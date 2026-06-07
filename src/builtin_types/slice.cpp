@@ -131,8 +131,8 @@ namespace cl
             return thread->set_pending_builtin_exception_string(
                 L"ValueError", L"length should not be negative");
         }
-        NormalizedTernarySlice normalized = CL_TRY(
-            normalize_ternary_slice_for_length(thread, slice, sequence_length));
+        NormalizedGeneralSlice normalized = CL_TRY(
+            normalize_general_slice_for_length(thread, slice, sequence_length));
 
         TValue<Tuple> result = thread->make_object_value<Tuple>(3);
         result.extract()->initialize_item_unchecked(

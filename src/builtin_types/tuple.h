@@ -15,8 +15,8 @@
 namespace cl
 {
     class ClassObject;
-    struct NormalizedBinarySlice;
-    struct NormalizedTernarySlice;
+    struct NormalizedNonstridedSlice;
+    struct NormalizedGeneralSlice;
 
     struct TupleFromFrameArgumentsTag
     {
@@ -62,9 +62,9 @@ namespace cl
         }
         [[nodiscard]] Value get_item(int64_t py_idx) const;
         [[nodiscard]] TValue<Tuple>
-        get_slice(const NormalizedBinarySlice &slice) const;
+        get_slice(const NormalizedNonstridedSlice &slice) const;
         [[nodiscard]] TValue<Tuple>
-        get_slice(const NormalizedTernarySlice &slice) const;
+        get_slice(const NormalizedGeneralSlice &slice) const;
         [[nodiscard]] TValue<Tuple> concat(const Tuple *other) const;
         int64_t count(Value needle) const;
         [[nodiscard]] Value index(Value needle, int64_t start_py_idx,

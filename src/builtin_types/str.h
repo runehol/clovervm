@@ -24,8 +24,8 @@ namespace cl
     class ThreadState;
     class Tuple;
     class VirtualMachine;
-    struct NormalizedBinarySlice;
-    struct NormalizedTernarySlice;
+    struct NormalizedNonstridedSlice;
+    struct NormalizedGeneralSlice;
 
     class String : public Object
     {
@@ -112,10 +112,10 @@ namespace cl
         [[nodiscard]] Value char_at(ThreadState *thread, int64_t py_idx) const;
         [[nodiscard]] TValue<String>
         get_slice(ThreadState *thread,
-                  const NormalizedBinarySlice &slice) const;
+                  const NormalizedNonstridedSlice &slice) const;
         [[nodiscard]] TValue<String>
         get_slice(ThreadState *thread,
-                  const NormalizedTernarySlice &slice) const;
+                  const NormalizedGeneralSlice &slice) const;
         [[nodiscard]] TValue<String> concat(const String *other) const;
         [[nodiscard]] TValue<String> lower() const;
         [[nodiscard]] TValue<String> upper() const;

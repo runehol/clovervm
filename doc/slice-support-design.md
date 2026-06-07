@@ -263,19 +263,21 @@ Builtin sequence resolvers should use the key shape to split handlers:
 
 ```text
 SMI key                 -> integer element access
-slice_step_none_shape   -> no-step slice handler
+slice_step_none_shape   -> nonstrided slice handler
 slice_general_shape     -> full slice handler
 ```
 
 For list, tuple, and str, the `slice_step_none_shape` handler can skip the
-`step is None` branch and normalize only start/stop for a contiguous copy. It
-may still need to handle missing bounds and out-of-range clipping.
+`step is None` branch and normalize only start/stop into a
+`NormalizedNonstridedSlice` for a contiguous copy. It may still need to handle
+missing bounds and out-of-range clipping.
 
 The `slice_general_shape` handler must run full slice normalization. It must not
 assume that `.step` is non-`None`, integer, nonzero, or otherwise valid. It must
 handle `None` as an implicit step of `1`, coerce non-`None` step values through
 Python's integer-index protocol, reject a zero step, coerce start/stop as
-needed, normalize bounds, and produce the extended slice result.
+needed, normalize bounds into a `NormalizedGeneralSlice`, and produce the slice
+result.
 
 The shape split must not bypass Python-visible special-method dispatch. A
 trusted native handler should run only after the IC has proven that normal
@@ -493,6 +495,11 @@ Builtin sequence fast paths should not call the Python-visible
 `slice.indices` method. They should call the shared internal helper directly
 when slice consumption is implemented, avoiding tuple allocation and method
 dispatch.
+
+The internal helpers should expose the execution contract, not the bytecode
+operand arity: `NormalizedNonstridedSlice` is the start-plus-length form for
+`slice_step_none_shape`, while `NormalizedGeneralSlice` carries start, stop,
+step, and selected length for full slice normalization.
 
 ## Implementation Checklist
 

@@ -2082,19 +2082,20 @@ TEST(Interpreter, normalize_slice_helpers_compute_selected_length)
     TValue<Slice> forward =
         make_slice(test_context.thread(), Value::from_smi(1),
                    Value::from_smi(8), Value::None());
-    Expected<NormalizedBinarySlice> forward_result =
-        normalize_binary_slice_for_length(test_context.thread(), forward, 10);
+    Expected<NormalizedNonstridedSlice> forward_result =
+        normalize_nonstrided_slice_for_length(test_context.thread(), forward,
+                                              10);
     ASSERT_TRUE(forward_result.has_value());
-    NormalizedBinarySlice forward_normalized = forward_result.value();
+    NormalizedNonstridedSlice forward_normalized = forward_result.value();
     EXPECT_EQ(1, forward_normalized.start);
     EXPECT_EQ(7u, forward_normalized.selected_sequence_length);
 
     TValue<Slice> reverse = make_slice(test_context.thread(), Value::None(),
                                        Value::None(), Value::from_smi(-1));
-    Expected<NormalizedTernarySlice> reverse_result =
-        normalize_ternary_slice_for_length(test_context.thread(), reverse, 5);
+    Expected<NormalizedGeneralSlice> reverse_result =
+        normalize_general_slice_for_length(test_context.thread(), reverse, 5);
     ASSERT_TRUE(reverse_result.has_value());
-    NormalizedTernarySlice reverse_normalized = reverse_result.value();
+    NormalizedGeneralSlice reverse_normalized = reverse_result.value();
     EXPECT_EQ(4, reverse_normalized.start);
     EXPECT_EQ(-1, reverse_normalized.stop);
     EXPECT_EQ(-1, reverse_normalized.step);

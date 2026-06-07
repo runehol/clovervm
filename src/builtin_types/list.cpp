@@ -92,14 +92,14 @@ namespace cl
                 TValue<Slice>::from_value_assumed(index_value);
             if(slice.extract()->step.raw_value().is_none())
             {
-                NormalizedBinarySlice normalized =
-                    CL_TRY(normalize_binary_slice_for_length(
+                NormalizedNonstridedSlice normalized =
+                    CL_TRY(normalize_nonstrided_slice_for_length(
                         thread, slice,
                         static_cast<int64_t>(self.get_ptr<List>()->size())));
                 return self.get_ptr<List>()->get_slice(normalized).raw_value();
             }
-            NormalizedTernarySlice normalized =
-                CL_TRY(normalize_ternary_slice_for_length(
+            NormalizedGeneralSlice normalized =
+                CL_TRY(normalize_general_slice_for_length(
                     thread, slice,
                     static_cast<int64_t>(self.get_ptr<List>()->size())));
             return self.get_ptr<List>()->get_slice(normalized).raw_value();
@@ -571,7 +571,7 @@ namespace cl
         return item_unchecked(idx);
     }
 
-    TValue<List> List::get_slice(const NormalizedBinarySlice &slice) const
+    TValue<List> List::get_slice(const NormalizedNonstridedSlice &slice) const
     {
         TValue<List> result =
             make_object_value<List>(slice.selected_sequence_length);
@@ -585,7 +585,7 @@ namespace cl
         return result;
     }
 
-    TValue<List> List::get_slice(const NormalizedTernarySlice &slice) const
+    TValue<List> List::get_slice(const NormalizedGeneralSlice &slice) const
     {
         TValue<List> result =
             make_object_value<List>(slice.selected_sequence_length);

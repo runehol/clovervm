@@ -210,16 +210,16 @@ namespace cl
                 TValue<Slice>::from_value_assumed(index_value);
             if(slice.extract()->step.raw_value().is_none())
             {
-                NormalizedBinarySlice normalized =
-                    CL_TRY(normalize_binary_slice_for_length(
+                NormalizedNonstridedSlice normalized =
+                    CL_TRY(normalize_nonstrided_slice_for_length(
                         thread, slice,
                         self.get_ptr<String>()->count.extract()));
                 return self.get_ptr<String>()
                     ->get_slice(thread, normalized)
                     .raw_value();
             }
-            NormalizedTernarySlice normalized =
-                CL_TRY(normalize_ternary_slice_for_length(
+            NormalizedGeneralSlice normalized =
+                CL_TRY(normalize_general_slice_for_length(
                     thread, slice, self.get_ptr<String>()->count.extract()));
             return self.get_ptr<String>()
                 ->get_slice(thread, normalized)
@@ -430,8 +430,9 @@ namespace cl
         return thread->make_object_value<String>(result).raw_value();
     }
 
-    TValue<String> String::get_slice(ThreadState *thread,
-                                     const NormalizedBinarySlice &slice) const
+    TValue<String>
+    String::get_slice(ThreadState *thread,
+                      const NormalizedNonstridedSlice &slice) const
     {
         return thread->make_object_value<String>(
             std::wstring_view(&data[static_cast<size_t>(slice.start)],
@@ -439,7 +440,7 @@ namespace cl
     }
 
     TValue<String> String::get_slice(ThreadState *thread,
-                                     const NormalizedTernarySlice &slice) const
+                                     const NormalizedGeneralSlice &slice) const
     {
         TValue<String> result =
             thread->make_object_value<String>(TValue<SMI>::from_smi(

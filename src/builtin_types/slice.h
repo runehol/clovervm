@@ -46,13 +46,13 @@ namespace cl
                   sizeof(SlotObject) + Slice::kStepSlot * sizeof(Value));
     static_assert(std::is_trivially_destructible_v<Slice>);
 
-    struct NormalizedBinarySlice
+    struct NormalizedNonstridedSlice
     {
         int64_t start;
         size_t selected_sequence_length;
     };
 
-    struct NormalizedTernarySlice
+    struct NormalizedGeneralSlice
     {
         int64_t start;
         int64_t stop;
@@ -91,7 +91,7 @@ namespace cl
         return index;
     }
 
-    ALWAYSINLINE size_t selected_sequence_length_for_ternary_slice(
+    ALWAYSINLINE size_t selected_sequence_length_for_general_slice(
         int64_t start, int64_t stop, int64_t step)
     {
         if(step < 0)
@@ -106,9 +106,10 @@ namespace cl
 
     [[nodiscard]] TValue<Slice> make_slice(ThreadState *thread, Value start,
                                            Value stop, Value step);
-    [[nodiscard]] ALWAYSINLINE Expected<NormalizedBinarySlice>
-    normalize_binary_slice_for_length(ThreadState *thread, TValue<Slice> slice,
-                                      int64_t sequence_length)
+    [[nodiscard]] ALWAYSINLINE Expected<NormalizedNonstridedSlice>
+    normalize_nonstrided_slice_for_length(ThreadState *thread,
+                                          TValue<Slice> slice,
+                                          int64_t sequence_length)
     {
         (void)thread;
         Slice *raw_slice = slice.extract();
@@ -124,12 +125,12 @@ namespace cl
                                  sequence_length, 0, sequence_length);
         size_t selected_sequence_length =
             start < stop ? static_cast<size_t>(stop - start) : 0;
-        return Expected<NormalizedBinarySlice>::ok(
-            NormalizedBinarySlice{start, selected_sequence_length});
+        return Expected<NormalizedNonstridedSlice>::ok(
+            NormalizedNonstridedSlice{start, selected_sequence_length});
     }
 
-    [[nodiscard]] ALWAYSINLINE Expected<NormalizedTernarySlice>
-    normalize_ternary_slice_for_length(ThreadState *thread, TValue<Slice> slice,
+    [[nodiscard]] ALWAYSINLINE Expected<NormalizedGeneralSlice>
+    normalize_general_slice_for_length(ThreadState *thread, TValue<Slice> slice,
                                        int64_t sequence_length)
     {
         (void)thread;
@@ -140,7 +141,7 @@ namespace cl
             step = CL_TRY(slice_field_to_smi(raw_slice->step));
             if(step == 0)
             {
-                return Expected<NormalizedTernarySlice>::raise_exception(
+                return Expected<NormalizedGeneralSlice>::raise_exception(
                     L"ValueError", L"slice step cannot be zero");
             }
         }
@@ -158,8 +159,8 @@ namespace cl
                                  CL_TRY(slice_field_to_smi(raw_slice->stop)),
                                  sequence_length, lower, upper);
         size_t selected_sequence_length =
-            selected_sequence_length_for_ternary_slice(start, stop, step);
-        return Expected<NormalizedTernarySlice>::ok(NormalizedTernarySlice{
+            selected_sequence_length_for_general_slice(start, stop, step);
+        return Expected<NormalizedGeneralSlice>::ok(NormalizedGeneralSlice{
             start, stop, step, selected_sequence_length});
     }
 

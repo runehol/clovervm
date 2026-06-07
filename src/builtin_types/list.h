@@ -13,8 +13,8 @@
 namespace cl
 {
     class Tuple;
-    struct NormalizedBinarySlice;
-    struct NormalizedTernarySlice;
+    struct NormalizedNonstridedSlice;
+    struct NormalizedGeneralSlice;
 
     class List : public Object
     {
@@ -57,9 +57,9 @@ namespace cl
 
         [[nodiscard]] Value get_item(int64_t py_idx) const;
         [[nodiscard]] TValue<List>
-        get_slice(const NormalizedBinarySlice &slice) const;
+        get_slice(const NormalizedNonstridedSlice &slice) const;
         [[nodiscard]] TValue<List>
-        get_slice(const NormalizedTernarySlice &slice) const;
+        get_slice(const NormalizedGeneralSlice &slice) const;
         [[nodiscard]] Value set_item(int64_t py_idx, Value value);
         void insert_item(int64_t py_idx, Value value);
         // Returns a borrowed Value. Interpreter callers immediately place the
