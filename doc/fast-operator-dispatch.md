@@ -1,13 +1,15 @@
 # Fast Operator Dispatch
 
 This document describes inline caching for Python special-method dispatch in
-clovervm. The design has two targets:
+clovervm. The operator-cache design has two targets:
 
 - single-call protocols such as subscription, unary operators, length, and
   representation;
 - `NotImplemented`-continued protocols such as binary arithmetic, in-place
   arithmetic, rich comparison, and ternary `pow`;
-- table-driven fallback protocols such as membership.
+
+Membership has its own fallback protocol, but it does not fit the operator
+dispatch tables or the `CheckOperatorNotImplemented` continuation opcode.
 
 The cache must preserve Python-visible dispatch semantics. A cache hit may
 avoid repeated lookup and may jump to a trusted native handler, but only under
@@ -390,7 +392,6 @@ CallTernary            lookup type(operand0).dunder_name; call args: operand0, o
 CallTernaryReflected   lookup type(operand1).dunder_name; call args: operand1, operand0, operand2
 IdentityEq             fallback: operand0 is operand1
 IdentityNe             fallback: operand0 is not operand1
-ContainsFallback       fallback: membership via iteration or sequence indexing
 RaiseUnsupported       fallback: operator-specific unsupported TypeError
 RaiseOrdering          fallback: ordering TypeError
 ```
@@ -581,31 +582,28 @@ comparisons raise `TypeError`.
 ### Membership
 
 Membership has protocol fallback even though it has only one named dunder
-candidate. The fallback is selected when `__contains__` is missing, not when it
-returns `NotImplemented`. If `__contains__` exists, its result is truth-tested
-as the membership result. The opcode should be named for the primary dunder,
-such as `Contains`, rather than for the surface syntax spelling `in`. `not in`
-uses the same operation and negates the final truth value.
+candidate, but it should not use the operator dispatch tables or the paired
+`CheckOperatorNotImplemented` continuation opcode. The fallback is selected
+when `__contains__` is missing, not when it returns `NotImplemented`. If
+`__contains__` exists, its result is truth-tested as the membership result.
+Returning `NotImplemented` is not a fallback signal; in modern Python it raises
+during truth testing.
 
-```text
-Contains
-    0: CallBinary("__contains__", IfMethodFound)
-    1: ContainsFallback(Always)
-```
+Membership needs a separate dispatch shape when optimized. That shape must
+cover at least these steps for `item in container`:
 
-For this table, `operand0` is the container and `operand1` is the searched item.
-`ContainsFallback` runs the rest of the membership protocol for those saved
-operands:
-
-1. Try iteration and compare the searched item against each yielded value using
-   equality semantics.
-2. If iteration is unavailable, try sequence indexing from zero until the
+1. Look up and call `type(container).__contains__(container, item)`, if present,
+   then truth-test the result.
+2. If `__contains__` is missing, try iteration and compare each yielded value
+   against the searched item using equality semantics.
+3. If iteration is unavailable, try sequence indexing from zero until the
    sequence protocol terminates the search.
 
-This fallback is a native continuation/thunk boundary rather than an ordinary
-Python dunder-call row. It may create an iterator, call `next`, run equality
+The fallback path may create an iterator, call `next`, run equality
 comparisons, handle sentinel exceptions, and fall back to indexed subscription.
-It is not driven by `CheckOperatorNotImplemented`.
+It is not a `NotImplemented` continuation, and squeezing it into the same table
+and paired-opcode model as operator dunder dispatch would hide important
+membership-specific control flow.
 
 ## Protocol Semantics Summary
 
@@ -787,8 +785,8 @@ state unchanged unless the operation has an explicit negative-cache design.
 
 - Should trusted handlers require exact builtin type guards, or can some use
   shape guards that imply the same dunder-method lookup semantics?
-- How much of binary, in-place, comparison, and membership cache validation can
-  share one table walker without obscuring hot opcode paths?
+- How much of binary, in-place, and comparison cache validation can share one
+  table walker without obscuring hot opcode paths?
 - Should the continuation prefix store a direct metadata pointer or a small SMI
   table id?
 - Which odd callable shapes, if any, should be supported by cached Python
