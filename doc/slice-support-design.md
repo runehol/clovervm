@@ -529,8 +529,8 @@ Phase 1, slice object and syntax:
 
 Phase 2, Python-facing normalization:
 
-- [ ] Add shared SMI-only slice normalization in `builtin_types/slice.{h,cpp}`.
-- [ ] Implement Python-facing `slice.indices(length)`.
+- [x] Add shared SMI-only slice normalization in `builtin_types/slice.{h,cpp}`.
+- [x] Implement Python-facing `slice.indices(length)`.
 - [x] Do not install a placeholder `slice.indices` before it is implemented.
 - [x] Do not implement slice equality or hashing in this phase.
 - [x] Do not implement constant folding of literal slice objects in this phase.

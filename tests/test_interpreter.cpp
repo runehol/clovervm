@@ -158,6 +158,26 @@ static void expect_list_iterator(Value actual, List *expected_list,
     EXPECT_EQ(Value::from_smi(expected_index), iterator->index.raw_value());
 }
 
+static void expect_slice_indices_tuple(Value actual, int64_t expected_start,
+                                       int64_t expected_stop,
+                                       int64_t expected_step)
+{
+    ASSERT_TRUE(can_convert_to<Tuple>(actual));
+    Tuple *tuple = assume_convert_to<Tuple>(actual);
+    ASSERT_EQ(3u, tuple->size());
+    EXPECT_EQ(Value::from_smi(expected_start), tuple->item_unchecked(0));
+    EXPECT_EQ(Value::from_smi(expected_stop), tuple->item_unchecked(1));
+    EXPECT_EQ(Value::from_smi(expected_step), tuple->item_unchecked(2));
+}
+
+static void expect_slice_indices(const wchar_t *source, int64_t expected_start,
+                                 int64_t expected_stop, int64_t expected_step)
+{
+    test::FileRunner file_runner(source);
+    expect_slice_indices_tuple(file_runner.return_value, expected_start,
+                               expected_stop, expected_step);
+}
+
 static int64_t g_next_counter = 0;
 static Value *g_native_frame_frontier_seen = nullptr;
 static Value *g_expected_clover_frame_sentinel = nullptr;
@@ -2012,6 +2032,62 @@ TEST(Interpreter, slice_repr_shows_all_three_fields)
     EXPECT_STREQ(L"slice(1, 2, None)",
                  string_as_wchar_t(TValue<String>::from_value_assumed(
                      file_runner.return_value)));
+}
+
+TEST(Interpreter, slice_indices_normalizes_smi_fields)
+{
+    expect_slice_indices(L"slice(None, None).indices(5)\n", 0, 5, 1);
+    expect_slice_indices(L"slice(None, None, -1).indices(5)\n", 4, -1, -1);
+    expect_slice_indices(L"slice(0, -1).indices(5)\n", 0, 4, 1);
+    expect_slice_indices(L"slice(-10, 10).indices(5)\n", 0, 5, 1);
+    expect_slice_indices(L"slice(10, -10, -2).indices(5)\n", 4, -1, -2);
+    expect_slice_indices(L"slice(1, 8, 2).indices(10)\n", 1, 8, 2);
+}
+
+TEST(Interpreter, slice_indices_rejects_invalid_consumed_values)
+{
+    expect_python_error(L"slice(None, None, 0).indices(5)\n", L"ValueError",
+                        L"slice step cannot be zero");
+    expect_python_error(
+        L"slice('a', None).indices(5)\n", L"TypeError",
+        L"slice indices must be integers or None or have an __index__ method");
+    expect_python_error(
+        L"slice(None, None, 'x').indices(5)\n", L"TypeError",
+        L"slice indices must be integers or None or have an __index__ method");
+    expect_python_error(L"slice(None).indices(-1)\n", L"ValueError",
+                        L"length should not be negative");
+    expect_python_error(
+        L"slice(None).indices('x')\n", L"TypeError",
+        L"slice indices must be integers or None or have an __index__ method");
+}
+
+TEST(Interpreter, normalize_slice_for_length_computes_selected_length)
+{
+    test::VmTestContext test_context;
+    ThreadState::ActivationScope activation_scope(test_context.thread());
+
+    TValue<Slice> forward =
+        make_slice(test_context.thread(), Value::from_smi(1),
+                   Value::from_smi(8), Value::from_smi(2));
+    Expected<NormalizedSlice> forward_result =
+        normalize_slice_for_length(test_context.thread(), forward, 10);
+    ASSERT_TRUE(forward_result.has_value());
+    NormalizedSlice forward_normalized = forward_result.value();
+    EXPECT_EQ(1, forward_normalized.start);
+    EXPECT_EQ(8, forward_normalized.stop);
+    EXPECT_EQ(2, forward_normalized.step);
+    EXPECT_EQ(4u, forward_normalized.selected_sequence_length);
+
+    TValue<Slice> reverse = make_slice(test_context.thread(), Value::None(),
+                                       Value::None(), Value::from_smi(-1));
+    Expected<NormalizedSlice> reverse_result =
+        normalize_slice_for_length(test_context.thread(), reverse, 5);
+    ASSERT_TRUE(reverse_result.has_value());
+    NormalizedSlice reverse_normalized = reverse_result.value();
+    EXPECT_EQ(4, reverse_normalized.start);
+    EXPECT_EQ(-1, reverse_normalized.stop);
+    EXPECT_EQ(-1, reverse_normalized.step);
+    EXPECT_EQ(5u, reverse_normalized.selected_sequence_length);
 }
 
 TEST(Interpreter, subscript_load_observes_replaced_dunder_getitem)

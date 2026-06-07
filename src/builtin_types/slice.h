@@ -4,7 +4,10 @@
 #include "object_model/builtin_class_registry.h"
 #include "object_model/object.h"
 #include "object_model/owned.h"
+#include "object_model/typed_value.h"
 #include "object_model/value.h"
+#include <cstddef>
+#include <cstdint>
 #include <type_traits>
 
 namespace cl
@@ -43,8 +46,19 @@ namespace cl
                   sizeof(SlotObject) + Slice::kStepSlot * sizeof(Value));
     static_assert(std::is_trivially_destructible_v<Slice>);
 
+    struct NormalizedSlice
+    {
+        int64_t start;
+        int64_t stop;
+        int64_t step;
+        size_t selected_sequence_length;
+    };
+
     [[nodiscard]] TValue<Slice> make_slice(ThreadState *thread, Value start,
                                            Value stop, Value step);
+    [[nodiscard]] Expected<NormalizedSlice>
+    normalize_slice_for_length(ThreadState *thread, TValue<Slice> slice,
+                               int64_t sequence_length);
 
     BuiltinClassDefinition make_slice_class(VirtualMachine *vm);
     void install_slice_class_methods(VirtualMachine *vm);
