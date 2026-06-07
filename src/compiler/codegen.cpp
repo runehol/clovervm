@@ -1249,19 +1249,26 @@ namespace cl
             uint32_t source_offset = av.source_offsets[node_idx];
             int32_t lhs_idx = children[0];
             AstChildren lhs_children = av.children[lhs_idx];
-            ScopedRegister receiver_reg =
-                CL_TRY(codegen_node_into_a_register(lhs_children[0]));
-            ScopedRegister key_reg =
-                CL_TRY(codegen_node_into_a_register(lhs_children[1]));
 
             if(kind.operator_kind == AstOperatorKind::NOP)
             {
                 CL_TRY(codegen_node(children[1]));
+                TemporaryReg value_reg(*code_obj);
+                CL_TRY(code_obj->emit_star(source_offset, value_reg));
+                ScopedRegister receiver_reg =
+                    CL_TRY(codegen_node_into_a_register(lhs_children[0]));
+                ScopedRegister key_reg =
+                    CL_TRY(codegen_node_into_a_register(lhs_children[1]));
+                CL_TRY(code_obj->emit_ldar(source_offset, value_reg));
                 CL_TRY(code_obj->emit_set_item(source_offset, receiver_reg.reg,
                                                key_reg.reg));
                 return Expected<void>::ok();
             }
 
+            ScopedRegister receiver_reg =
+                CL_TRY(codegen_node_into_a_register(lhs_children[0]));
+            ScopedRegister key_reg =
+                CL_TRY(codegen_node_into_a_register(lhs_children[1]));
             OpTableEntry entry = get_operator_entry(kind.operator_kind);
             std::optional<int8_t> immediate = check_binary_acc_smi_immediate(
                 kind.operator_kind, entry, children[1]);
@@ -1310,17 +1317,22 @@ namespace cl
             AstChildren lhs_children = av.children[lhs_idx];
             uint8_t constant_idx =
                 CL_TRY(code_obj->allocate_constant(av.constants[lhs_idx]));
-            ScopedRegister receiver_reg =
-                CL_TRY(codegen_node_into_a_register(lhs_children[0]));
 
             if(kind.operator_kind == AstOperatorKind::NOP)
             {
                 CL_TRY(codegen_node(children[1]));
+                TemporaryReg value_reg(*code_obj);
+                CL_TRY(code_obj->emit_star(source_offset, value_reg));
+                ScopedRegister receiver_reg =
+                    CL_TRY(codegen_node_into_a_register(lhs_children[0]));
+                CL_TRY(code_obj->emit_ldar(source_offset, value_reg));
                 CL_TRY(code_obj->emit_store_attr(
                     source_offset, receiver_reg.reg, constant_idx));
                 return Expected<void>::ok();
             }
 
+            ScopedRegister receiver_reg =
+                CL_TRY(codegen_node_into_a_register(lhs_children[0]));
             OpTableEntry entry = get_operator_entry(kind.operator_kind);
             std::optional<int8_t> immediate = check_binary_acc_smi_immediate(
                 kind.operator_kind, entry, children[1]);
@@ -2381,27 +2393,16 @@ namespace cl
                         AstNodeKind lhs_kind = av.kinds[lhs_idx].node_kind;
                         if(lhs_kind == AstNodeKind::EXPRESSION_ATTRIBUTE)
                         {
-                            AstChildren lhs_children = av.children[lhs_idx];
-                            uint8_t constant_idx =
-                                CL_TRY(code_obj->allocate_constant(
-                                    av.constants[lhs_idx]));
-                            ScopedRegister receiver_reg = CL_TRY(
-                                codegen_node_into_a_register(lhs_children[0]));
                             CL_TRY(codegen_node(children[2]));
-                            CL_TRY(code_obj->emit_store_attr(
-                                source_offset, receiver_reg.reg, constant_idx));
+                            CL_TRY(emit_store_accumulator_to_target(
+                                source_offset, lhs_idx));
                             break;
                         }
                         if(lhs_kind == AstNodeKind::EXPRESSION_BINARY)
                         {
-                            AstChildren lhs_children = av.children[lhs_idx];
-                            ScopedRegister receiver_reg = CL_TRY(
-                                codegen_node_into_a_register(lhs_children[0]));
-                            ScopedRegister key_reg = CL_TRY(
-                                codegen_node_into_a_register(lhs_children[1]));
                             CL_TRY(codegen_node(children[2]));
-                            CL_TRY(code_obj->emit_set_item(
-                                source_offset, receiver_reg.reg, key_reg.reg));
+                            CL_TRY(emit_store_accumulator_to_target(
+                                source_offset, lhs_idx));
                             break;
                         }
                         CL_TRY(codegen_node(children[2]));

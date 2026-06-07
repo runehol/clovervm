@@ -2147,6 +2147,34 @@ TEST(Interpreter, subscript_store_observes_replaced_dunder_setitem)
     EXPECT_EQ(Value::from_smi(12), file_runner.return_value);
 }
 
+TEST(Interpreter, subscript_assignment_evaluates_rhs_before_target)
+{
+    test::FileRunner file_runner(L"xs = [0, 0]\n"
+                                 L"i = 0\n"
+                                 L"def rhs():\n"
+                                 L"    global i\n"
+                                 L"    i = 1\n"
+                                 L"    return 7\n"
+                                 L"xs[i] = rhs()\n"
+                                 L"xs[0] * 10 + xs[1]\n");
+
+    EXPECT_EQ(Value::from_smi(7), file_runner.return_value);
+}
+
+TEST(Interpreter, annotated_subscript_assignment_evaluates_rhs_before_target)
+{
+    test::FileRunner file_runner(L"xs = [0, 0]\n"
+                                 L"i = 0\n"
+                                 L"def rhs():\n"
+                                 L"    global i\n"
+                                 L"    i = 1\n"
+                                 L"    return 7\n"
+                                 L"xs[i]: int = rhs()\n"
+                                 L"xs[0] * 10 + xs[1]\n");
+
+    EXPECT_EQ(Value::from_smi(7), file_runner.return_value);
+}
+
 TEST(Interpreter, subscript_store_replaces_cache_for_different_key_shape)
 {
     test::VmTestContext test_context;
@@ -2476,6 +2504,48 @@ TEST(Interpreter, attribute_load_and_store_syntax)
               obj_value.get_ptr<Object>()->native_layout_id());
     EXPECT_EQ(Value::from_smi(7),
               obj_value.get_ptr<Instance>()->get_own_property(attr_name));
+}
+
+TEST(Interpreter, attribute_assignment_evaluates_rhs_before_target)
+{
+    test::FileRunner file_runner(L"class Box:\n"
+                                 L"    pass\n"
+                                 L"a = Box()\n"
+                                 L"b = Box()\n"
+                                 L"a.value = 1\n"
+                                 L"b.value = 2\n"
+                                 L"current = a\n"
+                                 L"def target():\n"
+                                 L"    return current\n"
+                                 L"def rhs():\n"
+                                 L"    global current\n"
+                                 L"    current = b\n"
+                                 L"    return 7\n"
+                                 L"target().value = rhs()\n"
+                                 L"a.value * 10 + b.value\n");
+
+    EXPECT_EQ(Value::from_smi(17), file_runner.return_value);
+}
+
+TEST(Interpreter, annotated_attribute_assignment_evaluates_rhs_before_target)
+{
+    test::FileRunner file_runner(L"class Box:\n"
+                                 L"    pass\n"
+                                 L"a = Box()\n"
+                                 L"b = Box()\n"
+                                 L"a.value = 1\n"
+                                 L"b.value = 2\n"
+                                 L"current = a\n"
+                                 L"def target():\n"
+                                 L"    return current\n"
+                                 L"def rhs():\n"
+                                 L"    global current\n"
+                                 L"    current = b\n"
+                                 L"    return 7\n"
+                                 L"target().value: int = rhs()\n"
+                                 L"a.value * 10 + b.value\n");
+
+    EXPECT_EQ(Value::from_smi(17), file_runner.return_value);
 }
 
 TEST(Interpreter, store_attr_caches_instance_add_transition)
