@@ -320,7 +320,7 @@ continuation prefix in the caller frame before the callee-visible arguments:
 
 ```text
 hidden prefix:
-    operator dispatch table pointer or SMI table id
+    SMI operator dispatch table id
     SMI next_candidate_index
     operand0 Value
     operand1 Value
@@ -332,9 +332,9 @@ actual Python call arguments:
 ```
 
 The hidden prefix is not visible to the callee. The operand slots are
-root-scanned. The table field is immutable VM metadata or an SMI id, not an
-ordinary heap object. Call argument slots must not be reused as continuation
-operands because call setup or the callee may mutate them.
+root-scanned. The table id is a small SMI that indexes immutable VM metadata,
+not an ordinary heap object. Call argument slots must not be reused as
+continuation operands because call setup or the callee may mutate them.
 
 `CheckOperatorNotImplemented` has no immediates. It is only a valid return
 target after an operator-candidate call that populated the hidden prefix:
@@ -364,6 +364,16 @@ are immutable VM metadata. They may contain immortal interned strings for dunder
 names; do not store ordinary collectable heap values in them.
 
 ```cpp
+enum class OperatorStepAction : uint8_t
+{
+    // ...
+};
+
+enum class OperatorStepApplicability : uint8_t
+{
+    // ...
+};
+
 struct OperatorDispatchTable
 {
     OperatorStep steps[MaxSteps];
@@ -371,11 +381,19 @@ struct OperatorDispatchTable
 
 struct OperatorStep
 {
+    ImmortalInternedString *dunder_name;  // null for fallback steps
     OperatorStepAction action;
     OperatorStepApplicability applicability;
-    ImmortalInternedString *dunder_name;  // null for fallback steps
+    uint8_t else_goto;
 };
 ```
+
+On 64-bit targets this keeps each step as one 16-byte entry while leaving the
+dunder name directly visible in the row. `else_goto` is the target row when
+applicability fails. If applicability passes and the action enters a Python
+candidate that returns `NotImplemented`, continuation resumes at the following
+row. The table PC therefore carries protocol branch state such as "reflected
+priority was already tried."
 
 `OperatorStepAction` describes what frame setup or fallback operation to run.
 It should be call-layout oriented, not operator-family oriented. If arithmetic,
@@ -407,10 +425,23 @@ IfMethodFound           call only if the named method resolves
 IfMethodFoundAndOperands01TypesDiffer
                         call only if the named method resolves and operand0
                         and operand1 have different types
+IfArithmeticReflectedPriority
+                        call only if the named reflected method resolves and
+                        operand1's type has arithmetic reflected priority for
+                        this operation. This predicate is not merely subtype,
+                        reflected-method presence, or deduplication against
+                        the normal dunder; it must capture the Python rule that
+                        the right subtype provides an overriding reflected
+                        implementation for the operation.
+IfRichComparisonReflectedPriority
+                        call only if the named reflected method resolves and
+                        operand1's type is a strict subclass of operand0's type
 ```
 
-Table sketches below write the applicability as the final item in each row
-action for compactness, for example `CallBinary("<name>", IfMethodFound)`.
+Table sketches below write applicability and non-fallthrough
+failed-applicability control flow inside each row action for compactness, for
+example `CallBinary("<name>", IfMethodFound, else goto fallback)`. If a row
+omits `else goto`, failed applicability falls through to the next row.
 
 Table operands are semantic protocol operands, not necessarily source operands.
 For example, `a in b` should compile to `Contains` with `operand0 = b` and
@@ -427,25 +458,28 @@ dunder call.
 
 ### Binary Arithmetic And Bitwise Operators
 
-Each ordinary binary operator has two table orderings. The normal-first table
-tries the operand0/normal dunder before the reflected dunder. The
-reflected-first table is selected when right-subclass priority says the
-reflected candidate must be attempted first. That priority is determined before
-walking the table from operand types and operation metadata, not by remembering
-or deduplicating resolved Python method objects.
+Each ordinary binary operator uses one branched table. The first row checks
+whether arithmetic reflected priority currently applies. If it does, the table
+tries the reflected candidate first and continuation proceeds through the
+"reflected already tried" branch. If it does not, `else goto normal_first`
+enters the ordinary normal-first branch. The table PC, not a side flag or a set
+of tried method objects, records which branch is active.
 
 Template:
 
 ```text
-Binary<Verb>NormalFirst
-    0: CallBinary("<normal>", IfMethodFound)
-    1: CallBinaryReflected("<reflected>", IfMethodFoundAndOperands01TypesDiffer)
-    2: RaiseUnsupported(Always)
-
-Binary<Verb>ReflectedFirst
-    0: CallBinaryReflected("<reflected>", IfMethodFound)
+Binary<Verb>
+    0: CallBinaryReflected("<reflected>",
+                           IfArithmeticReflectedPriority,
+                           else goto normal_first)
     1: CallBinary("<normal>", IfMethodFound)
     2: RaiseUnsupported(Always)
+
+normal_first:
+    3: CallBinary("<normal>", IfMethodFound)
+    4: CallBinaryReflected("<reflected>",
+                           IfMethodFoundAndOperands01TypesDiffer)
+    5: RaiseUnsupported(Always)
 ```
 
 Rows:
@@ -468,30 +502,38 @@ Rows:
 | `Or` | `__or__` | `__ror__` |
 
 The reflected second candidate checks current operand0/operand1 type inequality
-and current reflected-method lookup when it executes. The first Python call may
-have mutated classes or MROs before returning `NotImplemented`; the continuation
-recomputes lookup state but does not remember or deduplicate previously called
-method objects.
+and current reflected-method lookup when it executes. The reflected-priority
+row checks whether the right subtype provides reflected priority for this
+operation. Neither row performs runtime deduplication against the normal dunder
+or against previously called Python method objects. A Python call may mutate
+classes or MROs before returning `NotImplemented`; the continuation recomputes
+lookup state from the table PC and saved operands.
 
 ### In-Place Operators
 
-In-place operators prepend the in-place dunder, then fall back to the ordinary
-binary ordering.
+In-place operators try the in-place dunder first. If it is missing or returns
+`NotImplemented`, they enter the ordinary binary protocol from current state.
+That current-state entry is important because the in-place candidate may have
+mutated operands, classes, or MROs before returning `NotImplemented`.
 
 Template:
 
 ```text
-InPlace<Verb>NormalFirstFallback
-    0: CallBinary("<inplace>", IfMethodFound)
-    1: CallBinary("<normal>", IfMethodFound)
-    2: CallBinaryReflected("<reflected>", IfMethodFoundAndOperands01TypesDiffer)
-    3: RaiseUnsupported(Always)
+InPlace<Verb>
+    0: CallBinary("<inplace>", IfMethodFound, else goto binary_dispatch)
 
-InPlace<Verb>ReflectedFirstFallback
-    0: CallBinary("<inplace>", IfMethodFound)
-    1: CallBinaryReflected("<reflected>", IfMethodFound)
+binary_dispatch:
+    1: CallBinaryReflected("<reflected>",
+                           IfArithmeticReflectedPriority,
+                           else goto normal_first)
     2: CallBinary("<normal>", IfMethodFound)
     3: RaiseUnsupported(Always)
+
+normal_first:
+    4: CallBinary("<normal>", IfMethodFound)
+    5: CallBinaryReflected("<reflected>",
+                           IfMethodFoundAndOperands01TypesDiffer)
+    6: RaiseUnsupported(Always)
 ```
 
 Rows:
@@ -512,9 +554,10 @@ Rows:
 | `Xor` | `__ixor__` | `__xor__` | `__rxor__` |
 | `Or` | `__ior__` | `__or__` | `__ror__` |
 
-The in-place candidate is attempted before right-subclass reflected priority.
-If it is missing or returns `NotImplemented`, the ordinary binary protocol is
-run with the normal/reflected order selected for the current operand types.
+The in-place candidate is attempted before arithmetic reflected priority. If it
+is missing or returns `NotImplemented`, control enters the same branched binary
+dispatch shape used by ordinary `Binary<Verb>`, using the current operand
+objects and current lookup state.
 
 ### Ternary Pow
 
@@ -523,15 +566,18 @@ the exponent, and operand2 as the modulus. It uses ternary call actions for the
 same dunder names:
 
 ```text
-TernaryPowNormalFirst
-    0: CallTernary("__pow__", IfMethodFound)
-    1: CallTernaryReflected("__rpow__", IfMethodFoundAndOperands01TypesDiffer)
-    2: RaiseUnsupported(Always)
-
-TernaryPowReflectedFirst
-    0: CallTernaryReflected("__rpow__", IfMethodFound)
+TernaryPow
+    0: CallTernaryReflected("__rpow__",
+                            IfArithmeticReflectedPriority,
+                            else goto normal_first)
     1: CallTernary("__pow__", IfMethodFound)
     2: RaiseUnsupported(Always)
+
+normal_first:
+    3: CallTernary("__pow__", IfMethodFound)
+    4: CallTernaryReflected("__rpow__",
+                            IfMethodFoundAndOperands01TypesDiffer)
+    5: RaiseUnsupported(Always)
 ```
 
 There is no in-place ternary table. `**=` is a binary augmented assignment and
@@ -542,25 +588,26 @@ uses `__ipow__(operand1)` before falling back to binary `__pow__`/`__rpow__`.
 Rich comparisons use binary call actions but comparison-specific reflected
 names and fallbacks.
 
-Rich comparisons also have two table orderings. The reflected-first table is
-selected when operand0 and operand1 have different types and `type(operand1)`
-is a strict subclass of `type(operand0)`. Otherwise the normal-first table is
-used. Unlike ordinary binary arithmetic, rich comparison reverse rows are not
-guarded by operand type inequality: same-type comparisons may still call the
-swapped comparison operation.
+Rich comparisons also use one branched table. The reflected-priority row is
+eligible when operand1's type is a strict subclass of operand0's type and the
+named reflected comparison resolves. Unlike ordinary binary arithmetic, rich
+comparison reverse rows are not guarded by operand type inequality: same-type
+comparisons may still call the swapped comparison operation.
 
 Template:
 
 ```text
-Compare<Verb>NormalFirst
-    0: CallBinary("<normal>", IfMethodFound)
-    1: CallBinaryReflected("<reflected>", IfMethodFound)
-    2: <fallback>(Always)
-
-Compare<Verb>ReflectedFirst
-    0: CallBinaryReflected("<reflected>", IfMethodFound)
+Compare<Verb>
+    0: CallBinaryReflected("<reflected>",
+                           IfRichComparisonReflectedPriority,
+                           else goto normal_first)
     1: CallBinary("<normal>", IfMethodFound)
     2: <fallback>(Always)
+
+normal_first:
+    3: CallBinary("<normal>", IfMethodFound)
+    4: CallBinaryReflected("<reflected>", IfMethodFound)
+    5: <fallback>(Always)
 ```
 
 Rows:
@@ -618,19 +665,21 @@ For an ordinary binary operator `lhs op rhs`, let:
 
 Candidate order:
 
-1. If the reflected-first ordering was selected and `G` exists, call
-   `G(rhs, lhs)` first.
+1. If arithmetic reflected priority applies and `G` exists, call `G(rhs, lhs)`
+   first.
 2. Call `F(lhs, rhs)` if it exists.
-3. If the reflected-first ordering was not selected, and `L != R`, and `G`
-   exists, call `G(rhs, lhs)`.
+3. If the reflected-priority candidate was not tried first, and `L != R`, and
+   `G` exists, call `G(rhs, lhs)`.
 4. If every called candidate returns `NotImplemented`, raise the
    operator-specific unsupported-operand `TypeError`.
 
-The right-subclass priority decision is a protocol/table-selection decision
-made from operand types and operation metadata. It is not a runtime
-deduplication pass over resolved Python method objects. In particular, the
-normal and reflected candidates may both be called even if their current lookup
-results are represented by the same Python function object.
+The reflected-priority decision is not a runtime deduplication pass over
+resolved Python method objects. In particular, the normal and reflected
+candidates may both be called even if their current lookup results are
+represented by the same Python function object. The dispatch table encodes
+whether the reflected-priority candidate was already tried in its row index:
+continuation after the priority row resumes in the branch that cannot reach the
+second reflected row.
 
 Returning the singleton `NotImplemented` is the only protocol-level signal to
 continue to the next candidate. Any other returned value is the result. Raising
@@ -787,7 +836,5 @@ state unchanged unless the operation has an explicit negative-cache design.
   shape guards that imply the same dunder-method lookup semantics?
 - How much of binary, in-place, and comparison cache validation can share one
   table walker without obscuring hot opcode paths?
-- Should the continuation prefix store a direct metadata pointer or a small SMI
-  table id?
 - Which odd callable shapes, if any, should be supported by cached Python
   dunder-call replay after the fixed-arity function-shaped path lands?
