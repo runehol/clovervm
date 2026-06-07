@@ -2363,6 +2363,108 @@ TEST(Interpreter, subscript_load_replaces_cache_for_different_slice_shapes)
               none_cache.key_shape_key);
 }
 
+TEST(Interpreter, subscript_load_caches_trusted_builtin_slice_handlers)
+{
+    test::VmTestContext test_context;
+    ThreadState::ActivationScope activation_scope(test_context.thread());
+
+    CodeObject *code_obj = test_context.compile_file(
+        L"def list_nonstrided(xs):\n"
+        L"    return xs[1:3]\n"
+        L"def list_general(xs):\n"
+        L"    return xs[::-1]\n"
+        L"def tuple_nonstrided(xs):\n"
+        L"    return xs[1:3]\n"
+        L"def tuple_general(xs):\n"
+        L"    return xs[::-1]\n"
+        L"def str_nonstrided(xs):\n"
+        L"    return xs[1:3]\n"
+        L"def str_general(xs):\n"
+        L"    return xs[::-1]\n"
+        L"list_nonstrided_result = list_nonstrided([1, 2, 3, 4])\n"
+        L"list_general_result = list_general([1, 2, 3, 4])\n"
+        L"tuple_nonstrided_result = tuple_nonstrided((1, 2, 3, 4))\n"
+        L"tuple_general_result = tuple_general((1, 2, 3, 4))\n"
+        L"str_nonstrided_result = str_nonstrided('abcd')\n"
+        L"str_general_result = str_general('abcd')\n"
+        L"result = list_nonstrided_result[0] * 10000000\n"
+        L"result += list_general_result[0] * 1000000\n"
+        L"result += tuple_nonstrided_result[0] * 100000\n"
+        L"result += tuple_general_result[0] * 10000\n"
+        L"result += list_nonstrided_result[1] * 1000\n"
+        L"result += list_general_result[3] * 100\n"
+        L"result += tuple_nonstrided_result[1] * 10\n"
+        L"result += tuple_general_result[3]\n"
+        L"result\n");
+
+    Value actual = test_context.thread()->run_clovervm_code_object(code_obj);
+    ASSERT_EQ(Value::from_smi(24243131), actual);
+
+    TValue<String> str_nonstrided_result_name(
+        test_context.vm().get_or_create_interned_string_value(
+            L"str_nonstrided_result"));
+    expect_string_value(
+        load_global_from_module_for_test(code_obj, str_nonstrided_result_name),
+        L"bc");
+    TValue<String> str_general_result_name(
+        test_context.vm().get_or_create_interned_string_value(
+            L"str_general_result"));
+    expect_string_value(
+        load_global_from_module_for_test(code_obj, str_general_result_name),
+        L"dcba");
+
+    auto expect_trusted_slice_cache = [&](const wchar_t *function_name,
+                                          Shape *expected_key_shape,
+                                          BinaryHandler &handler_out) {
+        TValue<String> function_name_value(
+            test_context.vm().get_or_create_interned_string_value(
+                function_name));
+        Value function_value =
+            load_global_from_module_for_test(code_obj, function_name_value);
+        ASSERT_TRUE(can_convert_to<Function>(function_value));
+        CodeObject *function_code =
+            assume_convert_to<Function>(function_value)->code_object.extract();
+        ASSERT_EQ(1u, function_code->subscript_caches.size());
+        const SubscriptInlineCache &cache = function_code->subscript_caches[0];
+        EXPECT_EQ(ShapeKey::from_shape(expected_key_shape),
+                  cache.key_shape_key);
+        EXPECT_EQ(expected_key_shape,
+                  test_context.vm().shape_for_key(cache.key_shape_key));
+        EXPECT_NE(nullptr, cache.handler.binary);
+        handler_out = cache.handler.binary;
+    };
+
+    BinaryHandler list_nonstrided_handler = nullptr;
+    BinaryHandler tuple_nonstrided_handler = nullptr;
+    BinaryHandler str_nonstrided_handler = nullptr;
+    BinaryHandler list_general_handler = nullptr;
+    BinaryHandler tuple_general_handler = nullptr;
+    BinaryHandler str_general_handler = nullptr;
+
+    expect_trusted_slice_cache(L"list_nonstrided",
+                               test_context.vm().slice_step_none_shape(),
+                               list_nonstrided_handler);
+    expect_trusted_slice_cache(L"tuple_nonstrided",
+                               test_context.vm().slice_step_none_shape(),
+                               tuple_nonstrided_handler);
+    expect_trusted_slice_cache(L"str_nonstrided",
+                               test_context.vm().slice_step_none_shape(),
+                               str_nonstrided_handler);
+    expect_trusted_slice_cache(L"list_general",
+                               test_context.vm().slice_general_shape(),
+                               list_general_handler);
+    expect_trusted_slice_cache(L"tuple_general",
+                               test_context.vm().slice_general_shape(),
+                               tuple_general_handler);
+    expect_trusted_slice_cache(L"str_general",
+                               test_context.vm().slice_general_shape(),
+                               str_general_handler);
+
+    EXPECT_NE(list_nonstrided_handler, list_general_handler);
+    EXPECT_NE(tuple_nonstrided_handler, tuple_general_handler);
+    EXPECT_NE(str_nonstrided_handler, str_general_handler);
+}
+
 TEST(Interpreter, subscript_store_calls_user_defined_dunder_setitem)
 {
     test::FileRunner file_runner(L"class Bag:\n"

@@ -551,7 +551,7 @@ Phase 3, sequence operations and trusted handlers:
   is in scope for the same implementation pass.
 - [x] Update builtin sequence type-error messages to allow slice keys, for example
   "list indices must be integers or slices" rather than only "integers".
-- [ ] Add resolver branches for `slice_step_none_shape` and
+- [x] Add resolver branches for `slice_step_none_shape` and
   `slice_general_shape`.
 - [x] Add interpreter-level tests for user-defined `__getitem__` receiving slices.
 - [x] Add interpreter-level tests for builtin sequence slicing behavior.

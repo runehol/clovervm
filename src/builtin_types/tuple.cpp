@@ -127,6 +127,29 @@ namespace cl
         return self.get_ptr<Tuple>()->get_item(index_value.get_smi());
     }
 
+    static Value trusted_tuple_getitem_nonstrided_slice_handler(
+        ThreadState *thread, Value self, Value index_value)
+    {
+        TValue<Slice> slice = TValue<Slice>::from_value_assumed(index_value);
+        NormalizedNonstridedSlice normalized =
+            CL_TRY(normalize_nonstrided_slice_for_length(
+                thread, slice,
+                static_cast<int64_t>(self.get_ptr<Tuple>()->size())));
+        return self.get_ptr<Tuple>()->get_slice(normalized).raw_value();
+    }
+
+    static Value
+    trusted_tuple_getitem_general_slice_handler(ThreadState *thread, Value self,
+                                                Value index_value)
+    {
+        TValue<Slice> slice = TValue<Slice>::from_value_assumed(index_value);
+        NormalizedGeneralSlice normalized =
+            CL_TRY(normalize_general_slice_for_length(
+                thread, slice,
+                static_cast<int64_t>(self.get_ptr<Tuple>()->size())));
+        return self.get_ptr<Tuple>()->get_slice(normalized).raw_value();
+    }
+
     static TrustedHandlerResolution
     resolve_trusted_tuple_getitem_handler(VirtualMachine *vm,
                                           ShapeKey container_key,
@@ -134,11 +157,26 @@ namespace cl
     {
         (void)unused;
         TrustedHandlerResolution resolution;
-        if(vm->shape_for_key(container_key)->get_class() == vm->tuple_class() &&
-           key_key == ShapeKey::from_value(Value::from_smi(0)))
+        if(vm->shape_for_key(container_key)->get_class() != vm->tuple_class())
+        {
+            return resolution;
+        }
+        if(key_key == ShapeKey::from_value(Value::from_smi(0)))
         {
             resolution.arity = TrustedHandlerArity::Binary;
             resolution.binary = trusted_tuple_getitem_smi_handler;
+            return resolution;
+        }
+        if(key_key == ShapeKey::from_shape(vm->slice_step_none_shape()))
+        {
+            resolution.arity = TrustedHandlerArity::Binary;
+            resolution.binary = trusted_tuple_getitem_nonstrided_slice_handler;
+            return resolution;
+        }
+        if(key_key == ShapeKey::from_shape(vm->slice_general_shape()))
+        {
+            resolution.arity = TrustedHandlerArity::Binary;
+            resolution.binary = trusted_tuple_getitem_general_slice_handler;
         }
         return resolution;
     }
