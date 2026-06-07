@@ -33,19 +33,22 @@ namespace cl
         OperatorWalkStatus status =
             OperatorWalkStatus::PropagatePendingException;
         uint32_t resume_index = 0;
+        OperatorStepAction action = OperatorStepAction::IdentityEq;
         OperatorOperandOrder operand_order = OperatorOperandOrder::Normal;
         Value result = Value::None();
         OperatorInlineCache cache_entry;
 
         static OperatorWalkDescriptor native_result(Value result);
         static OperatorWalkDescriptor propagate_pending_exception();
-        static OperatorWalkDescriptor call_python_function(
-            uint32_t resume_index, OperatorOperandOrder operand_order,
-            Value receiver, const AttributeReadDescriptor &method_descriptor,
-            ShapeKey arg_shape_key, TValue<Function> function, uint32_t n_args,
-            FunctionCallAdaptation adaptation, bool has_self);
         static OperatorWalkDescriptor
-        call_trusted_handler(Value receiver,
+        call_python_function(OperatorStepAction action, uint32_t resume_index,
+                             OperatorOperandOrder operand_order, Value receiver,
+                             const AttributeReadDescriptor &method_descriptor,
+                             ShapeKey arg_shape_key, TValue<Function> function,
+                             uint32_t n_args, FunctionCallAdaptation adaptation,
+                             bool has_self);
+        static OperatorWalkDescriptor
+        call_trusted_handler(OperatorStepAction action, Value receiver,
                              const AttributeReadDescriptor &method_descriptor,
                              ShapeKey arg_shape_key, TrustedHandler handler);
     };

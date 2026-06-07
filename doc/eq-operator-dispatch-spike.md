@@ -166,6 +166,13 @@ normal_first:
       `reg(0) = table id`, `reg(1) = next row`, `reg(2) = operand0`,
       `reg(3) = operand1`.
 - [ ] Build callee-visible call arguments after the continuation prefix.
+- [ ] Add continuation frame setup helpers per opcode/operator-handler arity.
+      The handler owns arity; the hidden continuation prefix stores canonical
+      operands and is independent of whether the selected call is normal or
+      reflected.
+- [ ] Add callee argument setup helpers that use the selected walk action, so
+      `CallBinary` and `CallBinaryReflected` build the correct callee-visible
+      argument order.
 - [ ] Account for the downward-growing physical frame layout while keeping the
       logical register numbering clear.
 - [ ] Ensure continuation operand slots are root-scanned.

@@ -27,13 +27,15 @@ namespace cl
     }
 
     OperatorWalkDescriptor OperatorWalkDescriptor::call_python_function(
-        uint32_t resume_index, OperatorOperandOrder operand_order,
-        Value receiver, const AttributeReadDescriptor &method_descriptor,
+        OperatorStepAction action, uint32_t resume_index,
+        OperatorOperandOrder operand_order, Value receiver,
+        const AttributeReadDescriptor &method_descriptor,
         ShapeKey arg_shape_key, TValue<Function> function, uint32_t n_args,
         FunctionCallAdaptation adaptation, bool has_self)
     {
         OperatorWalkDescriptor descriptor;
         descriptor.status = OperatorWalkStatus::CallPythonFunction;
+        descriptor.action = action;
         descriptor.resume_index = resume_index;
         descriptor.operand_order = operand_order;
         descriptor.cache_entry = OperatorInlineCache::python_function_call(
@@ -44,11 +46,13 @@ namespace cl
     }
 
     OperatorWalkDescriptor OperatorWalkDescriptor::call_trusted_handler(
-        Value receiver, const AttributeReadDescriptor &method_descriptor,
+        OperatorStepAction action, Value receiver,
+        const AttributeReadDescriptor &method_descriptor,
         ShapeKey arg_shape_key, TrustedHandler handler)
     {
         OperatorWalkDescriptor descriptor;
         descriptor.status = OperatorWalkStatus::CallTrustedHandler;
+        descriptor.action = action;
         descriptor.cache_entry = OperatorInlineCache::trusted_handler_call(
             receiver, method_descriptor, arg_shape_key, handler);
         return descriptor;
@@ -229,11 +233,13 @@ namespace cl
             if(handler.arity == TrustedHandlerArity::Binary)
             {
                 return OperatorWalkDescriptor::call_trusted_handler(
-                    receiver, method_descriptor, arg_shape_key, handler);
+                    step.action, receiver, method_descriptor, arg_shape_key,
+                    handler);
             }
             return OperatorWalkDescriptor::call_python_function(
-                index + 1, operand_order, receiver, method_descriptor,
-                arg_shape_key, function, n_args, adaptation, has_self);
+                step.action, index + 1, operand_order, receiver,
+                method_descriptor, arg_shape_key, function, n_args, adaptation,
+                has_self);
         }
 
         debug_operator_table_exhausted();
