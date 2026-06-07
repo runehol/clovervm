@@ -667,14 +667,12 @@ namespace cl
     }
 
     Expected<uint32_t> CodeObjectBuilder::emit_del_item(uint32_t source_offset,
-                                                        uint32_t receiver_reg,
-                                                        uint32_t key_reg)
+                                                        uint32_t receiver_reg)
     {
         uint8_t cache_idx = CL_TRY(allocate_subscript_cache());
         uint32_t result =
             emplace_back(source_offset, uint8_t(Bytecode::DelItem));
         emplace_back(source_offset, encode_reg(receiver_reg));
-        emplace_back(source_offset, encode_reg(key_reg));
         emplace_back(source_offset, cache_idx);
         return Expected<uint32_t>::ok(result);
     }

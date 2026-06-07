@@ -3273,13 +3273,12 @@ namespace cl
 
     NOINLINE static INTERP_CC Value op_del_item_cache_miss(PARAMS)
     {
-        static constexpr uint32_t call_instr_len = 4;
+        static constexpr uint32_t call_instr_len = 3;
         int8_t receiver_reg = pc[1];
-        int8_t key_reg = pc[2];
-        uint8_t cache_idx = pc[3];
+        uint8_t cache_idx = pc[2];
         static constexpr uint32_t n_user_args = 1;
         Value receiver = fp[receiver_reg];
-        Value key = fp[key_reg];
+        Value key = accumulator;
         ShapeKey receiver_shape_key = ShapeKey::from_value(receiver);
         ShapeKey key_shape_key = ShapeKey::from_value(key);
         VirtualMachine *vm = thread->get_machine();
@@ -3391,13 +3390,12 @@ namespace cl
 
     NOINLINE static INTERP_CC Value op_del_item_cached_call_slow(PARAMS)
     {
-        static constexpr uint32_t call_instr_len = 4;
+        static constexpr uint32_t call_instr_len = 3;
         int8_t receiver_reg = pc[1];
-        int8_t key_reg = pc[2];
-        uint8_t cache_idx = pc[3];
+        uint8_t cache_idx = pc[2];
         static constexpr uint32_t n_user_args = 1;
         Value receiver = fp[receiver_reg];
-        Value key = fp[key_reg];
+        Value key = accumulator;
         SubscriptInlineCache &cache = code_object->subscript_caches[cache_idx];
         assert(cache.function != nullptr);
 
@@ -3419,12 +3417,11 @@ namespace cl
 
     static INTERP_CC Value op_del_item(PARAMS)
     {
-        static constexpr uint32_t call_instr_len = 4;
+        static constexpr uint32_t call_instr_len = 3;
         int8_t receiver_reg = pc[1];
-        int8_t key_reg = pc[2];
-        uint8_t cache_idx = pc[3];
+        uint8_t cache_idx = pc[2];
         Value receiver = fp[receiver_reg];
-        Value key = fp[key_reg];
+        Value key = accumulator;
         SubscriptInlineCache &cache = code_object->subscript_caches[cache_idx];
         if(unlikely(!cache.method_read_cache.matches(receiver)))
         {

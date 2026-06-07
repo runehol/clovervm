@@ -1369,7 +1369,7 @@ TEST(Codegen, subscript_store_uses_receiver_value_regs_and_accumulator_key)
     EXPECT_EQ(expected, actual);
 }
 
-TEST(Codegen, subscript_delete_uses_receiver_and_key_regs)
+TEST(Codegen, subscript_delete_uses_receiver_reg_and_accumulator_key)
 {
     const wchar_t *test_case = L"def clear(obj, idx):\n"
                                L"    del obj[idx]\n";
@@ -1380,9 +1380,10 @@ TEST(Codegen, subscript_delete_uses_receiver_and_key_regs)
         "    2 StaGlobal c[1], module_global_mutation_ic[0]\n"
         "    5 Return\n"
         "Constant 0: Code object:\n"
-        "    0 DelItem p0, p1, subscript_ic[0]\n"
-        "    4 LdaNone\n"
-        "    5 Return\n"
+        "    0 Ldar p1\n"
+        "    2 DelItem p0, subscript_ic[0]\n"
+        "    5 LdaNone\n"
+        "    6 Return\n"
         "\n"
         "Constant 1: \"clear\"\n";
     std::string actual = bytecode_str_from_file(test_case);

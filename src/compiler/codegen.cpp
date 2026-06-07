@@ -1316,10 +1316,8 @@ namespace cl
             AstChildren target_children = av.children[target_idx];
             ScopedRegister receiver_reg =
                 CL_TRY(codegen_node_into_a_register(target_children[0]));
-            ScopedRegister key_reg =
-                CL_TRY(codegen_node_into_a_register(target_children[1]));
-            CL_TRY(code_obj->emit_del_item(source_offset, receiver_reg.reg,
-                                           key_reg.reg));
+            CL_TRY(codegen_node(target_children[1]));
+            CL_TRY(code_obj->emit_del_item(source_offset, receiver_reg.reg));
             return Expected<void>::ok();
         }
 
