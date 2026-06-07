@@ -854,7 +854,7 @@ TEST(Attr, ClassWriteDescriptorUsesMetaclassMroShapeAndContentsValidityCell)
 
     ASSERT_TRUE(descriptor.is_found());
     EXPECT_TRUE(descriptor.is_cacheable());
-    ValidityCell *cell = descriptor.plan.lookup_validity_cell;
+    ValidityCell *cell = descriptor.lookup_validity_cell;
     ASSERT_NE(nullptr, cell);
     EXPECT_EQ(cell, meta->current_mro_shape_and_contents_validity_cell());
     EXPECT_EQ(nullptr, cls->current_mro_shape_and_contents_validity_cell());
@@ -898,7 +898,7 @@ TEST(Attr, AttributeWriteDescriptorCarriesSupersededClassCacheBlockers)
     EXPECT_EQ(
         attribute_cache_blocker(AttributeCacheBlocker::MutableDescriptorType),
         write_descriptor.cache_blockers);
-    EXPECT_EQ(nullptr, write_descriptor.plan.lookup_validity_cell);
+    EXPECT_EQ(nullptr, write_descriptor.lookup_validity_cell);
     EXPECT_FALSE(write_descriptor.is_cacheable());
     EXPECT_EQ(nullptr,
               owner_cls->current_mro_shape_and_contents_validity_cell());
@@ -1081,7 +1081,7 @@ TEST(Attr, AttributeWriteDescriptorCarriesLookupValidityForDescriptorMiss)
               descriptor.cache_blockers);
     EXPECT_EQ(nullptr, descriptor.plan.storage_owner);
     EXPECT_TRUE(descriptor.is_cacheable());
-    ValidityCell *cell = descriptor.plan.lookup_validity_cell;
+    ValidityCell *cell = descriptor.lookup_validity_cell;
     ASSERT_NE(nullptr, cell);
     EXPECT_TRUE(cell->is_valid());
     EXPECT_EQ(cell, child->current_mro_shape_and_contents_validity_cell());
@@ -1125,7 +1125,7 @@ TEST(Attr, AttributeDeleteDescriptorCarriesLookupValidityForOwnDelete)
     EXPECT_TRUE(descriptor.is_cacheable());
     EXPECT_NE(shape_before_delete, descriptor.plan.next_shape);
     EXPECT_TRUE(descriptor.plan.storage_location().is_found());
-    ValidityCell *cell = descriptor.plan.lookup_validity_cell;
+    ValidityCell *cell = descriptor.lookup_validity_cell;
     ASSERT_NE(nullptr, cell);
     EXPECT_TRUE(cell->is_valid());
     EXPECT_EQ(cell, child->current_mro_shape_and_contents_validity_cell());

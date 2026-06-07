@@ -2536,12 +2536,14 @@ namespace cl
                 assert(storage_location.is_found());
                 if(storage_location.kind == StorageKind::Inline)
                 {
-                    AttributeMutationPlan plan = AttributeMutationPlan::add_own_property(
-                        next_shape, storage_location,
+                    AttributeMutationPlan plan =
+                        AttributeMutationPlan::add_own_property(
+                            next_shape, storage_location);
+                    ValidityCell *lookup_validity_cell =
                         receiver_object->get_shape()
                             ->get_class()
-                            ->get_or_create_mro_shape_and_contents_validity_cell());
-                    cache.populate(receiver, plan);
+                            ->get_or_create_mro_shape_and_contents_validity_cell();
+                    cache.populate(receiver, plan, lookup_validity_cell);
                     store_attr_add_own_property_inline_fast(
                         receiver, cache.plan, accumulator);
                     COMPLETE();

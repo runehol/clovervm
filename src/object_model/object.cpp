@@ -54,7 +54,7 @@ namespace cl
                                 ->invalidate_module_builtins_binding_validity_cell();
                             return AttributeWriteDescriptor::found(
                                 AttributeMutationPlan::store_existing(
-                                    nullptr, info.storage_location(), nullptr));
+                                    nullptr, info.storage_location()));
                         }
                     case DescriptorSpecialKind::ShapeClass:
                         return AttributeWriteDescriptor::found(
@@ -73,8 +73,8 @@ namespace cl
             }
 
             return AttributeWriteDescriptor::found(
-                AttributeMutationPlan::store_existing(
-                    nullptr, info.storage_location(), nullptr));
+                AttributeMutationPlan::store_existing(nullptr,
+                                                      info.storage_location()));
         }
 
         AttributeDeleteDescriptor
@@ -113,8 +113,7 @@ namespace cl
                                     name, ShapeTransitionVerb::Delete);
                             return AttributeDeleteDescriptor::found(
                                 AttributeMutationPlan::delete_own_property(
-                                    next_shape, info.storage_location(),
-                                    nullptr));
+                                    next_shape, info.storage_location()));
                         }
                     case DescriptorSpecialKind::ShapeClass:
                     case DescriptorSpecialKind::SlotDict:
@@ -134,7 +133,7 @@ namespace cl
                 name, ShapeTransitionVerb::Delete);
             return AttributeDeleteDescriptor::found(
                 AttributeMutationPlan::delete_own_property(
-                    next_shape, info.storage_location(), nullptr));
+                    next_shape, info.storage_location()));
         }
 
     }  // namespace

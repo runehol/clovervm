@@ -260,11 +260,11 @@ namespace cl
     with_mro_shape_and_contents_validity_cell_if_unblocked(
         AttributeWriteDescriptor descriptor, ClassObject *cls)
     {
-        descriptor.plan.lookup_validity_cell = nullptr;
+        descriptor.lookup_validity_cell = nullptr;
         if(descriptor.is_found() &&
            attribute_cache_blockers_are_none(descriptor.cache_blockers))
         {
-            descriptor.plan.lookup_validity_cell =
+            descriptor.lookup_validity_cell =
                 cls->get_or_create_mro_shape_and_contents_validity_cell();
         }
         return descriptor;
@@ -274,11 +274,11 @@ namespace cl
     with_mro_shape_and_contents_validity_cell_if_unblocked(
         AttributeDeleteDescriptor descriptor, ClassObject *cls)
     {
-        descriptor.plan.lookup_validity_cell = nullptr;
+        descriptor.lookup_validity_cell = nullptr;
         if(descriptor.is_found() &&
            attribute_cache_blockers_are_none(descriptor.cache_blockers))
         {
-            descriptor.plan.lookup_validity_cell =
+            descriptor.lookup_validity_cell =
                 cls->get_or_create_mro_shape_and_contents_validity_cell();
         }
         return descriptor;

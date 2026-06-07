@@ -3145,8 +3145,8 @@ TEST(Interpreter, store_attr_caches_instance_add_transition)
     ASSERT_NE(nullptr, cache.plan.next_shape);
     ASSERT_TRUE(cache.plan.storage_location().is_found());
     EXPECT_TRUE(cache.plan.is_add_own_property());
-    ASSERT_NE(nullptr, cache.plan.lookup_validity_cell);
-    EXPECT_TRUE(cache.plan.lookup_validity_cell->is_valid());
+    ASSERT_NE(nullptr, cache.lookup_validity_cell);
+    EXPECT_TRUE(cache.lookup_validity_cell->is_valid());
 }
 
 TEST(Interpreter, del_attr_deletes_instance_property_and_caches_plan)
@@ -3197,8 +3197,8 @@ TEST(Interpreter, del_attr_deletes_instance_property_and_caches_plan)
     EXPECT_TRUE(cache.plan.is_delete_own_property());
     ASSERT_NE(nullptr, cache.plan.next_shape);
     EXPECT_TRUE(cache.plan.storage_location().is_found());
-    ASSERT_NE(nullptr, cache.plan.lookup_validity_cell);
-    EXPECT_TRUE(cache.plan.lookup_validity_cell->is_valid());
+    ASSERT_NE(nullptr, cache.lookup_validity_cell);
+    EXPECT_TRUE(cache.lookup_validity_cell->is_valid());
 
     Instance *second = test_context.thread()->make_internal_raw<Instance>(cls);
     ASSERT_TRUE(second->set_own_property(value_name, Value::from_smi(8)));

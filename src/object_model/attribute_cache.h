@@ -46,14 +46,15 @@ namespace cl
     {
     public:
         Shape *receiver_shape = nullptr;
+        ValidityCell *lookup_validity_cell = nullptr;
         AttributeMutationPlan plan = AttributeWriteDescriptor::not_found().plan;
 
         ALWAYSINLINE bool matches(Value receiver) const
         {
             return receiver.is_ptr() && receiver_shape != nullptr &&
                    receiver.get_ptr<Object>()->get_shape() == receiver_shape &&
-                   plan.lookup_validity_cell != nullptr &&
-                   plan.lookup_validity_cell->is_valid();
+                   lookup_validity_cell != nullptr &&
+                   lookup_validity_cell->is_valid();
         }
 
         void populate(Value receiver,
@@ -62,6 +63,7 @@ namespace cl
             assert(receiver.is_ptr());
             assert(descriptor.is_cacheable());
             receiver_shape = receiver.get_ptr<Object>()->get_shape();
+            lookup_validity_cell = descriptor.lookup_validity_cell;
             plan = descriptor.plan;
         }
 
@@ -71,20 +73,24 @@ namespace cl
             assert(receiver.is_ptr());
             assert(descriptor.is_cacheable());
             receiver_shape = receiver.get_ptr<Object>()->get_shape();
+            lookup_validity_cell = descriptor.lookup_validity_cell;
             plan = descriptor.plan;
         }
 
-        void populate(Value receiver, AttributeMutationPlan mutation_plan)
+        void populate(Value receiver, AttributeMutationPlan mutation_plan,
+                      ValidityCell *validity_cell)
         {
             assert(receiver.is_ptr());
-            assert(mutation_plan.lookup_validity_cell != nullptr);
+            assert(validity_cell != nullptr);
             receiver_shape = receiver.get_ptr<Object>()->get_shape();
+            lookup_validity_cell = validity_cell;
             plan = mutation_plan;
         }
 
         void clear()
         {
             receiver_shape = nullptr;
+            lookup_validity_cell = nullptr;
             plan = AttributeWriteDescriptor::not_found().plan;
         }
     };

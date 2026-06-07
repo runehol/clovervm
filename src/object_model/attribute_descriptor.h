@@ -196,32 +196,27 @@ namespace cl
             Object *storage_owner;
             Shape *next_shape;
         };
-        ValidityCell *lookup_validity_cell;
         int32_t physical_idx;
         StorageKind storage_kind;
         AttributeMutationPlanKind kind;
 
-        static AttributeMutationPlan
-        store_existing(Object *storage_owner, StorageLocation location,
-                       ValidityCell *lookup_validity_cell)
+        static AttributeMutationPlan store_existing(Object *storage_owner,
+                                                    StorageLocation location)
         {
             AttributeMutationPlan plan;
             plan.storage_owner = storage_owner;
-            plan.lookup_validity_cell = lookup_validity_cell;
             plan.physical_idx = location.physical_idx;
             plan.storage_kind = location.kind;
             plan.kind = AttributeMutationPlanKind::StoreExisting;
             return plan;
         }
 
-        static AttributeMutationPlan
-        add_own_property(Shape *next_shape, StorageLocation location,
-                         ValidityCell *lookup_validity_cell)
+        static AttributeMutationPlan add_own_property(Shape *next_shape,
+                                                      StorageLocation location)
         {
             assert(location.kind == StorageKind::Inline);
             AttributeMutationPlan plan;
             plan.next_shape = next_shape;
-            plan.lookup_validity_cell = lookup_validity_cell;
             plan.physical_idx = location.physical_idx;
             plan.storage_kind = location.kind;
             plan.kind = AttributeMutationPlanKind::AddOwnProperty;
@@ -229,12 +224,10 @@ namespace cl
         }
 
         static AttributeMutationPlan
-        delete_own_property(Shape *next_shape, StorageLocation location,
-                            ValidityCell *lookup_validity_cell)
+        delete_own_property(Shape *next_shape, StorageLocation location)
         {
             AttributeMutationPlan plan;
             plan.next_shape = next_shape;
-            plan.lookup_validity_cell = lookup_validity_cell;
             plan.physical_idx = location.physical_idx;
             plan.storage_kind = location.kind;
             plan.kind = AttributeMutationPlanKind::DeleteOwnProperty;
@@ -245,7 +238,6 @@ namespace cl
         {
             AttributeMutationPlan plan;
             plan.next_shape = nullptr;
-            plan.lookup_validity_cell = nullptr;
             plan.physical_idx = -1;
             plan.storage_kind = StorageKind::Inline;
             plan.kind = AttributeMutationPlanKind::ChangeClass;
@@ -273,15 +265,15 @@ namespace cl
         }
     };
 
-    static_assert(
-        sizeof(AttributeMutationPlan) == 24,
-        "AttributeMutationPlan should stay compact for mutation caches");
+    static_assert(sizeof(AttributeMutationPlan) == 16,
+                  "AttributeMutationPlan should stay compact");
 
     class AttributeWriteDescriptor
     {
     public:
         AttributeWriteStatus status;
         AttributeMutationPlan plan;
+        ValidityCell *lookup_validity_cell;
         AttributeCacheBlockers cache_blockers;
 
         static AttributeWriteDescriptor not_found()
@@ -289,8 +281,8 @@ namespace cl
             return AttributeWriteDescriptor{
                 AttributeWriteStatus::NotFound,
                 AttributeMutationPlan::store_existing(
-                    nullptr, StorageLocation::not_found(), nullptr),
-                attribute_cache_blocker(AttributeCacheBlocker::None)};
+                    nullptr, StorageLocation::not_found()),
+                nullptr, attribute_cache_blocker(AttributeCacheBlocker::None)};
         }
 
         static AttributeWriteDescriptor already_exists()
@@ -321,18 +313,17 @@ namespace cl
             return descriptor;
         }
 
-        static AttributeWriteDescriptor found(AttributeMutationPlan plan)
+        static AttributeWriteDescriptor
+        found(AttributeMutationPlan plan,
+              ValidityCell *lookup_validity_cell = nullptr)
         {
             return AttributeWriteDescriptor{
-                AttributeWriteStatus::Found, plan,
+                AttributeWriteStatus::Found, plan, lookup_validity_cell,
                 attribute_cache_blocker(AttributeCacheBlocker::None)};
         }
 
         bool is_found() const { return status == AttributeWriteStatus::Found; }
-        bool is_cacheable() const
-        {
-            return plan.lookup_validity_cell != nullptr;
-        }
+        bool is_cacheable() const { return lookup_validity_cell != nullptr; }
     };
 
     class AttributeDeleteDescriptor
@@ -340,6 +331,7 @@ namespace cl
     public:
         AttributeDeleteStatus status;
         AttributeMutationPlan plan;
+        ValidityCell *lookup_validity_cell;
         AttributeCacheBlockers cache_blockers;
 
         static AttributeDeleteDescriptor not_found()
@@ -347,8 +339,8 @@ namespace cl
             return AttributeDeleteDescriptor{
                 AttributeDeleteStatus::NotFound,
                 AttributeMutationPlan::store_existing(
-                    nullptr, StorageLocation::not_found(), nullptr),
-                attribute_cache_blocker(AttributeCacheBlocker::None)};
+                    nullptr, StorageLocation::not_found()),
+                nullptr, attribute_cache_blocker(AttributeCacheBlocker::None)};
         }
 
         static AttributeDeleteDescriptor read_only()
@@ -372,18 +364,17 @@ namespace cl
             return descriptor;
         }
 
-        static AttributeDeleteDescriptor found(AttributeMutationPlan plan)
+        static AttributeDeleteDescriptor
+        found(AttributeMutationPlan plan,
+              ValidityCell *lookup_validity_cell = nullptr)
         {
             return AttributeDeleteDescriptor{
-                AttributeDeleteStatus::Found, plan,
+                AttributeDeleteStatus::Found, plan, lookup_validity_cell,
                 attribute_cache_blocker(AttributeCacheBlocker::None)};
         }
 
         bool is_found() const { return status == AttributeDeleteStatus::Found; }
-        bool is_cacheable() const
-        {
-            return plan.lookup_validity_cell != nullptr;
-        }
+        bool is_cacheable() const { return lookup_validity_cell != nullptr; }
     };
 
 }  // namespace cl
