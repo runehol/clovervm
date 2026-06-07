@@ -19,6 +19,11 @@ assert types.MethodType is types.FunctionType
 assert isinstance(sample_function, types.FunctionType)
 assert isinstance(sample_function.__code__, types.CodeType)
 assert sample_function.__code__.__class__ is types.CodeType
+try:
+    sample_function.__code__ = sample_function.__code__
+    assert False
+except AttributeError:
+    pass
 
 assert types.ModuleType is sys.__class__
 assert isinstance(sys, types.ModuleType)

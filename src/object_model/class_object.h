@@ -59,6 +59,9 @@ namespace cl
                                               uint32_t slot_index);
         BuiltinInstanceShapeBuilder &add_slot(TValue<String> name,
                                               uint32_t slot_index);
+        BuiltinInstanceShapeBuilder &add_slot(TValue<String> name,
+                                              uint32_t slot_index,
+                                              DescriptorFlags flags);
         BuiltinInstanceShapeBuilder &reserve_slot(uint32_t slot_index);
         BuiltinInstanceShapeBuilder &add_descriptor(TValue<String> name,
                                                     DescriptorInfo info);

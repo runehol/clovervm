@@ -525,11 +525,18 @@ namespace cl
     BuiltinInstanceShapeBuilder::add_slot(TValue<String> name,
                                           uint32_t slot_index)
     {
+        return add_slot(name, slot_index,
+                        descriptor_flag(DescriptorFlag::StableSlot));
+    }
+
+    BuiltinInstanceShapeBuilder &BuiltinInstanceShapeBuilder::add_slot(
+        TValue<String> name, uint32_t slot_index, DescriptorFlags flags)
+    {
         reserve_slot(slot_index);
         return add_descriptor(
             name, DescriptorInfo::make(
                       StorageLocation{int32_t(slot_index), StorageKind::Inline},
-                      descriptor_flag(DescriptorFlag::StableSlot)));
+                      flags));
     }
 
     BuiltinInstanceShapeBuilder &
