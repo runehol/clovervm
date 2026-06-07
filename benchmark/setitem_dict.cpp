@@ -5,15 +5,17 @@ namespace benchmark_cpp
     int64_t setitem_dict_run(int64_t n)
     {
         int64_t values[] = {0, 0, 0, 0};
-        int64_t idx = 0;
-        for(int64_t i = 0; i < n; ++i)
+        int64_t i = 0;
+        for(; i + 4 <= n; i += 4)
         {
-            values[idx] = i;
-            ++idx;
-            if(idx == 4)
-            {
-                idx = 0;
-            }
+            values[0] = i;
+            values[1] = i + 1;
+            values[2] = i + 2;
+            values[3] = i + 3;
+        }
+        for(; i < n; ++i)
+        {
+            values[0] = i;
         }
         return values[0] + values[1] + values[2] + values[3];
     }
