@@ -1267,16 +1267,13 @@ namespace cl
 
             if(kind.operator_kind == AstOperatorKind::NOP)
             {
-                CL_TRY(codegen_node(children[1]));
-                TemporaryReg value_reg(*code_obj);
-                CL_TRY(code_obj->emit_star(source_offset, value_reg));
+                ScopedRegister value_reg =
+                    CL_TRY(codegen_node_into_a_register(children[1]));
                 ScopedRegister receiver_reg =
                     CL_TRY(codegen_node_into_a_register(lhs_children[0]));
-                ScopedRegister key_reg =
-                    CL_TRY(codegen_node_into_a_register(lhs_children[1]));
-                CL_TRY(code_obj->emit_ldar(source_offset, value_reg));
+                CL_TRY(codegen_node(lhs_children[1]));
                 CL_TRY(code_obj->emit_set_item(source_offset, receiver_reg.reg,
-                                               key_reg.reg));
+                                               value_reg.reg));
                 return Expected<void>::ok();
             }
 
@@ -1305,8 +1302,11 @@ namespace cl
                                                 lhs_value_reg));
             }
 
+            TemporaryReg value_reg(*code_obj);
+            CL_TRY(code_obj->emit_star(source_offset, value_reg));
+            CL_TRY(code_obj->emit_ldar(source_offset, key_reg.reg));
             CL_TRY(code_obj->emit_set_item(source_offset, receiver_reg.reg,
-                                           key_reg.reg));
+                                           value_reg));
             return Expected<void>::ok();
         }
 
@@ -1708,11 +1708,9 @@ namespace cl
                 CL_TRY(code_obj->emit_star(source_offset, value_reg));
                 ScopedRegister receiver_reg =
                     CL_TRY(codegen_node_into_a_register(target_children[0]));
-                ScopedRegister key_reg =
-                    CL_TRY(codegen_node_into_a_register(target_children[1]));
-                CL_TRY(code_obj->emit_ldar(source_offset, value_reg));
+                CL_TRY(codegen_node(target_children[1]));
                 CL_TRY(code_obj->emit_set_item(source_offset, receiver_reg.reg,
-                                               key_reg.reg));
+                                               value_reg));
                 return Expected<void>::ok();
             }
 

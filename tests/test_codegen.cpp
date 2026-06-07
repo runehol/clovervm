@@ -1347,7 +1347,7 @@ TEST(Codegen, subscript_load_uses_receiver_reg_and_accumulator_key)
     EXPECT_EQ(expected, actual);
 }
 
-TEST(Codegen, subscript_store_uses_receiver_key_regs_and_accumulator_value)
+TEST(Codegen, subscript_store_uses_receiver_value_regs_and_accumulator_key)
 {
     const wchar_t *test_case = L"def set(obj, idx, value):\n"
                                L"    obj[idx] = value\n";
@@ -1358,12 +1358,10 @@ TEST(Codegen, subscript_store_uses_receiver_key_regs_and_accumulator_value)
         "    2 StaGlobal c[1], module_global_mutation_ic[0]\n"
         "    5 Return\n"
         "Constant 0: Code object:\n"
-        "    0 Ldar p2\n"
-        "    2 Star0\n"
-        "    3 Ldar0\n"
-        "    4 SetItem p0, p1, subscript_ic[0]\n"
-        "    8 LdaNone\n"
-        "    9 Return\n"
+        "    0 Ldar p1\n"
+        "    2 SetItem p0, p2, subscript_ic[0]\n"
+        "    6 LdaNone\n"
+        "    7 Return\n"
         "\n"
         "Constant 1: \"set\"\n";
     std::string actual = bytecode_str_from_file(test_case);
@@ -1406,9 +1404,11 @@ TEST(Codegen, subscript_augmented_assignment_evaluates_receiver_and_key_once)
         "    0 Ldar p1\n"
         "    2 GetItem p0, subscript_ic[0]\n"
         "    5 AddSmi 1\n"
-        "    7 SetItem p0, p1, subscript_ic[1]\n"
-        "   11 LdaNone\n"
-        "   12 Return\n"
+        "    7 Star0\n"
+        "    8 Ldar p1\n"
+        "   10 SetItem p0, r0, subscript_ic[1]\n"
+        "   14 LdaNone\n"
+        "   15 Return\n"
         "\n"
         "Constant 1: \"bump\"\n";
     std::string actual = bytecode_str_from_file(test_case);
