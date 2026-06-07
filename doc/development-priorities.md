@@ -27,29 +27,37 @@ JIT, language, and runtime work.
 
 ## Priority Order
 
-1. **Guarded operator/protocol dispatch plans and type profiling**
+1. **Non-inline comparison specialization and guarded protocol dispatch**
 
    The design direction for this work is captured in
    [Fast Operator Dispatch](fast-operator-dispatch.md).
 
-   The first implementation slice should be subscription dispatch: `obj[key]`,
-   `obj[key] = value`, and `del obj[key]`. It exercises the same
-   special-method lookup and validity-cell machinery as overloaded operators,
-   but avoids reflected and in-place candidate ordering while the cache shape is
-   still being proved.
+   Subscription dispatch has now proved the basic shape: the inline cache can
+   guard the ordinary Python special-method lookup result, then install a
+   trusted native handler based on receiver and operand/key shapes. The next
+   priority is to apply the same model to comparisons and other non-inline
+   operands, where exact builtin types can avoid generic dispatch without
+   changing Python-visible semantics.
 
-   After subscription, move other operator and implicit protocol dispatch from
+   The first concrete step should be exact `str` comparison:
+
+   - generic Python-visible `str ==`, `str !=`, `<`, `<=`, `>`, and `>=`;
+   - trusted exact `str`/`str` handlers selected by operand shapes;
+   - comparison microbenchmarks that cover equal strings, early differences,
+     and long common prefixes;
+   - enough ordering support to unblock full pystone.
+
+   After comparisons, move other operator and implicit protocol dispatch from
    ad hoc special cases plus generic failure into explicit guarded plans. Binary
    and in-place operators such as `+` should preserve direct SMI-plus-SMI
    arithmetic as the primary hot path: the common integer case should remain a
    direct tag check and checked arithmetic path, without paying for uniform
-   shape lookup or generic cache probing. The same cache shape should extend to
-   other bytecode-driven dunder protocols such as numeric conversion and
-   truthiness. The resolver should own Python operator semantics, including type
-   special cases, special-method lookup on the type, reflected methods,
-   `NotImplemented`, and eventual `TypeError` formation. Executing a Python
-   `__add__` or `__radd__` should reuse the call-plan machinery as a
-   special-method call, not perform ordinary instance attribute lookup.
+   shape lookup or generic cache probing. The resolver should own Python
+   operator semantics, including type special cases, special-method lookup on
+   the type, reflected methods, `NotImplemented`, and eventual `TypeError`
+   formation. Executing a Python `__add__` or `__radd__` should reuse the
+   call-plan machinery as a special-method call, not perform ordinary instance
+   attribute lookup.
 
    The fallback inline cache should use the VM's shape model as its profiling
    vocabulary, including heap-object shapes and inline-value shapes. Binary
@@ -68,16 +76,33 @@ JIT, language, and runtime work.
    `__iter__`, `__next__`, and numeric conversions, not just arithmetic
    operators.
 
-2. **Slices**
+2. **Full pystone benchmark**
 
-   Add parse, lowering, and runtime support for `a[i:j:k]`, including
-   list/tuple/string slicing and slice assignment/deletion where appropriate.
-   Slices are important language surface, but should follow the subscription
-   protocol-dispatch work so they can use the same `__getitem__`,
-   `__setitem__`, `__delitem__`, cache, and type-profile machinery instead of
-   growing a separate ad hoc path.
+   The current `pystone_lite.py` benchmark exercises a useful subset, but the
+   full Python 3-era pystone benchmark is now close enough to be valuable. The
+   benchmark harness already has external CPython timing through
+   `cpython_runner.py`, and Google Benchmark externally times CloverVM
+   `run(n)`, so full pystone should be adapted into the same harness rather
+   than using pystone's internal timing.
 
-3. **Richer call adaptation and generic callable protocol**
+   The remaining semantic blocker is string ordering: full pystone compares
+   characters and strings with `<`, `<=`, `>`, and `>=`. Setup-only unsupported
+   constructs such as list comprehensions, list multiplication, and unpacking
+   assignment can be rewritten in the benchmark source without changing the
+   measured loop body. String ordering should not be rewritten to `ord(...)` in
+   the benchmark body, because that changes the workload.
+
+3. **Slice write/delete support when it becomes the shortest path**
+
+   Keep `slice.__new__` and syntax construction validation-free: slice fields
+   are raw objects, and `__index__` conversion must happen at consumption time
+   because it can run Python-visible side effects.
+
+   List slice `__setitem__` and `__delitem__`, plus any future equality/hash
+   decisions, should wait until a concrete benchmark or stdlib bringup task
+   needs them.
+
+4. **Richer call adaptation and generic callable protocol**
 
    Extend the call-plan model to the remaining Python call forms: runtime
    support for positional-only parameters, callee `**kwargs`, caller `*args`,
@@ -94,36 +119,37 @@ JIT, language, and runtime work.
    positional call supplies every parameter slot; default initialization is only
    needed for call sites that leave defaulted slots unfilled.
 
-4. **Interpreter-controlled descriptor execution**
+5. **Interpreter-controlled descriptor execution**
 
    Lookup already classifies descriptor work into plans. The next step is to
    execute `__get__`, `__set__`, and `__delete__` through explicit interpreter
    or VM-controlled dispatch so Python-visible execution, allocation, and
    exceptions are not hidden inside lookup/classification helpers.
 
-5. **Full Python dict hashing and equality**
+6. **Full Python dict hashing and equality**
 
    Python `dict` needs arbitrary-key hashing and equality semantics rather than
    the current string-key-oriented internal assumptions. This matters for real
    Python code, imports, module namespaces, mappings, and future library work.
 
-6. **Attribute hooks and escaped bound methods**
+7. **Short-lived allocation and reclamation pressure**
+
+    Repeated constructor/conversion and get-slice benchmarks now spend
+    significant time allocating and reclaiming tiny temporary objects, especially
+    strings and short list/tuple slice results. Before treating formatting,
+    protocol dispatch, or slice copy loops as the primary remaining bottleneck,
+    measure whether the benchmark has become an allocator/reclamation workload.
+    Candidate work includes improving zero-count-table processing, slab reuse,
+    and size-class behavior for very small short-lived objects.
+
+8. **Attribute hooks and escaped bound methods**
 
     Implement `__getattribute__`, `__getattr__`, `__setattr__`, and
     `__delattr__`, and add observable bound-method objects for escaped method
     values such as `f = obj.m`. Direct method-call fast paths should remain
     allocation-free when the bound method does not escape.
 
-7. **Short-lived allocation and reclamation pressure**
-
-    Repeated constructor/conversion benchmarks now spend significant time
-    allocating and reclaiming tiny temporary objects, especially strings. Before
-    treating formatting or protocol code as the primary remaining bottleneck,
-    measure whether the benchmark has become an allocator/reclamation workload.
-    Candidate work includes improving zero-count-table processing, slab reuse,
-    and size-class behavior for very small short-lived objects.
-
-8. **Inner functions with variable capture**
+9. **Inner functions with variable capture**
 
     Implement nested functions that capture variables from enclosing function
     scopes, following the cell-based design in
@@ -138,7 +164,7 @@ JIT, language, and runtime work.
     objects and therefore need explicit lifetime, root visibility, teardown, and
     pending-exception behavior for uninitialized cell reads.
 
-9. **Remaining basic operators**
+10. **Remaining basic operators**
 
     Fill in the parsed-but-not-yet-executable basic operators once the higher
     priority operator/protocol dispatch design is settled enough that they do
@@ -151,13 +177,13 @@ JIT, language, and runtime work.
     mirrors the same gap for `pow`, `matmul`, bitwise functional helpers, and
     `invert`.
 
-10. **Generators, `yield`, and `yield from`**
+11. **Generators, `yield`, and `yield from`**
 
     Generators create long-lived suspended frames, so they should wait until the
     memory/root model is reliable. `yield from` also needs careful interaction
     with `StopIteration.value` and internal no-value sentinels.
 
-11. **Comprehensions and richer syntax**
+12. **Comprehensions and richer syntax**
 
     Add list/dict/set comprehensions, generator expressions, more assignment
     targets, richer string syntax, and other surface-area features after the
@@ -169,7 +195,11 @@ Revisit this ordering when:
 
 - descriptor `__get__`, `__set__`, and `__delete__` execution no longer hides
   Python-visible behavior inside lookup helpers;
-- subscription dispatch has a guarded IC, and the same cache model has a clear
+- exact string comparisons have generic semantics, trusted `str`/`str`
+  handlers, and benchmark coverage;
+- full pystone runs in the benchmark harness and shows a different blocker than
+  string ordering or benchmark-source adaptation;
+- comparison dispatch has a guarded IC, and the same cache model has a clear
   path to binary/in-place operators, reflected methods, `NotImplemented`
   fallback, and analogous dunder-protocol cases;
 - callee `**kwargs`, caller `*args` / `**kwargs`, positional-only parameters, or
