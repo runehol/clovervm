@@ -89,6 +89,17 @@ Special-method lookup is rooted in the operand type and its MRO. It does not
 consult attributes stored directly on the operand object. It still has
 descriptor and binding behavior for the class/MRO entry it finds.
 
+A resolved special method is a protocol candidate even when the resolved value
+is not a function-shaped object the operator cache can replay. For example, a
+class-level `__add__ = 123` is found and then the attempted call raises
+`TypeError`; it is not treated as a missing method and must not be skipped in
+favor of a later fallback candidate. Likewise, descriptors and callable objects
+that do not match the cacheable function-shaped path remain Python-visible
+candidates. The cache may decline to install a replay plan for such cases, but
+the generic protocol must still call, raise, or continue from the selected row
+with the same next-row `NotImplemented` continuation semantics as an ordinary
+function-shaped candidate.
+
 Examples:
 
 ```text
@@ -210,7 +221,11 @@ function-shaped call plan: fixed positional arity, predictable receiver binding,
 and no descriptor or call adaptation that changes argument layout in a
 candidate-specific way. Odd cases such as staticmethod-shaped operator methods,
 varargs/default adaptation, or descriptor dispatch stay on the generic slow
-path until explicitly designed.
+path until explicitly designed. They are not "missing" methods: a found
+non-cacheable candidate must be executed through a generic call path, or must
+raise if it is not callable, at the same protocol row where it was selected.
+If the generic call returns `NotImplemented`, the protocol continues from the
+next table row.
 
 Before entering a cached Python function, the opcode lays out a normal
 contiguous argument span. Cached dunder-call replay cannot depend on transient
@@ -452,6 +467,14 @@ IfRichComparisonReflectedPriority
                         call only if the named reflected method resolves and
                         operand1's type is a strict subclass of operand0's type
 ```
+
+`IfMethodFound` is about Python protocol resolution, not cacheability. If the
+named method resolves to a non-callable value, a descriptor result, or another
+callable shape that the fast function-entry path cannot replay, the row is
+still applicable. The action must execute that candidate through a generic call
+path or raise the corresponding call error; it must not fall through as though
+the method were absent. A generic call that returns `NotImplemented` resumes
+from the following table row just like a fast function-shaped call.
 
 Table sketches below write applicability and non-fallthrough
 failed-applicability control flow inside each row action for compactness, for
@@ -833,10 +856,15 @@ For multi-candidate and table-driven fallback protocols:
 3. Prefer a complete trusted native handler when the current table state can be
    collapsed under the operand shape guards.
 4. The first multi-candidate implementation is cacheless for Python candidates.
-   It still stops table walking at the first callable Python candidate, writes
-   the per-call continuation prefix into the caller frame, and enters the
-   function with the paired `CheckOperatorNotImplemented` byte as the return
-   PC, but it does not install a dunder-call replay plan for that table row.
+   It still stops table walking at the first applicable Python-visible
+   candidate, writes the per-call continuation prefix into the caller frame
+   when entering a Python function, and enters the function with the paired
+   `CheckOperatorNotImplemented` byte as the return PC, but it does not install
+   a dunder-call replay plan for that table row. If the selected candidate is
+   found but not supported by the fast function-shaped entry path, the miss path
+   must use a generic call path or raise the ordinary call error at that row
+   instead of treating the method as absent. Generic calls that return
+   `NotImplemented` continue from the row after the selected candidate.
 5. Once any Python candidate has been called, the operation is committed to the
    continuation path for the rest of that dynamic execution. A later candidate
    reached after an earlier Python candidate returned `NotImplemented` must not
