@@ -109,6 +109,72 @@ namespace cl
         }
     };
 
+    struct FloatAddOperator
+    {
+        static constexpr const wchar_t *receiver_error =
+            L"float.__add__ expects a float receiver";
+
+        Value operator()(ThreadState *thread, double left, double right) const
+        {
+            return thread->make_object_value<Float>(left + right).raw_value();
+        }
+    };
+
+    struct FloatRAddOperator
+    {
+        static constexpr const wchar_t *receiver_error =
+            L"float.__radd__ expects a float receiver";
+
+        Value operator()(ThreadState *thread, double left, double right) const
+        {
+            return FloatAddOperator{}(thread, left, right);
+        }
+    };
+
+    struct FloatSubOperator
+    {
+        static constexpr const wchar_t *receiver_error =
+            L"float.__sub__ expects a float receiver";
+
+        Value operator()(ThreadState *thread, double left, double right) const
+        {
+            return thread->make_object_value<Float>(left - right).raw_value();
+        }
+    };
+
+    struct FloatRSubOperator
+    {
+        static constexpr const wchar_t *receiver_error =
+            L"float.__rsub__ expects a float receiver";
+
+        Value operator()(ThreadState *thread, double left, double right) const
+        {
+            return thread->make_object_value<Float>(right - left).raw_value();
+        }
+    };
+
+    struct FloatMulOperator
+    {
+        static constexpr const wchar_t *receiver_error =
+            L"float.__mul__ expects a float receiver";
+
+        Value operator()(ThreadState *thread, double left, double right) const
+        {
+            return thread->make_object_value<Float>(left * right).raw_value();
+        }
+    };
+
+    struct FloatRMulOperator
+    {
+        static constexpr const wchar_t *receiver_error =
+            L"float.__rmul__ expects a float receiver";
+
+        Value operator()(ThreadState *thread, double left, double right) const
+        {
+            return FloatMulOperator{}(thread, left, right);
+        }
+    };
+
     struct FloatLtOperator
     {
         static constexpr const wchar_t *receiver_error =
@@ -268,6 +334,39 @@ namespace cl
                     L"__ne__", native_float_binary_operator<FloatNeOperator>,
                     L"Return self != value."),
                 resolve_trusted_float_binary_resolver<FloatNeOperator>),
+            with_trusted_handler_resolver(
+                builtin_intrinsic_method(
+                    L"__add__", native_float_binary_operator<FloatAddOperator>,
+                    L"Return self + value."),
+                resolve_trusted_float_binary_resolver<FloatAddOperator>),
+            with_trusted_handler_resolver(
+                builtin_intrinsic_method(
+                    L"__radd__",
+                    native_float_binary_operator<FloatRAddOperator>,
+                    L"Return value + self."),
+                resolve_trusted_float_binary_resolver<FloatRAddOperator>),
+            with_trusted_handler_resolver(
+                builtin_intrinsic_method(
+                    L"__sub__", native_float_binary_operator<FloatSubOperator>,
+                    L"Return self - value."),
+                resolve_trusted_float_binary_resolver<FloatSubOperator>),
+            with_trusted_handler_resolver(
+                builtin_intrinsic_method(
+                    L"__rsub__",
+                    native_float_binary_operator<FloatRSubOperator>,
+                    L"Return value - self."),
+                resolve_trusted_float_binary_resolver<FloatRSubOperator>),
+            with_trusted_handler_resolver(
+                builtin_intrinsic_method(
+                    L"__mul__", native_float_binary_operator<FloatMulOperator>,
+                    L"Return self * value."),
+                resolve_trusted_float_binary_resolver<FloatMulOperator>),
+            with_trusted_handler_resolver(
+                builtin_intrinsic_method(
+                    L"__rmul__",
+                    native_float_binary_operator<FloatRMulOperator>,
+                    L"Return value * self."),
+                resolve_trusted_float_binary_resolver<FloatRMulOperator>),
             with_trusted_handler_resolver(
                 builtin_intrinsic_method(
                     L"__lt__", native_float_binary_operator<FloatLtOperator>,

@@ -5763,6 +5763,18 @@ TEST(Interpreter, float_objects_have_builtin_class_and_string_methods)
         test_context.vm().get_or_create_interned_string_value(L"__eq__");
     TValue<String> dunder_ne_name =
         test_context.vm().get_or_create_interned_string_value(L"__ne__");
+    TValue<String> dunder_add_name =
+        test_context.vm().get_or_create_interned_string_value(L"__add__");
+    TValue<String> dunder_radd_name =
+        test_context.vm().get_or_create_interned_string_value(L"__radd__");
+    TValue<String> dunder_sub_name =
+        test_context.vm().get_or_create_interned_string_value(L"__sub__");
+    TValue<String> dunder_rsub_name =
+        test_context.vm().get_or_create_interned_string_value(L"__rsub__");
+    TValue<String> dunder_mul_name =
+        test_context.vm().get_or_create_interned_string_value(L"__mul__");
+    TValue<String> dunder_rmul_name =
+        test_context.vm().get_or_create_interned_string_value(L"__rmul__");
     TValue<String> dunder_lt_name =
         test_context.vm().get_or_create_interned_string_value(L"__lt__");
     TValue<String> dunder_le_name =
@@ -5785,6 +5797,14 @@ TEST(Interpreter, float_objects_have_builtin_class_and_string_methods)
     EXPECT_TRUE(string_eq(
         TValue<String>::from_value_unchecked(repr_result),
         test_context.vm().get_or_create_interned_string_value(L"1.5")));
+
+    auto expect_float_method_result = [&](Value receiver, TValue<String> name,
+                                          Value argument, double expected) {
+        Value result = test_context.thread()->call_clovervm_method(
+            receiver, name, argument);
+        ASSERT_TRUE(can_convert_to<Float>(result));
+        EXPECT_DOUBLE_EQ(expected, result.get_ptr<Float>()->value);
+    };
 
     Value equal_float = test_context.thread()->call_clovervm_method(
         value, dunder_eq_name,
@@ -5811,6 +5831,20 @@ TEST(Interpreter, float_objects_have_builtin_class_and_string_methods)
     EXPECT_EQ(Value::NotImplemented(),
               test_context.thread()->call_clovervm_method(value, dunder_ne_name,
                                                           Value::None()));
+    expect_float_method_result(value, dunder_add_name, Value::from_smi(2), 3.5);
+    expect_float_method_result(value, dunder_add_name, Value::True(), 2.5);
+    expect_float_method_result(value, dunder_radd_name, Value::from_smi(2),
+                               3.5);
+    expect_float_method_result(value, dunder_sub_name, Value::from_smi(2),
+                               -0.5);
+    expect_float_method_result(value, dunder_rsub_name, Value::from_smi(2),
+                               0.5);
+    expect_float_method_result(value, dunder_mul_name, Value::from_smi(2), 3.0);
+    expect_float_method_result(value, dunder_rmul_name, Value::from_smi(2),
+                               3.0);
+    EXPECT_EQ(Value::NotImplemented(),
+              test_context.thread()->call_clovervm_method(
+                  value, dunder_add_name, Value::None()));
     EXPECT_EQ(Value::True(),
               test_context.thread()->call_clovervm_method(
                   one_value, dunder_lt_name, Value::from_smi(2)));
