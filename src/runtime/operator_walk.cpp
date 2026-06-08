@@ -64,15 +64,7 @@ namespace cl
 
     static bool operator_step_is_reflected(OperatorStepAction action)
     {
-        return action == OperatorStepAction::CallBinaryReflected;
-    }
-
-    static TrustedHandlerOperandOrder
-    trusted_handler_operand_order_for(OperatorOperandOrder order)
-    {
-        return order == OperatorOperandOrder::Reflected
-                   ? TrustedHandlerOperandOrder::Reflected
-                   : TrustedHandlerOperandOrder::Normal;
+        return operator_step_action_is_reflected(action);
     }
 
     static ClassObject *class_of_operand(ThreadState *thread, Value operand)
@@ -222,10 +214,14 @@ namespace cl
                 function.extract()->code_object.extract();
             if(target_code_object->trusted_handler_resolver != nullptr)
             {
+                ShapeKey selected_operand0_shape_key =
+                    reflected ? operand1_shape_key : operand0_shape_key;
+                ShapeKey selected_operand1_shape_key =
+                    reflected ? operand0_shape_key : operand1_shape_key;
                 TrustedHandler resolved_handler =
                     target_code_object->trusted_handler_resolver(
-                        vm, operand0_shape_key, operand1_shape_key, ShapeKey{},
-                        trusted_handler_operand_order_for(operand_order));
+                        vm, selected_operand0_shape_key,
+                        selected_operand1_shape_key, ShapeKey{});
                 if(!resolved_handler.is_none())
                 {
                     handler = resolved_handler;

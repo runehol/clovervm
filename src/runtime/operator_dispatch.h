@@ -10,10 +10,23 @@ namespace cl
 
     enum class OperatorStepAction : uint8_t
     {
-        CallBinary,
-        CallBinaryReflected,
-        IdentityEq,
+        CallBinary = 0,
+        CallBinaryReflected = 1,
+        IdentityEq = 2,
     };
+
+    static constexpr bool
+    operator_step_action_is_reflected(OperatorStepAction action)
+    {
+        return (static_cast<uint8_t>(action) & 1) != 0;
+    }
+
+    static_assert(
+        !operator_step_action_is_reflected(OperatorStepAction::CallBinary));
+    static_assert(operator_step_action_is_reflected(
+        OperatorStepAction::CallBinaryReflected));
+    static_assert(
+        !operator_step_action_is_reflected(OperatorStepAction::IdentityEq));
 
     enum class OperatorStepApplicability : uint8_t
     {

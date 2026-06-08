@@ -84,7 +84,7 @@ namespace cl
                                     Value operand1)
     {
         int32_t first_arg_reg = prefix_reg - 4;
-        if(unlikely(action == OperatorStepAction::CallBinaryReflected))
+        if(unlikely(operator_step_action_is_reflected(action)))
         {
             fp[first_arg_reg] = operand1;
             fp[first_arg_reg - 1] = operand0;

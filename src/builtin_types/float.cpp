@@ -123,16 +123,6 @@ namespace cl
         return left == right ? Value::True() : Value::False();
     }
 
-    static Value trusted_intlike_eq_float_handler(ThreadState *thread,
-                                                  Value left_value,
-                                                  Value right_value)
-    {
-        (void)thread;
-        double left = smi_or_bool_as_double(left_value);
-        double right = right_value.get_ptr<Float>()->value;
-        return left == right ? Value::True() : Value::False();
-    }
-
     static bool is_smi_or_bool_shape_key(ShapeKey key)
     {
         return key == ShapeKey::from_value(Value::from_smi(0)) ||
@@ -141,8 +131,7 @@ namespace cl
 
     static TrustedHandler
     resolve_trusted_float_eq_resolver(VirtualMachine *vm, ShapeKey operand0_key,
-                                      ShapeKey operand1_key, ShapeKey unused,
-                                      TrustedHandlerOperandOrder order)
+                                      ShapeKey operand1_key, ShapeKey unused)
     {
         (void)unused;
 
@@ -157,11 +146,6 @@ namespace cl
             }
             if(is_smi_or_bool_shape_key(operand1_key))
             {
-                if(order == TrustedHandlerOperandOrder::Reflected)
-                {
-                    return TrustedHandler::for_binary(
-                        trusted_intlike_eq_float_handler);
-                }
                 return TrustedHandler::for_binary(
                     trusted_float_eq_intlike_handler);
             }

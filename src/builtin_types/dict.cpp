@@ -228,12 +228,12 @@ namespace cl
                vm->shape_for_key(key_key)->get_class() == vm->str_class();
     }
 
-    static TrustedHandler resolve_trusted_dict_getitem_handler(
-        VirtualMachine *vm, ShapeKey container_key, ShapeKey key_key,
-        ShapeKey unused, TrustedHandlerOperandOrder order)
+    static TrustedHandler
+    resolve_trusted_dict_getitem_handler(VirtualMachine *vm,
+                                         ShapeKey container_key,
+                                         ShapeKey key_key, ShapeKey unused)
     {
         (void)unused;
-        assert(order == TrustedHandlerOperandOrder::Normal);
         if(trusted_dict_str_key_shapes_match(vm, container_key, key_key))
         {
             return TrustedHandler::for_binary(trusted_dict_getitem_str_handler);
@@ -241,12 +241,12 @@ namespace cl
         return TrustedHandler::none();
     }
 
-    static TrustedHandler resolve_trusted_dict_setitem_handler(
-        VirtualMachine *vm, ShapeKey container_key, ShapeKey key_key,
-        ShapeKey unused, TrustedHandlerOperandOrder order)
+    static TrustedHandler
+    resolve_trusted_dict_setitem_handler(VirtualMachine *vm,
+                                         ShapeKey container_key,
+                                         ShapeKey key_key, ShapeKey unused)
     {
         (void)unused;
-        assert(order == TrustedHandlerOperandOrder::Normal);
         if(trusted_dict_str_key_shapes_match(vm, container_key, key_key))
         {
             return TrustedHandler::for_ternary(
@@ -255,12 +255,12 @@ namespace cl
         return TrustedHandler::none();
     }
 
-    static TrustedHandler resolve_trusted_dict_delitem_handler(
-        VirtualMachine *vm, ShapeKey container_key, ShapeKey key_key,
-        ShapeKey unused, TrustedHandlerOperandOrder order)
+    static TrustedHandler
+    resolve_trusted_dict_delitem_handler(VirtualMachine *vm,
+                                         ShapeKey container_key,
+                                         ShapeKey key_key, ShapeKey unused)
     {
         (void)unused;
-        assert(order == TrustedHandlerOperandOrder::Normal);
         if(trusted_dict_str_key_shapes_match(vm, container_key, key_key))
         {
             return TrustedHandler::for_binary(trusted_dict_delitem_str_handler);
