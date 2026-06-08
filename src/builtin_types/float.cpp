@@ -76,114 +76,6 @@ namespace cl
         return false;
     }
 
-    static Value native_float_eq(ThreadState *thread, Value self, Value other)
-    {
-        (void)thread;
-        if(!can_convert_to<Float>(self))
-        {
-            return active_thread()->set_pending_builtin_exception_string(
-                L"TypeError", L"float.__eq__ expects a float receiver");
-        }
-
-        double right;
-        if(!try_get_float_or_smi_or_bool(other, &right))
-        {
-            return Value::NotImplemented();
-        }
-        double left = self.get_ptr<Float>()->value;
-        return left == right ? Value::True() : Value::False();
-    }
-
-    static Value native_float_ne(ThreadState *thread, Value self, Value other)
-    {
-        (void)thread;
-        if(!can_convert_to<Float>(self))
-        {
-            return active_thread()->set_pending_builtin_exception_string(
-                L"TypeError", L"float.__ne__ expects a float receiver");
-        }
-
-        double right;
-        if(!try_get_float_or_smi_or_bool(other, &right))
-        {
-            return Value::NotImplemented();
-        }
-        double left = self.get_ptr<Float>()->value;
-        return left != right ? Value::True() : Value::False();
-    }
-
-    static Value native_float_lt(ThreadState *thread, Value self, Value other)
-    {
-        (void)thread;
-        if(!can_convert_to<Float>(self))
-        {
-            return active_thread()->set_pending_builtin_exception_string(
-                L"TypeError", L"float.__lt__ expects a float receiver");
-        }
-
-        double right;
-        if(!try_get_float_or_smi_or_bool(other, &right))
-        {
-            return Value::NotImplemented();
-        }
-        double left = self.get_ptr<Float>()->value;
-        return left < right ? Value::True() : Value::False();
-    }
-
-    static Value native_float_le(ThreadState *thread, Value self, Value other)
-    {
-        (void)thread;
-        if(!can_convert_to<Float>(self))
-        {
-            return active_thread()->set_pending_builtin_exception_string(
-                L"TypeError", L"float.__le__ expects a float receiver");
-        }
-
-        double right;
-        if(!try_get_float_or_smi_or_bool(other, &right))
-        {
-            return Value::NotImplemented();
-        }
-        double left = self.get_ptr<Float>()->value;
-        return left <= right ? Value::True() : Value::False();
-    }
-
-    static Value native_float_gt(ThreadState *thread, Value self, Value other)
-    {
-        (void)thread;
-        if(!can_convert_to<Float>(self))
-        {
-            return active_thread()->set_pending_builtin_exception_string(
-                L"TypeError", L"float.__gt__ expects a float receiver");
-        }
-
-        double right;
-        if(!try_get_float_or_smi_or_bool(other, &right))
-        {
-            return Value::NotImplemented();
-        }
-        double left = self.get_ptr<Float>()->value;
-        return right < left ? Value::True() : Value::False();
-    }
-
-    static Value native_float_ge(ThreadState *thread, Value self, Value other)
-    {
-        (void)thread;
-        if(!can_convert_to<Float>(self))
-        {
-            return active_thread()->set_pending_builtin_exception_string(
-                L"TypeError", L"float.__ge__ expects a float receiver");
-        }
-
-        double right;
-        if(!try_get_float_or_smi_or_bool(other, &right))
-        {
-            return Value::NotImplemented();
-        }
-        double left = self.get_ptr<Float>()->value;
-        return right <= left ? Value::True() : Value::False();
-    }
-
     static double smi_or_bool_as_double(Value value)
     {
         assert((value.as.integer & value_not_smi_or_boolean_mask) == 0);
@@ -193,170 +85,122 @@ namespace cl
         return static_cast<double>(integer_value.get_smi());
     }
 
-    static Value trusted_float_eq_float_handler(ThreadState *thread,
+    struct FloatEqOperator
+    {
+        static constexpr const wchar_t *receiver_error =
+            L"float.__eq__ expects a float receiver";
+
+        Value operator()(ThreadState *thread, double left, double right) const
+        {
+            (void)thread;
+            return left == right ? Value::True() : Value::False();
+        }
+    };
+
+    struct FloatNeOperator
+    {
+        static constexpr const wchar_t *receiver_error =
+            L"float.__ne__ expects a float receiver";
+
+        Value operator()(ThreadState *thread, double left, double right) const
+        {
+            (void)thread;
+            return left != right ? Value::True() : Value::False();
+        }
+    };
+
+    struct FloatLtOperator
+    {
+        static constexpr const wchar_t *receiver_error =
+            L"float.__lt__ expects a float receiver";
+
+        Value operator()(ThreadState *thread, double left, double right) const
+        {
+            (void)thread;
+            return left < right ? Value::True() : Value::False();
+        }
+    };
+
+    struct FloatLeOperator
+    {
+        static constexpr const wchar_t *receiver_error =
+            L"float.__le__ expects a float receiver";
+
+        Value operator()(ThreadState *thread, double left, double right) const
+        {
+            (void)thread;
+            return left <= right ? Value::True() : Value::False();
+        }
+    };
+
+    struct FloatGtOperator
+    {
+        static constexpr const wchar_t *receiver_error =
+            L"float.__gt__ expects a float receiver";
+
+        Value operator()(ThreadState *thread, double left, double right) const
+        {
+            (void)thread;
+            return left > right ? Value::True() : Value::False();
+        }
+    };
+
+    struct FloatGeOperator
+    {
+        static constexpr const wchar_t *receiver_error =
+            L"float.__ge__ expects a float receiver";
+
+        Value operator()(ThreadState *thread, double left, double right) const
+        {
+            (void)thread;
+            return left >= right ? Value::True() : Value::False();
+        }
+    };
+
+    template <typename Operator>
+    static Value native_float_binary_operator(ThreadState *thread, Value self,
+                                              Value other)
+    {
+        if(!can_convert_to<Float>(self))
+        {
+            return thread->set_pending_builtin_exception_string(
+                L"TypeError", Operator::receiver_error);
+        }
+
+        double right;
+        if(!try_get_float_or_smi_or_bool(other, &right))
+        {
+            return Value::NotImplemented();
+        }
+        double left = self.get_ptr<Float>()->value;
+        return Operator{}(thread, left, right);
+    }
+
+    template <typename Operator>
+    static Value trusted_float_float_operator(ThreadState *thread,
+                                              Value left_value,
+                                              Value right_value)
+    {
+        return Operator{}(thread, left_value.get_ptr<Float>()->value,
+                          right_value.get_ptr<Float>()->value);
+    }
+
+    template <typename Operator>
+    static Value trusted_float_intlike_operator(ThreadState *thread,
                                                 Value left_value,
                                                 Value right_value)
     {
-        (void)thread;
-        double left = left_value.get_ptr<Float>()->value;
-        double right = right_value.get_ptr<Float>()->value;
-        return left == right ? Value::True() : Value::False();
+        return Operator{}(thread, left_value.get_ptr<Float>()->value,
+                          smi_or_bool_as_double(right_value));
     }
 
-    static Value trusted_float_eq_intlike_handler(ThreadState *thread,
-                                                  Value left_value,
-                                                  Value right_value)
-    {
-        (void)thread;
-        double left = left_value.get_ptr<Float>()->value;
-        double right = smi_or_bool_as_double(right_value);
-        return left == right ? Value::True() : Value::False();
-    }
-
-    static Value trusted_intlike_eq_float_handler(ThreadState *thread,
-                                                  Value left_value,
-                                                  Value right_value)
-    {
-        (void)thread;
-        double left = smi_or_bool_as_double(left_value);
-        double right = right_value.get_ptr<Float>()->value;
-        return left == right ? Value::True() : Value::False();
-    }
-
-    static Value trusted_float_ne_float_handler(ThreadState *thread,
+    template <typename Operator>
+    static Value trusted_intlike_float_operator(ThreadState *thread,
                                                 Value left_value,
                                                 Value right_value)
     {
-        (void)thread;
-        double left = left_value.get_ptr<Float>()->value;
-        double right = right_value.get_ptr<Float>()->value;
-        return left != right ? Value::True() : Value::False();
-    }
-
-    static Value trusted_float_ne_intlike_handler(ThreadState *thread,
-                                                  Value left_value,
-                                                  Value right_value)
-    {
-        (void)thread;
-        double left = left_value.get_ptr<Float>()->value;
-        double right = smi_or_bool_as_double(right_value);
-        return left != right ? Value::True() : Value::False();
-    }
-
-    static Value trusted_intlike_ne_float_handler(ThreadState *thread,
-                                                  Value left_value,
-                                                  Value right_value)
-    {
-        (void)thread;
-        double left = smi_or_bool_as_double(left_value);
-        double right = right_value.get_ptr<Float>()->value;
-        return left != right ? Value::True() : Value::False();
-    }
-
-    static Value trusted_float_lt_float_handler(ThreadState *thread,
-                                                Value left_value,
-                                                Value right_value)
-    {
-        (void)thread;
-        double left = left_value.get_ptr<Float>()->value;
-        double right = right_value.get_ptr<Float>()->value;
-        return left < right ? Value::True() : Value::False();
-    }
-
-    static Value trusted_float_lt_intlike_handler(ThreadState *thread,
-                                                  Value left_value,
-                                                  Value right_value)
-    {
-        (void)thread;
-        double left = left_value.get_ptr<Float>()->value;
-        double right = smi_or_bool_as_double(right_value);
-        return left < right ? Value::True() : Value::False();
-    }
-
-    static Value trusted_intlike_lt_float_handler(ThreadState *thread,
-                                                  Value left_value,
-                                                  Value right_value)
-    {
-        (void)thread;
-        double left = smi_or_bool_as_double(left_value);
-        double right = right_value.get_ptr<Float>()->value;
-        return left < right ? Value::True() : Value::False();
-    }
-
-    static Value trusted_float_le_float_handler(ThreadState *thread,
-                                                Value left_value,
-                                                Value right_value)
-    {
-        (void)thread;
-        double left = left_value.get_ptr<Float>()->value;
-        double right = right_value.get_ptr<Float>()->value;
-        return left <= right ? Value::True() : Value::False();
-    }
-
-    static Value trusted_float_le_intlike_handler(ThreadState *thread,
-                                                  Value left_value,
-                                                  Value right_value)
-    {
-        (void)thread;
-        double left = left_value.get_ptr<Float>()->value;
-        double right = smi_or_bool_as_double(right_value);
-        return left <= right ? Value::True() : Value::False();
-    }
-
-    static Value trusted_intlike_le_float_handler(ThreadState *thread,
-                                                  Value left_value,
-                                                  Value right_value)
-    {
-        (void)thread;
-        double left = smi_or_bool_as_double(left_value);
-        double right = right_value.get_ptr<Float>()->value;
-        return left <= right ? Value::True() : Value::False();
-    }
-
-    static Value trusted_float_gt_float_handler(ThreadState *thread,
-                                                Value left_value,
-                                                Value right_value)
-    {
-        return trusted_float_lt_float_handler(thread, right_value, left_value);
-    }
-
-    static Value trusted_float_gt_intlike_handler(ThreadState *thread,
-                                                  Value left_value,
-                                                  Value right_value)
-    {
-        return trusted_intlike_lt_float_handler(thread, right_value,
-                                                left_value);
-    }
-
-    static Value trusted_intlike_gt_float_handler(ThreadState *thread,
-                                                  Value left_value,
-                                                  Value right_value)
-    {
-        return trusted_float_lt_intlike_handler(thread, right_value,
-                                                left_value);
-    }
-
-    static Value trusted_float_ge_float_handler(ThreadState *thread,
-                                                Value left_value,
-                                                Value right_value)
-    {
-        return trusted_float_le_float_handler(thread, right_value, left_value);
-    }
-
-    static Value trusted_float_ge_intlike_handler(ThreadState *thread,
-                                                  Value left_value,
-                                                  Value right_value)
-    {
-        return trusted_intlike_le_float_handler(thread, right_value,
-                                                left_value);
-    }
-
-    static Value trusted_intlike_ge_float_handler(ThreadState *thread,
-                                                  Value left_value,
-                                                  Value right_value)
-    {
-        return trusted_float_le_intlike_handler(thread, right_value,
-                                                left_value);
+        return Operator{}(thread, smi_or_bool_as_double(left_value),
+                          right_value.get_ptr<Float>()->value);
     }
 
     static bool is_smi_or_bool_shape_key(ShapeKey key)
@@ -365,95 +209,34 @@ namespace cl
                key == ShapeKey::from_value(Value::False());
     }
 
+    template <typename Operator>
     static TrustedHandler resolve_trusted_float_binary_resolver(
         VirtualMachine *vm, ShapeKey operand0_key, ShapeKey operand1_key,
-        BinaryHandler float_float_handler, BinaryHandler float_intlike_handler,
-        BinaryHandler intlike_float_handler)
+        ShapeKey unused)
     {
+        (void)unused;
+
         ShapeKey float_key =
             ShapeKey::from_shape(vm->float_class()->get_instance_root_shape());
         if(operand0_key == float_key)
         {
             if(operand1_key == float_key)
             {
-                return TrustedHandler::for_binary(float_float_handler);
+                return TrustedHandler::for_binary(
+                    trusted_float_float_operator<Operator>);
             }
             if(is_smi_or_bool_shape_key(operand1_key))
             {
-                return TrustedHandler::for_binary(float_intlike_handler);
+                return TrustedHandler::for_binary(
+                    trusted_float_intlike_operator<Operator>);
             }
         }
         if(is_smi_or_bool_shape_key(operand0_key) && operand1_key == float_key)
         {
-            return TrustedHandler::for_binary(intlike_float_handler);
+            return TrustedHandler::for_binary(
+                trusted_intlike_float_operator<Operator>);
         }
         return TrustedHandler::none();
-    }
-
-    static TrustedHandler
-    resolve_trusted_float_eq_resolver(VirtualMachine *vm, ShapeKey operand0_key,
-                                      ShapeKey operand1_key, ShapeKey unused)
-    {
-        (void)unused;
-
-        return resolve_trusted_float_binary_resolver(
-            vm, operand0_key, operand1_key, trusted_float_eq_float_handler,
-            trusted_float_eq_intlike_handler, trusted_intlike_eq_float_handler);
-    }
-
-    static TrustedHandler
-    resolve_trusted_float_ne_resolver(VirtualMachine *vm, ShapeKey operand0_key,
-                                      ShapeKey operand1_key, ShapeKey unused)
-    {
-        (void)unused;
-
-        return resolve_trusted_float_binary_resolver(
-            vm, operand0_key, operand1_key, trusted_float_ne_float_handler,
-            trusted_float_ne_intlike_handler, trusted_intlike_ne_float_handler);
-    }
-
-    static TrustedHandler
-    resolve_trusted_float_lt_resolver(VirtualMachine *vm, ShapeKey operand0_key,
-                                      ShapeKey operand1_key, ShapeKey unused)
-    {
-        (void)unused;
-
-        return resolve_trusted_float_binary_resolver(
-            vm, operand0_key, operand1_key, trusted_float_lt_float_handler,
-            trusted_float_lt_intlike_handler, trusted_intlike_lt_float_handler);
-    }
-
-    static TrustedHandler
-    resolve_trusted_float_le_resolver(VirtualMachine *vm, ShapeKey operand0_key,
-                                      ShapeKey operand1_key, ShapeKey unused)
-    {
-        (void)unused;
-
-        return resolve_trusted_float_binary_resolver(
-            vm, operand0_key, operand1_key, trusted_float_le_float_handler,
-            trusted_float_le_intlike_handler, trusted_intlike_le_float_handler);
-    }
-
-    static TrustedHandler
-    resolve_trusted_float_gt_resolver(VirtualMachine *vm, ShapeKey operand0_key,
-                                      ShapeKey operand1_key, ShapeKey unused)
-    {
-        (void)unused;
-
-        return resolve_trusted_float_binary_resolver(
-            vm, operand0_key, operand1_key, trusted_float_gt_float_handler,
-            trusted_float_gt_intlike_handler, trusted_intlike_gt_float_handler);
-    }
-
-    static TrustedHandler
-    resolve_trusted_float_ge_resolver(VirtualMachine *vm, ShapeKey operand0_key,
-                                      ShapeKey operand1_key, ShapeKey unused)
-    {
-        (void)unused;
-
-        return resolve_trusted_float_binary_resolver(
-            vm, operand0_key, operand1_key, trusted_float_ge_float_handler,
-            trusted_float_ge_intlike_handler, trusted_intlike_ge_float_handler);
     }
 
     BuiltinClassDefinition make_float_class(VirtualMachine *vm)
@@ -476,29 +259,35 @@ namespace cl
             builtin_intrinsic_method(L"__repr__", native_float_repr,
                                      L"Return repr(self)."),
             with_trusted_handler_resolver(
-                builtin_intrinsic_method(L"__eq__", native_float_eq,
-                                         L"Return self == value."),
-                resolve_trusted_float_eq_resolver),
+                builtin_intrinsic_method(
+                    L"__eq__", native_float_binary_operator<FloatEqOperator>,
+                    L"Return self == value."),
+                resolve_trusted_float_binary_resolver<FloatEqOperator>),
             with_trusted_handler_resolver(
-                builtin_intrinsic_method(L"__ne__", native_float_ne,
-                                         L"Return self != value."),
-                resolve_trusted_float_ne_resolver),
+                builtin_intrinsic_method(
+                    L"__ne__", native_float_binary_operator<FloatNeOperator>,
+                    L"Return self != value."),
+                resolve_trusted_float_binary_resolver<FloatNeOperator>),
             with_trusted_handler_resolver(
-                builtin_intrinsic_method(L"__lt__", native_float_lt,
-                                         L"Return self < value."),
-                resolve_trusted_float_lt_resolver),
+                builtin_intrinsic_method(
+                    L"__lt__", native_float_binary_operator<FloatLtOperator>,
+                    L"Return self < value."),
+                resolve_trusted_float_binary_resolver<FloatLtOperator>),
             with_trusted_handler_resolver(
-                builtin_intrinsic_method(L"__le__", native_float_le,
-                                         L"Return self <= value."),
-                resolve_trusted_float_le_resolver),
+                builtin_intrinsic_method(
+                    L"__le__", native_float_binary_operator<FloatLeOperator>,
+                    L"Return self <= value."),
+                resolve_trusted_float_binary_resolver<FloatLeOperator>),
             with_trusted_handler_resolver(
-                builtin_intrinsic_method(L"__gt__", native_float_gt,
-                                         L"Return self > value."),
-                resolve_trusted_float_gt_resolver),
+                builtin_intrinsic_method(
+                    L"__gt__", native_float_binary_operator<FloatGtOperator>,
+                    L"Return self > value."),
+                resolve_trusted_float_binary_resolver<FloatGtOperator>),
             with_trusted_handler_resolver(
-                builtin_intrinsic_method(L"__ge__", native_float_ge,
-                                         L"Return self >= value."),
-                resolve_trusted_float_ge_resolver),
+                builtin_intrinsic_method(
+                    L"__ge__", native_float_binary_operator<FloatGeOperator>,
+                    L"Return self >= value."),
+                resolve_trusted_float_binary_resolver<FloatGeOperator>),
         };
         unwrap_bootstrap_expected(
             vm,
