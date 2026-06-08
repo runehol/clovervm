@@ -5763,6 +5763,14 @@ TEST(Interpreter, float_objects_have_builtin_class_and_string_methods)
         test_context.vm().get_or_create_interned_string_value(L"__eq__");
     TValue<String> dunder_ne_name =
         test_context.vm().get_or_create_interned_string_value(L"__ne__");
+    TValue<String> dunder_lt_name =
+        test_context.vm().get_or_create_interned_string_value(L"__lt__");
+    TValue<String> dunder_le_name =
+        test_context.vm().get_or_create_interned_string_value(L"__le__");
+    TValue<String> dunder_gt_name =
+        test_context.vm().get_or_create_interned_string_value(L"__gt__");
+    TValue<String> dunder_ge_name =
+        test_context.vm().get_or_create_interned_string_value(L"__ge__");
 
     Value str_result =
         test_context.thread()->call_clovervm_method(value, dunder_str_name);
@@ -5802,6 +5810,34 @@ TEST(Interpreter, float_objects_have_builtin_class_and_string_methods)
                                   one_value, dunder_ne_name, Value::True()));
     EXPECT_EQ(Value::NotImplemented(),
               test_context.thread()->call_clovervm_method(value, dunder_ne_name,
+                                                          Value::None()));
+    EXPECT_EQ(Value::True(),
+              test_context.thread()->call_clovervm_method(
+                  one_value, dunder_lt_name, Value::from_smi(2)));
+    EXPECT_EQ(Value::False(), test_context.thread()->call_clovervm_method(
+                                  one_value, dunder_lt_name, Value::True()));
+    EXPECT_EQ(Value::True(),
+              test_context.thread()->call_clovervm_method(
+                  one_value, dunder_le_name, Value::from_smi(1)));
+    EXPECT_EQ(Value::False(),
+              test_context.thread()->call_clovervm_method(
+                  one_value, dunder_le_name, Value::from_smi(0)));
+    EXPECT_EQ(Value::True(),
+              test_context.thread()->call_clovervm_method(
+                  one_value, dunder_gt_name, Value::from_smi(0)));
+    EXPECT_EQ(Value::False(),
+              test_context.thread()->call_clovervm_method(
+                  one_value, dunder_gt_name, Value::from_smi(1)));
+    EXPECT_EQ(Value::True(), test_context.thread()->call_clovervm_method(
+                                 one_value, dunder_ge_name, Value::True()));
+    EXPECT_EQ(Value::False(),
+              test_context.thread()->call_clovervm_method(
+                  one_value, dunder_ge_name, Value::from_smi(2)));
+    EXPECT_EQ(Value::NotImplemented(),
+              test_context.thread()->call_clovervm_method(value, dunder_lt_name,
+                                                          Value::None()));
+    EXPECT_EQ(Value::NotImplemented(),
+              test_context.thread()->call_clovervm_method(value, dunder_ge_name,
                                                           Value::None()));
 }
 
