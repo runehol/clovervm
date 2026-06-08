@@ -94,6 +94,24 @@ namespace cl
         return left == right ? Value::True() : Value::False();
     }
 
+    static Value native_float_ne(ThreadState *thread, Value self, Value other)
+    {
+        (void)thread;
+        if(!can_convert_to<Float>(self))
+        {
+            return active_thread()->set_pending_builtin_exception_string(
+                L"TypeError", L"float.__ne__ expects a float receiver");
+        }
+
+        double right;
+        if(!try_get_float_or_smi_or_bool(other, &right))
+        {
+            return Value::NotImplemented();
+        }
+        double left = self.get_ptr<Float>()->value;
+        return left != right ? Value::True() : Value::False();
+    }
+
     static double smi_or_bool_as_double(Value value)
     {
         assert((value.as.integer & value_not_smi_or_boolean_mask) == 0);
@@ -123,6 +141,46 @@ namespace cl
         return left == right ? Value::True() : Value::False();
     }
 
+    static Value trusted_intlike_eq_float_handler(ThreadState *thread,
+                                                  Value left_value,
+                                                  Value right_value)
+    {
+        (void)thread;
+        double left = smi_or_bool_as_double(left_value);
+        double right = right_value.get_ptr<Float>()->value;
+        return left == right ? Value::True() : Value::False();
+    }
+
+    static Value trusted_float_ne_float_handler(ThreadState *thread,
+                                                Value left_value,
+                                                Value right_value)
+    {
+        (void)thread;
+        double left = left_value.get_ptr<Float>()->value;
+        double right = right_value.get_ptr<Float>()->value;
+        return left != right ? Value::True() : Value::False();
+    }
+
+    static Value trusted_float_ne_intlike_handler(ThreadState *thread,
+                                                  Value left_value,
+                                                  Value right_value)
+    {
+        (void)thread;
+        double left = left_value.get_ptr<Float>()->value;
+        double right = smi_or_bool_as_double(right_value);
+        return left != right ? Value::True() : Value::False();
+    }
+
+    static Value trusted_intlike_ne_float_handler(ThreadState *thread,
+                                                  Value left_value,
+                                                  Value right_value)
+    {
+        (void)thread;
+        double left = smi_or_bool_as_double(left_value);
+        double right = right_value.get_ptr<Float>()->value;
+        return left != right ? Value::True() : Value::False();
+    }
+
     static bool is_smi_or_bool_shape_key(ShapeKey key)
     {
         return key == ShapeKey::from_value(Value::from_smi(0)) ||
@@ -150,6 +208,38 @@ namespace cl
                     trusted_float_eq_intlike_handler);
             }
         }
+        if(is_smi_or_bool_shape_key(operand0_key) && operand1_key == float_key)
+        {
+            return TrustedHandler::for_binary(trusted_intlike_eq_float_handler);
+        }
+        return TrustedHandler::none();
+    }
+
+    static TrustedHandler
+    resolve_trusted_float_ne_resolver(VirtualMachine *vm, ShapeKey operand0_key,
+                                      ShapeKey operand1_key, ShapeKey unused)
+    {
+        (void)unused;
+
+        ShapeKey float_key =
+            ShapeKey::from_shape(vm->float_class()->get_instance_root_shape());
+        if(operand0_key == float_key)
+        {
+            if(operand1_key == float_key)
+            {
+                return TrustedHandler::for_binary(
+                    trusted_float_ne_float_handler);
+            }
+            if(is_smi_or_bool_shape_key(operand1_key))
+            {
+                return TrustedHandler::for_binary(
+                    trusted_float_ne_intlike_handler);
+            }
+        }
+        if(is_smi_or_bool_shape_key(operand0_key) && operand1_key == float_key)
+        {
+            return TrustedHandler::for_binary(trusted_intlike_ne_float_handler);
+        }
         return TrustedHandler::none();
     }
 
@@ -176,6 +266,10 @@ namespace cl
                 builtin_intrinsic_method(L"__eq__", native_float_eq,
                                          L"Return self == value."),
                 resolve_trusted_float_eq_resolver),
+            with_trusted_handler_resolver(
+                builtin_intrinsic_method(L"__ne__", native_float_ne,
+                                         L"Return self != value."),
+                resolve_trusted_float_ne_resolver),
         };
         unwrap_bootstrap_expected(
             vm,
