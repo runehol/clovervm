@@ -5759,6 +5759,8 @@ TEST(Interpreter, float_objects_have_builtin_class_and_string_methods)
         test_context.vm().get_or_create_interned_string_value(L"__str__");
     TValue<String> dunder_repr_name =
         test_context.vm().get_or_create_interned_string_value(L"__repr__");
+    TValue<String> dunder_eq_name =
+        test_context.vm().get_or_create_interned_string_value(L"__eq__");
 
     Value str_result =
         test_context.thread()->call_clovervm_method(value, dunder_str_name);
@@ -5773,6 +5775,21 @@ TEST(Interpreter, float_objects_have_builtin_class_and_string_methods)
     EXPECT_TRUE(string_eq(
         TValue<String>::from_value_unchecked(repr_result),
         test_context.vm().get_or_create_interned_string_value(L"1.5")));
+
+    Value equal_float = test_context.thread()->call_clovervm_method(
+        value, dunder_eq_name,
+        test_context.thread()->make_object_value<Float>(1.5).raw_value());
+    EXPECT_EQ(Value::True(), equal_float);
+    Value one_value =
+        test_context.thread()->make_object_value<Float>(1.0).raw_value();
+    EXPECT_EQ(Value::True(),
+              test_context.thread()->call_clovervm_method(
+                  one_value, dunder_eq_name, Value::from_smi(1)));
+    EXPECT_EQ(Value::True(), test_context.thread()->call_clovervm_method(
+                                 one_value, dunder_eq_name, Value::True()));
+    EXPECT_EQ(Value::NotImplemented(),
+              test_context.thread()->call_clovervm_method(value, dunder_eq_name,
+                                                          Value::None()));
 }
 
 TEST(Interpreter, float_string_methods_format_special_values)
