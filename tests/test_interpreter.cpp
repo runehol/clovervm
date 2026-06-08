@@ -1885,6 +1885,27 @@ TEST(Interpreter, string_dunder_add_calls_intrinsic_function)
                  string_as_wchar_t(TValue<String>::from_value_assumed(actual)));
 }
 
+TEST(Interpreter, string_dunder_comparisons_call_intrinsic_functions)
+{
+    test::VmTestContext test_context;
+
+    EXPECT_EQ(Value::True(), test_context.run_file(L"\"a\".__eq__(\"a\")\n"));
+    EXPECT_EQ(Value::False(), test_context.run_file(L"\"a\".__eq__(\"b\")\n"));
+    EXPECT_EQ(Value::False(), test_context.run_file(L"\"a\".__ne__(\"a\")\n"));
+    EXPECT_EQ(Value::True(), test_context.run_file(L"\"a\".__ne__(\"b\")\n"));
+    EXPECT_EQ(Value::True(), test_context.run_file(L"\"a\".__lt__(\"b\")\n"));
+    EXPECT_EQ(Value::False(), test_context.run_file(L"\"b\".__lt__(\"a\")\n"));
+    EXPECT_EQ(Value::True(), test_context.run_file(L"\"a\".__le__(\"a\")\n"));
+    EXPECT_EQ(Value::False(), test_context.run_file(L"\"b\".__le__(\"a\")\n"));
+    EXPECT_EQ(Value::True(), test_context.run_file(L"\"b\".__gt__(\"a\")\n"));
+    EXPECT_EQ(Value::False(), test_context.run_file(L"\"a\".__gt__(\"b\")\n"));
+    EXPECT_EQ(Value::True(), test_context.run_file(L"\"a\".__ge__(\"a\")\n"));
+    EXPECT_EQ(Value::False(), test_context.run_file(L"\"a\".__ge__(\"b\")\n"));
+    EXPECT_EQ(Value::True(), test_context.run_file(L"\"a\".__lt__(\"aa\")\n"));
+    EXPECT_EQ(Value::NotImplemented(),
+              test_context.run_file(L"\"a\".__lt__(1)\n"));
+}
+
 TEST(Interpreter, string_dunder_add_wrong_type_reports_unimplemented)
 {
     expect_python_error(L"\"ab\".__add__(3)\n", L"UnimplementedError", L"");

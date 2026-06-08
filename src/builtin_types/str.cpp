@@ -11,6 +11,7 @@
 #include "runtime/exception_propagation.h"
 #include "runtime/thread_state.h"
 #include "runtime/virtual_machine.h"
+#include <algorithm>
 #include <cwctype>
 #include <iterator>
 
@@ -163,6 +164,140 @@ namespace cl
         return left_value.get_ptr<String>()
             ->concat(right_value.get_ptr<String>())
             .raw_value();
+    }
+
+    struct StrEqOperator
+    {
+        static constexpr const wchar_t *receiver_error =
+            L"str.__eq__ expects a str receiver";
+
+        Value operator()(ThreadState *thread, TValue<String> left,
+                         TValue<String> right) const
+        {
+            (void)thread;
+            return string_eq(left, right) ? Value::True() : Value::False();
+        }
+    };
+
+    struct StrNeOperator
+    {
+        static constexpr const wchar_t *receiver_error =
+            L"str.__ne__ expects a str receiver";
+
+        Value operator()(ThreadState *thread, TValue<String> left,
+                         TValue<String> right) const
+        {
+            (void)thread;
+            return string_eq(left, right) ? Value::False() : Value::True();
+        }
+    };
+
+    struct StrLtOperator
+    {
+        static constexpr const wchar_t *receiver_error =
+            L"str.__lt__ expects a str receiver";
+
+        Value operator()(ThreadState *thread, TValue<String> left,
+                         TValue<String> right) const
+        {
+            (void)thread;
+            return string_compare(left, right) < 0 ? Value::True()
+                                                   : Value::False();
+        }
+    };
+
+    struct StrLeOperator
+    {
+        static constexpr const wchar_t *receiver_error =
+            L"str.__le__ expects a str receiver";
+
+        Value operator()(ThreadState *thread, TValue<String> left,
+                         TValue<String> right) const
+        {
+            (void)thread;
+            return string_compare(left, right) <= 0 ? Value::True()
+                                                    : Value::False();
+        }
+    };
+
+    struct StrGtOperator
+    {
+        static constexpr const wchar_t *receiver_error =
+            L"str.__gt__ expects a str receiver";
+
+        Value operator()(ThreadState *thread, TValue<String> left,
+                         TValue<String> right) const
+        {
+            (void)thread;
+            return string_compare(left, right) > 0 ? Value::True()
+                                                   : Value::False();
+        }
+    };
+
+    struct StrGeOperator
+    {
+        static constexpr const wchar_t *receiver_error =
+            L"str.__ge__ expects a str receiver";
+
+        Value operator()(ThreadState *thread, TValue<String> left,
+                         TValue<String> right) const
+        {
+            (void)thread;
+            return string_compare(left, right) >= 0 ? Value::True()
+                                                    : Value::False();
+        }
+    };
+
+    struct StrAddOperator
+    {
+        Value operator()(ThreadState *thread, TValue<String> left,
+                         TValue<String> right) const
+        {
+            (void)thread;
+            return left.extract()->concat(right.extract()).raw_value();
+        }
+    };
+
+    template <typename Operator>
+    static Value native_str_compare_operator(ThreadState *thread, Value self,
+                                             Value other)
+    {
+        if(!can_convert_to<String>(self))
+        {
+            return thread->set_pending_builtin_exception_string(
+                L"TypeError", Operator::receiver_error);
+        }
+        if(!can_convert_to<String>(other))
+        {
+            return Value::NotImplemented();
+        }
+        return Operator{}(thread, TValue<String>::from_value_assumed(self),
+                          TValue<String>::from_value_assumed(other));
+    }
+
+    template <typename Operator>
+    static Value trusted_str_str_operator(ThreadState *thread, Value left_value,
+                                          Value right_value)
+    {
+        return Operator{}(thread,
+                          TValue<String>::from_value_assumed(left_value),
+                          TValue<String>::from_value_assumed(right_value));
+    }
+
+    template <typename Operator>
+    static TrustedHandler
+    resolve_trusted_str_str_resolver(VirtualMachine *vm, ShapeKey operand0_key,
+                                     ShapeKey operand1_key, ShapeKey unused)
+    {
+        (void)unused;
+
+        ShapeKey str_key = ShapeKey::from_shape(vm->str_instance_root_shape());
+        if(operand0_key == str_key && operand1_key == str_key)
+        {
+            return TrustedHandler::for_binary(
+                trusted_str_str_operator<Operator>);
+        }
+        return TrustedHandler::none();
     }
 
     static Value require_str_receiver(Value self, const wchar_t *method_name)
@@ -766,8 +901,40 @@ namespace cl
                                      L"Return repr(self)."),
             builtin_intrinsic_method(L"__len__", native_str_len,
                                      L"Return len(self)."),
-            builtin_intrinsic_method(L"__add__", native_str_add,
-                                     L"Return self + value."),
+            with_trusted_handler_resolver(
+                builtin_intrinsic_method(L"__add__", native_str_add,
+                                         L"Return self + value."),
+                resolve_trusted_str_str_resolver<StrAddOperator>),
+            with_trusted_handler_resolver(
+                builtin_intrinsic_method(
+                    L"__eq__", native_str_compare_operator<StrEqOperator>,
+                    L"Return self == value."),
+                resolve_trusted_str_str_resolver<StrEqOperator>),
+            with_trusted_handler_resolver(
+                builtin_intrinsic_method(
+                    L"__ne__", native_str_compare_operator<StrNeOperator>,
+                    L"Return self != value."),
+                resolve_trusted_str_str_resolver<StrNeOperator>),
+            with_trusted_handler_resolver(
+                builtin_intrinsic_method(
+                    L"__lt__", native_str_compare_operator<StrLtOperator>,
+                    L"Return self < value."),
+                resolve_trusted_str_str_resolver<StrLtOperator>),
+            with_trusted_handler_resolver(
+                builtin_intrinsic_method(
+                    L"__le__", native_str_compare_operator<StrLeOperator>,
+                    L"Return self <= value."),
+                resolve_trusted_str_str_resolver<StrLeOperator>),
+            with_trusted_handler_resolver(
+                builtin_intrinsic_method(
+                    L"__gt__", native_str_compare_operator<StrGtOperator>,
+                    L"Return self > value."),
+                resolve_trusted_str_str_resolver<StrGtOperator>),
+            with_trusted_handler_resolver(
+                builtin_intrinsic_method(
+                    L"__ge__", native_str_compare_operator<StrGeOperator>,
+                    L"Return self >= value."),
+                resolve_trusted_str_str_resolver<StrGeOperator>),
             with_trusted_handler_resolver(
                 builtin_intrinsic_method(L"__getitem__", native_str_getitem,
                                          L"Return self[index]."),
@@ -882,6 +1049,40 @@ namespace cl
                 return false;
         }
         return true;
+    }
+
+    int string_compare(TValue<String> a, TValue<String> b)
+    {
+        if(a.raw_value().as.integer == b.raw_value().as.integer)
+        {
+            return 0;
+        }
+
+        const String *sa = a.extract();
+        const String *sb = b.extract();
+        uint64_t a_len = sa->count.extract();
+        uint64_t b_len = sb->count.extract();
+        uint64_t min_len = std::min(a_len, b_len);
+        for(uint64_t i = 0; i < min_len; ++i)
+        {
+            if(sa->data[i] < sb->data[i])
+            {
+                return -1;
+            }
+            if(sa->data[i] > sb->data[i])
+            {
+                return 1;
+            }
+        }
+        if(a_len < b_len)
+        {
+            return -1;
+        }
+        if(a_len > b_len)
+        {
+            return 1;
+        }
+        return 0;
     }
 
 }  // namespace cl
