@@ -1513,6 +1513,10 @@ TEST(Interpreter, true_division_reports_zero_division)
                         L"division by zero");
     expect_python_error(L"1 / -0.0\n", L"ZeroDivisionError",
                         L"division by zero");
+    expect_python_error(L"(1.0).__truediv__(0.0)\n", L"ZeroDivisionError",
+                        L"division by zero");
+    expect_python_error(L"(0.0).__rtruediv__(1.0)\n", L"ZeroDivisionError",
+                        L"division by zero");
 }
 
 TEST(Interpreter, true_division_reports_unsupported_operands)
@@ -1548,6 +1552,10 @@ TEST(Interpreter, floor_division_reports_errors)
     expect_python_error(L"1 // 0\n", L"ZeroDivisionError", L"division by zero");
     expect_python_error(L"1 // 0.0\n", L"ZeroDivisionError",
                         L"division by zero");
+    expect_python_error(L"(1.0).__floordiv__(0.0)\n", L"ZeroDivisionError",
+                        L"division by zero");
+    expect_python_error(L"(0.0).__rfloordiv__(1.0)\n", L"ZeroDivisionError",
+                        L"division by zero");
     expect_python_error(L"\"a\" // 1\n", L"TypeError",
                         L"unsupported operand type(s) for //");
     expect_python_error(L"1 // \"a\"\n", L"TypeError",
@@ -1579,6 +1587,10 @@ TEST(Interpreter, modulo_reports_errors)
 {
     expect_python_error(L"1 % 0\n", L"ZeroDivisionError", L"division by zero");
     expect_python_error(L"1 % 0.0\n", L"ZeroDivisionError",
+                        L"division by zero");
+    expect_python_error(L"(1.0).__mod__(0.0)\n", L"ZeroDivisionError",
+                        L"division by zero");
+    expect_python_error(L"(0.0).__rmod__(1.0)\n", L"ZeroDivisionError",
                         L"division by zero");
     expect_python_error(L"\"a\" % 1\n", L"TypeError",
                         L"unsupported operand type(s) for %");
@@ -5959,6 +5971,18 @@ TEST(Interpreter, float_objects_have_builtin_class_and_string_methods)
         test_context.vm().get_or_create_interned_string_value(L"__mul__");
     TValue<String> dunder_rmul_name =
         test_context.vm().get_or_create_interned_string_value(L"__rmul__");
+    TValue<String> dunder_truediv_name =
+        test_context.vm().get_or_create_interned_string_value(L"__truediv__");
+    TValue<String> dunder_rtruediv_name =
+        test_context.vm().get_or_create_interned_string_value(L"__rtruediv__");
+    TValue<String> dunder_floordiv_name =
+        test_context.vm().get_or_create_interned_string_value(L"__floordiv__");
+    TValue<String> dunder_rfloordiv_name =
+        test_context.vm().get_or_create_interned_string_value(L"__rfloordiv__");
+    TValue<String> dunder_mod_name =
+        test_context.vm().get_or_create_interned_string_value(L"__mod__");
+    TValue<String> dunder_rmod_name =
+        test_context.vm().get_or_create_interned_string_value(L"__rmod__");
     TValue<String> dunder_lt_name =
         test_context.vm().get_or_create_interned_string_value(L"__lt__");
     TValue<String> dunder_le_name =
@@ -6026,9 +6050,29 @@ TEST(Interpreter, float_objects_have_builtin_class_and_string_methods)
     expect_float_method_result(value, dunder_mul_name, Value::from_smi(2), 3.0);
     expect_float_method_result(value, dunder_rmul_name, Value::from_smi(2),
                                3.0);
+    expect_float_method_result(value, dunder_truediv_name, Value::from_smi(2),
+                               0.75);
+    expect_float_method_result(value, dunder_rtruediv_name, Value::from_smi(3),
+                               2.0);
+    expect_float_method_result(value, dunder_floordiv_name, Value::from_smi(1),
+                               1.0);
+    expect_float_method_result(value, dunder_rfloordiv_name, Value::from_smi(5),
+                               3.0);
+    expect_float_method_result(value, dunder_mod_name, Value::from_smi(1), 0.5);
+    expect_float_method_result(value, dunder_rmod_name, Value::from_smi(5),
+                               0.5);
     EXPECT_EQ(Value::NotImplemented(),
               test_context.thread()->call_clovervm_method(
                   value, dunder_add_name, Value::None()));
+    EXPECT_EQ(Value::NotImplemented(),
+              test_context.thread()->call_clovervm_method(
+                  value, dunder_truediv_name, Value::None()));
+    EXPECT_EQ(Value::NotImplemented(),
+              test_context.thread()->call_clovervm_method(
+                  value, dunder_floordiv_name, Value::None()));
+    EXPECT_EQ(Value::NotImplemented(),
+              test_context.thread()->call_clovervm_method(
+                  value, dunder_mod_name, Value::None()));
     EXPECT_EQ(Value::True(),
               test_context.thread()->call_clovervm_method(
                   one_value, dunder_lt_name, Value::from_smi(2)));

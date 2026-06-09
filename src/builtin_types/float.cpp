@@ -175,6 +175,116 @@ namespace cl
         }
     };
 
+    static Value float_zero_division_error(ThreadState *thread)
+    {
+        return thread->set_pending_builtin_exception_string(
+            L"ZeroDivisionError", L"division by zero");
+    }
+
+    struct FloatTrueDivOperator
+    {
+        static constexpr const wchar_t *receiver_error =
+            L"float.__truediv__ expects a float receiver";
+
+        Value operator()(ThreadState *thread, double left, double right) const
+        {
+            if(unlikely(right == 0.0))
+            {
+                return float_zero_division_error(thread);
+            }
+            return thread->make_object_value<Float>(left / right).raw_value();
+        }
+    };
+
+    struct FloatRTrueDivOperator
+    {
+        static constexpr const wchar_t *receiver_error =
+            L"float.__rtruediv__ expects a float receiver";
+
+        Value operator()(ThreadState *thread, double left, double right) const
+        {
+            if(unlikely(left == 0.0))
+            {
+                return float_zero_division_error(thread);
+            }
+            return thread->make_object_value<Float>(right / left).raw_value();
+        }
+    };
+
+    struct FloatFloorDivOperator
+    {
+        static constexpr const wchar_t *receiver_error =
+            L"float.__floordiv__ expects a float receiver";
+
+        Value operator()(ThreadState *thread, double left, double right) const
+        {
+            if(unlikely(right == 0.0))
+            {
+                return float_zero_division_error(thread);
+            }
+            return thread->make_object_value<Float>(std::floor(left / right))
+                .raw_value();
+        }
+    };
+
+    struct FloatRFloorDivOperator
+    {
+        static constexpr const wchar_t *receiver_error =
+            L"float.__rfloordiv__ expects a float receiver";
+
+        Value operator()(ThreadState *thread, double left, double right) const
+        {
+            if(unlikely(left == 0.0))
+            {
+                return float_zero_division_error(thread);
+            }
+            return thread->make_object_value<Float>(std::floor(right / left))
+                .raw_value();
+        }
+    };
+
+    static Value float_modulo_result(ThreadState *thread, double left,
+                                     double right)
+    {
+        if(unlikely(right == 0.0))
+        {
+            return float_zero_division_error(thread);
+        }
+
+        double result = std::fmod(left, right);
+        if(result != 0.0 && (std::signbit(result) != std::signbit(right)))
+        {
+            result += right;
+        }
+        else if(result == 0.0)
+        {
+            result = std::copysign(0.0, right);
+        }
+        return thread->make_object_value<Float>(result).raw_value();
+    }
+
+    struct FloatModOperator
+    {
+        static constexpr const wchar_t *receiver_error =
+            L"float.__mod__ expects a float receiver";
+
+        Value operator()(ThreadState *thread, double left, double right) const
+        {
+            return float_modulo_result(thread, left, right);
+        }
+    };
+
+    struct FloatRModOperator
+    {
+        static constexpr const wchar_t *receiver_error =
+            L"float.__rmod__ expects a float receiver";
+
+        Value operator()(ThreadState *thread, double left, double right) const
+        {
+            return float_modulo_result(thread, right, left);
+        }
+    };
+
     struct FloatLtOperator
     {
         static constexpr const wchar_t *receiver_error =
@@ -390,6 +500,47 @@ namespace cl
                     L"Return value * self."),
                 resolve_trusted_float_binary_resolver<FloatRMulOperator,
                                                       FloatMulOperator>),
+            with_trusted_handler_resolver(
+                builtin_intrinsic_method(
+                    L"__truediv__",
+                    native_float_binary_operator<FloatTrueDivOperator>,
+                    L"Return self / value."),
+                resolve_trusted_float_binary_resolver<FloatTrueDivOperator,
+                                                      FloatRTrueDivOperator>),
+            with_trusted_handler_resolver(
+                builtin_intrinsic_method(
+                    L"__rtruediv__",
+                    native_float_binary_operator<FloatRTrueDivOperator>,
+                    L"Return value / self."),
+                resolve_trusted_float_binary_resolver<FloatRTrueDivOperator,
+                                                      FloatTrueDivOperator>),
+            with_trusted_handler_resolver(
+                builtin_intrinsic_method(
+                    L"__floordiv__",
+                    native_float_binary_operator<FloatFloorDivOperator>,
+                    L"Return self // value."),
+                resolve_trusted_float_binary_resolver<FloatFloorDivOperator,
+                                                      FloatRFloorDivOperator>),
+            with_trusted_handler_resolver(
+                builtin_intrinsic_method(
+                    L"__rfloordiv__",
+                    native_float_binary_operator<FloatRFloorDivOperator>,
+                    L"Return value // self."),
+                resolve_trusted_float_binary_resolver<FloatRFloorDivOperator,
+                                                      FloatFloorDivOperator>),
+            with_trusted_handler_resolver(
+                builtin_intrinsic_method(
+                    L"__mod__", native_float_binary_operator<FloatModOperator>,
+                    L"Return self % value."),
+                resolve_trusted_float_binary_resolver<FloatModOperator,
+                                                      FloatRModOperator>),
+            with_trusted_handler_resolver(
+                builtin_intrinsic_method(
+                    L"__rmod__",
+                    native_float_binary_operator<FloatRModOperator>,
+                    L"Return value % self."),
+                resolve_trusted_float_binary_resolver<FloatRModOperator,
+                                                      FloatModOperator>),
             with_trusted_handler_resolver(
                 builtin_intrinsic_method(
                     L"__lt__", native_float_binary_operator<FloatLtOperator>,
