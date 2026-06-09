@@ -13,6 +13,8 @@ namespace cl
         CallBinary = 0,
         CallBinaryReflected = 1,
         IdentityEq = 2,
+        IdentityNe = 4,
+        RaiseOrdering = 6,
     };
 
     static constexpr bool
@@ -27,6 +29,10 @@ namespace cl
         OperatorStepAction::CallBinaryReflected));
     static_assert(
         !operator_step_action_is_reflected(OperatorStepAction::IdentityEq));
+    static_assert(
+        !operator_step_action_is_reflected(OperatorStepAction::IdentityNe));
+    static_assert(
+        !operator_step_action_is_reflected(OperatorStepAction::RaiseOrdering));
 
     enum class OperatorStepApplicability : uint8_t
     {
@@ -45,6 +51,11 @@ namespace cl
     enum class OperatorDispatchTableId : uint32_t
     {
         CompareEq,
+        CompareNe,
+        CompareLt,
+        CompareLe,
+        CompareGt,
+        CompareGe,
         Count,
     };
 
@@ -78,6 +89,18 @@ namespace cl
         static constexpr OperatorStep identity_eq()
         {
             return OperatorStep{nullptr, OperatorStepAction::IdentityEq,
+                                OperatorStepApplicability::Always};
+        }
+
+        static constexpr OperatorStep identity_ne()
+        {
+            return OperatorStep{nullptr, OperatorStepAction::IdentityNe,
+                                OperatorStepApplicability::Always};
+        }
+
+        static constexpr OperatorStep raise_ordering()
+        {
+            return OperatorStep{nullptr, OperatorStepAction::RaiseOrdering,
                                 OperatorStepApplicability::Always};
         }
     };

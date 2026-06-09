@@ -376,7 +376,9 @@ namespace cl
         ClassObject *not_implemented_type_class_ = nullptr;
         ClassObject *ellipsis_type_class_ = nullptr;
         String *dunder_class_name_ = nullptr;
-        std::array<OperatorStep, 6> compare_eq_operator_steps_ = {};
+        std::array<std::array<OperatorStep, 6>,
+                   static_cast<size_t>(OperatorDispatchTableId::Count)>
+            rich_compare_operator_steps_ = {};
         std::array<OperatorDispatchTable,
                    static_cast<size_t>(OperatorDispatchTableId::Count)>
             operator_dispatch_tables_ = {};

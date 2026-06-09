@@ -799,11 +799,6 @@ template <> struct fmt::formatter<cl::CodeObject>
             case cl::Bytecode::BitwiseOr:
             case cl::Bytecode::BitwiseAnd:
             case cl::Bytecode::BitwiseXor:
-            case cl::Bytecode::TestNotEqual:
-            case cl::Bytecode::TestLess:
-            case cl::Bytecode::TestLessEqual:
-            case cl::Bytecode::TestGreater:
-            case cl::Bytecode::TestGreaterEqual:
             case cl::Bytecode::TestIs:
             case cl::Bytecode::TestIsNot:
             case cl::Bytecode::TestIn:
@@ -813,6 +808,11 @@ template <> struct fmt::formatter<cl::CodeObject>
                 break;
 
             case cl::Bytecode::TestEqual:
+            case cl::Bytecode::TestNotEqual:
+            case cl::Bytecode::TestLess:
+            case cl::Bytecode::TestLessEqual:
+            case cl::Bytecode::TestGreater:
+            case cl::Bytecode::TestGreaterEqual:
                 format_to(out, " ");
                 disassemble_reg(code_obj, out, pc++);
                 format_to(out, ", ");

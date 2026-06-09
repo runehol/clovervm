@@ -265,18 +265,6 @@ namespace cl
         COMPLETE();
     }
 
-    NOINLINE INTERP_CC Value unsupported_comparison_error(PARAMS)
-    {
-        ExceptionalTarget target = set_builtin_exception_and_resolve_frame_exit(
-            thread, fp, pc, code_object, L"TypeError",
-            L"unsupported operand type(s) for comparison");
-        fp = target.fp;
-        code_object = target.code_object;
-        pc = target.interpreted_pc;
-        START(0);
-        COMPLETE();
-    }
-
     NOINLINE INTERP_CC Value unsupported_unary_arithmetic_error(PARAMS)
     {
         ExceptionalTarget target = set_builtin_exception_and_resolve_frame_exit(
@@ -1418,96 +1406,6 @@ namespace cl
         COMPLETE();
     }
 
-    NOINLINE static INTERP_CC Value op_test_less_float_comparison(PARAMS)
-    {
-        START_BINARY_REG_ACC();
-
-        double left;
-        double right;
-        if(!try_get_float_or_smi_or_bool(a, &left) ||
-           !try_get_float_or_smi_or_bool(b, &right))
-        {
-            MUSTTAIL return unsupported_comparison_error(ARGS);
-        }
-
-        accumulator = left < right ? Value::True() : Value::False();
-        COMPLETE();
-    }
-
-    NOINLINE static INTERP_CC Value op_test_less_equal_float_comparison(PARAMS)
-    {
-        START_BINARY_REG_ACC();
-
-        double left;
-        double right;
-        if(!try_get_float_or_smi_or_bool(a, &left) ||
-           !try_get_float_or_smi_or_bool(b, &right))
-        {
-            MUSTTAIL return unsupported_comparison_error(ARGS);
-        }
-
-        accumulator = left <= right ? Value::True() : Value::False();
-        COMPLETE();
-    }
-
-    NOINLINE static INTERP_CC Value op_test_greater_float_comparison(PARAMS)
-    {
-        START_BINARY_REG_ACC();
-
-        double left;
-        double right;
-        if(!try_get_float_or_smi_or_bool(a, &left) ||
-           !try_get_float_or_smi_or_bool(b, &right))
-        {
-            MUSTTAIL return unsupported_comparison_error(ARGS);
-        }
-
-        accumulator = left > right ? Value::True() : Value::False();
-        COMPLETE();
-    }
-
-    NOINLINE static INTERP_CC Value
-    op_test_greater_equal_float_comparison(PARAMS)
-    {
-        START_BINARY_REG_ACC();
-
-        double left;
-        double right;
-        if(!try_get_float_or_smi_or_bool(a, &left) ||
-           !try_get_float_or_smi_or_bool(b, &right))
-        {
-            MUSTTAIL return unsupported_comparison_error(ARGS);
-        }
-
-        accumulator = left >= right ? Value::True() : Value::False();
-        COMPLETE();
-    }
-
-    NOINLINE static INTERP_CC Value op_test_not_equal_float_comparison(PARAMS)
-    {
-        START_BINARY_REG_ACC();
-
-        double left;
-        double right;
-        if(!try_get_float_or_smi_or_bool(a, &left) ||
-           !try_get_float_or_smi_or_bool(b, &right))
-        {
-            if(can_convert_to<String>(a) || can_convert_to<String>(b))
-            {
-                bool equal = can_convert_to<String>(a) &&
-                             can_convert_to<String>(b) &&
-                             string_eq(TValue<String>::from_value_assumed(a),
-                                       TValue<String>::from_value_assumed(b));
-                accumulator = equal ? Value::False() : Value::True();
-                COMPLETE();
-            }
-            MUSTTAIL return unsupported_comparison_error(ARGS);
-        }
-
-        accumulator = left != right ? Value::True() : Value::False();
-        COMPLETE();
-    }
-
     NOINLINE static INTERP_CC Value op_div(PARAMS)
     {
         START_BINARY_REG_ACC();
@@ -2335,6 +2233,17 @@ namespace cl
         }
 
         __builtin_unreachable();
+    }
+
+    static ALWAYSINLINE bool both_smi_or_bool(Value a, Value b)
+    {
+        return ((a.as.integer | b.as.integer) &
+                value_not_smi_or_boolean_mask) == 0;
+    }
+
+    static ALWAYSINLINE int64_t smi_or_bool_comparison_value(Value value)
+    {
+        return value.as.integer & ~int64_t(value_boolean_tag);
     }
 
     static ALWAYSINLINE DispatchTableEntry
@@ -3702,52 +3611,61 @@ namespace cl
         COMPLETE();
     }
 
-    static INTERP_CC Value op_test_less(PARAMS)
+    NOINLINE static INTERP_CC Value op_test_less_operator_dispatch(PARAMS)
     {
-        START_BINARY_REG_ACC();
-        if(unlikely(A_OR_B_NOT_SMI()))
-        {
-            MUSTTAIL return op_test_less_float_comparison(ARGS);
-        }
-        accumulator =
-            (a.as.integer < b.as.integer) ? Value::True() : Value::False();
-        COMPLETE();
+        int8_t reg = pc[1];
+        uint8_t cache_idx = pc[2];
+        Value a = fp[reg];
+        Value b = accumulator;
+        DispatchTableEntry next_dispatch_fun =
+            dispatch_cached_reflectable_binary_operator(
+                thread, fp, pc, dispatch, code_object, accumulator,
+                OperatorDispatchTableId::CompareLt, cache_idx, a, b, pc + 3,
+                pc + 4);
+        MUSTTAIL return next_dispatch_fun(ARGS);
     }
 
-    static INTERP_CC Value op_test_less_equal(PARAMS)
+    NOINLINE static INTERP_CC Value op_test_less_equal_operator_dispatch(PARAMS)
     {
-        START_BINARY_REG_ACC();
-        if(unlikely(A_OR_B_NOT_SMI()))
-        {
-            MUSTTAIL return op_test_less_equal_float_comparison(ARGS);
-        }
-        accumulator =
-            (a.as.integer <= b.as.integer) ? Value::True() : Value::False();
-        COMPLETE();
+        int8_t reg = pc[1];
+        uint8_t cache_idx = pc[2];
+        Value a = fp[reg];
+        Value b = accumulator;
+        DispatchTableEntry next_dispatch_fun =
+            dispatch_cached_reflectable_binary_operator(
+                thread, fp, pc, dispatch, code_object, accumulator,
+                OperatorDispatchTableId::CompareLe, cache_idx, a, b, pc + 3,
+                pc + 4);
+        MUSTTAIL return next_dispatch_fun(ARGS);
     }
 
-    static INTERP_CC Value op_test_greater_equal(PARAMS)
+    NOINLINE static INTERP_CC Value
+    op_test_greater_equal_operator_dispatch(PARAMS)
     {
-        START_BINARY_REG_ACC();
-        if(unlikely(A_OR_B_NOT_SMI()))
-        {
-            MUSTTAIL return op_test_greater_equal_float_comparison(ARGS);
-        }
-        accumulator =
-            (a.as.integer >= b.as.integer) ? Value::True() : Value::False();
-        COMPLETE();
+        int8_t reg = pc[1];
+        uint8_t cache_idx = pc[2];
+        Value a = fp[reg];
+        Value b = accumulator;
+        DispatchTableEntry next_dispatch_fun =
+            dispatch_cached_reflectable_binary_operator(
+                thread, fp, pc, dispatch, code_object, accumulator,
+                OperatorDispatchTableId::CompareGe, cache_idx, a, b, pc + 3,
+                pc + 4);
+        MUSTTAIL return next_dispatch_fun(ARGS);
     }
 
-    static INTERP_CC Value op_test_greater(PARAMS)
+    NOINLINE static INTERP_CC Value op_test_greater_operator_dispatch(PARAMS)
     {
-        START_BINARY_REG_ACC();
-        if(unlikely(A_OR_B_NOT_SMI()))
-        {
-            MUSTTAIL return op_test_greater_float_comparison(ARGS);
-        }
-        accumulator =
-            (a.as.integer > b.as.integer) ? Value::True() : Value::False();
-        COMPLETE();
+        int8_t reg = pc[1];
+        uint8_t cache_idx = pc[2];
+        Value a = fp[reg];
+        Value b = accumulator;
+        DispatchTableEntry next_dispatch_fun =
+            dispatch_cached_reflectable_binary_operator(
+                thread, fp, pc, dispatch, code_object, accumulator,
+                OperatorDispatchTableId::CompareGt, cache_idx, a, b, pc + 3,
+                pc + 4);
+        MUSTTAIL return next_dispatch_fun(ARGS);
     }
 
     NOINLINE static INTERP_CC Value op_test_equal_operator_dispatch(PARAMS)
@@ -3762,6 +3680,88 @@ namespace cl
                 OperatorDispatchTableId::CompareEq, cache_idx, a, b, pc + 3,
                 pc + 4);
         MUSTTAIL return next_dispatch_fun(ARGS);
+    }
+
+    NOINLINE static INTERP_CC Value op_test_not_equal_operator_dispatch(PARAMS)
+    {
+        int8_t reg = pc[1];
+        uint8_t cache_idx = pc[2];
+        Value a = fp[reg];
+        Value b = accumulator;
+        DispatchTableEntry next_dispatch_fun =
+            dispatch_cached_reflectable_binary_operator(
+                thread, fp, pc, dispatch, code_object, accumulator,
+                OperatorDispatchTableId::CompareNe, cache_idx, a, b, pc + 3,
+                pc + 4);
+        MUSTTAIL return next_dispatch_fun(ARGS);
+    }
+
+    static INTERP_CC Value op_test_less(PARAMS)
+    {
+        START(4);
+        int8_t reg = pc[1];
+        Value a = fp[reg];
+        Value b = accumulator;
+        if(likely(both_smi_or_bool(a, b)))
+        {
+            accumulator = smi_or_bool_comparison_value(a) <
+                                  smi_or_bool_comparison_value(b)
+                              ? Value::True()
+                              : Value::False();
+            COMPLETE();
+        }
+        MUSTTAIL return op_test_less_operator_dispatch(ARGS);
+    }
+
+    static INTERP_CC Value op_test_less_equal(PARAMS)
+    {
+        START(4);
+        int8_t reg = pc[1];
+        Value a = fp[reg];
+        Value b = accumulator;
+        if(likely(both_smi_or_bool(a, b)))
+        {
+            accumulator = smi_or_bool_comparison_value(a) <=
+                                  smi_or_bool_comparison_value(b)
+                              ? Value::True()
+                              : Value::False();
+            COMPLETE();
+        }
+        MUSTTAIL return op_test_less_equal_operator_dispatch(ARGS);
+    }
+
+    static INTERP_CC Value op_test_greater_equal(PARAMS)
+    {
+        START(4);
+        int8_t reg = pc[1];
+        Value a = fp[reg];
+        Value b = accumulator;
+        if(likely(both_smi_or_bool(a, b)))
+        {
+            accumulator = smi_or_bool_comparison_value(a) >=
+                                  smi_or_bool_comparison_value(b)
+                              ? Value::True()
+                              : Value::False();
+            COMPLETE();
+        }
+        MUSTTAIL return op_test_greater_equal_operator_dispatch(ARGS);
+    }
+
+    static INTERP_CC Value op_test_greater(PARAMS)
+    {
+        START(4);
+        int8_t reg = pc[1];
+        Value a = fp[reg];
+        Value b = accumulator;
+        if(likely(both_smi_or_bool(a, b)))
+        {
+            accumulator = smi_or_bool_comparison_value(a) >
+                                  smi_or_bool_comparison_value(b)
+                              ? Value::True()
+                              : Value::False();
+            COMPLETE();
+        }
+        MUSTTAIL return op_test_greater_operator_dispatch(ARGS);
     }
 
     static INTERP_CC Value op_test_equal(PARAMS)
@@ -3784,18 +3784,20 @@ namespace cl
 
     static INTERP_CC Value op_test_not_equal(PARAMS)
     {
-        START_BINARY_REG_ACC();
-        if(unlikely(A_OR_B_REFCOUNTED_PTR()))
+        START(4);
+        int8_t reg = pc[1];
+        Value a = fp[reg];
+        Value b = accumulator;
+        if(likely(!a.is_ptr() && !b.is_ptr()))
         {
-            MUSTTAIL return op_test_not_equal_float_comparison(ARGS);
+            // See if we have a bit difference after clearing the bit that
+            // promotes booleans to 0/1 integers.
+            uint64_t difference =
+                (a.as.integer ^ b.as.integer) & value_boolean_to_integer_mask;
+            accumulator = (difference != 0) ? Value::True() : Value::False();
+            COMPLETE();
         }
-        // see if we have a bit difference after we clear the bit that promotes
-        // booleans to 0/1 integers
-        uint64_t difference =
-            (a.as.integer ^ b.as.integer) & value_boolean_to_integer_mask;
-        accumulator = (difference != 0) ? Value::True() : Value::False();
-
-        COMPLETE();
+        MUSTTAIL return op_test_not_equal_operator_dispatch(ARGS);
     }
 
     NOINLINE static INTERP_CC Value op_check_operator_not_implemented(PARAMS)

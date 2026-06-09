@@ -561,25 +561,58 @@ namespace cl
         assert(str_instance_root_shape_ != nullptr);
 
         String *dunder_eq = get_or_create_interned_string_raw(L"__eq__");
-        compare_eq_operator_steps_ = {{
-            OperatorStep::call_binary_reflected(
-                dunder_eq,
-                OperatorStepApplicability::IfRichComparisonReflectedPriority,
-                2),
-            OperatorStep::call_binary(dunder_eq,
-                                      OperatorStepApplicability::IfMethodFound),
-            OperatorStep::identity_eq(),
-            OperatorStep::call_binary(dunder_eq,
-                                      OperatorStepApplicability::IfMethodFound),
-            OperatorStep::call_binary_reflected(
-                dunder_eq, OperatorStepApplicability::IfMethodFound),
-            OperatorStep::identity_eq(),
-        }};
+        String *dunder_ne = get_or_create_interned_string_raw(L"__ne__");
+        String *dunder_lt = get_or_create_interned_string_raw(L"__lt__");
+        String *dunder_le = get_or_create_interned_string_raw(L"__le__");
+        String *dunder_gt = get_or_create_interned_string_raw(L"__gt__");
+        String *dunder_ge = get_or_create_interned_string_raw(L"__ge__");
 
-        operator_dispatch_tables_[static_cast<size_t>(
-            OperatorDispatchTableId::CompareEq)] = OperatorDispatchTable{
-            compare_eq_operator_steps_.data(),
-            static_cast<uint8_t>(compare_eq_operator_steps_.size())};
+        auto install_rich_compare_table = [this](
+                                              OperatorDispatchTableId table_id,
+                                              String *normal_dunder,
+                                              String *reflected_dunder,
+                                              OperatorStep fallback) {
+            std::array<OperatorStep, 6> &steps =
+                rich_compare_operator_steps_[static_cast<size_t>(table_id)];
+            steps = {{
+                OperatorStep::call_binary_reflected(
+                    reflected_dunder,
+                    OperatorStepApplicability::
+                        IfRichComparisonReflectedPriority,
+                    2),
+                OperatorStep::call_binary(
+                    normal_dunder, OperatorStepApplicability::IfMethodFound),
+                fallback,
+                OperatorStep::call_binary(
+                    normal_dunder, OperatorStepApplicability::IfMethodFound),
+                OperatorStep::call_binary_reflected(
+                    reflected_dunder, OperatorStepApplicability::IfMethodFound),
+                fallback,
+            }};
+
+            operator_dispatch_tables_[static_cast<size_t>(table_id)] =
+                OperatorDispatchTable{steps.data(),
+                                      static_cast<uint8_t>(steps.size())};
+        };
+
+        install_rich_compare_table(OperatorDispatchTableId::CompareEq,
+                                   dunder_eq, dunder_eq,
+                                   OperatorStep::identity_eq());
+        install_rich_compare_table(OperatorDispatchTableId::CompareNe,
+                                   dunder_ne, dunder_ne,
+                                   OperatorStep::identity_ne());
+        install_rich_compare_table(OperatorDispatchTableId::CompareLt,
+                                   dunder_lt, dunder_gt,
+                                   OperatorStep::raise_ordering());
+        install_rich_compare_table(OperatorDispatchTableId::CompareLe,
+                                   dunder_le, dunder_ge,
+                                   OperatorStep::raise_ordering());
+        install_rich_compare_table(OperatorDispatchTableId::CompareGt,
+                                   dunder_gt, dunder_lt,
+                                   OperatorStep::raise_ordering());
+        install_rich_compare_table(OperatorDispatchTableId::CompareGe,
+                                   dunder_ge, dunder_le,
+                                   OperatorStep::raise_ordering());
     }
 
     static void install_bootstrap_tuple_class_on_value(Value value,

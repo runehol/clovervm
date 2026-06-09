@@ -90,6 +90,16 @@ namespace cl
         return t;
     }
 
+    constexpr bool is_rich_comparison_operator(AstOperatorKind kind)
+    {
+        return kind == AstOperatorKind::EQUAL ||
+               kind == AstOperatorKind::NOT_EQUAL ||
+               kind == AstOperatorKind::LESS ||
+               kind == AstOperatorKind::LESS_EQUAL ||
+               kind == AstOperatorKind::GREATER ||
+               kind == AstOperatorKind::GREATER_EQUAL;
+    }
+
     Expected<CodeObject *> codegen_function(const AstVector &av,
                                             ModuleObject *module,
                                             CodeObjectBuilder *parent_code_obj,
@@ -577,8 +587,16 @@ namespace cl
             {
                 CL_TRY(code_obj->emit_star(source_offset, prod));
             }
-            CL_TRY(
-                code_obj->emit_compare_op(source_offset, entry.standard, recv));
+            if(is_rich_comparison_operator(kind.operator_kind))
+            {
+                CL_TRY(code_obj->emit_rich_compare_op(source_offset,
+                                                      entry.standard, recv));
+            }
+            else
+            {
+                CL_TRY(code_obj->emit_simple_compare_op(source_offset,
+                                                        entry.standard, recv));
+            }
             return Expected<void>::ok();
         }
 

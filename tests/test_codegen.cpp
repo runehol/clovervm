@@ -762,10 +762,10 @@ TEST(Codegen, comparison_reuses_local_register_operand)
         "    5 Return\n"
         "Constant 0: Code object:\n"
         "    0 Ldar p1\n"
-        "    2 TestLess p0\n"
-        "    4 Return\n"
-        "    5 LdaNone\n"
+        "    2 TestLess p0, operator_ic[0]\n"
         "    6 Return\n"
+        "    7 LdaNone\n"
+        "    8 Return\n"
         "\n"
         "Constant 1: \"lt\"\n";
     std::string actual = bytecode_str_from_file(test_case);

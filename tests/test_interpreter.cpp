@@ -1609,6 +1609,35 @@ TEST(Interpreter, operator_eq_dispatch_returns_non_bool_result_unchanged)
                          L"sentinel");
 }
 
+TEST(Interpreter, rich_comparison_operator_dispatch_returns_non_bool_results)
+{
+    expect_string_result(L"class CompareResult:\n"
+                         L"    def __ne__(self, other):\n"
+                         L"        return 'ne'\n"
+                         L"CompareResult() != CompareResult()\n",
+                         L"ne");
+    expect_string_result(L"class CompareResult:\n"
+                         L"    def __lt__(self, other):\n"
+                         L"        return 'lt'\n"
+                         L"CompareResult() < CompareResult()\n",
+                         L"lt");
+    expect_string_result(L"class CompareResult:\n"
+                         L"    def __le__(self, other):\n"
+                         L"        return 'le'\n"
+                         L"CompareResult() <= CompareResult()\n",
+                         L"le");
+    expect_string_result(L"class CompareResult:\n"
+                         L"    def __gt__(self, other):\n"
+                         L"        return 'gt'\n"
+                         L"CompareResult() > CompareResult()\n",
+                         L"gt");
+    expect_string_result(L"class CompareResult:\n"
+                         L"    def __ge__(self, other):\n"
+                         L"        return 'ge'\n"
+                         L"CompareResult() >= CompareResult()\n",
+                         L"ge");
+}
+
 TEST(Interpreter, operator_eq_dispatch_identity_fallback_after_notimplemented)
 {
     test::VmTestContext test_context;
@@ -1948,6 +1977,32 @@ TEST(Interpreter, float_comparison_values)
                        L"nan = inf / inf\n"
                        L"nan != nan\n",
                        Value::True());
+}
+
+TEST(Interpreter, string_comparison_values)
+{
+    test::VmTestContext test_context;
+
+    auto expect_bool_result = [&](const wchar_t *source, Value expected) {
+        EXPECT_EQ(expected, test_context.run_file(source));
+    };
+
+    expect_bool_result(L"\"a\" == \"a\"\n", Value::True());
+    expect_bool_result(L"\"a\" == \"b\"\n", Value::False());
+    expect_bool_result(L"\"a\" != \"a\"\n", Value::False());
+    expect_bool_result(L"\"a\" != \"b\"\n", Value::True());
+    expect_bool_result(L"\"a\" < \"b\"\n", Value::True());
+    expect_bool_result(L"\"b\" < \"a\"\n", Value::False());
+    expect_bool_result(L"\"a\" <= \"a\"\n", Value::True());
+    expect_bool_result(L"\"b\" <= \"a\"\n", Value::False());
+    expect_bool_result(L"\"b\" > \"a\"\n", Value::True());
+    expect_bool_result(L"\"a\" > \"b\"\n", Value::False());
+    expect_bool_result(L"\"a\" >= \"a\"\n", Value::True());
+    expect_bool_result(L"\"a\" >= \"b\"\n", Value::False());
+    expect_bool_result(L"\"a\" < \"aa\"\n", Value::True());
+
+    expect_python_error(L"\"a\" < 1\n", L"TypeError",
+                        L"unsupported operand type(s) for comparison");
 }
 
 TEST(Interpreter, string_dunder_add_calls_intrinsic_function)

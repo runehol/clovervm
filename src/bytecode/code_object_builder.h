@@ -396,8 +396,11 @@ namespace cl
                                           uint32_t lhs_reg);
         Expected<uint32_t> emit_binary_smi_op(uint32_t source_offset,
                                               Bytecode op, int8_t rhs);
-        Expected<uint32_t> emit_compare_op(uint32_t source_offset, Bytecode op,
-                                           uint32_t lhs_reg);
+        Expected<uint32_t> emit_simple_compare_op(uint32_t source_offset,
+                                                  Bytecode op,
+                                                  uint32_t lhs_reg);
+        Expected<uint32_t> emit_rich_compare_op(uint32_t source_offset,
+                                                Bytecode op, uint32_t lhs_reg);
         Expected<uint32_t> emit_unary_op(uint32_t source_offset, Bytecode op);
         Expected<uint32_t> emit_call_code_object(uint32_t source_offset,
                                                  uint8_t code_object_idx,

@@ -157,6 +157,18 @@ namespace cl
                     return OperatorWalkDescriptor::native_result(
                         operand0 == operand1 ? Value::True() : Value::False());
 
+                case OperatorStepAction::IdentityNe:
+                    assert(step.applicability ==
+                           OperatorStepApplicability::Always);
+                    return OperatorWalkDescriptor::native_result(
+                        operand0 != operand1 ? Value::True() : Value::False());
+
+                case OperatorStepAction::RaiseOrdering:
+                    assert(step.applicability ==
+                           OperatorStepApplicability::Always);
+                    return operator_walk_raise_type_error(
+                        thread, L"unsupported operand type(s) for comparison");
+
                 case OperatorStepAction::CallBinary:
                 case OperatorStepAction::CallBinaryReflected:
                     {
