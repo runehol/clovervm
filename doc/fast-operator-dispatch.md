@@ -853,7 +853,10 @@ For single-call protocols:
 
 For multi-candidate and table-driven fallback protocols:
 
-1. Walk the relevant dispatch table from the selected start index.
+1. Walk the relevant dispatch table from start index `0`. Cache installation is
+   only allowed for this initial primary-opcode walk. A nonzero start index
+   means execution is resuming from `CheckOperatorNotImplemented` after Python
+   code has already run, and no cache may be installed or updated.
 2. Recompute applicability and lookup results at each step.
 3. Prefer a complete trusted native handler when the current table state can be
    collapsed under the operand shape guards.
@@ -874,9 +877,21 @@ For multi-candidate and table-driven fallback protocols:
    to update and must run to completion from saved operands and current lookups.
 
 Python-candidate inline caching for multi-candidate tables can be added later
-once skipped-row validation is represented in the cache payload. A cached table
-row must prove that every earlier row that could change the selected action is
-still inapplicable or otherwise safely skipped.
+once its replay payload and validation rules are specified.
+
+Trusted-handler table caching does not cache the table id, row index,
+`OperatorStepAction`, selected method read plan, or reflection bit. The opcode
+site already determines the table, and a trusted handler resolver must return a
+handler normalized to the opcode's physical operand order. A cached trusted
+binary handler therefore replays as `handler(thread, operand0, operand1)`.
+
+For binary table caches, validation deliberately over-approximates the table
+walk dependencies. A cache entry guards both operand shape keys and validity
+cells for both operand classes/MROs, because a table walk may have inspected
+either operand while checking applicability, reflected priority, skipped rows,
+or the selected method. If either operand's shape changes, or either
+operand-side validity cell is invalidated, the opcode misses and walks the
+table again from row `0`.
 
 Exception paths must not install direct handlers. If lookup, binding, call
 validation, or execution raises, propagate the pending exception and leave cache
@@ -886,16 +901,10 @@ state unchanged unless the operation has an explicit negative-cache design.
 
 - Should trusted handlers require exact builtin type guards, or can some use
   shape guards that imply the same dunder-method lookup semantics?
-- How should cache hit validation represent skipped rows in branched tables? If
-  a future cache entry starts at row 3 or row 4, it must prove that earlier
-  branch rows still would not run. The core invariant requires this generally,
-  but the cache payload fields for skipped applicability dependencies are not
-  yet specified.
 - What should the future table-row Python-candidate cache payload look like?
-  The current `arg_shape_key` and `reflected_call` style is too single-call and
-  binary-oriented for branched tables. A table-row cache likely needs a
-  `table_id`, row index, operand shape keys, the selected lookup cache, call
-  layout metadata, and any skipped-row applicability dependencies.
+  Trusted handlers are normalized to physical operand order, but Python calls
+  still need enough payload to reconstruct binding, call adaptation, and
+  selected argument order without rerunning the table.
 - How much of binary, in-place, and comparison cache validation can share one
   table walker without obscuring hot opcode paths?
 - Which odd callable shapes, if any, should be supported by cached Python

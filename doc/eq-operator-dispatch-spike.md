@@ -252,8 +252,6 @@ normal_first:
 - [ ] Preserve the same next-row `NotImplemented` continuation semantics for
       generic-call candidates as for fast function-shaped candidates.
 - [ ] Decide the table-row Python-candidate cache payload shape.
-- [ ] Represent skipped-row applicability dependencies for future cache hits.
-- [ ] Decide trusted-handler guard policy for rich comparisons.
 - [ ] Generalize the table walker to `!=`, ordering comparisons, binary
       arithmetic, and in-place arithmetic only after `CompareEq` is stable.
 - [ ] Revisit odd callable shapes beyond fixed function-shaped method calls.
