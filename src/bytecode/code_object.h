@@ -236,21 +236,12 @@ namespace cl
     {
         ShapeKey operand_shape_keys[3];
         ValidityCell *method_lookup_validity_cell = nullptr;
-        AttributeReadPlan method_read_plan =
-            AttributeReadDescriptor::not_found().plan;
         TrustedHandler handler;
         Function *function = nullptr;
         CodeObject *code_object = nullptr;
         uint32_t n_args = UINT32_MAX;
         FunctionCallAdaptation adaptation = FunctionCallAdaptation::FixedArity;
         bool has_self = false;
-
-        ALWAYSINLINE bool method_read_matches_operand0(Value receiver) const
-        {
-            return operand_shape_keys[0] == ShapeKey::from_value(receiver) &&
-                   method_lookup_validity_cell != nullptr &&
-                   method_lookup_validity_cell->is_valid();
-        }
 
         ALWAYSINLINE bool matches_unary(Value operand0) const
         {
@@ -283,7 +274,6 @@ namespace cl
             assert(receiver.is_ptr());
             assert(descriptor.is_cacheable());
             method_lookup_validity_cell = descriptor.lookup_validity_cell;
-            method_read_plan = descriptor.plan;
         }
 
         void populate_binary_shapes(ShapeKey operand0_shape_key,
@@ -347,7 +337,6 @@ namespace cl
             operand_shape_keys[1] = ShapeKey{};
             operand_shape_keys[2] = ShapeKey{};
             method_lookup_validity_cell = nullptr;
-            method_read_plan = AttributeReadDescriptor::not_found().plan;
             handler = TrustedHandler::none();
             function = nullptr;
             code_object = nullptr;

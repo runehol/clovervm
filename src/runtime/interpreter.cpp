@@ -2941,28 +2941,17 @@ namespace cl
 
         Value callable;
         Value self;
-        MethodCallTargetStatus target_status;
-        if(cache.method_read_matches_operand0(receiver))
+        AttributeReadDescriptor descriptor =
+            resolve_special_method_read_descriptor(receiver, method_name);
+        MethodCallTargetStatus target_status =
+            prepare_method_call_target_from_descriptor(receiver, descriptor,
+                                                       callable, self);
+        bool can_cache_call = target_status == MethodCallTargetStatus::Ready &&
+                              descriptor.is_cacheable();
+        if(can_cache_call)
         {
-            target_status = prepare_method_call_target_from_plan(
-                receiver, cache.method_read_plan, callable, self);
-            if(target_status == MethodCallTargetStatus::Ready)
-            {
-                cache.populate_binary_shapes(receiver_shape_key, key_shape_key);
-            }
-        }
-        else
-        {
-            AttributeReadDescriptor descriptor =
-                resolve_special_method_read_descriptor(receiver, method_name);
-            target_status = prepare_method_call_target_from_descriptor(
-                receiver, descriptor, callable, self);
-            if(target_status == MethodCallTargetStatus::Ready &&
-               descriptor.is_cacheable())
-            {
-                cache.populate_method_read(receiver, descriptor);
-                cache.populate_binary_shapes(receiver_shape_key, key_shape_key);
-            }
+            cache.populate_method_read(receiver, descriptor);
+            cache.populate_binary_shapes(receiver_shape_key, key_shape_key);
         }
         if(unlikely(target_status == MethodCallTargetStatus::Missing))
         {
@@ -2998,7 +2987,7 @@ namespace cl
         FunctionCallAdaptation adaptation =
             function_call_adaptation_for_positional_call(function, n_args);
         TrustedHandler handler;
-        if(cache.method_read_matches_operand0(receiver))
+        if(can_cache_call)
         {
             CodeObject *target_code_object =
                 function.extract()->code_object.extract();
@@ -3117,30 +3106,18 @@ namespace cl
 
         Value callable;
         Value self;
-        MethodCallTargetStatus target_status;
-        if(cache.method_read_matches_operand0(receiver))
+        AttributeReadDescriptor descriptor =
+            resolve_special_method_read_descriptor(receiver, method_name);
+        MethodCallTargetStatus target_status =
+            prepare_method_call_target_from_descriptor(receiver, descriptor,
+                                                       callable, self);
+        bool can_cache_call = target_status == MethodCallTargetStatus::Ready &&
+                              descriptor.is_cacheable();
+        if(can_cache_call)
         {
-            target_status = prepare_method_call_target_from_plan(
-                receiver, cache.method_read_plan, callable, self);
-            if(target_status == MethodCallTargetStatus::Ready)
-            {
-                cache.populate_ternary_shapes(receiver_shape_key, key_shape_key,
-                                              value_shape_key);
-            }
-        }
-        else
-        {
-            AttributeReadDescriptor descriptor =
-                resolve_special_method_read_descriptor(receiver, method_name);
-            target_status = prepare_method_call_target_from_descriptor(
-                receiver, descriptor, callable, self);
-            if(target_status == MethodCallTargetStatus::Ready &&
-               descriptor.is_cacheable())
-            {
-                cache.populate_method_read(receiver, descriptor);
-                cache.populate_ternary_shapes(receiver_shape_key, key_shape_key,
-                                              value_shape_key);
-            }
+            cache.populate_method_read(receiver, descriptor);
+            cache.populate_ternary_shapes(receiver_shape_key, key_shape_key,
+                                          value_shape_key);
         }
         if(unlikely(target_status == MethodCallTargetStatus::Missing))
         {
@@ -3176,7 +3153,7 @@ namespace cl
         FunctionCallAdaptation adaptation =
             function_call_adaptation_for_positional_call(function, n_args);
         TrustedHandler handler;
-        if(cache.method_read_matches_operand0(receiver))
+        if(can_cache_call)
         {
             CodeObject *target_code_object =
                 function.extract()->code_object.extract();
@@ -3298,28 +3275,17 @@ namespace cl
 
         Value callable;
         Value self;
-        MethodCallTargetStatus target_status;
-        if(cache.method_read_matches_operand0(receiver))
+        AttributeReadDescriptor descriptor =
+            resolve_special_method_read_descriptor(receiver, method_name);
+        MethodCallTargetStatus target_status =
+            prepare_method_call_target_from_descriptor(receiver, descriptor,
+                                                       callable, self);
+        bool can_cache_call = target_status == MethodCallTargetStatus::Ready &&
+                              descriptor.is_cacheable();
+        if(can_cache_call)
         {
-            target_status = prepare_method_call_target_from_plan(
-                receiver, cache.method_read_plan, callable, self);
-            if(target_status == MethodCallTargetStatus::Ready)
-            {
-                cache.populate_binary_shapes(receiver_shape_key, key_shape_key);
-            }
-        }
-        else
-        {
-            AttributeReadDescriptor descriptor =
-                resolve_special_method_read_descriptor(receiver, method_name);
-            target_status = prepare_method_call_target_from_descriptor(
-                receiver, descriptor, callable, self);
-            if(target_status == MethodCallTargetStatus::Ready &&
-               descriptor.is_cacheable())
-            {
-                cache.populate_method_read(receiver, descriptor);
-                cache.populate_binary_shapes(receiver_shape_key, key_shape_key);
-            }
+            cache.populate_method_read(receiver, descriptor);
+            cache.populate_binary_shapes(receiver_shape_key, key_shape_key);
         }
         if(unlikely(target_status == MethodCallTargetStatus::Missing))
         {
@@ -3355,7 +3321,7 @@ namespace cl
         FunctionCallAdaptation adaptation =
             function_call_adaptation_for_positional_call(function, n_args);
         TrustedHandler handler;
-        if(cache.method_read_matches_operand0(receiver))
+        if(can_cache_call)
         {
             CodeObject *target_code_object =
                 function.extract()->code_object.extract();
