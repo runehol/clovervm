@@ -240,7 +240,9 @@ namespace cl
         Function *function = nullptr;
         CodeObject *code_object = nullptr;
         uint32_t n_args = UINT32_MAX;
+        uint32_t resume_index = UINT32_MAX;
         FunctionCallAdaptation adaptation = FunctionCallAdaptation::FixedArity;
+        bool reflected_python_call = false;
         bool has_self = false;
 
         ALWAYSINLINE bool matches_unary(Value operand0) const
@@ -314,6 +316,7 @@ namespace cl
                              ShapeKey operand1_shape_key,
                              ShapeKey operand2_shape_key, Function *function,
                              CodeObject *code_object, uint32_t n_args,
+                             uint32_t resume_index, bool reflected_python_call,
                              bool has_self, FunctionCallAdaptation adaptation,
                              ValidityCell *operand0_lookup_validity_cell,
                              ValidityCell *operand1_lookup_validity_cell)
@@ -324,6 +327,8 @@ namespace cl
             cache.function = function;
             cache.code_object = code_object;
             cache.n_args = n_args;
+            cache.resume_index = resume_index;
+            cache.reflected_python_call = reflected_python_call;
             cache.adaptation = adaptation;
             cache.has_self = has_self;
             cache.populate_optional_binary_lookup_validity_cells(
@@ -357,7 +362,9 @@ namespace cl
             function = nullptr;
             code_object = nullptr;
             n_args = UINT32_MAX;
+            resume_index = UINT32_MAX;
             adaptation = FunctionCallAdaptation::FixedArity;
+            reflected_python_call = false;
             has_self = false;
         }
 

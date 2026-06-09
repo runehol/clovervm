@@ -172,22 +172,20 @@ from row `0`. Continuation walks start after a Python candidate has already run,
 so their descriptors pass null operand validity cells and must not be installed
 into an inline cache.
 
-For cached Python operator calls, the cache also needs immutable orientation
-metadata for the primary opcode path, such as a `reflected_call` bit. That bit
-does not encode Python fallback state. It only tells the primary opcode how to
-map source operands into the cached call layout:
+For cached Python operator calls, the cache also needs immutable replay metadata
+for the primary opcode path: the resume table index and a `reflected_python_call`
+bit. That bit does not encode Python fallback state. It only tells the primary
+opcode how to map source operands into the cached call layout:
 
 ```text
 normal binary call:    receiver = lhs, arg = rhs
 reflected binary call: receiver = rhs, arg = lhs
 ```
 
-The same orientation bit lets the opcode validate the right source operand
-shapes and write the semantic operands into the caller-frame continuation
-prefix in source/protocol order. Live continuation state still does not live in
-the cache. The opcode derives the next candidate index from immutable replay
-metadata and writes it, along with the saved operands, into the caller frame
-prefix immediately before entering the Python function.
+The same orientation bit lets the opcode write the cached Python call arguments.
+Live continuation state still does not live in the cache. The opcode writes the
+cached resume index, along with the saved operands, into the caller frame prefix
+immediately before entering the Python function.
 
 The intended execution tiers are:
 
@@ -877,8 +875,11 @@ For multi-candidate and table-driven fallback protocols:
    install or update an inline-cache entry; the continuation has no cache object
    to update and must run to completion from saved operands and current lookups.
 
-Python-candidate inline caching for multi-candidate tables can be added later
-once its replay payload and validation rules are specified.
+The initial `TestEqual` table cache supports both trusted handlers and cached
+function-shaped Python candidates. The miss path installs either payload only
+for row-`0` walks, detected by a non-null operand0 lookup validity cell.
+Continuation walks carry null operand validity cells and cannot update the
+inline cache.
 
 Trusted-handler table caching does not cache the table id, row index,
 `OperatorStepAction`, selected method read plan, or reflection bit. The opcode
@@ -894,18 +895,19 @@ or the selected method. If either operand's shape changes, or either
 operand-side validity cell is invalidated, the opcode misses and walks the
 table again from row `0`.
 
-Exception paths must not install direct handlers. If lookup, binding, call
-validation, or execution raises, propagate the pending exception and leave cache
-state unchanged unless the operation has an explicit negative-cache design.
+Lookup, binding, and call-validation exceptions must not install cache entries.
+Once a row-`0` walk has selected a cacheable trusted handler or function-shaped
+Python candidate, the opcode may install that entry before executing the
+candidate. If the candidate call raises, the cache entry may remain installed for
+future executions with the same operand guards.
 
 ## Open Questions
 
 - Should trusted handlers require exact builtin type guards, or can some use
   shape guards that imply the same dunder-method lookup semantics?
-- What should the future table-row Python-candidate cache payload look like?
-  Trusted handlers are normalized to physical operand order, but Python calls
-  still need enough payload to reconstruct binding, call adaptation, and
-  selected argument order without rerunning the table.
+- How much additional Python-candidate cache payload is needed beyond
+  `TestEqual`'s current function-shaped replay metadata as more operator tables
+  are added?
 - How much of binary, in-place, and comparison cache validation can share one
   table walker without obscuring hot opcode paths?
 - Which odd callable shapes, if any, should be supported by cached Python

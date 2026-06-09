@@ -775,8 +775,13 @@ TEST(Codegen, comparison_reuses_local_register_operand)
 
 TEST(Codegen, equality_emits_paired_operator_check_byte)
 {
+    test::VmTestContext test_context;
     const wchar_t *test_case = L"def eq(a, b):\n"
                                "    return a == b\n";
+    CodeObject *module_code = test_context.compile_file(test_case);
+    CodeObject *function_code =
+        module_code->constant_table[0].value().get_ptr<CodeObject>();
+    ASSERT_EQ(1u, function_code->operator_caches.size());
 
     std::string expected =
         "Code object:\n"
@@ -785,10 +790,10 @@ TEST(Codegen, equality_emits_paired_operator_check_byte)
         "    5 Return\n"
         "Constant 0: Code object:\n"
         "    0 Ldar p1\n"
-        "    2 TestEqual p0\n"
-        "    5 Return\n"
-        "    6 LdaNone\n"
-        "    7 Return\n"
+        "    2 TestEqual p0, operator_ic[0]\n"
+        "    6 Return\n"
+        "    7 LdaNone\n"
+        "    8 Return\n"
         "\n"
         "Constant 1: \"eq\"\n";
     std::string actual = bytecode_str_from_file(test_case);

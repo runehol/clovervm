@@ -1655,6 +1655,73 @@ TEST(Interpreter, operator_eq_dispatch_right_subclass_reflected_priority)
                                     L"Base() == Derived()\n"));
 }
 
+TEST(Interpreter, operator_eq_dispatch_reflected_python_cache_hit)
+{
+    test::VmTestContext test_context;
+    ThreadState::ActivationScope activation_scope(test_context.thread());
+
+    TValue<String> function_name(
+        test_context.vm().get_or_create_interned_string_value(L"eq"));
+    CodeObject *code_obj =
+        test_context.compile_file(L"class Base:\n"
+                                  L"    def __eq__(self, other):\n"
+                                  L"        return 'base'\n"
+                                  L"class Derived(Base):\n"
+                                  L"    def __init__(self):\n"
+                                  L"        self.marker = 6\n"
+                                  L"    def __eq__(self, other):\n"
+                                  L"        return self.marker\n"
+                                  L"def eq(left, right):\n"
+                                  L"    return left == right\n"
+                                  L"left = Base()\n"
+                                  L"right = Derived()\n"
+                                  L"eq(left, right) * 10 + eq(left, right)\n");
+
+    Value actual = test_context.thread()->run_clovervm_code_object(code_obj);
+    EXPECT_EQ(Value::from_smi(66), actual);
+
+    Value function_value =
+        load_global_from_module_for_test(code_obj, function_name);
+    ASSERT_TRUE(can_convert_to<Function>(function_value));
+    CodeObject *function_code =
+        assume_convert_to<Function>(function_value)->code_object.extract();
+    ASSERT_EQ(1u, function_code->operator_caches.size());
+    const OperatorInlineCache &cache = function_code->operator_caches[0];
+    ASSERT_NE(nullptr, cache.function);
+    EXPECT_TRUE(cache.reflected_python_call);
+    ASSERT_NE(nullptr, cache.operand_lookup_validity_cells[0]);
+    ASSERT_NE(nullptr, cache.operand_lookup_validity_cells[1]);
+}
+
+TEST(Interpreter, operator_eq_dispatch_trusted_handler_cache)
+{
+    test::VmTestContext test_context;
+    ThreadState::ActivationScope activation_scope(test_context.thread());
+
+    TValue<String> function_name(
+        test_context.vm().get_or_create_interned_string_value(L"eq"));
+    CodeObject *code_obj =
+        test_context.compile_file(L"def eq(left, right):\n"
+                                  L"    return left == right\n"
+                                  L"eq('a', 'a')\n"
+                                  L"eq('b', 'b')\n");
+
+    Value actual = test_context.thread()->run_clovervm_code_object(code_obj);
+    EXPECT_EQ(Value::True(), actual);
+
+    Value function_value =
+        load_global_from_module_for_test(code_obj, function_name);
+    ASSERT_TRUE(can_convert_to<Function>(function_value));
+    CodeObject *function_code =
+        assume_convert_to<Function>(function_value)->code_object.extract();
+    ASSERT_EQ(1u, function_code->operator_caches.size());
+    const OperatorInlineCache &cache = function_code->operator_caches[0];
+    EXPECT_EQ(TrustedHandlerArity::Binary, cache.handler.arity);
+    EXPECT_EQ(nullptr, cache.function);
+    ASSERT_NE(nullptr, cache.operand_lookup_validity_cells[0]);
+    ASSERT_NE(nullptr, cache.operand_lookup_validity_cells[1]);
+}
+
 TEST(Interpreter, operator_eq_dispatch_reloads_after_notimplemented)
 {
     test::VmTestContext test_context;
@@ -1701,7 +1768,7 @@ TEST(Interpreter, operator_eq_dispatch_call_exceptions_propagate)
                         L"ValueError", L"");
 }
 
-TEST(Interpreter, operator_eq_dispatch_exceptions_do_not_install_cache)
+TEST(Interpreter, operator_eq_dispatch_python_cache_installs_before_call)
 {
     test::VmTestContext test_context;
     ThreadState::ActivationScope activation_scope(test_context.thread());
@@ -1724,18 +1791,21 @@ TEST(Interpreter, operator_eq_dispatch_exceptions_do_not_install_cache)
                                   L"    eq(left, right)\n"
                                   L"except ValueError:\n"
                                   L"    caught = 1\n"
-                                  L"EqResult.fail = False\n"
-                                  L"caught * 10 + eq(left, right)\n");
+                                  L"caught\n");
 
     Value actual = test_context.thread()->run_clovervm_code_object(code_obj);
-    EXPECT_EQ(Value::from_smi(19), actual);
+    EXPECT_EQ(Value::from_smi(1), actual);
 
     Value function_value =
         load_global_from_module_for_test(code_obj, function_name);
     ASSERT_TRUE(can_convert_to<Function>(function_value));
     CodeObject *function_code =
         assume_convert_to<Function>(function_value)->code_object.extract();
-    EXPECT_TRUE(function_code->operator_caches.empty());
+    ASSERT_EQ(1u, function_code->operator_caches.size());
+    const OperatorInlineCache &cache = function_code->operator_caches[0];
+    ASSERT_NE(nullptr, cache.function);
+    ASSERT_NE(nullptr, cache.operand_lookup_validity_cells[0]);
+    ASSERT_NE(nullptr, cache.operand_lookup_validity_cells[1]);
 }
 
 TEST(Interpreter, shortcutting_boolean_operators_return_operand_values)

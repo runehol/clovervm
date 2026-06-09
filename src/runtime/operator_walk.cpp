@@ -43,7 +43,9 @@ namespace cl
         descriptor.cache_entry = OperatorInlineCache::python_function_call(
             operand0_shape_key, operand1_shape_key, operand2_shape_key,
             function.extract(), function.extract()->code_object.extract(),
-            n_args, has_self, adaptation, operand0_lookup_validity_cell,
+            n_args, resume_index,
+            operand_order == OperatorOperandOrder::Reflected, has_self,
+            adaptation, operand0_lookup_validity_cell,
             operand1_lookup_validity_cell);
         return descriptor;
     }

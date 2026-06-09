@@ -761,12 +761,19 @@ namespace cl
     CodeObjectBuilder::emit_compare_op(uint32_t source_offset, Bytecode op,
                                        uint32_t lhs_reg)
     {
-        uint32_t result = CL_TRY(emit_opcode_reg(source_offset, op, lhs_reg));
         if(op == Bytecode::TestEqual)
         {
+            uint8_t cache_idx = CL_TRY(allocate_operator_cache());
+            uint32_t result =
+                emplace_back(source_offset, uint8_t(Bytecode::TestEqual));
+            emplace_back(source_offset, encode_reg(lhs_reg));
+            emplace_back(source_offset, cache_idx);
             CL_TRY(emit_opcode(source_offset,
                                Bytecode::CheckOperatorNotImplemented));
+            return Expected<uint32_t>::ok(result);
         }
+
+        uint32_t result = CL_TRY(emit_opcode_reg(source_offset, op, lhs_reg));
         return Expected<uint32_t>::ok(result);
     }
 

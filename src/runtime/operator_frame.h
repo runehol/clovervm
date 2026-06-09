@@ -78,24 +78,6 @@ namespace cl
         fp[prefix_reg - 3] = operand1;
     }
 
-    [[maybe_unused]] static ALWAYSINLINE int32_t
-    setup_binary_operator_call_args(Value *fp, int32_t prefix_reg,
-                                    OperatorStepAction action, Value operand0,
-                                    Value operand1)
-    {
-        int32_t first_arg_reg = prefix_reg - 4;
-        if(unlikely(operator_step_action_is_reflected(action)))
-        {
-            fp[first_arg_reg] = operand1;
-            fp[first_arg_reg - 1] = operand0;
-            return first_arg_reg;
-        }
-        assert(action == OperatorStepAction::CallBinary);
-        fp[first_arg_reg] = operand0;
-        fp[first_arg_reg - 1] = operand1;
-        return first_arg_reg;
-    }
-
     [[maybe_unused]] static ALWAYSINLINE void
     setup_ternary_operator_continuation_prefix(Value *fp, int32_t prefix_reg,
                                                OperatorDispatchTableId table_id,

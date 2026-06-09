@@ -60,7 +60,8 @@ namespace cl
         ThreadState *thread, Value *&fp, const uint8_t *&pc, void *dispatch,
         CodeObject *&code_object, Value &accumulator,
         OperatorDispatchTableId table_id, Value operand0, Value operand1,
-        const uint8_t *continuation_pc, const uint8_t *next_pc);
+        const uint8_t *continuation_pc, const uint8_t *next_pc,
+        OperatorInlineCache *cache);
 
     static ALWAYSINLINE DispatchTableEntry
     dispatch_binary_operator_from_continuation(
@@ -2174,28 +2175,6 @@ namespace cl
         return reinterpret_cast<DispatchTable *>(dispatch)->table[pc[0]];
     }
 
-    static ALWAYSINLINE Value binary_operator_receiver_for_action(
-        OperatorStepAction action, Value operand0, Value operand1)
-    {
-        if(unlikely(operator_step_action_is_reflected(action)))
-        {
-            return operand1;
-        }
-        assert(action == OperatorStepAction::CallBinary);
-        return operand0;
-    }
-
-    static ALWAYSINLINE Value binary_operator_argument_for_action(
-        OperatorStepAction action, Value operand0, Value operand1)
-    {
-        if(unlikely(operator_step_action_is_reflected(action)))
-        {
-            return operand0;
-        }
-        assert(action == OperatorStepAction::CallBinary);
-        return operand1;
-    }
-
     static ALWAYSINLINE void
     resolve_operator_pending_exception(ThreadState *thread, Value *&fp,
                                        const uint8_t *&pc,
@@ -2222,12 +2201,27 @@ namespace cl
         setup_binary_operator_continuation_prefix(fp, prefix_reg, table_id,
                                                   descriptor.resume_index,
                                                   operand0, operand1);
-        int32_t first_arg_reg = setup_binary_operator_call_args(
-            fp, prefix_reg, descriptor.action, operand0, operand1);
-
-        Value self = entry.has_self ? binary_operator_receiver_for_action(
-                                          descriptor.action, operand0, operand1)
-                                    : Value::not_present();
+        bool reflected = operator_step_action_is_reflected(descriptor.action);
+        int32_t first_arg_reg = prefix_reg - 4;
+        Value self = Value::not_present();
+        if(unlikely(reflected))
+        {
+            fp[first_arg_reg] = operand1;
+            fp[first_arg_reg - 1] = operand0;
+            if(likely(entry.has_self))
+            {
+                self = operand1;
+            }
+        }
+        else
+        {
+            fp[first_arg_reg] = operand0;
+            fp[first_arg_reg - 1] = operand1;
+            if(likely(entry.has_self))
+            {
+                self = operand0;
+            }
+        }
         first_arg_reg =
             prepare_method_call_argument_slots(fp, first_arg_reg, 1, self);
 
@@ -2239,39 +2233,104 @@ namespace cl
             entry.n_args, continuation_instr_len, entry.adaptation);
     }
 
+    static ALWAYSINLINE void enter_cached_binary_operator_python_function(
+        ThreadState *thread, Value *&fp, const uint8_t *&pc,
+        CodeObject *&code_object, const OperatorInlineCache &entry,
+        OperatorDispatchTableId table_id, Value operand0, Value operand1,
+        const uint8_t *continuation_pc)
+    {
+        assert(entry.function != nullptr);
+        assert(entry.n_args == 1 || entry.n_args == 2);
+        assert(entry.resume_index != UINT32_MAX);
+
+        int32_t prefix_reg = code_object->get_first_free_arg_encoded_reg();
+        setup_binary_operator_continuation_prefix(
+            fp, prefix_reg, table_id, entry.resume_index, operand0, operand1);
+        int32_t first_arg_reg = prefix_reg - 4;
+        Value self = Value::not_present();
+        if(unlikely(entry.reflected_python_call))
+        {
+            fp[first_arg_reg] = operand1;
+            fp[first_arg_reg - 1] = operand0;
+            if(likely(entry.has_self))
+            {
+                self = operand1;
+            }
+        }
+        else
+        {
+            fp[first_arg_reg] = operand0;
+            fp[first_arg_reg - 1] = operand1;
+            if(likely(entry.has_self))
+            {
+                self = operand0;
+            }
+        }
+        first_arg_reg =
+            prepare_method_call_argument_slots(fp, first_arg_reg, 1, self);
+
+        assert(continuation_pc >= pc);
+        uint32_t continuation_instr_len = uint32_t(continuation_pc - pc);
+        enter_function_frame_from_positional_args(
+            thread, fp, pc, code_object,
+            TValue<Function>::from_oop(entry.function), first_arg_reg,
+            entry.n_args, continuation_instr_len, entry.adaptation);
+    }
+
+    static ALWAYSINLINE void install_operator_cache_if_cacheable(
+        OperatorInlineCache *cache, const OperatorWalkDescriptor &descriptor)
+    {
+        if(cache != nullptr &&
+           descriptor.cache_entry.operand_lookup_validity_cells[0] != nullptr)
+        {
+            *cache = descriptor.cache_entry;
+        }
+    }
+
     static ALWAYSINLINE DispatchTableEntry dispatch_binary_operator_walk_result(
         ThreadState *thread, Value *&fp, const uint8_t *&pc, void *dispatch,
         CodeObject *&code_object, Value &accumulator,
         OperatorDispatchTableId table_id, Value operand0, Value operand1,
         const OperatorWalkDescriptor &descriptor,
-        const uint8_t *continuation_pc, const uint8_t *next_pc)
+        const uint8_t *continuation_pc, const uint8_t *next_pc,
+        OperatorInlineCache *cache)
     {
         switch(descriptor.status)
         {
             case OperatorWalkStatus::CallPythonFunction:
+                install_operator_cache_if_cacheable(cache, descriptor);
                 enter_binary_operator_python_function(
                     thread, fp, pc, code_object, descriptor, table_id, operand0,
                     operand1, continuation_pc);
                 return dispatch_entry_for_pc(dispatch, pc);
 
             case OperatorWalkStatus::CallTrustedHandler:
-                assert(descriptor.cache_entry.handler.arity ==
-                       TrustedHandlerArity::Binary);
-                accumulator = descriptor.cache_entry.handler.binary(
-                    thread,
-                    binary_operator_receiver_for_action(descriptor.action,
-                                                        operand0, operand1),
-                    binary_operator_argument_for_action(descriptor.action,
-                                                        operand0, operand1));
-                assert(!accumulator.is_not_implemented_singleton());
-                if(unlikely(accumulator.is_exception_marker()))
                 {
-                    resolve_operator_pending_exception(thread, fp, pc,
-                                                       code_object);
+                    assert(descriptor.cache_entry.handler.arity ==
+                           TrustedHandlerArity::Binary);
+                    install_operator_cache_if_cacheable(cache, descriptor);
+                    bool reflected =
+                        operator_step_action_is_reflected(descriptor.action);
+                    if(unlikely(reflected))
+                    {
+                        accumulator = descriptor.cache_entry.handler.binary(
+                            thread, operand1, operand0);
+                    }
+                    else
+                    {
+                        accumulator = descriptor.cache_entry.handler.binary(
+                            thread, operand0, operand1);
+                    }
+                    assert(!accumulator.is_not_implemented_singleton());
+                    if(unlikely(accumulator.is_exception_marker()))
+                    {
+                        resolve_operator_pending_exception(thread, fp, pc,
+                                                           code_object);
+                        return dispatch_entry_for_pc(dispatch, pc);
+                    }
+                    pc = next_pc;
                     return dispatch_entry_for_pc(dispatch, pc);
                 }
-                pc = next_pc;
-                return dispatch_entry_for_pc(dispatch, pc);
 
             case OperatorWalkStatus::NativeResult:
                 accumulator = descriptor.result;
@@ -2291,13 +2350,14 @@ namespace cl
         ThreadState *thread, Value *&fp, const uint8_t *&pc, void *dispatch,
         CodeObject *&code_object, Value &accumulator,
         OperatorDispatchTableId table_id, Value operand0, Value operand1,
-        const uint8_t *continuation_pc, const uint8_t *next_pc)
+        const uint8_t *continuation_pc, const uint8_t *next_pc,
+        OperatorInlineCache *cache)
     {
         OperatorWalkDescriptor descriptor =
             walk_operator_table(thread, table_id, 0, operand0, operand1);
         return dispatch_binary_operator_walk_result(
             thread, fp, pc, dispatch, code_object, accumulator, table_id,
-            operand0, operand1, descriptor, continuation_pc, next_pc);
+            operand0, operand1, descriptor, continuation_pc, next_pc, cache);
     }
 
     static ALWAYSINLINE DispatchTableEntry
@@ -2320,7 +2380,7 @@ namespace cl
             thread, table_id, resume_index, operand0, operand1);
         return dispatch_binary_operator_walk_result(
             thread, fp, pc, dispatch, code_object, accumulator, table_id,
-            operand0, operand1, descriptor, continuation_pc, next_pc);
+            operand0, operand1, descriptor, continuation_pc, next_pc, nullptr);
     }
 
     enum class AttributeLoadPlanStatus : uint8_t
@@ -3672,9 +3732,48 @@ namespace cl
         COMPLETE();
     }
 
+    NOINLINE static INTERP_CC Value op_test_equal_operator_dispatch(PARAMS)
+    {
+        START(4);
+        int8_t reg = pc[1];
+        uint8_t cache_idx = pc[2];
+        Value a = fp[reg];
+        Value b = accumulator;
+        OperatorInlineCache &cache = code_object->operator_caches[cache_idx];
+        if(likely(cache.matches_reflectable_binary(a, b)))
+        {
+            if(cache.handler.arity == TrustedHandlerArity::Binary)
+            {
+                accumulator = cache.handler.binary(thread, a, b);
+                assert(!accumulator.is_not_implemented_singleton());
+                if(unlikely(accumulator.is_exception_marker()))
+                {
+                    MUSTTAIL return propagate_pending_exception(ARGS);
+                }
+                COMPLETE();
+            }
+            if(likely(cache.function != nullptr))
+            {
+                enter_cached_binary_operator_python_function(
+                    thread, fp, pc, code_object, cache,
+                    OperatorDispatchTableId::CompareEq, a, b, pc + 3);
+                auto *next_dispatch_fun =
+                    reinterpret_cast<DispatchTable *>(dispatch)->table[pc[0]];
+                MUSTTAIL return next_dispatch_fun(ARGS);
+            }
+        }
+
+        DispatchTableEntry next_dispatch_fun =
+            dispatch_binary_operator_from_main(
+                thread, fp, pc, dispatch, code_object, accumulator,
+                OperatorDispatchTableId::CompareEq, a, b, pc + 3, pc + 4,
+                &cache);
+        MUSTTAIL return next_dispatch_fun(ARGS);
+    }
+
     static INTERP_CC Value op_test_equal(PARAMS)
     {
-        START(3);
+        START(4);
         int8_t reg = pc[1];
         Value a = fp[reg];
         Value b = accumulator;
@@ -3687,12 +3786,7 @@ namespace cl
             accumulator = (difference == 0) ? Value::True() : Value::False();
             COMPLETE();
         }
-
-        DispatchTableEntry next_dispatch_fun =
-            dispatch_binary_operator_from_main(
-                thread, fp, pc, dispatch, code_object, accumulator,
-                OperatorDispatchTableId::CompareEq, a, b, pc + 2, pc + 3);
-        MUSTTAIL return next_dispatch_fun(ARGS);
+        MUSTTAIL return op_test_equal_operator_dispatch(ARGS);
     }
 
     static INTERP_CC Value op_test_not_equal(PARAMS)

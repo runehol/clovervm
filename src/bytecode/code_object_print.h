@@ -815,6 +815,8 @@ template <> struct fmt::formatter<cl::CodeObject>
             case cl::Bytecode::TestEqual:
                 format_to(out, " ");
                 disassemble_reg(code_obj, out, pc++);
+                format_to(out, ", ");
+                disassemble_operator_cache(code_obj, out, pc++);
                 assert(cl::Bytecode(code_obj.code[pc]) ==
                        cl::Bytecode::CheckOperatorNotImplemented);
                 ++pc;
