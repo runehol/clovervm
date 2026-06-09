@@ -55,10 +55,10 @@ namespace cl
             ValidityCell *operand1_lookup_validity_cell);
     };
 
-    OperatorWalkDescriptor walk_operator_table(ThreadState *thread,
-                                               OperatorDispatchTableId table_id,
-                                               uint32_t start_index,
-                                               Value operand0, Value operand1);
+    OperatorWalkDescriptor
+    walk_operator_table(ThreadState *thread, OperatorDispatchTableId table_id,
+                        uint32_t start_index, OperatorCacheability cacheability,
+                        Value operand0, Value operand1);
 
 }  // namespace cl
 

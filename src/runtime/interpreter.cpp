@@ -2369,8 +2369,9 @@ namespace cl
             }
         }
 
-        OperatorWalkDescriptor descriptor =
-            walk_operator_table(thread, table_id, 0, operand0, operand1);
+        OperatorWalkDescriptor descriptor = walk_operator_table(
+            thread, table_id, 0, OperatorCacheability::CacheableMaybeReflected,
+            operand0, operand1);
         return dispatch_binary_operator_walk_result(
             thread, fp, pc, dispatch, code_object, accumulator, table_id,
             operand0, operand1, descriptor, continuation_pc, next_pc, &cache);
@@ -2393,7 +2394,8 @@ namespace cl
                                                    operand1);
 
         OperatorWalkDescriptor descriptor = walk_operator_table(
-            thread, table_id, resume_index, operand0, operand1);
+            thread, table_id, resume_index, OperatorCacheability::Uncacheable,
+            operand0, operand1);
         return dispatch_binary_operator_walk_result(
             thread, fp, pc, dispatch, code_object, accumulator, table_id,
             operand0, operand1, descriptor, continuation_pc, next_pc, nullptr);

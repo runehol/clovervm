@@ -35,6 +35,13 @@ namespace cl
         IfRichComparisonReflectedPriority,
     };
 
+    enum class OperatorCacheability
+    {
+        Uncacheable,
+        CacheableDirectOnly,
+        CacheableMaybeReflected,
+    };
+
     enum class OperatorDispatchTableId : uint32_t
     {
         CompareEq,

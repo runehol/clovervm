@@ -16,7 +16,6 @@ namespace cl
 
         static ALWAYSINLINE ShapeKey from_value(Value value)
         {
-            value.assert_not_vm_sentinel();
             if(value.is_ptr())
             {
                 Shape *shape = value.get_ptr<Object>()->get_shape();

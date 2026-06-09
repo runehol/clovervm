@@ -131,10 +131,10 @@ namespace cl
         __builtin_unreachable();
     }
 
-    OperatorWalkDescriptor walk_operator_table(ThreadState *thread,
-                                               OperatorDispatchTableId table_id,
-                                               uint32_t start_index,
-                                               Value operand0, Value operand1)
+    OperatorWalkDescriptor
+    walk_operator_table(ThreadState *thread, OperatorDispatchTableId table_id,
+                        uint32_t start_index, OperatorCacheability cacheability,
+                        Value operand0, Value operand1)
     {
         VirtualMachine *vm = thread->get_machine();
         const OperatorDispatchTable &table =
@@ -241,12 +241,17 @@ namespace cl
 
             ValidityCell *operand0_lookup_validity_cell = nullptr;
             ValidityCell *operand1_lookup_validity_cell = nullptr;
-            if(start_index == 0)
+            if(cacheability != OperatorCacheability::Uncacheable)
             {
                 operand0_lookup_validity_cell =
                     operator_lookup_validity_cell_for_operand(thread, operand0);
-                operand1_lookup_validity_cell =
-                    operator_lookup_validity_cell_for_operand(thread, operand1);
+                if(cacheability ==
+                   OperatorCacheability::CacheableMaybeReflected)
+                {
+                    operand1_lookup_validity_cell =
+                        operator_lookup_validity_cell_for_operand(thread,
+                                                                  operand1);
+                }
             }
 
             if(handler.arity == TrustedHandlerArity::Binary)

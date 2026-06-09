@@ -331,8 +331,10 @@ namespace cl
             cache.reflected_python_call = reflected_python_call;
             cache.adaptation = adaptation;
             cache.has_self = has_self;
-            cache.populate_optional_binary_lookup_validity_cells(
-                operand0_lookup_validity_cell, operand1_lookup_validity_cell);
+            cache.operand_lookup_validity_cells[0] =
+                operand0_lookup_validity_cell;
+            cache.operand_lookup_validity_cells[1] =
+                operand1_lookup_validity_cell;
             return cache;
         }
 
@@ -346,8 +348,10 @@ namespace cl
             cache.populate_ternary_shapes(
                 operand0_shape_key, operand1_shape_key, operand2_shape_key);
             cache.handler = handler;
-            cache.populate_optional_binary_lookup_validity_cells(
-                operand0_lookup_validity_cell, operand1_lookup_validity_cell);
+            cache.operand_lookup_validity_cells[0] =
+                operand0_lookup_validity_cell;
+            cache.operand_lookup_validity_cells[1] =
+                operand1_lookup_validity_cell;
             return cache;
         }
 
@@ -369,22 +373,6 @@ namespace cl
         }
 
     private:
-        void populate_optional_binary_lookup_validity_cells(
-            ValidityCell *operand0_lookup_validity_cell,
-            ValidityCell *operand1_lookup_validity_cell)
-        {
-            if(operand0_lookup_validity_cell == nullptr)
-            {
-                assert(operand1_lookup_validity_cell == nullptr);
-                return;
-            }
-            assert(operand1_lookup_validity_cell != nullptr);
-            populate_operand_lookup_validity_cell(
-                0, operand0_lookup_validity_cell);
-            populate_operand_lookup_validity_cell(
-                1, operand1_lookup_validity_cell);
-        }
-
         ALWAYSINLINE bool
         operand_lookup_validity_cell_matches(uint8_t operand_index) const
         {
