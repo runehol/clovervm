@@ -10,6 +10,7 @@
 #include "runtime/thread_state.h"
 #include "runtime/virtual_machine.h"
 #include <algorithm>
+#include <cassert>
 #include <iterator>
 
 namespace cl
@@ -179,12 +180,12 @@ namespace cl
         return Value::None();
     }
 
-    static TrustedHandler
-    resolve_trusted_list_getitem_handler(VirtualMachine *vm,
-                                         ShapeKey container_key,
-                                         ShapeKey key_key, ShapeKey unused)
+    static TrustedHandler resolve_trusted_list_getitem_handler(
+        VirtualMachine *vm, ShapeKey container_key, ShapeKey key_key,
+        ShapeKey unused, TrustedHandlerOperandOrder order)
     {
         (void)unused;
+        assert(order == TrustedHandlerOperandOrder::Normal);
         if(vm->shape_for_key(container_key)->get_class() != vm->list_class())
         {
             return TrustedHandler::none();
@@ -206,12 +207,12 @@ namespace cl
         return TrustedHandler::none();
     }
 
-    static TrustedHandler
-    resolve_trusted_list_setitem_handler(VirtualMachine *vm,
-                                         ShapeKey container_key,
-                                         ShapeKey key_key, ShapeKey unused)
+    static TrustedHandler resolve_trusted_list_setitem_handler(
+        VirtualMachine *vm, ShapeKey container_key, ShapeKey key_key,
+        ShapeKey unused, TrustedHandlerOperandOrder order)
     {
         (void)unused;
+        assert(order == TrustedHandlerOperandOrder::Normal);
         if(vm->shape_for_key(container_key)->get_class() == vm->list_class() &&
            key_key == ShapeKey::from_value(Value::from_smi(0)))
         {
@@ -221,12 +222,12 @@ namespace cl
         return TrustedHandler::none();
     }
 
-    static TrustedHandler
-    resolve_trusted_list_delitem_handler(VirtualMachine *vm,
-                                         ShapeKey container_key,
-                                         ShapeKey key_key, ShapeKey unused)
+    static TrustedHandler resolve_trusted_list_delitem_handler(
+        VirtualMachine *vm, ShapeKey container_key, ShapeKey key_key,
+        ShapeKey unused, TrustedHandlerOperandOrder order)
     {
         (void)unused;
+        assert(order == TrustedHandlerOperandOrder::Normal);
         if(vm->shape_for_key(container_key)->get_class() == vm->list_class() &&
            key_key == ShapeKey::from_value(Value::from_smi(0)))
         {

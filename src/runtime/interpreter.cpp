@@ -2199,18 +2199,8 @@ namespace cl
                     assert(descriptor.cache_entry.handler.arity ==
                            TrustedHandlerArity::Binary);
                     install_operator_cache_if_cacheable(cache, descriptor);
-                    bool reflected =
-                        operator_step_action_is_reflected(descriptor.action);
-                    if(unlikely(reflected))
-                    {
-                        accumulator = descriptor.cache_entry.handler.binary(
-                            thread, operand1, operand0);
-                    }
-                    else
-                    {
-                        accumulator = descriptor.cache_entry.handler.binary(
-                            thread, operand0, operand1);
-                    }
+                    accumulator = descriptor.cache_entry.handler.binary(
+                        thread, operand0, operand1);
                     assert(!accumulator.is_not_implemented_singleton());
                     if(unlikely(accumulator.is_exception_marker()))
                     {
@@ -2983,7 +2973,8 @@ namespace cl
             {
                 TrustedHandler resolved_handler =
                     target_code_object->trusted_handler_resolver(
-                        vm, receiver_shape_key, key_shape_key, ShapeKey{});
+                        vm, receiver_shape_key, key_shape_key, ShapeKey{},
+                        TrustedHandlerOperandOrder::Normal);
                 if(resolved_handler.arity == TrustedHandlerArity::Binary)
                 {
                     handler = resolved_handler;
@@ -3150,7 +3141,8 @@ namespace cl
             {
                 TrustedHandler resolved_handler =
                     target_code_object->trusted_handler_resolver(
-                        vm, receiver_shape_key, key_shape_key, value_shape_key);
+                        vm, receiver_shape_key, key_shape_key, value_shape_key,
+                        TrustedHandlerOperandOrder::Normal);
                 if(resolved_handler.arity == TrustedHandlerArity::Ternary)
                 {
                     handler = resolved_handler;
@@ -3319,7 +3311,8 @@ namespace cl
             {
                 TrustedHandler resolved_handler =
                     target_code_object->trusted_handler_resolver(
-                        vm, receiver_shape_key, key_shape_key, ShapeKey{});
+                        vm, receiver_shape_key, key_shape_key, ShapeKey{},
+                        TrustedHandlerOperandOrder::Normal);
                 if(resolved_handler.arity == TrustedHandlerArity::Binary)
                 {
                     handler = resolved_handler;

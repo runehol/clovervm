@@ -1751,6 +1751,36 @@ TEST(Interpreter, operator_eq_dispatch_trusted_handler_cache)
     ASSERT_NE(nullptr, cache.operand_lookup_validity_cells[1]);
 }
 
+TEST(Interpreter, operator_eq_dispatch_reflected_float_trusted_cache_hit)
+{
+    test::VmTestContext test_context;
+
+    EXPECT_EQ(Value::from_smi(11),
+              test_context.run_file(L"def eq(left, right):\n"
+                                    L"    return left == right\n"
+                                    L"result = 0\n"
+                                    L"if eq(1, 1.0):\n"
+                                    L"    result += 10\n"
+                                    L"if eq(1, 1.0):\n"
+                                    L"    result += 1\n"
+                                    L"result\n"));
+}
+
+TEST(Interpreter, operator_lt_dispatch_reflected_float_trusted_cache_hit)
+{
+    test::VmTestContext test_context;
+
+    EXPECT_EQ(Value::from_smi(0),
+              test_context.run_file(L"def lt(left, right):\n"
+                                    L"    return left < right\n"
+                                    L"result = 0\n"
+                                    L"if lt(2, 1.0):\n"
+                                    L"    result += 10\n"
+                                    L"if lt(2, 1.0):\n"
+                                    L"    result += 1\n"
+                                    L"result\n"));
+}
+
 TEST(Interpreter, operator_eq_dispatch_reloads_after_notimplemented)
 {
     test::VmTestContext test_context;

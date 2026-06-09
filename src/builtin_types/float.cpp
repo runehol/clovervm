@@ -276,9 +276,10 @@ namespace cl
     }
 
     template <typename Operator>
-    static TrustedHandler resolve_trusted_float_binary_resolver(
-        VirtualMachine *vm, ShapeKey operand0_key, ShapeKey operand1_key,
-        ShapeKey unused)
+    static TrustedHandler
+    resolve_trusted_float_binary_handler(VirtualMachine *vm,
+                                         ShapeKey operand0_key,
+                                         ShapeKey operand1_key, ShapeKey unused)
     {
         (void)unused;
 
@@ -305,6 +306,20 @@ namespace cl
         return TrustedHandler::none();
     }
 
+    template <typename NormalOperator, typename ReflectedOperator>
+    static TrustedHandler resolve_trusted_float_binary_resolver(
+        VirtualMachine *vm, ShapeKey operand0_key, ShapeKey operand1_key,
+        ShapeKey operand2_key, TrustedHandlerOperandOrder order)
+    {
+        if(order == TrustedHandlerOperandOrder::Reflected)
+        {
+            return resolve_trusted_float_binary_handler<ReflectedOperator>(
+                vm, operand0_key, operand1_key, operand2_key);
+        }
+        return resolve_trusted_float_binary_handler<NormalOperator>(
+            vm, operand0_key, operand1_key, operand2_key);
+    }
+
     BuiltinClassDefinition make_float_class(VirtualMachine *vm)
     {
         static constexpr NativeLayoutId native_layout_ids[] = {
@@ -328,65 +343,77 @@ namespace cl
                 builtin_intrinsic_method(
                     L"__eq__", native_float_binary_operator<FloatEqOperator>,
                     L"Return self == value."),
-                resolve_trusted_float_binary_resolver<FloatEqOperator>),
+                resolve_trusted_float_binary_resolver<FloatEqOperator,
+                                                      FloatEqOperator>),
             with_trusted_handler_resolver(
                 builtin_intrinsic_method(
                     L"__ne__", native_float_binary_operator<FloatNeOperator>,
                     L"Return self != value."),
-                resolve_trusted_float_binary_resolver<FloatNeOperator>),
+                resolve_trusted_float_binary_resolver<FloatNeOperator,
+                                                      FloatNeOperator>),
             with_trusted_handler_resolver(
                 builtin_intrinsic_method(
                     L"__add__", native_float_binary_operator<FloatAddOperator>,
                     L"Return self + value."),
-                resolve_trusted_float_binary_resolver<FloatAddOperator>),
+                resolve_trusted_float_binary_resolver<FloatAddOperator,
+                                                      FloatAddOperator>),
             with_trusted_handler_resolver(
                 builtin_intrinsic_method(
                     L"__radd__",
                     native_float_binary_operator<FloatRAddOperator>,
                     L"Return value + self."),
-                resolve_trusted_float_binary_resolver<FloatRAddOperator>),
+                resolve_trusted_float_binary_resolver<FloatRAddOperator,
+                                                      FloatAddOperator>),
             with_trusted_handler_resolver(
                 builtin_intrinsic_method(
                     L"__sub__", native_float_binary_operator<FloatSubOperator>,
                     L"Return self - value."),
-                resolve_trusted_float_binary_resolver<FloatSubOperator>),
+                resolve_trusted_float_binary_resolver<FloatSubOperator,
+                                                      FloatRSubOperator>),
             with_trusted_handler_resolver(
                 builtin_intrinsic_method(
                     L"__rsub__",
                     native_float_binary_operator<FloatRSubOperator>,
                     L"Return value - self."),
-                resolve_trusted_float_binary_resolver<FloatRSubOperator>),
+                resolve_trusted_float_binary_resolver<FloatRSubOperator,
+                                                      FloatSubOperator>),
             with_trusted_handler_resolver(
                 builtin_intrinsic_method(
                     L"__mul__", native_float_binary_operator<FloatMulOperator>,
                     L"Return self * value."),
-                resolve_trusted_float_binary_resolver<FloatMulOperator>),
+                resolve_trusted_float_binary_resolver<FloatMulOperator,
+                                                      FloatMulOperator>),
             with_trusted_handler_resolver(
                 builtin_intrinsic_method(
                     L"__rmul__",
                     native_float_binary_operator<FloatRMulOperator>,
                     L"Return value * self."),
-                resolve_trusted_float_binary_resolver<FloatRMulOperator>),
+                resolve_trusted_float_binary_resolver<FloatRMulOperator,
+                                                      FloatMulOperator>),
             with_trusted_handler_resolver(
                 builtin_intrinsic_method(
                     L"__lt__", native_float_binary_operator<FloatLtOperator>,
                     L"Return self < value."),
-                resolve_trusted_float_binary_resolver<FloatLtOperator>),
+                resolve_trusted_float_binary_resolver<FloatLtOperator,
+                                                      FloatGtOperator>),
             with_trusted_handler_resolver(
                 builtin_intrinsic_method(
                     L"__le__", native_float_binary_operator<FloatLeOperator>,
                     L"Return self <= value."),
-                resolve_trusted_float_binary_resolver<FloatLeOperator>),
+                resolve_trusted_float_binary_resolver<FloatLeOperator,
+                                                      FloatGeOperator>),
             with_trusted_handler_resolver(
                 builtin_intrinsic_method(
                     L"__gt__", native_float_binary_operator<FloatGtOperator>,
                     L"Return self > value."),
-                resolve_trusted_float_binary_resolver<FloatGtOperator>),
+                resolve_trusted_float_binary_resolver<FloatGtOperator,
+                                                      FloatLtOperator>),
             with_trusted_handler_resolver(
                 builtin_intrinsic_method(
                     L"__ge__", native_float_binary_operator<FloatGeOperator>,
                     L"Return self >= value."),
-                resolve_trusted_float_binary_resolver<FloatGeOperator>),
+                resolve_trusted_float_binary_resolver<FloatGeOperator,
+                                                      FloatLeOperator>),
         };
         unwrap_bootstrap_expected(
             vm,

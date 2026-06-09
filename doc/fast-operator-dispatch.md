@@ -277,17 +277,25 @@ struct TrustedHandler
     };
 };
 
+enum class TrustedHandlerOperandOrder
+{
+    Normal,
+    Reflected,
+};
+
 using TrustedHandlerResolver = TrustedHandler (*)(
     VirtualMachine *, ShapeKey operand0_key, ShapeKey operand1_key,
-    ShapeKey operand2_key);
+    ShapeKey operand2_key, TrustedHandlerOperandOrder selected_order);
 ```
 
 The selected builtin code object or VM method metadata may carry a resolver.
 The miss path calls the resolver only after special-method lookup and ordinary
 call validation have selected the method. The resolver must prove the native
 handler's preconditions from the selected method plus operand shape keys.
-Resolvers receive shape keys in the opcode's semantic operand order. Reflected
-lookup order must be normalized before resolver entry; a trusted handler itself
+Resolvers receive shape keys in the opcode's semantic operand order.
+`selected_order` tells the resolver whether the selected Python method was the
+normal method or the reflected/converse method. The resolver uses that to return
+a trusted handler normalized to semantic operand order; a trusted handler itself
 does not carry a reflected-call bit.
 
 ## Continuation Opcode

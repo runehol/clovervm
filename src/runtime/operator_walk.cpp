@@ -70,6 +70,14 @@ namespace cl
         return operator_step_action_is_reflected(action);
     }
 
+    static TrustedHandlerOperandOrder
+    trusted_handler_operand_order_for(OperatorOperandOrder order)
+    {
+        return order == OperatorOperandOrder::Reflected
+                   ? TrustedHandlerOperandOrder::Reflected
+                   : TrustedHandlerOperandOrder::Normal;
+    }
+
     static ClassObject *class_of_operand(ThreadState *thread, Value operand)
     {
         return thread->class_of_value(operand);
@@ -245,17 +253,12 @@ namespace cl
                         if(target_code_object->trusted_handler_resolver !=
                            nullptr)
                         {
-                            ShapeKey selected_operand0_shape_key =
-                                reflected ? operand1_shape_key
-                                          : operand0_shape_key;
-                            ShapeKey selected_operand1_shape_key =
-                                reflected ? operand0_shape_key
-                                          : operand1_shape_key;
                             TrustedHandler resolved_handler =
                                 target_code_object->trusted_handler_resolver(
-                                    vm, selected_operand0_shape_key,
-                                    selected_operand1_shape_key,
-                                    operand2_shape_key);
+                                    vm, operand0_shape_key, operand1_shape_key,
+                                    operand2_shape_key,
+                                    trusted_handler_operand_order_for(
+                                        operand_order));
                             if(!resolved_handler.is_none())
                             {
                                 handler = resolved_handler;

@@ -185,9 +185,15 @@ namespace cl
         bool is_none() const { return arity == TrustedHandlerArity::None; }
     };
 
-    using TrustedHandlerResolver = TrustedHandler (*)(VirtualMachine *,
-                                                      ShapeKey, ShapeKey,
-                                                      ShapeKey);
+    enum class TrustedHandlerOperandOrder
+    {
+        Normal,
+        Reflected,
+    };
+
+    using TrustedHandlerResolver =
+        TrustedHandler (*)(VirtualMachine *, ShapeKey, ShapeKey, ShapeKey,
+                           TrustedHandlerOperandOrder);
 
     union NativeFunctionTarget
     {

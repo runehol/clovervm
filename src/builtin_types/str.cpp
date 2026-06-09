@@ -12,6 +12,7 @@
 #include "runtime/thread_state.h"
 #include "runtime/virtual_machine.h"
 #include <algorithm>
+#include <cassert>
 #include <cwctype>
 #include <iterator>
 
@@ -286,8 +287,8 @@ namespace cl
 
     template <typename Operator>
     static TrustedHandler
-    resolve_trusted_str_str_resolver(VirtualMachine *vm, ShapeKey operand0_key,
-                                     ShapeKey operand1_key, ShapeKey unused)
+    resolve_trusted_str_str_handler(VirtualMachine *vm, ShapeKey operand0_key,
+                                    ShapeKey operand1_key, ShapeKey unused)
     {
         (void)unused;
 
@@ -298,6 +299,21 @@ namespace cl
                 trusted_str_str_operator<Operator>);
         }
         return TrustedHandler::none();
+    }
+
+    template <typename NormalOperator, typename ReflectedOperator>
+    static TrustedHandler
+    resolve_trusted_str_str_resolver(VirtualMachine *vm, ShapeKey operand0_key,
+                                     ShapeKey operand1_key, ShapeKey unused,
+                                     TrustedHandlerOperandOrder order)
+    {
+        if(order == TrustedHandlerOperandOrder::Reflected)
+        {
+            return resolve_trusted_str_str_handler<ReflectedOperator>(
+                vm, operand0_key, operand1_key, unused);
+        }
+        return resolve_trusted_str_str_handler<NormalOperator>(
+            vm, operand0_key, operand1_key, unused);
     }
 
     static Value require_str_receiver(Value self, const wchar_t *method_name)
@@ -400,12 +416,12 @@ namespace cl
             .raw_value();
     }
 
-    static TrustedHandler
-    resolve_trusted_str_getitem_handler(VirtualMachine *vm,
-                                        ShapeKey container_key,
-                                        ShapeKey key_key, ShapeKey unused)
+    static TrustedHandler resolve_trusted_str_getitem_handler(
+        VirtualMachine *vm, ShapeKey container_key, ShapeKey key_key,
+        ShapeKey unused, TrustedHandlerOperandOrder order)
     {
         (void)unused;
+        assert(order == TrustedHandlerOperandOrder::Normal);
         if(vm->shape_for_key(container_key)->get_class() != vm->str_class())
         {
             return TrustedHandler::none();
@@ -904,37 +920,38 @@ namespace cl
             with_trusted_handler_resolver(
                 builtin_intrinsic_method(L"__add__", native_str_add,
                                          L"Return self + value."),
-                resolve_trusted_str_str_resolver<StrAddOperator>),
+                resolve_trusted_str_str_resolver<StrAddOperator,
+                                                 StrAddOperator>),
             with_trusted_handler_resolver(
                 builtin_intrinsic_method(
                     L"__eq__", native_str_compare_operator<StrEqOperator>,
                     L"Return self == value."),
-                resolve_trusted_str_str_resolver<StrEqOperator>),
+                resolve_trusted_str_str_resolver<StrEqOperator, StrEqOperator>),
             with_trusted_handler_resolver(
                 builtin_intrinsic_method(
                     L"__ne__", native_str_compare_operator<StrNeOperator>,
                     L"Return self != value."),
-                resolve_trusted_str_str_resolver<StrNeOperator>),
+                resolve_trusted_str_str_resolver<StrNeOperator, StrNeOperator>),
             with_trusted_handler_resolver(
                 builtin_intrinsic_method(
                     L"__lt__", native_str_compare_operator<StrLtOperator>,
                     L"Return self < value."),
-                resolve_trusted_str_str_resolver<StrLtOperator>),
+                resolve_trusted_str_str_resolver<StrLtOperator, StrGtOperator>),
             with_trusted_handler_resolver(
                 builtin_intrinsic_method(
                     L"__le__", native_str_compare_operator<StrLeOperator>,
                     L"Return self <= value."),
-                resolve_trusted_str_str_resolver<StrLeOperator>),
+                resolve_trusted_str_str_resolver<StrLeOperator, StrGeOperator>),
             with_trusted_handler_resolver(
                 builtin_intrinsic_method(
                     L"__gt__", native_str_compare_operator<StrGtOperator>,
                     L"Return self > value."),
-                resolve_trusted_str_str_resolver<StrGtOperator>),
+                resolve_trusted_str_str_resolver<StrGtOperator, StrLtOperator>),
             with_trusted_handler_resolver(
                 builtin_intrinsic_method(
                     L"__ge__", native_str_compare_operator<StrGeOperator>,
                     L"Return self >= value."),
-                resolve_trusted_str_str_resolver<StrGeOperator>),
+                resolve_trusted_str_str_resolver<StrGeOperator, StrLeOperator>),
             with_trusted_handler_resolver(
                 builtin_intrinsic_method(L"__getitem__", native_str_getitem,
                                          L"Return self[index]."),
