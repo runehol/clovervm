@@ -1147,7 +1147,7 @@ namespace cl
         return remainder;
     }
 
-    NOINLINE static INTERP_CC Value op_int_div_numeric(PARAMS)
+    NOINLINE static INTERP_CC Value op_floordiv(PARAMS)
     {
         START_BINARY_REG_ACC();
 
@@ -1186,7 +1186,7 @@ namespace cl
         COMPLETE();
     }
 
-    NOINLINE static INTERP_CC Value op_int_div_smi_numeric(PARAMS)
+    NOINLINE static INTERP_CC Value op_floordiv_smi(PARAMS)
     {
         START_BINARY_ACC_SMI();
 
@@ -1223,7 +1223,7 @@ namespace cl
         COMPLETE();
     }
 
-    NOINLINE static INTERP_CC Value op_mod_numeric(PARAMS)
+    NOINLINE static INTERP_CC Value op_mod(PARAMS)
     {
         START_BINARY_REG_ACC();
 
@@ -1266,7 +1266,7 @@ namespace cl
         COMPLETE();
     }
 
-    NOINLINE static INTERP_CC Value op_mod_smi_numeric(PARAMS)
+    NOINLINE static INTERP_CC Value op_mod_smi(PARAMS)
     {
         START_BINARY_ACC_SMI();
 
@@ -1307,7 +1307,7 @@ namespace cl
         COMPLETE();
     }
 
-    NOINLINE static INTERP_CC Value op_add_float_arithmetic(PARAMS)
+    NOINLINE static INTERP_CC Value op_add_float(PARAMS)
     {
         START_BINARY_REG_ACC();
 
@@ -1324,7 +1324,7 @@ namespace cl
         COMPLETE();
     }
 
-    NOINLINE static INTERP_CC Value op_add_smi_float_arithmetic(PARAMS)
+    NOINLINE static INTERP_CC Value op_add_smi_float(PARAMS)
     {
         START_BINARY_ACC_SMI();
 
@@ -1340,7 +1340,7 @@ namespace cl
         COMPLETE();
     }
 
-    NOINLINE static INTERP_CC Value op_sub_float_arithmetic(PARAMS)
+    NOINLINE static INTERP_CC Value op_sub_float(PARAMS)
     {
         START_BINARY_REG_ACC();
 
@@ -1357,7 +1357,7 @@ namespace cl
         COMPLETE();
     }
 
-    NOINLINE static INTERP_CC Value op_sub_smi_float_arithmetic(PARAMS)
+    NOINLINE static INTERP_CC Value op_sub_smi_float(PARAMS)
     {
         START_BINARY_ACC_SMI();
 
@@ -1373,7 +1373,7 @@ namespace cl
         COMPLETE();
     }
 
-    NOINLINE static INTERP_CC Value op_mul_float_arithmetic(PARAMS)
+    NOINLINE static INTERP_CC Value op_mul_float(PARAMS)
     {
         START_BINARY_REG_ACC();
 
@@ -1390,7 +1390,7 @@ namespace cl
         COMPLETE();
     }
 
-    NOINLINE static INTERP_CC Value op_mul_smi_float_arithmetic(PARAMS)
+    NOINLINE static INTERP_CC Value op_mul_smi_float(PARAMS)
     {
         START_BINARY_ACC_SMI();
 
@@ -1406,7 +1406,7 @@ namespace cl
         COMPLETE();
     }
 
-    NOINLINE static INTERP_CC Value op_div(PARAMS)
+    NOINLINE static INTERP_CC Value op_truediv(PARAMS)
     {
         START_BINARY_REG_ACC();
 
@@ -3408,7 +3408,7 @@ namespace cl
         START_BINARY_ACC_SMI();
         if(unlikely(A_NOT_SMI()))
         {
-            MUSTTAIL return op_add_smi_float_arithmetic(ARGS);
+            MUSTTAIL return op_add_smi_float(ARGS);
         }
         if(unlikely(__builtin_add_overflow(a.as.integer, b.as.integer,
                                            &accumulator.as.integer)))
@@ -3425,7 +3425,7 @@ namespace cl
         START_BINARY_REG_ACC();
         if(unlikely(A_OR_B_NOT_SMI()))
         {
-            MUSTTAIL return op_add_float_arithmetic(ARGS);
+            MUSTTAIL return op_add_float(ARGS);
         }
         if(unlikely(__builtin_add_overflow(a.as.integer, b.as.integer,
                                            &accumulator.as.integer)))
@@ -3442,7 +3442,7 @@ namespace cl
         START_BINARY_ACC_SMI();
         if(unlikely(A_NOT_SMI()))
         {
-            MUSTTAIL return op_sub_smi_float_arithmetic(ARGS);
+            MUSTTAIL return op_sub_smi_float(ARGS);
         }
         if(unlikely(__builtin_sub_overflow(a.as.integer, b.as.integer,
                                            &accumulator.as.integer)))
@@ -3459,7 +3459,7 @@ namespace cl
         START_BINARY_REG_ACC();
         if(unlikely(A_OR_B_NOT_SMI()))
         {
-            MUSTTAIL return op_sub_float_arithmetic(ARGS);
+            MUSTTAIL return op_sub_float(ARGS);
         }
         if(unlikely(__builtin_sub_overflow(a.as.integer, b.as.integer,
                                            &accumulator.as.integer)))
@@ -3476,7 +3476,7 @@ namespace cl
         START_BINARY_REG_ACC();
         if(unlikely(A_OR_B_NOT_SMI()))
         {
-            MUSTTAIL return op_mul_float_arithmetic(ARGS);
+            MUSTTAIL return op_mul_float(ARGS);
         }
         Value dest;
         if(unlikely(__builtin_smulll_overflow(a.as.integer, b.get_smi(),
@@ -3494,7 +3494,7 @@ namespace cl
         START_BINARY_ACC_SMI();
         if(unlikely(A_NOT_SMI()))
         {
-            MUSTTAIL return op_mul_smi_float_arithmetic(ARGS);
+            MUSTTAIL return op_mul_smi_float(ARGS);
         }
         Value dest;
         if(unlikely(__builtin_smulll_overflow(a.as.integer, b.get_smi(),
@@ -3507,7 +3507,7 @@ namespace cl
         COMPLETE();
     }
 
-    static INTERP_CC Value op_left_shift(PARAMS)
+    static INTERP_CC Value op_lshift(PARAMS)
     {
         START_BINARY_REG_ACC();
         if(unlikely(A_OR_B_NOT_SMI()))
@@ -3531,7 +3531,7 @@ namespace cl
         COMPLETE();
     }
 
-    static INTERP_CC Value op_left_shift_smi(PARAMS)
+    static INTERP_CC Value op_lshift_smi(PARAMS)
     {
         START_BINARY_ACC_SMI();
         if(unlikely(A_NOT_SMI()))
@@ -3554,7 +3554,7 @@ namespace cl
         COMPLETE();
     }
 
-    static INTERP_CC Value op_right_shift(PARAMS)
+    static INTERP_CC Value op_rshift(PARAMS)
     {
         START_BINARY_REG_ACC();
         if(unlikely(A_OR_B_NOT_SMI()))
@@ -3571,7 +3571,7 @@ namespace cl
         COMPLETE();
     }
 
-    static INTERP_CC Value op_right_shift_smi(PARAMS)
+    static INTERP_CC Value op_rshift_smi(PARAMS)
     {
         START_BINARY_ACC_SMI();
         if(unlikely(A_NOT_SMI()))
@@ -3587,7 +3587,7 @@ namespace cl
         COMPLETE();
     }
 
-    static INTERP_CC Value op_test_is(PARAMS)
+    static INTERP_CC Value op_is(PARAMS)
     {
         START_BINARY_REG_ACC();
 
@@ -3596,7 +3596,7 @@ namespace cl
         COMPLETE();
     }
 
-    static INTERP_CC Value op_test_is_not(PARAMS)
+    static INTERP_CC Value op_is_not(PARAMS)
     {
         START_BINARY_REG_ACC();
         accumulator =
@@ -3604,7 +3604,7 @@ namespace cl
         COMPLETE();
     }
 
-    NOINLINE static INTERP_CC Value op_test_less_operator_dispatch(PARAMS)
+    NOINLINE static INTERP_CC Value op_lt_dispatch(PARAMS)
     {
         int8_t reg = pc[1];
         uint8_t cache_idx = pc[2];
@@ -3618,7 +3618,7 @@ namespace cl
         MUSTTAIL return next_dispatch_fun(ARGS);
     }
 
-    NOINLINE static INTERP_CC Value op_test_less_equal_operator_dispatch(PARAMS)
+    NOINLINE static INTERP_CC Value op_le_dispatch(PARAMS)
     {
         int8_t reg = pc[1];
         uint8_t cache_idx = pc[2];
@@ -3632,8 +3632,7 @@ namespace cl
         MUSTTAIL return next_dispatch_fun(ARGS);
     }
 
-    NOINLINE static INTERP_CC Value
-    op_test_greater_equal_operator_dispatch(PARAMS)
+    NOINLINE static INTERP_CC Value op_ge_dispatch(PARAMS)
     {
         int8_t reg = pc[1];
         uint8_t cache_idx = pc[2];
@@ -3647,7 +3646,7 @@ namespace cl
         MUSTTAIL return next_dispatch_fun(ARGS);
     }
 
-    NOINLINE static INTERP_CC Value op_test_greater_operator_dispatch(PARAMS)
+    NOINLINE static INTERP_CC Value op_gt_dispatch(PARAMS)
     {
         int8_t reg = pc[1];
         uint8_t cache_idx = pc[2];
@@ -3661,7 +3660,7 @@ namespace cl
         MUSTTAIL return next_dispatch_fun(ARGS);
     }
 
-    NOINLINE static INTERP_CC Value op_test_equal_operator_dispatch(PARAMS)
+    NOINLINE static INTERP_CC Value op_eq_dispatch(PARAMS)
     {
         int8_t reg = pc[1];
         uint8_t cache_idx = pc[2];
@@ -3675,7 +3674,7 @@ namespace cl
         MUSTTAIL return next_dispatch_fun(ARGS);
     }
 
-    NOINLINE static INTERP_CC Value op_test_not_equal_operator_dispatch(PARAMS)
+    NOINLINE static INTERP_CC Value op_ne_dispatch(PARAMS)
     {
         int8_t reg = pc[1];
         uint8_t cache_idx = pc[2];
@@ -3689,7 +3688,7 @@ namespace cl
         MUSTTAIL return next_dispatch_fun(ARGS);
     }
 
-    static INTERP_CC Value op_test_less(PARAMS)
+    static INTERP_CC Value op_lt(PARAMS)
     {
         START(4);
         int8_t reg = pc[1];
@@ -3703,10 +3702,10 @@ namespace cl
                               : Value::False();
             COMPLETE();
         }
-        MUSTTAIL return op_test_less_operator_dispatch(ARGS);
+        MUSTTAIL return op_lt_dispatch(ARGS);
     }
 
-    static INTERP_CC Value op_test_less_equal(PARAMS)
+    static INTERP_CC Value op_le(PARAMS)
     {
         START(4);
         int8_t reg = pc[1];
@@ -3720,10 +3719,10 @@ namespace cl
                               : Value::False();
             COMPLETE();
         }
-        MUSTTAIL return op_test_less_equal_operator_dispatch(ARGS);
+        MUSTTAIL return op_le_dispatch(ARGS);
     }
 
-    static INTERP_CC Value op_test_greater_equal(PARAMS)
+    static INTERP_CC Value op_ge(PARAMS)
     {
         START(4);
         int8_t reg = pc[1];
@@ -3737,10 +3736,10 @@ namespace cl
                               : Value::False();
             COMPLETE();
         }
-        MUSTTAIL return op_test_greater_equal_operator_dispatch(ARGS);
+        MUSTTAIL return op_ge_dispatch(ARGS);
     }
 
-    static INTERP_CC Value op_test_greater(PARAMS)
+    static INTERP_CC Value op_gt(PARAMS)
     {
         START(4);
         int8_t reg = pc[1];
@@ -3754,10 +3753,10 @@ namespace cl
                               : Value::False();
             COMPLETE();
         }
-        MUSTTAIL return op_test_greater_operator_dispatch(ARGS);
+        MUSTTAIL return op_gt_dispatch(ARGS);
     }
 
-    static INTERP_CC Value op_test_equal(PARAMS)
+    static INTERP_CC Value op_eq(PARAMS)
     {
         START(4);
         int8_t reg = pc[1];
@@ -3772,10 +3771,10 @@ namespace cl
             accumulator = (difference == 0) ? Value::True() : Value::False();
             COMPLETE();
         }
-        MUSTTAIL return op_test_equal_operator_dispatch(ARGS);
+        MUSTTAIL return op_eq_dispatch(ARGS);
     }
 
-    static INTERP_CC Value op_test_not_equal(PARAMS)
+    static INTERP_CC Value op_ne(PARAMS)
     {
         START(4);
         int8_t reg = pc[1];
@@ -3790,7 +3789,7 @@ namespace cl
             accumulator = (difference != 0) ? Value::True() : Value::False();
             COMPLETE();
         }
-        MUSTTAIL return op_test_not_equal_operator_dispatch(ARGS);
+        MUSTTAIL return op_ne_dispatch(ARGS);
     }
 
     NOINLINE static INTERP_CC Value op_check_operator_not_implemented(PARAMS)
@@ -5390,24 +5389,24 @@ namespace cl
         SET_TABLE_ENTRY(Bytecode::SubSmi, op_sub_smi);
         SET_TABLE_ENTRY(Bytecode::Mul, op_mul);
         SET_TABLE_ENTRY(Bytecode::MulSmi, op_mul_smi);
-        SET_TABLE_ENTRY(Bytecode::Div, op_div);
-        SET_TABLE_ENTRY(Bytecode::IntDiv, op_int_div_numeric);
-        SET_TABLE_ENTRY(Bytecode::IntDivSmi, op_int_div_smi_numeric);
-        SET_TABLE_ENTRY(Bytecode::Mod, op_mod_numeric);
-        SET_TABLE_ENTRY(Bytecode::ModSmi, op_mod_smi_numeric);
-        SET_TABLE_ENTRY(Bytecode::LeftShift, op_left_shift);
-        SET_TABLE_ENTRY(Bytecode::LeftShiftSmi, op_left_shift_smi);
-        SET_TABLE_ENTRY(Bytecode::RightShift, op_right_shift);
-        SET_TABLE_ENTRY(Bytecode::RightShiftSmi, op_right_shift_smi);
+        SET_TABLE_ENTRY(Bytecode::Div, op_truediv);
+        SET_TABLE_ENTRY(Bytecode::IntDiv, op_floordiv);
+        SET_TABLE_ENTRY(Bytecode::IntDivSmi, op_floordiv_smi);
+        SET_TABLE_ENTRY(Bytecode::Mod, op_mod);
+        SET_TABLE_ENTRY(Bytecode::ModSmi, op_mod_smi);
+        SET_TABLE_ENTRY(Bytecode::LeftShift, op_lshift);
+        SET_TABLE_ENTRY(Bytecode::LeftShiftSmi, op_lshift_smi);
+        SET_TABLE_ENTRY(Bytecode::RightShift, op_rshift);
+        SET_TABLE_ENTRY(Bytecode::RightShiftSmi, op_rshift_smi);
 
-        SET_TABLE_ENTRY(Bytecode::TestIs, op_test_is);
-        SET_TABLE_ENTRY(Bytecode::TestIsNot, op_test_is_not);
-        SET_TABLE_ENTRY(Bytecode::TestEqual, op_test_equal);
-        SET_TABLE_ENTRY(Bytecode::TestNotEqual, op_test_not_equal);
-        SET_TABLE_ENTRY(Bytecode::TestLess, op_test_less);
-        SET_TABLE_ENTRY(Bytecode::TestLessEqual, op_test_less_equal);
-        SET_TABLE_ENTRY(Bytecode::TestGreaterEqual, op_test_greater_equal);
-        SET_TABLE_ENTRY(Bytecode::TestGreater, op_test_greater);
+        SET_TABLE_ENTRY(Bytecode::TestIs, op_is);
+        SET_TABLE_ENTRY(Bytecode::TestIsNot, op_is_not);
+        SET_TABLE_ENTRY(Bytecode::TestEqual, op_eq);
+        SET_TABLE_ENTRY(Bytecode::TestNotEqual, op_ne);
+        SET_TABLE_ENTRY(Bytecode::TestLess, op_lt);
+        SET_TABLE_ENTRY(Bytecode::TestLessEqual, op_le);
+        SET_TABLE_ENTRY(Bytecode::TestGreaterEqual, op_ge);
+        SET_TABLE_ENTRY(Bytecode::TestGreater, op_gt);
         SET_TABLE_ENTRY(Bytecode::CheckOperatorNotImplemented,
                         op_check_operator_not_implemented);
 
