@@ -55,14 +55,6 @@ namespace cl
 
     using DispatchTableEntry = Value(INTERP_CC *)(PARAMS);
 
-    [[maybe_unused]] static ALWAYSINLINE DispatchTableEntry
-    dispatch_binary_operator_from_main(
-        ThreadState *thread, Value *&fp, const uint8_t *&pc, void *dispatch,
-        CodeObject *&code_object, Value &accumulator,
-        OperatorDispatchTableId table_id, Value operand0, Value operand1,
-        const uint8_t *continuation_pc, const uint8_t *next_pc,
-        OperatorInlineCache *cache);
-
     static ALWAYSINLINE DispatchTableEntry
     dispatch_binary_operator_from_continuation(
         ThreadState *thread, Value *&fp, const uint8_t *&pc, void *dispatch,
@@ -2345,19 +2337,43 @@ namespace cl
         __builtin_unreachable();
     }
 
-    [[maybe_unused]] static ALWAYSINLINE DispatchTableEntry
-    dispatch_binary_operator_from_main(
+    static ALWAYSINLINE DispatchTableEntry
+    dispatch_cached_reflectable_binary_operator(
         ThreadState *thread, Value *&fp, const uint8_t *&pc, void *dispatch,
         CodeObject *&code_object, Value &accumulator,
-        OperatorDispatchTableId table_id, Value operand0, Value operand1,
-        const uint8_t *continuation_pc, const uint8_t *next_pc,
-        OperatorInlineCache *cache)
+        OperatorDispatchTableId table_id, uint8_t cache_idx, Value operand0,
+        Value operand1, const uint8_t *continuation_pc, const uint8_t *next_pc)
     {
+        OperatorInlineCache &cache = code_object->operator_caches[cache_idx];
+        if(likely(cache.matches_reflectable_binary(operand0, operand1)))
+        {
+            if(cache.handler.arity == TrustedHandlerArity::Binary)
+            {
+                accumulator = cache.handler.binary(thread, operand0, operand1);
+                assert(!accumulator.is_not_implemented_singleton());
+                if(unlikely(accumulator.is_exception_marker()))
+                {
+                    resolve_operator_pending_exception(thread, fp, pc,
+                                                       code_object);
+                    return dispatch_entry_for_pc(dispatch, pc);
+                }
+                pc = next_pc;
+                return dispatch_entry_for_pc(dispatch, pc);
+            }
+            if(likely(cache.function != nullptr))
+            {
+                enter_cached_binary_operator_python_function(
+                    thread, fp, pc, code_object, cache, table_id, operand0,
+                    operand1, continuation_pc);
+                return dispatch_entry_for_pc(dispatch, pc);
+            }
+        }
+
         OperatorWalkDescriptor descriptor =
             walk_operator_table(thread, table_id, 0, operand0, operand1);
         return dispatch_binary_operator_walk_result(
             thread, fp, pc, dispatch, code_object, accumulator, table_id,
-            operand0, operand1, descriptor, continuation_pc, next_pc, cache);
+            operand0, operand1, descriptor, continuation_pc, next_pc, &cache);
     }
 
     static ALWAYSINLINE DispatchTableEntry
@@ -3734,40 +3750,15 @@ namespace cl
 
     NOINLINE static INTERP_CC Value op_test_equal_operator_dispatch(PARAMS)
     {
-        START(4);
         int8_t reg = pc[1];
         uint8_t cache_idx = pc[2];
         Value a = fp[reg];
         Value b = accumulator;
-        OperatorInlineCache &cache = code_object->operator_caches[cache_idx];
-        if(likely(cache.matches_reflectable_binary(a, b)))
-        {
-            if(cache.handler.arity == TrustedHandlerArity::Binary)
-            {
-                accumulator = cache.handler.binary(thread, a, b);
-                assert(!accumulator.is_not_implemented_singleton());
-                if(unlikely(accumulator.is_exception_marker()))
-                {
-                    MUSTTAIL return propagate_pending_exception(ARGS);
-                }
-                COMPLETE();
-            }
-            if(likely(cache.function != nullptr))
-            {
-                enter_cached_binary_operator_python_function(
-                    thread, fp, pc, code_object, cache,
-                    OperatorDispatchTableId::CompareEq, a, b, pc + 3);
-                auto *next_dispatch_fun =
-                    reinterpret_cast<DispatchTable *>(dispatch)->table[pc[0]];
-                MUSTTAIL return next_dispatch_fun(ARGS);
-            }
-        }
-
         DispatchTableEntry next_dispatch_fun =
-            dispatch_binary_operator_from_main(
+            dispatch_cached_reflectable_binary_operator(
                 thread, fp, pc, dispatch, code_object, accumulator,
-                OperatorDispatchTableId::CompareEq, a, b, pc + 3, pc + 4,
-                &cache);
+                OperatorDispatchTableId::CompareEq, cache_idx, a, b, pc + 3,
+                pc + 4);
         MUSTTAIL return next_dispatch_fun(ARGS);
     }
 
