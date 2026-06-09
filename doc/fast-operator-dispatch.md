@@ -52,10 +52,10 @@ protocol after the candidate that already ran.
 - Do not add deoptimization machinery.
 - Do not put the operator cache in front of existing direct inline-value fast
   paths such as SMI arithmetic.
-- Do not build polymorphic inline caches in the first implementation. Cache
-  entries should be shaped so bounded PICs can be added later.
-- Do not solve class construction, class subscription, context managers, or
-  arbitrary descriptor replay as part of the first operator-cache step.
+- Do not require polymorphic inline caches. Cache entries should be shaped so
+  bounded PICs can be added later.
+- Do not fold class construction, class subscription, context managers, or
+  arbitrary descriptor replay into the operator-cache design.
 
 ## Hot-Path Boundary
 
@@ -116,13 +116,13 @@ Validity cells must cover positive and negative dunder lookup results. They
 must be invalidated by mutations anywhere along the relevant MRO path, base/MRO
 changes, and descriptor-relevant class-entry changes. The contents-sensitive
 MRO validity machinery is the expected primitive. Unrelated class writes may
-invalidate hot operator caches in the first design; code that mutates classes
-on hot paths can pay the miss cost.
+invalidate hot operator caches; code that mutates classes on hot paths can pay
+the miss cost.
 
 ## Cache Shape
 
-The concrete cache shape should generalize the current `OperatorInlineCache`,
-not introduce a separate cache-kind enum. The cache arm is structural:
+The operator cache entry is structural rather than tagged by a separate
+cache-kind enum:
 
 - a missing required operand lookup validity cell means the entry is empty or
   unusable;
@@ -131,25 +131,20 @@ not introduce a separate cache-kind enum. The cache arm is structural:
 - a non-null `function` means the cache may replay the selected
   function-shaped dunder call.
 
-Current shape:
+Entry shape:
 
 ```cpp
-union OperatorMethodHandler
-{
-    UnaryHandler unary;
-    BinaryHandler binary;
-    TernaryHandler ternary;
-};
-
 struct OperatorInlineCache
 {
     ShapeKey operand_shape_keys[3];
     ValidityCell *operand_lookup_validity_cells[2];
-    OperatorMethodHandler handler;
+    TrustedHandler handler;
     Function *function;
     CodeObject *code_object;
     uint32_t n_args;
+    uint32_t resume_index;
     FunctionCallAdaptation adaptation;
+    bool reflected_python_call;
     bool has_self;
 };
 ```
@@ -157,7 +152,9 @@ struct OperatorInlineCache
 `operand_shape_keys` are always in the opcode's semantic operand order. For
 `receiver[key]`, operand0 is the receiver and operand1 is the key. For binary
 operators, operand0 and operand1 are the source operands, regardless of whether
-the selected dunder call is normal or reflected.
+the selected dunder call is normal or reflected. Unused operands store the
+shape key for `Value::not_present()`, so the same cache shape can represent
+unary, binary, and ternary operator sites.
 
 `operand_lookup_validity_cells` stores operand-side special-method lookup
 dependencies. Receiver-only protocols such as `__getitem__`, `__setitem__`, and
@@ -167,10 +164,19 @@ operand0 and operand1 lookup validity cells. This deliberately over-guards the
 selected table row: the cache represents the whole table decision from row `0`,
 not only the selected method lookup.
 
-The table walker only materializes operand lookup validity cells when it starts
-from row `0`. Continuation walks start after a Python candidate has already run,
-so their descriptors pass null operand validity cells and must not be installed
-into an inline cache.
+Cacheability is chosen by the opcode handler, not by the dispatch table:
+
+```text
+Uncacheable              install no entry
+CacheableDirectOnly      guard operand0's lookup validity cell
+CacheableMaybeReflected  guard operand0 and operand1 lookup validity cells
+```
+
+The primary opcode path may choose a cacheable mode when it starts the protocol
+from the beginning. A continuation path always uses `Uncacheable`, because a
+Python candidate has already run and the continuation has no cache object to
+update. Dispatch tables describe protocol order only; the same table can be
+walked from a cacheable primary opcode path or an uncacheable continuation path.
 
 For cached Python operator calls, the cache also needs immutable replay metadata
 for the primary opcode path: the resume table index and a `reflected_python_call`
@@ -183,9 +189,11 @@ reflected binary call: receiver = rhs, arg = lhs
 ```
 
 The same orientation bit lets the opcode write the cached Python call arguments.
-Live continuation state still does not live in the cache. The opcode writes the
-cached resume index, along with the saved operands, into the caller frame prefix
-immediately before entering the Python function.
+Trusted handler cache entries do not need this bit: the resolver returns a
+handler normalized to the opcode's semantic operand order. Live continuation
+state still does not live in the cache. The opcode writes the cached resume
+index, along with the saved operands, into the caller frame prefix immediately
+before entering the Python function.
 
 The intended execution tiers are:
 
@@ -215,16 +223,15 @@ A descriptor should represent:
 - binding shape for function-shaped calls;
 - cache blockers when the result cannot be replayed.
 
-The first cacheable Python-call implementation should require a normal
-function-shaped call plan: fixed positional arity, predictable receiver binding,
-and no descriptor or call adaptation that changes argument layout in a
-candidate-specific way. Odd cases such as staticmethod-shaped operator methods,
-varargs/default adaptation, or descriptor dispatch stay on the generic slow
-path until explicitly designed. They are not "missing" methods: a found
-non-cacheable candidate must be executed through a generic call path, or must
-raise if it is not callable, at the same protocol row where it was selected.
-If the generic call returns `NotImplemented`, the protocol continues from the
-next table row.
+Cacheable Python-call replay requires a normal function-shaped call plan: fixed
+positional arity, predictable receiver binding, and no descriptor or call
+adaptation that changes argument layout in a candidate-specific way. Odd cases
+such as staticmethod-shaped operator methods, varargs/default adaptation, or
+descriptor dispatch stay on the generic slow path until explicitly designed.
+They are not "missing" methods: a found non-cacheable candidate must be
+executed through a generic call path, or must raise if it is not callable, at the
+same protocol row where it was selected. If the generic call returns
+`NotImplemented`, the protocol continues from the next table row.
 
 Before entering a cached Python function, the opcode lays out a normal
 contiguous argument span. Cached dunder-call replay cannot depend on transient
@@ -258,7 +265,7 @@ enum class TrustedHandlerArity : uint8_t
     Ternary,
 };
 
-struct TrustedHandlerResolution
+struct TrustedHandler
 {
     TrustedHandlerArity arity = TrustedHandlerArity::None;
 
@@ -270,14 +277,18 @@ struct TrustedHandlerResolution
     };
 };
 
-using TrustedHandlerResolver = TrustedHandlerResolution (*)(
-    VirtualMachine *, ShapeKey, ShapeKey, ShapeKey);
+using TrustedHandlerResolver = TrustedHandler (*)(
+    VirtualMachine *, ShapeKey operand0_key, ShapeKey operand1_key,
+    ShapeKey operand2_key);
 ```
 
 The selected builtin code object or VM method metadata may carry a resolver.
 The miss path calls the resolver only after special-method lookup and ordinary
 call validation have selected the method. The resolver must prove the native
 handler's preconditions from the selected method plus operand shape keys.
+Resolvers receive shape keys in the opcode's semantic operand order. Reflected
+lookup order must be normalized before resolver entry; a trusted handler itself
+does not carry a reflected-call bit.
 
 ## Continuation Opcode
 
@@ -393,19 +404,10 @@ are immutable VM metadata. They may contain VM-local interned strings for dunder
 names; do not store ordinary collectable heap values in them.
 
 ```cpp
-enum class OperatorStepAction : uint8_t
-{
-    // ...
-};
-
-enum class OperatorStepApplicability : uint8_t
-{
-    // ...
-};
-
 struct OperatorDispatchTable
 {
-    OperatorStep steps[MaxSteps];
+    const OperatorStep *steps;
+    uint8_t n_steps;
 };
 
 struct OperatorStep
@@ -431,7 +433,11 @@ It should be call-layout oriented, not operator-family oriented. If arithmetic,
 comparison, and in-place candidates use the same lookup root and argument
 layout, they should use the same action.
 
-Useful initial actions:
+Reflected call actions use odd numeric values; non-reflected actions use even
+numeric values. Code that needs only call orientation may extract reflectedness
+from the action value instead of carrying a parallel enum through the cache.
+
+Action vocabulary:
 
 ```text
 CallUnary              lookup type(operand0).dunder_name; call args: operand0
@@ -448,7 +454,7 @@ RaiseOrdering          fallback: ordering TypeError
 `OperatorStepApplicability` answers whether the step is currently eligible.
 This keeps method elision and subtype-priority checks out of frame setup.
 
-Useful initial applicability cases:
+Applicability vocabulary:
 
 ```text
 Always                  fallback step; no method lookup
@@ -482,10 +488,12 @@ failed-applicability control flow inside each row action for compactness, for
 example `CallBinary("<name>", IfMethodFound, else +2 to fallback)`. If a row
 omits `else`, failed applicability falls through to the next row.
 
-Table operands are semantic protocol operands, not necessarily source operands.
-For example, `a in b` should compile to `Contains` with `operand0 = b` and
-`operand1 = a`, because the primary dunder name is `__contains__` and the
-protocol receiver is the container.
+Operator operands are semantic protocol operands, not necessarily source-text
+operands. For receiver-owned protocols, operand0 should be the protocol receiver.
+For ordinary binary operators, operand0 and operand1 are the source operands.
+For any future membership-specific cache, operand0 would be the container and
+operand1 the searched item, even though membership should not use the
+`NotImplemented` table/continuation mechanism.
 
 ## Table Inventory
 
@@ -843,57 +851,53 @@ executes the remaining protocol to completion. It may recompute lookups, call
 later candidates, raise, or return a result, but it must leave the cache state
 unchanged.
 
-For single-call protocols:
+For single-call protocols, a cacheable primary miss path:
 
-1. Run dunder lookup.
-2. Validate callable shape and call adaptation.
-3. Ask a trusted-handler resolver, if the selected method has one.
-4. Install either a trusted handler or a dunder-method-call replay plan.
+1. Runs dunder lookup.
+2. Validates callable shape and call adaptation.
+3. Asks a trusted-handler resolver, if the selected method has one.
+4. Installs either a trusted handler or a dunder-method-call replay plan.
 
-For multi-candidate and table-driven fallback protocols:
+For multi-candidate and table-driven fallback protocols, a cacheable primary
+miss path:
 
-1. Walk the relevant dispatch table from start index `0`. Cache installation is
-   only allowed for this initial primary-opcode walk. A nonzero start index
-   means execution is resuming from `CheckOperatorNotImplemented` after Python
-   code has already run, and no cache may be installed or updated.
-2. Recompute applicability and lookup results at each step.
-3. Prefer a complete trusted native handler when the current table state can be
-   collapsed under the operand shape guards.
-4. The first multi-candidate implementation is cacheless for Python candidates.
-   It still stops table walking at the first applicable Python-visible
-   candidate, writes the per-call continuation prefix into the caller frame
-   when entering a Python function, and enters the function with the paired
-   `CheckOperatorNotImplemented` byte as the return PC, but it does not install
-   a dunder-call replay plan for that table row. If the selected candidate is
-   found but not supported by the fast function-shaped entry path, the miss path
-   must use a generic call path or raise the ordinary call error at that row
-   instead of treating the method as absent. Generic calls that return
-   `NotImplemented` continue from the row after the selected candidate.
-5. Once any Python candidate has been called, the operation is committed to the
-   continuation path for the rest of that dynamic execution. A later candidate
-   reached after an earlier Python candidate returned `NotImplemented` must not
-   install or update an inline-cache entry; the continuation has no cache object
-   to update and must run to completion from saved operands and current lookups.
+1. Walks the relevant dispatch table from start index `0`.
+2. Recomputes applicability and lookup results at each step.
+3. Stops at the first applicable Python-visible candidate, native result, native
+   raise, or trusted handler.
+4. Installs a cache entry only when the selected descriptor contains all lookup
+   validity cells required by the opcode's `OperatorCacheability`.
 
-The initial `TestEqual` table cache supports both trusted handlers and cached
-function-shaped Python candidates. The miss path installs either payload only
-for row-`0` walks, detected by a non-null operand0 lookup validity cell.
-Continuation walks carry null operand validity cells and cannot update the
-inline cache.
+A selected candidate that is found but not supported by the fast
+function-shaped entry path is still a protocol candidate. The miss path must use
+a generic call path or raise the ordinary call error at that row instead of
+treating the method as absent. A generic call that returns `NotImplemented`
+continues from the row after the selected candidate.
+
+Once any Python candidate has been called, the operation is committed to the
+continuation path for the rest of that dynamic execution. A later candidate
+reached after an earlier Python candidate returned `NotImplemented` must not
+install or update an inline-cache entry; the continuation has no cache object to
+update and must run to completion from saved operands and current lookups.
 
 Trusted-handler table caching does not cache the table id, row index,
 `OperatorStepAction`, selected method read plan, or reflection bit. The opcode
-site already determines the table, and a trusted handler resolver must return a
-handler normalized to the opcode's physical operand order. A cached trusted
-binary handler therefore replays as `handler(thread, operand0, operand1)`.
+site determines the table, and a trusted handler resolver returns a handler
+normalized to the opcode's semantic operand order. A cached binary trusted
+handler therefore replays as `handler(thread, operand0, operand1)`.
 
-For binary table caches, validation deliberately over-approximates the table
-walk dependencies. A cache entry guards both operand shape keys and validity
-cells for both operand classes/MROs, because a table walk may have inspected
-either operand while checking applicability, reflected priority, skipped rows,
-or the selected method. If either operand's shape changes, or either
-operand-side validity cell is invalidated, the opcode misses and walks the
-table again from row `0`.
+Cached Python function calls do store the resume row and reflected-call bit,
+because a cached Python call must rebuild the same receiver/argument layout and
+must resume at the row after the cached candidate if it returns
+`NotImplemented`.
+
+For reflectable binary table caches, validation deliberately over-approximates
+the table-walk dependencies. A cache entry guards both operand shape keys and
+validity cells for both operand classes/MROs, because a table walk may have
+inspected either operand while checking applicability, reflected priority,
+skipped rows, or the selected method. If either operand's shape changes, or
+either operand-side validity cell is invalidated, the opcode misses and walks
+the table again from row `0`.
 
 Lookup, binding, and call-validation exceptions must not install cache entries.
 Once a row-`0` walk has selected a cacheable trusted handler or function-shaped
@@ -905,10 +909,12 @@ future executions with the same operand guards.
 
 - Should trusted handlers require exact builtin type guards, or can some use
   shape guards that imply the same dunder-method lookup semantics?
-- How much additional Python-candidate cache payload is needed beyond
-  `TestEqual`'s current function-shaped replay metadata as more operator tables
-  are added?
-- How much of binary, in-place, and comparison cache validation can share one
-  table walker without obscuring hot opcode paths?
+- What generic-call machinery is required for found special-method candidates
+  that are callable but not supported by fixed function-shaped replay?
+- How much of unary, binary, ternary, in-place, and comparison cache validation
+  can share one table walker without obscuring hot opcode paths?
+- What is the exact CPython-aligned implementation rule for
+  `IfArithmeticReflectedPriority`, including slot wrappers, Python dunders, and
+  inherited reflected methods?
 - Which odd callable shapes, if any, should be supported by cached Python
   dunder-call replay after the fixed-arity function-shaped path lands?
