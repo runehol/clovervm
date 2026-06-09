@@ -149,126 +149,139 @@ namespace cl
             const OperatorStep &step = table.step(uint8_t(index));
             uint32_t failed_applicability_index = index + 1 + step.else_skip;
 
-            if(step.action == OperatorStepAction::IdentityEq)
+            switch(step.action)
             {
-                assert(step.applicability == OperatorStepApplicability::Always);
-                return OperatorWalkDescriptor::native_result(
-                    operand0 == operand1 ? Value::True() : Value::False());
-            }
+                case OperatorStepAction::IdentityEq:
+                    assert(step.applicability ==
+                           OperatorStepApplicability::Always);
+                    return OperatorWalkDescriptor::native_result(
+                        operand0 == operand1 ? Value::True() : Value::False());
 
-            assert(step.action == OperatorStepAction::CallBinary ||
-                   step.action == OperatorStepAction::CallBinaryReflected);
-            assert(step.dunder_name != nullptr);
+                case OperatorStepAction::CallBinary:
+                case OperatorStepAction::CallBinaryReflected:
+                    {
+                        assert(step.dunder_name != nullptr);
 
-            bool reflected = operator_step_is_reflected(step.action);
-            OperatorOperandOrder operand_order =
-                reflected ? OperatorOperandOrder::Reflected
-                          : OperatorOperandOrder::Normal;
-            Value receiver = reflected ? operand1 : operand0;
+                        bool reflected =
+                            operator_step_is_reflected(step.action);
+                        OperatorOperandOrder operand_order =
+                            reflected ? OperatorOperandOrder::Reflected
+                                      : OperatorOperandOrder::Normal;
+                        Value receiver = reflected ? operand1 : operand0;
 
-            AttributeReadDescriptor method_descriptor =
-                AttributeReadDescriptor::not_found();
-            TValue<String> method_name =
-                TValue<String>::from_oop(step.dunder_name);
-            if(!resolve_applicable_operator_method(
-                   thread, step, receiver, operand0, operand1, method_name,
-                   method_descriptor))
-            {
-                index = failed_applicability_index;
-                continue;
-            }
+                        AttributeReadDescriptor method_descriptor =
+                            AttributeReadDescriptor::not_found();
+                        TValue<String> method_name =
+                            TValue<String>::from_oop(step.dunder_name);
+                        if(!resolve_applicable_operator_method(
+                               thread, step, receiver, operand0, operand1,
+                               method_name, method_descriptor))
+                        {
+                            index = failed_applicability_index;
+                            continue;
+                        }
 
-            Value callable;
-            Value self;
-            MethodCallTargetStatus target_status =
-                prepare_method_call_target_from_descriptor(
-                    receiver, method_descriptor, callable, self);
-            if(target_status ==
-               MethodCallTargetStatus::RequiresDescriptorDispatch)
-            {
-                return operator_walk_raise_type_error(
-                    thread,
-                    L"descriptor __get__ requires interpreter dispatch");
-            }
-            if(target_status == MethodCallTargetStatus::Missing)
-            {
-                assert(false &&
-                       "applicable operator method missing after selection");
-                __builtin_unreachable();
-            }
-            if(!callable.is_ptr())
-            {
-                return operator_walk_raise_type_error(
-                    thread, L"object is not callable");
-            }
+                        Value callable;
+                        Value self;
+                        MethodCallTargetStatus target_status =
+                            prepare_method_call_target_from_descriptor(
+                                receiver, method_descriptor, callable, self);
+                        if(target_status ==
+                           MethodCallTargetStatus::RequiresDescriptorDispatch)
+                        {
+                            return operator_walk_raise_type_error(
+                                thread, L"descriptor __get__ requires "
+                                        L"interpreter dispatch");
+                        }
+                        if(target_status == MethodCallTargetStatus::Missing)
+                        {
+                            assert(false && "applicable operator method "
+                                            "missing after selection");
+                            __builtin_unreachable();
+                        }
+                        if(!callable.is_ptr())
+                        {
+                            return operator_walk_raise_type_error(
+                                thread, L"object is not callable");
+                        }
 
-            Object *callable_object = callable.get_ptr();
-            if(callable_object->native_layout_id() != NativeLayoutId::Function)
-            {
-                return operator_walk_raise_type_error(
-                    thread, L"object is not callable");
-            }
+                        Object *callable_object = callable.get_ptr();
+                        if(callable_object->native_layout_id() !=
+                           NativeLayoutId::Function)
+                        {
+                            return operator_walk_raise_type_error(
+                                thread, L"object is not callable");
+                        }
 
-            TValue<Function> function =
-                TValue<Function>::from_value_assumed(callable);
-            bool has_self = !self.is_not_present();
-            uint32_t n_args = 1 + (has_self ? 1 : 0);
-            if(!function.extract()->accepts_positional_only_call_arity(n_args))
-            {
-                return operator_walk_raise_type_error(
-                    thread, L"wrong number of arguments");
-            }
+                        TValue<Function> function =
+                            TValue<Function>::from_value_assumed(callable);
+                        bool has_self = !self.is_not_present();
+                        uint32_t n_args = 1 + (has_self ? 1 : 0);
+                        if(!function.extract()
+                                ->accepts_positional_only_call_arity(n_args))
+                        {
+                            return operator_walk_raise_type_error(
+                                thread, L"wrong number of arguments");
+                        }
 
-            FunctionCallAdaptation adaptation =
-                function_call_adaptation_for_positional_call(function, n_args);
-            TrustedHandler handler;
-            CodeObject *target_code_object =
-                function.extract()->code_object.extract();
-            if(target_code_object->trusted_handler_resolver != nullptr)
-            {
-                ShapeKey selected_operand0_shape_key =
-                    reflected ? operand1_shape_key : operand0_shape_key;
-                ShapeKey selected_operand1_shape_key =
-                    reflected ? operand0_shape_key : operand1_shape_key;
-                TrustedHandler resolved_handler =
-                    target_code_object->trusted_handler_resolver(
-                        vm, selected_operand0_shape_key,
-                        selected_operand1_shape_key, operand2_shape_key);
-                if(!resolved_handler.is_none())
-                {
-                    handler = resolved_handler;
-                }
-            }
+                        FunctionCallAdaptation adaptation =
+                            function_call_adaptation_for_positional_call(
+                                function, n_args);
+                        TrustedHandler handler;
+                        CodeObject *target_code_object =
+                            function.extract()->code_object.extract();
+                        if(target_code_object->trusted_handler_resolver !=
+                           nullptr)
+                        {
+                            ShapeKey selected_operand0_shape_key =
+                                reflected ? operand1_shape_key
+                                          : operand0_shape_key;
+                            ShapeKey selected_operand1_shape_key =
+                                reflected ? operand0_shape_key
+                                          : operand1_shape_key;
+                            TrustedHandler resolved_handler =
+                                target_code_object->trusted_handler_resolver(
+                                    vm, selected_operand0_shape_key,
+                                    selected_operand1_shape_key,
+                                    operand2_shape_key);
+                            if(!resolved_handler.is_none())
+                            {
+                                handler = resolved_handler;
+                            }
+                        }
 
-            ValidityCell *operand0_lookup_validity_cell = nullptr;
-            ValidityCell *operand1_lookup_validity_cell = nullptr;
-            if(cacheability != OperatorCacheability::Uncacheable)
-            {
-                operand0_lookup_validity_cell =
-                    operator_lookup_validity_cell_for_operand(thread, operand0);
-                if(cacheability ==
-                   OperatorCacheability::CacheableMaybeReflected)
-                {
-                    operand1_lookup_validity_cell =
-                        operator_lookup_validity_cell_for_operand(thread,
-                                                                  operand1);
-                }
-            }
+                        ValidityCell *operand0_lookup_validity_cell = nullptr;
+                        ValidityCell *operand1_lookup_validity_cell = nullptr;
+                        if(cacheability != OperatorCacheability::Uncacheable)
+                        {
+                            operand0_lookup_validity_cell =
+                                operator_lookup_validity_cell_for_operand(
+                                    thread, operand0);
+                            if(cacheability ==
+                               OperatorCacheability::CacheableMaybeReflected)
+                            {
+                                operand1_lookup_validity_cell =
+                                    operator_lookup_validity_cell_for_operand(
+                                        thread, operand1);
+                            }
+                        }
 
-            if(!handler.is_none())
-            {
-                return OperatorWalkDescriptor::call_trusted_handler(
-                    step.action, operand0_shape_key, operand1_shape_key,
-                    operand2_shape_key, handler, operand0_lookup_validity_cell,
-                    operand1_lookup_validity_cell);
-            }
-            else
-            {
-                return OperatorWalkDescriptor::call_python_function(
-                    step.action, index + 1, operand_order, operand0_shape_key,
-                    operand1_shape_key, operand2_shape_key, function, n_args,
-                    adaptation, has_self, operand0_lookup_validity_cell,
-                    operand1_lookup_validity_cell);
+                        if(!handler.is_none())
+                        {
+                            return OperatorWalkDescriptor::call_trusted_handler(
+                                step.action, operand0_shape_key,
+                                operand1_shape_key, operand2_shape_key, handler,
+                                operand0_lookup_validity_cell,
+                                operand1_lookup_validity_cell);
+                        }
+
+                        return OperatorWalkDescriptor::call_python_function(
+                            step.action, index + 1, operand_order,
+                            operand0_shape_key, operand1_shape_key,
+                            operand2_shape_key, function, n_args, adaptation,
+                            has_self, operand0_lookup_validity_cell,
+                            operand1_lookup_validity_cell);
+                    }
             }
         }
 
