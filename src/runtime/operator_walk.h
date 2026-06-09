@@ -58,7 +58,7 @@ namespace cl
     OperatorWalkDescriptor
     walk_operator_table(ThreadState *thread, OperatorDispatchTableId table_id,
                         uint32_t start_index, OperatorCacheability cacheability,
-                        Value operand0, Value operand1);
+                        Value operand0, Value operand1, Value operand2);
 
 }  // namespace cl
 

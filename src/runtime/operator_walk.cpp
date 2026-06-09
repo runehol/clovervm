@@ -134,13 +134,14 @@ namespace cl
     OperatorWalkDescriptor
     walk_operator_table(ThreadState *thread, OperatorDispatchTableId table_id,
                         uint32_t start_index, OperatorCacheability cacheability,
-                        Value operand0, Value operand1)
+                        Value operand0, Value operand1, Value operand2)
     {
         VirtualMachine *vm = thread->get_machine();
         const OperatorDispatchTable &table =
             vm->operator_dispatch_table(table_id);
         ShapeKey operand0_shape_key = ShapeKey::from_value(operand0);
         ShapeKey operand1_shape_key = ShapeKey::from_value(operand1);
+        ShapeKey operand2_shape_key = ShapeKey::from_value(operand2);
 
         uint32_t index = start_index;
         while(index < table.n_steps)
@@ -232,7 +233,7 @@ namespace cl
                 TrustedHandler resolved_handler =
                     target_code_object->trusted_handler_resolver(
                         vm, selected_operand0_shape_key,
-                        selected_operand1_shape_key, ShapeKey{});
+                        selected_operand1_shape_key, operand2_shape_key);
                 if(!resolved_handler.is_none())
                 {
                     handler = resolved_handler;
@@ -254,18 +255,18 @@ namespace cl
                 }
             }
 
-            if(handler.arity == TrustedHandlerArity::Binary)
+            if(!handler.is_none())
             {
                 return OperatorWalkDescriptor::call_trusted_handler(
                     step.action, operand0_shape_key, operand1_shape_key,
-                    ShapeKey{}, handler, operand0_lookup_validity_cell,
+                    operand2_shape_key, handler, operand0_lookup_validity_cell,
                     operand1_lookup_validity_cell);
             }
             else
             {
                 return OperatorWalkDescriptor::call_python_function(
                     step.action, index + 1, operand_order, operand0_shape_key,
-                    operand1_shape_key, ShapeKey{}, function, n_args,
+                    operand1_shape_key, operand2_shape_key, function, n_args,
                     adaptation, has_self, operand0_lookup_validity_cell,
                     operand1_lookup_validity_cell);
             }
