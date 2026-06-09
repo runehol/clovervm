@@ -5,6 +5,7 @@
 #include "builtin_types/tuple.h"
 #include "bytecode/code_object.h"
 #include "object_model/class_object.h"
+#include <cassert>
 #include <fmt/format.h>
 #include <fmt/xchar.h>
 
@@ -798,7 +799,6 @@ template <> struct fmt::formatter<cl::CodeObject>
             case cl::Bytecode::BitwiseOr:
             case cl::Bytecode::BitwiseAnd:
             case cl::Bytecode::BitwiseXor:
-            case cl::Bytecode::TestEqual:
             case cl::Bytecode::TestNotEqual:
             case cl::Bytecode::TestLess:
             case cl::Bytecode::TestLessEqual:
@@ -810,6 +810,14 @@ template <> struct fmt::formatter<cl::CodeObject>
             case cl::Bytecode::TestNotIn:
                 format_to(out, " ");
                 disassemble_reg(code_obj, out, pc++);
+                break;
+
+            case cl::Bytecode::TestEqual:
+                format_to(out, " ");
+                disassemble_reg(code_obj, out, pc++);
+                assert(cl::Bytecode(code_obj.code[pc]) ==
+                       cl::Bytecode::CheckOperatorNotImplemented);
+                ++pc;
                 break;
 
             case cl::Bytecode::AddSmi:

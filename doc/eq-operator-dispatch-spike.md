@@ -209,39 +209,39 @@ normal_first:
 
 ## Stage 8: Integrate `TestEqual`
 
-- [ ] Keep the existing inline immediate equality fast path for SMI/bool
+- [x] Keep the existing inline immediate equality fast path for SMI/bool
       values.
-- [ ] Route refcounted and mixed refcounted equality cases into the `CompareEq`
+- [x] Route refcounted and mixed refcounted equality cases into the `CompareEq`
       table dispatch.
-- [ ] Rely on trusted builtin handlers for float and string equality instead
+- [x] Rely on trusted builtin handlers for float and string equality instead
       of hardcoded `TestEqual` float/string branches.
-- [ ] Remove or narrow the legacy hardcoded refcounted equality helper once
+- [x] Remove or narrow the legacy hardcoded refcounted equality helper once
       `CompareEq` handles float/string cases.
-- [ ] Add or update a codegen emit helper for real `==` emission that emits
+- [x] Add or update a codegen emit helper for real `==` emission that emits
       both `TestEqual` and `CheckOperatorNotImplemented`.
-- [ ] Update bytecode printing so paired operator instructions hide the check
+- [x] Update bytecode printing so paired operator instructions hide the check
       byte in ordinary disassembly.
-- [ ] Add shared code object walking/instruction-length support for paired
-      operator opcodes.
-- [ ] Enable `TestEqual`'s paired-instruction length so it owns the following
+- [x] Update code object disassembly/walking so paired `TestEqual` consumes the
+      following check byte as one logical instruction.
+- [x] Enable `TestEqual`'s paired-instruction length so it owns the following
       check byte as one logical instruction once real `==` emission produces
       the pair.
-- [ ] Preserve the existing accumulator/register operand convention when
+- [x] Preserve the existing accumulator/register operand convention when
       mapping source operands into semantic `operand0` and `operand1`.
-- [ ] Return arbitrary rich-comparison results unchanged.
-- [ ] Fall back to identity only after both table branches return
+- [x] Return arbitrary rich-comparison results unchanged.
+- [x] Fall back to identity only after both table branches return
       `NotImplemented`.
 
 ## Stage 9: Verification
 
-- [ ] Add regression tests for bytecode printing/walking if the paired check
+- [x] Add regression tests for bytecode printing/walking if the paired check
       byte changes existing disassembly assumptions.
-- [ ] Add adversarial interpreter tests for mutation between comparison
+- [x] Add adversarial interpreter tests for mutation between comparison
       candidates.
-- [ ] Verify float and string equality reach `CompareEq` trusted handlers
+- [x] Verify float and string equality reach `CompareEq` trusted handlers
       rather than the old hardcoded equality helper.
-- [ ] Verify the continuation path does not install or update inline caches.
-- [ ] Confirm no Python-candidate operator cache entries are installed by the
+- [x] Verify the continuation path does not install or update inline caches.
+- [x] Confirm no Python-candidate operator cache entries are installed by the
       `__eq__` spike.
 
 ## Stage 10: Follow-Up Work

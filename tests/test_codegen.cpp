@@ -773,6 +773,30 @@ TEST(Codegen, comparison_reuses_local_register_operand)
     EXPECT_EQ(expected, actual);
 }
 
+TEST(Codegen, equality_emits_paired_operator_check_byte)
+{
+    const wchar_t *test_case = L"def eq(a, b):\n"
+                               "    return a == b\n";
+
+    std::string expected =
+        "Code object:\n"
+        "    0 CreateFunction c[0]\n"
+        "    2 StaGlobal c[1], module_global_mutation_ic[0]\n"
+        "    5 Return\n"
+        "Constant 0: Code object:\n"
+        "    0 Ldar p1\n"
+        "    2 TestEqual p0\n"
+        "    5 Return\n"
+        "    6 LdaNone\n"
+        "    7 Return\n"
+        "\n"
+        "Constant 1: \"eq\"\n";
+    std::string actual = bytecode_str_from_file(test_case);
+
+    EXPECT_EQ(expected, actual);
+    EXPECT_EQ(std::string::npos, actual.find("CheckOperatorNotImplemented"));
+}
+
 TEST(Codegen, assert_statement_uses_explicit_failure_path)
 {
     std::string expected = "Code object:\n"

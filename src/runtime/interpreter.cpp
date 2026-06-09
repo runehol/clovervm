@@ -1490,31 +1490,6 @@ namespace cl
         COMPLETE();
     }
 
-    NOINLINE static INTERP_CC Value op_test_equal_float_comparison(PARAMS)
-    {
-        START_BINARY_REG_ACC();
-
-        double left;
-        double right;
-        if(!try_get_float_or_smi_or_bool(a, &left) ||
-           !try_get_float_or_smi_or_bool(b, &right))
-        {
-            if(can_convert_to<String>(a) || can_convert_to<String>(b))
-            {
-                bool equal = can_convert_to<String>(a) &&
-                             can_convert_to<String>(b) &&
-                             string_eq(TValue<String>::from_value_assumed(a),
-                                       TValue<String>::from_value_assumed(b));
-                accumulator = equal ? Value::True() : Value::False();
-                COMPLETE();
-            }
-            MUSTTAIL return unsupported_comparison_error(ARGS);
-        }
-
-        accumulator = left == right ? Value::True() : Value::False();
-        COMPLETE();
-    }
-
     NOINLINE static INTERP_CC Value op_test_not_equal_float_comparison(PARAMS)
     {
         START_BINARY_REG_ACC();
@@ -3730,18 +3705,25 @@ namespace cl
 
     static INTERP_CC Value op_test_equal(PARAMS)
     {
-        START_BINARY_REG_ACC();
-        if(unlikely(A_OR_B_REFCOUNTED_PTR()))
+        START(3);
+        int8_t reg = pc[1];
+        Value a = fp[reg];
+        Value b = accumulator;
+        if(likely(!a.is_ptr() && !b.is_ptr()))
         {
-            MUSTTAIL return op_test_equal_float_comparison(ARGS);
+            // See if we have a bit difference after clearing the bit that
+            // promotes booleans to 0/1 integers.
+            uint64_t difference =
+                (a.as.integer ^ b.as.integer) & value_boolean_to_integer_mask;
+            accumulator = (difference == 0) ? Value::True() : Value::False();
+            COMPLETE();
         }
-        // see if we have a bit difference after we clear the bit that promotes
-        // booleans to 0/1 integers
-        uint64_t difference =
-            (a.as.integer ^ b.as.integer) & value_boolean_to_integer_mask;
-        accumulator = (difference == 0) ? Value::True() : Value::False();
 
-        COMPLETE();
+        DispatchTableEntry next_dispatch_fun =
+            dispatch_binary_operator_from_main(
+                thread, fp, pc, dispatch, code_object, accumulator,
+                OperatorDispatchTableId::CompareEq, a, b, pc + 2, pc + 3);
+        MUSTTAIL return next_dispatch_fun(ARGS);
     }
 
     static INTERP_CC Value op_test_not_equal(PARAMS)

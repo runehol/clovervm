@@ -1600,7 +1600,7 @@ TEST(Interpreter, arithmetic_reports_unsupported_operands)
                         L"unsupported operand type(s) for comparison");
 }
 
-TEST(Interpreter, DISABLED_operator_eq_spike_returns_non_bool_result_unchanged)
+TEST(Interpreter, operator_eq_dispatch_returns_non_bool_result_unchanged)
 {
     expect_string_result(L"class EqResult:\n"
                          L"    def __eq__(self, other):\n"
@@ -1609,22 +1609,25 @@ TEST(Interpreter, DISABLED_operator_eq_spike_returns_non_bool_result_unchanged)
                          L"sentinel");
 }
 
-TEST(Interpreter,
-     DISABLED_operator_eq_spike_identity_fallback_after_notimplemented)
+TEST(Interpreter, operator_eq_dispatch_identity_fallback_after_notimplemented)
 {
     test::VmTestContext test_context;
 
-    EXPECT_EQ(
-        Value::from_smi(10),
-        test_context.run_file(L"class EqResult:\n"
-                              L"    def __eq__(self, other):\n"
-                              L"        return NotImplemented\n"
-                              L"same = EqResult()\n"
-                              L"different = EqResult()\n"
-                              L"(same == same) * 10 + (same == different)\n"));
+    EXPECT_EQ(Value::from_smi(10),
+              test_context.run_file(L"class EqResult:\n"
+                                    L"    def __eq__(self, other):\n"
+                                    L"        return NotImplemented\n"
+                                    L"same = EqResult()\n"
+                                    L"different = EqResult()\n"
+                                    L"result = 0\n"
+                                    L"if same == same:\n"
+                                    L"    result += 10\n"
+                                    L"if same == different:\n"
+                                    L"    result += 1\n"
+                                    L"result\n"));
 }
 
-TEST(Interpreter, DISABLED_operator_eq_spike_same_exact_type_double_dispatch)
+TEST(Interpreter, operator_eq_dispatch_same_exact_type_double_dispatch)
 {
     test::VmTestContext test_context;
 
@@ -1638,7 +1641,7 @@ TEST(Interpreter, DISABLED_operator_eq_spike_same_exact_type_double_dispatch)
                                     L"EqResult.count\n"));
 }
 
-TEST(Interpreter, DISABLED_operator_eq_spike_right_subclass_reflected_priority)
+TEST(Interpreter, operator_eq_dispatch_right_subclass_reflected_priority)
 {
     test::VmTestContext test_context;
 
@@ -1652,7 +1655,7 @@ TEST(Interpreter, DISABLED_operator_eq_spike_right_subclass_reflected_priority)
                                     L"Base() == Derived()\n"));
 }
 
-TEST(Interpreter, DISABLED_operator_eq_spike_reloads_after_notimplemented)
+TEST(Interpreter, operator_eq_dispatch_reloads_after_notimplemented)
 {
     test::VmTestContext test_context;
 
@@ -1670,8 +1673,7 @@ TEST(Interpreter, DISABLED_operator_eq_spike_reloads_after_notimplemented)
                                     L"EqResult.count\n"));
 }
 
-TEST(Interpreter,
-     DISABLED_operator_eq_spike_found_non_callable_raises_call_error)
+TEST(Interpreter, operator_eq_dispatch_found_non_callable_raises_call_error)
 {
     expect_python_error(L"class EqResult:\n"
                         L"    __eq__ = 123\n"
@@ -1679,8 +1681,7 @@ TEST(Interpreter,
                         L"TypeError", L"object is not callable");
 }
 
-TEST(Interpreter,
-     DISABLED_operator_eq_spike_lookup_and_call_exceptions_propagate)
+TEST(Interpreter, DISABLED_operator_eq_dispatch_descriptor_lookup_exceptions)
 {
     expect_python_error(L"class RaisesFromLookup:\n"
                         L"    class Descriptor:\n"
@@ -1689,6 +1690,10 @@ TEST(Interpreter,
                         L"    __eq__ = Descriptor()\n"
                         L"RaisesFromLookup() == RaisesFromLookup()\n",
                         L"ValueError", L"");
+}
+
+TEST(Interpreter, operator_eq_dispatch_call_exceptions_propagate)
+{
     expect_python_error(L"class RaisesFromCall:\n"
                         L"    def __eq__(self, other):\n"
                         L"        raise ValueError\n"
@@ -1696,7 +1701,7 @@ TEST(Interpreter,
                         L"ValueError", L"");
 }
 
-TEST(Interpreter, DISABLED_operator_eq_spike_exceptions_do_not_install_cache)
+TEST(Interpreter, operator_eq_dispatch_exceptions_do_not_install_cache)
 {
     test::VmTestContext test_context;
     ThreadState::ActivationScope activation_scope(test_context.thread());

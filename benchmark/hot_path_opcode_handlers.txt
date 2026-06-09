@@ -78,7 +78,6 @@ op_store_attr
 op_sub
 op_sub_smi
 op_test_equal
-op_test_equal_float_comparison
 op_test_greater
 op_test_greater_float_comparison
 op_test_greater_equal
