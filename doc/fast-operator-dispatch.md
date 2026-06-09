@@ -124,7 +124,8 @@ on hot paths can pay the miss cost.
 The concrete cache shape should generalize the current `OperatorInlineCache`,
 not introduce a separate cache-kind enum. The cache arm is structural:
 
-- an empty `method_read_cache` means the entry is empty or unusable;
+- a missing required operand lookup validity cell means the entry is empty or
+  unusable;
 - a non-null `handler` means the cache may run a trusted native handler after
   the lookup and shape guards match;
 - a non-null `function` means the cache may replay the selected
@@ -142,8 +143,8 @@ union OperatorMethodHandler
 
 struct OperatorInlineCache
 {
-    AttributeReadInlineCache method_read_cache;
-    ShapeKey arg_shape_key;
+    ShapeKey operand_shape_keys[3];
+    ValidityCell *operand_lookup_validity_cells[2];
     OperatorMethodHandler handler;
     Function *function;
     CodeObject *code_object;
@@ -153,23 +154,23 @@ struct OperatorInlineCache
 };
 ```
 
-`method_read_cache` stores the special-method lookup dependency and currently
-also carries the receiver shape through `AttributeReadInlineCache`. For
-subscription that receiver is the container. For binary operators it is the
-operand whose dunder method is being called, which may be the source left
-operand or the source right operand.
+`operand_shape_keys` are always in the opcode's semantic operand order. For
+`receiver[key]`, operand0 is the receiver and operand1 is the key. For binary
+operators, operand0 and operand1 are the source operands, regardless of whether
+the selected dunder call is normal or reflected.
 
-`arg_shape_key` is the profiled shape of the other value argument in the cached
-dunder call layout. For get-item this is the key. For ordinary binary
-operators it is the non-receiver operand. For a reflected binary call, that
-means the receiver is the source right operand and `arg_shape_key` is the
-source left operand.
+`operand_lookup_validity_cells` stores operand-side special-method lookup
+dependencies. Receiver-only protocols such as `__getitem__`, `__setitem__`, and
+`__delitem__` require only `operand_lookup_validity_cells[0]`. Binary operator
+tables that can call either operand's method must store and validate both
+operand0 and operand1 lookup validity cells. This deliberately over-guards the
+selected table row: the cache represents the whole table decision from row `0`,
+not only the selected method lookup.
 
-This is the only value-shape-key area that should change for the next operator
-step. If embedding the receiver shape inside `method_read_cache` is too
-indirect for binary operator validation, add an explicit receiver/protocol-owner
-`ShapeKey`; do not introduce a broad cache-kind enum just to recover that
-information.
+The table walker only materializes operand lookup validity cells when it starts
+from row `0`. Continuation walks start after a Python candidate has already run,
+so their descriptors pass null operand validity cells and must not be installed
+into an inline cache.
 
 For cached Python operator calls, the cache also needs immutable orientation
 metadata for the primary opcode path, such as a `reflected_call` bit. That bit

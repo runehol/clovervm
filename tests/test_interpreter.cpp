@@ -2367,7 +2367,8 @@ TEST(Interpreter, subscript_load_caches_inline_key_shape)
         assume_convert_to<Function>(function_value)->code_object.extract();
     ASSERT_EQ(1u, function_code->operator_caches.size());
     const OperatorInlineCache &cache = function_code->operator_caches[0];
-    ASSERT_NE(nullptr, cache.method_lookup_validity_cell);
+    ASSERT_NE(nullptr, cache.operand_lookup_validity_cells[0]);
+    EXPECT_EQ(nullptr, cache.operand_lookup_validity_cells[1]);
     EXPECT_EQ(ShapeKey::from_value(Value::from_smi(1)),
               cache.operand_shape_keys[1]);
     EXPECT_EQ(test_context.vm().smi_shape(),
@@ -2440,7 +2441,8 @@ TEST(Interpreter, subscript_load_replaces_cache_for_different_key_shape)
         assume_convert_to<Function>(function_value)->code_object.extract();
     ASSERT_EQ(1u, function_code->operator_caches.size());
     const OperatorInlineCache &cache = function_code->operator_caches[0];
-    ASSERT_NE(nullptr, cache.method_lookup_validity_cell);
+    ASSERT_NE(nullptr, cache.operand_lookup_validity_cells[0]);
+    EXPECT_EQ(nullptr, cache.operand_lookup_validity_cells[1]);
 
     EXPECT_EQ(ShapeKey::from_value(Value::None()), cache.operand_shape_keys[1]);
     EXPECT_EQ(test_context.thread()->shape_of_value(Value::None()),
@@ -2750,7 +2752,8 @@ TEST(Interpreter, subscript_store_replaces_cache_for_different_key_shape)
         assume_convert_to<Function>(function_value)->code_object.extract();
     ASSERT_EQ(1u, function_code->operator_caches.size());
     const OperatorInlineCache &cache = function_code->operator_caches[0];
-    ASSERT_NE(nullptr, cache.method_lookup_validity_cell);
+    ASSERT_NE(nullptr, cache.operand_lookup_validity_cells[0]);
+    EXPECT_EQ(nullptr, cache.operand_lookup_validity_cells[1]);
     EXPECT_EQ(ShapeKey::from_value(Value::None()), cache.operand_shape_keys[1]);
     EXPECT_EQ(ShapeKey::from_value(Value::from_smi(11)),
               cache.operand_shape_keys[2]);

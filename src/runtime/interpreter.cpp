@@ -2950,7 +2950,8 @@ namespace cl
                               descriptor.is_cacheable();
         if(can_cache_call)
         {
-            cache.populate_method_read(receiver, descriptor);
+            cache.populate_operand0_method_lookup_validity(receiver,
+                                                           descriptor);
             cache.populate_binary_shapes(receiver_shape_key, key_shape_key);
         }
         if(unlikely(target_status == MethodCallTargetStatus::Missing))
@@ -3115,7 +3116,8 @@ namespace cl
                               descriptor.is_cacheable();
         if(can_cache_call)
         {
-            cache.populate_method_read(receiver, descriptor);
+            cache.populate_operand0_method_lookup_validity(receiver,
+                                                           descriptor);
             cache.populate_ternary_shapes(receiver_shape_key, key_shape_key,
                                           value_shape_key);
         }
@@ -3284,7 +3286,8 @@ namespace cl
                               descriptor.is_cacheable();
         if(can_cache_call)
         {
-            cache.populate_method_read(receiver, descriptor);
+            cache.populate_operand0_method_lookup_validity(receiver,
+                                                           descriptor);
             cache.populate_binary_shapes(receiver_shape_key, key_shape_key);
         }
         if(unlikely(target_status == MethodCallTargetStatus::Missing))

@@ -42,16 +42,17 @@ namespace cl
         static OperatorWalkDescriptor propagate_pending_exception();
         static OperatorWalkDescriptor call_python_function(
             OperatorStepAction action, uint32_t resume_index,
-            OperatorOperandOrder operand_order, Value receiver,
-            const AttributeReadDescriptor &method_descriptor,
-            ShapeKey operand0_shape_key, ShapeKey operand1_shape_key,
-            ShapeKey operand2_shape_key, TValue<Function> function,
-            uint32_t n_args, FunctionCallAdaptation adaptation, bool has_self);
+            OperatorOperandOrder operand_order, ShapeKey operand0_shape_key,
+            ShapeKey operand1_shape_key, ShapeKey operand2_shape_key,
+            TValue<Function> function, uint32_t n_args,
+            FunctionCallAdaptation adaptation, bool has_self,
+            ValidityCell *operand0_lookup_validity_cell,
+            ValidityCell *operand1_lookup_validity_cell);
         static OperatorWalkDescriptor call_trusted_handler(
-            OperatorStepAction action, Value receiver,
-            const AttributeReadDescriptor &method_descriptor,
-            ShapeKey operand0_shape_key, ShapeKey operand1_shape_key,
-            ShapeKey operand2_shape_key, TrustedHandler handler);
+            OperatorStepAction action, ShapeKey operand0_shape_key,
+            ShapeKey operand1_shape_key, ShapeKey operand2_shape_key,
+            TrustedHandler handler, ValidityCell *operand0_lookup_validity_cell,
+            ValidityCell *operand1_lookup_validity_cell);
     };
 
     OperatorWalkDescriptor walk_operator_table(ThreadState *thread,

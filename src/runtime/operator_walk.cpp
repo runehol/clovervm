@@ -28,11 +28,12 @@ namespace cl
 
     OperatorWalkDescriptor OperatorWalkDescriptor::call_python_function(
         OperatorStepAction action, uint32_t resume_index,
-        OperatorOperandOrder operand_order, Value receiver,
-        const AttributeReadDescriptor &method_descriptor,
-        ShapeKey operand0_shape_key, ShapeKey operand1_shape_key,
-        ShapeKey operand2_shape_key, TValue<Function> function, uint32_t n_args,
-        FunctionCallAdaptation adaptation, bool has_self)
+        OperatorOperandOrder operand_order, ShapeKey operand0_shape_key,
+        ShapeKey operand1_shape_key, ShapeKey operand2_shape_key,
+        TValue<Function> function, uint32_t n_args,
+        FunctionCallAdaptation adaptation, bool has_self,
+        ValidityCell *operand0_lookup_validity_cell,
+        ValidityCell *operand1_lookup_validity_cell)
     {
         OperatorWalkDescriptor descriptor;
         descriptor.status = OperatorWalkStatus::CallPythonFunction;
@@ -40,25 +41,25 @@ namespace cl
         descriptor.resume_index = resume_index;
         descriptor.operand_order = operand_order;
         descriptor.cache_entry = OperatorInlineCache::python_function_call(
-            receiver, method_descriptor, operand0_shape_key, operand1_shape_key,
-            operand2_shape_key, function.extract(),
-            function.extract()->code_object.extract(), n_args, has_self,
-            adaptation);
+            operand0_shape_key, operand1_shape_key, operand2_shape_key,
+            function.extract(), function.extract()->code_object.extract(),
+            n_args, has_self, adaptation, operand0_lookup_validity_cell,
+            operand1_lookup_validity_cell);
         return descriptor;
     }
 
     OperatorWalkDescriptor OperatorWalkDescriptor::call_trusted_handler(
-        OperatorStepAction action, Value receiver,
-        const AttributeReadDescriptor &method_descriptor,
-        ShapeKey operand0_shape_key, ShapeKey operand1_shape_key,
-        ShapeKey operand2_shape_key, TrustedHandler handler)
+        OperatorStepAction action, ShapeKey operand0_shape_key,
+        ShapeKey operand1_shape_key, ShapeKey operand2_shape_key,
+        TrustedHandler handler, ValidityCell *operand0_lookup_validity_cell,
+        ValidityCell *operand1_lookup_validity_cell)
     {
         OperatorWalkDescriptor descriptor;
         descriptor.status = OperatorWalkStatus::CallTrustedHandler;
         descriptor.action = action;
         descriptor.cache_entry = OperatorInlineCache::trusted_handler_call(
-            receiver, method_descriptor, operand0_shape_key, operand1_shape_key,
-            operand2_shape_key, handler);
+            operand0_shape_key, operand1_shape_key, operand2_shape_key, handler,
+            operand0_lookup_validity_cell, operand1_lookup_validity_cell);
         return descriptor;
     }
 
@@ -70,6 +71,14 @@ namespace cl
     static ClassObject *class_of_operand(ThreadState *thread, Value operand)
     {
         return thread->class_of_value(operand);
+    }
+
+    static ValidityCell *
+    operator_lookup_validity_cell_for_operand(ThreadState *thread,
+                                              Value operand)
+    {
+        return class_of_operand(thread, operand)
+            ->get_or_create_mro_shape_and_contents_validity_cell();
     }
 
     [[noreturn]] static void debug_operator_table_exhausted()
@@ -228,17 +237,31 @@ namespace cl
                 }
             }
 
+            ValidityCell *operand0_lookup_validity_cell = nullptr;
+            ValidityCell *operand1_lookup_validity_cell = nullptr;
+            if(start_index == 0)
+            {
+                operand0_lookup_validity_cell =
+                    operator_lookup_validity_cell_for_operand(thread, operand0);
+                operand1_lookup_validity_cell =
+                    operator_lookup_validity_cell_for_operand(thread, operand1);
+            }
+
             if(handler.arity == TrustedHandlerArity::Binary)
             {
                 return OperatorWalkDescriptor::call_trusted_handler(
-                    step.action, receiver, method_descriptor,
-                    operand0_shape_key, operand1_shape_key, ShapeKey{},
-                    handler);
+                    step.action, operand0_shape_key, operand1_shape_key,
+                    ShapeKey{}, handler, operand0_lookup_validity_cell,
+                    operand1_lookup_validity_cell);
             }
-            return OperatorWalkDescriptor::call_python_function(
-                step.action, index + 1, operand_order, receiver,
-                method_descriptor, operand0_shape_key, operand1_shape_key,
-                ShapeKey{}, function, n_args, adaptation, has_self);
+            else
+            {
+                return OperatorWalkDescriptor::call_python_function(
+                    step.action, index + 1, operand_order, operand0_shape_key,
+                    operand1_shape_key, ShapeKey{}, function, n_args,
+                    adaptation, has_self, operand0_lookup_validity_cell,
+                    operand1_lookup_validity_cell);
+            }
         }
 
         debug_operator_table_exhausted();

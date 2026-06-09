@@ -235,7 +235,7 @@ namespace cl
     struct OperatorInlineCache
     {
         ShapeKey operand_shape_keys[3];
-        ValidityCell *method_lookup_validity_cell = nullptr;
+        ValidityCell *operand_lookup_validity_cells[2] = {nullptr, nullptr};
         TrustedHandler handler;
         Function *function = nullptr;
         CodeObject *code_object = nullptr;
@@ -246,16 +246,23 @@ namespace cl
         ALWAYSINLINE bool matches_unary(Value operand0) const
         {
             return operand_shape_keys[0] == ShapeKey::from_value(operand0) &&
-                   method_lookup_validity_cell != nullptr &&
-                   method_lookup_validity_cell->is_valid();
+                   operand_lookup_validity_cell_matches(0);
         }
 
         ALWAYSINLINE bool matches_binary(Value operand0, Value operand1) const
         {
             return operand_shape_keys[0] == ShapeKey::from_value(operand0) &&
                    operand_shape_keys[1] == ShapeKey::from_value(operand1) &&
-                   method_lookup_validity_cell != nullptr &&
-                   method_lookup_validity_cell->is_valid();
+                   operand_lookup_validity_cell_matches(0);
+        }
+
+        ALWAYSINLINE bool matches_reflectable_binary(Value operand0,
+                                                     Value operand1) const
+        {
+            return operand_shape_keys[0] == ShapeKey::from_value(operand0) &&
+                   operand_shape_keys[1] == ShapeKey::from_value(operand1) &&
+                   operand_lookup_validity_cell_matches(0) &&
+                   operand_lookup_validity_cell_matches(1);
         }
 
         ALWAYSINLINE bool matches_ternary(Value operand0, Value operand1,
@@ -264,16 +271,25 @@ namespace cl
             return operand_shape_keys[0] == ShapeKey::from_value(operand0) &&
                    operand_shape_keys[1] == ShapeKey::from_value(operand1) &&
                    operand_shape_keys[2] == ShapeKey::from_value(operand2) &&
-                   method_lookup_validity_cell != nullptr &&
-                   method_lookup_validity_cell->is_valid();
+                   operand_lookup_validity_cell_matches(0);
         }
 
-        void populate_method_read(Value receiver,
-                                  const AttributeReadDescriptor &descriptor)
+        void populate_operand0_method_lookup_validity(
+            Value receiver, const AttributeReadDescriptor &descriptor)
         {
             assert(receiver.is_ptr());
             assert(descriptor.is_cacheable());
-            method_lookup_validity_cell = descriptor.lookup_validity_cell;
+            populate_operand_lookup_validity_cell(
+                0, descriptor.lookup_validity_cell);
+            operand_lookup_validity_cells[1] = nullptr;
+        }
+
+        void populate_operand_lookup_validity_cell(uint8_t operand_index,
+                                                   ValidityCell *validity_cell)
+        {
+            assert(operand_index < 2);
+            assert(validity_cell != nullptr);
+            operand_lookup_validity_cells[operand_index] = validity_cell;
         }
 
         void populate_binary_shapes(ShapeKey operand0_shape_key,
@@ -293,12 +309,14 @@ namespace cl
             operand_shape_keys[2] = operand2_shape_key;
         }
 
-        static OperatorInlineCache python_function_call(
-            Value receiver, const AttributeReadDescriptor &method_descriptor,
-            ShapeKey operand0_shape_key, ShapeKey operand1_shape_key,
-            ShapeKey operand2_shape_key, Function *function,
-            CodeObject *code_object, uint32_t n_args, bool has_self,
-            FunctionCallAdaptation adaptation)
+        static OperatorInlineCache
+        python_function_call(ShapeKey operand0_shape_key,
+                             ShapeKey operand1_shape_key,
+                             ShapeKey operand2_shape_key, Function *function,
+                             CodeObject *code_object, uint32_t n_args,
+                             bool has_self, FunctionCallAdaptation adaptation,
+                             ValidityCell *operand0_lookup_validity_cell,
+                             ValidityCell *operand1_lookup_validity_cell)
         {
             OperatorInlineCache cache;
             cache.populate_ternary_shapes(
@@ -308,26 +326,23 @@ namespace cl
             cache.n_args = n_args;
             cache.adaptation = adaptation;
             cache.has_self = has_self;
-            if(method_descriptor.is_cacheable() && receiver.is_ptr())
-            {
-                cache.populate_method_read(receiver, method_descriptor);
-            }
+            cache.populate_optional_binary_lookup_validity_cells(
+                operand0_lookup_validity_cell, operand1_lookup_validity_cell);
             return cache;
         }
 
         static OperatorInlineCache trusted_handler_call(
-            Value receiver, const AttributeReadDescriptor &method_descriptor,
             ShapeKey operand0_shape_key, ShapeKey operand1_shape_key,
-            ShapeKey operand2_shape_key, TrustedHandler handler)
+            ShapeKey operand2_shape_key, TrustedHandler handler,
+            ValidityCell *operand0_lookup_validity_cell,
+            ValidityCell *operand1_lookup_validity_cell)
         {
             OperatorInlineCache cache;
             cache.populate_ternary_shapes(
                 operand0_shape_key, operand1_shape_key, operand2_shape_key);
             cache.handler = handler;
-            if(method_descriptor.is_cacheable() && receiver.is_ptr())
-            {
-                cache.populate_method_read(receiver, method_descriptor);
-            }
+            cache.populate_optional_binary_lookup_validity_cells(
+                operand0_lookup_validity_cell, operand1_lookup_validity_cell);
             return cache;
         }
 
@@ -336,13 +351,39 @@ namespace cl
             operand_shape_keys[0] = ShapeKey{};
             operand_shape_keys[1] = ShapeKey{};
             operand_shape_keys[2] = ShapeKey{};
-            method_lookup_validity_cell = nullptr;
+            operand_lookup_validity_cells[0] = nullptr;
+            operand_lookup_validity_cells[1] = nullptr;
             handler = TrustedHandler::none();
             function = nullptr;
             code_object = nullptr;
             n_args = UINT32_MAX;
             adaptation = FunctionCallAdaptation::FixedArity;
             has_self = false;
+        }
+
+    private:
+        void populate_optional_binary_lookup_validity_cells(
+            ValidityCell *operand0_lookup_validity_cell,
+            ValidityCell *operand1_lookup_validity_cell)
+        {
+            if(operand0_lookup_validity_cell == nullptr)
+            {
+                assert(operand1_lookup_validity_cell == nullptr);
+                return;
+            }
+            assert(operand1_lookup_validity_cell != nullptr);
+            populate_operand_lookup_validity_cell(
+                0, operand0_lookup_validity_cell);
+            populate_operand_lookup_validity_cell(
+                1, operand1_lookup_validity_cell);
+        }
+
+        ALWAYSINLINE bool
+        operand_lookup_validity_cell_matches(uint8_t operand_index) const
+        {
+            assert(operand_index < 2);
+            ValidityCell *cell = operand_lookup_validity_cells[operand_index];
+            return cell != nullptr && cell->is_valid();
         }
     };
 
