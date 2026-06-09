@@ -6,7 +6,7 @@ Python-candidate inline caching for multi-candidate tables.
 
 The spike goal is correctness and shape validation:
 
-- preserve existing direct primitive equality fast paths;
+- preserve existing inline immediate equality fast paths;
 - add table-driven rich-comparison dispatch for non-primitive `==`;
 - call Python `__eq__` candidates through the paired
   `CheckOperatorNotImplemented` continuation opcode;
@@ -17,6 +17,9 @@ The spike goal is correctness and shape validation:
 ## Non-Goals
 
 - Do not install Python-candidate cache entries for `CompareEq` table rows.
+- Continuation resume must not install or update inline caches. Once a Python
+  candidate has returned into `CheckOperatorNotImplemented`, execution no
+  longer has contact with the initial opcode cache object.
 - Do not implement trusted native handler caching for comparisons in this
   spike.
 - Do not implement arithmetic operators, in-place operators, ternary `pow`, or
@@ -191,11 +194,6 @@ normal_first:
 - [x] Enter the Python function with the paired `CheckOperatorNotImplemented`
       byte as the return PC.
 - [x] Keep the helper cacheless for Python candidates.
-- [ ] Route selected candidates that are unsupported by the fast function-shaped
-      entry path through a generic call path, or raise the ordinary call error
-      for non-callable candidates, without treating them as missing methods.
-- [ ] Preserve the same next-row `NotImplemented` continuation semantics for
-      generic-call candidates as for fast function-shaped candidates.
 
 ## Stage 7: `CheckOperatorNotImplemented` Resume
 
@@ -207,15 +205,18 @@ normal_first:
       operand0, and operand1 from the hidden prefix.
 - [x] Resume table walking from the saved row using current lookup state.
 - [x] Assert table id, row index, and prefix layout in debug builds.
-- [ ] Do not install or update inline caches from the continuation path.
 - [x] Propagate pending exceptions through the interpreter exception path.
 
 ## Stage 8: Integrate `TestEqual`
 
-- [ ] Keep existing direct equality fast paths for inline values and builtin
-      primitives ahead of operator dispatch.
-- [ ] Route non-primitive or otherwise unsupported direct cases into
-      `CompareEq` table dispatch.
+- [ ] Keep the existing inline immediate equality fast path for SMI/bool
+      values.
+- [ ] Route refcounted and mixed refcounted equality cases into the `CompareEq`
+      table dispatch.
+- [ ] Rely on trusted builtin handlers for float and string equality instead
+      of hardcoded `TestEqual` float/string branches.
+- [ ] Remove or narrow the legacy hardcoded refcounted equality helper once
+      `CompareEq` handles float/string cases.
 - [ ] Add or update a codegen emit helper for real `==` emission that emits
       both `TestEqual` and `CheckOperatorNotImplemented`.
 - [ ] Update bytecode printing so paired operator instructions hide the check
@@ -237,11 +238,19 @@ normal_first:
       byte changes existing disassembly assumptions.
 - [ ] Add adversarial interpreter tests for mutation between comparison
       candidates.
+- [ ] Verify float and string equality reach `CompareEq` trusted handlers
+      rather than the old hardcoded equality helper.
+- [ ] Verify the continuation path does not install or update inline caches.
 - [ ] Confirm no Python-candidate operator cache entries are installed by the
       `__eq__` spike.
 
 ## Stage 10: Follow-Up Work
 
+- [ ] Route selected candidates that are unsupported by the fast function-shaped
+      entry path through a generic call path, or raise the ordinary call error
+      for non-callable candidates, without treating them as missing methods.
+- [ ] Preserve the same next-row `NotImplemented` continuation semantics for
+      generic-call candidates as for fast function-shaped candidates.
 - [ ] Decide the table-row Python-candidate cache payload shape.
 - [ ] Represent skipped-row applicability dependencies for future cache hits.
 - [ ] Decide trusted-handler guard policy for rich comparisons.
