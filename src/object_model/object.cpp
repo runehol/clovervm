@@ -175,9 +175,47 @@ namespace cl
         return value_to_repr_string(self);
     }
 
+    static Value native_object_eq(ThreadState *thread, Value self, Value other)
+    {
+        if(self.is_vm_sentinel())
+        {
+            return thread->set_pending_builtin_exception_string(
+                L"TypeError", L"object.__eq__ expects an object receiver");
+        }
+        return self == other ? Value::True() : Value::NotImplemented();
+    }
+
+    static Value native_object_ne(ThreadState *thread, Value self, Value other)
+    {
+        if(self.is_vm_sentinel())
+        {
+            return thread->set_pending_builtin_exception_string(
+                L"TypeError", L"object.__ne__ expects an object receiver");
+        }
+
+        TValue<String> eq_name =
+            thread->get_machine()->get_or_create_interned_string_value(
+                L"__eq__");
+        Value equal = thread->call_clovervm_method(self, eq_name, other);
+        if(equal.is_exception_marker() || equal.is_not_implemented_singleton())
+        {
+            return equal;
+        }
+        if(equal.is_ptr())
+        {
+            return thread->set_pending_builtin_exception_string(
+                L"TypeError", L"unsupported truthiness for object");
+        }
+        return equal.is_truthy() ? Value::False() : Value::True();
+    }
+
     void install_object_class_methods(VirtualMachine *vm)
     {
         BuiltinIntrinsicMethod methods[] = {
+            builtin_intrinsic_method(L"__eq__", native_object_eq,
+                                     L"Return self == value."),
+            builtin_intrinsic_method(L"__ne__", native_object_ne,
+                                     L"Return self != value."),
             builtin_intrinsic_method(L"__str__", native_object_str,
                                      L"Return str(self)."),
             builtin_intrinsic_method(L"__repr__", native_object_repr,

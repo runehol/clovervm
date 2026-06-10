@@ -1668,6 +1668,26 @@ TEST(Interpreter, operator_eq_dispatch_identity_fallback_after_notimplemented)
                                     L"result\n"));
 }
 
+TEST(Interpreter, operator_ne_dispatch_inverts_object_eq_fallback)
+{
+    test::VmTestContext test_context;
+
+    EXPECT_EQ(
+        Value::from_smi(11),
+        test_context.run_file(L"class AlwaysEqual:\n"
+                              L"    def __eq__(self, other):\n"
+                              L"        return True\n"
+                              L"class NeverEqual:\n"
+                              L"    def __eq__(self, other):\n"
+                              L"        return False\n"
+                              L"result = 0\n"
+                              L"if not (AlwaysEqual() != AlwaysEqual()):\n"
+                              L"    result += 10\n"
+                              L"if NeverEqual() != NeverEqual():\n"
+                              L"    result += 1\n"
+                              L"result\n"));
+}
+
 TEST(Interpreter, operator_eq_dispatch_same_exact_type_double_dispatch)
 {
     test::VmTestContext test_context;
