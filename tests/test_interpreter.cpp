@@ -28,6 +28,7 @@
 #include "object_model/value_string.h"
 #include "runtime/exception_object.h"
 #include "runtime/interpreter.h"
+#include "runtime/operator_walk.h"
 #include "runtime/thread_state.h"
 #include "runtime/virtual_machine.h"
 #include "test_helpers.h"
@@ -1714,6 +1715,42 @@ TEST(Interpreter, operator_eq_dispatch_right_subclass_reflected_priority)
                                     L"    def __eq__(self, other):\n"
                                     L"        return 7\n"
                                     L"Base() == Derived()\n"));
+}
+
+TEST(Interpreter, operator_add_walk_uses_arithmetic_reflected_priority)
+{
+    test::VmTestContext test_context;
+    ThreadState::ActivationScope activation_scope(test_context.thread());
+
+    TValue<String> left_name(
+        test_context.vm().get_or_create_interned_string_value(L"left"));
+    TValue<String> right_name(
+        test_context.vm().get_or_create_interned_string_value(L"right"));
+    CodeObject *code_obj =
+        test_context.compile_file(L"class Base:\n"
+                                  L"    def __add__(self, other):\n"
+                                  L"        return 3\n"
+                                  L"class Derived(Base):\n"
+                                  L"    def __radd__(self, other):\n"
+                                  L"        return 7\n"
+                                  L"left = Base()\n"
+                                  L"right = Derived()\n");
+    Value run_result =
+        test_context.thread()->run_clovervm_code_object(code_obj);
+    ASSERT_FALSE(run_result.is_exception_marker());
+
+    Value left = load_global_from_module_for_test(code_obj, left_name);
+    Value right = load_global_from_module_for_test(code_obj, right_name);
+
+    OperatorWalkDescriptor descriptor = walk_operator_table(
+        test_context.thread(), OperatorDispatchTableId::Add, 0,
+        OperatorCacheability::Uncacheable, left, right, Value::not_present());
+
+    ASSERT_EQ(OperatorWalkStatus::CallPythonFunction, descriptor.status);
+    EXPECT_EQ(OperatorStepAction::CallBinaryReflected, descriptor.action);
+    EXPECT_EQ(1u, descriptor.resume_index);
+    ASSERT_NE(nullptr, descriptor.cache_entry.function);
+    EXPECT_TRUE(descriptor.cache_entry.reflected_python_call);
 }
 
 TEST(Interpreter, operator_eq_dispatch_reflected_python_cache_hit)

@@ -105,6 +105,30 @@ namespace cl
         return OperatorWalkDescriptor::propagate_pending_exception();
     }
 
+    static OperatorWalkDescriptor
+    operator_walk_raise_unsupported(ThreadState *thread,
+                                    OperatorDispatchTableId table_id)
+    {
+        switch(table_id)
+        {
+            case OperatorDispatchTableId::Add:
+                return operator_walk_raise_type_error(
+                    thread, L"unsupported operand type(s) for +");
+
+            case OperatorDispatchTableId::CompareEq:
+            case OperatorDispatchTableId::CompareNe:
+            case OperatorDispatchTableId::CompareLt:
+            case OperatorDispatchTableId::CompareLe:
+            case OperatorDispatchTableId::CompareGt:
+            case OperatorDispatchTableId::CompareGe:
+            case OperatorDispatchTableId::Count:
+                break;
+        }
+
+        assert(false && "unsupported operator fallback for table");
+        __builtin_unreachable();
+    }
+
     static bool resolve_applicable_operator_method(
         ThreadState *thread, const OperatorStep &step, Value receiver,
         Value operand0, Value operand1, TValue<String> method_name,
@@ -183,6 +207,11 @@ namespace cl
                            OperatorStepApplicability::Always);
                     return operator_walk_raise_type_error(
                         thread, L"unsupported operand type(s) for comparison");
+
+                case OperatorStepAction::RaiseUnsupported:
+                    assert(step.applicability ==
+                           OperatorStepApplicability::Always);
+                    return operator_walk_raise_unsupported(thread, table_id);
 
                 case OperatorStepAction::CallBinary:
                 case OperatorStepAction::CallBinaryReflected:

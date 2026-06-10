@@ -566,6 +566,24 @@ namespace cl
         String *dunder_le = get_or_create_interned_string_raw(L"__le__");
         String *dunder_gt = get_or_create_interned_string_raw(L"__gt__");
         String *dunder_ge = get_or_create_interned_string_raw(L"__ge__");
+        String *dunder_add = get_or_create_interned_string_raw(L"__add__");
+        String *dunder_radd = get_or_create_interned_string_raw(L"__radd__");
+
+        add_operator_steps_ = {{
+            OperatorStep::call_binary_reflected(
+                dunder_radd,
+                OperatorStepApplicability::IfArithmeticReflectedPriority, 2),
+            OperatorStep::call_binary(dunder_add,
+                                      OperatorStepApplicability::IfMethodFound),
+            OperatorStep::raise_unsupported(),
+            OperatorStep::call_binary(dunder_add,
+                                      OperatorStepApplicability::IfMethodFound),
+            OperatorStep::raise_unsupported(),
+        }};
+        operator_dispatch_tables_[static_cast<size_t>(
+            OperatorDispatchTableId::Add)] = OperatorDispatchTable{
+            add_operator_steps_.data(),
+            static_cast<uint8_t>(add_operator_steps_.size())};
 
         auto install_rich_compare_table = [this](
                                               OperatorDispatchTableId table_id,

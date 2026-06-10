@@ -14,7 +14,8 @@ namespace cl
         CallBinaryReflected = 1,
         IdentityEq = 2,
         IdentityNe = 4,
-        RaiseOrdering = 6,
+        RaiseUnsupported = 6,
+        RaiseOrdering = 8,
     };
 
     static constexpr bool
@@ -31,6 +32,8 @@ namespace cl
         !operator_step_action_is_reflected(OperatorStepAction::IdentityEq));
     static_assert(
         !operator_step_action_is_reflected(OperatorStepAction::IdentityNe));
+    static_assert(!operator_step_action_is_reflected(
+        OperatorStepAction::RaiseUnsupported));
     static_assert(
         !operator_step_action_is_reflected(OperatorStepAction::RaiseOrdering));
 
@@ -57,6 +60,7 @@ namespace cl
         CompareLe,
         CompareGt,
         CompareGe,
+        Add,
         Count,
     };
 
@@ -102,6 +106,12 @@ namespace cl
         static constexpr OperatorStep raise_ordering()
         {
             return OperatorStep{nullptr, OperatorStepAction::RaiseOrdering,
+                                OperatorStepApplicability::Always};
+        }
+
+        static constexpr OperatorStep raise_unsupported()
+        {
+            return OperatorStep{nullptr, OperatorStepAction::RaiseUnsupported,
                                 OperatorStepApplicability::Always};
         }
     };
