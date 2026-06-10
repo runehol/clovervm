@@ -136,6 +136,22 @@ namespace cl
         return -1;
     }
 
+    DescriptorLookup Shape::lookup_present_descriptor(TValue<String> name) const
+    {
+        for(uint32_t property_idx = 0; property_idx < present_count_;
+            ++property_idx)
+        {
+            if(string_eq(name, get_property_name(property_idx)))
+            {
+                return DescriptorLookup{DescriptorPresence::Present,
+                                        int32_t(property_idx),
+                                        get_descriptor_info(property_idx)};
+            }
+        }
+
+        return DescriptorLookup::absent();
+    }
+
     DescriptorLookup
     Shape::lookup_descriptor_including_latent(TValue<String> name) const
     {

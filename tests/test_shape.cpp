@@ -245,6 +245,12 @@ TEST(Shape, DescriptorLookupReportsPresentAndAbsentProperties)
     EXPECT_EQ(2, a_lookup.descriptor_idx);
     EXPECT_TRUE(a_lookup.storage_location().is_found());
 
+    DescriptorLookup present_a_lookup =
+        shape_with_a->lookup_present_descriptor(a_name);
+    EXPECT_EQ(DescriptorPresence::Present, present_a_lookup.presence);
+    EXPECT_TRUE(present_a_lookup.is_present());
+    EXPECT_EQ(2, present_a_lookup.descriptor_idx);
+
     DescriptorLookup b_lookup =
         shape_with_a->lookup_descriptor_including_latent(b_name);
     EXPECT_EQ(DescriptorPresence::Absent, b_lookup.presence);
@@ -364,6 +370,8 @@ TEST(Shape, StableSlotDeleteMovesDescriptorToLatentAndReAddReusesSlot)
         shape_without_a->lookup_descriptor_including_latent(a_name);
     EXPECT_TRUE(latent_lookup.is_latent());
     EXPECT_EQ(0, latent_lookup.info.physical_idx);
+    EXPECT_FALSE(
+        shape_without_a->lookup_present_descriptor(a_name).is_present());
     EXPECT_EQ(1, shape_without_a->get_next_slot_index());
     EXPECT_FALSE(shape_without_a->resolve_present_property(a_name).is_found());
 

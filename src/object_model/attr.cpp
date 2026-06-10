@@ -322,12 +322,13 @@ namespace cl
             }
 
             DescriptorLookup lookup =
-                cls->get_shape()->lookup_descriptor_including_latent(name);
-            if(lookup.is_present())
+                cls->get_shape()->lookup_present_descriptor(name);
+            if(!lookup.is_present())
             {
-                return class_chain_read_descriptor_from_lookup(
-                    class_object, cls, lookup, path, binding);
+                continue;
             }
+            return class_chain_read_descriptor_from_lookup(
+                class_object, cls, lookup, path, binding);
         }
 
         return AttributeReadDescriptor::not_found();
@@ -364,12 +365,13 @@ namespace cl
             }
 
             DescriptorLookup lookup =
-                cls->get_shape()->lookup_descriptor_including_latent(name);
-            if(lookup.is_present())
+                cls->get_shape()->lookup_present_descriptor(name);
+            if(!lookup.is_present())
             {
-                return class_chain_read_descriptor_from_lookup(
-                    class_object, cls, lookup, path, binding);
+                continue;
             }
+            return class_chain_read_descriptor_from_lookup(
+                class_object, cls, lookup, path, binding);
         }
 
         return AttributeReadDescriptor::not_found();

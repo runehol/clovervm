@@ -200,6 +200,7 @@ namespace cl
         uint32_t transition_count() const { return transitions.size(); }
 
         int32_t lookup_descriptor_index(TValue<String> name) const;
+        DescriptorLookup lookup_present_descriptor(TValue<String> name) const;
         DescriptorLookup
         lookup_descriptor_including_latent(TValue<String> name) const;
         StorageLocation resolve_present_property(TValue<String> name) const;
