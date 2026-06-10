@@ -143,6 +143,17 @@ namespace cl
                     receiver, method_name);
                 return method_descriptor.is_found();
 
+            case OperatorStepApplicability::
+                IfMethodFoundAndOperands01TypesDiffer:
+                if(class_of_operand(thread, operand0) ==
+                   class_of_operand(thread, operand1))
+                {
+                    return false;
+                }
+                method_descriptor = resolve_special_method_read_descriptor(
+                    receiver, method_name);
+                return method_descriptor.is_found();
+
             case OperatorStepApplicability::IfArithmeticReflectedPriority:
                 assert(operator_step_is_reflected(step.action));
                 method_descriptor =

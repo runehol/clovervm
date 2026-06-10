@@ -41,6 +41,7 @@ namespace cl
     {
         Always,
         IfMethodFound,
+        IfMethodFoundAndOperands01TypesDiffer,
         IfArithmeticReflectedPriority,
         IfRichComparisonReflectedPriority,
     };

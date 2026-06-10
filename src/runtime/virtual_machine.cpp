@@ -578,6 +578,9 @@ namespace cl
             OperatorStep::raise_unsupported(),
             OperatorStep::call_binary(dunder_add,
                                       OperatorStepApplicability::IfMethodFound),
+            OperatorStep::call_binary_reflected(
+                dunder_radd, OperatorStepApplicability::
+                                 IfMethodFoundAndOperands01TypesDiffer),
             OperatorStep::raise_unsupported(),
         }};
         operator_dispatch_tables_[static_cast<size_t>(

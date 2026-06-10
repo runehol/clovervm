@@ -1753,6 +1753,42 @@ TEST(Interpreter, operator_add_walk_uses_arithmetic_reflected_priority)
     EXPECT_TRUE(descriptor.cache_entry.reflected_python_call);
 }
 
+TEST(Interpreter, operator_add_walk_uses_reflected_fallback_for_different_types)
+{
+    test::VmTestContext test_context;
+    ThreadState::ActivationScope activation_scope(test_context.thread());
+
+    TValue<String> left_name(
+        test_context.vm().get_or_create_interned_string_value(L"left"));
+    TValue<String> right_name(
+        test_context.vm().get_or_create_interned_string_value(L"right"));
+    CodeObject *code_obj =
+        test_context.compile_file(L"class Left:\n"
+                                  L"    def __add__(self, other):\n"
+                                  L"        return NotImplemented\n"
+                                  L"class Right:\n"
+                                  L"    def __radd__(self, other):\n"
+                                  L"        return 7\n"
+                                  L"left = Left()\n"
+                                  L"right = Right()\n");
+    Value run_result =
+        test_context.thread()->run_clovervm_code_object(code_obj);
+    ASSERT_FALSE(run_result.is_exception_marker());
+
+    Value left = load_global_from_module_for_test(code_obj, left_name);
+    Value right = load_global_from_module_for_test(code_obj, right_name);
+
+    OperatorWalkDescriptor descriptor = walk_operator_table(
+        test_context.thread(), OperatorDispatchTableId::Add, 4,
+        OperatorCacheability::Uncacheable, left, right, Value::not_present());
+
+    ASSERT_EQ(OperatorWalkStatus::CallPythonFunction, descriptor.status);
+    EXPECT_EQ(OperatorStepAction::CallBinaryReflected, descriptor.action);
+    EXPECT_EQ(5u, descriptor.resume_index);
+    ASSERT_NE(nullptr, descriptor.cache_entry.function);
+    EXPECT_TRUE(descriptor.cache_entry.reflected_python_call);
+}
+
 TEST(Interpreter, operator_eq_dispatch_reflected_python_cache_hit)
 {
     test::VmTestContext test_context;
