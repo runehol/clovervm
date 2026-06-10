@@ -289,33 +289,8 @@ namespace cl
         AttributeReadPlanPath path, AttributeBindingContext binding)
     {
         Value mro_value = class_object->get_mro_value();
-        if(!can_convert_to<Tuple>(mro_value))
-        {
-            DescriptorLookup lookup =
-                class_object->get_shape()->lookup_descriptor_including_latent(
-                    name);
-            if(!lookup.is_present())
-            {
-                return AttributeReadDescriptor::not_found();
-            }
-
-            if(lookup.info.has_flag(DescriptorFlag::SpecialRead))
-            {
-                return special_read_descriptor(class_chain_shape_class_receiver(
-                                                   class_object, path, binding),
-                                               lookup.info);
-            }
-
-            Value own_value =
-                class_object->read_storage_location(lookup.storage_location());
-            return AttributeReadDescriptor::found(
-                AttributeReadPlan::from_storage(
-                    path, attribute_read_plan_kind_for_path(path, own_value),
-                    class_object, lookup.storage_location(), binding),
-                own_value);
-        }
-
-        Tuple *mro = try_convert_to<Tuple>(mro_value);
+        assert(can_convert_to<Tuple>(mro_value));
+        Tuple *mro = assume_convert_to<Tuple>(mro_value);
         for(uint32_t mro_idx = 0; mro_idx < mro->size(); ++mro_idx)
         {
             Value class_value = mro->item_unchecked(mro_idx);
