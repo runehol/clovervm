@@ -119,6 +119,13 @@ namespace cl
                     receiver, method_name);
                 return method_descriptor.is_found();
 
+            case OperatorStepApplicability::IfArithmeticReflectedPriority:
+                assert(operator_step_is_reflected(step.action));
+                method_descriptor =
+                    resolve_reflected_priority_special_method_read_descriptor(
+                        receiver, operand0, method_name);
+                return method_descriptor.is_found();
+
             case OperatorStepApplicability::IfRichComparisonReflectedPriority:
                 {
                     ClassObject *left_class =

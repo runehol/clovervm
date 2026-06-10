@@ -21,6 +21,9 @@ namespace cl
                                                          TValue<String> name);
     AttributeReadDescriptor
     resolve_special_method_read_descriptor(Value obj, TValue<String> name);
+    AttributeReadDescriptor
+    resolve_reflected_priority_special_method_read_descriptor(
+        Value receiver, Value alternate, TValue<String> name);
     Value load_attr_from_plan(Value receiver, const AttributeReadPlan &plan);
     bool load_method_from_plan(Value receiver, const AttributeReadPlan &plan,
                                Value &callable_out, Value &self_out);

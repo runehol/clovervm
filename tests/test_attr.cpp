@@ -1357,3 +1357,103 @@ TEST(Attr, ClassFunctionMethodPlanSurvivesClassContentsWriteAndReloadsSlot)
     EXPECT_EQ(second_method, callable);
     EXPECT_EQ(Value::from_oop(instance), self);
 }
+
+TEST(Attr, ReflectedPrioritySpecialMethodFindsOverrideBeforeAlternateClass)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation_scope(context.thread());
+
+    TValue<String> base_name(
+        context.vm().get_or_create_interned_string_value(L"Base"));
+    TValue<String> child_name(
+        context.vm().get_or_create_interned_string_value(L"Child"));
+    TValue<String> reflected_name(
+        context.vm().get_or_create_interned_string_value(L"__radd__"));
+
+    ClassObject *base = context.thread()->make_internal_raw<ClassObject>(
+        base_name, 2, context.vm().object_class(), NativeLayoutId::Instance);
+    ClassObject *child = context.thread()->make_internal_raw<ClassObject>(
+        child_name, 2, base, NativeLayoutId::Instance);
+    EXPECT_TRUE(child->set_own_property(reflected_name, Value::from_smi(42)));
+
+    Instance *base_instance =
+        context.thread()->make_internal_raw<Instance>(base);
+    Instance *child_instance =
+        context.thread()->make_internal_raw<Instance>(child);
+
+    AttributeReadDescriptor descriptor =
+        resolve_reflected_priority_special_method_read_descriptor(
+            Value::from_oop(child_instance), Value::from_oop(base_instance),
+            reflected_name);
+
+    ASSERT_TRUE(descriptor.is_found());
+    EXPECT_EQ(Value::from_smi(42), descriptor.lookup_value);
+    EXPECT_EQ(child, descriptor.plan.storage_owner);
+    EXPECT_EQ(child->current_mro_shape_and_contents_validity_cell(),
+              descriptor.lookup_validity_cell);
+}
+
+TEST(Attr, ReflectedPrioritySpecialMethodStopsAtAlternateClass)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation_scope(context.thread());
+
+    TValue<String> base_name(
+        context.vm().get_or_create_interned_string_value(L"Base"));
+    TValue<String> child_name(
+        context.vm().get_or_create_interned_string_value(L"Child"));
+    TValue<String> reflected_name(
+        context.vm().get_or_create_interned_string_value(L"__radd__"));
+
+    ClassObject *base = context.thread()->make_internal_raw<ClassObject>(
+        base_name, 2, context.vm().object_class(), NativeLayoutId::Instance);
+    EXPECT_TRUE(base->set_own_property(reflected_name, Value::from_smi(13)));
+    ClassObject *child = context.thread()->make_internal_raw<ClassObject>(
+        child_name, 2, base, NativeLayoutId::Instance);
+
+    Instance *base_instance =
+        context.thread()->make_internal_raw<Instance>(base);
+    Instance *child_instance =
+        context.thread()->make_internal_raw<Instance>(child);
+
+    AttributeReadDescriptor descriptor =
+        resolve_reflected_priority_special_method_read_descriptor(
+            Value::from_oop(child_instance), Value::from_oop(base_instance),
+            reflected_name);
+
+    EXPECT_FALSE(descriptor.is_found());
+}
+
+TEST(Attr, ReflectedPrioritySpecialMethodRequiresAlternateClassInMro)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation_scope(context.thread());
+
+    TValue<String> alternate_name(
+        context.vm().get_or_create_interned_string_value(L"Alternate"));
+    TValue<String> receiver_name(
+        context.vm().get_or_create_interned_string_value(L"Receiver"));
+    TValue<String> reflected_name(
+        context.vm().get_or_create_interned_string_value(L"__radd__"));
+
+    ClassObject *alternate = context.thread()->make_internal_raw<ClassObject>(
+        alternate_name, 2, context.vm().object_class(),
+        NativeLayoutId::Instance);
+    ClassObject *receiver = context.thread()->make_internal_raw<ClassObject>(
+        receiver_name, 2, context.vm().object_class(),
+        NativeLayoutId::Instance);
+    EXPECT_TRUE(
+        receiver->set_own_property(reflected_name, Value::from_smi(99)));
+
+    Instance *alternate_instance =
+        context.thread()->make_internal_raw<Instance>(alternate);
+    Instance *receiver_instance =
+        context.thread()->make_internal_raw<Instance>(receiver);
+
+    AttributeReadDescriptor descriptor =
+        resolve_reflected_priority_special_method_read_descriptor(
+            Value::from_oop(receiver_instance),
+            Value::from_oop(alternate_instance), reflected_name);
+
+    EXPECT_FALSE(descriptor.is_found());
+}

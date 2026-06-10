@@ -284,6 +284,27 @@ namespace cl
         return descriptor;
     }
 
+    static AttributeReadDescriptor class_chain_read_descriptor_from_lookup(
+        const ClassObject *class_object, ClassObject *storage_class,
+        DescriptorLookup lookup, AttributeReadPlanPath path,
+        AttributeBindingContext binding)
+    {
+        if(lookup.info.has_flag(DescriptorFlag::SpecialRead))
+        {
+            return special_read_descriptor(
+                class_chain_shape_class_receiver(class_object, path, binding),
+                lookup.info);
+        }
+
+        Value value =
+            storage_class->read_storage_location(lookup.storage_location());
+        return AttributeReadDescriptor::found(
+            AttributeReadPlan::from_storage(
+                path, attribute_read_plan_kind_for_path(path, value),
+                storage_class, lookup.storage_location(), binding),
+            value);
+    }
+
     static AttributeReadDescriptor lookup_class_chain_read_descriptor(
         const ClassObject *class_object, TValue<String> name,
         AttributeReadPlanPath path, AttributeBindingContext binding)
@@ -302,24 +323,53 @@ namespace cl
 
             DescriptorLookup lookup =
                 cls->get_shape()->lookup_descriptor_including_latent(name);
-            if(!lookup.is_present())
+            if(lookup.is_present())
+            {
+                return class_chain_read_descriptor_from_lookup(
+                    class_object, cls, lookup, path, binding);
+            }
+        }
+
+        return AttributeReadDescriptor::not_found();
+    }
+
+    static bool find_class_in_mro(Tuple *mro, ClassObject *target_class,
+                                  uint32_t &index)
+    {
+        for(uint32_t mro_idx = 0; mro_idx < mro->size(); ++mro_idx)
+        {
+            if(mro->item_unchecked(mro_idx) == Value::from_oop(target_class))
+            {
+                index = mro_idx;
+                return true;
+            }
+        }
+        return false;
+    }
+
+    static AttributeReadDescriptor
+    lookup_class_chain_read_descriptor_until_mro_index(
+        const ClassObject *class_object, Tuple *mro, uint32_t stop_mro_idx,
+        TValue<String> name, AttributeReadPlanPath path,
+        AttributeBindingContext binding)
+    {
+        assert(stop_mro_idx <= mro->size());
+        for(uint32_t mro_idx = 0; mro_idx < stop_mro_idx; ++mro_idx)
+        {
+            Value class_value = mro->item_unchecked(mro_idx);
+            ClassObject *cls = try_convert_to<ClassObject>(class_value);
+            if(cls == nullptr)
             {
                 continue;
             }
 
-            if(lookup.info.has_flag(DescriptorFlag::SpecialRead))
+            DescriptorLookup lookup =
+                cls->get_shape()->lookup_descriptor_including_latent(name);
+            if(lookup.is_present())
             {
-                return special_read_descriptor(class_chain_shape_class_receiver(
-                                                   class_object, path, binding),
-                                               lookup.info);
+                return class_chain_read_descriptor_from_lookup(
+                    class_object, cls, lookup, path, binding);
             }
-
-            Value value = cls->read_storage_location(lookup.storage_location());
-            return AttributeReadDescriptor::found(
-                AttributeReadPlan::from_storage(
-                    path, attribute_read_plan_kind_for_path(path, value), cls,
-                    lookup.storage_location(), binding),
-                value);
         }
 
         return AttributeReadDescriptor::not_found();
@@ -518,6 +568,40 @@ namespace cl
         }
         return with_mro_shape_and_contents_validity_cell_if_unblocked(
             descriptor, class_object);
+    }
+
+    AttributeReadDescriptor
+    resolve_reflected_priority_special_method_read_descriptor(
+        Value receiver, Value alternate, TValue<String> name)
+    {
+        ClassObject *receiver_class = active_thread()->class_of_value(receiver);
+        ClassObject *alternate_class =
+            active_thread()->class_of_value(alternate);
+        if(receiver_class == alternate_class)
+        {
+            return AttributeReadDescriptor::not_found();
+        }
+
+        Value mro_value = receiver_class->get_mro_value();
+        assert(can_convert_to<Tuple>(mro_value));
+        Tuple *mro = assume_convert_to<Tuple>(mro_value);
+        uint32_t alternate_mro_idx = 0;
+        if(!find_class_in_mro(mro, alternate_class, alternate_mro_idx))
+        {
+            return AttributeReadDescriptor::not_found();
+        }
+
+        AttributeReadDescriptor descriptor = classify_class_read_descriptor(
+            lookup_class_chain_read_descriptor_until_mro_index(
+                receiver_class, mro, alternate_mro_idx, name,
+                AttributeReadPlanPath::InstanceClassChain,
+                AttributeBindingContext{receiver, receiver_class}));
+        if(!receiver.is_ptr())
+        {
+            return uncacheable_inline_receiver_descriptor(descriptor);
+        }
+        return with_mro_shape_and_contents_validity_cell_if_unblocked(
+            descriptor, receiver_class);
     }
 
     Value load_attr_from_plan(Value receiver, const AttributeReadPlan &plan)
