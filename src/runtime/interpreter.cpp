@@ -2189,7 +2189,7 @@ namespace cl
             operand0, operand1, descriptor, continuation_pc, next_pc, &cache);
     }
 
-    [[maybe_unused]] static ALWAYSINLINE DispatchTableEntry
+    static ALWAYSINLINE DispatchTableEntry
     dispatch_cached_reflectable_ternary_operator(
         ThreadState *thread, Value *&fp, const uint8_t *&pc, void *dispatch,
         CodeObject *&code_object, Value &accumulator,
@@ -2293,7 +2293,7 @@ namespace cl
             operand0, operand1, descriptor, continuation_pc, next_pc, nullptr);
     }
 
-    [[maybe_unused]] static ALWAYSINLINE DispatchTableEntry
+    static ALWAYSINLINE DispatchTableEntry
     dispatch_ternary_operator_from_continuation(
         ThreadState *thread, Value *&fp, const uint8_t *&pc, void *dispatch,
         CodeObject *&code_object, Value &accumulator,
@@ -3523,6 +3523,22 @@ namespace cl
 #undef DEFINE_BINARY_SMI_OPERATOR_DISPATCH
 #undef DEFINE_BINARY_REG_OPERATOR_DISPATCH
 
+    NOINLINE static INTERP_CC Value op_ternary_pow(PARAMS)
+    {
+        int8_t operand0_reg = pc[1];
+        int8_t operand1_reg = pc[2];
+        uint8_t cache_idx = pc[3];
+        Value operand0 = fp[operand0_reg];
+        Value operand1 = fp[operand1_reg];
+        Value operand2 = accumulator;
+        DispatchTableEntry next_dispatch_fun =
+            dispatch_cached_reflectable_ternary_operator(
+                thread, fp, pc, dispatch, code_object, accumulator,
+                OperatorDispatchTableId::TernaryPow, cache_idx, operand0,
+                operand1, operand2, pc + 4, pc + 5);
+        MUSTTAIL return next_dispatch_fun(ARGS);
+    }
+
     NOINLINE static INTERP_CC Value op_negate_dispatch(PARAMS)
     {
         uint8_t cache_idx = pc[1];
@@ -4028,6 +4044,21 @@ namespace cl
 
         DispatchTableEntry next_dispatch_fun =
             dispatch_binary_operator_from_continuation(
+                thread, fp, pc, dispatch, code_object, accumulator, pc, pc + 1);
+        MUSTTAIL return next_dispatch_fun(ARGS);
+    }
+
+    NOINLINE static INTERP_CC Value
+    op_check_ternary_operator_not_implemented(PARAMS)
+    {
+        if(!accumulator.is_not_implemented_singleton())
+        {
+            START(1);
+            COMPLETE();
+        }
+
+        DispatchTableEntry next_dispatch_fun =
+            dispatch_ternary_operator_from_continuation(
                 thread, fp, pc, dispatch, code_object, accumulator, pc, pc + 1);
         MUSTTAIL return next_dispatch_fun(ARGS);
     }
@@ -5634,6 +5665,7 @@ namespace cl
         SET_TABLE_ENTRY(Bytecode::MulSmi, op_mul_smi);
         SET_TABLE_ENTRY(Bytecode::BinaryPow, op_binary_pow);
         SET_TABLE_ENTRY(Bytecode::BinaryPowSmi, op_binary_pow_smi);
+        SET_TABLE_ENTRY(Bytecode::TernaryPow, op_ternary_pow);
         SET_TABLE_ENTRY(Bytecode::TrueDiv, op_truediv_dispatch);
         SET_TABLE_ENTRY(Bytecode::FloorDiv, op_floordiv);
         SET_TABLE_ENTRY(Bytecode::FloorDivSmi, op_floordiv_smi);
@@ -5660,6 +5692,8 @@ namespace cl
         SET_TABLE_ENTRY(Bytecode::TestGreater, op_gt);
         SET_TABLE_ENTRY(Bytecode::CheckOperatorNotImplemented,
                         op_check_operator_not_implemented);
+        SET_TABLE_ENTRY(Bytecode::CheckTernaryOperatorNotImplemented,
+                        op_check_ternary_operator_not_implemented);
 
         SET_TABLE_ENTRY(Bytecode::LdaGlobal, op_lda_global);
         SET_TABLE_ENTRY(Bytecode::StaGlobal, op_sta_global);

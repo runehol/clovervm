@@ -111,6 +111,13 @@ Print the values to standard output."""
     __clover_write_stdout__(end)
 
 
+def pow(a, b, modulo=None):
+    """Return a raised to the power b, optionally reduced modulo modulo."""
+    if modulo is None:
+        return a**b
+    return __clover_ternary_pow__(a, b, modulo)
+
+
 def sum(iterable, start=0):
     """Return the sum of a 'start' value (default: 0) plus an iterable of numbers.
 

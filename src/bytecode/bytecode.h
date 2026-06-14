@@ -95,6 +95,7 @@ namespace cl
         TrueDiv,
         FloorDiv,
         BinaryPow,
+        TernaryPow,
         LShift,
         RShift,  // arithmetic shift
         Mod,
@@ -113,6 +114,7 @@ namespace cl
         TestIn,
         TestNotIn,
         CheckOperatorNotImplemented,
+        CheckTernaryOperatorNotImplemented,
 
         // binary on smi. acc op smi
         AddSmi,

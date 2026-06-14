@@ -253,6 +253,8 @@ template <> struct fmt::formatter<cl::Bytecode>
                 return format_to(out, "FloorDiv");
             case cl::Bytecode::BinaryPow:
                 return format_to(out, "BinaryPow");
+            case cl::Bytecode::TernaryPow:
+                return format_to(out, "TernaryPow");
             case cl::Bytecode::LShift:
                 return format_to(out, "LShift");
             case cl::Bytecode::RShift:
@@ -288,6 +290,8 @@ template <> struct fmt::formatter<cl::Bytecode>
                 return format_to(out, "TestNotIn");
             case cl::Bytecode::CheckOperatorNotImplemented:
                 return format_to(out, "CheckOperatorNotImplemented");
+            case cl::Bytecode::CheckTernaryOperatorNotImplemented:
+                return format_to(out, "CheckTernaryOperatorNotImplemented");
 
             case cl::Bytecode::AddSmi:
                 return format_to(out, "AddSmi");
@@ -822,6 +826,18 @@ template <> struct fmt::formatter<cl::CodeObject>
                 ++pc;
                 break;
 
+            case cl::Bytecode::TernaryPow:
+                format_to(out, " ");
+                disassemble_reg(code_obj, out, pc++);
+                format_to(out, ", ");
+                disassemble_reg(code_obj, out, pc++);
+                format_to(out, ", ");
+                disassemble_operator_cache(code_obj, out, pc++);
+                assert(cl::Bytecode(code_obj.code[pc]) ==
+                       cl::Bytecode::CheckTernaryOperatorNotImplemented);
+                ++pc;
+                break;
+
             case cl::Bytecode::AddSmi:
             case cl::Bytecode::SubSmi:
             case cl::Bytecode::MulSmi:
@@ -853,6 +869,7 @@ template <> struct fmt::formatter<cl::CodeObject>
             case cl::Bytecode::Not:
             case cl::Bytecode::Sqrt:
             case cl::Bytecode::CheckOperatorNotImplemented:
+            case cl::Bytecode::CheckTernaryOperatorNotImplemented:
                 break;
 
             case cl::Bytecode::CallPositional:

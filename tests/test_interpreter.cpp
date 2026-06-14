@@ -1559,6 +1559,38 @@ TEST(Interpreter, binary_power_dispatch_calls_custom_methods)
                                     L"Left() ** 3\n"));
 }
 
+TEST(Interpreter, builtin_pow_uses_binary_dispatch_when_modulo_is_none)
+{
+    test::VmTestContext test_context;
+
+    EXPECT_EQ(Value::from_smi(42),
+              test_context.run_file(L"class Left:\n"
+                                    L"    def __pow__(self, other):\n"
+                                    L"        return 42\n"
+                                    L"pow(Left(), 3)\n"));
+    EXPECT_EQ(Value::from_smi(43),
+              test_context.run_file(L"class Left:\n"
+                                    L"    def __pow__(self, other):\n"
+                                    L"        return 43\n"
+                                    L"pow(Left(), 3, None)\n"));
+}
+
+TEST(Interpreter, builtin_pow_uses_ternary_dispatch_for_modulo)
+{
+    test::VmTestContext test_context;
+
+    EXPECT_EQ(Value::from_smi(44),
+              test_context.run_file(L"class Left:\n"
+                                    L"    def __pow__(self, other, modulo):\n"
+                                    L"        return 44\n"
+                                    L"pow(Left(), 3, 5)\n"));
+    EXPECT_EQ(Value::from_smi(45),
+              test_context.run_file(L"class Right:\n"
+                                    L"    def __rpow__(self, other, modulo):\n"
+                                    L"        return 45\n"
+                                    L"pow(2, Right(), 5)\n"));
+}
+
 TEST(Interpreter, true_division_values)
 {
     test::VmTestContext test_context;
@@ -5937,6 +5969,21 @@ TEST(Interpreter, user_defined_clover_locals_name_is_ordinary_function)
                                  L"__clover_locals__()\n");
 
     EXPECT_EQ(Value::from_smi(987), file_runner.return_value);
+}
+
+TEST(Interpreter, user_code_cannot_use_clover_ternary_pow_as_intrinsic)
+{
+    expect_python_error(L"__clover_ternary_pow__(2, 3, 5)\n", L"NameError",
+                        L"name '__clover_ternary_pow__' is not defined");
+}
+
+TEST(Interpreter, user_defined_clover_ternary_pow_name_is_ordinary_function)
+{
+    test::FileRunner file_runner(L"def __clover_ternary_pow__(a, b, modulo):\n"
+                                 L"    return 123\n"
+                                 L"__clover_ternary_pow__(2, 3, 5)\n");
+
+    EXPECT_EQ(Value::from_smi(123), file_runner.return_value);
 }
 
 TEST(Interpreter, globals_builtin_returns_fresh_slotdict_views)

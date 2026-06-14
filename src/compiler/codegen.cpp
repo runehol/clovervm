@@ -806,6 +806,7 @@ namespace cl
             Globals,
             Locals,
             Sqrt,
+            TernaryPow,
         };
 
         Expected<TrustedCloverCall>
@@ -856,6 +857,12 @@ namespace cl
             if(name_value == interned_string(L"__clover_sqrt__").raw_value())
             {
                 return Expected<TrustedCloverCall>::ok(TrustedCloverCall::Sqrt);
+            }
+            if(name_value ==
+               interned_string(L"__clover_ternary_pow__").raw_value())
+            {
+                return Expected<TrustedCloverCall>::ok(
+                    TrustedCloverCall::TernaryPow);
             }
             return Expected<TrustedCloverCall>::raise_exception(
                 L"SyntaxError", L"unknown trusted __clover_* helper");
@@ -1055,6 +1062,30 @@ namespace cl
             return Expected<void>::ok();
         }
 
+        Expected<void>
+        codegen_trusted_clover_ternary_pow(uint32_t source_offset,
+                                           AstChildren args)
+        {
+            CL_TRY(require_positional_call_arguments(
+                args, L"__clover_ternary_pow__"));
+            if(args.size() != 3)
+            {
+                return Expected<void>::raise_exception(
+                    L"SyntaxError",
+                    L"__clover_ternary_pow__ expects exactly 3 arguments");
+            }
+
+            TemporaryReg operands(*code_obj, 2);
+            CL_TRY(codegen_node_into_specific_register(
+                call_argument_value(args[0]), operands));
+            CL_TRY(codegen_node_into_specific_register(
+                call_argument_value(args[1]), operands + 1));
+            CL_TRY(codegen_node(call_argument_value(args[2])));
+            CL_TRY(code_obj->emit_ternary_operator(
+                source_offset, Bytecode::TernaryPow, operands, operands + 1));
+            return Expected<void>::ok();
+        }
+
         Expected<bool> try_codegen_trusted_clover_call(int32_t node_idx)
         {
             AstChildren children = av.children[node_idx];
@@ -1085,6 +1116,10 @@ namespace cl
                     return Expected<bool>::ok(true);
                 case TrustedCloverCall::Sqrt:
                     CL_TRY(codegen_trusted_clover_sqrt(source_offset, args));
+                    return Expected<bool>::ok(true);
+                case TrustedCloverCall::TernaryPow:
+                    CL_TRY(codegen_trusted_clover_ternary_pow(source_offset,
+                                                              args));
                     return Expected<bool>::ok(true);
             }
             __builtin_unreachable();

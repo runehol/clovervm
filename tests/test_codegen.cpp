@@ -1861,3 +1861,32 @@ TEST(Codegen, user_clover_sqrt_name_is_ordinary_call)
     EXPECT_EQ(std::string::npos, actual.find("Sqrt"));
     EXPECT_NE(std::string::npos, actual.find("CallPositional"));
 }
+
+TEST(Codegen, trusted_clover_ternary_pow_lowers_to_opcode)
+{
+    std::string actual = trusted_builtin_bytecode_str_from_file(
+        L"def powmod(a, b, modulo):\n"
+        L"    return __clover_ternary_pow__(a, b, modulo)\n");
+
+    EXPECT_NE(std::string::npos, actual.find("TernaryPow"));
+    EXPECT_EQ(std::string::npos, actual.find("CallPositional"));
+}
+
+TEST(Codegen, trusted_clover_ternary_pow_rejects_wrong_arity)
+{
+    expect_trusted_builtin_compile_python_error(
+        L"def powmod(a, b):\n"
+        L"    return __clover_ternary_pow__(a, b)\n",
+        L"SyntaxError", L"__clover_ternary_pow__ expects exactly 3 arguments");
+}
+
+TEST(Codegen, user_clover_ternary_pow_name_is_ordinary_call)
+{
+    std::string actual =
+        bytecode_str_from_file(L"def powmod(a, b, modulo):\n"
+                               L"    return __clover_ternary_pow__(a, b, "
+                               L"modulo)\n");
+
+    EXPECT_EQ(std::string::npos, actual.find("TernaryPow"));
+    EXPECT_NE(std::string::npos, actual.find("CallPositional"));
+}

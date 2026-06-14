@@ -768,6 +768,22 @@ namespace cl
     }
 
     Expected<uint32_t>
+    CodeObjectBuilder::emit_ternary_operator(uint32_t source_offset,
+                                             Bytecode op, uint32_t operand0_reg,
+                                             uint32_t operand1_reg)
+    {
+        assert(op == Bytecode::TernaryPow);
+        uint32_t result = emplace_back(source_offset, uint8_t(op));
+        emplace_back(source_offset, encode_reg(operand0_reg));
+        emplace_back(source_offset, encode_reg(operand1_reg));
+        uint8_t cache_idx = CL_TRY(allocate_operator_cache());
+        emplace_back(source_offset, cache_idx);
+        CL_TRY(emit_opcode(source_offset,
+                           Bytecode::CheckTernaryOperatorNotImplemented));
+        return Expected<uint32_t>::ok(result);
+    }
+
+    Expected<uint32_t>
     CodeObjectBuilder::emit_unary_op(uint32_t source_offset, Bytecode op,
                                      OperatorBytecodeFormat format)
     {
