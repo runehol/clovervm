@@ -170,6 +170,7 @@ Detailed docs:
 
 - [Refcounting and Reclamation](refcounting-and-reclamation.md)
 - [Heap Slab Allocation and Reuse](heap-slab-allocation-and-reuse.md)
+- [Generational Mark-Sweep GC Design Notes](generational-mark-sweep-gc.md)
 
 ## Exceptions And Control Flow
 
