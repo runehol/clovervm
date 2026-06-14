@@ -450,6 +450,78 @@ namespace cl
         }
     };
 
+    struct IntAddOperator
+    {
+        static constexpr const wchar_t *receiver_error =
+            L"int.__add__ expects an int receiver";
+
+        Value operator()(ThreadState *thread, ConstBigIntView left,
+                         ConstBigIntView right) const
+        {
+            return bigint_add(thread, left, right).raw_value();
+        }
+    };
+
+    struct IntRAddOperator
+    {
+        static constexpr const wchar_t *receiver_error =
+            L"int.__radd__ expects an int receiver";
+
+        Value operator()(ThreadState *thread, ConstBigIntView left,
+                         ConstBigIntView right) const
+        {
+            return IntAddOperator{}(thread, left, right);
+        }
+    };
+
+    struct IntSubOperator
+    {
+        static constexpr const wchar_t *receiver_error =
+            L"int.__sub__ expects an int receiver";
+
+        Value operator()(ThreadState *thread, ConstBigIntView left,
+                         ConstBigIntView right) const
+        {
+            return bigint_sub(thread, left, right).raw_value();
+        }
+    };
+
+    struct IntRSubOperator
+    {
+        static constexpr const wchar_t *receiver_error =
+            L"int.__rsub__ expects an int receiver";
+
+        Value operator()(ThreadState *thread, ConstBigIntView left,
+                         ConstBigIntView right) const
+        {
+            return IntSubOperator{}(thread, right, left);
+        }
+    };
+
+    struct IntMulOperator
+    {
+        static constexpr const wchar_t *receiver_error =
+            L"int.__mul__ expects an int receiver";
+
+        Value operator()(ThreadState *thread, ConstBigIntView left,
+                         ConstBigIntView right) const
+        {
+            return bigint_mul(thread, left, right).raw_value();
+        }
+    };
+
+    struct IntRMulOperator
+    {
+        static constexpr const wchar_t *receiver_error =
+            L"int.__rmul__ expects an int receiver";
+
+        Value operator()(ThreadState *thread, ConstBigIntView left,
+                         ConstBigIntView right) const
+        {
+            return IntMulOperator{}(thread, left, right);
+        }
+    };
+
     struct SMITrueDivOperator
     {
         static constexpr const wchar_t *receiver_error =
@@ -895,6 +967,28 @@ namespace cl
     }
 
     template <typename Operator>
+    static Value native_int_bigint_binary_operator(ThreadState *thread,
+                                                   Value self, Value other)
+    {
+        if(!is_intlike_value(self))
+        {
+            return thread->set_pending_builtin_exception_string(
+                L"TypeError", Operator::receiver_error);
+        }
+        if(!is_intlike_value(other))
+        {
+            return Value::NotImplemented();
+        }
+
+        SmiBigInt self_smi(0);
+        SmiBigInt other_smi(0);
+        ConstBigIntView self_view = intlike_value_bigint_view(self, &self_smi);
+        ConstBigIntView other_view =
+            intlike_value_bigint_view(other, &other_smi);
+        return Operator{}(thread, self_view, other_view);
+    }
+
+    template <typename Operator>
     static Value native_int_compare_operator(ThreadState *thread, Value self,
                                              Value other)
     {
@@ -1047,37 +1141,43 @@ namespace cl
                                      L"Return self >= value."),
             with_trusted_handler_resolver(
                 builtin_intrinsic_method(
-                    L"__add__", native_int_binary_operator<SMIAddOperator>,
+                    L"__add__",
+                    native_int_bigint_binary_operator<IntAddOperator>,
                     L"Return self + value."),
                 resolve_trusted_int_binary_resolver<SMIAddOperator,
                                                     SMIRAddOperator>),
             with_trusted_handler_resolver(
                 builtin_intrinsic_method(
-                    L"__radd__", native_int_binary_operator<SMIRAddOperator>,
+                    L"__radd__",
+                    native_int_bigint_binary_operator<IntRAddOperator>,
                     L"Return value + self."),
                 resolve_trusted_int_binary_resolver<SMIRAddOperator,
                                                     SMIAddOperator>),
             with_trusted_handler_resolver(
                 builtin_intrinsic_method(
-                    L"__sub__", native_int_binary_operator<SMISubOperator>,
+                    L"__sub__",
+                    native_int_bigint_binary_operator<IntSubOperator>,
                     L"Return self - value."),
                 resolve_trusted_int_binary_resolver<SMISubOperator,
                                                     SMIRSubOperator>),
             with_trusted_handler_resolver(
                 builtin_intrinsic_method(
-                    L"__rsub__", native_int_binary_operator<SMIRSubOperator>,
+                    L"__rsub__",
+                    native_int_bigint_binary_operator<IntRSubOperator>,
                     L"Return value - self."),
                 resolve_trusted_int_binary_resolver<SMIRSubOperator,
                                                     SMISubOperator>),
             with_trusted_handler_resolver(
                 builtin_intrinsic_method(
-                    L"__mul__", native_int_binary_operator<SMIMulOperator>,
+                    L"__mul__",
+                    native_int_bigint_binary_operator<IntMulOperator>,
                     L"Return self * value."),
                 resolve_trusted_int_binary_resolver<SMIMulOperator,
                                                     SMIRMulOperator>),
             with_trusted_handler_resolver(
                 builtin_intrinsic_method(
-                    L"__rmul__", native_int_binary_operator<SMIRMulOperator>,
+                    L"__rmul__",
+                    native_int_bigint_binary_operator<IntRMulOperator>,
                     L"Return value * self."),
                 resolve_trusted_int_binary_resolver<SMIRMulOperator,
                                                     SMIMulOperator>),

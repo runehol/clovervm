@@ -323,151 +323,161 @@ TEST(BigInt, AbsMulAddU32WritesNormalizedMagnitude)
     EXPECT_EQ(9u, dest.digits[1]);
 }
 
-TEST(BigInt, AbsAddPropagatesCarryAndNormalizesSign)
+TEST(BigInt, AddPropagatesCarryToHeapBigInt)
 {
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation_scope(context.thread());
     digit_t left[] = {0xffffffffu, 0xffffffffu};
     digit_t right[] = {1};
-    BigIntScratch scratch(3);
-    MutableBigIntView dest = scratch.mutable_view();
 
-    bigint_abs_add(&dest, ConstBigIntView{2, 1, left},
+    Expected<Value> result =
+        bigint_add(context.thread(), ConstBigIntView{2, 1, left},
                    ConstBigIntView{1, 1, right});
 
-    EXPECT_EQ(3u, dest.n_digits);
-    EXPECT_EQ(1, dest.signum);
-    EXPECT_EQ(0u, dest.digits[0]);
-    EXPECT_EQ(0u, dest.digits[1]);
-    EXPECT_EQ(1u, dest.digits[2]);
+    ASSERT_TRUE(result.has_value());
+    ASSERT_TRUE(can_convert_to<BigInt>(result.value()));
+    ConstBigIntView view = assume_convert_to<BigInt>(result.value())->view();
+    EXPECT_EQ(3u, view.n_digits);
+    EXPECT_EQ(1, view.signum);
+    EXPECT_EQ(0u, view.digits[0]);
+    EXPECT_EQ(0u, view.digits[1]);
+    EXPECT_EQ(1u, view.digits[2]);
 }
 
-TEST(BigInt, AbsSubBorrowsAndTrimsHighZeroDigits)
+TEST(BigInt, SubBorrowsAndDemotesTrimmedResult)
 {
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation_scope(context.thread());
     digit_t left[] = {0, 1};
     digit_t right[] = {1};
-    BigIntScratch scratch(2);
-    MutableBigIntView dest = scratch.mutable_view();
 
-    bigint_abs_sub(&dest, ConstBigIntView{2, 1, left},
+    Expected<Value> result =
+        bigint_sub(context.thread(), ConstBigIntView{2, 1, left},
                    ConstBigIntView{1, 1, right});
 
-    EXPECT_EQ(1u, dest.n_digits);
-    EXPECT_EQ(1, dest.signum);
-    EXPECT_EQ(0xffffffffu, dest.digits[0]);
+    ASSERT_TRUE(result.has_value());
+    EXPECT_EQ(Value::from_smi(0xffffffffLL), result.value());
 }
 
 TEST(BigInt, AddCombinesSignedMagnitudes)
 {
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation_scope(context.thread());
     digit_t large[] = {5, 1};
     digit_t small[] = {7};
-    BigIntScratch scratch(3);
-    MutableBigIntView dest = scratch.mutable_view();
 
-    bigint_add(&dest, ConstBigIntView{2, 1, large},
-               ConstBigIntView{1, -1, small});
+    Expected<Value> positive =
+        bigint_add(context.thread(), ConstBigIntView{2, 1, large},
+                   ConstBigIntView{1, -1, small});
+    Expected<Value> negative =
+        bigint_add(context.thread(), ConstBigIntView{1, 1, small},
+                   ConstBigIntView{2, -1, large});
 
-    EXPECT_EQ(1u, dest.n_digits);
-    EXPECT_EQ(1, dest.signum);
-    EXPECT_EQ(0xfffffffeu, dest.digits[0]);
-
-    digit_t normalized_digits[] = {dest.digits[0]};
-    MutableBigIntView negative_dest = scratch.mutable_view();
-    bigint_add(&negative_dest, ConstBigIntView{1, 1, small},
-               ConstBigIntView{2, -1, large});
-
-    EXPECT_EQ(1u, negative_dest.n_digits);
-    EXPECT_EQ(-1, negative_dest.signum);
-    EXPECT_EQ(normalized_digits[0], negative_dest.digits[0]);
+    ASSERT_TRUE(positive.has_value());
+    ASSERT_TRUE(negative.has_value());
+    EXPECT_EQ(Value::from_smi(0xfffffffeLL), positive.value());
+    EXPECT_EQ(Value::from_smi(-0xfffffffeLL), negative.value());
 }
 
 TEST(BigInt, AddCanonicalizesCancellationToZero)
 {
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation_scope(context.thread());
     digit_t left[] = {3, 2};
     digit_t right[] = {3, 2};
-    BigIntScratch scratch(2);
-    MutableBigIntView dest = scratch.mutable_view();
 
-    bigint_add(&dest, ConstBigIntView{2, 1, left},
-               ConstBigIntView{2, -1, right});
+    Expected<Value> result =
+        bigint_add(context.thread(), ConstBigIntView{2, 1, left},
+                   ConstBigIntView{2, -1, right});
 
-    EXPECT_EQ(0u, dest.n_digits);
-    EXPECT_EQ(0, dest.signum);
+    ASSERT_TRUE(result.has_value());
+    EXPECT_EQ(Value::from_smi(0), result.value());
 }
 
 TEST(BigInt, SubUsesSignedRightOperand)
 {
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation_scope(context.thread());
     digit_t left[] = {1};
     digit_t right[] = {2};
-    BigIntScratch scratch(2);
-    MutableBigIntView dest = scratch.mutable_view();
 
-    bigint_sub(&dest, ConstBigIntView{1, 1, left},
-               ConstBigIntView{1, 1, right});
+    Expected<Value> result =
+        bigint_sub(context.thread(), ConstBigIntView{1, 1, left},
+                   ConstBigIntView{1, 1, right});
 
-    EXPECT_EQ(1u, dest.n_digits);
-    EXPECT_EQ(-1, dest.signum);
-    EXPECT_EQ(1u, dest.digits[0]);
+    ASSERT_TRUE(result.has_value());
+    EXPECT_EQ(Value::from_smi(-1), result.value());
 }
 
 TEST(BigInt, MulCanonicalizesZero)
 {
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation_scope(context.thread());
     digit_t zero[] = {0};
     digit_t value[] = {7, 1};
-    BigIntScratch scratch(3);
-    MutableBigIntView dest = scratch.mutable_view();
 
-    bigint_mul(&dest, ConstBigIntView{0, 0, zero},
-               ConstBigIntView{2, -1, value});
+    Expected<Value> result =
+        bigint_mul(context.thread(), ConstBigIntView{0, 0, zero},
+                   ConstBigIntView{2, -1, value});
 
-    EXPECT_EQ(0u, dest.n_digits);
-    EXPECT_EQ(0, dest.signum);
+    ASSERT_TRUE(result.has_value());
+    EXPECT_EQ(Value::from_smi(0), result.value());
 }
 
 TEST(BigInt, MulTrimsUnusedHighDigit)
 {
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation_scope(context.thread());
     digit_t left[] = {1};
     digit_t right[] = {1};
-    BigIntScratch scratch(2);
-    MutableBigIntView dest = scratch.mutable_view();
 
-    bigint_mul(&dest, ConstBigIntView{1, -1, left},
-               ConstBigIntView{1, -1, right});
+    Expected<Value> result =
+        bigint_mul(context.thread(), ConstBigIntView{1, -1, left},
+                   ConstBigIntView{1, -1, right});
 
-    EXPECT_EQ(1u, dest.n_digits);
-    EXPECT_EQ(1, dest.signum);
-    EXPECT_EQ(1u, dest.digits[0]);
+    ASSERT_TRUE(result.has_value());
+    EXPECT_EQ(Value::from_smi(1), result.value());
 }
 
 TEST(BigInt, MulPropagatesSingleDigitCarry)
 {
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation_scope(context.thread());
     digit_t left[] = {0xffffffffu};
     digit_t right[] = {0xffffffffu};
-    BigIntScratch scratch(2);
-    MutableBigIntView dest = scratch.mutable_view();
 
-    bigint_mul(&dest, ConstBigIntView{1, -1, left},
-               ConstBigIntView{1, 1, right});
+    Expected<Value> result =
+        bigint_mul(context.thread(), ConstBigIntView{1, -1, left},
+                   ConstBigIntView{1, 1, right});
 
-    EXPECT_EQ(2u, dest.n_digits);
-    EXPECT_EQ(-1, dest.signum);
-    EXPECT_EQ(1u, dest.digits[0]);
-    EXPECT_EQ(0xfffffffeu, dest.digits[1]);
+    ASSERT_TRUE(result.has_value());
+    ASSERT_TRUE(can_convert_to<BigInt>(result.value()));
+    ConstBigIntView view = assume_convert_to<BigInt>(result.value())->view();
+    EXPECT_EQ(2u, view.n_digits);
+    EXPECT_EQ(-1, view.signum);
+    EXPECT_EQ(1u, view.digits[0]);
+    EXPECT_EQ(0xfffffffeu, view.digits[1]);
 }
 
 TEST(BigInt, MulAccumulatesMultiDigitProducts)
 {
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation_scope(context.thread());
     digit_t left[] = {0xffffffffu, 1};
     digit_t right[] = {0xffffffffu, 1};
-    BigIntScratch scratch(4);
-    MutableBigIntView dest = scratch.mutable_view();
 
-    bigint_mul(&dest, ConstBigIntView{2, 1, left},
-               ConstBigIntView{2, -1, right});
+    Expected<Value> result =
+        bigint_mul(context.thread(), ConstBigIntView{2, 1, left},
+                   ConstBigIntView{2, -1, right});
 
-    EXPECT_EQ(3u, dest.n_digits);
-    EXPECT_EQ(-1, dest.signum);
-    EXPECT_EQ(1u, dest.digits[0]);
-    EXPECT_EQ(0xfffffffcu, dest.digits[1]);
-    EXPECT_EQ(3u, dest.digits[2]);
+    ASSERT_TRUE(result.has_value());
+    ASSERT_TRUE(can_convert_to<BigInt>(result.value()));
+    ConstBigIntView view = assume_convert_to<BigInt>(result.value())->view();
+    EXPECT_EQ(3u, view.n_digits);
+    EXPECT_EQ(-1, view.signum);
+    EXPECT_EQ(1u, view.digits[0]);
+    EXPECT_EQ(0xfffffffcu, view.digits[1]);
+    EXPECT_EQ(3u, view.digits[2]);
 }
 
 TEST(BigInt, CompareBigIntViewsUsesSignedMagnitude)

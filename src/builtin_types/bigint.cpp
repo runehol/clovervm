@@ -289,8 +289,8 @@ namespace cl
         dest->signum = src.signum;
     }
 
-    void bigint_abs_add(MutableBigIntView *dest, ConstBigIntView left,
-                        ConstBigIntView right)
+    static void bigint_abs_add_into(MutableBigIntView *dest,
+                                    ConstBigIntView left, ConstBigIntView right)
     {
         assert(is_normalized_bigint_view(left));
         assert(is_normalized_bigint_view(right));
@@ -321,8 +321,8 @@ namespace cl
         assert(is_normalized_bigint_view(dest->view()));
     }
 
-    void bigint_abs_sub(MutableBigIntView *dest, ConstBigIntView left,
-                        ConstBigIntView right)
+    static void bigint_abs_sub_into(MutableBigIntView *dest,
+                                    ConstBigIntView left, ConstBigIntView right)
     {
         assert(is_normalized_bigint_view(left));
         assert(is_normalized_bigint_view(right));
@@ -360,8 +360,8 @@ namespace cl
         dest->signum = normalized.signum;
     }
 
-    void bigint_add(MutableBigIntView *dest, ConstBigIntView left,
-                    ConstBigIntView right)
+    static void bigint_add_into(MutableBigIntView *dest, ConstBigIntView left,
+                                ConstBigIntView right)
     {
         assert(is_normalized_bigint_view(left));
         assert(is_normalized_bigint_view(right));
@@ -382,7 +382,7 @@ namespace cl
         }
         if(left.signum == right.signum)
         {
-            bigint_abs_add(dest, left, right);
+            bigint_abs_add_into(dest, left, right);
             dest->signum = left.signum;
             assert(is_normalized_bigint_view(dest->view()));
             return;
@@ -395,28 +395,28 @@ namespace cl
         }
         else if(abs_compare > 0)
         {
-            bigint_abs_sub(dest, left, right);
+            bigint_abs_sub_into(dest, left, right);
             dest->signum = left.signum;
         }
         else
         {
-            bigint_abs_sub(dest, right, left);
+            bigint_abs_sub_into(dest, right, left);
             dest->signum = right.signum;
         }
         assert(is_normalized_bigint_view(dest->view()));
     }
 
-    void bigint_sub(MutableBigIntView *dest, ConstBigIntView left,
-                    ConstBigIntView right)
+    static void bigint_sub_into(MutableBigIntView *dest, ConstBigIntView left,
+                                ConstBigIntView right)
     {
         assert(is_normalized_bigint_view(right));
         ConstBigIntView negated_right{
             right.n_digits, static_cast<signum_t>(-right.signum), right.digits};
-        bigint_add(dest, left, negated_right);
+        bigint_add_into(dest, left, negated_right);
     }
 
-    void bigint_mul(MutableBigIntView *dest, ConstBigIntView left,
-                    ConstBigIntView right)
+    static void bigint_mul_into(MutableBigIntView *dest, ConstBigIntView left,
+                                ConstBigIntView right)
     {
         assert(is_normalized_bigint_view(left));
         assert(is_normalized_bigint_view(right));
@@ -454,6 +454,33 @@ namespace cl
         ConstBigIntView normalized = normalize_bigint_view(dest->view());
         dest->n_digits = normalized.n_digits;
         dest->signum = normalized.signum;
+    }
+
+    Expected<Value> bigint_add(ThreadState *thread, ConstBigIntView left,
+                               ConstBigIntView right)
+    {
+        BigIntScratch scratch(std::max(left.n_digits, right.n_digits) + 1);
+        MutableBigIntView dest = scratch.mutable_view();
+        bigint_add_into(&dest, left, right);
+        return finalize_bigint(thread, dest.view());
+    }
+
+    Expected<Value> bigint_sub(ThreadState *thread, ConstBigIntView left,
+                               ConstBigIntView right)
+    {
+        BigIntScratch scratch(std::max(left.n_digits, right.n_digits) + 1);
+        MutableBigIntView dest = scratch.mutable_view();
+        bigint_sub_into(&dest, left, right);
+        return finalize_bigint(thread, dest.view());
+    }
+
+    Expected<Value> bigint_mul(ThreadState *thread, ConstBigIntView left,
+                               ConstBigIntView right)
+    {
+        BigIntScratch scratch(left.n_digits + right.n_digits);
+        MutableBigIntView dest = scratch.mutable_view();
+        bigint_mul_into(&dest, left, right);
+        return finalize_bigint(thread, dest.view());
     }
 
     void bigint_abs_mul_add_u32(MutableBigIntView *dest, ConstBigIntView src,

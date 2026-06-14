@@ -56,7 +56,7 @@ design rationale and semantic boundaries live in [BigInt Design](bigint.md).
 - [x] Implement BigInt subtraction kernels.
 - [x] Implement BigInt multiplication kernels.
 - [x] Implement unary plus and unary negation.
-- [ ] Update non-trusted builtin int dunder methods for bool, SMI, and BigInt
+- [x] Update non-trusted builtin int dunder methods for bool, SMI, and BigInt
       operand combinations.
 - [ ] Update trusted builtin int handlers for bool, SMI, and BigInt operand
       combinations.

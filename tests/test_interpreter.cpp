@@ -7558,3 +7558,27 @@ TEST(Interpreter, unary_plus_accepts_bigint_and_bool)
                          L"288230376151711744");
     EXPECT_EQ(Value::from_smi(1), test::FileRunner(L"+True\n").return_value);
 }
+
+TEST(Interpreter, int_dunder_arithmetic_promotes_to_bigint)
+{
+    expect_string_result(L"str((288230376151711743).__add__(1))\n",
+                         L"288230376151711744");
+    expect_string_result(L"str((-288230376151711743).__sub__(2))\n",
+                         L"-288230376151711745");
+    expect_string_result(L"str((288230376151711743).__mul__(2))\n",
+                         L"576460752303423486");
+}
+
+TEST(Interpreter, bigint_arithmetic_operators)
+{
+    expect_string_result(L"str(int('288230376151711744') + 1)\n",
+                         L"288230376151711745");
+    EXPECT_EQ(Value::from_smi(0),
+              test::FileRunner(L"int('288230376151711744') - "
+                               L"int('288230376151711744')\n")
+                  .return_value);
+    expect_string_result(L"str(int('288230376151711744') * -2)\n",
+                         L"-576460752303423488");
+    expect_string_result(L"str(True + int('288230376151711744'))\n",
+                         L"288230376151711745");
+}
