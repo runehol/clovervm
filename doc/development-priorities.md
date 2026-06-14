@@ -27,23 +27,7 @@ JIT, language, and runtime work.
 
 ## Priority Order
 
-1. **Full pystone benchmark**
-
-   The current `pystone_lite.py` benchmark exercises a useful subset, but the
-   full Python 3-era pystone benchmark is now close enough to be valuable. The
-   benchmark harness already has external CPython timing through
-   `cpython_runner.py`, and Google Benchmark externally times CloverVM
-   `run(n)`, so full pystone should be adapted into the same harness rather
-   than using pystone's internal timing.
-
-   String ordering and rich-comparison dispatch are no longer the primary
-   blocker. The next step is to adapt full pystone into the benchmark harness
-   and use the result to choose the next runtime slice. Setup-only unsupported
-   constructs such as list comprehensions, list multiplication, and unpacking
-   assignment can be rewritten in the benchmark source without changing the
-   measured loop body, but benchmark-body semantics should remain intact.
-
-2. **Implicit protocol dispatch and cached special calls**
+1. **Implicit protocol dispatch and cached special calls**
 
    Move guarded special-method dispatch to implicit protocols: cached dunder
    method calls for `__len__`, `__iter__`, `__next__`, numeric conversions, and
@@ -55,7 +39,7 @@ JIT, language, and runtime work.
    showed that once direct `str(int)` avoided generic lookup, pressure moved to
    cached calls, Python-level protocol lowering, and short-lived allocations.
 
-3. **Richer call adaptation and generic callable protocol**
+2. **Richer call adaptation and generic callable protocol**
 
    Extend the call-plan model to the remaining Python call forms: runtime
    support for positional-only parameters, callee `**kwargs`, caller `*args`,
@@ -72,32 +56,28 @@ JIT, language, and runtime work.
    positional call supplies every parameter slot; default initialization is only
    needed for call sites that leave defaulted slots unfilled.
 
-4. **Interpreter-controlled descriptor execution**
+3. **Interpreter-controlled descriptor execution**
 
    Lookup already classifies descriptor work into plans. The next step is to
    execute `__get__`, `__set__`, and `__delete__` through explicit interpreter
    or VM-controlled dispatch so Python-visible execution, allocation, and
    exceptions are not hidden inside lookup/classification helpers.
 
-5. **Full Python dict hashing and equality**
+4. **Full Python dict hashing and equality**
 
    Python `dict` needs arbitrary-key hashing and equality semantics rather than
    the current string-key-oriented internal assumptions. This matters for real
    Python code, imports, module namespaces, mappings, and future library work.
 
-6. **Short-lived allocation and reclamation pressure**
+5. **Consider a garbage collector**
 
-    Repeated constructor/conversion and get-slice benchmarks now spend
-    significant time allocating and reclaiming tiny temporary objects, especially
-    strings and short list/tuple slice results. Before treating formatting,
-    protocol dispatch, or slice copy loops as the primary remaining bottleneck,
-    measure whether the benchmark has become an allocator/reclamation workload.
-    Candidate work includes evaluating a generational, non-moving,
-    stop-the-world mark-and-sweep allocator, as well as improving
-    zero-count-table processing, slab reuse, and size-class behavior for very
-    small short-lived objects.
+   Benchmarking has shown that the current deferred refcounting design has significant
+   deficiencies, and is the prime contributor to us sometimes being slower than CPython.
+   We'd like to explore replacing the refcounting scheme with a generational, non-moving
+   stop-the world mark-and-sweep garbage collector, as well as supporting Py_INCREF and
+   DECREF with an object pinning system.
 
-7. **Slice write/delete support when it becomes the shortest path**
+6. **Slice write/delete support when it becomes the shortest path**
 
    Keep `slice.__new__` and syntax construction validation-free: slice fields
    are raw objects, and `__index__` conversion must happen at consumption time
@@ -107,14 +87,14 @@ JIT, language, and runtime work.
    decisions, should wait until a concrete benchmark or stdlib bringup task
    needs them.
 
-8. **Attribute hooks and escaped bound methods**
+7. **Attribute hooks and escaped bound methods**
 
     Implement `__getattribute__`, `__getattr__`, `__setattr__`, and
     `__delattr__`, and add observable bound-method objects for escaped method
     values such as `f = obj.m`. Direct method-call fast paths should remain
     allocation-free when the bound method does not escape.
 
-9. **Inner functions with variable capture**
+8. **Inner functions with variable capture**
 
     Implement nested functions that capture variables from enclosing function
     scopes, following the cell-based design in
@@ -129,24 +109,34 @@ JIT, language, and runtime work.
     objects and therefore need explicit lifetime, root visibility, teardown, and
     pending-exception behavior for uninitialized cell reads.
 
-10. **Remaining operator and expression surface**
+9. **Remaining operator and expression surface**
 
     Remaining operator surface should be filled in only where it has a clear
     semantic design and benchmark or compatibility demand.
 
-    Known remaining gaps include ternary `pow(a, b, modulo)`, `@` / matrix
+    Known remaining gaps include `@` / matrix
     multiplication, `in` / `not in`, and the `operator` module helpers that
-    mirror these operations. Ternary power is high-priority because it extends
-    the dispatch substrate; containment remains lower until it has a design
-    that does not misuse `NotImplemented` continuation semantics.
+    mirror these operations.
 
-11. **Generators, `yield`, and `yield from`**
+10. **Inner functions with closure capture **
+
+	Python supports functions that capture variables as closures. We want to
+	implement them similar to CPython - allocate a closure cell, and whenever
+	we load or store the variable we dereference through the closure cell.
+
+11. Class semantics cleanup.
+
+	Class scopes are currently implemented as local scopes, but this is not correct.
+	Instead these should be dynamic scopes backed by a dict that is eventually
+	slurped up into the class object when the initialization is done.
+
+12. **Generators, `yield`, and `yield from`**
 
     Generators create long-lived suspended frames, so they should wait until the
     memory/root model is reliable. `yield from` also needs careful interaction
     with `StopIteration.value` and internal no-value sentinels.
 
-12. **Comprehensions and richer syntax**
+13. **Comprehensions and richer syntax**
 
     Add list/dict/set comprehensions, generator expressions, more assignment
     targets, richer string syntax, and other surface-area features after the
