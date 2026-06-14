@@ -148,7 +148,24 @@ def pow(a, b, modulo=None):
 
 Use parameter names `a`, `b`, and `modulo`.
 
-## Stage 9: Tests
+## Stage 9: Move Subscription Operators To Tables
+
+After ternary pow has proved the ternary table path, move `__getitem__`,
+`__setitem__`, and `__delitem__` onto operator dispatch tables instead of their
+bespoke opcode slow paths.
+
+The intended split is:
+
+- `GetItem`: receiver-owned binary table for `__getitem__(receiver, key)`;
+- `SetItem`: receiver-owned ternary table for
+  `__setitem__(receiver, key, value)`;
+- `DelItem`: receiver-owned binary table for `__delitem__(receiver, key)`.
+
+These tables should preserve receiver-only lookup semantics, not reflected
+operator semantics. Cache guards remain operand0/operand1 only; for `SetItem`,
+the value operand is saved call/continuation state and is not a cache key.
+
+## Stage 10: Tests
 
 Add tests for:
 
@@ -161,7 +178,7 @@ Add tests for:
 - untrusted `__clover_ternary_pow__` remaining ordinary user code;
 - ternary trusted resolver calls requesting `TrustedHandlerArity::Ternary`.
 
-## Stage 10: Documentation And Verification
+## Stage 11: Documentation And Verification
 
 Update `doc/fast-operator-dispatch.md` after implementation to reflect:
 
