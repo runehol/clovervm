@@ -1316,6 +1316,29 @@ TEST(Interpreter, class_call_allocates_instance)
               actual_class->HeapObject::native_layout_id());
 }
 
+TEST(Interpreter, store_attr_add_own_property_initializes_instance_slots)
+{
+    test::VmTestContext test_context;
+    ThreadState::ActivationScope activation_scope(test_context.thread());
+
+    CodeObject *code_obj = test_context.compile_file(L"class Cls:\n"
+                                                     L"    pass\n"
+                                                     L"obj = Cls()\n"
+                                                     L"obj.first = 1\n"
+                                                     L"obj.second = 2\n"
+                                                     L"obj\n");
+
+    Value actual = test_context.thread()->run_clovervm_code_object(code_obj);
+    ASSERT_TRUE(actual.is_ptr());
+    ASSERT_EQ(NativeLayoutId::Instance,
+              actual.get_ptr<Object>()->native_layout_id());
+    Instance *instance = actual.get_ptr<Instance>();
+
+    EXPECT_EQ(2u, instance->native_layout_aux_count_value());
+    EXPECT_EQ(Value::from_smi(1), instance->inline_slot_base()[0]);
+    EXPECT_EQ(Value::from_smi(2), instance->inline_slot_base()[1]);
+}
+
 TEST(Interpreter, class_constructor_rejects_non_none_init_return)
 {
     expect_python_error(L"class Cls:\n"
