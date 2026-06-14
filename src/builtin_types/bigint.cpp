@@ -646,6 +646,41 @@ namespace cl
         dest->signum = normalized.signum == 0 ? 0 : 1;
     }
 
+    static bool bigint_abs_shift_right_loses_nonzero_bits(ConstBigIntView src,
+                                                          uint64_t shift_amount)
+    {
+        assert(is_normalized_bigint_view(src));
+        assert(src.signum == 0 || src.signum == 1);
+        if(src.signum == 0 || shift_amount == 0)
+        {
+            return false;
+        }
+
+        uint64_t whole_digits64 = shift_amount / kDigitBits;
+        if(whole_digits64 >= src.n_digits)
+        {
+            return true;
+        }
+        size_t whole_digits = static_cast<size_t>(whole_digits64);
+        uint32_t intra_digit_shift =
+            static_cast<uint32_t>(shift_amount % kDigitBits);
+
+        for(size_t idx = 0; idx < whole_digits; ++idx)
+        {
+            if(src.digits[idx] != 0)
+            {
+                return true;
+            }
+        }
+        if(intra_digit_shift == 0)
+        {
+            return false;
+        }
+
+        digit_t mask = (digit_t{1} << intra_digit_shift) - 1;
+        return (src.digits[whole_digits] & mask) != 0;
+    }
+
     static void bigint_abs_divmod_normalized_into(MutableBigIntView *quotient,
                                                   MutableBigIntView *remainder,
                                                   MutableBigIntView dividend,
@@ -922,6 +957,70 @@ namespace cl
             bigint_floor_divmod_views(&quotient, &remainder, &adjusted_quotient,
                                       &adjusted_remainder, left, right);
         return finalize_bigint(thread, result.remainder);
+    }
+
+    Expected<Value> bigint_lshift(ThreadState *thread, ConstBigIntView left,
+                                  uint64_t shift_amount)
+    {
+        assert(is_normalized_bigint_view(left));
+        if(left.signum == 0 || shift_amount == 0)
+        {
+            return finalize_bigint(thread, left);
+        }
+
+        uint64_t whole_digits64 = shift_amount / kDigitBits;
+        if(whole_digits64 >
+           std::numeric_limits<size_t>::max() - left.n_digits - 1)
+        {
+            return Expected<Value>::raise_exception(L"OverflowError",
+                                                    L"integer overflow");
+        }
+        size_t capacity =
+            left.n_digits + static_cast<size_t>(whole_digits64) + 1;
+        BigIntScratch scratch(capacity);
+        MutableBigIntView dest = scratch.mutable_view();
+        bigint_shift_left_into(&dest, left, shift_amount);
+        return finalize_bigint(thread, dest.view());
+    }
+
+    Expected<Value> bigint_rshift(ThreadState *thread, ConstBigIntView left,
+                                  uint64_t shift_amount)
+    {
+        assert(is_normalized_bigint_view(left));
+        if(left.signum == 0 || shift_amount == 0)
+        {
+            return finalize_bigint(thread, left);
+        }
+
+        uint64_t whole_digits64 = shift_amount / kDigitBits;
+        size_t shifted_capacity =
+            whole_digits64 >= left.n_digits
+                ? 1
+                : left.n_digits - static_cast<size_t>(whole_digits64) + 1;
+        BigIntScratch scratch(shifted_capacity);
+        MutableBigIntView dest = scratch.mutable_view();
+        ConstBigIntView left_abs = abs_bigint_view(left);
+        bigint_shift_right_abs_into(&dest, left_abs, shift_amount);
+        if(left.signum < 0)
+        {
+            if(bigint_abs_shift_right_loses_nonzero_bits(left_abs,
+                                                         shift_amount))
+            {
+                digit_t one_digit = 1;
+                ConstBigIntView one{1, 1, &one_digit};
+                BigIntScratch adjusted_scratch(
+                    std::max<size_t>(dest.n_digits, 1) + 1);
+                MutableBigIntView adjusted = adjusted_scratch.mutable_view();
+                bigint_abs_add_into(&adjusted, dest.view(), one);
+                adjusted.signum = -1;
+                return finalize_bigint(thread, adjusted.view());
+            }
+            if(dest.n_digits != 0)
+            {
+                dest.signum = -1;
+            }
+        }
+        return finalize_bigint(thread, dest.view());
     }
 
     void bigint_abs_mul_add_u32(MutableBigIntView *dest, ConstBigIntView src,

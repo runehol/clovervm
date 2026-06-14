@@ -7575,17 +7575,42 @@ TEST(Interpreter, shift_reports_unsupported_operands)
                         L"unsupported operand type(s) for shift");
 }
 
-TEST(Interpreter, left_shift_overflow_smi)
+TEST(Interpreter, left_shift_overflow_smi_promotes_to_bigint)
 {
-    expect_python_error(L"1 << 58\n", L"OverflowError", L"integer overflow");
+    expect_string_result(L"str(1 << 58)\n", L"288230376151711744");
 }
 
-TEST(Interpreter, left_shift_overflow_register)
+TEST(Interpreter, left_shift_overflow_register_promotes_to_bigint)
 {
-    expect_python_error(L"a = 1\n"
-                        L"b = 58\n"
-                        L"a << b\n",
-                        L"OverflowError", L"integer overflow");
+    expect_string_result(L"a = 1\n"
+                         L"b = 58\n"
+                         L"str(a << b)\n",
+                         L"288230376151711744");
+}
+
+TEST(Interpreter, bigint_shift_values)
+{
+    expect_string_result(L"str(int('18446744073709551616') << 4)\n",
+                         L"295147905179352825856");
+    expect_string_result(L"str(-int('18446744073709551616') << 1)\n",
+                         L"-36893488147419103232");
+    EXPECT_EQ(
+        Value::from_smi(1),
+        test::FileRunner(L"int('18446744073709551616') >> 64\n").return_value);
+    EXPECT_EQ(
+        Value::from_smi(-1),
+        test::FileRunner(L"-int('18446744073709551616') >> 64\n").return_value);
+    EXPECT_EQ(Value::from_smi(-2),
+              test::FileRunner(L"-(int('18446744073709551616') + 1) >> 64\n")
+                  .return_value);
+    EXPECT_EQ(Value::from_smi(0),
+              test::FileRunner(L"int('18446744073709551616') >> "
+                               L"int('18446744073709551616')\n")
+                  .return_value);
+    EXPECT_EQ(Value::from_smi(-1),
+              test::FileRunner(L"-int('18446744073709551616') >> "
+                               L"int('18446744073709551616')\n")
+                  .return_value);
 }
 
 TEST(Interpreter, add_overflow_promotes_to_bigint)

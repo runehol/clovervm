@@ -588,6 +588,52 @@ TEST(BigInt, FloorDivAndModDemoteExactSmallResults)
     EXPECT_EQ(Value::from_smi(0), remainder.value());
 }
 
+TEST(BigInt, LeftShiftPromotesAndPreservesSign)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation_scope(context.thread());
+    digit_t positive[] = {1};
+    digit_t negative[] = {1};
+
+    Expected<Value> positive_result =
+        bigint_lshift(context.thread(), ConstBigIntView{1, 1, positive}, 64);
+    Expected<Value> negative_result =
+        bigint_lshift(context.thread(), ConstBigIntView{1, -1, negative}, 33);
+
+    ASSERT_TRUE(positive_result.has_value());
+    ASSERT_TRUE(negative_result.has_value());
+    EXPECT_EQ(L"18446744073709551616",
+              int_value_decimal(positive_result.value()));
+    EXPECT_EQ(L"-8589934592", int_value_decimal(negative_result.value()));
+}
+
+TEST(BigInt, RightShiftUsesArithmeticFloorSemantics)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation_scope(context.thread());
+    digit_t positive[] = {0, 0, 1};
+    digit_t negative_exact[] = {0, 0, 1};
+    digit_t negative_round[] = {1, 0, 1};
+
+    Expected<Value> positive_result =
+        bigint_rshift(context.thread(), ConstBigIntView{3, 1, positive}, 64);
+    Expected<Value> negative_exact_result = bigint_rshift(
+        context.thread(), ConstBigIntView{3, -1, negative_exact}, 64);
+    Expected<Value> negative_round_result = bigint_rshift(
+        context.thread(), ConstBigIntView{3, -1, negative_round}, 64);
+    Expected<Value> negative_large_shift = bigint_rshift(
+        context.thread(), ConstBigIntView{3, -1, negative_round}, 200);
+
+    ASSERT_TRUE(positive_result.has_value());
+    ASSERT_TRUE(negative_exact_result.has_value());
+    ASSERT_TRUE(negative_round_result.has_value());
+    ASSERT_TRUE(negative_large_shift.has_value());
+    EXPECT_EQ(Value::from_smi(1), positive_result.value());
+    EXPECT_EQ(Value::from_smi(-1), negative_exact_result.value());
+    EXPECT_EQ(Value::from_smi(-2), negative_round_result.value());
+    EXPECT_EQ(Value::from_smi(-1), negative_large_shift.value());
+}
+
 TEST(BigInt, CompareBigIntViewsUsesSignedMagnitude)
 {
     digit_t one[] = {1};

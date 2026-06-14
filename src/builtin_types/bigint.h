@@ -155,6 +155,12 @@ namespace cl
     [[nodiscard]] Expected<Value> bigint_mod(ThreadState *thread,
                                              ConstBigIntView left,
                                              ConstBigIntView right);
+    [[nodiscard]] Expected<Value> bigint_lshift(ThreadState *thread,
+                                                ConstBigIntView left,
+                                                uint64_t shift_amount);
+    [[nodiscard]] Expected<Value> bigint_rshift(ThreadState *thread,
+                                                ConstBigIntView left,
+                                                uint64_t shift_amount);
     void bigint_abs_mul_add_u32(MutableBigIntView *dest, ConstBigIntView src,
                                 uint32_t multiplier, uint32_t addend);
     int compare_bigint_abs(ConstBigIntView left, ConstBigIntView right);

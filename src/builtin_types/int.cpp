@@ -569,6 +569,35 @@ namespace cl
         return remainder;
     }
 
+    enum class ShiftCountStatus
+    {
+        Converted,
+        TooLarge
+    };
+
+    static Expected<ShiftCountStatus>
+    bigint_view_to_shift_count(ConstBigIntView view, uint64_t *out)
+    {
+        assert(is_normalized_bigint_view(view));
+        if(view.signum < 0)
+        {
+            return Expected<ShiftCountStatus>::raise_exception(
+                L"ValueError", L"negative shift count");
+        }
+        if(view.n_digits > 2)
+        {
+            return Expected<ShiftCountStatus>::ok(ShiftCountStatus::TooLarge);
+        }
+
+        uint64_t shift = view.n_digits > 0 ? view.digits[0] : 0;
+        if(view.n_digits > 1)
+        {
+            shift |= uint64_t(view.digits[1]) << kDigitBits;
+        }
+        *out = shift;
+        return Expected<ShiftCountStatus>::ok(ShiftCountStatus::Converted);
+    }
+
     struct SMIFloorDivOperator
     {
         static constexpr const wchar_t *receiver_error =
@@ -710,6 +739,41 @@ namespace cl
         }
     };
 
+    struct IntLShiftOperator
+    {
+        static constexpr const wchar_t *receiver_error =
+            L"int.__lshift__ expects an int receiver";
+
+        Value operator()(ThreadState *thread, ConstBigIntView left,
+                         ConstBigIntView right) const
+        {
+            uint64_t shift_amount = 0;
+            Expected<ShiftCountStatus> status =
+                bigint_view_to_shift_count(right, &shift_amount);
+            if(status.has_exception())
+            {
+                return Value::exception_marker();
+            }
+            if(status.value() == ShiftCountStatus::TooLarge)
+            {
+                return int_overflow_error(thread);
+            }
+            return bigint_lshift(thread, left, shift_amount).raw_value();
+        }
+    };
+
+    struct IntRLShiftOperator
+    {
+        static constexpr const wchar_t *receiver_error =
+            L"int.__rlshift__ expects an int receiver";
+
+        Value operator()(ThreadState *thread, ConstBigIntView left,
+                         ConstBigIntView right) const
+        {
+            return IntLShiftOperator{}(thread, right, left);
+        }
+    };
+
     struct SMIRShiftOperator
     {
         static constexpr const wchar_t *receiver_error =
@@ -726,6 +790,41 @@ namespace cl
                 return Value::from_smi(left < 0 ? -1 : 0);
             }
             return Value::from_smi(left >> right);
+        }
+    };
+
+    struct IntRShiftOperator
+    {
+        static constexpr const wchar_t *receiver_error =
+            L"int.__rshift__ expects an int receiver";
+
+        Value operator()(ThreadState *thread, ConstBigIntView left,
+                         ConstBigIntView right) const
+        {
+            uint64_t shift_amount = 0;
+            Expected<ShiftCountStatus> status =
+                bigint_view_to_shift_count(right, &shift_amount);
+            if(status.has_exception())
+            {
+                return Value::exception_marker();
+            }
+            if(status.value() == ShiftCountStatus::TooLarge)
+            {
+                return Value::from_smi(left.signum < 0 ? -1 : 0);
+            }
+            return bigint_rshift(thread, left, shift_amount).raw_value();
+        }
+    };
+
+    struct IntRRShiftOperator
+    {
+        static constexpr const wchar_t *receiver_error =
+            L"int.__rrshift__ expects an int receiver";
+
+        Value operator()(ThreadState *thread, ConstBigIntView left,
+                         ConstBigIntView right) const
+        {
+            return IntRShiftOperator{}(thread, right, left);
         }
     };
 
@@ -1333,31 +1432,31 @@ namespace cl
             with_trusted_handler_resolver(
                 builtin_intrinsic_method(
                     L"__lshift__",
-                    native_int_binary_operator<SMILShiftOperator>,
+                    native_int_bigint_binary_operator<IntLShiftOperator>,
                     L"Return self << value."),
-                resolve_trusted_int_binary_resolver<SMILShiftOperator,
-                                                    SMIRLShiftOperator>),
+                resolve_trusted_int_bigint_binary_resolver<IntLShiftOperator,
+                                                           IntRLShiftOperator>),
             with_trusted_handler_resolver(
                 builtin_intrinsic_method(
                     L"__rlshift__",
-                    native_int_binary_operator<SMIRLShiftOperator>,
+                    native_int_bigint_binary_operator<IntRLShiftOperator>,
                     L"Return value << self."),
-                resolve_trusted_int_binary_resolver<SMIRLShiftOperator,
-                                                    SMILShiftOperator>),
+                resolve_trusted_int_bigint_binary_resolver<IntRLShiftOperator,
+                                                           IntLShiftOperator>),
             with_trusted_handler_resolver(
                 builtin_intrinsic_method(
                     L"__rshift__",
-                    native_int_binary_operator<SMIRShiftOperator>,
+                    native_int_bigint_binary_operator<IntRShiftOperator>,
                     L"Return self >> value."),
-                resolve_trusted_int_binary_resolver<SMIRShiftOperator,
-                                                    SMIRRShiftOperator>),
+                resolve_trusted_int_bigint_binary_resolver<IntRShiftOperator,
+                                                           IntRRShiftOperator>),
             with_trusted_handler_resolver(
                 builtin_intrinsic_method(
                     L"__rrshift__",
-                    native_int_binary_operator<SMIRRShiftOperator>,
+                    native_int_bigint_binary_operator<IntRRShiftOperator>,
                     L"Return value >> self."),
-                resolve_trusted_int_binary_resolver<SMIRRShiftOperator,
-                                                    SMIRShiftOperator>),
+                resolve_trusted_int_bigint_binary_resolver<IntRRShiftOperator,
+                                                           IntRShiftOperator>),
             with_trusted_handler_resolver(
                 builtin_intrinsic_method(
                     L"__and__", native_int_binary_operator<SMIAndOperator>,
