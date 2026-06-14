@@ -18,10 +18,15 @@ namespace cl
 
     struct OpTableEntry
     {
-        constexpr OpTableEntry(Bytecode _standard = Bytecode::Invalid,
-                               Bytecode _binary_acc_smi = Bytecode::Invalid,
-                               OperatorBytecodeFormat _bytecode_format =
-                                   OperatorBytecodeFormat::Plain)
+        constexpr OpTableEntry()
+            : standard(Bytecode::Invalid), binary_acc_smi(Bytecode::Invalid),
+              bytecode_format(OperatorBytecodeFormat::Plain)
+        {
+        }
+
+        constexpr OpTableEntry(OperatorBytecodeFormat _bytecode_format,
+                               Bytecode _standard,
+                               Bytecode _binary_acc_smi = Bytecode::Invalid)
             : standard(_standard), binary_acc_smi(_binary_acc_smi),
               bytecode_format(_bytecode_format)
         {
@@ -41,61 +46,69 @@ namespace cl
     {
         OpTable t;
 
-        t.table[size_t(AstOperatorKind::ADD)] =
-            OpTableEntry(Bytecode::Add, Bytecode::AddSmi);
-        t.table[size_t(AstOperatorKind::SUBTRACT)] =
-            OpTableEntry(Bytecode::Sub, Bytecode::SubSmi);
-        t.table[size_t(AstOperatorKind::MULTIPLY)] =
-            OpTableEntry(Bytecode::Mul, Bytecode::MulSmi);
+        t.table[size_t(AstOperatorKind::ADD)] = OpTableEntry(
+            OperatorBytecodeFormat::Plain, Bytecode::Add, Bytecode::AddSmi);
+        t.table[size_t(AstOperatorKind::SUBTRACT)] = OpTableEntry(
+            OperatorBytecodeFormat::Plain, Bytecode::Sub, Bytecode::SubSmi);
+        t.table[size_t(AstOperatorKind::MULTIPLY)] = OpTableEntry(
+            OperatorBytecodeFormat::Plain, Bytecode::Mul, Bytecode::MulSmi);
         t.table[size_t(AstOperatorKind::DIVIDE)] =
-            OpTableEntry(Bytecode::TrueDiv);
+            OpTableEntry(OperatorBytecodeFormat::Plain, Bytecode::TrueDiv);
         t.table[size_t(AstOperatorKind::INT_DIVIDE)] =
-            OpTableEntry(Bytecode::FloorDiv, Bytecode::FloorDivSmi);
-        t.table[size_t(AstOperatorKind::POWER)] =
-            OpTableEntry(Bytecode::Pow, Bytecode::PowSmi);
+            OpTableEntry(OperatorBytecodeFormat::Plain, Bytecode::FloorDiv,
+                         Bytecode::FloorDivSmi);
+        t.table[size_t(AstOperatorKind::POWER)] = OpTableEntry(
+            OperatorBytecodeFormat::Plain, Bytecode::Pow, Bytecode::PowSmi);
         t.table[size_t(AstOperatorKind::LEFTSHIFT)] =
-            OpTableEntry(Bytecode::LShift, Bytecode::LShiftSmi);
+            OpTableEntry(OperatorBytecodeFormat::Plain, Bytecode::LShift,
+                         Bytecode::LShiftSmi);
         t.table[size_t(AstOperatorKind::RIGHTSHIFT)] =
-            OpTableEntry(Bytecode::RShift, Bytecode::RShiftSmi);
-        t.table[size_t(AstOperatorKind::MODULO)] =
-            OpTableEntry(Bytecode::Mod, Bytecode::ModSmi);
-        t.table[size_t(AstOperatorKind::BITWISE_OR)] =
-            OpTableEntry(Bytecode::Or, Bytecode::OrSmi);
-        t.table[size_t(AstOperatorKind::BITWISE_AND)] =
-            OpTableEntry(Bytecode::And, Bytecode::AndSmi);
-        t.table[size_t(AstOperatorKind::BITWISE_XOR)] =
-            OpTableEntry(Bytecode::Xor, Bytecode::XorSmi);
+            OpTableEntry(OperatorBytecodeFormat::Plain, Bytecode::RShift,
+                         Bytecode::RShiftSmi);
+        t.table[size_t(AstOperatorKind::MODULO)] = OpTableEntry(
+            OperatorBytecodeFormat::Plain, Bytecode::Mod, Bytecode::ModSmi);
+        t.table[size_t(AstOperatorKind::BITWISE_OR)] = OpTableEntry(
+            OperatorBytecodeFormat::Plain, Bytecode::Or, Bytecode::OrSmi);
+        t.table[size_t(AstOperatorKind::BITWISE_AND)] = OpTableEntry(
+            OperatorBytecodeFormat::Plain, Bytecode::And, Bytecode::AndSmi);
+        t.table[size_t(AstOperatorKind::BITWISE_XOR)] = OpTableEntry(
+            OperatorBytecodeFormat::Plain, Bytecode::Xor, Bytecode::XorSmi);
 
         t.table[size_t(AstOperatorKind::EQUAL)] = OpTableEntry(
-            Bytecode::TestEqual, Bytecode::Invalid,
-            OperatorBytecodeFormat::WithCacheAndNotImplementedCheck);
+            OperatorBytecodeFormat::WithCacheAndNotImplementedCheck,
+            Bytecode::TestEqual);
         t.table[size_t(AstOperatorKind::NOT_EQUAL)] = OpTableEntry(
-            Bytecode::TestNotEqual, Bytecode::Invalid,
-            OperatorBytecodeFormat::WithCacheAndNotImplementedCheck);
+            OperatorBytecodeFormat::WithCacheAndNotImplementedCheck,
+            Bytecode::TestNotEqual);
         t.table[size_t(AstOperatorKind::LESS)] = OpTableEntry(
-            Bytecode::TestLess, Bytecode::Invalid,
-            OperatorBytecodeFormat::WithCacheAndNotImplementedCheck);
+            OperatorBytecodeFormat::WithCacheAndNotImplementedCheck,
+            Bytecode::TestLess);
         t.table[size_t(AstOperatorKind::LESS_EQUAL)] = OpTableEntry(
-            Bytecode::TestLessEqual, Bytecode::Invalid,
-            OperatorBytecodeFormat::WithCacheAndNotImplementedCheck);
+            OperatorBytecodeFormat::WithCacheAndNotImplementedCheck,
+            Bytecode::TestLessEqual);
         t.table[size_t(AstOperatorKind::GREATER)] = OpTableEntry(
-            Bytecode::TestGreater, Bytecode::Invalid,
-            OperatorBytecodeFormat::WithCacheAndNotImplementedCheck);
+            OperatorBytecodeFormat::WithCacheAndNotImplementedCheck,
+            Bytecode::TestGreater);
         t.table[size_t(AstOperatorKind::GREATER_EQUAL)] = OpTableEntry(
-            Bytecode::TestGreaterEqual, Bytecode::Invalid,
-            OperatorBytecodeFormat::WithCacheAndNotImplementedCheck);
-        t.table[size_t(AstOperatorKind::IS)] = OpTableEntry(Bytecode::TestIs);
+            OperatorBytecodeFormat::WithCacheAndNotImplementedCheck,
+            Bytecode::TestGreaterEqual);
+        t.table[size_t(AstOperatorKind::IS)] =
+            OpTableEntry(OperatorBytecodeFormat::Plain, Bytecode::TestIs);
         t.table[size_t(AstOperatorKind::IS_NOT)] =
-            OpTableEntry(Bytecode::TestIsNot);
-        t.table[size_t(AstOperatorKind::IN)] = OpTableEntry(Bytecode::TestIn);
+            OpTableEntry(OperatorBytecodeFormat::Plain, Bytecode::TestIsNot);
+        t.table[size_t(AstOperatorKind::IN)] =
+            OpTableEntry(OperatorBytecodeFormat::Plain, Bytecode::TestIn);
         t.table[size_t(AstOperatorKind::NOT_IN)] =
-            OpTableEntry(Bytecode::TestNotIn);
+            OpTableEntry(OperatorBytecodeFormat::Plain, Bytecode::TestNotIn);
 
-        t.table[size_t(AstOperatorKind::NOT)] = OpTableEntry(Bytecode::Not);
-        t.table[size_t(AstOperatorKind::NEGATE)] = OpTableEntry(Bytecode::Neg);
-        t.table[size_t(AstOperatorKind::PLUS)] = OpTableEntry(Bytecode::Pos);
+        t.table[size_t(AstOperatorKind::NOT)] =
+            OpTableEntry(OperatorBytecodeFormat::Plain, Bytecode::Not);
+        t.table[size_t(AstOperatorKind::NEGATE)] =
+            OpTableEntry(OperatorBytecodeFormat::Plain, Bytecode::Neg);
+        t.table[size_t(AstOperatorKind::PLUS)] =
+            OpTableEntry(OperatorBytecodeFormat::Plain, Bytecode::Pos);
         t.table[size_t(AstOperatorKind::BITWISE_NOT)] =
-            OpTableEntry(Bytecode::Invert);
+            OpTableEntry(OperatorBytecodeFormat::Plain, Bytecode::Invert);
 
         return t;
     }
