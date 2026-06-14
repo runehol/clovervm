@@ -787,14 +787,7 @@ template <> struct fmt::formatter<cl::CodeObject>
                 disassemble_constant(code_obj, out, pc++);
                 break;
 
-            case cl::Bytecode::Sub:
-            case cl::Bytecode::Mul:
-            case cl::Bytecode::TrueDiv:
-            case cl::Bytecode::FloorDiv:
             case cl::Bytecode::Pow:
-            case cl::Bytecode::LShift:
-            case cl::Bytecode::RShift:
-            case cl::Bytecode::Mod:
             case cl::Bytecode::Or:
             case cl::Bytecode::And:
             case cl::Bytecode::Xor:
@@ -807,6 +800,13 @@ template <> struct fmt::formatter<cl::CodeObject>
                 break;
 
             case cl::Bytecode::Add:
+            case cl::Bytecode::Sub:
+            case cl::Bytecode::Mul:
+            case cl::Bytecode::TrueDiv:
+            case cl::Bytecode::FloorDiv:
+            case cl::Bytecode::LShift:
+            case cl::Bytecode::RShift:
+            case cl::Bytecode::Mod:
             case cl::Bytecode::TestEqual:
             case cl::Bytecode::TestNotEqual:
             case cl::Bytecode::TestLess:
@@ -822,13 +822,7 @@ template <> struct fmt::formatter<cl::CodeObject>
                 ++pc;
                 break;
 
-            case cl::Bytecode::SubSmi:
-            case cl::Bytecode::MulSmi:
-            case cl::Bytecode::FloorDivSmi:
             case cl::Bytecode::PowSmi:
-            case cl::Bytecode::LShiftSmi:
-            case cl::Bytecode::RShiftSmi:
-            case cl::Bytecode::ModSmi:
             case cl::Bytecode::OrSmi:
             case cl::Bytecode::AndSmi:
             case cl::Bytecode::XorSmi:
@@ -837,6 +831,12 @@ template <> struct fmt::formatter<cl::CodeObject>
                 break;
 
             case cl::Bytecode::AddSmi:
+            case cl::Bytecode::SubSmi:
+            case cl::Bytecode::MulSmi:
+            case cl::Bytecode::FloorDivSmi:
+            case cl::Bytecode::LShiftSmi:
+            case cl::Bytecode::RShiftSmi:
+            case cl::Bytecode::ModSmi:
                 format_to(out, " ");
                 disassemble_smi8(code_obj, out, pc++);
                 format_to(out, ", ");
@@ -846,10 +846,14 @@ template <> struct fmt::formatter<cl::CodeObject>
                 ++pc;
                 break;
 
-            case cl::Bytecode::Nop:
-            case cl::Bytecode::Not:
             case cl::Bytecode::Neg:
             case cl::Bytecode::Pos:
+                format_to(out, " ");
+                disassemble_operator_cache(code_obj, out, pc++);
+                break;
+
+            case cl::Bytecode::Nop:
+            case cl::Bytecode::Not:
             case cl::Bytecode::Sqrt:
             case cl::Bytecode::Invert:
             case cl::Bytecode::CheckOperatorNotImplemented:

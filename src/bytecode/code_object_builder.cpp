@@ -767,10 +767,13 @@ namespace cl
         return Expected<uint32_t>::ok(result);
     }
 
-    Expected<uint32_t> CodeObjectBuilder::emit_unary_op(uint32_t source_offset,
-                                                        Bytecode op)
+    Expected<uint32_t>
+    CodeObjectBuilder::emit_unary_op(uint32_t source_offset, Bytecode op,
+                                     OperatorBytecodeFormat format)
     {
-        return emit_opcode(source_offset, op);
+        uint32_t result = CL_TRY(emit_opcode(source_offset, op));
+        CL_TRY(emit_operator_cache_suffix(source_offset, format));
+        return Expected<uint32_t>::ok(result);
     }
 
     Expected<uint32_t> CodeObjectBuilder::emit_call_code_object(

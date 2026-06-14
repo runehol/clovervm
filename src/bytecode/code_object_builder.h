@@ -405,7 +405,8 @@ namespace cl
         Expected<uint32_t> emit_operator_smi(uint32_t source_offset,
                                              Bytecode op, int8_t rhs,
                                              OperatorBytecodeFormat format);
-        Expected<uint32_t> emit_unary_op(uint32_t source_offset, Bytecode op);
+        Expected<uint32_t> emit_unary_op(uint32_t source_offset, Bytecode op,
+                                         OperatorBytecodeFormat format);
         Expected<uint32_t> emit_call_code_object(uint32_t source_offset,
                                                  uint8_t code_object_idx,
                                                  uint32_t first_arg_reg,

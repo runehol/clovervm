@@ -83,9 +83,9 @@ TEST(Codegen, simple2)
 {
     std::string expected = "Code object:\n"
                            "    0 LdaSmi 1\n"
-                           "    2 LShiftSmi 4\n"
-                           "    4 AddSmi 3, operator_ic[0]\n"
-                           "    8 Return\n";
+                           "    2 LShiftSmi 4, operator_ic[0]\n"
+                           "    6 AddSmi 3, operator_ic[1]\n"
+                           "   10 Return\n";
     std::string actual = bytecode_str_from_file(L"(1 << 4) + 3");
 
     EXPECT_EQ(expected, actual);
@@ -496,16 +496,16 @@ TEST(Codegen, while_else)
         "    5 LdaSmi 0\n"
         "    7 StaGlobal c[1], module_global_mutation_ic[1]\n"
         "   10 LdaGlobal c[0], module_global_read_ic[0]\n"
-        "   13 JumpIfFalse 30\n"
+        "   13 JumpIfFalse 32\n"
         "   16 LdaGlobal c[0], module_global_read_ic[1]\n"
-        "   19 SubSmi 1\n"
-        "   21 StaGlobal c[0], module_global_mutation_ic[2]\n"
-        "   24 LdaGlobal c[0], module_global_read_ic[2]\n"
-        "   27 JumpIfTrue 16\n"
-        "   30 LdaSmi 7\n"
-        "   32 StaGlobal c[1], module_global_mutation_ic[3]\n"
-        "   35 LdaGlobal c[1], module_global_read_ic[3]\n"
-        "   38 Return\n"
+        "   19 SubSmi 1, operator_ic[0]\n"
+        "   23 StaGlobal c[0], module_global_mutation_ic[2]\n"
+        "   26 LdaGlobal c[0], module_global_read_ic[2]\n"
+        "   29 JumpIfTrue 16\n"
+        "   32 LdaSmi 7\n"
+        "   34 StaGlobal c[1], module_global_mutation_ic[3]\n"
+        "   37 LdaGlobal c[1], module_global_read_ic[3]\n"
+        "   40 Return\n"
         "Constant 0: \"a\"\n"
         "Constant 1: \"b\"\n";
     std::string actual = bytecode_str_from_file(test_case);

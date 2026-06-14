@@ -193,78 +193,6 @@ namespace cl
         COMPLETE();
     }
 
-    NOINLINE INTERP_CC Value unsupported_division_error(PARAMS)
-    {
-        ExceptionalTarget target = set_builtin_exception_and_resolve_frame_exit(
-            thread, fp, pc, code_object, L"TypeError",
-            L"unsupported operand type(s) for /");
-        fp = target.fp;
-        code_object = target.code_object;
-        pc = target.interpreted_pc;
-        START(0);
-        COMPLETE();
-    }
-
-    NOINLINE INTERP_CC Value unsupported_int_division_error(PARAMS)
-    {
-        ExceptionalTarget target = set_builtin_exception_and_resolve_frame_exit(
-            thread, fp, pc, code_object, L"TypeError",
-            L"unsupported operand type(s) for //");
-        fp = target.fp;
-        code_object = target.code_object;
-        pc = target.interpreted_pc;
-        START(0);
-        COMPLETE();
-    }
-
-    NOINLINE INTERP_CC Value unsupported_modulo_error(PARAMS)
-    {
-        ExceptionalTarget target = set_builtin_exception_and_resolve_frame_exit(
-            thread, fp, pc, code_object, L"TypeError",
-            L"unsupported operand type(s) for %");
-        fp = target.fp;
-        code_object = target.code_object;
-        pc = target.interpreted_pc;
-        START(0);
-        COMPLETE();
-    }
-
-    NOINLINE INTERP_CC Value unsupported_subtraction_error(PARAMS)
-    {
-        ExceptionalTarget target = set_builtin_exception_and_resolve_frame_exit(
-            thread, fp, pc, code_object, L"TypeError",
-            L"unsupported operand type(s) for -");
-        fp = target.fp;
-        code_object = target.code_object;
-        pc = target.interpreted_pc;
-        START(0);
-        COMPLETE();
-    }
-
-    NOINLINE INTERP_CC Value unsupported_multiplication_error(PARAMS)
-    {
-        ExceptionalTarget target = set_builtin_exception_and_resolve_frame_exit(
-            thread, fp, pc, code_object, L"TypeError",
-            L"unsupported operand type(s) for *");
-        fp = target.fp;
-        code_object = target.code_object;
-        pc = target.interpreted_pc;
-        START(0);
-        COMPLETE();
-    }
-
-    NOINLINE INTERP_CC Value unsupported_unary_arithmetic_error(PARAMS)
-    {
-        ExceptionalTarget target = set_builtin_exception_and_resolve_frame_exit(
-            thread, fp, pc, code_object, L"TypeError",
-            L"unsupported operand type for unary arithmetic");
-        fp = target.fp;
-        code_object = target.code_object;
-        pc = target.interpreted_pc;
-        START(0);
-        COMPLETE();
-    }
-
     NOINLINE INTERP_CC Value unsupported_shift_error(PARAMS)
     {
         ExceptionalTarget target = set_builtin_exception_and_resolve_frame_exit(
@@ -1076,43 +1004,6 @@ namespace cl
         COMPLETE();
     }
 
-    static ALWAYSINLINE bool try_get_exact_float(Value value, double *out)
-    {
-        if(can_convert_to<Float>(value))
-        {
-            *out = value.get_ptr<Float>()->value;
-            return true;
-        }
-        return false;
-    }
-
-    static ALWAYSINLINE bool try_get_float_or_smi_or_bool(Value value,
-                                                          double *out)
-    {
-        if(unlikely((value.as.integer & value_not_smi_or_boolean_mask) == 0))
-        {
-            Value integer_value;
-            integer_value.as.integer =
-                value.as.integer & value_boolean_to_integer_mask;
-            *out = static_cast<double>(integer_value.get_smi());
-            return true;
-        }
-        return try_get_exact_float(value, out);
-    }
-
-    static ALWAYSINLINE bool try_get_smi_or_bool(Value value, int64_t *out)
-    {
-        if(unlikely((value.as.integer & value_not_smi_or_boolean_mask) == 0))
-        {
-            Value integer_value;
-            integer_value.as.integer =
-                value.as.integer & value_boolean_to_integer_mask;
-            *out = integer_value.get_smi();
-            return true;
-        }
-        return false;
-    }
-
     static ALWAYSINLINE int64_t floor_div_smi_values(int64_t left,
                                                      int64_t right)
     {
@@ -1135,15 +1026,23 @@ namespace cl
         return remainder;
     }
 
+    NOINLINE static INTERP_CC Value op_truediv_dispatch(PARAMS);
+    NOINLINE static INTERP_CC Value op_floordiv_dispatch(PARAMS);
+    NOINLINE static INTERP_CC Value op_floordiv_smi_dispatch(PARAMS);
+    NOINLINE static INTERP_CC Value op_mod_dispatch(PARAMS);
+    NOINLINE static INTERP_CC Value op_mod_smi_dispatch(PARAMS);
+
     NOINLINE static INTERP_CC Value op_floordiv(PARAMS)
     {
-        START_BINARY_REG_ACC();
+        START(4);
+        int8_t reg = pc[1];
+        Value a = fp[reg];
+        Value b = accumulator;
 
-        int64_t left_int;
-        int64_t right_int;
-        if(try_get_smi_or_bool(a, &left_int) &&
-           try_get_smi_or_bool(b, &right_int))
+        if(!unlikely(A_OR_B_NOT_SMI()))
         {
+            int64_t left_int = a.get_smi();
+            int64_t right_int = b.get_smi();
             if(unlikely(right_int == 0))
             {
                 MUSTTAIL return zero_division_error(ARGS);
@@ -1157,31 +1056,19 @@ namespace cl
             COMPLETE();
         }
 
-        double left;
-        double right;
-        if(!try_get_float_or_smi_or_bool(a, &left) ||
-           !try_get_float_or_smi_or_bool(b, &right))
-        {
-            MUSTTAIL return unsupported_int_division_error(ARGS);
-        }
-        if(unlikely(right == 0.0))
-        {
-            MUSTTAIL return zero_division_error(ARGS);
-        }
-
-        accumulator = thread->make_object_value<Float>(std::floor(left / right))
-                          .raw_value();
-        COMPLETE();
+        MUSTTAIL return op_floordiv_dispatch(ARGS);
     }
 
     NOINLINE static INTERP_CC Value op_floordiv_smi(PARAMS)
     {
-        START_BINARY_ACC_SMI();
+        START(4);
+        Value a = accumulator;
+        Value b = Value::from_smi(int8_t(pc[1]));
 
-        int64_t left_int;
         int64_t right_int = b.get_smi();
-        if(try_get_smi_or_bool(a, &left_int))
+        if(!unlikely(A_NOT_SMI()))
         {
+            int64_t left_int = a.get_smi();
             if(unlikely(right_int == 0))
             {
                 MUSTTAIL return zero_division_error(ARGS);
@@ -1195,31 +1082,20 @@ namespace cl
             COMPLETE();
         }
 
-        double left;
-        if(!try_get_exact_float(a, &left))
-        {
-            MUSTTAIL return unsupported_int_division_error(ARGS);
-        }
-        if(unlikely(right_int == 0))
-        {
-            MUSTTAIL return zero_division_error(ARGS);
-        }
-
-        accumulator =
-            thread->make_object_value<Float>(std::floor(left / right_int))
-                .raw_value();
-        COMPLETE();
+        MUSTTAIL return op_floordiv_smi_dispatch(ARGS);
     }
 
     NOINLINE static INTERP_CC Value op_mod(PARAMS)
     {
-        START_BINARY_REG_ACC();
+        START(4);
+        int8_t reg = pc[1];
+        Value a = fp[reg];
+        Value b = accumulator;
 
-        int64_t left_int;
-        int64_t right_int;
-        if(try_get_smi_or_bool(a, &left_int) &&
-           try_get_smi_or_bool(b, &right_int))
+        if(!unlikely(A_OR_B_NOT_SMI()))
         {
+            int64_t left_int = a.get_smi();
+            int64_t right_int = b.get_smi();
             if(unlikely(right_int == 0))
             {
                 MUSTTAIL return zero_division_error(ARGS);
@@ -1229,39 +1105,19 @@ namespace cl
             COMPLETE();
         }
 
-        double left;
-        double right;
-        if(!try_get_float_or_smi_or_bool(a, &left) ||
-           !try_get_float_or_smi_or_bool(b, &right))
-        {
-            MUSTTAIL return unsupported_modulo_error(ARGS);
-        }
-        if(unlikely(right == 0.0))
-        {
-            MUSTTAIL return zero_division_error(ARGS);
-        }
-
-        double result = std::fmod(left, right);
-        if(result != 0.0 && (std::signbit(result) != std::signbit(right)))
-        {
-            result += right;
-        }
-        else if(result == 0.0)
-        {
-            result = std::copysign(0.0, right);
-        }
-        accumulator = thread->make_object_value<Float>(result).raw_value();
-        COMPLETE();
+        MUSTTAIL return op_mod_dispatch(ARGS);
     }
 
     NOINLINE static INTERP_CC Value op_mod_smi(PARAMS)
     {
-        START_BINARY_ACC_SMI();
+        START(4);
+        Value a = accumulator;
+        Value b = Value::from_smi(int8_t(pc[1]));
 
-        int64_t left_int;
         int64_t right_int = b.get_smi();
-        if(try_get_smi_or_bool(a, &left_int))
+        if(!unlikely(A_NOT_SMI()))
         {
+            int64_t left_int = a.get_smi();
             if(unlikely(right_int == 0))
             {
                 MUSTTAIL return zero_division_error(ARGS);
@@ -1271,143 +1127,13 @@ namespace cl
             COMPLETE();
         }
 
-        double left;
-        if(!try_get_exact_float(a, &left))
-        {
-            MUSTTAIL return unsupported_modulo_error(ARGS);
-        }
-        if(unlikely(right_int == 0))
-        {
-            MUSTTAIL return zero_division_error(ARGS);
-        }
-
-        double result = std::fmod(left, right_int);
-        if(result != 0.0 &&
-           (std::signbit(result) != std::signbit(double(right_int))))
-        {
-            result += right_int;
-        }
-        else if(result == 0.0)
-        {
-            result = std::copysign(0.0, double(right_int));
-        }
-        accumulator = thread->make_object_value<Float>(result).raw_value();
-        COMPLETE();
-    }
-
-    NOINLINE static INTERP_CC Value op_sub_float(PARAMS)
-    {
-        START_BINARY_REG_ACC();
-
-        double left;
-        double right;
-        if(!try_get_float_or_smi_or_bool(a, &left) ||
-           !try_get_float_or_smi_or_bool(b, &right))
-        {
-            MUSTTAIL return unsupported_subtraction_error(ARGS);
-        }
-
-        accumulator =
-            thread->make_object_value<Float>(left - right).raw_value();
-        COMPLETE();
-    }
-
-    NOINLINE static INTERP_CC Value op_sub_smi_float(PARAMS)
-    {
-        START_BINARY_ACC_SMI();
-
-        double left;
-        if(!try_get_exact_float(a, &left))
-        {
-            MUSTTAIL return unsupported_subtraction_error(ARGS);
-        }
-
-        accumulator =
-            thread->make_object_value<Float>(left - double(b.get_smi()))
-                .raw_value();
-        COMPLETE();
-    }
-
-    NOINLINE static INTERP_CC Value op_mul_float(PARAMS)
-    {
-        START_BINARY_REG_ACC();
-
-        double left;
-        double right;
-        if(!try_get_float_or_smi_or_bool(a, &left) ||
-           !try_get_float_or_smi_or_bool(b, &right))
-        {
-            MUSTTAIL return unsupported_multiplication_error(ARGS);
-        }
-
-        accumulator =
-            thread->make_object_value<Float>(left * right).raw_value();
-        COMPLETE();
-    }
-
-    NOINLINE static INTERP_CC Value op_mul_smi_float(PARAMS)
-    {
-        START_BINARY_ACC_SMI();
-
-        double left;
-        if(!try_get_exact_float(a, &left))
-        {
-            MUSTTAIL return unsupported_multiplication_error(ARGS);
-        }
-
-        accumulator =
-            thread->make_object_value<Float>(left * double(b.get_smi()))
-                .raw_value();
-        COMPLETE();
+        MUSTTAIL return op_mod_smi_dispatch(ARGS);
     }
 
     NOINLINE static INTERP_CC Value op_truediv(PARAMS)
     {
-        START_BINARY_REG_ACC();
-
-        double left;
-        double right;
-        if(!try_get_float_or_smi_or_bool(a, &left) ||
-           !try_get_float_or_smi_or_bool(b, &right))
-        {
-            MUSTTAIL return unsupported_division_error(ARGS);
-        }
-        if(unlikely(right == 0.0))
-        {
-            MUSTTAIL return zero_division_error(ARGS);
-        }
-
-        accumulator =
-            thread->make_object_value<Float>(left / right).raw_value();
-        COMPLETE();
-    }
-
-    NOINLINE static INTERP_CC Value op_negate_float_arithmetic(PARAMS)
-    {
-        START_UNARY_ACC();
-
-        double value;
-        if(!try_get_exact_float(a, &value))
-        {
-            MUSTTAIL return unsupported_unary_arithmetic_error(ARGS);
-        }
-
-        accumulator = thread->make_object_value<Float>(-value).raw_value();
-        COMPLETE();
-    }
-
-    NOINLINE static INTERP_CC Value op_plus_float_arithmetic(PARAMS)
-    {
-        START_UNARY_ACC();
-
-        double value;
-        if(!try_get_exact_float(a, &value))
-        {
-            MUSTTAIL return unsupported_unary_arithmetic_error(ARGS);
-        }
-
-        accumulator = thread->make_object_value<Float>(value).raw_value();
-        COMPLETE();
+        START(4);
+        MUSTTAIL return op_truediv_dispatch(ARGS);
     }
 
     NOINLINE static INTERP_CC Value op_sqrt_type_error(PARAMS)
@@ -2180,6 +1906,101 @@ namespace cl
         __builtin_unreachable();
     }
 
+    static ALWAYSINLINE void enter_unary_operator_python_function(
+        ThreadState *thread, Value *&fp, const uint8_t *&pc,
+        CodeObject *&code_object, const OperatorWalkDescriptor &descriptor,
+        Value operand0, const uint8_t *next_pc)
+    {
+        const OperatorInlineCache &entry = descriptor.cache_entry;
+        assert(entry.function != nullptr);
+        assert(entry.n_args == 0 || entry.n_args == 1);
+
+        int32_t first_arg_reg = code_object->get_first_free_arg_encoded_reg();
+        Value self = Value::not_present();
+        if(likely(entry.has_self))
+        {
+            self = operand0;
+        }
+        first_arg_reg =
+            prepare_method_call_argument_slots(fp, first_arg_reg, 0, self);
+
+        assert(next_pc >= pc);
+        uint32_t instr_len = uint32_t(next_pc - pc);
+        enter_function_frame_from_positional_args(
+            thread, fp, pc, code_object,
+            TValue<Function>::from_oop(entry.function), first_arg_reg,
+            entry.n_args, instr_len, entry.adaptation);
+    }
+
+    static ALWAYSINLINE void enter_cached_unary_operator_python_function(
+        ThreadState *thread, Value *&fp, const uint8_t *&pc,
+        CodeObject *&code_object, const OperatorInlineCache &entry,
+        Value operand0, const uint8_t *next_pc)
+    {
+        assert(entry.function != nullptr);
+        assert(entry.n_args == 0 || entry.n_args == 1);
+
+        int32_t first_arg_reg = code_object->get_first_free_arg_encoded_reg();
+        Value self = Value::not_present();
+        if(likely(entry.has_self))
+        {
+            self = operand0;
+        }
+        first_arg_reg =
+            prepare_method_call_argument_slots(fp, first_arg_reg, 0, self);
+
+        assert(next_pc >= pc);
+        uint32_t instr_len = uint32_t(next_pc - pc);
+        enter_function_frame_from_positional_args(
+            thread, fp, pc, code_object,
+            TValue<Function>::from_oop(entry.function), first_arg_reg,
+            entry.n_args, instr_len, entry.adaptation);
+    }
+
+    static ALWAYSINLINE DispatchTableEntry dispatch_unary_operator_walk_result(
+        ThreadState *thread, Value *&fp, const uint8_t *&pc, void *dispatch,
+        CodeObject *&code_object, Value &accumulator, Value operand0,
+        const OperatorWalkDescriptor &descriptor, const uint8_t *next_pc,
+        OperatorInlineCache *cache)
+    {
+        switch(descriptor.status)
+        {
+            case OperatorWalkStatus::CallPythonFunction:
+                install_operator_cache_if_cacheable(cache, descriptor);
+                enter_unary_operator_python_function(
+                    thread, fp, pc, code_object, descriptor, operand0, next_pc);
+                return dispatch_entry_for_pc(dispatch, pc);
+
+            case OperatorWalkStatus::CallTrustedHandler:
+                {
+                    assert(descriptor.cache_entry.handler.arity ==
+                           TrustedHandlerArity::Unary);
+                    install_operator_cache_if_cacheable(cache, descriptor);
+                    accumulator =
+                        descriptor.cache_entry.handler.unary(thread, operand0);
+                    if(unlikely(accumulator.is_exception_marker()))
+                    {
+                        resolve_operator_pending_exception(thread, fp, pc,
+                                                           code_object);
+                        return dispatch_entry_for_pc(dispatch, pc);
+                    }
+                    pc = next_pc;
+                    return dispatch_entry_for_pc(dispatch, pc);
+                }
+
+            case OperatorWalkStatus::NativeResult:
+                accumulator = descriptor.result;
+                pc = next_pc;
+                return dispatch_entry_for_pc(dispatch, pc);
+
+            case OperatorWalkStatus::PropagatePendingException:
+                resolve_operator_pending_exception(thread, fp, pc, code_object);
+                return dispatch_entry_for_pc(dispatch, pc);
+        }
+
+        __builtin_unreachable();
+    }
+
     static ALWAYSINLINE bool both_smi_or_bool(Value a, Value b)
     {
         return ((a.as.integer | b.as.integer) &
@@ -2229,6 +2050,43 @@ namespace cl
         return dispatch_binary_operator_walk_result(
             thread, fp, pc, dispatch, code_object, accumulator, table_id,
             operand0, operand1, descriptor, continuation_pc, next_pc, &cache);
+    }
+
+    static ALWAYSINLINE DispatchTableEntry dispatch_cached_unary_operator(
+        ThreadState *thread, Value *&fp, const uint8_t *&pc, void *dispatch,
+        CodeObject *&code_object, Value &accumulator,
+        OperatorDispatchTableId table_id, uint8_t cache_idx, Value operand0,
+        const uint8_t *next_pc)
+    {
+        OperatorInlineCache &cache = code_object->operator_caches[cache_idx];
+        if(likely(cache.matches_unary(operand0)))
+        {
+            if(cache.handler.arity == TrustedHandlerArity::Unary)
+            {
+                accumulator = cache.handler.unary(thread, operand0);
+                if(unlikely(accumulator.is_exception_marker()))
+                {
+                    resolve_operator_pending_exception(thread, fp, pc,
+                                                       code_object);
+                    return dispatch_entry_for_pc(dispatch, pc);
+                }
+                pc = next_pc;
+                return dispatch_entry_for_pc(dispatch, pc);
+            }
+            if(likely(cache.function != nullptr))
+            {
+                enter_cached_unary_operator_python_function(
+                    thread, fp, pc, code_object, cache, operand0, next_pc);
+                return dispatch_entry_for_pc(dispatch, pc);
+            }
+        }
+
+        OperatorWalkDescriptor descriptor = walk_operator_table(
+            thread, table_id, 0, OperatorCacheability::CacheableDirectOnly,
+            operand0, Value::not_present(), Value::not_present());
+        return dispatch_unary_operator_walk_result(
+            thread, fp, pc, dispatch, code_object, accumulator, operand0,
+            descriptor, next_pc, &cache);
     }
 
     static ALWAYSINLINE DispatchTableEntry
@@ -3383,6 +3241,71 @@ namespace cl
         MUSTTAIL return next_dispatch_fun(ARGS);
     }
 
+#define DEFINE_BINARY_REG_OPERATOR_DISPATCH(name, table_id)                    \
+    NOINLINE static INTERP_CC Value op_##name##_dispatch(PARAMS)               \
+    {                                                                          \
+        int8_t reg = pc[1];                                                    \
+        uint8_t cache_idx = pc[2];                                             \
+        Value a = fp[reg];                                                     \
+        Value b = accumulator;                                                 \
+        DispatchTableEntry next_dispatch_fun =                                 \
+            dispatch_cached_reflectable_binary_operator(                       \
+                thread, fp, pc, dispatch, code_object, accumulator,            \
+                OperatorDispatchTableId::table_id, cache_idx, a, b, pc + 3,    \
+                pc + 4);                                                       \
+        MUSTTAIL return next_dispatch_fun(ARGS);                               \
+    }
+
+#define DEFINE_BINARY_SMI_OPERATOR_DISPATCH(name, table_id)                    \
+    NOINLINE static INTERP_CC Value op_##name##_smi_dispatch(PARAMS)           \
+    {                                                                          \
+        uint8_t cache_idx = pc[2];                                             \
+        Value a = accumulator;                                                 \
+        Value b = Value::from_smi(int8_t(pc[1]));                              \
+        DispatchTableEntry next_dispatch_fun =                                 \
+            dispatch_cached_reflectable_binary_operator(                       \
+                thread, fp, pc, dispatch, code_object, accumulator,            \
+                OperatorDispatchTableId::table_id, cache_idx, a, b, pc + 3,    \
+                pc + 4);                                                       \
+        MUSTTAIL return next_dispatch_fun(ARGS);                               \
+    }
+
+#define DEFINE_BINARY_OPERATOR_DISPATCH(name, table_id)                        \
+    DEFINE_BINARY_REG_OPERATOR_DISPATCH(name, table_id)                        \
+    DEFINE_BINARY_SMI_OPERATOR_DISPATCH(name, table_id)
+
+    DEFINE_BINARY_OPERATOR_DISPATCH(sub, Sub)
+    DEFINE_BINARY_OPERATOR_DISPATCH(mul, Mul)
+    DEFINE_BINARY_REG_OPERATOR_DISPATCH(truediv, TrueDiv)
+    DEFINE_BINARY_OPERATOR_DISPATCH(floordiv, FloorDiv)
+    DEFINE_BINARY_OPERATOR_DISPATCH(mod, Mod)
+    DEFINE_BINARY_OPERATOR_DISPATCH(lshift, LShift)
+    DEFINE_BINARY_OPERATOR_DISPATCH(rshift, RShift)
+
+#undef DEFINE_BINARY_OPERATOR_DISPATCH
+#undef DEFINE_BINARY_SMI_OPERATOR_DISPATCH
+#undef DEFINE_BINARY_REG_OPERATOR_DISPATCH
+
+    NOINLINE static INTERP_CC Value op_negate_dispatch(PARAMS)
+    {
+        uint8_t cache_idx = pc[1];
+        Value a = accumulator;
+        DispatchTableEntry next_dispatch_fun = dispatch_cached_unary_operator(
+            thread, fp, pc, dispatch, code_object, accumulator,
+            OperatorDispatchTableId::Neg, cache_idx, a, pc + 2);
+        MUSTTAIL return next_dispatch_fun(ARGS);
+    }
+
+    NOINLINE static INTERP_CC Value op_plus_dispatch(PARAMS)
+    {
+        uint8_t cache_idx = pc[1];
+        Value a = accumulator;
+        DispatchTableEntry next_dispatch_fun = dispatch_cached_unary_operator(
+            thread, fp, pc, dispatch, code_object, accumulator,
+            OperatorDispatchTableId::Pos, cache_idx, a, pc + 2);
+        MUSTTAIL return next_dispatch_fun(ARGS);
+    }
+
     static INTERP_CC Value op_add_smi(PARAMS)
     {
         START(4);
@@ -3424,10 +3347,12 @@ namespace cl
 
     static INTERP_CC Value op_sub_smi(PARAMS)
     {
-        START_BINARY_ACC_SMI();
+        START(4);
+        Value a = accumulator;
+        Value b = Value::from_smi(int8_t(pc[1]));
         if(unlikely(A_NOT_SMI()))
         {
-            MUSTTAIL return op_sub_smi_float(ARGS);
+            MUSTTAIL return op_sub_smi_dispatch(ARGS);
         }
         if(unlikely(__builtin_sub_overflow(a.as.integer, b.as.integer,
                                            &accumulator.as.integer)))
@@ -3441,10 +3366,13 @@ namespace cl
 
     static INTERP_CC Value op_sub(PARAMS)
     {
-        START_BINARY_REG_ACC();
+        START(4);
+        int8_t reg = pc[1];
+        Value a = fp[reg];
+        Value b = accumulator;
         if(unlikely(A_OR_B_NOT_SMI()))
         {
-            MUSTTAIL return op_sub_float(ARGS);
+            MUSTTAIL return op_sub_dispatch(ARGS);
         }
         if(unlikely(__builtin_sub_overflow(a.as.integer, b.as.integer,
                                            &accumulator.as.integer)))
@@ -3458,10 +3386,13 @@ namespace cl
 
     static INTERP_CC Value op_mul(PARAMS)
     {
-        START_BINARY_REG_ACC();
+        START(4);
+        int8_t reg = pc[1];
+        Value a = fp[reg];
+        Value b = accumulator;
         if(unlikely(A_OR_B_NOT_SMI()))
         {
-            MUSTTAIL return op_mul_float(ARGS);
+            MUSTTAIL return op_mul_dispatch(ARGS);
         }
         Value dest;
         if(unlikely(__builtin_smulll_overflow(a.as.integer, b.get_smi(),
@@ -3476,10 +3407,12 @@ namespace cl
 
     static INTERP_CC Value op_mul_smi(PARAMS)
     {
-        START_BINARY_ACC_SMI();
+        START(4);
+        Value a = accumulator;
+        Value b = Value::from_smi(int8_t(pc[1]));
         if(unlikely(A_NOT_SMI()))
         {
-            MUSTTAIL return op_mul_smi_float(ARGS);
+            MUSTTAIL return op_mul_smi_dispatch(ARGS);
         }
         Value dest;
         if(unlikely(__builtin_smulll_overflow(a.as.integer, b.get_smi(),
@@ -3494,10 +3427,13 @@ namespace cl
 
     static INTERP_CC Value op_lshift(PARAMS)
     {
-        START_BINARY_REG_ACC();
+        START(4);
+        int8_t reg = pc[1];
+        Value a = fp[reg];
+        Value b = accumulator;
         if(unlikely(A_OR_B_NOT_SMI()))
         {
-            MUSTTAIL return unsupported_shift_error(ARGS);
+            MUSTTAIL return op_lshift_dispatch(ARGS);
         }
         int64_t shift_count = b.get_smi();
         if(unlikely(shift_count < 0))
@@ -3518,10 +3454,12 @@ namespace cl
 
     static INTERP_CC Value op_lshift_smi(PARAMS)
     {
-        START_BINARY_ACC_SMI();
+        START(4);
+        Value a = accumulator;
+        Value b = Value::from_smi(int8_t(pc[1]));
         if(unlikely(A_NOT_SMI()))
         {
-            MUSTTAIL return unsupported_shift_error(ARGS);
+            MUSTTAIL return op_lshift_smi_dispatch(ARGS);
         }
         int64_t shift_count = b.get_smi();
         // Bytecode invariant: codegen only emits LShiftSmi for shifts 0..63.
@@ -3541,10 +3479,13 @@ namespace cl
 
     static INTERP_CC Value op_rshift(PARAMS)
     {
-        START_BINARY_REG_ACC();
+        START(4);
+        int8_t reg = pc[1];
+        Value a = fp[reg];
+        Value b = accumulator;
         if(unlikely(A_OR_B_NOT_SMI()))
         {
-            MUSTTAIL return unsupported_shift_error(ARGS);
+            MUSTTAIL return op_rshift_dispatch(ARGS);
         }
 
         int64_t shift_count = b.get_smi();
@@ -3558,10 +3499,12 @@ namespace cl
 
     static INTERP_CC Value op_rshift_smi(PARAMS)
     {
-        START_BINARY_ACC_SMI();
+        START(4);
+        Value a = accumulator;
+        Value b = Value::from_smi(int8_t(pc[1]));
         if(unlikely(A_NOT_SMI()))
         {
-            MUSTTAIL return unsupported_shift_error(ARGS);
+            MUSTTAIL return op_rshift_smi_dispatch(ARGS);
         }
         int64_t shift_count = b.get_smi();
         if(unlikely(shift_count < 0))
@@ -3793,10 +3736,11 @@ namespace cl
 
     static INTERP_CC Value op_negate(PARAMS)
     {
-        START_UNARY_ACC();
+        START(2);
+        Value a = accumulator;
         if(unlikely(A_NOT_SMI()))
         {
-            MUSTTAIL return op_negate_float_arithmetic(ARGS);
+            MUSTTAIL return op_negate_dispatch(ARGS);
         }
 
         if(unlikely(__builtin_sub_overflow(0, a.as.integer,
@@ -3811,10 +3755,11 @@ namespace cl
 
     static INTERP_CC Value op_plus(PARAMS)
     {
-        START_UNARY_ACC();
+        START(2);
+        Value a = accumulator;
         if(unlikely(A_NOT_SMI()))
         {
-            MUSTTAIL return op_plus_float_arithmetic(ARGS);
+            MUSTTAIL return op_plus_dispatch(ARGS);
         }
 
         COMPLETE();

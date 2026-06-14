@@ -333,6 +333,40 @@ namespace cl
         }
     };
 
+    struct FloatNegOperator
+    {
+        static constexpr const wchar_t *receiver_error =
+            L"float.__neg__ expects a float receiver";
+
+        Value operator()(ThreadState *thread, double value) const
+        {
+            return thread->make_object_value<Float>(-value).raw_value();
+        }
+    };
+
+    struct FloatPosOperator
+    {
+        static constexpr const wchar_t *receiver_error =
+            L"float.__pos__ expects a float receiver";
+
+        Value operator()(ThreadState *thread, double value) const
+        {
+            return thread->make_object_value<Float>(value).raw_value();
+        }
+    };
+
+    template <typename Operator>
+    static Value native_float_unary_operator(ThreadState *thread, Value self)
+    {
+        if(!can_convert_to<Float>(self))
+        {
+            return thread->set_pending_builtin_exception_string(
+                L"TypeError", Operator::receiver_error);
+        }
+
+        return Operator{}(thread, self.get_ptr<Float>()->value);
+    }
+
     template <typename Operator>
     static Value native_float_binary_operator(ThreadState *thread, Value self,
                                               Value other)
@@ -377,6 +411,12 @@ namespace cl
     {
         return Operator{}(thread, smi_or_bool_as_double(left_value),
                           right_value.get_ptr<Float>()->value);
+    }
+
+    template <typename Operator>
+    static Value trusted_float_unary_operator(ThreadState *thread, Value value)
+    {
+        return Operator{}(thread, value.get_ptr<Float>()->value);
     }
 
     static bool is_smi_or_bool_shape_key(ShapeKey key)
@@ -428,6 +468,25 @@ namespace cl
         }
         return resolve_trusted_float_binary_handler<NormalOperator>(
             vm, operand0_key, operand1_key, operand2_key);
+    }
+
+    template <typename Operator>
+    static TrustedHandler resolve_trusted_float_unary_handler(
+        VirtualMachine *vm, ShapeKey operand0_key, ShapeKey operand1_key,
+        ShapeKey operand2_key, TrustedHandlerOperandOrder order)
+    {
+        (void)operand1_key;
+        (void)operand2_key;
+        (void)order;
+
+        ShapeKey float_key =
+            ShapeKey::from_shape(vm->float_class()->get_instance_root_shape());
+        if(operand0_key == float_key)
+        {
+            return TrustedHandler::for_unary(
+                trusted_float_unary_operator<Operator>);
+        }
+        return TrustedHandler::none();
     }
 
     BuiltinClassDefinition make_float_class(VirtualMachine *vm)
@@ -565,6 +624,16 @@ namespace cl
                     L"Return self >= value."),
                 resolve_trusted_float_binary_resolver<FloatGeOperator,
                                                       FloatLeOperator>),
+            with_trusted_handler_resolver(
+                builtin_intrinsic_method(
+                    L"__neg__", native_float_unary_operator<FloatNegOperator>,
+                    L"Return -self."),
+                resolve_trusted_float_unary_handler<FloatNegOperator>),
+            with_trusted_handler_resolver(
+                builtin_intrinsic_method(
+                    L"__pos__", native_float_unary_operator<FloatPosOperator>,
+                    L"Return +self."),
+                resolve_trusted_float_unary_handler<FloatPosOperator>),
         };
         unwrap_bootstrap_expected(
             vm,

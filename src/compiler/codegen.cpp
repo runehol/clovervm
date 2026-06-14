@@ -50,24 +50,28 @@ namespace cl
             OperatorBytecodeFormat::WithCacheAndNotImplementedCheck,
             Bytecode::Add, Bytecode::AddSmi);
         t.table[size_t(AstOperatorKind::SUBTRACT)] = OpTableEntry(
-            OperatorBytecodeFormat::Plain, Bytecode::Sub, Bytecode::SubSmi);
+            OperatorBytecodeFormat::WithCacheAndNotImplementedCheck,
+            Bytecode::Sub, Bytecode::SubSmi);
         t.table[size_t(AstOperatorKind::MULTIPLY)] = OpTableEntry(
-            OperatorBytecodeFormat::Plain, Bytecode::Mul, Bytecode::MulSmi);
-        t.table[size_t(AstOperatorKind::DIVIDE)] =
-            OpTableEntry(OperatorBytecodeFormat::Plain, Bytecode::TrueDiv);
-        t.table[size_t(AstOperatorKind::INT_DIVIDE)] =
-            OpTableEntry(OperatorBytecodeFormat::Plain, Bytecode::FloorDiv,
-                         Bytecode::FloorDivSmi);
+            OperatorBytecodeFormat::WithCacheAndNotImplementedCheck,
+            Bytecode::Mul, Bytecode::MulSmi);
+        t.table[size_t(AstOperatorKind::DIVIDE)] = OpTableEntry(
+            OperatorBytecodeFormat::WithCacheAndNotImplementedCheck,
+            Bytecode::TrueDiv);
+        t.table[size_t(AstOperatorKind::INT_DIVIDE)] = OpTableEntry(
+            OperatorBytecodeFormat::WithCacheAndNotImplementedCheck,
+            Bytecode::FloorDiv, Bytecode::FloorDivSmi);
         t.table[size_t(AstOperatorKind::POWER)] = OpTableEntry(
             OperatorBytecodeFormat::Plain, Bytecode::Pow, Bytecode::PowSmi);
-        t.table[size_t(AstOperatorKind::LEFTSHIFT)] =
-            OpTableEntry(OperatorBytecodeFormat::Plain, Bytecode::LShift,
-                         Bytecode::LShiftSmi);
-        t.table[size_t(AstOperatorKind::RIGHTSHIFT)] =
-            OpTableEntry(OperatorBytecodeFormat::Plain, Bytecode::RShift,
-                         Bytecode::RShiftSmi);
+        t.table[size_t(AstOperatorKind::LEFTSHIFT)] = OpTableEntry(
+            OperatorBytecodeFormat::WithCacheAndNotImplementedCheck,
+            Bytecode::LShift, Bytecode::LShiftSmi);
+        t.table[size_t(AstOperatorKind::RIGHTSHIFT)] = OpTableEntry(
+            OperatorBytecodeFormat::WithCacheAndNotImplementedCheck,
+            Bytecode::RShift, Bytecode::RShiftSmi);
         t.table[size_t(AstOperatorKind::MODULO)] = OpTableEntry(
-            OperatorBytecodeFormat::Plain, Bytecode::Mod, Bytecode::ModSmi);
+            OperatorBytecodeFormat::WithCacheAndNotImplementedCheck,
+            Bytecode::Mod, Bytecode::ModSmi);
         t.table[size_t(AstOperatorKind::BITWISE_OR)] = OpTableEntry(
             OperatorBytecodeFormat::Plain, Bytecode::Or, Bytecode::OrSmi);
         t.table[size_t(AstOperatorKind::BITWISE_AND)] = OpTableEntry(
@@ -105,9 +109,9 @@ namespace cl
         t.table[size_t(AstOperatorKind::NOT)] =
             OpTableEntry(OperatorBytecodeFormat::Plain, Bytecode::Not);
         t.table[size_t(AstOperatorKind::NEGATE)] =
-            OpTableEntry(OperatorBytecodeFormat::Plain, Bytecode::Neg);
+            OpTableEntry(OperatorBytecodeFormat::WithCache, Bytecode::Neg);
         t.table[size_t(AstOperatorKind::PLUS)] =
-            OpTableEntry(OperatorBytecodeFormat::Plain, Bytecode::Pos);
+            OpTableEntry(OperatorBytecodeFormat::WithCache, Bytecode::Pos);
         t.table[size_t(AstOperatorKind::BITWISE_NOT)] =
             OpTableEntry(OperatorBytecodeFormat::Plain, Bytecode::Invert);
 
@@ -1042,7 +1046,8 @@ namespace cl
             }
 
             CL_TRY(codegen_node(call_argument_value(args[0])));
-            CL_TRY(code_obj->emit_unary_op(source_offset, Bytecode::Sqrt));
+            CL_TRY(code_obj->emit_unary_op(source_offset, Bytecode::Sqrt,
+                                           OperatorBytecodeFormat::Plain));
             return Expected<void>::ok();
         }
 
@@ -2643,7 +2648,8 @@ namespace cl
                             get_operator_entry(kind.operator_kind);
                         CL_TRY(codegen_node(children[0]));
                         CL_TRY(code_obj->emit_unary_op(source_offset,
-                                                       entry.standard));
+                                                       entry.standard,
+                                                       entry.bytecode_format));
                         break;
                     }
                 case AstNodeKind::EXPRESSION_LITERAL:

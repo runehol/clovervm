@@ -3082,14 +3082,25 @@ TEST(Interpreter, subscript_load_caches_trusted_builtin_slice_handlers)
         ASSERT_TRUE(can_convert_to<Function>(function_value));
         CodeObject *function_code =
             assume_convert_to<Function>(function_value)->code_object.extract();
-        ASSERT_EQ(1u, function_code->operator_caches.size());
-        const OperatorInlineCache &cache = function_code->operator_caches[0];
+        const OperatorInlineCache *cache = nullptr;
+        for(const OperatorInlineCache &candidate:
+            function_code->operator_caches)
+        {
+            if(candidate.handler.arity == TrustedHandlerArity::Binary &&
+               candidate.operand_shape_keys[1] ==
+                   ShapeKey::from_shape(expected_key_shape))
+            {
+                cache = &candidate;
+                break;
+            }
+        }
+        ASSERT_NE(nullptr, cache);
         EXPECT_EQ(ShapeKey::from_shape(expected_key_shape),
-                  cache.operand_shape_keys[1]);
-        EXPECT_EQ(expected_key_shape,
-                  test_context.vm().shape_for_key(cache.operand_shape_keys[1]));
-        EXPECT_NE(nullptr, cache.handler.binary);
-        handler_out = cache.handler.binary;
+                  cache->operand_shape_keys[1]);
+        EXPECT_EQ(expected_key_shape, test_context.vm().shape_for_key(
+                                          cache->operand_shape_keys[1]));
+        EXPECT_NE(nullptr, cache->handler.binary);
+        handler_out = cache->handler.binary;
     };
 
     BinaryHandler list_nonstrided_handler = nullptr;
