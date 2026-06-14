@@ -22,6 +22,8 @@ namespace cl
 
     static constexpr uint32_t kDigitBits = sizeof(digit_t) * 8;
     static_assert(kDigitBits == 32);
+    static constexpr double_digit_t kDigitBase = double_digit_t{1}
+                                                 << kDigitBits;
 
     struct ConstBigIntView
     {
@@ -143,6 +145,14 @@ namespace cl
     [[nodiscard]] Expected<Value> bigint_from_int64(ThreadState *thread,
                                                     int64_t value);
     [[nodiscard]] Expected<int64_t> bigint_to_int64(ConstBigIntView view);
+    void bigint_abs_add(MutableBigIntView *dest, ConstBigIntView left,
+                        ConstBigIntView right);
+    void bigint_abs_sub(MutableBigIntView *dest, ConstBigIntView left,
+                        ConstBigIntView right);
+    void bigint_add(MutableBigIntView *dest, ConstBigIntView left,
+                    ConstBigIntView right);
+    void bigint_sub(MutableBigIntView *dest, ConstBigIntView left,
+                    ConstBigIntView right);
     void bigint_abs_mul_add_u32(MutableBigIntView *dest, ConstBigIntView src,
                                 uint32_t multiplier, uint32_t addend);
     int compare_bigint_abs(ConstBigIntView left, ConstBigIntView right);

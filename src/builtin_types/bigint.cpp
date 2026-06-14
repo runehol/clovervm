@@ -2,6 +2,7 @@
 
 #include "runtime/thread_state.h"
 
+#include <algorithm>
 #include <cassert>
 #include <cstring>
 #include <limits>
@@ -247,6 +248,153 @@ namespace cl
             return Expected<int64_t>::ok(std::numeric_limits<int64_t>::min());
         }
         return Expected<int64_t>::ok(-static_cast<int64_t>(magnitude));
+    }
+
+    static void set_zero(MutableBigIntView *dest)
+    {
+        dest->n_digits = 0;
+        dest->signum = 0;
+    }
+
+    static void copy_bigint_view(MutableBigIntView *dest, ConstBigIntView src)
+    {
+        ConstBigIntView normalized = normalize_bigint_view(src);
+        assert(dest->capacity >= normalized.n_digits);
+        assert(dest->digits != normalized.digits);
+        if(normalized.n_digits > 0)
+        {
+            std::memcpy(dest->digits, normalized.digits,
+                        normalized.n_digits * sizeof(digit_t));
+        }
+        dest->n_digits = normalized.n_digits;
+        dest->signum = normalized.signum;
+    }
+
+    void bigint_abs_add(MutableBigIntView *dest, ConstBigIntView left,
+                        ConstBigIntView right)
+    {
+        ConstBigIntView normalized_left = normalize_bigint_view(left);
+        ConstBigIntView normalized_right = normalize_bigint_view(right);
+        size_t max_digits =
+            std::max(normalized_left.n_digits, normalized_right.n_digits);
+        assert(dest->capacity >= max_digits + 1);
+        assert(dest->digits != normalized_left.digits);
+        assert(dest->digits != normalized_right.digits);
+
+        double_digit_t carry = 0;
+        for(size_t idx = 0; idx < max_digits; ++idx)
+        {
+            double_digit_t left_digit = idx < normalized_left.n_digits
+                                            ? normalized_left.digits[idx]
+                                            : 0;
+            double_digit_t right_digit = idx < normalized_right.n_digits
+                                             ? normalized_right.digits[idx]
+                                             : 0;
+            double_digit_t sum = left_digit + right_digit + carry;
+            dest->digits[idx] = static_cast<digit_t>(sum);
+            carry = sum >> kDigitBits;
+        }
+
+        dest->n_digits = max_digits;
+        if(carry != 0)
+        {
+            dest->digits[dest->n_digits] = static_cast<digit_t>(carry);
+            ++dest->n_digits;
+        }
+        dest->signum = dest->n_digits == 0 ? 0 : 1;
+    }
+
+    void bigint_abs_sub(MutableBigIntView *dest, ConstBigIntView left,
+                        ConstBigIntView right)
+    {
+        ConstBigIntView normalized_left = normalize_bigint_view(left);
+        ConstBigIntView normalized_right = normalize_bigint_view(right);
+        assert(compare_bigint_abs(normalized_left, normalized_right) >= 0);
+        assert(dest->capacity >= normalized_left.n_digits);
+        assert(dest->digits != normalized_left.digits);
+        assert(dest->digits != normalized_right.digits);
+
+        double_digit_t borrow = 0;
+        for(size_t idx = 0; idx < normalized_left.n_digits; ++idx)
+        {
+            double_digit_t left_digit = normalized_left.digits[idx];
+            double_digit_t right_digit = idx < normalized_right.n_digits
+                                             ? normalized_right.digits[idx]
+                                             : 0;
+            double_digit_t subtrahend = right_digit + borrow;
+            if(left_digit < subtrahend)
+            {
+                dest->digits[idx] =
+                    static_cast<digit_t>(kDigitBase + left_digit - subtrahend);
+                borrow = 1;
+            }
+            else
+            {
+                dest->digits[idx] =
+                    static_cast<digit_t>(left_digit - subtrahend);
+                borrow = 0;
+            }
+        }
+        assert(borrow == 0);
+
+        dest->n_digits = normalized_left.n_digits;
+        dest->signum = dest->n_digits == 0 ? 0 : 1;
+        ConstBigIntView normalized = normalize_bigint_view(dest->view());
+        dest->n_digits = normalized.n_digits;
+        dest->signum = normalized.n_digits == 0 ? 0 : 1;
+    }
+
+    void bigint_add(MutableBigIntView *dest, ConstBigIntView left,
+                    ConstBigIntView right)
+    {
+        ConstBigIntView normalized_left = normalize_bigint_view(left);
+        ConstBigIntView normalized_right = normalize_bigint_view(right);
+        assert(dest->digits != normalized_left.digits);
+        assert(dest->digits != normalized_right.digits);
+
+        if(normalized_left.signum == 0)
+        {
+            copy_bigint_view(dest, normalized_right);
+            return;
+        }
+        if(normalized_right.signum == 0)
+        {
+            copy_bigint_view(dest, normalized_left);
+            return;
+        }
+        if(normalized_left.signum == normalized_right.signum)
+        {
+            bigint_abs_add(dest, normalized_left, normalized_right);
+            dest->signum = normalized_left.signum;
+            return;
+        }
+
+        int abs_compare = compare_bigint_abs(normalized_left, normalized_right);
+        if(abs_compare == 0)
+        {
+            set_zero(dest);
+        }
+        else if(abs_compare > 0)
+        {
+            bigint_abs_sub(dest, normalized_left, normalized_right);
+            dest->signum = normalized_left.signum;
+        }
+        else
+        {
+            bigint_abs_sub(dest, normalized_right, normalized_left);
+            dest->signum = normalized_right.signum;
+        }
+    }
+
+    void bigint_sub(MutableBigIntView *dest, ConstBigIntView left,
+                    ConstBigIntView right)
+    {
+        ConstBigIntView normalized_right = normalize_bigint_view(right);
+        ConstBigIntView negated_right{
+            normalized_right.n_digits,
+            static_cast<signum_t>(-normalized_right.signum),
+            normalized_right.digits};
+        bigint_add(dest, left, negated_right);
     }
 
     void bigint_abs_mul_add_u32(MutableBigIntView *dest, ConstBigIntView src,

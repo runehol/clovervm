@@ -294,6 +294,91 @@ TEST(BigInt, AbsMulAddU32WritesNormalizedMagnitude)
     EXPECT_EQ(9u, dest.digits[1]);
 }
 
+TEST(BigInt, AbsAddPropagatesCarryAndNormalizesSign)
+{
+    digit_t left[] = {0xffffffffu, 0xffffffffu};
+    digit_t right[] = {1};
+    BigIntScratch scratch(3);
+    MutableBigIntView dest = scratch.mutable_view();
+
+    bigint_abs_add(&dest, ConstBigIntView{2, 1, left},
+                   ConstBigIntView{1, 1, right});
+
+    EXPECT_EQ(3u, dest.n_digits);
+    EXPECT_EQ(1, dest.signum);
+    EXPECT_EQ(0u, dest.digits[0]);
+    EXPECT_EQ(0u, dest.digits[1]);
+    EXPECT_EQ(1u, dest.digits[2]);
+}
+
+TEST(BigInt, AbsSubBorrowsAndTrimsHighZeroDigits)
+{
+    digit_t left[] = {0, 1};
+    digit_t right[] = {1};
+    BigIntScratch scratch(2);
+    MutableBigIntView dest = scratch.mutable_view();
+
+    bigint_abs_sub(&dest, ConstBigIntView{2, 1, left},
+                   ConstBigIntView{1, 1, right});
+
+    EXPECT_EQ(1u, dest.n_digits);
+    EXPECT_EQ(1, dest.signum);
+    EXPECT_EQ(0xffffffffu, dest.digits[0]);
+}
+
+TEST(BigInt, AddCombinesSignedMagnitudes)
+{
+    digit_t large[] = {5, 1};
+    digit_t small[] = {7};
+    BigIntScratch scratch(3);
+    MutableBigIntView dest = scratch.mutable_view();
+
+    bigint_add(&dest, ConstBigIntView{2, 1, large},
+               ConstBigIntView{1, -1, small});
+
+    EXPECT_EQ(1u, dest.n_digits);
+    EXPECT_EQ(1, dest.signum);
+    EXPECT_EQ(0xfffffffeu, dest.digits[0]);
+
+    digit_t normalized_digits[] = {dest.digits[0]};
+    MutableBigIntView negative_dest = scratch.mutable_view();
+    bigint_add(&negative_dest, ConstBigIntView{1, 1, small},
+               ConstBigIntView{2, -1, large});
+
+    EXPECT_EQ(1u, negative_dest.n_digits);
+    EXPECT_EQ(-1, negative_dest.signum);
+    EXPECT_EQ(normalized_digits[0], negative_dest.digits[0]);
+}
+
+TEST(BigInt, AddCanonicalizesCancellationToZero)
+{
+    digit_t left[] = {3, 2};
+    digit_t right[] = {3, 2};
+    BigIntScratch scratch(2);
+    MutableBigIntView dest = scratch.mutable_view();
+
+    bigint_add(&dest, ConstBigIntView{2, 1, left},
+               ConstBigIntView{2, -1, right});
+
+    EXPECT_EQ(0u, dest.n_digits);
+    EXPECT_EQ(0, dest.signum);
+}
+
+TEST(BigInt, SubUsesSignedRightOperand)
+{
+    digit_t left[] = {1};
+    digit_t right[] = {2};
+    BigIntScratch scratch(2);
+    MutableBigIntView dest = scratch.mutable_view();
+
+    bigint_sub(&dest, ConstBigIntView{1, 1, left},
+               ConstBigIntView{1, 1, right});
+
+    EXPECT_EQ(1u, dest.n_digits);
+    EXPECT_EQ(-1, dest.signum);
+    EXPECT_EQ(1u, dest.digits[0]);
+}
+
 TEST(BigInt, CompareBigIntViewsUsesSignedMagnitude)
 {
     digit_t one[] = {1};
