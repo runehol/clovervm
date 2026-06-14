@@ -7,31 +7,31 @@ design rationale and semantic boundaries live in [BigInt Design](bigint.md).
 
 ### Stage 1: Representation And Registration
 
-- [ ] Add `src/builtin_types/bigint.h` and `src/builtin_types/bigint.cpp`.
-- [ ] Define `digit_t`, `signum_t`, `ConstBigIntView`, `MutableBigIntView`,
+- [x] Add `src/builtin_types/bigint.h` and `src/builtin_types/bigint.cpp`.
+- [x] Define `digit_t`, `signum_t`, `ConstBigIntView`, `MutableBigIntView`,
       `SmiBigInt`, `BigIntScratch`, and `BigInt`.
-- [ ] Add `NativeLayoutId::BigInt`.
-- [ ] Add `BigInt` to the native layout registry.
-- [ ] Register `NativeLayoutId::BigInt` to the existing `int` class.
-- [ ] Add build-system entries for the new BigInt source file.
-- [ ] Add `make_uninitialized_bigint_for_digits` for exact-sized heap BigInt
+- [x] Add `NativeLayoutId::BigInt`.
+- [x] Add `BigInt` to the native layout registry.
+- [x] Register `NativeLayoutId::BigInt` to the existing `int` class.
+- [x] Add build-system entries for the new BigInt source file.
+- [x] Add `make_uninitialized_bigint_for_digits` for exact-sized heap BigInt
       allocation.
-- [ ] Add focused tests for native layout descriptors, exact-sized allocation,
+- [x] Add focused tests for native layout descriptors, exact-sized allocation,
       and `SmiBigInt` view edge cases.
 
 ### Stage 2: Conversion, Parsing, And Formatting
 
-- [ ] Implement `BigInt::view()`.
-- [ ] Implement `SmiBigInt` construction from decoded SMI-range integers.
-- [ ] Implement `BigIntScratch` inline storage plus `std::vector<digit_t>`
+- [x] Implement `BigInt::view()`.
+- [x] Implement `SmiBigInt` construction from decoded SMI-range integers.
+- [x] Implement `BigIntScratch` inline storage plus `std::vector<digit_t>`
       overflow backing.
-- [ ] Implement `Expected<Value>` result finalization from `ConstBigIntView` to SMI
+- [x] Implement `Expected<Value>` result finalization from `ConstBigIntView` to SMI
       or exact-sized heap `BigInt`.
-- [ ] Implement full `int64_t` to/from BigInt conversion, including
+- [x] Implement full `int64_t` to/from BigInt conversion, including
       `INT64_MIN`.
-- [ ] Implement decoded SMI-range conversion helpers with range assertions.
+- [x] Implement decoded SMI-range conversion helpers with range assertions.
 - [ ] Implement decimal formatting for BigInt `str()` and `repr()`.
-- [ ] Leave BigInt-aware `int(str)` parsing policy deferred.
+- [x] Leave BigInt-aware `int(str)` parsing policy deferred.
 - [ ] Add tests for `INT64_MIN`, `-1`, SMI boundaries, and decimal formatting.
 
 ### Stage 3: Integer Categories And Comparisons
