@@ -83,7 +83,7 @@ TEST(Codegen, simple2)
 {
     std::string expected = "Code object:\n"
                            "    0 LdaSmi 1\n"
-                           "    2 LeftShiftSmi 4\n"
+                           "    2 LShiftSmi 4\n"
                            "    4 AddSmi 3\n"
                            "    6 Return\n";
     std::string actual = bytecode_str_from_file(L"(1 << 4) + 3");

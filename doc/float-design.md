@@ -219,10 +219,10 @@ operations. Once the path has accepted a float operand, the operation is a float
 operation. For example, `1 + 2.0` and `1.0 + 2` both compute as `double` and
 return `Float`.
 
-`Div` is different because Python 3 division is float-producing even for
-`int / int`. It should not mirror integer `Add`/`Sub`/`Mul` semantics. The `Div`
-handler can either directly tail-call the division helper or keep only minimal
-operand setup before entering a cold numeric division path.
+`TrueDiv` is different because Python 3 division is float-producing even for
+`int / int`. It should not mirror integer `Add`/`Sub`/`Mul` semantics. The
+`TrueDiv` handler can either directly tail-call the division helper or keep only
+minimal operand setup before entering a cold numeric division path.
 
 The numeric continuations should be explicit about which operator they
 implement. Avoid a large generic numeric operation function unless duplication

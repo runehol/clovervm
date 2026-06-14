@@ -43,23 +43,24 @@ namespace cl
             OpTableEntry(Bytecode::Sub, Bytecode::SubSmi);
         t.table[size_t(AstOperatorKind::MULTIPLY)] =
             OpTableEntry(Bytecode::Mul, Bytecode::MulSmi);
-        t.table[size_t(AstOperatorKind::DIVIDE)] = OpTableEntry(Bytecode::Div);
+        t.table[size_t(AstOperatorKind::DIVIDE)] =
+            OpTableEntry(Bytecode::TrueDiv);
         t.table[size_t(AstOperatorKind::INT_DIVIDE)] =
-            OpTableEntry(Bytecode::IntDiv, Bytecode::IntDivSmi);
+            OpTableEntry(Bytecode::FloorDiv, Bytecode::FloorDivSmi);
         t.table[size_t(AstOperatorKind::POWER)] =
             OpTableEntry(Bytecode::Pow, Bytecode::PowSmi);
         t.table[size_t(AstOperatorKind::LEFTSHIFT)] =
-            OpTableEntry(Bytecode::LeftShift, Bytecode::LeftShiftSmi);
+            OpTableEntry(Bytecode::LShift, Bytecode::LShiftSmi);
         t.table[size_t(AstOperatorKind::RIGHTSHIFT)] =
-            OpTableEntry(Bytecode::RightShift, Bytecode::RightShiftSmi);
+            OpTableEntry(Bytecode::RShift, Bytecode::RShiftSmi);
         t.table[size_t(AstOperatorKind::MODULO)] =
             OpTableEntry(Bytecode::Mod, Bytecode::ModSmi);
         t.table[size_t(AstOperatorKind::BITWISE_OR)] =
-            OpTableEntry(Bytecode::BitwiseOr, Bytecode::BitwiseOrSmi);
+            OpTableEntry(Bytecode::Or, Bytecode::OrSmi);
         t.table[size_t(AstOperatorKind::BITWISE_AND)] =
-            OpTableEntry(Bytecode::BitwiseAnd, Bytecode::BitwiseAndSmi);
+            OpTableEntry(Bytecode::And, Bytecode::AndSmi);
         t.table[size_t(AstOperatorKind::BITWISE_XOR)] =
-            OpTableEntry(Bytecode::BitwiseXor, Bytecode::BitwiseXorSmi);
+            OpTableEntry(Bytecode::Xor, Bytecode::XorSmi);
 
         t.table[size_t(AstOperatorKind::EQUAL)] =
             OpTableEntry(Bytecode::TestEqual);
@@ -81,11 +82,10 @@ namespace cl
             OpTableEntry(Bytecode::TestNotIn);
 
         t.table[size_t(AstOperatorKind::NOT)] = OpTableEntry(Bytecode::Not);
-        t.table[size_t(AstOperatorKind::NEGATE)] =
-            OpTableEntry(Bytecode::Negate);
-        t.table[size_t(AstOperatorKind::PLUS)] = OpTableEntry(Bytecode::Plus);
+        t.table[size_t(AstOperatorKind::NEGATE)] = OpTableEntry(Bytecode::Neg);
+        t.table[size_t(AstOperatorKind::PLUS)] = OpTableEntry(Bytecode::Pos);
         t.table[size_t(AstOperatorKind::BITWISE_NOT)] =
-            OpTableEntry(Bytecode::BitwiseNot);
+            OpTableEntry(Bytecode::Invert);
 
         return t;
     }

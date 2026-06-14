@@ -247,24 +247,24 @@ template <> struct fmt::formatter<cl::Bytecode>
                 return format_to(out, "Sub");
             case cl::Bytecode::Mul:
                 return format_to(out, "Mul");
-            case cl::Bytecode::Div:
-                return format_to(out, "Div");
-            case cl::Bytecode::IntDiv:
-                return format_to(out, "IntDiv");
+            case cl::Bytecode::TrueDiv:
+                return format_to(out, "TrueDiv");
+            case cl::Bytecode::FloorDiv:
+                return format_to(out, "FloorDiv");
             case cl::Bytecode::Pow:
                 return format_to(out, "Pow");
-            case cl::Bytecode::LeftShift:
-                return format_to(out, "LeftShift");
-            case cl::Bytecode::RightShift:
-                return format_to(out, "RightShift");
+            case cl::Bytecode::LShift:
+                return format_to(out, "LShift");
+            case cl::Bytecode::RShift:
+                return format_to(out, "RShift");
             case cl::Bytecode::Mod:
                 return format_to(out, "Mod");
-            case cl::Bytecode::BitwiseOr:
-                return format_to(out, "BitwiseOr");
-            case cl::Bytecode::BitwiseAnd:
-                return format_to(out, "BitwiseAnd");
-            case cl::Bytecode::BitwiseXor:
-                return format_to(out, "BitwiseXor");
+            case cl::Bytecode::Or:
+                return format_to(out, "Or");
+            case cl::Bytecode::And:
+                return format_to(out, "And");
+            case cl::Bytecode::Xor:
+                return format_to(out, "Xor");
 
             case cl::Bytecode::TestEqual:
                 return format_to(out, "TestEqual");
@@ -295,36 +295,36 @@ template <> struct fmt::formatter<cl::Bytecode>
                 return format_to(out, "SubSmi");
             case cl::Bytecode::MulSmi:
                 return format_to(out, "MulSmi");
-            case cl::Bytecode::IntDivSmi:
-                return format_to(out, "IntDivSmi");
+            case cl::Bytecode::FloorDivSmi:
+                return format_to(out, "FloorDivSmi");
             case cl::Bytecode::PowSmi:
                 return format_to(out, "PowSmi");
-            case cl::Bytecode::LeftShiftSmi:
-                return format_to(out, "LeftShiftSmi");
-            case cl::Bytecode::RightShiftSmi:
-                return format_to(out, "RightShiftSmi");
+            case cl::Bytecode::LShiftSmi:
+                return format_to(out, "LShiftSmi");
+            case cl::Bytecode::RShiftSmi:
+                return format_to(out, "RShiftSmi");
             case cl::Bytecode::ModSmi:
                 return format_to(out, "ModSmi");
-            case cl::Bytecode::BitwiseOrSmi:
-                return format_to(out, "BitwiseOrSmi");
-            case cl::Bytecode::BitwiseAndSmi:
-                return format_to(out, "BitwiseAndSmi");
-            case cl::Bytecode::BitwiseXorSmi:
-                return format_to(out, "BitwiseXorSmi");
+            case cl::Bytecode::OrSmi:
+                return format_to(out, "OrSmi");
+            case cl::Bytecode::AndSmi:
+                return format_to(out, "AndSmi");
+            case cl::Bytecode::XorSmi:
+                return format_to(out, "XorSmi");
 
             case cl::Bytecode::Nop:
                 return format_to(out, "Nop");
 
             case cl::Bytecode::Not:
                 return format_to(out, "Not");
-            case cl::Bytecode::Negate:
-                return format_to(out, "Negate");
-            case cl::Bytecode::Plus:
-                return format_to(out, "Plus");
+            case cl::Bytecode::Neg:
+                return format_to(out, "Neg");
+            case cl::Bytecode::Pos:
+                return format_to(out, "Pos");
             case cl::Bytecode::Sqrt:
                 return format_to(out, "Sqrt");
-            case cl::Bytecode::BitwiseNot:
-                return format_to(out, "BitwiseNot");
+            case cl::Bytecode::Invert:
+                return format_to(out, "Invert");
 
             case cl::Bytecode::CallPositional:
                 return format_to(out, "CallPositional");
@@ -790,15 +790,15 @@ template <> struct fmt::formatter<cl::CodeObject>
             case cl::Bytecode::Add:
             case cl::Bytecode::Sub:
             case cl::Bytecode::Mul:
-            case cl::Bytecode::Div:
-            case cl::Bytecode::IntDiv:
+            case cl::Bytecode::TrueDiv:
+            case cl::Bytecode::FloorDiv:
             case cl::Bytecode::Pow:
-            case cl::Bytecode::LeftShift:
-            case cl::Bytecode::RightShift:
+            case cl::Bytecode::LShift:
+            case cl::Bytecode::RShift:
             case cl::Bytecode::Mod:
-            case cl::Bytecode::BitwiseOr:
-            case cl::Bytecode::BitwiseAnd:
-            case cl::Bytecode::BitwiseXor:
+            case cl::Bytecode::Or:
+            case cl::Bytecode::And:
+            case cl::Bytecode::Xor:
             case cl::Bytecode::TestIs:
             case cl::Bytecode::TestIsNot:
             case cl::Bytecode::TestIn:
@@ -825,24 +825,24 @@ template <> struct fmt::formatter<cl::CodeObject>
             case cl::Bytecode::AddSmi:
             case cl::Bytecode::SubSmi:
             case cl::Bytecode::MulSmi:
-            case cl::Bytecode::IntDivSmi:
+            case cl::Bytecode::FloorDivSmi:
             case cl::Bytecode::PowSmi:
-            case cl::Bytecode::LeftShiftSmi:
-            case cl::Bytecode::RightShiftSmi:
+            case cl::Bytecode::LShiftSmi:
+            case cl::Bytecode::RShiftSmi:
             case cl::Bytecode::ModSmi:
-            case cl::Bytecode::BitwiseOrSmi:
-            case cl::Bytecode::BitwiseAndSmi:
-            case cl::Bytecode::BitwiseXorSmi:
+            case cl::Bytecode::OrSmi:
+            case cl::Bytecode::AndSmi:
+            case cl::Bytecode::XorSmi:
                 format_to(out, " ");
                 disassemble_smi8(code_obj, out, pc++);
                 break;
 
             case cl::Bytecode::Nop:
             case cl::Bytecode::Not:
-            case cl::Bytecode::Negate:
-            case cl::Bytecode::Plus:
+            case cl::Bytecode::Neg:
+            case cl::Bytecode::Pos:
             case cl::Bytecode::Sqrt:
-            case cl::Bytecode::BitwiseNot:
+            case cl::Bytecode::Invert:
             case cl::Bytecode::CheckOperatorNotImplemented:
                 break;
 

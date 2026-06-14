@@ -3539,7 +3539,7 @@ namespace cl
             MUSTTAIL return unsupported_shift_error(ARGS);
         }
         int64_t shift_count = b.get_smi();
-        // Bytecode invariant: codegen only emits LeftShiftSmi for shifts 0..63.
+        // Bytecode invariant: codegen only emits LShiftSmi for shifts 0..63.
         assert(shift_count >= 0 && shift_count < 64);
         int64_t value = a.get_smi();
         int64_t sign_bits = __builtin_clrsbll(value);
@@ -5389,15 +5389,15 @@ namespace cl
         SET_TABLE_ENTRY(Bytecode::SubSmi, op_sub_smi);
         SET_TABLE_ENTRY(Bytecode::Mul, op_mul);
         SET_TABLE_ENTRY(Bytecode::MulSmi, op_mul_smi);
-        SET_TABLE_ENTRY(Bytecode::Div, op_truediv);
-        SET_TABLE_ENTRY(Bytecode::IntDiv, op_floordiv);
-        SET_TABLE_ENTRY(Bytecode::IntDivSmi, op_floordiv_smi);
+        SET_TABLE_ENTRY(Bytecode::TrueDiv, op_truediv);
+        SET_TABLE_ENTRY(Bytecode::FloorDiv, op_floordiv);
+        SET_TABLE_ENTRY(Bytecode::FloorDivSmi, op_floordiv_smi);
         SET_TABLE_ENTRY(Bytecode::Mod, op_mod);
         SET_TABLE_ENTRY(Bytecode::ModSmi, op_mod_smi);
-        SET_TABLE_ENTRY(Bytecode::LeftShift, op_lshift);
-        SET_TABLE_ENTRY(Bytecode::LeftShiftSmi, op_lshift_smi);
-        SET_TABLE_ENTRY(Bytecode::RightShift, op_rshift);
-        SET_TABLE_ENTRY(Bytecode::RightShiftSmi, op_rshift_smi);
+        SET_TABLE_ENTRY(Bytecode::LShift, op_lshift);
+        SET_TABLE_ENTRY(Bytecode::LShiftSmi, op_lshift_smi);
+        SET_TABLE_ENTRY(Bytecode::RShift, op_rshift);
+        SET_TABLE_ENTRY(Bytecode::RShiftSmi, op_rshift_smi);
 
         SET_TABLE_ENTRY(Bytecode::TestIs, op_is);
         SET_TABLE_ENTRY(Bytecode::TestIsNot, op_is_not);
@@ -5426,8 +5426,8 @@ namespace cl
                         op_call_method_attr_keyword);
         SET_TABLE_ENTRY(Bytecode::CallSpecialMethod, op_call_special_method);
 
-        SET_TABLE_ENTRY(Bytecode::Negate, op_negate);
-        SET_TABLE_ENTRY(Bytecode::Plus, op_plus);
+        SET_TABLE_ENTRY(Bytecode::Neg, op_negate);
+        SET_TABLE_ENTRY(Bytecode::Pos, op_plus);
         SET_TABLE_ENTRY(Bytecode::Sqrt, op_sqrt);
         SET_TABLE_ENTRY(Bytecode::Not, op_not);
 

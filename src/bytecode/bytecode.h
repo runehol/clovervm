@@ -92,15 +92,15 @@ namespace cl
         Add,
         Sub,
         Mul,
-        Div,
-        IntDiv,
+        TrueDiv,
+        FloorDiv,
         Pow,
-        LeftShift,
-        RightShift,  // arithmetic shift
+        LShift,
+        RShift,  // arithmetic shift
         Mod,
-        BitwiseOr,
-        BitwiseAnd,
-        BitwiseXor,
+        Or,
+        And,
+        Xor,
 
         TestEqual,
         TestNotEqual,
@@ -118,20 +118,20 @@ namespace cl
         AddSmi,
         SubSmi,
         MulSmi,
-        IntDivSmi,
+        FloorDivSmi,
         PowSmi,
-        LeftShiftSmi,
-        RightShiftSmi,  // arithmetic shift
+        LShiftSmi,
+        RShiftSmi,  // arithmetic shift
         ModSmi,
-        BitwiseOrSmi,
-        BitwiseAndSmi,
-        BitwiseXorSmi,
+        OrSmi,
+        AndSmi,
+        XorSmi,
 
         Not,
-        Negate,
-        Plus,
+        Neg,
+        Pos,
         Sqrt,
-        BitwiseNot,
+        Invert,
 
         Nop,
 
