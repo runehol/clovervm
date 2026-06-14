@@ -1489,6 +1489,11 @@ TEST(Interpreter, float_arithmetic_values)
     EXPECT_EQ(Value::from_smi(3), test_context.run_file(L"1 + 2\n"));
     EXPECT_EQ(Value::from_smi(3), test_context.run_file(L"5 - 2\n"));
     EXPECT_EQ(Value::from_smi(6), test_context.run_file(L"2 * 3\n"));
+    EXPECT_EQ(Value::from_smi(2), test_context.run_file(L"True + True\n"));
+    EXPECT_EQ(Value::from_smi(0), test_context.run_file(L"True - True\n"));
+    EXPECT_EQ(Value::from_smi(0), test_context.run_file(L"True * False\n"));
+    EXPECT_EQ(Value::from_smi(-1), test_context.run_file(L"-True\n"));
+    EXPECT_EQ(Value::from_smi(1), test_context.run_file(L"+True\n"));
 }
 
 TEST(Interpreter, true_division_values)
@@ -1989,7 +1994,8 @@ TEST(Interpreter, operator_add_dispatch_trusted_str_handler_cache_hit)
     ASSERT_NE(nullptr, cache.operand_lookup_validity_cells[1]);
 }
 
-TEST(Interpreter, operator_add_dispatch_reflected_float_trusted_cache_hit)
+TEST(Interpreter,
+     operator_add_dispatch_caches_int_notimplemented_before_reflected_float)
 {
     test::VmTestContext test_context;
     ThreadState::ActivationScope activation_scope(test_context.thread());
@@ -2013,8 +2019,8 @@ TEST(Interpreter, operator_add_dispatch_reflected_float_trusted_cache_hit)
         assume_convert_to<Function>(function_value)->code_object.extract();
     ASSERT_EQ(1u, function_code->operator_caches.size());
     const OperatorInlineCache &cache = function_code->operator_caches[0];
-    EXPECT_EQ(TrustedHandlerArity::Binary, cache.handler.arity);
-    EXPECT_EQ(nullptr, cache.function);
+    EXPECT_EQ(TrustedHandlerArity::None, cache.handler.arity);
+    ASSERT_NE(nullptr, cache.function);
     ASSERT_NE(nullptr, cache.operand_lookup_validity_cells[0]);
     ASSERT_NE(nullptr, cache.operand_lookup_validity_cells[1]);
 }

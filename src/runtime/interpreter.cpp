@@ -1130,12 +1130,6 @@ namespace cl
         MUSTTAIL return op_mod_smi_dispatch(ARGS);
     }
 
-    NOINLINE static INTERP_CC Value op_truediv(PARAMS)
-    {
-        START(4);
-        MUSTTAIL return op_truediv_dispatch(ARGS);
-    }
-
     NOINLINE static INTERP_CC Value op_sqrt_type_error(PARAMS)
     {
         ExceptionalTarget target = set_builtin_exception_and_resolve_frame_exit(
@@ -5319,7 +5313,7 @@ namespace cl
         SET_TABLE_ENTRY(Bytecode::SubSmi, op_sub_smi);
         SET_TABLE_ENTRY(Bytecode::Mul, op_mul);
         SET_TABLE_ENTRY(Bytecode::MulSmi, op_mul_smi);
-        SET_TABLE_ENTRY(Bytecode::TrueDiv, op_truediv);
+        SET_TABLE_ENTRY(Bytecode::TrueDiv, op_truediv_dispatch);
         SET_TABLE_ENTRY(Bytecode::FloorDiv, op_floordiv);
         SET_TABLE_ENTRY(Bytecode::FloorDivSmi, op_floordiv_smi);
         SET_TABLE_ENTRY(Bytecode::Mod, op_mod);
