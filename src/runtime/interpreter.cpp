@@ -2782,7 +2782,8 @@ namespace cl
                 TrustedResolution resolution =
                     target_code_object->trusted_handler_resolver(
                         vm, receiver_shape_key, key_shape_key, ShapeKey{},
-                        TrustedHandlerOperandOrder::Normal);
+                        TrustedHandlerOperandOrder::Normal,
+                        TrustedHandlerArity::Binary);
                 if(resolution.kind == TrustedResolutionKind::TrustedHandler)
                 {
                     assert(resolution.arity == TrustedHandlerArity::Binary);
@@ -2958,7 +2959,8 @@ namespace cl
                 TrustedResolution resolution =
                     target_code_object->trusted_handler_resolver(
                         vm, receiver_shape_key, key_shape_key, value_shape_key,
-                        TrustedHandlerOperandOrder::Normal);
+                        TrustedHandlerOperandOrder::Normal,
+                        TrustedHandlerArity::Ternary);
                 if(resolution.kind == TrustedResolutionKind::TrustedHandler)
                 {
                     assert(resolution.arity == TrustedHandlerArity::Ternary);
@@ -3138,7 +3140,8 @@ namespace cl
                 TrustedResolution resolution =
                     target_code_object->trusted_handler_resolver(
                         vm, receiver_shape_key, key_shape_key, ShapeKey{},
-                        TrustedHandlerOperandOrder::Normal);
+                        TrustedHandlerOperandOrder::Normal,
+                        TrustedHandlerArity::Binary);
                 if(resolution.kind == TrustedResolutionKind::TrustedHandler)
                 {
                     assert(resolution.arity == TrustedHandlerArity::Binary);

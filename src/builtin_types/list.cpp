@@ -182,10 +182,15 @@ namespace cl
 
     static TrustedResolution resolve_trusted_list_getitem_handler(
         VirtualMachine *vm, ShapeKey container_key, ShapeKey key_key,
-        ShapeKey unused, TrustedHandlerOperandOrder order)
+        ShapeKey unused, TrustedHandlerOperandOrder order,
+        TrustedHandlerArity requested_arity)
     {
         (void)unused;
         assert(order == TrustedHandlerOperandOrder::Normal);
+        if(requested_arity != TrustedHandlerArity::Binary)
+        {
+            return TrustedResolution::no_trusted_handler_call_untrusted();
+        }
         if(vm->shape_for_key(container_key)->get_class() != vm->list_class())
         {
             return TrustedResolution::no_trusted_handler_call_untrusted();
@@ -210,10 +215,15 @@ namespace cl
 
     static TrustedResolution resolve_trusted_list_setitem_handler(
         VirtualMachine *vm, ShapeKey container_key, ShapeKey key_key,
-        ShapeKey unused, TrustedHandlerOperandOrder order)
+        ShapeKey unused, TrustedHandlerOperandOrder order,
+        TrustedHandlerArity requested_arity)
     {
         (void)unused;
         assert(order == TrustedHandlerOperandOrder::Normal);
+        if(requested_arity != TrustedHandlerArity::Ternary)
+        {
+            return TrustedResolution::no_trusted_handler_call_untrusted();
+        }
         if(vm->shape_for_key(container_key)->get_class() == vm->list_class() &&
            key_key == ShapeKey::from_value(Value::from_smi(0)))
         {
@@ -225,10 +235,15 @@ namespace cl
 
     static TrustedResolution resolve_trusted_list_delitem_handler(
         VirtualMachine *vm, ShapeKey container_key, ShapeKey key_key,
-        ShapeKey unused, TrustedHandlerOperandOrder order)
+        ShapeKey unused, TrustedHandlerOperandOrder order,
+        TrustedHandlerArity requested_arity)
     {
         (void)unused;
         assert(order == TrustedHandlerOperandOrder::Normal);
+        if(requested_arity != TrustedHandlerArity::Binary)
+        {
+            return TrustedResolution::no_trusted_handler_call_untrusted();
+        }
         if(vm->shape_for_key(container_key)->get_class() == vm->list_class() &&
            key_key == ShapeKey::from_value(Value::from_smi(0)))
         {

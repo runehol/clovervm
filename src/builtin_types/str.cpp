@@ -308,8 +308,13 @@ namespace cl
     static TrustedResolution
     resolve_trusted_str_str_resolver(VirtualMachine *vm, ShapeKey operand0_key,
                                      ShapeKey operand1_key, ShapeKey unused,
-                                     TrustedHandlerOperandOrder order)
+                                     TrustedHandlerOperandOrder order,
+                                     TrustedHandlerArity requested_arity)
     {
+        if(requested_arity != TrustedHandlerArity::Binary)
+        {
+            return TrustedResolution::no_trusted_handler_call_untrusted();
+        }
         if(order == TrustedHandlerOperandOrder::Reflected)
         {
             return resolve_trusted_str_str_handler<ReflectedOperator>(
@@ -421,10 +426,15 @@ namespace cl
 
     static TrustedResolution resolve_trusted_str_getitem_handler(
         VirtualMachine *vm, ShapeKey container_key, ShapeKey key_key,
-        ShapeKey unused, TrustedHandlerOperandOrder order)
+        ShapeKey unused, TrustedHandlerOperandOrder order,
+        TrustedHandlerArity requested_arity)
     {
         (void)unused;
         assert(order == TrustedHandlerOperandOrder::Normal);
+        if(requested_arity != TrustedHandlerArity::Binary)
+        {
+            return TrustedResolution::no_trusted_handler_call_untrusted();
+        }
         if(vm->shape_for_key(container_key)->get_class() != vm->str_class())
         {
             return TrustedResolution::no_trusted_handler_call_untrusted();

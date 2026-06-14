@@ -631,8 +631,13 @@ namespace cl
     template <typename NormalOperator, typename ReflectedOperator>
     static TrustedResolution resolve_trusted_int_binary_resolver(
         VirtualMachine *vm, ShapeKey operand0_key, ShapeKey operand1_key,
-        ShapeKey operand2_key, TrustedHandlerOperandOrder order)
+        ShapeKey operand2_key, TrustedHandlerOperandOrder order,
+        TrustedHandlerArity requested_arity)
     {
+        if(requested_arity != TrustedHandlerArity::Binary)
+        {
+            return TrustedResolution::no_trusted_handler_call_untrusted();
+        }
         if(order == TrustedHandlerOperandOrder::Reflected)
         {
             return resolve_trusted_int_binary_handler<ReflectedOperator>(
@@ -645,13 +650,18 @@ namespace cl
     template <typename Operator>
     static TrustedResolution resolve_trusted_int_unary_handler(
         VirtualMachine *vm, ShapeKey operand0_key, ShapeKey operand1_key,
-        ShapeKey operand2_key, TrustedHandlerOperandOrder order)
+        ShapeKey operand2_key, TrustedHandlerOperandOrder order,
+        TrustedHandlerArity requested_arity)
     {
         (void)vm;
         (void)operand1_key;
         (void)operand2_key;
         (void)order;
 
+        if(requested_arity != TrustedHandlerArity::Unary)
+        {
+            return TrustedResolution::no_trusted_handler_call_untrusted();
+        }
         if(is_smi_or_bool_shape_key(operand0_key))
         {
             return TrustedResolution::call_trusted(

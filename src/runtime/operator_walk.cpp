@@ -344,7 +344,8 @@ namespace cl
                                 target_code_object->trusted_handler_resolver(
                                     vm, operand0_shape_key, operand1_shape_key,
                                     operand2_shape_key,
-                                    TrustedHandlerOperandOrder::Normal);
+                                    TrustedHandlerOperandOrder::Normal,
+                                    TrustedHandlerArity::Unary);
                             switch(resolution.kind)
                             {
                                 case TrustedResolutionKind::
@@ -472,7 +473,8 @@ namespace cl
                                     vm, operand0_shape_key, operand1_shape_key,
                                     operand2_shape_key,
                                     trusted_handler_operand_order_for(
-                                        operand_order));
+                                        operand_order),
+                                    TrustedHandlerArity::Binary);
                             switch(resolution.kind)
                             {
                                 case TrustedResolutionKind::
