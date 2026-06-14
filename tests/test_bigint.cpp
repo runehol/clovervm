@@ -53,26 +53,26 @@ TEST(BigInt, SmiBigIntZeroViewIsCanonical)
 TEST(BigInt, SmiBigIntPositiveViewIsLittleEndian)
 {
     expect_smi_bigint_view(1, 1, 1, 1, 0);
-    expect_smi_bigint_view(int64_t{1} << 32, 1, 2, 0, 1);
+    expect_smi_bigint_view(int64_t{1} << kDigitBits, 1, 2, 0, 1);
 }
 
 TEST(BigInt, SmiBigIntNegativeViewUsesMagnitudeDigits)
 {
     expect_smi_bigint_view(-1, -1, 1, 1, 0);
-    expect_smi_bigint_view(-(int64_t{1} << 32), -1, 2, 0, 1);
+    expect_smi_bigint_view(-(int64_t{1} << kDigitBits), -1, 2, 0, 1);
 }
 
 TEST(BigInt, SmiBigIntBoundaryViewsFitInTwoDigits)
 {
-    uint64_t max_magnitude = static_cast<uint64_t>(value_smi_max);
+    double_digit_t max_magnitude = static_cast<double_digit_t>(value_smi_max);
     expect_smi_bigint_view(value_smi_max, 1, 2,
                            static_cast<digit_t>(max_magnitude),
-                           static_cast<digit_t>(max_magnitude >> 32));
+                           static_cast<digit_t>(max_magnitude >> kDigitBits));
 
-    uint64_t min_magnitude = uint64_t(-(value_smi_min + 1)) + 1;
+    double_digit_t min_magnitude = double_digit_t(-(value_smi_min + 1)) + 1;
     expect_smi_bigint_view(value_smi_min, -1, 2,
                            static_cast<digit_t>(min_magnitude),
-                           static_cast<digit_t>(min_magnitude >> 32));
+                           static_cast<digit_t>(min_magnitude >> kDigitBits));
 }
 
 TEST(BigInt, ScratchStartsAsCanonicalZeroWithInlineStorage)
@@ -150,9 +150,9 @@ TEST(BigInt, BigIntToSmiRejectsOverflow)
 {
     test::VmTestContext context;
     ThreadState::ActivationScope activation_scope(context.thread());
-    uint64_t magnitude = static_cast<uint64_t>(value_smi_max) + 1;
+    double_digit_t magnitude = static_cast<double_digit_t>(value_smi_max) + 1;
     digit_t digits[] = {static_cast<digit_t>(magnitude),
-                        static_cast<digit_t>(magnitude >> 32)};
+                        static_cast<digit_t>(magnitude >> kDigitBits)};
 
     Expected<TValue<SMI>> value = bigint_to_smi(ConstBigIntView{2, 1, digits});
 
@@ -165,9 +165,9 @@ TEST(BigInt, FinalizeReturnsHeapBigIntForNonSmiMagnitude)
 {
     test::VmTestContext context;
     ThreadState::ActivationScope activation_scope(context.thread());
-    uint64_t magnitude = static_cast<uint64_t>(value_smi_max) + 1;
+    double_digit_t magnitude = static_cast<double_digit_t>(value_smi_max) + 1;
     digit_t digits[] = {static_cast<digit_t>(magnitude),
-                        static_cast<digit_t>(magnitude >> 32)};
+                        static_cast<digit_t>(magnitude >> kDigitBits)};
 
     Expected<Value> value =
         finalize_bigint(context.thread(), ConstBigIntView{2, 1, digits});
@@ -249,9 +249,9 @@ TEST(BigInt, DecimalStringFormatsZero)
 
 TEST(BigInt, DecimalStringFormatsSmiBoundaryMagnitude)
 {
-    uint64_t magnitude = static_cast<uint64_t>(value_smi_max);
+    double_digit_t magnitude = static_cast<double_digit_t>(value_smi_max);
     digit_t digits[] = {static_cast<digit_t>(magnitude),
-                        static_cast<digit_t>(magnitude >> 32)};
+                        static_cast<digit_t>(magnitude >> kDigitBits)};
 
     EXPECT_EQ(std::to_wstring(value_smi_max),
               bigint_to_decimal_string(ConstBigIntView{2, 1, digits}));

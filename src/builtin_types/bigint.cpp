@@ -15,16 +15,16 @@ namespace cl
         assert(decoded_smi_range_int >= value_smi_min);
         assert(decoded_smi_range_int <= value_smi_max);
 
-        uint64_t magnitude;
+        double_digit_t magnitude;
         if(decoded_smi_range_int < 0)
         {
             signum_ = -1;
-            magnitude = uint64_t(-(decoded_smi_range_int + 1)) + 1;
+            magnitude = double_digit_t(-(decoded_smi_range_int + 1)) + 1;
         }
         else if(decoded_smi_range_int > 0)
         {
             signum_ = 1;
-            magnitude = static_cast<uint64_t>(decoded_smi_range_int);
+            magnitude = static_cast<double_digit_t>(decoded_smi_range_int);
         }
         else
         {
@@ -33,7 +33,7 @@ namespace cl
         }
 
         digits_[0] = static_cast<digit_t>(magnitude);
-        digits_[1] = static_cast<digit_t>(magnitude >> 32);
+        digits_[1] = static_cast<digit_t>(magnitude >> kDigitBits);
         if(digits_[1] != 0)
         {
             n_digits_ = 2;
@@ -105,13 +105,14 @@ namespace cl
         return view;
     }
 
-    static uint64_t magnitude_to_uint64_unchecked(ConstBigIntView view)
+    static double_digit_t
+    magnitude_to_double_digit_unchecked(ConstBigIntView view)
     {
         assert(view.n_digits <= 2);
-        uint64_t magnitude = view.n_digits > 0 ? view.digits[0] : 0;
+        double_digit_t magnitude = view.n_digits > 0 ? view.digits[0] : 0;
         if(view.n_digits > 1)
         {
-            magnitude |= uint64_t(view.digits[1]) << 32;
+            magnitude |= double_digit_t(view.digits[1]) << kDigitBits;
         }
         return magnitude;
     }
@@ -129,11 +130,11 @@ namespace cl
             return Optional<TValue<SMI>>::none();
         }
 
-        uint64_t magnitude = magnitude_to_uint64_unchecked(view);
+        double_digit_t magnitude = magnitude_to_double_digit_unchecked(view);
         int64_t result;
         if(view.signum > 0)
         {
-            if(magnitude > static_cast<uint64_t>(value_smi_max))
+            if(magnitude > static_cast<double_digit_t>(value_smi_max))
             {
                 return Optional<TValue<SMI>>::none();
             }
@@ -141,7 +142,7 @@ namespace cl
         }
         else
         {
-            if(magnitude > uint64_t(-(value_smi_min + 1)) + 1)
+            if(magnitude > double_digit_t(-(value_smi_min + 1)) + 1)
             {
                 return Optional<TValue<SMI>>::none();
             }
@@ -186,16 +187,16 @@ namespace cl
     {
         digit_t digits[2];
         signum_t signum;
-        uint64_t magnitude;
+        double_digit_t magnitude;
         if(value < 0)
         {
             signum = -1;
-            magnitude = uint64_t(-(value + 1)) + 1;
+            magnitude = double_digit_t(-(value + 1)) + 1;
         }
         else if(value > 0)
         {
             signum = 1;
-            magnitude = static_cast<uint64_t>(value);
+            magnitude = static_cast<double_digit_t>(value);
         }
         else
         {
@@ -204,7 +205,7 @@ namespace cl
         }
 
         digits[0] = static_cast<digit_t>(magnitude);
-        digits[1] = static_cast<digit_t>(magnitude >> 32);
+        digits[1] = static_cast<digit_t>(magnitude >> kDigitBits);
         uint32_t n_digits = digits[1] != 0 ? 2 : (digits[0] != 0 ? 1 : 0);
         return finalize_bigint(thread,
                                ConstBigIntView{n_digits, signum, digits});
@@ -223,10 +224,11 @@ namespace cl
                                                       L"integer overflow");
         }
 
-        uint64_t magnitude = magnitude_to_uint64_unchecked(normalized);
+        double_digit_t magnitude =
+            magnitude_to_double_digit_unchecked(normalized);
         if(normalized.signum > 0)
         {
-            if(magnitude > uint64_t(std::numeric_limits<int64_t>::max()))
+            if(magnitude > double_digit_t(std::numeric_limits<int64_t>::max()))
             {
                 return Expected<int64_t>::raise_exception(L"OverflowError",
                                                           L"integer overflow");
@@ -234,8 +236,8 @@ namespace cl
             return Expected<int64_t>::ok(static_cast<int64_t>(magnitude));
         }
 
-        constexpr uint64_t min_magnitude =
-            uint64_t(std::numeric_limits<int64_t>::max()) + 1;
+        constexpr double_digit_t min_magnitude =
+            double_digit_t(std::numeric_limits<int64_t>::max()) + 1;
         if(magnitude > min_magnitude)
         {
             return Expected<int64_t>::raise_exception(L"OverflowError",
@@ -255,12 +257,13 @@ namespace cl
         assert(dest->capacity >= src.n_digits + 1);
         assert(dest->digits != src.digits);
 
-        uint64_t carry = addend;
+        double_digit_t carry = addend;
         for(uint32_t idx = 0; idx < src.n_digits; ++idx)
         {
-            uint64_t product = uint64_t(src.digits[idx]) * multiplier + carry;
+            double_digit_t product =
+                double_digit_t(src.digits[idx]) * multiplier + carry;
             dest->digits[idx] = static_cast<digit_t>(product);
-            carry = product >> 32;
+            carry = product >> kDigitBits;
         }
 
         dest->n_digits = src.n_digits;
@@ -319,10 +322,11 @@ namespace cl
         assert(quotient->capacity >= dividend.n_digits);
         assert(quotient->digits != dividend.digits);
 
-        uint64_t remainder = 0;
+        double_digit_t remainder = 0;
         for(uint32_t idx = dividend.n_digits; idx > 0; --idx)
         {
-            uint64_t accumulator = (remainder << 32) | dividend.digits[idx - 1];
+            double_digit_t accumulator =
+                (remainder << kDigitBits) | dividend.digits[idx - 1];
             quotient->digits[idx - 1] =
                 static_cast<digit_t>(accumulator / divisor);
             remainder = accumulator % divisor;

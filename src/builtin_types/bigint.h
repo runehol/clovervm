@@ -17,7 +17,11 @@ namespace cl
     class ThreadState;
 
     using digit_t = uint32_t;
+    using double_digit_t = uint64_t;
     using signum_t = int16_t;
+
+    static constexpr uint32_t kDigitBits = sizeof(digit_t) * 8;
+    static_assert(kDigitBits == 32);
 
     struct ConstBigIntView
     {
