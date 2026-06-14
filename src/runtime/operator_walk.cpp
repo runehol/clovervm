@@ -115,6 +115,49 @@ namespace cl
                 return operator_walk_raise_type_error(
                     thread, L"unsupported operand type(s) for +");
 
+            case OperatorDispatchTableId::Sub:
+                return operator_walk_raise_type_error(
+                    thread, L"unsupported operand type(s) for -");
+
+            case OperatorDispatchTableId::Mul:
+                return operator_walk_raise_type_error(
+                    thread, L"unsupported operand type(s) for *");
+
+            case OperatorDispatchTableId::TrueDiv:
+                return operator_walk_raise_type_error(
+                    thread, L"unsupported operand type(s) for /");
+
+            case OperatorDispatchTableId::FloorDiv:
+                return operator_walk_raise_type_error(
+                    thread, L"unsupported operand type(s) for //");
+
+            case OperatorDispatchTableId::Mod:
+                return operator_walk_raise_type_error(
+                    thread, L"unsupported operand type(s) for %");
+
+            case OperatorDispatchTableId::LShift:
+            case OperatorDispatchTableId::RShift:
+                return operator_walk_raise_type_error(
+                    thread, L"unsupported operand type(s) for shift");
+
+            case OperatorDispatchTableId::And:
+                return operator_walk_raise_type_error(
+                    thread, L"unsupported operand type(s) for &");
+
+            case OperatorDispatchTableId::Xor:
+                return operator_walk_raise_type_error(
+                    thread, L"unsupported operand type(s) for ^");
+
+            case OperatorDispatchTableId::Or:
+                return operator_walk_raise_type_error(
+                    thread, L"unsupported operand type(s) for |");
+
+            case OperatorDispatchTableId::Neg:
+            case OperatorDispatchTableId::Pos:
+            case OperatorDispatchTableId::Invert:
+                return operator_walk_raise_type_error(
+                    thread, L"unsupported operand type for unary arithmetic");
+
             case OperatorDispatchTableId::CompareEq:
             case OperatorDispatchTableId::CompareNe:
             case OperatorDispatchTableId::CompareLt:
@@ -223,6 +266,110 @@ namespace cl
                     assert(step.applicability ==
                            OperatorStepApplicability::Always);
                     return operator_walk_raise_unsupported(thread, table_id);
+
+                case OperatorStepAction::CallUnary:
+                    {
+                        assert(step.dunder_name != nullptr);
+
+                        Value receiver = operand0;
+                        AttributeReadDescriptor method_descriptor =
+                            AttributeReadDescriptor::not_found();
+                        TValue<String> method_name =
+                            TValue<String>::from_oop(step.dunder_name);
+                        if(!resolve_applicable_operator_method(
+                               thread, step, receiver, operand0, operand1,
+                               method_name, method_descriptor))
+                        {
+                            index = failed_applicability_index;
+                            continue;
+                        }
+
+                        Value callable;
+                        Value self;
+                        MethodCallTargetStatus target_status =
+                            prepare_method_call_target_from_descriptor(
+                                receiver, method_descriptor, callable, self);
+                        if(target_status ==
+                           MethodCallTargetStatus::RequiresDescriptorDispatch)
+                        {
+                            return operator_walk_raise_type_error(
+                                thread, L"descriptor __get__ requires "
+                                        L"interpreter dispatch");
+                        }
+                        if(target_status == MethodCallTargetStatus::Missing)
+                        {
+                            assert(false && "applicable operator method "
+                                            "missing after selection");
+                            __builtin_unreachable();
+                        }
+                        if(!callable.is_ptr())
+                        {
+                            return operator_walk_raise_type_error(
+                                thread, L"object is not callable");
+                        }
+
+                        Object *callable_object = callable.get_ptr();
+                        if(callable_object->native_layout_id() !=
+                           NativeLayoutId::Function)
+                        {
+                            return operator_walk_raise_type_error(
+                                thread, L"object is not callable");
+                        }
+
+                        TValue<Function> function =
+                            TValue<Function>::from_value_assumed(callable);
+                        bool has_self = !self.is_not_present();
+                        uint32_t n_args = has_self ? 1 : 0;
+                        if(!function.extract()
+                                ->accepts_positional_only_call_arity(n_args))
+                        {
+                            return operator_walk_raise_type_error(
+                                thread, L"wrong number of arguments");
+                        }
+
+                        FunctionCallAdaptation adaptation =
+                            function_call_adaptation_for_positional_call(
+                                function, n_args);
+                        TrustedHandler handler;
+                        CodeObject *target_code_object =
+                            function.extract()->code_object.extract();
+                        if(target_code_object->trusted_handler_resolver !=
+                           nullptr)
+                        {
+                            TrustedHandler resolved_handler =
+                                target_code_object->trusted_handler_resolver(
+                                    vm, operand0_shape_key, operand1_shape_key,
+                                    operand2_shape_key,
+                                    TrustedHandlerOperandOrder::Normal);
+                            if(!resolved_handler.is_none())
+                            {
+                                handler = resolved_handler;
+                            }
+                        }
+
+                        ValidityCell *operand0_lookup_validity_cell = nullptr;
+                        if(cacheability != OperatorCacheability::Uncacheable)
+                        {
+                            operand0_lookup_validity_cell =
+                                operator_lookup_validity_cell_for_operand(
+                                    thread, operand0);
+                        }
+
+                        if(!handler.is_none())
+                        {
+                            return OperatorWalkDescriptor::call_trusted_handler(
+                                step.action, operand0_shape_key,
+                                operand1_shape_key, operand2_shape_key, handler,
+                                operand0_lookup_validity_cell, nullptr);
+                        }
+
+                        return OperatorWalkDescriptor::call_python_function(
+                            step.action, index + 1,
+                            OperatorOperandOrder::Normal, operand0_shape_key,
+                            operand1_shape_key, operand2_shape_key, function,
+                            n_args, adaptation, has_self,
+                            operand0_lookup_validity_cell, nullptr);
+                    }
 
                 case OperatorStepAction::CallBinary:
                 case OperatorStepAction::CallBinaryReflected:

@@ -1753,6 +1753,62 @@ TEST(Interpreter, operator_add_walk_uses_arithmetic_reflected_priority)
     EXPECT_TRUE(descriptor.cache_entry.reflected_python_call);
 }
 
+TEST(Interpreter, operator_dispatch_tables_include_unary_and_binary_arithmetic)
+{
+    test::VmTestContext test_context;
+
+    auto expect_binary_table = [&](OperatorDispatchTableId table_id) {
+        const OperatorDispatchTable &table =
+            test_context.vm().operator_dispatch_table(table_id);
+        ASSERT_EQ(6, table.n_steps);
+        EXPECT_EQ(OperatorStepAction::CallBinaryReflected,
+                  table.step(0).action);
+        EXPECT_NE(nullptr, table.step(0).dunder_name);
+        EXPECT_EQ(OperatorStepApplicability::IfArithmeticReflectedPriority,
+                  table.step(0).applicability);
+        EXPECT_EQ(2, table.step(0).else_skip);
+        EXPECT_EQ(OperatorStepAction::CallBinary, table.step(1).action);
+        EXPECT_NE(nullptr, table.step(1).dunder_name);
+        EXPECT_EQ(OperatorStepAction::RaiseUnsupported, table.step(2).action);
+        EXPECT_EQ(OperatorStepAction::CallBinary, table.step(3).action);
+        EXPECT_NE(nullptr, table.step(3).dunder_name);
+        EXPECT_EQ(OperatorStepAction::CallBinaryReflected,
+                  table.step(4).action);
+        EXPECT_NE(nullptr, table.step(4).dunder_name);
+        EXPECT_EQ(
+            OperatorStepApplicability::IfMethodFoundAndOperands01TypesDiffer,
+            table.step(4).applicability);
+        EXPECT_EQ(OperatorStepAction::RaiseUnsupported, table.step(5).action);
+    };
+
+    expect_binary_table(OperatorDispatchTableId::Add);
+    expect_binary_table(OperatorDispatchTableId::Sub);
+    expect_binary_table(OperatorDispatchTableId::Mul);
+    expect_binary_table(OperatorDispatchTableId::TrueDiv);
+    expect_binary_table(OperatorDispatchTableId::FloorDiv);
+    expect_binary_table(OperatorDispatchTableId::Mod);
+    expect_binary_table(OperatorDispatchTableId::LShift);
+    expect_binary_table(OperatorDispatchTableId::RShift);
+    expect_binary_table(OperatorDispatchTableId::And);
+    expect_binary_table(OperatorDispatchTableId::Xor);
+    expect_binary_table(OperatorDispatchTableId::Or);
+
+    auto expect_unary_table = [&](OperatorDispatchTableId table_id) {
+        const OperatorDispatchTable &table =
+            test_context.vm().operator_dispatch_table(table_id);
+        ASSERT_EQ(2, table.n_steps);
+        EXPECT_EQ(OperatorStepAction::CallUnary, table.step(0).action);
+        EXPECT_NE(nullptr, table.step(0).dunder_name);
+        EXPECT_EQ(OperatorStepApplicability::IfMethodFound,
+                  table.step(0).applicability);
+        EXPECT_EQ(OperatorStepAction::RaiseUnsupported, table.step(1).action);
+    };
+
+    expect_unary_table(OperatorDispatchTableId::Neg);
+    expect_unary_table(OperatorDispatchTableId::Pos);
+    expect_unary_table(OperatorDispatchTableId::Invert);
+}
+
 TEST(Interpreter, operator_add_walk_uses_reflected_fallback_for_different_types)
 {
     test::VmTestContext test_context;

@@ -16,6 +16,7 @@ namespace cl
         IdentityNe = 4,
         RaiseUnsupported = 6,
         RaiseOrdering = 8,
+        CallUnary = 10,
     };
 
     static constexpr bool
@@ -36,6 +37,8 @@ namespace cl
         OperatorStepAction::RaiseUnsupported));
     static_assert(
         !operator_step_action_is_reflected(OperatorStepAction::RaiseOrdering));
+    static_assert(
+        !operator_step_action_is_reflected(OperatorStepAction::CallUnary));
 
     enum class OperatorStepApplicability : uint8_t
     {
@@ -62,6 +65,19 @@ namespace cl
         CompareGt,
         CompareGe,
         Add,
+        Sub,
+        Mul,
+        TrueDiv,
+        FloorDiv,
+        Mod,
+        LShift,
+        RShift,
+        And,
+        Xor,
+        Or,
+        Neg,
+        Pos,
+        Invert,
         Count,
     };
 
@@ -79,6 +95,14 @@ namespace cl
                     uint8_t else_skip = 0)
         {
             return OperatorStep{dunder_name, OperatorStepAction::CallBinary,
+                                applicability, else_skip};
+        }
+
+        static constexpr OperatorStep
+        call_unary(String *dunder_name, OperatorStepApplicability applicability,
+                   uint8_t else_skip = 0)
+        {
+            return OperatorStep{dunder_name, OperatorStepAction::CallUnary,
                                 applicability, else_skip};
         }
 
