@@ -86,6 +86,9 @@ namespace cl
         Neg,
         Pos,
         Invert,
+        GetItem,
+        SetItem,
+        DelItem,
         Count,
     };
 

@@ -1933,6 +1933,32 @@ TEST(Interpreter, operator_dispatch_tables_include_unary_and_binary_arithmetic)
     expect_unary_table(OperatorDispatchTableId::Neg);
     expect_unary_table(OperatorDispatchTableId::Pos);
     expect_unary_table(OperatorDispatchTableId::Invert);
+
+    auto expect_receiver_binary_table = [&](OperatorDispatchTableId table_id) {
+        const OperatorDispatchTable &table =
+            test_context.vm().operator_dispatch_table(table_id);
+        ASSERT_EQ(2, table.n_steps);
+        EXPECT_EQ(OperatorStepAction::CallBinary, table.step(0).action);
+        EXPECT_NE(nullptr, table.step(0).dunder_name);
+        EXPECT_EQ(OperatorStepApplicability::IfMethodFound,
+                  table.step(0).applicability);
+        EXPECT_EQ(OperatorStepAction::RaiseUnsupported, table.step(1).action);
+    };
+
+    expect_receiver_binary_table(OperatorDispatchTableId::GetItem);
+    expect_receiver_binary_table(OperatorDispatchTableId::DelItem);
+
+    {
+        const OperatorDispatchTable &table =
+            test_context.vm().operator_dispatch_table(
+                OperatorDispatchTableId::SetItem);
+        ASSERT_EQ(2, table.n_steps);
+        EXPECT_EQ(OperatorStepAction::CallTernary, table.step(0).action);
+        EXPECT_NE(nullptr, table.step(0).dunder_name);
+        EXPECT_EQ(OperatorStepApplicability::IfMethodFound,
+                  table.step(0).applicability);
+        EXPECT_EQ(OperatorStepAction::RaiseUnsupported, table.step(1).action);
+    }
 }
 
 TEST(Interpreter, operator_add_walk_uses_reflected_fallback_for_different_types)
@@ -2995,10 +3021,8 @@ TEST(Interpreter, subscript_load_caches_inline_key_shape)
               cache.operand_shape_keys[1]);
     EXPECT_EQ(test_context.vm().smi_shape(),
               test_context.vm().shape_for_key(cache.operand_shape_keys[1]));
-    ASSERT_NE(nullptr, cache.function);
-    EXPECT_EQ(2u, cache.n_args);
-    EXPECT_TRUE(cache.has_self);
-    EXPECT_EQ(FunctionCallAdaptation::FixedArity, cache.adaptation);
+    EXPECT_FALSE(cache.trusted_handler.is_null());
+    EXPECT_EQ(nullptr, cache.function);
 }
 
 TEST(Interpreter, subscript_load_caches_getitem_with_default_arguments)

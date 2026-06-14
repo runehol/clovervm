@@ -602,6 +602,12 @@ namespace cl
         String *dunder_pos = get_or_create_interned_string_raw(L"__pos__");
         String *dunder_invert =
             get_or_create_interned_string_raw(L"__invert__");
+        String *dunder_getitem =
+            get_or_create_interned_string_raw(L"__getitem__");
+        String *dunder_setitem =
+            get_or_create_interned_string_raw(L"__setitem__");
+        String *dunder_delitem =
+            get_or_create_interned_string_raw(L"__delitem__");
 
         auto install_binary_arithmetic_operator_table =
             [this](OperatorDispatchTableId table_id, String *normal_dunder,
@@ -675,6 +681,30 @@ namespace cl
                     OperatorDispatchTable{steps.data(), 2};
             };
 
+        auto install_receiver_binary_operator_table =
+            [this](OperatorDispatchTableId table_id, String *dunder) {
+                std::array<OperatorStep, 6> &steps =
+                    operator_dispatch_steps_[static_cast<size_t>(table_id)];
+                steps[0] = OperatorStep::call_binary(
+                    dunder, OperatorStepApplicability::IfMethodFound);
+                steps[1] = OperatorStep::raise_unsupported();
+
+                operator_dispatch_tables_[static_cast<size_t>(table_id)] =
+                    OperatorDispatchTable{steps.data(), 2};
+            };
+
+        auto install_receiver_ternary_operator_table =
+            [this](OperatorDispatchTableId table_id, String *dunder) {
+                std::array<OperatorStep, 6> &steps =
+                    operator_dispatch_steps_[static_cast<size_t>(table_id)];
+                steps[0] = OperatorStep::call_ternary(
+                    dunder, OperatorStepApplicability::IfMethodFound);
+                steps[1] = OperatorStep::raise_unsupported();
+
+                operator_dispatch_tables_[static_cast<size_t>(table_id)] =
+                    OperatorDispatchTable{steps.data(), 2};
+            };
+
         install_binary_arithmetic_operator_table(OperatorDispatchTableId::Add,
                                                  dunder_add, dunder_radd);
         install_binary_arithmetic_operator_table(OperatorDispatchTableId::Sub,
@@ -706,6 +736,12 @@ namespace cl
         install_unary_operator_table(OperatorDispatchTableId::Pos, dunder_pos);
         install_unary_operator_table(OperatorDispatchTableId::Invert,
                                      dunder_invert);
+        install_receiver_binary_operator_table(OperatorDispatchTableId::GetItem,
+                                               dunder_getitem);
+        install_receiver_ternary_operator_table(
+            OperatorDispatchTableId::SetItem, dunder_setitem);
+        install_receiver_binary_operator_table(OperatorDispatchTableId::DelItem,
+                                               dunder_delitem);
 
         auto install_rich_compare_table = [this](
                                               OperatorDispatchTableId table_id,

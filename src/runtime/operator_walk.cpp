@@ -103,9 +103,8 @@ namespace cl
         return OperatorWalkDescriptor::propagate_pending_exception();
     }
 
-    static OperatorWalkDescriptor
-    operator_walk_raise_unsupported(ThreadState *thread,
-                                    OperatorDispatchTableId table_id)
+    static OperatorWalkDescriptor operator_walk_raise_unsupported(
+        ThreadState *thread, OperatorDispatchTableId table_id, Value operand0)
     {
         switch(table_id)
         {
@@ -160,6 +159,28 @@ namespace cl
             case OperatorDispatchTableId::Invert:
                 return operator_walk_raise_type_error(
                     thread, L"unsupported operand type for unary arithmetic");
+
+            case OperatorDispatchTableId::GetItem:
+                return operator_walk_raise_type_error(
+                    thread, L"object is not subscriptable");
+
+            case OperatorDispatchTableId::SetItem:
+                return operator_walk_raise_type_error(
+                    thread,
+                    operand0.is_ptr() &&
+                            operand0.get_ptr()->native_layout_id() ==
+                                NativeLayoutId::Tuple
+                        ? L"'tuple' object does not support item assignment"
+                        : L"object is not subscriptable");
+
+            case OperatorDispatchTableId::DelItem:
+                return operator_walk_raise_type_error(
+                    thread,
+                    operand0.is_ptr() &&
+                            operand0.get_ptr()->native_layout_id() ==
+                                NativeLayoutId::Tuple
+                        ? L"'tuple' object does not support item deletion"
+                        : L"object is not subscriptable");
 
             case OperatorDispatchTableId::CompareEq:
             case OperatorDispatchTableId::CompareNe:
@@ -267,7 +288,8 @@ namespace cl
                 case OperatorStepAction::RaiseUnsupported:
                     assert(step.applicability ==
                            OperatorStepApplicability::Always);
-                    return operator_walk_raise_unsupported(thread, table_id);
+                    return operator_walk_raise_unsupported(thread, table_id,
+                                                           operand0);
 
                 case OperatorStepAction::CallUnary:
                     {

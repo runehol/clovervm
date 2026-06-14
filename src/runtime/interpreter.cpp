@@ -357,54 +357,6 @@ namespace cl
         COMPLETE();
     }
 
-    NOINLINE INTERP_CC Value subscript_error(PARAMS)
-    {
-        ExceptionalTarget target = set_builtin_exception_and_resolve_frame_exit(
-            thread, fp, pc, code_object, L"TypeError",
-            L"object is not subscriptable");
-        fp = target.fp;
-        code_object = target.code_object;
-        pc = target.interpreted_pc;
-        START(0);
-        COMPLETE();
-    }
-
-    NOINLINE INTERP_CC Value subscript_assignment_error(PARAMS)
-    {
-        int8_t first_arg_reg = pc[1];
-        Value receiver = fp[first_arg_reg];
-        const wchar_t *message =
-            receiver.is_ptr() && receiver.get_ptr()->native_layout_id() ==
-                                     NativeLayoutId::Tuple
-                ? L"'tuple' object does not support item assignment"
-                : L"object is not subscriptable";
-        ExceptionalTarget target = set_builtin_exception_and_resolve_frame_exit(
-            thread, fp, pc, code_object, L"TypeError", message);
-        fp = target.fp;
-        code_object = target.code_object;
-        pc = target.interpreted_pc;
-        START(0);
-        COMPLETE();
-    }
-
-    NOINLINE INTERP_CC Value subscript_deletion_error(PARAMS)
-    {
-        int8_t first_arg_reg = pc[1];
-        Value receiver = fp[first_arg_reg];
-        const wchar_t *message =
-            receiver.is_ptr() && receiver.get_ptr()->native_layout_id() ==
-                                     NativeLayoutId::Tuple
-                ? L"'tuple' object does not support item deletion"
-                : L"object is not subscriptable";
-        ExceptionalTarget target = set_builtin_exception_and_resolve_frame_exit(
-            thread, fp, pc, code_object, L"TypeError", message);
-        fp = target.fp;
-        code_object = target.code_object;
-        pc = target.interpreted_pc;
-        START(0);
-        COMPLETE();
-    }
-
     NOINLINE INTERP_CC Value propagate_pending_exception(PARAMS)
     {
         assert(thread->has_pending_exception());
@@ -1178,22 +1130,6 @@ namespace cl
         cache.n_args = n_args;
         cache.adaptation =
             function_call_adaptation_for_positional_call(fun, n_args);
-    }
-
-    static ALWAYSINLINE void populate_operator_call_cache(
-        OperatorInlineCache &cache, TValue<Function> fun, uint32_t n_args,
-        bool has_self, FunctionCallAdaptation adaptation,
-        TrustedResolution trusted_resolution)
-    {
-        cache.trusted_handler =
-            trusted_resolution.has_trusted_handler()
-                ? TrustedHandler::from_resolution(trusted_resolution)
-                : TrustedHandler::none();
-        cache.function = fun.extract();
-        cache.code_object = fun.extract()->code_object.extract();
-        cache.n_args = n_args;
-        cache.adaptation = adaptation;
-        cache.has_self = has_self;
     }
 
     static ALWAYSINLINE void
@@ -2232,6 +2168,86 @@ namespace cl
             &cache);
     }
 
+    static ALWAYSINLINE DispatchTableEntry
+    dispatch_cached_direct_binary_operator(
+        ThreadState *thread, Value *&fp, const uint8_t *&pc, void *dispatch,
+        CodeObject *&code_object, Value &accumulator,
+        OperatorDispatchTableId table_id, uint8_t cache_idx, Value operand0,
+        Value operand1, const uint8_t *next_pc)
+    {
+        OperatorInlineCache &cache = code_object->operator_caches[cache_idx];
+        if(likely(cache.matches_binary(operand0, operand1)))
+        {
+            if(!cache.trusted_handler.is_null())
+            {
+                accumulator =
+                    cache.trusted_handler.binary(thread, operand0, operand1);
+                if(unlikely(accumulator.is_exception_marker()))
+                {
+                    resolve_operator_pending_exception(thread, fp, pc,
+                                                       code_object);
+                    return dispatch_entry_for_pc(dispatch, pc);
+                }
+                pc = next_pc;
+                return dispatch_entry_for_pc(dispatch, pc);
+            }
+            if(likely(cache.function != nullptr))
+            {
+                enter_cached_binary_operator_untrusted_function(
+                    thread, fp, pc, code_object, cache, table_id, operand0,
+                    operand1, next_pc);
+                return dispatch_entry_for_pc(dispatch, pc);
+            }
+        }
+
+        OperatorWalkDescriptor descriptor = walk_operator_table(
+            thread, table_id, 0, OperatorCacheability::CacheableDirectOnly,
+            operand0, operand1, Value::not_present());
+        return dispatch_binary_operator_walk_result(
+            thread, fp, pc, dispatch, code_object, accumulator, table_id,
+            operand0, operand1, descriptor, next_pc, next_pc, &cache);
+    }
+
+    static ALWAYSINLINE DispatchTableEntry
+    dispatch_cached_direct_ternary_operator(
+        ThreadState *thread, Value *&fp, const uint8_t *&pc, void *dispatch,
+        CodeObject *&code_object, Value &accumulator,
+        OperatorDispatchTableId table_id, uint8_t cache_idx, Value operand0,
+        Value operand1, Value operand2, const uint8_t *next_pc)
+    {
+        OperatorInlineCache &cache = code_object->operator_caches[cache_idx];
+        if(likely(cache.matches_ternary(operand0, operand1)))
+        {
+            if(!cache.trusted_handler.is_null())
+            {
+                accumulator = cache.trusted_handler.ternary(thread, operand0,
+                                                            operand1, operand2);
+                if(unlikely(accumulator.is_exception_marker()))
+                {
+                    resolve_operator_pending_exception(thread, fp, pc,
+                                                       code_object);
+                    return dispatch_entry_for_pc(dispatch, pc);
+                }
+                pc = next_pc;
+                return dispatch_entry_for_pc(dispatch, pc);
+            }
+            if(likely(cache.function != nullptr))
+            {
+                enter_cached_ternary_operator_untrusted_function(
+                    thread, fp, pc, code_object, cache, table_id, operand0,
+                    operand1, operand2, next_pc);
+                return dispatch_entry_for_pc(dispatch, pc);
+            }
+        }
+
+        OperatorWalkDescriptor descriptor = walk_operator_table(
+            thread, table_id, 0, OperatorCacheability::CacheableDirectOnly,
+            operand0, operand1, operand2);
+        return dispatch_ternary_operator_walk_result(
+            thread, fp, pc, dispatch, code_object, accumulator, table_id,
+            operand0, operand1, operand2, descriptor, next_pc, next_pc, &cache);
+    }
+
     static ALWAYSINLINE DispatchTableEntry dispatch_cached_unary_operator(
         ThreadState *thread, Value *&fp, const uint8_t *&pc, void *dispatch,
         CodeObject *&code_object, Value &accumulator,
@@ -2920,533 +2936,48 @@ namespace cl
         COMPLETE();
     }
 
-    NOINLINE static INTERP_CC Value op_get_item_cache_miss(PARAMS)
-    {
-        static constexpr uint32_t call_instr_len = 3;
-        int8_t receiver_reg = pc[1];
-        uint8_t cache_idx = pc[2];
-        static constexpr uint32_t n_user_args = 1;
-        Value receiver = fp[receiver_reg];
-        Value key = accumulator;
-        ShapeKey receiver_shape_key = ShapeKey::from_value(receiver);
-        ShapeKey key_shape_key = ShapeKey::from_value(key);
-        VirtualMachine *vm = thread->get_machine();
-        TValue<String> method_name =
-            vm->get_or_create_interned_string_value(L"__getitem__");
-        OperatorInlineCache &cache = code_object->operator_caches[cache_idx];
-
-        Value callable;
-        Value self;
-        AttributeReadDescriptor descriptor =
-            resolve_special_method_read_descriptor(receiver, method_name);
-        MethodCallTargetStatus target_status =
-            prepare_method_call_target_from_descriptor(receiver, descriptor,
-                                                       callable, self);
-        bool can_cache_call = target_status == MethodCallTargetStatus::Ready &&
-                              descriptor.is_cacheable();
-        if(can_cache_call)
-        {
-            cache.populate_operand0_method_lookup_validity(receiver,
-                                                           descriptor);
-            cache.populate_binary_shapes(receiver_shape_key, key_shape_key);
-        }
-        if(unlikely(target_status == MethodCallTargetStatus::Missing))
-        {
-            MUSTTAIL return subscript_error(ARGS);
-        }
-        if(unlikely(target_status ==
-                    MethodCallTargetStatus::RequiresDescriptorDispatch))
-        {
-            MUSTTAIL return descriptor_dispatch_error(ARGS);
-        }
-
-        bool has_self = !self.is_not_present();
-        uint32_t n_args = n_user_args + (has_self ? 1 : 0);
-
-        if(unlikely(!callable.is_ptr()))
-        {
-            MUSTTAIL return not_callable_error(ARGS);
-        }
-
-        Object *fun_object = callable.get_ptr();
-        if(unlikely(fun_object->native_layout_id() != NativeLayoutId::Function))
-        {
-            MUSTTAIL return not_callable_error(ARGS);
-        }
-
-        TValue<Function> function =
-            TValue<Function>::from_value_assumed(callable);
-        if(unlikely(
-               !function.extract()->accepts_positional_only_call_arity(n_args)))
-        {
-            MUSTTAIL return wrong_arity_error(ARGS);
-        }
-        FunctionCallAdaptation adaptation =
-            function_call_adaptation_for_positional_call(function, n_args);
-        TrustedResolution trusted_resolution =
-            TrustedResolution::no_trusted_handler_call_untrusted();
-        if(can_cache_call)
-        {
-            CodeObject *target_code_object =
-                function.extract()->code_object.extract();
-            if(target_code_object->trusted_handler_resolver != nullptr)
-            {
-                TrustedResolution resolution =
-                    target_code_object->trusted_handler_resolver(
-                        vm, receiver_shape_key, key_shape_key,
-                        TrustedHandlerOperandOrder::Normal,
-                        TrustedHandlerArity::Binary);
-                if(resolution.kind == TrustedResolutionKind::TrustedHandler)
-                {
-                    assert(resolution.arity == TrustedHandlerArity::Binary);
-                    trusted_resolution = resolution;
-                }
-                else
-                {
-                    assert(
-                        resolution.kind !=
-                        TrustedResolutionKind::KnownNotImplementedSkipMethod);
-                }
-            }
-            populate_operator_call_cache(cache, function, n_args, has_self,
-                                         adaptation, trusted_resolution);
-        }
-
-        if(trusted_resolution.has_trusted_handler())
-        {
-            accumulator = trusted_resolution.binary(thread, receiver, key);
-            if(unlikely(accumulator.is_exception_marker()))
-            {
-                MUSTTAIL return propagate_pending_exception(ARGS);
-            }
-            START(call_instr_len);
-            COMPLETE();
-        }
-
-        int8_t first_arg_reg = code_object->get_first_free_arg_encoded_reg();
-        fp[first_arg_reg] = receiver;
-        fp[first_arg_reg - 1] = key;
-        first_arg_reg = prepare_method_call_argument_slots(fp, first_arg_reg,
-                                                           n_user_args, self);
-        enter_function_frame_from_positional_args(
-            thread, fp, pc, code_object, function, first_arg_reg, n_args,
-            call_instr_len, adaptation);
-
-        auto *next_dispatch_fun =
-            reinterpret_cast<DispatchTable *>(dispatch)->table[pc[0]];
-        MUSTTAIL return next_dispatch_fun(ARGS);
-    }
-
-    NOINLINE static INTERP_CC Value op_get_item_cached_call_slow(PARAMS)
-    {
-        static constexpr uint32_t call_instr_len = 3;
-        int8_t receiver_reg = pc[1];
-        uint8_t cache_idx = pc[2];
-        static constexpr uint32_t n_user_args = 1;
-        Value receiver = fp[receiver_reg];
-        Value key = accumulator;
-        OperatorInlineCache &cache = code_object->operator_caches[cache_idx];
-        assert(cache.function != nullptr);
-
-        Value self = cache.has_self ? receiver : Value::not_present();
-        int8_t first_arg_reg = code_object->get_first_free_arg_encoded_reg();
-        fp[first_arg_reg] = receiver;
-        fp[first_arg_reg - 1] = key;
-        first_arg_reg = prepare_method_call_argument_slots(fp, first_arg_reg,
-                                                           n_user_args, self);
-        TValue<Function> function = TValue<Function>::from_oop(cache.function);
-        enter_function_frame_from_positional_args(
-            thread, fp, pc, code_object, function, first_arg_reg, cache.n_args,
-            call_instr_len, cache.adaptation);
-
-        auto *next_dispatch_fun =
-            reinterpret_cast<DispatchTable *>(dispatch)->table[pc[0]];
-        MUSTTAIL return next_dispatch_fun(ARGS);
-    }
-
     static INTERP_CC Value op_get_item(PARAMS)
     {
-        static constexpr uint32_t call_instr_len = 3;
         int8_t receiver_reg = pc[1];
         uint8_t cache_idx = pc[2];
         Value receiver = fp[receiver_reg];
         Value key = accumulator;
-        OperatorInlineCache &cache = code_object->operator_caches[cache_idx];
-        if(unlikely(!cache.matches_binary(receiver, key)))
-        {
-            MUSTTAIL return op_get_item_cache_miss(ARGS);
-        }
-        if(!cache.trusted_handler.is_null())
-        {
-            accumulator = cache.trusted_handler.binary(thread, receiver, key);
-            if(unlikely(accumulator.is_exception_marker()))
-            {
-                MUSTTAIL return propagate_pending_exception(ARGS);
-            }
-            START(call_instr_len);
-            COMPLETE();
-        }
-        if(unlikely(cache.function == nullptr))
-        {
-            MUSTTAIL return op_get_item_cache_miss(ARGS);
-        }
-        MUSTTAIL return op_get_item_cached_call_slow(ARGS);
-    }
-
-    NOINLINE static INTERP_CC Value op_set_item_cache_miss(PARAMS)
-    {
-        static constexpr uint32_t call_instr_len = 4;
-        int8_t receiver_reg = pc[1];
-        int8_t value_reg = pc[2];
-        uint8_t cache_idx = pc[3];
-        static constexpr uint32_t n_user_args = 2;
-        Value receiver = fp[receiver_reg];
-        Value key = accumulator;
-        Value value = fp[value_reg];
-        ShapeKey receiver_shape_key = ShapeKey::from_value(receiver);
-        ShapeKey key_shape_key = ShapeKey::from_value(key);
-        VirtualMachine *vm = thread->get_machine();
-        TValue<String> method_name =
-            vm->get_or_create_interned_string_value(L"__setitem__");
-        OperatorInlineCache &cache = code_object->operator_caches[cache_idx];
-
-        Value callable;
-        Value self;
-        AttributeReadDescriptor descriptor =
-            resolve_special_method_read_descriptor(receiver, method_name);
-        MethodCallTargetStatus target_status =
-            prepare_method_call_target_from_descriptor(receiver, descriptor,
-                                                       callable, self);
-        bool can_cache_call = target_status == MethodCallTargetStatus::Ready &&
-                              descriptor.is_cacheable();
-        if(can_cache_call)
-        {
-            cache.populate_operand0_method_lookup_validity(receiver,
-                                                           descriptor);
-            cache.populate_binary_shapes(receiver_shape_key, key_shape_key);
-        }
-        if(unlikely(target_status == MethodCallTargetStatus::Missing))
-        {
-            MUSTTAIL return subscript_assignment_error(ARGS);
-        }
-        if(unlikely(target_status ==
-                    MethodCallTargetStatus::RequiresDescriptorDispatch))
-        {
-            MUSTTAIL return descriptor_dispatch_error(ARGS);
-        }
-
-        bool has_self = !self.is_not_present();
-        uint32_t n_args = n_user_args + (has_self ? 1 : 0);
-
-        if(unlikely(!callable.is_ptr()))
-        {
-            MUSTTAIL return not_callable_error(ARGS);
-        }
-
-        Object *fun_object = callable.get_ptr();
-        if(unlikely(fun_object->native_layout_id() != NativeLayoutId::Function))
-        {
-            MUSTTAIL return not_callable_error(ARGS);
-        }
-
-        TValue<Function> function =
-            TValue<Function>::from_value_assumed(callable);
-        if(unlikely(
-               !function.extract()->accepts_positional_only_call_arity(n_args)))
-        {
-            MUSTTAIL return wrong_arity_error(ARGS);
-        }
-        FunctionCallAdaptation adaptation =
-            function_call_adaptation_for_positional_call(function, n_args);
-        TrustedResolution trusted_resolution =
-            TrustedResolution::no_trusted_handler_call_untrusted();
-        if(can_cache_call)
-        {
-            CodeObject *target_code_object =
-                function.extract()->code_object.extract();
-            if(target_code_object->trusted_handler_resolver != nullptr)
-            {
-                TrustedResolution resolution =
-                    target_code_object->trusted_handler_resolver(
-                        vm, receiver_shape_key, key_shape_key,
-                        TrustedHandlerOperandOrder::Normal,
-                        TrustedHandlerArity::Ternary);
-                if(resolution.kind == TrustedResolutionKind::TrustedHandler)
-                {
-                    assert(resolution.arity == TrustedHandlerArity::Ternary);
-                    trusted_resolution = resolution;
-                }
-                else
-                {
-                    assert(
-                        resolution.kind !=
-                        TrustedResolutionKind::KnownNotImplementedSkipMethod);
-                }
-            }
-            populate_operator_call_cache(cache, function, n_args, has_self,
-                                         adaptation, trusted_resolution);
-        }
-
-        if(trusted_resolution.has_trusted_handler())
-        {
-            accumulator =
-                trusted_resolution.ternary(thread, receiver, key, value);
-            if(unlikely(accumulator.is_exception_marker()))
-            {
-                MUSTTAIL return propagate_pending_exception(ARGS);
-            }
-            START(call_instr_len);
-            COMPLETE();
-        }
-
-        int8_t first_arg_reg = code_object->get_first_free_arg_encoded_reg();
-        fp[first_arg_reg] = receiver;
-        fp[first_arg_reg - 1] = key;
-        fp[first_arg_reg - 2] = value;
-        first_arg_reg = prepare_method_call_argument_slots(fp, first_arg_reg,
-                                                           n_user_args, self);
-        enter_function_frame_from_positional_args(
-            thread, fp, pc, code_object, function, first_arg_reg, n_args,
-            call_instr_len, adaptation);
-
-        auto *next_dispatch_fun =
-            reinterpret_cast<DispatchTable *>(dispatch)->table[pc[0]];
-        MUSTTAIL return next_dispatch_fun(ARGS);
-    }
-
-    NOINLINE static INTERP_CC Value op_set_item_cached_call_slow(PARAMS)
-    {
-        static constexpr uint32_t call_instr_len = 4;
-        int8_t receiver_reg = pc[1];
-        int8_t value_reg = pc[2];
-        uint8_t cache_idx = pc[3];
-        static constexpr uint32_t n_user_args = 2;
-        Value receiver = fp[receiver_reg];
-        Value key = accumulator;
-        Value value = fp[value_reg];
-        OperatorInlineCache &cache = code_object->operator_caches[cache_idx];
-        assert(cache.function != nullptr);
-
-        Value self = cache.has_self ? receiver : Value::not_present();
-        int8_t first_arg_reg = code_object->get_first_free_arg_encoded_reg();
-        fp[first_arg_reg] = receiver;
-        fp[first_arg_reg - 1] = key;
-        fp[first_arg_reg - 2] = value;
-        first_arg_reg = prepare_method_call_argument_slots(fp, first_arg_reg,
-                                                           n_user_args, self);
-        TValue<Function> function = TValue<Function>::from_oop(cache.function);
-        enter_function_frame_from_positional_args(
-            thread, fp, pc, code_object, function, first_arg_reg, cache.n_args,
-            call_instr_len, cache.adaptation);
-
-        auto *next_dispatch_fun =
-            reinterpret_cast<DispatchTable *>(dispatch)->table[pc[0]];
+        DispatchTableEntry next_dispatch_fun =
+            dispatch_cached_direct_binary_operator(
+                thread, fp, pc, dispatch, code_object, accumulator,
+                OperatorDispatchTableId::GetItem, cache_idx, receiver, key,
+                pc + 3);
         MUSTTAIL return next_dispatch_fun(ARGS);
     }
 
     static INTERP_CC Value op_set_item(PARAMS)
     {
-        static constexpr uint32_t call_instr_len = 4;
         int8_t receiver_reg = pc[1];
         int8_t value_reg = pc[2];
         uint8_t cache_idx = pc[3];
         Value receiver = fp[receiver_reg];
         Value key = accumulator;
         Value value = fp[value_reg];
-        OperatorInlineCache &cache = code_object->operator_caches[cache_idx];
-        if(unlikely(!cache.matches_ternary(receiver, key)))
-        {
-            MUSTTAIL return op_set_item_cache_miss(ARGS);
-        }
-        if(!cache.trusted_handler.is_null())
-        {
-            accumulator =
-                cache.trusted_handler.ternary(thread, receiver, key, value);
-            if(unlikely(accumulator.is_exception_marker()))
-            {
-                MUSTTAIL return propagate_pending_exception(ARGS);
-            }
-            START(call_instr_len);
-            COMPLETE();
-        }
-        if(unlikely(cache.function == nullptr))
-        {
-            MUSTTAIL return op_set_item_cache_miss(ARGS);
-        }
-        MUSTTAIL return op_set_item_cached_call_slow(ARGS);
-    }
-
-    NOINLINE static INTERP_CC Value op_del_item_cache_miss(PARAMS)
-    {
-        static constexpr uint32_t call_instr_len = 3;
-        int8_t receiver_reg = pc[1];
-        uint8_t cache_idx = pc[2];
-        static constexpr uint32_t n_user_args = 1;
-        Value receiver = fp[receiver_reg];
-        Value key = accumulator;
-        ShapeKey receiver_shape_key = ShapeKey::from_value(receiver);
-        ShapeKey key_shape_key = ShapeKey::from_value(key);
-        VirtualMachine *vm = thread->get_machine();
-        TValue<String> method_name =
-            vm->get_or_create_interned_string_value(L"__delitem__");
-        OperatorInlineCache &cache = code_object->operator_caches[cache_idx];
-
-        Value callable;
-        Value self;
-        AttributeReadDescriptor descriptor =
-            resolve_special_method_read_descriptor(receiver, method_name);
-        MethodCallTargetStatus target_status =
-            prepare_method_call_target_from_descriptor(receiver, descriptor,
-                                                       callable, self);
-        bool can_cache_call = target_status == MethodCallTargetStatus::Ready &&
-                              descriptor.is_cacheable();
-        if(can_cache_call)
-        {
-            cache.populate_operand0_method_lookup_validity(receiver,
-                                                           descriptor);
-            cache.populate_binary_shapes(receiver_shape_key, key_shape_key);
-        }
-        if(unlikely(target_status == MethodCallTargetStatus::Missing))
-        {
-            MUSTTAIL return subscript_deletion_error(ARGS);
-        }
-        if(unlikely(target_status ==
-                    MethodCallTargetStatus::RequiresDescriptorDispatch))
-        {
-            MUSTTAIL return descriptor_dispatch_error(ARGS);
-        }
-
-        bool has_self = !self.is_not_present();
-        uint32_t n_args = n_user_args + (has_self ? 1 : 0);
-
-        if(unlikely(!callable.is_ptr()))
-        {
-            MUSTTAIL return not_callable_error(ARGS);
-        }
-
-        Object *fun_object = callable.get_ptr();
-        if(unlikely(fun_object->native_layout_id() != NativeLayoutId::Function))
-        {
-            MUSTTAIL return not_callable_error(ARGS);
-        }
-
-        TValue<Function> function =
-            TValue<Function>::from_value_assumed(callable);
-        if(unlikely(
-               !function.extract()->accepts_positional_only_call_arity(n_args)))
-        {
-            MUSTTAIL return wrong_arity_error(ARGS);
-        }
-        FunctionCallAdaptation adaptation =
-            function_call_adaptation_for_positional_call(function, n_args);
-        TrustedResolution trusted_resolution =
-            TrustedResolution::no_trusted_handler_call_untrusted();
-        if(can_cache_call)
-        {
-            CodeObject *target_code_object =
-                function.extract()->code_object.extract();
-            if(target_code_object->trusted_handler_resolver != nullptr)
-            {
-                TrustedResolution resolution =
-                    target_code_object->trusted_handler_resolver(
-                        vm, receiver_shape_key, key_shape_key,
-                        TrustedHandlerOperandOrder::Normal,
-                        TrustedHandlerArity::Binary);
-                if(resolution.kind == TrustedResolutionKind::TrustedHandler)
-                {
-                    assert(resolution.arity == TrustedHandlerArity::Binary);
-                    trusted_resolution = resolution;
-                }
-                else
-                {
-                    assert(
-                        resolution.kind !=
-                        TrustedResolutionKind::KnownNotImplementedSkipMethod);
-                }
-            }
-            populate_operator_call_cache(cache, function, n_args, has_self,
-                                         adaptation, trusted_resolution);
-        }
-
-        if(trusted_resolution.has_trusted_handler())
-        {
-            accumulator = trusted_resolution.binary(thread, receiver, key);
-            if(unlikely(accumulator.is_exception_marker()))
-            {
-                MUSTTAIL return propagate_pending_exception(ARGS);
-            }
-            START(call_instr_len);
-            COMPLETE();
-        }
-
-        int8_t first_arg_reg = code_object->get_first_free_arg_encoded_reg();
-        fp[first_arg_reg] = receiver;
-        fp[first_arg_reg - 1] = key;
-        first_arg_reg = prepare_method_call_argument_slots(fp, first_arg_reg,
-                                                           n_user_args, self);
-        enter_function_frame_from_positional_args(
-            thread, fp, pc, code_object, function, first_arg_reg, n_args,
-            call_instr_len, adaptation);
-
-        auto *next_dispatch_fun =
-            reinterpret_cast<DispatchTable *>(dispatch)->table[pc[0]];
-        MUSTTAIL return next_dispatch_fun(ARGS);
-    }
-
-    NOINLINE static INTERP_CC Value op_del_item_cached_call_slow(PARAMS)
-    {
-        static constexpr uint32_t call_instr_len = 3;
-        int8_t receiver_reg = pc[1];
-        uint8_t cache_idx = pc[2];
-        static constexpr uint32_t n_user_args = 1;
-        Value receiver = fp[receiver_reg];
-        Value key = accumulator;
-        OperatorInlineCache &cache = code_object->operator_caches[cache_idx];
-        assert(cache.function != nullptr);
-
-        Value self = cache.has_self ? receiver : Value::not_present();
-        int8_t first_arg_reg = code_object->get_first_free_arg_encoded_reg();
-        fp[first_arg_reg] = receiver;
-        fp[first_arg_reg - 1] = key;
-        first_arg_reg = prepare_method_call_argument_slots(fp, first_arg_reg,
-                                                           n_user_args, self);
-        TValue<Function> function = TValue<Function>::from_oop(cache.function);
-        enter_function_frame_from_positional_args(
-            thread, fp, pc, code_object, function, first_arg_reg, cache.n_args,
-            call_instr_len, cache.adaptation);
-
-        auto *next_dispatch_fun =
-            reinterpret_cast<DispatchTable *>(dispatch)->table[pc[0]];
+        DispatchTableEntry next_dispatch_fun =
+            dispatch_cached_direct_ternary_operator(
+                thread, fp, pc, dispatch, code_object, accumulator,
+                OperatorDispatchTableId::SetItem, cache_idx, receiver, key,
+                value, pc + 4);
         MUSTTAIL return next_dispatch_fun(ARGS);
     }
 
     static INTERP_CC Value op_del_item(PARAMS)
     {
-        static constexpr uint32_t call_instr_len = 3;
         int8_t receiver_reg = pc[1];
         uint8_t cache_idx = pc[2];
         Value receiver = fp[receiver_reg];
         Value key = accumulator;
-        OperatorInlineCache &cache = code_object->operator_caches[cache_idx];
-        if(unlikely(!cache.matches_binary(receiver, key)))
-        {
-            MUSTTAIL return op_del_item_cache_miss(ARGS);
-        }
-        if(!cache.trusted_handler.is_null())
-        {
-            accumulator = cache.trusted_handler.binary(thread, receiver, key);
-            if(unlikely(accumulator.is_exception_marker()))
-            {
-                MUSTTAIL return propagate_pending_exception(ARGS);
-            }
-            START(call_instr_len);
-            COMPLETE();
-        }
-        if(unlikely(cache.function == nullptr))
-        {
-            MUSTTAIL return op_del_item_cache_miss(ARGS);
-        }
-        MUSTTAIL return op_del_item_cached_call_slow(ARGS);
+        DispatchTableEntry next_dispatch_fun =
+            dispatch_cached_direct_binary_operator(
+                thread, fp, pc, dispatch, code_object, accumulator,
+                OperatorDispatchTableId::DelItem, cache_idx, receiver, key,
+                pc + 3);
+        MUSTTAIL return next_dispatch_fun(ARGS);
     }
 
     NOINLINE static INTERP_CC Value op_add_smi_dispatch(PARAMS)
