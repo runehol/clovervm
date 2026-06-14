@@ -4,6 +4,8 @@
 
 #include <algorithm>
 #include <cassert>
+#include <cfloat>
+#include <cmath>
 #include <cstring>
 #include <limits>
 #include <string>
@@ -121,6 +123,12 @@ namespace cl
         }
         assert(view.signum == -1 || view.signum == 1);
         return view;
+    }
+
+    static uint32_t countl_zero(digit_t value)
+    {
+        assert(value != 0);
+        return static_cast<uint32_t>(__builtin_clz(value));
     }
 
     static double_digit_t
@@ -264,6 +272,129 @@ namespace cl
             return Expected<int64_t>::ok(std::numeric_limits<int64_t>::min());
         }
         return Expected<int64_t>::ok(-static_cast<int64_t>(magnitude));
+    }
+
+    static size_t bigint_abs_bit_length(ConstBigIntView view)
+    {
+        assert(is_normalized_bigint_view(view));
+        if(view.n_digits == 0)
+        {
+            return 0;
+        }
+        digit_t top_digit = view.digits[view.n_digits - 1];
+        return (view.n_digits - 1) * kDigitBits + kDigitBits -
+               countl_zero(top_digit);
+    }
+
+    static bool bigint_abs_bit(ConstBigIntView view, size_t bit_index)
+    {
+        size_t digit_index = bit_index / kDigitBits;
+        if(digit_index >= view.n_digits)
+        {
+            return false;
+        }
+        uint32_t digit_bit = static_cast<uint32_t>(bit_index % kDigitBits);
+        return ((view.digits[digit_index] >> digit_bit) & 1) != 0;
+    }
+
+    static bool bigint_abs_any_bits_below(ConstBigIntView view, size_t n_bits)
+    {
+        size_t full_digits = n_bits / kDigitBits;
+        uint32_t remaining_bits = static_cast<uint32_t>(n_bits % kDigitBits);
+
+        for(size_t idx = 0; idx < full_digits && idx < view.n_digits; ++idx)
+        {
+            if(view.digits[idx] != 0)
+            {
+                return true;
+            }
+        }
+
+        if(remaining_bits != 0 && full_digits < view.n_digits)
+        {
+            digit_t mask = (digit_t{1} << remaining_bits) - 1;
+            return (view.digits[full_digits] & mask) != 0;
+        }
+        return false;
+    }
+
+    static uint64_t bigint_abs_top_bits(ConstBigIntView view, size_t bit_length,
+                                        uint32_t n_bits)
+    {
+        assert(n_bits <= 64);
+        assert(bit_length >= n_bits);
+
+        uint64_t result = 0;
+        size_t low_bit = bit_length - n_bits;
+        for(uint32_t idx = 0; idx < n_bits; ++idx)
+        {
+            result <<= 1;
+            if(bigint_abs_bit(view, low_bit + n_bits - 1 - idx))
+            {
+                result |= 1;
+            }
+        }
+        return result;
+    }
+
+    Expected<double> bigint_to_double(ConstBigIntView view)
+    {
+        assert(is_normalized_bigint_view(view));
+        if(view.signum == 0)
+        {
+            return Expected<double>::ok(0.0);
+        }
+
+        static_assert(DBL_MANT_DIG == 53);
+        static_assert(DBL_MAX_EXP == 1024);
+        constexpr uint32_t precision = DBL_MANT_DIG;
+        size_t bit_length = bigint_abs_bit_length(view);
+        uint64_t mantissa;
+
+        if(bit_length <= precision)
+        {
+            mantissa = bigint_abs_top_bits(view, bit_length,
+                                           static_cast<uint32_t>(bit_length));
+            double result = static_cast<double>(mantissa);
+            if(view.signum < 0)
+            {
+                result = -result;
+            }
+            return Expected<double>::ok(result);
+        }
+        else
+        {
+            size_t discarded_bits = bit_length - precision;
+            mantissa = bigint_abs_top_bits(view, bit_length, precision);
+            bool guard_bit = bigint_abs_bit(view, discarded_bits - 1);
+            bool sticky_bits =
+                discarded_bits > 1 &&
+                bigint_abs_any_bits_below(view, discarded_bits - 1);
+            if(guard_bit && (sticky_bits || (mantissa & 1) != 0))
+            {
+                ++mantissa;
+                if(mantissa == (uint64_t{1} << precision))
+                {
+                    mantissa >>= 1;
+                    ++bit_length;
+                }
+            }
+        }
+
+        if(bit_length > DBL_MAX_EXP)
+        {
+            return Expected<double>::raise_exception(
+                L"OverflowError", L"int too large to convert to float");
+        }
+
+        double result =
+            std::ldexp(static_cast<double>(mantissa),
+                       static_cast<int>(bit_length) - int(precision));
+        if(view.signum < 0)
+        {
+            result = -result;
+        }
+        return Expected<double>::ok(result);
     }
 
     Expected<Value> bigint_negate(ThreadState *thread, ConstBigIntView view)
@@ -617,12 +748,6 @@ namespace cl
     static uint32_t divmod_abs_by_u32(MutableBigIntView *quotient,
                                       ConstBigIntView dividend,
                                       uint32_t divisor);
-
-    static uint32_t countl_zero(digit_t value)
-    {
-        assert(value != 0);
-        return static_cast<uint32_t>(__builtin_clz(value));
-    }
 
     static ConstBigIntView abs_bigint_view(ConstBigIntView view)
     {

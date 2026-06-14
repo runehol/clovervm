@@ -5,6 +5,7 @@
 #include "runtime/thread_state.h"
 #include "test_helpers.h"
 
+#include <algorithm>
 #include <gtest/gtest.h>
 #include <limits>
 #include <string>
@@ -245,6 +246,75 @@ TEST(BigInt, BigIntToInt64RejectsOverflow)
     EXPECT_TRUE(value.has_exception());
     expect_pending_exception(context.thread(), L"OverflowError",
                              L"integer overflow");
+}
+
+TEST(BigInt, BigIntToDoubleConvertsExactValues)
+{
+    digit_t zero[] = {0};
+    digit_t one[] = {1};
+    digit_t two_to_53[] = {0, 1u << 21};
+
+    Expected<double> zero_result =
+        bigint_to_double(ConstBigIntView{0, 0, zero});
+    Expected<double> one_result = bigint_to_double(ConstBigIntView{1, 1, one});
+    Expected<double> negative_one_result =
+        bigint_to_double(ConstBigIntView{1, -1, one});
+    Expected<double> two_to_53_result =
+        bigint_to_double(ConstBigIntView{2, 1, two_to_53});
+
+    ASSERT_TRUE(zero_result.has_value());
+    ASSERT_TRUE(one_result.has_value());
+    ASSERT_TRUE(negative_one_result.has_value());
+    ASSERT_TRUE(two_to_53_result.has_value());
+    EXPECT_DOUBLE_EQ(0.0, zero_result.value());
+    EXPECT_DOUBLE_EQ(1.0, one_result.value());
+    EXPECT_DOUBLE_EQ(-1.0, negative_one_result.value());
+    EXPECT_DOUBLE_EQ(9007199254740992.0, two_to_53_result.value());
+}
+
+TEST(BigInt, BigIntToDoubleRoundsToNearestEven)
+{
+    digit_t tie_down[] = {1, 1u << 21};
+    digit_t round_up[] = {3, 1u << 21};
+
+    Expected<double> tie_down_result =
+        bigint_to_double(ConstBigIntView{2, 1, tie_down});
+    Expected<double> round_up_result =
+        bigint_to_double(ConstBigIntView{2, 1, round_up});
+    Expected<double> negative_round_up_result =
+        bigint_to_double(ConstBigIntView{2, -1, round_up});
+
+    ASSERT_TRUE(tie_down_result.has_value());
+    ASSERT_TRUE(round_up_result.has_value());
+    ASSERT_TRUE(negative_round_up_result.has_value());
+    EXPECT_DOUBLE_EQ(9007199254740992.0, tie_down_result.value());
+    EXPECT_DOUBLE_EQ(9007199254740996.0, round_up_result.value());
+    EXPECT_DOUBLE_EQ(-9007199254740996.0, negative_round_up_result.value());
+}
+
+TEST(BigInt, BigIntToDoubleHandlesLargeFiniteAndOverflow)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation_scope(context.thread());
+    digit_t two_to_1023[32] = {};
+    two_to_1023[31] = 0x80000000u;
+    digit_t overflow_digits[32];
+    std::fill_n(overflow_digits, 32, 0xffffffffu);
+
+    Expected<double> finite =
+        bigint_to_double(ConstBigIntView{32, 1, two_to_1023});
+    Expected<double> negative_finite =
+        bigint_to_double(ConstBigIntView{32, -1, two_to_1023});
+    Expected<double> overflow =
+        bigint_to_double(ConstBigIntView{32, 1, overflow_digits});
+
+    ASSERT_TRUE(finite.has_value());
+    ASSERT_TRUE(negative_finite.has_value());
+    EXPECT_DOUBLE_EQ(8.98846567431158e307, finite.value());
+    EXPECT_DOUBLE_EQ(-8.98846567431158e307, negative_finite.value());
+    EXPECT_TRUE(overflow.has_exception());
+    expect_pending_exception(context.thread(), L"OverflowError",
+                             L"int too large to convert to float");
 }
 
 TEST(BigInt, BigIntNegateFinalizesToSmiOrHeapBigInt)

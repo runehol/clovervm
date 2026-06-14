@@ -138,6 +138,7 @@ namespace cl
     [[nodiscard]] Expected<Value> bigint_from_int64(ThreadState *thread,
                                                     int64_t value);
     [[nodiscard]] Expected<int64_t> bigint_to_int64(ConstBigIntView view);
+    [[nodiscard]] Expected<double> bigint_to_double(ConstBigIntView view);
     [[nodiscard]] Expected<Value> bigint_negate(ThreadState *thread,
                                                 ConstBigIntView view);
     [[nodiscard]] Expected<Value> bigint_add(ThreadState *thread,
