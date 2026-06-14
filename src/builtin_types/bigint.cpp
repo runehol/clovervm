@@ -407,6 +407,47 @@ namespace cl
         bigint_add(dest, left, negated_right);
     }
 
+    void bigint_mul(MutableBigIntView *dest, ConstBigIntView left,
+                    ConstBigIntView right)
+    {
+        assert(is_normalized_bigint_view(left));
+        assert(is_normalized_bigint_view(right));
+        assert(dest->digits != left.digits);
+        assert(dest->digits != right.digits);
+
+        if(left.signum == 0 || right.signum == 0)
+        {
+            set_zero(dest);
+            return;
+        }
+
+        size_t result_capacity = left.n_digits + right.n_digits;
+        assert(dest->capacity >= result_capacity);
+        std::fill_n(dest->digits, result_capacity, digit_t{0});
+
+        for(size_t left_idx = 0; left_idx < left.n_digits; ++left_idx)
+        {
+            double_digit_t carry = 0;
+            for(size_t right_idx = 0; right_idx < right.n_digits; ++right_idx)
+            {
+                size_t dest_idx = left_idx + right_idx;
+                double_digit_t product = double_digit_t(left.digits[left_idx]) *
+                                             right.digits[right_idx] +
+                                         dest->digits[dest_idx] + carry;
+                dest->digits[dest_idx] = static_cast<digit_t>(product);
+                carry = product >> kDigitBits;
+            }
+            dest->digits[left_idx + right.n_digits] =
+                static_cast<digit_t>(carry);
+        }
+
+        dest->n_digits = result_capacity;
+        dest->signum = left.signum * right.signum;
+        ConstBigIntView normalized = normalize_bigint_view(dest->view());
+        dest->n_digits = normalized.n_digits;
+        dest->signum = normalized.signum;
+    }
+
     void bigint_abs_mul_add_u32(MutableBigIntView *dest, ConstBigIntView src,
                                 uint32_t multiplier, uint32_t addend)
     {

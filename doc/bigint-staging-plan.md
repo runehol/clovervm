@@ -51,10 +51,10 @@ design rationale and semantic boundaries live in [BigInt Design](bigint.md).
 
 ### Stage 4: Basic Arithmetic Dunder And Trusted Handlers
 
-- [ ] Implement BigInt addition kernels using `ConstBigIntView` inputs and
+- [x] Implement BigInt addition kernels using `ConstBigIntView` inputs and
       `BigIntScratch` destination storage.
-- [ ] Implement BigInt subtraction kernels.
-- [ ] Implement BigInt multiplication kernels.
+- [x] Implement BigInt subtraction kernels.
+- [x] Implement BigInt multiplication kernels.
 - [ ] Implement unary plus and unary negation.
 - [ ] Update non-trusted builtin int dunder methods for bool, SMI, and BigInt
       operand combinations.

@@ -383,6 +383,68 @@ TEST(BigInt, SubUsesSignedRightOperand)
     EXPECT_EQ(1u, dest.digits[0]);
 }
 
+TEST(BigInt, MulCanonicalizesZero)
+{
+    digit_t zero[] = {0};
+    digit_t value[] = {7, 1};
+    BigIntScratch scratch(3);
+    MutableBigIntView dest = scratch.mutable_view();
+
+    bigint_mul(&dest, ConstBigIntView{0, 0, zero},
+               ConstBigIntView{2, -1, value});
+
+    EXPECT_EQ(0u, dest.n_digits);
+    EXPECT_EQ(0, dest.signum);
+}
+
+TEST(BigInt, MulTrimsUnusedHighDigit)
+{
+    digit_t left[] = {1};
+    digit_t right[] = {1};
+    BigIntScratch scratch(2);
+    MutableBigIntView dest = scratch.mutable_view();
+
+    bigint_mul(&dest, ConstBigIntView{1, -1, left},
+               ConstBigIntView{1, -1, right});
+
+    EXPECT_EQ(1u, dest.n_digits);
+    EXPECT_EQ(1, dest.signum);
+    EXPECT_EQ(1u, dest.digits[0]);
+}
+
+TEST(BigInt, MulPropagatesSingleDigitCarry)
+{
+    digit_t left[] = {0xffffffffu};
+    digit_t right[] = {0xffffffffu};
+    BigIntScratch scratch(2);
+    MutableBigIntView dest = scratch.mutable_view();
+
+    bigint_mul(&dest, ConstBigIntView{1, -1, left},
+               ConstBigIntView{1, 1, right});
+
+    EXPECT_EQ(2u, dest.n_digits);
+    EXPECT_EQ(-1, dest.signum);
+    EXPECT_EQ(1u, dest.digits[0]);
+    EXPECT_EQ(0xfffffffeu, dest.digits[1]);
+}
+
+TEST(BigInt, MulAccumulatesMultiDigitProducts)
+{
+    digit_t left[] = {0xffffffffu, 1};
+    digit_t right[] = {0xffffffffu, 1};
+    BigIntScratch scratch(4);
+    MutableBigIntView dest = scratch.mutable_view();
+
+    bigint_mul(&dest, ConstBigIntView{2, 1, left},
+               ConstBigIntView{2, -1, right});
+
+    EXPECT_EQ(3u, dest.n_digits);
+    EXPECT_EQ(-1, dest.signum);
+    EXPECT_EQ(1u, dest.digits[0]);
+    EXPECT_EQ(0xfffffffcu, dest.digits[1]);
+    EXPECT_EQ(3u, dest.digits[2]);
+}
+
 TEST(BigInt, CompareBigIntViewsUsesSignedMagnitude)
 {
     digit_t one[] = {1};

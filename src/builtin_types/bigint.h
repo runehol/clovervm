@@ -154,6 +154,8 @@ namespace cl
                     ConstBigIntView right);
     void bigint_sub(MutableBigIntView *dest, ConstBigIntView left,
                     ConstBigIntView right);
+    void bigint_mul(MutableBigIntView *dest, ConstBigIntView left,
+                    ConstBigIntView right);
     void bigint_abs_mul_add_u32(MutableBigIntView *dest, ConstBigIntView src,
                                 uint32_t multiplier, uint32_t addend);
     int compare_bigint_abs(ConstBigIntView left, ConstBigIntView right);
