@@ -187,8 +187,7 @@ namespace cl
             digit_begin = 1;
         }
 
-        uint32_t scratch_capacity =
-            static_cast<uint32_t>(text.size() - digit_begin + 1);
+        size_t scratch_capacity = text.size() - digit_begin + 1;
         BigIntScratch scratch0(scratch_capacity);
         BigIntScratch scratch1(scratch_capacity);
         MutableBigIntView initial = scratch0.mutable_view();

@@ -14,7 +14,7 @@ using namespace cl;
 namespace
 {
     void expect_smi_bigint_view(int64_t value, signum_t expected_signum,
-                                uint32_t expected_n_digits,
+                                size_t expected_n_digits,
                                 digit_t expected_digit0,
                                 digit_t expected_digit1)
     {

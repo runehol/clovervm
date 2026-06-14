@@ -48,7 +48,7 @@ namespace cl
         }
     }
 
-    BigIntScratch::BigIntScratch(uint32_t capacity)
+    BigIntScratch::BigIntScratch(size_t capacity)
         : capacity_(capacity), n_digits_(0), signum_(0), digits_(inline_digits_)
     {
         if(capacity_ > kInlineDigits)
@@ -75,13 +75,12 @@ namespace cl
 
     MutableBigIntView BigInt::mutable_view_for_initialization()
     {
-        return MutableBigIntView{
-            static_cast<uint32_t>(storage_count_for(n_digits_)), n_digits_,
-            signum_, digits_};
+        return MutableBigIntView{storage_count_for(n_digits_), n_digits_,
+                                 signum_, digits_};
     }
 
     BigInt *make_uninitialized_bigint_for_digits(ThreadState *thread,
-                                                 uint32_t n_digits,
+                                                 size_t n_digits,
                                                  signum_t signum)
     {
         assert((n_digits == 0 && signum == 0) ||
@@ -206,7 +205,7 @@ namespace cl
 
         digits[0] = static_cast<digit_t>(magnitude);
         digits[1] = static_cast<digit_t>(magnitude >> kDigitBits);
-        uint32_t n_digits = digits[1] != 0 ? 2 : (digits[0] != 0 ? 1 : 0);
+        size_t n_digits = digits[1] != 0 ? 2 : (digits[0] != 0 ? 1 : 0);
         return finalize_bigint(thread,
                                ConstBigIntView{n_digits, signum, digits});
     }
@@ -258,7 +257,7 @@ namespace cl
         assert(dest->digits != src.digits);
 
         double_digit_t carry = addend;
-        for(uint32_t idx = 0; idx < src.n_digits; ++idx)
+        for(size_t idx = 0; idx < src.n_digits; ++idx)
         {
             double_digit_t product =
                 double_digit_t(src.digits[idx]) * multiplier + carry;
@@ -284,7 +283,7 @@ namespace cl
             return normalized_left.n_digits < normalized_right.n_digits ? -1
                                                                         : 1;
         }
-        for(uint32_t idx = normalized_left.n_digits; idx > 0; --idx)
+        for(size_t idx = normalized_left.n_digits; idx > 0; --idx)
         {
             digit_t left_digit = normalized_left.digits[idx - 1];
             digit_t right_digit = normalized_right.digits[idx - 1];
@@ -323,7 +322,7 @@ namespace cl
         assert(quotient->digits != dividend.digits);
 
         double_digit_t remainder = 0;
-        for(uint32_t idx = dividend.n_digits; idx > 0; --idx)
+        for(size_t idx = dividend.n_digits; idx > 0; --idx)
         {
             double_digit_t accumulator =
                 (remainder << kDigitBits) | dividend.digits[idx - 1];

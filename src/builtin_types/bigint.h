@@ -25,15 +25,15 @@ namespace cl
 
     struct ConstBigIntView
     {
-        uint32_t n_digits;
+        size_t n_digits;
         signum_t signum;
         const digit_t *digits;
     };
 
     struct MutableBigIntView
     {
-        uint32_t capacity;
-        uint32_t n_digits;
+        size_t capacity;
+        size_t n_digits;
         signum_t signum;
         digit_t *digits;
 
@@ -57,7 +57,7 @@ namespace cl
         }
 
     private:
-        uint32_t n_digits_;
+        size_t n_digits_;
         signum_t signum_;
         digit_t digits_[2];
     };
@@ -65,15 +65,15 @@ namespace cl
     class BigIntScratch
     {
     public:
-        explicit BigIntScratch(uint32_t capacity);
+        explicit BigIntScratch(size_t capacity);
         MutableBigIntView mutable_view();
         ConstBigIntView view() const;
 
     private:
         static constexpr uint32_t kInlineDigits = 8;
 
-        uint32_t capacity_;
-        uint32_t n_digits_;
+        size_t capacity_;
+        size_t n_digits_;
         signum_t signum_;
         digit_t *digits_;
         digit_t inline_digits_[kInlineDigits];
@@ -89,27 +89,27 @@ namespace cl
     public:
         static constexpr NativeLayoutId native_layout = NativeLayoutId::BigInt;
 
-        BigInt(ClassObject *cls, UninitializedBigIntDigitsTag,
-               uint32_t n_digits, signum_t signum)
+        BigInt(ClassObject *cls, UninitializedBigIntDigitsTag, size_t n_digits,
+               signum_t signum)
             : Object(cls, native_layout), n_digits_(n_digits), signum_(signum)
         {
             assert((n_digits_ == 0 && signum_ == 0) ||
                    (n_digits_ > 0 && (signum_ == -1 || signum_ == 1)));
         }
 
-        uint32_t n_digits() const { return n_digits_; }
+        size_t n_digits() const { return n_digits_; }
         signum_t signum() const { return signum_; }
         ConstBigIntView view() const;
         MutableBigIntView mutable_view_for_initialization();
 
-        static size_t size_for(uint32_t n_digits)
+        static size_t size_for(size_t n_digits)
         {
             return sizeof(BigInt) +
                    (storage_count_for(n_digits) - 1) * sizeof(digit_t);
         }
 
         static size_t size_for(ClassObject *, UninitializedBigIntDigitsTag,
-                               uint32_t n_digits, signum_t)
+                               size_t n_digits, signum_t)
         {
             return size_for(n_digits);
         }
@@ -123,18 +123,18 @@ namespace cl
         CL_DECLARE_CUSTOM_OBJECT_SIZE(BigInt, BigInt::object_size_in_bytes);
 
     private:
-        static size_t storage_count_for(uint32_t n_digits)
+        static size_t storage_count_for(size_t n_digits)
         {
             return n_digits == 0 ? 1 : n_digits;
         }
 
-        uint32_t n_digits_;
+        size_t n_digits_;
         signum_t signum_;
         digit_t digits_[1];
     };
 
     BigInt *make_uninitialized_bigint_for_digits(ThreadState *thread,
-                                                 uint32_t n_digits,
+                                                 size_t n_digits,
                                                  signum_t signum);
     ConstBigIntView normalize_bigint_view(ConstBigIntView view);
     [[nodiscard]] Expected<TValue<SMI>> bigint_to_smi(ConstBigIntView view);
