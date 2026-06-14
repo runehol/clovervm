@@ -1,3 +1,4 @@
+#include "builtin_types/bigint.h"
 #include "builtin_types/dict.h"
 #include "builtin_types/float.h"
 #include "builtin_types/list.h"
@@ -1103,6 +1104,58 @@ TEST(Interpreter, int_constructor_converts_string)
               test::FileRunner(L"int('1_000')\n").return_value);
 }
 
+TEST(Interpreter, int_constructor_converts_large_string_to_bigint)
+{
+    test::VmTestContext context;
+
+    Value positive = context.run_file(L"int('288230376151711744')\n");
+    ASSERT_TRUE(can_convert_to<BigInt>(positive));
+    expect_string_value(context.run_file(L"str(int('288230376151711744'))\n"),
+                        L"288230376151711744");
+
+    Value negative = context.run_file(L"int('-288230376151711745')\n");
+    ASSERT_TRUE(can_convert_to<BigInt>(negative));
+    expect_string_value(context.run_file(L"str(int('-288230376151711745'))\n"),
+                        L"-288230376151711745");
+}
+
+TEST(Interpreter, int_constructor_large_string_allows_underscores)
+{
+    expect_string_result(L"str(int('288_230_376_151_711_744'))\n",
+                         L"288230376151711744");
+}
+
+TEST(Interpreter, integer_literal_can_be_bigint)
+{
+    test::VmTestContext context;
+
+    Value literal = context.run_file(L"288230376151711744\n");
+    ASSERT_TRUE(can_convert_to<BigInt>(literal));
+    expect_string_value(context.run_file(L"str(288230376151711744)\n"),
+                        L"288230376151711744");
+    EXPECT_EQ(Value::True(),
+              context.run_file(
+                  L"288_230_376_151_711_744 == int('288230376151711744')\n"));
+}
+
+TEST(Interpreter, bigint_comparison_values)
+{
+    EXPECT_EQ(Value::True(),
+              test::FileRunner(
+                  L"int('288230376151711744') == int('288230376151711744')\n")
+                  .return_value);
+    EXPECT_EQ(
+        Value::True(),
+        test::FileRunner(L"int('288230376151711744') > 288230376151711743\n")
+            .return_value);
+    EXPECT_EQ(Value::True(), test::FileRunner(L"int('-288230376151711745') < "
+                                              L"int('-288230376151711744')\n")
+                                 .return_value);
+    EXPECT_EQ(
+        Value::True(),
+        test::FileRunner(L"int('288230376151711744') > True\n").return_value);
+}
+
 TEST(Interpreter, int_constructor_rejects_invalid_string)
 {
     expect_python_error(L"int('')\n", L"ValueError",
@@ -1111,14 +1164,6 @@ TEST(Interpreter, int_constructor_rejects_invalid_string)
                         L"invalid literal for int()");
     expect_python_error(L"int('1__2')\n", L"ValueError",
                         L"invalid literal for int()");
-}
-
-TEST(Interpreter, int_constructor_reports_string_overflow)
-{
-    expect_python_error(L"int('288230376151711744')\n", L"OverflowError",
-                        L"integer overflow");
-    expect_python_error(L"int('-288230376151711745')\n", L"OverflowError",
-                        L"integer overflow");
 }
 
 TEST(Interpreter, int_constructor_rejects_unsupported_value)
@@ -3727,6 +3772,18 @@ TEST(Interpreter, subscript_load_rejects_non_integer_string_index)
 {
     expect_python_error(L"'abc'['x']\n", L"TypeError",
                         L"string indices must be integers or slices");
+}
+
+TEST(Interpreter, subscript_load_rejects_oversized_bigint_index)
+{
+    expect_python_error(L"[1, 2][int('288230376151711744')]\n",
+                        L"OverflowError", L"integer overflow");
+    expect_python_error(L"(1, 2)[int('288230376151711744')]\n",
+                        L"OverflowError", L"integer overflow");
+    expect_python_error(L"'ab'[int('288230376151711744')]\n", L"OverflowError",
+                        L"integer overflow");
+    expect_python_error(L"[1, 2][slice(int('288230376151711744'), None)]\n",
+                        L"OverflowError", L"integer overflow");
 }
 
 TEST(Interpreter, subscript_load_rejects_out_of_range_list_index)

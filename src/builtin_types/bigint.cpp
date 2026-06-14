@@ -248,6 +248,30 @@ namespace cl
         return Expected<int64_t>::ok(-static_cast<int64_t>(magnitude));
     }
 
+    void bigint_abs_mul_add_u32(MutableBigIntView *dest, ConstBigIntView src,
+                                uint32_t multiplier, uint32_t addend)
+    {
+        assert(src.signum == 0 || src.signum == 1);
+        assert(dest->capacity >= src.n_digits + 1);
+        assert(dest->digits != src.digits);
+
+        uint64_t carry = addend;
+        for(uint32_t idx = 0; idx < src.n_digits; ++idx)
+        {
+            uint64_t product = uint64_t(src.digits[idx]) * multiplier + carry;
+            dest->digits[idx] = static_cast<digit_t>(product);
+            carry = product >> 32;
+        }
+
+        dest->n_digits = src.n_digits;
+        if(carry != 0)
+        {
+            dest->digits[dest->n_digits] = static_cast<digit_t>(carry);
+            ++dest->n_digits;
+        }
+        dest->signum = dest->n_digits == 0 ? 0 : 1;
+    }
+
     int compare_bigint_abs(ConstBigIntView left, ConstBigIntView right)
     {
         ConstBigIntView normalized_left = normalize_bigint_view(left);

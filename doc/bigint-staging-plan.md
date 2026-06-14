@@ -31,7 +31,8 @@ design rationale and semantic boundaries live in [BigInt Design](bigint.md).
       `INT64_MIN`.
 - [x] Implement decoded SMI-range conversion helpers with range assertions.
 - [x] Implement decimal formatting for BigInt `str()` and `repr()`.
-- [x] Leave BigInt-aware `int(str)` parsing policy deferred.
+- [x] Implement BigInt-aware `int(str)` parsing with an allocation-free SMI
+      fast path and BigInt-backed slow path.
 - [x] Add tests for `INT64_MIN`, `-1`, SMI boundaries, and decimal formatting.
 
 ### Stage 3: Integer Categories And Comparisons

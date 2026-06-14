@@ -1,6 +1,7 @@
 #include "compiler/parser.h"
 
 #include "builtin_types/float.h"
+#include "builtin_types/int.h"
 #include "compiler/ast.h"
 #include "compiler/compilation_unit.h"
 #include "compiler/token.h"
@@ -1213,8 +1214,8 @@ namespace cl
                     {
                         std::wstring_view token = string_for_int_number_token(
                             *ast.compilation_unit, source_pos_for_token());
-                        int64_t iv = std::stoll(std::wstring(token));
-                        Value v = Value::from_smi(iv);
+                        Value v = CL_TRY(parse_int_string_view(
+                            vm.get_default_thread(), token));
                         return Expected<int32_t>::ok(ast.emplace_back(
                             AstKind(AstNodeKind::EXPRESSION_LITERAL,
                                     AstOperatorKind::NUMBER),

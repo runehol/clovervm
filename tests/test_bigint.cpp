@@ -280,6 +280,20 @@ TEST(BigInt, DecimalStringFormatsLargePositiveAndNegativeValues)
               bigint_to_decimal_string(ConstBigIntView{3, -1, digits}));
 }
 
+TEST(BigInt, AbsMulAddU32WritesNormalizedMagnitude)
+{
+    digit_t digits[] = {0xffffffffu};
+    BigIntScratch scratch(2);
+    MutableBigIntView dest = scratch.mutable_view();
+
+    bigint_abs_mul_add_u32(&dest, ConstBigIntView{1, 1, digits}, 10, 9);
+
+    EXPECT_EQ(2u, dest.n_digits);
+    EXPECT_EQ(1, dest.signum);
+    EXPECT_EQ(0xffffffffu, dest.digits[0]);
+    EXPECT_EQ(9u, dest.digits[1]);
+}
+
 TEST(BigInt, CompareBigIntViewsUsesSignedMagnitude)
 {
     digit_t one[] = {1};
@@ -331,25 +345,4 @@ TEST(BigInt, ExactIntValueToSmiExcludesBool)
     ASSERT_TRUE(bool_result.has_value());
     EXPECT_EQ(IntToSmiStatus::NotInt, bool_result.value());
     EXPECT_EQ(7, bool_smi.extract());
-}
-
-TEST(BigInt, IntlikeValueToSmiRejectsOversizedBigIntWithOverflow)
-{
-    test::VmTestContext context;
-    ThreadState::ActivationScope activation_scope(context.thread());
-    uint64_t magnitude = static_cast<uint64_t>(value_smi_max) + 1;
-    digit_t digits[] = {static_cast<digit_t>(magnitude),
-                        static_cast<digit_t>(magnitude >> 32)};
-    Expected<Value> value =
-        finalize_bigint(context.thread(), ConstBigIntView{2, 1, digits});
-    ASSERT_TRUE(value.has_value());
-    ASSERT_TRUE(can_convert_to<BigInt>(value.value()));
-
-    TValue<SMI> smi = TValue<SMI>::from_smi(0);
-    Expected<IntToSmiStatus> status =
-        try_intlike_value_to_smi(value.value(), &smi);
-
-    EXPECT_TRUE(status.has_exception());
-    expect_pending_exception(context.thread(), L"OverflowError",
-                             L"integer overflow");
 }
