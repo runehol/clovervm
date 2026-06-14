@@ -22,7 +22,7 @@ namespace cl
 
     enum class OperatorWalkStatus
     {
-        CallPythonFunction,
+        CallUntrustedFunction,
         CallTrustedHandler,
         NativeResult,
         PropagatePendingException,
@@ -40,7 +40,7 @@ namespace cl
 
         static OperatorWalkDescriptor native_result(Value result);
         static OperatorWalkDescriptor propagate_pending_exception();
-        static OperatorWalkDescriptor call_python_function(
+        static OperatorWalkDescriptor call_untrusted_function(
             OperatorStepAction action, uint32_t resume_index,
             OperatorOperandOrder operand_order, ShapeKey operand0_shape_key,
             ShapeKey operand1_shape_key, ShapeKey operand2_shape_key,
@@ -51,7 +51,8 @@ namespace cl
         static OperatorWalkDescriptor call_trusted_handler(
             OperatorStepAction action, ShapeKey operand0_shape_key,
             ShapeKey operand1_shape_key, ShapeKey operand2_shape_key,
-            TrustedHandler handler, ValidityCell *operand0_lookup_validity_cell,
+            TrustedResolution resolution,
+            ValidityCell *operand0_lookup_validity_cell,
             ValidityCell *operand1_lookup_validity_cell);
     };
 

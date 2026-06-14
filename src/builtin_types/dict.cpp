@@ -229,7 +229,7 @@ namespace cl
                vm->shape_for_key(key_key)->get_class() == vm->str_class();
     }
 
-    static TrustedHandler resolve_trusted_dict_getitem_handler(
+    static TrustedResolution resolve_trusted_dict_getitem_handler(
         VirtualMachine *vm, ShapeKey container_key, ShapeKey key_key,
         ShapeKey unused, TrustedHandlerOperandOrder order)
     {
@@ -237,12 +237,13 @@ namespace cl
         assert(order == TrustedHandlerOperandOrder::Normal);
         if(trusted_dict_str_key_shapes_match(vm, container_key, key_key))
         {
-            return TrustedHandler::for_binary(trusted_dict_getitem_str_handler);
+            return TrustedResolution::call_trusted(
+                trusted_dict_getitem_str_handler);
         }
-        return TrustedHandler::none();
+        return TrustedResolution::no_trusted_handler_call_untrusted();
     }
 
-    static TrustedHandler resolve_trusted_dict_setitem_handler(
+    static TrustedResolution resolve_trusted_dict_setitem_handler(
         VirtualMachine *vm, ShapeKey container_key, ShapeKey key_key,
         ShapeKey unused, TrustedHandlerOperandOrder order)
     {
@@ -250,13 +251,13 @@ namespace cl
         assert(order == TrustedHandlerOperandOrder::Normal);
         if(trusted_dict_str_key_shapes_match(vm, container_key, key_key))
         {
-            return TrustedHandler::for_ternary(
+            return TrustedResolution::call_trusted(
                 trusted_dict_setitem_str_handler);
         }
-        return TrustedHandler::none();
+        return TrustedResolution::no_trusted_handler_call_untrusted();
     }
 
-    static TrustedHandler resolve_trusted_dict_delitem_handler(
+    static TrustedResolution resolve_trusted_dict_delitem_handler(
         VirtualMachine *vm, ShapeKey container_key, ShapeKey key_key,
         ShapeKey unused, TrustedHandlerOperandOrder order)
     {
@@ -264,9 +265,10 @@ namespace cl
         assert(order == TrustedHandlerOperandOrder::Normal);
         if(trusted_dict_str_key_shapes_match(vm, container_key, key_key))
         {
-            return TrustedHandler::for_binary(trusted_dict_delitem_str_handler);
+            return TrustedResolution::call_trusted(
+                trusted_dict_delitem_str_handler);
         }
-        return TrustedHandler::none();
+        return TrustedResolution::no_trusted_handler_call_untrusted();
     }
 
     static Value native_dict_keys(ThreadState *thread, Value self)

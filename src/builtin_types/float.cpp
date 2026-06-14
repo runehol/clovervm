@@ -426,7 +426,7 @@ namespace cl
     }
 
     template <typename Operator>
-    static TrustedHandler
+    static TrustedResolution
     resolve_trusted_float_binary_handler(VirtualMachine *vm,
                                          ShapeKey operand0_key,
                                          ShapeKey operand1_key, ShapeKey unused)
@@ -439,25 +439,25 @@ namespace cl
         {
             if(operand1_key == float_key)
             {
-                return TrustedHandler::for_binary(
+                return TrustedResolution::call_trusted(
                     trusted_float_float_operator<Operator>);
             }
             if(is_smi_or_bool_shape_key(operand1_key))
             {
-                return TrustedHandler::for_binary(
+                return TrustedResolution::call_trusted(
                     trusted_float_intlike_operator<Operator>);
             }
         }
         if(is_smi_or_bool_shape_key(operand0_key) && operand1_key == float_key)
         {
-            return TrustedHandler::for_binary(
+            return TrustedResolution::call_trusted(
                 trusted_intlike_float_operator<Operator>);
         }
-        return TrustedHandler::none();
+        return TrustedResolution::no_trusted_handler_call_untrusted();
     }
 
     template <typename NormalOperator, typename ReflectedOperator>
-    static TrustedHandler resolve_trusted_float_binary_resolver(
+    static TrustedResolution resolve_trusted_float_binary_resolver(
         VirtualMachine *vm, ShapeKey operand0_key, ShapeKey operand1_key,
         ShapeKey operand2_key, TrustedHandlerOperandOrder order)
     {
@@ -471,7 +471,7 @@ namespace cl
     }
 
     template <typename Operator>
-    static TrustedHandler resolve_trusted_float_unary_handler(
+    static TrustedResolution resolve_trusted_float_unary_handler(
         VirtualMachine *vm, ShapeKey operand0_key, ShapeKey operand1_key,
         ShapeKey operand2_key, TrustedHandlerOperandOrder order)
     {
@@ -483,10 +483,10 @@ namespace cl
             ShapeKey::from_shape(vm->float_class()->get_instance_root_shape());
         if(operand0_key == float_key)
         {
-            return TrustedHandler::for_unary(
+            return TrustedResolution::call_trusted(
                 trusted_float_unary_operator<Operator>);
         }
-        return TrustedHandler::none();
+        return TrustedResolution::no_trusted_handler_call_untrusted();
     }
 
     BuiltinClassDefinition make_float_class(VirtualMachine *vm)

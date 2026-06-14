@@ -151,7 +151,7 @@ namespace cl
         return self.get_ptr<Tuple>()->get_slice(normalized).raw_value();
     }
 
-    static TrustedHandler resolve_trusted_tuple_getitem_handler(
+    static TrustedResolution resolve_trusted_tuple_getitem_handler(
         VirtualMachine *vm, ShapeKey container_key, ShapeKey key_key,
         ShapeKey unused, TrustedHandlerOperandOrder order)
     {
@@ -159,24 +159,24 @@ namespace cl
         assert(order == TrustedHandlerOperandOrder::Normal);
         if(vm->shape_for_key(container_key)->get_class() != vm->tuple_class())
         {
-            return TrustedHandler::none();
+            return TrustedResolution::no_trusted_handler_call_untrusted();
         }
         if(key_key == ShapeKey::from_value(Value::from_smi(0)))
         {
-            return TrustedHandler::for_binary(
+            return TrustedResolution::call_trusted(
                 trusted_tuple_getitem_smi_handler);
         }
         if(key_key == ShapeKey::from_shape(vm->slice_step_none_shape()))
         {
-            return TrustedHandler::for_binary(
+            return TrustedResolution::call_trusted(
                 trusted_tuple_getitem_nonstrided_slice_handler);
         }
         if(key_key == ShapeKey::from_shape(vm->slice_general_shape()))
         {
-            return TrustedHandler::for_binary(
+            return TrustedResolution::call_trusted(
                 trusted_tuple_getitem_general_slice_handler);
         }
-        return TrustedHandler::none();
+        return TrustedResolution::no_trusted_handler_call_untrusted();
     }
 
     static size_t normalize_tuple_search_bound(int64_t py_idx, size_t size)

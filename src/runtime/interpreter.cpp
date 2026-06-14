@@ -1183,9 +1183,12 @@ namespace cl
     static ALWAYSINLINE void populate_operator_call_cache(
         OperatorInlineCache &cache, TValue<Function> fun, uint32_t n_args,
         bool has_self, FunctionCallAdaptation adaptation,
-        TrustedHandler handler)
+        TrustedResolution trusted_resolution)
     {
-        cache.handler = handler;
+        cache.trusted_handler =
+            trusted_resolution.has_trusted_handler()
+                ? TrustedHandler::from_resolution(trusted_resolution)
+                : TrustedHandler::none();
         cache.function = fun.extract();
         cache.code_object = fun.extract()->code_object.extract();
         cache.n_args = n_args;
@@ -1752,7 +1755,7 @@ namespace cl
         pc = target.interpreted_pc;
     }
 
-    static ALWAYSINLINE void enter_binary_operator_python_function(
+    static ALWAYSINLINE void enter_binary_operator_untrusted_function(
         ThreadState *thread, Value *&fp, const uint8_t *&pc,
         CodeObject *&code_object, const OperatorWalkDescriptor &descriptor,
         OperatorDispatchTableId table_id, Value operand0, Value operand1,
@@ -1798,7 +1801,7 @@ namespace cl
             entry.n_args, continuation_instr_len, entry.adaptation);
     }
 
-    static ALWAYSINLINE void enter_cached_binary_operator_python_function(
+    static ALWAYSINLINE void enter_cached_binary_operator_untrusted_function(
         ThreadState *thread, Value *&fp, const uint8_t *&pc,
         CodeObject *&code_object, const OperatorInlineCache &entry,
         OperatorDispatchTableId table_id, Value operand0, Value operand1,
@@ -1813,7 +1816,7 @@ namespace cl
             fp, prefix_reg, table_id, entry.resume_index, operand0, operand1);
         int32_t first_arg_reg = prefix_reg - 4;
         Value self = Value::not_present();
-        if(unlikely(entry.reflected_python_call))
+        if(unlikely(entry.reflected_untrusted_call))
         {
             fp[first_arg_reg] = operand1;
             fp[first_arg_reg - 1] = operand0;
@@ -1862,19 +1865,17 @@ namespace cl
     {
         switch(descriptor.status)
         {
-            case OperatorWalkStatus::CallPythonFunction:
+            case OperatorWalkStatus::CallUntrustedFunction:
                 install_operator_cache_if_cacheable(cache, descriptor);
-                enter_binary_operator_python_function(
+                enter_binary_operator_untrusted_function(
                     thread, fp, pc, code_object, descriptor, table_id, operand0,
                     operand1, continuation_pc);
                 return dispatch_entry_for_pc(dispatch, pc);
 
             case OperatorWalkStatus::CallTrustedHandler:
                 {
-                    assert(descriptor.cache_entry.handler.arity ==
-                           TrustedHandlerArity::Binary);
                     install_operator_cache_if_cacheable(cache, descriptor);
-                    accumulator = descriptor.cache_entry.handler.binary(
+                    accumulator = descriptor.cache_entry.trusted_handler.binary(
                         thread, operand0, operand1);
                     assert(!accumulator.is_not_implemented_singleton());
                     if(unlikely(accumulator.is_exception_marker()))
@@ -1900,7 +1901,7 @@ namespace cl
         __builtin_unreachable();
     }
 
-    static ALWAYSINLINE void enter_unary_operator_python_function(
+    static ALWAYSINLINE void enter_unary_operator_untrusted_function(
         ThreadState *thread, Value *&fp, const uint8_t *&pc,
         CodeObject *&code_object, const OperatorWalkDescriptor &descriptor,
         Value operand0, const uint8_t *next_pc)
@@ -1926,7 +1927,7 @@ namespace cl
             entry.n_args, instr_len, entry.adaptation);
     }
 
-    static ALWAYSINLINE void enter_cached_unary_operator_python_function(
+    static ALWAYSINLINE void enter_cached_unary_operator_untrusted_function(
         ThreadState *thread, Value *&fp, const uint8_t *&pc,
         CodeObject *&code_object, const OperatorInlineCache &entry,
         Value operand0, const uint8_t *next_pc)
@@ -1959,19 +1960,17 @@ namespace cl
     {
         switch(descriptor.status)
         {
-            case OperatorWalkStatus::CallPythonFunction:
+            case OperatorWalkStatus::CallUntrustedFunction:
                 install_operator_cache_if_cacheable(cache, descriptor);
-                enter_unary_operator_python_function(
+                enter_unary_operator_untrusted_function(
                     thread, fp, pc, code_object, descriptor, operand0, next_pc);
                 return dispatch_entry_for_pc(dispatch, pc);
 
             case OperatorWalkStatus::CallTrustedHandler:
                 {
-                    assert(descriptor.cache_entry.handler.arity ==
-                           TrustedHandlerArity::Unary);
                     install_operator_cache_if_cacheable(cache, descriptor);
-                    accumulator =
-                        descriptor.cache_entry.handler.unary(thread, operand0);
+                    accumulator = descriptor.cache_entry.trusted_handler.unary(
+                        thread, operand0);
                     if(unlikely(accumulator.is_exception_marker()))
                     {
                         resolve_operator_pending_exception(thread, fp, pc,
@@ -2016,9 +2015,10 @@ namespace cl
         OperatorInlineCache &cache = code_object->operator_caches[cache_idx];
         if(likely(cache.matches_reflectable_binary(operand0, operand1)))
         {
-            if(cache.handler.arity == TrustedHandlerArity::Binary)
+            if(!cache.trusted_handler.is_null())
             {
-                accumulator = cache.handler.binary(thread, operand0, operand1);
+                accumulator =
+                    cache.trusted_handler.binary(thread, operand0, operand1);
                 assert(!accumulator.is_not_implemented_singleton());
                 if(unlikely(accumulator.is_exception_marker()))
                 {
@@ -2031,7 +2031,7 @@ namespace cl
             }
             if(likely(cache.function != nullptr))
             {
-                enter_cached_binary_operator_python_function(
+                enter_cached_binary_operator_untrusted_function(
                     thread, fp, pc, code_object, cache, table_id, operand0,
                     operand1, continuation_pc);
                 return dispatch_entry_for_pc(dispatch, pc);
@@ -2055,9 +2055,9 @@ namespace cl
         OperatorInlineCache &cache = code_object->operator_caches[cache_idx];
         if(likely(cache.matches_unary(operand0)))
         {
-            if(cache.handler.arity == TrustedHandlerArity::Unary)
+            if(!cache.trusted_handler.is_null())
             {
-                accumulator = cache.handler.unary(thread, operand0);
+                accumulator = cache.trusted_handler.unary(thread, operand0);
                 if(unlikely(accumulator.is_exception_marker()))
                 {
                     resolve_operator_pending_exception(thread, fp, pc,
@@ -2069,7 +2069,7 @@ namespace cl
             }
             if(likely(cache.function != nullptr))
             {
-                enter_cached_unary_operator_python_function(
+                enter_cached_unary_operator_untrusted_function(
                     thread, fp, pc, code_object, cache, operand0, next_pc);
                 return dispatch_entry_for_pc(dispatch, pc);
             }
@@ -2771,29 +2771,37 @@ namespace cl
         }
         FunctionCallAdaptation adaptation =
             function_call_adaptation_for_positional_call(function, n_args);
-        TrustedHandler handler;
+        TrustedResolution trusted_resolution =
+            TrustedResolution::no_trusted_handler_call_untrusted();
         if(can_cache_call)
         {
             CodeObject *target_code_object =
                 function.extract()->code_object.extract();
             if(target_code_object->trusted_handler_resolver != nullptr)
             {
-                TrustedHandler resolved_handler =
+                TrustedResolution resolution =
                     target_code_object->trusted_handler_resolver(
                         vm, receiver_shape_key, key_shape_key, ShapeKey{},
                         TrustedHandlerOperandOrder::Normal);
-                if(resolved_handler.arity == TrustedHandlerArity::Binary)
+                if(resolution.kind == TrustedResolutionKind::TrustedHandler)
                 {
-                    handler = resolved_handler;
+                    assert(resolution.arity == TrustedHandlerArity::Binary);
+                    trusted_resolution = resolution;
+                }
+                else
+                {
+                    assert(
+                        resolution.kind !=
+                        TrustedResolutionKind::KnownNotImplementedSkipMethod);
                 }
             }
             populate_operator_call_cache(cache, function, n_args, has_self,
-                                         adaptation, handler);
+                                         adaptation, trusted_resolution);
         }
 
-        if(handler.arity == TrustedHandlerArity::Binary)
+        if(trusted_resolution.has_trusted_handler())
         {
-            accumulator = handler.binary(thread, receiver, key);
+            accumulator = trusted_resolution.binary(thread, receiver, key);
             if(unlikely(accumulator.is_exception_marker()))
             {
                 MUSTTAIL return propagate_pending_exception(ARGS);
@@ -2855,9 +2863,9 @@ namespace cl
         {
             MUSTTAIL return op_get_item_cache_miss(ARGS);
         }
-        if(cache.handler.arity == TrustedHandlerArity::Binary)
+        if(!cache.trusted_handler.is_null())
         {
-            accumulator = cache.handler.binary(thread, receiver, key);
+            accumulator = cache.trusted_handler.binary(thread, receiver, key);
             if(unlikely(accumulator.is_exception_marker()))
             {
                 MUSTTAIL return propagate_pending_exception(ARGS);
@@ -2939,29 +2947,38 @@ namespace cl
         }
         FunctionCallAdaptation adaptation =
             function_call_adaptation_for_positional_call(function, n_args);
-        TrustedHandler handler;
+        TrustedResolution trusted_resolution =
+            TrustedResolution::no_trusted_handler_call_untrusted();
         if(can_cache_call)
         {
             CodeObject *target_code_object =
                 function.extract()->code_object.extract();
             if(target_code_object->trusted_handler_resolver != nullptr)
             {
-                TrustedHandler resolved_handler =
+                TrustedResolution resolution =
                     target_code_object->trusted_handler_resolver(
                         vm, receiver_shape_key, key_shape_key, value_shape_key,
                         TrustedHandlerOperandOrder::Normal);
-                if(resolved_handler.arity == TrustedHandlerArity::Ternary)
+                if(resolution.kind == TrustedResolutionKind::TrustedHandler)
                 {
-                    handler = resolved_handler;
+                    assert(resolution.arity == TrustedHandlerArity::Ternary);
+                    trusted_resolution = resolution;
+                }
+                else
+                {
+                    assert(
+                        resolution.kind !=
+                        TrustedResolutionKind::KnownNotImplementedSkipMethod);
                 }
             }
             populate_operator_call_cache(cache, function, n_args, has_self,
-                                         adaptation, handler);
+                                         adaptation, trusted_resolution);
         }
 
-        if(handler.arity == TrustedHandlerArity::Ternary)
+        if(trusted_resolution.has_trusted_handler())
         {
-            accumulator = handler.ternary(thread, receiver, key, value);
+            accumulator =
+                trusted_resolution.ternary(thread, receiver, key, value);
             if(unlikely(accumulator.is_exception_marker()))
             {
                 MUSTTAIL return propagate_pending_exception(ARGS);
@@ -3029,9 +3046,10 @@ namespace cl
         {
             MUSTTAIL return op_set_item_cache_miss(ARGS);
         }
-        if(cache.handler.arity == TrustedHandlerArity::Ternary)
+        if(!cache.trusted_handler.is_null())
         {
-            accumulator = cache.handler.ternary(thread, receiver, key, value);
+            accumulator =
+                cache.trusted_handler.ternary(thread, receiver, key, value);
             if(unlikely(accumulator.is_exception_marker()))
             {
                 MUSTTAIL return propagate_pending_exception(ARGS);
@@ -3109,29 +3127,37 @@ namespace cl
         }
         FunctionCallAdaptation adaptation =
             function_call_adaptation_for_positional_call(function, n_args);
-        TrustedHandler handler;
+        TrustedResolution trusted_resolution =
+            TrustedResolution::no_trusted_handler_call_untrusted();
         if(can_cache_call)
         {
             CodeObject *target_code_object =
                 function.extract()->code_object.extract();
             if(target_code_object->trusted_handler_resolver != nullptr)
             {
-                TrustedHandler resolved_handler =
+                TrustedResolution resolution =
                     target_code_object->trusted_handler_resolver(
                         vm, receiver_shape_key, key_shape_key, ShapeKey{},
                         TrustedHandlerOperandOrder::Normal);
-                if(resolved_handler.arity == TrustedHandlerArity::Binary)
+                if(resolution.kind == TrustedResolutionKind::TrustedHandler)
                 {
-                    handler = resolved_handler;
+                    assert(resolution.arity == TrustedHandlerArity::Binary);
+                    trusted_resolution = resolution;
+                }
+                else
+                {
+                    assert(
+                        resolution.kind !=
+                        TrustedResolutionKind::KnownNotImplementedSkipMethod);
                 }
             }
             populate_operator_call_cache(cache, function, n_args, has_self,
-                                         adaptation, handler);
+                                         adaptation, trusted_resolution);
         }
 
-        if(handler.arity == TrustedHandlerArity::Binary)
+        if(trusted_resolution.has_trusted_handler())
         {
-            accumulator = handler.binary(thread, receiver, key);
+            accumulator = trusted_resolution.binary(thread, receiver, key);
             if(unlikely(accumulator.is_exception_marker()))
             {
                 MUSTTAIL return propagate_pending_exception(ARGS);
@@ -3193,9 +3219,9 @@ namespace cl
         {
             MUSTTAIL return op_del_item_cache_miss(ARGS);
         }
-        if(cache.handler.arity == TrustedHandlerArity::Binary)
+        if(!cache.trusted_handler.is_null())
         {
-            accumulator = cache.handler.binary(thread, receiver, key);
+            accumulator = cache.trusted_handler.binary(thread, receiver, key);
             if(unlikely(accumulator.is_exception_marker()))
             {
                 MUSTTAIL return propagate_pending_exception(ARGS);

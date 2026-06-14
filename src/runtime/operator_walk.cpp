@@ -26,7 +26,7 @@ namespace cl
         return descriptor;
     }
 
-    OperatorWalkDescriptor OperatorWalkDescriptor::call_python_function(
+    OperatorWalkDescriptor OperatorWalkDescriptor::call_untrusted_function(
         OperatorStepAction action, uint32_t resume_index,
         OperatorOperandOrder operand_order, ShapeKey operand0_shape_key,
         ShapeKey operand1_shape_key, ShapeKey operand2_shape_key,
@@ -36,11 +36,11 @@ namespace cl
         ValidityCell *operand1_lookup_validity_cell)
     {
         OperatorWalkDescriptor descriptor;
-        descriptor.status = OperatorWalkStatus::CallPythonFunction;
+        descriptor.status = OperatorWalkStatus::CallUntrustedFunction;
         descriptor.action = action;
         descriptor.resume_index = resume_index;
         descriptor.operand_order = operand_order;
-        descriptor.cache_entry = OperatorInlineCache::python_function_call(
+        descriptor.cache_entry = OperatorInlineCache::untrusted_function_call(
             operand0_shape_key, operand1_shape_key, operand2_shape_key,
             function.extract(), function.extract()->code_object.extract(),
             n_args, resume_index,
@@ -53,15 +53,17 @@ namespace cl
     OperatorWalkDescriptor OperatorWalkDescriptor::call_trusted_handler(
         OperatorStepAction action, ShapeKey operand0_shape_key,
         ShapeKey operand1_shape_key, ShapeKey operand2_shape_key,
-        TrustedHandler handler, ValidityCell *operand0_lookup_validity_cell,
+        TrustedResolution resolution,
+        ValidityCell *operand0_lookup_validity_cell,
         ValidityCell *operand1_lookup_validity_cell)
     {
         OperatorWalkDescriptor descriptor;
         descriptor.status = OperatorWalkStatus::CallTrustedHandler;
         descriptor.action = action;
         descriptor.cache_entry = OperatorInlineCache::trusted_handler_call(
-            operand0_shape_key, operand1_shape_key, operand2_shape_key, handler,
-            operand0_lookup_validity_cell, operand1_lookup_validity_cell);
+            operand0_shape_key, operand1_shape_key, operand2_shape_key,
+            resolution, operand0_lookup_validity_cell,
+            operand1_lookup_validity_cell);
         return descriptor;
     }
 
@@ -330,20 +332,35 @@ namespace cl
                         FunctionCallAdaptation adaptation =
                             function_call_adaptation_for_positional_call(
                                 function, n_args);
-                        TrustedHandler handler;
+                        TrustedResolution trusted_resolution =
+                            TrustedResolution::
+                                no_trusted_handler_call_untrusted();
                         CodeObject *target_code_object =
                             function.extract()->code_object.extract();
                         if(target_code_object->trusted_handler_resolver !=
                            nullptr)
                         {
-                            TrustedHandler resolved_handler =
+                            TrustedResolution resolution =
                                 target_code_object->trusted_handler_resolver(
                                     vm, operand0_shape_key, operand1_shape_key,
                                     operand2_shape_key,
                                     TrustedHandlerOperandOrder::Normal);
-                            if(!resolved_handler.is_none())
+                            switch(resolution.kind)
                             {
-                                handler = resolved_handler;
+                                case TrustedResolutionKind::
+                                    NoTrustedHandlerCallUntrusted:
+                                    break;
+
+                                case TrustedResolutionKind::TrustedHandler:
+                                    assert(resolution.arity ==
+                                           TrustedHandlerArity::Unary);
+                                    trusted_resolution = resolution;
+                                    break;
+
+                                case TrustedResolutionKind::
+                                    KnownNotImplementedSkipMethod:
+                                    index = failed_applicability_index;
+                                    continue;
                             }
                         }
 
@@ -355,15 +372,16 @@ namespace cl
                                     thread, operand0);
                         }
 
-                        if(!handler.is_none())
+                        if(trusted_resolution.has_trusted_handler())
                         {
                             return OperatorWalkDescriptor::call_trusted_handler(
                                 step.action, operand0_shape_key,
-                                operand1_shape_key, operand2_shape_key, handler,
+                                operand1_shape_key, operand2_shape_key,
+                                trusted_resolution,
                                 operand0_lookup_validity_cell, nullptr);
                         }
 
-                        return OperatorWalkDescriptor::call_python_function(
+                        return OperatorWalkDescriptor::call_untrusted_function(
                             step.action, index + 1,
                             OperatorOperandOrder::Normal, operand0_shape_key,
                             operand1_shape_key, operand2_shape_key, function,
@@ -441,21 +459,36 @@ namespace cl
                         FunctionCallAdaptation adaptation =
                             function_call_adaptation_for_positional_call(
                                 function, n_args);
-                        TrustedHandler handler;
+                        TrustedResolution trusted_resolution =
+                            TrustedResolution::
+                                no_trusted_handler_call_untrusted();
                         CodeObject *target_code_object =
                             function.extract()->code_object.extract();
                         if(target_code_object->trusted_handler_resolver !=
                            nullptr)
                         {
-                            TrustedHandler resolved_handler =
+                            TrustedResolution resolution =
                                 target_code_object->trusted_handler_resolver(
                                     vm, operand0_shape_key, operand1_shape_key,
                                     operand2_shape_key,
                                     trusted_handler_operand_order_for(
                                         operand_order));
-                            if(!resolved_handler.is_none())
+                            switch(resolution.kind)
                             {
-                                handler = resolved_handler;
+                                case TrustedResolutionKind::
+                                    NoTrustedHandlerCallUntrusted:
+                                    break;
+
+                                case TrustedResolutionKind::TrustedHandler:
+                                    assert(resolution.arity ==
+                                           TrustedHandlerArity::Binary);
+                                    trusted_resolution = resolution;
+                                    break;
+
+                                case TrustedResolutionKind::
+                                    KnownNotImplementedSkipMethod:
+                                    index = failed_applicability_index;
+                                    continue;
                             }
                         }
 
@@ -475,16 +508,17 @@ namespace cl
                             }
                         }
 
-                        if(!handler.is_none())
+                        if(trusted_resolution.has_trusted_handler())
                         {
                             return OperatorWalkDescriptor::call_trusted_handler(
                                 step.action, operand0_shape_key,
-                                operand1_shape_key, operand2_shape_key, handler,
+                                operand1_shape_key, operand2_shape_key,
+                                trusted_resolution,
                                 operand0_lookup_validity_cell,
                                 operand1_lookup_validity_cell);
                         }
 
-                        return OperatorWalkDescriptor::call_python_function(
+                        return OperatorWalkDescriptor::call_untrusted_function(
                             step.action, index + 1, operand_order,
                             operand0_shape_key, operand1_shape_key,
                             operand2_shape_key, function, n_args, adaptation,

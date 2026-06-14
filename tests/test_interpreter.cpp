@@ -1751,11 +1751,11 @@ TEST(Interpreter, operator_add_walk_uses_arithmetic_reflected_priority)
         test_context.thread(), OperatorDispatchTableId::Add, 0,
         OperatorCacheability::Uncacheable, left, right, Value::not_present());
 
-    ASSERT_EQ(OperatorWalkStatus::CallPythonFunction, descriptor.status);
+    ASSERT_EQ(OperatorWalkStatus::CallUntrustedFunction, descriptor.status);
     EXPECT_EQ(OperatorStepAction::CallBinaryReflected, descriptor.action);
     EXPECT_EQ(1u, descriptor.resume_index);
     ASSERT_NE(nullptr, descriptor.cache_entry.function);
-    EXPECT_TRUE(descriptor.cache_entry.reflected_python_call);
+    EXPECT_TRUE(descriptor.cache_entry.reflected_untrusted_call);
 }
 
 TEST(Interpreter, operator_dispatch_tables_include_unary_and_binary_arithmetic)
@@ -1843,11 +1843,11 @@ TEST(Interpreter, operator_add_walk_uses_reflected_fallback_for_different_types)
         test_context.thread(), OperatorDispatchTableId::Add, 4,
         OperatorCacheability::Uncacheable, left, right, Value::not_present());
 
-    ASSERT_EQ(OperatorWalkStatus::CallPythonFunction, descriptor.status);
+    ASSERT_EQ(OperatorWalkStatus::CallUntrustedFunction, descriptor.status);
     EXPECT_EQ(OperatorStepAction::CallBinaryReflected, descriptor.action);
     EXPECT_EQ(5u, descriptor.resume_index);
     ASSERT_NE(nullptr, descriptor.cache_entry.function);
-    EXPECT_TRUE(descriptor.cache_entry.reflected_python_call);
+    EXPECT_TRUE(descriptor.cache_entry.reflected_untrusted_call);
 }
 
 TEST(Interpreter, operator_add_dispatch_calls_python_dunder_from_add_smi)
@@ -1905,7 +1905,7 @@ TEST(Interpreter, operator_add_dispatch_python_cache_hit)
     ASSERT_EQ(1u, function_code->operator_caches.size());
     const OperatorInlineCache &cache = function_code->operator_caches[0];
     ASSERT_NE(nullptr, cache.function);
-    EXPECT_FALSE(cache.reflected_python_call);
+    EXPECT_FALSE(cache.reflected_untrusted_call);
     ASSERT_NE(nullptr, cache.operand_lookup_validity_cells[0]);
     ASSERT_NE(nullptr, cache.operand_lookup_validity_cells[1]);
 }
@@ -1943,7 +1943,7 @@ TEST(Interpreter, operator_add_dispatch_reflected_subclass_python_cache_hit)
     ASSERT_EQ(1u, function_code->operator_caches.size());
     const OperatorInlineCache &cache = function_code->operator_caches[0];
     ASSERT_NE(nullptr, cache.function);
-    EXPECT_TRUE(cache.reflected_python_call);
+    EXPECT_TRUE(cache.reflected_untrusted_call);
     ASSERT_NE(nullptr, cache.operand_lookup_validity_cells[0]);
     ASSERT_NE(nullptr, cache.operand_lookup_validity_cells[1]);
 }
@@ -1988,14 +1988,13 @@ TEST(Interpreter, operator_add_dispatch_trusted_str_handler_cache_hit)
         assume_convert_to<Function>(function_value)->code_object.extract();
     ASSERT_EQ(1u, function_code->operator_caches.size());
     const OperatorInlineCache &cache = function_code->operator_caches[0];
-    EXPECT_EQ(TrustedHandlerArity::Binary, cache.handler.arity);
+    EXPECT_FALSE(cache.trusted_handler.is_null());
     EXPECT_EQ(nullptr, cache.function);
     ASSERT_NE(nullptr, cache.operand_lookup_validity_cells[0]);
     ASSERT_NE(nullptr, cache.operand_lookup_validity_cells[1]);
 }
 
-TEST(Interpreter,
-     operator_add_dispatch_caches_int_notimplemented_before_reflected_float)
+TEST(Interpreter, operator_add_dispatch_reflected_float_trusted_cache_hit)
 {
     test::VmTestContext test_context;
     ThreadState::ActivationScope activation_scope(test_context.thread());
@@ -2019,8 +2018,8 @@ TEST(Interpreter,
         assume_convert_to<Function>(function_value)->code_object.extract();
     ASSERT_EQ(1u, function_code->operator_caches.size());
     const OperatorInlineCache &cache = function_code->operator_caches[0];
-    EXPECT_EQ(TrustedHandlerArity::None, cache.handler.arity);
-    ASSERT_NE(nullptr, cache.function);
+    EXPECT_FALSE(cache.trusted_handler.is_null());
+    EXPECT_EQ(nullptr, cache.function);
     ASSERT_NE(nullptr, cache.operand_lookup_validity_cells[0]);
     ASSERT_NE(nullptr, cache.operand_lookup_validity_cells[1]);
 }
@@ -2058,7 +2057,7 @@ TEST(Interpreter, operator_eq_dispatch_reflected_python_cache_hit)
     ASSERT_EQ(1u, function_code->operator_caches.size());
     const OperatorInlineCache &cache = function_code->operator_caches[0];
     ASSERT_NE(nullptr, cache.function);
-    EXPECT_TRUE(cache.reflected_python_call);
+    EXPECT_TRUE(cache.reflected_untrusted_call);
     ASSERT_NE(nullptr, cache.operand_lookup_validity_cells[0]);
     ASSERT_NE(nullptr, cache.operand_lookup_validity_cells[1]);
 }
@@ -2086,7 +2085,7 @@ TEST(Interpreter, operator_eq_dispatch_trusted_handler_cache)
         assume_convert_to<Function>(function_value)->code_object.extract();
     ASSERT_EQ(1u, function_code->operator_caches.size());
     const OperatorInlineCache &cache = function_code->operator_caches[0];
-    EXPECT_EQ(TrustedHandlerArity::Binary, cache.handler.arity);
+    EXPECT_FALSE(cache.trusted_handler.is_null());
     EXPECT_EQ(nullptr, cache.function);
     ASSERT_NE(nullptr, cache.operand_lookup_validity_cells[0]);
     ASSERT_NE(nullptr, cache.operand_lookup_validity_cells[1]);
@@ -3092,7 +3091,7 @@ TEST(Interpreter, subscript_load_caches_trusted_builtin_slice_handlers)
         for(const OperatorInlineCache &candidate:
             function_code->operator_caches)
         {
-            if(candidate.handler.arity == TrustedHandlerArity::Binary &&
+            if(!candidate.trusted_handler.is_null() &&
                candidate.operand_shape_keys[1] ==
                    ShapeKey::from_shape(expected_key_shape))
             {
@@ -3105,8 +3104,8 @@ TEST(Interpreter, subscript_load_caches_trusted_builtin_slice_handlers)
                   cache->operand_shape_keys[1]);
         EXPECT_EQ(expected_key_shape, test_context.vm().shape_for_key(
                                           cache->operand_shape_keys[1]));
-        EXPECT_NE(nullptr, cache->handler.binary);
-        handler_out = cache->handler.binary;
+        EXPECT_NE(nullptr, cache->trusted_handler.binary);
+        handler_out = cache->trusted_handler.binary;
     };
 
     BinaryHandler list_nonstrided_handler = nullptr;

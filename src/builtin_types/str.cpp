@@ -289,7 +289,7 @@ namespace cl
     }
 
     template <typename Operator>
-    static TrustedHandler
+    static TrustedResolution
     resolve_trusted_str_str_handler(VirtualMachine *vm, ShapeKey operand0_key,
                                     ShapeKey operand1_key, ShapeKey unused)
     {
@@ -298,14 +298,14 @@ namespace cl
         ShapeKey str_key = ShapeKey::from_shape(vm->str_instance_root_shape());
         if(operand0_key == str_key && operand1_key == str_key)
         {
-            return TrustedHandler::for_binary(
+            return TrustedResolution::call_trusted(
                 trusted_str_str_operator<Operator>);
         }
-        return TrustedHandler::none();
+        return TrustedResolution::no_trusted_handler_call_untrusted();
     }
 
     template <typename NormalOperator, typename ReflectedOperator>
-    static TrustedHandler
+    static TrustedResolution
     resolve_trusted_str_str_resolver(VirtualMachine *vm, ShapeKey operand0_key,
                                      ShapeKey operand1_key, ShapeKey unused,
                                      TrustedHandlerOperandOrder order)
@@ -419,7 +419,7 @@ namespace cl
             .raw_value();
     }
 
-    static TrustedHandler resolve_trusted_str_getitem_handler(
+    static TrustedResolution resolve_trusted_str_getitem_handler(
         VirtualMachine *vm, ShapeKey container_key, ShapeKey key_key,
         ShapeKey unused, TrustedHandlerOperandOrder order)
     {
@@ -427,23 +427,24 @@ namespace cl
         assert(order == TrustedHandlerOperandOrder::Normal);
         if(vm->shape_for_key(container_key)->get_class() != vm->str_class())
         {
-            return TrustedHandler::none();
+            return TrustedResolution::no_trusted_handler_call_untrusted();
         }
         if(key_key == ShapeKey::from_value(Value::from_smi(0)))
         {
-            return TrustedHandler::for_binary(trusted_str_getitem_smi_handler);
+            return TrustedResolution::call_trusted(
+                trusted_str_getitem_smi_handler);
         }
         if(key_key == ShapeKey::from_shape(vm->slice_step_none_shape()))
         {
-            return TrustedHandler::for_binary(
+            return TrustedResolution::call_trusted(
                 trusted_str_getitem_nonstrided_slice_handler);
         }
         if(key_key == ShapeKey::from_shape(vm->slice_general_shape()))
         {
-            return TrustedHandler::for_binary(
+            return TrustedResolution::call_trusted(
                 trusted_str_getitem_general_slice_handler);
         }
-        return TrustedHandler::none();
+        return TrustedResolution::no_trusted_handler_call_untrusted();
     }
 
     static Value native_str_lower(ThreadState *thread, Value self)

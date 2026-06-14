@@ -143,8 +143,17 @@ namespace cl
         Ternary,
     };
 
-    struct TrustedHandler
+    enum class TrustedResolutionKind
     {
+        NoTrustedHandlerCallUntrusted,
+        TrustedHandler,
+        KnownNotImplementedSkipMethod,
+    };
+
+    struct TrustedResolution
+    {
+        TrustedResolutionKind kind =
+            TrustedResolutionKind::NoTrustedHandlerCallUntrusted;
         TrustedHandlerArity arity = TrustedHandlerArity::None;
 
         union
@@ -154,35 +163,94 @@ namespace cl
             TernaryHandler ternary;
         };
 
-        TrustedHandler() : arity(TrustedHandlerArity::None), unary(nullptr) {}
+        TrustedResolution() : unary(nullptr) {}
+
+        static TrustedResolution no_trusted_handler_call_untrusted()
+        {
+            return TrustedResolution();
+        }
+
+        static TrustedResolution call_trusted(UnaryHandler handler)
+        {
+            TrustedResolution resolution;
+            resolution.kind = TrustedResolutionKind::TrustedHandler;
+            resolution.arity = TrustedHandlerArity::Unary;
+            resolution.unary = handler;
+            return resolution;
+        }
+
+        static TrustedResolution call_trusted(BinaryHandler handler)
+        {
+            TrustedResolution resolution;
+            resolution.kind = TrustedResolutionKind::TrustedHandler;
+            resolution.arity = TrustedHandlerArity::Binary;
+            resolution.binary = handler;
+            return resolution;
+        }
+
+        static TrustedResolution call_trusted(TernaryHandler handler)
+        {
+            TrustedResolution resolution;
+            resolution.kind = TrustedResolutionKind::TrustedHandler;
+            resolution.arity = TrustedHandlerArity::Ternary;
+            resolution.ternary = handler;
+            return resolution;
+        }
+
+        static TrustedResolution known_not_implemented_skip_method()
+        {
+            TrustedResolution resolution;
+            resolution.kind =
+                TrustedResolutionKind::KnownNotImplementedSkipMethod;
+            return resolution;
+        }
+
+        bool has_trusted_handler() const
+        {
+            return kind == TrustedResolutionKind::TrustedHandler;
+        }
+    };
+
+    union TrustedHandler
+    {
+        using RawHandler = void (*)();
+
+        RawHandler raw;
+        UnaryHandler unary;
+        BinaryHandler binary;
+        TernaryHandler ternary;
+
+        TrustedHandler() : raw(nullptr) {}
+
+        bool is_null() const { return raw == nullptr; }
 
         static TrustedHandler none() { return TrustedHandler(); }
 
-        static TrustedHandler for_unary(UnaryHandler handler)
+        static TrustedHandler from_resolution(TrustedResolution resolution)
         {
-            TrustedHandler trusted_handler;
-            trusted_handler.arity = TrustedHandlerArity::Unary;
-            trusted_handler.unary = handler;
-            return trusted_handler;
-        }
+            assert(resolution.kind == TrustedResolutionKind::TrustedHandler);
+            TrustedHandler pointer;
+            switch(resolution.arity)
+            {
+                case TrustedHandlerArity::Unary:
+                    pointer.unary = resolution.unary;
+                    return pointer;
 
-        static TrustedHandler for_binary(BinaryHandler handler)
-        {
-            TrustedHandler trusted_handler;
-            trusted_handler.arity = TrustedHandlerArity::Binary;
-            trusted_handler.binary = handler;
-            return trusted_handler;
-        }
+                case TrustedHandlerArity::Binary:
+                    pointer.binary = resolution.binary;
+                    return pointer;
 
-        static TrustedHandler for_ternary(TernaryHandler handler)
-        {
-            TrustedHandler trusted_handler;
-            trusted_handler.arity = TrustedHandlerArity::Ternary;
-            trusted_handler.ternary = handler;
-            return trusted_handler;
-        }
+                case TrustedHandlerArity::Ternary:
+                    pointer.ternary = resolution.ternary;
+                    return pointer;
 
-        bool is_none() const { return arity == TrustedHandlerArity::None; }
+                case TrustedHandlerArity::None:
+                    break;
+            }
+
+            assert(false && "missing trusted handler");
+            __builtin_unreachable();
+        }
     };
 
     enum class TrustedHandlerOperandOrder
@@ -192,8 +260,8 @@ namespace cl
     };
 
     using TrustedHandlerResolver =
-        TrustedHandler (*)(VirtualMachine *, ShapeKey, ShapeKey, ShapeKey,
-                           TrustedHandlerOperandOrder);
+        TrustedResolution (*)(VirtualMachine *, ShapeKey, ShapeKey, ShapeKey,
+                              TrustedHandlerOperandOrder);
 
     union NativeFunctionTarget
     {
@@ -242,13 +310,13 @@ namespace cl
     {
         ShapeKey operand_shape_keys[3];
         ValidityCell *operand_lookup_validity_cells[2] = {nullptr, nullptr};
-        TrustedHandler handler;
+        TrustedHandler trusted_handler;
         Function *function = nullptr;
         CodeObject *code_object = nullptr;
         uint32_t n_args = UINT32_MAX;
         uint32_t resume_index = UINT32_MAX;
         FunctionCallAdaptation adaptation = FunctionCallAdaptation::FixedArity;
-        bool reflected_python_call = false;
+        bool reflected_untrusted_call = false;
         bool has_self = false;
 
         ALWAYSINLINE bool matches_unary(Value operand0) const
@@ -317,15 +385,14 @@ namespace cl
             operand_shape_keys[2] = operand2_shape_key;
         }
 
-        static OperatorInlineCache
-        python_function_call(ShapeKey operand0_shape_key,
-                             ShapeKey operand1_shape_key,
-                             ShapeKey operand2_shape_key, Function *function,
-                             CodeObject *code_object, uint32_t n_args,
-                             uint32_t resume_index, bool reflected_python_call,
-                             bool has_self, FunctionCallAdaptation adaptation,
-                             ValidityCell *operand0_lookup_validity_cell,
-                             ValidityCell *operand1_lookup_validity_cell)
+        static OperatorInlineCache untrusted_function_call(
+            ShapeKey operand0_shape_key, ShapeKey operand1_shape_key,
+            ShapeKey operand2_shape_key, Function *function,
+            CodeObject *code_object, uint32_t n_args, uint32_t resume_index,
+            bool reflected_untrusted_call, bool has_self,
+            FunctionCallAdaptation adaptation,
+            ValidityCell *operand0_lookup_validity_cell,
+            ValidityCell *operand1_lookup_validity_cell)
         {
             OperatorInlineCache cache;
             cache.populate_ternary_shapes(
@@ -334,7 +401,7 @@ namespace cl
             cache.code_object = code_object;
             cache.n_args = n_args;
             cache.resume_index = resume_index;
-            cache.reflected_python_call = reflected_python_call;
+            cache.reflected_untrusted_call = reflected_untrusted_call;
             cache.adaptation = adaptation;
             cache.has_self = has_self;
             cache.operand_lookup_validity_cells[0] =
@@ -346,14 +413,15 @@ namespace cl
 
         static OperatorInlineCache trusted_handler_call(
             ShapeKey operand0_shape_key, ShapeKey operand1_shape_key,
-            ShapeKey operand2_shape_key, TrustedHandler handler,
+            ShapeKey operand2_shape_key, TrustedResolution resolution,
             ValidityCell *operand0_lookup_validity_cell,
             ValidityCell *operand1_lookup_validity_cell)
         {
+            assert(resolution.kind == TrustedResolutionKind::TrustedHandler);
             OperatorInlineCache cache;
             cache.populate_ternary_shapes(
                 operand0_shape_key, operand1_shape_key, operand2_shape_key);
-            cache.handler = handler;
+            cache.trusted_handler = TrustedHandler::from_resolution(resolution);
             cache.operand_lookup_validity_cells[0] =
                 operand0_lookup_validity_cell;
             cache.operand_lookup_validity_cells[1] =
@@ -368,13 +436,13 @@ namespace cl
             operand_shape_keys[2] = ShapeKey{};
             operand_lookup_validity_cells[0] = nullptr;
             operand_lookup_validity_cells[1] = nullptr;
-            handler = TrustedHandler::none();
+            trusted_handler = TrustedHandler::none();
             function = nullptr;
             code_object = nullptr;
             n_args = UINT32_MAX;
             resume_index = UINT32_MAX;
             adaptation = FunctionCallAdaptation::FixedArity;
-            reflected_python_call = false;
+            reflected_untrusted_call = false;
             has_self = false;
         }
 
