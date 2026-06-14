@@ -119,6 +119,17 @@ TEST(Codegen, interactive_expression_returns_value)
     EXPECT_EQ(expected, actual);
 }
 
+TEST(Codegen, binary_power_uses_cached_operator_bytecode)
+{
+    std::string expected = "Code object:\n"
+                           "    0 LdaSmi 2\n"
+                           "    2 BinaryPowSmi 3, operator_ic[0]\n"
+                           "    6 Return\n";
+    std::string actual = bytecode_str_from_file(L"2 ** 3\n");
+
+    EXPECT_EQ(expected, actual);
+}
+
 TEST(Codegen, interactive_assignment_returns_none)
 {
     std::string expected =

@@ -69,6 +69,7 @@ namespace cl
         Mul,
         TrueDiv,
         FloorDiv,
+        BinaryPow,
         Mod,
         LShift,
         RShift,

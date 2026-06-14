@@ -125,6 +125,10 @@ namespace cl
                 return operator_walk_raise_type_error(
                     thread, L"unsupported operand type(s) for *");
 
+            case OperatorDispatchTableId::BinaryPow:
+                return operator_walk_raise_type_error(
+                    thread, L"unsupported operand type(s) for **");
+
             case OperatorDispatchTableId::TrueDiv:
                 return operator_walk_raise_type_error(
                     thread, L"unsupported operand type(s) for /");

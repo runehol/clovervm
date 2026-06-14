@@ -62,7 +62,8 @@ namespace cl
             OperatorBytecodeFormat::WithCacheAndNotImplementedCheck,
             Bytecode::FloorDiv, Bytecode::FloorDivSmi);
         t.table[size_t(AstOperatorKind::POWER)] = OpTableEntry(
-            OperatorBytecodeFormat::Plain, Bytecode::Pow, Bytecode::PowSmi);
+            OperatorBytecodeFormat::WithCacheAndNotImplementedCheck,
+            Bytecode::BinaryPow, Bytecode::BinaryPowSmi);
         t.table[size_t(AstOperatorKind::LEFTSHIFT)] = OpTableEntry(
             OperatorBytecodeFormat::WithCacheAndNotImplementedCheck,
             Bytecode::LShift, Bytecode::LShiftSmi);

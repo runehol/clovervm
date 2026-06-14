@@ -572,6 +572,8 @@ namespace cl
         String *dunder_rsub = get_or_create_interned_string_raw(L"__rsub__");
         String *dunder_mul = get_or_create_interned_string_raw(L"__mul__");
         String *dunder_rmul = get_or_create_interned_string_raw(L"__rmul__");
+        String *dunder_pow = get_or_create_interned_string_raw(L"__pow__");
+        String *dunder_rpow = get_or_create_interned_string_raw(L"__rpow__");
         String *dunder_truediv =
             get_or_create_interned_string_raw(L"__truediv__");
         String *dunder_rtruediv =
@@ -649,6 +651,8 @@ namespace cl
                                                  dunder_sub, dunder_rsub);
         install_binary_arithmetic_operator_table(OperatorDispatchTableId::Mul,
                                                  dunder_mul, dunder_rmul);
+        install_binary_arithmetic_operator_table(
+            OperatorDispatchTableId::BinaryPow, dunder_pow, dunder_rpow);
         install_binary_arithmetic_operator_table(
             OperatorDispatchTableId::TrueDiv, dunder_truediv, dunder_rtruediv);
         install_binary_arithmetic_operator_table(

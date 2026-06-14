@@ -1536,6 +1536,29 @@ TEST(Interpreter, bitwise_dispatch_calls_custom_methods)
                                     L"~Left()\n"));
 }
 
+TEST(Interpreter, binary_power_dispatch_calls_custom_methods)
+{
+    test::VmTestContext test_context;
+
+    EXPECT_EQ(Value::from_smi(42),
+              test_context.run_file(L"class Left:\n"
+                                    L"    def __pow__(self, other):\n"
+                                    L"        return 42\n"
+                                    L"Left() ** 3\n"));
+    EXPECT_EQ(Value::from_smi(43),
+              test_context.run_file(L"class Right:\n"
+                                    L"    def __rpow__(self, other):\n"
+                                    L"        return 43\n"
+                                    L"2 ** Right()\n"));
+    EXPECT_EQ(Value::from_smi(44),
+              test_context.run_file(L"class Left:\n"
+                                    L"    def __pow__(self, other, mod=None):\n"
+                                    L"        if mod is None:\n"
+                                    L"            return 44\n"
+                                    L"        return 45\n"
+                                    L"Left() ** 3\n"));
+}
+
 TEST(Interpreter, true_division_values)
 {
     test::VmTestContext test_context;
@@ -1829,6 +1852,7 @@ TEST(Interpreter, operator_dispatch_tables_include_unary_and_binary_arithmetic)
     expect_binary_table(OperatorDispatchTableId::Add);
     expect_binary_table(OperatorDispatchTableId::Sub);
     expect_binary_table(OperatorDispatchTableId::Mul);
+    expect_binary_table(OperatorDispatchTableId::BinaryPow);
     expect_binary_table(OperatorDispatchTableId::TrueDiv);
     expect_binary_table(OperatorDispatchTableId::FloorDiv);
     expect_binary_table(OperatorDispatchTableId::Mod);

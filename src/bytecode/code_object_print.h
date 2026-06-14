@@ -251,8 +251,8 @@ template <> struct fmt::formatter<cl::Bytecode>
                 return format_to(out, "TrueDiv");
             case cl::Bytecode::FloorDiv:
                 return format_to(out, "FloorDiv");
-            case cl::Bytecode::Pow:
-                return format_to(out, "Pow");
+            case cl::Bytecode::BinaryPow:
+                return format_to(out, "BinaryPow");
             case cl::Bytecode::LShift:
                 return format_to(out, "LShift");
             case cl::Bytecode::RShift:
@@ -297,8 +297,8 @@ template <> struct fmt::formatter<cl::Bytecode>
                 return format_to(out, "MulSmi");
             case cl::Bytecode::FloorDivSmi:
                 return format_to(out, "FloorDivSmi");
-            case cl::Bytecode::PowSmi:
-                return format_to(out, "PowSmi");
+            case cl::Bytecode::BinaryPowSmi:
+                return format_to(out, "BinaryPowSmi");
             case cl::Bytecode::LShiftSmi:
                 return format_to(out, "LShiftSmi");
             case cl::Bytecode::RShiftSmi:
@@ -787,7 +787,6 @@ template <> struct fmt::formatter<cl::CodeObject>
                 disassemble_constant(code_obj, out, pc++);
                 break;
 
-            case cl::Bytecode::Pow:
             case cl::Bytecode::TestIs:
             case cl::Bytecode::TestIsNot:
             case cl::Bytecode::TestIn:
@@ -801,6 +800,7 @@ template <> struct fmt::formatter<cl::CodeObject>
             case cl::Bytecode::Mul:
             case cl::Bytecode::TrueDiv:
             case cl::Bytecode::FloorDiv:
+            case cl::Bytecode::BinaryPow:
             case cl::Bytecode::LShift:
             case cl::Bytecode::RShift:
             case cl::Bytecode::Mod:
@@ -822,15 +822,11 @@ template <> struct fmt::formatter<cl::CodeObject>
                 ++pc;
                 break;
 
-            case cl::Bytecode::PowSmi:
-                format_to(out, " ");
-                disassemble_smi8(code_obj, out, pc++);
-                break;
-
             case cl::Bytecode::AddSmi:
             case cl::Bytecode::SubSmi:
             case cl::Bytecode::MulSmi:
             case cl::Bytecode::FloorDivSmi:
+            case cl::Bytecode::BinaryPowSmi:
             case cl::Bytecode::LShiftSmi:
             case cl::Bytecode::RShiftSmi:
             case cl::Bytecode::ModSmi:

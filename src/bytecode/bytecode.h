@@ -94,7 +94,7 @@ namespace cl
         Mul,
         TrueDiv,
         FloorDiv,
-        Pow,
+        BinaryPow,
         LShift,
         RShift,  // arithmetic shift
         Mod,
@@ -119,7 +119,7 @@ namespace cl
         SubSmi,
         MulSmi,
         FloorDivSmi,
-        PowSmi,
+        BinaryPowSmi,
         LShiftSmi,
         RShiftSmi,  // arithmetic shift
         ModSmi,
