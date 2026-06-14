@@ -787,7 +787,6 @@ template <> struct fmt::formatter<cl::CodeObject>
                 disassemble_constant(code_obj, out, pc++);
                 break;
 
-            case cl::Bytecode::Add:
             case cl::Bytecode::Sub:
             case cl::Bytecode::Mul:
             case cl::Bytecode::TrueDiv:
@@ -807,6 +806,7 @@ template <> struct fmt::formatter<cl::CodeObject>
                 disassemble_reg(code_obj, out, pc++);
                 break;
 
+            case cl::Bytecode::Add:
             case cl::Bytecode::TestEqual:
             case cl::Bytecode::TestNotEqual:
             case cl::Bytecode::TestLess:
@@ -822,7 +822,6 @@ template <> struct fmt::formatter<cl::CodeObject>
                 ++pc;
                 break;
 
-            case cl::Bytecode::AddSmi:
             case cl::Bytecode::SubSmi:
             case cl::Bytecode::MulSmi:
             case cl::Bytecode::FloorDivSmi:
@@ -835,6 +834,16 @@ template <> struct fmt::formatter<cl::CodeObject>
             case cl::Bytecode::XorSmi:
                 format_to(out, " ");
                 disassemble_smi8(code_obj, out, pc++);
+                break;
+
+            case cl::Bytecode::AddSmi:
+                format_to(out, " ");
+                disassemble_smi8(code_obj, out, pc++);
+                format_to(out, ", ");
+                disassemble_operator_cache(code_obj, out, pc++);
+                assert(cl::Bytecode(code_obj.code[pc]) ==
+                       cl::Bytecode::CheckOperatorNotImplemented);
+                ++pc;
                 break;
 
             case cl::Bytecode::Nop:

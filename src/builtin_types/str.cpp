@@ -155,11 +155,14 @@ namespace cl
     static Value native_str_add(ThreadState *thread, Value left_value,
                                 Value right_value)
     {
-        if(!can_convert_to<String>(left_value) ||
-           !can_convert_to<String>(right_value))
+        if(!can_convert_to<String>(left_value))
         {
-            return active_thread()->set_pending_builtin_exception_none(
-                L"UnimplementedError");
+            return thread->set_pending_builtin_exception_string(
+                L"TypeError", L"str.__add__ expects a str receiver");
+        }
+        if(!can_convert_to<String>(right_value))
+        {
+            return Value::NotImplemented();
         }
 
         return left_value.get_ptr<String>()

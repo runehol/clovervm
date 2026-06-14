@@ -1789,6 +1789,31 @@ TEST(Interpreter, operator_add_walk_uses_reflected_fallback_for_different_types)
     EXPECT_TRUE(descriptor.cache_entry.reflected_python_call);
 }
 
+TEST(Interpreter, operator_add_dispatch_calls_python_dunder_from_add_smi)
+{
+    test::VmTestContext test_context;
+
+    EXPECT_EQ(Value::from_smi(11),
+              test_context.run_file(L"class Addable:\n"
+                                    L"    def __add__(self, other):\n"
+                                    L"        return 11\n"
+                                    L"Addable() + 1\n"));
+}
+
+TEST(Interpreter, operator_add_dispatch_continues_after_notimplemented)
+{
+    test::VmTestContext test_context;
+
+    EXPECT_EQ(Value::from_smi(7),
+              test_context.run_file(L"class Left:\n"
+                                    L"    def __add__(self, other):\n"
+                                    L"        return NotImplemented\n"
+                                    L"class Right:\n"
+                                    L"    def __radd__(self, other):\n"
+                                    L"        return 7\n"
+                                    L"Left() + Right()\n"));
+}
+
 TEST(Interpreter, operator_eq_dispatch_reflected_python_cache_hit)
 {
     test::VmTestContext test_context;
@@ -2140,10 +2165,10 @@ TEST(Interpreter, string_comparison_values)
                         L"unsupported operand type(s) for comparison");
 }
 
-TEST(Interpreter, string_dunder_add_calls_intrinsic_function)
+TEST(Interpreter, string_add_expression_concatenates_strings)
 {
     test::VmTestContext test_context;
-    Value actual = test_context.run_file(L"\"ab\".__add__(\"cd\")\n");
+    Value actual = test_context.run_file(L"\"ab\" + \"cd\"\n");
 
     ASSERT_TRUE(can_convert_to<String>(actual));
     EXPECT_STREQ(L"abcd",
@@ -2171,17 +2196,23 @@ TEST(Interpreter, string_dunder_comparisons_call_intrinsic_functions)
               test_context.run_file(L"\"a\".__lt__(1)\n"));
 }
 
-TEST(Interpreter, string_dunder_add_wrong_type_reports_unimplemented)
+TEST(Interpreter, string_dunder_add_wrong_type_returns_notimplemented)
 {
-    expect_python_error(L"\"ab\".__add__(3)\n", L"UnimplementedError", L"");
+    test::VmTestContext test_context;
+
+    EXPECT_EQ(Value::NotImplemented(),
+              test_context.run_file(L"\"ab\".__add__(3)\n"));
 }
 
-TEST(Interpreter, string_dunder_add_wrong_type_unwinds_nested_frames)
+TEST(Interpreter,
+     string_dunder_add_wrong_type_returns_notimplemented_from_nested_frame)
 {
-    expect_python_error(L"def fail():\n"
-                        L"    return \"ab\".__add__(3)\n"
-                        L"fail()\n",
-                        L"UnimplementedError", L"");
+    test::VmTestContext test_context;
+
+    EXPECT_EQ(Value::NotImplemented(),
+              test_context.run_file(L"def fail():\n"
+                                    L"    return \"ab\".__add__(3)\n"
+                                    L"fail()\n"));
 }
 
 TEST(Interpreter, list_literal_returns_list_object)

@@ -47,7 +47,8 @@ namespace cl
         OpTable t;
 
         t.table[size_t(AstOperatorKind::ADD)] = OpTableEntry(
-            OperatorBytecodeFormat::Plain, Bytecode::Add, Bytecode::AddSmi);
+            OperatorBytecodeFormat::WithCacheAndNotImplementedCheck,
+            Bytecode::Add, Bytecode::AddSmi);
         t.table[size_t(AstOperatorKind::SUBTRACT)] = OpTableEntry(
             OperatorBytecodeFormat::Plain, Bytecode::Sub, Bytecode::SubSmi);
         t.table[size_t(AstOperatorKind::MULTIPLY)] = OpTableEntry(

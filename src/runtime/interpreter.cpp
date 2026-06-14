@@ -229,18 +229,6 @@ namespace cl
         COMPLETE();
     }
 
-    NOINLINE INTERP_CC Value unsupported_addition_error(PARAMS)
-    {
-        ExceptionalTarget target = set_builtin_exception_and_resolve_frame_exit(
-            thread, fp, pc, code_object, L"TypeError",
-            L"unsupported operand type(s) for +");
-        fp = target.fp;
-        code_object = target.code_object;
-        pc = target.interpreted_pc;
-        START(0);
-        COMPLETE();
-    }
-
     NOINLINE INTERP_CC Value unsupported_subtraction_error(PARAMS)
     {
         ExceptionalTarget target = set_builtin_exception_and_resolve_frame_exit(
@@ -1304,39 +1292,6 @@ namespace cl
             result = std::copysign(0.0, double(right_int));
         }
         accumulator = thread->make_object_value<Float>(result).raw_value();
-        COMPLETE();
-    }
-
-    NOINLINE static INTERP_CC Value op_add_float(PARAMS)
-    {
-        START_BINARY_REG_ACC();
-
-        double left;
-        double right;
-        if(!try_get_float_or_smi_or_bool(a, &left) ||
-           !try_get_float_or_smi_or_bool(b, &right))
-        {
-            MUSTTAIL return unsupported_addition_error(ARGS);
-        }
-
-        accumulator =
-            thread->make_object_value<Float>(left + right).raw_value();
-        COMPLETE();
-    }
-
-    NOINLINE static INTERP_CC Value op_add_smi_float(PARAMS)
-    {
-        START_BINARY_ACC_SMI();
-
-        double left;
-        if(!try_get_exact_float(a, &left))
-        {
-            MUSTTAIL return unsupported_addition_error(ARGS);
-        }
-
-        accumulator =
-            thread->make_object_value<Float>(left + double(b.get_smi()))
-                .raw_value();
         COMPLETE();
     }
 
@@ -3403,12 +3358,39 @@ namespace cl
         MUSTTAIL return op_del_item_cached_call_slow(ARGS);
     }
 
+    NOINLINE static INTERP_CC Value op_add_smi_dispatch(PARAMS)
+    {
+        uint8_t cache_idx = pc[2];
+        Value a = accumulator;
+        Value b = Value::from_smi(int8_t(pc[1]));
+        DispatchTableEntry next_dispatch_fun =
+            dispatch_cached_reflectable_binary_operator(
+                thread, fp, pc, dispatch, code_object, accumulator,
+                OperatorDispatchTableId::Add, cache_idx, a, b, pc + 3, pc + 4);
+        MUSTTAIL return next_dispatch_fun(ARGS);
+    }
+
+    NOINLINE static INTERP_CC Value op_add_dispatch(PARAMS)
+    {
+        int8_t reg = pc[1];
+        uint8_t cache_idx = pc[2];
+        Value a = fp[reg];
+        Value b = accumulator;
+        DispatchTableEntry next_dispatch_fun =
+            dispatch_cached_reflectable_binary_operator(
+                thread, fp, pc, dispatch, code_object, accumulator,
+                OperatorDispatchTableId::Add, cache_idx, a, b, pc + 3, pc + 4);
+        MUSTTAIL return next_dispatch_fun(ARGS);
+    }
+
     static INTERP_CC Value op_add_smi(PARAMS)
     {
-        START_BINARY_ACC_SMI();
+        START(4);
+        Value a = accumulator;
+        Value b = Value::from_smi(int8_t(pc[1]));
         if(unlikely(A_NOT_SMI()))
         {
-            MUSTTAIL return op_add_smi_float(ARGS);
+            MUSTTAIL return op_add_smi_dispatch(ARGS);
         }
         if(unlikely(__builtin_add_overflow(a.as.integer, b.as.integer,
                                            &accumulator.as.integer)))
@@ -3422,10 +3404,13 @@ namespace cl
 
     static INTERP_CC Value op_add(PARAMS)
     {
-        START_BINARY_REG_ACC();
+        START(4);
+        int8_t reg = pc[1];
+        Value a = fp[reg];
+        Value b = accumulator;
         if(unlikely(A_OR_B_NOT_SMI()))
         {
-            MUSTTAIL return op_add_float(ARGS);
+            MUSTTAIL return op_add_dispatch(ARGS);
         }
         if(unlikely(__builtin_add_overflow(a.as.integer, b.as.integer,
                                            &accumulator.as.integer)))
