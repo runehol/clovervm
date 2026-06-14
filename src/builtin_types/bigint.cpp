@@ -461,6 +461,159 @@ namespace cl
         dest->signum = normalized.signum;
     }
 
+    static void bigint_digits_complement_into(digit_t *dest, const digit_t *src,
+                                              size_t n_digits)
+    {
+        digit_t carry = 1;
+        for(size_t idx = 0; idx < n_digits; ++idx)
+        {
+            double_digit_t sum = double_digit_t(src[idx] ^ ~digit_t{0}) + carry;
+            dest[idx] = static_cast<digit_t>(sum);
+            carry = static_cast<digit_t>(sum >> kDigitBits);
+        }
+        assert(carry == 0);
+    }
+
+    struct BigIntAndOperation
+    {
+        static bool result_negative(bool left_negative, bool right_negative)
+        {
+            return left_negative && right_negative;
+        }
+
+        static digit_t apply(digit_t left, digit_t right)
+        {
+            return left & right;
+        }
+
+        static digit_t tail(digit_t larger_digit, bool smaller_negative)
+        {
+            return smaller_negative ? larger_digit : digit_t{0};
+        }
+    };
+
+    struct BigIntXorOperation
+    {
+        static bool result_negative(bool left_negative, bool right_negative)
+        {
+            return left_negative != right_negative;
+        }
+
+        static digit_t apply(digit_t left, digit_t right)
+        {
+            return left ^ right;
+        }
+
+        static digit_t tail(digit_t larger_digit, bool smaller_negative)
+        {
+            return smaller_negative ? larger_digit ^ ~digit_t{0} : larger_digit;
+        }
+    };
+
+    struct BigIntOrOperation
+    {
+        static bool result_negative(bool left_negative, bool right_negative)
+        {
+            return left_negative || right_negative;
+        }
+
+        static digit_t apply(digit_t left, digit_t right)
+        {
+            return left | right;
+        }
+
+        static digit_t tail(digit_t larger_digit, bool smaller_negative)
+        {
+            return smaller_negative ? ~digit_t{0} : larger_digit;
+        }
+    };
+
+    template <typename Operation>
+    static Expected<Value> bigint_bitwise(ThreadState *thread,
+                                          ConstBigIntView left,
+                                          ConstBigIntView right)
+    {
+        assert(is_normalized_bigint_view(left));
+        assert(is_normalized_bigint_view(right));
+
+        if(left.n_digits < right.n_digits)
+        {
+            std::swap(left, right);
+        }
+
+        bool left_negative = left.signum < 0;
+        bool right_negative = right.signum < 0;
+        BigIntScratch left_complement_scratch(left.n_digits);
+        BigIntScratch right_complement_scratch(right.n_digits);
+
+        if(left_negative)
+        {
+            MutableBigIntView complemented =
+                left_complement_scratch.mutable_view();
+            bigint_digits_complement_into(complemented.digits, left.digits,
+                                          left.n_digits);
+            left = ConstBigIntView{left.n_digits, 1, complemented.digits};
+        }
+        if(right_negative)
+        {
+            MutableBigIntView complemented =
+                right_complement_scratch.mutable_view();
+            bigint_digits_complement_into(complemented.digits, right.digits,
+                                          right.n_digits);
+            right = ConstBigIntView{right.n_digits, 1, complemented.digits};
+        }
+
+        bool result_negative =
+            Operation::result_negative(left_negative, right_negative);
+        size_t result_digits = left.n_digits;
+
+        if(result_digits == 0)
+        {
+            return finalize_bigint(thread, ConstBigIntView{0, 0, nullptr});
+        }
+
+        BigIntScratch result_scratch(result_digits + (result_negative ? 1 : 0));
+        MutableBigIntView result = result_scratch.mutable_view();
+
+        size_t idx = 0;
+        for(; idx < right.n_digits && idx < result_digits; ++idx)
+        {
+            result.digits[idx] =
+                Operation::apply(left.digits[idx], right.digits[idx]);
+        }
+
+        if(idx < result_digits)
+        {
+            for(; idx < result_digits; ++idx)
+            {
+                result.digits[idx] =
+                    Operation::tail(left.digits[idx], right_negative);
+            }
+        }
+
+        result.n_digits = result_digits;
+        result.signum = result_digits == 0 ? 0 : 1;
+        if(result_negative)
+        {
+            result.digits[result_digits] = ~digit_t{0};
+            bigint_digits_complement_into(result.digits, result.digits,
+                                          result_digits + 1);
+            result.n_digits = result_digits + 1;
+            ConstBigIntView normalized = normalize_bigint_view(result.view());
+            result.n_digits = normalized.n_digits;
+            result.signum = result.n_digits == 0 ? 0 : -1;
+        }
+        else
+        {
+            ConstBigIntView normalized = normalize_bigint_view(result.view());
+            result.n_digits = normalized.n_digits;
+            result.signum = normalized.signum;
+        }
+
+        assert(is_normalized_bigint_view(result.view()));
+        return finalize_bigint(thread, result.view());
+    }
+
     static uint32_t divmod_abs_by_u32(MutableBigIntView *quotient,
                                       ConstBigIntView dividend,
                                       uint32_t divisor);
@@ -1021,6 +1174,40 @@ namespace cl
             }
         }
         return finalize_bigint(thread, dest.view());
+    }
+
+    Expected<Value> bigint_invert(ThreadState *thread, ConstBigIntView view)
+    {
+        assert(is_normalized_bigint_view(view));
+
+        digit_t one_digit = 1;
+        ConstBigIntView one{1, 1, &one_digit};
+        BigIntScratch scratch(std::max<size_t>(view.n_digits, 1) + 1);
+        MutableBigIntView dest = scratch.mutable_view();
+        bigint_add_into(&dest, view, one);
+        if(dest.n_digits != 0)
+        {
+            dest.signum = static_cast<signum_t>(-dest.signum);
+        }
+        return finalize_bigint(thread, dest.view());
+    }
+
+    Expected<Value> bigint_and(ThreadState *thread, ConstBigIntView left,
+                               ConstBigIntView right)
+    {
+        return bigint_bitwise<BigIntAndOperation>(thread, left, right);
+    }
+
+    Expected<Value> bigint_xor(ThreadState *thread, ConstBigIntView left,
+                               ConstBigIntView right)
+    {
+        return bigint_bitwise<BigIntXorOperation>(thread, left, right);
+    }
+
+    Expected<Value> bigint_or(ThreadState *thread, ConstBigIntView left,
+                              ConstBigIntView right)
+    {
+        return bigint_bitwise<BigIntOrOperation>(thread, left, right);
     }
 
     void bigint_abs_mul_add_u32(MutableBigIntView *dest, ConstBigIntView src,

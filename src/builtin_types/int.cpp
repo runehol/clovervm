@@ -908,6 +908,78 @@ namespace cl
         }
     };
 
+    struct IntAndOperator
+    {
+        static constexpr const wchar_t *receiver_error =
+            L"int.__and__ expects an int receiver";
+
+        Value operator()(ThreadState *thread, ConstBigIntView left,
+                         ConstBigIntView right) const
+        {
+            return bigint_and(thread, left, right).raw_value();
+        }
+    };
+
+    struct IntRAndOperator
+    {
+        static constexpr const wchar_t *receiver_error =
+            L"int.__rand__ expects an int receiver";
+
+        Value operator()(ThreadState *thread, ConstBigIntView left,
+                         ConstBigIntView right) const
+        {
+            return IntAndOperator{}(thread, right, left);
+        }
+    };
+
+    struct IntXorOperator
+    {
+        static constexpr const wchar_t *receiver_error =
+            L"int.__xor__ expects an int receiver";
+
+        Value operator()(ThreadState *thread, ConstBigIntView left,
+                         ConstBigIntView right) const
+        {
+            return bigint_xor(thread, left, right).raw_value();
+        }
+    };
+
+    struct IntRXorOperator
+    {
+        static constexpr const wchar_t *receiver_error =
+            L"int.__rxor__ expects an int receiver";
+
+        Value operator()(ThreadState *thread, ConstBigIntView left,
+                         ConstBigIntView right) const
+        {
+            return IntXorOperator{}(thread, right, left);
+        }
+    };
+
+    struct IntOrOperator
+    {
+        static constexpr const wchar_t *receiver_error =
+            L"int.__or__ expects an int receiver";
+
+        Value operator()(ThreadState *thread, ConstBigIntView left,
+                         ConstBigIntView right) const
+        {
+            return bigint_or(thread, left, right).raw_value();
+        }
+    };
+
+    struct IntROrOperator
+    {
+        static constexpr const wchar_t *receiver_error =
+            L"int.__ror__ expects an int receiver";
+
+        Value operator()(ThreadState *thread, ConstBigIntView left,
+                         ConstBigIntView right) const
+        {
+            return IntOrOperator{}(thread, right, left);
+        }
+    };
+
     struct SMINegOperator
     {
         static constexpr const wchar_t *receiver_error =
@@ -951,6 +1023,17 @@ namespace cl
         {
             (void)thread;
             return Value::from_smi(~value);
+        }
+    };
+
+    struct IntInvertOperator
+    {
+        static constexpr const wchar_t *receiver_error =
+            L"int.__invert__ expects an int receiver";
+
+        Value operator()(ThreadState *thread, ConstBigIntView value) const
+        {
+            return bigint_invert(thread, value).raw_value();
         }
     };
 
@@ -1135,6 +1218,21 @@ namespace cl
     }
 
     template <typename Operator>
+    static Value native_int_bigint_unary_operator(ThreadState *thread,
+                                                  Value self)
+    {
+        if(!is_intlike_value(self))
+        {
+            return thread->set_pending_builtin_exception_string(
+                L"TypeError", Operator::receiver_error);
+        }
+
+        SmiViewStorage storage;
+        ConstBigIntView view = intlike_value_bigint_view(self, &storage);
+        return Operator{}(thread, view);
+    }
+
+    template <typename Operator>
     static Value native_int_compare_operator(ThreadState *thread, Value self,
                                              Value other)
     {
@@ -1177,6 +1275,15 @@ namespace cl
         ConstBigIntView right =
             intlike_value_bigint_view(right_value, &right_storage);
         return Operator{}(thread, left, right);
+    }
+
+    template <typename Operator>
+    static Value trusted_intlike_bigint_unary_operator(ThreadState *thread,
+                                                       Value value)
+    {
+        SmiViewStorage storage;
+        ConstBigIntView view = intlike_value_bigint_view(value, &storage);
+        return Operator{}(thread, view);
     }
 
     template <typename Operator>
@@ -1279,6 +1386,78 @@ namespace cl
         }
         return resolve_trusted_int_bigint_binary_handler<NormalOperator>(
             vm, operand0_key, operand1_key);
+    }
+
+    template <typename SMIOperator, typename BigIntOperator>
+    static TrustedResolution resolve_trusted_int_smi_or_bigint_binary_handler(
+        VirtualMachine *vm, ShapeKey operand0_key, ShapeKey operand1_key)
+    {
+        if(is_smi_or_bool_shape_key(operand0_key) &&
+           is_smi_or_bool_shape_key(operand1_key))
+        {
+            return TrustedResolution::call_trusted(
+                trusted_intlike_intlike_operator<SMIOperator>);
+        }
+        if(is_intlike_shape_key(vm, operand0_key) &&
+           is_intlike_shape_key(vm, operand1_key))
+        {
+            return TrustedResolution::call_trusted(
+                trusted_intlike_bigint_operator<BigIntOperator>);
+        }
+        if((is_intlike_shape_key(vm, operand0_key) &&
+            is_float_shape_key(vm, operand1_key)) ||
+           (is_float_shape_key(vm, operand0_key) &&
+            is_intlike_shape_key(vm, operand1_key)))
+        {
+            return TrustedResolution::known_not_implemented_skip_method();
+        }
+        return TrustedResolution::no_trusted_handler_call_untrusted();
+    }
+
+    template <typename NormalSMIOperator, typename ReflectedSMIOperator,
+              typename NormalBigIntOperator, typename ReflectedBigIntOperator>
+    static TrustedResolution resolve_trusted_int_smi_or_bigint_binary_resolver(
+        VirtualMachine *vm, ShapeKey operand0_key, ShapeKey operand1_key,
+        TrustedHandlerOperandOrder order, TrustedHandlerArity requested_arity)
+    {
+        if(requested_arity != TrustedHandlerArity::Binary)
+        {
+            return TrustedResolution::no_trusted_handler_call_untrusted();
+        }
+        if(order == TrustedHandlerOperandOrder::Reflected)
+        {
+            return resolve_trusted_int_smi_or_bigint_binary_handler<
+                ReflectedSMIOperator, ReflectedBigIntOperator>(vm, operand0_key,
+                                                               operand1_key);
+        }
+        return resolve_trusted_int_smi_or_bigint_binary_handler<
+            NormalSMIOperator, NormalBigIntOperator>(vm, operand0_key,
+                                                     operand1_key);
+    }
+
+    template <typename SMIOperator, typename BigIntOperator>
+    static TrustedResolution resolve_trusted_int_smi_or_bigint_unary_handler(
+        VirtualMachine *vm, ShapeKey operand0_key, ShapeKey operand1_key,
+        TrustedHandlerOperandOrder order, TrustedHandlerArity requested_arity)
+    {
+        (void)operand1_key;
+        (void)order;
+
+        if(requested_arity != TrustedHandlerArity::Unary)
+        {
+            return TrustedResolution::no_trusted_handler_call_untrusted();
+        }
+        if(is_smi_or_bool_shape_key(operand0_key))
+        {
+            return TrustedResolution::call_trusted(
+                trusted_intlike_unary_operator<SMIOperator>);
+        }
+        if(is_intlike_shape_key(vm, operand0_key))
+        {
+            return TrustedResolution::call_trusted(
+                trusted_intlike_bigint_unary_operator<BigIntOperator>);
+        }
+        return TrustedResolution::no_trusted_handler_call_untrusted();
     }
 
     template <typename Operator>
@@ -1459,40 +1638,51 @@ namespace cl
                                                            IntRShiftOperator>),
             with_trusted_handler_resolver(
                 builtin_intrinsic_method(
-                    L"__and__", native_int_binary_operator<SMIAndOperator>,
+                    L"__and__",
+                    native_int_bigint_binary_operator<IntAndOperator>,
                     L"Return self & value."),
-                resolve_trusted_int_binary_resolver<SMIAndOperator,
-                                                    SMIRAndOperator>),
+                resolve_trusted_int_smi_or_bigint_binary_resolver<
+                    SMIAndOperator, SMIRAndOperator, IntAndOperator,
+                    IntRAndOperator>),
             with_trusted_handler_resolver(
                 builtin_intrinsic_method(
-                    L"__rand__", native_int_binary_operator<SMIRAndOperator>,
+                    L"__rand__",
+                    native_int_bigint_binary_operator<IntRAndOperator>,
                     L"Return value & self."),
-                resolve_trusted_int_binary_resolver<SMIRAndOperator,
-                                                    SMIAndOperator>),
+                resolve_trusted_int_smi_or_bigint_binary_resolver<
+                    SMIRAndOperator, SMIAndOperator, IntRAndOperator,
+                    IntAndOperator>),
             with_trusted_handler_resolver(
                 builtin_intrinsic_method(
-                    L"__xor__", native_int_binary_operator<SMIXorOperator>,
+                    L"__xor__",
+                    native_int_bigint_binary_operator<IntXorOperator>,
                     L"Return self ^ value."),
-                resolve_trusted_int_binary_resolver<SMIXorOperator,
-                                                    SMIRXorOperator>),
+                resolve_trusted_int_smi_or_bigint_binary_resolver<
+                    SMIXorOperator, SMIRXorOperator, IntXorOperator,
+                    IntRXorOperator>),
             with_trusted_handler_resolver(
                 builtin_intrinsic_method(
-                    L"__rxor__", native_int_binary_operator<SMIRXorOperator>,
+                    L"__rxor__",
+                    native_int_bigint_binary_operator<IntRXorOperator>,
                     L"Return value ^ self."),
-                resolve_trusted_int_binary_resolver<SMIRXorOperator,
-                                                    SMIXorOperator>),
+                resolve_trusted_int_smi_or_bigint_binary_resolver<
+                    SMIRXorOperator, SMIXorOperator, IntRXorOperator,
+                    IntXorOperator>),
             with_trusted_handler_resolver(
                 builtin_intrinsic_method(
-                    L"__or__", native_int_binary_operator<SMIOrOperator>,
+                    L"__or__", native_int_bigint_binary_operator<IntOrOperator>,
                     L"Return self | value."),
-                resolve_trusted_int_binary_resolver<SMIOrOperator,
-                                                    SMIROrOperator>),
+                resolve_trusted_int_smi_or_bigint_binary_resolver<
+                    SMIOrOperator, SMIROrOperator, IntOrOperator,
+                    IntROrOperator>),
             with_trusted_handler_resolver(
                 builtin_intrinsic_method(
-                    L"__ror__", native_int_binary_operator<SMIROrOperator>,
+                    L"__ror__",
+                    native_int_bigint_binary_operator<IntROrOperator>,
                     L"Return value | self."),
-                resolve_trusted_int_binary_resolver<SMIROrOperator,
-                                                    SMIOrOperator>),
+                resolve_trusted_int_smi_or_bigint_binary_resolver<
+                    SMIROrOperator, SMIOrOperator, IntROrOperator,
+                    IntOrOperator>),
             with_trusted_handler_resolver(
                 builtin_intrinsic_method(L"__neg__", native_int_neg,
                                          L"Return -self."),
@@ -1503,9 +1693,11 @@ namespace cl
                 resolve_trusted_int_unary_handler<SMIPosOperator>),
             with_trusted_handler_resolver(
                 builtin_intrinsic_method(
-                    L"__invert__", native_int_unary_operator<SMIInvertOperator>,
+                    L"__invert__",
+                    native_int_bigint_unary_operator<IntInvertOperator>,
                     L"Return ~self."),
-                resolve_trusted_int_unary_handler<SMIInvertOperator>),
+                resolve_trusted_int_smi_or_bigint_unary_handler<
+                    SMIInvertOperator, IntInvertOperator>),
         };
         unwrap_bootstrap_expected(
             vm,

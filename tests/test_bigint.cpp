@@ -634,6 +634,64 @@ TEST(BigInt, RightShiftUsesArithmeticFloorSemantics)
     EXPECT_EQ(Value::from_smi(-1), negative_large_shift.value());
 }
 
+TEST(BigInt, InvertUsesInfiniteTwosComplementSemantics)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation_scope(context.thread());
+    digit_t positive[] = {0, 0, 1};
+    digit_t negative[] = {0, 0, 1};
+
+    Expected<Value> positive_result =
+        bigint_invert(context.thread(), ConstBigIntView{3, 1, positive});
+    Expected<Value> negative_result =
+        bigint_invert(context.thread(), ConstBigIntView{3, -1, negative});
+
+    ASSERT_TRUE(positive_result.has_value());
+    ASSERT_TRUE(negative_result.has_value());
+    EXPECT_EQ(L"-18446744073709551617",
+              int_value_decimal(positive_result.value()));
+    EXPECT_EQ(L"18446744073709551615",
+              int_value_decimal(negative_result.value()));
+}
+
+TEST(BigInt, BitwiseOpsUseInfiniteTwosComplementSemantics)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation_scope(context.thread());
+    digit_t two_to_64[] = {0, 0, 1};
+    digit_t low_mask[] = {255};
+    digit_t negative_mask[] = {255};
+    digit_t small[] = {3};
+
+    Expected<Value> or_positive =
+        bigint_or(context.thread(), ConstBigIntView{3, 1, two_to_64},
+                  ConstBigIntView{1, 1, small});
+    Expected<Value> and_mixed =
+        bigint_and(context.thread(), ConstBigIntView{3, -1, two_to_64},
+                   ConstBigIntView{1, 1, low_mask});
+    Expected<Value> or_mixed =
+        bigint_or(context.thread(), ConstBigIntView{3, -1, two_to_64},
+                  ConstBigIntView{1, 1, low_mask});
+    Expected<Value> xor_mixed =
+        bigint_xor(context.thread(), ConstBigIntView{3, -1, two_to_64},
+                   ConstBigIntView{1, 1, low_mask});
+    Expected<Value> and_negative =
+        bigint_and(context.thread(), ConstBigIntView{3, -1, two_to_64},
+                   ConstBigIntView{1, -1, negative_mask});
+
+    ASSERT_TRUE(or_positive.has_value());
+    ASSERT_TRUE(and_mixed.has_value());
+    ASSERT_TRUE(or_mixed.has_value());
+    ASSERT_TRUE(xor_mixed.has_value());
+    ASSERT_TRUE(and_negative.has_value());
+    EXPECT_EQ(L"18446744073709551619", int_value_decimal(or_positive.value()));
+    EXPECT_EQ(Value::from_smi(0), and_mixed.value());
+    EXPECT_EQ(L"-18446744073709551361", int_value_decimal(or_mixed.value()));
+    EXPECT_EQ(L"-18446744073709551361", int_value_decimal(xor_mixed.value()));
+    EXPECT_EQ(L"-18446744073709551616",
+              int_value_decimal(and_negative.value()));
+}
+
 TEST(BigInt, CompareBigIntViewsUsesSignedMagnitude)
 {
     digit_t one[] = {1};

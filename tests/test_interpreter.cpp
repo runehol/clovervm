@@ -7613,6 +7613,25 @@ TEST(Interpreter, bigint_shift_values)
                   .return_value);
 }
 
+TEST(Interpreter, bigint_bitwise_values)
+{
+    expect_string_result(L"str(~int('18446744073709551616'))\n",
+                         L"-18446744073709551617");
+    expect_string_result(L"str(~-int('18446744073709551616'))\n",
+                         L"18446744073709551615");
+    expect_string_result(L"str(int('18446744073709551616') | 3)\n",
+                         L"18446744073709551619");
+    EXPECT_EQ(
+        Value::from_smi(0),
+        test::FileRunner(L"-int('18446744073709551616') & 255\n").return_value);
+    expect_string_result(L"str(-int('18446744073709551616') | 255)\n",
+                         L"-18446744073709551361");
+    expect_string_result(L"str(-int('18446744073709551616') ^ 255)\n",
+                         L"-18446744073709551361");
+    expect_string_result(L"str(-int('18446744073709551616') & -255)\n",
+                         L"-18446744073709551616");
+}
+
 TEST(Interpreter, add_overflow_promotes_to_bigint)
 {
     expect_string_result(L"str(288230376151711743 + 1)\n",
