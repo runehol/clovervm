@@ -700,7 +700,14 @@ namespace cl
         {
             if(unlikely(value == value_smi_min))
             {
-                return int_overflow_error(thread);
+                SmiBigInt smi_bigint(value);
+                Expected<Value> result =
+                    bigint_negate(thread, smi_bigint.view());
+                if(result.has_exception())
+                {
+                    return Value::exception_marker();
+                }
+                return result.value();
             }
             return Value::from_smi(-value);
         }
@@ -825,6 +832,46 @@ namespace cl
         }
 
         return Operator{}(thread, value);
+    }
+
+    static Value native_int_neg(ThreadState *thread, Value self)
+    {
+        int64_t value;
+        if(try_get_smi_or_bool(self, &value))
+        {
+            return SMINegOperator{}(thread, value);
+        }
+        if(can_convert_to<BigInt>(self))
+        {
+            BigInt *bigint = assume_convert_to<BigInt>(self);
+            Expected<Value> result = bigint_negate(thread, bigint->view());
+            if(result.has_exception())
+            {
+                return Value::exception_marker();
+            }
+            return result.value();
+        }
+        return thread->set_pending_builtin_exception_string(
+            L"TypeError", SMINegOperator::receiver_error);
+    }
+
+    static Value native_int_pos(ThreadState *thread, Value self)
+    {
+        (void)thread;
+        if(self.is_smi() || can_convert_to<BigInt>(self))
+        {
+            return self;
+        }
+        if(self == Value::True())
+        {
+            return Value::from_smi(1);
+        }
+        if(self == Value::False())
+        {
+            return Value::from_smi(0);
+        }
+        return thread->set_pending_builtin_exception_string(
+            L"TypeError", SMIPosOperator::receiver_error);
     }
 
     template <typename Operator>
@@ -1139,14 +1186,12 @@ namespace cl
                 resolve_trusted_int_binary_resolver<SMIROrOperator,
                                                     SMIOrOperator>),
             with_trusted_handler_resolver(
-                builtin_intrinsic_method(
-                    L"__neg__", native_int_unary_operator<SMINegOperator>,
-                    L"Return -self."),
+                builtin_intrinsic_method(L"__neg__", native_int_neg,
+                                         L"Return -self."),
                 resolve_trusted_int_unary_handler<SMINegOperator>),
             with_trusted_handler_resolver(
-                builtin_intrinsic_method(
-                    L"__pos__", native_int_unary_operator<SMIPosOperator>,
-                    L"Return +self."),
+                builtin_intrinsic_method(L"__pos__", native_int_pos,
+                                         L"Return +self."),
                 resolve_trusted_int_unary_handler<SMIPosOperator>),
             with_trusted_handler_resolver(
                 builtin_intrinsic_method(

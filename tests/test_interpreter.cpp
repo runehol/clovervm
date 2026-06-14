@@ -1138,6 +1138,16 @@ TEST(Interpreter, integer_literal_can_be_bigint)
                   L"288_230_376_151_711_744 == int('288230376151711744')\n"));
 }
 
+TEST(Interpreter, negative_integer_literal_can_be_bigint)
+{
+    test::VmTestContext context;
+
+    Value literal = context.run_file(L"-288230376151711745\n");
+    ASSERT_TRUE(can_convert_to<BigInt>(literal));
+    expect_string_value(context.run_file(L"str(-288230376151711745)\n"),
+                        L"-288230376151711745");
+}
+
 TEST(Interpreter, bigint_comparison_values)
 {
     EXPECT_EQ(Value::True(),
@@ -7533,7 +7543,18 @@ TEST(Interpreter, negate_overflow)
     Value actual = file_runner.return_value;
     EXPECT_EQ(expected, actual);
 
-    expect_python_error(L"x = -288230376151711743 - 1\n"
-                        L"-x\n",
-                        L"OverflowError", L"integer overflow");
+    test::VmTestContext context;
+    Value promoted = context.run_file(L"x = -288230376151711743 - 1\n"
+                                      L"-x\n");
+    ASSERT_TRUE(can_convert_to<BigInt>(promoted));
+    expect_string_value(context.run_file(L"x = -288230376151711743 - 1\n"
+                                         L"str(-x)\n"),
+                        L"288230376151711744");
+}
+
+TEST(Interpreter, unary_plus_accepts_bigint_and_bool)
+{
+    expect_string_result(L"str(+int('288230376151711744'))\n",
+                         L"288230376151711744");
+    EXPECT_EQ(Value::from_smi(1), test::FileRunner(L"+True\n").return_value);
 }

@@ -243,6 +243,31 @@ TEST(BigInt, BigIntToInt64RejectsOverflow)
                              L"integer overflow");
 }
 
+TEST(BigInt, BigIntNegateFinalizesToSmiOrHeapBigInt)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation_scope(context.thread());
+    digit_t small_digits[] = {1};
+    digit_t large_digits[] = {0, 0, 1};
+
+    Expected<Value> small =
+        bigint_negate(context.thread(), ConstBigIntView{1, -1, small_digits});
+    Expected<Value> large =
+        bigint_negate(context.thread(), ConstBigIntView{3, 1, large_digits});
+
+    ASSERT_TRUE(small.has_value());
+    EXPECT_EQ(Value::from_smi(1), small.value());
+    ASSERT_TRUE(large.has_value());
+    ASSERT_TRUE(can_convert_to<BigInt>(large.value()));
+    BigInt *bigint = assume_convert_to<BigInt>(large.value());
+    ConstBigIntView view = bigint->view();
+    EXPECT_EQ(3u, view.n_digits);
+    EXPECT_EQ(-1, view.signum);
+    EXPECT_EQ(0u, view.digits[0]);
+    EXPECT_EQ(0u, view.digits[1]);
+    EXPECT_EQ(1u, view.digits[2]);
+}
+
 TEST(BigInt, DecimalStringFormatsZero)
 {
     digit_t digits[] = {0};

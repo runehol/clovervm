@@ -261,6 +261,14 @@ namespace cl
         return Expected<int64_t>::ok(-static_cast<int64_t>(magnitude));
     }
 
+    Expected<Value> bigint_negate(ThreadState *thread, ConstBigIntView view)
+    {
+        assert(is_normalized_bigint_view(view));
+        ConstBigIntView negated{
+            view.n_digits, static_cast<signum_t>(-view.signum), view.digits};
+        return finalize_bigint(thread, negated);
+    }
+
     static void set_zero(MutableBigIntView *dest)
     {
         dest->n_digits = 0;

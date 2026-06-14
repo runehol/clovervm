@@ -55,7 +55,7 @@ design rationale and semantic boundaries live in [BigInt Design](bigint.md).
       `BigIntScratch` destination storage.
 - [x] Implement BigInt subtraction kernels.
 - [x] Implement BigInt multiplication kernels.
-- [ ] Implement unary plus and unary negation.
+- [x] Implement unary plus and unary negation.
 - [ ] Update non-trusted builtin int dunder methods for bool, SMI, and BigInt
       operand combinations.
 - [ ] Update trusted builtin int handlers for bool, SMI, and BigInt operand
