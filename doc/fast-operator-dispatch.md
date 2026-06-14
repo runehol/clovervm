@@ -642,6 +642,40 @@ normal_first:
 There is no in-place ternary table. `**=` is a binary augmented assignment and
 uses `__ipow__(operand1)` before falling back to binary `__pow__`/`__rpow__`.
 
+### Subscription Operators
+
+Subscription load, store, and delete use receiver-owned operator tables. These
+tables are not reflected: lookup is only against `type(operand0)`, where
+operand0 is the subscription receiver.
+
+Templates:
+
+```text
+GetItem
+    0: CallBinary("__getitem__", IfMethodFound)
+    1: RaiseUnsupported(Always)
+
+SetItem
+    0: CallTernary("__setitem__", IfMethodFound)
+    1: RaiseUnsupported(Always)
+
+DelItem
+    0: CallBinary("__delitem__", IfMethodFound)
+    1: RaiseUnsupported(Always)
+```
+
+`GetItem` and `DelItem` call with semantic operands `(receiver, key)`.
+`SetItem` calls with semantic operands `(receiver, key, value)`. The cache
+guards for all three tables are receiver shape and key shape only. For
+`SetItem`, the value operand is saved runtime call/continuation state and is
+not a cache key.
+
+Because these tables are receiver-owned, their opcode caches use direct
+cacheability: cache validation checks the receiver lookup validity cell, but
+does not depend on key-class lookup validity. This differs from reflectable
+binary arithmetic tables, whose row applicability may inspect both operand
+classes and therefore guards both lookup validity cells.
+
 ### Rich Comparisons
 
 Rich comparisons use binary call actions but comparison-specific reflected
@@ -910,6 +944,12 @@ inspected either operand while checking applicability, reflected priority,
 skipped rows, or the selected method. If either operand's shape changes, or
 either operand-side validity cell is invalidated, the opcode misses and walks
 the table again from row `0`.
+
+For direct receiver-owned table caches such as `GetItem`, `SetItem`, and
+`DelItem`, validation guards operand0 and operand1 shape keys but only the
+operand0 lookup validity cell. Operand1 participates as call data and as a
+shape guard for trusted handlers, but its class/MRO lookup state is not part of
+receiver-owned method selection.
 
 Lookup, binding, and call-validation exceptions must not install cache entries.
 Once a row-`0` walk has selected a cacheable trusted handler or function-shaped

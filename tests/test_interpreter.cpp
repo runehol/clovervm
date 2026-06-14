@@ -1579,16 +1579,25 @@ TEST(Interpreter, builtin_pow_uses_ternary_dispatch_for_modulo)
 {
     test::VmTestContext test_context;
 
-    EXPECT_EQ(Value::from_smi(44),
+    EXPECT_EQ(Value::from_smi(305),
               test_context.run_file(L"class Left:\n"
                                     L"    def __pow__(self, other, modulo):\n"
-                                    L"        return 44\n"
+                                    L"        return other * 100 + modulo\n"
                                     L"pow(Left(), 3, 5)\n"));
     EXPECT_EQ(Value::from_smi(45),
               test_context.run_file(L"class Right:\n"
                                     L"    def __rpow__(self, other, modulo):\n"
                                     L"        return 45\n"
                                     L"pow(2, Right(), 5)\n"));
+}
+
+TEST(Interpreter, builtin_pow_with_modulo_rejects_binary_only_pow)
+{
+    expect_python_error(L"class Left:\n"
+                        L"    def __pow__(self, other):\n"
+                        L"        return 42\n"
+                        L"pow(Left(), 3, 5)\n",
+                        L"TypeError", L"wrong number of arguments");
 }
 
 TEST(Interpreter, true_division_values)
