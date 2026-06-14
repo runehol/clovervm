@@ -1,6 +1,11 @@
 #include "builtin_types/bigint.h"
 
+#include "runtime/exception_object.h"
+#include "runtime/thread_state.h"
+#include "test_helpers.h"
+
 #include <gtest/gtest.h>
+#include <limits>
 
 using namespace cl;
 
@@ -18,6 +23,23 @@ namespace
         EXPECT_EQ(expected_n_digits, view.n_digits);
         EXPECT_EQ(expected_digit0, view.digits[0]);
         EXPECT_EQ(expected_digit1, view.digits[1]);
+    }
+
+    void expect_pending_exception(ThreadState *thread,
+                                  const wchar_t *class_name,
+                                  const wchar_t *message)
+    {
+        ASSERT_TRUE(thread->has_pending_exception());
+        ASSERT_EQ(PendingExceptionKind::Object,
+                  thread->pending_exception_kind());
+        TValue<Exception> exception = thread->pending_exception_object();
+        EXPECT_STREQ(class_name, exception.extract()
+                                     ->get_shape()
+                                     ->get_class()
+                                     ->get_name()
+                                     .extract()
+                                     ->data);
+        EXPECT_STREQ(message, exception.extract()->message.extract()->data);
     }
 }  // namespace
 
@@ -74,4 +96,143 @@ TEST(BigInt, ScratchUsesOverflowStorageForLargeCapacity)
     EXPECT_EQ(16u, mutable_view.capacity);
     EXPECT_EQ(0u, mutable_view.n_digits);
     ASSERT_NE(nullptr, mutable_view.digits);
+}
+
+TEST(BigInt, NormalizeTrimsHighZeroDigits)
+{
+    digit_t digits[] = {7, 0, 0};
+
+    ConstBigIntView view = normalize_bigint_view(ConstBigIntView{3, 1, digits});
+
+    EXPECT_EQ(1u, view.n_digits);
+    EXPECT_EQ(1, view.signum);
+    EXPECT_EQ(digits, view.digits);
+}
+
+TEST(BigInt, NormalizeCanonicalizesZero)
+{
+    digit_t digits[] = {0, 0};
+
+    ConstBigIntView view =
+        normalize_bigint_view(ConstBigIntView{2, -1, digits});
+
+    EXPECT_EQ(0u, view.n_digits);
+    EXPECT_EQ(0, view.signum);
+    EXPECT_EQ(digits, view.digits);
+}
+
+TEST(BigInt, FinalizeReturnsSmiForSmallAndTrimmedValues)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation_scope(context.thread());
+    digit_t digits[] = {123, 0, 0};
+
+    Expected<Value> value =
+        finalize_bigint(context.thread(), ConstBigIntView{3, 1, digits});
+
+    ASSERT_TRUE(value.has_value());
+    EXPECT_EQ(Value::from_smi(123), value.value());
+}
+
+TEST(BigInt, BigIntToSmiConvertsTrimmedValue)
+{
+    digit_t digits[] = {123, 0, 0};
+
+    Expected<TValue<SMI>> value = bigint_to_smi(ConstBigIntView{3, 1, digits});
+
+    ASSERT_TRUE(value.has_value());
+    EXPECT_EQ(Value::from_smi(123), value.value().raw_value());
+}
+
+TEST(BigInt, BigIntToSmiRejectsOverflow)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation_scope(context.thread());
+    uint64_t magnitude = static_cast<uint64_t>(value_smi_max) + 1;
+    digit_t digits[] = {static_cast<digit_t>(magnitude),
+                        static_cast<digit_t>(magnitude >> 32)};
+
+    Expected<TValue<SMI>> value = bigint_to_smi(ConstBigIntView{2, 1, digits});
+
+    EXPECT_TRUE(value.has_exception());
+    expect_pending_exception(context.thread(), L"OverflowError",
+                             L"integer overflow");
+}
+
+TEST(BigInt, FinalizeReturnsHeapBigIntForNonSmiMagnitude)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation_scope(context.thread());
+    uint64_t magnitude = static_cast<uint64_t>(value_smi_max) + 1;
+    digit_t digits[] = {static_cast<digit_t>(magnitude),
+                        static_cast<digit_t>(magnitude >> 32)};
+
+    Expected<Value> value =
+        finalize_bigint(context.thread(), ConstBigIntView{2, 1, digits});
+
+    ASSERT_TRUE(value.has_value());
+    ASSERT_TRUE(can_convert_to<BigInt>(value.value()));
+    BigInt *bigint = assume_convert_to<BigInt>(value.value());
+    ConstBigIntView view = bigint->view();
+    EXPECT_EQ(2u, view.n_digits);
+    EXPECT_EQ(1, view.signum);
+    EXPECT_EQ(digits[0], view.digits[0]);
+    EXPECT_EQ(digits[1], view.digits[1]);
+    EXPECT_NE(digits, view.digits);
+}
+
+TEST(BigInt, BigIntFromInt64FinalizesToSmiWhenPossible)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation_scope(context.thread());
+
+    Expected<Value> value = bigint_from_int64(context.thread(), value_smi_min);
+
+    ASSERT_TRUE(value.has_value());
+    EXPECT_EQ(Value::from_smi(value_smi_min), value.value());
+}
+
+TEST(BigInt, BigIntFromInt64CanProduceHeapBigInt)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation_scope(context.thread());
+
+    Expected<Value> value = bigint_from_int64(
+        context.thread(), std::numeric_limits<int64_t>::min());
+
+    ASSERT_TRUE(value.has_value());
+    ASSERT_TRUE(can_convert_to<BigInt>(value.value()));
+    BigInt *bigint = assume_convert_to<BigInt>(value.value());
+    ConstBigIntView view = bigint->view();
+    EXPECT_EQ(2u, view.n_digits);
+    EXPECT_EQ(-1, view.signum);
+    EXPECT_EQ(0u, view.digits[0]);
+    EXPECT_EQ(0x80000000u, view.digits[1]);
+}
+
+TEST(BigInt, BigIntToInt64ConvertsSignedBoundaryValues)
+{
+    digit_t max_digits[] = {0xffffffffu, 0x7fffffffu};
+    digit_t min_digits[] = {0, 0x80000000u};
+
+    Expected<int64_t> max = bigint_to_int64(ConstBigIntView{2, 1, max_digits});
+    Expected<int64_t> min = bigint_to_int64(ConstBigIntView{2, -1, min_digits});
+
+    ASSERT_TRUE(max.has_value());
+    ASSERT_TRUE(min.has_value());
+    EXPECT_EQ(std::numeric_limits<int64_t>::max(), max.value());
+    EXPECT_EQ(std::numeric_limits<int64_t>::min(), min.value());
+}
+
+TEST(BigInt, BigIntToInt64RejectsOverflow)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation_scope(context.thread());
+    digit_t digits[] = {0, 0, 1};
+
+    Expected<int64_t> value = bigint_to_int64(ConstBigIntView{3, 1, digits});
+
+    EXPECT_TRUE(value.has_exception());
+    expect_pending_exception(context.thread(), L"OverflowError",
+                             L"integer overflow");
 }

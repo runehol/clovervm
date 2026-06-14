@@ -3,6 +3,7 @@
 
 #include "object_model/class_object.h"
 #include "object_model/object.h"
+#include "object_model/typed_value.h"
 #include "object_model/value.h"
 
 #include <cassert>
@@ -130,6 +131,13 @@ namespace cl
     BigInt *make_uninitialized_bigint_for_digits(ThreadState *thread,
                                                  uint32_t n_digits,
                                                  signum_t signum);
+    ConstBigIntView normalize_bigint_view(ConstBigIntView view);
+    [[nodiscard]] Expected<TValue<SMI>> bigint_to_smi(ConstBigIntView view);
+    [[nodiscard]] Expected<Value> finalize_bigint(ThreadState *thread,
+                                                  ConstBigIntView view);
+    [[nodiscard]] Expected<Value> bigint_from_int64(ThreadState *thread,
+                                                    int64_t value);
+    [[nodiscard]] Expected<int64_t> bigint_to_int64(ConstBigIntView view);
 
 }  // namespace cl
 
