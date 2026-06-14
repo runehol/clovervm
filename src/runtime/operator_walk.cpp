@@ -236,7 +236,6 @@ namespace cl
             vm->operator_dispatch_table(table_id);
         ShapeKey operand0_shape_key = ShapeKey::from_value(operand0);
         ShapeKey operand1_shape_key = ShapeKey::from_value(operand1);
-        ShapeKey operand2_shape_key = ShapeKey::from_value(operand2);
 
         uint32_t index = start_index;
         while(index < table.n_steps)
@@ -343,7 +342,6 @@ namespace cl
                             TrustedResolution resolution =
                                 target_code_object->trusted_handler_resolver(
                                     vm, operand0_shape_key, operand1_shape_key,
-                                    operand2_shape_key,
                                     TrustedHandlerOperandOrder::Normal,
                                     TrustedHandlerArity::Unary);
                             switch(resolution.kind)
@@ -469,7 +467,6 @@ namespace cl
                             TrustedResolution resolution =
                                 target_code_object->trusted_handler_resolver(
                                     vm, operand0_shape_key, operand1_shape_key,
-                                    operand2_shape_key,
                                     trusted_handler_operand_order_for(
                                         operand_order),
                                     TrustedHandlerArity::Binary);

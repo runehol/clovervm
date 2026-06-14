@@ -605,13 +605,9 @@ namespace cl
     }
 
     template <typename Operator>
-    static TrustedResolution
-    resolve_trusted_int_binary_handler(VirtualMachine *vm,
-                                       ShapeKey operand0_key,
-                                       ShapeKey operand1_key, ShapeKey unused)
+    static TrustedResolution resolve_trusted_int_binary_handler(
+        VirtualMachine *vm, ShapeKey operand0_key, ShapeKey operand1_key)
     {
-        (void)unused;
-
         if(is_smi_or_bool_shape_key(operand0_key) &&
            is_smi_or_bool_shape_key(operand1_key))
         {
@@ -631,8 +627,7 @@ namespace cl
     template <typename NormalOperator, typename ReflectedOperator>
     static TrustedResolution resolve_trusted_int_binary_resolver(
         VirtualMachine *vm, ShapeKey operand0_key, ShapeKey operand1_key,
-        ShapeKey operand2_key, TrustedHandlerOperandOrder order,
-        TrustedHandlerArity requested_arity)
+        TrustedHandlerOperandOrder order, TrustedHandlerArity requested_arity)
     {
         if(requested_arity != TrustedHandlerArity::Binary)
         {
@@ -641,21 +636,19 @@ namespace cl
         if(order == TrustedHandlerOperandOrder::Reflected)
         {
             return resolve_trusted_int_binary_handler<ReflectedOperator>(
-                vm, operand0_key, operand1_key, operand2_key);
+                vm, operand0_key, operand1_key);
         }
         return resolve_trusted_int_binary_handler<NormalOperator>(
-            vm, operand0_key, operand1_key, operand2_key);
+            vm, operand0_key, operand1_key);
     }
 
     template <typename Operator>
     static TrustedResolution resolve_trusted_int_unary_handler(
         VirtualMachine *vm, ShapeKey operand0_key, ShapeKey operand1_key,
-        ShapeKey operand2_key, TrustedHandlerOperandOrder order,
-        TrustedHandlerArity requested_arity)
+        TrustedHandlerOperandOrder order, TrustedHandlerArity requested_arity)
     {
         (void)vm;
         (void)operand1_key;
-        (void)operand2_key;
         (void)order;
 
         if(requested_arity != TrustedHandlerArity::Unary)

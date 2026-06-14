@@ -231,10 +231,8 @@ namespace cl
 
     static TrustedResolution resolve_trusted_dict_getitem_handler(
         VirtualMachine *vm, ShapeKey container_key, ShapeKey key_key,
-        ShapeKey unused, TrustedHandlerOperandOrder order,
-        TrustedHandlerArity requested_arity)
+        TrustedHandlerOperandOrder order, TrustedHandlerArity requested_arity)
     {
-        (void)unused;
         assert(order == TrustedHandlerOperandOrder::Normal);
         if(requested_arity != TrustedHandlerArity::Binary)
         {
@@ -250,10 +248,8 @@ namespace cl
 
     static TrustedResolution resolve_trusted_dict_setitem_handler(
         VirtualMachine *vm, ShapeKey container_key, ShapeKey key_key,
-        ShapeKey unused, TrustedHandlerOperandOrder order,
-        TrustedHandlerArity requested_arity)
+        TrustedHandlerOperandOrder order, TrustedHandlerArity requested_arity)
     {
-        (void)unused;
         assert(order == TrustedHandlerOperandOrder::Normal);
         if(requested_arity != TrustedHandlerArity::Ternary)
         {
@@ -269,10 +265,8 @@ namespace cl
 
     static TrustedResolution resolve_trusted_dict_delitem_handler(
         VirtualMachine *vm, ShapeKey container_key, ShapeKey key_key,
-        ShapeKey unused, TrustedHandlerOperandOrder order,
-        TrustedHandlerArity requested_arity)
+        TrustedHandlerOperandOrder order, TrustedHandlerArity requested_arity)
     {
-        (void)unused;
         assert(order == TrustedHandlerOperandOrder::Normal);
         if(requested_arity != TrustedHandlerArity::Binary)
         {

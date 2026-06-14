@@ -34,17 +34,17 @@ Rationale:
   shape.
 - ternary power is rare, and useful modulo specializations are expected to be
   integer-family cases where handlers can inspect the actual modulo value.
-- trusted ternary handlers must not depend on operand2 shape for cache
-  validity. If such a specialization is ever needed, it should be added as a
-  deliberate cache design extension rather than an accidental third guard.
+- trusted ternary handlers must not depend on operand2 shape. If such a
+  specialization is ever needed, it should be added as a deliberate cache
+  design extension rather than an accidental third guard.
 
 Implementation:
 
 - remove `operand_shape_keys[2]` from `OperatorInlineCache`;
 - make ternary cache matching compare only operand0 and operand1;
 - keep operand2 as saved continuation/call state;
-- keep passing transient operand2 values or shape keys to slow-path resolver
-  code when needed, but do not store operand2 shape in cache entries.
+- remove operand2 shape from the trusted resolver contract so resolvers cannot
+  accidentally specialize on it.
 
 ## Stage 2: Ternary Continuation Read Support
 

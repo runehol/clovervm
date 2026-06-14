@@ -153,10 +153,8 @@ namespace cl
 
     static TrustedResolution resolve_trusted_tuple_getitem_handler(
         VirtualMachine *vm, ShapeKey container_key, ShapeKey key_key,
-        ShapeKey unused, TrustedHandlerOperandOrder order,
-        TrustedHandlerArity requested_arity)
+        TrustedHandlerOperandOrder order, TrustedHandlerArity requested_arity)
     {
-        (void)unused;
         assert(order == TrustedHandlerOperandOrder::Normal);
         if(requested_arity != TrustedHandlerArity::Binary)
         {

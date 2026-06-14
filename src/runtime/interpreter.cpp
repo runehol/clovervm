@@ -2781,7 +2781,7 @@ namespace cl
             {
                 TrustedResolution resolution =
                     target_code_object->trusted_handler_resolver(
-                        vm, receiver_shape_key, key_shape_key, ShapeKey{},
+                        vm, receiver_shape_key, key_shape_key,
                         TrustedHandlerOperandOrder::Normal,
                         TrustedHandlerArity::Binary);
                 if(resolution.kind == TrustedResolutionKind::TrustedHandler)
@@ -2893,7 +2893,6 @@ namespace cl
         Value value = fp[value_reg];
         ShapeKey receiver_shape_key = ShapeKey::from_value(receiver);
         ShapeKey key_shape_key = ShapeKey::from_value(key);
-        ShapeKey value_shape_key = ShapeKey::from_value(value);
         VirtualMachine *vm = thread->get_machine();
         TValue<String> method_name =
             vm->get_or_create_interned_string_value(L"__setitem__");
@@ -2957,7 +2956,7 @@ namespace cl
             {
                 TrustedResolution resolution =
                     target_code_object->trusted_handler_resolver(
-                        vm, receiver_shape_key, key_shape_key, value_shape_key,
+                        vm, receiver_shape_key, key_shape_key,
                         TrustedHandlerOperandOrder::Normal,
                         TrustedHandlerArity::Ternary);
                 if(resolution.kind == TrustedResolutionKind::TrustedHandler)
@@ -3138,7 +3137,7 @@ namespace cl
             {
                 TrustedResolution resolution =
                     target_code_object->trusted_handler_resolver(
-                        vm, receiver_shape_key, key_shape_key, ShapeKey{},
+                        vm, receiver_shape_key, key_shape_key,
                         TrustedHandlerOperandOrder::Normal,
                         TrustedHandlerArity::Binary);
                 if(resolution.kind == TrustedResolutionKind::TrustedHandler)

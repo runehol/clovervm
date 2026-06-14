@@ -260,7 +260,7 @@ namespace cl
     };
 
     using TrustedHandlerResolver =
-        TrustedResolution (*)(VirtualMachine *, ShapeKey, ShapeKey, ShapeKey,
+        TrustedResolution (*)(VirtualMachine *, ShapeKey, ShapeKey,
                               TrustedHandlerOperandOrder, TrustedHandlerArity);
 
     union NativeFunctionTarget

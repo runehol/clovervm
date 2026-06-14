@@ -283,9 +283,10 @@ enum class TrustedHandlerOperandOrder
     Reflected,
 };
 
-using TrustedHandlerResolver = TrustedHandler (*)(
+using TrustedHandlerResolver = TrustedResolution (*)(
     VirtualMachine *, ShapeKey operand0_key, ShapeKey operand1_key,
-    ShapeKey operand2_key, TrustedHandlerOperandOrder selected_order);
+    TrustedHandlerOperandOrder selected_order,
+    TrustedHandlerArity requested_arity);
 ```
 
 The selected builtin code object or VM method metadata may carry a resolver.
@@ -296,7 +297,10 @@ Resolvers receive shape keys in the opcode's semantic operand order.
 `selected_order` tells the resolver whether the selected Python method was the
 normal method or the reflected/converse method. The resolver uses that to return
 a trusted handler normalized to semantic operand order; a trusted handler itself
-does not carry a reflected-call bit.
+does not carry a reflected-call bit. `requested_arity` tells the resolver which
+handler ABI the current opcode will call. Ternary protocols do not pass
+operand2's shape to resolvers; operand2 is runtime call state and must not be a
+trusted-handler cache key.
 
 ## Continuation Opcode
 

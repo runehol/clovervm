@@ -291,10 +291,8 @@ namespace cl
     template <typename Operator>
     static TrustedResolution
     resolve_trusted_str_str_handler(VirtualMachine *vm, ShapeKey operand0_key,
-                                    ShapeKey operand1_key, ShapeKey unused)
+                                    ShapeKey operand1_key)
     {
-        (void)unused;
-
         ShapeKey str_key = ShapeKey::from_shape(vm->str_instance_root_shape());
         if(operand0_key == str_key && operand1_key == str_key)
         {
@@ -305,11 +303,9 @@ namespace cl
     }
 
     template <typename NormalOperator, typename ReflectedOperator>
-    static TrustedResolution
-    resolve_trusted_str_str_resolver(VirtualMachine *vm, ShapeKey operand0_key,
-                                     ShapeKey operand1_key, ShapeKey unused,
-                                     TrustedHandlerOperandOrder order,
-                                     TrustedHandlerArity requested_arity)
+    static TrustedResolution resolve_trusted_str_str_resolver(
+        VirtualMachine *vm, ShapeKey operand0_key, ShapeKey operand1_key,
+        TrustedHandlerOperandOrder order, TrustedHandlerArity requested_arity)
     {
         if(requested_arity != TrustedHandlerArity::Binary)
         {
@@ -318,10 +314,10 @@ namespace cl
         if(order == TrustedHandlerOperandOrder::Reflected)
         {
             return resolve_trusted_str_str_handler<ReflectedOperator>(
-                vm, operand0_key, operand1_key, unused);
+                vm, operand0_key, operand1_key);
         }
-        return resolve_trusted_str_str_handler<NormalOperator>(
-            vm, operand0_key, operand1_key, unused);
+        return resolve_trusted_str_str_handler<NormalOperator>(vm, operand0_key,
+                                                               operand1_key);
     }
 
     static Value require_str_receiver(Value self, const wchar_t *method_name)
@@ -426,10 +422,8 @@ namespace cl
 
     static TrustedResolution resolve_trusted_str_getitem_handler(
         VirtualMachine *vm, ShapeKey container_key, ShapeKey key_key,
-        ShapeKey unused, TrustedHandlerOperandOrder order,
-        TrustedHandlerArity requested_arity)
+        TrustedHandlerOperandOrder order, TrustedHandlerArity requested_arity)
     {
-        (void)unused;
         assert(order == TrustedHandlerOperandOrder::Normal);
         if(requested_arity != TrustedHandlerArity::Binary)
         {
