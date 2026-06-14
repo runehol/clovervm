@@ -3331,12 +3331,50 @@ TEST(Interpreter, subscript_store_replaces_cache_for_different_key_shape)
     ASSERT_NE(nullptr, cache.operand_lookup_validity_cells[0]);
     EXPECT_EQ(nullptr, cache.operand_lookup_validity_cells[1]);
     EXPECT_EQ(ShapeKey::from_value(Value::None()), cache.operand_shape_keys[1]);
-    EXPECT_EQ(ShapeKey::from_value(Value::from_smi(11)),
-              cache.operand_shape_keys[2]);
     ASSERT_NE(nullptr, cache.function);
     EXPECT_EQ(3u, cache.n_args);
     EXPECT_TRUE(cache.has_self);
     EXPECT_EQ(FunctionCallAdaptation::FixedArity, cache.adaptation);
+}
+
+TEST(Interpreter, subscript_store_cache_ignores_value_shape)
+{
+    test::VmTestContext test_context;
+    ThreadState::ActivationScope activation_scope(test_context.thread());
+
+    TValue<String> function_name(
+        test_context.vm().get_or_create_interned_string_value(L"set_item"));
+    CodeObject *code_obj =
+        test_context.compile_file(L"class Bag:\n"
+                                  L"    def __init__(self):\n"
+                                  L"        self.total = 0\n"
+                                  L"    def __setitem__(self, key, value):\n"
+                                  L"        if value is None:\n"
+                                  L"            self.total += key\n"
+                                  L"        else:\n"
+                                  L"            self.total += value\n"
+                                  L"def set_item(obj, key, value):\n"
+                                  L"    obj[key] = value\n"
+                                  L"bag = Bag()\n"
+                                  L"set_item(bag, 1, 7)\n"
+                                  L"set_item(bag, 2, None)\n"
+                                  L"bag.total\n");
+
+    Value actual = test_context.thread()->run_clovervm_code_object(code_obj);
+    EXPECT_EQ(Value::from_smi(9), actual);
+
+    Value function_value =
+        load_global_from_module_for_test(code_obj, function_name);
+    ASSERT_TRUE(can_convert_to<Function>(function_value));
+    CodeObject *function_code =
+        assume_convert_to<Function>(function_value)->code_object.extract();
+    ASSERT_EQ(1u, function_code->operator_caches.size());
+    const OperatorInlineCache &cache = function_code->operator_caches[0];
+    ASSERT_NE(nullptr, cache.operand_lookup_validity_cells[0]);
+    EXPECT_EQ(ShapeKey::from_value(Value::from_smi(0)),
+              cache.operand_shape_keys[1]);
+    ASSERT_NE(nullptr, cache.function);
+    EXPECT_EQ(3u, cache.n_args);
 }
 
 TEST(Interpreter, subscript_delete_calls_user_defined_dunder_delitem)

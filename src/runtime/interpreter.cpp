@@ -2912,8 +2912,7 @@ namespace cl
         {
             cache.populate_operand0_method_lookup_validity(receiver,
                                                            descriptor);
-            cache.populate_ternary_shapes(receiver_shape_key, key_shape_key,
-                                          value_shape_key);
+            cache.populate_binary_shapes(receiver_shape_key, key_shape_key);
         }
         if(unlikely(target_status == MethodCallTargetStatus::Missing))
         {
@@ -3044,7 +3043,7 @@ namespace cl
         Value key = accumulator;
         Value value = fp[value_reg];
         OperatorInlineCache &cache = code_object->operator_caches[cache_idx];
-        if(unlikely(!cache.matches_ternary(receiver, key, value)))
+        if(unlikely(!cache.matches_ternary(receiver, key)))
         {
             MUSTTAIL return op_set_item_cache_miss(ARGS);
         }

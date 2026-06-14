@@ -43,15 +43,13 @@ namespace cl
         static OperatorWalkDescriptor call_untrusted_function(
             OperatorStepAction action, uint32_t resume_index,
             OperatorOperandOrder operand_order, ShapeKey operand0_shape_key,
-            ShapeKey operand1_shape_key, ShapeKey operand2_shape_key,
-            TValue<Function> function, uint32_t n_args,
-            FunctionCallAdaptation adaptation, bool has_self,
+            ShapeKey operand1_shape_key, TValue<Function> function,
+            uint32_t n_args, FunctionCallAdaptation adaptation, bool has_self,
             ValidityCell *operand0_lookup_validity_cell,
             ValidityCell *operand1_lookup_validity_cell);
         static OperatorWalkDescriptor call_trusted_handler(
             OperatorStepAction action, ShapeKey operand0_shape_key,
-            ShapeKey operand1_shape_key, ShapeKey operand2_shape_key,
-            TrustedResolution resolution,
+            ShapeKey operand1_shape_key, TrustedResolution resolution,
             ValidityCell *operand0_lookup_validity_cell,
             ValidityCell *operand1_lookup_validity_cell);
     };

@@ -308,7 +308,7 @@ namespace cl
 
     struct OperatorInlineCache
     {
-        ShapeKey operand_shape_keys[3];
+        ShapeKey operand_shape_keys[2];
         ValidityCell *operand_lookup_validity_cells[2] = {nullptr, nullptr};
         TrustedHandler trusted_handler;
         Function *function = nullptr;
@@ -341,12 +341,12 @@ namespace cl
                    operand_lookup_validity_cell_matches(1);
         }
 
-        ALWAYSINLINE bool matches_ternary(Value operand0, Value operand1,
-                                          Value operand2) const
+        ALWAYSINLINE bool matches_ternary(Value operand0, Value operand1) const
         {
+            // Ternary operator caches intentionally guard only operand0 and
+            // operand1. Operand2 is runtime call state, not a cache key.
             return operand_shape_keys[0] == ShapeKey::from_value(operand0) &&
                    operand_shape_keys[1] == ShapeKey::from_value(operand1) &&
-                   operand_shape_keys[2] == ShapeKey::from_value(operand2) &&
                    operand_lookup_validity_cell_matches(0);
         }
 
@@ -373,30 +373,19 @@ namespace cl
         {
             operand_shape_keys[0] = operand0_shape_key;
             operand_shape_keys[1] = operand1_shape_key;
-            operand_shape_keys[2] = ShapeKey{};
-        }
-
-        void populate_ternary_shapes(ShapeKey operand0_shape_key,
-                                     ShapeKey operand1_shape_key,
-                                     ShapeKey operand2_shape_key)
-        {
-            operand_shape_keys[0] = operand0_shape_key;
-            operand_shape_keys[1] = operand1_shape_key;
-            operand_shape_keys[2] = operand2_shape_key;
         }
 
         static OperatorInlineCache untrusted_function_call(
             ShapeKey operand0_shape_key, ShapeKey operand1_shape_key,
-            ShapeKey operand2_shape_key, Function *function,
-            CodeObject *code_object, uint32_t n_args, uint32_t resume_index,
-            bool reflected_untrusted_call, bool has_self,
+            Function *function, CodeObject *code_object, uint32_t n_args,
+            uint32_t resume_index, bool reflected_untrusted_call, bool has_self,
             FunctionCallAdaptation adaptation,
             ValidityCell *operand0_lookup_validity_cell,
             ValidityCell *operand1_lookup_validity_cell)
         {
             OperatorInlineCache cache;
-            cache.populate_ternary_shapes(
-                operand0_shape_key, operand1_shape_key, operand2_shape_key);
+            cache.populate_binary_shapes(operand0_shape_key,
+                                         operand1_shape_key);
             cache.function = function;
             cache.code_object = code_object;
             cache.n_args = n_args;
@@ -411,16 +400,17 @@ namespace cl
             return cache;
         }
 
-        static OperatorInlineCache trusted_handler_call(
-            ShapeKey operand0_shape_key, ShapeKey operand1_shape_key,
-            ShapeKey operand2_shape_key, TrustedResolution resolution,
-            ValidityCell *operand0_lookup_validity_cell,
-            ValidityCell *operand1_lookup_validity_cell)
+        static OperatorInlineCache
+        trusted_handler_call(ShapeKey operand0_shape_key,
+                             ShapeKey operand1_shape_key,
+                             TrustedResolution resolution,
+                             ValidityCell *operand0_lookup_validity_cell,
+                             ValidityCell *operand1_lookup_validity_cell)
         {
             assert(resolution.kind == TrustedResolutionKind::TrustedHandler);
             OperatorInlineCache cache;
-            cache.populate_ternary_shapes(
-                operand0_shape_key, operand1_shape_key, operand2_shape_key);
+            cache.populate_binary_shapes(operand0_shape_key,
+                                         operand1_shape_key);
             cache.trusted_handler = TrustedHandler::from_resolution(resolution);
             cache.operand_lookup_validity_cells[0] =
                 operand0_lookup_validity_cell;
@@ -433,7 +423,6 @@ namespace cl
         {
             operand_shape_keys[0] = ShapeKey{};
             operand_shape_keys[1] = ShapeKey{};
-            operand_shape_keys[2] = ShapeKey{};
             operand_lookup_validity_cells[0] = nullptr;
             operand_lookup_validity_cells[1] = nullptr;
             trusted_handler = TrustedHandler::none();

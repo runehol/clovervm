@@ -29,8 +29,7 @@ namespace cl
     OperatorWalkDescriptor OperatorWalkDescriptor::call_untrusted_function(
         OperatorStepAction action, uint32_t resume_index,
         OperatorOperandOrder operand_order, ShapeKey operand0_shape_key,
-        ShapeKey operand1_shape_key, ShapeKey operand2_shape_key,
-        TValue<Function> function, uint32_t n_args,
+        ShapeKey operand1_shape_key, TValue<Function> function, uint32_t n_args,
         FunctionCallAdaptation adaptation, bool has_self,
         ValidityCell *operand0_lookup_validity_cell,
         ValidityCell *operand1_lookup_validity_cell)
@@ -41,9 +40,8 @@ namespace cl
         descriptor.resume_index = resume_index;
         descriptor.operand_order = operand_order;
         descriptor.cache_entry = OperatorInlineCache::untrusted_function_call(
-            operand0_shape_key, operand1_shape_key, operand2_shape_key,
-            function.extract(), function.extract()->code_object.extract(),
-            n_args, resume_index,
+            operand0_shape_key, operand1_shape_key, function.extract(),
+            function.extract()->code_object.extract(), n_args, resume_index,
             operand_order == OperatorOperandOrder::Reflected, has_self,
             adaptation, operand0_lookup_validity_cell,
             operand1_lookup_validity_cell);
@@ -52,8 +50,7 @@ namespace cl
 
     OperatorWalkDescriptor OperatorWalkDescriptor::call_trusted_handler(
         OperatorStepAction action, ShapeKey operand0_shape_key,
-        ShapeKey operand1_shape_key, ShapeKey operand2_shape_key,
-        TrustedResolution resolution,
+        ShapeKey operand1_shape_key, TrustedResolution resolution,
         ValidityCell *operand0_lookup_validity_cell,
         ValidityCell *operand1_lookup_validity_cell)
     {
@@ -61,9 +58,8 @@ namespace cl
         descriptor.status = OperatorWalkStatus::CallTrustedHandler;
         descriptor.action = action;
         descriptor.cache_entry = OperatorInlineCache::trusted_handler_call(
-            operand0_shape_key, operand1_shape_key, operand2_shape_key,
-            resolution, operand0_lookup_validity_cell,
-            operand1_lookup_validity_cell);
+            operand0_shape_key, operand1_shape_key, resolution,
+            operand0_lookup_validity_cell, operand1_lookup_validity_cell);
         return descriptor;
     }
 
@@ -381,17 +377,15 @@ namespace cl
                         {
                             return OperatorWalkDescriptor::call_trusted_handler(
                                 step.action, operand0_shape_key,
-                                operand1_shape_key, operand2_shape_key,
-                                trusted_resolution,
+                                operand1_shape_key, trusted_resolution,
                                 operand0_lookup_validity_cell, nullptr);
                         }
 
                         return OperatorWalkDescriptor::call_untrusted_function(
                             step.action, index + 1,
                             OperatorOperandOrder::Normal, operand0_shape_key,
-                            operand1_shape_key, operand2_shape_key, function,
-                            n_args, adaptation, has_self,
-                            operand0_lookup_validity_cell, nullptr);
+                            operand1_shape_key, function, n_args, adaptation,
+                            has_self, operand0_lookup_validity_cell, nullptr);
                     }
 
                 case OperatorStepAction::CallBinary:
@@ -518,17 +512,16 @@ namespace cl
                         {
                             return OperatorWalkDescriptor::call_trusted_handler(
                                 step.action, operand0_shape_key,
-                                operand1_shape_key, operand2_shape_key,
-                                trusted_resolution,
+                                operand1_shape_key, trusted_resolution,
                                 operand0_lookup_validity_cell,
                                 operand1_lookup_validity_cell);
                         }
 
                         return OperatorWalkDescriptor::call_untrusted_function(
                             step.action, index + 1, operand_order,
-                            operand0_shape_key, operand1_shape_key,
-                            operand2_shape_key, function, n_args, adaptation,
-                            has_self, operand0_lookup_validity_cell,
+                            operand0_shape_key, operand1_shape_key, function,
+                            n_args, adaptation, has_self,
+                            operand0_lookup_validity_cell,
                             operand1_lookup_validity_cell);
                     }
             }
