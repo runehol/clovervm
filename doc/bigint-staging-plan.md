@@ -14,6 +14,8 @@ design rationale and semantic boundaries live in [BigInt Design](bigint.md).
 - [ ] Add `BigInt` to the native layout registry.
 - [ ] Register `NativeLayoutId::BigInt` to the existing `int` class.
 - [ ] Add build-system entries for the new BigInt source file.
+- [ ] Add `make_uninitialized_bigint_for_digits` for exact-sized heap BigInt
+      allocation.
 - [ ] Add focused tests for native layout descriptors, exact-sized allocation,
       and `SmiBigInt` view edge cases.
 
@@ -23,16 +25,14 @@ design rationale and semantic boundaries live in [BigInt Design](bigint.md).
 - [ ] Implement `SmiBigInt` construction from decoded SMI-range integers.
 - [ ] Implement `BigIntScratch` inline storage plus `std::vector<digit_t>`
       overflow backing.
-- [ ] Implement result finalization from `BigIntView` to SMI or exact-sized
-      heap `BigInt`.
+- [ ] Implement `Expected<Value>` result finalization from `BigIntView` to SMI
+      or exact-sized heap `BigInt`.
 - [ ] Implement full `int64_t` to/from BigInt conversion, including
       `INT64_MIN`.
 - [ ] Implement decoded SMI-range conversion helpers with range assertions.
 - [ ] Implement decimal formatting for BigInt `str()` and `repr()`.
-- [ ] Extend `int(str)` overflow handling to parse into BigInt while preserving
-      current whitespace, sign, and underscore grammar.
-- [ ] Add tests for `INT64_MIN`, `-1`, SMI boundaries, decimal round trips, and
-      malformed literals.
+- [ ] Leave BigInt-aware `int(str)` parsing policy deferred.
+- [ ] Add tests for `INT64_MIN`, `-1`, SMI boundaries, and decimal formatting.
 
 ### Stage 3: Integer Categories And Comparisons
 
@@ -43,8 +43,8 @@ design rationale and semantic boundaries live in [BigInt Design](bigint.md).
       BigInts with `OverflowError`.
 - [ ] Implement equality comparisons across bool, SMI, and BigInt.
 - [ ] Implement ordering comparisons across bool, SMI, and BigInt.
-- [ ] Leave BigInt hashing deferred while dictionaries only support string
-      keys.
+- [ ] Leave BigInt hashing deferred while `hash()` and non-string dictionary
+      keys are not exposed.
 - [ ] Add tests for bool/SMI/BigInt comparison behavior and SMI-sized boundary
       rejection.
 
@@ -61,8 +61,7 @@ design rationale and semantic boundaries live in [BigInt Design](bigint.md).
       combinations.
 - [ ] Ensure all arithmetic results finalize to SMI when representable.
 - [ ] Add tests for SMI overflow promotion, mixed SMI/BigInt arithmetic,
-      cancellation to SMI, sign handling, and unary negation of
-      `value_smi_min`.
+      cancellation to SMI, and sign handling.
 
 ### Stage 5: Opcode Overflow Routing
 
@@ -73,6 +72,8 @@ design rationale and semantic boundaries live in [BigInt Design](bigint.md).
       `COMPLETE`, and `MUSTTAIL return ...` conventions.
 - [ ] Add interpreter tests showing SMI overflow expressions now produce BigInt
       results.
+- [ ] Add interpreter tests showing unary negation of `value_smi_min` promotes
+      instead of raising overflow.
 - [ ] Confirm non-overflow SMI fast-path behavior remains unchanged.
 
 ## Invariants
@@ -98,11 +99,11 @@ design rationale and semantic boundaries live in [BigInt Design](bigint.md).
 - SMI opcode overflow should enter ordinary operator dispatch so inline caches
   can record the selected BigInt path.
 - Opcode handlers should not directly implement BigInt arithmetic.
-- `int(str)` should preserve existing accepted grammar while routing overflow
-  to BigInt parsing.
+- BigInt-aware `int(str)` parsing policy is deferred.
 - List, tuple, string, and slice internals remain SMI-sized in the first
   implementation slice.
-- BigInt hashing is deferred until non-string dictionary keys are supported.
+- BigInt hashing is deferred until `hash()` or non-string dictionary keys are
+  exposed.
 
 ## Verification
 

@@ -7,7 +7,7 @@ range.
 
 Status: accepted staged design. The first implementation should land in staged
 pieces, starting with representation, conversion, formatting, comparison,
-hashing, and basic arithmetic.
+and basic arithmetic.
 
 ## Goals
 
@@ -31,9 +31,12 @@ hashing, and basic arithmetic.
 - No bitwise operations.
 - No BigInt-aware `range`.
 - No arbitrary-size source-code integer literals.
+- No BigInt-aware `int(str)` parsing policy.
 - No BigInt-to-float conversion or mixed BigInt/float arithmetic.
 - No BigInt indexing support for large containers. List, tuple, string, and
   slice internals remain SMI-sized for now.
+- No BigInt hashing while `hash()` and non-string dictionary keys are not
+  exposed.
 - No dependency on `rqm`. Clovervm should copy and adapt the relevant design
   decisions, not import the library.
 
@@ -182,6 +185,12 @@ fall back to overflow backing for larger temporaries. This keeps Python heap
 `BigInt` objects exact-sized and canonical while still avoiding heap BigInt
 allocation when a result normalizes back into the SMI range.
 
+This intentionally differs from current `rqm::znum`, which can allocate an
+oversized result object first and then trim its visible digit count. In
+clovervm, heap `BigInt` objects are Python-visible values, not mutable scratch
+buffers. Oversized temporary storage belongs in `BigIntScratch`; heap `BigInt`
+allocation happens only after the normalized result size is known.
+
 Scratch digit storage is uninitialized. Kernels that need zeroed destination
 digits must explicitly initialize the range they use.
 
@@ -194,13 +203,16 @@ SMI-range path:
 - Do not use `std::abs(int64_t)` for magnitude extraction.
 - SMI-range conversion can rely on the stronger SMI bounds and avoid the
   `INT64_MIN` edge.
-- Result finalization should normalize high zero digits and return SMI if the
-  value is representable. Otherwise it should allocate an exact-sized heap
-  BigInt and copy the normalized digits from scratch storage.
-- Decimal `int(str)` parsing should preserve the current accepted grammar,
-  including leading/trailing whitespace, optional sign, and valid underscores.
-  Overflow from the current SMI parser should become the BigInt path rather
-  than an integer-overflow error.
+- Result finalization promotes a normalized `BigIntView` into a
+  Python-visible integer `Value`. It should return `Expected<Value>`: return
+  SMI if the value is representable, otherwise allocate an exact-sized heap
+  BigInt and copy the normalized digits from scratch storage. A helper named
+  `make_uninitialized_bigint_for_digits` should allocate the exact-sized heap
+  object used by finalization and low-level allocation tests.
+- Decimal formatting should support BigInt `str()` and `repr()`.
+- Decimal `int(str)` BigInt parsing policy is deferred. It is
+  performance-sensitive and should be designed separately around the existing
+  accepted grammar, SMI fast path, overflow behavior, and BigInt fallback.
 
 The `rqm` `znum` design has two pitfalls that should not be copied:
 
@@ -229,17 +241,12 @@ to integer normalization is a higher-level int-method responsibility.
 The first arithmetic slice should include:
 
 - equality and ordering comparisons across bool, SMI, and BigInt;
-- equality-compatible hashing across bool, SMI, and BigInt;
 - unary `+`;
 - unary `-`;
 - addition;
 - subtraction;
 - multiplication;
-- decimal parsing and string formatting.
-
-The int hash path is currently vague and may need separate cleanup. Preserve
-the semantic requirement that equal bool/SMI/BigInt values hash equal, but do
-not treat hash-path refactoring as the first representation step.
+- decimal string formatting.
 
 Arithmetic kernels should be representation-oriented and Python-policy-free.
 They should accept `BigIntView` operands and write into caller-provided mutable
@@ -268,8 +275,8 @@ Arithmetic result construction should be scratch-first:
 2. Create `BigIntScratch` for mutable result storage.
 3. Run the kernel into `scratch.mutable_view()`.
 4. Normalize the result.
-5. Finalize to SMI if representable, otherwise allocate an exact-sized heap
-   `BigInt` and copy the normalized digits.
+5. Finalize to `Expected<Value>`: SMI if representable, otherwise an
+   exact-sized heap `BigInt` with the normalized digits copied in.
 
 Do not use heap `BigInt` objects as oversized mutable work buffers. That would
 mix Python object allocation concerns into the BigInt object shape, require a
@@ -277,8 +284,9 @@ separate capacity field, and allow invisible spare digits on returned objects.
 
 ## Hashing
 
-Hashing does not need to match CPython in the first slice, but it must preserve
-Python equality requirements:
+Hashing is deferred while `hash()` and non-string dictionary keys are not
+exposed. Before either becomes Python-visible for integers, BigInt hashing must
+preserve Python equality requirements:
 
 - `True == 1` and `hash(True) == hash(1)`.
 - `False == 0` and `hash(False) == hash(0)`.
@@ -330,8 +338,8 @@ Recommended first implementation slice:
 2. Register `NativeLayoutId::BigInt` to the existing `int` class.
 3. Add conversion helpers for full `int64_t`, decoded SMI-range ints, and
    result finalization.
-4. Add decimal parse and format for BigInt values.
-5. Add comparison and hashing across bool, SMI, and BigInt.
+4. Add decimal formatting for BigInt values.
+5. Add comparisons across bool, SMI, and BigInt.
 6. Add unary plus, unary minus, addition, subtraction, and multiplication in
    int dunder handlers.
 7. Change SMI overflow paths to enter operator dispatch rather than reporting
@@ -343,6 +351,7 @@ Later slices:
 - Bitwise operations.
 - Power.
 - BigInt-aware `range`.
+- BigInt-aware `int(str)` parsing.
 - BigInt-to-float conversion and mixed BigInt/float operations.
 - Arbitrary-size integer source literals through parser, AST, and codegen.
 - Extension-compatibility boxed small-int policy if needed.
@@ -355,6 +364,5 @@ Later slices:
 - Addition, subtraction, multiplication, and negation promote on SMI overflow.
 - BigInt results that shrink back into SMI range canonicalize to SMI.
 - Comparisons work across bool, SMI, and BigInt.
-- Hashing preserves equality across bool, SMI, and BigInt.
-- Decimal parse and format round-trip values above and below the SMI range.
+- Decimal formatting works for values above and below the SMI range.
 - Non-SMI BigInt indices and slice fields raise `OverflowError` in v1.
