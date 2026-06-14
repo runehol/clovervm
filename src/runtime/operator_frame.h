@@ -46,6 +46,17 @@ namespace cl
     }
 
     [[maybe_unused]] static ALWAYSINLINE void
+    read_ternary_operator_continuation_operands(Value *fp, int32_t prefix_reg,
+                                                Value &operand0,
+                                                Value &operand1,
+                                                Value &operand2)
+    {
+        operand0 = fp[prefix_reg - 2];
+        operand1 = fp[prefix_reg - 3];
+        operand2 = fp[prefix_reg - 4];
+    }
+
+    [[maybe_unused]] static ALWAYSINLINE void
     setup_unary_operator_continuation_prefix(Value *fp, int32_t prefix_reg,
                                              OperatorDispatchTableId table_id,
                                              uint32_t resume_index,
