@@ -1845,6 +1845,101 @@ namespace cl
             entry.n_args, continuation_instr_len, entry.adaptation);
     }
 
+    static ALWAYSINLINE void enter_ternary_operator_untrusted_function(
+        ThreadState *thread, Value *&fp, const uint8_t *&pc,
+        CodeObject *&code_object, const OperatorWalkDescriptor &descriptor,
+        OperatorDispatchTableId table_id, Value operand0, Value operand1,
+        Value operand2, const uint8_t *continuation_pc)
+    {
+        const OperatorInlineCache &entry = descriptor.cache_entry;
+        assert(entry.function != nullptr);
+        assert(entry.n_args == 2 || entry.n_args == 3);
+
+        int32_t prefix_reg = code_object->get_first_free_arg_encoded_reg();
+        setup_ternary_operator_continuation_prefix(
+            fp, prefix_reg, table_id, descriptor.resume_index, operand0,
+            operand1, operand2);
+        bool reflected = operator_step_action_is_reflected(descriptor.action);
+        int32_t first_arg_reg = prefix_reg - 6;
+        Value self = Value::not_present();
+        if(unlikely(reflected))
+        {
+            fp[first_arg_reg] = operand1;
+            fp[first_arg_reg - 1] = operand0;
+            fp[first_arg_reg - 2] = operand2;
+            if(likely(entry.has_self))
+            {
+                self = operand1;
+            }
+        }
+        else
+        {
+            fp[first_arg_reg] = operand0;
+            fp[first_arg_reg - 1] = operand1;
+            fp[first_arg_reg - 2] = operand2;
+            if(likely(entry.has_self))
+            {
+                self = operand0;
+            }
+        }
+        first_arg_reg =
+            prepare_method_call_argument_slots(fp, first_arg_reg, 2, self);
+
+        assert(continuation_pc >= pc);
+        uint32_t continuation_instr_len = uint32_t(continuation_pc - pc);
+        enter_function_frame_from_positional_args(
+            thread, fp, pc, code_object,
+            TValue<Function>::from_oop(entry.function), first_arg_reg,
+            entry.n_args, continuation_instr_len, entry.adaptation);
+    }
+
+    static ALWAYSINLINE void enter_cached_ternary_operator_untrusted_function(
+        ThreadState *thread, Value *&fp, const uint8_t *&pc,
+        CodeObject *&code_object, const OperatorInlineCache &entry,
+        OperatorDispatchTableId table_id, Value operand0, Value operand1,
+        Value operand2, const uint8_t *continuation_pc)
+    {
+        assert(entry.function != nullptr);
+        assert(entry.n_args == 2 || entry.n_args == 3);
+        assert(entry.resume_index != UINT32_MAX);
+
+        int32_t prefix_reg = code_object->get_first_free_arg_encoded_reg();
+        setup_ternary_operator_continuation_prefix(fp, prefix_reg, table_id,
+                                                   entry.resume_index, operand0,
+                                                   operand1, operand2);
+        int32_t first_arg_reg = prefix_reg - 6;
+        Value self = Value::not_present();
+        if(unlikely(entry.reflected_untrusted_call))
+        {
+            fp[first_arg_reg] = operand1;
+            fp[first_arg_reg - 1] = operand0;
+            fp[first_arg_reg - 2] = operand2;
+            if(likely(entry.has_self))
+            {
+                self = operand1;
+            }
+        }
+        else
+        {
+            fp[first_arg_reg] = operand0;
+            fp[first_arg_reg - 1] = operand1;
+            fp[first_arg_reg - 2] = operand2;
+            if(likely(entry.has_self))
+            {
+                self = operand0;
+            }
+        }
+        first_arg_reg =
+            prepare_method_call_argument_slots(fp, first_arg_reg, 2, self);
+
+        assert(continuation_pc >= pc);
+        uint32_t continuation_instr_len = uint32_t(continuation_pc - pc);
+        enter_function_frame_from_positional_args(
+            thread, fp, pc, code_object,
+            TValue<Function>::from_oop(entry.function), first_arg_reg,
+            entry.n_args, continuation_instr_len, entry.adaptation);
+    }
+
     static ALWAYSINLINE void install_operator_cache_if_cacheable(
         OperatorInlineCache *cache, const OperatorWalkDescriptor &descriptor)
     {
@@ -1877,6 +1972,54 @@ namespace cl
                     install_operator_cache_if_cacheable(cache, descriptor);
                     accumulator = descriptor.cache_entry.trusted_handler.binary(
                         thread, operand0, operand1);
+                    assert(!accumulator.is_not_implemented_singleton());
+                    if(unlikely(accumulator.is_exception_marker()))
+                    {
+                        resolve_operator_pending_exception(thread, fp, pc,
+                                                           code_object);
+                        return dispatch_entry_for_pc(dispatch, pc);
+                    }
+                    pc = next_pc;
+                    return dispatch_entry_for_pc(dispatch, pc);
+                }
+
+            case OperatorWalkStatus::NativeResult:
+                accumulator = descriptor.result;
+                pc = next_pc;
+                return dispatch_entry_for_pc(dispatch, pc);
+
+            case OperatorWalkStatus::PropagatePendingException:
+                resolve_operator_pending_exception(thread, fp, pc, code_object);
+                return dispatch_entry_for_pc(dispatch, pc);
+        }
+
+        __builtin_unreachable();
+    }
+
+    static ALWAYSINLINE DispatchTableEntry
+    dispatch_ternary_operator_walk_result(
+        ThreadState *thread, Value *&fp, const uint8_t *&pc, void *dispatch,
+        CodeObject *&code_object, Value &accumulator,
+        OperatorDispatchTableId table_id, Value operand0, Value operand1,
+        Value operand2, const OperatorWalkDescriptor &descriptor,
+        const uint8_t *continuation_pc, const uint8_t *next_pc,
+        OperatorInlineCache *cache)
+    {
+        switch(descriptor.status)
+        {
+            case OperatorWalkStatus::CallUntrustedFunction:
+                install_operator_cache_if_cacheable(cache, descriptor);
+                enter_ternary_operator_untrusted_function(
+                    thread, fp, pc, code_object, descriptor, table_id, operand0,
+                    operand1, operand2, continuation_pc);
+                return dispatch_entry_for_pc(dispatch, pc);
+
+            case OperatorWalkStatus::CallTrustedHandler:
+                {
+                    install_operator_cache_if_cacheable(cache, descriptor);
+                    accumulator =
+                        descriptor.cache_entry.trusted_handler.ternary(
+                            thread, operand0, operand1, operand2);
                     assert(!accumulator.is_not_implemented_singleton());
                     if(unlikely(accumulator.is_exception_marker()))
                     {
@@ -2046,6 +2189,49 @@ namespace cl
             operand0, operand1, descriptor, continuation_pc, next_pc, &cache);
     }
 
+    [[maybe_unused]] static ALWAYSINLINE DispatchTableEntry
+    dispatch_cached_reflectable_ternary_operator(
+        ThreadState *thread, Value *&fp, const uint8_t *&pc, void *dispatch,
+        CodeObject *&code_object, Value &accumulator,
+        OperatorDispatchTableId table_id, uint8_t cache_idx, Value operand0,
+        Value operand1, Value operand2, const uint8_t *continuation_pc,
+        const uint8_t *next_pc)
+    {
+        OperatorInlineCache &cache = code_object->operator_caches[cache_idx];
+        if(likely(cache.matches_ternary(operand0, operand1)))
+        {
+            if(!cache.trusted_handler.is_null())
+            {
+                accumulator = cache.trusted_handler.ternary(thread, operand0,
+                                                            operand1, operand2);
+                assert(!accumulator.is_not_implemented_singleton());
+                if(unlikely(accumulator.is_exception_marker()))
+                {
+                    resolve_operator_pending_exception(thread, fp, pc,
+                                                       code_object);
+                    return dispatch_entry_for_pc(dispatch, pc);
+                }
+                pc = next_pc;
+                return dispatch_entry_for_pc(dispatch, pc);
+            }
+            if(likely(cache.function != nullptr))
+            {
+                enter_cached_ternary_operator_untrusted_function(
+                    thread, fp, pc, code_object, cache, table_id, operand0,
+                    operand1, operand2, continuation_pc);
+                return dispatch_entry_for_pc(dispatch, pc);
+            }
+        }
+
+        OperatorWalkDescriptor descriptor = walk_operator_table(
+            thread, table_id, 0, OperatorCacheability::CacheableMaybeReflected,
+            operand0, operand1, operand2);
+        return dispatch_ternary_operator_walk_result(
+            thread, fp, pc, dispatch, code_object, accumulator, table_id,
+            operand0, operand1, operand2, descriptor, continuation_pc, next_pc,
+            &cache);
+    }
+
     static ALWAYSINLINE DispatchTableEntry dispatch_cached_unary_operator(
         ThreadState *thread, Value *&fp, const uint8_t *&pc, void *dispatch,
         CodeObject *&code_object, Value &accumulator,
@@ -2105,6 +2291,32 @@ namespace cl
         return dispatch_binary_operator_walk_result(
             thread, fp, pc, dispatch, code_object, accumulator, table_id,
             operand0, operand1, descriptor, continuation_pc, next_pc, nullptr);
+    }
+
+    [[maybe_unused]] static ALWAYSINLINE DispatchTableEntry
+    dispatch_ternary_operator_from_continuation(
+        ThreadState *thread, Value *&fp, const uint8_t *&pc, void *dispatch,
+        CodeObject *&code_object, Value &accumulator,
+        const uint8_t *continuation_pc, const uint8_t *next_pc)
+    {
+        int32_t prefix_reg = code_object->get_first_free_arg_encoded_reg();
+        OperatorDispatchTableId table_id;
+        uint32_t resume_index;
+        read_operator_continuation_header(fp, prefix_reg, table_id,
+                                          resume_index);
+        Value operand0;
+        Value operand1;
+        Value operand2;
+        read_ternary_operator_continuation_operands(fp, prefix_reg, operand0,
+                                                    operand1, operand2);
+
+        OperatorWalkDescriptor descriptor = walk_operator_table(
+            thread, table_id, resume_index, OperatorCacheability::Uncacheable,
+            operand0, operand1, operand2);
+        return dispatch_ternary_operator_walk_result(
+            thread, fp, pc, dispatch, code_object, accumulator, table_id,
+            operand0, operand1, operand2, descriptor, continuation_pc, next_pc,
+            nullptr);
     }
 
     enum class AttributeLoadPlanStatus : uint8_t

@@ -388,6 +388,8 @@ namespace cl
 
                 case OperatorStepAction::CallBinary:
                 case OperatorStepAction::CallBinaryReflected:
+                case OperatorStepAction::CallTernary:
+                case OperatorStepAction::CallTernaryReflected:
                     {
                         assert(step.dunder_name != nullptr);
 
@@ -397,6 +399,13 @@ namespace cl
                             reflected ? OperatorOperandOrder::Reflected
                                       : OperatorOperandOrder::Normal;
                         Value receiver = reflected ? operand1 : operand0;
+                        bool ternary =
+                            step.action == OperatorStepAction::CallTernary ||
+                            step.action ==
+                                OperatorStepAction::CallTernaryReflected;
+                        TrustedHandlerArity requested_arity =
+                            ternary ? TrustedHandlerArity::Ternary
+                                    : TrustedHandlerArity::Binary;
 
                         AttributeReadDescriptor method_descriptor =
                             AttributeReadDescriptor::not_found();
@@ -445,7 +454,8 @@ namespace cl
                         TValue<Function> function =
                             TValue<Function>::from_value_assumed(callable);
                         bool has_self = !self.is_not_present();
-                        uint32_t n_args = 1 + (has_self ? 1 : 0);
+                        uint32_t n_user_args = ternary ? 2 : 1;
+                        uint32_t n_args = n_user_args + (has_self ? 1 : 0);
                         if(!function.extract()
                                 ->accepts_positional_only_call_arity(n_args))
                         {
@@ -469,7 +479,7 @@ namespace cl
                                     vm, operand0_shape_key, operand1_shape_key,
                                     trusted_handler_operand_order_for(
                                         operand_order),
-                                    TrustedHandlerArity::Binary);
+                                    requested_arity);
                             switch(resolution.kind)
                             {
                                 case TrustedResolutionKind::
@@ -477,8 +487,7 @@ namespace cl
                                     break;
 
                                 case TrustedResolutionKind::TrustedHandler:
-                                    assert(resolution.arity ==
-                                           TrustedHandlerArity::Binary);
+                                    assert(resolution.arity == requested_arity);
                                     trusted_resolution = resolution;
                                     break;
 

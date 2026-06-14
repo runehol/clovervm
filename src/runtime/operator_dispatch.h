@@ -17,6 +17,8 @@ namespace cl
         RaiseUnsupported = 6,
         RaiseOrdering = 8,
         CallUnary = 10,
+        CallTernary = 12,
+        CallTernaryReflected = 13,
     };
 
     static constexpr bool
@@ -39,6 +41,10 @@ namespace cl
         !operator_step_action_is_reflected(OperatorStepAction::RaiseOrdering));
     static_assert(
         !operator_step_action_is_reflected(OperatorStepAction::CallUnary));
+    static_assert(
+        !operator_step_action_is_reflected(OperatorStepAction::CallTernary));
+    static_assert(operator_step_action_is_reflected(
+        OperatorStepAction::CallTernaryReflected));
 
     enum class OperatorStepApplicability : uint8_t
     {
@@ -114,6 +120,25 @@ namespace cl
         {
             return OperatorStep{dunder_name,
                                 OperatorStepAction::CallBinaryReflected,
+                                applicability, else_skip};
+        }
+
+        static constexpr OperatorStep
+        call_ternary(String *dunder_name,
+                     OperatorStepApplicability applicability,
+                     uint8_t else_skip = 0)
+        {
+            return OperatorStep{dunder_name, OperatorStepAction::CallTernary,
+                                applicability, else_skip};
+        }
+
+        static constexpr OperatorStep
+        call_ternary_reflected(String *dunder_name,
+                               OperatorStepApplicability applicability,
+                               uint8_t else_skip = 0)
+        {
+            return OperatorStep{dunder_name,
+                                OperatorStepAction::CallTernaryReflected,
                                 applicability, else_skip};
         }
 
