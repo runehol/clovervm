@@ -25,9 +25,9 @@ namespace cl
     [[nodiscard]] Expected<IntToSmiStatus>
     try_exact_int_value_to_smi(Value value, TValue<SMI> *out);
     ConstBigIntView intlike_value_bigint_view(Value value,
-                                              SmiBigInt *smi_storage);
+                                              SmiViewStorage *smi_storage);
     ConstBigIntView exact_int_value_bigint_view(Value value,
-                                                SmiBigInt *smi_storage);
+                                                SmiViewStorage *smi_storage);
     [[nodiscard]] Expected<Value> parse_int_string_view(ThreadState *thread,
                                                         std::wstring_view text);
 

@@ -47,21 +47,11 @@ namespace cl
         operator ConstBigIntView() const { return view(); }
     };
 
-    class SmiBigInt
+    static constexpr size_t kSmiViewDigits = 2;
+
+    struct SmiViewStorage
     {
-    public:
-        explicit SmiBigInt(int64_t decoded_smi_range_int);
-
-        operator ConstBigIntView() const { return view(); }
-        ConstBigIntView view() const
-        {
-            return ConstBigIntView{n_digits_, signum_, digits_};
-        }
-
-    private:
-        size_t n_digits_;
-        signum_t signum_;
-        digit_t digits_[2];
+        digit_t digits[kSmiViewDigits];
     };
 
     class BigIntScratch
@@ -138,6 +128,8 @@ namespace cl
     BigInt *make_uninitialized_bigint_for_digits(ThreadState *thread,
                                                  size_t n_digits,
                                                  signum_t signum);
+    ConstBigIntView smi_bigint_view(int64_t decoded_smi_range_int,
+                                    SmiViewStorage *storage);
     bool is_normalized_bigint_view(ConstBigIntView view);
     ConstBigIntView normalize_bigint_view(ConstBigIntView view);
     [[nodiscard]] Expected<TValue<SMI>> bigint_to_smi(ConstBigIntView view);

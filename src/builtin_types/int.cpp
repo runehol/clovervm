@@ -85,24 +85,22 @@ namespace cl
     }
 
     ConstBigIntView intlike_value_bigint_view(Value value,
-                                              SmiBigInt *smi_storage)
+                                              SmiViewStorage *smi_storage)
     {
         if(is_smi_or_bool_value(value))
         {
-            *smi_storage = SmiBigInt(smi_or_bool_as_int(value));
-            return smi_storage->view();
+            return smi_bigint_view(smi_or_bool_as_int(value), smi_storage);
         }
         assert(can_convert_to<BigInt>(value));
         return value.get_ptr<BigInt>()->view();
     }
 
     ConstBigIntView exact_int_value_bigint_view(Value value,
-                                                SmiBigInt *smi_storage)
+                                                SmiViewStorage *smi_storage)
     {
         if(value.is_smi())
         {
-            *smi_storage = SmiBigInt(value.get_smi());
-            return smi_storage->view();
+            return smi_bigint_view(value.get_smi(), smi_storage);
         }
         assert(can_convert_to<BigInt>(value));
         return value.get_ptr<BigInt>()->view();
@@ -772,9 +770,9 @@ namespace cl
         {
             if(unlikely(value == value_smi_min))
             {
-                SmiBigInt smi_bigint(value);
+                SmiViewStorage smi_storage;
                 Expected<Value> result =
-                    bigint_negate(thread, smi_bigint.view());
+                    bigint_negate(thread, smi_bigint_view(value, &smi_storage));
                 if(result.has_exception())
                 {
                     return Value::exception_marker();
@@ -980,11 +978,12 @@ namespace cl
             return Value::NotImplemented();
         }
 
-        SmiBigInt self_smi(0);
-        SmiBigInt other_smi(0);
-        ConstBigIntView self_view = intlike_value_bigint_view(self, &self_smi);
+        SmiViewStorage self_storage;
+        SmiViewStorage other_storage;
+        ConstBigIntView self_view =
+            intlike_value_bigint_view(self, &self_storage);
         ConstBigIntView other_view =
-            intlike_value_bigint_view(other, &other_smi);
+            intlike_value_bigint_view(other, &other_storage);
         return Operator{}(thread, self_view, other_view);
     }
 
@@ -1002,10 +1001,11 @@ namespace cl
             return Value::NotImplemented();
         }
 
-        SmiBigInt left_smi(0);
-        SmiBigInt right_smi(0);
-        ConstBigIntView left = intlike_value_bigint_view(self, &left_smi);
-        ConstBigIntView right = intlike_value_bigint_view(other, &right_smi);
+        SmiViewStorage left_storage;
+        SmiViewStorage right_storage;
+        ConstBigIntView left = intlike_value_bigint_view(self, &left_storage);
+        ConstBigIntView right =
+            intlike_value_bigint_view(other, &right_storage);
         return Operator{}(thread, left, right);
     }
 

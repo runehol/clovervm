@@ -13,13 +13,12 @@ using namespace cl;
 
 namespace
 {
-    void expect_smi_bigint_view(int64_t value, signum_t expected_signum,
-                                size_t expected_n_digits,
-                                digit_t expected_digit0,
-                                digit_t expected_digit1)
+    void expect_smi_view(int64_t value, signum_t expected_signum,
+                         size_t expected_n_digits, digit_t expected_digit0,
+                         digit_t expected_digit1)
     {
-        SmiBigInt smi_bigint(value);
-        ConstBigIntView view = smi_bigint.view();
+        SmiViewStorage storage;
+        ConstBigIntView view = smi_bigint_view(value, &storage);
 
         EXPECT_EQ(expected_signum, view.signum);
         EXPECT_EQ(expected_n_digits, view.n_digits);
@@ -45,34 +44,29 @@ namespace
     }
 }  // namespace
 
-TEST(BigInt, SmiBigIntZeroViewIsCanonical)
+TEST(BigInt, SmiViewZeroViewIsCanonical) { expect_smi_view(0, 0, 0, 0, 0); }
+
+TEST(BigInt, SmiViewPositiveViewIsLittleEndian)
 {
-    expect_smi_bigint_view(0, 0, 0, 0, 0);
+    expect_smi_view(1, 1, 1, 1, 0);
+    expect_smi_view(int64_t{1} << kDigitBits, 1, 2, 0, 1);
 }
 
-TEST(BigInt, SmiBigIntPositiveViewIsLittleEndian)
+TEST(BigInt, SmiViewNegativeViewUsesMagnitudeDigits)
 {
-    expect_smi_bigint_view(1, 1, 1, 1, 0);
-    expect_smi_bigint_view(int64_t{1} << kDigitBits, 1, 2, 0, 1);
+    expect_smi_view(-1, -1, 1, 1, 0);
+    expect_smi_view(-(int64_t{1} << kDigitBits), -1, 2, 0, 1);
 }
 
-TEST(BigInt, SmiBigIntNegativeViewUsesMagnitudeDigits)
-{
-    expect_smi_bigint_view(-1, -1, 1, 1, 0);
-    expect_smi_bigint_view(-(int64_t{1} << kDigitBits), -1, 2, 0, 1);
-}
-
-TEST(BigInt, SmiBigIntBoundaryViewsFitInTwoDigits)
+TEST(BigInt, SmiViewBoundaryViewsFitInTwoDigits)
 {
     double_digit_t max_magnitude = static_cast<double_digit_t>(value_smi_max);
-    expect_smi_bigint_view(value_smi_max, 1, 2,
-                           static_cast<digit_t>(max_magnitude),
-                           static_cast<digit_t>(max_magnitude >> kDigitBits));
+    expect_smi_view(value_smi_max, 1, 2, static_cast<digit_t>(max_magnitude),
+                    static_cast<digit_t>(max_magnitude >> kDigitBits));
 
     double_digit_t min_magnitude = double_digit_t(-(value_smi_min + 1)) + 1;
-    expect_smi_bigint_view(value_smi_min, -1, 2,
-                           static_cast<digit_t>(min_magnitude),
-                           static_cast<digit_t>(min_magnitude >> kDigitBits));
+    expect_smi_view(value_smi_min, -1, 2, static_cast<digit_t>(min_magnitude),
+                    static_cast<digit_t>(min_magnitude >> kDigitBits));
 }
 
 TEST(BigInt, ScratchStartsAsCanonicalZeroWithInlineStorage)

@@ -11,42 +11,47 @@
 
 namespace cl
 {
-    SmiBigInt::SmiBigInt(int64_t decoded_smi_range_int)
+    ConstBigIntView smi_bigint_view(int64_t decoded_smi_range_int,
+                                    SmiViewStorage *storage)
     {
         assert(decoded_smi_range_int >= value_smi_min);
         assert(decoded_smi_range_int <= value_smi_max);
 
+        signum_t signum;
         double_digit_t magnitude;
         if(decoded_smi_range_int < 0)
         {
-            signum_ = -1;
+            signum = -1;
             magnitude = double_digit_t(-(decoded_smi_range_int + 1)) + 1;
         }
         else if(decoded_smi_range_int > 0)
         {
-            signum_ = 1;
+            signum = 1;
             magnitude = static_cast<double_digit_t>(decoded_smi_range_int);
         }
         else
         {
-            signum_ = 0;
+            signum = 0;
             magnitude = 0;
         }
 
-        digits_[0] = static_cast<digit_t>(magnitude);
-        digits_[1] = static_cast<digit_t>(magnitude >> kDigitBits);
-        if(digits_[1] != 0)
+        storage->digits[0] = static_cast<digit_t>(magnitude);
+        storage->digits[1] = static_cast<digit_t>(magnitude >> kDigitBits);
+        size_t n_digits;
+        if(storage->digits[1] != 0)
         {
-            n_digits_ = 2;
+            n_digits = 2;
         }
-        else if(digits_[0] != 0)
+        else if(storage->digits[0] != 0)
         {
-            n_digits_ = 1;
+            n_digits = 1;
         }
         else
         {
-            n_digits_ = 0;
+            n_digits = 0;
         }
+
+        return ConstBigIntView{n_digits, signum, storage->digits};
     }
 
     BigIntScratch::BigIntScratch(size_t capacity)
