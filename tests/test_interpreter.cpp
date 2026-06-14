@@ -1678,6 +1678,49 @@ TEST(Interpreter, builtin_pow_with_modulo_rejects_binary_only_pow)
                         L"TypeError", L"wrong number of arguments");
 }
 
+TEST(Interpreter, integer_power_values)
+{
+    test::VmTestContext test_context;
+
+    auto expect_float_result = [&](const wchar_t *source, double expected) {
+        Value actual = test_context.run_file(source);
+        ASSERT_TRUE(can_convert_to<Float>(actual));
+        EXPECT_DOUBLE_EQ(expected, actual.get_ptr<Float>()->value);
+    };
+
+    EXPECT_EQ(Value::from_smi(1024), test_context.run_file(L"2 ** 10\n"));
+    expect_string_result(L"str(2 ** 58)\n", L"288230376151711744");
+    expect_string_result(L"str(2 ** 100)\n",
+                         L"1267650600228229401496703205376");
+    expect_string_result(L"base = int('18446744073709551616')\n"
+                         L"str(base ** 2)\n",
+                         L"340282366920938463463374607431768211456");
+    EXPECT_EQ(Value::from_smi(8), test_context.run_file(L"pow(2, 3, None)\n"));
+    EXPECT_EQ(Value::True(),
+              test_context.run_file(L"(2).__pow__(3, 5) is NotImplemented\n"));
+    expect_float_result(L"e = -3\n"
+                        L"2 ** e\n",
+                        0.125);
+    expect_float_result(L"e = -3\n"
+                        L"(-2) ** e\n",
+                        -0.125);
+    expect_float_result(L"base = int('18446744073709551616')\n"
+                        L"e = -1\n"
+                        L"base ** e\n",
+                        5.421010862427522e-20);
+}
+
+TEST(Interpreter, integer_power_errors)
+{
+    expect_python_error(L"e = -1\n"
+                        L"0 ** e\n",
+                        L"ZeroDivisionError", L"zero to a negative power");
+    expect_python_error(L"base = 1 << 2000\n"
+                        L"e = -1\n"
+                        L"base ** e\n",
+                        L"OverflowError", L"int too large to convert to float");
+}
+
 TEST(Interpreter, true_division_values)
 {
     test::VmTestContext test_context;

@@ -9,8 +9,10 @@
 #include "object_model/value.h"
 #include "runtime/thread_state.h"
 #include "runtime/virtual_machine.h"
+#include <cmath>
 #include <cwctype>
 #include <iterator>
+#include <limits>
 #include <string>
 #include <string_view>
 
@@ -545,6 +547,269 @@ namespace cl
         Value operator()(ThreadState *thread, int64_t left, int64_t right) const
         {
             return SMITrueDivOperator{}(thread, right, left);
+        }
+    };
+
+    static bool nonzero_bigint_view_is_odd(ConstBigIntView view)
+    {
+        assert(is_normalized_bigint_view(view));
+        assert(view.signum != 0);
+        assert(view.n_digits > 0);
+        return (view.digits[0] & 1) != 0;
+    }
+
+    static size_t bigint_view_abs_bit_length(ConstBigIntView view)
+    {
+        assert(is_normalized_bigint_view(view));
+        if(view.n_digits == 0)
+        {
+            return 0;
+        }
+
+        digit_t top_digit = view.digits[view.n_digits - 1];
+        size_t top_bits = 0;
+        while(top_digit != 0)
+        {
+            ++top_bits;
+            top_digit >>= 1;
+        }
+        return (view.n_digits - 1) * kDigitBits + top_bits;
+    }
+
+    static bool bigint_view_abs_bit(ConstBigIntView view, size_t bit_index)
+    {
+        size_t digit_index = bit_index / kDigitBits;
+        if(digit_index >= view.n_digits)
+        {
+            return false;
+        }
+        uint32_t digit_bit = static_cast<uint32_t>(bit_index % kDigitBits);
+        return ((view.digits[digit_index] >> digit_bit) & 1) != 0;
+    }
+
+    static Value int_zero_to_negative_power_error(ThreadState *thread)
+    {
+        return thread->set_pending_builtin_exception_string(
+            L"ZeroDivisionError", L"zero to a negative power");
+    }
+
+    static Value int_float_pow_result(ThreadState *thread, double base,
+                                      double exponent, bool negative_result)
+    {
+        double magnitude = std::pow(std::abs(base), exponent);
+        if(std::isinf(magnitude))
+        {
+            return thread->set_pending_builtin_exception_string(
+                L"OverflowError", L"float power result too large");
+        }
+        double result = negative_result ? -magnitude : magnitude;
+        return thread->make_object_value<Float>(result).raw_value();
+    }
+
+    static Value int_bigint_negative_exponent_pow(ThreadState *thread,
+                                                  ConstBigIntView base,
+                                                  ConstBigIntView exponent)
+    {
+        assert(exponent.signum < 0);
+        Expected<double> exponent_double = bigint_to_double(exponent);
+        if(exponent_double.has_exception())
+        {
+            return Value::exception_marker();
+        }
+        Expected<double> base_double = bigint_to_double(base);
+        if(base_double.has_exception())
+        {
+            return Value::exception_marker();
+        }
+        if(base.signum == 0)
+        {
+            return int_zero_to_negative_power_error(thread);
+        }
+        bool negative_result =
+            base.signum < 0 && nonzero_bigint_view_is_odd(exponent);
+        return int_float_pow_result(thread, base_double.value(),
+                                    exponent_double.value(), negative_result);
+    }
+
+    static Expected<Value> int_pow_multiply_values(ThreadState *thread,
+                                                   Value left, Value right)
+    {
+        SmiViewStorage left_storage;
+        SmiViewStorage right_storage;
+        ConstBigIntView left_view =
+            intlike_value_bigint_view(left, &left_storage);
+        ConstBigIntView right_view =
+            intlike_value_bigint_view(right, &right_storage);
+        return bigint_mul(thread, left_view, right_view);
+    }
+
+    static Expected<Value> int_pow_nonnegative(ThreadState *thread,
+                                               ConstBigIntView base,
+                                               ConstBigIntView exponent)
+    {
+        assert(is_normalized_bigint_view(base));
+        assert(is_normalized_bigint_view(exponent));
+        assert(exponent.signum >= 0);
+
+        Owned<Value> result(Value::from_smi(1));
+        if(exponent.signum == 0)
+        {
+            return Expected<Value>::ok(result.value());
+        }
+
+        Expected<Value> initial_power = finalize_bigint(thread, base);
+        if(initial_power.has_exception())
+        {
+            return Expected<Value>::propagate_exception();
+        }
+        Owned<Value> power(initial_power.value());
+
+        size_t exponent_bits = bigint_view_abs_bit_length(exponent);
+        for(size_t bit_idx = 0; bit_idx < exponent_bits; ++bit_idx)
+        {
+            if(bigint_view_abs_bit(exponent, bit_idx))
+            {
+                Expected<Value> product = int_pow_multiply_values(
+                    thread, result.value(), power.value());
+                if(product.has_exception())
+                {
+                    return Expected<Value>::propagate_exception();
+                }
+                result = product.value();
+            }
+
+            if(bit_idx + 1 < exponent_bits)
+            {
+                Expected<Value> square = int_pow_multiply_values(
+                    thread, power.value(), power.value());
+                if(square.has_exception())
+                {
+                    return Expected<Value>::propagate_exception();
+                }
+                power = square.value();
+            }
+        }
+
+        return Expected<Value>::ok(result.value());
+    }
+
+    static Value int_smi_pow_nonnegative(ThreadState *thread, int64_t base,
+                                         int64_t exponent)
+    {
+        assert(exponent >= 0);
+        int64_t result = 1;
+        int64_t power = base;
+        uint64_t remaining = static_cast<uint64_t>(exponent);
+
+        auto fallback_to_bigint = [&]() {
+            SmiViewStorage base_storage;
+            SmiViewStorage exponent_storage;
+            return int_pow_nonnegative(
+                       thread, smi_bigint_view(base, &base_storage),
+                       smi_bigint_view(exponent, &exponent_storage))
+                .raw_value();
+        };
+
+        while(remaining != 0)
+        {
+            if((remaining & 1) != 0)
+            {
+                int64_t product;
+                if(unlikely(__builtin_smulll_overflow(result, power, &product)))
+                {
+                    return fallback_to_bigint();
+                }
+                if(unlikely(product < value_smi_min || product > value_smi_max))
+                {
+                    return fallback_to_bigint();
+                }
+                result = product;
+            }
+            remaining >>= 1;
+            if(remaining != 0)
+            {
+                int64_t square;
+                if(unlikely(__builtin_smulll_overflow(power, power, &square)))
+                {
+                    return fallback_to_bigint();
+                }
+                if(unlikely(square < value_smi_min || square > value_smi_max))
+                {
+                    return fallback_to_bigint();
+                }
+                power = square;
+            }
+        }
+
+        return Value::from_smi(result);
+    }
+
+    struct SMIPowOperator
+    {
+        static constexpr const wchar_t *receiver_error =
+            L"int.__pow__ expects an int receiver";
+
+        Value operator()(ThreadState *thread, int64_t left, int64_t right) const
+        {
+            if(right == 0)
+            {
+                return Value::from_smi(1);
+            }
+            if(right < 0)
+            {
+                if(left == 0)
+                {
+                    return int_zero_to_negative_power_error(thread);
+                }
+                bool negative_result = left < 0 && (right & 1) != 0;
+                return int_float_pow_result(thread, static_cast<double>(left),
+                                            static_cast<double>(right),
+                                            negative_result);
+            }
+            return int_smi_pow_nonnegative(thread, left, right);
+        }
+    };
+
+    struct SMIRPowOperator
+    {
+        static constexpr const wchar_t *receiver_error =
+            L"int.__rpow__ expects an int receiver";
+
+        Value operator()(ThreadState *thread, int64_t left, int64_t right) const
+        {
+            return SMIPowOperator{}(thread, right, left);
+        }
+    };
+
+    struct IntPowOperator
+    {
+        static constexpr const wchar_t *receiver_error =
+            L"int.__pow__ expects an int receiver";
+
+        Value operator()(ThreadState *thread, ConstBigIntView left,
+                         ConstBigIntView right) const
+        {
+            if(right.signum == 0)
+            {
+                return Value::from_smi(1);
+            }
+            if(right.signum < 0)
+            {
+                return int_bigint_negative_exponent_pow(thread, left, right);
+            }
+            return int_pow_nonnegative(thread, left, right).raw_value();
+        }
+    };
+
+    struct IntRPowOperator
+    {
+        static constexpr const wchar_t *receiver_error =
+            L"int.__rpow__ expects an int receiver";
+
+        Value operator()(ThreadState *thread, ConstBigIntView left,
+                         ConstBigIntView right) const
+        {
+            return IntPowOperator{}(thread, right, left);
         }
     };
 
@@ -1217,6 +1482,40 @@ namespace cl
         return Operator{}(thread, self_view, other_view);
     }
 
+    static Value native_int_binary_pow(ThreadState *thread, Value self,
+                                       Value other)
+    {
+        return native_int_bigint_binary_operator<IntPowOperator>(thread, self,
+                                                                 other);
+    }
+
+    static Value native_int_binary_rpow(ThreadState *thread, Value self,
+                                        Value other)
+    {
+        return native_int_bigint_binary_operator<IntRPowOperator>(thread, self,
+                                                                  other);
+    }
+
+    static Value native_int_ternary_pow(ThreadState *thread, Value self,
+                                        Value other, Value modulo)
+    {
+        if(modulo == Value::None())
+        {
+            return native_int_binary_pow(thread, self, other);
+        }
+        return Value::NotImplemented();
+    }
+
+    static Value native_int_ternary_rpow(ThreadState *thread, Value self,
+                                         Value other, Value modulo)
+    {
+        if(modulo == Value::None())
+        {
+            return native_int_binary_rpow(thread, self, other);
+        }
+        return Value::NotImplemented();
+    }
+
     template <typename Operator>
     static Value native_int_bigint_unary_operator(ThreadState *thread,
                                                   Value self)
@@ -1435,6 +1734,42 @@ namespace cl
                                                      operand1_key);
     }
 
+    static TrustedResolution resolve_trusted_int_pow_resolver(
+        VirtualMachine *vm, ShapeKey operand0_key, ShapeKey operand1_key,
+        TrustedHandlerOperandOrder order, TrustedHandlerArity requested_arity)
+    {
+        if(requested_arity == TrustedHandlerArity::Binary)
+        {
+            return resolve_trusted_int_smi_or_bigint_binary_resolver<
+                SMIPowOperator, SMIRPowOperator, IntPowOperator,
+                IntRPowOperator>(vm, operand0_key, operand1_key, order,
+                                 requested_arity);
+        }
+        if(requested_arity == TrustedHandlerArity::Ternary)
+        {
+            return TrustedResolution::no_trusted_handler_call_untrusted();
+        }
+        return TrustedResolution::no_trusted_handler_call_untrusted();
+    }
+
+    static TrustedResolution resolve_trusted_int_rpow_resolver(
+        VirtualMachine *vm, ShapeKey operand0_key, ShapeKey operand1_key,
+        TrustedHandlerOperandOrder order, TrustedHandlerArity requested_arity)
+    {
+        if(requested_arity == TrustedHandlerArity::Binary)
+        {
+            return resolve_trusted_int_smi_or_bigint_binary_resolver<
+                SMIRPowOperator, SMIPowOperator, IntRPowOperator,
+                IntPowOperator>(vm, operand0_key, operand1_key, order,
+                                requested_arity);
+        }
+        if(requested_arity == TrustedHandlerArity::Ternary)
+        {
+            return TrustedResolution::no_trusted_handler_call_untrusted();
+        }
+        return TrustedResolution::no_trusted_handler_call_untrusted();
+    }
+
     template <typename SMIOperator, typename BigIntOperator>
     static TrustedResolution resolve_trusted_int_smi_or_bigint_unary_handler(
         VirtualMachine *vm, ShapeKey operand0_key, ShapeKey operand1_key,
@@ -1498,6 +1833,9 @@ namespace cl
             active_thread()->make_object_value<Tuple>(1));
         int_new_defaults.extract()->initialize_item_unchecked(
             0, Value::from_smi(0));
+        Owned<TValue<Tuple>> int_pow_defaults(
+            active_thread()->make_object_value<Tuple>(1));
+        int_pow_defaults.extract()->initialize_item_unchecked(0, Value::None());
         BuiltinIntrinsicMethod methods[] = {
             with_defaults(builtin_intrinsic_method(L"__new__", native_int_new,
                                                    L"Create an int object."),
@@ -1566,6 +1904,18 @@ namespace cl
                     L"Return value * self."),
                 resolve_trusted_int_bigint_binary_resolver<IntRMulOperator,
                                                            IntMulOperator>),
+            with_trusted_handler_resolver(
+                with_defaults(
+                    builtin_intrinsic_method(L"__pow__", native_int_ternary_pow,
+                                             L"Return pow(self, value, mod)."),
+                    int_pow_defaults.value()),
+                resolve_trusted_int_pow_resolver),
+            with_trusted_handler_resolver(
+                with_defaults(builtin_intrinsic_method(
+                                  L"__rpow__", native_int_ternary_rpow,
+                                  L"Return pow(value, self, mod)."),
+                              int_pow_defaults.value()),
+                resolve_trusted_int_rpow_resolver),
             with_trusted_handler_resolver(
                 builtin_intrinsic_method(
                     L"__truediv__",
