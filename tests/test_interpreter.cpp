@@ -6372,6 +6372,7 @@ TEST(Interpreter, builtin_type_classes_are_vm_roots_and_builtins)
     };
 
     constexpr ExpectedBuiltinType expected_types[] = {
+        {NativeLayoutId::BigInt, L"int"},
         {NativeLayoutId::ClassObject, L"type"},
         {NativeLayoutId::String, L"str"},
         {NativeLayoutId::List, L"list"},

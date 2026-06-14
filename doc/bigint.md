@@ -91,7 +91,7 @@ Arithmetic kernels should operate on borrowed views rather than owning objects:
 using digit_t = uint32_t;
 using signum_t = int16_t;
 
-struct BigIntView
+struct ConstBigIntView
 {
     uint32_t n_digits;
     signum_t signum;
@@ -105,18 +105,18 @@ struct MutableBigIntView
     signum_t signum;
     digit_t *digits;
 
-    BigIntView view() const
+    ConstBigIntView view() const
     {
-        return BigIntView{n_digits, signum, digits};
+        return ConstBigIntView{n_digits, signum, digits};
     }
 
-    operator BigIntView() const { return view(); }
+    operator ConstBigIntView() const { return view(); }
 };
 ```
 
-`BigIntView` is read-only and has no capacity. `MutableBigIntView` is for
-destination storage, includes capacity, and can convert to `BigIntView`.
-`BigInt::view()` must return only `BigIntView`; only scratch or construction
+`ConstBigIntView` is read-only and has no capacity. `MutableBigIntView` is for
+destination storage, includes capacity, and can convert to `ConstBigIntView`.
+`BigInt::view()` must return only `ConstBigIntView`; only scratch or construction
 code should expose `MutableBigIntView`.
 
 Mixed SMI/BigInt operations should not allocate temporary BigInts just to read
@@ -127,8 +127,8 @@ class SmiBigInt
 {
 public:
     explicit SmiBigInt(int64_t decoded_smi_range_int);
-    operator BigIntView() const;
-    BigIntView view() const;
+    operator ConstBigIntView() const;
+    ConstBigIntView view() const;
 
 private:
     uint32_t n_digits_;
@@ -139,7 +139,7 @@ private:
 
 `SmiBigInt` is literally a stack-backed BigInt value sized for a decoded
 SMI-range integer. It owns enough digit storage for any SMI magnitude and can
-be converted to `BigIntView` for arithmetic.
+be converted to `ConstBigIntView` for arithmetic.
 
 Important naming rule: `SmiBigInt` takes a decoded SMI-range integer, not tagged
 SMI bits. In clovervm there are two different "SMI" concepts:
@@ -166,7 +166,7 @@ class BigIntScratch
 public:
     explicit BigIntScratch(uint32_t capacity);
     MutableBigIntView mutable_view();
-    BigIntView view() const;
+    ConstBigIntView view() const;
 
 private:
     static constexpr uint32_t kInlineDigits = 8;
@@ -203,7 +203,7 @@ SMI-range path:
 - Do not use `std::abs(int64_t)` for magnitude extraction.
 - SMI-range conversion can rely on the stronger SMI bounds and avoid the
   `INT64_MIN` edge.
-- Result finalization promotes a normalized `BigIntView` into a
+- Result finalization promotes a normalized `ConstBigIntView` into a
   Python-visible integer `Value`. It should return `Expected<Value>`: return
   SMI if the value is representable, otherwise allocate an exact-sized heap
   BigInt and copy the normalized digits from scratch storage. A helper named
@@ -249,7 +249,7 @@ The first arithmetic slice should include:
 - decimal string formatting.
 
 Arithmetic kernels should be representation-oriented and Python-policy-free.
-They should accept `BigIntView` operands and write into caller-provided mutable
+They should accept `ConstBigIntView` operands and write into caller-provided mutable
 result storage. `int.cpp` owns Python-visible policy: returning SMI or BigInt,
 returning `NotImplemented`, and raising exceptions.
 
@@ -333,7 +333,7 @@ sign and implements the two's-complement behavior at the operation layer.
 
 Recommended first implementation slice:
 
-1. Add `BigInt`, `BigIntView`, `MutableBigIntView`, `SmiBigInt`, and
+1. Add `BigInt`, `ConstBigIntView`, `MutableBigIntView`, `SmiBigInt`, and
    `BigIntScratch`.
 2. Register `NativeLayoutId::BigInt` to the existing `int` class.
 3. Add conversion helpers for full `int64_t`, decoded SMI-range ints, and

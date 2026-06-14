@@ -13,6 +13,7 @@ set_target_properties(test_clovervm PROPERTIES
 enable_sanitizers(test_clovervm)
 
 target_sources(test_clovervm PRIVATE
+	test_bigint.cpp
 	test_codegen.cpp
 	test_exception_handling.cpp
 	test_heap.cpp

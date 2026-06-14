@@ -8,7 +8,7 @@ design rationale and semantic boundaries live in [BigInt Design](bigint.md).
 ### Stage 1: Representation And Registration
 
 - [ ] Add `src/builtin_types/bigint.h` and `src/builtin_types/bigint.cpp`.
-- [ ] Define `digit_t`, `signum_t`, `BigIntView`, `MutableBigIntView`,
+- [ ] Define `digit_t`, `signum_t`, `ConstBigIntView`, `MutableBigIntView`,
       `SmiBigInt`, `BigIntScratch`, and `BigInt`.
 - [ ] Add `NativeLayoutId::BigInt`.
 - [ ] Add `BigInt` to the native layout registry.
@@ -25,7 +25,7 @@ design rationale and semantic boundaries live in [BigInt Design](bigint.md).
 - [ ] Implement `SmiBigInt` construction from decoded SMI-range integers.
 - [ ] Implement `BigIntScratch` inline storage plus `std::vector<digit_t>`
       overflow backing.
-- [ ] Implement `Expected<Value>` result finalization from `BigIntView` to SMI
+- [ ] Implement `Expected<Value>` result finalization from `ConstBigIntView` to SMI
       or exact-sized heap `BigInt`.
 - [ ] Implement full `int64_t` to/from BigInt conversion, including
       `INT64_MIN`.
@@ -50,7 +50,7 @@ design rationale and semantic boundaries live in [BigInt Design](bigint.md).
 
 ### Stage 4: Basic Arithmetic Dunder And Trusted Handlers
 
-- [ ] Implement BigInt addition kernels using `BigIntView` inputs and
+- [ ] Implement BigInt addition kernels using `ConstBigIntView` inputs and
       `BigIntScratch` destination storage.
 - [ ] Implement BigInt subtraction kernels.
 - [ ] Implement BigInt multiplication kernels.
@@ -89,9 +89,9 @@ design rationale and semantic boundaries live in [BigInt Design](bigint.md).
 - `SmiBigInt` takes decoded SMI-range integers, never tagged SMI bits.
 - Bool normalization happens in int operand adapters, not inside the BigInt
   class.
-- `BigIntView` is read-only and has no capacity.
+- `ConstBigIntView` is read-only and has no capacity.
 - `MutableBigIntView` is destination storage, has capacity, and can convert to
-  `BigIntView`.
+  `ConstBigIntView`.
 - Public arithmetic kernels assume destination storage does not alias any input
   view.
 - `BigIntScratch` digit storage is uninitialized; kernels initialize the ranges

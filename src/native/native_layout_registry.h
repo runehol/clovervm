@@ -1,6 +1,7 @@
 #ifndef CL_NATIVE_LAYOUT_REGISTRY_H
 #define CL_NATIVE_LAYOUT_REGISTRY_H
 
+#include "builtin_types/bigint.h"
 #include "builtin_types/dict.h"
 #include "builtin_types/dict_view.h"
 #include "builtin_types/float.h"
@@ -27,6 +28,7 @@
 #include "runtime/exception_object.h"
 
 #define CL_NATIVE_LAYOUT_REGISTRY(V)                                           \
+    V(BigInt);                                                                 \
     V(List);                                                                   \
     V(Tuple);                                                                  \
     V(RangeIterator);                                                          \

@@ -9,6 +9,7 @@ namespace cl
     {
         Invalid = 0,
 
+        BigInt,
         String,
         List,
         Tuple,

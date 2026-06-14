@@ -1,3 +1,4 @@
+#include "builtin_types/bigint.h"
 #include "builtin_types/dict.h"
 #include "builtin_types/list.h"
 #include "builtin_types/list_iterator.h"
@@ -142,6 +143,59 @@ TEST(NativeLayoutDescriptor, FixedObjectSubclassesUseNativeStaticDescriptors)
     expect_static_native_layout_descriptor<Dict>();
     expect_static_native_layout_descriptor<SlotDict>();
     expect_static_native_layout_descriptor<ClassObject>();
+}
+
+TEST(NativeLayoutDescriptor, BigIntUsesInheritedObjectReleaseDescriptor)
+{
+    const ReleaseDescriptor &release =
+        release_descriptor_for(BigInt::native_layout);
+
+    EXPECT_EQ(ReleaseKind::StaticSpan, release.kind);
+    EXPECT_EQ(Object::native_value_offset_in_words(),
+              release.value_offset_words);
+    EXPECT_EQ(Object::native_static_release_count(),
+              release.static_release_count);
+
+    const ObjectSizeDescriptor &object_size =
+        object_size_descriptor_for(BigInt::native_layout);
+
+    EXPECT_EQ(ObjectSizeKind::Custom, object_size.kind);
+    ASSERT_NE(nullptr, object_size.custom_size_in_bytes);
+}
+
+TEST(NativeLayoutDescriptor, BigIntExactSizedAllocationMapsToIntClass)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation_scope(context.thread());
+
+    BigInt *bigint =
+        make_uninitialized_bigint_for_digits(context.thread(), 3, -1);
+
+    EXPECT_EQ(NativeLayoutId::BigInt, bigint->native_layout_id());
+    EXPECT_EQ(context.vm().int_class(), bigint->get_shape()->get_class());
+    EXPECT_EQ(3u, bigint->n_digits());
+    EXPECT_EQ(-1, bigint->signum());
+    EXPECT_EQ(3u, bigint->view().n_digits);
+    EXPECT_EQ(-1, bigint->view().signum);
+    EXPECT_EQ(3u, bigint->mutable_view_for_initialization().capacity);
+    EXPECT_EQ(BigInt::size_for(3), object_size_in_bytes(bigint));
+}
+
+TEST(NativeLayoutDescriptor, BigIntZeroAllocationStillHasOneDigitSlot)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation_scope(context.thread());
+
+    BigInt *bigint =
+        make_uninitialized_bigint_for_digits(context.thread(), 0, 0);
+
+    EXPECT_EQ(0u, bigint->n_digits());
+    EXPECT_EQ(0, bigint->signum());
+    EXPECT_EQ(0u, bigint->view().n_digits);
+    EXPECT_EQ(0, bigint->view().signum);
+    EXPECT_EQ(1u, bigint->mutable_view_for_initialization().capacity);
+    EXPECT_EQ(sizeof(BigInt), BigInt::size_for(0));
+    EXPECT_EQ(BigInt::size_for(0), object_size_in_bytes(bigint));
 }
 
 TEST(NativeLayoutDescriptor, ValidityCellUsesEmptyStaticDescriptor)

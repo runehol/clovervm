@@ -43,6 +43,8 @@ add_library(libclovervm_objects OBJECT
     compiler/codegen_scope_analysis.cpp
     compiler/codegen_scope_analysis.h
     compiler/compilation_unit.h
+    builtin_types/bigint.cpp
+    builtin_types/bigint.h
     builtin_types/dict.cpp
     builtin_types/dict.h
     builtin_types/dict_view.cpp
