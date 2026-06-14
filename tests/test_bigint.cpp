@@ -1,5 +1,6 @@
 #include "builtin_types/bigint.h"
 
+#include "builtin_types/int.h"
 #include "runtime/exception_object.h"
 #include "runtime/thread_state.h"
 #include "test_helpers.h"
@@ -277,4 +278,78 @@ TEST(BigInt, DecimalStringFormatsLargePositiveAndNegativeValues)
               bigint_to_decimal_string(ConstBigIntView{3, 1, digits}));
     EXPECT_EQ(std::wstring(L"-18446744073709551616"),
               bigint_to_decimal_string(ConstBigIntView{3, -1, digits}));
+}
+
+TEST(BigInt, CompareBigIntViewsUsesSignedMagnitude)
+{
+    digit_t one[] = {1};
+    digit_t two[] = {2};
+    digit_t high[] = {0, 1};
+
+    EXPECT_EQ(0, compare_bigint(ConstBigIntView{1, 1, one},
+                                ConstBigIntView{1, 1, one}));
+    EXPECT_LT(
+        compare_bigint(ConstBigIntView{1, 1, one}, ConstBigIntView{1, 1, two}),
+        0);
+    EXPECT_GT(
+        compare_bigint(ConstBigIntView{2, 1, high}, ConstBigIntView{1, 1, two}),
+        0);
+    EXPECT_LT(compare_bigint(ConstBigIntView{1, -1, two},
+                             ConstBigIntView{1, -1, one}),
+              0);
+    EXPECT_LT(
+        compare_bigint(ConstBigIntView{1, -1, one}, ConstBigIntView{0, 0, one}),
+        0);
+    EXPECT_GT(
+        compare_bigint(ConstBigIntView{1, 1, one}, ConstBigIntView{0, 0, one}),
+        0);
+}
+
+TEST(BigInt, IntlikeValueToSmiAcceptsBoolAndRejectsNonIntegers)
+{
+    TValue<SMI> bool_smi = TValue<SMI>::from_smi(0);
+    TValue<SMI> none_smi = TValue<SMI>::from_smi(7);
+    Expected<IntToSmiStatus> bool_result =
+        try_intlike_value_to_smi(Value::True(), &bool_smi);
+    Expected<IntToSmiStatus> none_result =
+        try_intlike_value_to_smi(Value::None(), &none_smi);
+
+    ASSERT_TRUE(bool_result.has_value());
+    EXPECT_EQ(IntToSmiStatus::Converted, bool_result.value());
+    EXPECT_EQ(1, bool_smi.extract());
+    ASSERT_TRUE(none_result.has_value());
+    EXPECT_EQ(IntToSmiStatus::NotInt, none_result.value());
+    EXPECT_EQ(7, none_smi.extract());
+}
+
+TEST(BigInt, ExactIntValueToSmiExcludesBool)
+{
+    TValue<SMI> bool_smi = TValue<SMI>::from_smi(7);
+    Expected<IntToSmiStatus> bool_result =
+        try_exact_int_value_to_smi(Value::True(), &bool_smi);
+
+    ASSERT_TRUE(bool_result.has_value());
+    EXPECT_EQ(IntToSmiStatus::NotInt, bool_result.value());
+    EXPECT_EQ(7, bool_smi.extract());
+}
+
+TEST(BigInt, IntlikeValueToSmiRejectsOversizedBigIntWithOverflow)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation_scope(context.thread());
+    uint64_t magnitude = static_cast<uint64_t>(value_smi_max) + 1;
+    digit_t digits[] = {static_cast<digit_t>(magnitude),
+                        static_cast<digit_t>(magnitude >> 32)};
+    Expected<Value> value =
+        finalize_bigint(context.thread(), ConstBigIntView{2, 1, digits});
+    ASSERT_TRUE(value.has_value());
+    ASSERT_TRUE(can_convert_to<BigInt>(value.value()));
+
+    TValue<SMI> smi = TValue<SMI>::from_smi(0);
+    Expected<IntToSmiStatus> status =
+        try_intlike_value_to_smi(value.value(), &smi);
+
+    EXPECT_TRUE(status.has_exception());
+    expect_pending_exception(context.thread(), L"OverflowError",
+                             L"integer overflow");
 }

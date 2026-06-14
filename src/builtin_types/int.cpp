@@ -1,6 +1,5 @@
 #include "builtin_types/int.h"
 
-#include "builtin_types/bigint.h"
 #include "builtin_types/float.h"
 #include "builtin_types/str.h"
 #include "builtin_types/tuple.h"
@@ -16,6 +15,98 @@
 
 namespace cl
 {
+    static bool is_smi_or_bool_value(Value value)
+    {
+        return (value.as.integer & value_not_smi_or_boolean_mask) == 0;
+    }
+
+    static int64_t smi_or_bool_as_int(Value value)
+    {
+        assert(is_smi_or_bool_value(value));
+        Value integer_value;
+        integer_value.as.integer =
+            value.as.integer & value_boolean_to_integer_mask;
+        return integer_value.get_smi();
+    }
+
+    bool is_intlike_value(Value value)
+    {
+        return is_smi_or_bool_value(value) || can_convert_to<BigInt>(value);
+    }
+
+    bool is_exact_int_value(Value value)
+    {
+        return value.is_smi() || can_convert_to<BigInt>(value);
+    }
+
+    Expected<IntToSmiStatus> try_intlike_value_to_smi(Value value,
+                                                      TValue<SMI> *out)
+    {
+        if(is_smi_or_bool_value(value))
+        {
+            *out = TValue<SMI>::from_smi(smi_or_bool_as_int(value));
+            return Expected<IntToSmiStatus>::ok(IntToSmiStatus::Converted);
+        }
+        if(can_convert_to<BigInt>(value))
+        {
+            Expected<TValue<SMI>> smi =
+                bigint_to_smi(value.get_ptr<BigInt>()->view());
+            if(smi.has_exception())
+            {
+                return Expected<IntToSmiStatus>::propagate_exception();
+            }
+            *out = smi.value();
+            return Expected<IntToSmiStatus>::ok(IntToSmiStatus::Converted);
+        }
+        return Expected<IntToSmiStatus>::ok(IntToSmiStatus::NotInt);
+    }
+
+    Expected<IntToSmiStatus> try_exact_int_value_to_smi(Value value,
+                                                        TValue<SMI> *out)
+    {
+        if(value.is_smi())
+        {
+            *out = TValue<SMI>::from_smi(value.get_smi());
+            return Expected<IntToSmiStatus>::ok(IntToSmiStatus::Converted);
+        }
+        if(can_convert_to<BigInt>(value))
+        {
+            Expected<TValue<SMI>> smi =
+                bigint_to_smi(value.get_ptr<BigInt>()->view());
+            if(smi.has_exception())
+            {
+                return Expected<IntToSmiStatus>::propagate_exception();
+            }
+            *out = smi.value();
+            return Expected<IntToSmiStatus>::ok(IntToSmiStatus::Converted);
+        }
+        return Expected<IntToSmiStatus>::ok(IntToSmiStatus::NotInt);
+    }
+
+    ConstBigIntView intlike_value_bigint_view(Value value,
+                                              SmiBigInt *smi_storage)
+    {
+        if(is_smi_or_bool_value(value))
+        {
+            *smi_storage = SmiBigInt(smi_or_bool_as_int(value));
+            return smi_storage->view();
+        }
+        assert(can_convert_to<BigInt>(value));
+        return value.get_ptr<BigInt>()->view();
+    }
+
+    ConstBigIntView exact_int_value_bigint_view(Value value,
+                                                SmiBigInt *smi_storage)
+    {
+        if(value.is_smi())
+        {
+            *smi_storage = SmiBigInt(value.get_smi());
+            return smi_storage->view();
+        }
+        assert(can_convert_to<BigInt>(value));
+        return value.get_ptr<BigInt>()->view();
+    }
+
     static Value invalid_int_literal(ThreadState *thread)
     {
         return thread->set_pending_builtin_exception_string(
@@ -145,24 +236,12 @@ namespace cl
 
     static bool try_get_smi_or_bool(Value value, int64_t *out)
     {
-        if(unlikely((value.as.integer & value_not_smi_or_boolean_mask) == 0))
+        if(unlikely(is_smi_or_bool_value(value)))
         {
-            Value integer_value;
-            integer_value.as.integer =
-                value.as.integer & value_boolean_to_integer_mask;
-            *out = integer_value.get_smi();
+            *out = smi_or_bool_as_int(value);
             return true;
         }
         return false;
-    }
-
-    static int64_t smi_or_bool_as_int(Value value)
-    {
-        assert((value.as.integer & value_not_smi_or_boolean_mask) == 0);
-        Value integer_value;
-        integer_value.as.integer =
-            value.as.integer & value_boolean_to_integer_mask;
-        return integer_value.get_smi();
     }
 
     static Value int_overflow_error(ThreadState *thread)
@@ -553,6 +632,90 @@ namespace cl
         }
     };
 
+    struct IntEqOperator
+    {
+        static constexpr const wchar_t *receiver_error =
+            L"int.__eq__ expects an int receiver";
+
+        Value operator()(ThreadState *thread, ConstBigIntView left,
+                         ConstBigIntView right) const
+        {
+            (void)thread;
+            return compare_bigint(left, right) == 0 ? Value::True()
+                                                    : Value::False();
+        }
+    };
+
+    struct IntNeOperator
+    {
+        static constexpr const wchar_t *receiver_error =
+            L"int.__ne__ expects an int receiver";
+
+        Value operator()(ThreadState *thread, ConstBigIntView left,
+                         ConstBigIntView right) const
+        {
+            (void)thread;
+            return compare_bigint(left, right) != 0 ? Value::True()
+                                                    : Value::False();
+        }
+    };
+
+    struct IntLtOperator
+    {
+        static constexpr const wchar_t *receiver_error =
+            L"int.__lt__ expects an int receiver";
+
+        Value operator()(ThreadState *thread, ConstBigIntView left,
+                         ConstBigIntView right) const
+        {
+            (void)thread;
+            return compare_bigint(left, right) < 0 ? Value::True()
+                                                   : Value::False();
+        }
+    };
+
+    struct IntLeOperator
+    {
+        static constexpr const wchar_t *receiver_error =
+            L"int.__le__ expects an int receiver";
+
+        Value operator()(ThreadState *thread, ConstBigIntView left,
+                         ConstBigIntView right) const
+        {
+            (void)thread;
+            return compare_bigint(left, right) <= 0 ? Value::True()
+                                                    : Value::False();
+        }
+    };
+
+    struct IntGtOperator
+    {
+        static constexpr const wchar_t *receiver_error =
+            L"int.__gt__ expects an int receiver";
+
+        Value operator()(ThreadState *thread, ConstBigIntView left,
+                         ConstBigIntView right) const
+        {
+            (void)thread;
+            return compare_bigint(left, right) > 0 ? Value::True()
+                                                   : Value::False();
+        }
+    };
+
+    struct IntGeOperator
+    {
+        static constexpr const wchar_t *receiver_error =
+            L"int.__ge__ expects an int receiver";
+
+        Value operator()(ThreadState *thread, ConstBigIntView left,
+                         ConstBigIntView right) const
+        {
+            (void)thread;
+            return compare_bigint(left, right) >= 0 ? Value::True()
+                                                    : Value::False();
+        }
+    };
+
     template <typename Operator>
     static Value native_int_unary_operator(ThreadState *thread, Value self)
     {
@@ -583,6 +746,27 @@ namespace cl
             return Value::NotImplemented();
         }
 
+        return Operator{}(thread, left, right);
+    }
+
+    template <typename Operator>
+    static Value native_int_compare_operator(ThreadState *thread, Value self,
+                                             Value other)
+    {
+        if(!is_intlike_value(self))
+        {
+            return thread->set_pending_builtin_exception_string(
+                L"TypeError", Operator::receiver_error);
+        }
+        if(!is_intlike_value(other))
+        {
+            return Value::NotImplemented();
+        }
+
+        SmiBigInt left_smi(0);
+        SmiBigInt right_smi(0);
+        ConstBigIntView left = intlike_value_bigint_view(self, &left_smi);
+        ConstBigIntView right = intlike_value_bigint_view(other, &right_smi);
         return Operator{}(thread, left, right);
     }
 
@@ -698,6 +882,24 @@ namespace cl
                                      L"Return str(self)."),
             builtin_intrinsic_method(L"__repr__", native_int_str,
                                      L"Return repr(self)."),
+            builtin_intrinsic_method(L"__eq__",
+                                     native_int_compare_operator<IntEqOperator>,
+                                     L"Return self == value."),
+            builtin_intrinsic_method(L"__ne__",
+                                     native_int_compare_operator<IntNeOperator>,
+                                     L"Return self != value."),
+            builtin_intrinsic_method(L"__lt__",
+                                     native_int_compare_operator<IntLtOperator>,
+                                     L"Return self < value."),
+            builtin_intrinsic_method(L"__le__",
+                                     native_int_compare_operator<IntLeOperator>,
+                                     L"Return self <= value."),
+            builtin_intrinsic_method(L"__gt__",
+                                     native_int_compare_operator<IntGtOperator>,
+                                     L"Return self > value."),
+            builtin_intrinsic_method(L"__ge__",
+                                     native_int_compare_operator<IntGeOperator>,
+                                     L"Return self >= value."),
             with_trusted_handler_resolver(
                 builtin_intrinsic_method(
                     L"__add__", native_int_binary_operator<SMIAddOperator>,

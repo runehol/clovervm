@@ -1,6 +1,7 @@
 #ifndef CL_SLICE_H
 #define CL_SLICE_H
 
+#include "builtin_types/int.h"
 #include "object_model/builtin_class_registry.h"
 #include "object_model/object.h"
 #include "object_model/owned.h"
@@ -62,14 +63,20 @@ namespace cl
 
     ALWAYSINLINE Expected<int64_t> slice_field_to_smi(Value value)
     {
-        if(!value.is_smi())
+        TValue<SMI> smi = TValue<SMI>::from_smi(0);
+        Expected<IntToSmiStatus> status = try_intlike_value_to_smi(value, &smi);
+        if(status.has_exception())
+        {
+            return Expected<int64_t>::propagate_exception();
+        }
+        if(status.value() == IntToSmiStatus::NotInt)
         {
             return Expected<int64_t>::raise_exception(
                 L"TypeError",
                 L"slice indices must be integers or None or have an "
                 L"__index__ method");
         }
-        return Expected<int64_t>::ok(value.get_smi());
+        return Expected<int64_t>::ok(smi.extract());
     }
 
     ALWAYSINLINE int64_t normalize_slice_field(int64_t index,

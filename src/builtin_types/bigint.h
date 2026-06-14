@@ -139,6 +139,8 @@ namespace cl
     [[nodiscard]] Expected<Value> bigint_from_int64(ThreadState *thread,
                                                     int64_t value);
     [[nodiscard]] Expected<int64_t> bigint_to_int64(ConstBigIntView view);
+    int compare_bigint_abs(ConstBigIntView left, ConstBigIntView right);
+    int compare_bigint(ConstBigIntView left, ConstBigIntView right);
     std::wstring bigint_to_decimal_string(ConstBigIntView view);
 
 }  // namespace cl

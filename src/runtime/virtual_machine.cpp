@@ -218,7 +218,7 @@ namespace cl
     [[nodiscard]] static Value require_range_integer_arg(Value arg,
                                                          Value &arg_out)
     {
-        if(!arg.is_integer())
+        if(!arg.is_smi())
         {
             return active_thread()->set_pending_builtin_exception_string(
                 L"TypeError", L"range() arguments must be integers");

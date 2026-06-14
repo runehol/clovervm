@@ -36,16 +36,16 @@ design rationale and semantic boundaries live in [BigInt Design](bigint.md).
 
 ### Stage 3: Integer Categories And Comparisons
 
-- [ ] Add explicit helpers for intlike, exact-int, and SMI-sized integer
+- [x] Add explicit helpers for intlike, exact-int, and SMI-sized integer
       classification/conversion.
-- [ ] Audit sites that use `is_integer()` followed by `get_smi()`.
-- [ ] Update checked SMI-sized internal conversions to reject out-of-SMI
+- [x] Audit sites that use `is_integer()` followed by `get_smi()`.
+- [x] Update checked SMI-sized internal conversions to reject out-of-SMI
       BigInts with `OverflowError`.
-- [ ] Implement equality comparisons across bool, SMI, and BigInt.
-- [ ] Implement ordering comparisons across bool, SMI, and BigInt.
-- [ ] Leave BigInt hashing deferred while `hash()` and non-string dictionary
+- [x] Implement equality comparisons across bool, SMI, and BigInt.
+- [x] Implement ordering comparisons across bool, SMI, and BigInt.
+- [x] Leave BigInt hashing deferred while `hash()` and non-string dictionary
       keys are not exposed.
-- [ ] Add tests for bool/SMI/BigInt comparison behavior and SMI-sized boundary
+- [x] Add tests for bool/SMI/BigInt comparison behavior and SMI-sized boundary
       rejection.
 
 ### Stage 4: Basic Arithmetic Dunder And Trusted Handlers

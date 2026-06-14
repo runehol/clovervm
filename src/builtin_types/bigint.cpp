@@ -248,6 +248,44 @@ namespace cl
         return Expected<int64_t>::ok(-static_cast<int64_t>(magnitude));
     }
 
+    int compare_bigint_abs(ConstBigIntView left, ConstBigIntView right)
+    {
+        ConstBigIntView normalized_left = normalize_bigint_view(left);
+        ConstBigIntView normalized_right = normalize_bigint_view(right);
+        if(normalized_left.n_digits != normalized_right.n_digits)
+        {
+            return normalized_left.n_digits < normalized_right.n_digits ? -1
+                                                                        : 1;
+        }
+        for(uint32_t idx = normalized_left.n_digits; idx > 0; --idx)
+        {
+            digit_t left_digit = normalized_left.digits[idx - 1];
+            digit_t right_digit = normalized_right.digits[idx - 1];
+            if(left_digit != right_digit)
+            {
+                return left_digit < right_digit ? -1 : 1;
+            }
+        }
+        return 0;
+    }
+
+    int compare_bigint(ConstBigIntView left, ConstBigIntView right)
+    {
+        ConstBigIntView normalized_left = normalize_bigint_view(left);
+        ConstBigIntView normalized_right = normalize_bigint_view(right);
+        if(normalized_left.signum != normalized_right.signum)
+        {
+            return normalized_left.signum < normalized_right.signum ? -1 : 1;
+        }
+        if(normalized_left.signum == 0)
+        {
+            return 0;
+        }
+
+        int abs_compare = compare_bigint_abs(normalized_left, normalized_right);
+        return normalized_left.signum > 0 ? abs_compare : -abs_compare;
+    }
+
     static uint32_t divmod_abs_by_u32(MutableBigIntView *quotient,
                                       ConstBigIntView dividend,
                                       uint32_t divisor)

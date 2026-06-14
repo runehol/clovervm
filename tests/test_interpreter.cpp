@@ -3651,7 +3651,7 @@ TEST(Interpreter,
 TEST(Interpreter, subscript_load_rejects_non_integer_list_index)
 {
     expect_python_error(L"xs = [1, 2, 3]\n"
-                        L"xs[False]\n",
+                        L"xs['x']\n",
                         L"TypeError",
                         L"list indices must be integers or slices");
 }
@@ -3660,7 +3660,7 @@ TEST(Interpreter, subscript_load_non_integer_list_index_unwinds_nested_frames)
 {
     expect_python_error(L"def fail():\n"
                         L"    xs = [1, 2, 3]\n"
-                        L"    return xs[False]\n"
+                        L"    return xs['x']\n"
                         L"fail()\n",
                         L"TypeError",
                         L"list indices must be integers or slices");
@@ -3670,9 +3670,18 @@ TEST(Interpreter, subscript_load_rejects_non_integer_tuple_index)
 {
     expect_python_error(L"class Cls:\n"
                         L"    pass\n"
-                        L"Cls.__mro__[False]\n",
+                        L"Cls.__mro__['x']\n",
                         L"TypeError",
                         L"tuple indices must be integers or slices");
+}
+
+TEST(Interpreter, subscript_load_accepts_bool_indices)
+{
+    EXPECT_EQ(Value::from_smi(2),
+              test::FileRunner(L"[1, 2][True]\n").return_value);
+    EXPECT_EQ(Value::from_smi(1),
+              test::FileRunner(L"(1, 2)[False]\n").return_value);
+    expect_string_result(L"'ab'[True]\n", L"b");
 }
 
 TEST(Interpreter, subscript_load_slices_list)
@@ -3716,7 +3725,7 @@ TEST(Interpreter, subscript_load_slice_reports_invalid_consumed_values)
 
 TEST(Interpreter, subscript_load_rejects_non_integer_string_index)
 {
-    expect_python_error(L"'abc'[False]\n", L"TypeError",
+    expect_python_error(L"'abc'['x']\n", L"TypeError",
                         L"string indices must be integers or slices");
 }
 

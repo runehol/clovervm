@@ -1,4 +1,5 @@
 #include "builtin_types/str.h"
+#include "builtin_types/int.h"
 #include "builtin_types/list.h"
 #include "builtin_types/slice.h"
 #include "builtin_types/string_builder.h"
@@ -346,12 +347,19 @@ namespace cl
     static Value require_smi_index(Value value, const wchar_t *message,
                                    int64_t &out)
     {
-        if(!value.is_smi())
+        TValue<SMI> index = TValue<SMI>::from_smi(0);
+        Expected<IntToSmiStatus> status =
+            try_intlike_value_to_smi(value, &index);
+        if(status.has_exception())
+        {
+            return Value::exception_marker();
+        }
+        if(status.value() == IntToSmiStatus::NotInt)
         {
             return active_thread()->set_pending_builtin_exception_string(
                 L"TypeError", message);
         }
-        out = value.get_smi();
+        out = index.extract();
         return Value::None();
     }
 
