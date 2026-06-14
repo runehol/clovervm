@@ -1049,7 +1049,7 @@ namespace cl
             }
             if(unlikely(left_int == value_smi_min && right_int == -1))
             {
-                MUSTTAIL return overflow_path(ARGS);
+                MUSTTAIL return op_floordiv_dispatch(ARGS);
             }
             accumulator =
                 Value::from_smi(floor_div_smi_values(left_int, right_int));
@@ -1075,7 +1075,7 @@ namespace cl
             }
             if(unlikely(left_int == value_smi_min && right_int == -1))
             {
-                MUSTTAIL return overflow_path(ARGS);
+                MUSTTAIL return op_floordiv_smi_dispatch(ARGS);
             }
             accumulator =
                 Value::from_smi(floor_div_smi_values(left_int, right_int));
@@ -3352,7 +3352,7 @@ namespace cl
                                            &accumulator.as.integer)))
         {
             accumulator.as.integer -= b.as.integer;
-            MUSTTAIL return overflow_path(ARGS);
+            MUSTTAIL return op_add_smi_dispatch(ARGS);
         }
 
         COMPLETE();
@@ -3372,7 +3372,7 @@ namespace cl
                                            &accumulator.as.integer)))
         {
             accumulator.as.integer -= a.as.integer;
-            MUSTTAIL return overflow_path(ARGS);
+            MUSTTAIL return op_add_dispatch(ARGS);
         }
 
         COMPLETE();
@@ -3391,7 +3391,7 @@ namespace cl
                                            &accumulator.as.integer)))
         {
             accumulator.as.integer += b.as.integer;
-            MUSTTAIL return overflow_path(ARGS);
+            MUSTTAIL return op_sub_smi_dispatch(ARGS);
         }
 
         COMPLETE();
@@ -3411,7 +3411,7 @@ namespace cl
                                            &accumulator.as.integer)))
         {
             accumulator.as.integer += a.as.integer;
-            MUSTTAIL return overflow_path(ARGS);
+            MUSTTAIL return op_sub_dispatch(ARGS);
         }
 
         COMPLETE();
@@ -3431,7 +3431,7 @@ namespace cl
         if(unlikely(__builtin_smulll_overflow(a.as.integer, b.get_smi(),
                                               &dest.as.integer)))
         {
-            MUSTTAIL return overflow_path(ARGS);
+            MUSTTAIL return op_mul_dispatch(ARGS);
         }
         accumulator = dest;
 
@@ -3451,7 +3451,7 @@ namespace cl
         if(unlikely(__builtin_smulll_overflow(a.as.integer, b.get_smi(),
                                               &dest.as.integer)))
         {
-            MUSTTAIL return overflow_path(ARGS);
+            MUSTTAIL return op_mul_smi_dispatch(ARGS);
         }
         accumulator = dest;
 
@@ -3477,7 +3477,7 @@ namespace cl
                     (value != 0 &&
                      shift_count + int64_t(value_tag_bits) > sign_bits)))
         {
-            MUSTTAIL return overflow_path(ARGS);
+            MUSTTAIL return op_lshift_dispatch(ARGS);
         }
         accumulator.as.integer =
             static_cast<int64_t>(uint64_t(a.as.integer) << shift_count);
@@ -3502,7 +3502,7 @@ namespace cl
         if(unlikely(value != 0 &&
                     shift_count + int64_t(value_tag_bits) > sign_bits))
         {
-            MUSTTAIL return overflow_path(ARGS);
+            MUSTTAIL return op_lshift_smi_dispatch(ARGS);
         }
         accumulator.as.integer =
             static_cast<int64_t>(uint64_t(a.as.integer) << shift_count);
@@ -3821,7 +3821,7 @@ namespace cl
                                            &accumulator.as.integer)))
         {
             accumulator.as.integer = -accumulator.as.integer;
-            MUSTTAIL return overflow_path(ARGS);
+            MUSTTAIL return op_negate_dispatch(ARGS);
         }
 
         COMPLETE();
