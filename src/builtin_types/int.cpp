@@ -435,6 +435,75 @@ namespace cl
         }
     };
 
+    struct SMIAndOperator
+    {
+        static constexpr const wchar_t *receiver_error =
+            L"int.__and__ expects an int receiver";
+
+        Value operator()(ThreadState *thread, int64_t left, int64_t right) const
+        {
+            (void)thread;
+            return Value::from_smi(left & right);
+        }
+    };
+
+    struct SMIRAndOperator
+    {
+        static constexpr const wchar_t *receiver_error =
+            L"int.__rand__ expects an int receiver";
+
+        Value operator()(ThreadState *thread, int64_t left, int64_t right) const
+        {
+            return SMIAndOperator{}(thread, right, left);
+        }
+    };
+
+    struct SMIXorOperator
+    {
+        static constexpr const wchar_t *receiver_error =
+            L"int.__xor__ expects an int receiver";
+
+        Value operator()(ThreadState *thread, int64_t left, int64_t right) const
+        {
+            (void)thread;
+            return Value::from_smi(left ^ right);
+        }
+    };
+
+    struct SMIRXorOperator
+    {
+        static constexpr const wchar_t *receiver_error =
+            L"int.__rxor__ expects an int receiver";
+
+        Value operator()(ThreadState *thread, int64_t left, int64_t right) const
+        {
+            return SMIXorOperator{}(thread, right, left);
+        }
+    };
+
+    struct SMIOrOperator
+    {
+        static constexpr const wchar_t *receiver_error =
+            L"int.__or__ expects an int receiver";
+
+        Value operator()(ThreadState *thread, int64_t left, int64_t right) const
+        {
+            (void)thread;
+            return Value::from_smi(left | right);
+        }
+    };
+
+    struct SMIROrOperator
+    {
+        static constexpr const wchar_t *receiver_error =
+            L"int.__ror__ expects an int receiver";
+
+        Value operator()(ThreadState *thread, int64_t left, int64_t right) const
+        {
+            return SMIOrOperator{}(thread, right, left);
+        }
+    };
+
     struct SMINegOperator
     {
         static constexpr const wchar_t *receiver_error =
@@ -459,6 +528,18 @@ namespace cl
         {
             (void)thread;
             return Value::from_smi(value);
+        }
+    };
+
+    struct SMIInvertOperator
+    {
+        static constexpr const wchar_t *receiver_error =
+            L"int.__invert__ expects an int receiver";
+
+        Value operator()(ThreadState *thread, int64_t value) const
+        {
+            (void)thread;
+            return Value::from_smi(~value);
         }
     };
 
@@ -707,6 +788,42 @@ namespace cl
                                                     SMIRShiftOperator>),
             with_trusted_handler_resolver(
                 builtin_intrinsic_method(
+                    L"__and__", native_int_binary_operator<SMIAndOperator>,
+                    L"Return self & value."),
+                resolve_trusted_int_binary_resolver<SMIAndOperator,
+                                                    SMIRAndOperator>),
+            with_trusted_handler_resolver(
+                builtin_intrinsic_method(
+                    L"__rand__", native_int_binary_operator<SMIRAndOperator>,
+                    L"Return value & self."),
+                resolve_trusted_int_binary_resolver<SMIRAndOperator,
+                                                    SMIAndOperator>),
+            with_trusted_handler_resolver(
+                builtin_intrinsic_method(
+                    L"__xor__", native_int_binary_operator<SMIXorOperator>,
+                    L"Return self ^ value."),
+                resolve_trusted_int_binary_resolver<SMIXorOperator,
+                                                    SMIRXorOperator>),
+            with_trusted_handler_resolver(
+                builtin_intrinsic_method(
+                    L"__rxor__", native_int_binary_operator<SMIRXorOperator>,
+                    L"Return value ^ self."),
+                resolve_trusted_int_binary_resolver<SMIRXorOperator,
+                                                    SMIXorOperator>),
+            with_trusted_handler_resolver(
+                builtin_intrinsic_method(
+                    L"__or__", native_int_binary_operator<SMIOrOperator>,
+                    L"Return self | value."),
+                resolve_trusted_int_binary_resolver<SMIOrOperator,
+                                                    SMIROrOperator>),
+            with_trusted_handler_resolver(
+                builtin_intrinsic_method(
+                    L"__ror__", native_int_binary_operator<SMIROrOperator>,
+                    L"Return value | self."),
+                resolve_trusted_int_binary_resolver<SMIROrOperator,
+                                                    SMIOrOperator>),
+            with_trusted_handler_resolver(
+                builtin_intrinsic_method(
                     L"__neg__", native_int_unary_operator<SMINegOperator>,
                     L"Return -self."),
                 resolve_trusted_int_unary_handler<SMINegOperator>),
@@ -715,6 +832,11 @@ namespace cl
                     L"__pos__", native_int_unary_operator<SMIPosOperator>,
                     L"Return +self."),
                 resolve_trusted_int_unary_handler<SMIPosOperator>),
+            with_trusted_handler_resolver(
+                builtin_intrinsic_method(
+                    L"__invert__", native_int_unary_operator<SMIInvertOperator>,
+                    L"Return ~self."),
+                resolve_trusted_int_unary_handler<SMIInvertOperator>),
         };
         unwrap_bootstrap_expected(
             vm,

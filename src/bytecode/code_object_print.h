@@ -788,9 +788,6 @@ template <> struct fmt::formatter<cl::CodeObject>
                 break;
 
             case cl::Bytecode::Pow:
-            case cl::Bytecode::Or:
-            case cl::Bytecode::And:
-            case cl::Bytecode::Xor:
             case cl::Bytecode::TestIs:
             case cl::Bytecode::TestIsNot:
             case cl::Bytecode::TestIn:
@@ -807,6 +804,9 @@ template <> struct fmt::formatter<cl::CodeObject>
             case cl::Bytecode::LShift:
             case cl::Bytecode::RShift:
             case cl::Bytecode::Mod:
+            case cl::Bytecode::Or:
+            case cl::Bytecode::And:
+            case cl::Bytecode::Xor:
             case cl::Bytecode::TestEqual:
             case cl::Bytecode::TestNotEqual:
             case cl::Bytecode::TestLess:
@@ -823,9 +823,6 @@ template <> struct fmt::formatter<cl::CodeObject>
                 break;
 
             case cl::Bytecode::PowSmi:
-            case cl::Bytecode::OrSmi:
-            case cl::Bytecode::AndSmi:
-            case cl::Bytecode::XorSmi:
                 format_to(out, " ");
                 disassemble_smi8(code_obj, out, pc++);
                 break;
@@ -837,6 +834,9 @@ template <> struct fmt::formatter<cl::CodeObject>
             case cl::Bytecode::LShiftSmi:
             case cl::Bytecode::RShiftSmi:
             case cl::Bytecode::ModSmi:
+            case cl::Bytecode::OrSmi:
+            case cl::Bytecode::AndSmi:
+            case cl::Bytecode::XorSmi:
                 format_to(out, " ");
                 disassemble_smi8(code_obj, out, pc++);
                 format_to(out, ", ");
@@ -848,6 +848,7 @@ template <> struct fmt::formatter<cl::CodeObject>
 
             case cl::Bytecode::Neg:
             case cl::Bytecode::Pos:
+            case cl::Bytecode::Invert:
                 format_to(out, " ");
                 disassemble_operator_cache(code_obj, out, pc++);
                 break;
@@ -855,7 +856,6 @@ template <> struct fmt::formatter<cl::CodeObject>
             case cl::Bytecode::Nop:
             case cl::Bytecode::Not:
             case cl::Bytecode::Sqrt:
-            case cl::Bytecode::Invert:
             case cl::Bytecode::CheckOperatorNotImplemented:
                 break;
 

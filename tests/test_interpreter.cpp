@@ -1496,6 +1496,46 @@ TEST(Interpreter, float_arithmetic_values)
     EXPECT_EQ(Value::from_smi(1), test_context.run_file(L"+True\n"));
 }
 
+TEST(Interpreter, bitwise_integer_values)
+{
+    test::VmTestContext test_context;
+
+    EXPECT_EQ(Value::from_smi(1), test_context.run_file(L"5 & 3\n"));
+    EXPECT_EQ(Value::from_smi(5), test_context.run_file(L"4 | 1\n"));
+    EXPECT_EQ(Value::from_smi(5), test_context.run_file(L"6 ^ 3\n"));
+    EXPECT_EQ(Value::from_smi(-5), test_context.run_file(L"-8 | 3\n"));
+    EXPECT_EQ(Value::from_smi(0), test_context.run_file(L"-8 & 3\n"));
+    EXPECT_EQ(Value::from_smi(-5), test_context.run_file(L"-8 ^ 3\n"));
+    EXPECT_EQ(Value::from_smi(-4), test_context.run_file(L"~3\n"));
+    EXPECT_EQ(Value::from_smi(2), test_context.run_file(L"~-3\n"));
+}
+
+TEST(Interpreter, bitwise_dispatch_calls_custom_methods)
+{
+    test::VmTestContext test_context;
+
+    EXPECT_EQ(Value::from_smi(42),
+              test_context.run_file(L"class Right:\n"
+                                    L"    def __rand__(self, other):\n"
+                                    L"        return 42\n"
+                                    L"1 & Right()\n"));
+    EXPECT_EQ(Value::from_smi(43),
+              test_context.run_file(L"class Right:\n"
+                                    L"    def __ror__(self, other):\n"
+                                    L"        return 43\n"
+                                    L"1 | Right()\n"));
+    EXPECT_EQ(Value::from_smi(44),
+              test_context.run_file(L"class Right:\n"
+                                    L"    def __rxor__(self, other):\n"
+                                    L"        return 44\n"
+                                    L"1 ^ Right()\n"));
+    EXPECT_EQ(Value::from_smi(45),
+              test_context.run_file(L"class Left:\n"
+                                    L"    def __invert__(self):\n"
+                                    L"        return 45\n"
+                                    L"~Left()\n"));
+}
+
 TEST(Interpreter, true_division_values)
 {
     test::VmTestContext test_context;

@@ -3301,6 +3301,9 @@ namespace cl
     DEFINE_BINARY_OPERATOR_DISPATCH(mod, Mod)
     DEFINE_BINARY_OPERATOR_DISPATCH(lshift, LShift)
     DEFINE_BINARY_OPERATOR_DISPATCH(rshift, RShift)
+    DEFINE_BINARY_OPERATOR_DISPATCH(and, And)
+    DEFINE_BINARY_OPERATOR_DISPATCH(xor, Xor)
+    DEFINE_BINARY_OPERATOR_DISPATCH(or, Or)
 
 #undef DEFINE_BINARY_OPERATOR_DISPATCH
 #undef DEFINE_BINARY_SMI_OPERATOR_DISPATCH
@@ -3323,6 +3326,16 @@ namespace cl
         DispatchTableEntry next_dispatch_fun = dispatch_cached_unary_operator(
             thread, fp, pc, dispatch, code_object, accumulator,
             OperatorDispatchTableId::Pos, cache_idx, a, pc + 2);
+        MUSTTAIL return next_dispatch_fun(ARGS);
+    }
+
+    NOINLINE static INTERP_CC Value op_invert_dispatch(PARAMS)
+    {
+        uint8_t cache_idx = pc[1];
+        Value a = accumulator;
+        DispatchTableEntry next_dispatch_fun = dispatch_cached_unary_operator(
+            thread, fp, pc, dispatch, code_object, accumulator,
+            OperatorDispatchTableId::Invert, cache_idx, a, pc + 2);
         MUSTTAIL return next_dispatch_fun(ARGS);
     }
 
@@ -3534,6 +3547,47 @@ namespace cl
 
         COMPLETE();
     }
+
+#define DEFINE_BITWISE_REG_OPERATOR(name, op)                                  \
+    static INTERP_CC Value op_##name(PARAMS)                                   \
+    {                                                                          \
+        START(4);                                                              \
+        int8_t reg = pc[1];                                                    \
+        Value a = fp[reg];                                                     \
+        Value b = accumulator;                                                 \
+        if(unlikely(A_OR_B_NOT_SMI()))                                         \
+        {                                                                      \
+            MUSTTAIL return op_##name##_dispatch(ARGS);                        \
+        }                                                                      \
+        accumulator.as.integer = a.as.integer op b.as.integer;                 \
+        COMPLETE();                                                            \
+    }
+
+#define DEFINE_BITWISE_SMI_OPERATOR(name, op)                                  \
+    static INTERP_CC Value op_##name##_smi(PARAMS)                             \
+    {                                                                          \
+        START(4);                                                              \
+        Value a = accumulator;                                                 \
+        Value b = Value::from_smi(int8_t(pc[1]));                              \
+        if(unlikely(A_NOT_SMI()))                                              \
+        {                                                                      \
+            MUSTTAIL return op_##name##_smi_dispatch(ARGS);                    \
+        }                                                                      \
+        accumulator.as.integer = a.as.integer op b.as.integer;                 \
+        COMPLETE();                                                            \
+    }
+
+#define DEFINE_BITWISE_OPERATOR(name, op)                                      \
+    DEFINE_BITWISE_REG_OPERATOR(name, op)                                      \
+    DEFINE_BITWISE_SMI_OPERATOR(name, op)
+
+    DEFINE_BITWISE_OPERATOR(and, &)
+    DEFINE_BITWISE_OPERATOR(xor, ^)
+    DEFINE_BITWISE_OPERATOR(or, |)
+
+#undef DEFINE_BITWISE_OPERATOR
+#undef DEFINE_BITWISE_SMI_OPERATOR
+#undef DEFINE_BITWISE_REG_OPERATOR
 
     static INTERP_CC Value op_is(PARAMS)
     {
@@ -3781,6 +3835,21 @@ namespace cl
         {
             MUSTTAIL return op_plus_dispatch(ARGS);
         }
+
+        COMPLETE();
+    }
+
+    static INTERP_CC Value op_invert(PARAMS)
+    {
+        START(2);
+        Value a = accumulator;
+        if(unlikely(A_NOT_SMI()))
+        {
+            MUSTTAIL return op_invert_dispatch(ARGS);
+        }
+
+        accumulator.as.integer =
+            ~a.as.integer & ~static_cast<int64_t>(value_tag_mask);
 
         COMPLETE();
     }
@@ -5348,6 +5417,12 @@ namespace cl
         SET_TABLE_ENTRY(Bytecode::LShiftSmi, op_lshift_smi);
         SET_TABLE_ENTRY(Bytecode::RShift, op_rshift);
         SET_TABLE_ENTRY(Bytecode::RShiftSmi, op_rshift_smi);
+        SET_TABLE_ENTRY(Bytecode::Or, op_or);
+        SET_TABLE_ENTRY(Bytecode::OrSmi, op_or_smi);
+        SET_TABLE_ENTRY(Bytecode::And, op_and);
+        SET_TABLE_ENTRY(Bytecode::AndSmi, op_and_smi);
+        SET_TABLE_ENTRY(Bytecode::Xor, op_xor);
+        SET_TABLE_ENTRY(Bytecode::XorSmi, op_xor_smi);
 
         SET_TABLE_ENTRY(Bytecode::TestIs, op_is);
         SET_TABLE_ENTRY(Bytecode::TestIsNot, op_is_not);
@@ -5378,6 +5453,7 @@ namespace cl
 
         SET_TABLE_ENTRY(Bytecode::Neg, op_negate);
         SET_TABLE_ENTRY(Bytecode::Pos, op_plus);
+        SET_TABLE_ENTRY(Bytecode::Invert, op_invert);
         SET_TABLE_ENTRY(Bytecode::Sqrt, op_sqrt);
         SET_TABLE_ENTRY(Bytecode::Not, op_not);
 

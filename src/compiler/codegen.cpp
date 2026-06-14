@@ -73,11 +73,14 @@ namespace cl
             OperatorBytecodeFormat::WithCacheAndNotImplementedCheck,
             Bytecode::Mod, Bytecode::ModSmi);
         t.table[size_t(AstOperatorKind::BITWISE_OR)] = OpTableEntry(
-            OperatorBytecodeFormat::Plain, Bytecode::Or, Bytecode::OrSmi);
+            OperatorBytecodeFormat::WithCacheAndNotImplementedCheck,
+            Bytecode::Or, Bytecode::OrSmi);
         t.table[size_t(AstOperatorKind::BITWISE_AND)] = OpTableEntry(
-            OperatorBytecodeFormat::Plain, Bytecode::And, Bytecode::AndSmi);
+            OperatorBytecodeFormat::WithCacheAndNotImplementedCheck,
+            Bytecode::And, Bytecode::AndSmi);
         t.table[size_t(AstOperatorKind::BITWISE_XOR)] = OpTableEntry(
-            OperatorBytecodeFormat::Plain, Bytecode::Xor, Bytecode::XorSmi);
+            OperatorBytecodeFormat::WithCacheAndNotImplementedCheck,
+            Bytecode::Xor, Bytecode::XorSmi);
 
         t.table[size_t(AstOperatorKind::EQUAL)] = OpTableEntry(
             OperatorBytecodeFormat::WithCacheAndNotImplementedCheck,
@@ -113,7 +116,7 @@ namespace cl
         t.table[size_t(AstOperatorKind::PLUS)] =
             OpTableEntry(OperatorBytecodeFormat::WithCache, Bytecode::Pos);
         t.table[size_t(AstOperatorKind::BITWISE_NOT)] =
-            OpTableEntry(OperatorBytecodeFormat::Plain, Bytecode::Invert);
+            OpTableEntry(OperatorBytecodeFormat::WithCache, Bytecode::Invert);
 
         return t;
     }
