@@ -138,6 +138,7 @@ namespace cl
     BigInt *make_uninitialized_bigint_for_digits(ThreadState *thread,
                                                  size_t n_digits,
                                                  signum_t signum);
+    bool is_normalized_bigint_view(ConstBigIntView view);
     ConstBigIntView normalize_bigint_view(ConstBigIntView view);
     [[nodiscard]] Expected<TValue<SMI>> bigint_to_smi(ConstBigIntView view);
     [[nodiscard]] Expected<Value> finalize_bigint(ThreadState *thread,

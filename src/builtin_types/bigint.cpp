@@ -90,6 +90,19 @@ namespace cl
                                                n_digits, signum);
     }
 
+    bool is_normalized_bigint_view(ConstBigIntView view)
+    {
+        if(view.n_digits == 0)
+        {
+            return view.signum == 0;
+        }
+        if(view.signum != -1 && view.signum != 1)
+        {
+            return false;
+        }
+        return view.digits[view.n_digits - 1] != 0;
+    }
+
     ConstBigIntView normalize_bigint_view(ConstBigIntView view)
     {
         while(view.n_digits > 0 && view.digits[view.n_digits - 1] == 0)
@@ -120,6 +133,7 @@ namespace cl
     static Optional<TValue<SMI>>
     normalized_bigint_view_to_smi_if_fits(ConstBigIntView view)
     {
+        assert(is_normalized_bigint_view(view));
         assert(view.signum == 0 || view.signum == -1 || view.signum == 1);
         if(view.signum == 0)
         {
@@ -153,9 +167,9 @@ namespace cl
 
     Expected<TValue<SMI>> bigint_to_smi(ConstBigIntView view)
     {
-        ConstBigIntView normalized = normalize_bigint_view(view);
+        assert(is_normalized_bigint_view(view));
         Optional<TValue<SMI>> result =
-            normalized_bigint_view_to_smi_if_fits(normalized);
+            normalized_bigint_view_to_smi_if_fits(view);
         if(result.has_value())
         {
             return Expected<TValue<SMI>>::ok(result.value());
@@ -166,20 +180,18 @@ namespace cl
 
     Expected<Value> finalize_bigint(ThreadState *thread, ConstBigIntView view)
     {
-        ConstBigIntView normalized = normalize_bigint_view(view);
-        Optional<TValue<SMI>> smi =
-            normalized_bigint_view_to_smi_if_fits(normalized);
+        assert(is_normalized_bigint_view(view));
+        Optional<TValue<SMI>> smi = normalized_bigint_view_to_smi_if_fits(view);
         if(smi.has_value())
         {
             return Expected<Value>::ok(smi.value().raw_value());
         }
 
         BigInt *bigint = make_uninitialized_bigint_for_digits(
-            thread, normalized.n_digits, normalized.signum);
+            thread, view.n_digits, view.signum);
         MutableBigIntView dest = bigint->mutable_view_for_initialization();
-        assert(dest.capacity >= normalized.n_digits);
-        std::memcpy(dest.digits, normalized.digits,
-                    normalized.n_digits * sizeof(digit_t));
+        assert(dest.capacity >= view.n_digits);
+        std::memcpy(dest.digits, view.digits, view.n_digits * sizeof(digit_t));
         return Expected<Value>::ok(Value::from_oop(bigint));
     }
 
@@ -213,20 +225,19 @@ namespace cl
 
     Expected<int64_t> bigint_to_int64(ConstBigIntView view)
     {
-        ConstBigIntView normalized = normalize_bigint_view(view);
-        if(normalized.signum == 0)
+        assert(is_normalized_bigint_view(view));
+        if(view.signum == 0)
         {
             return Expected<int64_t>::ok(0);
         }
-        if(normalized.n_digits > 2)
+        if(view.n_digits > 2)
         {
             return Expected<int64_t>::raise_exception(L"OverflowError",
                                                       L"integer overflow");
         }
 
-        double_digit_t magnitude =
-            magnitude_to_double_digit_unchecked(normalized);
-        if(normalized.signum > 0)
+        double_digit_t magnitude = magnitude_to_double_digit_unchecked(view);
+        if(view.signum > 0)
         {
             if(magnitude > double_digit_t(std::numeric_limits<int64_t>::max()))
             {
@@ -258,38 +269,35 @@ namespace cl
 
     static void copy_bigint_view(MutableBigIntView *dest, ConstBigIntView src)
     {
-        ConstBigIntView normalized = normalize_bigint_view(src);
-        assert(dest->capacity >= normalized.n_digits);
-        assert(dest->digits != normalized.digits);
-        if(normalized.n_digits > 0)
+        assert(is_normalized_bigint_view(src));
+        assert(dest->capacity >= src.n_digits);
+        assert(dest->digits != src.digits);
+        if(src.n_digits > 0)
         {
-            std::memcpy(dest->digits, normalized.digits,
-                        normalized.n_digits * sizeof(digit_t));
+            std::memcpy(dest->digits, src.digits,
+                        src.n_digits * sizeof(digit_t));
         }
-        dest->n_digits = normalized.n_digits;
-        dest->signum = normalized.signum;
+        dest->n_digits = src.n_digits;
+        dest->signum = src.signum;
     }
 
     void bigint_abs_add(MutableBigIntView *dest, ConstBigIntView left,
                         ConstBigIntView right)
     {
-        ConstBigIntView normalized_left = normalize_bigint_view(left);
-        ConstBigIntView normalized_right = normalize_bigint_view(right);
-        size_t max_digits =
-            std::max(normalized_left.n_digits, normalized_right.n_digits);
+        assert(is_normalized_bigint_view(left));
+        assert(is_normalized_bigint_view(right));
+        size_t max_digits = std::max(left.n_digits, right.n_digits);
         assert(dest->capacity >= max_digits + 1);
-        assert(dest->digits != normalized_left.digits);
-        assert(dest->digits != normalized_right.digits);
+        assert(dest->digits != left.digits);
+        assert(dest->digits != right.digits);
 
         double_digit_t carry = 0;
         for(size_t idx = 0; idx < max_digits; ++idx)
         {
-            double_digit_t left_digit = idx < normalized_left.n_digits
-                                            ? normalized_left.digits[idx]
-                                            : 0;
-            double_digit_t right_digit = idx < normalized_right.n_digits
-                                             ? normalized_right.digits[idx]
-                                             : 0;
+            double_digit_t left_digit =
+                idx < left.n_digits ? left.digits[idx] : 0;
+            double_digit_t right_digit =
+                idx < right.n_digits ? right.digits[idx] : 0;
             double_digit_t sum = left_digit + right_digit + carry;
             dest->digits[idx] = static_cast<digit_t>(sum);
             carry = sum >> kDigitBits;
@@ -302,25 +310,25 @@ namespace cl
             ++dest->n_digits;
         }
         dest->signum = dest->n_digits == 0 ? 0 : 1;
+        assert(is_normalized_bigint_view(dest->view()));
     }
 
     void bigint_abs_sub(MutableBigIntView *dest, ConstBigIntView left,
                         ConstBigIntView right)
     {
-        ConstBigIntView normalized_left = normalize_bigint_view(left);
-        ConstBigIntView normalized_right = normalize_bigint_view(right);
-        assert(compare_bigint_abs(normalized_left, normalized_right) >= 0);
-        assert(dest->capacity >= normalized_left.n_digits);
-        assert(dest->digits != normalized_left.digits);
-        assert(dest->digits != normalized_right.digits);
+        assert(is_normalized_bigint_view(left));
+        assert(is_normalized_bigint_view(right));
+        assert(compare_bigint_abs(left, right) >= 0);
+        assert(dest->capacity >= left.n_digits);
+        assert(dest->digits != left.digits);
+        assert(dest->digits != right.digits);
 
         double_digit_t borrow = 0;
-        for(size_t idx = 0; idx < normalized_left.n_digits; ++idx)
+        for(size_t idx = 0; idx < left.n_digits; ++idx)
         {
-            double_digit_t left_digit = normalized_left.digits[idx];
-            double_digit_t right_digit = idx < normalized_right.n_digits
-                                             ? normalized_right.digits[idx]
-                                             : 0;
+            double_digit_t left_digit = left.digits[idx];
+            double_digit_t right_digit =
+                idx < right.n_digits ? right.digits[idx] : 0;
             double_digit_t subtrahend = right_digit + borrow;
             if(left_digit < subtrahend)
             {
@@ -337,70 +345,74 @@ namespace cl
         }
         assert(borrow == 0);
 
-        dest->n_digits = normalized_left.n_digits;
+        dest->n_digits = left.n_digits;
         dest->signum = dest->n_digits == 0 ? 0 : 1;
         ConstBigIntView normalized = normalize_bigint_view(dest->view());
         dest->n_digits = normalized.n_digits;
-        dest->signum = normalized.n_digits == 0 ? 0 : 1;
+        dest->signum = normalized.signum;
     }
 
     void bigint_add(MutableBigIntView *dest, ConstBigIntView left,
                     ConstBigIntView right)
     {
-        ConstBigIntView normalized_left = normalize_bigint_view(left);
-        ConstBigIntView normalized_right = normalize_bigint_view(right);
-        assert(dest->digits != normalized_left.digits);
-        assert(dest->digits != normalized_right.digits);
+        assert(is_normalized_bigint_view(left));
+        assert(is_normalized_bigint_view(right));
+        assert(dest->digits != left.digits);
+        assert(dest->digits != right.digits);
 
-        if(normalized_left.signum == 0)
+        if(left.signum == 0)
         {
-            copy_bigint_view(dest, normalized_right);
+            copy_bigint_view(dest, right);
+            assert(is_normalized_bigint_view(dest->view()));
             return;
         }
-        if(normalized_right.signum == 0)
+        if(right.signum == 0)
         {
-            copy_bigint_view(dest, normalized_left);
+            copy_bigint_view(dest, left);
+            assert(is_normalized_bigint_view(dest->view()));
             return;
         }
-        if(normalized_left.signum == normalized_right.signum)
+        if(left.signum == right.signum)
         {
-            bigint_abs_add(dest, normalized_left, normalized_right);
-            dest->signum = normalized_left.signum;
+            bigint_abs_add(dest, left, right);
+            dest->signum = left.signum;
+            assert(is_normalized_bigint_view(dest->view()));
             return;
         }
 
-        int abs_compare = compare_bigint_abs(normalized_left, normalized_right);
+        int abs_compare = compare_bigint_abs(left, right);
         if(abs_compare == 0)
         {
             set_zero(dest);
         }
         else if(abs_compare > 0)
         {
-            bigint_abs_sub(dest, normalized_left, normalized_right);
-            dest->signum = normalized_left.signum;
+            bigint_abs_sub(dest, left, right);
+            dest->signum = left.signum;
         }
         else
         {
-            bigint_abs_sub(dest, normalized_right, normalized_left);
-            dest->signum = normalized_right.signum;
+            bigint_abs_sub(dest, right, left);
+            dest->signum = right.signum;
         }
+        assert(is_normalized_bigint_view(dest->view()));
     }
 
     void bigint_sub(MutableBigIntView *dest, ConstBigIntView left,
                     ConstBigIntView right)
     {
-        ConstBigIntView normalized_right = normalize_bigint_view(right);
+        assert(is_normalized_bigint_view(right));
         ConstBigIntView negated_right{
-            normalized_right.n_digits,
-            static_cast<signum_t>(-normalized_right.signum),
-            normalized_right.digits};
+            right.n_digits, static_cast<signum_t>(-right.signum), right.digits};
         bigint_add(dest, left, negated_right);
     }
 
     void bigint_abs_mul_add_u32(MutableBigIntView *dest, ConstBigIntView src,
                                 uint32_t multiplier, uint32_t addend)
     {
+        assert(is_normalized_bigint_view(src));
         assert(src.signum == 0 || src.signum == 1);
+        assert(multiplier != 0);
         assert(dest->capacity >= src.n_digits + 1);
         assert(dest->digits != src.digits);
 
@@ -420,21 +432,21 @@ namespace cl
             ++dest->n_digits;
         }
         dest->signum = dest->n_digits == 0 ? 0 : 1;
+        assert(is_normalized_bigint_view(dest->view()));
     }
 
     int compare_bigint_abs(ConstBigIntView left, ConstBigIntView right)
     {
-        ConstBigIntView normalized_left = normalize_bigint_view(left);
-        ConstBigIntView normalized_right = normalize_bigint_view(right);
-        if(normalized_left.n_digits != normalized_right.n_digits)
+        assert(is_normalized_bigint_view(left));
+        assert(is_normalized_bigint_view(right));
+        if(left.n_digits != right.n_digits)
         {
-            return normalized_left.n_digits < normalized_right.n_digits ? -1
-                                                                        : 1;
+            return left.n_digits < right.n_digits ? -1 : 1;
         }
-        for(size_t idx = normalized_left.n_digits; idx > 0; --idx)
+        for(size_t idx = left.n_digits; idx > 0; --idx)
         {
-            digit_t left_digit = normalized_left.digits[idx - 1];
-            digit_t right_digit = normalized_right.digits[idx - 1];
+            digit_t left_digit = left.digits[idx - 1];
+            digit_t right_digit = right.digits[idx - 1];
             if(left_digit != right_digit)
             {
                 return left_digit < right_digit ? -1 : 1;
@@ -445,25 +457,26 @@ namespace cl
 
     int compare_bigint(ConstBigIntView left, ConstBigIntView right)
     {
-        ConstBigIntView normalized_left = normalize_bigint_view(left);
-        ConstBigIntView normalized_right = normalize_bigint_view(right);
-        if(normalized_left.signum != normalized_right.signum)
+        assert(is_normalized_bigint_view(left));
+        assert(is_normalized_bigint_view(right));
+        if(left.signum != right.signum)
         {
-            return normalized_left.signum < normalized_right.signum ? -1 : 1;
+            return left.signum < right.signum ? -1 : 1;
         }
-        if(normalized_left.signum == 0)
+        if(left.signum == 0)
         {
             return 0;
         }
 
-        int abs_compare = compare_bigint_abs(normalized_left, normalized_right);
-        return normalized_left.signum > 0 ? abs_compare : -abs_compare;
+        int abs_compare = compare_bigint_abs(left, right);
+        return left.signum > 0 ? abs_compare : -abs_compare;
     }
 
     static uint32_t divmod_abs_by_u32(MutableBigIntView *quotient,
                                       ConstBigIntView dividend,
                                       uint32_t divisor)
     {
+        assert(is_normalized_bigint_view(dividend));
         assert(divisor != 0);
         assert(dividend.signum == 0 || dividend.signum == 1);
         assert(quotient->capacity >= dividend.n_digits);
@@ -492,19 +505,18 @@ namespace cl
         static constexpr uint32_t kDecimalBase = 1000000000;
         static constexpr uint32_t kDecimalBaseDigits = 9;
 
-        ConstBigIntView normalized = normalize_bigint_view(view);
-        if(normalized.signum == 0)
+        assert(is_normalized_bigint_view(view));
+        if(view.signum == 0)
         {
             return L"0";
         }
 
-        ConstBigIntView current{normalized.n_digits, 1, normalized.digits};
-        BigIntScratch scratch0(normalized.n_digits);
-        BigIntScratch scratch1(normalized.n_digits);
+        ConstBigIntView current{view.n_digits, 1, view.digits};
+        BigIntScratch scratch0(view.n_digits);
+        BigIntScratch scratch1(view.n_digits);
         bool use_first_scratch = true;
         std::vector<uint32_t> chunks;
-        chunks.reserve(size_t(normalized.n_digits) * 10 / kDecimalBaseDigits +
-                       1);
+        chunks.reserve(size_t(view.n_digits) * 10 / kDecimalBaseDigits + 1);
 
         while(current.n_digits > 0)
         {
@@ -520,8 +532,8 @@ namespace cl
 
         std::wstring result;
         result.reserve(chunks.size() * kDecimalBaseDigits +
-                       (normalized.signum < 0 ? 1 : 0));
-        if(normalized.signum < 0)
+                       (view.signum < 0 ? 1 : 0));
+        if(view.signum < 0)
         {
             result.push_back(L'-');
         }

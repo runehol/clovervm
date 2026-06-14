@@ -104,43 +104,47 @@ TEST(BigInt, NormalizeTrimsHighZeroDigits)
 {
     digit_t digits[] = {7, 0, 0};
 
+    EXPECT_FALSE(is_normalized_bigint_view(ConstBigIntView{3, 1, digits}));
     ConstBigIntView view = normalize_bigint_view(ConstBigIntView{3, 1, digits});
 
     EXPECT_EQ(1u, view.n_digits);
     EXPECT_EQ(1, view.signum);
     EXPECT_EQ(digits, view.digits);
+    EXPECT_TRUE(is_normalized_bigint_view(view));
 }
 
 TEST(BigInt, NormalizeCanonicalizesZero)
 {
     digit_t digits[] = {0, 0};
 
+    EXPECT_FALSE(is_normalized_bigint_view(ConstBigIntView{2, -1, digits}));
     ConstBigIntView view =
         normalize_bigint_view(ConstBigIntView{2, -1, digits});
 
     EXPECT_EQ(0u, view.n_digits);
     EXPECT_EQ(0, view.signum);
     EXPECT_EQ(digits, view.digits);
+    EXPECT_TRUE(is_normalized_bigint_view(view));
 }
 
-TEST(BigInt, FinalizeReturnsSmiForSmallAndTrimmedValues)
+TEST(BigInt, FinalizeReturnsSmiForSmallValues)
 {
     test::VmTestContext context;
     ThreadState::ActivationScope activation_scope(context.thread());
-    digit_t digits[] = {123, 0, 0};
+    digit_t digits[] = {123};
 
     Expected<Value> value =
-        finalize_bigint(context.thread(), ConstBigIntView{3, 1, digits});
+        finalize_bigint(context.thread(), ConstBigIntView{1, 1, digits});
 
     ASSERT_TRUE(value.has_value());
     EXPECT_EQ(Value::from_smi(123), value.value());
 }
 
-TEST(BigInt, BigIntToSmiConvertsTrimmedValue)
+TEST(BigInt, BigIntToSmiConvertsSmallValue)
 {
-    digit_t digits[] = {123, 0, 0};
+    digit_t digits[] = {123};
 
-    Expected<TValue<SMI>> value = bigint_to_smi(ConstBigIntView{3, 1, digits});
+    Expected<TValue<SMI>> value = bigint_to_smi(ConstBigIntView{1, 1, digits});
 
     ASSERT_TRUE(value.has_value());
     EXPECT_EQ(Value::from_smi(123), value.value().raw_value());
@@ -241,10 +245,10 @@ TEST(BigInt, BigIntToInt64RejectsOverflow)
 
 TEST(BigInt, DecimalStringFormatsZero)
 {
-    digit_t digits[] = {0, 0};
+    digit_t digits[] = {0};
 
     EXPECT_EQ(std::wstring(L"0"),
-              bigint_to_decimal_string(ConstBigIntView{2, 1, digits}));
+              bigint_to_decimal_string(ConstBigIntView{0, 0, digits}));
 }
 
 TEST(BigInt, DecimalStringFormatsSmiBoundaryMagnitude)
