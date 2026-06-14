@@ -9,6 +9,7 @@
 #include <cassert>
 #include <cstddef>
 #include <cstdint>
+#include <string>
 #include <vector>
 
 namespace cl
@@ -138,6 +139,7 @@ namespace cl
     [[nodiscard]] Expected<Value> bigint_from_int64(ThreadState *thread,
                                                     int64_t value);
     [[nodiscard]] Expected<int64_t> bigint_to_int64(ConstBigIntView view);
+    std::wstring bigint_to_decimal_string(ConstBigIntView view);
 
 }  // namespace cl
 

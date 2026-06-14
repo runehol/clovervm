@@ -1,5 +1,6 @@
 #include "builtin_types/int.h"
 
+#include "builtin_types/bigint.h"
 #include "builtin_types/float.h"
 #include "builtin_types/str.h"
 #include "builtin_types/tuple.h"
@@ -123,14 +124,23 @@ namespace cl
 
     static Value native_int_str(ThreadState *thread, Value self)
     {
-        if(!self.is_smi())
+        if(self.is_smi())
         {
-            return active_thread()->set_pending_builtin_exception_string(
-                L"TypeError", L"int.__str__ expects an int receiver");
+            return thread
+                ->make_object_value<String>(std::to_wstring(self.get_smi()))
+                .raw_value();
         }
-        return active_thread()
-            ->make_object_value<String>(std::to_wstring(self.get_smi()))
-            .raw_value();
+        if(can_convert_to<BigInt>(self))
+        {
+            BigInt *bigint = assume_convert_to<BigInt>(self);
+            return thread
+                ->make_object_value<String>(
+                    bigint_to_decimal_string(bigint->view()))
+                .raw_value();
+        }
+
+        return thread->set_pending_builtin_exception_string(
+            L"TypeError", L"int.__str__ expects an int receiver");
     }
 
     static bool try_get_smi_or_bool(Value value, int64_t *out)

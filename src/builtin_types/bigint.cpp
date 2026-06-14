@@ -5,6 +5,8 @@
 #include <cassert>
 #include <cstring>
 #include <limits>
+#include <string>
+#include <vector>
 
 namespace cl
 {
@@ -244,6 +246,82 @@ namespace cl
             return Expected<int64_t>::ok(std::numeric_limits<int64_t>::min());
         }
         return Expected<int64_t>::ok(-static_cast<int64_t>(magnitude));
+    }
+
+    static uint32_t divmod_abs_by_u32(MutableBigIntView *quotient,
+                                      ConstBigIntView dividend,
+                                      uint32_t divisor)
+    {
+        assert(divisor != 0);
+        assert(dividend.signum == 0 || dividend.signum == 1);
+        assert(quotient->capacity >= dividend.n_digits);
+        assert(quotient->digits != dividend.digits);
+
+        uint64_t remainder = 0;
+        for(uint32_t idx = dividend.n_digits; idx > 0; --idx)
+        {
+            uint64_t accumulator = (remainder << 32) | dividend.digits[idx - 1];
+            quotient->digits[idx - 1] =
+                static_cast<digit_t>(accumulator / divisor);
+            remainder = accumulator % divisor;
+        }
+
+        quotient->n_digits = dividend.n_digits;
+        quotient->signum = quotient->n_digits == 0 ? 0 : 1;
+        ConstBigIntView normalized = normalize_bigint_view(quotient->view());
+        quotient->n_digits = normalized.n_digits;
+        quotient->signum = normalized.n_digits == 0 ? 0 : 1;
+        return static_cast<uint32_t>(remainder);
+    }
+
+    std::wstring bigint_to_decimal_string(ConstBigIntView view)
+    {
+        static constexpr uint32_t kDecimalBase = 1000000000;
+        static constexpr uint32_t kDecimalBaseDigits = 9;
+
+        ConstBigIntView normalized = normalize_bigint_view(view);
+        if(normalized.signum == 0)
+        {
+            return L"0";
+        }
+
+        ConstBigIntView current{normalized.n_digits, 1, normalized.digits};
+        BigIntScratch scratch0(normalized.n_digits);
+        BigIntScratch scratch1(normalized.n_digits);
+        bool use_first_scratch = true;
+        std::vector<uint32_t> chunks;
+        chunks.reserve(size_t(normalized.n_digits) * 10 / kDecimalBaseDigits +
+                       1);
+
+        while(current.n_digits > 0)
+        {
+            MutableBigIntView quotient = use_first_scratch
+                                             ? scratch0.mutable_view()
+                                             : scratch1.mutable_view();
+            uint32_t remainder =
+                divmod_abs_by_u32(&quotient, current, kDecimalBase);
+            chunks.push_back(remainder);
+            current = quotient.view();
+            use_first_scratch = !use_first_scratch;
+        }
+
+        std::wstring result;
+        result.reserve(chunks.size() * kDecimalBaseDigits +
+                       (normalized.signum < 0 ? 1 : 0));
+        if(normalized.signum < 0)
+        {
+            result.push_back(L'-');
+        }
+
+        result += std::to_wstring(chunks.back());
+        for(size_t chunk_index = chunks.size() - 1; chunk_index > 0;
+            --chunk_index)
+        {
+            std::wstring chunk = std::to_wstring(chunks[chunk_index - 1]);
+            result.append(kDecimalBaseDigits - chunk.size(), L'0');
+            result += chunk;
+        }
+        return result;
     }
 
 }  // namespace cl

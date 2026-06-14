@@ -6,6 +6,7 @@
 
 #include <gtest/gtest.h>
 #include <limits>
+#include <string>
 
 using namespace cl;
 
@@ -235,4 +236,45 @@ TEST(BigInt, BigIntToInt64RejectsOverflow)
     EXPECT_TRUE(value.has_exception());
     expect_pending_exception(context.thread(), L"OverflowError",
                              L"integer overflow");
+}
+
+TEST(BigInt, DecimalStringFormatsZero)
+{
+    digit_t digits[] = {0, 0};
+
+    EXPECT_EQ(std::wstring(L"0"),
+              bigint_to_decimal_string(ConstBigIntView{2, 1, digits}));
+}
+
+TEST(BigInt, DecimalStringFormatsSmiBoundaryMagnitude)
+{
+    uint64_t magnitude = static_cast<uint64_t>(value_smi_max);
+    digit_t digits[] = {static_cast<digit_t>(magnitude),
+                        static_cast<digit_t>(magnitude >> 32)};
+
+    EXPECT_EQ(std::to_wstring(value_smi_max),
+              bigint_to_decimal_string(ConstBigIntView{2, 1, digits}));
+}
+
+TEST(BigInt, DecimalStringFormatsInt64MinHeapBigInt)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation_scope(context.thread());
+    Expected<Value> value = bigint_from_int64(
+        context.thread(), std::numeric_limits<int64_t>::min());
+    ASSERT_TRUE(value.has_value());
+    BigInt *bigint = assume_convert_to<BigInt>(value.value());
+
+    EXPECT_EQ(std::to_wstring(std::numeric_limits<int64_t>::min()),
+              bigint_to_decimal_string(bigint->view()));
+}
+
+TEST(BigInt, DecimalStringFormatsLargePositiveAndNegativeValues)
+{
+    digit_t digits[] = {0, 0, 1};
+
+    EXPECT_EQ(std::wstring(L"18446744073709551616"),
+              bigint_to_decimal_string(ConstBigIntView{3, 1, digits}));
+    EXPECT_EQ(std::wstring(L"-18446744073709551616"),
+              bigint_to_decimal_string(ConstBigIntView{3, -1, digits}));
 }
