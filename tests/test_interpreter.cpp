@@ -1862,6 +1862,31 @@ TEST(Interpreter, operator_dispatch_tables_include_unary_and_binary_arithmetic)
     expect_binary_table(OperatorDispatchTableId::Xor);
     expect_binary_table(OperatorDispatchTableId::Or);
 
+    {
+        const OperatorDispatchTable &table =
+            test_context.vm().operator_dispatch_table(
+                OperatorDispatchTableId::TernaryPow);
+        ASSERT_EQ(6, table.n_steps);
+        EXPECT_EQ(OperatorStepAction::CallTernaryReflected,
+                  table.step(0).action);
+        EXPECT_NE(nullptr, table.step(0).dunder_name);
+        EXPECT_EQ(OperatorStepApplicability::IfArithmeticReflectedPriority,
+                  table.step(0).applicability);
+        EXPECT_EQ(2, table.step(0).else_skip);
+        EXPECT_EQ(OperatorStepAction::CallTernary, table.step(1).action);
+        EXPECT_NE(nullptr, table.step(1).dunder_name);
+        EXPECT_EQ(OperatorStepAction::RaiseUnsupported, table.step(2).action);
+        EXPECT_EQ(OperatorStepAction::CallTernary, table.step(3).action);
+        EXPECT_NE(nullptr, table.step(3).dunder_name);
+        EXPECT_EQ(OperatorStepAction::CallTernaryReflected,
+                  table.step(4).action);
+        EXPECT_NE(nullptr, table.step(4).dunder_name);
+        EXPECT_EQ(
+            OperatorStepApplicability::IfMethodFoundAndOperands01TypesDiffer,
+            table.step(4).applicability);
+        EXPECT_EQ(OperatorStepAction::RaiseUnsupported, table.step(5).action);
+    }
+
     auto expect_unary_table = [&](OperatorDispatchTableId table_id) {
         const OperatorDispatchTable &table =
             test_context.vm().operator_dispatch_table(table_id);

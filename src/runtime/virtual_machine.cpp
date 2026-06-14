@@ -633,6 +633,36 @@ namespace cl
                                           static_cast<uint8_t>(steps.size())};
             };
 
+        auto install_ternary_arithmetic_operator_table =
+            [this](OperatorDispatchTableId table_id, String *normal_dunder,
+                   String *reflected_dunder) {
+                std::array<OperatorStep, 6> &steps =
+                    operator_dispatch_steps_[static_cast<size_t>(table_id)];
+                steps = {{
+                    OperatorStep::call_ternary_reflected(
+                        reflected_dunder,
+                        OperatorStepApplicability::
+                            IfArithmeticReflectedPriority,
+                        2),
+                    OperatorStep::call_ternary(
+                        normal_dunder,
+                        OperatorStepApplicability::IfMethodFound),
+                    OperatorStep::raise_unsupported(),
+                    OperatorStep::call_ternary(
+                        normal_dunder,
+                        OperatorStepApplicability::IfMethodFound),
+                    OperatorStep::call_ternary_reflected(
+                        reflected_dunder,
+                        OperatorStepApplicability::
+                            IfMethodFoundAndOperands01TypesDiffer),
+                    OperatorStep::raise_unsupported(),
+                }};
+
+                operator_dispatch_tables_[static_cast<size_t>(table_id)] =
+                    OperatorDispatchTable{steps.data(),
+                                          static_cast<uint8_t>(steps.size())};
+            };
+
         auto install_unary_operator_table =
             [this](OperatorDispatchTableId table_id, String *dunder) {
                 std::array<OperatorStep, 6> &steps =
@@ -653,6 +683,8 @@ namespace cl
                                                  dunder_mul, dunder_rmul);
         install_binary_arithmetic_operator_table(
             OperatorDispatchTableId::BinaryPow, dunder_pow, dunder_rpow);
+        install_ternary_arithmetic_operator_table(
+            OperatorDispatchTableId::TernaryPow, dunder_pow, dunder_rpow);
         install_binary_arithmetic_operator_table(
             OperatorDispatchTableId::TrueDiv, dunder_truediv, dunder_rtruediv);
         install_binary_arithmetic_operator_table(

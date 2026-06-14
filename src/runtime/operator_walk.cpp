@@ -122,6 +122,7 @@ namespace cl
                     thread, L"unsupported operand type(s) for *");
 
             case OperatorDispatchTableId::BinaryPow:
+            case OperatorDispatchTableId::TernaryPow:
                 return operator_walk_raise_type_error(
                     thread, L"unsupported operand type(s) for **");
 
