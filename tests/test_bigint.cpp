@@ -26,6 +26,16 @@ namespace
         EXPECT_EQ(expected_digit1, view.digits[1]);
     }
 
+    std::wstring int_value_decimal(Value value)
+    {
+        if(value.is_smi())
+        {
+            return std::to_wstring(value.get_smi());
+        }
+        BigInt *bigint = assume_convert_to<BigInt>(value);
+        return bigint_to_decimal_string(bigint->view());
+    }
+
     void expect_pending_exception(ThreadState *thread,
                                   const wchar_t *class_name,
                                   const wchar_t *message)
@@ -472,6 +482,110 @@ TEST(BigInt, MulAccumulatesMultiDigitProducts)
     EXPECT_EQ(1u, view.digits[0]);
     EXPECT_EQ(0xfffffffcu, view.digits[1]);
     EXPECT_EQ(3u, view.digits[2]);
+}
+
+TEST(BigInt, FloorDivUsesPythonSignedSemantics)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation_scope(context.thread());
+    digit_t large[] = {0, 0, 1};
+    digit_t three[] = {3};
+
+    Expected<Value> positive =
+        bigint_floor_div(context.thread(), ConstBigIntView{3, 1, large},
+                         ConstBigIntView{1, 1, three});
+    Expected<Value> negative_dividend =
+        bigint_floor_div(context.thread(), ConstBigIntView{3, -1, large},
+                         ConstBigIntView{1, 1, three});
+    Expected<Value> negative_divisor =
+        bigint_floor_div(context.thread(), ConstBigIntView{3, 1, large},
+                         ConstBigIntView{1, -1, three});
+    Expected<Value> both_negative =
+        bigint_floor_div(context.thread(), ConstBigIntView{3, -1, large},
+                         ConstBigIntView{1, -1, three});
+
+    ASSERT_TRUE(positive.has_value());
+    ASSERT_TRUE(negative_dividend.has_value());
+    ASSERT_TRUE(negative_divisor.has_value());
+    ASSERT_TRUE(both_negative.has_value());
+    EXPECT_EQ(L"6148914691236517205", int_value_decimal(positive.value()));
+    EXPECT_EQ(L"-6148914691236517206",
+              int_value_decimal(negative_dividend.value()));
+    EXPECT_EQ(L"-6148914691236517206",
+              int_value_decimal(negative_divisor.value()));
+    EXPECT_EQ(L"6148914691236517205", int_value_decimal(both_negative.value()));
+}
+
+TEST(BigInt, ModUsesDivisorSign)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation_scope(context.thread());
+    digit_t large[] = {0, 0, 1};
+    digit_t three[] = {3};
+
+    Expected<Value> positive =
+        bigint_mod(context.thread(), ConstBigIntView{3, 1, large},
+                   ConstBigIntView{1, 1, three});
+    Expected<Value> negative_dividend =
+        bigint_mod(context.thread(), ConstBigIntView{3, -1, large},
+                   ConstBigIntView{1, 1, three});
+    Expected<Value> negative_divisor =
+        bigint_mod(context.thread(), ConstBigIntView{3, 1, large},
+                   ConstBigIntView{1, -1, three});
+    Expected<Value> both_negative =
+        bigint_mod(context.thread(), ConstBigIntView{3, -1, large},
+                   ConstBigIntView{1, -1, three});
+
+    ASSERT_TRUE(positive.has_value());
+    ASSERT_TRUE(negative_dividend.has_value());
+    ASSERT_TRUE(negative_divisor.has_value());
+    ASSERT_TRUE(both_negative.has_value());
+    EXPECT_EQ(Value::from_smi(1), positive.value());
+    EXPECT_EQ(Value::from_smi(2), negative_dividend.value());
+    EXPECT_EQ(Value::from_smi(-2), negative_divisor.value());
+    EXPECT_EQ(Value::from_smi(-1), both_negative.value());
+}
+
+TEST(BigInt, FloorDivAndModRejectZeroDivisor)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation_scope(context.thread());
+    digit_t value[] = {1};
+    digit_t zero[] = {0};
+
+    Expected<Value> quotient =
+        bigint_floor_div(context.thread(), ConstBigIntView{1, 1, value},
+                         ConstBigIntView{0, 0, zero});
+    ASSERT_TRUE(quotient.has_exception());
+    expect_pending_exception(context.thread(), L"ZeroDivisionError",
+                             L"division by zero");
+    context.thread()->clear_pending_exception();
+
+    Expected<Value> remainder =
+        bigint_mod(context.thread(), ConstBigIntView{1, 1, value},
+                   ConstBigIntView{0, 0, zero});
+    ASSERT_TRUE(remainder.has_exception());
+    expect_pending_exception(context.thread(), L"ZeroDivisionError",
+                             L"division by zero");
+}
+
+TEST(BigInt, FloorDivAndModDemoteExactSmallResults)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation_scope(context.thread());
+    digit_t large[] = {0, 0, 1};
+
+    Expected<Value> quotient =
+        bigint_floor_div(context.thread(), ConstBigIntView{3, 1, large},
+                         ConstBigIntView{3, 1, large});
+    Expected<Value> remainder =
+        bigint_mod(context.thread(), ConstBigIntView{3, 1, large},
+                   ConstBigIntView{3, 1, large});
+
+    ASSERT_TRUE(quotient.has_value());
+    ASSERT_TRUE(remainder.has_value());
+    EXPECT_EQ(Value::from_smi(1), quotient.value());
+    EXPECT_EQ(Value::from_smi(0), remainder.value());
 }
 
 TEST(BigInt, CompareBigIntViewsUsesSignedMagnitude)

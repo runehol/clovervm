@@ -1730,6 +1730,17 @@ TEST(Interpreter, floor_division_values)
     EXPECT_EQ(Value::from_smi(-3), test_context.run_file(L"5 // -2\n"));
     EXPECT_EQ(Value::from_smi(2), test_context.run_file(L"-5 // -2\n"));
     EXPECT_EQ(Value::from_smi(1), test_context.run_file(L"True // 1\n"));
+    expect_string_result(L"str(int('18446744073709551616') // 3)\n",
+                         L"6148914691236517205");
+    expect_string_result(L"str(-int('18446744073709551616') // 3)\n",
+                         L"-6148914691236517206");
+    expect_string_result(L"str(int('18446744073709551616') // -3)\n",
+                         L"-6148914691236517206");
+    expect_string_result(L"str(-int('18446744073709551616') // -3)\n",
+                         L"6148914691236517205");
+    EXPECT_EQ(Value::from_smi(1),
+              test_context.run_file(L"int('18446744073709551616') // "
+                                    L"int('18446744073709551616')\n"));
     expect_float_result(L"5.0 // 2\n", 2.0);
     expect_float_result(L"5 // 2.0\n", 2.0);
     expect_float_result(L"-5.0 // 2\n", -3.0);
@@ -1738,6 +1749,8 @@ TEST(Interpreter, floor_division_values)
 TEST(Interpreter, floor_division_reports_errors)
 {
     expect_python_error(L"1 // 0\n", L"ZeroDivisionError", L"division by zero");
+    expect_python_error(L"int('18446744073709551616') // 0\n",
+                        L"ZeroDivisionError", L"division by zero");
     expect_python_error(L"1 // 0.0\n", L"ZeroDivisionError",
                         L"division by zero");
     expect_python_error(L"(1.0).__floordiv__(0.0)\n", L"ZeroDivisionError",
@@ -1765,6 +1778,17 @@ TEST(Interpreter, modulo_values)
     EXPECT_EQ(Value::from_smi(-1), test_context.run_file(L"5 % -2\n"));
     EXPECT_EQ(Value::from_smi(-1), test_context.run_file(L"-5 % -2\n"));
     EXPECT_EQ(Value::from_smi(0), test_context.run_file(L"False % 1\n"));
+    EXPECT_EQ(Value::from_smi(1),
+              test_context.run_file(L"int('18446744073709551616') % 3\n"));
+    EXPECT_EQ(Value::from_smi(2),
+              test_context.run_file(L"-int('18446744073709551616') % 3\n"));
+    EXPECT_EQ(Value::from_smi(-2),
+              test_context.run_file(L"int('18446744073709551616') % -3\n"));
+    EXPECT_EQ(Value::from_smi(-1),
+              test_context.run_file(L"-int('18446744073709551616') % -3\n"));
+    EXPECT_EQ(Value::from_smi(0),
+              test_context.run_file(L"int('18446744073709551616') % "
+                                    L"int('18446744073709551616')\n"));
     expect_float_result(L"5.0 % 2\n", 1.0);
     expect_float_result(L"5 % 2.0\n", 1.0);
     expect_float_result(L"-5.0 % 2\n", 1.0);
@@ -1774,6 +1798,8 @@ TEST(Interpreter, modulo_values)
 TEST(Interpreter, modulo_reports_errors)
 {
     expect_python_error(L"1 % 0\n", L"ZeroDivisionError", L"division by zero");
+    expect_python_error(L"int('18446744073709551616') % 0\n",
+                        L"ZeroDivisionError", L"division by zero");
     expect_python_error(L"1 % 0.0\n", L"ZeroDivisionError",
                         L"division by zero");
     expect_python_error(L"(1.0).__mod__(0.0)\n", L"ZeroDivisionError",

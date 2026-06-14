@@ -599,6 +599,30 @@ namespace cl
         }
     };
 
+    struct IntFloorDivOperator
+    {
+        static constexpr const wchar_t *receiver_error =
+            L"int.__floordiv__ expects an int receiver";
+
+        Value operator()(ThreadState *thread, ConstBigIntView left,
+                         ConstBigIntView right) const
+        {
+            return bigint_floor_div(thread, left, right).raw_value();
+        }
+    };
+
+    struct IntRFloorDivOperator
+    {
+        static constexpr const wchar_t *receiver_error =
+            L"int.__rfloordiv__ expects an int receiver";
+
+        Value operator()(ThreadState *thread, ConstBigIntView left,
+                         ConstBigIntView right) const
+        {
+            return IntFloorDivOperator{}(thread, right, left);
+        }
+    };
+
     struct SMIModOperator
     {
         static constexpr const wchar_t *receiver_error =
@@ -611,6 +635,30 @@ namespace cl
                 return int_zero_division_error(thread);
             }
             return Value::from_smi(modulo_smi_values(left, right));
+        }
+    };
+
+    struct IntModOperator
+    {
+        static constexpr const wchar_t *receiver_error =
+            L"int.__mod__ expects an int receiver";
+
+        Value operator()(ThreadState *thread, ConstBigIntView left,
+                         ConstBigIntView right) const
+        {
+            return bigint_mod(thread, left, right).raw_value();
+        }
+    };
+
+    struct IntRModOperator
+    {
+        static constexpr const wchar_t *receiver_error =
+            L"int.__rmod__ expects an int receiver";
+
+        Value operator()(ThreadState *thread, ConstBigIntView left,
+                         ConstBigIntView right) const
+        {
+            return IntModOperator{}(thread, right, left);
         }
     };
 
@@ -1257,29 +1305,31 @@ namespace cl
             with_trusted_handler_resolver(
                 builtin_intrinsic_method(
                     L"__floordiv__",
-                    native_int_binary_operator<SMIFloorDivOperator>,
+                    native_int_bigint_binary_operator<IntFloorDivOperator>,
                     L"Return self // value."),
-                resolve_trusted_int_binary_resolver<SMIFloorDivOperator,
-                                                    SMIRFloorDivOperator>),
+                resolve_trusted_int_bigint_binary_resolver<
+                    IntFloorDivOperator, IntRFloorDivOperator>),
             with_trusted_handler_resolver(
                 builtin_intrinsic_method(
                     L"__rfloordiv__",
-                    native_int_binary_operator<SMIRFloorDivOperator>,
+                    native_int_bigint_binary_operator<IntRFloorDivOperator>,
                     L"Return value // self."),
-                resolve_trusted_int_binary_resolver<SMIRFloorDivOperator,
-                                                    SMIFloorDivOperator>),
+                resolve_trusted_int_bigint_binary_resolver<
+                    IntRFloorDivOperator, IntFloorDivOperator>),
             with_trusted_handler_resolver(
                 builtin_intrinsic_method(
-                    L"__mod__", native_int_binary_operator<SMIModOperator>,
+                    L"__mod__",
+                    native_int_bigint_binary_operator<IntModOperator>,
                     L"Return self % value."),
-                resolve_trusted_int_binary_resolver<SMIModOperator,
-                                                    SMIRModOperator>),
+                resolve_trusted_int_bigint_binary_resolver<IntModOperator,
+                                                           IntRModOperator>),
             with_trusted_handler_resolver(
                 builtin_intrinsic_method(
-                    L"__rmod__", native_int_binary_operator<SMIRModOperator>,
+                    L"__rmod__",
+                    native_int_bigint_binary_operator<IntRModOperator>,
                     L"Return value % self."),
-                resolve_trusted_int_binary_resolver<SMIRModOperator,
-                                                    SMIModOperator>),
+                resolve_trusted_int_bigint_binary_resolver<IntRModOperator,
+                                                           IntModOperator>),
             with_trusted_handler_resolver(
                 builtin_intrinsic_method(
                     L"__lshift__",

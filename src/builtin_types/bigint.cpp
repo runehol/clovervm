@@ -461,6 +461,392 @@ namespace cl
         dest->signum = normalized.signum;
     }
 
+    static uint32_t divmod_abs_by_u32(MutableBigIntView *quotient,
+                                      ConstBigIntView dividend,
+                                      uint32_t divisor);
+
+    static uint32_t countl_zero(digit_t value)
+    {
+        assert(value != 0);
+        return static_cast<uint32_t>(__builtin_clz(value));
+    }
+
+    static ConstBigIntView abs_bigint_view(ConstBigIntView view)
+    {
+        assert(is_normalized_bigint_view(view));
+        return ConstBigIntView{view.n_digits,
+                               view.n_digits == 0 ? signum_t{0} : signum_t{1},
+                               view.digits};
+    }
+
+    static void bigint_abs_mul_digit_into(MutableBigIntView *dest,
+                                          ConstBigIntView left, digit_t right)
+    {
+        assert(is_normalized_bigint_view(left));
+        assert(left.signum == 0 || left.signum == 1);
+        assert(dest->capacity >= left.n_digits + 1);
+        assert(dest->digits != left.digits);
+
+        if(left.signum == 0 || right == 0)
+        {
+            set_zero(dest);
+            return;
+        }
+
+        double_digit_t carry = 0;
+        for(size_t idx = 0; idx < left.n_digits; ++idx)
+        {
+            double_digit_t product =
+                double_digit_t(left.digits[idx]) * right + carry;
+            dest->digits[idx] = static_cast<digit_t>(product);
+            carry = product >> kDigitBits;
+        }
+
+        dest->n_digits = left.n_digits;
+        if(carry != 0)
+        {
+            dest->digits[dest->n_digits] = static_cast<digit_t>(carry);
+            ++dest->n_digits;
+        }
+        dest->signum = 1;
+        assert(is_normalized_bigint_view(dest->view()));
+    }
+
+    static void bigint_abs_sub_alias_left(MutableBigIntView *left,
+                                          ConstBigIntView right)
+    {
+        assert(is_normalized_bigint_view(left->view()));
+        assert(is_normalized_bigint_view(right));
+        assert(left->signum == 0 || left->signum == 1);
+        assert(right.signum == 0 || right.signum == 1);
+        assert(compare_bigint_abs(left->view(), right) >= 0);
+
+        double_digit_t borrow = 0;
+        for(size_t idx = 0; idx < left->n_digits; ++idx)
+        {
+            double_digit_t left_digit = left->digits[idx];
+            double_digit_t right_digit =
+                idx < right.n_digits ? right.digits[idx] : 0;
+            double_digit_t subtrahend = right_digit + borrow;
+            if(left_digit < subtrahend)
+            {
+                left->digits[idx] =
+                    static_cast<digit_t>(kDigitBase + left_digit - subtrahend);
+                borrow = 1;
+            }
+            else
+            {
+                left->digits[idx] =
+                    static_cast<digit_t>(left_digit - subtrahend);
+                borrow = 0;
+            }
+        }
+        assert(borrow == 0);
+
+        ConstBigIntView normalized = normalize_bigint_view(left->view());
+        left->n_digits = normalized.n_digits;
+        left->signum = normalized.signum == 0 ? 0 : 1;
+    }
+
+    static void bigint_shift_left_into(MutableBigIntView *dest,
+                                       ConstBigIntView src,
+                                       uint64_t shift_amount)
+    {
+        assert(is_normalized_bigint_view(src));
+        assert(dest->digits != src.digits);
+        if(src.signum == 0)
+        {
+            set_zero(dest);
+            return;
+        }
+
+        uint64_t whole_digits64 = shift_amount / kDigitBits;
+        assert(whole_digits64 <=
+               std::numeric_limits<size_t>::max() - src.n_digits - 1);
+        size_t whole_digits = static_cast<size_t>(whole_digits64);
+        uint32_t intra_digit_shift =
+            static_cast<uint32_t>(shift_amount % kDigitBits);
+        assert(dest->capacity >= src.n_digits + whole_digits + 1);
+
+        std::fill_n(dest->digits, whole_digits, digit_t{0});
+        dest->n_digits = whole_digits;
+        dest->signum = src.signum;
+
+        if(intra_digit_shift == 0)
+        {
+            std::memcpy(dest->digits + whole_digits, src.digits,
+                        src.n_digits * sizeof(digit_t));
+            dest->n_digits += src.n_digits;
+            return;
+        }
+
+        uint32_t inverse_shift = kDigitBits - intra_digit_shift;
+        digit_t carry = 0;
+        for(size_t idx = 0; idx < src.n_digits; ++idx)
+        {
+            digit_t digit = src.digits[idx];
+            dest->digits[dest->n_digits++] =
+                static_cast<digit_t>((digit << intra_digit_shift) | carry);
+            carry = digit >> inverse_shift;
+        }
+        if(carry != 0)
+        {
+            dest->digits[dest->n_digits++] = carry;
+        }
+        assert(is_normalized_bigint_view(dest->view()));
+    }
+
+    static void bigint_shift_right_abs_into(MutableBigIntView *dest,
+                                            ConstBigIntView src,
+                                            uint64_t shift_amount)
+    {
+        assert(is_normalized_bigint_view(src));
+        assert(src.signum == 0 || src.signum == 1);
+        assert(dest->digits != src.digits);
+        if(src.signum == 0)
+        {
+            set_zero(dest);
+            return;
+        }
+
+        uint64_t whole_digits64 = shift_amount / kDigitBits;
+        if(whole_digits64 >= src.n_digits)
+        {
+            set_zero(dest);
+            return;
+        }
+        size_t whole_digits = static_cast<size_t>(whole_digits64);
+        uint32_t intra_digit_shift =
+            static_cast<uint32_t>(shift_amount % kDigitBits);
+
+        dest->n_digits = src.n_digits - whole_digits;
+        dest->signum = 1;
+        assert(dest->capacity >= dest->n_digits);
+        if(intra_digit_shift == 0)
+        {
+            std::memcpy(dest->digits, src.digits + whole_digits,
+                        dest->n_digits * sizeof(digit_t));
+        }
+        else
+        {
+            uint32_t inverse_shift = kDigitBits - intra_digit_shift;
+            digit_t carry = 0;
+            for(size_t out_idx = dest->n_digits; out_idx > 0; --out_idx)
+            {
+                size_t src_idx = whole_digits + out_idx - 1;
+                digit_t digit = src.digits[src_idx];
+                dest->digits[out_idx - 1] =
+                    static_cast<digit_t>((digit >> intra_digit_shift) | carry);
+                carry = digit << inverse_shift;
+            }
+        }
+
+        ConstBigIntView normalized = normalize_bigint_view(dest->view());
+        dest->n_digits = normalized.n_digits;
+        dest->signum = normalized.signum == 0 ? 0 : 1;
+    }
+
+    static void bigint_abs_divmod_normalized_into(MutableBigIntView *quotient,
+                                                  MutableBigIntView *remainder,
+                                                  MutableBigIntView dividend,
+                                                  ConstBigIntView divisor)
+    {
+        assert(is_normalized_bigint_view(divisor));
+        assert(divisor.signum == 1);
+        assert(dividend.signum == 1);
+        assert(dividend.n_digits > divisor.n_digits);
+        assert((divisor.digits[divisor.n_digits - 1] &
+                (digit_t{1} << (kDigitBits - 1))) != 0);
+
+        size_t n = divisor.n_digits;
+        size_t m = dividend.n_digits - n - 1;
+        digit_t divisor_high = divisor.digits[n - 1];
+        digit_t divisor_next = n >= 2 ? divisor.digits[n - 2] : 0;
+        BigIntScratch product_scratch(n + 1);
+        MutableBigIntView product = product_scratch.mutable_view();
+
+        std::fill_n(quotient->digits, m + 1, digit_t{0});
+        static constexpr double_digit_t base = kDigitBase;
+        for(size_t reverse_j = m + 1; reverse_j > 0; --reverse_j)
+        {
+            size_t j = reverse_j - 1;
+            double_digit_t high_pair =
+                (double_digit_t(dividend.digits[j + n]) << kDigitBits) |
+                dividend.digits[j + n - 1];
+            double_digit_t q_hat = high_pair / divisor_high;
+            double_digit_t r_hat = high_pair % divisor_high;
+            double_digit_t u_jn_2 = j + n >= 2 ? dividend.digits[j + n - 2] : 0;
+
+            while(q_hat == base || q_hat * divisor_next > base * r_hat + u_jn_2)
+            {
+                --q_hat;
+                r_hat += divisor_high;
+                if(r_hat >= base)
+                {
+                    break;
+                }
+            }
+
+            MutableBigIntView dividend_segment{n + 1, n + 1, 1,
+                                               dividend.digits + j};
+            ConstBigIntView normalized_segment =
+                normalize_bigint_view(dividend_segment.view());
+            dividend_segment.n_digits = normalized_segment.n_digits;
+            dividend_segment.signum = normalized_segment.signum == 0 ? 0 : 1;
+
+            bigint_abs_mul_digit_into(&product, divisor,
+                                      static_cast<digit_t>(q_hat));
+            while(compare_bigint_abs(dividend_segment.view(), product.view()) <
+                  0)
+            {
+                --q_hat;
+                bigint_abs_mul_digit_into(&product, divisor,
+                                          static_cast<digit_t>(q_hat));
+            }
+
+            quotient->digits[j] = static_cast<digit_t>(q_hat);
+            bigint_abs_sub_alias_left(&dividend_segment, product.view());
+        }
+
+        quotient->n_digits = m + 1;
+        quotient->signum = quotient->n_digits == 0 ? 0 : 1;
+        ConstBigIntView normalized_quotient =
+            normalize_bigint_view(quotient->view());
+        quotient->n_digits = normalized_quotient.n_digits;
+        quotient->signum = normalized_quotient.signum == 0 ? 0 : 1;
+
+        ConstBigIntView normalized_remainder =
+            normalize_bigint_view(dividend.view());
+        assert(remainder->capacity >= normalized_remainder.n_digits);
+        if(normalized_remainder.n_digits > 0)
+        {
+            std::memcpy(remainder->digits, normalized_remainder.digits,
+                        normalized_remainder.n_digits * sizeof(digit_t));
+        }
+        remainder->n_digits = normalized_remainder.n_digits;
+        remainder->signum = normalized_remainder.signum == 0 ? 0 : 1;
+    }
+
+    static void bigint_abs_divmod_into(MutableBigIntView *quotient,
+                                       MutableBigIntView *remainder,
+                                       ConstBigIntView dividend,
+                                       ConstBigIntView divisor)
+    {
+        assert(is_normalized_bigint_view(dividend));
+        assert(is_normalized_bigint_view(divisor));
+        assert(dividend.signum == 0 || dividend.signum == 1);
+        assert(divisor.signum == 1);
+        assert(quotient->digits != dividend.digits);
+        assert(quotient->digits != divisor.digits);
+        assert(remainder->digits != dividend.digits);
+        assert(remainder->digits != divisor.digits);
+
+        if(dividend.signum == 0 || compare_bigint_abs(dividend, divisor) < 0)
+        {
+            set_zero(quotient);
+            copy_bigint_view(remainder, dividend);
+            return;
+        }
+
+        if(divisor.n_digits == 1)
+        {
+            uint32_t rem =
+                divmod_abs_by_u32(quotient, dividend, divisor.digits[0]);
+            if(rem == 0)
+            {
+                set_zero(remainder);
+            }
+            else
+            {
+                assert(remainder->capacity >= 1);
+                remainder->digits[0] = rem;
+                remainder->n_digits = 1;
+                remainder->signum = 1;
+            }
+            return;
+        }
+
+        uint64_t normalization_shift =
+            countl_zero(divisor.digits[divisor.n_digits - 1]);
+        BigIntScratch normalized_dividend_scratch(dividend.n_digits + 1);
+        BigIntScratch normalized_divisor_scratch(divisor.n_digits + 1);
+        BigIntScratch normalized_remainder_scratch(divisor.n_digits + 1);
+
+        MutableBigIntView normalized_dividend =
+            normalized_dividend_scratch.mutable_view();
+        MutableBigIntView normalized_divisor =
+            normalized_divisor_scratch.mutable_view();
+        MutableBigIntView normalized_remainder =
+            normalized_remainder_scratch.mutable_view();
+
+        bigint_shift_left_into(&normalized_dividend, dividend,
+                               normalization_shift);
+        bigint_shift_left_into(&normalized_divisor, divisor,
+                               normalization_shift);
+        if(normalized_dividend.n_digits == dividend.n_digits)
+        {
+            assert(normalized_dividend.capacity > normalized_dividend.n_digits);
+            normalized_dividend.digits[normalized_dividend.n_digits++] = 0;
+        }
+
+        bigint_abs_divmod_normalized_into(quotient, &normalized_remainder,
+                                          normalized_dividend,
+                                          normalized_divisor.view());
+        bigint_shift_right_abs_into(remainder, normalized_remainder.view(),
+                                    normalization_shift);
+    }
+
+    struct BigIntDivModViews
+    {
+        ConstBigIntView quotient;
+        ConstBigIntView remainder;
+    };
+
+    static BigIntDivModViews
+    bigint_floor_divmod_views(MutableBigIntView *quotient,
+                              MutableBigIntView *remainder,
+                              MutableBigIntView *adjusted_quotient,
+                              MutableBigIntView *adjusted_remainder,
+                              ConstBigIntView left, ConstBigIntView right)
+    {
+        assert(is_normalized_bigint_view(left));
+        assert(is_normalized_bigint_view(right));
+        assert(right.signum != 0);
+
+        ConstBigIntView left_abs = abs_bigint_view(left);
+        ConstBigIntView right_abs = abs_bigint_view(right);
+        bigint_abs_divmod_into(quotient, remainder, left_abs, right_abs);
+
+        signum_t quotient_sign = left.signum * right.signum;
+        MutableBigIntView *quotient_result = quotient;
+        MutableBigIntView *remainder_result = remainder;
+        if(remainder->signum != 0 && quotient_sign < 0)
+        {
+            digit_t one_digit = 1;
+            ConstBigIntView one{1, 1, &one_digit};
+            bigint_abs_add_into(adjusted_quotient, quotient->view(), one);
+            quotient_result = adjusted_quotient;
+        }
+        if(quotient_result->n_digits != 0)
+        {
+            quotient_result->signum = quotient_sign;
+        }
+
+        if(remainder->signum != 0 && left.signum != right.signum)
+        {
+            bigint_abs_sub_into(adjusted_remainder, right_abs,
+                                remainder->view());
+            remainder_result = adjusted_remainder;
+        }
+        if(remainder_result->n_digits != 0)
+        {
+            remainder_result->signum = right.signum;
+        }
+
+        return BigIntDivModViews{quotient_result->view(),
+                                 remainder_result->view()};
+    }
+
     Expected<Value> bigint_add(ThreadState *thread, ConstBigIntView left,
                                ConstBigIntView right)
     {
@@ -486,6 +872,56 @@ namespace cl
         MutableBigIntView dest = scratch.mutable_view();
         bigint_mul_into(&dest, left, right);
         return finalize_bigint(thread, dest.view());
+    }
+
+    Expected<Value> bigint_floor_div(ThreadState *thread, ConstBigIntView left,
+                                     ConstBigIntView right)
+    {
+        if(right.signum == 0)
+        {
+            return Expected<Value>::raise_exception(L"ZeroDivisionError",
+                                                    L"division by zero");
+        }
+
+        BigIntScratch quotient_scratch(left.n_digits);
+        BigIntScratch remainder_scratch(std::max<size_t>(left.n_digits, 1));
+        BigIntScratch adjusted_quotient_scratch(left.n_digits + 1);
+        BigIntScratch adjusted_remainder_scratch(right.n_digits);
+        MutableBigIntView quotient = quotient_scratch.mutable_view();
+        MutableBigIntView remainder = remainder_scratch.mutable_view();
+        MutableBigIntView adjusted_quotient =
+            adjusted_quotient_scratch.mutable_view();
+        MutableBigIntView adjusted_remainder =
+            adjusted_remainder_scratch.mutable_view();
+        BigIntDivModViews result =
+            bigint_floor_divmod_views(&quotient, &remainder, &adjusted_quotient,
+                                      &adjusted_remainder, left, right);
+        return finalize_bigint(thread, result.quotient);
+    }
+
+    Expected<Value> bigint_mod(ThreadState *thread, ConstBigIntView left,
+                               ConstBigIntView right)
+    {
+        if(right.signum == 0)
+        {
+            return Expected<Value>::raise_exception(L"ZeroDivisionError",
+                                                    L"division by zero");
+        }
+
+        BigIntScratch quotient_scratch(left.n_digits);
+        BigIntScratch remainder_scratch(std::max<size_t>(left.n_digits, 1));
+        BigIntScratch adjusted_quotient_scratch(left.n_digits + 1);
+        BigIntScratch adjusted_remainder_scratch(right.n_digits);
+        MutableBigIntView quotient = quotient_scratch.mutable_view();
+        MutableBigIntView remainder = remainder_scratch.mutable_view();
+        MutableBigIntView adjusted_quotient =
+            adjusted_quotient_scratch.mutable_view();
+        MutableBigIntView adjusted_remainder =
+            adjusted_remainder_scratch.mutable_view();
+        BigIntDivModViews result =
+            bigint_floor_divmod_views(&quotient, &remainder, &adjusted_quotient,
+                                      &adjusted_remainder, left, right);
+        return finalize_bigint(thread, result.remainder);
     }
 
     void bigint_abs_mul_add_u32(MutableBigIntView *dest, ConstBigIntView src,
