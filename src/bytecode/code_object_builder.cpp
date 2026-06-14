@@ -743,38 +743,27 @@ namespace cl
         return emit_opcode_reg_jump(source_offset, op, range_regs, target);
     }
 
-    Expected<uint32_t> CodeObjectBuilder::emit_binary_op(uint32_t source_offset,
-                                                         Bytecode op,
-                                                         uint32_t lhs_reg)
-    {
-        return emit_opcode_reg(source_offset, op, lhs_reg);
-    }
-
     Expected<uint32_t>
-    CodeObjectBuilder::emit_binary_smi_op(uint32_t source_offset, Bytecode op,
-                                          int8_t rhs)
+    CodeObjectBuilder::emit_operator_reg(uint32_t source_offset, Bytecode op,
+                                         uint32_t lhs_reg,
+                                         OperatorBytecodeFormat format)
     {
-        return emit_opcode_smi(source_offset, op, rhs);
-    }
-
-    Expected<uint32_t>
-    CodeObjectBuilder::emit_simple_compare_op(uint32_t source_offset,
-                                              Bytecode op, uint32_t lhs_reg)
-    {
-        uint32_t result = CL_TRY(emit_opcode_reg(source_offset, op, lhs_reg));
+        assert(op != Bytecode::Invalid);
+        uint32_t result = emplace_back(source_offset, uint8_t(op));
+        emplace_back(source_offset, encode_reg(lhs_reg));
+        CL_TRY(emit_operator_cache_suffix(source_offset, format));
         return Expected<uint32_t>::ok(result);
     }
 
     Expected<uint32_t>
-    CodeObjectBuilder::emit_rich_compare_op(uint32_t source_offset, Bytecode op,
-                                            uint32_t lhs_reg)
+    CodeObjectBuilder::emit_operator_smi(uint32_t source_offset, Bytecode op,
+                                         int8_t rhs,
+                                         OperatorBytecodeFormat format)
     {
-        uint8_t cache_idx = CL_TRY(allocate_operator_cache());
+        assert(op != Bytecode::Invalid);
         uint32_t result = emplace_back(source_offset, uint8_t(op));
-        emplace_back(source_offset, encode_reg(lhs_reg));
-        emplace_back(source_offset, cache_idx);
-        CL_TRY(
-            emit_opcode(source_offset, Bytecode::CheckOperatorNotImplemented));
+        emplace_back(source_offset, rhs);
+        CL_TRY(emit_operator_cache_suffix(source_offset, format));
         return Expected<uint32_t>::ok(result);
     }
 
@@ -1014,6 +1003,35 @@ namespace cl
             CL_TRY(check_u8_operand_index(idx, L"operator cache table"));
         code_obj->operator_caches.emplace_back();
         return Expected<uint8_t>::ok(encoded_idx);
+    }
+
+    Expected<void>
+    CodeObjectBuilder::emit_operator_cache_suffix(uint32_t source_offset,
+                                                  OperatorBytecodeFormat format)
+    {
+        switch(format)
+        {
+            case OperatorBytecodeFormat::Plain:
+                return Expected<void>::ok();
+
+            case OperatorBytecodeFormat::WithCache:
+                {
+                    uint8_t cache_idx = CL_TRY(allocate_operator_cache());
+                    emplace_back(source_offset, cache_idx);
+                }
+                return Expected<void>::ok();
+
+            case OperatorBytecodeFormat::WithCacheAndNotImplementedCheck:
+                {
+                    uint8_t cache_idx = CL_TRY(allocate_operator_cache());
+                    emplace_back(source_offset, cache_idx);
+                    CL_TRY(emit_opcode(source_offset,
+                                       Bytecode::CheckOperatorNotImplemented));
+                }
+                return Expected<void>::ok();
+        }
+
+        __builtin_unreachable();
     }
 
     Expected<uint8_t> CodeObjectBuilder::allocate_keyword_call_cache()

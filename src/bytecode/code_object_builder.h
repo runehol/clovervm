@@ -34,6 +34,13 @@ namespace cl
         CallFrame,
     };
 
+    enum class OperatorBytecodeFormat
+    {
+        Plain,
+        WithCache,
+        WithCacheAndNotImplementedCheck,
+    };
+
     class JumpTarget
     {
     public:
@@ -392,15 +399,12 @@ namespace cl
         Expected<uint32_t> emit_for_iter_range(uint32_t source_offset,
                                                Bytecode op, uint32_t range_regs,
                                                JumpTarget &target);
-        Expected<uint32_t> emit_binary_op(uint32_t source_offset, Bytecode op,
-                                          uint32_t lhs_reg);
-        Expected<uint32_t> emit_binary_smi_op(uint32_t source_offset,
-                                              Bytecode op, int8_t rhs);
-        Expected<uint32_t> emit_simple_compare_op(uint32_t source_offset,
-                                                  Bytecode op,
-                                                  uint32_t lhs_reg);
-        Expected<uint32_t> emit_rich_compare_op(uint32_t source_offset,
-                                                Bytecode op, uint32_t lhs_reg);
+        Expected<uint32_t> emit_operator_reg(uint32_t source_offset,
+                                             Bytecode op, uint32_t lhs_reg,
+                                             OperatorBytecodeFormat format);
+        Expected<uint32_t> emit_operator_smi(uint32_t source_offset,
+                                             Bytecode op, int8_t rhs,
+                                             OperatorBytecodeFormat format);
         Expected<uint32_t> emit_unary_op(uint32_t source_offset, Bytecode op);
         Expected<uint32_t> emit_call_code_object(uint32_t source_offset,
                                                  uint8_t code_object_idx,
@@ -451,6 +455,9 @@ namespace cl
         Expected<uint8_t> allocate_function_call_cache();
         Expected<uint8_t> allocate_operator_cache();
         Expected<uint8_t> allocate_keyword_call_cache();
+        Expected<void>
+        emit_operator_cache_suffix(uint32_t source_offset,
+                                   OperatorBytecodeFormat format);
         uint32_t emplace_back(uint32_t source_offset, uint8_t c);
         Expected<uint32_t> emit_opcode(uint32_t source_offset, Bytecode c);
         Expected<uint32_t> emit_opcode_smi(uint32_t source_offset, Bytecode c,

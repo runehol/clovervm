@@ -19,13 +19,17 @@ namespace cl
     struct OpTableEntry
     {
         constexpr OpTableEntry(Bytecode _standard = Bytecode::Invalid,
-                               Bytecode _binary_acc_smi = Bytecode::Invalid)
-            : standard(_standard), binary_acc_smi(_binary_acc_smi)
+                               Bytecode _binary_acc_smi = Bytecode::Invalid,
+                               OperatorBytecodeFormat _bytecode_format =
+                                   OperatorBytecodeFormat::Plain)
+            : standard(_standard), binary_acc_smi(_binary_acc_smi),
+              bytecode_format(_bytecode_format)
         {
         }
 
         Bytecode standard;
         Bytecode binary_acc_smi;
+        OperatorBytecodeFormat bytecode_format;
     };
 
     struct OpTable
@@ -62,18 +66,24 @@ namespace cl
         t.table[size_t(AstOperatorKind::BITWISE_XOR)] =
             OpTableEntry(Bytecode::Xor, Bytecode::XorSmi);
 
-        t.table[size_t(AstOperatorKind::EQUAL)] =
-            OpTableEntry(Bytecode::TestEqual);
-        t.table[size_t(AstOperatorKind::NOT_EQUAL)] =
-            OpTableEntry(Bytecode::TestNotEqual);
-        t.table[size_t(AstOperatorKind::LESS)] =
-            OpTableEntry(Bytecode::TestLess);
-        t.table[size_t(AstOperatorKind::LESS_EQUAL)] =
-            OpTableEntry(Bytecode::TestLessEqual);
-        t.table[size_t(AstOperatorKind::GREATER)] =
-            OpTableEntry(Bytecode::TestGreater);
-        t.table[size_t(AstOperatorKind::GREATER_EQUAL)] =
-            OpTableEntry(Bytecode::TestGreaterEqual);
+        t.table[size_t(AstOperatorKind::EQUAL)] = OpTableEntry(
+            Bytecode::TestEqual, Bytecode::Invalid,
+            OperatorBytecodeFormat::WithCacheAndNotImplementedCheck);
+        t.table[size_t(AstOperatorKind::NOT_EQUAL)] = OpTableEntry(
+            Bytecode::TestNotEqual, Bytecode::Invalid,
+            OperatorBytecodeFormat::WithCacheAndNotImplementedCheck);
+        t.table[size_t(AstOperatorKind::LESS)] = OpTableEntry(
+            Bytecode::TestLess, Bytecode::Invalid,
+            OperatorBytecodeFormat::WithCacheAndNotImplementedCheck);
+        t.table[size_t(AstOperatorKind::LESS_EQUAL)] = OpTableEntry(
+            Bytecode::TestLessEqual, Bytecode::Invalid,
+            OperatorBytecodeFormat::WithCacheAndNotImplementedCheck);
+        t.table[size_t(AstOperatorKind::GREATER)] = OpTableEntry(
+            Bytecode::TestGreater, Bytecode::Invalid,
+            OperatorBytecodeFormat::WithCacheAndNotImplementedCheck);
+        t.table[size_t(AstOperatorKind::GREATER_EQUAL)] = OpTableEntry(
+            Bytecode::TestGreaterEqual, Bytecode::Invalid,
+            OperatorBytecodeFormat::WithCacheAndNotImplementedCheck);
         t.table[size_t(AstOperatorKind::IS)] = OpTableEntry(Bytecode::TestIs);
         t.table[size_t(AstOperatorKind::IS_NOT)] =
             OpTableEntry(Bytecode::TestIsNot);
@@ -88,16 +98,6 @@ namespace cl
             OpTableEntry(Bytecode::Invert);
 
         return t;
-    }
-
-    constexpr bool is_rich_comparison_operator(AstOperatorKind kind)
-    {
-        return kind == AstOperatorKind::EQUAL ||
-               kind == AstOperatorKind::NOT_EQUAL ||
-               kind == AstOperatorKind::LESS ||
-               kind == AstOperatorKind::LESS_EQUAL ||
-               kind == AstOperatorKind::GREATER ||
-               kind == AstOperatorKind::GREATER_EQUAL;
     }
 
     Expected<CodeObject *> codegen_function(const AstVector &av,
@@ -558,16 +558,18 @@ namespace cl
             if(immediate.has_value())
             {
                 CL_TRY(codegen_node(children[0]));
-                CL_TRY(code_obj->emit_binary_smi_op(
-                    source_offset, entry.binary_acc_smi, *immediate));
+                CL_TRY(code_obj->emit_operator_smi(
+                    source_offset, entry.binary_acc_smi, *immediate,
+                    entry.bytecode_format));
             }
             else
             {
                 ScopedRegister lhs_reg =
                     CL_TRY(codegen_node_into_a_register(children[0]));
                 CL_TRY(codegen_node(children[1]));
-                CL_TRY(code_obj->emit_binary_op(source_offset, entry.standard,
-                                                lhs_reg.reg));
+                CL_TRY(code_obj->emit_operator_reg(source_offset,
+                                                   entry.standard, lhs_reg.reg,
+                                                   entry.bytecode_format));
             }
             return Expected<void>::ok();
         }
@@ -587,16 +589,8 @@ namespace cl
             {
                 CL_TRY(code_obj->emit_star(source_offset, prod));
             }
-            if(is_rich_comparison_operator(kind.operator_kind))
-            {
-                CL_TRY(code_obj->emit_rich_compare_op(source_offset,
-                                                      entry.standard, recv));
-            }
-            else
-            {
-                CL_TRY(code_obj->emit_simple_compare_op(source_offset,
-                                                        entry.standard, recv));
-            }
+            CL_TRY(code_obj->emit_operator_reg(source_offset, entry.standard,
+                                               recv, entry.bytecode_format));
             return Expected<void>::ok();
         }
 
@@ -1358,16 +1352,18 @@ namespace cl
 
             if(immediate.has_value())
             {
-                CL_TRY(code_obj->emit_binary_smi_op(
-                    source_offset, entry.binary_acc_smi, *immediate));
+                CL_TRY(code_obj->emit_operator_smi(
+                    source_offset, entry.binary_acc_smi, *immediate,
+                    entry.bytecode_format));
             }
             else
             {
                 TemporaryReg lhs_value_reg(*code_obj);
                 CL_TRY(code_obj->emit_star(source_offset, lhs_value_reg));
                 CL_TRY(codegen_node(children[1]));
-                CL_TRY(code_obj->emit_binary_op(source_offset, entry.standard,
-                                                lhs_value_reg));
+                CL_TRY(code_obj->emit_operator_reg(
+                    source_offset, entry.standard, lhs_value_reg,
+                    entry.bytecode_format));
             }
 
             TemporaryReg value_reg(*code_obj);
@@ -1432,16 +1428,18 @@ namespace cl
 
             if(immediate.has_value())
             {
-                CL_TRY(code_obj->emit_binary_smi_op(
-                    source_offset, entry.binary_acc_smi, *immediate));
+                CL_TRY(code_obj->emit_operator_smi(
+                    source_offset, entry.binary_acc_smi, *immediate,
+                    entry.bytecode_format));
             }
             else
             {
                 TemporaryReg lhs_value_reg(*code_obj);
                 CL_TRY(code_obj->emit_star(source_offset, lhs_value_reg));
                 CL_TRY(codegen_node(children[1]));
-                CL_TRY(code_obj->emit_binary_op(source_offset, entry.standard,
-                                                lhs_value_reg));
+                CL_TRY(code_obj->emit_operator_reg(
+                    source_offset, entry.standard, lhs_value_reg,
+                    entry.bytecode_format));
             }
 
             CL_TRY(code_obj->emit_store_attr(source_offset, receiver_reg.reg,
