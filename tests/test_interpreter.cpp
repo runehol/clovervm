@@ -1814,6 +1814,155 @@ TEST(Interpreter, operator_add_dispatch_continues_after_notimplemented)
                                     L"Left() + Right()\n"));
 }
 
+TEST(Interpreter, operator_add_dispatch_python_cache_hit)
+{
+    test::VmTestContext test_context;
+    ThreadState::ActivationScope activation_scope(test_context.thread());
+
+    TValue<String> function_name(
+        test_context.vm().get_or_create_interned_string_value(L"add"));
+    CodeObject *code_obj =
+        test_context.compile_file(L"class Addable:\n"
+                                  L"    def __init__(self, value):\n"
+                                  L"        self.value = value\n"
+                                  L"    def __add__(self, other):\n"
+                                  L"        return self.value + other\n"
+                                  L"def add(left, right):\n"
+                                  L"    return left + right\n"
+                                  L"left = Addable(10)\n"
+                                  L"add(left, 1)\n"
+                                  L"add(left, 2)\n");
+
+    Value actual = test_context.thread()->run_clovervm_code_object(code_obj);
+    EXPECT_EQ(Value::from_smi(12), actual);
+
+    Value function_value =
+        load_global_from_module_for_test(code_obj, function_name);
+    ASSERT_TRUE(can_convert_to<Function>(function_value));
+    CodeObject *function_code =
+        assume_convert_to<Function>(function_value)->code_object.extract();
+    ASSERT_EQ(1u, function_code->operator_caches.size());
+    const OperatorInlineCache &cache = function_code->operator_caches[0];
+    ASSERT_NE(nullptr, cache.function);
+    EXPECT_FALSE(cache.reflected_python_call);
+    ASSERT_NE(nullptr, cache.operand_lookup_validity_cells[0]);
+    ASSERT_NE(nullptr, cache.operand_lookup_validity_cells[1]);
+}
+
+TEST(Interpreter, operator_add_dispatch_reflected_subclass_python_cache_hit)
+{
+    test::VmTestContext test_context;
+    ThreadState::ActivationScope activation_scope(test_context.thread());
+
+    TValue<String> function_name(
+        test_context.vm().get_or_create_interned_string_value(L"add"));
+    CodeObject *code_obj = test_context.compile_file(
+        L"class Base:\n"
+        L"    def __add__(self, other):\n"
+        L"        return 3\n"
+        L"class Derived(Base):\n"
+        L"    def __init__(self):\n"
+        L"        self.marker = 7\n"
+        L"    def __radd__(self, other):\n"
+        L"        return self.marker\n"
+        L"def add(left, right):\n"
+        L"    return left + right\n"
+        L"left = Base()\n"
+        L"right = Derived()\n"
+        L"add(left, right) * 10 + add(left, right)\n");
+
+    Value actual = test_context.thread()->run_clovervm_code_object(code_obj);
+    EXPECT_EQ(Value::from_smi(77), actual);
+
+    Value function_value =
+        load_global_from_module_for_test(code_obj, function_name);
+    ASSERT_TRUE(can_convert_to<Function>(function_value));
+    CodeObject *function_code =
+        assume_convert_to<Function>(function_value)->code_object.extract();
+    ASSERT_EQ(1u, function_code->operator_caches.size());
+    const OperatorInlineCache &cache = function_code->operator_caches[0];
+    ASSERT_NE(nullptr, cache.function);
+    EXPECT_TRUE(cache.reflected_python_call);
+    ASSERT_NE(nullptr, cache.operand_lookup_validity_cells[0]);
+    ASSERT_NE(nullptr, cache.operand_lookup_validity_cells[1]);
+}
+
+TEST(Interpreter, operator_add_dispatch_inherited_radd_does_not_preempt_add)
+{
+    test::VmTestContext test_context;
+
+    EXPECT_EQ(Value::from_smi(3),
+              test_context.run_file(L"class Base:\n"
+                                    L"    def __add__(self, other):\n"
+                                    L"        return 3\n"
+                                    L"    def __radd__(self, other):\n"
+                                    L"        return 7\n"
+                                    L"class Derived(Base):\n"
+                                    L"    pass\n"
+                                    L"Base() + Derived()\n"));
+}
+
+TEST(Interpreter, operator_add_dispatch_trusted_str_handler_cache_hit)
+{
+    test::VmTestContext test_context;
+    ThreadState::ActivationScope activation_scope(test_context.thread());
+
+    TValue<String> function_name(
+        test_context.vm().get_or_create_interned_string_value(L"add"));
+    CodeObject *code_obj =
+        test_context.compile_file(L"def add(left, right):\n"
+                                  L"    return left + right\n"
+                                  L"add('a', 'b')\n"
+                                  L"add('c', 'd')\n");
+
+    Value actual = test_context.thread()->run_clovervm_code_object(code_obj);
+    ASSERT_TRUE(can_convert_to<String>(actual));
+    EXPECT_STREQ(L"cd",
+                 string_as_wchar_t(TValue<String>::from_value_assumed(actual)));
+
+    Value function_value =
+        load_global_from_module_for_test(code_obj, function_name);
+    ASSERT_TRUE(can_convert_to<Function>(function_value));
+    CodeObject *function_code =
+        assume_convert_to<Function>(function_value)->code_object.extract();
+    ASSERT_EQ(1u, function_code->operator_caches.size());
+    const OperatorInlineCache &cache = function_code->operator_caches[0];
+    EXPECT_EQ(TrustedHandlerArity::Binary, cache.handler.arity);
+    EXPECT_EQ(nullptr, cache.function);
+    ASSERT_NE(nullptr, cache.operand_lookup_validity_cells[0]);
+    ASSERT_NE(nullptr, cache.operand_lookup_validity_cells[1]);
+}
+
+TEST(Interpreter, operator_add_dispatch_reflected_float_trusted_cache_hit)
+{
+    test::VmTestContext test_context;
+    ThreadState::ActivationScope activation_scope(test_context.thread());
+
+    TValue<String> function_name(
+        test_context.vm().get_or_create_interned_string_value(L"add"));
+    CodeObject *code_obj =
+        test_context.compile_file(L"def add(left, right):\n"
+                                  L"    return left + right\n"
+                                  L"add(1, 1.5)\n"
+                                  L"add(2, 1.5)\n");
+
+    Value actual = test_context.thread()->run_clovervm_code_object(code_obj);
+    ASSERT_TRUE(can_convert_to<Float>(actual));
+    EXPECT_DOUBLE_EQ(3.5, actual.get_ptr<Float>()->value);
+
+    Value function_value =
+        load_global_from_module_for_test(code_obj, function_name);
+    ASSERT_TRUE(can_convert_to<Function>(function_value));
+    CodeObject *function_code =
+        assume_convert_to<Function>(function_value)->code_object.extract();
+    ASSERT_EQ(1u, function_code->operator_caches.size());
+    const OperatorInlineCache &cache = function_code->operator_caches[0];
+    EXPECT_EQ(TrustedHandlerArity::Binary, cache.handler.arity);
+    EXPECT_EQ(nullptr, cache.function);
+    ASSERT_NE(nullptr, cache.operand_lookup_validity_cells[0]);
+    ASSERT_NE(nullptr, cache.operand_lookup_validity_cells[1]);
+}
+
 TEST(Interpreter, operator_eq_dispatch_reflected_python_cache_hit)
 {
     test::VmTestContext test_context;
