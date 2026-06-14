@@ -193,6 +193,8 @@ namespace
             {"benchmark/pystone_lite.py",
              {benchmark_cpp::pystone_lite_run,
               benchmark_cpp::pystone_lite_items}},
+            {"benchmark/pystone.py",
+             {benchmark_cpp::pystone_run, benchmark_cpp::pystone_items}},
             {"benchmark/pystone_arithmetic.py",
              {benchmark_cpp::pystone_arithmetic_run,
               benchmark_cpp::pystone_arithmetic_items}},
@@ -1095,6 +1097,12 @@ template <typename Program> static void BM_PystoneLite(benchmark::State &state)
 BENCHMARK_TEMPLATE(BM_PystoneLite, CloverProgram)
     ->Name("BM_PystoneLite")
     ->Arg(10000);
+
+template <typename Program> static void BM_Pystone(benchmark::State &state)
+{
+    run_benchmark_case<Program>(state, "benchmark/pystone.py", state.range(0));
+}
+BENCHMARK_TEMPLATE(BM_Pystone, CloverProgram)->Name("BM_Pystone")->Arg(10000);
 
 template <typename Program>
 static void BM_PystoneArithmetic(benchmark::State &state)

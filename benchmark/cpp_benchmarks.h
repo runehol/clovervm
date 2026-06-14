@@ -167,6 +167,9 @@ namespace benchmark_cpp
     int64_t pystone_lite_run(int64_t n);
     int64_t pystone_lite_items(int64_t n);
 
+    int64_t pystone_run(int64_t n);
+    int64_t pystone_items(int64_t n);
+
     int64_t pystone_arithmetic_run(int64_t n);
     int64_t pystone_arithmetic_items(int64_t n);
 }  // namespace benchmark_cpp

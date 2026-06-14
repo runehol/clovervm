@@ -47,6 +47,7 @@ add_executable(bench_clovervm
     nbody.cpp
     nested_for_loop.cpp
     pystone_arithmetic.cpp
+    pystone.cpp
     pystone_lite.cpp
     recursive_fib.cpp
     str_constructor_int.cpp
