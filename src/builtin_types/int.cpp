@@ -1019,6 +1019,20 @@ namespace cl
     }
 
     template <typename Operator>
+    static Value trusted_intlike_bigint_operator(ThreadState *thread,
+                                                 Value left_value,
+                                                 Value right_value)
+    {
+        SmiViewStorage left_storage;
+        SmiViewStorage right_storage;
+        ConstBigIntView left =
+            intlike_value_bigint_view(left_value, &left_storage);
+        ConstBigIntView right =
+            intlike_value_bigint_view(right_value, &right_storage);
+        return Operator{}(thread, left, right);
+    }
+
+    template <typename Operator>
     static Value trusted_intlike_unary_operator(ThreadState *thread,
                                                 Value value)
     {
@@ -1029,6 +1043,13 @@ namespace cl
     {
         return key == ShapeKey::from_value(Value::from_smi(0)) ||
                key == ShapeKey::from_value(Value::False());
+    }
+
+    static bool is_intlike_shape_key(VirtualMachine *vm, ShapeKey key)
+    {
+        return is_smi_or_bool_shape_key(key) ||
+               key == ShapeKey::from_shape(
+                          vm->int_class()->get_instance_root_shape());
     }
 
     static bool is_float_shape_key(VirtualMachine *vm, ShapeKey key)
@@ -1057,6 +1078,26 @@ namespace cl
         return TrustedResolution::no_trusted_handler_call_untrusted();
     }
 
+    template <typename Operator>
+    static TrustedResolution resolve_trusted_int_bigint_binary_handler(
+        VirtualMachine *vm, ShapeKey operand0_key, ShapeKey operand1_key)
+    {
+        if(is_intlike_shape_key(vm, operand0_key) &&
+           is_intlike_shape_key(vm, operand1_key))
+        {
+            return TrustedResolution::call_trusted(
+                trusted_intlike_bigint_operator<Operator>);
+        }
+        if((is_intlike_shape_key(vm, operand0_key) &&
+            is_float_shape_key(vm, operand1_key)) ||
+           (is_float_shape_key(vm, operand0_key) &&
+            is_intlike_shape_key(vm, operand1_key)))
+        {
+            return TrustedResolution::known_not_implemented_skip_method();
+        }
+        return TrustedResolution::no_trusted_handler_call_untrusted();
+    }
+
     template <typename NormalOperator, typename ReflectedOperator>
     static TrustedResolution resolve_trusted_int_binary_resolver(
         VirtualMachine *vm, ShapeKey operand0_key, ShapeKey operand1_key,
@@ -1072,6 +1113,24 @@ namespace cl
                 vm, operand0_key, operand1_key);
         }
         return resolve_trusted_int_binary_handler<NormalOperator>(
+            vm, operand0_key, operand1_key);
+    }
+
+    template <typename NormalOperator, typename ReflectedOperator>
+    static TrustedResolution resolve_trusted_int_bigint_binary_resolver(
+        VirtualMachine *vm, ShapeKey operand0_key, ShapeKey operand1_key,
+        TrustedHandlerOperandOrder order, TrustedHandlerArity requested_arity)
+    {
+        if(requested_arity != TrustedHandlerArity::Binary)
+        {
+            return TrustedResolution::no_trusted_handler_call_untrusted();
+        }
+        if(order == TrustedHandlerOperandOrder::Reflected)
+        {
+            return resolve_trusted_int_bigint_binary_handler<ReflectedOperator>(
+                vm, operand0_key, operand1_key);
+        }
+        return resolve_trusted_int_bigint_binary_handler<NormalOperator>(
             vm, operand0_key, operand1_key);
     }
 
@@ -1144,43 +1203,43 @@ namespace cl
                     L"__add__",
                     native_int_bigint_binary_operator<IntAddOperator>,
                     L"Return self + value."),
-                resolve_trusted_int_binary_resolver<SMIAddOperator,
-                                                    SMIRAddOperator>),
+                resolve_trusted_int_bigint_binary_resolver<IntAddOperator,
+                                                           IntRAddOperator>),
             with_trusted_handler_resolver(
                 builtin_intrinsic_method(
                     L"__radd__",
                     native_int_bigint_binary_operator<IntRAddOperator>,
                     L"Return value + self."),
-                resolve_trusted_int_binary_resolver<SMIRAddOperator,
-                                                    SMIAddOperator>),
+                resolve_trusted_int_bigint_binary_resolver<IntRAddOperator,
+                                                           IntAddOperator>),
             with_trusted_handler_resolver(
                 builtin_intrinsic_method(
                     L"__sub__",
                     native_int_bigint_binary_operator<IntSubOperator>,
                     L"Return self - value."),
-                resolve_trusted_int_binary_resolver<SMISubOperator,
-                                                    SMIRSubOperator>),
+                resolve_trusted_int_bigint_binary_resolver<IntSubOperator,
+                                                           IntRSubOperator>),
             with_trusted_handler_resolver(
                 builtin_intrinsic_method(
                     L"__rsub__",
                     native_int_bigint_binary_operator<IntRSubOperator>,
                     L"Return value - self."),
-                resolve_trusted_int_binary_resolver<SMIRSubOperator,
-                                                    SMISubOperator>),
+                resolve_trusted_int_bigint_binary_resolver<IntRSubOperator,
+                                                           IntSubOperator>),
             with_trusted_handler_resolver(
                 builtin_intrinsic_method(
                     L"__mul__",
                     native_int_bigint_binary_operator<IntMulOperator>,
                     L"Return self * value."),
-                resolve_trusted_int_binary_resolver<SMIMulOperator,
-                                                    SMIRMulOperator>),
+                resolve_trusted_int_bigint_binary_resolver<IntMulOperator,
+                                                           IntRMulOperator>),
             with_trusted_handler_resolver(
                 builtin_intrinsic_method(
                     L"__rmul__",
                     native_int_bigint_binary_operator<IntRMulOperator>,
                     L"Return value * self."),
-                resolve_trusted_int_binary_resolver<SMIRMulOperator,
-                                                    SMIMulOperator>),
+                resolve_trusted_int_bigint_binary_resolver<IntRMulOperator,
+                                                           IntMulOperator>),
             with_trusted_handler_resolver(
                 builtin_intrinsic_method(
                     L"__truediv__",

@@ -59,7 +59,7 @@ design rationale and semantic boundaries live in [BigInt Design](bigint.md).
 - [x] Implement unary plus and unary negation.
 - [x] Update non-trusted builtin int dunder methods for bool, SMI, and BigInt
       operand combinations.
-- [ ] Update trusted builtin int handlers for bool, SMI, and BigInt operand
+- [x] Update trusted builtin int handlers for bool, SMI, and BigInt operand
       combinations.
 - [ ] Ensure all arithmetic results finalize to SMI when representable.
 - [ ] Add tests for SMI overflow promotion, mixed SMI/BigInt arithmetic,

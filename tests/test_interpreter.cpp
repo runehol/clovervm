@@ -2258,6 +2258,50 @@ TEST(Interpreter, operator_add_dispatch_reflected_float_trusted_cache_hit)
     ASSERT_NE(nullptr, cache.operand_lookup_validity_cells[1]);
 }
 
+TEST(Interpreter, operator_dispatch_trusted_bigint_arithmetic_cache_hit)
+{
+    test::VmTestContext test_context;
+    ThreadState::ActivationScope activation_scope(test_context.thread());
+
+    CodeObject *code_obj =
+        test_context.compile_file(L"big = int('288230376151711744')\n"
+                                  L"def add(left, right):\n"
+                                  L"    return left + right\n"
+                                  L"def sub(left, right):\n"
+                                  L"    return left - right\n"
+                                  L"def mul(left, right):\n"
+                                  L"    return left * right\n"
+                                  L"add(big, 1)\n"
+                                  L"add(big, 2)\n"
+                                  L"sub(big, 1)\n"
+                                  L"sub(big, 2)\n"
+                                  L"mul(big, -1)\n"
+                                  L"str(mul(big, -2))\n");
+
+    Value actual = test_context.thread()->run_clovervm_code_object(code_obj);
+    expect_string_value(actual, L"-576460752303423488");
+
+    auto expect_trusted_cache = [&](const wchar_t *function_name) {
+        TValue<String> name(
+            test_context.vm().get_or_create_interned_string_value(
+                function_name));
+        Value function_value = load_global_from_module_for_test(code_obj, name);
+        ASSERT_TRUE(can_convert_to<Function>(function_value));
+        CodeObject *function_code =
+            assume_convert_to<Function>(function_value)->code_object.extract();
+        ASSERT_EQ(1u, function_code->operator_caches.size());
+        const OperatorInlineCache &cache = function_code->operator_caches[0];
+        EXPECT_FALSE(cache.trusted_handler.is_null());
+        EXPECT_EQ(nullptr, cache.function);
+        ASSERT_NE(nullptr, cache.operand_lookup_validity_cells[0]);
+        ASSERT_NE(nullptr, cache.operand_lookup_validity_cells[1]);
+    };
+
+    expect_trusted_cache(L"add");
+    expect_trusted_cache(L"sub");
+    expect_trusted_cache(L"mul");
+}
+
 TEST(Interpreter, operator_eq_dispatch_reflected_python_cache_hit)
 {
     test::VmTestContext test_context;
@@ -7518,22 +7562,22 @@ TEST(Interpreter, left_shift_overflow_register)
                         L"OverflowError", L"integer overflow");
 }
 
-TEST(Interpreter, add_overflow)
+TEST(Interpreter, add_overflow_promotes_to_bigint)
 {
-    expect_python_error(L"288230376151711743 + 1\n", L"OverflowError",
-                        L"integer overflow");
+    expect_string_result(L"str(288230376151711743 + 1)\n",
+                         L"288230376151711744");
 }
 
-TEST(Interpreter, subtract_overflow)
+TEST(Interpreter, subtract_overflow_promotes_to_bigint)
 {
-    expect_python_error(L"-288230376151711743 - 2\n", L"OverflowError",
-                        L"integer overflow");
+    expect_string_result(L"str(-288230376151711743 - 2)\n",
+                         L"-288230376151711745");
 }
 
-TEST(Interpreter, multiply_overflow)
+TEST(Interpreter, multiply_overflow_promotes_to_bigint)
 {
-    expect_python_error(L"288230376151711743 * 2\n", L"OverflowError",
-                        L"integer overflow");
+    expect_string_result(L"str(288230376151711743 * 2)\n",
+                         L"576460752303423486");
 }
 
 TEST(Interpreter, negate_overflow)
