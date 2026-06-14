@@ -9,7 +9,7 @@ design rationale and semantic boundaries live in [BigInt Design](bigint.md).
 
 - [x] Add `src/builtin_types/bigint.h` and `src/builtin_types/bigint.cpp`.
 - [x] Define `digit_t`, `signum_t`, `ConstBigIntView`, `MutableBigIntView`,
-      `SmiBigInt`, `BigIntScratch`, and `BigInt`.
+      `SmiViewStorage`, `BigIntScratch`, and `BigInt`.
 - [x] Add `NativeLayoutId::BigInt`.
 - [x] Add `BigInt` to the native layout registry.
 - [x] Register `NativeLayoutId::BigInt` to the existing `int` class.
@@ -17,12 +17,13 @@ design rationale and semantic boundaries live in [BigInt Design](bigint.md).
 - [x] Add `make_uninitialized_bigint_for_digits` for exact-sized heap BigInt
       allocation.
 - [x] Add focused tests for native layout descriptors, exact-sized allocation,
-      and `SmiBigInt` view edge cases.
+      and SMI-backed view edge cases.
 
 ### Stage 2: Conversion, Parsing, And Formatting
 
 - [x] Implement `BigInt::view()`.
-- [x] Implement `SmiBigInt` construction from decoded SMI-range integers.
+- [x] Implement `smi_bigint_view` construction from decoded SMI-range integers
+      using caller-owned `SmiViewStorage`.
 - [x] Implement `BigIntScratch` inline storage plus `std::vector<digit_t>`
       overflow backing.
 - [x] Implement `Expected<Value>` result finalization from `ConstBigIntView` to SMI
@@ -87,7 +88,9 @@ design rationale and semantic boundaries live in [BigInt Design](bigint.md).
 - Zero is canonical: `signum == 0` and `n_digits == 0`.
 - Nonzero BigInts have no high zero digits.
 - VM-created public integer results return SMI whenever representable.
-- `SmiBigInt` takes decoded SMI-range integers, never tagged SMI bits.
+- `smi_bigint_view` takes decoded SMI-range integers, never tagged SMI bits.
+- `SmiViewStorage` owns only stack backing digits for temporary SMI views, not
+  sign or digit-count metadata.
 - Bool normalization happens in int operand adapters, not inside the BigInt
   class.
 - `ConstBigIntView` is read-only and has no capacity.

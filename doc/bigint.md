@@ -5,10 +5,6 @@ for clovervm. The design keeps the existing SMI representation as the fast path
 and adds a heap `BigInt` representation for integer values outside the SMI
 range.
 
-Status: accepted staged design, partially implemented. Representation,
-conversion, formatting, parsing, source literal bodies, and comparisons are in
-place. Basic arithmetic and opcode overflow routing are the next slices.
-
 ## Goals
 
 - Keep SMI arithmetic as the common fast path.
@@ -121,29 +117,27 @@ destination storage, includes capacity, and can convert to `ConstBigIntView`.
 code should expose `MutableBigIntView`.
 
 Mixed SMI/BigInt operations should not allocate temporary BigInts just to read
-SMI operands. Use a stack-backed small BigInt owner:
+SMI operands. Use a small stack-backed storage wrapper for SMI operand digits:
 
 ```cpp
-class SmiBigInt
-{
-public:
-    explicit SmiBigInt(int64_t decoded_smi_range_int);
-    operator ConstBigIntView() const;
-    ConstBigIntView view() const;
+static constexpr size_t kSmiViewDigits = 2;
 
-private:
-    size_t n_digits_;
-    int16_t signum_;
-    digit_t digits_[2];
+struct SmiViewStorage
+{
+    digit_t digits[kSmiViewDigits];
 };
+
+ConstBigIntView smi_bigint_view(int64_t decoded_smi_range_int,
+                                SmiViewStorage *storage);
 ```
 
-`SmiBigInt` is literally a stack-backed BigInt value sized for a decoded
-SMI-range integer. It owns enough digit storage for any SMI magnitude and can
-be converted to `ConstBigIntView` for arithmetic.
+`SmiViewStorage` owns enough digit storage for any SMI magnitude. It is not a
+number object and does not carry sign or digit count. `smi_bigint_view`
+computes those fields and returns a `ConstBigIntView` backed by the caller's
+storage.
 
-Important naming rule: `SmiBigInt` takes a decoded SMI-range integer, not tagged
-SMI bits. In clovervm there are two different "SMI" concepts:
+Important naming rule: `smi_bigint_view` takes a decoded SMI-range integer,
+not tagged SMI bits. In clovervm there are two different "SMI" concepts:
 
 - tagged SMI bits: the encoded `Value` form, `decoded << value_tag_bits`;
 - decoded SMI-range integer: an ordinary `int64_t` known to fit the SMI range.
@@ -156,7 +150,7 @@ Helpers should make this distinction obvious. Avoid names such as
 - `from_smi_value` only when the parameter is a `Value` or `TValue<SMI>`.
 
 `from_smi_range_int` should assert the SMI range. Bool normalization belongs in
-the `int` operand adapters before constructing a `SmiBigInt`.
+the `int` operand adapters before creating a view over `SmiViewStorage`.
 
 Mutable arithmetic results should use explicit scratch storage rather than
 allocating a Python heap `BigInt` as a temporary work buffer:
@@ -334,34 +328,6 @@ two's-complement representation:
 Future bitwise implementations should translate from sign-magnitude storage to
 this semantic model. CPython also stores integer magnitudes separately from the
 sign and implements the two's-complement behavior at the operation layer.
-
-## Staging
-
-Recommended first implementation slice:
-
-1. Add `BigInt`, `ConstBigIntView`, `MutableBigIntView`, `SmiBigInt`, and
-   `BigIntScratch`.
-2. Register `NativeLayoutId::BigInt` to the existing `int` class.
-3. Add conversion helpers for full `int64_t`, decoded SMI-range ints, and
-   result finalization.
-4. Add decimal formatting for BigInt values.
-5. Add comparisons across bool, SMI, and BigInt.
-6. Add BigInt-aware `int(str)` parsing and source integer literal bodies.
-7. Add unary plus, unary minus, addition, subtraction, and multiplication in
-   int dunder handlers.
-8. Change SMI overflow paths to enter operator dispatch rather than reporting
-   integer overflow for operations that now promote.
-
-Later slices:
-
-- BigInt division and modulo with Python floor-division semantics.
-- Bitwise operations.
-- Power.
-- BigInt-aware `range`.
-- BigInt-to-float conversion and mixed BigInt/float operations.
-- Any remaining source-literal follow-up needed after unary negation is
-  BigInt-aware.
-- Extension-compatibility boxed small-int policy if needed.
 
 ## Tests To Pin
 
