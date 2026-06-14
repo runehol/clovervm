@@ -5,9 +5,9 @@ for clovervm. The design keeps the existing SMI representation as the fast path
 and adds a heap `BigInt` representation for integer values outside the SMI
 range.
 
-Status: accepted staged design. The first implementation should land in staged
-pieces, starting with representation, conversion, formatting, comparison,
-and basic arithmetic.
+Status: accepted staged design, partially implemented. Representation,
+conversion, formatting, parsing, source literal bodies, and comparisons are in
+place. Basic arithmetic and opcode overflow routing are the next slices.
 
 ## Goals
 
@@ -30,8 +30,6 @@ and basic arithmetic.
 - No power.
 - No bitwise operations.
 - No BigInt-aware `range`.
-- No arbitrary-size source-code integer literals.
-- No BigInt-aware `int(str)` parsing policy.
 - No BigInt-to-float conversion or mixed BigInt/float arithmetic.
 - No BigInt indexing support for large containers. List, tuple, string, and
   slice internals remain SMI-sized for now.
@@ -49,14 +47,16 @@ It is an implementation detail of Python `int`, not a new public builtin type.
 The representation is sign-magnitude with little-endian 32-bit digits:
 
 ```cpp
-using BigIntDigit = uint32_t;
+using digit_t = uint32_t;
+using double_digit_t = uint64_t;
+static constexpr uint32_t kDigitBits = sizeof(digit_t) * 8;
 
 class BigInt : public Object
 {
 public:
     static constexpr NativeLayoutId native_layout = NativeLayoutId::BigInt;
 
-    BigIntDigit digits[1];
+    digit_t digits[1];
 };
 ```
 
@@ -89,19 +89,20 @@ Arithmetic kernels should operate on borrowed views rather than owning objects:
 
 ```cpp
 using digit_t = uint32_t;
+using double_digit_t = uint64_t;
 using signum_t = int16_t;
 
 struct ConstBigIntView
 {
-    uint32_t n_digits;
+    size_t n_digits;
     signum_t signum;
     const digit_t *digits;
 };
 
 struct MutableBigIntView
 {
-    uint32_t capacity;
-    uint32_t n_digits;
+    size_t capacity;
+    size_t n_digits;
     signum_t signum;
     digit_t *digits;
 
@@ -131,7 +132,7 @@ public:
     ConstBigIntView view() const;
 
 private:
-    uint32_t n_digits_;
+    size_t n_digits_;
     int16_t signum_;
     digit_t digits_[2];
 };
@@ -164,15 +165,15 @@ allocating a Python heap `BigInt` as a temporary work buffer:
 class BigIntScratch
 {
 public:
-    explicit BigIntScratch(uint32_t capacity);
+    explicit BigIntScratch(size_t capacity);
     MutableBigIntView mutable_view();
     ConstBigIntView view() const;
 
 private:
     static constexpr uint32_t kInlineDigits = 8;
 
-    uint32_t capacity_;
-    uint32_t n_digits_;
+    size_t capacity_;
+    size_t n_digits_;
     signum_t signum_;
     digit_t *digits_;
     digit_t inline_digits_[kInlineDigits];
@@ -210,9 +211,14 @@ SMI-range path:
   `make_uninitialized_bigint_for_digits` should allocate the exact-sized heap
   object used by finalization and low-level allocation tests.
 - Decimal formatting should support BigInt `str()` and `repr()`.
-- Decimal `int(str)` BigInt parsing policy is deferred. It is
-  performance-sensitive and should be designed separately around the existing
-  accepted grammar, SMI fast path, overflow behavior, and BigInt fallback.
+- Decimal `int(str)` parsing should preserve the existing accepted/rejected
+  grammar while changing overflow behavior. The implemented shape is an
+  allocation-free SMI fast path and a BigInt-backed slow path that finalizes
+  back to SMI when the result is representable.
+- Source-code integer literal bodies should use the same decimal parsing and
+  finalization path. A leading `-` is still unary negation, so negative
+  out-of-SMI literals require the Stage 4 negation work before they fully
+  promote.
 
 The `rqm` `znum` design has two pitfalls that should not be copied:
 
@@ -340,9 +346,10 @@ Recommended first implementation slice:
    result finalization.
 4. Add decimal formatting for BigInt values.
 5. Add comparisons across bool, SMI, and BigInt.
-6. Add unary plus, unary minus, addition, subtraction, and multiplication in
+6. Add BigInt-aware `int(str)` parsing and source integer literal bodies.
+7. Add unary plus, unary minus, addition, subtraction, and multiplication in
    int dunder handlers.
-7. Change SMI overflow paths to enter operator dispatch rather than reporting
+8. Change SMI overflow paths to enter operator dispatch rather than reporting
    integer overflow for operations that now promote.
 
 Later slices:
@@ -351,9 +358,9 @@ Later slices:
 - Bitwise operations.
 - Power.
 - BigInt-aware `range`.
-- BigInt-aware `int(str)` parsing.
 - BigInt-to-float conversion and mixed BigInt/float operations.
-- Arbitrary-size integer source literals through parser, AST, and codegen.
+- Any remaining source-literal follow-up needed after unary negation is
+  BigInt-aware.
 - Extension-compatibility boxed small-int policy if needed.
 
 ## Tests To Pin
@@ -365,4 +372,7 @@ Later slices:
 - BigInt results that shrink back into SMI range canonicalize to SMI.
 - Comparisons work across bool, SMI, and BigInt.
 - Decimal formatting works for values above and below the SMI range.
+- `int(str)` preserves malformed-string behavior while allowing values above
+  the SMI range.
+- Positive source integer literals above the SMI range produce BigInts.
 - Non-SMI BigInt indices and slice fields raise `OverflowError` in v1.

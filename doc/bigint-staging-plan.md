@@ -100,7 +100,8 @@ design rationale and semantic boundaries live in [BigInt Design](bigint.md).
 - SMI opcode overflow should enter ordinary operator dispatch so inline caches
   can record the selected BigInt path.
 - Opcode handlers should not directly implement BigInt arithmetic.
-- BigInt-aware `int(str)` parsing policy is deferred.
+- BigInt-aware `int(str)` parsing preserves the existing grammar policy and
+  only changes overflow behavior.
 - List, tuple, string, and slice internals remain SMI-sized in the first
   implementation slice.
 - BigInt hashing is deferred until `hash()` or non-string dictionary keys are
