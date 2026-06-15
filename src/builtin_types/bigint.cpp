@@ -76,6 +76,67 @@ namespace cl
         return ConstBigIntView{n_digits_, signum_, digits_};
     }
 
+    class BigIntWorkBuffer
+    {
+    public:
+        explicit BigIntWorkBuffer(size_t capacity = 1)
+            : digits_(std::max<size_t>(capacity, 1)),
+              view_{digits_.size(), 0, 0, digits_.data()}
+        {
+        }
+
+        ConstBigIntView view() const { return view_.view(); }
+
+        size_t n_digits() const { return view_.n_digits; }
+
+        MutableBigIntView *mutable_view()
+        {
+            refresh_view_storage();
+            return &view_;
+        }
+
+        void ensure_capacity(size_t capacity)
+        {
+            if(capacity <= digits_.size())
+            {
+                return;
+            }
+            digits_.resize(capacity);
+            refresh_view_storage();
+        }
+
+        void copy_from(ConstBigIntView src)
+        {
+            assert(is_normalized_bigint_view(src));
+            ensure_capacity(src.n_digits);
+            if(src.n_digits != 0)
+            {
+                std::memcpy(digits_.data(), src.digits,
+                            src.n_digits * sizeof(digit_t));
+            }
+            view_.n_digits = src.n_digits;
+            view_.signum = src.signum;
+        }
+
+        void swap(BigIntWorkBuffer &other)
+        {
+            digits_.swap(other.digits_);
+            std::swap(view_, other.view_);
+            refresh_view_storage();
+            other.refresh_view_storage();
+        }
+
+    private:
+        void refresh_view_storage()
+        {
+            view_.capacity = digits_.size();
+            view_.digits = digits_.data();
+        }
+
+        std::vector<digit_t> digits_;
+        MutableBigIntView view_;
+    };
+
     ConstBigIntView BigInt::view() const
     {
         return ConstBigIntView{n_digits_, signum_, digits_};
@@ -1193,29 +1254,6 @@ namespace cl
         return finalize_bigint(thread, dest.view());
     }
 
-    static ConstBigIntView exact_int_value_bigint_view(Value value,
-                                                       SmiViewStorage *storage)
-    {
-        if(value.is_smi())
-        {
-            return smi_bigint_view(value.get_smi(), storage);
-        }
-        assert(can_convert_to<BigInt>(value));
-        return value.get_ptr<BigInt>()->view();
-    }
-
-    static Expected<Value> bigint_pow_multiply_values(ThreadState *thread,
-                                                      Value left, Value right)
-    {
-        SmiViewStorage left_storage;
-        SmiViewStorage right_storage;
-        ConstBigIntView left_view =
-            exact_int_value_bigint_view(left, &left_storage);
-        ConstBigIntView right_view =
-            exact_int_value_bigint_view(right, &right_storage);
-        return bigint_mul(thread, left_view, right_view);
-    }
-
     Expected<Value> bigint_pow_nonnegative(ThreadState *thread,
                                            ConstBigIntView base,
                                            ConstBigIntView exponent)
@@ -1224,46 +1262,40 @@ namespace cl
         assert(is_normalized_bigint_view(exponent));
         assert(exponent.signum >= 0);
 
-        Value result = Value::from_smi(1);
+        digit_t one_digit = 1;
+        ConstBigIntView one{1, 1, &one_digit};
+        BigIntWorkBuffer result(1);
+        result.copy_from(one);
         if(exponent.signum == 0)
         {
-            return Expected<Value>::ok(result);
+            return finalize_bigint(thread, result.view());
         }
 
-        Expected<Value> initial_power = finalize_bigint(thread, base);
-        if(initial_power.has_exception())
-        {
-            return Expected<Value>::propagate_exception();
-        }
-        Value power = initial_power.value();
+        BigIntWorkBuffer power(base.n_digits);
+        BigIntWorkBuffer product;
+        power.copy_from(base);
 
         size_t exponent_bits = bigint_abs_bit_length(exponent);
         for(size_t bit_idx = 0; bit_idx < exponent_bits; ++bit_idx)
         {
             if(bigint_abs_bit(exponent, bit_idx))
             {
-                Expected<Value> product =
-                    bigint_pow_multiply_values(thread, result, power);
-                if(product.has_exception())
-                {
-                    return Expected<Value>::propagate_exception();
-                }
-                result = product.value();
+                product.ensure_capacity(result.n_digits() + power.n_digits());
+                bigint_mul_into(product.mutable_view(), result.view(),
+                                power.view());
+                result.swap(product);
             }
 
             if(bit_idx + 1 < exponent_bits)
             {
-                Expected<Value> square =
-                    bigint_pow_multiply_values(thread, power, power);
-                if(square.has_exception())
-                {
-                    return Expected<Value>::propagate_exception();
-                }
-                power = square.value();
+                product.ensure_capacity(power.n_digits() * 2);
+                bigint_mul_into(product.mutable_view(), power.view(),
+                                power.view());
+                power.swap(product);
             }
         }
 
-        return Expected<Value>::ok(result);
+        return finalize_bigint(thread, result.view());
     }
 
     Expected<Value> bigint_floor_div(ThreadState *thread, ConstBigIntView left,
