@@ -132,6 +132,7 @@ namespace cl
                                     SmiViewStorage *storage);
     bool is_normalized_bigint_view(ConstBigIntView view);
     ConstBigIntView normalize_bigint_view(ConstBigIntView view);
+    bool bigint_is_odd(ConstBigIntView view);
     [[nodiscard]] Expected<TValue<SMI>> bigint_to_smi(ConstBigIntView view);
     [[nodiscard]] Expected<Value> finalize_bigint(ThreadState *thread,
                                                   ConstBigIntView view);
@@ -150,6 +151,9 @@ namespace cl
     [[nodiscard]] Expected<Value> bigint_mul(ThreadState *thread,
                                              ConstBigIntView left,
                                              ConstBigIntView right);
+    [[nodiscard]] Expected<Value>
+    bigint_pow_nonnegative(ThreadState *thread, ConstBigIntView base,
+                           ConstBigIntView exponent);
     [[nodiscard]] Expected<Value> bigint_floor_div(ThreadState *thread,
                                                    ConstBigIntView left,
                                                    ConstBigIntView right);

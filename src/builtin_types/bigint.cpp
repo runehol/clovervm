@@ -125,6 +125,12 @@ namespace cl
         return view;
     }
 
+    bool bigint_is_odd(ConstBigIntView view)
+    {
+        assert(is_normalized_bigint_view(view));
+        return view.n_digits > 0 && (view.digits[0] & 1) != 0;
+    }
+
     static uint32_t countl_zero(digit_t value)
     {
         assert(value != 0);
@@ -1185,6 +1191,79 @@ namespace cl
         MutableBigIntView dest = scratch.mutable_view();
         bigint_mul_into(&dest, left, right);
         return finalize_bigint(thread, dest.view());
+    }
+
+    static ConstBigIntView exact_int_value_bigint_view(Value value,
+                                                       SmiViewStorage *storage)
+    {
+        if(value.is_smi())
+        {
+            return smi_bigint_view(value.get_smi(), storage);
+        }
+        assert(can_convert_to<BigInt>(value));
+        return value.get_ptr<BigInt>()->view();
+    }
+
+    static Expected<Value> bigint_pow_multiply_values(ThreadState *thread,
+                                                      Value left, Value right)
+    {
+        SmiViewStorage left_storage;
+        SmiViewStorage right_storage;
+        ConstBigIntView left_view =
+            exact_int_value_bigint_view(left, &left_storage);
+        ConstBigIntView right_view =
+            exact_int_value_bigint_view(right, &right_storage);
+        return bigint_mul(thread, left_view, right_view);
+    }
+
+    Expected<Value> bigint_pow_nonnegative(ThreadState *thread,
+                                           ConstBigIntView base,
+                                           ConstBigIntView exponent)
+    {
+        assert(is_normalized_bigint_view(base));
+        assert(is_normalized_bigint_view(exponent));
+        assert(exponent.signum >= 0);
+
+        Value result = Value::from_smi(1);
+        if(exponent.signum == 0)
+        {
+            return Expected<Value>::ok(result);
+        }
+
+        Expected<Value> initial_power = finalize_bigint(thread, base);
+        if(initial_power.has_exception())
+        {
+            return Expected<Value>::propagate_exception();
+        }
+        Value power = initial_power.value();
+
+        size_t exponent_bits = bigint_abs_bit_length(exponent);
+        for(size_t bit_idx = 0; bit_idx < exponent_bits; ++bit_idx)
+        {
+            if(bigint_abs_bit(exponent, bit_idx))
+            {
+                Expected<Value> product =
+                    bigint_pow_multiply_values(thread, result, power);
+                if(product.has_exception())
+                {
+                    return Expected<Value>::propagate_exception();
+                }
+                result = product.value();
+            }
+
+            if(bit_idx + 1 < exponent_bits)
+            {
+                Expected<Value> square =
+                    bigint_pow_multiply_values(thread, power, power);
+                if(square.has_exception())
+                {
+                    return Expected<Value>::propagate_exception();
+                }
+                power = square.value();
+            }
+        }
+
+        return Expected<Value>::ok(result);
     }
 
     Expected<Value> bigint_floor_div(ThreadState *thread, ConstBigIntView left,

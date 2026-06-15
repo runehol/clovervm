@@ -550,43 +550,6 @@ namespace cl
         }
     };
 
-    static bool nonzero_bigint_view_is_odd(ConstBigIntView view)
-    {
-        assert(is_normalized_bigint_view(view));
-        assert(view.signum != 0);
-        assert(view.n_digits > 0);
-        return (view.digits[0] & 1) != 0;
-    }
-
-    static size_t bigint_view_abs_bit_length(ConstBigIntView view)
-    {
-        assert(is_normalized_bigint_view(view));
-        if(view.n_digits == 0)
-        {
-            return 0;
-        }
-
-        digit_t top_digit = view.digits[view.n_digits - 1];
-        size_t top_bits = 0;
-        while(top_digit != 0)
-        {
-            ++top_bits;
-            top_digit >>= 1;
-        }
-        return (view.n_digits - 1) * kDigitBits + top_bits;
-    }
-
-    static bool bigint_view_abs_bit(ConstBigIntView view, size_t bit_index)
-    {
-        size_t digit_index = bit_index / kDigitBits;
-        if(digit_index >= view.n_digits)
-        {
-            return false;
-        }
-        uint32_t digit_bit = static_cast<uint32_t>(bit_index % kDigitBits);
-        return ((view.digits[digit_index] >> digit_bit) & 1) != 0;
-    }
-
     static Value int_zero_to_negative_power_error(ThreadState *thread)
     {
         return thread->set_pending_builtin_exception_string(
@@ -625,72 +588,9 @@ namespace cl
         {
             return int_zero_to_negative_power_error(thread);
         }
-        bool negative_result =
-            base.signum < 0 && nonzero_bigint_view_is_odd(exponent);
+        bool negative_result = base.signum < 0 && bigint_is_odd(exponent);
         return int_float_pow_result(thread, base_double.value(),
                                     exponent_double.value(), negative_result);
-    }
-
-    static Expected<Value> int_pow_multiply_values(ThreadState *thread,
-                                                   Value left, Value right)
-    {
-        SmiViewStorage left_storage;
-        SmiViewStorage right_storage;
-        ConstBigIntView left_view =
-            intlike_value_bigint_view(left, &left_storage);
-        ConstBigIntView right_view =
-            intlike_value_bigint_view(right, &right_storage);
-        return bigint_mul(thread, left_view, right_view);
-    }
-
-    static Expected<Value> int_pow_nonnegative(ThreadState *thread,
-                                               ConstBigIntView base,
-                                               ConstBigIntView exponent)
-    {
-        assert(is_normalized_bigint_view(base));
-        assert(is_normalized_bigint_view(exponent));
-        assert(exponent.signum >= 0);
-
-        Owned<Value> result(Value::from_smi(1));
-        if(exponent.signum == 0)
-        {
-            return Expected<Value>::ok(result.value());
-        }
-
-        Expected<Value> initial_power = finalize_bigint(thread, base);
-        if(initial_power.has_exception())
-        {
-            return Expected<Value>::propagate_exception();
-        }
-        Owned<Value> power(initial_power.value());
-
-        size_t exponent_bits = bigint_view_abs_bit_length(exponent);
-        for(size_t bit_idx = 0; bit_idx < exponent_bits; ++bit_idx)
-        {
-            if(bigint_view_abs_bit(exponent, bit_idx))
-            {
-                Expected<Value> product = int_pow_multiply_values(
-                    thread, result.value(), power.value());
-                if(product.has_exception())
-                {
-                    return Expected<Value>::propagate_exception();
-                }
-                result = product.value();
-            }
-
-            if(bit_idx + 1 < exponent_bits)
-            {
-                Expected<Value> square = int_pow_multiply_values(
-                    thread, power.value(), power.value());
-                if(square.has_exception())
-                {
-                    return Expected<Value>::propagate_exception();
-                }
-                power = square.value();
-            }
-        }
-
-        return Expected<Value>::ok(result.value());
     }
 
     static Value int_smi_pow_nonnegative(ThreadState *thread, int64_t base,
@@ -704,7 +604,7 @@ namespace cl
         auto fallback_to_bigint = [&]() {
             SmiViewStorage base_storage;
             SmiViewStorage exponent_storage;
-            return int_pow_nonnegative(
+            return bigint_pow_nonnegative(
                        thread, smi_bigint_view(base, &base_storage),
                        smi_bigint_view(exponent, &exponent_storage))
                 .raw_value();
@@ -797,7 +697,7 @@ namespace cl
             {
                 return int_bigint_negative_exponent_pow(thread, left, right);
             }
-            return int_pow_nonnegative(thread, left, right).raw_value();
+            return bigint_pow_nonnegative(thread, left, right).raw_value();
         }
     };
 
