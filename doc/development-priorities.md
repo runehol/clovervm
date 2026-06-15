@@ -16,6 +16,11 @@ JIT, language, and runtime work.
 - Do not turn feature work into hidden semantic shortcuts. If a feature can run
   Python bytecode, allocate observably, invoke descriptors, or raise, it should
   be routed through explicit VM dispatch and pending-exception propagation.
+- Every VM-implicit Python-visible execution path should be explicit and
+  inspectable before serious JIT code generation begins. Descriptor execution,
+  callable-object dispatch, iteration protocol calls, implicit conversion
+  protocols, and attribute hooks need dispatch plans and inline-cache shapes
+  that future compiled code can guard, inline, or exit from.
 - Keep fallibility visible in types. `libclovervm` is built without C++
   exceptions, so VM failures must travel through pending Python exception state,
   `Value::exception_marker()`, or `Expected<T>` rather than C++ exception
@@ -27,65 +32,90 @@ JIT, language, and runtime work.
 
 ## Priority Order
 
-1. **Implicit protocol dispatch and cached special calls**
-
-   Move guarded special-method dispatch to implicit protocols: cached dunder
-   method calls for `__len__`, `__iter__`, `__next__`, numeric conversions, and
-   other VM-invoked protocols.
-
-   These should reuse the guarded special-method call model where possible, but
-   not inherit operator-specific assumptions such as reflected fallback or
-   `NotImplemented` continuation. Recent constructor and conversion benchmarks
-   showed that once direct `str(int)` avoided generic lookup, pressure moved to
-   cached calls, Python-level protocol lowering, and short-lived allocations.
-
-2. **Richer call adaptation and generic callable protocol**
-
-   Extend the call-plan model to the remaining Python call forms: runtime
-   support for positional-only parameters, callee `**kwargs`, caller `*args`,
-   caller `**kwargs`, richer duplicate/error ordering, arbitrary object
-   `__call__`, and native-to-managed keyword-call APIs.
-
-   Keep this as an extension of the existing positional and keyword call-plan
-   model. Do not collapse `CallPositional`, `CallKeyword`, direct positional
-   method calls, and direct keyword method calls into one broad generic slow
-   path unless measurements show the current specialization is the wrong shape.
-
-   Call adaptation must remain call-site-shaped, not just callee-shaped. A
-   function with defaults can still use the fixed-arity frame-entry path when a
-   positional call supplies every parameter slot; default initialization is only
-   needed for call sites that leave defaulted slots unfilled.
-
-3. **Interpreter-controlled descriptor execution**
+1. **Interpreter-controlled descriptor execution**
 
    Lookup already classifies descriptor work into plans. The next step is to
    execute `__get__`, `__set__`, and `__delete__` through explicit interpreter
    or VM-controlled dispatch so Python-visible execution, allocation, and
    exceptions are not hidden inside lookup/classification helpers.
 
-4. **Full Python dict hashing and equality**
+   Descriptor plans must carry the guards and binding decisions needed by a
+   future JIT. A compiled attribute read, write, delete, or method call should
+   be able to replay the same descriptor decision from cache metadata, or exit
+   to the interpreter when the guard no longer proves that decision.
 
-   Python `dict` needs arbitrary-key hashing and equality semantics rather than
-   the current string-key-oriented internal assumptions. This matters for real
-   Python code, imports, module namespaces, mappings, and future library work.
+2. **Generic callable protocol and call-site IC contracts**
 
-5. **Consider a garbage collector**
+   Extend the call-plan model from ordinary functions, constructor thunks, and
+   direct method calls to all callable-object shapes the VM can encounter:
+   escaped bound methods, descriptor-produced callables, and arbitrary objects
+   with `__call__`.
 
-   Benchmarking has shown that the current deferred refcounting design has significant
-   deficiencies, and is the prime contributor to us sometimes being slower than CPython.
-   We'd like to explore replacing the refcounting scheme with a generational, non-moving
-   stop-the world mark-and-sweep garbage collector, as well as supporting Py_INCREF and
-   DECREF with an object pinning system.
+   Keep call adaptation call-site-shaped, not just callee-shaped. A warmed call
+   site should expose enough normalized plan metadata for exact JIT-to-JIT calls
+   later: callable guard, receiver binding, defaults copied, constructor thunk,
+   target code object, pending-exception behavior, and any validity cells.
+   Unsupported public call forms should remain explicit adapter edges, not
+   implicit fallback machinery hidden inside the hot path.
 
-6. **Slice write/delete support when it becomes the shortest path**
+   This does not require completing every Python call syntax first. Runtime
+   support for positional-only parameters, callee `**kwargs`, caller `*args`,
+   caller `**kwargs`, richer duplicate/error ordering, and native keyword-call
+   convenience APIs can land later as additional call-plan variants.
 
-   Keep `slice.__new__` and syntax construction validation-free: slice fields
-   are raw objects, and `__index__` conversion must happen at consumption time
-   because it can run Python-visible side effects.
+3. **Implicit protocol dispatch and cached special calls**
 
-   List slice `__setitem__` and `__delitem__`, plus any future equality/hash
-   decisions, should wait until a concrete benchmark or stdlib bringup task
-   needs them.
+   Move guarded special-method dispatch to implicit protocols: cached dunder
+   method calls for `__len__`, `__iter__`, `__next__`, `__index__`, truthiness,
+   numeric conversions, and other VM-invoked protocols.
+
+   These should reuse the guarded special-method call model where possible, but
+   not inherit operator-specific assumptions such as reflected fallback or
+   `NotImplemented` continuation. Protocol caches should record the lookup,
+   binding, call target, and continuation behavior that a JIT would otherwise
+   have to rediscover.
+
+4. **Traceable iteration protocol and loop plans**
+
+   Iteration should be lowered so every implicit call and control-flow edge is
+   visible: `__iter__`, `__next__`, public `StopIteration` consumption, and any
+   direct internal iterator plan. Loop fast paths should produce feedback that a
+   future JIT can inspect to decide whether it may skip protocol calls, inline a
+   concrete iterator step, or leave an explicit cached `__next__` call in place.
+
+   Direct builtin iteration plans are useful, but they are not a substitute for
+   traceable public protocol calls. Exact immutable builtin plans may skip
+   Python-visible calls only when their guards prove the same semantic result.
+
+5. **Memory strategy and JIT root metadata**
+
+   Decide whether first JIT work targets the current deferred-refcounting
+   substrate or a generational non-moving mark-sweep collector. The decision
+   must settle the contracts for write barriers or retain/release operations,
+   safepoint records, accumulator publication, deopt metadata, transition
+   stubs, native-stack switching, descriptor-driven teardown, and native object
+   pinning.
+
+   Implementing a new collector is not necessarily a prerequisite for the first
+   compiler, but starting JIT code generation before the root and heap-write
+   contracts are explicit risks rework in every compiled store, call, exit, and
+   runtime transition.
+
+6. **Split string-key dictionaries from general Python dictionaries**
+
+   Preserve a string-key dictionary shape for namespaces and VM-internal maps
+   where exact `str` keys give native hashing and equality with no
+   Python-visible calls. This representation fits module globals, class
+   namespaces, keyword-name tables, and other maps whose key contract is
+   deliberately narrower than public Python `dict`.
+
+   Add a separate general Python dictionary path for arbitrary keys. General
+   dict lookup, insertion, and deletion must route `__hash__` and equality
+   through explicit protocol dispatch with inspectable inline-cache metadata,
+   because those operations can run Python bytecode, raise, mutate, or re-enter
+   the VM. A future JIT should be able to distinguish native string-key lookup
+   from general dict lookup with guarded hash/equality calls, not rediscover
+   those hidden call sites inside dict probing helpers.
 
 7. **Attribute hooks and escaped bound methods**
 
@@ -130,7 +160,17 @@ JIT, language, and runtime work.
     memory/root model is reliable. `yield from` also needs careful interaction
     with `StopIteration.value` and internal no-value sentinels.
 
-12. **Comprehensions and richer syntax**
+12. **Slice write/delete support when it becomes the shortest path**
+
+    Keep `slice.__new__` and syntax construction validation-free: slice fields
+    are raw objects, and `__index__` conversion must happen at consumption time
+    because it can run Python-visible side effects.
+
+    List slice `__setitem__` and `__delitem__`, plus any future equality/hash
+    decisions, should wait until a concrete benchmark or stdlib bringup task
+    needs them.
+
+13. **Comprehensions and richer syntax**
 
     Add list/dict/set comprehensions, generator expressions, more assignment
     targets, richer string syntax, and other surface-area features after the
@@ -140,14 +180,24 @@ JIT, language, and runtime work.
 
 Revisit this ordering when:
 
-- descriptor `__get__`, `__set__`, and `__delete__` execution no longer hides
-  Python-visible behavior inside lookup helpers;
+- descriptor `__get__`, `__set__`, and `__delete__` execution is explicit,
+  guarded, and replayable from cache metadata;
+- ordinary functions, constructor thunks, direct methods, escaped bound
+  methods, descriptor-produced callables, and arbitrary `__call__` objects all
+  have explicit call-plan outcomes or explicit adapter edges;
+- iteration lowering exposes `__iter__`, `__next__`, `StopIteration`
+  consumption, and internal iterator plans as inspectable bytecode/cache
+  metadata rather than hidden helper behavior;
+- the memory strategy for first JIT work has an explicit contract for heap
+  writes, safepoint publication, deopt/root maps, native-stack transitions, and
+  object pinning;
 - full pystone runs in the benchmark harness and shows a different blocker than
   benchmark-source adaptation;
 - implicit protocols such as `__len__`, `__iter__`, `__next__`, and numeric
   conversion have guarded dispatch plans comparable to operator dispatch;
 - callee `**kwargs`, caller `*args` / `**kwargs`, positional-only parameters, or
-  generic `__call__` become the next blocker for stdlib module bringup;
+  exact CPython call diagnostics become the next blocker for stdlib module
+  bringup;
 - importlib, public finder/loader APIs, path hooks, or exact module namespace
   compatibility become necessary for broader Python source;
 - public `range()` semantics become a practical blocker rather than a visible
