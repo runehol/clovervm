@@ -1,9 +1,8 @@
 # BigInt Design
 
-This document describes the planned arbitrary-precision integer implementation
-for clovervm. The design keeps the existing SMI representation as the fast path
-and adds a heap `BigInt` representation for integer values outside the SMI
-range.
+This document describes the arbitrary-precision integer implementation for
+clovervm. The design keeps the existing SMI representation as the fast path and
+adds a heap `BigInt` representation for integer values outside the SMI range.
 
 ## Goals
 
@@ -17,20 +16,21 @@ range.
   semantics require it.
 - Route SMI fast-path overflow through ordinary operator dispatch so inline
   caches can record the resulting trusted BigInt path.
-- Keep BigInt allocation and arithmetic out of hot opcode handlers in the first
-  implementation.
+- Keep BigInt allocation and arithmetic out of hot opcode handlers.
 
-## Non-Goals For The First Slice
+## Deferred Work
 
-- No full division or modulo.
-- No power.
-- No bitwise operations.
 - No BigInt-aware `range`.
-- No BigInt-to-float conversion or mixed BigInt/float arithmetic.
 - No BigInt indexing support for large containers. List, tuple, string, and
   slice internals remain SMI-sized for now.
 - No BigInt hashing while `hash()` and non-string dictionary keys are not
   exposed.
+- No ternary integer power with modulo yet. CPython supports negative exponents
+  there by computing a modular inverse, so this should be implemented together
+  with an extended-gcd/modular-inverse helper rather than as a simple binary
+  power wrapper.
+- No mixed BigInt/float arithmetic beyond the conversions needed by negative
+  exponent integer power.
 - No dependency on `rqm`. Clovervm should copy and adapt the relevant design
   decisions, not import the library.
 
@@ -152,8 +152,8 @@ Helpers should make this distinction obvious. Avoid names such as
 `from_smi_range_int` should assert the SMI range. Bool normalization belongs in
 the `int` operand adapters before creating a view over `SmiViewStorage`.
 
-Mutable arithmetic results should use explicit scratch storage rather than
-allocating a Python heap `BigInt` as a temporary work buffer:
+Mutable arithmetic results use explicit scratch storage rather than allocating
+a Python heap `BigInt` as a temporary work buffer:
 
 ```cpp
 class BigIntScratch
@@ -189,6 +189,14 @@ allocation happens only after the normalized result size is known.
 Scratch digit storage is uninitialized. Kernels that need zeroed destination
 digits must explicitly initialize the range they use.
 
+Long-running internal algorithms can use private resizable work buffers when a
+fixed-capacity scratch object is not the right shape. The binary power
+implementation uses this pattern: it keeps `result`, `power`, and `product` in
+resizable digit buffers, multiplies with low-level view-based kernels, rotates
+the buffers, and finalizes only once at the end. Such work buffers are still not
+Python objects, and borrowed views from them should be kept as short-lived as
+possible.
+
 ## Conversion
 
 The BigInt layer should provide full `int64_t` conversion and a narrower
@@ -209,10 +217,10 @@ SMI-range path:
   grammar while changing overflow behavior. The implemented shape is an
   allocation-free SMI fast path and a BigInt-backed slow path that finalizes
   back to SMI when the result is representable.
-- Source-code integer literal bodies should use the same decimal parsing and
+- Source-code integer literal bodies use the same decimal parsing and
   finalization path. A leading `-` is still unary negation, so negative
-  out-of-SMI literals require the Stage 4 negation work before they fully
-  promote.
+  out-of-SMI literals are produced by applying integer negation to the parsed
+  positive literal.
 
 The `rqm` `znum` design has two pitfalls that should not be copied:
 
@@ -223,14 +231,13 @@ Both cases should have direct tests in clovervm.
 
 ## Integer Operand Categories
 
-After BigInt exists, integer checks must be explicit. These categories should
-be represented by helper functions instead of open-coded `is_integer()` plus
-`get_smi()`:
+Integer checks must be explicit. These categories should be represented by
+helper functions instead of open-coded `is_integer()` plus `get_smi()`:
 
 - intlike: `bool`, SMI, or BigInt;
 - exact int: SMI or BigInt, not `bool`;
 - SMI-sized int: `bool` or SMI normalized to a decoded SMI-range `int64_t`;
-- internal index/count: SMI-sized only in the first slice.
+- internal index/count: SMI-sized only for now.
 
 Python arithmetic treats bool as an int subclass, so int dunder handlers should
 accept bool operands. The BigInt class itself should not know about bool; bool
@@ -238,14 +245,16 @@ to integer normalization is a higher-level int-method responsibility.
 
 ## Arithmetic And Dispatch
 
-The first arithmetic slice should include:
+The implemented BigInt arithmetic surface includes:
 
 - equality and ordering comparisons across bool, SMI, and BigInt;
-- unary `+`;
-- unary `-`;
-- addition;
-- subtraction;
-- multiplication;
+- unary `+`, unary `-`, and `~`;
+- addition, subtraction, and multiplication;
+- floor division and modulo;
+- left and right shifts with 64-bit shift amounts;
+- bitwise `&`, `|`, and `^` with Python's infinite two's-complement semantics;
+- binary power, including negative-exponent conversion to float;
+- BigInt-to-double conversion;
 - decimal string formatting.
 
 Arithmetic kernels should be representation-oriented and Python-policy-free.
@@ -255,21 +264,20 @@ returning `NotImplemented`, and raising exceptions.
 
 Public arithmetic kernels should assume the destination storage is distinct
 from every input view. Do not carry over `rqm`'s helper-specific in-place
-aliasing behavior. If a future division or GCD implementation needs in-place
-work buffers, give those internal helpers explicit aliasing contracts.
+aliasing behavior. Internal helpers may have narrower aliasing contracts, but
+those contracts should be local and explicit.
 
 SMI opcode handlers should keep the current hot path shape. On SMI overflow,
 they should tail-call the ordinary operator dispatch path. The selected int
 dunder handler can then specialize for BigInt promotion, and the operator inline
 cache can record the trusted choice.
 
-Both trusted and non-trusted builtin int dunder handlers should support BigInt
-operands in the first arithmetic slice. Opcode handlers should not implement
-BigInt arithmetic directly. Unary negation of `value_smi_min` should promote
-through the dunder/trusted-handler path rather than raising overflow in the
-opcode handler.
+Both trusted and non-trusted builtin int dunder handlers support BigInt
+operands. Opcode handlers should not implement BigInt arithmetic directly.
+Unary negation of `value_smi_min` promotes through the dunder/trusted-handler
+path rather than raising overflow in the opcode handler.
 
-Arithmetic result construction should be scratch-first:
+Most arithmetic result construction is scratch-first:
 
 1. Estimate result digit capacity.
 2. Create `BigIntScratch` for mutable result storage.
@@ -281,6 +289,12 @@ Arithmetic result construction should be scratch-first:
 Do not use heap `BigInt` objects as oversized mutable work buffers. That would
 mix Python object allocation concerns into the BigInt object shape, require a
 separate capacity field, and allow invisible spare digits on returned objects.
+
+For algorithms that repeatedly compose primitive operations, prefer staying in
+BigInt work buffers until the final result is known. Calling high-level helpers
+such as `bigint_mul` inside a loop repeatedly normalizes, finalizes, and may
+demote to SMI, which is the wrong abstraction level for algorithms such as
+binary power and future modular power.
 
 ## Hashing
 
@@ -299,13 +313,12 @@ magnitude digits.
 
 ## SMI-Sized Boundaries
 
-Some runtime features currently require SMI-sized integers. The first BigInt
-slice should keep those boundaries explicit:
+Some runtime features currently require SMI-sized integers. Keep those
+boundaries explicit:
 
 - list, tuple, and string indices remain SMI-sized;
 - slice normalization remains SMI-sized;
-- `range` may reject out-of-SMI BigInts in the first slice, but should become
-  BigInt-aware in a later step;
+- `range` requires SMI-sized integer arguments for now;
 - non-integers should keep existing `TypeError` behavior;
 - integers that are too large for these temporary limits should raise
   `OverflowError`.
@@ -325,20 +338,62 @@ two's-complement representation:
 - `x << n == x * 2**n` for `n >= 0`;
 - `&`, `|`, and `^` operate with infinite sign extension.
 
-Future bitwise implementations should translate from sign-magnitude storage to
-this semantic model. CPython also stores integer magnitudes separately from the
-sign and implements the two's-complement behavior at the operation layer.
+The implementation translates from sign-magnitude storage to this semantic
+model at the operation layer. CPython also stores integer magnitudes separately
+from the sign and implements the two's-complement behavior in the operation
+logic.
+
+## Power And Modular Power
+
+Binary integer power is split between Python-visible policy in `int.cpp` and
+BigInt arithmetic in `bigint.cpp`.
+
+`int.cpp` handles:
+
+- SMI-only fast binary power when the result stays in SMI range;
+- overflow routing from the SMI fast path to BigInt power;
+- negative exponents, which produce float results for binary power;
+- receiver/type checks, reflected calls, trusted handlers, and
+  `NotImplemented`.
+
+`bigint.cpp` handles non-negative BigInt exponentiation using resizable work
+buffers and low-level multiplication. It does not allocate intermediate Python
+integer values inside the exponentiation loop, and it finalizes the result once
+after the loop.
+
+Ternary power with a non-`None` modulus is deferred. CPython semantics are not
+just "binary power, then modulo":
+
+- modulus zero raises `ValueError: pow() 3rd argument cannot be 0`;
+- negative modulus is valid and the result follows the modulus sign;
+- negative exponents are valid when the base is invertible modulo the modulus;
+- non-invertible negative-exponent cases raise
+  `ValueError: base is not invertible for the given modulus`.
+
+The right BigInt-side shape is likely a `bigint_powmod` helper that assumes
+validated integer inputs and performs reduction during exponentiation. Negative
+exponents require modular inverse first, so this should be paired with an
+extended-gcd/modular-inverse helper rather than implemented as a special case in
+`int.cpp`.
 
 ## Tests To Pin
 
 - `-1` construction has negative sign and stringifies as `-1`.
 - `INT64_MIN` converts to BigInt and back to `int64_t`.
 - Public result paths return SMI for zero and other SMI-range results.
-- Addition, subtraction, multiplication, and negation promote on SMI overflow.
+- Addition, subtraction, multiplication, negation, shifts, bitwise operations,
+  and binary power promote on SMI overflow.
 - BigInt results that shrink back into SMI range canonicalize to SMI.
 - Comparisons work across bool, SMI, and BigInt.
 - Decimal formatting works for values above and below the SMI range.
 - `int(str)` preserves malformed-string behavior while allowing values above
   the SMI range.
 - Positive source integer literals above the SMI range produce BigInts.
+- Negative source integer literals above the SMI range work through unary
+  negation.
+- BigInt floor division and modulo follow Python sign rules.
+- BigInt shifts reject negative shift counts and support 64-bit shift amounts.
+- BigInt bitwise operations follow infinite two's-complement semantics.
+- Binary integer power supports large positive results and negative exponents
+  through float conversion.
 - Non-SMI BigInt indices and slice fields raise `OverflowError` in v1.
