@@ -1238,8 +1238,10 @@ namespace cl
         cache.function = fun.extract();
         cache.code_object = fun.extract()->code_object.extract();
         cache.validity_cell = validity_cell;
-        cache.n_pos_args = n_pos_args;
-        cache.default_fill_start_slot = default_fill_start_slot;
+        assert(n_pos_args <= UINT8_MAX);
+        cache.n_pos_args = uint8_t(n_pos_args);
+        assert(default_fill_start_slot <= UINT16_MAX);
+        cache.default_fill_start_slot = uint16_t(default_fill_start_slot);
         if(fun.extract()->has_varargs())
         {
             cache.adaptation = FunctionCallAdaptation::Varargs;

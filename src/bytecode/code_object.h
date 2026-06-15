@@ -452,11 +452,14 @@ namespace cl
         Function *function = nullptr;
         CodeObject *code_object = nullptr;
         ValidityCell *validity_cell = nullptr;
-        uint32_t n_pos_args = UINT32_MAX;
-        uint32_t default_fill_start_slot = 0;
-        FunctionCallAdaptation adaptation = FunctionCallAdaptation::FixedArity;
         std::unique_ptr<int8_t[]> keyword_dest_regs;
+        uint8_t n_pos_args = UINT8_MAX;
+        uint16_t default_fill_start_slot = 0;
+        FunctionCallAdaptation adaptation = FunctionCallAdaptation::FixedArity;
     };
+
+    static_assert(sizeof(KeywordCallInlineCache) == 48,
+                  "KeywordCallInlineCache should stay compact");
 
     struct ExceptionTableEntry
     {
