@@ -16,6 +16,7 @@
 #include <cassert>
 #include <clovervm/native_module.h>
 #include <cstdint>
+#include <memory>
 #include <vector>
 
 namespace cl
@@ -454,7 +455,7 @@ namespace cl
         uint32_t n_pos_args = UINT32_MAX;
         uint32_t default_fill_start_slot = 0;
         FunctionCallAdaptation adaptation = FunctionCallAdaptation::FixedArity;
-        std::vector<int8_t> keyword_dest_regs;
+        std::unique_ptr<int8_t[]> keyword_dest_regs;
     };
 
     struct ExceptionTableEntry

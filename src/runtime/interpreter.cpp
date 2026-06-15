@@ -1231,7 +1231,8 @@ namespace cl
     static ALWAYSINLINE void populate_keyword_call_cache_with_guard(
         KeywordCallInlineCache &cache, Value guard_value, TValue<Function> fun,
         ValidityCell *validity_cell, uint32_t n_pos_args,
-        uint32_t default_fill_start_slot, std::vector<int8_t> keyword_dest_regs)
+        uint32_t default_fill_start_slot,
+        std::unique_ptr<int8_t[]> keyword_dest_regs)
     {
         cache.guard_value = guard_value;
         cache.function = fun.extract();
@@ -1297,8 +1298,8 @@ namespace cl
             filled[idx] = true;
         }
 
-        std::vector<int8_t> keyword_dest_regs;
-        keyword_dest_regs.reserve(n_kw_args);
+        std::unique_ptr<int8_t[]> keyword_dest_regs =
+            std::make_unique<int8_t[]>(n_kw_args);
         CodeObject *target_code_object = function->code_object.extract();
         FunctionKeywordRemap &remap =
             target_code_object->function_keyword_remap;
@@ -1339,8 +1340,8 @@ namespace cl
             }
 
             filled[parameter_idx] = true;
-            keyword_dest_regs.push_back(
-                target_code_object->encode_reg(parameter_idx));
+            keyword_dest_regs[kw_idx] =
+                target_code_object->encode_reg(parameter_idx);
         }
 
         for(uint32_t parameter_idx = 0; parameter_idx < signature.n_parameters;
@@ -1644,7 +1645,7 @@ namespace cl
                 new_fp, fun, cache.default_fill_start_slot);
         }
 
-        assert(cache.keyword_dest_regs.size() == n_kw_args);
+        assert(n_kw_args == 0 || cache.keyword_dest_regs != nullptr);
         for(uint32_t kw_idx = 0; kw_idx < n_kw_args; ++kw_idx)
         {
             new_fp[cache.keyword_dest_regs[kw_idx]] =
