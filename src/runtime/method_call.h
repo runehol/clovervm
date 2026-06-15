@@ -70,7 +70,7 @@ namespace cl
         switch(plan.kind)
         {
             case AttributeReadPlanKind::ConstantValue:
-                callable_out = plan.binding.self;
+                callable_out = plan.constant_value;
                 return MethodCallTargetStatus::Ready;
 
             case AttributeReadPlanKind::ReceiverSlot:

@@ -289,8 +289,7 @@ namespace cl
         return AttributeReadDescriptor::found(
             AttributeReadPlan::from_storage(
                 AttributeReadPlanPath::ReceiverOwnProperty,
-                AttributeReadPlanKind::ReceiverSlot, nullptr, location,
-                AttributeBindingContext::none()),
+                AttributeReadPlanKind::ReceiverSlot, nullptr, location),
             read_storage_location(location));
     }
 

@@ -2363,7 +2363,7 @@ namespace cl
         switch(plan.kind)
         {
             case AttributeReadPlanKind::ConstantValue:
-                value_out = plan.binding.self;
+                value_out = plan.constant_value;
                 return AttributeLoadPlanStatus::Ready;
 
             case AttributeReadPlanKind::ReceiverSlot:

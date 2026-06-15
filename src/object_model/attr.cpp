@@ -301,7 +301,7 @@ namespace cl
         return AttributeReadDescriptor::found(
             AttributeReadPlan::from_storage(
                 path, attribute_read_plan_kind_for_path(path, value),
-                storage_class, lookup.storage_location(), binding),
+                storage_class, lookup.storage_location()),
             value);
     }
 
@@ -610,7 +610,7 @@ namespace cl
     {
         if(plan.kind == AttributeReadPlanKind::ConstantValue)
         {
-            return plan.binding.self;
+            return plan.constant_value;
         }
 
         const Object *storage_owner = plan.storage_owner;

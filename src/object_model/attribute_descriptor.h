@@ -122,16 +122,15 @@ namespace cl
         AttributeReadPlanKind kind;
         const Object *storage_owner;
         StorageLocation storage_location;
-        AttributeBindingContext binding;
+        Value constant_value;
 
         static AttributeReadPlan from_storage(AttributeReadPlanPath path,
                                               AttributeReadPlanKind kind,
                                               const Object *storage_owner,
-                                              StorageLocation location,
-                                              AttributeBindingContext binding)
+                                              StorageLocation location)
         {
             return AttributeReadPlan{path, kind, storage_owner, location,
-                                     binding};
+                                     Value::not_present()};
         }
 
         static AttributeReadPlan constant(Value value)
@@ -139,7 +138,7 @@ namespace cl
             return AttributeReadPlan{AttributeReadPlanPath::ReceiverOwnProperty,
                                      AttributeReadPlanKind::ConstantValue,
                                      nullptr, StorageLocation::not_found(),
-                                     AttributeBindingContext{value, nullptr}};
+                                     value};
         }
     };
 
@@ -159,8 +158,7 @@ namespace cl
                 AttributeReadPlan::from_storage(
                     AttributeReadPlanPath::ReceiverOwnProperty,
                     AttributeReadPlanKind::ReceiverSlot, nullptr,
-                    StorageLocation::not_found(),
-                    AttributeBindingContext::none()),
+                    StorageLocation::not_found()),
                 Value::not_present(), nullptr,
                 attribute_cache_blocker(AttributeCacheBlocker::None)};
         }
