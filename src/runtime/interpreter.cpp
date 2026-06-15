@@ -1217,10 +1217,10 @@ namespace cl
 
     static ALWAYSINLINE bool
     keyword_call_cache_matches(const KeywordCallInlineCache &cache, Value fun,
-                               Value keyword_names, uint32_t n_pos_args)
+                               uint32_t n_pos_args)
     {
-        if(cache.n_pos_args != n_pos_args || cache.guard_value != fun ||
-           cache.keyword_names != keyword_names)
+        if(cache.function == nullptr || cache.n_pos_args != n_pos_args ||
+           cache.guard_value != fun)
         {
             return false;
         }
@@ -1230,14 +1230,13 @@ namespace cl
 
     static ALWAYSINLINE void populate_keyword_call_cache_with_guard(
         KeywordCallInlineCache &cache, Value guard_value, TValue<Function> fun,
-        ValidityCell *validity_cell, Value keyword_names, uint32_t n_pos_args,
+        ValidityCell *validity_cell, uint32_t n_pos_args,
         uint32_t default_fill_start_slot, std::vector<int8_t> keyword_dest_regs)
     {
         cache.guard_value = guard_value;
         cache.function = fun.extract();
         cache.code_object = fun.extract()->code_object.extract();
         cache.validity_cell = validity_cell;
-        cache.keyword_names = keyword_names;
         cache.n_pos_args = n_pos_args;
         cache.default_fill_start_slot = default_fill_start_slot;
         if(fun.extract()->has_varargs())
@@ -1366,8 +1365,8 @@ namespace cl
         uint32_t default_fill_start_slot =
             default_fill_start_slot_for_keyword_call(fun, n_filled_by_position);
         populate_keyword_call_cache_with_guard(
-            candidate, guard_value, fun, validity_cell, keyword_names_value,
-            n_pos_args, default_fill_start_slot, std::move(keyword_dest_regs));
+            candidate, guard_value, fun, validity_cell, n_pos_args,
+            default_fill_start_slot, std::move(keyword_dest_regs));
         cache = std::move(candidate);
         return Expected<void>::ok();
     }
@@ -4071,8 +4070,7 @@ namespace cl
             code_object->constant_table[keyword_names_idx].value();
         KeywordCallInlineCache &cache =
             code_object->keyword_call_caches[cache_idx];
-        if(unlikely(!keyword_call_cache_matches(cache, fun, keyword_names,
-                                                n_pos_args)))
+        if(unlikely(!keyword_call_cache_matches(cache, fun, n_pos_args)))
         {
             INTERP_TRY(populate_keyword_call_cache_from_callable(
                 fun, keyword_names, n_pos_args, n_kw_args, cache));
@@ -4098,16 +4096,12 @@ namespace cl
         uint8_t n_pos_args = pc[3];
         int8_t first_kw_value_reg = pc[4];
         uint8_t n_kw_args = pc[5];
-        uint8_t keyword_names_idx = pc[6];
         uint8_t cache_idx = pc[7];
         Value fun = fp[callable_reg];
-        Value keyword_names =
-            code_object->constant_table[keyword_names_idx].value();
         KeywordCallInlineCache &cache =
             code_object->keyword_call_caches[cache_idx];
 
-        if(unlikely(!keyword_call_cache_matches(cache, fun, keyword_names,
-                                                n_pos_args)))
+        if(unlikely(!keyword_call_cache_matches(cache, fun, n_pos_args)))
         {
             MUSTTAIL return op_call_keyword_slow(ARGS);
         }
@@ -4301,8 +4295,8 @@ namespace cl
         uint32_t n_pos_args = n_user_pos_args + (has_self ? 1 : 0);
         KeywordCallInlineCache &call_cache =
             code_object->keyword_call_caches[call_cache_idx];
-        if(unlikely(!keyword_call_cache_matches(call_cache, callable,
-                                                keyword_names, n_pos_args)))
+        if(unlikely(
+               !keyword_call_cache_matches(call_cache, callable, n_pos_args)))
         {
             INTERP_TRY(populate_keyword_call_cache_from_callable(
                 callable, keyword_names, n_pos_args, n_kw_args, call_cache));
@@ -4331,10 +4325,7 @@ namespace cl
         uint32_t n_user_pos_args = uint8_t(pc[5]);
         int8_t first_kw_value_reg = pc[6];
         uint8_t n_kw_args = pc[7];
-        uint8_t keyword_names_idx = pc[8];
         Value receiver = fp[receiver_reg];
-        Value keyword_names =
-            code_object->constant_table[keyword_names_idx].value();
         AttributeReadInlineCache &attr_cache =
             code_object->attribute_read_caches[read_cache_idx];
         if(unlikely(!attr_cache.matches(receiver)))
@@ -4356,8 +4347,8 @@ namespace cl
         uint32_t n_pos_args = n_user_pos_args + (has_self ? 1 : 0);
         KeywordCallInlineCache &call_cache =
             code_object->keyword_call_caches[call_cache_idx];
-        if(unlikely(!keyword_call_cache_matches(call_cache, callable,
-                                                keyword_names, n_pos_args)))
+        if(unlikely(
+               !keyword_call_cache_matches(call_cache, callable, n_pos_args)))
         {
             MUSTTAIL return op_call_method_attr_keyword_slow(ARGS);
         }
