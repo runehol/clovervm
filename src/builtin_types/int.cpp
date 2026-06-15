@@ -620,7 +620,7 @@ namespace cl
             if((remaining & 1) != 0)
             {
                 int64_t product;
-                if(unlikely(__builtin_smulll_overflow(result, power, &product)))
+                if(unlikely(__builtin_mul_overflow(result, power, &product)))
                 {
                     return fallback_to_bigint();
                 }
@@ -634,7 +634,7 @@ namespace cl
             if(remaining != 0)
             {
                 int64_t square;
-                if(unlikely(__builtin_smulll_overflow(power, power, &square)))
+                if(unlikely(__builtin_mul_overflow(power, power, &square)))
                 {
                     return fallback_to_bigint();
                 }
