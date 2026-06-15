@@ -1085,6 +1085,13 @@ TEST(Interpreter, int_constructor_returns_int_argument)
     EXPECT_EQ(Value::from_smi(42), file_runner.return_value);
 }
 
+TEST(Interpreter, int_constructor_returns_bigint_argument)
+{
+    expect_string_result(L"x = int('288230376151711744')\n"
+                         L"str(int(x))\n",
+                         L"288230376151711744");
+}
+
 TEST(Interpreter, int_constructor_converts_bool)
 {
     test::FileRunner true_runner(L"int(True)\n");

@@ -300,6 +300,11 @@ namespace cl
             return result;
         }
 
+        if(can_convert_to<BigInt>(obj))
+        {
+            return obj;
+        }
+
         if(can_convert_to<String>(obj))
         {
             return parse_int_string(thread,
