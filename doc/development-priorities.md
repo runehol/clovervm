@@ -118,25 +118,19 @@ JIT, language, and runtime work.
     multiplication, `in` / `not in`, and the `operator` module helpers that
     mirror these operations.
 
-10. **Inner functions with closure capture **
+10. **Class semantics cleanup**
 
-	Python supports functions that capture variables as closures. We want to
-	implement them similar to CPython - allocate a closure cell, and whenever
-	we load or store the variable we dereference through the closure cell.
+    Class scopes are currently implemented as local scopes, but this is not
+    correct. Instead these should be dynamic scopes backed by a dict that is
+    eventually slurped up into the class object when the initialization is done.
 
-11. Class semantics cleanup.
-
-	Class scopes are currently implemented as local scopes, but this is not correct.
-	Instead these should be dynamic scopes backed by a dict that is eventually
-	slurped up into the class object when the initialization is done.
-
-12. **Generators, `yield`, and `yield from`**
+11. **Generators, `yield`, and `yield from`**
 
     Generators create long-lived suspended frames, so they should wait until the
     memory/root model is reliable. `yield from` also needs careful interaction
     with `StopIteration.value` and internal no-value sentinels.
 
-13. **Comprehensions and richer syntax**
+12. **Comprehensions and richer syntax**
 
     Add list/dict/set comprehensions, generator expressions, more assignment
     targets, richer string syntax, and other surface-area features after the
