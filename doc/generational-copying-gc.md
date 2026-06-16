@@ -1,19 +1,28 @@
-# Moving GC With Stable Native Wrappers
+# Generational Copying GC Design Notes
 
-This document sketches an alternative garbage-collection and native-extension
-direction for CloverVM. It is intentionally separate from
+This document sketches an alternative garbage-collection direction for CloverVM:
+a generational, moving collector that copies ordinary VM objects and handles
+native API boundaries through explicit handles or stable wrappers.
+
+It is intentionally separate from
 [Generational Mark-Sweep GC Design Notes](generational-mark-sweep-gc.md):
 this design allows ordinary VM objects to move, so it is incompatible with a
 collector strategy that preserves raw managed-object addresses for native code.
 
-The goal is a hybrid runtime:
+The collector goal is a stop-the-world generational copying runtime:
 
 - normal VM objects are allocated in moving generations and may be copied during
   stop-the-world collection;
+- old or stable storage may use a non-moving policy where copying is not
+  appropriate, such as extension-owned objects or exported storage;
+- roots and heap references are updated after object movement.
+
+Native API support follows from that collector choice:
+
 - VM-internal intrinsic functions may use raw `Value` directly, but cannot let
   unrooted values survive safepoints;
 - native code that uses CloverVM's own C extension API sees opaque
-  `clover_value` handles that can survive collections through VM-managed
+  `clover_handle` values that can survive collections through VM-managed
   indirection, but do not guarantee stable handle identity;
 - native code that uses a CPython Limited API / Stable ABI style surface sees
   stable, opaque `PyObject *` values with CPython-style reference lifetime
@@ -26,11 +35,9 @@ The goal is a hybrid runtime:
   pinning or stable-storage rules rather than making arbitrary objects
   non-moving.
 
-This is not full CPython C API or ABI compatibility. Extensions must not depend
-on CPython object layout, downcast `PyObject *` to concrete internal structs, or
-inspect object fields directly. The supported contract is an opaque object
-pointer API where all behavior goes through VM-provided functions and supported
-macros.
+The native API sections are part of the GC design because a moving collector
+must know every root and must be able to update every reference to moved
+objects. They are not the main collector policy.
 
 ## Collector Model
 
@@ -47,6 +54,99 @@ not need concurrent forwarding logic or read barriers merely to preserve
 `PyObject *` stability. While native code is running, the wrapper's address is
 stable. While the collector is running, native code is stopped and the VM can
 rewrite wrapper target slots directly.
+
+## Copying Collection Shape
+
+The ordinary managed heap should be designed around evacuation: live objects in
+the collected generation are copied to new storage, and every root or heap slot
+that referenced the old address is rewritten to the new address before
+execution resumes.
+
+A collection has three broad phases:
+
+1. Stop mutators at safepoints and publish all VM-controlled roots.
+2. Evacuate reachable movable objects from the collected generation.
+3. Rewrite roots, handle slots, and heap references to point at copied objects.
+
+The collector must be able to enumerate and update:
+
+- managed stack slots and accumulators;
+- VM/runtime roots;
+- ordinary object fields and backing arrays;
+- remembered old-to-young references for minor collections;
+- CloverVM C API handle storage;
+- CPython Limited API wrapper target slots;
+- extension-owned stable objects that expose tracing hooks.
+
+Objects in stable storage are not copied by this ordinary evacuation path. They
+are still part of the traced object graph if they can reference or be referenced
+by movable VM objects.
+
+## Heap Object Metadata
+
+The collector should keep layout metadata separate from GC state.
+
+The current heap header already carries `native_layout_id_` and
+`native_layout_aux_count`. For a copying collector, the GC should treat those as
+inputs to the native-layout descriptor system:
+
+```text
+descriptor = descriptor_for(obj->native_layout_id())
+size = descriptor.object_size(obj)
+trace/copy layout = descriptor.trace_layout(obj)
+```
+
+The GC-specific object state needed for ordinary copied objects is much smaller:
+
+- normal versus forwarded state;
+- forwarding target when the object has been evacuated.
+
+The forwarding target can be written into the from-space object itself after
+the object has been copied. A reference repair path can then recognize a
+forwarded object and replace the old address with the forwarding target.
+
+For copied generations, classic white/grey/black mark bits do not need to live
+in every object header. The states are implicit:
+
+```text
+not forwarded in from-space = white
+forwarded but not scanned = grey
+forwarded and scan complete = black
+```
+
+The grey/black distinction can be represented by the evacuation scan queue and
+its scan frontier rather than by header bits.
+
+Generation should also be kept out of the object header if the owning
+space/slab/region can answer it cheaply. A per-object generation marker is only
+needed if the implementation allows mixed-generation storage where generation
+cannot be derived from the allocation region.
+
+Remembered-set state is separate from forwarding state. It can be represented
+with side metadata such as cards, remembered-object sets, or region dirty state.
+A per-object remembered bit is an optimization to avoid duplicate remembered-set
+entries, not a fundamental copied-object header requirement.
+
+## Generations
+
+The first policy should be a stop-the-world generational collector:
+
+- young generation for newly allocated movable objects;
+- old generation for objects that survive enough young collections or are
+  promoted by policy;
+- stable storage for extension-owned objects and storage that must not move.
+
+Young collections evacuate live young objects and update references from roots
+and remembered old objects. They must not scan the entire old generation.
+Old-to-young stores therefore need a remembered-set barrier, even though the
+collector itself is stop-the-world.
+
+Major collections may collect both young and old movable generations. The exact
+old-generation policy is still open: old objects may continue to move during
+major collection, or the old generation may use a non-moving mark-sweep policy
+for objects that are expensive or risky to copy. That choice is independent from
+the C API handle contract: native code still cannot observe raw addresses for
+ordinary movable objects.
 
 ## Native API Layers
 
@@ -74,30 +174,32 @@ roots, managed frames, or explicit VM-rooted handles before the safepoint.
 
 ### CloverVM C Extension API
 
-The CloverVM C extension API uses `clover_value`. This is the preferred native
-extension surface for Clover-specific modules.
+The CloverVM C extension API uses `clover_handle`. This is the preferred native
+extension surface for Clover-specific modules. This name is intentional: in a
+moving collector the API value is a handle to VM-owned storage, not the VM value
+representation itself.
 
 Unlike the intrinsic API, this API may call helpers that allocate and trigger
-collection. Therefore `clover_value` cannot remain a raw copy of movable
+collection. Therefore `clover_handle` cannot remain a raw copy of movable
 `Value` bits in a moving collector. It must become an opaque VM-managed token or
 handle that the active `clover_context` can trace and update.
 
 The CloverVM C API does not need to preserve handle identity. If the same VM
-object is exposed twice as `clover_value`, the two `clover_value` tokens do not
+object is exposed twice as `clover_handle`, the two `clover_handle` values do not
 need to compare equal unless a specific API function promises that. Extension
-code should treat `clover_value` as an opaque value token, not as an identity
+code should treat `clover_handle` as an opaque value handle, not as an identity
 pointer.
 
 This weaker contract avoids the cost of a global canonical wrapper table for
-ordinary Clover-native extensions. `clover_value` can be an opaque pointer to
+ordinary Clover-native extensions. `clover_handle` can be an opaque pointer to
 VM-owned handle storage. The handle storage is scanned and updated by the GC,
 but it does not need to be canonical for object identity.
 
-Temporary `clover_value` handles are valid only for the active API entry that
-produced or received them. Native code that needs to store a value in C globals,
-native module state, heap allocations, async callbacks, or other locations that
-can outlive the current call must first convert it to an explicit
-`clover_handle`.
+Ordinary `clover_handle` values are transitory handles, valid only for the
+active API entry that produced or received them. Native code that needs to store
+a value in C globals, native module state, heap allocations, async callbacks, or
+other locations that can outlive the current call must first convert it to an
+explicit `clover_persistent_handle`.
 
 ### CPython Limited C API
 
@@ -106,7 +208,7 @@ surface. It uses stable, opaque `PyObject *` values and CPython-style refcount
 lifetime rules.
 
 This layer needs stable wrapper identity for C-visible `PyObject *` values.
-Unlike `clover_value`, a `PyObject *` may be compared, increfed, decrefed, and
+Unlike `clover_handle`, a `PyObject *` may be compared, increfed, decrefed, and
 held according to CPython's reference rules. That requires a canonical stable
 wrapper or stable extension object while native references exist.
 
@@ -266,7 +368,7 @@ CPython Limited API exposure may create a different `PyObject *`. That is
 acceptable because no native code may legally retain the old pointer after its
 refcount or borrowed-reference lifetime has ended.
 
-This table is not required for the CloverVM C API. `clover_value` handles do
+This table is not required for the CloverVM C API. `clover_handle` values do
 not promise stable identity, so the VM can use cheaper per-context or
 per-native-call handle storage.
 
@@ -274,101 +376,114 @@ per-native-call handle storage.
 
 The CloverVM C API needs handles because native C stack/register state is not
 precisely scannable as managed `Value` storage. In a moving collector,
-`clover_value` should be an opaque pointer to VM-owned handle storage rather
+`clover_handle` should be an opaque pointer to VM-owned handle storage rather
 than contain raw `Value` bits.
 
 There are two expected handle lifetimes:
 
-- temporary handles owned by the active native call or `clover_context`;
-- `clover_handle` objects explicitly retained by native code and released
-  later.
+- transitory `clover_handle` objects owned by the active native call or
+  `clover_context`;
+- `clover_persistent_handle` objects explicitly retained by native code and
+  released later.
 
 Both storage classes contain a managed `Value` slot that the collector can scan
 and update when movable objects are copied. The difference is ownership and
-lifetime, not the external `clover_value` shape.
+lifetime, not the external handle concept.
 
 Conceptually:
 
 ```text
 VM Value[] args
   -> CloverNativeCallFrame
-       create temporary handles for arguments
-       pass opaque clover_value pointers to native code
+       create transitory handles for arguments
+       pass opaque clover_handle pointers to native code
        API helpers read/write handle targets
        GC scans and updates handle storage
-       convert returned clover_value through its handle
-       release temporary handles on return
+       convert returned clover_handle through its handle
+       release transitory handles on return
 ```
 
-Temporary handles are valid only for the active API entry that produced or
-received them. `clover_handle` objects are created by an explicit retain
-operation and may be stored in C globals, native module state, C heap
+Transitory handles are valid only for the active API entry that produced or
+received them. `clover_persistent_handle` objects are created by an explicit
+retain operation and may be stored in C globals, native module state, C heap
 allocations, or callbacks until released.
 
-`clover_handle` is the name for a persistent native root. It should be a distinct
-opaque C type from `clover_value`:
+`clover_persistent_handle` is the name for a persistent native root. It should
+be a distinct opaque C type from `clover_handle`:
 
 ```c
 typedef struct clover_handle clover_handle;
+typedef struct clover_persistent_handle clover_persistent_handle;
 ```
 
 The expected API shape is:
 
 ```c
-clover_handle *clover_value_retain(clover_context *ctx, clover_value value);
-void clover_handle_release(clover_handle *handle);
-clover_value clover_handle_get(clover_context *ctx, clover_handle *handle);
+clover_persistent_handle *clover_handle_retain(clover_context *ctx,
+                                               clover_handle *handle);
+void clover_persistent_handle_release(clover_persistent_handle *handle);
+clover_handle *clover_persistent_handle_get(
+    clover_context *ctx, clover_persistent_handle *handle);
 ```
 
-`clover_value_retain` resolves the temporary `clover_value` through the current
-context, allocates persistent VM-owned handle storage, copies the managed value
-into that storage, and registers the handle as a native root. `clover_handle_get`
-converts the persistent root back into an ordinary `clover_value` usable with
-the current context. `clover_handle_release` removes the native root and allows
-the target to be collected if no other roots remain.
+`clover_handle_retain` resolves the transitory `clover_handle` through the
+current context, allocates persistent VM-owned handle storage, copies the
+managed value into that storage, and registers the persistent handle as a native
+root. `clover_persistent_handle_get` converts the persistent root back into an
+ordinary transitory `clover_handle` usable with the current context.
+`clover_persistent_handle_release` removes the native root and allows the target
+to be collected if no other roots remain.
 
-A `clover_handle` can be converted back to an ordinary call-scoped
-`clover_value` by returning the same opaque handle pointer or by creating a
-temporary alias for the current context. The key requirement is that the storage
-backing the resulting `clover_value` is live independently of the old call stack
-when the value originated from a `clover_handle`.
+An implementation may choose to back `clover_persistent_handle` with the same
+stable indirection objects used for CPython Limited API `PyObject *` wrappers.
+That is an implementation detail only. The CloverVM C API should expose
+`clover_persistent_handle` as its own opaque type, and native Clover extensions
+must not depend on it being layout-compatible with, pointer-identical to, or
+interchangeable with `PyObject *`.
+
+A `clover_persistent_handle` can be converted back to an ordinary transitory
+`clover_handle` by returning a handle view of the same underlying storage or by
+creating a transitory alias for the current context. The key requirement is that
+the storage backing the resulting `clover_handle` is live independently of the
+old call stack when the value originated from a `clover_persistent_handle`.
 
 ```text
-clover_value
+clover_handle
   -> VM-owned handle
        value slot -> movable VM object or immediate Value
-       lifetime -> temporary context-owned or clover_handle persistent root
+       lifetime -> transitory context-owned or clover_persistent_handle root
 ```
 
 Every CloverVM C API function resolves values by validating the opaque handle
 and then reading or updating its value slot:
 
 ```text
-clover_* API(ctx, value)
-  handle = validate_handle(ctx, value)
-  read or update handle->slot
+clover_* API(ctx, handle)
+  storage = validate_handle(ctx, handle)
+  read or update storage->slot
 ```
 
-Validation should distinguish temporary handles from persistent handles. A
-temporary handle used after its context has returned should fail validation. A
-`clover_handle` remains valid until `clover_handle_release` is called.
+Validation should distinguish transitory handles from persistent handles. A
+transitory handle used after its context has returned should fail validation. A
+`clover_persistent_handle` remains valid until
+`clover_persistent_handle_release` is called.
 
 When a CloverVM C API operation stores a value into VM-owned storage, it stores
-the underlying managed value, not the `clover_value` handle. For example, a
+the underlying managed value, not the `clover_handle` itself. For example, a
 future `clover_list_set_item(ctx, list, index, item)` would resolve `item`
 through its handle and then perform a normal managed list store
-with the collector's write barrier. The list would not retain the temporary
+with the collector's write barrier. The list would not retain the transitory
 handle, and the native extension could not keep using `item` after the call
 returns.
 
-The same object exposed twice may receive two distinct `clover_value` tokens.
+The same object exposed twice may receive two distinct `clover_handle` values.
 That is allowed unless a specific CloverVM C API function documents identity
 semantics. Extension code must use API operations for equality, hashing, and
-object behavior rather than comparing handle-token values.
+object behavior rather than comparing handle pointer values.
 
-Native code that needs to retain a value across calls must use `clover_handle`.
-It should not rely on temporary handles surviving after the current API entry
-returns.
+Native code that needs to retain a value across calls must use
+`clover_persistent_handle`. It should not rely on transitory handles surviving
+after the current API entry returns.
 
 ## CPython Limited API Call Frames
 
@@ -428,9 +543,10 @@ The design should avoid making every wrapper ever created a permanent strong
 root. Otherwise repeated native exposure of short-lived values would leak object
 graphs through the wrapper table.
 
-`clover_value` handles do not use this refcount contract. Their lifetime is
-owned either by the active CloverVM C API context for temporary handles or by an
-explicit `clover_handle` retain/release API for persistent native roots.
+`clover_handle` values do not use this refcount contract. Their lifetime is
+owned either by the active CloverVM C API context for transitory handles or by
+an explicit `clover_persistent_handle` retain/release API for persistent native
+roots.
 
 ## Cross-Heap References
 
@@ -439,7 +555,7 @@ This hybrid design has several important cross-boundary reference directions.
 CloverVM C API handle to movable object:
 
 ```text
-clover_value -> VM-owned handle -> movable VM object
+clover_handle -> VM-owned handle -> movable VM object
 ```
 
 Live CloverVM C API handles are scanned as native roots. If a target moves, the
@@ -505,11 +621,12 @@ unrestricted CPython C API's layout and address-stability assumptions.
   access?
 - What is the concrete wrapper layout, and does it need to be CPython-header
   shaped for source compatibility with Limited-API code?
-- What is the concrete `clover_value` handle layout: one allocation per handle,
+- What is the concrete `clover_handle` storage layout: one allocation per handle,
   arena-allocated handles, freelists, debug cookies, and whether immediates get
   direct singleton handles or per-call/per-retain handles?
-- What is the exact `clover_handle` API shape and error behavior for converting
-  a temporary `clover_value` into a storable native root and releasing it later?
+- What is the exact `clover_persistent_handle` API shape and error behavior for
+  converting a transitory `clover_handle` into a storable native root and
+  releasing it later?
 - How does the identity table key movable objects across copying collections:
   direct old address with forwarding repair, stable object ID, or side identity
   cell?
