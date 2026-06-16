@@ -17,6 +17,7 @@
 #include "object_model/shape.h"
 #include "object_model/slot_dict.h"
 #include "object_model/validity_cell.h"
+#include "object_model/vm_array.h"
 #include "object_model/vm_array_backing.h"
 #include "runtime/exception_object.h"
 #include "runtime/thread_state.h"
@@ -36,6 +37,12 @@ namespace
         static void dealloc(HeapObject *) {}
 
         CL_DECLARE_CUSTOM_DEALLOC(CustomDeallocTestObject, dealloc);
+    };
+
+    struct TwoValueCells
+    {
+        Value first;
+        Value second;
     };
 
     template <typename T> void expect_static_native_layout_descriptor()
@@ -636,6 +643,25 @@ TEST(NativeLayoutDescriptor, ValueArrayBackingStoresLargeCellCount)
               object_size_in_bytes(backing));
 }
 
+TEST(NativeLayoutDescriptor, ValueArrayRejectsBackingCellCountOutsideSmiRange)
+{
+    ValueArray<TwoValueCells> array;
+
+    EXPECT_DEATH(
+        { array.reserve(static_cast<size_t>(value_smi_max) / 2 + 1); },
+        "VM value array backing cell count exceeds SMI range");
+}
+
+TEST(NativeLayoutDescriptor, ValueArrayBackingRejectsCellCountOutsideSmiRange)
+{
+    EXPECT_DEATH(
+        {
+            ValueArrayBacking backing(static_cast<size_t>(value_smi_max) + 1);
+            (void)backing;
+        },
+        "VM array backing count exceeds SMI range");
+}
+
 TEST(NativeLayoutDescriptor, HeapPtrArrayBackingUsesDynamicSmiReleaseDescriptor)
 {
     const ReleaseDescriptor &release =
@@ -685,6 +711,25 @@ TEST(NativeLayoutDescriptor, HeapPtrArrayBackingStoresLargeCellCount)
     EXPECT_EQ(0u, backing->native_layout_aux_count_value());
     EXPECT_EQ(HeapPtrArrayBacking::size_for(cell_count),
               object_size_in_bytes(backing));
+}
+
+TEST(NativeLayoutDescriptor, HeapPtrArrayRejectsCapacityOutsideSmiRange)
+{
+    HeapPtrArray<ValidityCell> array;
+
+    EXPECT_DEATH(
+        { array.reserve(static_cast<size_t>(value_smi_max) + 1); },
+        "VM array size exceeds SMI range");
+}
+
+TEST(NativeLayoutDescriptor, HeapPtrArrayBackingRejectsCellCountOutsideSmiRange)
+{
+    EXPECT_DEATH(
+        {
+            HeapPtrArrayBacking backing(static_cast<size_t>(value_smi_max) + 1);
+            (void)backing;
+        },
+        "VM array backing count exceeds SMI range");
 }
 
 TEST(NativeLayoutDescriptor, TestOnlyDescriptorsAreInvalid)

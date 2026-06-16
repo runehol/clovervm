@@ -7,6 +7,7 @@
 #include "object_model/typed_value.h"
 #include "object_model/value.h"
 #include "object_model/vm_array_backing.h"
+#include "runtime/fatal.h"
 #include "runtime/thread_state.h"
 #include <cassert>
 #include <cstddef>
@@ -31,20 +32,35 @@ namespace cl
 
         inline size_t checked_array_size(size_t size)
         {
-            assert(size <= static_cast<size_t>(INT64_MAX >> value_tag_bits));
+            if(unlikely(size > static_cast<size_t>(value_smi_max)))
+            {
+                fatal("VM array size exceeds SMI range");
+            }
             return size;
         }
 
         inline size_t grown_capacity(size_t current_capacity,
                                      size_t minimum_capacity)
         {
-            size_t grown = current_capacity == 0 ? 1 : current_capacity * 2;
+            size_t grown;
+            if(current_capacity == 0)
+            {
+                grown = 1;
+            }
+            else if(unlikely(current_capacity >
+                             static_cast<size_t>(value_smi_max) / 2))
+            {
+                grown = static_cast<size_t>(value_smi_max);
+            }
+            else
+            {
+                grown = current_capacity * 2;
+            }
             if(grown < minimum_capacity)
             {
                 grown = minimum_capacity;
             }
-            assert(grown <= static_cast<size_t>(INT64_MAX >> value_tag_bits));
-            return grown;
+            return checked_array_size(grown);
         }
     }  // namespace detail
 
@@ -296,6 +312,11 @@ namespace cl
 
         static size_t value_cell_count_for_capacity(size_t capacity)
         {
+            if(unlikely(capacity > static_cast<size_t>(value_smi_max) /
+                                       values_per_element))
+            {
+                fatal("VM value array backing cell count exceeds SMI range");
+            }
             return capacity * values_per_element;
         }
 
