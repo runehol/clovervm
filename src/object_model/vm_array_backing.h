@@ -6,6 +6,7 @@
 #include "object_model/owned.h"
 #include "object_model/typed_value.h"
 #include "object_model/value.h"
+#include "runtime/fatal.h"
 
 #include <algorithm>
 #include <cstddef>
@@ -13,6 +14,38 @@
 
 namespace cl
 {
+    namespace detail
+    {
+        inline size_t checked_vm_array_backing_count(size_t count)
+        {
+            if(unlikely(count > static_cast<size_t>(value_smi_max)))
+            {
+                fatal("VM array backing count exceeds SMI range");
+            }
+            return count;
+        }
+
+        inline size_t checked_vm_array_backing_mul(size_t left, size_t right)
+        {
+            size_t result;
+            if(unlikely(__builtin_mul_overflow(left, right, &result)))
+            {
+                fatal("VM array backing size overflows size_t");
+            }
+            return result;
+        }
+
+        inline size_t checked_vm_array_backing_add(size_t left, size_t right)
+        {
+            size_t result;
+            if(unlikely(__builtin_add_overflow(left, right, &result)))
+            {
+                fatal("VM array backing size overflows size_t");
+            }
+            return result;
+        }
+    }  // namespace detail
+
     class RawArrayBacking : public HeapObject
     {
     public:
@@ -26,8 +59,9 @@ namespace cl
 
         static size_t size_for(size_t storage_bytes)
         {
-            return CL_OFFSETOF(RawArrayBacking, bytes) +
-                   std::max<size_t>(storage_bytes, 1);
+            return detail::checked_vm_array_backing_add(
+                CL_OFFSETOF(RawArrayBacking, bytes),
+                std::max<size_t>(storage_bytes, 1));
         }
 
         static size_t object_size_in_bytes(const RawArrayBacking *backing)
@@ -53,8 +87,8 @@ namespace cl
 
         explicit ValueArrayBacking(size_t value_cell_count)
             : HeapObject(native_layout),
-              value_cell_count_value(
-                  TValue<SMI>::from_smi(static_cast<int64_t>(value_cell_count)))
+              value_cell_count_value(TValue<SMI>::from_smi(static_cast<int64_t>(
+                  detail::checked_vm_array_backing_count(value_cell_count))))
         {
         }
 
@@ -65,14 +99,18 @@ namespace cl
 
         void set_value_cell_count(size_t value_cell_count)
         {
-            value_cell_count_value =
-                TValue<SMI>::from_smi(static_cast<int64_t>(value_cell_count));
+            value_cell_count_value = TValue<SMI>::from_smi(static_cast<int64_t>(
+                detail::checked_vm_array_backing_count(value_cell_count)));
         }
 
         static size_t size_for(size_t value_cell_count)
         {
-            return CL_OFFSETOF(ValueArrayBacking, elements) +
-                   sizeof(Value) * std::max<size_t>(value_cell_count, 1);
+            value_cell_count =
+                detail::checked_vm_array_backing_count(value_cell_count);
+            return detail::checked_vm_array_backing_add(
+                CL_OFFSETOF(ValueArrayBacking, elements),
+                detail::checked_vm_array_backing_mul(
+                    sizeof(Value), std::max<size_t>(value_cell_count, 1)));
         }
 
         static size_t object_size_in_bytes(const ValueArrayBacking *backing)
@@ -97,8 +135,8 @@ namespace cl
 
         explicit HeapPtrArrayBacking(size_t value_cell_count)
             : HeapObject(native_layout),
-              value_cell_count_value(
-                  TValue<SMI>::from_smi(static_cast<int64_t>(value_cell_count)))
+              value_cell_count_value(TValue<SMI>::from_smi(static_cast<int64_t>(
+                  detail::checked_vm_array_backing_count(value_cell_count))))
         {
         }
 
@@ -109,14 +147,19 @@ namespace cl
 
         void set_value_cell_count(size_t value_cell_count)
         {
-            value_cell_count_value =
-                TValue<SMI>::from_smi(static_cast<int64_t>(value_cell_count));
+            value_cell_count_value = TValue<SMI>::from_smi(static_cast<int64_t>(
+                detail::checked_vm_array_backing_count(value_cell_count)));
         }
 
         static size_t size_for(size_t value_cell_count)
         {
-            return CL_OFFSETOF(HeapPtrArrayBacking, elements) +
-                   sizeof(HeapObject *) * std::max<size_t>(value_cell_count, 1);
+            value_cell_count =
+                detail::checked_vm_array_backing_count(value_cell_count);
+            return detail::checked_vm_array_backing_add(
+                CL_OFFSETOF(HeapPtrArrayBacking, elements),
+                detail::checked_vm_array_backing_mul(
+                    sizeof(HeapObject *),
+                    std::max<size_t>(value_cell_count, 1)));
         }
 
         static size_t object_size_in_bytes(const HeapPtrArrayBacking *backing)
