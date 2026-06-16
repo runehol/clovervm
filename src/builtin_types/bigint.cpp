@@ -1298,6 +1298,205 @@ namespace cl
         return finalize_bigint(thread, result.view());
     }
 
+    static bool bigint_view_is_one(ConstBigIntView view)
+    {
+        return view.signum == 1 && view.n_digits == 1 && view.digits[0] == 1;
+    }
+
+    static void bigint_floor_mod_into(MutableBigIntView *dest,
+                                      ConstBigIntView left,
+                                      ConstBigIntView right,
+                                      MutableBigIntView *quotient,
+                                      MutableBigIntView *remainder,
+                                      MutableBigIntView *adjusted_quotient,
+                                      MutableBigIntView *adjusted_remainder)
+    {
+        assert(is_normalized_bigint_view(left));
+        assert(is_normalized_bigint_view(right));
+        assert(right.signum != 0);
+        assert(dest->digits != left.digits);
+        assert(dest->digits != right.digits);
+
+        BigIntDivModViews result =
+            bigint_floor_divmod_views(quotient, remainder, adjusted_quotient,
+                                      adjusted_remainder, left, right);
+        copy_bigint_view(dest, result.remainder);
+    }
+
+    static void bigint_modular_inverse_into(
+        MutableBigIntView *dest, ConstBigIntView base, ConstBigIntView modulo,
+        ConstBigIntView abs_modulo, MutableBigIntView *old_r,
+        MutableBigIntView *r, MutableBigIntView *next_r,
+        MutableBigIntView *old_t, MutableBigIntView *t,
+        MutableBigIntView *next_t, MutableBigIntView *quotient,
+        MutableBigIntView *product, MutableBigIntView *diff,
+        MutableBigIntView *mod_quotient, MutableBigIntView *mod_remainder,
+        MutableBigIntView *mod_adjusted_quotient,
+        MutableBigIntView *mod_adjusted_remainder)
+    {
+        assert(abs_modulo.signum > 0);
+        assert(!bigint_view_is_one(abs_modulo));
+
+        copy_bigint_view(old_r, abs_modulo);
+        bigint_floor_mod_into(r, base, abs_modulo, mod_quotient, mod_remainder,
+                              mod_adjusted_quotient, mod_adjusted_remainder);
+        set_zero(old_t);
+
+        digit_t one_digit = 1;
+        ConstBigIntView one{1, 1, &one_digit};
+        copy_bigint_view(t, one);
+
+        while(r->signum != 0)
+        {
+            bigint_abs_divmod_into(quotient, next_r, old_r->view(), r->view());
+
+            bigint_mul_into(product, quotient->view(), t->view());
+            bigint_sub_into(diff, old_t->view(), product->view());
+            bigint_floor_mod_into(
+                next_t, diff->view(), abs_modulo, mod_quotient, mod_remainder,
+                mod_adjusted_quotient, mod_adjusted_remainder);
+
+            std::swap(*old_r, *r);
+            std::swap(*r, *next_r);
+            std::swap(*old_t, *t);
+            std::swap(*t, *next_t);
+        }
+
+        if(!bigint_view_is_one(old_r->view()))
+        {
+            set_zero(dest);
+            return;
+        }
+
+        bigint_floor_mod_into(dest, old_t->view(), modulo, mod_quotient,
+                              mod_remainder, mod_adjusted_quotient,
+                              mod_adjusted_remainder);
+    }
+
+    Expected<Value> bigint_modular_pow(ThreadState *thread,
+                                       ConstBigIntView base,
+                                       ConstBigIntView exponent,
+                                       ConstBigIntView modulo)
+    {
+        assert(is_normalized_bigint_view(base));
+        assert(is_normalized_bigint_view(exponent));
+        assert(is_normalized_bigint_view(modulo));
+
+        if(modulo.signum == 0)
+        {
+            return Expected<Value>::raise_exception(
+                L"ValueError", L"pow() 3rd argument cannot be 0");
+        }
+
+        ConstBigIntView abs_modulo = abs_bigint_view(modulo);
+        if(bigint_view_is_one(abs_modulo))
+        {
+            return finalize_bigint(thread, ConstBigIntView{0, 0, nullptr});
+        }
+
+        size_t residue_capacity = std::max<size_t>(abs_modulo.n_digits, 1);
+        if(residue_capacity > (std::numeric_limits<size_t>::max() - 2) / 2)
+        {
+            return Expected<Value>::raise_exception(L"OverflowError",
+                                                    L"integer overflow");
+        }
+        size_t product_capacity = residue_capacity * 2;
+        size_t diff_capacity = product_capacity + 1;
+        size_t reduction_capacity = std::max(
+            {base.n_digits, product_capacity, diff_capacity, size_t{1}});
+        if(reduction_capacity == std::numeric_limits<size_t>::max())
+        {
+            return Expected<Value>::raise_exception(L"OverflowError",
+                                                    L"integer overflow");
+        }
+
+        BigIntScratch result_scratch(residue_capacity);
+        BigIntScratch power_scratch(residue_capacity);
+        BigIntScratch product_scratch(product_capacity);
+        BigIntScratch quotient_scratch(reduction_capacity);
+        BigIntScratch remainder_scratch(reduction_capacity);
+        BigIntScratch adjusted_quotient_scratch(reduction_capacity + 1);
+        BigIntScratch adjusted_remainder_scratch(residue_capacity);
+
+        MutableBigIntView result = result_scratch.mutable_view();
+        MutableBigIntView power = power_scratch.mutable_view();
+        MutableBigIntView product = product_scratch.mutable_view();
+        MutableBigIntView quotient = quotient_scratch.mutable_view();
+        MutableBigIntView remainder = remainder_scratch.mutable_view();
+        MutableBigIntView adjusted_quotient =
+            adjusted_quotient_scratch.mutable_view();
+        MutableBigIntView adjusted_remainder =
+            adjusted_remainder_scratch.mutable_view();
+
+        digit_t one_digit = 1;
+        ConstBigIntView one{1, 1, &one_digit};
+        bigint_floor_mod_into(&result, one, modulo, &quotient, &remainder,
+                              &adjusted_quotient, &adjusted_remainder);
+
+        if(exponent.signum < 0)
+        {
+            BigIntScratch old_r_scratch(residue_capacity);
+            BigIntScratch r_scratch(residue_capacity);
+            BigIntScratch next_r_scratch(residue_capacity);
+            BigIntScratch old_t_scratch(residue_capacity);
+            BigIntScratch t_scratch(residue_capacity);
+            BigIntScratch next_t_scratch(residue_capacity);
+            BigIntScratch inverse_quotient_scratch(residue_capacity);
+            BigIntScratch inverse_product_scratch(product_capacity);
+            BigIntScratch diff_scratch(diff_capacity);
+
+            MutableBigIntView old_r = old_r_scratch.mutable_view();
+            MutableBigIntView r = r_scratch.mutable_view();
+            MutableBigIntView next_r = next_r_scratch.mutable_view();
+            MutableBigIntView old_t = old_t_scratch.mutable_view();
+            MutableBigIntView t = t_scratch.mutable_view();
+            MutableBigIntView next_t = next_t_scratch.mutable_view();
+            MutableBigIntView inverse_quotient =
+                inverse_quotient_scratch.mutable_view();
+            MutableBigIntView inverse_product =
+                inverse_product_scratch.mutable_view();
+            MutableBigIntView diff = diff_scratch.mutable_view();
+
+            bigint_modular_inverse_into(
+                &power, base, modulo, abs_modulo, &old_r, &r, &next_r, &old_t,
+                &t, &next_t, &inverse_quotient, &inverse_product, &diff,
+                &quotient, &remainder, &adjusted_quotient, &adjusted_remainder);
+            if(power.signum == 0)
+            {
+                return Expected<Value>::raise_exception(
+                    L"ValueError",
+                    L"base is not invertible for the given modulus");
+            }
+        }
+        else
+        {
+            bigint_floor_mod_into(&power, base, modulo, &quotient, &remainder,
+                                  &adjusted_quotient, &adjusted_remainder);
+        }
+
+        size_t exponent_bits = bigint_abs_bit_length(exponent);
+        for(size_t bit_idx = 0; bit_idx < exponent_bits; ++bit_idx)
+        {
+            if(bigint_abs_bit(exponent, bit_idx))
+            {
+                bigint_mul_into(&product, result.view(), power.view());
+                bigint_floor_mod_into(&result, product.view(), modulo,
+                                      &quotient, &remainder, &adjusted_quotient,
+                                      &adjusted_remainder);
+            }
+
+            if(bit_idx + 1 < exponent_bits)
+            {
+                bigint_mul_into(&product, power.view(), power.view());
+                bigint_floor_mod_into(&power, product.view(), modulo, &quotient,
+                                      &remainder, &adjusted_quotient,
+                                      &adjusted_remainder);
+            }
+        }
+
+        return finalize_bigint(thread, result.view());
+    }
+
     Expected<Value> bigint_floor_div(ThreadState *thread, ConstBigIntView left,
                                      ConstBigIntView right)
     {

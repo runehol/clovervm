@@ -1408,7 +1408,28 @@ namespace cl
         {
             return native_int_binary_pow(thread, self, other);
         }
-        return Value::NotImplemented();
+        if(!is_intlike_value(self))
+        {
+            return thread->set_pending_builtin_exception_string(
+                L"TypeError", IntPowOperator::receiver_error);
+        }
+        if(!is_intlike_value(other) || !is_intlike_value(modulo))
+        {
+            return Value::NotImplemented();
+        }
+
+        SmiViewStorage self_storage;
+        SmiViewStorage other_storage;
+        SmiViewStorage modulo_storage;
+        Expected<Value> result = bigint_modular_pow(
+            thread, intlike_value_bigint_view(self, &self_storage),
+            intlike_value_bigint_view(other, &other_storage),
+            intlike_value_bigint_view(modulo, &modulo_storage));
+        if(result.has_exception())
+        {
+            return Value::exception_marker();
+        }
+        return result.value();
     }
 
     static Value native_int_ternary_rpow(ThreadState *thread, Value self,
@@ -1418,7 +1439,28 @@ namespace cl
         {
             return native_int_binary_rpow(thread, self, other);
         }
-        return Value::NotImplemented();
+        if(!is_intlike_value(self))
+        {
+            return thread->set_pending_builtin_exception_string(
+                L"TypeError", IntRPowOperator::receiver_error);
+        }
+        if(!is_intlike_value(other) || !is_intlike_value(modulo))
+        {
+            return Value::NotImplemented();
+        }
+
+        SmiViewStorage self_storage;
+        SmiViewStorage other_storage;
+        SmiViewStorage modulo_storage;
+        Expected<Value> result = bigint_modular_pow(
+            thread, intlike_value_bigint_view(other, &other_storage),
+            intlike_value_bigint_view(self, &self_storage),
+            intlike_value_bigint_view(modulo, &modulo_storage));
+        if(result.has_exception())
+        {
+            return Value::exception_marker();
+        }
+        return result.value();
     }
 
     template <typename Operator>

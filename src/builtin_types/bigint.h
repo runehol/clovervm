@@ -154,6 +154,10 @@ namespace cl
     [[nodiscard]] Expected<Value>
     bigint_pow_nonnegative(ThreadState *thread, ConstBigIntView base,
                            ConstBigIntView exponent);
+    [[nodiscard]] Expected<Value> bigint_modular_pow(ThreadState *thread,
+                                                     ConstBigIntView base,
+                                                     ConstBigIntView exponent,
+                                                     ConstBigIntView modulo);
     [[nodiscard]] Expected<Value> bigint_floor_div(ThreadState *thread,
                                                    ConstBigIntView left,
                                                    ConstBigIntView right);

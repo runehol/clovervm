@@ -1711,8 +1711,18 @@ TEST(Interpreter, integer_power_values)
                          L"str(base ** 2)\n",
                          L"340282366920938463463374607431768211456");
     EXPECT_EQ(Value::from_smi(8), test_context.run_file(L"pow(2, 3, None)\n"));
-    EXPECT_EQ(Value::True(),
-              test_context.run_file(L"(2).__pow__(3, 5) is NotImplemented\n"));
+    EXPECT_EQ(Value::from_smi(3), test_context.run_file(L"pow(2, 3, 5)\n"));
+    EXPECT_EQ(Value::from_smi(3),
+              test_context.run_file(L"(2).__pow__(3, 5)\n"));
+    EXPECT_EQ(Value::from_smi(4),
+              test_context.run_file(L"(2).__rpow__(3, 5)\n"));
+    EXPECT_EQ(Value::from_smi(3), test_context.run_file(L"pow(2, -1, 5)\n"));
+    EXPECT_EQ(Value::from_smi(-2), test_context.run_file(L"pow(2, -1, -5)\n"));
+    EXPECT_EQ(Value::from_smi(0), test_context.run_file(L"pow(2, 3, 1)\n"));
+    EXPECT_EQ(Value::from_smi(16), test_context.run_file(L"pow(2, 100, 17)\n"));
+    expect_string_result(L"base = int('18446744073709551616')\n"
+                         L"str(pow(base, 2, 97))\n",
+                         L"35");
     expect_float_result(L"e = -3\n"
                         L"2 ** e\n",
                         0.125);
@@ -1734,6 +1744,10 @@ TEST(Interpreter, integer_power_errors)
                         L"e = -1\n"
                         L"base ** e\n",
                         L"OverflowError", L"int too large to convert to float");
+    expect_python_error(L"pow(2, 3, 0)\n", L"ValueError",
+                        L"pow() 3rd argument cannot be 0");
+    expect_python_error(L"pow(2, -1, 4)\n", L"ValueError",
+                        L"base is not invertible for the given modulus");
 }
 
 TEST(Interpreter, true_division_values)
