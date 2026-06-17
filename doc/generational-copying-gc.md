@@ -191,6 +191,48 @@ stores, module globals, or other high-churn structures can later receive more
 precise slot/range tracking if measurements show that rescanning the whole
 object is too expensive.
 
+### Write Barrier Implementation Lessons
+
+A minimal remembered-set experiment showed that the barrier is not free, but it
+is not a deal breaker if the hot-path entry points are shaped carefully.
+
+The correctness policy can be shared:
+
+```text
+old owner stores young child -> remember old owner
+```
+
+The hot implementation should not force every caller through one generic helper.
+Different stores know different facts, and the barrier API should expose those
+facts so irrelevant checks disappear from common paths:
+
+- a `Value` store should reject non-refcounted immediates before computing the
+  owner or checking generation state;
+- a caller that already proved the child is refcounted should use a
+  known-refcounted entry point and skip repeated tag/pointer validation;
+- a caller that already has `ThreadState *` should pass it to the barrier;
+- a caller without `ThreadState *` may lazily call `active_thread()`, but only
+  after proving that the store really needs to record an old-to-young edge;
+- `ValueArray<Value>` should use a single-cell fast path;
+- composite value arrays, such as dictionary entries, should scan their value
+  cells, compute the backing owner only if at least one cell is refcounted, and
+  then reuse the same owner for all remembered checks.
+
+This matters for dense container writes. A list item benchmark that writes only
+small integers should not pay for remembered-set insertion or thread-local state
+lookup. Profiling confirmed that the hot cost was not TLS lookup: the benchmark
+never reached the actual record path because the stored values were immediates.
+The cost came from entering a generic element barrier and doing owner/backing
+and generation-shaped work before rejecting the immediate value.
+
+Factoring the helper so `ValueArray<Value>` rejects non-refcounted values first
+recovered a meaningful part of the regression, but the list item write path
+still remained visibly slower than the no-barrier baseline. The lesson is that
+shared barrier tests and shared correctness policy are good; a single shared
+hot-path implementation is not. Barrier entry points should be small and
+specialized by caller knowledge, with the generic helper reserved for callers
+that really do not know more.
+
 Module globals are the first likely refinement. If module slot storage can keep
 a cheap remembered bit close to each slot, then a global write of a young value
 into an old module should record the exact slot instead of remembering the whole
