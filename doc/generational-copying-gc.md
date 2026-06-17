@@ -117,29 +117,95 @@ forwarded and scan complete = black
 The grey/black distinction can be represented by the evacuation scan queue and
 its scan frontier rather than by header bits.
 
-Generation should also be kept out of the object header if the owning
-space/slab/region can answer it cheaply. A per-object generation marker is only
-needed if the implementation allows mixed-generation storage where generation
-cannot be derived from the allocation region.
+The first implementation should use object-level generation state in the header:
 
-Remembered-set state is separate from forwarding state. It can be represented
-with side metadata such as cards, remembered-object sets, or region dirty state.
-A per-object remembered bit is an optimization to avoid duplicate remembered-set
-entries, not a fundamental copied-object header requirement.
+```cpp
+enum class HeapGenerationState : uint8_t {
+    Young,
+    Old,
+    OldRemembered,
+};
+```
+
+`OldRemembered` means the object is old and may contain young references, so
+minor GC must scan it. The state is conservative: an object may remain
+`OldRemembered` after a young reference is overwritten until a minor collection
+rescans it and clears the state.
+
+Forwarding state is separate from generation state. `Forwarded` is a temporary
+evacuation state that changes how from-space memory is interpreted.
+`OldRemembered` is a persistent generational barrier state.
 
 ## Generations
 
 The first policy should be a stop-the-world generational collector:
 
 - young generation for newly allocated movable objects;
-- old generation for objects that survive enough young collections or are
-  promoted by policy;
+- old generation for objects that survive a minor collection;
 - stable storage for extension-owned objects and storage that must not move.
 
 Young collections evacuate live young objects and update references from roots
 and remembered old objects. They must not scan the entire old generation.
 Old-to-young stores therefore need a remembered-set barrier, even though the
 collector itself is stop-the-world.
+
+The simple first policy is immediate promotion: every live young object that
+survives a minor collection is copied out of the nursery and becomes old. Dead
+young objects are not copied. After the minor collection, the nursery can be
+reused wholesale.
+
+Minor collection should evacuate the full young generation reachable from roots
+and remembered old objects. Promoted objects should normally end the collection
+with old-to-old references to other promoted young survivors. New old-to-young
+references after the collection are created by later heap stores and recorded by
+the write barrier.
+
+The baseline write barrier is object-level:
+
+```cpp
+if(owner->generation_state == HeapGenerationState::Old &&
+   child_is_young(child)) {
+    owner->generation_state = HeapGenerationState::OldRemembered;
+    thread->remembered_set.push_back(owner);
+}
+```
+
+If the owner is already `OldRemembered`, the barrier does nothing. The
+`Old -> OldRemembered` transition is the duplicate-entry guard.
+
+Each `ThreadState` should own a remembered set. That keeps ordinary barriers
+lock-free in the common case: a mutator records old-to-young stores in its own
+thread-local vector. In a future no-GIL implementation where multiple threads
+can write the same old object, the `Old -> OldRemembered` transition must become
+atomic so only one thread records the object.
+
+During stop-the-world minor GC, the collector scans the remembered sets for all
+threads. For each remembered old object, it scans and updates references using
+the layout descriptors. If the object still contains young references after the
+collection, it remains `OldRemembered` and stays in a remembered set for the
+next minor collection. If it no longer contains young references, the collector
+sets it back to `Old`.
+
+This object-level remembered policy is intentionally coarse. Large backing
+stores, module globals, or other high-churn structures can later receive more
+precise slot/range tracking if measurements show that rescanning the whole
+object is too expensive.
+
+Module globals are the first likely refinement. If module slot storage can keep
+a cheap remembered bit close to each slot, then a global write of a young value
+into an old module should record the exact slot instead of remembering the whole
+module object:
+
+```text
+remembered module slot entry:
+  module object
+  slot index
+```
+
+The per-slot remembered bit is the duplicate-entry guard for that slot. Minor GC
+can scan only the recorded module slots, update copied young targets, and clear
+the slot bit when the slot no longer contains a young reference. This keeps
+module global churn from forcing every minor GC to rescan all module storage.
 
 Major collections may collect both young and old movable generations. The exact
 old-generation policy is still open: old objects may continue to move during
