@@ -87,7 +87,7 @@ operands and results:
   - `_dict_promote_to_general(d)`
   - `_dict_probe_table_identity(d)`
 - hash normalization:
-  - `NormalizeHash(value)`
+  - `CanonicalizeHash(value)`
 - probing:
   - `_dict_probe_start(d, hash_value)`
   - `_dict_probe_step(d, probe)`
@@ -119,14 +119,19 @@ This matches the current table representation style and keeps trusted bytecode
 branches cheap. Named constants in trusted source can carry readability; the
 runtime value should remain a small integer.
 
-Dictionary entry hashes are stored as SMI values. General dict bytecode should
-use the same hash protocol path as public `hash(key)`, then pass that result
-through `NormalizeHash`. `NormalizeHash` is a general trusted opcode, not
-dictionary-specific policy: it accepts `bool`, SMI, and BigInt integer results,
-does not call Python, and returns a normalized SMI hash or raises if the value
-is not an integer.
+Dictionary entry hashes are stored as SMI values. Public `hash(key)` must return
+that same canonical SMI hash value. General dict bytecode should call public
+`hash(key)` and use the result directly; it should not wrap that call in a
+second canonicalization step.
 
-`NormalizeHash` should preserve exact small integer hashes before applying any
+`CanonicalizeHash` is the trusted intrinsic/opcode used by built-in bytecode
+that implements the public hash protocol, by bytecode-backed general dict
+methods that inline the hash protocol for their own inline caches, and by exact
+built-in hash helpers. It is not dictionary-specific policy: it accepts `bool`,
+SMI, and BigInt integer results, does not call Python, and returns a normalized
+SMI hash or raises if the value is not an integer.
+
+`CanonicalizeHash` should preserve exact small integer hashes before applying any
 modular reduction:
 
 - `False` normalizes to `0` and `True` normalizes to `1`.
@@ -150,15 +155,16 @@ CPython remaps a returned hash value of `-1` to `-2` because `-1` is a C API
 error sentinel for `Py_hash_t`. CloverVM does not need that remap for internal
 dict correctness because failures travel through pending exception state and
 hash values are distinct from probe sentinels, but adopting the remap as part
-of `NormalizeHash` keeps the public `hash()` result, dict storage, and any
+of `CanonicalizeHash` keeps the public `hash()` result, dict storage, and any
 future C API compatibility path aligned.
 
-Every exact built-in hash helper that can feed dict storage must use the same
-normalization policy. In particular, the string-shaped dict fast path may call
-a trusted string hash helper directly, but that helper must return a normalized
-SMI hash, including `-1` to `-2` remapping. Raw string mixing helpers, if kept,
-should stay private and should not be callable from dict insertion, lookup, or
-public `hash()` without immediately applying `NormalizeHash`.
+Every exact built-in hash helper that can feed dict storage or public `hash()`
+must use the same normalization policy. In particular, the string-shaped dict
+fast path may call a trusted string hash helper directly, but that helper must
+return a normalized SMI hash, including `-1` to `-2` remapping. Raw string
+mixing helpers, if kept, should stay private and should not be callable from
+dict insertion, lookup, or public `hash()` without immediately applying
+`CanonicalizeHash`.
 
 The opcodes should avoid returning raw entry pointers or references that can
 survive a Python-visible call. Return entry indexes, probe indexes, or compact
@@ -184,13 +190,21 @@ ordinary call sites and inline caches.
 
 ```python
 def _general_dict_hash_key(key):
-    return NormalizeHash(hash(key))
+    return hash(key)
 ```
 
 This assumes public `hash()` is implemented as the shared Python-visible hash
 protocol. Missing or disabled `__hash__` should fail through that shared path;
-non-integer and out-of-SMI integer hash results should be handled by
-`NormalizeHash`. The dict should not have a parallel hash protocol.
+non-integer and out-of-SMI integer hash results should be handled by public
+`hash()` through `CanonicalizeHash`. The dict should not have a parallel hash
+protocol or re-canonicalize a public hash result.
+
+Implementation can inline the public hash protocol inside the trusted dict
+method body instead of calling the public `hash` builtin directly. That inlined
+sequence should have its own cache-bearing special-method lookup and call sites,
+then finish with `CanonicalizeHash`. The semantic contract is still exactly
+`hash(key)`: same canonical SMI result, same disabled-hash behavior, same
+non-integer result error, and same exception propagation.
 
 ### Lookup
 
@@ -505,9 +519,12 @@ is to expose one invariant at a time.
 
 - [ ] Define the CloverVM integer hash modulus and document it as SMI-sized,
   not CPython `Py_hash_t`-sized.
-- [ ] Add the shared `NormalizeHash` operation for `bool`, SMI, and BigInt
+- [ ] Add the shared `CanonicalizeHash` operation for `bool`, SMI, and BigInt
   integer values.
-- [ ] Apply `-1` to `-2` remapping inside `NormalizeHash`.
+- [ ] Expose `CanonicalizeHash` as a trusted intrinsic/opcode usable by built-in
+  bytecode bodies but unavailable to ordinary Python source and native
+  extensions.
+- [ ] Apply `-1` to `-2` remapping inside `CanonicalizeHash`.
 - [ ] Change exact string hashing so dict-facing string hash helpers return a
   normalized `TValue<SMI>` hash rather than raw `uint64_t` output.
 - [ ] Add direct normalization tests for `-1`, bools, SMI boundary values,
@@ -522,7 +539,7 @@ hash value stored by today's string dict an explicit normalized hash.
 - [ ] Implement the public `hash(obj)` builtin through the ordinary special
   method protocol.
 - [ ] Require `__hash__` results to be integer values and route those values
-  through `NormalizeHash`.
+  through `CanonicalizeHash`.
 - [ ] Preserve disabled or missing hash behavior as `TypeError`.
 - [ ] Keep direct exact-builtin hash paths consistent with public `hash()` and
   dict storage.
@@ -562,8 +579,9 @@ This milestone should be table-mechanical only. If an opcode needs to call
 
 ### 4. General Lookup And Revalidation
 
-- [ ] Implement bytecode-backed general `__getitem__` and membership using
-  public `hash()` plus `NormalizeHash`.
+- [ ] Implement bytecode-backed general `__getitem__` and membership using the
+  canonical SMI hash result produced by either public `hash()` or an inlined
+  equivalent hash-protocol sequence ending in `CanonicalizeHash`.
 - [ ] Call equality from bytecode only after hash match and identity miss.
 - [ ] Hold the candidate key alive across equality.
 - [ ] Revalidate table identity and candidate entry after equality returns.
