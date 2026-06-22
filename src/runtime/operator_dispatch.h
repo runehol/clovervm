@@ -19,7 +19,8 @@ namespace cl
         CallUnary = 10,
         CallTernary = 12,
         CallTernaryReflected = 13,
-        CallMembershipFallback = 14,
+        CallIterMembershipFallback = 14,
+        CallSequenceMembershipFallback = 16,
     };
 
     static constexpr bool
@@ -47,7 +48,9 @@ namespace cl
     static_assert(operator_step_action_is_reflected(
         OperatorStepAction::CallTernaryReflected));
     static_assert(!operator_step_action_is_reflected(
-        OperatorStepAction::CallMembershipFallback));
+        OperatorStepAction::CallIterMembershipFallback));
+    static_assert(!operator_step_action_is_reflected(
+        OperatorStepAction::CallSequenceMembershipFallback));
 
     enum class OperatorStepApplicability : uint8_t
     {
@@ -174,11 +177,20 @@ namespace cl
                                 OperatorStepApplicability::Always};
         }
 
-        static constexpr OperatorStep call_membership_fallback()
+        static constexpr OperatorStep
+        call_iter_membership_fallback(String *dunder_name)
         {
-            return OperatorStep{nullptr,
-                                OperatorStepAction::CallMembershipFallback,
-                                OperatorStepApplicability::Always};
+            return OperatorStep{dunder_name,
+                                OperatorStepAction::CallIterMembershipFallback,
+                                OperatorStepApplicability::IfMethodFound};
+        }
+
+        static constexpr OperatorStep
+        call_sequence_membership_fallback(String *dunder_name)
+        {
+            return OperatorStep{
+                dunder_name, OperatorStepAction::CallSequenceMembershipFallback,
+                OperatorStepApplicability::IfMethodFound};
         }
     };
 

@@ -91,17 +91,20 @@ Add a membership table:
 OperatorDispatchTableId::Contains
 ```
 
-Add a membership-specific table fallback verb:
+Add membership-specific table fallback verbs:
 
 ```cpp
-OperatorStepAction::CallMembershipFallback
+OperatorStepAction::CallIterMembershipFallback
+OperatorStepAction::CallSequenceMembershipFallback
 ```
 
 Install the table as:
 
 ```text
 0: CallBinary("__contains__", IfMethodFound)
-1: CallMembershipFallback(Always)
+1: CallIterMembershipFallback("__iter__", IfMethodFound)
+2: CallSequenceMembershipFallback("__getitem__", IfMethodFound)
+3: RaiseUnsupported
 ```
 
 This is intentionally not a `RaiseUnsupported` fallback. Missing
@@ -190,30 +193,54 @@ On a cache miss:
    function-call descriptor that calls with `(container, needle)` and caches on
    the container lookup validity cell only.
 
-3. If row 0 misses, row 1 `CallMembershipFallback` returns an untrusted
-   function-call descriptor for the VM-owned fallback helper. It must cache on
-   the negative `__contains__` lookup validity cell so adding `__contains__` to
-   the container class invalidates the fallback cache.
+3. If row 0 misses and row 1 finds `__iter__`, row 1
+   `CallIterMembershipFallback` returns an untrusted function-call descriptor
+   for the VM-owned iterator fallback helper. It must cache on the receiver
+   lookup validity cell so adding or replacing `__contains__` or `__iter__`
+   invalidates the cached fallback decision.
 
-4. Found-but-unsupported `__contains__` cases follow the existing operator IC
+4. If `__iter__` is missing and row 2 finds `__getitem__`, row 2
+   `CallSequenceMembershipFallback` returns an untrusted function-call
+   descriptor for the VM-owned sequence-index fallback helper. This preserves
+   the important CPython distinction: an existing `__iter__` that raises does
+   not fall through to indexed access.
+
+5. Found-but-unsupported `__contains__` cases follow the existing operator IC
    limits. This slice does not add descriptor execution or arbitrary
    callable-object support.
 
 ## Fallback Helper
 
-Define the first helper in `src/bootstrap/builtins.py`, then capture it during
+Define the helpers in `src/bootstrap/builtins.py`, then capture them during
 VM bootstrap and delete the name from the builtins scope before user code runs.
-The opcode must call the VM-owned function directly, not look it up through
-builtins at runtime. User code must not be able to shadow the helper.
+The opcode must call the VM-owned functions directly, not look them up through
+builtins at runtime. User code must not be able to shadow the helpers.
 
-Initial helper:
+Iterator helper:
 
 ```python
-def __clover_membership_fallback(container, needle):
+def __clover_iter_membership_fallback(container, needle):
     for item in container:
         if item == needle:
             return True
     return False
+```
+
+Sequence-index helper:
+
+```python
+def __clover_sequence_membership_fallback(container, needle):
+    idx = 0
+    while True:
+        try:
+            item = container[idx]
+        except IndexError:
+            return False
+        except StopIteration:
+            return False
+        if item == needle:
+            return True
+        idx += 1
 ```
 
 Sequence-index fallback is staged for later. When added, catch only failure to
@@ -291,12 +318,15 @@ build-debug/src/clovervm -c "1 in [1, 2]"
 - [x] Extend the temporary `TestIn` and `TestNotIn` skeleton opcodes to include
   an operator IC operand.
 - [x] Add `OperatorDispatchTableId::Contains`.
-- [x] Add `OperatorStepAction::CallMembershipFallback`.
+- [x] Add `OperatorStepAction::CallIterMembershipFallback`.
+- [x] Add `OperatorStepAction::CallSequenceMembershipFallback`.
 - [x] Install the membership table:
 
   ```text
   0: CallBinary("__contains__", IfMethodFound)
-  1: CallMembershipFallback(Always)
+  1: CallIterMembershipFallback("__iter__", IfMethodFound)
+  2: CallSequenceMembershipFallback("__getitem__", IfMethodFound)
+  3: RaiseUnsupported
   ```
 
 - [x] Add codegen tests that prove `in` and `not in` emit the new opcode shape.
@@ -307,11 +337,13 @@ unknown dispatch-table entries.
 
 ### Stage 2: VM-Owned Fallback Helper
 
-- [x] Add `__clover_membership_fallback(container, needle)` to
+- [x] Add `__clover_iter_membership_fallback(container, needle)` to
   `src/bootstrap/builtins.py`.
-- [x] During VM bootstrap, resolve the helper to a stable VM-owned function handle.
-- [x] Delete the helper name from the builtins module namespace before user code can
-  observe or shadow it.
+- [x] Add `__clover_sequence_membership_fallback(container, needle)` to
+  `src/bootstrap/builtins.py`.
+- [x] During VM bootstrap, resolve the helpers to stable VM-owned function handles.
+- [x] Delete the helper names from the builtins module namespace before user code
+  can observe or shadow them.
 - [x] Expose an internal accessor for the operator walker to retrieve the fallback
   function.
 - [x] Add tests that the helper is not visible through normal builtins lookup
@@ -392,8 +424,8 @@ This stage is an optimization of the protocol path, not a semantic shortcut.
 
 ### Stage 7: Deferred Protocol Polish
 
-- [ ] Add sequence-index fallback to the hidden helper after the iterator fallback
-  path is stable.
+- [x] Add sequence-index fallback through a separate hidden helper selected only
+  when `__iter__` is missing and `__getitem__` exists.
 - [ ] Replace current truthiness behavior with the eventual shared truthiness
   protocol dispatch when that work lands.
 - [ ] Revisit docs once membership fallback, truthiness, and general dictionary keys

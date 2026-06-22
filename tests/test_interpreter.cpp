@@ -2066,6 +2066,39 @@ TEST(Interpreter, membership_fallback_handles_iterable_containers)
     EXPECT_EQ(Value::True(), test_context.run_file(L"3 not in [1, 2]\n"));
 }
 
+TEST(Interpreter, membership_fallback_handles_sequence_index_protocol)
+{
+    test::VmTestContext test_context;
+
+    EXPECT_EQ(Value::True(),
+              test_context.run_file(L"class Sequence:\n"
+                                    L"    def __getitem__(self, idx):\n"
+                                    L"        if idx == 0:\n"
+                                    L"            return 'a'\n"
+                                    L"        if idx == 1:\n"
+                                    L"            return 'b'\n"
+                                    L"        raise IndexError\n"
+                                    L"'b' in Sequence()\n"));
+    EXPECT_EQ(Value::False(),
+              test_context.run_file(L"class Sequence:\n"
+                                    L"    def __getitem__(self, idx):\n"
+                                    L"        if idx == 0:\n"
+                                    L"            return 'a'\n"
+                                    L"        raise StopIteration\n"
+                                    L"'b' in Sequence()\n"));
+}
+
+TEST(Interpreter, membership_fallback_does_not_index_when_iter_exists)
+{
+    expect_python_error(L"class Sequence:\n"
+                        L"    def __iter__(self):\n"
+                        L"        raise ValueError\n"
+                        L"    def __getitem__(self, idx):\n"
+                        L"        return 'needle'\n"
+                        L"'needle' in Sequence()\n",
+                        L"ValueError", L"");
+}
+
 TEST(Interpreter, membership_dispatch_calls_dunder_contains)
 {
     test::VmTestContext test_context;
@@ -6471,19 +6504,35 @@ TEST(Interpreter, membership_fallback_helper_is_vm_owned_and_hidden)
 {
     test::VmTestContext test_context;
     ThreadState::ActivationScope activation_scope(test_context.thread());
-    TValue<Function> fallback =
-        test_context.vm().membership_fallback_function();
+    TValue<Function> iter_fallback =
+        test_context.vm().membership_iter_fallback_function();
+    TValue<Function> sequence_fallback =
+        test_context.vm().membership_sequence_fallback_function();
     EXPECT_EQ(NativeLayoutId::Function,
-              fallback.raw_value().get_ptr<Object>()->native_layout_id());
+              iter_fallback.raw_value().get_ptr<Object>()->native_layout_id());
+    EXPECT_EQ(
+        NativeLayoutId::Function,
+        sequence_fallback.raw_value().get_ptr<Object>()->native_layout_id());
 
-    TValue<String> helper_name =
+    TValue<String> iter_helper_name =
         test_context.vm().get_or_create_interned_string_value(
-            L"__clover_membership_fallback");
+            L"__clover_iter_membership_fallback");
+    TValue<String> sequence_helper_name =
+        test_context.vm().get_or_create_interned_string_value(
+            L"__clover_sequence_membership_fallback");
     ModuleObject *builtins =
         test_context.vm().global_builtins_module().extract();
-    EXPECT_EQ(Value::not_present(), builtins->get_own_property(helper_name));
-    expect_python_error(L"__clover_membership_fallback\n", L"NameError",
-                        L"name '__clover_membership_fallback' is not defined");
+    EXPECT_EQ(Value::not_present(),
+              builtins->get_own_property(iter_helper_name));
+    EXPECT_EQ(Value::not_present(),
+              builtins->get_own_property(sequence_helper_name));
+    expect_python_error(L"__clover_iter_membership_fallback\n", L"NameError",
+                        L"name '__clover_iter_membership_fallback' is not "
+                        L"defined");
+    expect_python_error(L"__clover_sequence_membership_fallback\n",
+                        L"NameError",
+                        L"name '__clover_sequence_membership_fallback' is not "
+                        L"defined");
 }
 
 TEST(Interpreter, builtin_module_exposes_singleton_values)

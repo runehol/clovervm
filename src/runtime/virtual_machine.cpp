@@ -415,7 +415,10 @@ namespace cl
         : refcounted_global_heap(GlobalHeap::refcounted_heap()),
           interned_global_heap(GlobalHeap::interned_heap()),
           interned_strings(&interned_global_heap), range_builtin(Value::None()),
-          membership_fallback_function_(Optional<TValue<Function>>::none()),
+          membership_iter_fallback_function_(
+              Optional<TValue<Function>>::none()),
+          membership_sequence_fallback_function_(
+              Optional<TValue<Function>>::none()),
           native_library_handles_(std::make_unique<NativeLibraryHandleCache>())
     {
         struct BootstrapCleanup
@@ -428,7 +431,9 @@ namespace cl
                 if(armed)
                 {
                     vm->range_builtin = Value::None();
-                    vm->membership_fallback_function_ =
+                    vm->membership_iter_fallback_function_ =
+                        Optional<TValue<Function>>::none();
+                    vm->membership_sequence_fallback_function_ =
                         Optional<TValue<Function>>::none();
                     vm->global_builtins_module_ = nullptr;
                     vm->sys_module_ = nullptr;
@@ -451,7 +456,10 @@ namespace cl
         {
             ThreadState::ActivationScope activation_scope(threads[0].get());
             range_builtin = Value::None();
-            membership_fallback_function_ = Optional<TValue<Function>>::none();
+            membership_iter_fallback_function_ =
+                Optional<TValue<Function>>::none();
+            membership_sequence_fallback_function_ =
+                Optional<TValue<Function>>::none();
             global_builtins_module_ = nullptr;
             sys_module_ = nullptr;
             imported_modules_ = nullptr;
@@ -607,6 +615,7 @@ namespace cl
         String *dunder_pos = get_or_create_interned_string_raw(L"__pos__");
         String *dunder_invert =
             get_or_create_interned_string_raw(L"__invert__");
+        String *dunder_iter = get_or_create_interned_string_raw(L"__iter__");
         String *dunder_getitem =
             get_or_create_interned_string_raw(L"__getitem__");
         String *dunder_setitem =
@@ -713,15 +722,20 @@ namespace cl
             };
 
         auto install_membership_operator_table =
-            [this](OperatorDispatchTableId table_id, String *dunder) {
+            [this](OperatorDispatchTableId table_id, String *dunder,
+                   String *dunder_iter, String *dunder_getitem) {
                 std::array<OperatorStep, 6> &steps =
                     operator_dispatch_steps_[static_cast<size_t>(table_id)];
                 steps[0] = OperatorStep::call_binary(
                     dunder, OperatorStepApplicability::IfMethodFound);
-                steps[1] = OperatorStep::call_membership_fallback();
+                steps[1] =
+                    OperatorStep::call_iter_membership_fallback(dunder_iter);
+                steps[2] = OperatorStep::call_sequence_membership_fallback(
+                    dunder_getitem);
+                steps[3] = OperatorStep::raise_unsupported();
 
                 operator_dispatch_tables_[static_cast<size_t>(table_id)] =
-                    OperatorDispatchTable{steps.data(), 2};
+                    OperatorDispatchTable{steps.data(), 4};
             };
 
         install_binary_arithmetic_operator_table(OperatorDispatchTableId::Add,
@@ -762,7 +776,8 @@ namespace cl
         install_receiver_binary_operator_table(OperatorDispatchTableId::DelItem,
                                                dunder_delitem);
         install_membership_operator_table(OperatorDispatchTableId::Contains,
-                                          dunder_contains);
+                                          dunder_contains, dunder_iter,
+                                          dunder_getitem);
 
         auto install_rich_compare_table = [this](
                                               OperatorDispatchTableId table_id,
@@ -1205,20 +1220,44 @@ namespace cl
                 thread, "initializing trusted builtins.py");
         }
 
-        TValue<String> membership_fallback_name =
+        TValue<String> membership_iter_fallback_name =
             get_or_create_interned_string_value(
-                L"__clover_membership_fallback");
-        Value membership_fallback_value =
-            builtins_module->get_own_property(membership_fallback_name);
-        if(!can_convert_to<Function>(membership_fallback_value))
+                L"__clover_iter_membership_fallback");
+        Value membership_iter_fallback_value =
+            builtins_module->get_own_property(membership_iter_fallback_name);
+        if(!can_convert_to<Function>(membership_iter_fallback_value))
         {
-            fatal("trusted builtins.py did not define membership fallback");
+            fatal("trusted builtins.py did not define iter membership "
+                  "fallback");
         }
-        membership_fallback_function_ = Optional<TValue<Function>>::some(
-            TValue<Function>::from_value_assumed(membership_fallback_value));
-        if(!delete_module_global(builtins_module, membership_fallback_name))
+        membership_iter_fallback_function_ = Optional<TValue<Function>>::some(
+            TValue<Function>::from_value_assumed(
+                membership_iter_fallback_value));
+        if(!delete_module_global(builtins_module,
+                                 membership_iter_fallback_name))
         {
-            fatal("failed to hide membership fallback from builtins");
+            fatal("failed to hide iter membership fallback from builtins");
+        }
+
+        TValue<String> membership_sequence_fallback_name =
+            get_or_create_interned_string_value(
+                L"__clover_sequence_membership_fallback");
+        Value membership_sequence_fallback_value =
+            builtins_module->get_own_property(
+                membership_sequence_fallback_name);
+        if(!can_convert_to<Function>(membership_sequence_fallback_value))
+        {
+            fatal("trusted builtins.py did not define sequence membership "
+                  "fallback");
+        }
+        membership_sequence_fallback_function_ =
+            Optional<TValue<Function>>::some(
+                TValue<Function>::from_value_assumed(
+                    membership_sequence_fallback_value));
+        if(!delete_module_global(builtins_module,
+                                 membership_sequence_fallback_name))
+        {
+            fatal("failed to hide sequence membership fallback from builtins");
         }
 
         Expected<CodeObject *> sys_code = thread->compile_in_module(
@@ -1237,10 +1276,17 @@ namespace cl
         }
     }
 
-    TValue<Function> VirtualMachine::membership_fallback_function() const
+    TValue<Function> VirtualMachine::membership_iter_fallback_function() const
     {
-        assert(membership_fallback_function_.value().has_value());
-        return membership_fallback_function_.value().value();
+        assert(membership_iter_fallback_function_.value().has_value());
+        return membership_iter_fallback_function_.value().value();
+    }
+
+    TValue<Function>
+    VirtualMachine::membership_sequence_fallback_function() const
+    {
+        assert(membership_sequence_fallback_function_.value().has_value());
+        return membership_sequence_fallback_function_.value().value();
     }
 
 }  // namespace cl

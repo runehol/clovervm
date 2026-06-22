@@ -292,12 +292,30 @@ namespace cl
                     return operator_walk_raise_unsupported(thread, table_id,
                                                            operand0);
 
-                case OperatorStepAction::CallMembershipFallback:
+                case OperatorStepAction::CallIterMembershipFallback:
+                case OperatorStepAction::CallSequenceMembershipFallback:
                     {
                         assert(step.applicability ==
-                               OperatorStepApplicability::Always);
+                               OperatorStepApplicability::IfMethodFound);
+                        assert(step.dunder_name != nullptr);
+                        Value receiver = operand0;
+                        AttributeReadDescriptor method_descriptor =
+                            AttributeReadDescriptor::not_found();
+                        TValue<String> method_name =
+                            TValue<String>::from_oop(step.dunder_name);
+                        if(!resolve_applicable_operator_method(
+                               thread, step, receiver, operand0, operand1,
+                               method_name, method_descriptor))
+                        {
+                            index = failed_applicability_index;
+                            continue;
+                        }
+
                         TValue<Function> function =
-                            vm->membership_fallback_function();
+                            step.action == OperatorStepAction::
+                                               CallIterMembershipFallback
+                                ? vm->membership_iter_fallback_function()
+                                : vm->membership_sequence_fallback_function();
                         uint32_t n_args = 2;
                         if(!function.extract()
                                 ->accepts_positional_only_call_arity(n_args))

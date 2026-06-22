@@ -150,11 +150,25 @@ If the iterable is empty, return True."""
     return True
 
 
-def __clover_membership_fallback(container, needle):
+def __clover_iter_membership_fallback(container, needle):
     for item in container:
         if item == needle:
             return True
     return False
+
+
+def __clover_sequence_membership_fallback(container, needle):
+    idx = 0
+    while True:
+        try:
+            item = container[idx]
+        except IndexError:
+            return False
+        except StopIteration:
+            return False
+        if item == needle:
+            return True
+        idx += 1
 
 
 def min(*args):
