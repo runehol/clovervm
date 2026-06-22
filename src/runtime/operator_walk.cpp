@@ -293,10 +293,37 @@ namespace cl
                                                            operand0);
 
                 case OperatorStepAction::CallMembershipFallback:
-                    assert(step.applicability ==
-                           OperatorStepApplicability::Always);
-                    return operator_walk_raise_type_error(
-                        thread, L"membership fallback is not implemented yet");
+                    {
+                        assert(step.applicability ==
+                               OperatorStepApplicability::Always);
+                        TValue<Function> function =
+                            vm->membership_fallback_function();
+                        uint32_t n_args = 2;
+                        if(!function.extract()
+                                ->accepts_positional_only_call_arity(n_args))
+                        {
+                            return operator_walk_raise_type_error(
+                                thread, L"wrong number of arguments");
+                        }
+
+                        FunctionCallAdaptation adaptation =
+                            function_call_adaptation_for_positional_call(
+                                function, n_args);
+                        ValidityCell *operand0_lookup_validity_cell = nullptr;
+                        if(cacheability != OperatorCacheability::Uncacheable)
+                        {
+                            operand0_lookup_validity_cell =
+                                operator_lookup_validity_cell_for_operand(
+                                    thread, operand0);
+                        }
+
+                        return OperatorWalkDescriptor::call_untrusted_function(
+                            step.action, index + 1,
+                            OperatorOperandOrder::Normal, operand0_shape_key,
+                            ShapeKey::from_value(Value::not_present()),
+                            function, n_args, adaptation, false,
+                            operand0_lookup_validity_cell, nullptr);
+                    }
 
                 case OperatorStepAction::CallUnary:
                     {

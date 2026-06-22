@@ -284,10 +284,8 @@ template <> struct fmt::formatter<cl::Bytecode>
                 return format_to(out, "TestIs");
             case cl::Bytecode::TestIsNot:
                 return format_to(out, "TestIsNot");
-            case cl::Bytecode::TestIn:
-                return format_to(out, "TestIn");
-            case cl::Bytecode::TestNotIn:
-                return format_to(out, "TestNotIn");
+            case cl::Bytecode::Contains:
+                return format_to(out, "Contains");
             case cl::Bytecode::CheckOperatorNotImplemented:
                 return format_to(out, "CheckOperatorNotImplemented");
             case cl::Bytecode::CheckTernaryOperatorNotImplemented:
@@ -801,8 +799,7 @@ template <> struct fmt::formatter<cl::CodeObject>
                 disassemble_reg(code_obj, out, pc++);
                 break;
 
-            case cl::Bytecode::TestIn:
-            case cl::Bytecode::TestNotIn:
+            case cl::Bytecode::Contains:
                 format_to(out, " ");
                 disassemble_reg(code_obj, out, pc++);
                 format_to(out, ", ");

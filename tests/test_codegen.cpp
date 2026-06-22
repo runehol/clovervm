@@ -822,8 +822,9 @@ TEST(Codegen, membership_uses_operator_cache_without_notimplemented_check)
 
     std::string actual = bytecode_str_from_file(test_case);
 
-    EXPECT_NE(std::string::npos, actual.find("TestIn p0, operator_ic[0]"));
-    EXPECT_NE(std::string::npos, actual.find("TestNotIn p0, operator_ic[0]"));
+    EXPECT_NE(std::string::npos, actual.find("Contains p0, operator_ic[0]"));
+    EXPECT_NE(std::string::npos, actual.find("ToBool"));
+    EXPECT_NE(std::string::npos, actual.find("ToBoolNot"));
     EXPECT_EQ(std::string::npos, actual.find("CheckOperatorNotImplemented"));
 }
 

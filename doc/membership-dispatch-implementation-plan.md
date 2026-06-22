@@ -32,18 +32,18 @@ fallback is selected only by a missing `__contains__` lookup. A returned
 `NotImplemented` value is not a fallback signal and does not use an operator
 continuation opcode.
 
-`TestIn` leaves the selected call result in the accumulator. The compiler then
+`Contains` leaves the selected call result in the accumulator. The compiler then
 emits `ToBool` for `in` or `ToBoolNot` for `not in`. Those truthiness opcodes
 use the current VM truthiness behavior. Full `__bool__` / `__len__` truthiness
 dispatch is deferred to the broader implicit protocol work.
 
 ## Bytecode Shape
 
-Keep `TestIn` as the membership protocol opcode and have it carry an operator
+Keep `Contains` as the membership protocol opcode and have it carry an operator
 inline-cache index:
 
 ```text
-TestIn needle_reg, operator_ic
+Contains needle_reg, operator_ic
 ```
 
 Add explicit truthiness conversion opcodes:
@@ -62,7 +62,7 @@ needle in container
 as:
 
 ```text
-TestIn needle_reg, operator_ic
+Contains needle_reg, operator_ic
 ToBool
 ```
 
@@ -75,13 +75,13 @@ needle not in container
 as:
 
 ```text
-TestIn needle_reg, operator_ic
+Contains needle_reg, operator_ic
 ToBoolNot
 ```
 
 `TestNotIn` is no longer part of the target bytecode shape. Stage 4 removes
 normal emission of it and deletes the opcode support once all in-repo lowering
-uses `TestIn + ToBoolNot`.
+uses `Contains + ToBoolNot`.
 
 ## Operator Table
 
@@ -168,7 +168,7 @@ trusted_handler = null for the first slice
 The opcode must not use `matches_binary(container, needle)`. The needle shape is
 ordinary runtime call state and must not participate in cache matching.
 
-`TestIn` does not truth-test or invert the call result. It stages the membership
+`Contains` does not truth-test or invert the call result. It stages the membership
 call so that normal interpreter return lands on the following `ToBool` or
 `ToBoolNot` opcode.
 
@@ -235,7 +235,7 @@ VM-level boolean.
 
 ## Interpreter Dispatch
 
-Add a membership-specific `TestIn` opcode helper instead of reusing
+Add a membership-specific `Contains` opcode helper instead of reusing
 `dispatch_cached_direct_binary_operator`, because that helper checks both
 operand shapes. The membership helper should:
 
@@ -269,10 +269,10 @@ Add interpreter tests for:
 Add codegen tests that `in` and `not in` emit:
 
 ```text
-TestIn needle_reg, operator_ic[n]
+Contains needle_reg, operator_ic[n]
 ToBool
 
-TestIn needle_reg, operator_ic[n]
+Contains needle_reg, operator_ic[n]
 ToBoolNot
 ```
 
@@ -286,7 +286,8 @@ build-debug/src/clovervm -c "1 in [1, 2]"
 
 ### Stage 1: Bytecode and Table Skeleton
 
-- [x] Extend `TestIn` and `TestNotIn` to include an operator IC operand.
+- [x] Extend the temporary `TestIn` and `TestNotIn` skeleton opcodes to include
+  an operator IC operand.
 - [x] Add `OperatorDispatchTableId::Contains`.
 - [x] Add `OperatorStepAction::CallMembershipFallback`.
 - [x] Install the membership table:
@@ -319,11 +320,11 @@ shape removes it in Stage 4 rather than completing it.
 
 ### Stage 3: Truthiness Conversion Bytecodes
 
-- [ ] Add `ToBool` and `ToBoolNot` bytecodes.
-- [ ] Add code object printer support for `ToBool` and `ToBoolNot`.
-- [ ] Add `ToBool` and `ToBoolNot` interpreter handlers using current VM
+- [x] Add `ToBool` and `ToBoolNot` bytecodes.
+- [x] Add code object printer support for `ToBool` and `ToBoolNot`.
+- [x] Add `ToBool` and `ToBoolNot` interpreter handlers using current VM
   truthiness behavior.
-- [ ] Add focused interpreter tests for immediate values, floats, and
+- [x] Add focused interpreter tests for immediate values, floats, and
   unsupported pointer truthiness.
 
 This stage should not wire membership dispatch. It gives later membership
@@ -332,20 +333,20 @@ semantics reviewable on their own.
 
 ### Stage 4: Membership Opcode Dispatch
 
-- [ ] Change `not in` codegen to emit `TestIn ...; ToBoolNot`.
-- [ ] Change `in` codegen to emit `TestIn ...; ToBool`.
-- [ ] Remove `TestNotIn` from normal codegen and delete the obsolete opcode
+- [x] Change `not in` codegen to emit `Contains ...; ToBoolNot`.
+- [x] Change `in` codegen to emit `Contains ...; ToBool`.
+- [x] Remove `TestNotIn` from normal codegen and delete the obsolete opcode
   support.
-- [ ] Add the `TestIn` interpreter handler.
-- [ ] Implement the membership-specific cache hit path using
+- [x] Add the `Contains` interpreter handler.
+- [x] Implement the membership-specific cache hit path using
   `OperatorInlineCache::matches_unary(container)`.
-- [ ] Stage cached calls with `(container, needle)` and return to the next
+- [x] Stage cached calls with `(container, needle)` and return to the next
   bytecode.
-- [ ] Implement the miss path by walking `OperatorDispatchTableId::Contains`.
-- [ ] Populate the operator cache for both positive `__contains__` lookup and
+- [x] Implement the miss path by walking `OperatorDispatchTableId::Contains`.
+- [x] Populate the operator cache for both positive `__contains__` lookup and
   negative-lookup fallback helper calls.
-- [ ] Add codegen tests for `TestIn + ToBool` and `TestIn + ToBoolNot`.
-- [ ] Add a regression test for:
+- [x] Add codegen tests for `Contains + ToBool` and `Contains + ToBoolNot`.
+- [x] Add a regression test for:
 
   ```bash
   build-debug/src/clovervm -c "1 in [1, 2]"

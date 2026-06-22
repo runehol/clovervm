@@ -1811,6 +1811,26 @@ namespace cl
             entry.n_args, continuation_instr_len, entry.adaptation);
     }
 
+    static ALWAYSINLINE void enter_membership_operator_untrusted_function(
+        ThreadState *thread, Value *&fp, const uint8_t *&pc,
+        CodeObject *&code_object, const OperatorInlineCache &entry,
+        Value container, Value needle, const uint8_t *next_pc)
+    {
+        assert(entry.function != nullptr);
+        assert(entry.n_args == 2);
+
+        int32_t first_arg_reg = code_object->get_first_free_arg_encoded_reg();
+        fp[first_arg_reg] = container;
+        fp[first_arg_reg - 1] = needle;
+
+        assert(next_pc >= pc);
+        uint32_t instr_len = uint32_t(next_pc - pc);
+        enter_function_frame_from_positional_args(
+            thread, fp, pc, code_object,
+            TValue<Function>::from_oop(entry.function), first_arg_reg,
+            entry.n_args, instr_len, entry.adaptation);
+    }
+
     static ALWAYSINLINE void enter_ternary_operator_untrusted_function(
         ThreadState *thread, Value *&fp, const uint8_t *&pc,
         CodeObject *&code_object, const OperatorWalkDescriptor &descriptor,
@@ -1914,6 +1934,23 @@ namespace cl
         {
             *cache = descriptor.cache_entry;
         }
+    }
+
+    static ALWAYSINLINE void
+    normalize_membership_cache_entry(OperatorInlineCache &entry)
+    {
+        entry.operand_shape_keys[1] =
+            ShapeKey::from_value(Value::not_present());
+        entry.operand_lookup_validity_cells[1] = nullptr;
+        entry.reflected_untrusted_call = false;
+    }
+
+    static ALWAYSINLINE void
+    install_membership_cache_if_cacheable(OperatorInlineCache *cache,
+                                          OperatorWalkDescriptor &descriptor)
+    {
+        normalize_membership_cache_entry(descriptor.cache_entry);
+        install_operator_cache_if_cacheable(cache, descriptor);
     }
 
     static ALWAYSINLINE DispatchTableEntry dispatch_binary_operator_walk_result(
@@ -2080,6 +2117,50 @@ namespace cl
                     install_operator_cache_if_cacheable(cache, descriptor);
                     accumulator = descriptor.cache_entry.trusted_handler.unary(
                         thread, operand0);
+                    if(unlikely(accumulator.is_exception_marker()))
+                    {
+                        resolve_operator_pending_exception(thread, fp, pc,
+                                                           code_object);
+                        return dispatch_entry_for_pc(dispatch, pc);
+                    }
+                    pc = next_pc;
+                    return dispatch_entry_for_pc(dispatch, pc);
+                }
+
+            case OperatorWalkStatus::NativeResult:
+                accumulator = descriptor.result;
+                pc = next_pc;
+                return dispatch_entry_for_pc(dispatch, pc);
+
+            case OperatorWalkStatus::PropagatePendingException:
+                resolve_operator_pending_exception(thread, fp, pc, code_object);
+                return dispatch_entry_for_pc(dispatch, pc);
+        }
+
+        __builtin_unreachable();
+    }
+
+    static ALWAYSINLINE DispatchTableEntry
+    dispatch_membership_operator_walk_result(
+        ThreadState *thread, Value *&fp, const uint8_t *&pc, void *dispatch,
+        CodeObject *&code_object, Value &accumulator, Value container,
+        Value needle, OperatorWalkDescriptor &descriptor,
+        const uint8_t *next_pc, OperatorInlineCache *cache)
+    {
+        switch(descriptor.status)
+        {
+            case OperatorWalkStatus::CallUntrustedFunction:
+                install_membership_cache_if_cacheable(cache, descriptor);
+                enter_membership_operator_untrusted_function(
+                    thread, fp, pc, code_object, descriptor.cache_entry,
+                    container, needle, next_pc);
+                return dispatch_entry_for_pc(dispatch, pc);
+
+            case OperatorWalkStatus::CallTrustedHandler:
+                {
+                    install_membership_cache_if_cacheable(cache, descriptor);
+                    accumulator = descriptor.cache_entry.trusted_handler.binary(
+                        thread, container, needle);
                     if(unlikely(accumulator.is_exception_marker()))
                     {
                         resolve_operator_pending_exception(thread, fp, pc,
@@ -2313,6 +2394,45 @@ namespace cl
         return dispatch_unary_operator_walk_result(
             thread, fp, pc, dispatch, code_object, accumulator, operand0,
             descriptor, next_pc, &cache);
+    }
+
+    static ALWAYSINLINE DispatchTableEntry dispatch_cached_membership_operator(
+        ThreadState *thread, Value *&fp, const uint8_t *&pc, void *dispatch,
+        CodeObject *&code_object, Value &accumulator, uint8_t cache_idx,
+        Value container, Value needle, const uint8_t *next_pc)
+    {
+        OperatorInlineCache &cache = code_object->operator_caches[cache_idx];
+        if(likely(cache.matches_unary(container)))
+        {
+            if(!cache.trusted_handler.is_null())
+            {
+                accumulator =
+                    cache.trusted_handler.binary(thread, container, needle);
+                if(unlikely(accumulator.is_exception_marker()))
+                {
+                    resolve_operator_pending_exception(thread, fp, pc,
+                                                       code_object);
+                    return dispatch_entry_for_pc(dispatch, pc);
+                }
+                pc = next_pc;
+                return dispatch_entry_for_pc(dispatch, pc);
+            }
+            if(likely(cache.function != nullptr))
+            {
+                enter_membership_operator_untrusted_function(
+                    thread, fp, pc, code_object, cache, container, needle,
+                    next_pc);
+                return dispatch_entry_for_pc(dispatch, pc);
+            }
+        }
+
+        OperatorWalkDescriptor descriptor =
+            walk_operator_table(thread, OperatorDispatchTableId::Contains, 0,
+                                OperatorCacheability::CacheableDirectOnly,
+                                container, needle, Value::not_present());
+        return dispatch_membership_operator_walk_result(
+            thread, fp, pc, dispatch, code_object, accumulator, container,
+            needle, descriptor, next_pc, &cache);
     }
 
     static ALWAYSINLINE DispatchTableEntry
@@ -3407,26 +3527,22 @@ namespace cl
         COMPLETE();
     }
 
-    NOINLINE static INTERP_CC Value membership_dispatch_unimplemented(PARAMS)
+    static INTERP_CC Value op_contains(PARAMS)
     {
-        ExceptionalTarget target = set_builtin_exception_and_resolve_frame_exit(
-            thread, fp, pc, code_object, L"UnimplementedError",
-            L"membership dispatch is not implemented yet");
-        fp = target.fp;
-        code_object = target.code_object;
-        pc = target.interpreted_pc;
-        START(0);
-        COMPLETE();
-    }
-
-    static INTERP_CC Value op_test_in(PARAMS)
-    {
-        MUSTTAIL return membership_dispatch_unimplemented(ARGS);
-    }
-
-    static INTERP_CC Value op_test_not_in(PARAMS)
-    {
-        MUSTTAIL return membership_dispatch_unimplemented(ARGS);
+        static constexpr uint32_t instr_len = 3;
+        int8_t needle_reg = pc[1];
+        uint8_t cache_idx = pc[2];
+        Value container = accumulator;
+        Value needle = fp[needle_reg];
+        DispatchTableEntry next_dispatch_fun =
+            dispatch_cached_membership_operator(
+                thread, fp, pc, dispatch, code_object, accumulator, cache_idx,
+                container, needle, pc + instr_len);
+        if(unlikely(thread->safepoint_requested()))
+        {
+            MUSTTAIL return op_committed_safepoint_slow(ARGS);
+        }
+        MUSTTAIL return next_dispatch_fun(ARGS);
     }
 
     NOINLINE static INTERP_CC Value op_lt_dispatch(PARAMS)
@@ -5289,8 +5405,7 @@ namespace cl
         SET_TABLE_ENTRY(Bytecode::TestLessEqual, op_le);
         SET_TABLE_ENTRY(Bytecode::TestGreaterEqual, op_ge);
         SET_TABLE_ENTRY(Bytecode::TestGreater, op_gt);
-        SET_TABLE_ENTRY(Bytecode::TestIn, op_test_in);
-        SET_TABLE_ENTRY(Bytecode::TestNotIn, op_test_not_in);
+        SET_TABLE_ENTRY(Bytecode::Contains, op_contains);
         SET_TABLE_ENTRY(Bytecode::CheckOperatorNotImplemented,
                         op_check_operator_not_implemented);
         SET_TABLE_ENTRY(Bytecode::CheckTernaryOperatorNotImplemented,

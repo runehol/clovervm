@@ -111,8 +111,7 @@ namespace cl
         TestGreaterEqual,
         TestIs,
         TestIsNot,
-        TestIn,
-        TestNotIn,
+        Contains,
         CheckOperatorNotImplemented,
         CheckTernaryOperatorNotImplemented,
 

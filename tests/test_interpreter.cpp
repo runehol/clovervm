@@ -2057,6 +2057,103 @@ TEST(Interpreter, rich_comparison_operator_dispatch_returns_non_bool_results)
                          L"ge");
 }
 
+TEST(Interpreter, membership_fallback_handles_iterable_containers)
+{
+    test::VmTestContext test_context;
+
+    EXPECT_EQ(Value::True(), test_context.run_file(L"1 in [1, 2]\n"));
+    EXPECT_EQ(Value::False(), test_context.run_file(L"3 in [1, 2]\n"));
+    EXPECT_EQ(Value::True(), test_context.run_file(L"3 not in [1, 2]\n"));
+}
+
+TEST(Interpreter, membership_dispatch_calls_dunder_contains)
+{
+    test::VmTestContext test_context;
+
+    EXPECT_EQ(Value::True(),
+              test_context.run_file(L"class Container:\n"
+                                    L"    def __contains__(self, item):\n"
+                                    L"        return item == 7\n"
+                                    L"7 in Container()\n"));
+    EXPECT_EQ(Value::False(),
+              test_context.run_file(L"class Container:\n"
+                                    L"    def __contains__(self, item):\n"
+                                    L"        return item == 7\n"
+                                    L"8 in Container()\n"));
+}
+
+TEST(Interpreter, membership_cache_hit_ignores_needle_shape)
+{
+    test::VmTestContext test_context;
+    ThreadState::ActivationScope activation_scope(test_context.thread());
+
+    TValue<String> function_name(
+        test_context.vm().get_or_create_interned_string_value(L"contains"));
+    CodeObject *code_obj =
+        test_context.compile_file(L"class Container:\n"
+                                  L"    def __contains__(self, item):\n"
+                                  L"        return True\n"
+                                  L"def contains(container, needle):\n"
+                                  L"    return needle in container\n"
+                                  L"container = Container()\n"
+                                  L"contains(container, 1)\n"
+                                  L"contains(container, 'needle')\n");
+
+    Value actual = test_context.thread()->run_clovervm_code_object(code_obj);
+    EXPECT_EQ(Value::True(), actual);
+
+    Value function_value =
+        load_global_from_module_for_test(code_obj, function_name);
+    ASSERT_TRUE(can_convert_to<Function>(function_value));
+    CodeObject *function_code =
+        assume_convert_to<Function>(function_value)->code_object.extract();
+    ASSERT_EQ(1u, function_code->operator_caches.size());
+    const OperatorInlineCache &cache = function_code->operator_caches[0];
+    ASSERT_NE(nullptr, cache.function);
+    ASSERT_NE(nullptr, cache.operand_lookup_validity_cells[0]);
+    EXPECT_EQ(nullptr, cache.operand_lookup_validity_cells[1]);
+}
+
+TEST(Interpreter, membership_fallback_cache_invalidates_when_contains_is_added)
+{
+    test::VmTestContext test_context;
+
+    EXPECT_EQ(Value::True(), test_context.run_file(
+                                 L"class Container:\n"
+                                 L"    def __iter__(self):\n"
+                                 L"        return iter(())\n"
+                                 L"def contains(container, needle):\n"
+                                 L"    return needle in container\n"
+                                 L"container = Container()\n"
+                                 L"first = contains(container, 1)\n"
+                                 L"def always_contains(self, needle):\n"
+                                 L"    return True\n"
+                                 L"Container.__contains__ = always_contains\n"
+                                 L"second = contains(container, 1)\n"
+                                 L"first == False and second == True\n"));
+}
+
+TEST(Interpreter, membership_truth_tests_dunder_contains_result)
+{
+    test::VmTestContext test_context;
+
+    EXPECT_EQ(Value::False(),
+              test_context.run_file(L"class Container:\n"
+                                    L"    def __contains__(self, item):\n"
+                                    L"        return 0\n"
+                                    L"1 in Container()\n"));
+    EXPECT_EQ(Value::True(),
+              test_context.run_file(L"class Container:\n"
+                                    L"    def __contains__(self, item):\n"
+                                    L"        return NotImplemented\n"
+                                    L"1 in Container()\n"));
+    expect_python_error(L"class Container:\n"
+                        L"    def __contains__(self, item):\n"
+                        L"        return 'yes'\n"
+                        L"1 in Container()\n",
+                        L"TypeError", L"unsupported truthiness for object");
+}
+
 TEST(Interpreter, operator_eq_dispatch_identity_fallback_after_notimplemented)
 {
     test::VmTestContext test_context;

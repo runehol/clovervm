@@ -106,9 +106,9 @@ namespace cl
         t.table[size_t(AstOperatorKind::IS_NOT)] =
             OpTableEntry(OperatorBytecodeFormat::Plain, Bytecode::TestIsNot);
         t.table[size_t(AstOperatorKind::IN)] =
-            OpTableEntry(OperatorBytecodeFormat::WithCache, Bytecode::TestIn);
-        t.table[size_t(AstOperatorKind::NOT_IN)] = OpTableEntry(
-            OperatorBytecodeFormat::WithCache, Bytecode::TestNotIn);
+            OpTableEntry(OperatorBytecodeFormat::WithCache, Bytecode::Contains);
+        t.table[size_t(AstOperatorKind::NOT_IN)] =
+            OpTableEntry(OperatorBytecodeFormat::WithCache, Bytecode::Contains);
 
         t.table[size_t(AstOperatorKind::NOT)] =
             OpTableEntry(OperatorBytecodeFormat::Plain, Bytecode::Not);
@@ -280,6 +280,11 @@ namespace cl
         constexpr static OpTableEntry get_operator_entry(AstOperatorKind ok)
         {
             return operator_table.table[size_t(ok)];
+        }
+
+        static bool is_membership_operator(AstOperatorKind ok)
+        {
+            return ok == AstOperatorKind::IN || ok == AstOperatorKind::NOT_IN;
         }
 
         std::optional<int8_t> check_binary_acc_smi_immediate(
@@ -574,6 +579,25 @@ namespace cl
             AstChildren children = av.children[node_idx];
             uint32_t source_offset = av.source_offsets[node_idx];
             OpTableEntry entry = get_operator_entry(kind.operator_kind);
+            if(is_membership_operator(kind.operator_kind))
+            {
+                ScopedRegister lhs_reg =
+                    CL_TRY(codegen_node_into_a_register(children[0]));
+                CL_TRY(codegen_node(children[1]));
+                CL_TRY(code_obj->emit_operator_reg(
+                    source_offset, Bytecode::Contains, lhs_reg.reg,
+                    entry.bytecode_format));
+                if(kind.operator_kind == AstOperatorKind::NOT_IN)
+                {
+                    CL_TRY(code_obj->emit_to_bool_not(source_offset));
+                }
+                else
+                {
+                    CL_TRY(code_obj->emit_to_bool(source_offset));
+                }
+                return Expected<void>::ok();
+            }
+
             std::optional<int8_t> immediate = check_binary_acc_smi_immediate(
                 kind.operator_kind, entry, children[1]);
 
@@ -613,6 +637,17 @@ namespace cl
             }
             CL_TRY(code_obj->emit_operator_reg(source_offset, entry.standard,
                                                recv, entry.bytecode_format));
+            if(is_membership_operator(kind.operator_kind))
+            {
+                if(kind.operator_kind == AstOperatorKind::NOT_IN)
+                {
+                    CL_TRY(code_obj->emit_to_bool_not(source_offset));
+                }
+                else
+                {
+                    CL_TRY(code_obj->emit_to_bool(source_offset));
+                }
+            }
             return Expected<void>::ok();
         }
 
