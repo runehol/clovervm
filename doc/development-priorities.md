@@ -117,6 +117,12 @@ JIT, language, and runtime work.
    from general dict lookup with guarded hash/equality calls, not rediscover
    those hidden call sites inside dict probing helpers.
 
+   Standard-library bringup has started to hit this boundary directly:
+   `errno.errorcode` is specified as a real `dict` keyed by integer errno
+   values. Do not work around that with a non-dict substitute; treat it as
+   evidence that general public dictionaries have become a compatibility
+   blocker for otherwise small modules.
+
 7. **Attribute hooks and escaped bound methods**
 
     Implement `__getattribute__`, `__getattr__`, `__setattr__`, and
@@ -199,6 +205,8 @@ Revisit this ordering when:
   bringup;
 - importlib, public finder/loader APIs, path hooks, or exact module namespace
   compatibility become necessary for broader Python source;
+- small stdlib modules such as `errno` are blocked mainly because public
+  dictionaries cannot yet represent non-string keys;
 - public `range()` semantics become a practical blocker rather than a visible
   cleanup item;
 - performance measurements show that a lower-priority item has become a

@@ -41,7 +41,7 @@ edge cases, platform behavior, or APIs are still missing.
 | [ ] | `site` | Startup path customization and site-packages conventions. | Not started / not assessed. |
 | [~] | `os` | Environment, paths, file operations, process integration. | POSIX-only `_os` native backend plus public `os.py` now covers core constants, `getcwd`, `chdir`, `listdir` (tuple, not list), process/user/group IDs, environment get/set/unset, `strerror`, `system`, `umask`, `stat`/`lstat` as plain tuples, `access`, `chmod`, `mkdir`/`makedirs`, `rmdir`, `unlink`/`remove`, `rename`/`replace`, and a small `os.path`/`posixpath` subset (`join`, `split`, `dirname`, `basename`, `exists`, `isdir`, `isfile`, `isabs`, `abspath`). Some implementation shape is cleanup debt caused by current string limitations: Python code has explicit `__add__` calls where normal string `+` is not available, cannot iterate or slice strings, and therefore pushes simple path string operations such as split into unnecessary native C. Missing broad CPython surface: bytes/path-like/fd support, `environ` mapping, `OSError` subclasses/errno attributes, named stat result objects, file descriptor I/O, process spawning/exec/wait, symlinks, scandir/walk, full `posixpath`, extended platform constants, and keyword-only dir-fd/follow-symlink behavior. |
 | [~] | `posix` / platform backend | Low-level OS primitives backing `os`. | Private `_os` native module backs the first POSIX syscall slice for `os`; no public `posix` module yet. |
-| [ ] | `errno` | Stable OS error constants. | Not started / not assessed. |
+| [ ] | `errno` | Stable OS error constants. | Blocked on general Python dictionaries or another deliberate public mapping design: CPython-compatible `errno.errorcode` is a real `dict` keyed by integer errno values, while CloverVM's current public `dict` path is still limited to string keys. |
 | [ ] | `stat` | File mode constants and helpers. | Not started / not assessed. |
 | [ ] | `pathlib` | Modern path abstraction used by tooling and tests. | Not started / not assessed. |
 
@@ -137,7 +137,7 @@ source:
 | [ ] | `contextlib` | Useful after context-manager semantics are solid. |
 | [ ] | `os` | Start with path/environment basics before process-heavy APIs. |
 | [ ] | `io` | Foundational for files, codecs, archives, and testing tools. |
-| [ ] | `errno` | Small constants module with broad utility. |
+| [ ] | `errno` | Small constants module with broad utility; blocked by integer-key `errorcode` until public dict supports non-string keys deliberately. |
 | [ ] | `stat` | Small constants/helpers module with broad utility. |
 | [ ] | `pathlib` | Depends on enough `os`/`stat` support to be meaningful. |
 | [ ] | `re` | Large but unlocks a lot of parsers and stdlib modules. |
