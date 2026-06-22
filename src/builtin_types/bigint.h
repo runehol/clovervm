@@ -134,7 +134,7 @@ namespace cl
     ConstBigIntView normalize_bigint_view(ConstBigIntView view);
     bool bigint_is_odd(ConstBigIntView view);
     [[nodiscard]] Expected<TValue<SMI>> bigint_to_smi(ConstBigIntView view);
-    TValue<SMI> bigint_hash(ConstBigIntView view, uint64_t hash_modulus);
+    TValue<SMI> bigint_hash(ConstBigIntView view);
     [[nodiscard]] Expected<Value> finalize_bigint(ThreadState *thread,
                                                   ConstBigIntView view);
     [[nodiscard]] Expected<Value> bigint_from_int64(ThreadState *thread,

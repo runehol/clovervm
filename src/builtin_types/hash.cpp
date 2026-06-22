@@ -26,8 +26,7 @@ namespace cl
         }
         if(can_convert_to<BigInt>(value))
         {
-            TValue<SMI> hash = bigint_hash(value.get_ptr<BigInt>()->view(),
-                                           uint64_t(clover_hash_modulus));
+            TValue<SMI> hash = bigint_hash(value.get_ptr<BigInt>()->view());
             return Expected<TValue<SMI>>::ok(
                 remap_hash_sentinel(hash.extract()));
         }

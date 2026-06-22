@@ -1,5 +1,6 @@
 #include "builtin_types/bigint.h"
 
+#include "builtin_types/hash.h"
 #include "runtime/thread_state.h"
 
 #include <algorithm>
@@ -258,35 +259,51 @@ namespace cl
                                                       L"integer overflow");
     }
 
-    static uint64_t bigint_hash_magnitude_mod(ConstBigIntView view,
-                                              uint64_t modulus)
+    static uint64_t bigint_hash_modulus(ConstBigIntView view)
     {
         assert(is_normalized_bigint_view(view));
-        assert(modulus != 0);
+        static_assert(kDigitBits < clover_hash_modulus_bits);
+        static constexpr uint64_t hash_modulus = uint64_t(clover_hash_modulus);
 
         // Hashing reduces the stored magnitude and applies the sign later.
         // This is deliberately not Python floor-modulo semantics.
+        //
+        // The reduction below relies on a Mersenne-form modulus, 2**n - 1.
+        // Appending a 32-bit BigInt digit computes:
+        //
+        //     magnitude_mod * 2**32 + digit
+        //
+        // Because 2**n is congruent to 1 modulo 2**n - 1, any bits shifted past
+        // bit n can be folded back into the low bits with addition. This keeps
+        // the intermediate inside 64 bits without requiring a wider integer
+        // type.
         uint64_t magnitude_mod = 0;
         for(size_t idx = view.n_digits; idx > 0; --idx)
         {
-            magnitude_mod =
-                ((magnitude_mod << kDigitBits) + view.digits[idx - 1]) %
-                modulus;
+            uint64_t low =
+                magnitude_mod &
+                ((uint64_t{1} << (clover_hash_modulus_bits - kDigitBits)) - 1);
+            uint64_t high =
+                magnitude_mod >> (clover_hash_modulus_bits - kDigitBits);
+            magnitude_mod = (low << kDigitBits) + high + view.digits[idx - 1];
+            if(magnitude_mod >= hash_modulus)
+            {
+                magnitude_mod -= hash_modulus;
+            }
         }
         return magnitude_mod;
     }
 
-    TValue<SMI> bigint_hash(ConstBigIntView view, uint64_t hash_modulus)
+    TValue<SMI> bigint_hash(ConstBigIntView view)
     {
         assert(is_normalized_bigint_view(view));
-        assert(hash_modulus <= uint64_t(value_smi_max));
         Optional<TValue<SMI>> smi = normalized_bigint_view_to_smi_if_fits(view);
         if(smi.has_value())
         {
             return smi.value();
         }
 
-        uint64_t magnitude_mod = bigint_hash_magnitude_mod(view, hash_modulus);
+        uint64_t magnitude_mod = bigint_hash_modulus(view);
         int64_t hash = static_cast<int64_t>(magnitude_mod);
         if(view.signum < 0)
         {

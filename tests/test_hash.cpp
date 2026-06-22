@@ -91,6 +91,22 @@ TEST(Hash, CanonicalizeHashReducesOutOfSmiBigInt)
     EXPECT_EQ(-2, canonicalize_hash_result(negative.value()).value().extract());
 }
 
+TEST(Hash, CanonicalizeHashReducesLargeBigIntWithoutOverflowingIntermediate)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation_scope(context.thread());
+
+    Value ten_to_100 = context.run_file(L"10**100\n");
+    ASSERT_TRUE(can_convert_to<BigInt>(ten_to_100));
+    EXPECT_EQ(69889855055785222,
+              canonicalize_hash_result(ten_to_100).value().extract());
+
+    Value ten_to_101 = context.run_file(L"10**101\n");
+    ASSERT_TRUE(can_convert_to<BigInt>(ten_to_101));
+    EXPECT_EQ(122437798254428734,
+              canonicalize_hash_result(ten_to_101).value().extract());
+}
+
 TEST(Hash, CanonicalizeHashRejectsNonInteger)
 {
     test::VmTestContext context;

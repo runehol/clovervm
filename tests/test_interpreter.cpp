@@ -7792,6 +7792,16 @@ TEST(Interpreter, python_defined_hash_builtin_reduces_large_dunder_hash_result)
                                     L"hash(C())\n"));
 }
 
+TEST(Interpreter, python_defined_hash_builtin_reduces_large_int_without_zeroing)
+{
+    test::VmTestContext test_context;
+
+    EXPECT_EQ(Value::from_smi(69889855055785222),
+              test_context.run_file(L"hash(10**100)\n"));
+    EXPECT_EQ(Value::from_smi(122437798254428734),
+              test_context.run_file(L"hash(10**101)\n"));
+}
+
 TEST(Interpreter, python_defined_hash_builtin_rejects_non_integer_hash_result)
 {
     expect_python_error(L"class C:\n"
