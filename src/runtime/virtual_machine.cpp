@@ -24,6 +24,7 @@
 #include "compiler/codegen.h"
 #include "compiler/parser.h"
 #include "import_system/import_system.h"
+#include "import_system/module_global.h"
 #include "memory/heap_reclamation.h"
 #include "native/native_module_loader_internal.h"
 #include "object_model/function.h"
@@ -414,6 +415,7 @@ namespace cl
         : refcounted_global_heap(GlobalHeap::refcounted_heap()),
           interned_global_heap(GlobalHeap::interned_heap()),
           interned_strings(&interned_global_heap), range_builtin(Value::None()),
+          membership_fallback_function_(Optional<TValue<Function>>::none()),
           native_library_handles_(std::make_unique<NativeLibraryHandleCache>())
     {
         struct BootstrapCleanup
@@ -426,6 +428,8 @@ namespace cl
                 if(armed)
                 {
                     vm->range_builtin = Value::None();
+                    vm->membership_fallback_function_ =
+                        Optional<TValue<Function>>::none();
                     vm->global_builtins_module_ = nullptr;
                     vm->sys_module_ = nullptr;
                     vm->imported_modules_ = nullptr;
@@ -447,6 +451,7 @@ namespace cl
         {
             ThreadState::ActivationScope activation_scope(threads[0].get());
             range_builtin = Value::None();
+            membership_fallback_function_ = Optional<TValue<Function>>::none();
             global_builtins_module_ = nullptr;
             sys_module_ = nullptr;
             imported_modules_ = nullptr;
@@ -1200,6 +1205,22 @@ namespace cl
                 thread, "initializing trusted builtins.py");
         }
 
+        TValue<String> membership_fallback_name =
+            get_or_create_interned_string_value(
+                L"__clover_membership_fallback");
+        Value membership_fallback_value =
+            builtins_module->get_own_property(membership_fallback_name);
+        if(!can_convert_to<Function>(membership_fallback_value))
+        {
+            fatal("trusted builtins.py did not define membership fallback");
+        }
+        membership_fallback_function_ = Optional<TValue<Function>>::some(
+            TValue<Function>::from_value_assumed(membership_fallback_value));
+        if(!delete_module_global(builtins_module, membership_fallback_name))
+        {
+            fatal("failed to hide membership fallback from builtins");
+        }
+
         Expected<CodeObject *> sys_code = thread->compile_in_module(
             trusted_sys_source, StartRule::File, sys_module().extract(),
             LanguageMode::TrustedCloverExtensions);
@@ -1214,6 +1235,12 @@ namespace cl
             fatal_bootstrap_python_exception(thread,
                                              "initializing trusted sys.py");
         }
+    }
+
+    TValue<Function> VirtualMachine::membership_fallback_function() const
+    {
+        assert(membership_fallback_function_.value().has_value());
+        return membership_fallback_function_.value().value();
     }
 
 }  // namespace cl

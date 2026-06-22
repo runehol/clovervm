@@ -150,6 +150,13 @@ If the iterable is empty, return True."""
     return True
 
 
+def __clover_membership_fallback(container, needle):
+    for item in container:
+        if item == needle:
+            return True
+    return False
+
+
 def min(*args):
     """With a single iterable argument, return its smallest item.
 

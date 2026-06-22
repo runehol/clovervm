@@ -27,6 +27,7 @@ namespace cl
     class ThreadState;
     class CodeObject;
     class Dict;
+    class Function;
     class List;
     struct NativeLibraryHandleCache;
     struct SafepointScanRecord;
@@ -98,6 +99,7 @@ namespace cl
         }
 
         Value get_range_builtin() const { return range_builtin; }
+        TValue<Function> membership_fallback_function() const;
         TValue<ModuleObject> global_builtins_module() const
         {
             assert(global_builtins_module_ != nullptr);
@@ -395,6 +397,7 @@ namespace cl
         std::array<CodeObject *, MaxCloverFunctionEntryAdapterArgs + 1>
             clover_function_entry_adapters = {};
         Owned<Value> range_builtin;
+        Owned<Optional<TValue<Function>>> membership_fallback_function_;
         ModuleObject *global_builtins_module_ = nullptr;
         ModuleObject *sys_module_ = nullptr;
         Dict *imported_modules_ = nullptr;

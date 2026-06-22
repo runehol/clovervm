@@ -246,14 +246,14 @@ unknown dispatch-table entries.
 
 ### Stage 2: VM-Owned Fallback Helper
 
-- [ ] Add `__clover_membership_fallback(container, needle)` to
+- [x] Add `__clover_membership_fallback(container, needle)` to
   `src/bootstrap/builtins.py`.
-- [ ] During VM bootstrap, resolve the helper to a stable VM-owned function handle.
-- [ ] Delete the helper name from the builtins module namespace before user code can
+- [x] During VM bootstrap, resolve the helper to a stable VM-owned function handle.
+- [x] Delete the helper name from the builtins module namespace before user code can
   observe or shadow it.
-- [ ] Expose an internal accessor for the operator walker to retrieve the fallback
+- [x] Expose an internal accessor for the operator walker to retrieve the fallback
   function.
-- [ ] Add tests that the helper is not visible through normal builtins lookup
+- [x] Add tests that the helper is not visible through normal builtins lookup
   after bootstrap.
 
 ### Stage 3: Membership Opcode Dispatch

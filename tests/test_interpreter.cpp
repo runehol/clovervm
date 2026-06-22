@@ -6161,6 +6161,25 @@ TEST(Interpreter, trusted_python_builtins_are_installed)
     }
 }
 
+TEST(Interpreter, membership_fallback_helper_is_vm_owned_and_hidden)
+{
+    test::VmTestContext test_context;
+    ThreadState::ActivationScope activation_scope(test_context.thread());
+    TValue<Function> fallback =
+        test_context.vm().membership_fallback_function();
+    EXPECT_EQ(NativeLayoutId::Function,
+              fallback.raw_value().get_ptr<Object>()->native_layout_id());
+
+    TValue<String> helper_name =
+        test_context.vm().get_or_create_interned_string_value(
+            L"__clover_membership_fallback");
+    ModuleObject *builtins =
+        test_context.vm().global_builtins_module().extract();
+    EXPECT_EQ(Value::not_present(), builtins->get_own_property(helper_name));
+    expect_python_error(L"__clover_membership_fallback\n", L"NameError",
+                        L"name '__clover_membership_fallback' is not defined");
+}
+
 TEST(Interpreter, builtin_module_exposes_singleton_values)
 {
     test::VmTestContext test_context;
