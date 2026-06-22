@@ -79,6 +79,7 @@ namespace cl
         Add,
         Sub,
         Mul,
+        MatMul,
         TrueDiv,
         FloorDiv,
         BinaryPow,

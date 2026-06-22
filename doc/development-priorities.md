@@ -144,8 +144,8 @@ JIT, language, and runtime work.
     Remaining operator surface should be filled in only where it has a clear
     semantic design and benchmark or compatibility demand.
 
-    Known remaining gaps include `@` / matrix multiplication and the `operator`
-    module helpers that mirror existing operations.
+    Known remaining gaps include the `operator` module helpers that mirror
+    existing operations.
 
 10. **Class semantics cleanup**
 

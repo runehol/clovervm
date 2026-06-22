@@ -3190,6 +3190,7 @@ namespace cl
 
     DEFINE_BINARY_OPERATOR_DISPATCH(sub, Sub)
     DEFINE_BINARY_OPERATOR_DISPATCH(mul, Mul)
+    DEFINE_BINARY_REG_OPERATOR_DISPATCH(matmul, MatMul)
     DEFINE_BINARY_OPERATOR_DISPATCH(binary_pow, BinaryPow)
     DEFINE_BINARY_REG_OPERATOR_DISPATCH(truediv, TrueDiv)
     DEFINE_BINARY_OPERATOR_DISPATCH(floordiv, FloorDiv)
@@ -3372,6 +3373,11 @@ namespace cl
     static INTERP_CC Value op_binary_pow(PARAMS)
     {
         MUSTTAIL return op_binary_pow_dispatch(ARGS);
+    }
+
+    static INTERP_CC Value op_matmul(PARAMS)
+    {
+        MUSTTAIL return op_matmul_dispatch(ARGS);
     }
 
     static INTERP_CC Value op_binary_pow_smi(PARAMS)
@@ -5378,6 +5384,7 @@ namespace cl
         SET_TABLE_ENTRY(Bytecode::SubSmi, op_sub_smi);
         SET_TABLE_ENTRY(Bytecode::Mul, op_mul);
         SET_TABLE_ENTRY(Bytecode::MulSmi, op_mul_smi);
+        SET_TABLE_ENTRY(Bytecode::MatMul, op_matmul);
         SET_TABLE_ENTRY(Bytecode::BinaryPow, op_binary_pow);
         SET_TABLE_ENTRY(Bytecode::BinaryPowSmi, op_binary_pow_smi);
         SET_TABLE_ENTRY(Bytecode::TernaryPow, op_ternary_pow);

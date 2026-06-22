@@ -828,6 +828,19 @@ TEST(Codegen, membership_uses_operator_cache_without_notimplemented_check)
     EXPECT_EQ(std::string::npos, actual.find("CheckOperatorNotImplemented"));
 }
 
+TEST(Codegen, matmul_uses_cached_operator_without_smi_shortcut)
+{
+    const wchar_t *test_case = L"def matmul_with_constant(left):\n"
+                               "    return left @ 2\n"
+                               "def constant_matmul(right):\n"
+                               "    return 2 @ right\n";
+
+    std::string actual = bytecode_str_from_file(test_case);
+
+    EXPECT_NE(std::string::npos, actual.find("MatMul"));
+    EXPECT_EQ(std::string::npos, actual.find("MatMulSmi"));
+}
+
 TEST(Codegen, assert_statement_uses_explicit_failure_path)
 {
     std::string expected = "Code object:\n"

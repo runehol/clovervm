@@ -2408,6 +2408,7 @@ TEST(Interpreter, operator_dispatch_tables_include_unary_and_binary_arithmetic)
     expect_binary_table(OperatorDispatchTableId::Add);
     expect_binary_table(OperatorDispatchTableId::Sub);
     expect_binary_table(OperatorDispatchTableId::Mul);
+    expect_binary_table(OperatorDispatchTableId::MatMul);
     expect_binary_table(OperatorDispatchTableId::BinaryPow);
     expect_binary_table(OperatorDispatchTableId::TrueDiv);
     expect_binary_table(OperatorDispatchTableId::FloorDiv);
@@ -2544,6 +2545,46 @@ TEST(Interpreter, operator_add_dispatch_continues_after_notimplemented)
                                     L"    def __radd__(self, other):\n"
                                     L"        return 7\n"
                                     L"Left() + Right()\n"));
+}
+
+TEST(Interpreter, operator_matmul_dispatch_calls_python_dunder)
+{
+    expect_string_result(L"class Matrix:\n"
+                         L"    def __matmul__(self, other):\n"
+                         L"        return 'matmul'\n"
+                         L"Matrix() @ Matrix()\n",
+                         L"matmul");
+}
+
+TEST(Interpreter, operator_matmul_dispatch_continues_after_notimplemented)
+{
+    test::VmTestContext test_context;
+
+    EXPECT_EQ(Value::from_smi(7),
+              test_context.run_file(L"class Left:\n"
+                                    L"    def __matmul__(self, other):\n"
+                                    L"        return NotImplemented\n"
+                                    L"class Right:\n"
+                                    L"    def __rmatmul__(self, other):\n"
+                                    L"        return 7\n"
+                                    L"Left() @ Right()\n"));
+}
+
+TEST(Interpreter, operator_matmul_augmented_assignment_uses_binary_lowering)
+{
+    expect_string_result(L"class Matrix:\n"
+                         L"    def __matmul__(self, other):\n"
+                         L"        return 'updated'\n"
+                         L"value = Matrix()\n"
+                         L"value @= Matrix()\n"
+                         L"value\n",
+                         L"updated");
+}
+
+TEST(Interpreter, operator_matmul_unsupported_operands_raise)
+{
+    expect_python_error(L"1 @ 2\n", L"TypeError",
+                        L"unsupported operand type(s) for @");
 }
 
 TEST(Interpreter, operator_add_dispatch_python_cache_hit)

@@ -247,6 +247,8 @@ template <> struct fmt::formatter<cl::Bytecode>
                 return format_to(out, "Sub");
             case cl::Bytecode::Mul:
                 return format_to(out, "Mul");
+            case cl::Bytecode::MatMul:
+                return format_to(out, "MatMul");
             case cl::Bytecode::TrueDiv:
                 return format_to(out, "TrueDiv");
             case cl::Bytecode::FloorDiv:
@@ -809,6 +811,7 @@ template <> struct fmt::formatter<cl::CodeObject>
             case cl::Bytecode::Add:
             case cl::Bytecode::Sub:
             case cl::Bytecode::Mul:
+            case cl::Bytecode::MatMul:
             case cl::Bytecode::TrueDiv:
             case cl::Bytecode::FloorDiv:
             case cl::Bytecode::BinaryPow:

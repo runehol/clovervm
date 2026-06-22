@@ -55,6 +55,9 @@ namespace cl
         t.table[size_t(AstOperatorKind::MULTIPLY)] = OpTableEntry(
             OperatorBytecodeFormat::WithCacheAndNotImplementedCheck,
             Bytecode::Mul, Bytecode::MulSmi);
+        t.table[size_t(AstOperatorKind::MATMULT)] = OpTableEntry(
+            OperatorBytecodeFormat::WithCacheAndNotImplementedCheck,
+            Bytecode::MatMul);
         t.table[size_t(AstOperatorKind::DIVIDE)] = OpTableEntry(
             OperatorBytecodeFormat::WithCacheAndNotImplementedCheck,
             Bytecode::TrueDiv);
