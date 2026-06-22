@@ -1,9 +1,9 @@
 # Membership Dispatch Implementation Plan
 
-This plan stages `in` and `not in` as explicit membership protocol opcodes.
-The goal is to fix the currently emitted-but-unhandled `TestIn` and
-`TestNotIn` bytecodes without hiding Python-visible membership behavior inside
-generic fallback machinery.
+This plan stages `in` and `not in` as an explicit membership protocol opcode
+followed by explicit truthiness conversion. The goal is to fix the currently
+emitted-but-unhandled membership bytecode without hiding Python-visible
+membership behavior inside generic fallback machinery.
 
 ## Semantic Shape
 
@@ -32,22 +32,56 @@ fallback is selected only by a missing `__contains__` lookup. A returned
 `NotImplemented` value is not a fallback signal and does not use an operator
 continuation opcode.
 
-Both `TestIn` and `TestNotIn` truth-test the selected call result using the
-current VM truthiness behavior. Full `__bool__` / `__len__` truthiness dispatch
-is deferred to the broader implicit protocol work.
+`TestIn` leaves the selected call result in the accumulator. The compiler then
+emits `ToBool` for `in` or `ToBoolNot` for `not in`. Those truthiness opcodes
+use the current VM truthiness behavior. Full `__bool__` / `__len__` truthiness
+dispatch is deferred to the broader implicit protocol work.
 
 ## Bytecode Shape
 
-Extend the current emitted opcodes to carry an operator inline-cache index:
+Keep `TestIn` as the membership protocol opcode and have it carry an operator
+inline-cache index:
 
 ```text
 TestIn needle_reg, operator_ic
-TestNotIn needle_reg, operator_ic
 ```
 
-Keep separate opcodes for `in` and `not in`. They share the same dispatch path,
-with `TestNotIn` inverting the final truth value after the membership result has
-been truth-tested.
+Add explicit truthiness conversion opcodes:
+
+```text
+ToBool
+ToBoolNot
+```
+
+Compile:
+
+```python
+needle in container
+```
+
+as:
+
+```text
+TestIn needle_reg, operator_ic
+ToBool
+```
+
+Compile:
+
+```python
+needle not in container
+```
+
+as:
+
+```text
+TestIn needle_reg, operator_ic
+ToBoolNot
+```
+
+`TestNotIn` is no longer part of the target bytecode shape. Stage 4 removes
+normal emission of it and deletes the opcode support once all in-repo lowering
+uses `TestIn + ToBoolNot`.
 
 ## Operator Table
 
@@ -134,6 +168,10 @@ trusted_handler = null for the first slice
 The opcode must not use `matches_binary(container, needle)`. The needle shape is
 ordinary runtime call state and must not participate in cache matching.
 
+`TestIn` does not truth-test or invert the call result. It stages the membership
+call so that normal interpreter return lands on the following `ToBool` or
+`ToBoolNot` opcode.
+
 ## Miss Path
 
 On a cache miss:
@@ -179,23 +217,40 @@ def __clover_membership_fallback(container, needle):
 Sequence-index fallback is staged for later. When added, catch only failure to
 obtain an iterator, not arbitrary errors raised during iteration or equality.
 
+## Truthiness Conversion
+
+Add `ToBool` and `ToBoolNot` opcode handlers. They should:
+
+- consume the accumulator;
+- write `True` or `False` back to the accumulator;
+- use the same current truthiness behavior as `not` and conditional jumps;
+- support float truthiness through the existing float slow-path behavior;
+- raise the current unsupported-truthiness error for unsupported pointer
+  results;
+- differ only in whether the boolean result is inverted.
+
+These opcodes are not membership-specific. They are reusable continuation
+opcodes for any future operation that must convert an arbitrary result to a
+VM-level boolean.
+
 ## Interpreter Dispatch
 
-Add membership-specific opcode helpers instead of reusing
+Add a membership-specific `TestIn` opcode helper instead of reusing
 `dispatch_cached_direct_binary_operator`, because that helper checks both
 operand shapes. The membership helper should:
 
 1. Decode `needle_reg` and `operator_ic`.
 2. Load `container` from the accumulator and `needle` from `fp[needle_reg]`.
 3. If `cache.matches_unary(container)`, stage `(container, needle)` and enter
-   the cached function.
+   the cached function with the next bytecode as the return target.
 4. On miss, walk the membership table and populate the cache from the returned
    descriptor.
-5. When the selected call returns, truth-test the result with current VM
-   truthiness behavior.
-6. Invert the final boolean for `TestNotIn`.
+5. Stage the selected call with `(container, needle)` and enter the function
+   with the next bytecode as the return target.
 
 No `CheckOperatorNotImplemented` or other continuation opcode is involved.
+Truthiness conversion is handled by the following `ToBool` or `ToBoolNot`
+opcode.
 
 ## Tests
 
@@ -215,7 +270,10 @@ Add codegen tests that `in` and `not in` emit:
 
 ```text
 TestIn needle_reg, operator_ic[n]
-TestNotIn needle_reg, operator_ic[n]
+ToBool
+
+TestIn needle_reg, operator_ic[n]
+ToBoolNot
 ```
 
 Add a direct regression for the current failure:
@@ -256,17 +314,37 @@ unknown dispatch-table entries.
 - [x] Add tests that the helper is not visible through normal builtins lookup
   after bootstrap.
 
-### Stage 3: Membership Opcode Dispatch
+The Stage 1 `TestNotIn` skeleton was temporary scaffolding. The revised target
+shape removes it in Stage 4 rather than completing it.
 
-- [ ] Add `TestIn` and `TestNotIn` interpreter handlers.
+### Stage 3: Truthiness Conversion Bytecodes
+
+- [ ] Add `ToBool` and `ToBoolNot` bytecodes.
+- [ ] Add code object printer support for `ToBool` and `ToBoolNot`.
+- [ ] Add `ToBool` and `ToBoolNot` interpreter handlers using current VM
+  truthiness behavior.
+- [ ] Add focused interpreter tests for immediate values, floats, and
+  unsupported pointer truthiness.
+
+This stage should not wire membership dispatch. It gives later membership
+lowering a concrete post-call truthiness target and keeps the truthiness
+semantics reviewable on their own.
+
+### Stage 4: Membership Opcode Dispatch
+
+- [ ] Change `not in` codegen to emit `TestIn ...; ToBoolNot`.
+- [ ] Change `in` codegen to emit `TestIn ...; ToBool`.
+- [ ] Remove `TestNotIn` from normal codegen and delete the obsolete opcode
+  support.
+- [ ] Add the `TestIn` interpreter handler.
 - [ ] Implement the membership-specific cache hit path using
   `OperatorInlineCache::matches_unary(container)`.
-- [ ] Stage cached calls with `(container, needle)`.
+- [ ] Stage cached calls with `(container, needle)` and return to the next
+  bytecode.
 - [ ] Implement the miss path by walking `OperatorDispatchTableId::Contains`.
 - [ ] Populate the operator cache for both positive `__contains__` lookup and
   negative-lookup fallback helper calls.
-- [ ] Truth-test the call result with current VM truthiness behavior and invert for
-  `TestNotIn`.
+- [ ] Add codegen tests for `TestIn + ToBool` and `TestIn + ToBoolNot`.
 - [ ] Add a regression test for:
 
   ```bash
@@ -276,7 +354,7 @@ unknown dispatch-table entries.
 for containers that already have a visible `__contains__` method or can use the
 fallback helper.
 
-### Stage 4: Builtin `__contains__` Methods
+### Stage 5: Builtin `__contains__` Methods
 
 - [ ] Add visible `list.__contains__`.
 - [ ] Add visible `tuple.__contains__`.
@@ -296,7 +374,7 @@ fallback helper.
 This stage makes the protocol target visible independently of the membership
 opcode.
 
-### Stage 5: Trusted Builtin Handlers
+### Stage 6: Trusted Builtin Handlers
 
 - [ ] Add trusted handler resolution for builtin `list.__contains__`.
 - [ ] Add trusted handler resolution for builtin `tuple.__contains__`.
@@ -310,7 +388,7 @@ opcode.
 
 This stage is an optimization of the protocol path, not a semantic shortcut.
 
-### Stage 6: Deferred Protocol Polish
+### Stage 7: Deferred Protocol Polish
 
 - [ ] Add sequence-index fallback to the hidden helper after the iterator fallback
   path is stable.
