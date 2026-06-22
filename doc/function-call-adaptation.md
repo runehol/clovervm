@@ -280,12 +280,13 @@ every possible signature feature combination. The intended tiers are:
 
 ```text
 FixedArity
-Defaults
+Defaultable
 Full
 ```
 
 `FixedArity` means frame entry can commit directly after arity/cache validation.
-`Defaults` means only default-value initialization may be needed before entry.
+`Defaultable` means only default-value initialization may be needed before
+entry.
 `Full` means the callee may require default initialization, `*args` tuple
 construction, and/or `**kwargs` dictionary construction.
 
@@ -300,6 +301,11 @@ For positional calls, `**kwargs` never absorbs extra positional arguments.
 Positional arity remains governed by the positional parameter count and `*args`.
 If the callee has `**kwargs`, `CallPositional` initializes that slot with a
 fresh empty dictionary after ordinary arity validation and before entering the
+callee frame.
+
+The `Full` path initializes `*args` and `**kwargs` late. It is acceptable for an
+earlier default-copy step to write placeholder values into those slots because
+the full adaptation step overwrites them before Python code can observe the
 callee frame.
 
 ## Binding Algorithm
@@ -338,7 +344,10 @@ the accepted callee-`**kwargs` design:
 
 The parser already rejects duplicate explicit keyword names. Caller `*args` and
 caller `**kwargs` are still deferred. Callee `**kwargs` only consumes unmatched
-explicit `name=value` keywords in the existing call-site order.
+explicit `name=value` keywords in the existing call-site order. Those names are
+the existing explicit keyword names, so the kwargs dictionary is string-only;
+support for non-string key validation belongs to later caller `**mapping`
+expansion.
 
 ## Keyword Call Inline Cache
 
@@ -366,6 +375,9 @@ The keyword destination vector stays compact as an `int8_t` array. Destination
 value `0` is reserved as the kwargs-dictionary sentinel for this vector. Real
 entries are callee-frame-relative encoded parameter destinations; `fp[0]` is
 the previous-frame-pointer header slot, not a writable parameter destination.
+Cache construction should assert that real keyword destination registers never
+equal the sentinel, and frame entry must branch on the sentinel before writing
+through the destination value.
 
 The warm path avoids name lookup and semantic rediscovery. Positional values are
 already in the temporary call argument span. The plan fills defaults from
@@ -377,13 +389,19 @@ into the fresh kwargs dictionary. The sentinel-aware loop should only run on the
 
 ## Constructor Thunks
 
-Constructor thunks continue to mirror the selected `__init__` signature with
-`self` removed. Keyword adaptation happens at the public call boundary before
-entering the thunk.
+Constructor thunks continue to mirror the selected `__init__` or `__new__`
+signature with `self` or `cls` removed, including `**kwargs` metadata. Keyword
+adaptation happens at the public class-call boundary before entering the thunk.
+The public thunk signature preserves `HasKwArgs`; keyword remap entries are
+copied with parameter indexes shifted down by one, while the kwargs collector
+itself remains excluded from the remap.
 
 The thunk body does not become a second keyword binder. It receives a prepared,
 normalized frame and then enters the known initializer code object through the
-existing internal `CallCodeObject` mechanism.
+existing internal `CallCodeObject` mechanism. The inner call is a prepared
+positional-only forwarding call: the thunk has already normalized the public
+call into the target parameter layout, including defaults, `*args`, and
+`**kwargs`.
 
 This matches the current constructor-thunk design: the ordinary class hot path
 gets signature-aware specialization, while unusual construction remains a

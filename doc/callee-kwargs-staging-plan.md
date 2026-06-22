@@ -5,24 +5,32 @@ include caller-side `**mapping` expansion.
 
 ## Invariants
 
-- [ ] `**kwargs` never absorbs positional arguments. Positional arity remains
+- `**kwargs` never absorbs positional arguments. Positional arity remains
   controlled by positional parameters and `*args`.
-- [ ] Every call to a function with `**kwargs` receives a fresh dictionary in
-  the kwargs parameter slot, including calls with no keyword arguments.
-- [ ] Unmatched explicit `name=value` keywords are inserted into the kwargs
+- Every call to a function with `**kwargs` receives a fresh dictionary in the
+  kwargs parameter slot, including calls with no keyword arguments.
+- Unmatched explicit `name=value` keywords are inserted into the kwargs
   dictionary in call-site order.
-- [ ] The `**kwargs` parameter is not keyword-bindable and is not present in the
+- The `**kwargs` parameter is not keyword-bindable and is not present in the
   function keyword remap.
-- [ ] `keyword_dest_regs` remains compact. Destination value `0` is reserved as
-  the kwargs-dictionary sentinel and must not be used as a writable parameter
+- `keyword_dest_regs` remains compact. Destination value `0` is reserved as the
+  kwargs-dictionary sentinel and must not be used as a writable parameter
   destination.
-- [ ] Caller `*args` and caller `**mapping` expansion remain unsupported and
+- Cache construction asserts that real keyword destination registers never equal
+  the kwargs sentinel, and frame entry branches on the sentinel before writing
+  through a destination value.
+- The kwargs dictionary is string-only in this stage because it only receives
+  explicit `name=value` keyword names. Caller `**mapping` validation is separate
+  later work.
+- `*args` and `**kwargs` slots are initialized late on the full adaptation path,
+  after any default-copy placeholders that may have touched those slots.
+- Caller `*args` and caller `**mapping` expansion remain unsupported and
   explicit.
 
 ## Implementation Stages
 
 - [ ] Replace `FunctionCallAdaptation::Varargs` with the compact tiered model:
-  `FixedArity`, `Defaults`, and `Full`.
+  `FixedArity`, `Defaultable`, and `Full`.
 - [ ] Update positional call adaptation selection so functions with `*args` or
   `**kwargs` use `Full`, while fixed/default-only functions keep the existing
   cheaper paths.
@@ -30,8 +38,15 @@ include caller-side `**mapping` expansion.
   parameter slot and set `FunctionParameterFlags::HasKwArgs`.
 - [ ] Keep `**kwargs` out of `FunctionKeywordRemap`, while continuing to remap
   positional-or-keyword and keyword-only parameters.
-- [ ] Update function layout assertions and constructor-thunk signature copying
-  so kwargs slots are preserved or shifted correctly.
+- [ ] Update function layout assertions for optional `*args` and `**kwargs`
+  slots.
+- [ ] Update constructor-thunk signature copying so public class-call thunks
+  mirror `__init__` or `__new__` with `self` or `cls` dropped, including
+  `HasKwArgs`.
+- [ ] Copy constructor-thunk keyword remaps with parameter indexes shifted down
+  by one, while keeping kwargs collectors out of the remap.
+- [ ] Keep constructor-thunk bodies as prepared positional-only forwarding
+  calls into the selected `__init__` or `__new__` code object.
 - [ ] Add frame-entry helpers to compute the kwargs slot and store a fresh empty
   dictionary for functions with `**kwargs`.
 - [ ] Update `CallPositional` entry so the `Full` path initializes defaults,
@@ -63,9 +78,8 @@ include caller-side `**mapping` expansion.
 - [ ] Interpreter tests that extra positional arguments still raise when there
   is no `*args`, even if `**kwargs` exists.
 - [ ] Interpreter tests for combined `*args` and `**kwargs`.
-- [ ] Constructor tests for keyword calls to `__init__` or `__new__` signatures
-  that include `**kwargs`, if constructor thunks support the new layout in the
-  same stage.
+- [ ] Constructor tests for keyword calls to `__init__` and `__new__`
+  signatures that include `**kwargs`.
 - [ ] Cache-hit tests for repeated keyword calls with the same keyword-name
   tuple and kwargs-sentinel routing.
 
