@@ -67,20 +67,27 @@ The important split is where inline caches live:
 - The general dict method's bytecode contains the `__hash__` and equality call
   sites, so those calls get ordinary inline caches.
 
-## C++ Primitives
+## Trusted Dict Opcodes
 
-The general bytecode method needs low-level trusted primitives for table work.
-These primitives may inspect and mutate dict storage, but must not perform
+The general bytecode method needs low-level trusted opcodes for table work.
+These opcodes may inspect and mutate dict storage, but must not perform
 Python-visible protocol calls.
 
-Needed primitive groups:
+These operations should not be exposed as Python-visible methods, normal native
+functions, or importable private helpers. They are too specific to dictionary
+table invariants and too easy to misuse in ways that corrupt a dict. They
+should be emitted only by trusted compiler paths for built-in dict method
+bodies, and rejected in ordinary Python source.
+
+Needed opcode groups, using function-like placeholder names only to describe
+operands and results:
 
 - shape and storage:
   - `_dict_is_string_shape(d)`
   - `_dict_promote_to_general(d)`
   - `_dict_probe_table_identity(d)`
 - hash normalization:
-  - `_dict_normalize_hash(hash_result)`
+  - `NormalizeHash(value)`
 - probing:
   - `_dict_probe_start(d, hash_value)`
   - `_dict_probe_step(d, probe)`
@@ -97,9 +104,9 @@ Needed primitive groups:
   - `_dict_entry_delete(d, entry)`
   - `_dict_resize_general_if_needed(d)`
 
-The exact primitive names are placeholders. The contract matters more than the
+The exact opcode names are placeholders. The contract matters more than the
 names: all Python-visible calls happen in bytecode, and all raw table
-manipulation happens in trusted primitives.
+manipulation happens in dedicated trusted dict opcodes.
 
 Probe results should be integer-shaped, not strings or public status objects.
 One convenient contract is:
@@ -112,12 +119,53 @@ This matches the current table representation style and keeps trusted bytecode
 branches cheap. Named constants in trusted source can carry readability; the
 runtime value should remain a small integer.
 
-The primitives should avoid returning raw entry pointers or references that can
+Dictionary entry hashes are stored as SMI values. General dict bytecode should
+use the same hash protocol path as public `hash(key)`, then pass that result
+through `NormalizeHash`. `NormalizeHash` is a general trusted opcode, not
+dictionary-specific policy: it accepts `bool`, SMI, and BigInt integer results,
+does not call Python, and returns a normalized SMI hash or raises if the value
+is not an integer.
+
+`NormalizeHash` should preserve exact small integer hashes before applying any
+modular reduction:
+
+- `False` normalizes to `0` and `True` normalizes to `1`.
+- SMI values normalize to themselves.
+- BigInts that fit in the SMI range normalize to the same value as the
+  equivalent SMI. This keeps future noncanonical small heap integers from
+  violating the equal-objects-have-equal-hash invariant.
+- BigInts outside the SMI range reduce through CloverVM's integer hash modulus
+  and return a signed SMI result.
+- A normalized result of `-1` is remapped to `-2`.
+
+CPython uses a `Py_hash_t`-sized integer hash modulus that is larger than
+CloverVM's SMI range on 64-bit builds. CloverVM is not forced to copy that
+modulus for ordinary Python semantics. The VM should choose a hash modulus whose
+reduced results fit in SMI storage; a Mersenne value such as `value_smi_max`
+keeps modular reduction simple and keeps every reduced result representable.
+Exact SMI preservation handles the boundary value where a direct SMI hash is
+outside the reduced-result range.
+
+CPython remaps a returned hash value of `-1` to `-2` because `-1` is a C API
+error sentinel for `Py_hash_t`. CloverVM does not need that remap for internal
+dict correctness because failures travel through pending exception state and
+hash values are distinct from probe sentinels, but adopting the remap as part
+of `NormalizeHash` keeps the public `hash()` result, dict storage, and any
+future C API compatibility path aligned.
+
+Every exact built-in hash helper that can feed dict storage must use the same
+normalization policy. In particular, the string-shaped dict fast path may call
+a trusted string hash helper directly, but that helper must return a normalized
+SMI hash, including `-1` to `-2` remapping. Raw string mixing helpers, if kept,
+should stay private and should not be callable from dict insertion, lookup, or
+public `hash()` without immediately applying `NormalizeHash`.
+
+The opcodes should avoid returning raw entry pointers or references that can
 survive a Python-visible call. Return entry indexes, probe indexes, or compact
 probe-state objects instead, and require revalidation after any call that can
 mutate the dictionary.
 
-The revalidation primitive should follow CPython's local defense rather than a
+The revalidation opcode should follow CPython's local defense rather than a
 coarse "any dict version changed" rule. CPython's `dictobject.c` holds the
 candidate key alive across `PyObject_RichCompareBool`, then checks whether the
 same keys table and same entry key are still present. If not, lookup reports a
@@ -136,14 +184,13 @@ ordinary call sites and inline caches.
 
 ```python
 def _general_dict_hash_key(key):
-    raw_hash = key.__hash__()
-    return _dict_normalize_hash(raw_hash)
+    return NormalizeHash(hash(key))
 ```
 
-Later, when public `hash()` exists, this should share the same protocol path as
-`hash(key)`: missing or disabled `__hash__` raises `TypeError`, non-integer
-hash results raise `TypeError`, and the integer is truncated/normalized to the
-runtime hash width.
+This assumes public `hash()` is implemented as the shared Python-visible hash
+protocol. Missing or disabled `__hash__` should fail through that shared path;
+non-integer and out-of-SMI integer hash results should be handled by
+`NormalizeHash`. The dict should not have a parallel hash protocol.
 
 ### Lookup
 
@@ -327,7 +374,7 @@ def _general_dict_update(self, other=None):
 accepts iterables of pairs and keyword arguments. Those can be added when the
 iterator and keyword-call surfaces are ready enough to support them honestly.
 
-Methods that do not perform key lookup can stay mostly primitive-backed, but
+Methods that do not perform key lookup can stay mostly opcode-backed, but
 they must work for either dict shape:
 
 ```python
@@ -410,7 +457,7 @@ Therefore:
 - after equality returns, revalidate that the probe still refers to the same
   table and same candidate key
 - restart the probe if that table/key revalidation fails
-- keep C++ primitive effects small enough that a restart leaves the dictionary
+- keep opcode effects small enough that a restart leaves the dictionary
   in a valid state
 
 CPython uses this local table/key revalidation pattern in `dictobject.c` rather
@@ -440,12 +487,13 @@ JIT.
   equality with existing keys is needed?
 - Should string-to-general promotion reuse the current `Dict` table in place,
   or allocate a new general table and reinsert entries?
-- Should the first general path support only exact builtin hash implementations
-  while the `__hash__` protocol is being built, or should the hash protocol
-  come first?
+- How should `hash()` be staged so general dict bytecode can use the shared
+  hash protocol plus `NormalizeHash` without inventing a parallel dict-only
+  hash path?
 - How should active dict iterators respond to promotion and mutation?
-- Where should the built-in bytecode methods live so they can be trusted,
-  cache-bearing, and available during bootstrap?
+- Where should the built-in bytecode method bodies live so they are available
+  during bootstrap while still being the only code allowed to emit trusted dict
+  opcodes?
 
 ## Test Plan
 
