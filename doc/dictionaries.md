@@ -1,5 +1,9 @@
 # Dictionaries
 
+See also [Switchable Dictionaries](switchable-dictionaries.md) for the planned
+shape-backed split between string-only dictionaries and general Python
+dictionaries.
+
 Insertion ordered dictionaries:
 
 - <https://morepypy.blogspot.com/2015/01/faster-more-memory-efficient-and-more.html>

@@ -103,6 +103,9 @@ JIT, language, and runtime work.
 
 6. **Split string-key dictionaries from general Python dictionaries**
 
+   See [Switchable Dictionaries](switchable-dictionaries.md) for the current
+   design sketch.
+
    Preserve a string-key dictionary shape for namespaces and VM-internal maps
    where exact `str` keys give native hashing and equality with no
    Python-visible calls. This representation fits module globals, class
