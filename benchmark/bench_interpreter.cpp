@@ -155,6 +155,15 @@ namespace
             {"benchmark/function_keyword_default.py",
              {benchmark_cpp::function_keyword_default_run,
               benchmark_cpp::function_keyword_default_items}},
+            {"benchmark/function_kwargs_capture.py",
+             {benchmark_cpp::function_kwargs_capture_run,
+              benchmark_cpp::function_kwargs_capture_items}},
+            {"benchmark/function_kwargs_lookup.py",
+             {benchmark_cpp::function_kwargs_lookup_run,
+              benchmark_cpp::function_kwargs_lookup_items}},
+            {"benchmark/function_kwargs_mixed.py",
+             {benchmark_cpp::function_kwargs_mixed_run,
+              benchmark_cpp::function_kwargs_mixed_items}},
             {"benchmark/function_varargs.py",
              {benchmark_cpp::function_varargs_run,
               benchmark_cpp::function_varargs_items}},
@@ -971,6 +980,36 @@ static void BM_FunctionKeywordDefault(benchmark::State &state)
 }
 BENCHMARK_TEMPLATE(BM_FunctionKeywordDefault, CloverProgram)
     ->Name("BM_FunctionKeywordDefault")
+    ->Arg(100000);
+
+template <typename Program>
+static void BM_FunctionKwargsCapture(benchmark::State &state)
+{
+    run_benchmark_case<Program>(state, "benchmark/function_kwargs_capture.py",
+                                state.range(0));
+}
+BENCHMARK_TEMPLATE(BM_FunctionKwargsCapture, CloverProgram)
+    ->Name("BM_FunctionKwargsCapture")
+    ->Arg(100000);
+
+template <typename Program>
+static void BM_FunctionKwargsLookup(benchmark::State &state)
+{
+    run_benchmark_case<Program>(state, "benchmark/function_kwargs_lookup.py",
+                                state.range(0));
+}
+BENCHMARK_TEMPLATE(BM_FunctionKwargsLookup, CloverProgram)
+    ->Name("BM_FunctionKwargsLookup")
+    ->Arg(100000);
+
+template <typename Program>
+static void BM_FunctionKwargsMixed(benchmark::State &state)
+{
+    run_benchmark_case<Program>(state, "benchmark/function_kwargs_mixed.py",
+                                state.range(0));
+}
+BENCHMARK_TEMPLATE(BM_FunctionKwargsMixed, CloverProgram)
+    ->Name("BM_FunctionKwargsMixed")
     ->Arg(100000);
 
 template <typename Program>

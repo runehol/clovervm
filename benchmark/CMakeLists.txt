@@ -18,6 +18,9 @@ add_executable(bench_clovervm
     function_keyword.cpp
     function_keyword_default.cpp
     function_keyword_mixed.cpp
+    function_kwargs_capture.cpp
+    function_kwargs_lookup.cpp
+    function_kwargs_mixed.cpp
     function_varargs.cpp
     function_varargs_with_positional.cpp
     getslice.cpp
