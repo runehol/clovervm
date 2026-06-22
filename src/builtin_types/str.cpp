@@ -469,10 +469,10 @@ namespace cl
     static Value trusted_str_contains_handler(ThreadState *thread, Value self,
                                               Value needle_value)
     {
-        (void)thread;
         if(!can_convert_to<String>(needle_value))
         {
-            return Value::False();
+            return thread->set_pending_builtin_exception_string(
+                L"TypeError", L"'in <string>' requires string as left operand");
         }
         return self.get_ptr<String>()->find(needle_value.get_ptr<String>()) >= 0
                    ? Value::True()
@@ -577,10 +577,8 @@ namespace cl
                                      Value needle_value)
     {
         CL_PROPAGATE_EXCEPTION(require_str_receiver(self, L"__contains__"));
-        if(!can_convert_to<String>(needle_value))
-        {
-            return Value::False();
-        }
+        CL_PROPAGATE_EXCEPTION(require_string_argument(
+            needle_value, L"'in <string>' requires string as left operand"));
         return self.get_ptr<String>()->find(needle_value.get_ptr<String>()) >= 0
                    ? Value::True()
                    : Value::False();

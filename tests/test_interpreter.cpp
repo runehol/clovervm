@@ -2337,8 +2337,8 @@ TEST(Interpreter, native_builtin_contains_methods_are_visible)
               test_context.run_file(L"'abc'.__contains__('z')\n"));
     EXPECT_EQ(Value::True(),
               test_context.run_file(L"'abc'.__contains__('bc')\n"));
-    EXPECT_EQ(Value::False(),
-              test_context.run_file(L"'abc'.__contains__(1)\n"));
+    expect_python_error(L"'abc'.__contains__(1)\n", L"TypeError",
+                        L"'in <string>' requires string as left operand");
 }
 
 TEST(Interpreter, sequence_membership_fallback_uses_equality)
@@ -2394,8 +2394,12 @@ TEST(Interpreter, native_contains_membership_uses_trusted_handler)
                                   L"    return needle in container\n"
                                   L"str_contains('abc', 'b')\n"
                                   L"str_contains('abc', 1)\n");
-    EXPECT_EQ(Value::False(),
-              test_context.thread()->run_clovervm_code_object(str_code));
+    EXPECT_TRUE(test_context.thread()
+                    ->run_clovervm_code_object(str_code)
+                    .is_exception_marker());
+    expect_thread_python_error(
+        test_context.thread(), L"TypeError",
+        L"'in <string>' requires string as left operand");
 
     Value str_function_value =
         load_global_from_module_for_test(str_code, str_function_name);

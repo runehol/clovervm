@@ -792,9 +792,10 @@ negative `__contains__`, positive or negative `__iter__`, and positive
 
 Trusted handlers are available for native `dict.__contains__` and
 `str.__contains__`. They are selected only after ordinary `__contains__` lookup
-guards prove the builtin method is still selected. The handlers accept
+guards prove the builtin method is still selected. The handlers run for
 arbitrary needle shapes because the membership IC deliberately does not cache
-on the searched item.
+on the searched item; each handler still applies its own Python-visible
+argument checks.
 
 ## Protocol Semantics Summary
 
