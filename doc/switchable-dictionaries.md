@@ -487,13 +487,162 @@ JIT.
   equality with existing keys is needed?
 - Should string-to-general promotion reuse the current `Dict` table in place,
   or allocate a new general table and reinsert entries?
-- How should `hash()` be staged so general dict bytecode can use the shared
-  hash protocol plus `NormalizeHash` without inventing a parallel dict-only
-  hash path?
 - How should active dict iterators respond to promotion and mutation?
 - Where should the built-in bytecode method bodies live so they are available
   during bootstrap while still being the only code allowed to emit trusted dict
   opcodes?
+- What exact C API surface should be provided for semantic dict operations and
+  exact-string fast-path operations?
+
+## Milestones
+
+Each milestone should preserve a working tree where existing string-key dicts
+continue to work. Do not implement a later milestone by adding a temporary
+parallel dictionary path that would need to be unwound; the point of the staging
+is to expose one invariant at a time.
+
+### 0. Hash Normalization Groundwork
+
+- [ ] Define the CloverVM integer hash modulus and document it as SMI-sized,
+  not CPython `Py_hash_t`-sized.
+- [ ] Add the shared `NormalizeHash` operation for `bool`, SMI, and BigInt
+  integer values.
+- [ ] Apply `-1` to `-2` remapping inside `NormalizeHash`.
+- [ ] Change exact string hashing so dict-facing string hash helpers return a
+  normalized `TValue<SMI>` hash rather than raw `uint64_t` output.
+- [ ] Add direct normalization tests for `-1`, bools, SMI boundary values,
+  fitting BigInts, non-fitting BigInts, and strings whose raw mix would
+  otherwise fall outside SMI storage.
+
+This milestone should not add non-string dict keys yet. It should only make the
+hash value stored by today's string dict an explicit normalized hash.
+
+### 1. Public `hash()` Protocol
+
+- [ ] Implement the public `hash(obj)` builtin through the ordinary special
+  method protocol.
+- [ ] Require `__hash__` results to be integer values and route those values
+  through `NormalizeHash`.
+- [ ] Preserve disabled or missing hash behavior as `TypeError`.
+- [ ] Keep direct exact-builtin hash paths consistent with public `hash()` and
+  dict storage.
+- [ ] Add tests for custom `__hash__`, non-integer `__hash__` results, very
+  large integer hash results, `hash(-1)`, `hash(True)`, `hash(False)`, and
+  exception propagation.
+
+This gives the general dict bytecode a single protocol call to use later,
+instead of inventing a dict-only hash path.
+
+### 2. Dict Shape Plumbing
+
+- [ ] Represent string and general dict modes through the existing shape system.
+- [ ] Add a one-way promotion operation from string shape to general shape.
+- [ ] Ensure promotion invalidates shape-guarded operator inline caches through
+  normal shape invalidation.
+- [ ] Keep deletion from demoting the dict.
+- [ ] Add tests that promotion changes behavior only through shape, and that
+  caches miss correctly after promotion.
+
+This milestone can keep the general shape mostly unreachable except through
+direct test hooks or controlled promotion probes. Its purpose is to settle the
+object-model invariant before adding general probing semantics.
+
+### 3. Trusted Dict Opcode Skeleton
+
+- [ ] Add trusted-only opcode support for dict table identity, probe start,
+  probe step, probe advance, entry hash/key/value reads, and entry writes.
+- [ ] Return integer-shaped probe statuses and entry indexes, not raw pointers.
+- [ ] Reject these opcodes from ordinary Python source.
+- [ ] Keep every opcode free of Python-visible protocol calls.
+- [ ] Add structural tests that trusted dict method bodies can use the opcodes
+  and untrusted code cannot.
+
+This milestone should be table-mechanical only. If an opcode needs to call
+`__hash__`, equality, descriptors, or arbitrary Python, the design has slipped.
+
+### 4. General Lookup And Revalidation
+
+- [ ] Implement bytecode-backed general `__getitem__` and membership using
+  public `hash()` plus `NormalizeHash`.
+- [ ] Call equality from bytecode only after hash match and identity miss.
+- [ ] Hold the candidate key alive across equality.
+- [ ] Revalidate table identity and candidate entry after equality returns.
+- [ ] Restart probing when revalidation fails.
+- [ ] Add adversarial tests where `__eq__` clears, resizes, deletes from, and
+  reinserts into the same dict.
+
+This is the highest semantic-risk milestone. Do not add assignment or deletion
+until stale-entry defense is tested on lookup.
+
+### 5. General Assignment, Deletion, And Promotion Entry Points
+
+- [ ] Implement bytecode-backed general `__setitem__` with tombstone handling
+  and insertion-order preservation.
+- [ ] Implement bytecode-backed general `__delitem__`.
+- [ ] Route insertion of any non-string key in a string-shaped dict through
+  promotion before assignment.
+- [ ] Decide and implement the conservative non-string lookup behavior for
+  string-shaped dicts: promote and use general bytecode unless a separate
+  hash-only miss path has been deliberately designed.
+- [ ] Add tests for integer keys, bool/int key collisions, overwrites preserving
+  insertion order, deletion misses, and deleting the last non-string key without
+  demotion.
+
+After this milestone, `errno.errorcode` can be represented as a real integer-key
+dict, assuming the stdlib module itself is added separately.
+
+### 6. Public Dict Method Coverage
+
+- [ ] Route `get`, `setdefault`, `pop`, `update`, and `fromkeys` through the
+  same core bytecode lookup, assignment, and deletion paths.
+- [ ] Keep view-producing and non-lookup methods shape-agnostic.
+- [ ] Define active iterator behavior for promotion and mutation before
+  exposing iterator-sensitive methods broadly.
+- [ ] Add tests that public methods share the same hash/equality side effects
+  and exception propagation as subscription syntax.
+
+This milestone should remove temporary gaps where subscription works for
+general dicts but public methods accidentally retain string-only assumptions.
+
+### 7. C API Dict Surface
+
+- [ ] Add opaque C API functions for creating dicts and performing semantic
+  lookup, assignment, deletion, membership, and length operations.
+- [ ] Route general C API operations through the same semantic implementation
+  as Python-visible dict operations, including public `hash()`, equality,
+  pending-exception propagation, promotion, and stale-entry revalidation.
+- [ ] Add exact-string C API helpers for module/global-style construction paths
+  that can use the string-shaped trusted fast path without invoking Python
+  bytecode.
+- [ ] Keep trusted probe opcodes and raw table helpers unavailable through the
+  C API. Native extensions must not be able to hold entry indexes, probe state,
+  raw hash-table pointers, or unchecked shape-specific dict internals across
+  calls.
+- [ ] Document which C API functions may re-enter Python and which exact-string
+  helpers are non-reentrant.
+- [ ] Add native module tests that build string-key dicts, integer-key dicts,
+  propagated `__hash__` and `__eq__` exceptions, and mutation during equality
+  through the C API surface.
+
+This milestone is not a separate dictionary implementation. The C API should be
+a public boundary over the same string/general dict semantics, with a narrow
+exact-string fast path for code that can prove its keys are exact strings.
+
+### 8. Cleanup, Performance, And Stdlib Unblock
+
+- [ ] Remove obsolete string-only `TODO`s and helper names that imply raw hash
+  storage.
+- [ ] Audit dict fast paths so exact-string dictionaries still avoid Python
+  bytecode and general dictionaries still expose cache-bearing hash/equality
+  calls.
+- [ ] Add focused performance checks for unchanged string-key workloads.
+- [ ] Implement or unblock `errno.errorcode` using a real integer-key dict.
+- [ ] Update `doc/dictionaries.md`, `doc/clover-c-api.md`,
+  `doc/development-priorities.md`, and the stdlib bringup checklist to reflect
+  the completed scope.
+
+This milestone should be cleanup and validation, not the place to introduce new
+dictionary semantics.
 
 ## Test Plan
 
