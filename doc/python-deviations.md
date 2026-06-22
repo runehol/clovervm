@@ -50,22 +50,26 @@ To close: add traceback objects and thread them through exception propagation.
 
 ## Class Construction
 
-### Class calls do not dispatch custom `__new__`
+### Class calls only partially support custom `__new__`
 
 Python class construction calls `__new__` first, then conditionally calls
 `__init__` on the returned object. clovervm's class-call path currently builds a
-constructor thunk that directly allocates an instance of the class and then
-calls ordinary Python-defined `__init__`.
+constructor thunk from either the ordinary allocate-then-`__init__` path or a
+`__new__`-only path.
 
-If a class supplies `__new__`, clovervm does not invoke it through Python's
-constructor protocol.
+If a class supplies `__new__` and no `__init__`, clovervm calls `__new__` with
+the class argument and preserves normal argument adaptation. If a class supplies
+both custom `__new__` and `__init__`, clovervm still does not implement Python's
+full constructor protocol.
 
-Reason: the current constructor thunk is optimized around the common
-allocate-then-init path and does not yet represent the more general
-`__new__`/`__init__` interaction.
+Reason: the current constructor thunks cover the common allocate-then-init path
+and the new-only path separately. They do not yet represent the more general
+`__new__`/`__init__` interaction where `__init__` is called only when Python
+would call it for the object returned by `__new__`.
 
-To close: teach class calls to dispatch `__new__`, handle non-instance returns,
-and only call `__init__` when Python would.
+To close: teach class calls to handle the combined custom `__new__` plus
+`__init__` protocol, including non-instance returns and conditional `__init__`
+dispatch.
 
 ## Methods And Attribute Access
 
@@ -150,31 +154,40 @@ To close: introduce a range object, make `range()` return it, and have
 
 ## Numeric Semantics
 
-### `bool` is not an `int` subtype for numeric protocols
+### Some integer consumers still require SMI-sized tagged integers
 
-In Python, `bool` is a subclass of `int`, so APIs that require an integer often
-accept `True` and `False` as `1` and `0`. clovervm represents booleans with a
-separate inline tag and class, and integer checks currently require tagged SMI
-values.
+In Python, `bool` is a subclass of `int`, and arbitrary-precision integers are
+accepted by APIs that use the integer protocol as long as the value is in range
+for the operation. clovervm now models `bool` as an `int` subclass and supports
+heap `BigInt` values for general integer arithmetic, but some runtime consumers
+still require SMI-sized tagged integer arguments.
 
 For example, Python accepts `range(False)` as `range(0)`, while clovervm reports
-`TypeError: range() arguments must be integers`.
+`TypeError: range() arguments must be integers`. Non-SMI `BigInt` range
+arguments are also outside the current range slice.
 
-Reason: separate bool and integer tags keep the value representation and fast
-type checks simple, but do not model Python's historical bool/int inheritance.
+Reason: those consumers are still implemented directly on tagged SMI values.
+`range()` also currently returns a `RangeIterator` whose fields are SMI-backed.
 
-To close: decide whether `bool` should become an `int` subclass in the class
-hierarchy, and update numeric argument conversion and arithmetic protocols to
-match Python.
+To close: route SMI-sized argument conversion through the same intlike policy
+used by numeric operations where appropriate, and decide per API whether
+non-SMI `BigInt` values should be accepted, rejected with Python-compatible
+overflow behavior, or require a wider backing representation.
 
-### Integers are fixed-width tagged values
+### BigInt support is not yet complete Python `int` semantics
 
-Python integers have arbitrary precision. clovervm's Python-visible integers are
-currently tagged SMI values, so arithmetic that would overflow the tagged range
-raises an implementation overflow error instead of widening to a larger integer.
+Python integers have arbitrary precision across parsing, arithmetic, indexing,
+hashing, conversions, and protocol dispatch. clovervm has heap `BigInt` values
+and promotes many arithmetic overflow paths out of the tagged SMI range, but the
+BigInt surface is still partial.
 
-Reason: the tagged integer representation came first, and heap-allocated big
-integers have not been added yet.
+Known remaining gaps include APIs that still require SMI-sized values, non-SMI
+BigInt indexing and range support, and integer hashing once non-string
+dictionary keys or `hash()` become Python-visible.
 
-To close: add a big-integer representation and make arithmetic promote out of
-the SMI range instead of failing on overflow.
+Reason: the first BigInt slice added the representation and core arithmetic
+surface without converting every integer consumer in the runtime.
+
+To close: complete the remaining integer-protocol consumers, add compatible
+hashing before exposing integer hashing broadly, and remove SMI-only argument
+paths where Python accepts wider integers.
