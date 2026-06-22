@@ -22,7 +22,7 @@ def add(a, b):
 
 
 def and_(a, b):
-    _unsupported()
+    return a & b
 
 
 def call(obj, *args):
@@ -42,10 +42,7 @@ def concat(a, b):
 
 
 def contains(a, b):
-    for item in a:
-        if item == b:
-            return True
-    return False
+    return b in a
 
 
 def countOf(a, b):
@@ -85,7 +82,7 @@ def iadd(a, b):
 
 
 def iand(a, b):
-    _unsupported()
+    return a & b
 
 
 def iconcat(a, b):
@@ -101,7 +98,7 @@ def ilshift(a, b):
 
 
 def imatmul(a, b):
-    _unsupported()
+    return a @ b
 
 
 def imod(a, b):
@@ -128,19 +125,19 @@ def indexOf(a, b):
 
 
 def inv(a):
-    _unsupported()
+    return ~a
 
 
 def invert(a):
-    _unsupported()
+    return ~a
 
 
 def ior(a, b):
-    _unsupported()
+    return a | b
 
 
 def ipow(a, b):
-    _unsupported()
+    return a**b
 
 
 def irshift(a, b):
@@ -172,7 +169,7 @@ def itruediv(a, b):
 
 
 def ixor(a, b):
-    _unsupported()
+    return a ^ b
 
 
 def le(a, b):
@@ -195,7 +192,7 @@ def lt(a, b):
 
 
 def matmul(a, b):
-    _unsupported()
+    return a @ b
 
 
 def mod(a, b):
@@ -219,7 +216,7 @@ def not_(a):
 
 
 def or_(a, b):
-    _unsupported()
+    return a | b
 
 
 def pos(a):
@@ -227,7 +224,7 @@ def pos(a):
 
 
 def pow(a, b):
-    _unsupported()
+    return a**b
 
 
 def rshift(a, b):
@@ -253,7 +250,7 @@ def truth(a):
 
 
 def xor(a, b):
-    _unsupported()
+    return a ^ b
 
 
 def attrgetter(*attrs):
@@ -316,4 +313,62 @@ __truediv__ = truediv
 __xor__ = xor
 
 
-__all__ = ("abs", "add", "getitem", "setitem", "delitem")
+__all__ = (
+    "abs",
+    "add",
+    "and_",
+    "attrgetter",
+    "call",
+    "concat",
+    "contains",
+    "countOf",
+    "delitem",
+    "eq",
+    "floordiv",
+    "ge",
+    "getitem",
+    "gt",
+    "iadd",
+    "iand",
+    "iconcat",
+    "ifloordiv",
+    "ilshift",
+    "imatmul",
+    "imod",
+    "imul",
+    "index",
+    "indexOf",
+    "inv",
+    "invert",
+    "ior",
+    "ipow",
+    "irshift",
+    "is_",
+    "is_none",
+    "is_not",
+    "is_not_none",
+    "isub",
+    "itemgetter",
+    "itruediv",
+    "ixor",
+    "le",
+    "length_hint",
+    "lshift",
+    "lt",
+    "matmul",
+    "methodcaller",
+    "mod",
+    "mul",
+    "ne",
+    "neg",
+    "not_",
+    "or_",
+    "pos",
+    "pow",
+    "rshift",
+    "setitem",
+    "sub",
+    "truediv",
+    "truth",
+    "xor",
+)

@@ -12,7 +12,11 @@ assert operator.sub(9, 4) == 5
 assert operator.mul(6, 7) == 42
 assert operator.floordiv(8, 3) == 2
 assert operator.mod(8, 3) == 2
+assert operator.pow(2, 5) == 32
 assert operator.truediv(7, 2) == 3.5
+assert operator.and_(6, 3) == 2
+assert operator.or_(4, 1) == 5
+assert operator.xor(6, 3) == 5
 assert operator.lshift(3, 2) == 12
 assert operator.rshift(9, 1) == 4
 
@@ -20,6 +24,8 @@ assert operator.neg(4) == -4
 assert operator.pos(-4) == -4
 assert operator.abs(-4) == 4
 assert operator.abs(4) == 4
+assert operator.inv(6) == -7
+assert operator.invert(6) == -7
 assert operator.not_(False)
 assert not operator.not_(True)
 assert operator.truth(1)
@@ -57,12 +63,17 @@ assert operator.isub(9, 2) == 7
 assert operator.imul(3, 4) == 12
 assert operator.ifloordiv(8, 3) == 2
 assert operator.imod(8, 3) == 2
+assert operator.ipow(2, 4) == 16
 assert operator.itruediv(7, 2) == 3.5
+assert operator.iand(6, 3) == 2
+assert operator.ior(4, 1) == 5
+assert operator.ixor(6, 3) == 5
 assert operator.ilshift(1, 4) == 16
 assert operator.irshift(16, 2) == 4
 
 assert operator.contains([1, 2, 3], 2)
 assert not operator.contains([1, 2, 3], 5)
+assert operator.contains({"alpha": 1}, "alpha")
 assert operator.countOf([1, 2, 1, 3], 1) == 2
 assert operator.indexOf(["a", "b", "c"], "b") == 1
 assert operator.length_hint([1, 2, 3]) == 3
@@ -81,3 +92,22 @@ def add3(a, b, c):
 assert operator.call(constant) == 37
 assert operator.call(add3, 1, 2, 3) == 6
 assert operator.__all__[0] == "abs"
+assert operator.__all__[2] == "and_"
+assert operator.__all__[19] == "imatmul"
+
+
+class LeftMatmul:
+    def __matmul__(self, other):
+        return "left"
+
+
+class RightMatmul:
+    def __rmatmul__(self, other):
+        return "right"
+
+
+assert operator.matmul(LeftMatmul(), 1) == "left"
+assert operator.__matmul__(LeftMatmul(), 1) == "left"
+assert operator.matmul(1, RightMatmul()) == "right"
+assert operator.imatmul(LeftMatmul(), 1) == "left"
+assert operator.__imatmul__(LeftMatmul(), 1) == "left"
