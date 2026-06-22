@@ -195,6 +195,7 @@ namespace cl
     }
 
     uint64_t string_hash(TValue<String> s);
+    TValue<SMI> string_hash_normalized(TValue<String> s);
     bool string_eq_slow_path(TValue<String> a, TValue<String> b);
     int string_compare(TValue<String> a, TValue<String> b);
     const cl_wchar *string_as_wchar_t(TValue<String> s);

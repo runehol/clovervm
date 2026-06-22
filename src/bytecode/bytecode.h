@@ -136,6 +136,7 @@ namespace cl
         Pos,
         Sqrt,
         Invert,
+        CanonicalizeHash,
 
         Nop,
 

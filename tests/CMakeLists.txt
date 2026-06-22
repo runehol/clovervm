@@ -16,6 +16,7 @@ target_sources(test_clovervm PRIVATE
 	test_bigint.cpp
 	test_codegen.cpp
 	test_exception_handling.cpp
+	test_hash.cpp
 	test_heap.cpp
 	test_import_system.cpp
 	test_native_module_build.cpp

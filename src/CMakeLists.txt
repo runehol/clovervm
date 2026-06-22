@@ -60,6 +60,8 @@ add_library(libclovervm_objects OBJECT
     runtime/fatal.h
     builtin_types/float.cpp
     builtin_types/float.h
+    builtin_types/hash.cpp
+    builtin_types/hash.h
     object_model/function.cpp
     object_model/function.h
     memory/global_heap.cpp

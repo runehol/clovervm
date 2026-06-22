@@ -333,6 +333,8 @@ template <> struct fmt::formatter<cl::Bytecode>
                 return format_to(out, "Sqrt");
             case cl::Bytecode::Invert:
                 return format_to(out, "Invert");
+            case cl::Bytecode::CanonicalizeHash:
+                return format_to(out, "CanonicalizeHash");
 
             case cl::Bytecode::CallPositional:
                 return format_to(out, "CallPositional");
@@ -880,6 +882,7 @@ template <> struct fmt::formatter<cl::CodeObject>
             case cl::Bytecode::ToBool:
             case cl::Bytecode::ToBoolNot:
             case cl::Bytecode::Sqrt:
+            case cl::Bytecode::CanonicalizeHash:
             case cl::Bytecode::CheckOperatorNotImplemented:
             case cl::Bytecode::CheckTernaryOperatorNotImplemented:
                 break;

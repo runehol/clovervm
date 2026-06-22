@@ -23,8 +23,8 @@ namespace cl
 
     static TValue<SMI> internal_hash(Value key)
     {
-        return TValue<SMI>::from_smi(
-            string_hash(TValue<String>::from_value_unchecked(key)));
+        return string_hash_normalized(
+            TValue<String>::from_value_unchecked(key));
     }
 
     static bool internal_eq(Value a, Value b)

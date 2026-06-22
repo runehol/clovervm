@@ -2,6 +2,7 @@
 
 #include "builtin_types/dict.h"
 #include "builtin_types/float.h"
+#include "builtin_types/hash.h"
 #include "builtin_types/list.h"
 #include "builtin_types/range_iterator.h"
 #include "builtin_types/slice.h"
@@ -3842,6 +3843,14 @@ namespace cl
         COMPLETE();
     }
 
+    static INTERP_CC Value op_canonicalize_hash(PARAMS)
+    {
+        START(1);
+        accumulator =
+            INTERP_TRY(canonicalize_hash_result(accumulator)).raw_value();
+        COMPLETE();
+    }
+
     static INTERP_CC Value op_write_stdout(PARAMS)
     {
         START(1);
@@ -5438,6 +5447,7 @@ namespace cl
         SET_TABLE_ENTRY(Bytecode::Pos, op_plus);
         SET_TABLE_ENTRY(Bytecode::Invert, op_invert);
         SET_TABLE_ENTRY(Bytecode::Sqrt, op_sqrt);
+        SET_TABLE_ENTRY(Bytecode::CanonicalizeHash, op_canonicalize_hash);
         SET_TABLE_ENTRY(Bytecode::Not, op_not);
         SET_TABLE_ENTRY(Bytecode::ToBool, op_to_bool);
         SET_TABLE_ENTRY(Bytecode::ToBoolNot, op_to_bool_not);

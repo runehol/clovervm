@@ -258,6 +258,43 @@ namespace cl
                                                       L"integer overflow");
     }
 
+    static uint64_t bigint_hash_magnitude_mod(ConstBigIntView view,
+                                              uint64_t modulus)
+    {
+        assert(is_normalized_bigint_view(view));
+        assert(modulus != 0);
+
+        // Hashing reduces the stored magnitude and applies the sign later.
+        // This is deliberately not Python floor-modulo semantics.
+        uint64_t magnitude_mod = 0;
+        for(size_t idx = view.n_digits; idx > 0; --idx)
+        {
+            magnitude_mod =
+                ((magnitude_mod << kDigitBits) + view.digits[idx - 1]) %
+                modulus;
+        }
+        return magnitude_mod;
+    }
+
+    TValue<SMI> bigint_hash(ConstBigIntView view, uint64_t hash_modulus)
+    {
+        assert(is_normalized_bigint_view(view));
+        assert(hash_modulus <= uint64_t(value_smi_max));
+        Optional<TValue<SMI>> smi = normalized_bigint_view_to_smi_if_fits(view);
+        if(smi.has_value())
+        {
+            return smi.value();
+        }
+
+        uint64_t magnitude_mod = bigint_hash_magnitude_mod(view, hash_modulus);
+        int64_t hash = static_cast<int64_t>(magnitude_mod);
+        if(view.signum < 0)
+        {
+            hash = -hash;
+        }
+        return TValue<SMI>::from_smi(hash);
+    }
+
     Expected<Value> finalize_bigint(ThreadState *thread, ConstBigIntView view)
     {
         assert(is_normalized_bigint_view(view));

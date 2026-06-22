@@ -845,6 +845,7 @@ namespace cl
             Locals,
             Sqrt,
             TernaryPow,
+            CanonicalizeHash,
         };
 
         Expected<TrustedCloverCall>
@@ -901,6 +902,12 @@ namespace cl
             {
                 return Expected<TrustedCloverCall>::ok(
                     TrustedCloverCall::TernaryPow);
+            }
+            if(name_value ==
+               interned_string(L"__clover_canonicalize_hash__").raw_value())
+            {
+                return Expected<TrustedCloverCall>::ok(
+                    TrustedCloverCall::CanonicalizeHash);
             }
             return Expected<TrustedCloverCall>::raise_exception(
                 L"SyntaxError", L"unknown trusted __clover_* helper");
@@ -1124,6 +1131,27 @@ namespace cl
             return Expected<void>::ok();
         }
 
+        Expected<void>
+        codegen_trusted_clover_canonicalize_hash(uint32_t source_offset,
+                                                 AstChildren args)
+        {
+            CL_TRY(require_positional_call_arguments(
+                args, L"__clover_canonicalize_hash__"));
+            if(args.size() != 1)
+            {
+                return Expected<void>::raise_exception(
+                    L"SyntaxError",
+                    L"__clover_canonicalize_hash__ expects exactly 1 "
+                    L"argument");
+            }
+
+            CL_TRY(codegen_node(call_argument_value(args[0])));
+            CL_TRY(code_obj->emit_unary_op(source_offset,
+                                           Bytecode::CanonicalizeHash,
+                                           OperatorBytecodeFormat::Plain));
+            return Expected<void>::ok();
+        }
+
         Expected<bool> try_codegen_trusted_clover_call(int32_t node_idx)
         {
             AstChildren children = av.children[node_idx];
@@ -1158,6 +1186,10 @@ namespace cl
                 case TrustedCloverCall::TernaryPow:
                     CL_TRY(codegen_trusted_clover_ternary_pow(source_offset,
                                                               args));
+                    return Expected<bool>::ok(true);
+                case TrustedCloverCall::CanonicalizeHash:
+                    CL_TRY(codegen_trusted_clover_canonicalize_hash(
+                        source_offset, args));
                     return Expected<bool>::ok(true);
             }
             __builtin_unreachable();

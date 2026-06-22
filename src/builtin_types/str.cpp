@@ -1,4 +1,5 @@
 #include "builtin_types/str.h"
+#include "builtin_types/hash.h"
 #include "builtin_types/int.h"
 #include "builtin_types/list.h"
 #include "builtin_types/slice.h"
@@ -1078,6 +1079,11 @@ namespace cl
             hash = hash * 33 + c[i];
         }
         return hash;
+    }
+
+    TValue<SMI> string_hash_normalized(TValue<String> s)
+    {
+        return canonicalize_nonnegative_raw_hash(string_hash(s));
     }
 
     const cl_wchar *string_as_wchar_t(TValue<String> s)

@@ -1908,6 +1908,35 @@ TEST(Codegen, trusted_clover_ternary_pow_rejects_wrong_arity)
         L"SyntaxError", L"__clover_ternary_pow__ expects exactly 3 arguments");
 }
 
+TEST(Codegen, trusted_clover_canonicalize_hash_lowers_to_opcode)
+{
+    std::string actual = trusted_builtin_bytecode_str_from_file(
+        L"def canonicalize(value):\n"
+        L"    return __clover_canonicalize_hash__(value)\n");
+
+    EXPECT_NE(std::string::npos, actual.find("CanonicalizeHash"));
+    EXPECT_EQ(std::string::npos, actual.find("CallPositional"));
+}
+
+TEST(Codegen, trusted_clover_canonicalize_hash_rejects_wrong_arity)
+{
+    expect_trusted_builtin_compile_python_error(
+        L"def canonicalize():\n"
+        L"    return __clover_canonicalize_hash__()\n",
+        L"SyntaxError",
+        L"__clover_canonicalize_hash__ expects exactly 1 argument");
+}
+
+TEST(Codegen, user_clover_canonicalize_hash_name_is_ordinary_call)
+{
+    std::string actual = bytecode_str_from_file(
+        L"def canonicalize(value):\n"
+        L"    return __clover_canonicalize_hash__(value)\n");
+
+    EXPECT_EQ(std::string::npos, actual.find("CanonicalizeHash"));
+    EXPECT_NE(std::string::npos, actual.find("CallPositional"));
+}
+
 TEST(Codegen, user_clover_ternary_pow_name_is_ordinary_call)
 {
     std::string actual =

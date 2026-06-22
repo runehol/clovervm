@@ -517,17 +517,17 @@ is to expose one invariant at a time.
 
 ### 0. Hash Normalization Groundwork
 
-- [ ] Define the CloverVM integer hash modulus and document it as SMI-sized,
+- [x] Define the CloverVM integer hash modulus and document it as SMI-sized,
   not CPython `Py_hash_t`-sized.
-- [ ] Add the shared `CanonicalizeHash` operation for `bool`, SMI, and BigInt
+- [x] Add the shared `CanonicalizeHash` operation for `bool`, SMI, and BigInt
   integer values.
-- [ ] Expose `CanonicalizeHash` as a trusted intrinsic/opcode usable by built-in
+- [x] Expose `CanonicalizeHash` as a trusted intrinsic/opcode usable by built-in
   bytecode bodies but unavailable to ordinary Python source and native
   extensions.
-- [ ] Apply `-1` to `-2` remapping inside `CanonicalizeHash`.
-- [ ] Change exact string hashing so dict-facing string hash helpers return a
+- [x] Apply `-1` to `-2` remapping inside `CanonicalizeHash`.
+- [x] Change exact string hashing so dict-facing string hash helpers return a
   normalized `TValue<SMI>` hash rather than raw `uint64_t` output.
-- [ ] Add direct normalization tests for `-1`, bools, SMI boundary values,
+- [x] Add direct normalization tests for `-1`, bools, SMI boundary values,
   fitting BigInts, non-fitting BigInts, and strings whose raw mix would
   otherwise fall outside SMI storage.
 
