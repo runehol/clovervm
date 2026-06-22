@@ -608,6 +608,8 @@ namespace cl
             get_or_create_interned_string_raw(L"__setitem__");
         String *dunder_delitem =
             get_or_create_interned_string_raw(L"__delitem__");
+        String *dunder_contains =
+            get_or_create_interned_string_raw(L"__contains__");
 
         auto install_binary_arithmetic_operator_table =
             [this](OperatorDispatchTableId table_id, String *normal_dunder,
@@ -705,6 +707,18 @@ namespace cl
                     OperatorDispatchTable{steps.data(), 2};
             };
 
+        auto install_membership_operator_table =
+            [this](OperatorDispatchTableId table_id, String *dunder) {
+                std::array<OperatorStep, 6> &steps =
+                    operator_dispatch_steps_[static_cast<size_t>(table_id)];
+                steps[0] = OperatorStep::call_binary(
+                    dunder, OperatorStepApplicability::IfMethodFound);
+                steps[1] = OperatorStep::call_membership_fallback();
+
+                operator_dispatch_tables_[static_cast<size_t>(table_id)] =
+                    OperatorDispatchTable{steps.data(), 2};
+            };
+
         install_binary_arithmetic_operator_table(OperatorDispatchTableId::Add,
                                                  dunder_add, dunder_radd);
         install_binary_arithmetic_operator_table(OperatorDispatchTableId::Sub,
@@ -742,6 +756,8 @@ namespace cl
             OperatorDispatchTableId::SetItem, dunder_setitem);
         install_receiver_binary_operator_table(OperatorDispatchTableId::DelItem,
                                                dunder_delitem);
+        install_membership_operator_table(OperatorDispatchTableId::Contains,
+                                          dunder_contains);
 
         auto install_rich_compare_table = [this](
                                               OperatorDispatchTableId table_id,

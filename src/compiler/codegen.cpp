@@ -106,9 +106,9 @@ namespace cl
         t.table[size_t(AstOperatorKind::IS_NOT)] =
             OpTableEntry(OperatorBytecodeFormat::Plain, Bytecode::TestIsNot);
         t.table[size_t(AstOperatorKind::IN)] =
-            OpTableEntry(OperatorBytecodeFormat::Plain, Bytecode::TestIn);
-        t.table[size_t(AstOperatorKind::NOT_IN)] =
-            OpTableEntry(OperatorBytecodeFormat::Plain, Bytecode::TestNotIn);
+            OpTableEntry(OperatorBytecodeFormat::WithCache, Bytecode::TestIn);
+        t.table[size_t(AstOperatorKind::NOT_IN)] = OpTableEntry(
+            OperatorBytecodeFormat::WithCache, Bytecode::TestNotIn);
 
         t.table[size_t(AstOperatorKind::NOT)] =
             OpTableEntry(OperatorBytecodeFormat::Plain, Bytecode::Not);

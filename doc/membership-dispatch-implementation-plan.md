@@ -228,17 +228,17 @@ build-debug/src/clovervm -c "1 in [1, 2]"
 
 ### Stage 1: Bytecode and Table Skeleton
 
-- [ ] Extend `TestIn` and `TestNotIn` to include an operator IC operand.
-- [ ] Add `OperatorDispatchTableId::Contains`.
-- [ ] Add `OperatorStepAction::CallMembershipFallback`.
-- [ ] Install the membership table:
+- [x] Extend `TestIn` and `TestNotIn` to include an operator IC operand.
+- [x] Add `OperatorDispatchTableId::Contains`.
+- [x] Add `OperatorStepAction::CallMembershipFallback`.
+- [x] Install the membership table:
 
   ```text
   0: CallBinary("__contains__", IfMethodFound)
   1: CallMembershipFallback(Always)
   ```
 
-- [ ] Add codegen tests that prove `in` and `not in` emit the new opcode shape.
+- [x] Add codegen tests that prove `in` and `not in` emit the new opcode shape.
 
 This stage may still route execution to a controlled unsupported path if the
 runtime call path is not wired yet, but it must not leave the opcodes as

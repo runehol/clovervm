@@ -19,6 +19,7 @@ namespace cl
         CallUnary = 10,
         CallTernary = 12,
         CallTernaryReflected = 13,
+        CallMembershipFallback = 14,
     };
 
     static constexpr bool
@@ -45,6 +46,8 @@ namespace cl
         !operator_step_action_is_reflected(OperatorStepAction::CallTernary));
     static_assert(operator_step_action_is_reflected(
         OperatorStepAction::CallTernaryReflected));
+    static_assert(!operator_step_action_is_reflected(
+        OperatorStepAction::CallMembershipFallback));
 
     enum class OperatorStepApplicability : uint8_t
     {
@@ -89,6 +92,7 @@ namespace cl
         GetItem,
         SetItem,
         DelItem,
+        Contains,
         Count,
     };
 
@@ -167,6 +171,13 @@ namespace cl
         static constexpr OperatorStep raise_unsupported()
         {
             return OperatorStep{nullptr, OperatorStepAction::RaiseUnsupported,
+                                OperatorStepApplicability::Always};
+        }
+
+        static constexpr OperatorStep call_membership_fallback()
+        {
+            return OperatorStep{nullptr,
+                                OperatorStepAction::CallMembershipFallback,
                                 OperatorStepApplicability::Always};
         }
     };

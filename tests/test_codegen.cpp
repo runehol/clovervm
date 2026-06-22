@@ -813,6 +813,20 @@ TEST(Codegen, equality_emits_paired_operator_check_byte)
     EXPECT_EQ(std::string::npos, actual.find("CheckOperatorNotImplemented"));
 }
 
+TEST(Codegen, membership_uses_operator_cache_without_notimplemented_check)
+{
+    const wchar_t *test_case = L"def contains(needle, container):\n"
+                               "    return needle in container\n"
+                               "def excludes(needle, container):\n"
+                               "    return needle not in container\n";
+
+    std::string actual = bytecode_str_from_file(test_case);
+
+    EXPECT_NE(std::string::npos, actual.find("TestIn p0, operator_ic[0]"));
+    EXPECT_NE(std::string::npos, actual.find("TestNotIn p0, operator_ic[0]"));
+    EXPECT_EQ(std::string::npos, actual.find("CheckOperatorNotImplemented"));
+}
+
 TEST(Codegen, assert_statement_uses_explicit_failure_path)
 {
     std::string expected = "Code object:\n"

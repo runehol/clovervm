@@ -188,6 +188,7 @@ namespace cl
             case OperatorDispatchTableId::CompareLe:
             case OperatorDispatchTableId::CompareGt:
             case OperatorDispatchTableId::CompareGe:
+            case OperatorDispatchTableId::Contains:
             case OperatorDispatchTableId::Count:
                 break;
         }
@@ -290,6 +291,12 @@ namespace cl
                            OperatorStepApplicability::Always);
                     return operator_walk_raise_unsupported(thread, table_id,
                                                            operand0);
+
+                case OperatorStepAction::CallMembershipFallback:
+                    assert(step.applicability ==
+                           OperatorStepApplicability::Always);
+                    return operator_walk_raise_type_error(
+                        thread, L"membership fallback is not implemented yet");
 
                 case OperatorStepAction::CallUnary:
                     {

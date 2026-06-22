@@ -3379,6 +3379,28 @@ namespace cl
         COMPLETE();
     }
 
+    NOINLINE static INTERP_CC Value membership_dispatch_unimplemented(PARAMS)
+    {
+        ExceptionalTarget target = set_builtin_exception_and_resolve_frame_exit(
+            thread, fp, pc, code_object, L"UnimplementedError",
+            L"membership dispatch is not implemented yet");
+        fp = target.fp;
+        code_object = target.code_object;
+        pc = target.interpreted_pc;
+        START(0);
+        COMPLETE();
+    }
+
+    static INTERP_CC Value op_test_in(PARAMS)
+    {
+        MUSTTAIL return membership_dispatch_unimplemented(ARGS);
+    }
+
+    static INTERP_CC Value op_test_not_in(PARAMS)
+    {
+        MUSTTAIL return membership_dispatch_unimplemented(ARGS);
+    }
+
     NOINLINE static INTERP_CC Value op_lt_dispatch(PARAMS)
     {
         int8_t reg = pc[1];
@@ -5215,6 +5237,8 @@ namespace cl
         SET_TABLE_ENTRY(Bytecode::TestLessEqual, op_le);
         SET_TABLE_ENTRY(Bytecode::TestGreaterEqual, op_ge);
         SET_TABLE_ENTRY(Bytecode::TestGreater, op_gt);
+        SET_TABLE_ENTRY(Bytecode::TestIn, op_test_in);
+        SET_TABLE_ENTRY(Bytecode::TestNotIn, op_test_not_in);
         SET_TABLE_ENTRY(Bytecode::CheckOperatorNotImplemented,
                         op_check_operator_not_implemented);
         SET_TABLE_ENTRY(Bytecode::CheckTernaryOperatorNotImplemented,

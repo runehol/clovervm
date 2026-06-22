@@ -793,10 +793,16 @@ template <> struct fmt::formatter<cl::CodeObject>
 
             case cl::Bytecode::TestIs:
             case cl::Bytecode::TestIsNot:
+                format_to(out, " ");
+                disassemble_reg(code_obj, out, pc++);
+                break;
+
             case cl::Bytecode::TestIn:
             case cl::Bytecode::TestNotIn:
                 format_to(out, " ");
                 disassemble_reg(code_obj, out, pc++);
+                format_to(out, ", ");
+                disassemble_operator_cache(code_obj, out, pc++);
                 break;
 
             case cl::Bytecode::Add:
