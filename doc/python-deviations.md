@@ -119,10 +119,16 @@ Python truthiness supports arbitrary objects through `__bool__`, and then
 `__len__` if `__bool__` is absent. clovervm's conditional jumps currently handle
 immediate truthy/falsy values and use the generic slow path for pointer values.
 
+The same limitation applies to the `ToBool` and `ToBoolNot` opcodes used after
+membership dispatch. For example, if `__contains__` returns an object whose
+truth value should be determined by `__bool__` or `__len__`, clovervm currently
+raises `TypeError: unsupported truthiness for object` instead of dispatching the
+truthiness protocol.
+
 Reason: object truthiness is a separate protocol slice.
 
-To close: extend conditional truthiness to dispatch `__bool__`, then `__len__`,
-with correct exception propagation.
+To close: extend conditional and explicit truthiness conversion opcodes to
+dispatch `__bool__`, then `__len__`, with correct exception propagation.
 
 ## Builtins And Iteration
 

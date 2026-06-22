@@ -110,6 +110,8 @@ in-place add: lookup(type(lhs), "__iadd__")
               lookup(type(lhs), "__add__")
               lookup(type(rhs), "__radd__")
 membership:   lookup(type(container), "__contains__")
+              lookup(type(container), "__iter__")
+              lookup(type(container), "__getitem__")
 ```
 
 Validity cells must cover positive and negative dunder lookup results. They
@@ -136,7 +138,7 @@ Entry shape:
 ```cpp
 struct OperatorInlineCache
 {
-    ShapeKey operand_shape_keys[3];
+    ShapeKey operand_shape_keys[2];
     ValidityCell *operand_lookup_validity_cells[2];
     TrustedHandler handler;
     Function *function;
@@ -154,7 +156,8 @@ struct OperatorInlineCache
 operators, operand0 and operand1 are the source operands, regardless of whether
 the selected dunder call is normal or reflected. Unused operands store the
 shape key for `Value::not_present()`, so the same cache shape can represent
-unary, binary, and ternary operator sites.
+unary and binary operator sites. Ternary operator caches also guard only
+operand0 and operand1; operand2 is runtime call state, not a cache key.
 
 `operand_lookup_validity_cells` stores operand-side special-method lookup
 dependencies. Receiver-only protocols such as `__getitem__`, `__setitem__`, and
@@ -163,6 +166,13 @@ tables that can call either operand's method must store and validate both
 operand0 and operand1 lookup validity cells. This deliberately over-guards the
 selected table row: the cache represents the whole table decision from row `0`,
 not only the selected method lookup.
+
+Membership uses a binary call shape but unary cacheability. The semantic
+operands are `(container, needle)`, but method selection depends only on the
+container protocol: `__contains__`, `__iter__`, then `__getitem__`. The
+membership opcode normalizes installed cache entries so only operand0's shape
+and lookup validity cell participate in cache matching. The searched item is
+runtime call state, not a cache key.
 
 Cacheability is chosen by the opcode handler, not by the dispatch table:
 
@@ -457,6 +467,10 @@ CallBinary             lookup type(operand0).dunder_name; call args: operand0, o
 CallBinaryReflected    lookup type(operand1).dunder_name; call args: operand1, operand0
 CallTernary            lookup type(operand0).dunder_name; call args: operand0, operand1, operand2
 CallTernaryReflected   lookup type(operand1).dunder_name; call args: operand1, operand0, operand2
+CallIterMembershipFallback
+                       lookup type(operand0).__iter__; call VM iterator fallback helper
+CallSequenceMembershipFallback
+                       lookup type(operand0).__getitem__; call VM sequence-index fallback helper
 IdentityEq             fallback: operand0 is operand1
 IdentityNe             fallback: operand0 is not operand1
 RaiseUnsupported       fallback: operator-specific unsupported TypeError
@@ -724,28 +738,63 @@ non-identity, and ordering comparisons raise `TypeError`.
 ### Membership
 
 Membership has protocol fallback even though it has only one named dunder
-candidate, but it should not use the operator dispatch tables or the paired
+candidate. It uses an operator dispatch table, but it does not use the paired
 `CheckOperatorNotImplemented` continuation opcode. The fallback is selected
 when `__contains__` is missing, not when it returns `NotImplemented`. If
 `__contains__` exists, its result is truth-tested as the membership result.
-Returning `NotImplemented` is not a fallback signal; in modern Python it raises
-during truth testing.
+Returning `NotImplemented` is not a fallback signal.
 
-Membership needs a separate dispatch shape when optimized. That shape must
-cover at least these steps for `item in container`:
+The `Contains` bytecode is receiver-owned: operand0 is the container and
+operand1 is the searched item. The compiler emits:
 
-1. Look up and call `type(container).__contains__(container, item)`, if present,
-   then truth-test the result.
-2. If `__contains__` is missing, try iteration and compare each yielded value
-   against the searched item using equality semantics.
-3. If iteration is unavailable, try sequence indexing from zero until the
-   sequence protocol terminates the search.
+```text
+needle in container      -> Contains needle_reg, operator_ic[n]; ToBool
+needle not in container  -> Contains needle_reg, operator_ic[n]; ToBoolNot
+```
 
-The fallback path may create an iterator, call `next`, run equality
-comparisons, handle sentinel exceptions, and fall back to indexed subscription.
-It is not a `NotImplemented` continuation, and squeezing it into the same table
-and paired-opcode model as operator dunder dispatch would hide important
-membership-specific control flow.
+`Contains` leaves the selected protocol result in the accumulator. Boolean
+conversion and negation live in the following truthiness opcode.
+
+Membership table:
+
+```text
+Contains
+    0: CallBinary("__contains__", IfMethodFound)
+    1: CallIterMembershipFallback("__iter__", IfMethodFound)
+    2: CallSequenceMembershipFallback("__getitem__", IfMethodFound)
+    3: RaiseUnsupported(Always)
+```
+
+The iterator fallback calls a VM-owned hidden Python helper that performs:
+
+```python
+for item in container:
+    if item == needle:
+        return True
+return False
+```
+
+The sequence fallback is selected only when `__iter__` is missing and
+`__getitem__` is present. It calls a separate VM-owned hidden helper that
+indexes from zero until `IndexError` or `StopIteration`, comparing each item
+with ordinary equality. If `__iter__` exists and raises at runtime, membership
+does not fall through to sequence indexing.
+
+The VM captures both helpers during bootstrap and deletes their names from the
+builtins module before user code can observe or shadow them.
+
+Membership cache entries use the unary variant of `OperatorInlineCache`.
+Cache hits match only the container shape and container lookup validity cell.
+This single validity cell is the class/MRO contents cell for the receiver and
+guards the whole selected receiver-protocol decision from row `0`, including
+negative `__contains__`, positive or negative `__iter__`, and positive
+`__getitem__` where relevant.
+
+Trusted handlers are available for native `dict.__contains__` and
+`str.__contains__`. They are selected only after ordinary `__contains__` lookup
+guards prove the builtin method is still selected. The handlers accept
+arbitrary needle shapes because the membership IC deliberately does not cache
+on the searched item.
 
 ## Protocol Semantics Summary
 
