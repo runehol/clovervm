@@ -36,6 +36,15 @@ For many object types, including most builtins, eval(repr(obj)) == obj."""
     )
 
 
+def hash(obj):
+    """Return the hash value for the object."""
+    return __clover_canonicalize_hash__(
+        __clover_call_special__(
+            obj, "__hash__", TypeError, "object is unhashable"
+        )
+    )
+
+
 def len(obj):
     """Return the number of items in a container."""
     return __clover_call_special__(

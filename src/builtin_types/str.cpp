@@ -154,6 +154,17 @@ namespace cl
         return self.get_ptr<String>()->count.raw_value();
     }
 
+    static Value native_str_hash(ThreadState *thread, Value self)
+    {
+        if(!can_convert_to<String>(self))
+        {
+            return thread->set_pending_builtin_exception_string(
+                L"TypeError", L"str.__hash__ expects a str receiver");
+        }
+        return string_hash_normalized(TValue<String>::from_value_assumed(self))
+            .raw_value();
+    }
+
     static Value native_str_add(ThreadState *thread, Value left_value,
                                 Value right_value)
     {
@@ -320,6 +331,32 @@ namespace cl
         }
         return resolve_trusted_str_str_handler<NormalOperator>(vm, operand0_key,
                                                                operand1_key);
+    }
+
+    static Value trusted_str_hash(ThreadState *thread, Value value)
+    {
+        (void)thread;
+        return string_hash_normalized(TValue<String>::from_value_assumed(value))
+            .raw_value();
+    }
+
+    static TrustedResolution resolve_trusted_str_hash_handler(
+        VirtualMachine *vm, ShapeKey operand0_key, ShapeKey operand1_key,
+        TrustedHandlerOperandOrder order, TrustedHandlerArity requested_arity)
+    {
+        (void)operand1_key;
+        (void)order;
+
+        if(requested_arity != TrustedHandlerArity::Unary)
+        {
+            return TrustedResolution::no_trusted_handler_call_untrusted();
+        }
+        ShapeKey str_key = ShapeKey::from_shape(vm->str_instance_root_shape());
+        if(operand0_key == str_key)
+        {
+            return TrustedResolution::call_trusted(trusted_str_hash);
+        }
+        return TrustedResolution::no_trusted_handler_call_untrusted();
     }
 
     static Value require_str_receiver(Value self, const wchar_t *method_name)
@@ -978,6 +1015,10 @@ namespace cl
                                      L"Return repr(self)."),
             builtin_intrinsic_method(L"__len__", native_str_len,
                                      L"Return len(self)."),
+            with_trusted_handler_resolver(
+                builtin_intrinsic_method(L"__hash__", native_str_hash,
+                                         L"Return hash(self)."),
+                resolve_trusted_str_hash_handler),
             with_trusted_handler_resolver(
                 builtin_intrinsic_method(L"__add__", native_str_add,
                                          L"Return self + value."),

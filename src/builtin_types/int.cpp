@@ -1,6 +1,7 @@
 #include "builtin_types/int.h"
 
 #include "builtin_types/float.h"
+#include "builtin_types/hash.h"
 #include "builtin_types/str.h"
 #include "builtin_types/tuple.h"
 #include "object_model/class_object.h"
@@ -335,6 +336,22 @@ namespace cl
 
         return thread->set_pending_builtin_exception_string(
             L"TypeError", L"int.__str__ expects an int receiver");
+    }
+
+    static Value intlike_hash_value(Value self)
+    {
+        Expected<TValue<SMI>> hash = canonicalize_hash_result(self);
+        return hash.value().raw_value();
+    }
+
+    static Value native_int_hash(ThreadState *thread, Value self)
+    {
+        if(!is_intlike_value(self))
+        {
+            return thread->set_pending_builtin_exception_string(
+                L"TypeError", L"int.__hash__ expects an int receiver");
+        }
+        return intlike_hash_value(self);
     }
 
     static bool try_get_smi_or_bool(Value value, int64_t *out)
@@ -1539,6 +1556,19 @@ namespace cl
         return Operator{}(thread, smi_or_bool_as_int(value));
     }
 
+    static Value trusted_smi_or_bool_hash(ThreadState *thread, Value value)
+    {
+        (void)thread;
+        int64_t hash = smi_or_bool_as_int(value);
+        return Value::from_smi(hash == -1 ? -2 : hash);
+    }
+
+    static Value trusted_bigint_hash(ThreadState *thread, Value value)
+    {
+        (void)thread;
+        return intlike_hash_value(value);
+    }
+
     static bool is_smi_or_bool_shape_key(ShapeKey key)
     {
         return key == ShapeKey::from_value(Value::from_smi(0)) ||
@@ -1556,6 +1586,34 @@ namespace cl
     {
         return key == ShapeKey::from_shape(
                           vm->float_class()->get_instance_root_shape());
+    }
+
+    static bool is_bigint_shape_key(VirtualMachine *vm, ShapeKey key)
+    {
+        return key ==
+               ShapeKey::from_shape(vm->int_class()->get_instance_root_shape());
+    }
+
+    static TrustedResolution resolve_trusted_int_hash_handler(
+        VirtualMachine *vm, ShapeKey operand0_key, ShapeKey operand1_key,
+        TrustedHandlerOperandOrder order, TrustedHandlerArity requested_arity)
+    {
+        (void)operand1_key;
+        (void)order;
+
+        if(requested_arity != TrustedHandlerArity::Unary)
+        {
+            return TrustedResolution::no_trusted_handler_call_untrusted();
+        }
+        if(is_smi_or_bool_shape_key(operand0_key))
+        {
+            return TrustedResolution::call_trusted(trusted_smi_or_bool_hash);
+        }
+        if(is_bigint_shape_key(vm, operand0_key))
+        {
+            return TrustedResolution::call_trusted(trusted_bigint_hash);
+        }
+        return TrustedResolution::no_trusted_handler_call_untrusted();
     }
 
     template <typename Operator>
@@ -1791,6 +1849,10 @@ namespace cl
                                      L"Return str(self)."),
             builtin_intrinsic_method(L"__repr__", native_int_str,
                                      L"Return repr(self)."),
+            with_trusted_handler_resolver(
+                builtin_intrinsic_method(L"__hash__", native_int_hash,
+                                         L"Return hash(self)."),
+                resolve_trusted_int_hash_handler),
             builtin_intrinsic_method(L"__eq__",
                                      native_int_compare_operator<IntEqOperator>,
                                      L"Return self == value."),

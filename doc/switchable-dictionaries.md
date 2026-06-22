@@ -536,16 +536,18 @@ hash value stored by today's string dict an explicit normalized hash.
 
 ### 1. Public `hash()` Protocol
 
-- [ ] Implement the public `hash(obj)` builtin through the ordinary special
+- [x] Implement the public `hash(obj)` builtin through the ordinary special
   method protocol.
-- [ ] Require `__hash__` results to be integer values and route those values
+- [x] Require `__hash__` results to be integer values and route those values
   through `CanonicalizeHash`.
 - [ ] Preserve disabled or missing hash behavior as `TypeError`.
-- [ ] Keep direct exact-builtin hash paths consistent with public `hash()` and
+- [x] Keep direct exact-builtin hash paths consistent with public `hash()` and
   dict storage.
-- [ ] Add tests for custom `__hash__`, non-integer `__hash__` results, very
-  large integer hash results, `hash(-1)`, `hash(True)`, `hash(False)`, and
-  exception propagation.
+- [x] Add tests for custom `__hash__`, non-integer `__hash__` results, very
+  large integer hash results, `hash(-1)`, `hash(True)`, `hash(False)`, missing
+  hash, and exception propagation.
+- [ ] Add disabled-hash tests once `__hash__ = None` semantics are defined for
+  special method lookup.
 
 This gives the general dict bytecode a single protocol call to use later,
 instead of inventing a dict-only hash path.

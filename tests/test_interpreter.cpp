@@ -6514,6 +6514,7 @@ TEST(Interpreter, trusted_python_builtins_are_installed)
          L"\n"
          L"For many object types, including most builtins, eval(repr(obj)) "
          L"== obj."},
+        {L"hash", L"Return the hash value for the object."},
         {L"len", L"Return the number of items in a container."},
         {L"globals",
          L"Return the dictionary containing the current scope's global "
@@ -7601,6 +7602,81 @@ TEST(Interpreter, python_defined_len_builtin_calls_dunder_len)
 TEST(Interpreter, python_defined_len_builtin_missing_method_error)
 {
     expect_python_error(L"len(1)\n", L"TypeError", L"object has no len()");
+}
+
+TEST(Interpreter, python_defined_hash_builtin_calls_builtin_hash_methods)
+{
+    test::VmTestContext test_context;
+
+    EXPECT_EQ(Value::from_smi(42), test_context.run_file(L"hash(42)\n"));
+    EXPECT_EQ(Value::from_smi(-2), test_context.run_file(L"hash(-1)\n"));
+    EXPECT_EQ(Value::from_smi(1), test_context.run_file(L"hash(True)\n"));
+    EXPECT_EQ(Value::from_smi(0), test_context.run_file(L"hash(False)\n"));
+
+    TValue<String> abc =
+        test_context.thread()->make_object_value<String>(L"abc");
+    EXPECT_EQ(string_hash_normalized(abc).raw_value(),
+              test_context.run_file(L"hash('abc')\n"));
+}
+
+TEST(Interpreter, python_defined_hash_builtin_calls_custom_dunder_hash)
+{
+    test::VmTestContext test_context;
+
+    EXPECT_EQ(Value::from_smi(123),
+              test_context.run_file(L"class C:\n"
+                                    L"    def __hash__(self):\n"
+                                    L"        return 123\n"
+                                    L"hash(C())\n"));
+}
+
+TEST(Interpreter, python_defined_hash_builtin_canonicalizes_dunder_hash_result)
+{
+    test::VmTestContext test_context;
+
+    EXPECT_EQ(Value::from_smi(-2),
+              test_context.run_file(L"class C:\n"
+                                    L"    def __hash__(self):\n"
+                                    L"        return -1\n"
+                                    L"hash(C())\n"));
+}
+
+TEST(Interpreter, python_defined_hash_builtin_reduces_large_dunder_hash_result)
+{
+    test::VmTestContext test_context;
+
+    EXPECT_EQ(Value::from_smi(1),
+              test_context.run_file(L"class C:\n"
+                                    L"    def __hash__(self):\n"
+                                    L"        return 288230376151711744\n"
+                                    L"hash(C())\n"));
+}
+
+TEST(Interpreter, python_defined_hash_builtin_rejects_non_integer_hash_result)
+{
+    expect_python_error(L"class C:\n"
+                        L"    def __hash__(self):\n"
+                        L"        return 'hello'\n"
+                        L"hash(C())\n",
+                        L"TypeError",
+                        L"__hash__ method should return an integer");
+}
+
+TEST(Interpreter, python_defined_hash_builtin_propagates_dunder_hash_exception)
+{
+    expect_python_error(L"class C:\n"
+                        L"    def __hash__(self):\n"
+                        L"        raise ValueError\n"
+                        L"hash(C())\n",
+                        L"ValueError", L"");
+}
+
+TEST(Interpreter, python_defined_hash_builtin_missing_method_error)
+{
+    expect_python_error(L"class C:\n"
+                        L"    pass\n"
+                        L"hash(C())\n",
+                        L"TypeError", L"object is unhashable");
 }
 
 TEST(Interpreter, python_defined_print_builtin_writes_values_to_stdout)
