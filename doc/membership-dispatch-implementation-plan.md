@@ -109,27 +109,29 @@ This is intentionally not a `RaiseUnsupported` fallback. Missing
 
 ## Builtin Container Support
 
-Implement `__contains__` methods for the common builtin container types:
+Implement `__contains__` methods only for builtin container types whose
+membership semantics are not well represented by the generic iteration
+fallback:
 
-- `list.__contains__(self, needle)`;
-- `tuple.__contains__(self, needle)`;
 - `dict.__contains__(self, key)`;
 - `str.__contains__(self, needle)`.
 
-These methods provide the Python-visible protocol targets used by the
-membership opcode. They should also install trusted handlers so hot membership
-sites can skip the untrusted Python-call path when the guarded lookup proves
-the builtin method is still selected.
+`list` and `tuple` should initially rely on the VM-owned fallback helper. That
+keeps sequence membership on the ordinary equality operator path instead of
+adding a C++ helper with weaker handle-equality semantics.
+
+The native `dict` and `str` methods provide Python-visible protocol targets
+used by the membership opcode. They should also install trusted handlers so hot
+membership sites can skip the untrusted Python-call path when the guarded lookup
+proves the builtin method is still selected.
 
 Trusted handlers should preserve the current container semantics available in
 the VM:
 
-- `list` and `tuple` search their elements using the equality behavior already
-  supported by the container methods;
 - `dict` tests key presence and keeps the current string-key dictionary
   limitations unless general dictionary keys have landed;
-- `str` tests substring membership for string needles and raises the ordinary
-  unsupported-type error for non-string needles.
+- `str` tests substring membership for string needles and returns `False` for
+  non-string needles while this stage keeps membership fallback behavior simple.
 
 The trusted handlers are optimizations of visible `__contains__` dispatch, not
 separate builtin ladders. The cache must still guard the container shape and
@@ -357,28 +359,29 @@ fallback helper.
 
 ### Stage 5: Builtin `__contains__` Methods
 
-- [ ] Add visible `list.__contains__`.
-- [ ] Add visible `tuple.__contains__`.
-- [ ] Add visible `dict.__contains__`.
-- [ ] Add visible `str.__contains__`.
-- [ ] Keep behavior aligned with each type's current VM-supported semantics:
-  element search for `list` and `tuple`, string-key presence for current `dict`,
-  and substring membership for `str`.
-- [ ] Add Python/interpreter tests for direct method calls such as:
+- [x] Keep `list` membership on the fallback helper so sequence membership uses
+  ordinary equality.
+- [x] Keep `tuple` membership on the fallback helper so sequence membership uses
+  ordinary equality.
+- [x] Add visible `dict.__contains__`.
+- [x] Add visible `str.__contains__`.
+- [x] Keep behavior aligned with each type's current VM-supported semantics:
+  fallback equality search for `list` and `tuple`, string-key presence for
+  current `dict`, and substring membership for `str`.
+- [x] Add Python/interpreter tests for direct method calls and fallback sequence
+  membership such as:
 
   ```python
-  [1, 2].__contains__(1)
   {"x": 1}.__contains__("x")
   "abc".__contains__("b")
+  needle in [1, 2]
   ```
 
-This stage makes the protocol target visible independently of the membership
-opcode.
+This stage makes the native protocol target visible only where the fallback
+would have the wrong semantic shape or miss the efficient builtin operation.
 
 ### Stage 6: Trusted Builtin Handlers
 
-- [ ] Add trusted handler resolution for builtin `list.__contains__`.
-- [ ] Add trusted handler resolution for builtin `tuple.__contains__`.
 - [ ] Add trusted handler resolution for builtin `dict.__contains__`.
 - [ ] Add trusted handler resolution for builtin `str.__contains__`.
 - [ ] Ensure the membership opcode only calls trusted handlers after the ordinary

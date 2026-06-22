@@ -504,6 +504,19 @@ namespace cl
             self.get_ptr<String>()->find(needle_value.get_ptr<String>()));
     }
 
+    static Value native_str_contains(ThreadState *thread, Value self,
+                                     Value needle_value)
+    {
+        CL_PROPAGATE_EXCEPTION(require_str_receiver(self, L"__contains__"));
+        if(!can_convert_to<String>(needle_value))
+        {
+            return Value::False();
+        }
+        return self.get_ptr<String>()->find(needle_value.get_ptr<String>()) >= 0
+                   ? Value::True()
+                   : Value::False();
+    }
+
     static Value native_str_index(ThreadState *thread, Value self,
                                   Value needle_value)
     {
@@ -981,6 +994,9 @@ namespace cl
                 L"Return whether self starts with prefix."),
             builtin_intrinsic_method(L"endswith", native_str_endswith,
                                      L"Return whether self ends with suffix."),
+            builtin_intrinsic_method(
+                L"__contains__", native_str_contains,
+                L"Return whether needle is a substring of self."),
             builtin_intrinsic_method(L"find", native_str_find,
                                      L"Return first substring index or -1."),
             builtin_intrinsic_method(L"index", native_str_index,

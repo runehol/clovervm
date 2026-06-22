@@ -2154,6 +2154,40 @@ TEST(Interpreter, membership_truth_tests_dunder_contains_result)
                         L"TypeError", L"unsupported truthiness for object");
 }
 
+TEST(Interpreter, native_builtin_contains_methods_are_visible)
+{
+    test::VmTestContext test_context;
+
+    EXPECT_EQ(Value::True(),
+              test_context.run_file(L"{'x': 1}.__contains__('x')\n"));
+    EXPECT_EQ(Value::False(),
+              test_context.run_file(L"{'x': 1}.__contains__('y')\n"));
+    EXPECT_EQ(Value::True(),
+              test_context.run_file(L"'abc'.__contains__('b')\n"));
+    EXPECT_EQ(Value::False(),
+              test_context.run_file(L"'abc'.__contains__('z')\n"));
+    EXPECT_EQ(Value::True(),
+              test_context.run_file(L"'abc'.__contains__('bc')\n"));
+    EXPECT_EQ(Value::False(),
+              test_context.run_file(L"'abc'.__contains__(1)\n"));
+}
+
+TEST(Interpreter, sequence_membership_fallback_uses_equality)
+{
+    test::VmTestContext test_context;
+
+    EXPECT_EQ(Value::True(),
+              test_context.run_file(L"class MatchesNeedle:\n"
+                                    L"    def __eq__(self, other):\n"
+                                    L"        return other == 2\n"
+                                    L"MatchesNeedle() in [1, 2]\n"));
+    EXPECT_EQ(Value::True(),
+              test_context.run_file(L"class MatchesNeedle:\n"
+                                    L"    def __eq__(self, other):\n"
+                                    L"        return other == 2\n"
+                                    L"MatchesNeedle() in (1, 2)\n"));
+}
+
 TEST(Interpreter, operator_eq_dispatch_identity_fallback_after_notimplemented)
 {
     test::VmTestContext test_context;

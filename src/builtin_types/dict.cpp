@@ -179,6 +179,15 @@ namespace cl
         return self.get_ptr<Dict>()->get_item(key);
     }
 
+    static Value native_dict_contains(ThreadState *thread, Value self,
+                                      Value key)
+    {
+        CL_PROPAGATE_EXCEPTION(require_dict_receiver(self, L"__contains__"));
+        CL_PROPAGATE_EXCEPTION(require_string_key(key));
+        return self.get_ptr<Dict>()->contains(key) ? Value::True()
+                                                   : Value::False();
+    }
+
     static Value native_dict_setitem(ThreadState *thread, Value self, Value key,
                                      Value value)
     {
@@ -430,6 +439,7 @@ namespace cl
         install_trusted(L"__delitem__", native_dict_delitem,
                         resolve_trusted_dict_delitem_handler);
 
+        install(L"__contains__", native_dict_contains);
         install(L"get", native_dict_get,
                 Optional<TValue<Tuple>>::some(
                     make_single_default(vm, Value::None())));
