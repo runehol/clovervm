@@ -2188,6 +2188,60 @@ TEST(Interpreter, sequence_membership_fallback_uses_equality)
                                     L"MatchesNeedle() in (1, 2)\n"));
 }
 
+TEST(Interpreter, native_contains_membership_uses_trusted_handler)
+{
+    test::VmTestContext test_context;
+    ThreadState::ActivationScope activation_scope(test_context.thread());
+
+    TValue<String> dict_function_name(
+        test_context.vm().get_or_create_interned_string_value(
+            L"dict_contains"));
+    CodeObject *dict_code =
+        test_context.compile_file(L"def dict_contains(container, needle):\n"
+                                  L"    return needle in container\n"
+                                  L"d = {'x': 1}\n"
+                                  L"dict_contains(d, 'x')\n"
+                                  L"dict_contains(d, 'y')\n");
+    EXPECT_EQ(Value::False(),
+              test_context.thread()->run_clovervm_code_object(dict_code));
+
+    Value dict_function_value =
+        load_global_from_module_for_test(dict_code, dict_function_name);
+    ASSERT_TRUE(can_convert_to<Function>(dict_function_value));
+    CodeObject *dict_function_code =
+        assume_convert_to<Function>(dict_function_value)->code_object.extract();
+    ASSERT_EQ(1u, dict_function_code->operator_caches.size());
+    const OperatorInlineCache &dict_cache =
+        dict_function_code->operator_caches[0];
+    EXPECT_FALSE(dict_cache.trusted_handler.is_null());
+    EXPECT_EQ(nullptr, dict_cache.function);
+    EXPECT_NE(nullptr, dict_cache.operand_lookup_validity_cells[0]);
+    EXPECT_EQ(nullptr, dict_cache.operand_lookup_validity_cells[1]);
+
+    TValue<String> str_function_name(
+        test_context.vm().get_or_create_interned_string_value(L"str_contains"));
+    CodeObject *str_code =
+        test_context.compile_file(L"def str_contains(container, needle):\n"
+                                  L"    return needle in container\n"
+                                  L"str_contains('abc', 'b')\n"
+                                  L"str_contains('abc', 1)\n");
+    EXPECT_EQ(Value::False(),
+              test_context.thread()->run_clovervm_code_object(str_code));
+
+    Value str_function_value =
+        load_global_from_module_for_test(str_code, str_function_name);
+    ASSERT_TRUE(can_convert_to<Function>(str_function_value));
+    CodeObject *str_function_code =
+        assume_convert_to<Function>(str_function_value)->code_object.extract();
+    ASSERT_EQ(1u, str_function_code->operator_caches.size());
+    const OperatorInlineCache &str_cache =
+        str_function_code->operator_caches[0];
+    EXPECT_FALSE(str_cache.trusted_handler.is_null());
+    EXPECT_EQ(nullptr, str_cache.function);
+    EXPECT_NE(nullptr, str_cache.operand_lookup_validity_cells[0]);
+    EXPECT_EQ(nullptr, str_cache.operand_lookup_validity_cells[1]);
+}
+
 TEST(Interpreter, operator_eq_dispatch_identity_fallback_after_notimplemented)
 {
     test::VmTestContext test_context;

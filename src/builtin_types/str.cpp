@@ -428,6 +428,19 @@ namespace cl
             .raw_value();
     }
 
+    static Value trusted_str_contains_handler(ThreadState *thread, Value self,
+                                              Value needle_value)
+    {
+        (void)thread;
+        if(!can_convert_to<String>(needle_value))
+        {
+            return Value::False();
+        }
+        return self.get_ptr<String>()->find(needle_value.get_ptr<String>()) >= 0
+                   ? Value::True()
+                   : Value::False();
+    }
+
     static TrustedResolution resolve_trusted_str_getitem_handler(
         VirtualMachine *vm, ShapeKey container_key, ShapeKey key_key,
         TrustedHandlerOperandOrder order, TrustedHandlerArity requested_arity)
@@ -455,6 +468,24 @@ namespace cl
         {
             return TrustedResolution::call_trusted(
                 trusted_str_getitem_general_slice_handler);
+        }
+        return TrustedResolution::no_trusted_handler_call_untrusted();
+    }
+
+    static TrustedResolution resolve_trusted_str_contains_handler(
+        VirtualMachine *vm, ShapeKey container_key, ShapeKey key_key,
+        TrustedHandlerOperandOrder order, TrustedHandlerArity requested_arity)
+    {
+        (void)key_key;
+        assert(order == TrustedHandlerOperandOrder::Normal);
+        if(requested_arity != TrustedHandlerArity::Binary)
+        {
+            return TrustedResolution::no_trusted_handler_call_untrusted();
+        }
+        if(vm->shape_for_key(container_key)->get_class() == vm->str_class())
+        {
+            return TrustedResolution::call_trusted(
+                trusted_str_contains_handler);
         }
         return TrustedResolution::no_trusted_handler_call_untrusted();
     }
@@ -994,9 +1025,11 @@ namespace cl
                 L"Return whether self starts with prefix."),
             builtin_intrinsic_method(L"endswith", native_str_endswith,
                                      L"Return whether self ends with suffix."),
-            builtin_intrinsic_method(
-                L"__contains__", native_str_contains,
-                L"Return whether needle is a substring of self."),
+            with_trusted_handler_resolver(
+                builtin_intrinsic_method(
+                    L"__contains__", native_str_contains,
+                    L"Return whether needle is a substring of self."),
+                resolve_trusted_str_contains_handler),
             builtin_intrinsic_method(L"find", native_str_find,
                                      L"Return first substring index or -1."),
             builtin_intrinsic_method(L"index", native_str_index,

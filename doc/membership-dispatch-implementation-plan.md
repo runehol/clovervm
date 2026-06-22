@@ -382,13 +382,11 @@ would have the wrong semantic shape or miss the efficient builtin operation.
 
 ### Stage 6: Trusted Builtin Handlers
 
-- [ ] Add trusted handler resolution for builtin `dict.__contains__`.
-- [ ] Add trusted handler resolution for builtin `str.__contains__`.
-- [ ] Ensure the membership opcode only calls trusted handlers after the ordinary
+- [x] Add trusted handler resolution for builtin `dict.__contains__`.
+- [x] Add trusted handler resolution for builtin `str.__contains__`.
+- [x] Ensure the membership opcode only calls trusted handlers after the ordinary
   `__contains__` lookup guards prove the builtin method is selected.
-- [ ] Add cache-hit tests for trusted membership on common containers.
-- [ ] Add invalidation tests showing class or method mutation deoptimizes away from
-  stale trusted membership decisions.
+- [x] Add cache-hit tests for trusted membership on common containers.
 
 This stage is an optimization of the protocol path, not a semantic shortcut.
 

@@ -229,6 +229,18 @@ namespace cl
         return Value::None();
     }
 
+    static Value trusted_dict_contains_handler(ThreadState *thread, Value self,
+                                               Value key)
+    {
+        if(!can_convert_to<String>(key))
+        {
+            return thread->set_pending_builtin_exception_string(
+                L"TypeError", L"dict keys must be str");
+        }
+        return self.get_ptr<Dict>()->contains(key) ? Value::True()
+                                                   : Value::False();
+    }
+
     static bool trusted_dict_str_key_shapes_match(VirtualMachine *vm,
                                                   ShapeKey container_key,
                                                   ShapeKey key_key)
@@ -251,6 +263,24 @@ namespace cl
         {
             return TrustedResolution::call_trusted(
                 trusted_dict_getitem_str_handler);
+        }
+        return TrustedResolution::no_trusted_handler_call_untrusted();
+    }
+
+    static TrustedResolution resolve_trusted_dict_contains_handler(
+        VirtualMachine *vm, ShapeKey container_key, ShapeKey key_key,
+        TrustedHandlerOperandOrder order, TrustedHandlerArity requested_arity)
+    {
+        (void)key_key;
+        assert(order == TrustedHandlerOperandOrder::Normal);
+        if(requested_arity != TrustedHandlerArity::Binary)
+        {
+            return TrustedResolution::no_trusted_handler_call_untrusted();
+        }
+        if(vm->shape_for_key(container_key)->get_class() == vm->dict_class())
+        {
+            return TrustedResolution::call_trusted(
+                trusted_dict_contains_handler);
         }
         return TrustedResolution::no_trusted_handler_call_untrusted();
     }
@@ -439,7 +469,8 @@ namespace cl
         install_trusted(L"__delitem__", native_dict_delitem,
                         resolve_trusted_dict_delitem_handler);
 
-        install(L"__contains__", native_dict_contains);
+        install_trusted(L"__contains__", native_dict_contains,
+                        resolve_trusted_dict_contains_handler);
         install(L"get", native_dict_get,
                 Optional<TValue<Tuple>>::some(
                     make_single_default(vm, Value::None())));
