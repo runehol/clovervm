@@ -792,6 +792,17 @@ namespace cl
         return Expected<uint32_t>::ok(result);
     }
 
+    Expected<uint32_t> CodeObjectBuilder::emit_to_bool(uint32_t source_offset)
+    {
+        return emit_opcode(source_offset, Bytecode::ToBool);
+    }
+
+    Expected<uint32_t>
+    CodeObjectBuilder::emit_to_bool_not(uint32_t source_offset)
+    {
+        return emit_opcode(source_offset, Bytecode::ToBoolNot);
+    }
+
     Expected<uint32_t> CodeObjectBuilder::emit_call_code_object(
         uint32_t source_offset, uint8_t code_object_idx, uint32_t first_arg_reg,
         uint8_t argc)

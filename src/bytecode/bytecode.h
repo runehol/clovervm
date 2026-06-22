@@ -130,6 +130,8 @@ namespace cl
         XorSmi,
 
         Not,
+        ToBool,
+        ToBoolNot,
         Neg,
         Pos,
         Sqrt,

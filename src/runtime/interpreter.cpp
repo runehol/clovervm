@@ -920,6 +920,34 @@ namespace cl
         COMPLETE();
     }
 
+    NOINLINE static INTERP_CC Value op_to_bool_float_truthiness(PARAMS)
+    {
+        START(1);
+        if(!can_convert_to<Float>(accumulator))
+        {
+            MUSTTAIL return unsupported_truthiness_error(ARGS);
+        }
+
+        accumulator = accumulator.get_ptr<Float>()->value != 0.0
+                          ? Value::True()
+                          : Value::False();
+        COMPLETE();
+    }
+
+    NOINLINE static INTERP_CC Value op_to_bool_not_float_truthiness(PARAMS)
+    {
+        START(1);
+        if(!can_convert_to<Float>(accumulator))
+        {
+            MUSTTAIL return unsupported_truthiness_error(ARGS);
+        }
+
+        accumulator = accumulator.get_ptr<Float>()->value != 0.0
+                          ? Value::False()
+                          : Value::True();
+        COMPLETE();
+    }
+
     NOINLINE static INTERP_CC Value op_jump_if_true_float_truthiness(PARAMS)
     {
         int16_t rel_target = read_int16_le(&pc[1]);
@@ -3729,6 +3757,30 @@ namespace cl
         COMPLETE();
     }
 
+    static INTERP_CC Value op_to_bool(PARAMS)
+    {
+        START_UNARY_ACC();
+        if(unlikely((a.as.integer & value_ptr_mask) != 0))
+        {
+            MUSTTAIL return op_to_bool_float_truthiness(ARGS);
+        }
+
+        accumulator = a.is_truthy() ? Value::True() : Value::False();
+        COMPLETE();
+    }
+
+    static INTERP_CC Value op_to_bool_not(PARAMS)
+    {
+        START_UNARY_ACC();
+        if(unlikely((a.as.integer & value_ptr_mask) != 0))
+        {
+            MUSTTAIL return op_to_bool_not_float_truthiness(ARGS);
+        }
+
+        accumulator = a.is_truthy() ? Value::False() : Value::True();
+        COMPLETE();
+    }
+
     static INTERP_CC Value op_create_function(PARAMS)
     {
         START(2);
@@ -5265,6 +5317,8 @@ namespace cl
         SET_TABLE_ENTRY(Bytecode::Invert, op_invert);
         SET_TABLE_ENTRY(Bytecode::Sqrt, op_sqrt);
         SET_TABLE_ENTRY(Bytecode::Not, op_not);
+        SET_TABLE_ENTRY(Bytecode::ToBool, op_to_bool);
+        SET_TABLE_ENTRY(Bytecode::ToBoolNot, op_to_bool_not);
 
         SET_TABLE_ENTRY(Bytecode::CreateDict, op_create_dict);
         SET_TABLE_ENTRY(Bytecode::CreateList, op_create_list);

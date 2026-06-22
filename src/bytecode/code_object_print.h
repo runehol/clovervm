@@ -321,6 +321,10 @@ template <> struct fmt::formatter<cl::Bytecode>
 
             case cl::Bytecode::Not:
                 return format_to(out, "Not");
+            case cl::Bytecode::ToBool:
+                return format_to(out, "ToBool");
+            case cl::Bytecode::ToBoolNot:
+                return format_to(out, "ToBoolNot");
             case cl::Bytecode::Neg:
                 return format_to(out, "Neg");
             case cl::Bytecode::Pos:
@@ -873,6 +877,8 @@ template <> struct fmt::formatter<cl::CodeObject>
 
             case cl::Bytecode::Nop:
             case cl::Bytecode::Not:
+            case cl::Bytecode::ToBool:
+            case cl::Bytecode::ToBoolNot:
             case cl::Bytecode::Sqrt:
             case cl::Bytecode::CheckOperatorNotImplemented:
             case cl::Bytecode::CheckTernaryOperatorNotImplemented:

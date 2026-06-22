@@ -411,6 +411,8 @@ namespace cl
                                                  uint32_t operand1_reg);
         Expected<uint32_t> emit_unary_op(uint32_t source_offset, Bytecode op,
                                          OperatorBytecodeFormat format);
+        Expected<uint32_t> emit_to_bool(uint32_t source_offset);
+        Expected<uint32_t> emit_to_bool_not(uint32_t source_offset);
         Expected<uint32_t> emit_call_code_object(uint32_t source_offset,
                                                  uint8_t code_object_idx,
                                                  uint32_t first_arg_reg,

@@ -427,6 +427,42 @@ static CodeObject *make_raise_unwind_code(test::VmTestContext &test_context,
     return builder.finalize().value();
 }
 
+static CodeObject *
+make_truthiness_conversion_code(test::VmTestContext &test_context,
+                                Bytecode truthiness_opcode, Value value)
+{
+    assert(truthiness_opcode == Bytecode::ToBool ||
+           truthiness_opcode == Bytecode::ToBoolNot);
+    ThreadState::ActivationScope activation_scope(test_context.thread());
+    TValue<String> name = test_context.vm().get_or_create_interned_string_value(
+        L"<truthiness-conversion-test>");
+    CodeObjectBuilder builder(
+        &test_context.vm(), nullptr,
+        TValue<ModuleObject>::from_oop(test_context.make_test_module_object(
+            name, test_context.vm().global_builtins_module().raw_value())),
+        nullptr, name);
+    uint32_t constant_idx = builder.allocate_constant(value).value();
+    builder.emit_lda_constant(0, uint8_t(constant_idx)).value();
+    if(truthiness_opcode == Bytecode::ToBool)
+    {
+        builder.emit_to_bool(0).value();
+    }
+    else
+    {
+        builder.emit_to_bool_not(0).value();
+    }
+    builder.emit_return(0).value();
+    return builder.finalize().value();
+}
+
+static Value run_truthiness_conversion(test::VmTestContext &test_context,
+                                       Bytecode truthiness_opcode, Value value)
+{
+    CodeObject *code_object =
+        make_truthiness_conversion_code(test_context, truthiness_opcode, value);
+    return test_context.thread()->run_clovervm_code_object(code_object);
+}
+
 static Value *prepare_native_return_wrapper_frame(ThreadState *thread)
 {
     Value *caller_fp = thread->clover_frame_frontier();
@@ -618,6 +654,91 @@ TEST(Interpreter, float_truthiness_while_statement)
                                     L"    count = count + 1\n"
                                     L"    guard = 0.0\n"
                                     L"count\n"));
+}
+
+TEST(Interpreter, to_bool_converts_immediate_truthiness)
+{
+    test::VmTestContext test_context;
+
+    EXPECT_EQ(Value::False(),
+              run_truthiness_conversion(test_context, Bytecode::ToBool,
+                                        Value::from_smi(0)));
+    EXPECT_EQ(Value::True(),
+              run_truthiness_conversion(test_context, Bytecode::ToBool,
+                                        Value::from_smi(7)));
+    EXPECT_EQ(Value::False(),
+              run_truthiness_conversion(test_context, Bytecode::ToBool,
+                                        Value::False()));
+    EXPECT_EQ(Value::True(),
+              run_truthiness_conversion(test_context, Bytecode::ToBool,
+                                        Value::True()));
+    EXPECT_EQ(Value::False(),
+              run_truthiness_conversion(test_context, Bytecode::ToBool,
+                                        Value::None()));
+}
+
+TEST(Interpreter, to_bool_not_inverts_immediate_truthiness)
+{
+    test::VmTestContext test_context;
+
+    EXPECT_EQ(Value::True(),
+              run_truthiness_conversion(test_context, Bytecode::ToBoolNot,
+                                        Value::from_smi(0)));
+    EXPECT_EQ(Value::False(),
+              run_truthiness_conversion(test_context, Bytecode::ToBoolNot,
+                                        Value::from_smi(7)));
+    EXPECT_EQ(Value::True(),
+              run_truthiness_conversion(test_context, Bytecode::ToBoolNot,
+                                        Value::False()));
+    EXPECT_EQ(Value::False(),
+              run_truthiness_conversion(test_context, Bytecode::ToBoolNot,
+                                        Value::True()));
+    EXPECT_EQ(Value::True(),
+              run_truthiness_conversion(test_context, Bytecode::ToBoolNot,
+                                        Value::None()));
+}
+
+TEST(Interpreter, truthiness_conversion_handles_float_truthiness)
+{
+    test::VmTestContext test_context;
+
+    Value zero =
+        test_context.thread()->make_object_value<Float>(0.0).raw_value();
+    Value one =
+        test_context.thread()->make_object_value<Float>(1.0).raw_value();
+
+    EXPECT_EQ(Value::False(),
+              run_truthiness_conversion(test_context, Bytecode::ToBool, zero));
+    EXPECT_EQ(Value::True(),
+              run_truthiness_conversion(test_context, Bytecode::ToBool, one));
+    EXPECT_EQ(Value::True(), run_truthiness_conversion(
+                                 test_context, Bytecode::ToBoolNot, zero));
+    EXPECT_EQ(Value::False(), run_truthiness_conversion(
+                                  test_context, Bytecode::ToBoolNot, one));
+}
+
+TEST(Interpreter, truthiness_conversion_rejects_unsupported_pointer_truthiness)
+{
+    test::VmTestContext test_context;
+
+    Value string_value = test_context.vm()
+                             .get_or_create_interned_string_value(L"truthy")
+                             .raw_value();
+    Value result =
+        run_truthiness_conversion(test_context, Bytecode::ToBool, string_value);
+    EXPECT_TRUE(result.is_exception_marker());
+    expect_thread_python_error(test_context.thread(), L"TypeError",
+                               L"unsupported truthiness for object");
+}
+
+TEST(Interpreter, truthiness_conversion_opcodes_are_printed)
+{
+    test::VmTestContext test_context;
+    CodeObject *code_object = make_truthiness_conversion_code(
+        test_context, Bytecode::ToBoolNot, Value::from_smi(1));
+
+    std::string printed = fmt::to_string(*code_object);
+    EXPECT_NE(std::string::npos, printed.find("ToBoolNot"));
 }
 
 TEST(Interpreter, raise_statement_raises_exception_class)
