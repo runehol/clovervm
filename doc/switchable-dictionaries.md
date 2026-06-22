@@ -494,6 +494,91 @@ The hash and equality caches belong inside the bytecode-backed method. That
 keeps their call sites explicit and inspectable for the interpreter and future
 JIT.
 
+## C++ Dict Interface Boundary
+
+The current C++ `Dict` interface is a design hazard because methods named
+`get_item`, `set_item`, `contains`, and `del_item` accept arbitrary `Value`
+keys while the table implementation is actually exact-string-only. That makes
+it easy for native VM code to bypass Python-visible method guards and call raw
+string hashing/equality on non-string keys. Dict literal construction already
+has this shape: evaluated Python keys are passed directly to `Dict::set_item`.
+
+The C++ API should make the operation's semantic level explicit. A useful split
+is:
+
+- **Raw string-shape helpers**: private or tightly scoped helpers that require
+  the receiver to be in string-dict shape and require exact `str` keys. These
+  helpers are non-reentrant and can use direct normalized string hashing and
+  direct string equality. Their names should say `string_shape` or otherwise
+  make the invariant visible.
+- **Exact-string semantic helpers**: public C++ helpers that accept
+  `TValue<String>` keys but still dispatch by dict shape. These are useful for
+  callers that can prove the lookup key is a string, but they are not
+  universally non-fallible. If the receiver has already promoted to general
+  shape, probing can encounter non-string stored keys and equality may run
+  Python.
+- **General semantic helpers**: public C++ helpers that accept arbitrary
+  `Value` keys and implement ordinary Python dict semantics, including
+  `hash(key)`, equality, pending-exception propagation, promotion, and
+  stale-entry revalidation.
+
+This means that fallibility is not limited to "general key" APIs. A string key
+lookup into a general-shaped dict can still require Python-visible equality
+against a non-string candidate. The C++ signature should reflect that both
+exact-string semantic operations and general semantic operations can fail.
+
+A possible naming shape is:
+
+```cpp
+// Semantic operations. May run Python, may promote, may raise.
+[[nodiscard]] Expected<Value> get_item(ThreadState *thread, Value key);
+[[nodiscard]] Expected<void> set_item(ThreadState *thread, Value key,
+                                      Value value);
+[[nodiscard]] Expected<void> del_item(ThreadState *thread, Value key);
+[[nodiscard]] Expected<bool> contains(ThreadState *thread, Value key);
+
+// Same semantics, but the incoming lookup key is known exact str.
+[[nodiscard]] Expected<Value> get_string_item(ThreadState *thread,
+                                              TValue<String> key);
+[[nodiscard]] Expected<void> set_string_item(ThreadState *thread,
+                                             TValue<String> key, Value value);
+[[nodiscard]] Expected<void> del_string_item(ThreadState *thread,
+                                             TValue<String> key);
+[[nodiscard]] Expected<bool> contains_string(ThreadState *thread,
+                                             TValue<String> key);
+```
+
+The exact spelling is unsettled. The required property is that no public C++
+method with a generic name silently means "string-only". Either the method is
+semantic and fallible, or its name and type state that it is a raw exact-string
+or string-shape helper.
+
+These are internal C++ APIs, so pending-exception propagation should be explicit
+in the return type. Native-method and interpreter opcode wrappers can translate
+`Expected<void>` success into `Value::None()` and translate propagated failures
+into `Value::exception_marker()` at the boundary. The core dict implementation
+should not use in-band `Value` exception markers as its primary C++ contract.
+
+Existing native VM uses should be audited into these buckets:
+
+- Import caches, `sys.modules`, module globals, and bootstrap construction use
+  exact interned string keys. They should move to exact-string helpers and
+  should not accidentally become semantic Python dict operations.
+- Python-visible dict methods, dict displays, `dict.fromkeys`, `update`,
+  `setdefault`, `pop`, and subscription operators must route through semantic
+  helpers.
+- Trusted string fast paths may call raw string-shape helpers only after guards
+  prove both receiver shape and key shape.
+
+`CreateDict` needs special attention. General dict insertion can call
+`hash(key)`, which can execute Python. Dict display semantics require each
+key/value pair to be evaluated and inserted before the next pair's expressions
+are evaluated. A bulk `CreateDict` opcode that evaluates all expressions first
+and inserts afterward is not a good general insertion boundary. It can remain
+only for empty dicts or deliberately proven exact-string construction; ordinary
+dict displays should lower to create-empty plus per-entry semantic insertion
+once general keys are supported.
+
 ## Open Questions
 
 - Should non-string lookup in a string-shaped dict promote immediately, or
@@ -505,8 +590,14 @@ JIT.
 - Where should the built-in bytecode method bodies live so they are available
   during bootstrap while still being the only code allowed to emit trusted dict
   opcodes?
-- What exact C API surface should be provided for semantic dict operations and
-  exact-string fast-path operations?
+- What exact C++ and C API surfaces should be provided for semantic dict
+  operations and exact-string fast-path operations?
+- Should exact-string semantic helpers be separate overloads of the general
+  helpers, or separate names, given that they can still be fallible in
+  general-shaped dicts?
+- Should `CreateDict` be split into an exact-string bulk opcode and a semantic
+  per-entry insertion lowering, or should the existing opcode be narrowed to
+  empty dict creation only?
 
 ## Milestones
 
@@ -515,44 +606,26 @@ continue to work. Do not implement a later milestone by adding a temporary
 parallel dictionary path that would need to be unwound; the point of the staging
 is to expose one invariant at a time.
 
-### 0. Hash Normalization Groundwork
+### 0. C++ Dict Interface Split
 
-- [x] Define the CloverVM integer hash modulus and document it as SMI-sized,
-  not CPython `Py_hash_t`-sized.
-- [x] Add the shared `CanonicalizeHash` operation for `bool`, SMI, and BigInt
-  integer values.
-- [x] Expose `CanonicalizeHash` as a trusted intrinsic/opcode usable by built-in
-  bytecode bodies but unavailable to ordinary Python source and native
-  extensions.
-- [x] Apply `-1` to `-2` remapping inside `CanonicalizeHash`.
-- [x] Change exact string hashing so dict-facing string hash helpers return a
-  normalized `TValue<SMI>` hash rather than raw `uint64_t` output.
-- [x] Add direct normalization tests for `-1`, bools, SMI boundary values,
-  fitting BigInts, non-fitting BigInts, and strings whose raw mix would
-  otherwise fall outside SMI storage.
+- [ ] Rename or hide existing raw string-only table helpers so generic names no
+  longer imply string-only behavior.
+- [ ] Add exact-string helper entry points for import/cache/bootstrap callers
+  that can prove exact `str` keys.
+- [ ] Add semantic, fallible C++ entry points for arbitrary-key dict lookup,
+  assignment, deletion, and membership.
+- [ ] Decide whether exact-string semantic helpers are overloads or separately
+  named helpers, and document that they can still fail on general-shaped dicts.
+- [ ] Convert dict literal construction away from direct raw `Dict::set_item`
+  calls for non-empty general Python displays.
+- [ ] Add tests that non-string dict literals no longer reach raw string hashing
+  or unchecked `TValue<String>` conversion.
 
-This milestone should not add non-string dict keys yet. It should only make the
-hash value stored by today's string dict an explicit normalized hash.
+This milestone does not need to implement full general dict probing. It should
+make the C++ boundary honest enough that later general semantics do not grow on
+top of a string-only API by accident.
 
-### 1. Public `hash()` Protocol
-
-- [x] Implement the public `hash(obj)` builtin through the ordinary special
-  method protocol.
-- [x] Require `__hash__` results to be integer values and route those values
-  through `CanonicalizeHash`.
-- [ ] Preserve disabled or missing hash behavior as `TypeError`.
-- [x] Keep direct exact-builtin hash paths consistent with public `hash()` and
-  dict storage.
-- [x] Add tests for custom `__hash__`, non-integer `__hash__` results, very
-  large integer hash results, `hash(-1)`, `hash(True)`, `hash(False)`, missing
-  hash, and exception propagation.
-- [ ] Add disabled-hash tests once `__hash__ = None` semantics are defined for
-  special method lookup.
-
-This gives the general dict bytecode a single protocol call to use later,
-instead of inventing a dict-only hash path.
-
-### 2. Dict Shape Plumbing
+### 1. Dict Shape Plumbing
 
 - [ ] Represent string and general dict modes through the existing shape system.
 - [ ] Add a one-way promotion operation from string shape to general shape.
@@ -566,7 +639,7 @@ This milestone can keep the general shape mostly unreachable except through
 direct test hooks or controlled promotion probes. Its purpose is to settle the
 object-model invariant before adding general probing semantics.
 
-### 3. Trusted Dict Opcode Skeleton
+### 2. Trusted Dict Opcode Skeleton
 
 - [ ] Add trusted-only opcode support for dict table identity, probe start,
   probe step, probe advance, entry hash/key/value reads, and entry writes.
@@ -579,7 +652,7 @@ object-model invariant before adding general probing semantics.
 This milestone should be table-mechanical only. If an opcode needs to call
 `__hash__`, equality, descriptors, or arbitrary Python, the design has slipped.
 
-### 4. General Lookup And Revalidation
+### 3. General Lookup And Revalidation
 
 - [ ] Implement bytecode-backed general `__getitem__` and membership using the
   canonical SMI hash result produced by either public `hash()` or an inlined
@@ -594,7 +667,7 @@ This milestone should be table-mechanical only. If an opcode needs to call
 This is the highest semantic-risk milestone. Do not add assignment or deletion
 until stale-entry defense is tested on lookup.
 
-### 5. General Assignment, Deletion, And Promotion Entry Points
+### 4. General Assignment, Deletion, And Promotion Entry Points
 
 - [ ] Implement bytecode-backed general `__setitem__` with tombstone handling
   and insertion-order preservation.
@@ -611,7 +684,7 @@ until stale-entry defense is tested on lookup.
 After this milestone, `errno.errorcode` can be represented as a real integer-key
 dict, assuming the stdlib module itself is added separately.
 
-### 6. Public Dict Method Coverage
+### 5. Public Dict Method Coverage
 
 - [ ] Route `get`, `setdefault`, `pop`, `update`, and `fromkeys` through the
   same core bytecode lookup, assignment, and deletion paths.
@@ -624,7 +697,7 @@ dict, assuming the stdlib module itself is added separately.
 This milestone should remove temporary gaps where subscription works for
 general dicts but public methods accidentally retain string-only assumptions.
 
-### 7. C API Dict Surface
+### 6. C API Dict Surface
 
 - [ ] Add opaque C API functions for creating dicts and performing semantic
   lookup, assignment, deletion, membership, and length operations.
@@ -648,7 +721,7 @@ This milestone is not a separate dictionary implementation. The C API should be
 a public boundary over the same string/general dict semantics, with a narrow
 exact-string fast path for code that can prove its keys are exact strings.
 
-### 8. Cleanup, Performance, And Stdlib Unblock
+### 7. Cleanup, Performance, And Stdlib Unblock
 
 - [ ] Remove obsolete string-only `TODO`s and helper names that imply raw hash
   storage.
