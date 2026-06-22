@@ -293,8 +293,8 @@ namespace cl
     enum class FunctionCallAdaptation : uint8_t
     {
         FixedArity,
-        Defaults,
-        Varargs,
+        Defaultable,
+        Full,
     };
 
     struct FunctionCallInlineCache

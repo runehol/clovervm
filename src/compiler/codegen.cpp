@@ -162,8 +162,7 @@ namespace cl
     parameter_signature_has_unsupported_runtime_shape(const AstVector &av,
                                                       int32_t signature_idx)
     {
-        return !parameter_signature_group(av, signature_idx, 0).empty() ||
-               !parameter_signature_group(av, signature_idx, 4).empty();
+        return !parameter_signature_group(av, signature_idx, 0).empty();
     }
 
     Expected<AstChildren>
@@ -174,8 +173,7 @@ namespace cl
         {
             return Expected<AstChildren>::raise_exception(
                 L"SyntaxError",
-                L"positional-only and **kwargs parameters are not implemented "
-                L"yet");
+                L"positional-only parameters are not implemented yet");
         }
 
         AstChildren result = parameter_signature_group(av, signature_idx, 1);
@@ -187,6 +185,12 @@ namespace cl
         }
         AstChildren kwonly = parameter_signature_group(av, signature_idx, 3);
         for(int32_t param_idx: kwonly)
+        {
+            result.push_back(param_idx);
+        }
+        AstChildren kwarg = parameter_signature_group(av, signature_idx, 4);
+        assert(kwarg.size() <= 1);
+        for(int32_t param_idx: kwarg)
         {
             result.push_back(param_idx);
         }
@@ -3221,6 +3225,18 @@ namespace cl
         return false;
     }
 
+    bool has_kwargs_parameter(const AstVector &av, AstChildren param_children)
+    {
+        for(int32_t param_idx: param_children)
+        {
+            if(av.kinds[param_idx].node_kind == AstNodeKind::PARAMETER_KWARGS)
+            {
+                return true;
+            }
+        }
+        return false;
+    }
+
     bool parameter_sequence_has_required_parameter(const AstVector &av,
                                                    AstChildren param_children)
     {
@@ -3314,10 +3330,15 @@ namespace cl
         {
             fun_obj.parameter_flags() |= FunctionParameterFlags::HasVarArgs;
         }
+        if(has_kwargs_parameter(av, param_children))
+        {
+            fun_obj.parameter_flags() |= FunctionParameterFlags::HasKwArgs;
+        }
         for(int32_t ch: param_children)
         {
             assert(av.kinds[ch].node_kind == AstNodeKind::PARAMETER ||
-                   av.kinds[ch].node_kind == AstNodeKind::PARAMETER_VARARGS);
+                   av.kinds[ch].node_kind == AstNodeKind::PARAMETER_VARARGS ||
+                   av.kinds[ch].node_kind == AstNodeKind::PARAMETER_KWARGS);
             fun_obj.get_local_scope_ptr()->register_slot_index_for_write(
                 ast_string_constant(av, ch));
         }

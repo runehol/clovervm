@@ -26,7 +26,7 @@ namespace cl
 
     static ALWAYSINLINE bool is_fixed_arity_function(TValue<Function> fun)
     {
-        return !fun.extract()->has_varargs() &&
+        return !fun.extract()->has_varargs() && !fun.extract()->has_kwargs() &&
                fun.extract()->call_signature.min_positional_arity ==
                    fun.extract()->call_signature.max_positional_arity;
     }
@@ -35,18 +35,19 @@ namespace cl
     function_call_adaptation_for_positional_call(TValue<Function> fun,
                                                  uint32_t n_args)
     {
-        if(fun.extract()->has_varargs())
+        if(fun.extract()->has_varargs() || fun.extract()->has_kwargs())
         {
-            return FunctionCallAdaptation::Varargs;
+            return FunctionCallAdaptation::Full;
         }
         if(fun.extract()->default_parameters.value().has_value())
         {
             return n_args == fun.extract()->call_signature.function.n_parameters
                        ? FunctionCallAdaptation::FixedArity
-                       : FunctionCallAdaptation::Defaults;
+                       : FunctionCallAdaptation::Defaultable;
         }
-        return is_fixed_arity_function(fun) ? FunctionCallAdaptation::FixedArity
-                                            : FunctionCallAdaptation::Defaults;
+        return is_fixed_arity_function(fun)
+                   ? FunctionCallAdaptation::FixedArity
+                   : FunctionCallAdaptation::Defaultable;
     }
 
     static ALWAYSINLINE const Object *

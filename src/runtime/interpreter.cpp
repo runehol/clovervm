@@ -42,6 +42,7 @@
 
 namespace cl
 {
+    static constexpr int8_t KeywordDestKwargsDict = 0;
 
 #define PARAMS                                                                 \
     Value accumulator, Value *fp, const uint8_t *pc, void *dispatch,           \
@@ -1271,13 +1272,13 @@ namespace cl
         cache.n_pos_args = uint8_t(n_pos_args);
         assert(default_fill_start_slot <= UINT16_MAX);
         cache.default_fill_start_slot = uint16_t(default_fill_start_slot);
-        if(fun.extract()->has_varargs())
+        if(fun.extract()->has_varargs() || fun.extract()->has_kwargs())
         {
-            cache.adaptation = FunctionCallAdaptation::Varargs;
+            cache.adaptation = FunctionCallAdaptation::Full;
         }
         else if(fun.extract()->default_parameters.value().has_value())
         {
-            cache.adaptation = FunctionCallAdaptation::Defaults;
+            cache.adaptation = FunctionCallAdaptation::Defaultable;
         }
         else if(is_fixed_arity_function(fun))
         {
@@ -1285,7 +1286,7 @@ namespace cl
         }
         else
         {
-            cache.adaptation = FunctionCallAdaptation::Defaults;
+            cache.adaptation = FunctionCallAdaptation::Defaultable;
         }
         cache.keyword_dest_regs = std::move(keyword_dest_regs);
     }
@@ -1361,8 +1362,13 @@ namespace cl
             }
             if(!found || parameter_idx >= signature.n_parameters)
             {
-                return Expected<void>::raise_exception(
-                    L"TypeError", L"invalid keyword argument");
+                if(!signature.has_kwargs())
+                {
+                    return Expected<void>::raise_exception(
+                        L"TypeError", L"invalid keyword argument");
+                }
+                keyword_dest_regs[kw_idx] = KeywordDestKwargsDict;
+                continue;
             }
             if(filled[parameter_idx])
             {
@@ -1373,6 +1379,7 @@ namespace cl
             filled[parameter_idx] = true;
             keyword_dest_regs[kw_idx] =
                 target_code_object->encode_reg(parameter_idx);
+            assert(keyword_dest_regs[kw_idx] != KeywordDestKwargsDict);
         }
 
         for(uint32_t parameter_idx = 0; parameter_idx < signature.n_parameters;
@@ -1380,6 +1387,11 @@ namespace cl
         {
             if(signature.has_varargs() &&
                parameter_idx == signature.n_positional_parameters)
+            {
+                continue;
+            }
+            if(signature.has_kwargs() &&
+               parameter_idx == signature.n_parameters - 1)
             {
                 continue;
             }
@@ -1518,6 +1530,35 @@ namespace cl
             varargs_tuple.raw_value();
     }
 
+    static ALWAYSINLINE uint32_t kwargs_parameter_idx(TValue<Function> fun)
+    {
+        assert(fun.extract()->has_kwargs());
+        return fun.extract()->call_signature.function.n_parameters - 1;
+    }
+
+    static ALWAYSINLINE TValue<Dict> make_kwargs_argument(ThreadState *thread)
+    {
+        return thread->make_object_value<Dict>();
+    }
+
+    static ALWAYSINLINE void store_kwargs_argument(Value *new_fp,
+                                                   TValue<Function> fun,
+                                                   TValue<Dict> kwargs_dict)
+    {
+        CodeObject *target_code_object = fun.extract()->code_object.extract();
+        new_fp[target_code_object->encode_reg(kwargs_parameter_idx(fun))] =
+            kwargs_dict.raw_value();
+    }
+
+    static ALWAYSINLINE TValue<Dict>
+    make_and_store_kwargs_argument(ThreadState *thread, Value *new_fp,
+                                   TValue<Function> fun)
+    {
+        TValue<Dict> kwargs_dict = make_kwargs_argument(thread);
+        store_kwargs_argument(new_fp, fun, kwargs_dict);
+        return kwargs_dict;
+    }
+
     static ALWAYSINLINE Value *
     new_frame_pointer_from_first_arg(Value *fp, TValue<Function> fun,
                                      int32_t first_arg_reg)
@@ -1571,7 +1612,7 @@ namespace cl
                                            instr_len);
             return;
         }
-        if(adaptation == FunctionCallAdaptation::Defaults)
+        if(adaptation == FunctionCallAdaptation::Defaultable)
         {
             initialize_missing_default_arguments(new_fp, fun, n_args);
             enter_function_frame_at_new_fp(fp, pc, code_object, fun, new_fp,
@@ -1579,14 +1620,27 @@ namespace cl
             return;
         }
 
-        assert(adaptation == FunctionCallAdaptation::Varargs);
-        TValue<Tuple> varargs_tuple =
-            make_varargs_argument(thread, new_fp, fun, n_args);
+        assert(adaptation == FunctionCallAdaptation::Full);
+        Tuple *varargs_tuple = nullptr;
+        if(fun.extract()->has_varargs())
+        {
+            varargs_tuple =
+                make_varargs_argument(thread, new_fp, fun, n_args).extract();
+        }
         if(fun.extract()->default_parameters.value().has_value())
         {
             initialize_missing_default_arguments(new_fp, fun, n_args);
         }
-        store_varargs_argument(new_fp, fun, varargs_tuple);
+        if(fun.extract()->has_varargs())
+        {
+            assert(varargs_tuple != nullptr);
+            store_varargs_argument(new_fp, fun,
+                                   TValue<Tuple>::from_oop(varargs_tuple));
+        }
+        if(fun.extract()->has_kwargs())
+        {
+            (void)make_and_store_kwargs_argument(thread, new_fp, fun);
+        }
         enter_function_frame_at_new_fp(fp, pc, code_object, fun, new_fp,
                                        instr_len);
     }
@@ -1658,16 +1712,34 @@ namespace cl
         Value *new_fp = new_frame_pointer_from_first_arg(fp, cache.code_object,
                                                          first_arg_reg);
 
-        if(cache.adaptation == FunctionCallAdaptation::Varargs)
+        Dict *kwargs_dict = nullptr;
+        bool has_kwargs = fun.extract()->has_kwargs();
+        if(cache.adaptation == FunctionCallAdaptation::Full)
         {
-            TValue<Tuple> varargs_tuple =
-                make_varargs_argument(thread, new_fp, fun, n_pos_args);
+            Tuple *varargs_tuple = nullptr;
+            if(fun.extract()->has_varargs())
+            {
+                varargs_tuple =
+                    make_varargs_argument(thread, new_fp, fun, n_pos_args)
+                        .extract();
+            }
             if(fun.extract()->default_parameters.value().has_value())
             {
                 initialize_default_parameters_from_slot(
                     new_fp, fun, cache.default_fill_start_slot);
             }
-            store_varargs_argument(new_fp, fun, varargs_tuple);
+            if(fun.extract()->has_varargs())
+            {
+                assert(varargs_tuple != nullptr);
+                store_varargs_argument(new_fp, fun,
+                                       TValue<Tuple>::from_oop(varargs_tuple));
+            }
+            if(has_kwargs)
+            {
+                kwargs_dict =
+                    make_and_store_kwargs_argument(thread, new_fp, fun)
+                        .extract();
+            }
         }
         else if(cache.adaptation != FunctionCallAdaptation::FixedArity &&
                 fun.extract()->default_parameters.value().has_value())
@@ -1677,10 +1749,36 @@ namespace cl
         }
 
         assert(n_kw_args == 0 || cache.keyword_dest_regs != nullptr);
-        for(uint32_t kw_idx = 0; kw_idx < n_kw_args; ++kw_idx)
+        if(unlikely(cache.adaptation == FunctionCallAdaptation::Full &&
+                    has_kwargs))
         {
-            new_fp[cache.keyword_dest_regs[kw_idx]] =
-                fp[first_kw_value_reg - int32_t(kw_idx)];
+            Value keyword_names_value =
+                code_object->constant_table[pc[6]].value();
+            TValue<Tuple> keyword_names =
+                TValue<Tuple>::from_value_assumed(keyword_names_value);
+            assert(keyword_names.extract()->size() == n_kw_args);
+            for(uint32_t kw_idx = 0; kw_idx < n_kw_args; ++kw_idx)
+            {
+                int8_t dest = cache.keyword_dest_regs[kw_idx];
+                Value value = fp[first_kw_value_reg - int32_t(kw_idx)];
+                if(dest == KeywordDestKwargsDict)
+                {
+                    assert(kwargs_dict != nullptr);
+                    kwargs_dict->set_item(
+                        keyword_names.extract()->item_unchecked(kw_idx), value);
+                    continue;
+                }
+                new_fp[dest] = value;
+            }
+        }
+        else
+        {
+            for(uint32_t kw_idx = 0; kw_idx < n_kw_args; ++kw_idx)
+            {
+                int8_t dest = cache.keyword_dest_regs[kw_idx];
+                assert(dest != KeywordDestKwargsDict);
+                new_fp[dest] = fp[first_kw_value_reg - int32_t(kw_idx)];
+            }
         }
 
         enter_function_frame_at_new_fp(fp, pc, code_object, fun, new_fp,

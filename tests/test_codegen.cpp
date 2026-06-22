@@ -176,8 +176,7 @@ TEST(Codegen, unsupported_parameter_shape_is_compile_error)
         test_context,
         L"def f(a, /):\n"
         L"    pass\n",
-        L"SyntaxError",
-        L"positional-only and **kwargs parameters are not implemented yet");
+        L"SyntaxError", L"positional-only parameters are not implemented yet");
 }
 
 TEST(Codegen, unresolved_jump_target_allows_expected_codegen_error)
@@ -188,8 +187,7 @@ TEST(Codegen, unresolved_jump_target_allows_expected_codegen_error)
         L"if True:\n"
         L"    def f(a, /):\n"
         L"        pass\n",
-        L"SyntaxError",
-        L"positional-only and **kwargs parameters are not implemented yet");
+        L"SyntaxError", L"positional-only parameters are not implemented yet");
 }
 
 TEST(Codegen, exception_table_range_allows_expected_codegen_error)
@@ -202,8 +200,7 @@ TEST(Codegen, exception_table_range_allows_expected_codegen_error)
         L"        pass\n"
         L"finally:\n"
         L"    pass\n",
-        L"SyntaxError",
-        L"positional-only and **kwargs parameters are not implemented yet");
+        L"SyntaxError", L"positional-only parameters are not implemented yet");
 }
 
 TEST(Codegen, default_parameter_span_limit_is_compile_error)
@@ -656,6 +653,32 @@ TEST(Codegen, function_varargs_parameter_layout)
     EXPECT_EQ(1u, function_code->function_keyword_remap.parameter_index_at(1));
     EXPECT_TRUE(function_code->has_varargs());
     EXPECT_EQ(7, function_code->get_highest_occupied_frame_offset());
+}
+
+TEST(Codegen, function_kwargs_parameter_layout)
+{
+    test::VmTestContext test_context;
+    CodeObject *module_code =
+        test_context.compile_file(L"def f(a, *args, b=2, **kwargs):\n"
+                                  L"    return kwargs\n");
+    CodeObject *function_code =
+        module_code->constant_table[0].value().get_ptr<CodeObject>();
+
+    EXPECT_EQ(4, function_code->function_signature.n_parameters);
+    EXPECT_EQ(1, function_code->function_signature.n_positional_parameters);
+    EXPECT_EQ(1, function_code->function_signature.n_pos_or_kw_parameters);
+    EXPECT_EQ(1, function_code->function_signature.n_kwonly_parameters);
+    EXPECT_EQ(2u, function_code->function_signature.first_default_slot);
+    EXPECT_EQ(1u, function_code->function_signature.default_presence_mask);
+    ASSERT_EQ(2u, function_code->function_keyword_remap.size());
+    EXPECT_STREQ(L"a", string_as_wchar_t(TValue<String>::from_value_assumed(
+                           function_code->function_keyword_remap.name_at(0))));
+    EXPECT_EQ(0u, function_code->function_keyword_remap.parameter_index_at(0));
+    EXPECT_STREQ(L"b", string_as_wchar_t(TValue<String>::from_value_assumed(
+                           function_code->function_keyword_remap.name_at(1))));
+    EXPECT_EQ(2u, function_code->function_keyword_remap.parameter_index_at(1));
+    EXPECT_TRUE(function_code->has_varargs());
+    EXPECT_TRUE(function_code->has_kwargs());
 }
 
 TEST(Codegen, function_copies_hot_call_signature_from_code_object)

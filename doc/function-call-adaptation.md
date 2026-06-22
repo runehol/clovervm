@@ -24,12 +24,10 @@ paths:
   `first_default_slot` plus `default_presence_mask`;
 - entry adaptation supports fixed arity, positional defaults, required and
   defaulted keyword-only parameters, mixed positional/keyword-only default
-  layouts, and callee `*args`;
-- the accepted next extension is callee `**kwargs` binding without caller
-  `**mapping` expansion;
+  layouts, callee `*args`, and callee `**kwargs`;
 - parser/codegen represent explicit caller positional and keyword arguments;
 - parser accepts richer callee signature syntax, but codegen still rejects
-  positional-only parameters and `**kwargs` parameters for runtime use;
+  positional-only parameters for runtime use;
 - caller `*args` and `**kwargs` expansion remain unsupported.
 
 The keyword-call path deliberately does not introduce the full Python callable
@@ -421,9 +419,8 @@ starred-call or generic callable protocol work.
   optional `**kwargs`.
 
   It parses `/`, bare `*`, `*args`, keyword-only parameters, and `**kwargs`
-  into distinct AST structure. Codegen still rejects the runtime-unsupported
-  callee forms: positional-only parameters and `**kwargs`. Defaults remain
-  attached to parameter nodes for now.
+  into distinct AST structure. Codegen still rejects positional-only parameters
+  for runtime use. Defaults remain attached to parameter nodes for now.
 
 - [x] **Codegen and function signature metadata**
 
@@ -479,9 +476,8 @@ starred-call or generic callable protocol work.
   keyword by scanning the signature keyword layout, rejects duplicate formal
   fills, reports missing required parameters, and only commits the live cache
   entry after validation succeeds. Error messages are intentionally generic for
-  now. The accepted callee-`**kwargs` extension changes unexpected explicit
-  keywords from an error into sentinel-routed kwargs-dictionary insertions when
-  the callee has a kwargs parameter.
+  now. For callees with `**kwargs`, unexpected explicit keywords are
+  sentinel-routed kwargs-dictionary insertions.
 
 - [x] **Keyword call inline-cache plan**
 
@@ -507,8 +503,7 @@ starred-call or generic callable protocol work.
 
   Method keyword calls, positional-only parameters, caller `*args`, caller
   `**kwargs`, generic `__call__`, and descriptor-heavy callable behavior remain
-  unsupported. Callee `**kwargs` remains unimplemented in code, but its accepted
-  binding and IC design are recorded above.
+  unsupported.
 
 ## Deferred Work
 

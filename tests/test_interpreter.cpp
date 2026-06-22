@@ -1093,6 +1093,66 @@ TEST(Interpreter, function_keyword_call_handles_varargs_default_holes)
     EXPECT_EQ(Value::from_smi(5283), file_runner.return_value);
 }
 
+TEST(Interpreter, function_kwargs_collect_empty_dict)
+{
+    test::FileRunner file_runner(L"def f(**kwargs):\n"
+                                 L"    return len(kwargs)\n"
+                                 L"f()\n");
+    EXPECT_EQ(Value::from_smi(0), file_runner.return_value);
+}
+
+TEST(Interpreter, function_kwargs_collect_explicit_keywords_in_order)
+{
+    expect_string_result(L"def f(**kwargs):\n"
+                         L"    return str(kwargs)\n"
+                         L"f(c=3, a=1, b=2)\n",
+                         L"{'c': 3, 'a': 1, 'b': 2}");
+}
+
+TEST(Interpreter, function_kwargs_collect_unmatched_keywords)
+{
+    test::FileRunner file_runner(L"def f(a, *, b=2, **kwargs):\n"
+                                 L"    return a * 1000 + b * 100 + "
+                                 L"kwargs['c'] * 10 + kwargs['d']\n"
+                                 L"f(1, d=4, b=3, c=2)\n");
+    EXPECT_EQ(Value::from_smi(1324), file_runner.return_value);
+}
+
+TEST(Interpreter, function_kwargs_are_fresh_per_call)
+{
+    test::FileRunner file_runner(L"def f(**kwargs):\n"
+                                 L"    return kwargs\n"
+                                 L"first = f()\n"
+                                 L"second = f()\n"
+                                 L"first is second\n");
+    EXPECT_EQ(Value::False(), file_runner.return_value);
+}
+
+TEST(Interpreter, function_kwargs_rejects_duplicate_formal_fill)
+{
+    expect_python_error(L"def f(a, **kwargs):\n"
+                        L"    return kwargs\n"
+                        L"f(1, a=2)\n",
+                        L"TypeError", L"invalid keyword argument");
+}
+
+TEST(Interpreter, function_kwargs_does_not_absorb_extra_positionals)
+{
+    expect_python_error(L"def f(a, **kwargs):\n"
+                        L"    return kwargs\n"
+                        L"f(1, 2)\n",
+                        L"TypeError", L"wrong number of arguments");
+}
+
+TEST(Interpreter, function_varargs_and_kwargs_collect_independently)
+{
+    test::FileRunner file_runner(L"def f(a, *args, **kwargs):\n"
+                                 L"    return a * 100 + len(args) * 10 + "
+                                 L"kwargs['x']\n"
+                                 L"f(1, 2, 3, x=4)\n");
+    EXPECT_EQ(Value::from_smi(124), file_runner.return_value);
+}
+
 TEST(Interpreter, class_constructor_accepts_keyword_calls)
 {
     test::FileRunner file_runner(L"class C:\n"
@@ -1118,6 +1178,24 @@ TEST(Interpreter, class_constructor_preserves_varargs_keyword_only_defaults)
                                  L"        self.value = len(items) * 10 + sep\n"
                                  L"C(1, 2).value\n");
     EXPECT_EQ(Value::from_smi(29), file_runner.return_value);
+}
+
+TEST(Interpreter, class_constructor_preserves_kwargs)
+{
+    test::FileRunner file_runner(L"class C:\n"
+                                 L"    def __init__(self, a, **kwargs):\n"
+                                 L"        self.value = a * 10 + kwargs['b']\n"
+                                 L"C(3, b=4).value\n");
+    EXPECT_EQ(Value::from_smi(34), file_runner.return_value);
+}
+
+TEST(Interpreter, class_new_preserves_kwargs)
+{
+    test::FileRunner file_runner(L"class C:\n"
+                                 L"    def __new__(cls, **kwargs):\n"
+                                 L"        return kwargs['x']\n"
+                                 L"C(x=7)\n");
+    EXPECT_EQ(Value::from_smi(7), file_runner.return_value);
 }
 
 TEST(Interpreter, class_constructor_preserves_required_keyword_only)
@@ -3665,7 +3743,7 @@ TEST(Interpreter, subscript_load_caches_getitem_with_default_arguments)
     ASSERT_NE(nullptr, cache.function);
     EXPECT_EQ(2u, cache.n_args);
     EXPECT_TRUE(cache.has_self);
-    EXPECT_EQ(FunctionCallAdaptation::Defaults, cache.adaptation);
+    EXPECT_EQ(FunctionCallAdaptation::Defaultable, cache.adaptation);
 }
 
 TEST(Interpreter, subscript_load_replaces_cache_for_different_key_shape)

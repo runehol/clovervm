@@ -67,6 +67,8 @@ namespace cl
             return call_signature.function.has_varargs();
         }
 
+        bool has_kwargs() const { return call_signature.function.has_kwargs(); }
+
         bool has_default_for_parameter(uint32_t parameter_idx) const
         {
             return has_default_for_parameter(call_signature.function,
@@ -166,7 +168,8 @@ namespace cl
                            ->function_signature.n_positional_parameters +
                        code_object.extract()
                            ->function_signature.n_kwonly_parameters +
-                       (code_object.extract()->has_varargs() ? 1 : 0));
+                       (code_object.extract()->has_varargs() ? 1 : 0) +
+                       (code_object.extract()->has_kwargs() ? 1 : 0));
         }
     };
 
