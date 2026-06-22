@@ -25,6 +25,8 @@ paths:
 - entry adaptation supports fixed arity, positional defaults, required and
   defaulted keyword-only parameters, mixed positional/keyword-only default
   layouts, and callee `*args`;
+- the accepted next extension is callee `**kwargs` binding without caller
+  `**mapping` expansion;
 - parser/codegen represent explicit caller positional and keyword arguments;
 - parser accepts richer callee signature syntax, but codegen still rejects
   positional-only parameters and `**kwargs` parameters for runtime use;
@@ -165,6 +167,13 @@ Only keyword-bindable parameters belong in this layout:
 - positional-or-keyword parameters;
 - keyword-only parameters.
 
+The `**kwargs` parameter is not keyword-bindable and must not appear in this
+layout. It is the collector slot initialized by frame entry. An incoming
+`kwargs=value` keyword is treated like any other explicit keyword: it binds a
+real keyword-bindable parameter named `kwargs` if such a parameter exists, is
+collected into `**kwargs` if no such parameter exists and the callee has
+`**kwargs`, or is rejected otherwise.
+
 Positional-only names should remain visible to diagnostics and duplicate checks,
 but they are not valid keyword targets. A keyword that names a positional-only
 parameter must raise `TypeError`.
@@ -259,13 +268,44 @@ frame_slot[default_copy_start_slot + i] =
 
 The mask is cold-path validation metadata. Hot frame entry does not consult it:
 after IC setup has accepted the call shape, frame entry copies a contiguous
-suffix of the default tuple, stores `*args` if present, then copies keyword
-arguments to their encoded destination registers. Defaults that should not
-survive are naturally overwritten.
+suffix of the default tuple, stores `*args` if present, stores `**kwargs` if
+present, then copies keyword arguments to their encoded destination registers or
+inserts them into the `**kwargs` dictionary. Defaults that should not survive
+are naturally overwritten.
+
+## Call Adaptation Tiers
+
+`FunctionCallAdaptation` should stay a compact path selector, not a matrix of
+every possible signature feature combination. The intended tiers are:
+
+```text
+FixedArity
+Defaults
+Full
+```
+
+`FixedArity` means frame entry can commit directly after arity/cache validation.
+`Defaults` means only default-value initialization may be needed before entry.
+`Full` means the callee may require default initialization, `*args` tuple
+construction, and/or `**kwargs` dictionary construction.
+
+The tiers are ordered by entry path complexity, not by exact signature contents.
+A function with `**kwargs` but no defaults and no `*args` still uses `Full`,
+because it needs a fresh dictionary in the kwargs slot. This avoids a growing
+enum for combinations such as defaults-plus-kwargs or varargs-plus-kwargs. The
+`Full` path checks the function signature to decide which work is actually
+needed.
+
+For positional calls, `**kwargs` never absorbs extra positional arguments.
+Positional arity remains governed by the positional parameter count and `*args`.
+If the callee has `**kwargs`, `CallPositional` initializes that slot with a
+fresh empty dictionary after ordinary arity validation and before entering the
+callee frame.
 
 ## Binding Algorithm
 
-For a keyword-call cache miss in the implemented runtime subset:
+For a keyword-call cache miss in the implemented runtime subset, extended with
+the accepted callee-`**kwargs` design:
 
 1. Compute the callee frame pointer from the target code object's physical
    parameter slot count, as positional calls already do.
@@ -276,22 +316,29 @@ For a keyword-call cache miss in the implemented runtime subset:
 5. For each supplied keyword name/value pair:
    - find a matching positional-or-keyword parameter by scanning the code
      object's keyword remap;
-   - reject unexpected keywords;
-   - reject if that formal slot was already filled by position or keyword;
-   - mark the formal slot filled;
-   - store the encoded destination frame register in the candidate plan.
+   - if a matching keyword-bindable parameter is found, reject if that formal
+     slot was already filled by position or keyword, mark the formal slot
+     filled, and store the encoded destination frame register in the candidate
+     plan;
+   - if no matching keyword-bindable parameter is found and the callee has
+     `**kwargs`, store the kwargs-dictionary sentinel in the candidate plan;
+   - if no matching keyword-bindable parameter is found and the callee does not
+     have `**kwargs`, reject the unexpected keyword.
 6. Reject any remaining required parameter whose default-presence bit is clear.
+   The `*args` and `**kwargs` slots are initialized by frame entry and are not
+   user-supplied required parameters.
 7. Compute `default_fill_start_slot = max(n_filled_by_position,
    first_default_slot)`.
 8. Commit the candidate plan to the live cache.
 9. Apply the plan: copy the accepted default tuple suffix, store `*args` if
-   present, copy keyword values to their encoded destination registers, and
-   enter the target function frame using the ordinary frame header and return
-   machinery.
+   present, store a fresh `**kwargs` dictionary if present, copy keyword values
+   to their encoded destination registers or insert them into the kwargs
+   dictionary, and enter the target function frame using the ordinary frame
+   header and return machinery.
 
-The parser already rejects duplicate explicit keyword names. Caller `*args`,
-caller `**kwargs`, and callee `**kwargs` are deferred, so the current binder
-does not build keyword dictionaries or consume unknown keywords.
+The parser already rejects duplicate explicit keyword names. Caller `*args` and
+caller `**kwargs` are still deferred. Callee `**kwargs` only consumes unmatched
+explicit `name=value` keywords in the existing call-site order.
 
 ## Keyword Call Inline Cache
 
@@ -305,7 +352,7 @@ guard:
   n_pos_args
 
 plan:
-  keyword value index -> encoded destination frame register
+  keyword value index -> encoded destination frame register, or kwargs sentinel
   default_fill_start_slot
   FunctionCallAdaptation
   target code object
@@ -315,11 +362,18 @@ The cold path performs binding checks into a local candidate plan and only
 commits it to the live cache after validation succeeds. Bad calls therefore do
 not evict a previously valid cache entry.
 
+The keyword destination vector stays compact as an `int8_t` array. Destination
+value `0` is reserved as the kwargs-dictionary sentinel for this vector. Real
+entries are callee-frame-relative encoded parameter destinations; `fp[0]` is
+the previous-frame-pointer header slot, not a writable parameter destination.
+
 The warm path avoids name lookup and semantic rediscovery. Positional values are
 already in the temporary call argument span. The plan fills defaults from
 `default_fill_start_slot` when the adaptation requires defaults, initializes
-`*args` when the adaptation is `Varargs`, copies keyword values to precomputed
-encoded frame registers, and enters the frame.
+`*args` and/or `**kwargs` on the `Full` path, copies keyword values to
+precomputed encoded frame registers, and inserts sentinel-routed keyword values
+into the fresh kwargs dictionary. The sentinel-aware loop should only run on the
+`Full` path; ordinary fixed/default-only keyword calls keep the direct copy loop.
 
 ## Constructor Thunks
 
@@ -405,9 +459,11 @@ starred-call or generic callable protocol work.
 
   The binder builds a local candidate IC plan while validating, resolves each
   keyword by scanning the signature keyword layout, rejects duplicate formal
-  fills and unexpected keywords, reports missing required parameters, and only
-  commits the live cache entry after validation succeeds. Error messages are
-  intentionally generic for now.
+  fills, reports missing required parameters, and only commits the live cache
+  entry after validation succeeds. Error messages are intentionally generic for
+  now. The accepted callee-`**kwargs` extension changes unexpected explicit
+  keywords from an error into sentinel-routed kwargs-dictionary insertions when
+  the callee has a kwargs parameter.
 
 - [x] **Keyword call inline-cache plan**
 
@@ -415,9 +471,10 @@ starred-call or generic callable protocol work.
   identity, constructor validity where relevant, keyword-name tuple identity,
   and positional argument count.
 
-  The cached plan stores encoded destination frame registers for each keyword
-  value, `default_fill_start_slot`, and `FunctionCallAdaptation`. Cache misses
-  build a local candidate plan and only commit it after validation succeeds.
+  The cached plan stores encoded destination frame registers or the kwargs
+  sentinel for each keyword value, `default_fill_start_slot`, and
+  `FunctionCallAdaptation`. Cache misses build a local candidate plan and only
+  commit it after validation succeeds.
 
 - [x] **Semantics, regression tests, and benchmarks**
 
@@ -430,9 +487,10 @@ starred-call or generic callable protocol work.
   path and keyword calls carry a names tuple. Keyword call microbenchmarks cover
   all-keyword, mixed positional/keyword, and default-using keyword calls.
 
-  Method keyword calls, positional-only parameters, callee `**kwargs`, caller
-  `*args`, caller `**kwargs`, generic `__call__`, and descriptor-heavy callable
-  behavior remain unsupported.
+  Method keyword calls, positional-only parameters, caller `*args`, caller
+  `**kwargs`, generic `__call__`, and descriptor-heavy callable behavior remain
+  unsupported. Callee `**kwargs` remains unimplemented in code, but its accepted
+  binding and IC design are recorded above.
 
 ## Deferred Work
 
@@ -441,8 +499,6 @@ The following require separate design/implementation slices:
 - keyword method calls, including whether to add a fused method-keyword opcode
   or split method lookup/binding from keyword call entry;
 - runtime support for positional-only parameters;
-- callee `**kwargs`, including allocation, insertion order, and interaction
-  with unexpected explicit keywords;
 - caller `*args` expansion, including iterable protocol details and error
   ordering;
 - caller `**kwargs` expansion, including mapping protocol details, duplicate
