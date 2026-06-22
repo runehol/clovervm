@@ -169,40 +169,6 @@ TEST(Codegen, continue_outside_loop_is_compile_error)
                                       L"'continue' not properly in loop");
 }
 
-TEST(Codegen, unsupported_parameter_shape_is_compile_error)
-{
-    test::VmTestContext test_context;
-    test::expect_compile_python_error(
-        test_context,
-        L"def f(a, /):\n"
-        L"    pass\n",
-        L"SyntaxError", L"positional-only parameters are not implemented yet");
-}
-
-TEST(Codegen, unresolved_jump_target_allows_expected_codegen_error)
-{
-    test::VmTestContext test_context;
-    test::expect_compile_python_error(
-        test_context,
-        L"if True:\n"
-        L"    def f(a, /):\n"
-        L"        pass\n",
-        L"SyntaxError", L"positional-only parameters are not implemented yet");
-}
-
-TEST(Codegen, exception_table_range_allows_expected_codegen_error)
-{
-    test::VmTestContext test_context;
-    test::expect_compile_python_error(
-        test_context,
-        L"try:\n"
-        L"    def f(a, /):\n"
-        L"        pass\n"
-        L"finally:\n"
-        L"    pass\n",
-        L"SyntaxError", L"positional-only parameters are not implemented yet");
-}
-
 TEST(Codegen, default_parameter_span_limit_is_compile_error)
 {
     std::wstring source = L"def f(";
@@ -653,6 +619,29 @@ TEST(Codegen, function_varargs_parameter_layout)
     EXPECT_EQ(1u, function_code->function_keyword_remap.parameter_index_at(1));
     EXPECT_TRUE(function_code->has_varargs());
     EXPECT_EQ(7, function_code->get_highest_occupied_frame_offset());
+}
+
+TEST(Codegen, function_positional_only_parameter_layout)
+{
+    test::VmTestContext test_context;
+    CodeObject *module_code =
+        test_context.compile_file(L"def f(a, b, /, c, *, d=4):\n"
+                                  L"    return a\n");
+    CodeObject *function_code =
+        module_code->constant_table[0].value().get_ptr<CodeObject>();
+
+    EXPECT_EQ(4, function_code->function_signature.n_parameters);
+    EXPECT_EQ(3, function_code->function_signature.n_positional_parameters);
+    EXPECT_EQ(2, function_code->function_signature.n_posonly_parameters);
+    EXPECT_EQ(1, function_code->function_signature.n_pos_or_kw_parameters);
+    EXPECT_EQ(1, function_code->function_signature.n_kwonly_parameters);
+    ASSERT_EQ(2u, function_code->function_keyword_remap.size());
+    EXPECT_STREQ(L"c", string_as_wchar_t(TValue<String>::from_value_assumed(
+                           function_code->function_keyword_remap.name_at(0))));
+    EXPECT_EQ(2u, function_code->function_keyword_remap.parameter_index_at(0));
+    EXPECT_STREQ(L"d", string_as_wchar_t(TValue<String>::from_value_assumed(
+                           function_code->function_keyword_remap.name_at(1))));
+    EXPECT_EQ(3u, function_code->function_keyword_remap.parameter_index_at(1));
 }
 
 TEST(Codegen, function_kwargs_parameter_layout)

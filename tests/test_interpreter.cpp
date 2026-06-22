@@ -1093,6 +1093,46 @@ TEST(Interpreter, function_keyword_call_handles_varargs_default_holes)
     EXPECT_EQ(Value::from_smi(5283), file_runner.return_value);
 }
 
+TEST(Interpreter, function_positional_only_accepts_positional_argument)
+{
+    test::FileRunner file_runner(L"def f(a, /):\n"
+                                 L"    return a\n"
+                                 L"f(7)\n");
+    EXPECT_EQ(Value::from_smi(7), file_runner.return_value);
+}
+
+TEST(Interpreter, function_positional_only_rejects_keyword_argument)
+{
+    expect_python_error(L"def f(a, /):\n"
+                        L"    return a\n"
+                        L"f(a=1)\n",
+                        L"TypeError", L"invalid keyword argument");
+}
+
+TEST(Interpreter, function_positional_only_mixes_with_keyword_parameters)
+{
+    test::FileRunner file_runner(L"def f(a, /, b):\n"
+                                 L"    return a * 10 + b\n"
+                                 L"f(3, b=4)\n");
+    EXPECT_EQ(Value::from_smi(34), file_runner.return_value);
+}
+
+TEST(Interpreter, function_positional_only_defaults)
+{
+    test::FileRunner file_runner(L"def f(a=3, /, b=4):\n"
+                                 L"    return a * 10 + b\n"
+                                 L"f()\n");
+    EXPECT_EQ(Value::from_smi(34), file_runner.return_value);
+}
+
+TEST(Interpreter, function_positional_only_keyword_collected_by_kwargs)
+{
+    test::FileRunner file_runner(L"def f(a, /, **kwargs):\n"
+                                 L"    return a * 10 + kwargs['a']\n"
+                                 L"f(3, a=4)\n");
+    EXPECT_EQ(Value::from_smi(34), file_runner.return_value);
+}
+
 TEST(Interpreter, function_kwargs_collect_empty_dict)
 {
     test::FileRunner file_runner(L"def f(**kwargs):\n"
@@ -1196,6 +1236,24 @@ TEST(Interpreter, class_new_preserves_kwargs)
                                  L"        return kwargs['x']\n"
                                  L"C(x=7)\n");
     EXPECT_EQ(Value::from_smi(7), file_runner.return_value);
+}
+
+TEST(Interpreter, class_constructor_preserves_positional_only_self)
+{
+    test::FileRunner file_runner(L"class C:\n"
+                                 L"    def __init__(self, /, value):\n"
+                                 L"        self.value = value\n"
+                                 L"C(value=8).value\n");
+    EXPECT_EQ(Value::from_smi(8), file_runner.return_value);
+}
+
+TEST(Interpreter, class_new_preserves_positional_only_cls)
+{
+    test::FileRunner file_runner(L"class C:\n"
+                                 L"    def __new__(cls, /, value):\n"
+                                 L"        return value\n"
+                                 L"C(value=9)\n");
+    EXPECT_EQ(Value::from_smi(9), file_runner.return_value);
 }
 
 TEST(Interpreter, class_constructor_preserves_required_keyword_only)

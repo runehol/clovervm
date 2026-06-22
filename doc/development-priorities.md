@@ -59,9 +59,9 @@ JIT, language, and runtime work.
    implicit fallback machinery hidden inside the hot path.
 
    This does not require completing every Python call syntax first. Runtime
-   support for positional-only parameters, callee `**kwargs`, caller `*args`,
-   caller `**kwargs`, richer duplicate/error ordering, and native keyword-call
-   convenience APIs can land later as additional call-plan variants.
+   support for caller `*args`, caller `**kwargs`, richer duplicate/error
+   ordering, and native keyword-call convenience APIs can land later as
+   additional call-plan variants.
 
 3. **Implicit protocol dispatch and cached special calls**
 
@@ -203,9 +203,8 @@ Revisit this ordering when:
   benchmark-source adaptation;
 - implicit protocols such as `__len__`, `__iter__`, `__next__`, and numeric
   conversion have guarded dispatch plans comparable to operator dispatch;
-- callee `**kwargs`, caller `*args` / `**kwargs`, positional-only parameters, or
-  exact CPython call diagnostics become the next blocker for stdlib module
-  bringup;
+- caller `*args` / `**kwargs` expansion or exact CPython call diagnostics
+  become the next blocker for stdlib module bringup;
 - importlib, public finder/loader APIs, path hooks, or exact module namespace
   compatibility become necessary for broader Python source;
 - small stdlib modules such as `errno` are blocked mainly because public

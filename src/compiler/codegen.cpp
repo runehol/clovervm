@@ -158,25 +158,16 @@ namespace cl
         return av.children[av.children[signature_idx][group_idx]];
     }
 
-    bool
-    parameter_signature_has_unsupported_runtime_shape(const AstVector &av,
-                                                      int32_t signature_idx)
-    {
-        return !parameter_signature_group(av, signature_idx, 0).empty();
-    }
-
     Expected<AstChildren>
     supported_runtime_parameter_order(const AstVector &av,
                                       int32_t signature_idx)
     {
-        if(parameter_signature_has_unsupported_runtime_shape(av, signature_idx))
+        AstChildren result = parameter_signature_group(av, signature_idx, 0);
+        AstChildren pos_or_kw = parameter_signature_group(av, signature_idx, 1);
+        for(int32_t param_idx: pos_or_kw)
         {
-            return Expected<AstChildren>::raise_exception(
-                L"SyntaxError",
-                L"positional-only parameters are not implemented yet");
+            result.push_back(param_idx);
         }
-
-        AstChildren result = parameter_signature_group(av, signature_idx, 1);
         AstChildren vararg = parameter_signature_group(av, signature_idx, 2);
         assert(vararg.size() <= 1);
         for(int32_t param_idx: vararg)
@@ -3304,27 +3295,35 @@ namespace cl
                                   local_scope, function_name);
 
         fun_obj.set_docstring(docstring_for_body(av, children[1]));
+        AstChildren posonly = parameter_signature_group(av, children[0], 0);
+        AstChildren pos_or_kw = parameter_signature_group(av, children[0], 1);
+        AstChildren kwonly = parameter_signature_group(av, children[0], 3);
         fun_obj.n_parameters() = param_children.size();
-        fun_obj.n_positional_parameters() =
-            parameter_signature_group(av, children[0], 1).size();
-        fun_obj.function_signature().n_pos_or_kw_parameters =
-            fun_obj.n_positional_parameters();
-        fun_obj.function_signature().n_kwonly_parameters =
-            parameter_signature_group(av, children[0], 3).size();
+        fun_obj.function_signature().n_posonly_parameters = posonly.size();
+        fun_obj.n_positional_parameters() = posonly.size() + pos_or_kw.size();
+        fun_obj.function_signature().n_pos_or_kw_parameters = pos_or_kw.size();
+        fun_obj.function_signature().n_kwonly_parameters = kwonly.size();
         fun_obj.function_signature().has_required_keyword_only_parameters =
-            parameter_sequence_has_required_parameter(
-                av, parameter_signature_group(av, children[0], 3));
+            parameter_sequence_has_required_parameter(av, kwonly);
         assert(fun_obj.n_positional_parameters() <= UINT16_MAX);
-        for(uint32_t param_idx = 0; param_idx < param_children.size();
-            ++param_idx)
+        assert(fun_obj.n_parameters() <= UINT16_MAX);
+        for(uint32_t pos_or_kw_idx = 0; pos_or_kw_idx < pos_or_kw.size();
+            ++pos_or_kw_idx)
         {
-            int32_t parameter_node_idx = param_children[param_idx];
-            if(av.kinds[parameter_node_idx].node_kind == AstNodeKind::PARAMETER)
-            {
-                fun_obj.function_keyword_remap().add(
-                    ast_string_constant(av, parameter_node_idx),
-                    static_cast<uint16_t>(param_idx));
-            }
+            int32_t parameter_node_idx = pos_or_kw[pos_or_kw_idx];
+            fun_obj.function_keyword_remap().add(
+                ast_string_constant(av, parameter_node_idx),
+                static_cast<uint16_t>(posonly.size() + pos_or_kw_idx));
+        }
+        uint32_t first_kwonly_idx =
+            uint32_t(posonly.size() + pos_or_kw.size() +
+                     (has_varargs_parameter(av, param_children) ? 1 : 0));
+        for(uint32_t kwonly_idx = 0; kwonly_idx < kwonly.size(); ++kwonly_idx)
+        {
+            int32_t parameter_node_idx = kwonly[kwonly_idx];
+            fun_obj.function_keyword_remap().add(
+                ast_string_constant(av, parameter_node_idx),
+                static_cast<uint16_t>(first_kwonly_idx + kwonly_idx));
         }
         if(has_varargs_parameter(av, param_children))
         {

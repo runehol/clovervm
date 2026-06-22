@@ -26,8 +26,7 @@ paths:
   defaulted keyword-only parameters, mixed positional/keyword-only default
   layouts, callee `*args`, and callee `**kwargs`;
 - parser/codegen represent explicit caller positional and keyword arguments;
-- parser accepts richer callee signature syntax, but codegen still rejects
-  positional-only parameters for runtime use;
+- parser and codegen support positional-only parameters before `/`;
 - caller `*args` and `**kwargs` expansion remain unsupported.
 
 The keyword-call path deliberately does not introduce the full Python callable
@@ -172,9 +171,11 @@ real keyword-bindable parameter named `kwargs` if such a parameter exists, is
 collected into `**kwargs` if no such parameter exists and the callee has
 `**kwargs`, or is rejected otherwise.
 
-Positional-only names should remain visible to diagnostics and duplicate checks,
-but they are not valid keyword targets. A keyword that names a positional-only
-parameter must raise `TypeError`.
+Positional-only names should remain visible to diagnostics, but they are not
+valid keyword targets and must not appear in the keyword remap. A keyword that
+names a positional-only parameter is treated like any other unmatched keyword:
+it is collected into `**kwargs` if the callee has a kwargs parameter, and is
+otherwise rejected.
 
 The cold binder linearly scans `names`. Parameter counts and keyword counts are
 normally small, and interned names make comparison pointer/raw-value equality.
@@ -419,8 +420,8 @@ starred-call or generic callable protocol work.
   optional `**kwargs`.
 
   It parses `/`, bare `*`, `*args`, keyword-only parameters, and `**kwargs`
-  into distinct AST structure. Codegen still rejects positional-only parameters
-  for runtime use. Defaults remain attached to parameter nodes for now.
+  into distinct AST structure. Defaults remain attached to parameter nodes for
+  now.
 
 - [x] **Codegen and function signature metadata**
 
@@ -501,9 +502,8 @@ starred-call or generic callable protocol work.
   path and keyword calls carry a names tuple. Keyword call microbenchmarks cover
   all-keyword, mixed positional/keyword, and default-using keyword calls.
 
-  Method keyword calls, positional-only parameters, caller `*args`, caller
-  `**kwargs`, generic `__call__`, and descriptor-heavy callable behavior remain
-  unsupported.
+  Method keyword calls, caller `*args`, caller `**kwargs`, generic `__call__`,
+  and descriptor-heavy callable behavior remain unsupported.
 
 ## Deferred Work
 
@@ -511,7 +511,6 @@ The following require separate design/implementation slices:
 
 - keyword method calls, including whether to add a fused method-keyword opcode
   or split method lookup/binding from keyword call entry;
-- runtime support for positional-only parameters;
 - caller `*args` expansion, including iterable protocol details and error
   ordering;
 - caller `**kwargs` expansion, including mapping protocol details, duplicate
