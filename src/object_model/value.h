@@ -124,7 +124,7 @@ namespace cl
         static inline Value from_smi(int64_t v)
         {
             Value val;
-            val.as.integer = v << value_tag_bits;
+            val.as.integer = int64_t(uint64_t(v) << value_tag_bits);
             return val;
         }
 

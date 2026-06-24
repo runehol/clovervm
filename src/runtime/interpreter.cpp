@@ -104,11 +104,12 @@ namespace cl
 
     static int16_t read_int16_le(const uint8_t *p)
     {
-#if 1
+#ifdef NDEBUG_SANITIZER
+        uint16_t raw = uint16_t(p[0]) | (uint16_t(p[1]) << 8);
+        return int16_t(int32_t(uint32_t(raw) << 16) >> 16);
+#else
         const int16_t *ptr = reinterpret_cast<const int16_t *>(p);
         return *ptr;
-#else
-        return (p[0] << 0) | (p[1] << 8);
 #endif
     }
 
