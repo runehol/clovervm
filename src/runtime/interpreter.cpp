@@ -277,7 +277,8 @@ namespace cl
         (void)thread->set_pending_builtin_exception_string(
             L"SystemError",
             L"exception marker native return without pending exception");
-        Value *restored_fp = (Value *)fp[FrameHeaderPreviousFpOffset].as.ptr;
+        Value *restored_fp =
+            decode_frame_payload_ptr<Value *>(fp[FrameHeaderPreviousFpOffset]);
         thread->set_clover_frame_frontier(restored_fp);
         return Value::exception_marker();
     }
@@ -447,22 +448,24 @@ namespace cl
                             CodeObject *return_code_object,
                             const uint8_t *return_pc)
     {
-        // these aren't really values. we're just going to whack them in and
-        // ask the refcounter to ignore them.
-        new_fp[FrameHeaderPreviousFpOffset].as.ptr = (Object *)previous_fp;
+        // These are frame payload cells, not Python values. Keep real heap
+        // objects as tagged Values, and store raw VM pointers as integer bits.
+        new_fp[FrameHeaderPreviousFpOffset] =
+            encode_frame_payload_ptr(previous_fp);
         new_fp[FrameHeaderReturnCodeObjectOffset] =
             Value::from_oop(return_code_object);
-        new_fp[FrameHeaderReturnPcOffset].as.ptr = (Object *)return_pc;
+        new_fp[FrameHeaderReturnPcOffset] = encode_frame_payload_ptr(return_pc);
     }
 
     static ALWAYSINLINE void restore_frame_header(Value *&fp,
                                                   const uint8_t *&pc,
                                                   CodeObject *&code_object)
     {
-        pc = (const uint8_t *)fp[FrameHeaderReturnPcOffset].as.ptr;
+        pc = decode_frame_payload_ptr<const uint8_t *>(
+            fp[FrameHeaderReturnPcOffset]);
         code_object =
             fp[FrameHeaderReturnCodeObjectOffset].get_ptr<CodeObject>();
-        fp = (Value *)fp[FrameHeaderPreviousFpOffset].as.ptr;
+        fp = decode_frame_payload_ptr<Value *>(fp[FrameHeaderPreviousFpOffset]);
     }
 
     static ALWAYSINLINE Value *
@@ -5438,7 +5441,8 @@ namespace cl
 
     static INTERP_CC Value op_return_to_native(PARAMS)
     {
-        Value *restored_fp = (Value *)fp[FrameHeaderPreviousFpOffset].as.ptr;
+        Value *restored_fp =
+            decode_frame_payload_ptr<Value *>(fp[FrameHeaderPreviousFpOffset]);
         thread->set_clover_frame_frontier(restored_fp);
         return accumulator;
     }
@@ -5457,7 +5461,8 @@ namespace cl
             MUSTTAIL return op_return_exception_marker_to_native_slow(ARGS);
         }
 
-        Value *restored_fp = (Value *)fp[FrameHeaderPreviousFpOffset].as.ptr;
+        Value *restored_fp =
+            decode_frame_payload_ptr<Value *>(fp[FrameHeaderPreviousFpOffset]);
         thread->set_clover_frame_frontier(restored_fp);
         return Value::exception_marker();
     }
@@ -5656,8 +5661,8 @@ namespace cl
 
     Value *trace_previous_frame(Value *fp)
     {
-        return reinterpret_cast<Value *>(
-            fp[FrameHeaderPreviousFpOffset].as.ptr);
+        return decode_frame_payload_ptr<Value *>(
+            fp[FrameHeaderPreviousFpOffset]);
     }
 
     TraceFrameTransition classify_trace_frame_transition(Value *previous_fp,

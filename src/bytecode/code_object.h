@@ -17,6 +17,7 @@
 #include <clovervm/native_module.h>
 #include <cstdint>
 #include <memory>
+#include <type_traits>
 #include <vector>
 
 namespace cl
@@ -481,6 +482,28 @@ namespace cl
     static constexpr uint32_t ClassBodyParameterCount = 2;
 
     static constexpr uintptr_t FrameAlignmentBytes = 16;
+
+    template <typename Pointer>
+    static ALWAYSINLINE Value encode_frame_payload_ptr(Pointer ptr)
+    {
+        static_assert(std::is_pointer_v<Pointer>);
+        static_assert(sizeof(intptr_t) <= sizeof(int64_t));
+
+        Value value;
+        value.as.integer =
+            static_cast<int64_t>(reinterpret_cast<intptr_t>(ptr));
+        return value;
+    }
+
+    template <typename Pointer>
+    static ALWAYSINLINE Pointer decode_frame_payload_ptr(Value value)
+    {
+        static_assert(std::is_pointer_v<Pointer>);
+        static_assert(sizeof(intptr_t) <= sizeof(int64_t));
+
+        return reinterpret_cast<Pointer>(
+            static_cast<intptr_t>(static_cast<int64_t>(value.as.integer)));
+    }
 
     constexpr uint32_t round_up_to_abi_alignment(uint32_t value)
     {

@@ -54,10 +54,13 @@ namespace cl
 
     static void initialize_clover_frame_sentinel(Value *sentinel_fp)
     {
-        sentinel_fp[FrameHeaderPreviousFpOffset].as.ptr = nullptr;
-        sentinel_fp[FrameHeaderCompiledReturnPcOffset].as.ptr = nullptr;
+        sentinel_fp[FrameHeaderPreviousFpOffset] =
+            encode_frame_payload_ptr(static_cast<Value *>(nullptr));
+        sentinel_fp[FrameHeaderCompiledReturnPcOffset] =
+            encode_frame_payload_ptr(static_cast<const uint8_t *>(nullptr));
         sentinel_fp[FrameHeaderReturnCodeObjectOffset].as.ptr = nullptr;
-        sentinel_fp[FrameHeaderReturnPcOffset].as.ptr = nullptr;
+        sentinel_fp[FrameHeaderReturnPcOffset] =
+            encode_frame_payload_ptr(static_cast<const uint8_t *>(nullptr));
     }
 
     ThreadState::ThreadState(VirtualMachine *_machine)
@@ -139,8 +142,8 @@ namespace cl
             CL_TRY(machine->clover_function_entry_adapter(n_args));
         Value *caller_fp = clover_frame_frontier();
         Value *adapter_fp = entry_frame_pointer(caller_fp, adapter);
-        adapter_fp[FrameHeaderPreviousFpOffset].as.ptr =
-            reinterpret_cast<Object *>(caller_fp);
+        adapter_fp[FrameHeaderPreviousFpOffset] =
+            encode_frame_payload_ptr(caller_fp);
 
         set_clover_entry_adapter_parameter(adapter, adapter_fp, 0,
                                            function.raw_value());
