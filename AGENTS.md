@@ -10,6 +10,17 @@ This repository contains clovervm, a Python VM.
 - When implementing an agreed-upon plan, if you encounter a case the plan did not call out or anticipate, stop and ask for clarification before inventing or implementing a new design.
 - If an implementation exposes a significant design gap in an agreed plan, especially around public API shape, Python-visible semantics, error behavior, cache invalidation policy, object layout, ownership/lifetime rules, or cross-cutting VM invariants, stop and ask before deciding. Do not quietly add compatibility machinery, new metadata, new special cases, fallback behavior, or inferred policy just to keep moving.
 
+# Architecture and layering
+
+- Keep behavior in the layer that owns it. Parser and AST code should describe syntax and source structure; codegen should lower Python-visible semantics into bytecode; opcode handlers should execute bytecode while preserving dispatch shape; runtime object helpers should own object semantics, allocation, descriptors, and type behavior; native modules should expose Python behavior without reaching into interpreter frame machinery.
+- Before introducing a new helper, type, enum, opcode, AST node, cache structure, ownership pattern, or subsystem boundary, inspect nearby existing code and name the closest local pattern being followed. If no good local pattern exists, call that out before editing.
+- For changes touching more than one subsystem, first state which layer owns the behavior, which existing pattern the change follows, what invariants must remain true, and what tests or checks will prove the behavior.
+- Do not solve layering friction by adding broad compatibility paths, new metadata, or cross-layer shortcuts unless that design has been explicitly agreed. In this greenfield repository, prefer updating all in-repo users to match the chosen design.
+- If a proposed change requires one layer to know details from an unrelated layer, stop and explain the coupling pressure before implementing it.
+- New abstractions must earn their weight by removing real complexity, preserving a VM invariant, or matching an established project pattern. Do not add a helper or framework solely to reduce one or two local call sites.
+- Keep Python-visible semantics out of convenience code whose layer should only represent structure or mechanics, such as parser/AST plumbing, inline opcode classification helpers, or low-level unchecked primitives.
+- Before finalizing a nontrivial change, check that it follows an existing local pattern, that any new abstraction is justified, that ownership and pending-exception contracts remain explicit, that Python-visible semantics are covered by interpreter-level tests where appropriate, and that verification matches the touched subsystem.
+
 # Changing code
 
 - Run `clang-format -i` on every touched C++ source or header file so it matches the repository's `.clang-format`. Never run `clang-format` on `CMakeLists.txt` files.
@@ -21,7 +32,6 @@ This repository contains clovervm, a Python VM.
 - Run git commands one at a time. Do not launch multiple git commands in parallel, because repository locking can make them fail.
 - Run `gh` commands with elevated privileges so GitHub authentication works.
 - Prefer interpreter tests for semantics and end-to-end behavior. Keep codegen tests focused on high-value structural guarantees such as specific lowering patterns, call conventions, or optimizations that interpreter tests would not pin down well.
-- This is a greenfield project. Backwards compatibility layers or fallbacks are generally not needed when all uses inside the git repository can be updated.
 - When designing AST shapes for Python syntax, consult CPython's `Parser/Python.asdl` and borrow its structure where it fits clovervm before inventing a different local representation.
 
 # Interpreter code
