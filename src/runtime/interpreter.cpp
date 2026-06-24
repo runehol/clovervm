@@ -273,14 +273,12 @@ namespace cl
     exception_marker_native_return_without_pending_exception_system_error(
         PARAMS)
     {
-        START(1);
         (void)thread->set_pending_builtin_exception_string(
             L"SystemError",
             L"exception marker native return without pending exception");
         Value *restored_fp = (Value *)fp[FrameHeaderPreviousFpOffset].as.ptr;
         thread->set_clover_frame_frontier(restored_fp);
         return Value::exception_marker();
-        COMPLETE();
     }
 
     NOINLINE INTERP_CC Value local_name_error(PARAMS)
@@ -5439,11 +5437,9 @@ namespace cl
 
     static INTERP_CC Value op_return_to_native(PARAMS)
     {
-        START(1);
         Value *restored_fp = (Value *)fp[FrameHeaderPreviousFpOffset].as.ptr;
         thread->set_clover_frame_frontier(restored_fp);
         return accumulator;
-        COMPLETE();
     }
 
     NOINLINE static INTERP_CC Value
@@ -5455,7 +5451,6 @@ namespace cl
 
     static INTERP_CC Value op_return_exception_marker_to_native(PARAMS)
     {
-        START(1);
         if(unlikely(!thread->has_pending_exception()))
         {
             MUSTTAIL return op_return_exception_marker_to_native_slow(ARGS);
@@ -5464,7 +5459,6 @@ namespace cl
         Value *restored_fp = (Value *)fp[FrameHeaderPreviousFpOffset].as.ptr;
         thread->set_clover_frame_frontier(restored_fp);
         return Value::exception_marker();
-        COMPLETE();
     }
 
     DispatchTable make_dispatch_table()
