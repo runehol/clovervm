@@ -75,15 +75,43 @@ implemented runtime slice supports:
 - positional argument: `f(value)`;
 - keyword argument: `f(name=value)`.
 
-Caller-side expansion is deliberately deferred:
+Caller-side expansion is a distinct call-site shape:
 
 - starred positional expansion: `f(*values)`;
 - keyword mapping expansion: `f(**mapping)`;
 - mixed repeated expansions.
 
+Following CPython's broad shape, any call site that contains caller `*` or
+`**` expansion should normalize its dynamic argument sources before callee
+binding instead of trying to force them into the compact `CallKeyword` shape.
+The normalized call payload is:
+
+```text
+callable
+args_tuple
+optional kwargs_dict
+```
+
+`*values` accepts any iterable and materializes the positional arguments into a
+tuple. If the operand is already an exact tuple, the normalized payload may reuse
+it; otherwise the call site performs iterable-to-tuple coercion and reports the
+`TypeError` before entering the callee.
+
+`**mapping` accepts mapping-like objects, including `dict` subclasses and custom
+objects that provide mapping-style key lookup. It does not accept arbitrary
+iterables of key/value pairs. The call site always allocates a fresh plain
+kwargs dict when any caller keyword expansion or explicit keyword in an
+expanded call needs keyword transport. It then merges explicit keyword runs and
+`**mapping` operands into that dict in source order. This merge is responsible
+for runtime mapping validation, duplicate keyword detection, and string-key
+validation.
+
 The parser rejects repeated explicit keyword names at the call site with a
-`SyntaxError`. The deferred expansion forms should get AST space when their
-runtime semantics are designed.
+`SyntaxError`. Repeated names that involve `**mapping` operands remain runtime
+errors because the keys are dynamic.
+
+The fresh kwargs dict is a call-owned transport object. It must not alias the
+user mapping passed to `**mapping`, and callee binding may rely on owning it.
 
 ## Keyword Call Bytecode
 
@@ -130,6 +158,70 @@ kw_names          = ("c", "b")
 
 The names tuple is a stable call-site shape. It avoids interleaving metadata
 with values and gives `KeywordCallInlineCache` a compact guard key.
+
+## Expanded Call Binding
+
+Expanded calls consume the normalized `args_tuple` plus an optional fresh
+kwargs dict. They should share the same callee signature semantics as ordinary
+keyword calls, but they cannot reuse the existing keyword-call cache structure
+directly because the keyword set is runtime data rather than a static names
+tuple.
+
+The positional phase copies values from `args_tuple` into positional formal
+slots until either the tuple or the positional parameter range is exhausted.
+Remaining tuple items are an error unless the callee has `*args`; with
+`*args`, the callee receives a tuple containing the remaining positional suffix.
+For the pure collector case `def f(*args, **kwargs)`, the normalized
+`args_tuple` can be installed directly as the callee `*args` value.
+
+Default handling follows the same slot-indexed default metadata used by
+ordinary keyword calls. A positional or keyword value wins over a default. A
+slot that is not filled by the positional phase and is not filled by the keyword
+phase is satisfied from the default table if the corresponding
+`default_presence_mask` bit is present; otherwise the missing argument is an
+error. This applies to both positional-or-keyword parameters and keyword-only
+parameters. Defaults are copied as references to the stored Python values, not
+deep-copied.
+
+The keyword phase may destructively consume the fresh kwargs transport dict:
+
+```text
+for each keyword-bindable callee parameter:
+  if the name is present and the slot was filled positionally:
+    raise duplicate-value TypeError
+  if the name is present:
+    copy the value into the callee slot
+    delete the key from the transport dict
+  if the name is absent and no default can fill the slot:
+    raise missing-argument TypeError
+```
+
+Only keyword-bindable parameters participate in this deletion pass:
+positional-or-keyword and keyword-only parameters. Positional-only parameter
+names are not keyword targets. If a matching keyword remains in the transport
+dict and the callee has `**kwargs`, it is collected there like any other
+unmatched keyword; otherwise it is an unexpected-keyword error.
+
+After the keyword-bindable pass, any remaining entries in the transport dict are
+the unmatched keyword arguments. If the callee has `**kwargs`, the remaining
+dict can be installed as the callee `**kwargs` value because it is fresh and
+call-owned. If the callee has no `**kwargs`, a non-empty transport dict is an
+unexpected-keyword error.
+
+When an expanded call has no keyword transport dict but the callee has
+`**kwargs`, frame entry must still provide a fresh empty dict for the callee
+parameter. The empty-dict case must not use `None` or a shared mutable object.
+
+The first useful fast path is the pure collector signature:
+
+```python
+def f(*args, **kwargs):
+    ...
+```
+
+For that shape, expanded entry can install the normalized positional tuple and
+the fresh kwargs transport dict directly, allocating only a fresh empty dict
+when the caller supplied no keyword transport.
 
 ## Runtime Scope
 
