@@ -39,6 +39,9 @@ The native API sections are part of the GC design because a moving collector
 must know every root and must be able to update every reference to moved
 objects. They are not the main collector policy.
 
+Implementation staging belongs in
+[Generational Copying GC Implementation Plan](generational-copying-gc-implementation-plan.md).
+
 ## Collector Model
 
 The collector assumed by this proposal is generational, moving, and
@@ -92,9 +95,56 @@ inputs to the native-layout descriptor system:
 
 ```text
 descriptor = descriptor_for(obj->native_layout_id())
-size = descriptor.object_size(obj)
-trace/copy layout = descriptor.trace_layout(obj)
+size = descriptor.layout_size(obj)
+trace layout = descriptor.trace_layout(obj)
+release layout = descriptor.release_layout(obj)
 ```
+
+The collector should extend the existing native-layout descriptor system rather
+than introduce a separate GC descriptor framework. The layout descriptors should
+answer three different questions:
+
+- layout size: how much storage should the collector allocate and copy;
+- trace layout: which outgoing GC references the object contains;
+- release layout: which owned references should be released when the object
+  dies.
+
+Trace and release often describe the same `Value` spans today, but they should
+remain separate concepts. Future weak references, borrowed references, caches,
+or native-owned storage may be traced differently from how they are released.
+
+For copying GC, a single object-size answer is not enough. A descriptor should
+report both allocated extent and initialized extent:
+
+```cpp
+struct LayoutSize {
+    size_t allocated_size;
+    size_t initialized_size;
+};
+```
+
+`allocated_size` is the full object allocation, including spare capacity.
+`initialized_size` is the contiguous prefix containing valid object state that
+can be copied with `memcpy`. The invariant is:
+
+```text
+initialized_size <= allocated_size
+```
+
+The copying path should allocate the full extent but copy only initialized
+state:
+
+```cpp
+LayoutSize size = descriptor.layout_size(obj);
+HeapObject *dst = allocate(size.allocated_size);
+memcpy(dst, obj, size.initialized_size);
+```
+
+This preserves over-allocation for amortized-growth containers without reading
+uninitialized capacity. Tracing should still use the logical initialized object
+contents, not spare capacity. Any future policy that wants to shrink copied
+objects should be explicit collector policy, not something forced by the layout
+descriptor API.
 
 The GC-specific object state needed for ordinary copied objects is much smaller:
 
@@ -173,6 +223,9 @@ if(owner->generation_state == HeapGenerationState::Old &&
 If the owner is already `OldRemembered`, the barrier does nothing. The
 `Old -> OldRemembered` transition is the duplicate-entry guard.
 
+Remembered sets store old objects that may contain references into the nursery.
+They never store nursery objects.
+
 Each `ThreadState` should own a remembered set. That keeps ordinary barriers
 lock-free in the common case: a mutator records old-to-young stores in its own
 thread-local vector. In a future no-GIL implementation where multiple threads
@@ -181,15 +234,29 @@ atomic so only one thread records the object.
 
 During stop-the-world minor GC, the collector scans the remembered sets for all
 threads. For each remembered old object, it scans and updates references using
-the layout descriptors. If the object still contains young references after the
-collection, it remains `OldRemembered` and stays in a remembered set for the
-next minor collection. If it no longer contains young references, the collector
-sets it back to `Old`.
+the layout descriptors. With the initial en-masse promotion policy, every live
+young target found by roots or remembered old objects is promoted during the
+minor collection. After the remembered object has been scanned and repaired, the
+collector clears its remembered state back to `Old`; future old-to-young stores
+rebuild remembered-set entries through the write barrier.
 
 This object-level remembered policy is intentionally coarse. Large backing
 stores, module globals, or other high-churn structures can later receive more
 precise slot/range tracking if measurements show that rescanning the whole
 object is too expensive.
+
+The write-barrier contract is:
+
+- every heap store that can create an old-to-young edge must execute exactly one
+  appropriate write-barrier path;
+- the barrier observes the final stored child value;
+- the barrier may conservatively over-report old objects;
+- the barrier must never under-report old objects that can point into the
+  nursery.
+
+Construction paths, young-owner stores, immediate values, and caller-proven
+old-child stores may use specialized no-op paths, but the proof must be local to
+the store path and must not hide a possible old-to-young edge.
 
 ### Write Barrier Implementation Lessons
 
@@ -248,6 +315,12 @@ The per-slot remembered bit is the duplicate-entry guard for that slot. Minor GC
 can scan only the recorded module slots, update copied young targets, and clear
 the slot bit when the slot no longer contains a young reference. This keeps
 module global churn from forcing every minor GC to rescan all module storage.
+
+That refinement should not be part of the first collector. The initial collector
+should remember whole module objects or use a dirty-module list, and it should
+not make modules permanent roots or scan all modules on every minor collection.
+More precise module-slot entries should wait until profiling shows module
+scanning is a material minor-GC cost.
 
 Major collections may collect both young and old movable generations. The exact
 old-generation policy is still open: old objects may continue to move during
