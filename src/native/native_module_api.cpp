@@ -203,8 +203,9 @@ extern "C" CL_EXPORT clover_status clover_module_add_function_7(
     return cl::add_extension_function(builder, name, function, docstring);
 }
 
-extern "C" CL_EXPORT clover_status clover_module_add_value(
-    clover_native_module_builder *builder, const char *name, clover_value value)
+extern "C" CL_EXPORT clover_status
+clover_module_add_value(clover_native_module_builder *builder, const char *name,
+                        clover_handle value)
 {
     if(!cl::valid_builder(builder))
     {
@@ -218,7 +219,7 @@ extern "C" CL_EXPORT clover_status clover_module_add_value(
         return CLOVER_STATUS_ERROR;
     }
 
-    cl::Value unwrapped = cl::unwrap_clover_value(value);
+    cl::Value unwrapped = cl::unwrap_clover_handle(value);
     if(unwrapped.is_exception_marker())
     {
         if(builder->thread->pending_exception_kind() ==

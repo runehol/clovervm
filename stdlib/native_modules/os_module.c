@@ -15,7 +15,7 @@
 #include <sys/types.h>
 #include <unistd.h>
 
-static clover_value raise_errno(clover_context *ctx)
+static clover_handle raise_errno(clover_context *ctx)
 {
     return clover_raise_value_error(ctx, strerror(errno));
 }
@@ -25,7 +25,7 @@ typedef struct
     char *data;
 } path_string;
 
-static clover_status path_string_init(clover_context *ctx, clover_value value,
+static clover_status path_string_init(clover_context *ctx, clover_handle value,
                                       path_string *out)
 {
     size_t size;
@@ -59,7 +59,7 @@ static void path_string_destroy(path_string *path)
     path->data = NULL;
 }
 
-static clover_status value_as_int(clover_context *ctx, clover_value value,
+static clover_status value_as_int(clover_context *ctx, clover_handle value,
                                   int *out)
 {
     int64_t raw;
@@ -76,19 +76,19 @@ static clover_status value_as_int(clover_context *ctx, clover_value value,
     return CLOVER_STATUS_OK;
 }
 
-static clover_value os_getcwd(clover_context *ctx)
+static clover_handle os_getcwd(clover_context *ctx)
 {
     char *cwd = getcwd(NULL, 0);
     if(cwd == NULL)
     {
         return raise_errno(ctx);
     }
-    clover_value result = clover_string_from_utf8(ctx, cwd);
+    clover_handle result = clover_string_from_utf8(ctx, cwd);
     free(cwd);
     return result;
 }
 
-static clover_value os_chdir(clover_context *ctx, clover_value path_value)
+static clover_handle os_chdir(clover_context *ctx, clover_handle path_value)
 {
     path_string path;
     if(path_string_init(ctx, path_value, &path) != CLOVER_STATUS_OK)
@@ -106,7 +106,7 @@ static clover_value os_chdir(clover_context *ctx, clover_value path_value)
     return clover_none(ctx);
 }
 
-static clover_value os_listdir(clover_context *ctx, clover_value path_value)
+static clover_handle os_listdir(clover_context *ctx, clover_handle path_value)
 {
     path_string path;
     if(path_string_init(ctx, path_value, &path) != CLOVER_STATUS_OK)
@@ -125,7 +125,7 @@ static clover_value os_listdir(clover_context *ctx, clover_value path_value)
 
     size_t count = 0;
     size_t capacity = 16;
-    clover_value *items = (clover_value *)malloc(capacity * sizeof(*items));
+    clover_handle *items = (clover_handle *)malloc(capacity * sizeof(*items));
     if(items == NULL)
     {
         closedir(dir);
@@ -143,8 +143,8 @@ static clover_value os_listdir(clover_context *ctx, clover_value path_value)
         if(count == capacity)
         {
             capacity *= 2;
-            clover_value *grown =
-                (clover_value *)realloc(items, capacity * sizeof(*items));
+            clover_handle *grown =
+                (clover_handle *)realloc(items, capacity * sizeof(*items));
             if(grown == NULL)
             {
                 free(items);
@@ -165,42 +165,42 @@ static clover_value os_listdir(clover_context *ctx, clover_value path_value)
         return raise_errno(ctx);
     }
 
-    clover_value result = clover_tuple_from_array(ctx, items, count);
+    clover_handle result = clover_tuple_from_array(ctx, items, count);
     free(items);
     return result;
 }
 
-static clover_value os_getpid(clover_context *ctx)
+static clover_handle os_getpid(clover_context *ctx)
 {
     return clover_int_from_int64(ctx, (int64_t)getpid());
 }
 
-static clover_value os_getppid(clover_context *ctx)
+static clover_handle os_getppid(clover_context *ctx)
 {
     return clover_int_from_int64(ctx, (int64_t)getppid());
 }
 
-static clover_value os_getuid(clover_context *ctx)
+static clover_handle os_getuid(clover_context *ctx)
 {
     return clover_int_from_int64(ctx, (int64_t)getuid());
 }
 
-static clover_value os_geteuid(clover_context *ctx)
+static clover_handle os_geteuid(clover_context *ctx)
 {
     return clover_int_from_int64(ctx, (int64_t)geteuid());
 }
 
-static clover_value os_getgid(clover_context *ctx)
+static clover_handle os_getgid(clover_context *ctx)
 {
     return clover_int_from_int64(ctx, (int64_t)getgid());
 }
 
-static clover_value os_getegid(clover_context *ctx)
+static clover_handle os_getegid(clover_context *ctx)
 {
     return clover_int_from_int64(ctx, (int64_t)getegid());
 }
 
-static clover_value os_getenv(clover_context *ctx, clover_value name_value)
+static clover_handle os_getenv(clover_context *ctx, clover_handle name_value)
 {
     path_string name;
     if(path_string_init(ctx, name_value, &name) != CLOVER_STATUS_OK)
@@ -213,13 +213,13 @@ static clover_value os_getenv(clover_context *ctx, clover_value name_value)
         path_string_destroy(&name);
         return clover_none(ctx);
     }
-    clover_value result = clover_string_from_utf8(ctx, value);
+    clover_handle result = clover_string_from_utf8(ctx, value);
     path_string_destroy(&name);
     return result;
 }
 
-static clover_value os_putenv(clover_context *ctx, clover_value name_value,
-                              clover_value value_value)
+static clover_handle os_putenv(clover_context *ctx, clover_handle name_value,
+                               clover_handle value_value)
 {
     path_string name;
     path_string value;
@@ -244,7 +244,7 @@ static clover_value os_putenv(clover_context *ctx, clover_value name_value,
     return clover_none(ctx);
 }
 
-static clover_value os_unsetenv(clover_context *ctx, clover_value name_value)
+static clover_handle os_unsetenv(clover_context *ctx, clover_handle name_value)
 {
     path_string name;
     if(path_string_init(ctx, name_value, &name) != CLOVER_STATUS_OK)
@@ -262,7 +262,7 @@ static clover_value os_unsetenv(clover_context *ctx, clover_value name_value)
     return clover_none(ctx);
 }
 
-static clover_value os_strerror(clover_context *ctx, clover_value code_value)
+static clover_handle os_strerror(clover_context *ctx, clover_handle code_value)
 {
     int code;
     if(value_as_int(ctx, code_value, &code) != CLOVER_STATUS_OK)
@@ -272,7 +272,7 @@ static clover_value os_strerror(clover_context *ctx, clover_value code_value)
     return clover_string_from_utf8(ctx, strerror(code));
 }
 
-static clover_value os_system(clover_context *ctx, clover_value command_value)
+static clover_handle os_system(clover_context *ctx, clover_handle command_value)
 {
     path_string command;
     if(path_string_init(ctx, command_value, &command) != CLOVER_STATUS_OK)
@@ -284,7 +284,7 @@ static clover_value os_system(clover_context *ctx, clover_value command_value)
     return clover_int_from_int64(ctx, (int64_t)status);
 }
 
-static clover_value os_umask(clover_context *ctx, clover_value mask_value)
+static clover_handle os_umask(clover_context *ctx, clover_handle mask_value)
 {
     int mask;
     if(value_as_int(ctx, mask_value, &mask) != CLOVER_STATUS_OK)
@@ -294,9 +294,9 @@ static clover_value os_umask(clover_context *ctx, clover_value mask_value)
     return clover_int_from_int64(ctx, (int64_t)umask((mode_t)mask));
 }
 
-static clover_value stat_to_tuple(clover_context *ctx, const struct stat *st)
+static clover_handle stat_to_tuple(clover_context *ctx, const struct stat *st)
 {
-    clover_value items[] = {
+    clover_handle items[] = {
         clover_int_from_int64(ctx, (int64_t)st->st_mode),
         clover_int_from_int64(ctx, (int64_t)st->st_ino),
         clover_int_from_int64(ctx, (int64_t)st->st_dev),
@@ -311,7 +311,7 @@ static clover_value stat_to_tuple(clover_context *ctx, const struct stat *st)
     return clover_tuple_from_array(ctx, items, 10);
 }
 
-static clover_value os_stat(clover_context *ctx, clover_value path_value)
+static clover_handle os_stat(clover_context *ctx, clover_handle path_value)
 {
     path_string path;
     struct stat st;
@@ -330,7 +330,7 @@ static clover_value os_stat(clover_context *ctx, clover_value path_value)
     return stat_to_tuple(ctx, &st);
 }
 
-static clover_value os_lstat(clover_context *ctx, clover_value path_value)
+static clover_handle os_lstat(clover_context *ctx, clover_handle path_value)
 {
     path_string path;
     struct stat st;
@@ -349,8 +349,8 @@ static clover_value os_lstat(clover_context *ctx, clover_value path_value)
     return stat_to_tuple(ctx, &st);
 }
 
-static clover_value os_access(clover_context *ctx, clover_value path_value,
-                              clover_value mode_value)
+static clover_handle os_access(clover_context *ctx, clover_handle path_value,
+                               clover_handle mode_value)
 {
     path_string path;
     int mode;
@@ -368,8 +368,8 @@ static clover_value os_access(clover_context *ctx, clover_value path_value,
     return clover_int_from_int64(ctx, rc == 0 ? 1 : 0);
 }
 
-static clover_value os_chmod(clover_context *ctx, clover_value path_value,
-                             clover_value mode_value)
+static clover_handle os_chmod(clover_context *ctx, clover_handle path_value,
+                              clover_handle mode_value)
 {
     path_string path;
     int mode;
@@ -393,8 +393,8 @@ static clover_value os_chmod(clover_context *ctx, clover_value path_value,
     return clover_none(ctx);
 }
 
-static clover_value os_mkdir(clover_context *ctx, clover_value path_value,
-                             clover_value mode_value)
+static clover_handle os_mkdir(clover_context *ctx, clover_handle path_value,
+                              clover_handle mode_value)
 {
     path_string path;
     int mode;
@@ -418,7 +418,7 @@ static clover_value os_mkdir(clover_context *ctx, clover_value path_value,
     return clover_none(ctx);
 }
 
-static clover_value os_rmdir(clover_context *ctx, clover_value path_value)
+static clover_handle os_rmdir(clover_context *ctx, clover_handle path_value)
 {
     path_string path;
     if(path_string_init(ctx, path_value, &path) != CLOVER_STATUS_OK)
@@ -436,7 +436,7 @@ static clover_value os_rmdir(clover_context *ctx, clover_value path_value)
     return clover_none(ctx);
 }
 
-static clover_value os_unlink(clover_context *ctx, clover_value path_value)
+static clover_handle os_unlink(clover_context *ctx, clover_handle path_value)
 {
     path_string path;
     if(path_string_init(ctx, path_value, &path) != CLOVER_STATUS_OK)
@@ -454,8 +454,8 @@ static clover_value os_unlink(clover_context *ctx, clover_value path_value)
     return clover_none(ctx);
 }
 
-static clover_value os_rename(clover_context *ctx, clover_value src_value,
-                              clover_value dst_value)
+static clover_handle os_rename(clover_context *ctx, clover_handle src_value,
+                               clover_handle dst_value)
 {
     path_string src;
     path_string dst;
@@ -480,7 +480,8 @@ static clover_value os_rename(clover_context *ctx, clover_value src_value,
     return clover_none(ctx);
 }
 
-static clover_value os_path_split(clover_context *ctx, clover_value path_value)
+static clover_handle os_path_split(clover_context *ctx,
+                                   clover_handle path_value)
 {
     path_string path;
     if(path_string_init(ctx, path_value, &path) != CLOVER_STATUS_OK)
@@ -491,7 +492,7 @@ static clover_value os_path_split(clover_context *ctx, clover_value path_value)
     char *last_sep = strrchr(path.data, '/');
     if(last_sep == NULL)
     {
-        clover_value result =
+        clover_handle result =
             clover_tuple_from_pair(ctx, clover_string_from_utf8(ctx, ""),
                                    clover_string_from_utf8(ctx, path.data));
         path_string_destroy(&path);
@@ -502,7 +503,7 @@ static clover_value os_path_split(clover_context *ctx, clover_value path_value)
     const char *tail = last_sep + 1;
     if(head_size == 0)
     {
-        clover_value result =
+        clover_handle result =
             clover_tuple_from_pair(ctx, clover_string_from_utf8(ctx, "/"),
                                    clover_string_from_utf8(ctx, tail));
         path_string_destroy(&path);
@@ -510,7 +511,7 @@ static clover_value os_path_split(clover_context *ctx, clover_value path_value)
     }
 
     *last_sep = '\0';
-    clover_value result =
+    clover_handle result =
         clover_tuple_from_pair(ctx, clover_string_from_utf8(ctx, path.data),
                                clover_string_from_utf8(ctx, tail));
     path_string_destroy(&path);

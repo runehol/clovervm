@@ -4964,7 +4964,7 @@ namespace cl
         uint8_t target_idx = pc[1];
         thread->set_clover_frame_frontier(fp);
         clover_context ctx{thread};
-        accumulator = unwrap_clover_value(
+        accumulator = unwrap_clover_handle(
             code_object->native_function_targets[target_idx].extension0(&ctx));
         COMPLETE();
     }
@@ -4975,9 +4975,9 @@ namespace cl
         uint8_t target_idx = pc[1];
         thread->set_clover_frame_frontier(fp);
         clover_context ctx{thread};
-        accumulator = unwrap_clover_value(
+        accumulator = unwrap_clover_handle(
             code_object->native_function_targets[target_idx].extension1(
-                &ctx, wrap_clover_value(get_native_arg(fp, code_object, 0))));
+                &ctx, wrap_clover_handle(get_native_arg(fp, code_object, 0))));
         COMPLETE();
     }
 
@@ -4987,10 +4987,10 @@ namespace cl
         uint8_t target_idx = pc[1];
         thread->set_clover_frame_frontier(fp);
         clover_context ctx{thread};
-        accumulator = unwrap_clover_value(
+        accumulator = unwrap_clover_handle(
             code_object->native_function_targets[target_idx].extension2(
-                &ctx, wrap_clover_value(get_native_arg(fp, code_object, 0)),
-                wrap_clover_value(get_native_arg(fp, code_object, 1))));
+                &ctx, wrap_clover_handle(get_native_arg(fp, code_object, 0)),
+                wrap_clover_handle(get_native_arg(fp, code_object, 1))));
         COMPLETE();
     }
 
@@ -5000,11 +5000,11 @@ namespace cl
         uint8_t target_idx = pc[1];
         thread->set_clover_frame_frontier(fp);
         clover_context ctx{thread};
-        accumulator = unwrap_clover_value(
+        accumulator = unwrap_clover_handle(
             code_object->native_function_targets[target_idx].extension3(
-                &ctx, wrap_clover_value(get_native_arg(fp, code_object, 0)),
-                wrap_clover_value(get_native_arg(fp, code_object, 1)),
-                wrap_clover_value(get_native_arg(fp, code_object, 2))));
+                &ctx, wrap_clover_handle(get_native_arg(fp, code_object, 0)),
+                wrap_clover_handle(get_native_arg(fp, code_object, 1)),
+                wrap_clover_handle(get_native_arg(fp, code_object, 2))));
         COMPLETE();
     }
 
@@ -5014,12 +5014,12 @@ namespace cl
         uint8_t target_idx = pc[1];
         thread->set_clover_frame_frontier(fp);
         clover_context ctx{thread};
-        accumulator = unwrap_clover_value(
+        accumulator = unwrap_clover_handle(
             code_object->native_function_targets[target_idx].extension4(
-                &ctx, wrap_clover_value(get_native_arg(fp, code_object, 0)),
-                wrap_clover_value(get_native_arg(fp, code_object, 1)),
-                wrap_clover_value(get_native_arg(fp, code_object, 2)),
-                wrap_clover_value(get_native_arg(fp, code_object, 3))));
+                &ctx, wrap_clover_handle(get_native_arg(fp, code_object, 0)),
+                wrap_clover_handle(get_native_arg(fp, code_object, 1)),
+                wrap_clover_handle(get_native_arg(fp, code_object, 2)),
+                wrap_clover_handle(get_native_arg(fp, code_object, 3))));
         COMPLETE();
     }
 
@@ -5029,13 +5029,13 @@ namespace cl
         uint8_t target_idx = pc[1];
         thread->set_clover_frame_frontier(fp);
         clover_context ctx{thread};
-        accumulator = unwrap_clover_value(
+        accumulator = unwrap_clover_handle(
             code_object->native_function_targets[target_idx].extension5(
-                &ctx, wrap_clover_value(get_native_arg(fp, code_object, 0)),
-                wrap_clover_value(get_native_arg(fp, code_object, 1)),
-                wrap_clover_value(get_native_arg(fp, code_object, 2)),
-                wrap_clover_value(get_native_arg(fp, code_object, 3)),
-                wrap_clover_value(get_native_arg(fp, code_object, 4))));
+                &ctx, wrap_clover_handle(get_native_arg(fp, code_object, 0)),
+                wrap_clover_handle(get_native_arg(fp, code_object, 1)),
+                wrap_clover_handle(get_native_arg(fp, code_object, 2)),
+                wrap_clover_handle(get_native_arg(fp, code_object, 3)),
+                wrap_clover_handle(get_native_arg(fp, code_object, 4))));
         COMPLETE();
     }
 
@@ -5045,14 +5045,14 @@ namespace cl
         uint8_t target_idx = pc[1];
         thread->set_clover_frame_frontier(fp);
         clover_context ctx{thread};
-        accumulator = unwrap_clover_value(
+        accumulator = unwrap_clover_handle(
             code_object->native_function_targets[target_idx].extension6(
-                &ctx, wrap_clover_value(get_native_arg(fp, code_object, 0)),
-                wrap_clover_value(get_native_arg(fp, code_object, 1)),
-                wrap_clover_value(get_native_arg(fp, code_object, 2)),
-                wrap_clover_value(get_native_arg(fp, code_object, 3)),
-                wrap_clover_value(get_native_arg(fp, code_object, 4)),
-                wrap_clover_value(get_native_arg(fp, code_object, 5))));
+                &ctx, wrap_clover_handle(get_native_arg(fp, code_object, 0)),
+                wrap_clover_handle(get_native_arg(fp, code_object, 1)),
+                wrap_clover_handle(get_native_arg(fp, code_object, 2)),
+                wrap_clover_handle(get_native_arg(fp, code_object, 3)),
+                wrap_clover_handle(get_native_arg(fp, code_object, 4)),
+                wrap_clover_handle(get_native_arg(fp, code_object, 5))));
         COMPLETE();
     }
 
@@ -5062,15 +5062,15 @@ namespace cl
         uint8_t target_idx = pc[1];
         thread->set_clover_frame_frontier(fp);
         clover_context ctx{thread};
-        accumulator = unwrap_clover_value(
+        accumulator = unwrap_clover_handle(
             code_object->native_function_targets[target_idx].extension7(
-                &ctx, wrap_clover_value(get_native_arg(fp, code_object, 0)),
-                wrap_clover_value(get_native_arg(fp, code_object, 1)),
-                wrap_clover_value(get_native_arg(fp, code_object, 2)),
-                wrap_clover_value(get_native_arg(fp, code_object, 3)),
-                wrap_clover_value(get_native_arg(fp, code_object, 4)),
-                wrap_clover_value(get_native_arg(fp, code_object, 5)),
-                wrap_clover_value(get_native_arg(fp, code_object, 6))));
+                &ctx, wrap_clover_handle(get_native_arg(fp, code_object, 0)),
+                wrap_clover_handle(get_native_arg(fp, code_object, 1)),
+                wrap_clover_handle(get_native_arg(fp, code_object, 2)),
+                wrap_clover_handle(get_native_arg(fp, code_object, 3)),
+                wrap_clover_handle(get_native_arg(fp, code_object, 4)),
+                wrap_clover_handle(get_native_arg(fp, code_object, 5)),
+                wrap_clover_handle(get_native_arg(fp, code_object, 6))));
         COMPLETE();
     }
 

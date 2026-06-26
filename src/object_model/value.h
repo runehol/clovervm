@@ -12,7 +12,7 @@ namespace cl
     void add_to_active_zero_count_table_if_needed(HeapObject *obj);
 
     /*
-      A cl_value is a 64-bit generic cell to hold any value. It holds some
+      A Value is a 64-bit generic cell to hold any value. It holds some
       values inline, and some indirectly.
 
       The structure uses a 5-bit tag in the lowest bits:

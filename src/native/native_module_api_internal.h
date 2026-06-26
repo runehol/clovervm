@@ -10,15 +10,15 @@ namespace cl
     class ModuleObject;
     class ThreadState;
 
-    inline clover_value wrap_clover_value(Value value)
+    inline clover_handle wrap_clover_handle(Value value)
     {
-        static_assert(sizeof(clover_value) == sizeof(value.as.integer));
-        clover_value result;
+        static_assert(sizeof(clover_handle) == sizeof(value.as.integer));
+        clover_handle result;
         std::memcpy(&result, &value.as.integer, sizeof(result));
         return result;
     }
 
-    inline Value unwrap_clover_value(clover_value value)
+    inline Value unwrap_clover_handle(clover_handle value)
     {
         Value result;
         static_assert(sizeof(value) == sizeof(result.as.integer));

@@ -48,7 +48,7 @@ typedef enum clover_status
 } clover_status;
 ```
 
-`clover_value` is an opaque value handle. Extension modules must not inspect or
+`clover_handle` is an opaque value handle. Extension modules must not inspect or
 construct it directly; use `clover_*` helpers instead.
 
 ## Module Shape
@@ -153,7 +153,7 @@ The builder can add values to the module:
 clover_status clover_module_add_value(
     clover_native_module_builder *builder,
     const char *name,
-    clover_value value);
+    clover_handle value);
 ```
 
 `name` is a UTF-8 string. Values are manufactured through the runtime API:
@@ -179,14 +179,14 @@ Fixed arities from 0 through 7 are currently supported:
 
 ```c
 typedef struct clover_context clover_context;
-typedef uintptr_t clover_value;
+typedef uintptr_t clover_handle;
 
-typedef clover_value (*clover_extension_fn_0)(clover_context *ctx);
-typedef clover_value (*clover_extension_fn_1)(clover_context *ctx,
-                                              clover_value arg0);
-typedef clover_value (*clover_extension_fn_2)(clover_context *ctx,
-                                              clover_value arg0,
-                                              clover_value arg1);
+typedef clover_handle (*clover_extension_fn_0)(clover_context *ctx);
+typedef clover_handle (*clover_extension_fn_1)(clover_context *ctx,
+                                              clover_handle arg0);
+typedef clover_handle (*clover_extension_fn_2)(clover_context *ctx,
+                                              clover_handle arg0,
+                                              clover_handle arg1);
 /* ... through clover_extension_fn_7 */
 
 clover_status clover_module_add_function_0(
@@ -212,33 +212,33 @@ Function docstrings are UTF-8 strings; pass `NULL` for no docstring.
 ## Runtime API
 
 Native function callbacks receive a context and opaque argument handles.
-They return a `clover_value`: a normal value on success, or the context's error
+They return a `clover_handle`: a normal value on success, or the context's error
 marker after setting a pending exception.
 
 Implemented runtime APIs:
 
 ```c
-clover_value clover_propagate_error(clover_context *ctx);
-clover_value clover_none(clover_context *ctx);
-clover_value clover_int_from_int64(clover_context *ctx, int64_t value);
-clover_value clover_float_from_double(clover_context *ctx, double value);
-clover_value clover_string_from_utf8(clover_context *ctx,
+clover_handle clover_propagate_error(clover_context *ctx);
+clover_handle clover_none(clover_context *ctx);
+clover_handle clover_int_from_int64(clover_context *ctx, int64_t value);
+clover_handle clover_float_from_double(clover_context *ctx, double value);
+clover_handle clover_string_from_utf8(clover_context *ctx,
                                      const char *utf8_value);
-clover_value clover_tuple_from_array(clover_context *ctx,
-                                     const clover_value *items,
+clover_handle clover_tuple_from_array(clover_context *ctx,
+                                     const clover_handle *items,
                                      size_t count);
-clover_value clover_tuple_from_pair(clover_context *ctx,
-                                    clover_value item0,
-                                    clover_value item1);
+clover_handle clover_tuple_from_pair(clover_context *ctx,
+                                    clover_handle item0,
+                                    clover_handle item1);
 clover_status clover_float_as_double(clover_context *ctx,
-                                     clover_value value,
+                                     clover_handle value,
                                      double *out);
 clover_status clover_int_as_int64(clover_context *ctx,
-                                  clover_value value,
+                                  clover_handle value,
                                   int64_t *out);
-clover_value clover_raise_overflow_error(clover_context *ctx,
+clover_handle clover_raise_overflow_error(clover_context *ctx,
                                          const char *utf8_message);
-clover_value clover_raise_value_error(clover_context *ctx,
+clover_handle clover_raise_value_error(clover_context *ctx,
                                       const char *utf8_message);
 ```
 
@@ -252,7 +252,7 @@ pending exception and return the same error marker.
 Example:
 
 ```c
-static clover_value sleep_fn(clover_context *ctx, clover_value secs)
+static clover_handle sleep_fn(clover_context *ctx, clover_handle secs)
 {
     double seconds;
     if(clover_float_as_double(ctx, secs, &seconds) != CLOVER_STATUS_OK)
@@ -280,7 +280,7 @@ through builder or runtime APIs, not by touching VM internals.
 For callbacks:
 
 ```text
-return a normal clover_value on success
+return a normal clover_handle on success
 return clover_propagate_error(ctx) after a helper has set a pending exception
 return a raise-helper result for explicit semantic errors
 ```
@@ -357,7 +357,7 @@ extension functions:
   opaque handles
   module builder
   arity-typed C function registration
-  extension callbacks return clover_value or clover_propagate_error(ctx)
+  extension callbacks return clover_handle or clover_propagate_error(ctx)
   dynamic library boundary
 ```
 

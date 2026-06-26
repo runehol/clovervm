@@ -14,14 +14,14 @@
 
 static const int64_t NS_PER_SECOND = 1000000000LL;
 
-static clover_value seconds_from_timespec(clover_context *ctx,
-                                          struct timespec ts)
+static clover_handle seconds_from_timespec(clover_context *ctx,
+                                           struct timespec ts)
 {
     return clover_float_from_double(ctx, (double)ts.tv_sec +
                                              (double)ts.tv_nsec / 1000000000.0);
 }
 
-static clover_value ns_from_timespec(clover_context *ctx, struct timespec ts)
+static clover_handle ns_from_timespec(clover_context *ctx, struct timespec ts)
 {
     if(ts.tv_sec > (INT64_MAX - ts.tv_nsec) / NS_PER_SECOND)
     {
@@ -36,7 +36,7 @@ static clover_value ns_from_timespec(clover_context *ctx, struct timespec ts)
 }
 
 static clover_status clock_id_from_value(clover_context *ctx,
-                                         clover_value value, clockid_t *out)
+                                         clover_handle value, clockid_t *out)
 {
     int64_t raw;
     if(clover_int_as_int64(ctx, value, &raw) != CLOVER_STATUS_OK)
@@ -52,8 +52,8 @@ static clover_status clock_id_from_value(clover_context *ctx,
     return CLOVER_STATUS_OK;
 }
 
-static clover_value time_clock_gettime(clover_context *ctx,
-                                       clover_value clock_id)
+static clover_handle time_clock_gettime(clover_context *ctx,
+                                        clover_handle clock_id)
 {
     clockid_t id;
     struct timespec ts;
@@ -68,8 +68,8 @@ static clover_value time_clock_gettime(clover_context *ctx,
     return seconds_from_timespec(ctx, ts);
 }
 
-static clover_value time_clock_gettime_ns(clover_context *ctx,
-                                          clover_value clock_id)
+static clover_handle time_clock_gettime_ns(clover_context *ctx,
+                                           clover_handle clock_id)
 {
     clockid_t id;
     struct timespec ts;
@@ -84,8 +84,8 @@ static clover_value time_clock_gettime_ns(clover_context *ctx,
     return ns_from_timespec(ctx, ts);
 }
 
-static clover_value time_clock_getres(clover_context *ctx,
-                                      clover_value clock_id)
+static clover_handle time_clock_getres(clover_context *ctx,
+                                       clover_handle clock_id)
 {
     clockid_t id;
     struct timespec ts;
@@ -100,7 +100,7 @@ static clover_value time_clock_getres(clover_context *ctx,
     return seconds_from_timespec(ctx, ts);
 }
 
-static clover_value clock_seconds(clover_context *ctx, clockid_t clock_id)
+static clover_handle clock_seconds(clover_context *ctx, clockid_t clock_id)
 {
     struct timespec ts;
     if(clock_gettime(clock_id, &ts) != 0)
@@ -110,7 +110,7 @@ static clover_value clock_seconds(clover_context *ctx, clockid_t clock_id)
     return seconds_from_timespec(ctx, ts);
 }
 
-static clover_value clock_nanoseconds(clover_context *ctx, clockid_t clock_id)
+static clover_handle clock_nanoseconds(clover_context *ctx, clockid_t clock_id)
 {
     struct timespec ts;
     if(clock_gettime(clock_id, &ts) != 0)
@@ -120,37 +120,37 @@ static clover_value clock_nanoseconds(clover_context *ctx, clockid_t clock_id)
     return ns_from_timespec(ctx, ts);
 }
 
-static clover_value time_time(clover_context *ctx)
+static clover_handle time_time(clover_context *ctx)
 {
     return clock_seconds(ctx, CLOCK_REALTIME);
 }
 
-static clover_value time_time_ns(clover_context *ctx)
+static clover_handle time_time_ns(clover_context *ctx)
 {
     return clock_nanoseconds(ctx, CLOCK_REALTIME);
 }
 
-static clover_value time_monotonic(clover_context *ctx)
+static clover_handle time_monotonic(clover_context *ctx)
 {
     return clock_seconds(ctx, CLOCK_MONOTONIC);
 }
 
-static clover_value time_monotonic_ns(clover_context *ctx)
+static clover_handle time_monotonic_ns(clover_context *ctx)
 {
     return clock_nanoseconds(ctx, CLOCK_MONOTONIC);
 }
 
-static clover_value time_perf_counter(clover_context *ctx)
+static clover_handle time_perf_counter(clover_context *ctx)
 {
     return time_monotonic(ctx);
 }
 
-static clover_value time_perf_counter_ns(clover_context *ctx)
+static clover_handle time_perf_counter_ns(clover_context *ctx)
 {
     return time_monotonic_ns(ctx);
 }
 
-static clover_value time_process_time(clover_context *ctx)
+static clover_handle time_process_time(clover_context *ctx)
 {
 #ifdef CLOCK_PROCESS_CPUTIME_ID
     return clock_seconds(ctx, CLOCK_PROCESS_CPUTIME_ID);
@@ -165,7 +165,7 @@ static clover_value time_process_time(clover_context *ctx)
 #endif
 }
 
-static clover_value time_process_time_ns(clover_context *ctx)
+static clover_handle time_process_time_ns(clover_context *ctx)
 {
 #ifdef CLOCK_PROCESS_CPUTIME_ID
     return clock_nanoseconds(ctx, CLOCK_PROCESS_CPUTIME_ID);
@@ -184,7 +184,7 @@ static clover_value time_process_time_ns(clover_context *ctx)
 #endif
 }
 
-static clover_value time_thread_time(clover_context *ctx)
+static clover_handle time_thread_time(clover_context *ctx)
 {
 #ifdef CLOCK_THREAD_CPUTIME_ID
     return clock_seconds(ctx, CLOCK_THREAD_CPUTIME_ID);
@@ -193,7 +193,7 @@ static clover_value time_thread_time(clover_context *ctx)
 #endif
 }
 
-static clover_value time_thread_time_ns(clover_context *ctx)
+static clover_handle time_thread_time_ns(clover_context *ctx)
 {
 #ifdef CLOCK_THREAD_CPUTIME_ID
     return clock_nanoseconds(ctx, CLOCK_THREAD_CPUTIME_ID);
@@ -202,7 +202,7 @@ static clover_value time_thread_time_ns(clover_context *ctx)
 #endif
 }
 
-static clover_value time_sleep(clover_context *ctx, clover_value seconds)
+static clover_handle time_sleep(clover_context *ctx, clover_handle seconds)
 {
     double seconds_double;
     if(clover_float_as_double(ctx, seconds, &seconds_double) !=
@@ -239,9 +239,9 @@ static clover_value time_sleep(clover_context *ctx, clover_value seconds)
     return clover_none(ctx);
 }
 
-static clover_value tm_to_tuple(clover_context *ctx, const struct tm *tm)
+static clover_handle tm_to_tuple(clover_context *ctx, const struct tm *tm)
 {
-    clover_value items[] = {
+    clover_handle items[] = {
         clover_int_from_int64(ctx, tm->tm_year + 1900),
         clover_int_from_int64(ctx, tm->tm_mon + 1),
         clover_int_from_int64(ctx, tm->tm_mday),
@@ -255,7 +255,7 @@ static clover_value tm_to_tuple(clover_context *ctx, const struct tm *tm)
     return clover_tuple_from_array(ctx, items, 9);
 }
 
-static clover_value time_gmtime(clover_context *ctx, clover_value seconds)
+static clover_handle time_gmtime(clover_context *ctx, clover_handle seconds)
 {
     double seconds_double;
     if(clover_float_as_double(ctx, seconds, &seconds_double) !=
@@ -273,7 +273,7 @@ static clover_value time_gmtime(clover_context *ctx, clover_value seconds)
     return tm_to_tuple(ctx, &tm);
 }
 
-static clover_value time_localtime(clover_context *ctx, clover_value seconds)
+static clover_handle time_localtime(clover_context *ctx, clover_handle seconds)
 {
     double seconds_double;
     if(clover_float_as_double(ctx, seconds, &seconds_double) !=
@@ -290,10 +290,10 @@ static clover_value time_localtime(clover_context *ctx, clover_value seconds)
     return tm_to_tuple(ctx, &tm);
 }
 
-static clover_status int_from_tuple(clover_context *ctx, clover_value tuple,
+static clover_status int_from_tuple(clover_context *ctx, clover_handle tuple,
                                     size_t index, int *out)
 {
-    clover_value item;
+    clover_handle item;
     int64_t value;
     if(clover_tuple_get_item(ctx, tuple, index, &item) != CLOVER_STATUS_OK ||
        clover_int_as_int64(ctx, item, &value) != CLOVER_STATUS_OK)
@@ -309,7 +309,7 @@ static clover_status int_from_tuple(clover_context *ctx, clover_value tuple,
     return CLOVER_STATUS_OK;
 }
 
-static clover_status tm_from_tuple(clover_context *ctx, clover_value tuple,
+static clover_status tm_from_tuple(clover_context *ctx, clover_handle tuple,
                                    struct tm *out)
 {
     size_t size;
@@ -399,7 +399,7 @@ static clover_status check_tm(clover_context *ctx, struct tm *tm)
     return CLOVER_STATUS_OK;
 }
 
-static clover_value time_asctime(clover_context *ctx, clover_value tuple)
+static clover_handle time_asctime(clover_context *ctx, clover_handle tuple)
 {
     struct tm tm;
     if(tm_from_tuple(ctx, tuple, &tm) != CLOVER_STATUS_OK ||
@@ -416,7 +416,7 @@ static clover_value time_asctime(clover_context *ctx, clover_value tuple)
     return clover_string_from_utf8(ctx, buffer);
 }
 
-static clover_value time_mktime(clover_context *ctx, clover_value tuple)
+static clover_handle time_mktime(clover_context *ctx, clover_handle tuple)
 {
     struct tm tm;
     if(tm_from_tuple(ctx, tuple, &tm) != CLOVER_STATUS_OK)
@@ -433,8 +433,8 @@ static clover_value time_mktime(clover_context *ctx, clover_value tuple)
     return clover_float_from_double(ctx, (double)result);
 }
 
-static clover_value time_strftime(clover_context *ctx, clover_value format,
-                                  clover_value tuple)
+static clover_handle time_strftime(clover_context *ctx, clover_handle format,
+                                   clover_handle tuple)
 {
     char format_buffer[256];
     size_t format_size;
@@ -463,7 +463,7 @@ static clover_value time_strftime(clover_context *ctx, clover_value format,
     return clover_string_from_utf8(ctx, buffer);
 }
 
-static clover_value time_tzset(clover_context *ctx)
+static clover_handle time_tzset(clover_context *ctx)
 {
     (void)ctx;
     tzset();
@@ -593,8 +593,8 @@ CL_NATIVE_MODULE_EXPORT clover_status clover_module_init__time(
     ADD_INT("altzone", timezone - 3600);
 #endif
     ADD_INT("daylight", daylight);
-    clover_value tz_items[] = {clover_string_from_utf8(ctx, tzname[0]),
-                               clover_string_from_utf8(ctx, tzname[1])};
+    clover_handle tz_items[] = {clover_string_from_utf8(ctx, tzname[0]),
+                                clover_string_from_utf8(ctx, tzname[1])};
     if(clover_module_add_value(builder, "tzname",
                                clover_tuple_from_array(ctx, tz_items, 2)) !=
        CLOVER_STATUS_OK)

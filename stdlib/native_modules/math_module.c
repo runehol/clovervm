@@ -6,7 +6,7 @@
 #include <math.h>
 #include <stdint.h>
 
-static clover_value math_float_result(clover_context *ctx, double result)
+static clover_handle math_float_result(clover_context *ctx, double result)
 {
     if(errno == EDOM || (isnan(result) && errno != ERANGE))
     {
@@ -19,8 +19,8 @@ static clover_value math_float_result(clover_context *ctx, double result)
     return clover_float_from_double(ctx, result);
 }
 
-static clover_value math_unary(clover_context *ctx, clover_value value,
-                               double (*func)(double), int can_overflow)
+static clover_handle math_unary(clover_context *ctx, clover_handle value,
+                                double (*func)(double), int can_overflow)
 {
     double number;
     if(clover_float_as_double(ctx, value, &number) != CLOVER_STATUS_OK)
@@ -40,10 +40,10 @@ static clover_value math_unary(clover_context *ctx, clover_value value,
     return math_float_result(ctx, result);
 }
 
-static clover_value math_binary(clover_context *ctx, clover_value left,
-                                clover_value right,
-                                double (*func)(double, double),
-                                int can_overflow)
+static clover_handle math_binary(clover_context *ctx, clover_handle left,
+                                 clover_handle right,
+                                 double (*func)(double, double),
+                                 int can_overflow)
 {
     double left_number;
     double right_number;
@@ -67,14 +67,15 @@ static clover_value math_binary(clover_context *ctx, clover_value left,
 }
 
 #define MATH_UNARY_WRAPPER(wrapper_name, c_func, can_overflow)                 \
-    static clover_value wrapper_name(clover_context *ctx, clover_value value)  \
+    static clover_handle wrapper_name(clover_context *ctx,                     \
+                                      clover_handle value)                     \
     {                                                                          \
         return math_unary(ctx, value, c_func, can_overflow);                   \
     }
 
 #define MATH_BINARY_WRAPPER(wrapper_name, c_func, can_overflow)                \
-    static clover_value wrapper_name(clover_context *ctx, clover_value left,   \
-                                     clover_value right)                       \
+    static clover_handle wrapper_name(clover_context *ctx, clover_handle left, \
+                                      clover_handle right)                     \
     {                                                                          \
         return math_binary(ctx, left, right, c_func, can_overflow);            \
     }
@@ -112,7 +113,7 @@ MATH_BINARY_WRAPPER(math_fmod, fmod, 0)
 MATH_BINARY_WRAPPER(math_pow, pow, 1)
 MATH_BINARY_WRAPPER(math_remainder, remainder, 0)
 
-static clover_value math_ceil(clover_context *ctx, clover_value value)
+static clover_handle math_ceil(clover_context *ctx, clover_handle value)
 {
     double number;
     if(clover_float_as_double(ctx, value, &number) != CLOVER_STATUS_OK)
@@ -132,7 +133,7 @@ static clover_value math_ceil(clover_context *ctx, clover_value value)
     return clover_int_from_int64(ctx, (int64_t)ceil(number));
 }
 
-static clover_value math_floor(clover_context *ctx, clover_value value)
+static clover_handle math_floor(clover_context *ctx, clover_handle value)
 {
     double number;
     if(clover_float_as_double(ctx, value, &number) != CLOVER_STATUS_OK)
@@ -152,7 +153,7 @@ static clover_value math_floor(clover_context *ctx, clover_value value)
     return clover_int_from_int64(ctx, (int64_t)floor(number));
 }
 
-static clover_value math_trunc(clover_context *ctx, clover_value value)
+static clover_handle math_trunc(clover_context *ctx, clover_handle value)
 {
     double number;
     if(clover_float_as_double(ctx, value, &number) != CLOVER_STATUS_OK)
@@ -172,8 +173,8 @@ static clover_value math_trunc(clover_context *ctx, clover_value value)
     return clover_int_from_int64(ctx, (int64_t)trunc(number));
 }
 
-static clover_value math_fma(clover_context *ctx, clover_value x,
-                             clover_value y, clover_value z)
+static clover_handle math_fma(clover_context *ctx, clover_handle x,
+                              clover_handle y, clover_handle z)
 {
     double x_number;
     double y_number;
@@ -194,7 +195,7 @@ static clover_value math_fma(clover_context *ctx, clover_value x,
     return math_float_result(ctx, result);
 }
 
-static clover_value math_frexp(clover_context *ctx, clover_value value)
+static clover_handle math_frexp(clover_context *ctx, clover_handle value)
 {
     double number;
     if(clover_float_as_double(ctx, value, &number) != CLOVER_STATUS_OK)
@@ -203,13 +204,13 @@ static clover_value math_frexp(clover_context *ctx, clover_value value)
     }
     int exponent;
     double mantissa = frexp(number, &exponent);
-    clover_value items[] = {clover_float_from_double(ctx, mantissa),
-                            clover_int_from_int64(ctx, exponent)};
+    clover_handle items[] = {clover_float_from_double(ctx, mantissa),
+                             clover_int_from_int64(ctx, exponent)};
     return clover_tuple_from_array(ctx, items, 2);
 }
 
-static clover_value math_ldexp(clover_context *ctx, clover_value x,
-                               clover_value i)
+static clover_handle math_ldexp(clover_context *ctx, clover_handle x,
+                                clover_handle i)
 {
     double number;
     int64_t exponent;
@@ -235,7 +236,7 @@ static clover_value math_ldexp(clover_context *ctx, clover_value x,
     return math_float_result(ctx, result);
 }
 
-static clover_value math_modf(clover_context *ctx, clover_value value)
+static clover_handle math_modf(clover_context *ctx, clover_handle value)
 {
     double number;
     if(clover_float_as_double(ctx, value, &number) != CLOVER_STATUS_OK)
@@ -244,13 +245,13 @@ static clover_value math_modf(clover_context *ctx, clover_value value)
     }
     double integer_part;
     double fractional_part = modf(number, &integer_part);
-    clover_value items[] = {clover_float_from_double(ctx, fractional_part),
-                            clover_float_from_double(ctx, integer_part)};
+    clover_handle items[] = {clover_float_from_double(ctx, fractional_part),
+                             clover_float_from_double(ctx, integer_part)};
     return clover_tuple_from_array(ctx, items, 2);
 }
 
-static clover_value math_nextafter(clover_context *ctx, clover_value x,
-                                   clover_value y)
+static clover_handle math_nextafter(clover_context *ctx, clover_handle x,
+                                    clover_handle y)
 {
     double x_number;
     double y_number;
@@ -262,7 +263,7 @@ static clover_value math_nextafter(clover_context *ctx, clover_value x,
     return clover_float_from_double(ctx, nextafter(x_number, y_number));
 }
 
-static clover_value math_ulp(clover_context *ctx, clover_value value)
+static clover_handle math_ulp(clover_context *ctx, clover_handle value)
 {
     double number;
     if(clover_float_as_double(ctx, value, &number) != CLOVER_STATUS_OK)

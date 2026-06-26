@@ -1,22 +1,23 @@
 #include <clovervm/native_module.h>
 
-static clover_value answer_func(clover_context *ctx)
+static clover_handle answer_func(clover_context *ctx)
 {
     return clover_int_from_int64(ctx, 42);
 }
 
-static clover_value identity_func(clover_context *ctx, clover_value value)
+static clover_handle identity_func(clover_context *ctx, clover_handle value)
 {
     (void)ctx;
     return value;
 }
 
-static clover_value double_constant_func(clover_context *ctx)
+static clover_handle double_constant_func(clover_context *ctx)
 {
     return clover_float_from_double(ctx, 1.5);
 }
 
-static clover_value float_plus_one_func(clover_context *ctx, clover_value value)
+static clover_handle float_plus_one_func(clover_context *ctx,
+                                         clover_handle value)
 {
     double number;
     if(clover_float_as_double(ctx, value, &number) != CLOVER_STATUS_OK)
@@ -26,37 +27,37 @@ static clover_value float_plus_one_func(clover_context *ctx, clover_value value)
     return clover_float_from_double(ctx, number + 1.0);
 }
 
-static clover_value tuple2_func(clover_context *ctx, clover_value arg0,
-                                clover_value arg1)
+static clover_handle tuple2_func(clover_context *ctx, clover_handle arg0,
+                                 clover_handle arg1)
 {
     return clover_tuple_from_pair(ctx, arg0, arg1);
 }
 
-static clover_value tuple3_func(clover_context *ctx, clover_value arg0,
-                                clover_value arg1, clover_value arg2)
+static clover_handle tuple3_func(clover_context *ctx, clover_handle arg0,
+                                 clover_handle arg1, clover_handle arg2)
 {
-    clover_value items[] = {arg0, arg1, arg2};
+    clover_handle items[] = {arg0, arg1, arg2};
     return clover_tuple_from_array(ctx, items, 3);
 }
 
-static clover_value empty_tuple_func(clover_context *ctx)
+static clover_handle empty_tuple_func(clover_context *ctx)
 {
     return clover_tuple_from_array(ctx, 0, 0);
 }
 
-static clover_value bad_tuple_func(clover_context *ctx)
+static clover_handle bad_tuple_func(clover_context *ctx)
 {
     return clover_tuple_from_array(ctx, 0, 1);
 }
 
-static clover_status read_double(clover_context *ctx, clover_value value,
+static clover_status read_double(clover_context *ctx, clover_handle value,
                                  double *out)
 {
     return clover_float_as_double(ctx, value, out);
 }
 
-static clover_value sum2_func(clover_context *ctx, clover_value arg0,
-                              clover_value arg1)
+static clover_handle sum2_func(clover_context *ctx, clover_handle arg0,
+                               clover_handle arg1)
 {
     double v0;
     double v1;
@@ -68,8 +69,8 @@ static clover_value sum2_func(clover_context *ctx, clover_value arg0,
     return clover_float_from_double(ctx, v0 + v1);
 }
 
-static clover_value sum3_func(clover_context *ctx, clover_value arg0,
-                              clover_value arg1, clover_value arg2)
+static clover_handle sum3_func(clover_context *ctx, clover_handle arg0,
+                               clover_handle arg1, clover_handle arg2)
 {
     double v0;
     double v1;
@@ -83,9 +84,9 @@ static clover_value sum3_func(clover_context *ctx, clover_value arg0,
     return clover_float_from_double(ctx, v0 + v1 + v2);
 }
 
-static clover_value sum4_func(clover_context *ctx, clover_value arg0,
-                              clover_value arg1, clover_value arg2,
-                              clover_value arg3)
+static clover_handle sum4_func(clover_context *ctx, clover_handle arg0,
+                               clover_handle arg1, clover_handle arg2,
+                               clover_handle arg3)
 {
     double v0;
     double v1;
@@ -101,9 +102,9 @@ static clover_value sum4_func(clover_context *ctx, clover_value arg0,
     return clover_float_from_double(ctx, v0 + v1 + v2 + v3);
 }
 
-static clover_value sum5_func(clover_context *ctx, clover_value arg0,
-                              clover_value arg1, clover_value arg2,
-                              clover_value arg3, clover_value arg4)
+static clover_handle sum5_func(clover_context *ctx, clover_handle arg0,
+                               clover_handle arg1, clover_handle arg2,
+                               clover_handle arg3, clover_handle arg4)
 {
     double v0;
     double v1;
@@ -121,10 +122,10 @@ static clover_value sum5_func(clover_context *ctx, clover_value arg0,
     return clover_float_from_double(ctx, v0 + v1 + v2 + v3 + v4);
 }
 
-static clover_value sum6_func(clover_context *ctx, clover_value arg0,
-                              clover_value arg1, clover_value arg2,
-                              clover_value arg3, clover_value arg4,
-                              clover_value arg5)
+static clover_handle sum6_func(clover_context *ctx, clover_handle arg0,
+                               clover_handle arg1, clover_handle arg2,
+                               clover_handle arg3, clover_handle arg4,
+                               clover_handle arg5)
 {
     double v0;
     double v1;
@@ -144,10 +145,10 @@ static clover_value sum6_func(clover_context *ctx, clover_value arg0,
     return clover_float_from_double(ctx, v0 + v1 + v2 + v3 + v4 + v5);
 }
 
-static clover_value sum7_func(clover_context *ctx, clover_value arg0,
-                              clover_value arg1, clover_value arg2,
-                              clover_value arg3, clover_value arg4,
-                              clover_value arg5, clover_value arg6)
+static clover_handle sum7_func(clover_context *ctx, clover_handle arg0,
+                               clover_handle arg1, clover_handle arg2,
+                               clover_handle arg3, clover_handle arg4,
+                               clover_handle arg5, clover_handle arg6)
 {
     double v0;
     double v1;
