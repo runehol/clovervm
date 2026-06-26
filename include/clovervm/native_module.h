@@ -9,6 +9,7 @@
 #define CL_NATIVE_MODULE_EXPORT __attribute__((visibility("default")))
 #endif
 
+#include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
 
@@ -119,6 +120,8 @@ extern "C"
     CL_EXPORT clover_status clover_int_as_int64(clover_context *ctx,
                                                 clover_handle value,
                                                 int64_t *out);
+    CL_EXPORT clover_status clover_is(clover_context *ctx, clover_handle left,
+                                      clover_handle right, bool *out);
     CL_EXPORT clover_handle
     clover_raise_overflow_error(clover_context *ctx, const char *utf8_message);
     CL_EXPORT clover_handle clover_raise_value_error(clover_context *ctx,

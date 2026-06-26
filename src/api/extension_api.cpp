@@ -242,6 +242,19 @@ extern "C" CL_EXPORT clover_status clover_int_as_int64(clover_context *ctx,
     return CLOVER_STATUS_ERROR;
 }
 
+extern "C" CL_EXPORT clover_status clover_is(clover_context *ctx,
+                                             clover_handle left,
+                                             clover_handle right, bool *out)
+{
+    if(ctx == nullptr || ctx->thread == nullptr || out == nullptr)
+    {
+        return CLOVER_STATUS_ERROR;
+    }
+
+    *out = cl::unwrap_clover_handle(left) == cl::unwrap_clover_handle(right);
+    return CLOVER_STATUS_OK;
+}
+
 static clover_handle clover_raise_builtin_error(clover_context *ctx,
                                                 const wchar_t *type_name,
                                                 const char *utf8_message)

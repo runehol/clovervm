@@ -94,6 +94,25 @@ TEST(NativeModuleBuild, ImportingNativeExtensionPopulatesModuleGlobals)
                   TValue<Function>::from_value_assumed(identity_func),
                   Value::from_smi(123)));
 
+    TValue<String> is_identical_name =
+        context.vm().get_or_create_interned_string_value(L"is_identical");
+    Value is_identical = module->get_own_property(is_identical_name);
+    ASSERT_TRUE(can_convert_to<Function>(is_identical));
+    TValue<Function> is_identical_function =
+        TValue<Function>::from_value_assumed(is_identical);
+    Value same_string =
+        context.vm().get_or_create_interned_string_value(L"same").raw_value();
+    EXPECT_EQ(Value::from_smi(1),
+              context.thread()->call_clovervm_function(
+                  is_identical_function, same_string, same_string));
+    Value first_string =
+        context.thread()->make_object_value<String>(L"same").raw_value();
+    Value second_string =
+        context.thread()->make_object_value<String>(L"same").raw_value();
+    EXPECT_EQ(Value::from_smi(0),
+              context.thread()->call_clovervm_function(
+                  is_identical_function, first_string, second_string));
+
     TValue<String> double_constant_name =
         context.vm().get_or_create_interned_string_value(L"double_constant");
     Value double_constant = module->get_own_property(double_constant_name);

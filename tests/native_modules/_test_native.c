@@ -11,6 +11,17 @@ static clover_handle identity_func(clover_context *ctx, clover_handle value)
     return value;
 }
 
+static clover_handle is_identical_func(clover_context *ctx, clover_handle left,
+                                       clover_handle right)
+{
+    bool identical;
+    if(clover_is(ctx, left, right, &identical) != CLOVER_STATUS_OK)
+    {
+        return clover_propagate_error(ctx);
+    }
+    return clover_int_from_int64(ctx, identical ? 1 : 0);
+}
+
 static clover_handle double_constant_func(clover_context *ctx)
 {
     return clover_float_from_double(ctx, 1.5);
@@ -197,6 +208,12 @@ CL_NATIVE_MODULE_EXPORT clover_status clover_module_init__test_native(
     }
     if(clover_module_add_function_1(builder, "identity_func", identity_func,
                                     "Return the argument.") != CLOVER_STATUS_OK)
+    {
+        return CLOVER_STATUS_ERROR;
+    }
+    if(clover_module_add_function_2(
+           builder, "is_identical", is_identical_func,
+           "Return 1 when the arguments are identical.") != CLOVER_STATUS_OK)
     {
         return CLOVER_STATUS_ERROR;
     }

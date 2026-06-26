@@ -236,6 +236,10 @@ clover_status clover_float_as_double(clover_context *ctx,
 clover_status clover_int_as_int64(clover_context *ctx,
                                   clover_handle value,
                                   int64_t *out);
+clover_status clover_is(clover_context *ctx,
+                        clover_handle left,
+                        clover_handle right,
+                        bool *out);
 clover_handle clover_raise_overflow_error(clover_context *ctx,
                                          const char *utf8_message);
 clover_handle clover_raise_value_error(clover_context *ctx,
@@ -245,6 +249,10 @@ clover_handle clover_raise_value_error(clover_context *ctx,
 Conversion helpers set a pending exception on failure and return
 `CLOVER_STATUS_ERROR`. Callers propagate that failure by returning
 `clover_propagate_error(ctx)`.
+
+`clover_is` compares the underlying managed values for Python `is`
+identity. It must not compare handle storage addresses once handles become
+indirect.
 
 Explicit semantic errors use a raise helper directly. Raise helpers set the
 pending exception and return the same error marker.
