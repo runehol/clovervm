@@ -1689,6 +1689,23 @@ namespace cl
             instr_len, cache.adaptation);
     }
 
+    [[maybe_unused]] NOINLINE static Expected<void>
+    enter_uncached_resolved_positional_call(ThreadState *thread, Value *&fp,
+                                            const uint8_t *&pc,
+                                            CodeObject *&code_object,
+                                            Value callable,
+                                            int32_t first_arg_reg,
+                                            uint32_t n_args, uint32_t instr_len)
+    {
+        FunctionCallInlineCache local_cache;
+        CL_TRY(populate_positional_call_cache_from_callable(callable, n_args,
+                                                            local_cache));
+        enter_positional_call_from_cache(thread, fp, pc, code_object,
+                                         local_cache, first_arg_reg, n_args,
+                                         instr_len);
+        return Expected<void>::ok();
+    }
+
     static ALWAYSINLINE bool try_enter_cached_positional_call(
         ThreadState *thread, Value *&fp, const uint8_t *&pc,
         CodeObject *&code_object, Value callable, int32_t first_arg_reg,
