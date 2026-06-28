@@ -128,6 +128,7 @@ shape check alone cannot express.
 Detailed docs:
 
 - [Object Model](object-model.md)
+- [Descriptor Execution](descriptor-execution.md)
 - [Builtin Object Model](builtin-object-model.md)
 - [Module Global Namespace Design Sketch](module-global-namespace-design.md)
 
