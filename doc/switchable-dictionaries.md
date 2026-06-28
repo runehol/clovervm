@@ -503,21 +503,21 @@ it easy for native VM code to bypass Python-visible method guards and call raw
 string hashing/equality on non-string keys. Dict literal construction already
 has this shape: evaluated Python keys are passed directly to `Dict::set_item`.
 
-The C++ API should make the operation's semantic level explicit. A useful split
-is:
+The C++ API should make the operation's semantic level explicit. Raw
+string-shape operations are not a public C++ API category. They are private
+implementation details of `Dict` and trusted handlers, guarded by receiver
+shape and exact `str` key checks before use. Exposing them as a separate API
+would only move the current string-only hazard behind a different name.
 
-- **Raw string-shape helpers**: private or tightly scoped helpers that require
-  the receiver to be in string-dict shape and require exact `str` keys. These
-  helpers are non-reentrant and can use direct normalized string hashing and
-  direct string equality. Their names should say `string_shape` or otherwise
-  make the invariant visible.
-- **Exact-string semantic helpers**: public C++ helpers that accept
+The useful public/internal split is:
+
+- **Exact-string semantic helpers**: C++ helpers that accept
   `TValue<String>` keys but still dispatch by dict shape. These are useful for
   callers that can prove the lookup key is a string, but they are not
   universally non-fallible. If the receiver has already promoted to general
   shape, probing can encounter non-string stored keys and equality may run
   Python.
-- **General semantic helpers**: public C++ helpers that accept arbitrary
+- **General semantic helpers**: C++ helpers that accept arbitrary
   `Value` keys and implement ordinary Python dict semantics, including
   `hash(key)`, equality, pending-exception propagation, promotion, and
   stale-entry revalidation.
@@ -550,14 +550,42 @@ A possible naming shape is:
 
 The exact spelling is unsettled. The required property is that no public C++
 method with a generic name silently means "string-only". Either the method is
-semantic and fallible, or its name and type state that it is a raw exact-string
-or string-shape helper.
+semantic and fallible, or it is a private/raw helper that cannot be reached as a
+general dict interface.
 
 These are internal C++ APIs, so pending-exception propagation should be explicit
 in the return type. Native-method and interpreter opcode wrappers can translate
 `Expected<void>` success into `Value::None()` and translate propagated failures
 into `Value::exception_marker()` at the boundary. The core dict implementation
 should not use in-band `Value` exception markers as its primary C++ contract.
+
+Semantic dict helpers need two reusable `ThreadState` protocol operations rather
+than direct dunder calls:
+
+```cpp
+// Equivalent to Python hash(value), including special-method lookup,
+// integer-result validation, canonical SMI normalization, and -1 remapping.
+[[nodiscard]] Expected<TValue<SMI>> hash_value(Value value);
+
+// Equivalent to truth-testing Python left == right. This must use ordinary
+// equality operator semantics, including reflected dispatch and NotImplemented
+// fallback, not a direct __eq__ method call.
+[[nodiscard]] Expected<bool> test_equal(Value left, Value right);
+```
+
+`hash_value` may be implemented through a special-method call followed by
+`CanonicalizeHash`, or by an equivalent inlined sequence. `test_equal` should
+be implemented as the semantic equivalent of:
+
+```python
+def test_equal(left, right):
+    return bool(left == right)
+```
+
+The hot general-dict bytecode path should still contain its own cache-bearing
+hash and equality call sites. These `ThreadState` helpers are the C++ semantic
+bridge for native/internal callers and future C API wrappers; they are not a
+reason to move hot general dict lookup into opaque C++ code.
 
 Existing native VM uses should be audited into these buckets:
 
@@ -567,8 +595,8 @@ Existing native VM uses should be audited into these buckets:
 - Python-visible dict methods, dict displays, `dict.fromkeys`, `update`,
   `setdefault`, `pop`, and subscription operators must route through semantic
   helpers.
-- Trusted string fast paths may call raw string-shape helpers only after guards
-  prove both receiver shape and key shape.
+- Trusted string fast paths may call private raw string-shape helpers only after
+  guards prove both receiver shape and key shape.
 
 `CreateDict` needs special attention. General dict insertion can call
 `hash(key)`, which can execute Python. Dict display semantics require each
@@ -610,10 +638,16 @@ is to expose one invariant at a time.
 
 - [ ] Rename or hide existing raw string-only table helpers so generic names no
   longer imply string-only behavior.
+- [ ] Keep raw string-shape operations private to `Dict` and trusted handlers;
+  do not expose them as a separate public/internal C++ dict API.
+- [ ] Add or document the `ThreadState::hash_value` and
+  `ThreadState::test_equal` protocol helpers that semantic dict operations will
+  need when they can re-enter Python.
 - [ ] Add exact-string helper entry points for import/cache/bootstrap callers
   that can prove exact `str` keys.
-- [ ] Add semantic, fallible C++ entry points for arbitrary-key dict lookup,
-  assignment, deletion, and membership.
+- [ ] Define the semantic, fallible C++ entry point shapes for arbitrary-key dict
+  lookup, assignment, deletion, and membership, without pretending they are
+  implemented before the general dict path exists.
 - [ ] Decide whether exact-string semantic helpers are overloads or separately
   named helpers, and document that they can still fail on general-shaped dicts.
 - [ ] Convert dict literal construction away from direct raw `Dict::set_item`
@@ -657,7 +691,8 @@ This milestone should be table-mechanical only. If an opcode needs to call
 - [ ] Implement bytecode-backed general `__getitem__` and membership using the
   canonical SMI hash result produced by either public `hash()` or an inlined
   equivalent hash-protocol sequence ending in `CanonicalizeHash`.
-- [ ] Call equality from bytecode only after hash match and identity miss.
+- [ ] Call equality from bytecode only after hash match and identity miss, using
+  the semantic equivalent of `ThreadState::test_equal`.
 - [ ] Hold the candidate key alive across equality.
 - [ ] Revalidate table identity and candidate entry after equality returns.
 - [ ] Restart probing when revalidation fails.
