@@ -71,6 +71,14 @@ A collection has three broad phases:
 2. Evacuate reachable movable objects from the collected generation.
 3. Rewrite roots, handle slots, and heap references to point at copied objects.
 
+The evacuation algorithm should use a Cheney scan with breadth-first
+traversal. Roots and remembered old references copy their young targets into
+to-space and append those copied objects to the evacuation worklist. The
+collector then advances a scan frontier through to-space: scanning each copied
+object's outgoing references, copying any not-yet-forwarded collected objects,
+and appending those copies after the frontier. The worklist is complete when the
+scan frontier catches up with the allocation frontier.
+
 The collector must be able to enumerate and update:
 
 - managed stack slots and accumulators;
@@ -165,7 +173,10 @@ forwarded and scan complete = black
 ```
 
 The grey/black distinction can be represented by the evacuation scan queue and
-its scan frontier rather than by header bits.
+its scan frontier rather than by header bits. With the Cheney scan, copied
+objects before the scan frontier are black, copied objects between the scan
+frontier and the to-space allocation frontier are grey, and not-yet-forwarded
+objects in from-space are white.
 
 The first implementation should use object-level generation state in the header:
 
