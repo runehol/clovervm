@@ -851,9 +851,9 @@ parked for a later unification/stale-entry-defense pass.
 
 ### 4. GeneralDict Deletion And Mutation Adversaries
 
-- [ ] Implement `GeneralDict::__delitem__`.
-- [ ] Add tombstone handling and resize stress tests.
-- [ ] Add tests for deletion misses and deletion after equality mutation.
+- [x] Implement `GeneralDict::__delitem__`.
+- [x] Add tombstone handling and resize stress tests.
+- [x] Add tests for deletion misses and deletion after equality mutation.
 
 Stage invariants:
 

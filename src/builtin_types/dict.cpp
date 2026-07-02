@@ -188,6 +188,20 @@ namespace cl
                    : Value::False();
     }
 
+    static Value native_general_dict_delitem(ThreadState *thread, Value self,
+                                             Value key)
+    {
+        if(!can_convert_to<GeneralDict>(self))
+        {
+            return thread->set_pending_builtin_exception_string(
+                L"TypeError", L"__clover_general_dict.__delitem__ expects a "
+                              L"__clover_general_dict receiver");
+        }
+
+        CL_TRY(self.get_ptr<GeneralDict>()->del_item(thread, key));
+        return Value::None();
+    }
+
     static Value require_dict_receiver(Value self, const wchar_t *method_name)
     {
         if(!can_convert_to<Dict>(self))
@@ -593,6 +607,9 @@ namespace cl
             builtin_intrinsic_method(L"__contains__",
                                      native_general_dict_contains,
                                      L"Return key in self."),
+            builtin_intrinsic_method(L"__delitem__",
+                                     native_general_dict_delitem,
+                                     L"Delete self[key]."),
         };
         unwrap_bootstrap_expected(
             vm,
@@ -965,7 +982,10 @@ namespace cl
                     Owned<Value> candidate_key(entry.key);
                     bool equal =
                         CL_TRY(thread->test_equal(candidate_key.value(), key));
-                    if(hash_table.size() != table_size)
+                    if(hash_table.size() != table_size ||
+                       hash_table[hash_idx] != entry_idx ||
+                       !entries[entry_idx].valid() ||
+                       entries[entry_idx].key != candidate_key.value())
                     {
                         break;
                     }
@@ -1015,13 +1035,69 @@ namespace cl
                     Owned<Value> candidate_key(entry.key);
                     bool equal =
                         CL_TRY(thread->test_equal(candidate_key.value(), key));
-                    if(hash_table.size() != table_size)
+                    if(hash_table.size() != table_size ||
+                       hash_table[hash_idx] != entry_idx ||
+                       !entries[entry_idx].valid() ||
+                       entries[entry_idx].key != candidate_key.value())
                     {
                         break;
                     }
                     if(equal)
                     {
                         return Expected<int32_t>::ok(entry_idx);
+                    }
+                }
+
+                hash_idx = (hash_idx + 1) & hash_table_size_m1;
+            }
+        }
+    }
+
+    Expected<size_t>
+    GeneralDict::find_entry_slot_for_lookup(ThreadState *thread, Value key,
+                                            TValue<SMI> hash_smi)
+    {
+        while(true)
+        {
+            size_t table_size = hash_table.size();
+            uint64_t hash = hash_smi.extract();
+            uint32_t hash_table_size_m1 = static_cast<uint32_t>(table_size - 1);
+            uint32_t hash_idx = hash & hash_table_size_m1;
+
+            while(true)
+            {
+                int32_t entry_idx = hash_table[hash_idx];
+                if(entry_idx == not_present)
+                {
+                    return Expected<size_t>::ok(table_size);
+                }
+                if(entry_idx == tombstone)
+                {
+                    hash_idx = (hash_idx + 1) & hash_table_size_m1;
+                    continue;
+                }
+
+                Entry entry = entries[entry_idx];
+                if(entry.hash == hash_smi)
+                {
+                    if(entry.key == key)
+                    {
+                        return Expected<size_t>::ok(hash_idx);
+                    }
+
+                    Owned<Value> candidate_key(entry.key);
+                    bool equal =
+                        CL_TRY(thread->test_equal(candidate_key.value(), key));
+                    if(hash_table.size() != table_size ||
+                       hash_table[hash_idx] != entry_idx ||
+                       !entries[entry_idx].valid() ||
+                       entries[entry_idx].key != candidate_key.value())
+                    {
+                        break;
+                    }
+                    if(equal)
+                    {
+                        return Expected<size_t>::ok(hash_idx);
                     }
                 }
 
@@ -1077,6 +1153,28 @@ namespace cl
                         Entry(existing.key, live_value.value(), existing.hash));
         }
 
+        return Expected<void>::ok();
+    }
+
+    Expected<void> GeneralDict::del_item(ThreadState *thread, Value key)
+    {
+        key.assert_not_vm_sentinel();
+
+        Owned<Value> live_key(key);
+        TValue<SMI> hash = CL_TRY(thread->hash_value(live_key.value()));
+        size_t entry_slot =
+            CL_TRY(find_entry_slot_for_lookup(thread, live_key.value(), hash));
+        if(entry_slot == hash_table.size())
+        {
+            return Expected<void>::raise_exception(L"KeyError", L"");
+        }
+
+        int32_t idx = hash_table[entry_slot];
+        assert(idx >= 0);
+        entries.set(idx, Entry(Value::not_present(), Value::None(),
+                               TValue<SMI>::from_smi(0)));
+        hash_table[entry_slot] = tombstone;
+        --n_valid_entries;
         return Expected<void>::ok();
     }
 

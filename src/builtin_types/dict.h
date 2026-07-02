@@ -159,6 +159,7 @@ namespace cl
         [[nodiscard]] Expected<Value> get_item(ThreadState *thread, Value key);
         [[nodiscard]] Expected<void> set_item(ThreadState *thread, Value key,
                                               Value value);
+        [[nodiscard]] Expected<void> del_item(ThreadState *thread, Value key);
         [[nodiscard]] Expected<bool> contains(ThreadState *thread, Value key);
 
         size_t size() const { return n_valid_entries; }
@@ -179,6 +180,9 @@ namespace cl
         [[nodiscard]] Expected<int32_t>
         find_entry_index_for_lookup(ThreadState *thread, Value key,
                                     TValue<SMI> hash_smi);
+        [[nodiscard]] Expected<size_t>
+        find_entry_slot_for_lookup(ThreadState *thread, Value key,
+                                   TValue<SMI> hash_smi);
 
         void grow();
 

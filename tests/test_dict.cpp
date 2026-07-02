@@ -316,6 +316,132 @@ TEST(GeneralDict, GetItemRestartsAfterEqualityInsertionResize)
                                L"d[Probe()]\n"));
 }
 
+TEST(GeneralDict, DelItemRemovesKeyAndPreservesCollidingLookup)
+{
+    test::VmTestContext context;
+
+    EXPECT_EQ(Value::True(),
+              context.run_file(L"d = __clover_general_dict()\n"
+                               L"d[1] = 'one'\n"
+                               L"d[17] = 'seventeen'\n"
+                               L"del d[1]\n"
+                               L"len(d) == 1 and not (1 in d) and "
+                               L"d[17] == 'seventeen'\n"));
+}
+
+TEST(GeneralDict, DelItemRaisesKeyErrorForMissingKey)
+{
+    test::VmTestContext context;
+
+    Value result = context.run_file(L"d = __clover_general_dict()\n"
+                                    L"del d[1]\n");
+
+    EXPECT_TRUE(result.is_exception_marker());
+    expect_pending_exception(context.thread(), L"KeyError", L"");
+}
+
+TEST(GeneralDict, DelItemFindsEqualBoolAndIntKey)
+{
+    test::VmTestContext context;
+
+    EXPECT_EQ(Value::True(),
+              context.run_file(L"d = __clover_general_dict()\n"
+                               L"d[True] = 'truthy'\n"
+                               L"del d[1]\n"
+                               L"len(d) == 0 and not (True in d)\n"));
+}
+
+TEST(GeneralDict, DelItemPropagatesHashExceptions)
+{
+    test::VmTestContext context;
+
+    Value result = context.run_file(L"class C:\n"
+                                    L"    def __hash__(self):\n"
+                                    L"        raise ValueError\n"
+                                    L"d = __clover_general_dict()\n"
+                                    L"del d[C()]\n");
+
+    EXPECT_TRUE(result.is_exception_marker());
+    expect_pending_exception(context.thread(), L"ValueError", L"");
+}
+
+TEST(GeneralDict, DelItemPropagatesEqualityExceptions)
+{
+    test::VmTestContext context;
+
+    Value result = context.run_file(L"class C:\n"
+                                    L"    def __hash__(self):\n"
+                                    L"        return 7\n"
+                                    L"    def __eq__(self, other):\n"
+                                    L"        raise ValueError\n"
+                                    L"d = __clover_general_dict()\n"
+                                    L"d[C()] = 1\n"
+                                    L"del d[C()]\n");
+
+    EXPECT_TRUE(result.is_exception_marker());
+    expect_pending_exception(context.thread(), L"ValueError", L"");
+}
+
+TEST(GeneralDict, SetItemReusesTombstoneAndPreservesProbeChain)
+{
+    test::VmTestContext context;
+
+    EXPECT_EQ(
+        Value::True(),
+        context.run_file(L"d = __clover_general_dict()\n"
+                         L"d[1] = 1\n"
+                         L"d[17] = 17\n"
+                         L"del d[1]\n"
+                         L"d[33] = 33\n"
+                         L"len(d) == 2 and d[17] == 17 and d[33] == 33\n"));
+}
+
+TEST(GeneralDict, TombstoneResizeStressKeepsRemainingEntriesReachable)
+{
+    test::VmTestContext context;
+
+    EXPECT_EQ(Value::True(),
+              context.run_file(L"d = __clover_general_dict()\n"
+                               L"i = 0\n"
+                               L"while i < 40:\n"
+                               L"    d[i] = i\n"
+                               L"    i = i + 1\n"
+                               L"i = 0\n"
+                               L"while i < 40:\n"
+                               L"    del d[i]\n"
+                               L"    i = i + 2\n"
+                               L"d[100] = 100\n"
+                               L"len(d) == 21 and d[1] == 1 and d[39] == 39 "
+                               L"and d[100] == 100 and not (2 in d)\n"));
+}
+
+TEST(GeneralDict, DelItemRestartsAfterEqualityInsertionResize)
+{
+    test::VmTestContext context;
+
+    EXPECT_EQ(Value::True(),
+              context.run_file(L"d = __clover_general_dict()\n"
+                               L"mutated = False\n"
+                               L"class Stored:\n"
+                               L"    def __hash__(self):\n"
+                               L"        return 7\n"
+                               L"    def __eq__(self, other):\n"
+                               L"        global mutated\n"
+                               L"        if not mutated:\n"
+                               L"            mutated = True\n"
+                               L"            i = 20\n"
+                               L"            while i < 40:\n"
+                               L"                d[i] = i\n"
+                               L"                i = i + 1\n"
+                               L"        return True\n"
+                               L"class Probe:\n"
+                               L"    def __hash__(self):\n"
+                               L"        return 7\n"
+                               L"d[Stored()] = 99\n"
+                               L"del d[Probe()]\n"
+                               L"len(d) == 20 and d[39] == 39\n"));
+}
+
 TEST(Dict, SetItemOverwritesExistingValue)
 {
     test::VmTestContext context;
