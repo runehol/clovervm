@@ -181,6 +181,141 @@ TEST(GeneralDict, SetItemPropagatesEqualityExceptions)
     expect_pending_exception(context.thread(), L"ValueError", L"");
 }
 
+TEST(GeneralDict, GetItemReturnsInsertedIntegerKey)
+{
+    test::VmTestContext context;
+
+    EXPECT_EQ(Value::True(), context.run_file(L"d = __clover_general_dict()\n"
+                                              L"d[1] = 'one'\n"
+                                              L"d[1] == 'one'\n"));
+}
+
+TEST(GeneralDict, GetItemRaisesKeyErrorForMissingKey)
+{
+    test::VmTestContext context;
+
+    Value result = context.run_file(L"d = __clover_general_dict()\n"
+                                    L"d[1]\n");
+
+    EXPECT_TRUE(result.is_exception_marker());
+    expect_pending_exception(context.thread(), L"KeyError", L"");
+}
+
+TEST(GeneralDict, ContainsReportsPresentAndMissingKeys)
+{
+    test::VmTestContext context;
+
+    EXPECT_EQ(Value::True(), context.run_file(L"d = __clover_general_dict()\n"
+                                              L"d[1] = 'one'\n"
+                                              L"(1 in d) and not (2 in d)\n"));
+}
+
+TEST(GeneralDict, GetItemFindsEqualBoolAndIntKey)
+{
+    test::VmTestContext context;
+
+    EXPECT_EQ(Value::True(), context.run_file(L"d = __clover_general_dict()\n"
+                                              L"d[True] = 'truthy'\n"
+                                              L"d[1] == 'truthy'\n"));
+}
+
+TEST(GeneralDict, ContainsFindsEqualBoolAndIntKey)
+{
+    test::VmTestContext context;
+
+    EXPECT_EQ(Value::True(), context.run_file(L"d = __clover_general_dict()\n"
+                                              L"d[1] = 'one'\n"
+                                              L"True in d\n"));
+}
+
+TEST(GeneralDict, GetItemPropagatesHashExceptions)
+{
+    test::VmTestContext context;
+
+    Value result = context.run_file(L"class C:\n"
+                                    L"    def __hash__(self):\n"
+                                    L"        raise ValueError\n"
+                                    L"d = __clover_general_dict()\n"
+                                    L"d[C()]\n");
+
+    EXPECT_TRUE(result.is_exception_marker());
+    expect_pending_exception(context.thread(), L"ValueError", L"");
+}
+
+TEST(GeneralDict, ContainsPropagatesHashExceptions)
+{
+    test::VmTestContext context;
+
+    Value result = context.run_file(L"class C:\n"
+                                    L"    def __hash__(self):\n"
+                                    L"        raise ValueError\n"
+                                    L"d = __clover_general_dict()\n"
+                                    L"C() in d\n");
+
+    EXPECT_TRUE(result.is_exception_marker());
+    expect_pending_exception(context.thread(), L"ValueError", L"");
+}
+
+TEST(GeneralDict, GetItemPropagatesEqualityExceptions)
+{
+    test::VmTestContext context;
+
+    Value result = context.run_file(L"class C:\n"
+                                    L"    def __hash__(self):\n"
+                                    L"        return 7\n"
+                                    L"    def __eq__(self, other):\n"
+                                    L"        raise ValueError\n"
+                                    L"d = __clover_general_dict()\n"
+                                    L"d[C()] = 1\n"
+                                    L"d[C()]\n");
+
+    EXPECT_TRUE(result.is_exception_marker());
+    expect_pending_exception(context.thread(), L"ValueError", L"");
+}
+
+TEST(GeneralDict, ContainsPropagatesEqualityExceptions)
+{
+    test::VmTestContext context;
+
+    Value result = context.run_file(L"class C:\n"
+                                    L"    def __hash__(self):\n"
+                                    L"        return 7\n"
+                                    L"    def __eq__(self, other):\n"
+                                    L"        raise ValueError\n"
+                                    L"d = __clover_general_dict()\n"
+                                    L"d[C()] = 1\n"
+                                    L"C() in d\n");
+
+    EXPECT_TRUE(result.is_exception_marker());
+    expect_pending_exception(context.thread(), L"ValueError", L"");
+}
+
+TEST(GeneralDict, GetItemRestartsAfterEqualityInsertionResize)
+{
+    test::VmTestContext context;
+
+    EXPECT_EQ(Value::from_smi(99),
+              context.run_file(L"d = __clover_general_dict()\n"
+                               L"mutated = False\n"
+                               L"class Stored:\n"
+                               L"    def __hash__(self):\n"
+                               L"        return 7\n"
+                               L"    def __eq__(self, other):\n"
+                               L"        global mutated\n"
+                               L"        if not mutated:\n"
+                               L"            mutated = True\n"
+                               L"            i = 20\n"
+                               L"            while i < 40:\n"
+                               L"                d[i] = i\n"
+                               L"                i = i + 1\n"
+                               L"        return True\n"
+                               L"class Probe:\n"
+                               L"    def __hash__(self):\n"
+                               L"        return 7\n"
+                               L"d[Stored()] = 99\n"
+                               L"d[Probe()]\n"));
+}
+
 TEST(Dict, SetItemOverwritesExistingValue)
 {
     test::VmTestContext context;

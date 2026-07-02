@@ -156,8 +156,10 @@ namespace cl
 
         explicit GeneralDict(ClassObject *cls);
 
+        [[nodiscard]] Expected<Value> get_item(ThreadState *thread, Value key);
         [[nodiscard]] Expected<void> set_item(ThreadState *thread, Value key,
                                               Value value);
+        [[nodiscard]] Expected<bool> contains(ThreadState *thread, Value key);
 
         size_t size() const { return n_valid_entries; }
         bool empty() const { return n_valid_entries == 0; }
@@ -174,6 +176,9 @@ namespace cl
         [[nodiscard]] Expected<size_t>
         find_entry_slot_for_insert(ThreadState *thread, Value key,
                                    TValue<SMI> hash_smi);
+        [[nodiscard]] Expected<int32_t>
+        find_entry_index_for_lookup(ThreadState *thread, Value key,
+                                    TValue<SMI> hash_smi);
 
         void grow();
 

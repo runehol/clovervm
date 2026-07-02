@@ -828,9 +828,9 @@ same semantic path that later lookups will observe.
 
 ### 3. GeneralDict Lookup And Membership
 
-- [ ] Implement `GeneralDict::__getitem__` and `__contains__` using
+- [x] Implement `GeneralDict::__getitem__` and `__contains__` using
   `ThreadState::hash_value` for the lookup key.
-- [ ] Add tests for present keys, missing keys, integer keys, bool/int
+- [x] Add tests for present keys, missing keys, integer keys, bool/int
   collisions, hash exceptions, equality exceptions, and equality mutation that
   can be expressed with insertion alone.
 
