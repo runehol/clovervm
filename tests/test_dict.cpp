@@ -55,6 +55,39 @@ TEST(Dict, SetGetAndContainsWorkForStringKeys)
     EXPECT_EQ(Value::from_smi(22), dict->get_item(beta));
 }
 
+TEST(Dict, TableGenerationChangesOnlyWhenProbeStructureChanges)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation_scope(context.thread());
+    Dict *dict = context.thread()->make_object_raw<Dict>();
+
+    Value alpha = make_string(context, L"alpha");
+    Value beta = make_string(context, L"beta");
+
+    EXPECT_EQ(0u, dict->table_generation());
+    dict->set_item(alpha, Value::from_smi(11));
+    EXPECT_EQ(0u, dict->table_generation());
+    dict->set_item(alpha, Value::from_smi(99));
+    EXPECT_EQ(0u, dict->table_generation());
+    EXPECT_EQ(Value::None(), dict->del_item(alpha));
+    EXPECT_EQ(0u, dict->table_generation());
+
+    dict->clear();
+    EXPECT_EQ(1u, dict->table_generation());
+    dict->set_item(beta, Value::from_smi(22));
+    EXPECT_EQ(1u, dict->table_generation());
+
+    for(int64_t key = 0; key < 20; ++key)
+    {
+        std::wstring text = L"key";
+        text += std::to_wstring(key);
+        dict->set_item(make_string(context, text.c_str()),
+                       Value::from_smi(key));
+    }
+
+    EXPECT_GT(dict->table_generation(), 1u);
+}
+
 TEST(GeneralDict, ConstructsAsInternalClassAndStartsEmpty)
 {
     test::VmTestContext context;

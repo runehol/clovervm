@@ -35,13 +35,13 @@ namespace cl
 
     Dict::Dict(ClassObject *cls)
         : Object(cls, native_layout), hash_table(min_table_size, not_present),
-          n_valid_entries(0)
+          n_valid_entries(0), table_generation_(0)
     {
     }
 
     Dict::Dict(ClassObject *cls, const Dict &other)
         : Object(cls, native_layout), hash_table(min_table_size, not_present),
-          n_valid_entries(0)
+          n_valid_entries(0), table_generation_(0)
     {
         for(const Entry &e: other.entries)
         {
@@ -902,6 +902,7 @@ namespace cl
     {
         entries.clear();
         n_valid_entries = 0;
+        ++table_generation_;
         for(int32_t &k: hash_table)
         {
             k = not_present;
@@ -912,6 +913,7 @@ namespace cl
     {
         // make one that's twice the size
         size_t new_size = hash_table.size() * 2;
+        ++table_generation_;
         hash_table.resize(0);
         hash_table.resize(new_size, -1);
 

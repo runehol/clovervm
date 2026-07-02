@@ -76,6 +76,7 @@ namespace cl
 
         size_t size() const { return n_valid_entries; }
         bool empty() const { return n_valid_entries == 0; }
+        uint64_t table_generation() const { return table_generation_; }
 
         Iterator begin() const;
         Iterator end() const;
@@ -114,6 +115,7 @@ namespace cl
         RawArray<int32_t> hash_table;
         ValueArray<Entry> entries;
         size_t n_valid_entries;
+        uint64_t table_generation_;
 
     public:
         CL_DECLARE_STATIC_VALUE_SPAN_EXTENDS(
