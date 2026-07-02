@@ -173,7 +173,7 @@ operands and results:
 - shape and storage:
   - `_dict_is_string_shape(d)`
   - `_dict_promote_to_general(d)`
-  - `_dict_probe_table_identity(d)`
+  - `_dict_probe_table_generation(d)`
 - hash normalization:
   - `CanonicalizeHash(value)`
 - probing:
@@ -181,7 +181,7 @@ operands and results:
   - `_dict_probe_step(d, probe)`
   - `_dict_probe_advance(probe)`
   - `_dict_probe_record_tombstone(probe, entry_status)`
-  - `_dict_entry_still_matches(d, table_identity, entry, candidate)`
+  - `_dict_entry_still_matches(d, table_generation, entry, candidate)`
 - entry access:
   - `_dict_entry_hash(d, entry)`
   - `_dict_entry_key(d, entry)`
@@ -210,7 +210,7 @@ dict unification, that implementation should be factored into two layers:
   storage. These helpers must not call `hash`, equality, descriptors,
   `ThreadState::test_equal`, `ThreadState::hash_value`, or any operation that
   can run Python. They should operate on stored SMI hashes, probe state, entry
-  indexes, table identities, keys, and values.
+  indexes, table generations, keys, and values.
 
 The temporary semantic drivers should be written as direct mirrors of the later
 trusted bytecode sketches: compute/call `hash`, start a raw probe, inspect a raw
@@ -218,6 +218,37 @@ candidate, call equality at the driver layer, revalidate the entry, then call a
 raw write/delete/read helper. That makes the later migration mechanical: replace
 the C++ driver with trusted bytecode containing cache-bearing `hash` and
 equality sites, while keeping the raw table operations equivalent.
+
+Table generation should mean probe-structure generation, not "any dictionary
+mutation happened." A `table_generation` field is the preferred representation:
+increment it when an operation can make an existing probe or entry index refer
+to a different table structure, such as grow/rehash, clear, compaction,
+representation promotion, or replacing the table backing. Do not increment it
+for value overwrite, insertion into an existing empty/tombstone slot without
+resize, or deletion that only invalidates the current entry and writes a
+tombstone.
+
+After equality returns, the driver should accept the equality result only if the
+same probe-structure generation is still current and the same candidate key is
+still present at the same entry:
+
+```cpp
+bool entry_still_matches(Dict *dict, size_t table_generation, int32_t entry,
+                         Value candidate)
+{
+    return dict->table_generation() == table_generation &&
+           entry >= 0 &&
+           static_cast<size_t>(entry) < dict->entry_storage_size() &&
+           dict->entry_at(entry).valid() &&
+           dict->entry_at(entry).key == candidate;
+}
+```
+
+The exact C++ spelling can differ. The important contract is that broad
+mutation versions should not be used for this revalidation. A version that
+increments for every insert/delete/value overwrite is safe but too coarse: an
+unrelated mutation during equality could force unnecessary or repeated restarts
+even when the candidate entry remained valid.
 
 Do not add helpers such as `find_entry_with_python_equality` or
 `lookup_with_thread_state` as the long-term interface. Any helper that takes a
@@ -246,10 +277,10 @@ def _general_dict_getitem_driver(self, key):
             if candidate is key:
                 return _dict_entry_value(self, entry)
 
-            table_identity = _dict_probe_table_identity(self)
+            table_generation = _dict_probe_table_generation(self)
             equal = candidate == key
             if not _dict_entry_still_matches(
-                self, table_identity, entry, candidate
+                self, table_generation, entry, candidate
             ):
                 probe = _dict_probe_start(self, hash_value)
                 continue
@@ -284,10 +315,10 @@ def _general_dict_setitem_driver(self, key, value):
                 _dict_entry_write_existing(self, entry, value)
                 return None
 
-            table_identity = _dict_probe_table_identity(self)
+            table_generation = _dict_probe_table_generation(self)
             equal = candidate == key
             if not _dict_entry_still_matches(
-                self, table_identity, entry, candidate
+                self, table_generation, entry, candidate
             ):
                 _dict_resize_general_if_needed(self)
                 probe = _dict_probe_start(self, hash_value)
@@ -369,7 +400,7 @@ candidate key alive across `PyObject_RichCompareBool`, then checks whether the
 same keys table and same entry key are still present. If not, lookup reports a
 key-changed sentinel and `_Py_dict_lookup` restarts from the current table.
 CloverVM should preserve the same shape of defense: after equality returns,
-the entry index is reusable only if the same table identity and same candidate
+the entry index is reusable only if the same table generation and same candidate
 key are still present at that entry.
 
 ## General Dict Bytecode Sketches
@@ -416,10 +447,10 @@ def _general_dict_getitem(self, key):
                 if candidate is key:
                     return _dict_entry_value(self, entry)
 
-                table_identity = _dict_probe_table_identity(self)
+                table_generation = _dict_probe_table_generation(self)
                 equal = candidate == key
                 if not _dict_entry_still_matches(
-                    self, table_identity, entry, candidate
+                    self, table_generation, entry, candidate
                 ):
                     probe = _dict_probe_start(self, hash_value)
                     continue
@@ -476,10 +507,10 @@ def _general_dict_setitem(self, key, value):
                 _dict_entry_write_existing(self, entry, value)
                 return None
 
-            table_identity = _dict_probe_table_identity(self)
+            table_generation = _dict_probe_table_generation(self)
             equal = candidate == key
             if not _dict_entry_still_matches(
-                self, table_identity, entry, candidate
+                self, table_generation, entry, candidate
             ):
                 _dict_resize_general_if_needed(self)
                 probe = _dict_probe_start(self, hash_value)
@@ -515,10 +546,10 @@ def _general_dict_delitem(self, key):
                     _dict_entry_delete(self, entry)
                     return None
 
-                table_identity = _dict_probe_table_identity(self)
+                table_generation = _dict_probe_table_generation(self)
                 equal = candidate == key
                 if not _dict_entry_still_matches(
-                    self, table_identity, entry, candidate
+                    self, table_generation, entry, candidate
                 ):
                     probe = _dict_probe_start(self, hash_value)
                     continue
@@ -659,7 +690,7 @@ Therefore:
 
 - do not hold raw table pointers across Python-visible calls
 - hold or otherwise keep the candidate key alive across equality
-- record the current table identity before calling equality
+- record the current table generation before calling equality
 - after equality returns, revalidate that the probe still refers to the same
   table and same candidate key
 - restart the probe if that table/key revalidation fails
@@ -671,7 +702,7 @@ than relying only on a broad public dictionary version tag. Its generic compare
 helper keeps the entry key alive, calls rich comparison, then checks that the
 keys table and entry key are unchanged. If they changed, lookup returns a
 sentinel and restarts from the current table. CloverVM can implement the same
-idea with a compact table generation or identity plus a probe-entry key check.
+idea with a compact table generation plus a probe-entry key check.
 
 ## Interaction With Existing Caches
 
@@ -841,7 +872,7 @@ Later public-dict unification questions:
   opcodes?
 - What exact C++ and C API surfaces should be provided for semantic dict
   operations and exact-string fast-path operations?
-- What table identity or generation mechanism should stale-entry defense use
+- What table generation mechanism should stale-entry defense use
   once public general dict lookup needs CPython-style revalidation?
 - Should exact-string semantic helpers be separate overloads of the general
   helpers, or separate names, given that they can still be fallible in
@@ -949,7 +980,7 @@ Stage invariants:
   `ThreadState::test_equal`.
 
 Lookup is the first slice that exercises equality during probing. The table can
-now be populated through `__setitem__`, but CPython-style table identity
+now be populated through `__setitem__`, but CPython-style table generation
 revalidation and mutation adversaries that require deletion or clearing are
 parked for a later unification/stale-entry-defense pass.
 
@@ -971,7 +1002,30 @@ After this milestone, the internal class can represent integer-key dictionaries
 for controlled VM tests and experiments. It still should not be treated as a
 CPython-compatible `dict`.
 
-### 5. Factor GeneralDict Into Semantic Drivers And Raw Table Helpers
+### 5. Add GeneralDict Probe-Structure Generation
+
+- [ ] Add a `GeneralDict` table generation or equivalent probe-structure
+  generation.
+- [ ] Increment the generation when grow/rehash, clear, compaction, promotion, or
+  table-backing replacement can make existing probe state or entry indexes stale.
+- [ ] Do not increment the generation for value overwrite, insertion without
+  resize into an empty/tombstone slot, or deletion that only invalidates an entry
+  and writes a tombstone.
+- [ ] Update existing reentrant equality tests so lookup, assignment,
+  membership, and deletion revalidate against the probe-structure generation and
+  same candidate key.
+
+Stage invariants:
+
+- This is not a broad dictionary mutation version.
+- Revalidation after equality checks both probe-structure generation and same
+  entry/same candidate key.
+- Public `dict` behavior still does not change.
+
+This milestone should give the raw-helper factoring a stable table-generation
+primitive before the table helpers are split away from the semantic drivers.
+
+### 6. Factor GeneralDict Into Semantic Drivers And Raw Table Helpers
 
 - [ ] Refactor `GeneralDict` C++ lookup, assignment, deletion, and membership
   into temporary semantic drivers layered over protocol-free raw table helpers.
@@ -1000,7 +1054,7 @@ This milestone is the bridge from the bootstrap C++ implementation to the
 future cache-bearing bytecode implementation. It should be a behavior-preserving
 factoring, not a place to settle public dict representation questions.
 
-### 6. Public Dict Unification Design
+### 7. Public Dict Unification Design
 
 Design questions to resolve before implementation:
 
@@ -1019,7 +1073,7 @@ Design questions to resolve before implementation:
 This is the point to revisit the older switchable-dictionary design. Do not
 answer these questions in the bootstrap implementation by accident.
 
-### 7. Public Dict And C API Integration
+### 8. Public Dict And C API Integration
 
 - [ ] Route public `dict` lookup, assignment, deletion, membership, and public
   methods through the chosen unified design.
@@ -1034,7 +1088,7 @@ Stage invariant:
 
 - Raw string-shape helpers remain unavailable through the C API.
 
-### 8. Cleanup, Performance, And Stdlib Unblock
+### 9. Cleanup, Performance, And Stdlib Unblock
 
 - [ ] Remove bootstrap-only `GeneralDict` exposure if the public `dict` path has
   absorbed its role.
