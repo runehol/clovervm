@@ -661,14 +661,31 @@ than direct dunder calls:
 [[nodiscard]] Expected<bool> test_equal(Value left, Value right);
 ```
 
-`hash_value` may be implemented through a special-method call followed by
-`CanonicalizeHash`, or by an equivalent inlined sequence. `test_equal` should
-be implemented as the semantic equivalent of:
+`hash_value` should not call the public `hash` builtin through global lookup.
+It should be generated as a small cached helper code object that inlines the body
+of CloverVM's current `hash` implementation:
 
-```python
-def test_equal(left, right):
-    return bool(left == right)
+```text
+Load value
+CallSpecialMethod "__hash__", TypeError, "object is unhashable"
+CanonicalizeHash
+Return
 ```
+
+`test_equal` should also be generated as a small cached helper code object. It
+must use the ordinary equality operator opcode and then explicitly apply the
+VM's current truthiness conversion:
+
+```text
+Load right
+TestEqual left, operator_ic[0]
+ToBool
+Return
+```
+
+This is intentionally not a direct `__eq__` call and not a call to the Python
+`bool` builtin. It uses the same equality operator dispatch and `ToBool` opcode
+behavior that normal bytecode uses today.
 
 The hot general-dict bytecode path should still contain its own cache-bearing
 hash and equality call sites. These `ThreadState` helpers are the C++ semantic
@@ -757,9 +774,12 @@ This milestone should make the internal class real without changing ordinary
 
 - [ ] Implement `ThreadState::hash_value(Value) -> Expected<TValue<SMI>>` as the
   semantic equivalent of `hash(value)`, including special-method lookup,
-  integer-result validation, canonical SMI normalization, and `-1` remapping.
+  integer-result validation, canonical SMI normalization, and `-1` remapping,
+  by calling a cached helper code object that emits `CallSpecialMethod` followed
+  by `CanonicalizeHash`.
 - [ ] Implement `ThreadState::test_equal(Value, Value) -> Expected<bool>` as the
-  semantic equivalent of truth-testing `left == right`.
+  semantic equivalent of truth-testing `left == right`, by calling a cached
+  helper code object that emits `TestEqual` followed by `ToBool`.
 - [ ] Ensure `test_equal` uses ordinary equality operator semantics, including
   reflected dispatch and `NotImplemented` fallback, not a direct `__eq__` call.
 - [ ] Match the current behavior of Python `==` followed by the VM's current
