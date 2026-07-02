@@ -158,6 +158,8 @@ add_library(libclovervm_objects OBJECT
     runtime/operator_dispatch.h
     runtime/operator_walk.cpp
     runtime/operator_walk.h
+    runtime/protocol_helper_functions.cpp
+    runtime/protocol_helper_functions.h
     compiler/scope.cpp
     compiler/scope.h
     object_model/shape_descriptor.h

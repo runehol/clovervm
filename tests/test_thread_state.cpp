@@ -3,6 +3,7 @@
 
 #include "builtin_types/module_object.h"
 #include "builtin_types/str.h"
+#include "builtin_types/tuple.h"
 #include "object_model/owned.h"
 #include "object_model/refcount.h"
 #include "object_model/shape_key.h"
@@ -12,6 +13,20 @@
 
 namespace cl
 {
+    static void expect_pending_exception(ThreadState *thread,
+                                         const wchar_t *class_name)
+    {
+        ASSERT_EQ(PendingExceptionKind::Object,
+                  thread->pending_exception_kind());
+        TValue<Exception> exception = thread->pending_exception_object();
+        EXPECT_STREQ(class_name, exception.extract()
+                                     ->get_shape()
+                                     ->get_class()
+                                     ->get_name()
+                                     .extract()
+                                     ->data);
+    }
+
     struct TargetSafepointRecorder
     {
         CodeObject *target = nullptr;
@@ -244,6 +259,171 @@ namespace cl
         EXPECT_NE(nullptr, recorder.record.lowest_live_stack_slot);
         EXPECT_EQ(Value::from_smi(42),
                   recorder.record.accumulator_or_not_present);
+    }
+
+    TEST(ThreadState, HashValueReturnsCanonicalSmiHash)
+    {
+        test::VmTestContext context;
+        ThreadState *thread = context.thread();
+        ThreadState::ActivationScope active_thread(thread);
+
+        Expected<TValue<SMI>> result = thread->hash_value(Value::from_smi(-1));
+
+        ASSERT_FALSE(result.has_exception());
+        EXPECT_EQ(TValue<SMI>::from_smi(-2), result.value());
+        EXPECT_FALSE(thread->has_pending_exception());
+    }
+
+    TEST(ThreadState, HashValueCallsDunderHashAndCanonicalizesResult)
+    {
+        test::VmTestContext context;
+        ThreadState *thread = context.thread();
+        ThreadState::ActivationScope active_thread(thread);
+        Value pair_value = context.run_file(L"class C:\n"
+                                            L"    def __hash__(self):\n"
+                                            L"        return 10 ** 100\n"
+                                            L"obj = C()\n"
+                                            L"(obj, hash(obj))\n");
+        ASSERT_FALSE(pair_value.is_exception_marker());
+        ASSERT_TRUE(can_convert_to<Tuple>(pair_value));
+        Tuple *pair = pair_value.get_ptr<Tuple>();
+        ASSERT_TRUE(pair->item_unchecked(1).is_smi());
+
+        Expected<TValue<SMI>> result =
+            thread->hash_value(pair->item_unchecked(0));
+
+        ASSERT_FALSE(result.has_exception());
+        EXPECT_EQ(TValue<SMI>::from_value_unchecked(pair->item_unchecked(1)),
+                  result.value());
+        EXPECT_FALSE(thread->has_pending_exception());
+    }
+
+    TEST(ThreadState, HashValuePropagatesHashErrors)
+    {
+        test::VmTestContext context;
+        ThreadState *thread = context.thread();
+        ThreadState::ActivationScope active_thread(thread);
+        Value object = context.run_file(L"class C:\n"
+                                        L"    def __hash__(self):\n"
+                                        L"        return 'not an int'\n"
+                                        L"C()\n");
+        ASSERT_FALSE(object.is_exception_marker());
+
+        Expected<TValue<SMI>> result = thread->hash_value(object);
+
+        EXPECT_TRUE(result.has_exception());
+        expect_pending_exception(thread, L"TypeError");
+    }
+
+    TEST(ThreadState, HashValuePropagatesHashExceptions)
+    {
+        test::VmTestContext context;
+        ThreadState *thread = context.thread();
+        ThreadState::ActivationScope active_thread(thread);
+        Value object = context.run_file(L"class C:\n"
+                                        L"    def __hash__(self):\n"
+                                        L"        raise ValueError\n"
+                                        L"C()\n");
+        ASSERT_FALSE(object.is_exception_marker());
+
+        Expected<TValue<SMI>> result = thread->hash_value(object);
+
+        EXPECT_TRUE(result.has_exception());
+        expect_pending_exception(thread, L"ValueError");
+    }
+
+    TEST(ThreadState, HashValuePropagatesMissingHash)
+    {
+        test::VmTestContext context;
+        ThreadState *thread = context.thread();
+        ThreadState::ActivationScope active_thread(thread);
+        Value list = context.run_file(L"[]\n");
+        ASSERT_FALSE(list.is_exception_marker());
+
+        Expected<TValue<SMI>> result = thread->hash_value(list);
+
+        EXPECT_TRUE(result.has_exception());
+        expect_pending_exception(thread, L"TypeError");
+    }
+
+    TEST(ThreadState, HashValuePropagatesDisabledHash)
+    {
+        test::VmTestContext context;
+        ThreadState *thread = context.thread();
+        ThreadState::ActivationScope active_thread(thread);
+        Value object = context.run_file(L"class C:\n"
+                                        L"    __hash__ = None\n"
+                                        L"C()\n");
+        ASSERT_FALSE(object.is_exception_marker());
+
+        Expected<TValue<SMI>> result = thread->hash_value(object);
+
+        EXPECT_TRUE(result.has_exception());
+        expect_pending_exception(thread, L"TypeError");
+    }
+
+    TEST(ThreadState, TestEqualUsesPythonEqualityAndTruthiness)
+    {
+        test::VmTestContext context;
+        ThreadState *thread = context.thread();
+        ThreadState::ActivationScope active_thread(thread);
+        Value pair_value = context.run_file(L"class Truthy:\n"
+                                            L"    def __eq__(self, other):\n"
+                                            L"        return 1\n"
+                                            L"class Falsey:\n"
+                                            L"    def __eq__(self, other):\n"
+                                            L"        return 0\n"
+                                            L"(Truthy(), Falsey())\n");
+        ASSERT_FALSE(pair_value.is_exception_marker());
+        ASSERT_TRUE(can_convert_to<Tuple>(pair_value));
+        Tuple *pair = pair_value.get_ptr<Tuple>();
+
+        Expected<bool> truthy =
+            thread->test_equal(pair->item_unchecked(0), Value::None());
+        ASSERT_FALSE(truthy.has_exception());
+        EXPECT_TRUE(truthy.value());
+
+        Expected<bool> falsey =
+            thread->test_equal(pair->item_unchecked(1), Value::None());
+        ASSERT_FALSE(falsey.has_exception());
+        EXPECT_FALSE(falsey.value());
+        EXPECT_FALSE(thread->has_pending_exception());
+    }
+
+    TEST(ThreadState, TestEqualPropagatesEqualityErrors)
+    {
+        test::VmTestContext context;
+        ThreadState *thread = context.thread();
+        ThreadState::ActivationScope active_thread(thread);
+        Value object = context.run_file(L"class C:\n"
+                                        L"    def __eq__(self, other):\n"
+                                        L"        raise ValueError\n"
+                                        L"C()\n");
+        ASSERT_FALSE(object.is_exception_marker());
+
+        Expected<bool> result = thread->test_equal(object, Value::None());
+
+        EXPECT_TRUE(result.has_exception());
+        expect_pending_exception(thread, L"ValueError");
+    }
+
+    TEST(ThreadState, TestEqualPropagatesUnsupportedTruthiness)
+    {
+        test::VmTestContext context;
+        ThreadState *thread = context.thread();
+        ThreadState::ActivationScope active_thread(thread);
+        Value object = context.run_file(L"class Result:\n"
+                                        L"    pass\n"
+                                        L"class C:\n"
+                                        L"    def __eq__(self, other):\n"
+                                        L"        return Result()\n"
+                                        L"C()\n");
+        ASSERT_FALSE(object.is_exception_marker());
+
+        Expected<bool> result = thread->test_equal(object, Value::None());
+
+        EXPECT_TRUE(result.has_exception());
+        expect_pending_exception(thread, L"TypeError");
     }
 
     TEST(ThreadState, PendingExceptionObjectStoresTypedObject)

@@ -36,6 +36,7 @@
 #include "runtime/exception_object.h"
 #include "runtime/exception_propagation.h"
 #include "runtime/fatal.h"
+#include "runtime/protocol_helper_functions.h"
 #include "runtime/thread_state.h"
 #include <cassert>
 #include <cstdint>
@@ -415,6 +416,8 @@ namespace cl
         : refcounted_global_heap(GlobalHeap::refcounted_heap()),
           interned_global_heap(GlobalHeap::interned_heap()),
           interned_strings(&interned_global_heap), range_builtin(Value::None()),
+          hash_value_helper_function_(Optional<TValue<Function>>::none()),
+          test_equal_helper_function_(Optional<TValue<Function>>::none()),
           membership_iter_fallback_function_(
               Optional<TValue<Function>>::none()),
           membership_sequence_fallback_function_(
@@ -431,6 +434,10 @@ namespace cl
                 if(armed)
                 {
                     vm->range_builtin = Value::None();
+                    vm->hash_value_helper_function_ =
+                        Optional<TValue<Function>>::none();
+                    vm->test_equal_helper_function_ =
+                        Optional<TValue<Function>>::none();
                     vm->membership_iter_fallback_function_ =
                         Optional<TValue<Function>>::none();
                     vm->membership_sequence_fallback_function_ =
@@ -456,6 +463,8 @@ namespace cl
         {
             ThreadState::ActivationScope activation_scope(threads[0].get());
             range_builtin = Value::None();
+            hash_value_helper_function_ = Optional<TValue<Function>>::none();
+            test_equal_helper_function_ = Optional<TValue<Function>>::none();
             membership_iter_fallback_function_ =
                 Optional<TValue<Function>>::none();
             membership_sequence_fallback_function_ =
@@ -1213,6 +1222,15 @@ namespace cl
                 "installing __import__")
                 .raw_value());
 
+        hash_value_helper_function_ =
+            Optional<TValue<Function>>::some(unwrap_bootstrap_expected(
+                this, make_hash_value_helper_function(this),
+                "creating hash value helper"));
+        test_equal_helper_function_ =
+            Optional<TValue<Function>>::some(unwrap_bootstrap_expected(
+                this, make_test_equal_helper_function(this),
+                "creating test equal helper"));
+
         Expected<CodeObject *> builtins_code = thread->compile_in_module(
             trusted_builtin_source, StartRule::File, builtins_module,
             LanguageMode::TrustedCloverExtensions);
@@ -1288,6 +1306,18 @@ namespace cl
     {
         assert(membership_iter_fallback_function_.value().has_value());
         return membership_iter_fallback_function_.value().value();
+    }
+
+    TValue<Function> VirtualMachine::hash_value_helper_function() const
+    {
+        assert(hash_value_helper_function_.value().has_value());
+        return hash_value_helper_function_.value().value();
+    }
+
+    TValue<Function> VirtualMachine::test_equal_helper_function() const
+    {
+        assert(test_equal_helper_function_.value().has_value());
+        return test_equal_helper_function_.value().value();
     }
 
     TValue<Function>

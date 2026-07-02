@@ -157,6 +157,8 @@ namespace cl
                                                    Value arg2, Value arg3,
                                                    Value arg4, Value arg5,
                                                    Value arg6);
+        [[nodiscard]] Expected<TValue<SMI>> hash_value(Value value);
+        [[nodiscard]] Expected<bool> test_equal(Value left, Value right);
         [[nodiscard]] Value call_clovervm_method(Value receiver,
                                                  TValue<String> name);
         [[nodiscard]] Value

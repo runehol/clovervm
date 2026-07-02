@@ -778,15 +778,15 @@ construction/testing path.
 
 ### 1. ThreadState Protocol Helpers
 
-- [ ] Implement `ThreadState::hash_value(Value) -> Expected<TValue<SMI>>` as the
+- [x] Implement `ThreadState::hash_value(Value) -> Expected<TValue<SMI>>` as the
   semantic equivalent of `hash(value)`, including special-method lookup,
   integer-result validation, canonical SMI normalization, and `-1` remapping,
   by calling a cached helper code object that emits `CallSpecialMethod` followed
   by `CanonicalizeHash`.
-- [ ] Implement `ThreadState::test_equal(Value, Value) -> Expected<bool>` as the
+- [x] Implement `ThreadState::test_equal(Value, Value) -> Expected<bool>` as the
   semantic equivalent of truth-testing `left == right`, by calling a cached
   helper code object that emits `TestEqual` followed by `ToBool`.
-- [ ] Add tests for missing and disabled hash, non-integer hash results,
+- [x] Add tests for missing and disabled hash, non-integer hash results,
   exceptions from `__hash__`, non-bool equality results, and equality exceptions.
 
 Stage invariants:

@@ -220,6 +220,31 @@ namespace cl
         return call_clovervm_function_with_args(function, args, 7);
     }
 
+    Expected<TValue<SMI>> ThreadState::hash_value(Value value)
+    {
+        Value result = call_clovervm_function(
+            machine->hash_value_helper_function(), value);
+        if(result.is_exception_marker())
+        {
+            return Expected<TValue<SMI>>::propagate_exception();
+        }
+        assert(result.is_smi());
+        return Expected<TValue<SMI>>::ok(
+            TValue<SMI>::from_value_unchecked(result));
+    }
+
+    Expected<bool> ThreadState::test_equal(Value left, Value right)
+    {
+        Value result = call_clovervm_function(
+            machine->test_equal_helper_function(), left, right);
+        if(result.is_exception_marker())
+        {
+            return Expected<bool>::propagate_exception();
+        }
+        assert(result.is_bool());
+        return Expected<bool>::ok(result == Value::True());
+    }
+
     Value ThreadState::call_clovervm_method_with_args(Value receiver,
                                                       TValue<String> name,
                                                       const Value *args,

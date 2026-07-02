@@ -99,6 +99,8 @@ namespace cl
         }
 
         Value get_range_builtin() const { return range_builtin; }
+        TValue<Function> hash_value_helper_function() const;
+        TValue<Function> test_equal_helper_function() const;
         TValue<Function> membership_iter_fallback_function() const;
         TValue<Function> membership_sequence_fallback_function() const;
         TValue<ModuleObject> global_builtins_module() const
@@ -402,6 +404,8 @@ namespace cl
         std::array<CodeObject *, MaxCloverFunctionEntryAdapterArgs + 1>
             clover_function_entry_adapters = {};
         Owned<Value> range_builtin;
+        Owned<Optional<TValue<Function>>> hash_value_helper_function_;
+        Owned<Optional<TValue<Function>>> test_equal_helper_function_;
         Owned<Optional<TValue<Function>>> membership_iter_fallback_function_;
         Owned<Optional<TValue<Function>>>
             membership_sequence_fallback_function_;
