@@ -42,7 +42,7 @@ forcing automatic switching or a unified C++ `dict` interface immediately.
 ## Bootstrap GeneralDict Class
 
 The initial general-key implementation should be an internal Python-visible
-class, for example `__clover_general_dict`, backed by a new C++ class:
+class named `__clover_general_dict`, backed by a new C++ class:
 
 ```cpp
 class GeneralDict : public Object
@@ -719,7 +719,6 @@ plus per-entry semantic insertion once public general keys are supported.
 
 Bootstrap questions:
 
-- What exact internal Python name should expose the bootstrap class?
 - Should `GeneralDict.__repr__` be implemented in the first functional slice, or
   deferred until core lookup/assignment is stable?
 - What minimal iteration or `items` surface is needed for tests without dragging
@@ -758,8 +757,8 @@ CPython-compatible public `dict` implementation.
 
 - [ ] Add `NativeLayoutId::GeneralDict`.
 - [ ] Add `GeneralDict` to `dict.h` and `dict.cpp`.
-- [ ] Register a separate internal Python class, such as
-  `__clover_general_dict`, backed by `GeneralDict`.
+- [ ] Register a separate internal Python class named `__clover_general_dict`,
+  backed by `GeneralDict`.
 - [ ] Give `GeneralDict` data members that mirror `Dict`: same hash-table array,
   same entry-array shape, same stored SMI hash, and same live-entry count.
 - [ ] Do not introduce a shared base class, shared table abstraction, template
