@@ -13,6 +13,8 @@ namespace cl
 {
     class CodeObjectBuilder;
     class ExceptionTableRangeSuspension;
+    class Function;
+    class Tuple;
 
     enum class JumpRelocationKind : uint8_t
     {
@@ -450,7 +452,15 @@ namespace cl
         Expected<uint8_t>
         add_native_function_target(NativeFunctionTarget target);
 
+        void reserve_parameter_slots_and_frame_header();
+        void configure_positional_function(uint32_t n_parameters);
         Expected<CodeObject *> finalize();
+        Expected<TValue<Function>>
+        finalize_immortal_function(VirtualMachine *vm,
+                                   Optional<TValue<String>> docstring =
+                                       Optional<TValue<String>>::none(),
+                                   Optional<TValue<Tuple>> default_parameters =
+                                       Optional<TValue<Tuple>>::none());
 
     private:
         friend class JumpTarget;

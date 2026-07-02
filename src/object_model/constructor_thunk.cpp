@@ -12,17 +12,6 @@
 
 namespace cl
 {
-    static void
-    reserve_parameter_slots_and_frame_header(CodeObjectBuilder *code)
-    {
-        Scope *local_scope = code->get_local_scope_ptr();
-        local_scope->reserve_empty_slots(code->n_parameters());
-        uint32_t n_parameter_padding =
-            code->get_padded_n_parameters() - code->n_parameters();
-        local_scope->reserve_empty_slots(n_parameter_padding);
-        local_scope->reserve_empty_slots(FrameHeaderSize);
-    }
-
     static Expected<FunctionSignature> constructor_thunk_signature_drop_first(
         FunctionSignature source_signature,
         const wchar_t *dropped_parameter_description)
@@ -166,7 +155,7 @@ namespace cl
         }
 
         CodeObjectBuilder &code = *code_storage;
-        reserve_parameter_slots_and_frame_header(&code);
+        code.reserve_parameter_slots_and_frame_header();
 
         uint32_t class_const_idx =
             CL_TRY(code.allocate_constant(Value::from_oop(cls)));
@@ -292,7 +281,7 @@ namespace cl
         code.function_signature() = CL_TRY(
             new_only_constructor_thunk_signature(new_code->function_signature));
         copy_keyword_remap_drop_first(code, new_code);
-        reserve_parameter_slots_and_frame_header(&code);
+        code.reserve_parameter_slots_and_frame_header();
 
         uint32_t class_const_idx =
             CL_TRY(code.allocate_constant(Value::from_oop(cls)));

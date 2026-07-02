@@ -1,5 +1,6 @@
 #include "bytecode/code_object_builder.h"
 
+#include "object_model/function.h"
 #include "runtime/thread_state.h"
 #include "runtime/virtual_machine.h"
 
@@ -294,6 +295,25 @@ namespace cl
         assert(n_call_arg_regs > 0);
         assert(is_call_frame_aligned_register(first_arg_reg));
         assert(first_arg_reg + n_call_arg_regs == temporary_reg);
+    }
+
+    void CodeObjectBuilder::reserve_parameter_slots_and_frame_header()
+    {
+        Scope *local_scope = get_local_scope_ptr();
+        local_scope->reserve_empty_slots(n_parameters());
+        uint32_t n_parameter_padding =
+            get_padded_n_parameters() - n_parameters();
+        local_scope->reserve_empty_slots(n_parameter_padding);
+        local_scope->reserve_empty_slots(FrameHeaderSize);
+    }
+
+    void
+    CodeObjectBuilder::configure_positional_function(uint32_t n_parameters_)
+    {
+        n_parameters() = n_parameters_;
+        n_positional_parameters() = n_parameters_;
+        function_signature().n_pos_or_kw_parameters = n_parameters_;
+        reserve_parameter_slots_and_frame_header();
     }
 
     Expected<uint32_t>
@@ -979,6 +999,22 @@ namespace cl
         code_obj->first_free_arg_encoded_reg = encode_reg(first_free_arg_reg);
         finalized = true;
         return Expected<CodeObject *>::ok(code_obj);
+    }
+
+    Expected<TValue<Function>> CodeObjectBuilder::finalize_immortal_function(
+        VirtualMachine *vm, Optional<TValue<String>> docstring,
+        Optional<TValue<Tuple>> default_parameters)
+    {
+        TValue<CodeObject> code =
+            TValue<CodeObject>::from_oop(CL_TRY(finalize()));
+        if(default_parameters.has_value())
+        {
+            return Expected<TValue<Function>>::ok(
+                vm->make_immortal_object_value<Function>(code, docstring,
+                                                         default_parameters));
+        }
+        return Expected<TValue<Function>>::ok(
+            vm->make_immortal_object_value<Function>(code, docstring));
     }
 
     Expected<uint8_t> CodeObjectBuilder::allocate_attribute_read_cache()
