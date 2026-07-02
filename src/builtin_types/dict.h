@@ -10,6 +10,7 @@ namespace cl
 {
     class ClassObject;
     class List;
+    class ThreadState;
     class Tuple;
 
     class Dict : public Object
@@ -147,10 +148,21 @@ namespace cl
         static constexpr NativeLayoutId native_layout =
             NativeLayoutId::GeneralDict;
 
+        struct EntryView
+        {
+            Value key;
+            Value value;
+        };
+
         explicit GeneralDict(ClassObject *cls);
+
+        [[nodiscard]] Expected<void> set_item(ThreadState *thread, Value key,
+                                              Value value);
 
         size_t size() const { return n_valid_entries; }
         bool empty() const { return n_valid_entries == 0; }
+        size_t entry_storage_size() const { return entries.size(); }
+        bool entry_at(size_t idx, EntryView &out) const;
 
     private:
         constexpr static uint32_t max_load_nom = 3;
@@ -158,6 +170,12 @@ namespace cl
         constexpr static int32_t tombstone = -2;
         constexpr static int32_t not_present = -1;
         constexpr static size_t min_table_size = 16;
+
+        [[nodiscard]] Expected<size_t>
+        find_entry_slot_for_insert(ThreadState *thread, Value key,
+                                   TValue<SMI> hash_smi);
+
+        void grow();
 
         RawArray<int32_t> hash_table;
         ValueArray<Entry> entries;

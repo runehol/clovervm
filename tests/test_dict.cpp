@@ -92,6 +92,95 @@ TEST(GeneralDict, TemporaryBuiltinBindingCanConstructAndLen)
               context.run_file(L"len(__clover_general_dict())\n"));
 }
 
+TEST(GeneralDict, SetItemInsertsIntegerKeysThroughTemporaryBuiltin)
+{
+    test::VmTestContext context;
+
+    EXPECT_EQ(Value::from_smi(2),
+              context.run_file(L"d = __clover_general_dict()\n"
+                               L"d[1] = 'one'\n"
+                               L"d[2] = 'two'\n"
+                               L"len(d)\n"));
+}
+
+TEST(GeneralDict, SetItemOverwritesEqualBoolAndIntKey)
+{
+    test::VmTestContext context;
+    ThreadState *thread = context.thread();
+    ThreadState::ActivationScope activation_scope(thread);
+    GeneralDict *dict = thread->make_object_raw<GeneralDict>();
+
+    ASSERT_FALSE(dict->set_item(thread, Value::from_smi(1), Value::from_smi(11))
+                     .has_exception());
+    ASSERT_FALSE(dict->set_item(thread, Value::True(), Value::from_smi(22))
+                     .has_exception());
+
+    EXPECT_EQ(1u, dict->size());
+    ASSERT_EQ(1u, dict->entry_storage_size());
+    GeneralDict::EntryView entry = {Value::not_present(), Value::not_present()};
+    ASSERT_TRUE(dict->entry_at(0, entry));
+    EXPECT_EQ(Value::from_smi(1), entry.key);
+    EXPECT_EQ(Value::from_smi(22), entry.value);
+}
+
+TEST(GeneralDict, SetItemOverwritePreservesEntryOrder)
+{
+    test::VmTestContext context;
+    ThreadState *thread = context.thread();
+    ThreadState::ActivationScope activation_scope(thread);
+    GeneralDict *dict = thread->make_object_raw<GeneralDict>();
+
+    ASSERT_FALSE(dict->set_item(thread, Value::from_smi(1), Value::from_smi(11))
+                     .has_exception());
+    ASSERT_FALSE(dict->set_item(thread, Value::from_smi(2), Value::from_smi(22))
+                     .has_exception());
+    ASSERT_FALSE(dict->set_item(thread, Value::from_smi(1), Value::from_smi(99))
+                     .has_exception());
+
+    EXPECT_EQ(2u, dict->size());
+    ASSERT_EQ(2u, dict->entry_storage_size());
+    GeneralDict::EntryView first = {Value::not_present(), Value::not_present()};
+    GeneralDict::EntryView second = {Value::not_present(),
+                                     Value::not_present()};
+    ASSERT_TRUE(dict->entry_at(0, first));
+    ASSERT_TRUE(dict->entry_at(1, second));
+    EXPECT_EQ(Value::from_smi(1), first.key);
+    EXPECT_EQ(Value::from_smi(99), first.value);
+    EXPECT_EQ(Value::from_smi(2), second.key);
+    EXPECT_EQ(Value::from_smi(22), second.value);
+}
+
+TEST(GeneralDict, SetItemPropagatesHashExceptions)
+{
+    test::VmTestContext context;
+
+    Value result = context.run_file(L"class C:\n"
+                                    L"    def __hash__(self):\n"
+                                    L"        raise ValueError\n"
+                                    L"d = __clover_general_dict()\n"
+                                    L"d[C()] = 1\n");
+
+    EXPECT_TRUE(result.is_exception_marker());
+    expect_pending_exception(context.thread(), L"ValueError", L"");
+}
+
+TEST(GeneralDict, SetItemPropagatesEqualityExceptions)
+{
+    test::VmTestContext context;
+
+    Value result = context.run_file(L"class C:\n"
+                                    L"    def __hash__(self):\n"
+                                    L"        return 7\n"
+                                    L"    def __eq__(self, other):\n"
+                                    L"        raise ValueError\n"
+                                    L"d = __clover_general_dict()\n"
+                                    L"d[C()] = 1\n"
+                                    L"d[C()] = 2\n");
+
+    EXPECT_TRUE(result.is_exception_marker());
+    expect_pending_exception(context.thread(), L"ValueError", L"");
+}
+
 TEST(Dict, SetItemOverwritesExistingValue)
 {
     test::VmTestContext context;

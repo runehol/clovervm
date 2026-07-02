@@ -806,9 +806,9 @@ protocol calls later.
 
 ### 2. Basic GeneralDict Insertion
 
-- [ ] Implement `GeneralDict::__setitem__` for inserting new keys and
+- [x] Implement `GeneralDict::__setitem__` for inserting new keys and
   overwriting existing keys.
-- [ ] Add tests for integer keys, bool/int key collisions, overwrites preserving
+- [x] Add tests for integer keys, bool/int key collisions, overwrites preserving
   insertion order, `__hash__` exceptions, and `__eq__` exceptions.
 
 Stage invariants:

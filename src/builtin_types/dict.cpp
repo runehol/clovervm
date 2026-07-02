@@ -146,6 +146,20 @@ namespace cl
             static_cast<int64_t>(self.get_ptr<GeneralDict>()->size()));
     }
 
+    static Value native_general_dict_setitem(ThreadState *thread, Value self,
+                                             Value key, Value value)
+    {
+        if(!can_convert_to<GeneralDict>(self))
+        {
+            return thread->set_pending_builtin_exception_string(
+                L"TypeError", L"__clover_general_dict.__setitem__ expects a "
+                              L"__clover_general_dict receiver");
+        }
+
+        CL_TRY(self.get_ptr<GeneralDict>()->set_item(thread, key, value));
+        return Value::None();
+    }
+
     static Value require_dict_receiver(Value self, const wchar_t *method_name)
     {
         if(!can_convert_to<Dict>(self))
@@ -542,6 +556,9 @@ namespace cl
                                      L"Create a general dict object."),
             builtin_intrinsic_method(L"__len__", native_general_dict_len,
                                      L"Return len(self)."),
+            builtin_intrinsic_method(L"__setitem__",
+                                     native_general_dict_setitem,
+                                     L"Set self[key] to value."),
         };
         unwrap_bootstrap_expected(
             vm,
@@ -848,6 +865,149 @@ namespace cl
             int32_t *hash_entry = find_entry_with_provided_hash(
                 entries[write_idx].key, entries[write_idx].hash);
             *hash_entry = static_cast<int32_t>(write_idx);
+            ++write_idx;
+        }
+        entries.resize(write_idx, Entry(Value::not_present(), Value::None(),
+                                        TValue<SMI>::from_smi(0)));
+        assert(entries.size() == n_valid_entries);
+    }
+
+    bool GeneralDict::entry_at(size_t idx, EntryView &out) const
+    {
+        if(idx >= entries.size())
+        {
+            return false;
+        }
+        const Entry &entry = entries[idx];
+        if(!entry.valid())
+        {
+            return false;
+        }
+        out = EntryView{entry.key, entry.value};
+        return true;
+    }
+
+    Expected<size_t>
+    GeneralDict::find_entry_slot_for_insert(ThreadState *thread, Value key,
+                                            TValue<SMI> hash_smi)
+    {
+        while(true)
+        {
+            size_t table_size = hash_table.size();
+            uint64_t hash = hash_smi.extract();
+            uint32_t hash_table_size_m1 = static_cast<uint32_t>(table_size - 1);
+            uint32_t hash_idx = hash & hash_table_size_m1;
+            size_t tombstone_hash_idx = table_size;
+
+            while(true)
+            {
+                int32_t entry_idx = hash_table[hash_idx];
+                if(entry_idx == not_present)
+                {
+                    if(tombstone_hash_idx != table_size)
+                    {
+                        return Expected<size_t>::ok(tombstone_hash_idx);
+                    }
+                    return Expected<size_t>::ok(hash_idx);
+                }
+                if(entry_idx == tombstone)
+                {
+                    if(tombstone_hash_idx == table_size)
+                    {
+                        tombstone_hash_idx = hash_idx;
+                    }
+                    hash_idx = (hash_idx + 1) & hash_table_size_m1;
+                    continue;
+                }
+
+                Entry entry = entries[entry_idx];
+                if(entry.hash == hash_smi)
+                {
+                    if(entry.key == key)
+                    {
+                        return Expected<size_t>::ok(hash_idx);
+                    }
+
+                    Owned<Value> candidate_key(entry.key);
+                    bool equal =
+                        CL_TRY(thread->test_equal(candidate_key.value(), key));
+                    if(hash_table.size() != table_size)
+                    {
+                        break;
+                    }
+                    if(equal)
+                    {
+                        return Expected<size_t>::ok(hash_idx);
+                    }
+                }
+
+                hash_idx = (hash_idx + 1) & hash_table_size_m1;
+            }
+        }
+    }
+
+    Expected<void> GeneralDict::set_item(ThreadState *thread, Value key,
+                                         Value value)
+    {
+        key.assert_not_vm_sentinel();
+        value.assert_not_vm_sentinel();
+
+        Owned<Value> live_key(key);
+        Owned<Value> live_value(value);
+        TValue<SMI> hash = CL_TRY(thread->hash_value(live_key.value()));
+
+        if(entries.size() > hash_table.size() * max_load_nom / max_load_denom)
+        {
+            grow();
+        }
+
+        size_t entry_slot =
+            CL_TRY(find_entry_slot_for_insert(thread, live_key.value(), hash));
+        int32_t idx = hash_table[entry_slot];
+        if(idx < 0)
+        {
+            idx = static_cast<int32_t>(entries.size());
+            hash_table[entry_slot] = idx;
+            entries.emplace_back(live_key.value(), live_value.value(), hash);
+            ++n_valid_entries;
+        }
+        else
+        {
+            Entry existing = entries[idx];
+            entries.set(idx,
+                        Entry(existing.key, live_value.value(), existing.hash));
+        }
+
+        return Expected<void>::ok();
+    }
+
+    void GeneralDict::grow()
+    {
+        size_t new_size = hash_table.size() * 2;
+        hash_table.resize(0);
+        hash_table.resize(new_size, not_present);
+
+        size_t write_idx = 0;
+        for(size_t read_idx = 0; read_idx < entries.size(); ++read_idx)
+        {
+            Entry entry = entries[read_idx];
+            if(!entry.valid())
+            {
+                continue;
+            }
+
+            if(write_idx != read_idx)
+            {
+                entries.set(write_idx, entry);
+            }
+            uint64_t hash = entries[write_idx].hash.extract();
+            uint32_t hash_table_size_m1 = hash_table.size() - 1;
+            uint32_t hash_entry = hash & hash_table_size_m1;
+            while(hash_table[hash_entry] != not_present)
+            {
+                hash_entry = (hash_entry + 1) & hash_table_size_m1;
+            }
+            hash_table[hash_entry] = static_cast<int32_t>(write_idx);
             ++write_idx;
         }
         entries.resize(write_idx, Entry(Value::not_present(), Value::None(),
