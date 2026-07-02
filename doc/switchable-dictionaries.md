@@ -105,13 +105,14 @@ should retain `key` and `value` with `Owned<Value>` before calling
 
 ## Shape Invariants
 
-The final public-dict design should still use the existing shape system rather
-than a second public class.
+The final public-dict design should use one native layout, one C++ class, and
+one Python class. The public class remains `dict`; individual dict instances
+select their storage and operation mode through shape state.
 
 Every Python-visible object already has a `Shape`. Dictionary mode should be
 represented through that existing mechanism.
 
-The public class remains `dict`, but dict instances use different shapes:
+Dict instances use two dictionary shapes:
 
 - **String dict shape**: all live keys are exact `str` objects. Lookup,
   insertion, deletion, and membership may use trusted native string hashing and
@@ -142,7 +143,7 @@ should dispatch by receiver shape:
   - lookup/membership: promote or enter the general path, depending on the
     final implementation choice for miss semantics
   - insertion/update: promote before inserting
-- general dict shape: bytecode-backed general dict method
+- general dict shape: bytecode-backed public `dict` method
 
 The important split is where inline caches live:
 
@@ -676,6 +677,11 @@ requires `__hash__`, the public behavior of `d[key]` may still need to call
 design should route non-string lookup through general bytecode, promoting if
 needed, rather than inventing a special miss path.
 
+Promotion changes the dict shape and table representation in place. It does not
+replace the object with a different native layout, C++ class, or Python class.
+That keeps identity, references, and public type behavior stable: promotion is a
+shape/storage transition inside the single public `dict` implementation.
+
 ## Reentrancy and Probe Revalidation
 
 General dictionary operations must assume that `__hash__` and equality can:
@@ -1056,13 +1062,17 @@ factoring, not a place to settle public dict representation questions.
 
 ### 7. Public Dict Unification Design
 
+Resolved representation direction:
+
+- Public `dict` uses one native layout, one C++ class, and one Python class.
+- Dict instances use two shapes: string dict shape and general dict shape.
+- Promotion is an in-place shape/storage transition, not replacement with a
+  different object representation.
+
 Design questions to resolve before implementation:
 
-- Whether public `dict` will be one native layout with shape-backed modes, two
-  native layouts registered to the same public class, or a merged table
-  abstraction.
-- How insertion of a non-string key into public `dict` promotes or replaces the
-  existing string-only representation.
+- Exact storage transition for promotion from string shape to general shape,
+  including entry order preservation.
 - Whether the final general public path is bytecode-backed with trusted probe
   opcodes, C++-backed through `ThreadState` helpers, or staged from one to the
   other.
