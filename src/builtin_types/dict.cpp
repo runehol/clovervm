@@ -959,62 +959,50 @@ namespace cl
     {
         while(true)
         {
-            size_t table_size = hash_table.size();
-            uint64_t generation = table_generation_;
-            uint64_t hash = hash_smi.extract();
-            uint32_t hash_table_size_m1 = static_cast<uint32_t>(table_size - 1);
-            uint32_t hash_idx = hash & hash_table_size_m1;
-            size_t tombstone_hash_idx = table_size;
+            Probe probe = probe_start(hash_smi);
 
             while(true)
             {
-                int32_t entry_idx = hash_table[hash_idx];
-                if(entry_idx == not_present)
+                int32_t entry_status = hash_table[probe.hash_idx];
+                if(entry_status == not_present)
                 {
-                    if(tombstone_hash_idx != table_size)
-                    {
-                        return Expected<size_t>::ok(tombstone_hash_idx);
-                    }
-                    return Expected<size_t>::ok(hash_idx);
+                    return Expected<size_t>::ok(probe_write_slot(probe));
                 }
-                if(entry_idx == tombstone)
+                if(entry_status == tombstone)
                 {
-                    if(tombstone_hash_idx == table_size)
-                    {
-                        tombstone_hash_idx = hash_idx;
-                    }
-                    hash_idx = (hash_idx + 1) & hash_table_size_m1;
+                    probe_record_tombstone(probe, entry_status);
+                    probe_advance(probe);
                     continue;
                 }
 
-                Entry entry = entries[entry_idx];
+                Entry entry = entries[entry_status];
                 if(entry.hash == hash_smi)
                 {
                     if(entry.key == key)
                     {
-                        return Expected<size_t>::ok(hash_idx);
+                        return Expected<size_t>::ok(probe.hash_idx);
                     }
 
                     Owned<Value> candidate_key(entry.key);
                     bool equal =
                         CL_TRY(thread->test_equal(candidate_key.value(), key));
-                    if(!entry_still_matches(generation, hash_idx, entry_idx,
+                    if(!entry_still_matches(probe.table_generation,
+                                            probe.hash_idx, entry_status,
                                             candidate_key.value()))
                     {
                         break;
                     }
-                    if(tombstone_hash_idx != table_size &&
-                       hash_table[tombstone_hash_idx] != tombstone)
+                    if(!probe_recorded_tombstone_still_available(probe))
                     {
-                        tombstone_hash_idx = table_size;
+                        probe_clear_recorded_tombstone(probe);
                     }
                     if(equal)
                     {
-                        return Expected<size_t>::ok(hash_idx);
+                        return Expected<size_t>::ok(probe.hash_idx);
                     }
                 }
 
-                hash_idx = (hash_idx + 1) & hash_table_size_m1;
+                probe_advance(probe);
             }
         }
     }
@@ -1025,100 +1013,96 @@ namespace cl
     {
         while(true)
         {
-            size_t table_size = hash_table.size();
-            uint64_t generation = table_generation_;
-            uint64_t hash = hash_smi.extract();
-            uint32_t hash_table_size_m1 = static_cast<uint32_t>(table_size - 1);
-            uint32_t hash_idx = hash & hash_table_size_m1;
+            Probe probe = probe_start(hash_smi);
 
             while(true)
             {
-                int32_t entry_idx = hash_table[hash_idx];
-                if(entry_idx == not_present)
+                int32_t entry_status = hash_table[probe.hash_idx];
+                if(entry_status == not_present)
                 {
                     return Expected<int32_t>::ok(not_present);
                 }
-                if(entry_idx == tombstone)
+                if(entry_status == tombstone)
                 {
-                    hash_idx = (hash_idx + 1) & hash_table_size_m1;
+                    probe_advance(probe);
                     continue;
                 }
 
-                Entry entry = entries[entry_idx];
+                Entry entry = entries[entry_status];
                 if(entry.hash == hash_smi)
                 {
                     if(entry.key == key)
                     {
-                        return Expected<int32_t>::ok(entry_idx);
+                        return Expected<int32_t>::ok(entry_status);
                     }
 
                     Owned<Value> candidate_key(entry.key);
                     bool equal =
                         CL_TRY(thread->test_equal(candidate_key.value(), key));
-                    if(!entry_still_matches(generation, hash_idx, entry_idx,
+                    if(!entry_still_matches(probe.table_generation,
+                                            probe.hash_idx, entry_status,
                                             candidate_key.value()))
                     {
                         break;
                     }
                     if(equal)
                     {
-                        return Expected<int32_t>::ok(entry_idx);
+                        return Expected<int32_t>::ok(entry_status);
                     }
                 }
 
-                hash_idx = (hash_idx + 1) & hash_table_size_m1;
+                probe_advance(probe);
             }
         }
     }
 
-    Expected<size_t>
+    Expected<int64_t>
     GeneralDict::find_entry_slot_for_lookup(ThreadState *thread, Value key,
                                             TValue<SMI> hash_smi)
     {
         while(true)
         {
-            size_t table_size = hash_table.size();
-            uint64_t generation = table_generation_;
-            uint64_t hash = hash_smi.extract();
-            uint32_t hash_table_size_m1 = static_cast<uint32_t>(table_size - 1);
-            uint32_t hash_idx = hash & hash_table_size_m1;
+            Probe probe = probe_start(hash_smi);
 
             while(true)
             {
-                int32_t entry_idx = hash_table[hash_idx];
-                if(entry_idx == not_present)
+                int32_t entry_status = hash_table[probe.hash_idx];
+                if(entry_status == not_present)
                 {
-                    return Expected<size_t>::ok(table_size);
+                    return Expected<int64_t>::ok(-1);
                 }
-                if(entry_idx == tombstone)
+                if(entry_status == tombstone)
                 {
-                    hash_idx = (hash_idx + 1) & hash_table_size_m1;
+                    probe_advance(probe);
                     continue;
                 }
 
-                Entry entry = entries[entry_idx];
+                Entry entry = entries[entry_status];
                 if(entry.hash == hash_smi)
                 {
                     if(entry.key == key)
                     {
-                        return Expected<size_t>::ok(hash_idx);
+                        return Expected<int64_t>::ok(
+                            static_cast<int64_t>(probe.hash_idx));
                     }
 
                     Owned<Value> candidate_key(entry.key);
                     bool equal =
                         CL_TRY(thread->test_equal(candidate_key.value(), key));
-                    if(!entry_still_matches(generation, hash_idx, entry_idx,
+                    if(!entry_still_matches(probe.table_generation,
+                                            probe.hash_idx, entry_status,
                                             candidate_key.value()))
                     {
                         break;
                     }
                     if(equal)
                     {
-                        return Expected<size_t>::ok(hash_idx);
+                        return Expected<int64_t>::ok(
+                            static_cast<int64_t>(probe.hash_idx));
                     }
                 }
 
-                hash_idx = (hash_idx + 1) & hash_table_size_m1;
+                probe_advance(probe);
             }
         }
     }
@@ -1148,26 +1132,19 @@ namespace cl
         Owned<Value> live_value(value);
         TValue<SMI> hash = CL_TRY(thread->hash_value(live_key.value()));
 
-        if(entries.size() > hash_table.size() * max_load_nom / max_load_denom)
-        {
-            grow();
-        }
+        resize_general_if_needed();
 
         size_t entry_slot =
             CL_TRY(find_entry_slot_for_insert(thread, live_key.value(), hash));
         int32_t idx = hash_table[entry_slot];
         if(idx < 0)
         {
-            idx = static_cast<int32_t>(entries.size());
-            hash_table[entry_slot] = idx;
-            entries.emplace_back(live_key.value(), live_value.value(), hash);
-            ++n_valid_entries;
+            write_new_at_slot(entry_slot, hash, live_key.value(),
+                              live_value.value());
         }
         else
         {
-            Entry existing = entries[idx];
-            entries.set(idx,
-                        Entry(existing.key, live_value.value(), existing.hash));
+            write_existing(idx, live_value.value());
         }
 
         return Expected<void>::ok();
@@ -1179,19 +1156,17 @@ namespace cl
 
         Owned<Value> live_key(key);
         TValue<SMI> hash = CL_TRY(thread->hash_value(live_key.value()));
-        size_t entry_slot =
+        int64_t entry_slot =
             CL_TRY(find_entry_slot_for_lookup(thread, live_key.value(), hash));
-        if(entry_slot == hash_table.size())
+        if(entry_slot < 0)
         {
             return Expected<void>::raise_exception(L"KeyError", L"");
         }
 
-        int32_t idx = hash_table[entry_slot];
+        int32_t idx = hash_table[static_cast<size_t>(entry_slot)];
         assert(idx >= 0);
-        entries.set(idx, Entry(Value::not_present(), Value::None(),
-                               TValue<SMI>::from_smi(0)));
-        hash_table[entry_slot] = tombstone;
-        --n_valid_entries;
+        (void)idx;
+        delete_entry_at_slot(static_cast<size_t>(entry_slot));
         return Expected<void>::ok();
     }
 

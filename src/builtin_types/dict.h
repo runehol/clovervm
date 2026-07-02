@@ -177,13 +177,90 @@ namespace cl
         constexpr static int32_t not_present = -1;
         constexpr static size_t min_table_size = 16;
 
+        struct Probe
+        {
+            TValue<SMI> hash;
+            size_t hash_idx;
+            int64_t first_tombstone_idx;
+            uint64_t table_generation;
+        };
+
+        Probe probe_start(TValue<SMI> hash) const
+        {
+            return Probe{hash,
+                         static_cast<uint64_t>(hash.extract()) &
+                             (hash_table.size() - 1),
+                         -1, table_generation_};
+        }
+        void probe_advance(Probe &probe) const
+        {
+            probe.hash_idx = (probe.hash_idx + 1) & (hash_table.size() - 1);
+        }
+        void probe_record_tombstone(Probe &probe, int32_t entry_status) const
+        {
+            assert(entry_status == tombstone);
+            if(probe.first_tombstone_idx < 0)
+            {
+                probe.first_tombstone_idx =
+                    static_cast<int64_t>(probe.hash_idx);
+            }
+        }
+        void probe_clear_recorded_tombstone(Probe &probe) const
+        {
+            probe.first_tombstone_idx = -1;
+        }
+        bool probe_recorded_tombstone_still_available(const Probe &probe) const
+        {
+            return probe.first_tombstone_idx >= 0 &&
+                   hash_table[static_cast<size_t>(probe.first_tombstone_idx)] ==
+                       tombstone;
+        }
+        size_t probe_write_slot(const Probe &probe) const
+        {
+            if(probe_recorded_tombstone_still_available(probe))
+            {
+                return static_cast<size_t>(probe.first_tombstone_idx);
+            }
+            return probe.hash_idx;
+        }
+        void write_new_at_slot(size_t hash_idx, TValue<SMI> hash, Value key,
+                               Value value)
+        {
+            int32_t idx = static_cast<int32_t>(entries.size());
+            hash_table[hash_idx] = idx;
+            entries.emplace_back(key, value, hash);
+            ++n_valid_entries;
+        }
+        void write_existing(int32_t entry_idx, Value value)
+        {
+            Entry existing = entries[entry_idx];
+            entries.set(entry_idx, Entry(existing.key, value, existing.hash));
+        }
+        void delete_entry_at_slot(size_t hash_idx)
+        {
+            int32_t entry_idx = hash_table[hash_idx];
+            assert(entry_idx >= 0);
+            entries.set(entry_idx, Entry(Value::not_present(), Value::None(),
+                                         TValue<SMI>::from_smi(0)));
+            hash_table[hash_idx] = tombstone;
+            --n_valid_entries;
+        }
+        void resize_general_if_needed()
+        {
+            if(entries.size() >
+               hash_table.size() * max_load_nom / max_load_denom)
+            {
+                grow();
+            }
+        }
+
         [[nodiscard]] Expected<size_t>
         find_entry_slot_for_insert(ThreadState *thread, Value key,
                                    TValue<SMI> hash_smi);
         [[nodiscard]] Expected<int32_t>
         find_entry_index_for_lookup(ThreadState *thread, Value key,
                                     TValue<SMI> hash_smi);
-        [[nodiscard]] Expected<size_t>
+        [[nodiscard]] Expected<int64_t>
         find_entry_slot_for_lookup(ThreadState *thread, Value key,
                                    TValue<SMI> hash_smi);
 

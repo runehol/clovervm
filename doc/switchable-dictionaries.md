@@ -1027,12 +1027,12 @@ primitive before the table helpers are split away from the semantic drivers.
 
 ### 6. Factor GeneralDict Into Semantic Drivers And Raw Table Helpers
 
-- [ ] Refactor `GeneralDict` C++ lookup, assignment, deletion, and membership
+- [x] Refactor `GeneralDict` C++ lookup, assignment, deletion, and membership
   into temporary semantic drivers layered over protocol-free raw table helpers.
-- [ ] Keep the temporary semantic drivers behavior-equivalent to the current
+- [x] Keep the temporary semantic drivers behavior-equivalent to the current
   bootstrap methods, including pending-exception propagation and reentrant
   equality restart behavior.
-- [ ] Add tests or preserve existing tests proving insertion, lookup,
+- [x] Add tests or preserve existing tests proving insertion, lookup,
   membership, deletion, tombstone reuse, and mutation-during-equality behavior
   still pass after the factoring.
 
@@ -1042,7 +1042,7 @@ Stage invariants:
   `ThreadState::hash_value`, `ThreadState::test_equal`, `hash`, equality,
   descriptors, or arbitrary Python.
 - Raw helpers return compact probe states, entry indexes, status integers,
-  table identities, keys, values, or success/failure statuses. They do not
+  table generations, keys, values, or success/failure statuses. They do not
   return raw pointers or references that can survive a Python-visible call.
 - Temporary C++ semantic drivers remain clearly temporary and should mirror the
   trusted bytecode sketches closely enough that they can be replaced
