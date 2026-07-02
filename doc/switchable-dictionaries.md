@@ -22,10 +22,11 @@ forcing automatic switching or a unified C++ `dict` interface immediately.
   the bootstrap phase.
 - Keep exact-string dictionaries fast and non-reentrant.
 - Promote dictionaries to a general shape when non-string keys are inserted.
-- Route general dictionary hashing and equality through bytecode-visible calls
-  with normal inline caches.
-- Avoid C++ helpers that invoke `__hash__`, `__eq__`, descriptors, or other
-  Python-visible behavior behind the interpreter's back.
+- Eventually route public general-dictionary hashing and equality through
+  bytecode-visible calls with normal inline caches.
+- For the future public-dict hot path, avoid C++ helpers that invoke
+  `__hash__`, `__eq__`, descriptors, or other Python-visible behavior behind the
+  interpreter's back.
 
 ## Non-Goals
 
@@ -95,6 +96,12 @@ lowering, and CPython-compatible `dict` exposure are later work.
 for this bootstrap class. This is intentionally different from the future hot
 public-dict path, where the general dict method bodies should contain
 cache-bearing bytecode call sites.
+
+Because these helpers may re-enter Python, `GeneralDict` methods must keep
+arguments and candidate entries alive across calls. In practice, `__setitem__`
+should retain `key` and `value` with `Owned<Value>` before calling
+`hash_value`; probing paths should retain any candidate key before calling
+`test_equal`.
 
 ## Shape Invariants
 
@@ -700,8 +707,6 @@ Bootstrap questions:
   deferred until core lookup/assignment is stable?
 - What minimal iteration or `items` surface is needed for tests without dragging
   in full dict view semantics?
-- How should `ThreadState::test_equal` handle comparison results whose truthiness
-  is currently unsupported by CloverVM's object truthiness implementation?
 
 Later public-dict unification questions:
 
@@ -716,6 +721,8 @@ Later public-dict unification questions:
   opcodes?
 - What exact C++ and C API surfaces should be provided for semantic dict
   operations and exact-string fast-path operations?
+- What table identity or generation mechanism should stale-entry defense use
+  once public general dict lookup needs CPython-style revalidation?
 - Should exact-string semantic helpers be separate overloads of the general
   helpers, or separate names, given that they can still be fallible in
   general-shaped dicts?
@@ -755,9 +762,8 @@ This milestone should make the internal class real without changing ordinary
   semantic equivalent of truth-testing `left == right`.
 - [ ] Ensure `test_equal` uses ordinary equality operator semantics, including
   reflected dispatch and `NotImplemented` fallback, not a direct `__eq__` call.
-- [ ] Decide and document how `test_equal` handles comparison results whose
-  truthiness is currently unsupported by CloverVM's object truthiness
-  implementation.
+- [ ] Match the current behavior of Python `==` followed by the VM's current
+  truthiness conversion, including raising for unsupported object truthiness.
 - [ ] Add tests for missing and disabled hash, non-integer hash results,
   exceptions from `__hash__`, non-bool equality results, and equality exceptions.
 
@@ -777,9 +783,10 @@ protocol calls later.
 - [ ] Probe using stored canonical SMI hashes.
 - [ ] Treat identity match as an immediate hit.
 - [ ] After hash match and identity miss, call `ThreadState::test_equal`.
-- [ ] Hold the candidate key alive across equality.
-- [ ] Revalidate table identity and candidate entry after equality returns.
-- [ ] Restart probing when revalidation fails.
+- [ ] Retain `key` and `value` with `Owned<Value>` before calling
+  `ThreadState::hash_value`.
+- [ ] Retain the candidate key with `Owned<Value>` before calling
+  `ThreadState::test_equal`.
 - [ ] Preserve insertion order when overwriting an existing key.
 - [ ] Add tests for integer keys, bool/int key collisions, overwrites preserving
   insertion order, `__hash__` exceptions, and `__eq__` exceptions.
@@ -794,26 +801,28 @@ same semantic path that later lookups will observe.
 - [ ] Probe using stored canonical SMI hashes.
 - [ ] Treat identity match as an immediate hit.
 - [ ] After hash match and identity miss, call `ThreadState::test_equal`.
-- [ ] Hold the candidate key alive across equality.
-- [ ] Revalidate table identity and candidate entry after equality returns.
-- [ ] Restart probing when revalidation fails.
+- [ ] Retain the lookup key before calling `ThreadState::hash_value`.
+- [ ] Retain the candidate key with `Owned<Value>` before calling
+  `ThreadState::test_equal`.
 - [ ] Add tests for present keys, missing keys, integer keys, bool/int
   collisions, hash exceptions, equality exceptions, and equality mutation that
   can be expressed with insertion alone.
 
-Lookup revalidation is the highest semantic-risk slice. The table can now be
-populated through `__setitem__`, but mutation adversaries that require deletion
-or clearing should wait until those operations exist.
+Lookup is the first slice that exercises equality during probing. The table can
+now be populated through `__setitem__`, but CPython-style table identity
+revalidation and mutation adversaries that require deletion or clearing are
+parked for a later unification/stale-entry-defense pass.
 
 ### 4. GeneralDict Deletion And Mutation Adversaries
 
 - [ ] Implement `GeneralDict::__delitem__`.
-- [ ] Keep probing and revalidation open-coded in `GeneralDict`; do not factor it
-  into callback-based shared table helpers while equality may re-enter Python.
+- [ ] Keep probing open-coded in `GeneralDict`; do not factor it into
+  callback-based shared table helpers while equality may re-enter Python.
 - [ ] Add tombstone handling and resize stress tests.
 - [ ] Add tests for deletion misses and deletion after equality mutation.
-- [ ] Add adversarial tests where `__eq__` clears, resizes, deletes from, and
-  reinserts into the same `GeneralDict`.
+- [ ] Keep full CPython-style stale-entry adversaries where `__eq__` clears,
+  resizes, deletes from, and reinserts into the same table parked for the later
+  stale-entry-defense pass.
 
 After this milestone, the internal class can represent integer-key dictionaries
 for controlled VM tests and experiments. It still should not be treated as a
@@ -892,8 +901,9 @@ Bootstrap interpreter and native tests should cover:
 - custom `__hash__` is called for lookup, insertion, deletion, and membership
 - custom `__eq__` is called only after matching hashes and non-identical keys
 - exceptions from `__hash__` and `__eq__` propagate
-- equality that mutates the same `GeneralDict` does not use stale probe state,
-  with mutation cases staged according to the operations available so far
+- equality mutation cases are covered only to the extent supported by the
+  bootstrap operations available so far; full stale-probe defense is a later
+  unification requirement
 - deleting arbitrary keys leaves the table valid and preserves remaining
   insertion order
 
