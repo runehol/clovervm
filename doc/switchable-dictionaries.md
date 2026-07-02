@@ -196,6 +196,110 @@ The exact opcode names are placeholders. The contract matters more than the
 names: all Python-visible calls happen in bytecode, and all raw table
 manipulation happens in dedicated trusted dict opcodes.
 
+The current bootstrap `GeneralDict` C++ methods intentionally mix the protocol
+driver and raw table work: they call `ThreadState::hash_value` /
+`ThreadState::test_equal`, then probe or mutate storage directly. Before public
+dict unification, that implementation should be factored into two layers:
+
+- **Temporary semantic drivers**: C++ wrappers for `GeneralDict` bootstrap
+  methods. These may call `ThreadState::hash_value` and
+  `ThreadState::test_equal` while the internal class is still C++-backed. They
+  exist only to keep the bootstrap class functional until trusted bytecode
+  method bodies take over.
+- **Raw table helpers**: protocol-free operations that inspect or mutate table
+  storage. These helpers must not call `hash`, equality, descriptors,
+  `ThreadState::test_equal`, `ThreadState::hash_value`, or any operation that
+  can run Python. They should operate on stored SMI hashes, probe state, entry
+  indexes, table identities, keys, and values.
+
+The temporary semantic drivers should be written as direct mirrors of the later
+trusted bytecode sketches: compute/call `hash`, start a raw probe, inspect a raw
+candidate, call equality at the driver layer, revalidate the entry, then call a
+raw write/delete/read helper. That makes the later migration mechanical: replace
+the C++ driver with trusted bytecode containing cache-bearing `hash` and
+equality sites, while keeping the raw table operations equivalent.
+
+Do not add helpers such as `find_entry_with_python_equality` or
+`lookup_with_thread_state` as the long-term interface. Any helper that takes a
+`ThreadState *` in order to run equality is a semantic driver, not a raw table
+primitive, and should not be the operation that public general-dict bytecode
+uses for hot lookup.
+
+The factoring target for the temporary C++ drivers should look like the
+following pseudocode. These sketches are still written as Python-like code, but
+the boundary is the same for the intermediate C++ refactor: calls to `hash` and
+equality live in the driver, while every `_dict_*` operation is a raw helper
+that cannot run Python.
+
+```python
+def _general_dict_getitem_driver(self, key):
+    hash_value = hash(key)
+    probe = _dict_probe_start(self, hash_value)
+
+    while True:
+        entry = _dict_probe_step(self, probe)
+        if entry == DICT_PROBE_EMPTY:
+            raise KeyError
+
+        if entry >= 0 and _dict_entry_hash(self, entry) == hash_value:
+            candidate = _dict_entry_key(self, entry)
+            if candidate is key:
+                return _dict_entry_value(self, entry)
+
+            table_identity = _dict_probe_table_identity(self)
+            equal = candidate == key
+            if not _dict_entry_still_matches(
+                self, table_identity, entry, candidate
+            ):
+                probe = _dict_probe_start(self, hash_value)
+                continue
+
+            if equal:
+                return _dict_entry_value(self, entry)
+
+        _dict_probe_advance(probe)
+```
+
+```python
+def _general_dict_setitem_driver(self, key, value):
+    hash_value = hash(key)
+    _dict_resize_general_if_needed(self)
+    probe = _dict_probe_start(self, hash_value)
+
+    while True:
+        entry = _dict_probe_step(self, probe)
+
+        if entry == DICT_PROBE_EMPTY:
+            _dict_probe_write_new(self, probe, hash_value, key, value)
+            return None
+
+        if entry == DICT_PROBE_TOMBSTONE:
+            _dict_probe_record_tombstone(probe, entry)
+            _dict_probe_advance(probe)
+            continue
+
+        if _dict_entry_hash(self, entry) == hash_value:
+            candidate = _dict_entry_key(self, entry)
+            if candidate is key:
+                _dict_entry_write_existing(self, entry, value)
+                return None
+
+            table_identity = _dict_probe_table_identity(self)
+            equal = candidate == key
+            if not _dict_entry_still_matches(
+                self, table_identity, entry, candidate
+            ):
+                _dict_resize_general_if_needed(self)
+                probe = _dict_probe_start(self, hash_value)
+                continue
+
+            if equal:
+                _dict_entry_write_existing(self, entry, value)
+                return None
+
+        _dict_probe_advance(probe)
+```
+
 Probe results should be integer-shaped, not strings or public status objects.
 One convenient contract is:
 
@@ -867,23 +971,34 @@ After this milestone, the internal class can represent integer-key dictionaries
 for controlled VM tests and experiments. It still should not be treated as a
 CPython-compatible `dict`.
 
-### 5. Minimal Internal Class Coverage
+### 5. Factor GeneralDict Into Semantic Drivers And Raw Table Helpers
 
-- [ ] Add tests that `dict` literals still construct the existing `dict`, not
-  `__clover_general_dict`.
+- [ ] Refactor `GeneralDict` C++ lookup, assignment, deletion, and membership
+  into temporary semantic drivers layered over protocol-free raw table helpers.
+- [ ] Keep the temporary semantic drivers behavior-equivalent to the current
+  bootstrap methods, including pending-exception propagation and reentrant
+  equality restart behavior.
+- [ ] Add tests or preserve existing tests proving insertion, lookup,
+  membership, deletion, tombstone reuse, and mutation-during-equality behavior
+  still pass after the factoring.
 
-Optional implementation hooks:
+Stage invariants:
 
-- Add `GeneralDict.__repr__` only if it becomes useful for debugging.
-- Add the smallest `items`/iteration surface needed for focused tests only if
-  lookup/assignment tests become too awkward without it.
+- Raw table helpers do not take `ThreadState *` for protocol work and do not call
+  `ThreadState::hash_value`, `ThreadState::test_equal`, `hash`, equality,
+  descriptors, or arbitrary Python.
+- Raw helpers return compact probe states, entry indexes, status integers,
+  table identities, keys, values, or success/failure statuses. They do not
+  return raw pointers or references that can survive a Python-visible call.
+- Temporary C++ semantic drivers remain clearly temporary and should mirror the
+  trusted bytecode sketches closely enough that they can be replaced
+  mechanically later.
+- This stage does not expose new public `dict` behavior and does not promote
+  public dicts.
 
-Stage invariant:
-
-- Views, `copy`, `update`, `fromkeys`, and broad iterator semantics stay out of
-  the bootstrap unless a concrete test or internal user requires them.
-
-This milestone should keep the internal class intentionally narrow.
+This milestone is the bridge from the bootstrap C++ implementation to the
+future cache-bearing bytecode implementation. It should be a behavior-preserving
+factoring, not a place to settle public dict representation questions.
 
 ### 6. Public Dict Unification Design
 
