@@ -5,6 +5,7 @@
 #include "object_model/object.h"
 #include "object_model/typed_value.h"
 #include "object_model/vm_array.h"
+#include <cstdint>
 
 namespace cl
 {
@@ -161,9 +162,11 @@ namespace cl
                                               Value value);
         [[nodiscard]] Expected<void> del_item(ThreadState *thread, Value key);
         [[nodiscard]] Expected<bool> contains(ThreadState *thread, Value key);
+        void clear();
 
         size_t size() const { return n_valid_entries; }
         bool empty() const { return n_valid_entries == 0; }
+        uint64_t table_generation() const { return table_generation_; }
         size_t entry_storage_size() const { return entries.size(); }
         bool entry_at(size_t idx, EntryView &out) const;
 
@@ -184,11 +187,32 @@ namespace cl
         find_entry_slot_for_lookup(ThreadState *thread, Value key,
                                    TValue<SMI> hash_smi);
 
+        bool entry_still_matches(uint64_t generation, size_t hash_idx,
+                                 int32_t entry_idx, Value candidate_key) const
+        {
+            if(table_generation_ != generation)
+            {
+                return false;
+            }
+            if(hash_idx >= hash_table.size() ||
+               hash_table[hash_idx] != entry_idx)
+            {
+                return false;
+            }
+            if(entry_idx < 0 ||
+               static_cast<size_t>(entry_idx) >= entries.size())
+            {
+                return false;
+            }
+            const Entry &entry = entries[entry_idx];
+            return entry.valid() && entry.key == candidate_key;
+        }
         void grow();
 
         RawArray<int32_t> hash_table;
         ValueArray<Entry> entries;
         size_t n_valid_entries;
+        uint64_t table_generation_;
 
     public:
         CL_DECLARE_STATIC_VALUE_SPAN_EXTENDS(

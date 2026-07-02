@@ -1004,14 +1004,14 @@ CPython-compatible `dict`.
 
 ### 5. Add GeneralDict Probe-Structure Generation
 
-- [ ] Add a `GeneralDict` table generation or equivalent probe-structure
+- [x] Add a `GeneralDict` table generation or equivalent probe-structure
   generation.
-- [ ] Increment the generation when grow/rehash, clear, compaction, promotion, or
+- [x] Increment the generation when grow/rehash, clear, compaction, promotion, or
   table-backing replacement can make existing probe state or entry indexes stale.
-- [ ] Do not increment the generation for value overwrite, insertion without
+- [x] Do not increment the generation for value overwrite, insertion without
   resize into an empty/tombstone slot, or deletion that only invalidates an entry
   and writes a tombstone.
-- [ ] Update existing reentrant equality tests so lookup, assignment,
+- [x] Update existing reentrant equality tests so lookup, assignment,
   membership, and deletion revalidate against the probe-structure generation and
   same candidate key.
 

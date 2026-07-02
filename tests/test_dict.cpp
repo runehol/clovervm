@@ -442,6 +442,84 @@ TEST(GeneralDict, DelItemRestartsAfterEqualityInsertionResize)
                                L"len(d) == 20 and d[39] == 39\n"));
 }
 
+TEST(GeneralDict, TableGenerationChangesOnlyWhenProbeStructureChanges)
+{
+    test::VmTestContext context;
+    ThreadState *thread = context.thread();
+    ThreadState::ActivationScope activation_scope(thread);
+    GeneralDict *dict = thread->make_object_raw<GeneralDict>();
+
+    EXPECT_EQ(0u, dict->table_generation());
+    ASSERT_FALSE(dict->set_item(thread, Value::from_smi(1), Value::from_smi(11))
+                     .has_exception());
+    EXPECT_EQ(0u, dict->table_generation());
+    ASSERT_FALSE(dict->set_item(thread, Value::from_smi(1), Value::from_smi(99))
+                     .has_exception());
+    EXPECT_EQ(0u, dict->table_generation());
+    ASSERT_FALSE(dict->del_item(thread, Value::from_smi(1)).has_exception());
+    EXPECT_EQ(0u, dict->table_generation());
+
+    dict->clear();
+    EXPECT_EQ(1u, dict->table_generation());
+    ASSERT_FALSE(dict->set_item(thread, Value::from_smi(2), Value::from_smi(22))
+                     .has_exception());
+    EXPECT_EQ(1u, dict->table_generation());
+
+    for(int64_t key = 0; key < 20; ++key)
+    {
+        ASSERT_FALSE(
+            dict->set_item(thread, Value::from_smi(key), Value::from_smi(key))
+                .has_exception());
+    }
+
+    EXPECT_GT(dict->table_generation(), 0u);
+}
+
+TEST(GeneralDict, ClearRemovesEntriesAndChangesTableGeneration)
+{
+    test::VmTestContext context;
+
+    EXPECT_EQ(Value::True(),
+              context.run_file(L"d = __clover_general_dict()\n"
+                               L"d[1] = 'one'\n"
+                               L"d[2] = 'two'\n"
+                               L"d.clear()\n"
+                               L"len(d) == 0 and not (1 in d) and "
+                               L"not (2 in d)\n"));
+}
+
+TEST(GeneralDict, SetItemDoesNotReuseTombstoneFilledDuringEquality)
+{
+    test::VmTestContext context;
+
+    EXPECT_EQ(Value::True(),
+              context.run_file(L"d = __clover_general_dict()\n"
+                               L"filler = None\n"
+                               L"class Tomb:\n"
+                               L"    def __hash__(self):\n"
+                               L"        return 7\n"
+                               L"class Stored:\n"
+                               L"    def __hash__(self):\n"
+                               L"        return 7\n"
+                               L"    def __eq__(self, other):\n"
+                               L"        global filler\n"
+                               L"        if filler is None:\n"
+                               L"            filler = Tomb()\n"
+                               L"            d[filler] = 'filled'\n"
+                               L"        return False\n"
+                               L"class New:\n"
+                               L"    def __hash__(self):\n"
+                               L"        return 7\n"
+                               L"tomb = Tomb()\n"
+                               L"stored = Stored()\n"
+                               L"d[tomb] = 'deleted'\n"
+                               L"d[stored] = 'stored'\n"
+                               L"del d[tomb]\n"
+                               L"d[New()] = 'new'\n"
+                               L"len(d) == 3 and d[filler] == 'filled' and "
+                               L"d[stored] == 'stored'\n"));
+}
+
 TEST(Dict, SetItemOverwritesExistingValue)
 {
     test::VmTestContext context;

@@ -66,7 +66,7 @@ namespace cl
 
     GeneralDict::GeneralDict(ClassObject *cls)
         : Object(cls, native_layout), hash_table(min_table_size, not_present),
-          n_valid_entries(0)
+          n_valid_entries(0), table_generation_(0)
     {
     }
 
@@ -199,6 +199,19 @@ namespace cl
         }
 
         CL_TRY(self.get_ptr<GeneralDict>()->del_item(thread, key));
+        return Value::None();
+    }
+
+    static Value native_general_dict_clear(ThreadState *thread, Value self)
+    {
+        if(!can_convert_to<GeneralDict>(self))
+        {
+            return thread->set_pending_builtin_exception_string(
+                L"TypeError", L"__clover_general_dict.clear expects a "
+                              L"__clover_general_dict receiver");
+        }
+
+        self.get_ptr<GeneralDict>()->clear();
         return Value::None();
     }
 
@@ -610,6 +623,8 @@ namespace cl
             builtin_intrinsic_method(L"__delitem__",
                                      native_general_dict_delitem,
                                      L"Delete self[key]."),
+            builtin_intrinsic_method(L"clear", native_general_dict_clear,
+                                     L"Remove all items from self."),
         };
         unwrap_bootstrap_expected(
             vm,
@@ -945,6 +960,7 @@ namespace cl
         while(true)
         {
             size_t table_size = hash_table.size();
+            uint64_t generation = table_generation_;
             uint64_t hash = hash_smi.extract();
             uint32_t hash_table_size_m1 = static_cast<uint32_t>(table_size - 1);
             uint32_t hash_idx = hash & hash_table_size_m1;
@@ -982,12 +998,15 @@ namespace cl
                     Owned<Value> candidate_key(entry.key);
                     bool equal =
                         CL_TRY(thread->test_equal(candidate_key.value(), key));
-                    if(hash_table.size() != table_size ||
-                       hash_table[hash_idx] != entry_idx ||
-                       !entries[entry_idx].valid() ||
-                       entries[entry_idx].key != candidate_key.value())
+                    if(!entry_still_matches(generation, hash_idx, entry_idx,
+                                            candidate_key.value()))
                     {
                         break;
+                    }
+                    if(tombstone_hash_idx != table_size &&
+                       hash_table[tombstone_hash_idx] != tombstone)
+                    {
+                        tombstone_hash_idx = table_size;
                     }
                     if(equal)
                     {
@@ -1007,6 +1026,7 @@ namespace cl
         while(true)
         {
             size_t table_size = hash_table.size();
+            uint64_t generation = table_generation_;
             uint64_t hash = hash_smi.extract();
             uint32_t hash_table_size_m1 = static_cast<uint32_t>(table_size - 1);
             uint32_t hash_idx = hash & hash_table_size_m1;
@@ -1035,10 +1055,8 @@ namespace cl
                     Owned<Value> candidate_key(entry.key);
                     bool equal =
                         CL_TRY(thread->test_equal(candidate_key.value(), key));
-                    if(hash_table.size() != table_size ||
-                       hash_table[hash_idx] != entry_idx ||
-                       !entries[entry_idx].valid() ||
-                       entries[entry_idx].key != candidate_key.value())
+                    if(!entry_still_matches(generation, hash_idx, entry_idx,
+                                            candidate_key.value()))
                     {
                         break;
                     }
@@ -1060,6 +1078,7 @@ namespace cl
         while(true)
         {
             size_t table_size = hash_table.size();
+            uint64_t generation = table_generation_;
             uint64_t hash = hash_smi.extract();
             uint32_t hash_table_size_m1 = static_cast<uint32_t>(table_size - 1);
             uint32_t hash_idx = hash & hash_table_size_m1;
@@ -1088,10 +1107,8 @@ namespace cl
                     Owned<Value> candidate_key(entry.key);
                     bool equal =
                         CL_TRY(thread->test_equal(candidate_key.value(), key));
-                    if(hash_table.size() != table_size ||
-                       hash_table[hash_idx] != entry_idx ||
-                       !entries[entry_idx].valid() ||
-                       entries[entry_idx].key != candidate_key.value())
+                    if(!entry_still_matches(generation, hash_idx, entry_idx,
+                                            candidate_key.value()))
                     {
                         break;
                     }
@@ -1189,9 +1206,21 @@ namespace cl
         return Expected<bool>::ok(idx >= 0);
     }
 
+    void GeneralDict::clear()
+    {
+        entries.clear();
+        n_valid_entries = 0;
+        ++table_generation_;
+        for(int32_t &entry: hash_table)
+        {
+            entry = not_present;
+        }
+    }
+
     void GeneralDict::grow()
     {
         size_t new_size = hash_table.size() * 2;
+        ++table_generation_;
         hash_table.resize(0);
         hash_table.resize(new_size, not_present);
 
