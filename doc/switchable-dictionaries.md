@@ -761,10 +761,14 @@ CPython-compatible public `dict` implementation.
   backed by `GeneralDict`.
 - [x] Give `GeneralDict` data members that mirror `Dict`: same hash-table array,
   same entry-array shape, same stored SMI hash, and same live-entry count.
-- [x] Do not introduce a shared base class, shared table abstraction, template
-  layer, or separate files for this stage.
-- [x] Keep `{}` and dict-display lowering on the existing `Dict` path.
 - [x] Add construction and `len` tests for the internal class.
+
+Stage invariants:
+
+- No shared base class, shared table abstraction, template layer, or separate
+  files are introduced for this stage.
+- `{}` and dict-display lowering stay on the existing `Dict` path.
+- Ordinary `dict` behavior does not change.
 
 This milestone should make the internal class real without changing ordinary
 `dict` behavior. During bootstrap, `__clover_general_dict` is temporarily
@@ -782,16 +786,19 @@ construction/testing path.
 - [ ] Implement `ThreadState::test_equal(Value, Value) -> Expected<bool>` as the
   semantic equivalent of truth-testing `left == right`, by calling a cached
   helper code object that emits `TestEqual` followed by `ToBool`.
-- [ ] Ensure `test_equal` uses ordinary equality operator semantics, including
-  reflected dispatch and `NotImplemented` fallback, not a direct `__eq__` call.
-- [ ] Match the current behavior of Python `==` followed by the VM's current
-  truthiness conversion, including raising for unsupported object truthiness.
 - [ ] Add tests for missing and disabled hash, non-integer hash results,
   exceptions from `__hash__`, non-bool equality results, and equality exceptions.
 
-These helpers are allowed to re-enter Python. They are the C++ semantic bridge
-for the bootstrap `GeneralDict`; they are not the final hot-path strategy for
-public `dict`.
+Stage invariants:
+
+- `test_equal` uses ordinary equality operator semantics, including reflected
+  dispatch and `NotImplemented` fallback, not a direct `__eq__` call.
+- `test_equal` matches the current behavior of Python `==` followed by the VM's
+  current truthiness conversion, including raising for unsupported object
+  truthiness.
+- These helpers are allowed to re-enter Python.
+- These helpers are the C++ semantic bridge for the bootstrap `GeneralDict`; they
+  are not the final hot-path strategy for public `dict`.
 
 `GeneralDict` lookup, assignment, deletion, and membership all depend on these
 helpers. Do not implement general-key table operations first and backfill the
@@ -801,17 +808,20 @@ protocol calls later.
 
 - [ ] Implement `GeneralDict::__setitem__` for inserting new keys and
   overwriting existing keys.
-- [ ] Use `ThreadState::hash_value` before probing.
-- [ ] Probe using stored canonical SMI hashes.
-- [ ] Treat identity match as an immediate hit.
-- [ ] After hash match and identity miss, call `ThreadState::test_equal`.
-- [ ] Retain `key` and `value` with `Owned<Value>` before calling
-  `ThreadState::hash_value`.
-- [ ] Retain the candidate key with `Owned<Value>` before calling
-  `ThreadState::test_equal`.
-- [ ] Preserve insertion order when overwriting an existing key.
 - [ ] Add tests for integer keys, bool/int key collisions, overwrites preserving
   insertion order, `__hash__` exceptions, and `__eq__` exceptions.
+
+Stage invariants:
+
+- Insertion uses `ThreadState::hash_value` before probing.
+- Probing uses stored canonical SMI hashes.
+- Identity match is an immediate hit.
+- After hash match and identity miss, insertion calls `ThreadState::test_equal`.
+- `key` and `value` are retained with `Owned<Value>` before calling
+  `ThreadState::hash_value`.
+- Candidate keys are retained with `Owned<Value>` before calling
+  `ThreadState::test_equal`.
+- Overwriting an existing key preserves insertion order.
 
 Insertion has to come before lookup so tests can populate the table through the
 same semantic path that later lookups will observe.
@@ -820,15 +830,19 @@ same semantic path that later lookups will observe.
 
 - [ ] Implement `GeneralDict::__getitem__` and `__contains__` using
   `ThreadState::hash_value` for the lookup key.
-- [ ] Probe using stored canonical SMI hashes.
-- [ ] Treat identity match as an immediate hit.
-- [ ] After hash match and identity miss, call `ThreadState::test_equal`.
-- [ ] Retain the lookup key before calling `ThreadState::hash_value`.
-- [ ] Retain the candidate key with `Owned<Value>` before calling
-  `ThreadState::test_equal`.
 - [ ] Add tests for present keys, missing keys, integer keys, bool/int
   collisions, hash exceptions, equality exceptions, and equality mutation that
   can be expressed with insertion alone.
+
+Stage invariants:
+
+- Lookup and membership probe using stored canonical SMI hashes.
+- Identity match is an immediate hit.
+- After hash match and identity miss, lookup and membership call
+  `ThreadState::test_equal`.
+- The lookup key is retained before calling `ThreadState::hash_value`.
+- Candidate keys are retained with `Owned<Value>` before calling
+  `ThreadState::test_equal`.
 
 Lookup is the first slice that exercises equality during probing. The table can
 now be populated through `__setitem__`, but CPython-style table identity
@@ -838,12 +852,15 @@ parked for a later unification/stale-entry-defense pass.
 ### 4. GeneralDict Deletion And Mutation Adversaries
 
 - [ ] Implement `GeneralDict::__delitem__`.
-- [ ] Keep probing open-coded in `GeneralDict`; do not factor it into
-  callback-based shared table helpers while equality may re-enter Python.
 - [ ] Add tombstone handling and resize stress tests.
 - [ ] Add tests for deletion misses and deletion after equality mutation.
-- [ ] Keep full CPython-style stale-entry adversaries where `__eq__` clears,
-  resizes, deletes from, and reinserts into the same table parked for the later
+
+Stage invariants:
+
+- Probing stays open-coded in `GeneralDict`; do not factor it into callback-based
+  shared table helpers while equality may re-enter Python.
+- Full CPython-style stale-entry adversaries where `__eq__` clears, resizes,
+  deletes from, and reinserts into the same table stay parked for the later
   stale-entry-defense pass.
 
 After this milestone, the internal class can represent integer-key dictionaries
@@ -852,29 +869,37 @@ CPython-compatible `dict`.
 
 ### 5. Minimal Internal Class Coverage
 
-- [ ] Add `GeneralDict.__repr__` if useful for debugging.
-- [ ] Add the smallest `items`/iteration surface needed for focused tests, if
-  lookup/assignment tests become too awkward without it.
-- [ ] Keep views, `copy`, `update`, `fromkeys`, and broad iterator semantics out
-  of the bootstrap unless a concrete test or internal user requires them.
 - [ ] Add tests that `dict` literals still construct the existing `dict`, not
   `__clover_general_dict`.
+
+Optional implementation hooks:
+
+- Add `GeneralDict.__repr__` only if it becomes useful for debugging.
+- Add the smallest `items`/iteration surface needed for focused tests only if
+  lookup/assignment tests become too awkward without it.
+
+Stage invariant:
+
+- Views, `copy`, `update`, `fromkeys`, and broad iterator semantics stay out of
+  the bootstrap unless a concrete test or internal user requires them.
 
 This milestone should keep the internal class intentionally narrow.
 
 ### 6. Public Dict Unification Design
 
-- [ ] Decide whether public `dict` will be one native layout with shape-backed
-  modes, two native layouts registered to the same public class, or a merged
-  table abstraction.
-- [ ] Decide how insertion of a non-string key into public `dict` promotes or
-  replaces the existing string-only representation.
-- [ ] Decide whether the final general public path is bytecode-backed with
-  trusted probe opcodes, C++-backed through `ThreadState` helpers, or staged from
-  one to the other.
-- [ ] Decide how dict displays should preserve evaluation/insertion order once
-  general-key public dicts are supported.
-- [ ] Define active iterator behavior for promotion and mutation.
+Design questions to resolve before implementation:
+
+- Whether public `dict` will be one native layout with shape-backed modes, two
+  native layouts registered to the same public class, or a merged table
+  abstraction.
+- How insertion of a non-string key into public `dict` promotes or replaces the
+  existing string-only representation.
+- Whether the final general public path is bytecode-backed with trusted probe
+  opcodes, C++-backed through `ThreadState` helpers, or staged from one to the
+  other.
+- How dict displays should preserve evaluation/insertion order once general-key
+  public dicts are supported.
+- Active iterator behavior for promotion and mutation.
 
 This is the point to revisit the older switchable-dictionary design. Do not
 answer these questions in the bootstrap implementation by accident.
@@ -885,11 +910,14 @@ answer these questions in the bootstrap implementation by accident.
   methods through the chosen unified design.
 - [ ] Add C API functions for semantic lookup, assignment, deletion, membership,
   and length operations.
-- [ ] Keep raw string-shape helpers unavailable through the C API.
 - [ ] Document which C API functions may re-enter Python.
 - [ ] Add native module tests that build string-key dicts, integer-key dicts,
   propagated `__hash__` and `__eq__` exceptions, and mutation during equality
   through the C API surface.
+
+Stage invariant:
+
+- Raw string-shape helpers remain unavailable through the C API.
 
 ### 8. Cleanup, Performance, And Stdlib Unblock
 
