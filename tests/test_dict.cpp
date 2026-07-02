@@ -55,6 +55,43 @@ TEST(Dict, SetGetAndContainsWorkForStringKeys)
     EXPECT_EQ(Value::from_smi(22), dict->get_item(beta));
 }
 
+TEST(GeneralDict, ConstructsAsInternalClassAndStartsEmpty)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation_scope(context.thread());
+    GeneralDict *dict = context.thread()->make_object_raw<GeneralDict>();
+
+    EXPECT_EQ(context.vm().general_dict_class(),
+              dict->get_shape()->get_class());
+    EXPECT_STREQ(L"__clover_general_dict",
+                 dict->get_shape()->get_class()->get_name().extract()->data);
+    EXPECT_EQ(0u, dict->size());
+    EXPECT_TRUE(dict->empty());
+}
+
+TEST(GeneralDict, LenMethodReturnsLiveEntryCount)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation_scope(context.thread());
+    GeneralDict *dict = context.thread()->make_object_raw<GeneralDict>();
+    TValue<String> dunder_len_name =
+        context.vm().get_or_create_interned_string_value(L"__len__");
+
+    Value result = context.thread()->call_clovervm_method(Value::from_oop(dict),
+                                                          dunder_len_name);
+
+    EXPECT_EQ(Value::from_smi(0), result);
+    EXPECT_FALSE(context.thread()->has_pending_exception());
+}
+
+TEST(GeneralDict, TemporaryBuiltinBindingCanConstructAndLen)
+{
+    test::VmTestContext context;
+
+    EXPECT_EQ(Value::from_smi(0),
+              context.run_file(L"len(__clover_general_dict())\n"));
+}
+
 TEST(Dict, SetItemOverwritesExistingValue)
 {
     test::VmTestContext context;

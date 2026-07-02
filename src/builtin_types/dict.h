@@ -121,9 +121,61 @@ namespace cl
         CL_DECLARE_STATIC_OBJECT_SIZE(Dict);
     };
 
+    class GeneralDict : public Object
+    {
+    private:
+        class Entry
+        {
+        public:
+            Entry(Value _key, Value _value, TValue<SMI> _hash)
+                : key(_key), value(_value), hash(_hash)
+            {
+            }
+            Value key;
+            Value value;
+            TValue<SMI> hash;
+            bool valid() const { return !key.is_not_present(); }
+            void invalidate()
+            {
+                key = Value::not_present();
+                value = Value::None();
+                hash = TValue<SMI>::from_smi(0);
+            }
+        };
+
+    public:
+        static constexpr NativeLayoutId native_layout =
+            NativeLayoutId::GeneralDict;
+
+        explicit GeneralDict(ClassObject *cls);
+
+        size_t size() const { return n_valid_entries; }
+        bool empty() const { return n_valid_entries == 0; }
+
+    private:
+        constexpr static uint32_t max_load_nom = 3;
+        constexpr static uint32_t max_load_denom = 4;
+        constexpr static int32_t tombstone = -2;
+        constexpr static int32_t not_present = -1;
+        constexpr static size_t min_table_size = 16;
+
+        RawArray<int32_t> hash_table;
+        ValueArray<Entry> entries;
+        size_t n_valid_entries;
+
+    public:
+        CL_DECLARE_STATIC_VALUE_SPAN_EXTENDS(
+            GeneralDict, Object,
+            decltype(hash_table)::embedded_value_count +
+                decltype(entries)::embedded_value_count);
+        CL_DECLARE_STATIC_OBJECT_SIZE(GeneralDict);
+    };
+
     class VirtualMachine;
     BuiltinClassDefinition make_dict_class(VirtualMachine *vm);
+    BuiltinClassDefinition make_general_dict_class(VirtualMachine *vm);
     void install_dict_class_methods(VirtualMachine *vm);
+    void install_general_dict_class_methods(VirtualMachine *vm);
 
 };  // namespace cl
 

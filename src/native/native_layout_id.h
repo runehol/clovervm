@@ -14,6 +14,7 @@ namespace cl
         List,
         Tuple,
         Dict,
+        GeneralDict,
         SlotDict,
         Slice,
         Float,

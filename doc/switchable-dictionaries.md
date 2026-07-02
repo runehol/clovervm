@@ -755,19 +755,22 @@ CPython-compatible public `dict` implementation.
 
 ### 0. Internal GeneralDict Skeleton
 
-- [ ] Add `NativeLayoutId::GeneralDict`.
-- [ ] Add `GeneralDict` to `dict.h` and `dict.cpp`.
-- [ ] Register a separate internal Python class named `__clover_general_dict`,
+- [x] Add `NativeLayoutId::GeneralDict`.
+- [x] Add `GeneralDict` to `dict.h` and `dict.cpp`.
+- [x] Register a separate internal Python class named `__clover_general_dict`,
   backed by `GeneralDict`.
-- [ ] Give `GeneralDict` data members that mirror `Dict`: same hash-table array,
+- [x] Give `GeneralDict` data members that mirror `Dict`: same hash-table array,
   same entry-array shape, same stored SMI hash, and same live-entry count.
-- [ ] Do not introduce a shared base class, shared table abstraction, template
+- [x] Do not introduce a shared base class, shared table abstraction, template
   layer, or separate files for this stage.
-- [ ] Keep `{}` and dict-display lowering on the existing `Dict` path.
-- [ ] Add construction and `len` tests for the internal class.
+- [x] Keep `{}` and dict-display lowering on the existing `Dict` path.
+- [x] Add construction and `len` tests for the internal class.
 
 This milestone should make the internal class real without changing ordinary
-`dict` behavior.
+`dict` behavior. During bootstrap, `__clover_general_dict` is temporarily
+exported through the `builtins` module so Python-level tests can construct it.
+That exposure should be removed or replaced once there is a better internal
+construction/testing path.
 
 ### 1. ThreadState Protocol Helpers
 

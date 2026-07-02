@@ -64,6 +64,36 @@ namespace cl
                                         BuiltinsVisibility::Public);
     }
 
+    GeneralDict::GeneralDict(ClassObject *cls)
+        : Object(cls, native_layout), hash_table(min_table_size, not_present),
+          n_valid_entries(0)
+    {
+    }
+
+    BuiltinClassDefinition make_general_dict_class(VirtualMachine *vm)
+    {
+        static constexpr NativeLayoutId native_layout_ids[] = {
+            NativeLayoutId::GeneralDict};
+        ClassObject *cls = ClassObject::make_builtin_class<GeneralDict>(
+            vm->get_or_create_interned_string_value(L"__clover_general_dict"),
+            GeneralDict::native_static_release_count(), nullptr, 0,
+            vm->object_class());
+        return builtin_class_definition(cls, native_layout_ids,
+                                        BuiltinsVisibility::Public);
+    }
+
+    static Value native_general_dict_new(ThreadState *thread, Value cls_value)
+    {
+        if(cls_value !=
+           Value::from_oop(thread->get_machine()->general_dict_class()))
+        {
+            return thread->set_pending_builtin_exception_string(
+                L"TypeError", L"__clover_general_dict.__new__ expects "
+                              L"__clover_general_dict as cls");
+        }
+        return thread->make_object_value<GeneralDict>().raw_value();
+    }
+
     static Value native_dict_repr(ThreadState *thread, Value self)
     {
         if(!can_convert_to<Dict>(self))
@@ -101,6 +131,19 @@ namespace cl
 
         return Value::from_smi(
             static_cast<int64_t>(self.get_ptr<Dict>()->size()));
+    }
+
+    static Value native_general_dict_len(ThreadState *thread, Value self)
+    {
+        if(!can_convert_to<GeneralDict>(self))
+        {
+            return active_thread()->set_pending_builtin_exception_string(
+                L"TypeError", L"__clover_general_dict.__len__ expects a "
+                              L"__clover_general_dict receiver");
+        }
+
+        return Value::from_smi(
+            static_cast<int64_t>(self.get_ptr<GeneralDict>()->size()));
     }
 
     static Value require_dict_receiver(Value self, const wchar_t *method_name)
@@ -490,6 +533,21 @@ namespace cl
                     make_single_default(vm, Value::None())));
 
         cls->set_shape(cls->get_shape()->clone_with_flags(class_shape_flags));
+    }
+
+    void install_general_dict_class_methods(VirtualMachine *vm)
+    {
+        BuiltinIntrinsicMethod methods[] = {
+            builtin_intrinsic_method(L"__new__", native_general_dict_new,
+                                     L"Create a general dict object."),
+            builtin_intrinsic_method(L"__len__", native_general_dict_len,
+                                     L"Return len(self)."),
+        };
+        unwrap_bootstrap_expected(
+            vm,
+            install_builtin_intrinsic_methods(vm, vm->general_dict_class(),
+                                              methods, std::size(methods)),
+            "installing intrinsic methods");
     }
 
     TValue<Dict> Dict::copy() const { return make_object_value<Dict>(*this); }
