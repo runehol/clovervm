@@ -10,6 +10,7 @@
 namespace cl
 {
     class ClassObject;
+    struct DictStorageLayoutAssertions;
     class List;
     class ThreadState;
     class Tuple;
@@ -17,6 +18,8 @@ namespace cl
     class Dict : public Object
     {
     private:
+        friend struct DictStorageLayoutAssertions;
+
         class Entry
         {
         public:
@@ -128,6 +131,8 @@ namespace cl
     class GeneralDict : public Object
     {
     private:
+        friend struct DictStorageLayoutAssertions;
+
         class Entry
         {
         public:
@@ -299,6 +304,17 @@ namespace cl
             decltype(hash_table)::embedded_value_count +
                 decltype(entries)::embedded_value_count);
         CL_DECLARE_STATIC_OBJECT_SIZE(GeneralDict);
+    };
+
+    struct DictStorageLayoutAssertions
+    {
+        static_assert(
+            sizeof(Dict::Entry) == sizeof(GeneralDict::Entry),
+            "Dict and GeneralDict entries must stay layout-compatible");
+        static_assert(sizeof(Dict::EntryView) == sizeof(GeneralDict::EntryView),
+                      "Dict and GeneralDict entry views must stay compatible");
+        static_assert(sizeof(Dict) == sizeof(GeneralDict),
+                      "Dict and GeneralDict storage members must stay aligned");
     };
 
     class VirtualMachine;

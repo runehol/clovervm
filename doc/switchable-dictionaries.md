@@ -1168,19 +1168,19 @@ accident.
 
 ### 8. Make Dict Storage General-Compatible
 
-- [ ] Make `Dict` and `GeneralDict` data members literally identical: first align
+- [x] Make `Dict` and `GeneralDict` data members literally identical: first align
   entry field names and types, then member order and member types, before moving
   behavior.
-- [ ] Ensure exact string-keyed `Dict` storage already satisfies the general table
+- [x] Ensure exact string-keyed `Dict` storage already satisfies the general table
   layout invariants before shape-only promotion is enabled.
-- [ ] Ensure string-keyed `Dict` stores normalized canonical SMI hashes, including
+- [x] Ensure string-keyed `Dict` stores normalized canonical SMI hashes, including
   `-1` to `-2` remapping, so promotion can reuse stored hashes.
-- [ ] Add focused storage-alignment tests where easy, such as entry order, table
+- [x] Add focused storage-alignment tests where easy, such as entry order, table
   generation changes, tombstone reuse, or normalized string hashes. Do not overfit
   this stage to `GeneralDict`, since the bootstrap class should be deleted soon
   after public shape shifting works.
-- [ ] Keep public `dict` behavior unchanged while this storage pipe-cleaning lands.
-- [ ] Keep `__clover_general_dict` as the bootstrap reference and test vehicle for
+- [x] Keep public `dict` behavior unchanged while this storage pipe-cleaning lands.
+- [x] Keep `__clover_general_dict` as the bootstrap reference and test vehicle for
   this stage.
 
 Stage invariants:

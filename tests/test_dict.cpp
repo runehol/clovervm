@@ -88,6 +88,32 @@ TEST(Dict, TableGenerationChangesOnlyWhenProbeStructureChanges)
     EXPECT_GT(dict->table_generation(), 1u);
 }
 
+TEST(Dict, ReinsertReusesTombstoneWithoutChangingEntryOrder)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation_scope(context.thread());
+    Dict *dict = context.thread()->make_object_raw<Dict>();
+
+    Value first = make_string(context, L"first");
+    Value second = make_string(context, L"second");
+    Value third = make_string(context, L"third");
+
+    dict->set_item(first, Value::from_smi(1));
+    dict->set_item(second, Value::from_smi(2));
+    EXPECT_EQ(Value::None(), dict->del_item(first));
+    dict->set_item(third, Value::from_smi(3));
+
+    EXPECT_EQ(2u, dict->size());
+    EXPECT_EQ(3u, dict->entry_storage_size());
+    Dict::EntryView second_entry = {Value::not_present(), Value::not_present()};
+    Dict::EntryView third_entry = {Value::not_present(), Value::not_present()};
+    ASSERT_FALSE(dict->entry_at(0, second_entry));
+    ASSERT_TRUE(dict->entry_at(1, second_entry));
+    ASSERT_TRUE(dict->entry_at(2, third_entry));
+    EXPECT_EQ(second, second_entry.key);
+    EXPECT_EQ(third, third_entry.key);
+}
+
 TEST(GeneralDict, ConstructsAsInternalClassAndStartsEmpty)
 {
     test::VmTestContext context;
