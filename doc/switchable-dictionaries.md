@@ -699,12 +699,12 @@ the string-keyed path must therefore store normalized hashes, including `-1` to
 The initial helper is deliberately small:
 
 ```cpp
-void maybe_promote_string_key_dict_to_general_dict(ThreadContext *context,
+void maybe_promote_string_key_dict_to_general_dict(ThreadState *thread,
                                                    Object *obj)
 {
-    if(obj->get_shape() == context->get_string_key_dict_shape())
+    if(obj->get_shape() == thread->get_exact_dict_string_key_shape())
     {
-        obj->set_shape(context->get_general_dict_shape());
+        obj->set_shape(thread->get_exact_dict_general_shape());
     }
 }
 ```
@@ -1118,7 +1118,7 @@ Resolved representation direction:
 - Exact `dict` instances use one canonical string-keyed fast-path shape and an
   exact-dict general shape. Dict subclasses keep their own shapes, but those
   shapes behave as general dictionaries for dict operations.
-- The canonical exact-dict shapes should be cached directly on `ThreadContext`.
+- The canonical exact-dict shapes should be cached directly on `ThreadState`.
   They logically belong to the VM, but they do not change and dict operations are
   hot enough that repeated broader VM lookups should be avoided.
 - Promotion is an in-place shape/storage transition, not replacement with a
@@ -1190,9 +1190,9 @@ Stage invariants:
 
 ### 9a. Exact Dict Shapes
 
-- [ ] Cache the exact-dict shapes on `ThreadContext` with explicit names such as
+- [ ] Cache the exact-dict shapes on `ThreadState` with explicit names such as
   `get_exact_dict_string_key_shape()` and `get_exact_dict_general_shape()`.
-- [ ] Exact `dict()` starts with the `ThreadContext` canonical string-keyed dict
+- [ ] Exact `dict()` starts with the `ThreadState` canonical string-keyed dict
   shape.
 - [ ] Dict subclass construction leaves the subclass shape in place and uses
   general dict behavior.
