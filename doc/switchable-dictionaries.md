@@ -112,38 +112,47 @@ select their storage and operation mode through shape state.
 Every Python-visible object already has a `Shape`. Dictionary mode should be
 represented through that existing mechanism.
 
-Dict instances use two dictionary shapes:
+Dict instances use two dictionary modes, but the dispatch-critical shape is the
+canonical string-keyed dict shape:
 
-- **String dict shape**: all live keys are exact `str` objects. Lookup,
-  insertion, deletion, and membership may use trusted native string hashing and
-  equality. These operations must not run Python bytecode.
-- **General dict shape**: at least one non-string key has been inserted, or the
-  dict has otherwise been promoted. Lookup, insertion, deletion, and membership
-  must use the general dictionary path. The general path may run `__hash__`,
-  equality, descriptors, and arbitrary Python bytecode.
+- **String-keyed dict shape**: installed only on exact builtin `dict` instances
+  whose live keys are all exact `str` objects. Lookup, insertion, deletion, and
+  membership may use trusted native string hashing and equality only when the
+  incoming key is also exact `str`. These operations must not run Python
+  bytecode.
+- **General dict behavior**: used after exact-dict promotion, and used by dict
+  subclass instances from construction. Subclasses keep their own shapes rather
+  than using either the canonical string-keyed shape or the exact-dict general
+  shape, but those subclass shapes behave as general dictionaries for dict
+  operations. Ordinary dispatch should not depend on explicitly matching every
+  possible dict-subclass shape. Anything that does not match the canonical
+  string-keyed fast-path shape falls through to the general dictionary path. The
+  general path may run `__hash__`, equality, descriptors, and arbitrary Python
+  bytecode.
 
 The shape carries the contents invariant. Checking only the incoming key is not
 enough: a lookup by string in a dictionary that already contains a custom key
 can collide with that custom key and require Python-visible equality.
 
 Promotion is one-way. Deleting the non-string key does not demote the dict back
-to string shape. One-way promotion keeps cache invalidation and iterator
-behavior predictable.
+to string-keyed shape. One-way promotion keeps cache invalidation and iterator
+behavior predictable. Promotion checks for the canonical string-keyed dict shape
+and replaces it with exact-dict general shape/storage. If the receiver has any
+other dict shape, including a subclass shape, promotion leaves that shape alone
+and the operation proceeds through the general path.
 
 ## Dispatch Model
 
 This section describes the later public-dict unification target, not the initial
 bootstrap `GeneralDict` class.
 
-`dict.__getitem__`, `dict.__setitem__`, `dict.__delitem__`, and related methods
-should dispatch by receiver shape:
+`dict.__getitem__`, `dict.__setitem__`, `dict.__delitem__`, and related
+operations should dispatch by the canonical string-keyed receiver shape:
 
-- string dict shape plus exact string key: trusted handler
-- string dict shape plus non-string key:
-  - lookup/membership: promote or enter the general path, depending on the
-    final implementation choice for miss semantics
-  - insertion/update: promote before inserting
-- general dict shape: bytecode-backed public `dict` method
+- string-keyed dict shape plus exact string key: trusted handler
+- string-keyed dict shape plus non-string key: promote to general, then run the
+  general path
+- any general-dict receiver shape, including dict subclass shapes: general path
 
 The important split is where inline caches live:
 
@@ -668,19 +677,53 @@ def _dict_setitem(self, key, value):
     return _general_dict_setitem(self, key, value)
 ```
 
-Lookup by non-string in a string-shaped dict is semantically allowed to miss
-without promotion only if no Python-visible equality can run. Because the shape
-invariant proves all live keys are exact strings, a non-string lookup cannot
-need custom-key equality from an existing key. However, once the key itself
-requires `__hash__`, the public behavior of `d[key]` may still need to call
-`key.__hash__` before concluding the key is absent. The conservative initial
-design should route non-string lookup through general bytecode, promoting if
-needed, rather than inventing a special miss path.
+Lookup, membership, and deletion by non-string in a string-shaped dict should
+also promote before probing. The string-shaped representation is correct only
+for exact-string key equality. Once a non-string key participates in a
+Python-visible dict operation, the operation should run on the general shape
+rather than inventing a special miss path over string-only storage.
 
-Promotion changes the dict shape and table representation in place. It does not
-replace the object with a different native layout, C++ class, or Python class.
-That keeps identity, references, and public type behavior stable: promotion is a
-shape/storage transition inside the single public `dict` implementation.
+Promotion changes the dict shape in place. It does not replace the object with a
+different native layout, C++ class, Python class, or freshly copied table. That
+keeps identity, references, insertion order, and public type behavior stable:
+promotion is a shape transition inside the single public `dict` implementation.
+
+The storage must already be compatible with the general path before the shape
+flip. In practice, exact string-keyed dict storage should use the same
+GeneralDict-style entry facts needed by general lookup: `Value` keys, `Value`
+values, stored canonical SMI hashes, open-addressed table indexes, and
+insertion-ordered entries. Existing string hashes are reused during promotion;
+the string-keyed path must therefore store normalized hashes, including `-1` to
+`-2` remapping.
+
+The initial helper is deliberately small:
+
+```cpp
+void maybe_promote_string_key_dict_to_general_dict(ThreadContext *context,
+                                                   Object *obj)
+{
+    if(obj->get_shape() == context->get_string_key_dict_shape())
+    {
+        obj->set_shape(context->get_general_dict_shape());
+    }
+}
+```
+
+If a non-string insertion raises while hashing or comparing after this shape
+flip, the implementation does not need to roll back promotion; ending with an
+unchanged-but-general-shaped dict is acceptable.
+
+The first public implementation path may use the C++ semantic drivers and
+`ThreadState::hash_value` / `ThreadState::test_equal` that were built for the
+bootstrap `GeneralDict`. The exact-string shape should be kept or re-enabled soon
+as an optimization, but public general-key correctness does not need to wait for
+the bytecode/trusted-opcode hot path.
+
+Exact empty `dict` instances start string-keyed and may promote during
+population. Dict subclass instances start with their subclass shape and general
+dict behavior. The initial promotion helper should be private C++; trusted
+bytecode/opcode promotion can wait until insertion, lookup, and deletion move
+into bytecode-backed dict methods.
 
 ## Reentrancy and Probe Revalidation
 
@@ -767,20 +810,31 @@ A possible naming shape is:
 [[nodiscard]] Expected<bool> contains(ThreadState *thread, Value key);
 
 // Same semantics, but the incoming lookup key is known exact str.
-[[nodiscard]] Expected<Value> get_string_item(ThreadState *thread,
+[[nodiscard]] Expected<Value> get_item_for_str(ThreadState *thread,
+                                               TValue<String> key);
+[[nodiscard]] Expected<void> set_item_for_str(ThreadState *thread,
+                                              TValue<String> key, Value value);
+[[nodiscard]] Expected<void> del_item_for_str(ThreadState *thread,
                                               TValue<String> key);
-[[nodiscard]] Expected<void> set_string_item(ThreadState *thread,
-                                             TValue<String> key, Value value);
-[[nodiscard]] Expected<void> del_string_item(ThreadState *thread,
-                                             TValue<String> key);
-[[nodiscard]] Expected<bool> contains_string(ThreadState *thread,
-                                             TValue<String> key);
+[[nodiscard]] Expected<bool> contains_for_str(ThreadState *thread,
+                                              TValue<String> key);
 ```
 
-The exact spelling is unsettled. The required property is that no public C++
-method with a generic name silently means "string-only". Either the method is
-semantic and fallible, or it is a private/raw helper that cannot be reached as a
-general dict interface.
+The string-key semantic helpers should use distinct names rather than overloads.
+They are not raw string-dict operations: the typed key is only an input fact. If
+the receiver has the canonical string-keyed shape they may use the trusted
+string-keyed fast path; otherwise they delegate to the general semantic path and
+remain fallible.
+
+Private shape-guarded helpers may use names such as `string_keyed_lookup`,
+`string_keyed_insert`, `string_keyed_delete`, and `string_keyed_contains`. These
+should be private `Dict` implementation methods used only after the caller has
+proved the canonical string-keyed shape and exact `str` key. They must not be
+exposed as the C++ semantic interface.
+
+The required property is that no public C++ method with a generic name silently
+means "string-only". Either the method is semantic and fallible, or it is a
+private shape-guarded helper that cannot be reached as a general dict interface.
 
 These are internal C++ APIs, so pending-exception propagation should be explicit
 in the return type. Native-method and interpreter opcode wrappers can translate
@@ -852,9 +906,14 @@ can call `hash(key)`, which can execute Python. Dict display semantics require
 each key/value pair to be evaluated and inserted before the next pair's
 expressions are evaluated. A bulk `CreateDict` opcode that evaluates all
 expressions first and inserts afterward is not a good general insertion
-boundary. It can remain only for empty dicts or deliberately proven exact-string
-construction; ordinary general-key dict displays should lower to create-empty
-plus per-entry semantic insertion once public general keys are supported.
+boundary.
+
+The intended direction is to narrow the bulk opcode to empty dict construction or
+deliberately proven exact-string-key construction, and to name that exact-string
+bulk path `CreateStringKeyDict` if the current `CreateDict` name becomes
+misleading. Ordinary general-key dict displays should lower to create-empty plus
+per-entry semantic insertion so the insertion path gets its ordinary inline
+caches.
 
 ## Open Questions
 
@@ -867,12 +926,6 @@ Bootstrap questions:
 
 Later public-dict unification questions:
 
-- Should non-string lookup in a string-shaped dict promote immediately, or
-  should there be a bytecode miss path that calls `__hash__` but proves no
-  equality with existing keys is needed?
-- Should string-to-general promotion reuse the current `Dict` table in place,
-  or allocate a new general table and reinsert entries?
-- How should active dict iterators respond to promotion and mutation?
 - Where should the built-in bytecode method bodies live so they are available
   during bootstrap while still being the only code allowed to emit trusted dict
   opcodes?
@@ -883,9 +936,6 @@ Later public-dict unification questions:
 - Should exact-string semantic helpers be separate overloads of the general
   helpers, or separate names, given that they can still be fallible in
   general-shaped dicts?
-- Should `CreateDict` be split into an exact-string bulk opcode and a semantic
-  per-entry insertion lowering, or should the existing opcode be narrowed to
-  empty dict creation only?
 
 ## Milestones
 
@@ -1065,43 +1115,120 @@ factoring, not a place to settle public dict representation questions.
 Resolved representation direction:
 
 - Public `dict` uses one native layout, one C++ class, and one Python class.
-- Dict instances use two shapes: string dict shape and general dict shape.
+- Exact `dict` instances use one canonical string-keyed fast-path shape and an
+  exact-dict general shape. Dict subclasses keep their own shapes, but those
+  shapes behave as general dictionaries for dict operations.
+- The canonical exact-dict shapes should be cached directly on `ThreadContext`.
+  They logically belong to the VM, but they do not change and dict operations are
+  hot enough that repeated broader VM lookups should be avoided.
 - Promotion is an in-place shape/storage transition, not replacement with a
   different object representation.
+- The general-shape storage representation is the `GeneralDict`-style
+  representation: heterogeneous `Value` keys, `Value` values, stored canonical
+  SMI hashes, and insertion-ordered entries.
+- String-keyed storage must already satisfy the general table layout invariants
+  needed after promotion; promotion itself only changes the shape.
+- Non-string lookup, membership, deletion, and insertion on a string-shaped dict
+  promote before probing. String-shape operations are only correct for exact
+  string keys.
+- Exact string-key operations on the canonical string-keyed shape use trusted raw
+  lookup/insert/delete/membership. Misses raise `KeyError` for get/delete and
+  return `False` for contains. Exact string set inserts or overwrites without
+  promotion.
+- Exact string-key operations on dict subclasses still use the general path,
+  because subclass shapes behave as general dict shapes.
+- String-key semantic C++ helpers should use explicit names like
+  `get_item_for_str`; private canonical-shape helpers should be private `Dict`
+  methods named like `string_keyed_lookup`.
+- A failed non-string insertion does not need to roll back promotion if hashing
+  or equality raises after the shape transition.
+- The first public general-key path may use the existing C++ semantic drivers and
+  `ThreadState` protocol helpers. The bytecode/trusted-opcode path remains the
+  intended hot path, but it is not required for the first public correctness
+  slice.
+- The first promotion helper should be private C++; trusted bytecode promotion is
+  deferred until general insertion, lookup, and deletion move into bytecode.
+- Dict displays with possibly general keys should lower to create-empty plus
+  per-entry semantic insertion. Bulk dict creation should be limited to empty or
+  proven exact-string construction and may need a more explicit opcode name.
+- Promotion should not change iterator behavior by itself; active iterators care
+  about the same lookup/insertion/deletion mutation effects they already observe.
 
-Design questions to resolve before implementation:
+Later hot-path direction:
 
-- Exact storage transition for promotion from string shape to general shape,
-  including entry order preservation.
-- Whether the final general public path is bytecode-backed with trusted probe
-  opcodes, C++-backed through `ThreadState` helpers, or staged from one to the
-  other.
-- How dict displays should preserve evaluation/insertion order once general-key
-  public dicts are supported.
-- Active iterator behavior for promotion and mutation.
+- Bytecode-backed public dict method bodies should be generated by C++
+  `CodeObjectBuilder` functions near the dict implementation. Keeping them close
+  to `dict.cpp` makes the raw table opcodes visibly dict-owned and avoids
+  exposing trusted dict opcodes through general Python source or importable helper
+  modules.
 
 This is the point to revisit the older switchable-dictionary design. Do not
-answer these questions in the bootstrap implementation by accident.
+answer any remaining implementation details in the bootstrap implementation by
+accident.
 
-### 8. Public Dict And C API Integration
+### 8. Make Dict Storage General-Compatible
+
+- [ ] Make `Dict` and `GeneralDict` data members literally identical: first align
+  entry field names and types, then member order and member types, before moving
+  behavior.
+- [ ] Ensure exact string-keyed `Dict` storage already satisfies the general table
+  layout invariants before shape-only promotion is enabled.
+- [ ] Ensure string-keyed `Dict` stores normalized canonical SMI hashes, including
+  `-1` to `-2` remapping, so promotion can reuse stored hashes.
+- [ ] Add focused storage-alignment tests where easy, such as entry order, table
+  generation changes, tombstone reuse, or normalized string hashes. Do not overfit
+  this stage to `GeneralDict`, since the bootstrap class should be deleted soon
+  after public shape shifting works.
+- [ ] Keep public `dict` behavior unchanged while this storage pipe-cleaning lands.
+- [ ] Keep `__clover_general_dict` as the bootstrap reference and test vehicle for
+  this stage.
+
+Stage invariants:
+
+- This stage does not wire public promotion yet.
+- Shape-only promotion must not require table copying or reinsertion once enabled.
+
+### 9. Public Dict Shape Shifting And C API Integration
 
 - [ ] Route public `dict` lookup, assignment, deletion, membership, and public
   methods through the chosen unified design.
+- [ ] Exact `dict()` starts with the `ThreadContext` canonical string-keyed dict
+  shape; `dict` subclass construction leaves the subclass shape in place and uses
+  general dict behavior.
+- [ ] Add private C++ shape-only promotion from the canonical string-keyed shape
+  to the exact-dict general shape.
+- [ ] Cache the exact-dict shapes on `ThreadContext` with explicit names such as
+  `get_exact_dict_string_key_shape()` and `get_exact_dict_general_shape()`.
+- [ ] Implement explicit assignment/subscription promotion, such as
+  `d = {}; d[1] = "x"`, before changing dict-display lowering for general keys.
 - [ ] Add C API functions for semantic lookup, assignment, deletion, membership,
   and length operations.
 - [ ] Document which C API functions may re-enter Python.
 - [ ] Add native module tests that build string-key dicts, integer-key dicts,
   propagated `__hash__` and `__eq__` exceptions, and mutation during equality
   through the C API surface.
+- [ ] Add focused C++ API tests for semantic arbitrary-key operations,
+  `*_for_str` typed-key operations, exact string-keyed fast paths, promotion, and
+  subclass/general-shape behavior.
 
 Stage invariant:
 
 - Raw string-shape helpers remain unavailable through the C API.
 
-### 9. Cleanup, Performance, And Stdlib Unblock
+### 10. Remove Bootstrap GeneralDict
 
-- [ ] Remove bootstrap-only `GeneralDict` exposure if the public `dict` path has
-  absorbed its role.
+- [ ] Migrate remaining `GeneralDict` behavior tests to public `dict` tests.
+- [ ] Remove the temporary `__clover_general_dict` builtins exposure.
+- [ ] Delete the C++ `GeneralDict` class once public `Dict` has shape-shifting
+  behavior and equivalent test coverage.
+
+Stage invariant:
+
+- This should be a separate cleanup from the shape-shifting behavior change, so
+  representation migration and bootstrap deletion stay reviewable independently.
+
+### 11. Cleanup, Performance, And Stdlib Unblock
+
 - [ ] Remove obsolete string-only `TODO`s and helper names that imply raw hash
   storage.
 - [ ] Audit dict fast paths so exact-string dictionaries still avoid Python
