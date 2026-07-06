@@ -22,16 +22,14 @@ namespace cl
       TODO: these just assume string keys. replace with full equality machinery
       when we have calling Python-defined methods from C++ up and running */
 
-    static TValue<SMI> internal_hash(Value key)
+    static TValue<SMI> internal_hash(TValue<String> key)
     {
-        return string_hash_normalized(
-            TValue<String>::from_value_unchecked(key));
+        return string_hash_normalized(key);
     }
 
-    static bool internal_eq(Value a, Value b)
+    static bool internal_eq(TValue<String> a, TValue<String> b)
     {
-        return string_eq(TValue<String>::from_value_unchecked(a),
-                         TValue<String>::from_value_unchecked(b));
+        return string_eq(a, b);
     }
 
     Dict::Dict(ClassObject *cls)
@@ -48,7 +46,8 @@ namespace cl
         {
             if(e.valid())
             {
-                set_item(e.key, e.value);
+                string_keyed_insert(TValue<String>::from_value_unchecked(e.key),
+                                    e.value);
             }
         }
     }
@@ -290,69 +289,65 @@ namespace cl
                                  Value default_value)
     {
         CL_PROPAGATE_EXCEPTION(require_dict_receiver(self, L"get"));
-        CL_PROPAGATE_EXCEPTION(require_string_key(key));
         Dict *dict = self.get_ptr<Dict>();
-        if(!dict->contains(key))
+        if(!CL_TRY(dict->contains(thread, key)))
         {
             return default_value;
         }
-        return dict->get_item(key);
+        return CL_TRY(dict->get_item(thread, key));
     }
 
     static Value native_dict_getitem(ThreadState *thread, Value self, Value key)
     {
         CL_PROPAGATE_EXCEPTION(require_dict_receiver(self, L"__getitem__"));
-        CL_PROPAGATE_EXCEPTION(require_string_key(key));
-        return self.get_ptr<Dict>()->get_item(key);
+        return CL_TRY(self.get_ptr<Dict>()->get_item(thread, key));
     }
 
     static Value native_dict_contains(ThreadState *thread, Value self,
                                       Value key)
     {
         CL_PROPAGATE_EXCEPTION(require_dict_receiver(self, L"__contains__"));
-        CL_PROPAGATE_EXCEPTION(require_string_key(key));
-        return self.get_ptr<Dict>()->contains(key) ? Value::True()
-                                                   : Value::False();
+        return CL_TRY(self.get_ptr<Dict>()->contains(thread, key))
+                   ? Value::True()
+                   : Value::False();
     }
 
     static Value native_dict_setitem(ThreadState *thread, Value self, Value key,
                                      Value value)
     {
         CL_PROPAGATE_EXCEPTION(require_dict_receiver(self, L"__setitem__"));
-        CL_PROPAGATE_EXCEPTION(require_string_key(key));
-        self.get_ptr<Dict>()->set_item(key, value);
+        CL_TRY(self.get_ptr<Dict>()->set_item(thread, key, value));
         return Value::None();
     }
 
     static Value native_dict_delitem(ThreadState *thread, Value self, Value key)
     {
         CL_PROPAGATE_EXCEPTION(require_dict_receiver(self, L"__delitem__"));
-        CL_PROPAGATE_EXCEPTION(require_string_key(key));
-        CL_PROPAGATE_EXCEPTION(self.get_ptr<Dict>()->del_item(key));
+        CL_TRY(self.get_ptr<Dict>()->del_item(thread, key));
         return Value::None();
     }
 
     static Value trusted_dict_getitem_str_handler(ThreadState *thread,
                                                   Value self, Value key)
     {
-        (void)thread;
-        return self.get_ptr<Dict>()->get_item(key);
+        return CL_TRY(self.get_ptr<Dict>()->get_item_for_str(
+            thread, TValue<String>::from_value_unchecked(key)));
     }
 
     static Value trusted_dict_setitem_str_handler(ThreadState *thread,
                                                   Value self, Value key,
                                                   Value value)
     {
-        (void)thread;
-        self.get_ptr<Dict>()->set_item(key, value);
+        CL_TRY(self.get_ptr<Dict>()->set_item_for_str(
+            thread, TValue<String>::from_value_unchecked(key), value));
         return Value::None();
     }
 
     static Value trusted_dict_delitem_str_handler(ThreadState *thread,
                                                   Value self, Value key)
     {
-        (void)thread;
-        CL_PROPAGATE_EXCEPTION(self.get_ptr<Dict>()->del_item(key));
+        CL_TRY(self.get_ptr<Dict>()->del_item_for_str(
+            thread, TValue<String>::from_value_unchecked(key)));
         return Value::None();
     }
 
@@ -364,16 +359,18 @@ namespace cl
             return thread->set_pending_builtin_exception_string(
                 L"TypeError", L"dict keys must be str");
         }
-        return self.get_ptr<Dict>()->contains(key) ? Value::True()
-                                                   : Value::False();
+        return CL_TRY(self.get_ptr<Dict>()->contains_for_str(
+                   thread, TValue<String>::from_value_unchecked(key)))
+                   ? Value::True()
+                   : Value::False();
     }
 
     static bool trusted_dict_str_key_shapes_match(VirtualMachine *vm,
                                                   ShapeKey container_key,
                                                   ShapeKey key_key)
     {
-        return vm->shape_for_key(container_key)->get_class() ==
-                   vm->dict_class() &&
+        return vm->shape_for_key(container_key) ==
+                   vm->exact_dict_string_key_shape() &&
                vm->shape_for_key(key_key)->get_class() == vm->str_class();
     }
 
@@ -398,13 +395,12 @@ namespace cl
         VirtualMachine *vm, ShapeKey container_key, ShapeKey key_key,
         TrustedHandlerOperandOrder order, TrustedHandlerArity requested_arity)
     {
-        (void)key_key;
         assert(order == TrustedHandlerOperandOrder::Normal);
         if(requested_arity != TrustedHandlerArity::Binary)
         {
             return TrustedResolution::no_trusted_handler_call_untrusted();
         }
-        if(vm->shape_for_key(container_key)->get_class() == vm->dict_class())
+        if(trusted_dict_str_key_shapes_match(vm, container_key, key_key))
         {
             return TrustedResolution::call_trusted(
                 trusted_dict_contains_handler);
@@ -467,8 +463,7 @@ namespace cl
     static Value native_dict_pop(ThreadState *thread, Value self, Value key)
     {
         CL_PROPAGATE_EXCEPTION(require_dict_receiver(self, L"pop"));
-        CL_PROPAGATE_EXCEPTION(require_string_key(key));
-        return self.get_ptr<Dict>()->pop(key);
+        return CL_TRY(self.get_ptr<Dict>()->pop(thread, key));
     }
 
     static Value native_dict_popitem(ThreadState *thread, Value self)
@@ -481,8 +476,8 @@ namespace cl
                                         Value key, Value default_value)
     {
         CL_PROPAGATE_EXCEPTION(require_dict_receiver(self, L"setdefault"));
-        CL_PROPAGATE_EXCEPTION(require_string_key(key));
-        return self.get_ptr<Dict>()->setdefault(key, default_value);
+        return CL_TRY(
+            self.get_ptr<Dict>()->setdefault(thread, key, default_value));
     }
 
     static Value native_dict_update(ThreadState *thread, Value self,
@@ -670,18 +665,6 @@ namespace cl
             .raw_value();
     }
 
-    Value Dict::pop(Value key)
-    {
-        if(!contains(key))
-        {
-            return active_thread()->set_pending_builtin_exception_none(
-                L"KeyError");
-        }
-        Value result = get_item(key);
-        CL_PROPAGATE_EXCEPTION(del_item(key));
-        return result;
-    }
-
     Value Dict::popitem()
     {
         if(empty())
@@ -696,28 +679,20 @@ namespace cl
             last = entry;
         }
         assert(!last.key.is_not_present());
-        CL_PROPAGATE_EXCEPTION(del_item(last.key));
+        CL_PROPAGATE_EXCEPTION(string_keyed_delete(
+            TValue<String>::from_value_unchecked(last.key)));
         Owned<TValue<Tuple>> result(make_object_value<Tuple>(2));
         result.extract()->initialize_item_unchecked(0, last.key);
         result.extract()->initialize_item_unchecked(1, last.value);
         return result.raw_value();
     }
 
-    Value Dict::setdefault(Value key, Value default_value)
-    {
-        if(contains(key))
-        {
-            return get_item(key);
-        }
-        set_item(key, default_value);
-        return default_value;
-    }
-
     void Dict::update_from_dict(const Dict *other)
     {
         for(EntryView entry: *other)
         {
-            set_item(entry.key, entry.value);
+            string_keyed_insert(TValue<String>::from_value_unchecked(entry.key),
+                                entry.value);
         }
     }
 
@@ -726,7 +701,10 @@ namespace cl
         Owned<TValue<Dict>> result(make_object_value<Dict>());
         for(size_t idx = 0; idx < keys->size(); ++idx)
         {
-            result.extract()->set_item(keys->item_unchecked(idx), value);
+            CL_TRY(result.extract()->set_item_for_str(
+                active_thread(),
+                TValue<String>::from_value_unchecked(keys->item_unchecked(idx)),
+                value));
         }
         return result.raw_value();
     }
@@ -736,7 +714,10 @@ namespace cl
         Owned<TValue<Dict>> result(make_object_value<Dict>());
         for(size_t idx = 0; idx < keys->size(); ++idx)
         {
-            result.extract()->set_item(keys->item_unchecked(idx), value);
+            CL_TRY(result.extract()->set_item_for_str(
+                active_thread(),
+                TValue<String>::from_value_unchecked(keys->item_unchecked(idx)),
+                value));
         }
         return result.raw_value();
     }
@@ -803,17 +784,139 @@ namespace cl
         return true;
     }
 
-    const int32_t *Dict::find_entry(Value key) const
+    static Expected<TValue<String>> dict_key_as_string(Value key)
+    {
+        if(!can_convert_to<String>(key))
+        {
+            return Expected<TValue<String>>::raise_exception(
+                L"TypeError", L"dict keys must be str");
+        }
+        return Expected<TValue<String>>::ok(
+            TValue<String>::from_value_unchecked(key));
+    }
+
+    Expected<Value> Dict::get_item(ThreadState *thread, Value key)
+    {
+        TValue<String> string_key = CL_TRY(dict_key_as_string(key));
+        return get_item_for_str(thread, string_key);
+    }
+
+    Expected<void> Dict::set_item(ThreadState *thread, Value key, Value value)
+    {
+        TValue<String> string_key = CL_TRY(dict_key_as_string(key));
+        return set_item_for_str(thread, string_key, value);
+    }
+
+    Expected<void> Dict::del_item(ThreadState *thread, Value key)
+    {
+        TValue<String> string_key = CL_TRY(dict_key_as_string(key));
+        return del_item_for_str(thread, string_key);
+    }
+
+    Expected<bool> Dict::contains(ThreadState *thread, Value key)
+    {
+        TValue<String> string_key = CL_TRY(dict_key_as_string(key));
+        return contains_for_str(thread, string_key);
+    }
+
+    Expected<Value> Dict::pop(ThreadState *thread, Value key)
+    {
+        TValue<String> string_key = CL_TRY(dict_key_as_string(key));
+        return pop_for_str(thread, string_key);
+    }
+
+    Expected<Value> Dict::setdefault(ThreadState *thread, Value key,
+                                     Value default_value)
+    {
+        TValue<String> string_key = CL_TRY(dict_key_as_string(key));
+        return setdefault_for_str(thread, string_key, default_value);
+    }
+
+    Expected<Value> Dict::get_item_for_str(ThreadState *thread,
+                                           TValue<String> key)
+    {
+        (void)thread;
+        Value result = string_keyed_lookup(key);
+        if(result.is_exception_marker())
+        {
+            return Expected<Value>::propagate_exception();
+        }
+        return Expected<Value>::ok(result);
+    }
+
+    Expected<void> Dict::set_item_for_str(ThreadState *thread,
+                                          TValue<String> key, Value value)
+    {
+        (void)thread;
+        string_keyed_insert(key, value);
+        return Expected<void>::ok();
+    }
+
+    Expected<void> Dict::del_item_for_str(ThreadState *thread,
+                                          TValue<String> key)
+    {
+        (void)thread;
+        Value result = string_keyed_delete(key);
+        if(result.is_exception_marker())
+        {
+            return Expected<void>::propagate_exception();
+        }
+        return Expected<void>::ok();
+    }
+
+    Expected<bool> Dict::contains_for_str(ThreadState *thread,
+                                          TValue<String> key)
+    {
+        (void)thread;
+        return Expected<bool>::ok(string_keyed_contains(key));
+    }
+
+    Expected<Value> Dict::pop_for_str(ThreadState *thread, TValue<String> key)
+    {
+        (void)thread;
+        Value found = string_keyed_lookup(key);
+        if(found.is_exception_marker())
+        {
+            return Expected<Value>::propagate_exception();
+        }
+        Owned<Value> result(found);
+        Value deleted = string_keyed_delete(key);
+        if(deleted.is_exception_marker())
+        {
+            return Expected<Value>::propagate_exception();
+        }
+        return Expected<Value>::ok(result.value());
+    }
+
+    Expected<Value> Dict::setdefault_for_str(ThreadState *thread,
+                                             TValue<String> key,
+                                             Value default_value)
+    {
+        (void)thread;
+        if(string_keyed_contains(key))
+        {
+            Value result = string_keyed_lookup(key);
+            if(result.is_exception_marker())
+            {
+                return Expected<Value>::propagate_exception();
+            }
+            return Expected<Value>::ok(result);
+        }
+        string_keyed_insert(key, default_value);
+        return Expected<Value>::ok(default_value);
+    }
+
+    const int32_t *Dict::find_entry(TValue<String> key) const
     {
         return find_entry_with_provided_hash(key, internal_hash(key));
     }
 
-    int32_t *Dict::find_entry(Value key)
+    int32_t *Dict::find_entry(TValue<String> key)
     {
         return find_entry_with_provided_hash(key, internal_hash(key));
     }
 
-    int32_t *Dict::find_entry_with_provided_hash(Value key,
+    int32_t *Dict::find_entry_with_provided_hash(TValue<String> key,
                                                  TValue<SMI> hash_smi)
     {
         const Dict *self = this;
@@ -822,7 +925,8 @@ namespace cl
     }
 
     const int32_t *
-    Dict::find_entry_with_provided_hash(Value key, TValue<SMI> hash_smi) const
+    Dict::find_entry_with_provided_hash(TValue<String> key,
+                                        TValue<SMI> hash_smi) const
     {
         uint64_t hash = hash_smi.extract();
         uint32_t hash_table_size_m1 = hash_table.size() - 1;
@@ -847,7 +951,8 @@ namespace cl
                 hash_idx = (hash_idx + 1) & hash_table_size_m1;
                 continue;
             }
-            if(internal_eq(key, entries[entry_idx].key))
+            if(internal_eq(key, TValue<String>::from_value_unchecked(
+                                    entries[entry_idx].key)))
             {
                 return &hash_table[hash_idx];
             }
@@ -856,7 +961,7 @@ namespace cl
         }
     }
 
-    Value Dict::get_item(Value key) const
+    Value Dict::string_keyed_lookup(TValue<String> key) const
     {
         const int32_t *iidx = find_entry(key);
         int32_t idx = *iidx;
@@ -871,7 +976,7 @@ namespace cl
         return active_thread()->set_pending_builtin_exception_none(L"KeyError");
     }
 
-    Value Dict::del_item(Value key)
+    Value Dict::string_keyed_delete(TValue<String> key)
     {
         int32_t *iidx = find_entry(key);
         int32_t idx = *iidx;
@@ -886,9 +991,8 @@ namespace cl
         return active_thread()->set_pending_builtin_exception_none(L"KeyError");
     }
 
-    void Dict::set_item(Value key, Value value)
+    void Dict::string_keyed_insert(TValue<String> key, Value value)
     {
-        key.assert_not_vm_sentinel();
         value.assert_not_vm_sentinel();
 
         if(entries.size() > hash_table.size() * max_load_nom / max_load_denom)
@@ -903,7 +1007,7 @@ namespace cl
         {
             idx = entries.size();
             *entry = idx;
-            entries.emplace_back(key, value, hash);
+            entries.emplace_back(key.raw_value(), value, hash);
             ++n_valid_entries;
         }
         else
@@ -913,7 +1017,10 @@ namespace cl
         }
     }
 
-    bool Dict::contains(Value key) const { return *find_entry(key) >= 0; }
+    bool Dict::string_keyed_contains(TValue<String> key) const
+    {
+        return *find_entry(key) >= 0;
+    }
 
     void Dict::clear()
     {
@@ -948,7 +1055,8 @@ namespace cl
                 entries.set(write_idx, entry);
             }
             int32_t *hash_entry = find_entry_with_provided_hash(
-                entries[write_idx].key, entries[write_idx].hash);
+                TValue<String>::from_value_unchecked(entries[write_idx].key),
+                entries[write_idx].hash);
             *hash_entry = static_cast<int32_t>(write_idx);
             ++write_idx;
         }

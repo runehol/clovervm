@@ -809,6 +809,9 @@ A possible naming shape is:
                                       Value value);
 [[nodiscard]] Expected<void> del_item(ThreadState *thread, Value key);
 [[nodiscard]] Expected<bool> contains(ThreadState *thread, Value key);
+[[nodiscard]] Expected<Value> pop(ThreadState *thread, Value key);
+[[nodiscard]] Expected<Value> setdefault(ThreadState *thread, Value key,
+                                         Value default_value);
 
 // Same semantics, but the incoming lookup key is known exact str.
 [[nodiscard]] Expected<Value> get_item_for_str(ThreadState *thread,
@@ -819,6 +822,11 @@ A possible naming shape is:
                                               TValue<String> key);
 [[nodiscard]] Expected<bool> contains_for_str(ThreadState *thread,
                                               TValue<String> key);
+[[nodiscard]] Expected<Value> pop_for_str(ThreadState *thread,
+                                          TValue<String> key);
+[[nodiscard]] Expected<Value> setdefault_for_str(ThreadState *thread,
+                                                 TValue<String> key,
+                                                 Value default_value);
 ```
 
 The string-key semantic helpers should use distinct names rather than overloads.
@@ -827,15 +835,31 @@ the receiver has the canonical string-keyed shape they may use the trusted
 string-keyed fast path; otherwise they delegate to the general semantic path and
 remain fallible.
 
-Private shape-guarded helpers may use names such as `string_keyed_lookup`,
+Raw shape-guarded helpers may use names such as `string_keyed_lookup`,
 `string_keyed_insert`, `string_keyed_delete`, and `string_keyed_contains`. These
-should be private `Dict` implementation methods used only after the caller has
-proved the canonical string-keyed shape and exact `str` key. They must not be
-exposed as the C++ semantic interface.
+are not semantic APIs. They may be exposed inside the C++ runtime only for
+VM-owned string-keyed storage, such as a freshly allocated `**kwargs` capture
+dict, or for trusted handlers after exact receiver/key guards. They must not be
+used for Python-visible dictionaries such as `sys.modules`, because user code
+can mutate those dictionaries into general-key cases.
 
 The required property is that no public C++ method with a generic name silently
 means "string-only". Either the method is semantic and fallible, or it is a
-private shape-guarded helper that cannot be reached as a general dict interface.
+raw shape-guarded helper whose name makes the string-keyed storage requirement
+explicit.
+
+Composed dict operations must delegate through the same semantic paths rather
+than reaching into raw string-keyed storage:
+
+- `get` is lookup.
+- `pop` is lookup followed by deletion.
+- `setdefault` is lookup followed by insertion on miss.
+- `update` is repeated semantic insertion from another mapping or key/value
+  iterable. It promotes if any contributed key needs the general path.
+- `fromkeys` and dict display construction are repeated insertion.
+
+`popitem`, `clear`, views, and iteration do not choose keys and should not
+promote by themselves.
 
 These are internal C++ APIs, so pending-exception propagation should be explicit
 in the return type. Native-method and interpreter opcode wrappers can translate
@@ -891,12 +915,17 @@ reason to move hot general dict lookup into opaque C++ code.
 When public `dict` unification resumes, existing native VM uses should be
 audited into these buckets:
 
-- Import caches, `sys.modules`, module globals, and bootstrap construction use
-  exact interned string keys. They should move to exact-string helpers and
-  should not accidentally become semantic Python dict operations.
+- Import caches and bootstrap-only construction use exact interned string keys.
+  They should move to exact-string helpers and should not accidentally become
+  semantic Python dict operations.
+- `sys.modules` is Python-visible and user code can put arbitrary keys or values
+  in it. Import machinery may use semantic `*_for_str` helpers for known string
+  lookup keys, but it must not use raw `string_keyed_*` helpers.
 - Python-visible dict methods, `dict.fromkeys`, `update`, `setdefault`, `pop`,
   and subscription operators must route through semantic helpers once they can
-  observe general-key public dicts.
+  observe general-key public dicts. In particular, `update` must not copy raw
+  table entries: it iterates source key/value pairs and applies semantic
+  insertion to each pair, so a non-string source key promotes the target dict.
 - Trusted string fast paths may call private raw string-shape helpers only after
   guards prove both receiver shape and key shape.
 
@@ -1143,8 +1172,8 @@ Resolved representation direction:
   path once native-type subclassing is supported, because subclass shapes behave
   as general dict shapes.
 - String-key semantic C++ helpers should use explicit names like
-  `get_item_for_str`; private canonical-shape helpers should be private `Dict`
-  methods named like `string_keyed_lookup`.
+  `get_item_for_str`; raw canonical-shape helpers should have visibly
+  non-semantic names like `string_keyed_lookup`.
 - A failed non-string insertion does not need to roll back promotion if hashing
   or equality raises after the shape transition.
 - The first public general-key path may use the existing C++ semantic drivers and
@@ -1210,40 +1239,53 @@ Stage invariant:
 
 ### 9b. Public Dict Semantic C++ API
 
-- [ ] Introduce semantic `Dict` C++ operations with explicit fallibility:
+- [x] Introduce semantic `Dict` C++ operations with explicit fallibility:
   `get_item(ThreadState *, Value)`, `set_item(ThreadState *, Value, Value)`,
-  `del_item(ThreadState *, Value)`, and `contains(ThreadState *, Value)`.
-- [ ] Introduce typed-string-key semantic variants:
+  `del_item(ThreadState *, Value)`, `contains(ThreadState *, Value)`,
+  `pop(ThreadState *, Value)`, and
+  `setdefault(ThreadState *, Value, Value)`.
+- [x] Introduce typed-string-key semantic variants:
   `get_item_for_str`, `set_item_for_str`, `del_item_for_str`, and
-  `contains_for_str`.
-- [ ] Keep private exact-shape helpers visually distinct with names such as
+  `contains_for_str`, `pop_for_str`, and `setdefault_for_str`.
+- [x] Keep raw exact-shape helpers visually distinct with names such as
   `string_keyed_lookup`, `string_keyed_insert`, `string_keyed_delete`, and
   `string_keyed_contains`.
-- [ ] Add focused C++ API tests for exact string-keyed fast paths,
-  `*_for_str` typed-key operations, and general semantic delegation.
+- [x] Add focused C++ API tests for exact string-keyed fast paths,
+  `*_for_str` typed-key operations, composed operations such as `pop` and
+  `setdefault`, and temporary non-string-key rejection.
 
 Stage invariant:
 
-- Private `string_keyed_*` helpers are usable only after proving canonical
-  string-keyed shape and exact `str` key. They are not semantic APIs.
+- Raw `string_keyed_*` helpers are usable only after proving canonical
+  string-keyed shape and exact `str` key, or for freshly allocated VM-owned
+  string-keyed storage such as `**kwargs` capture dicts. They are not semantic
+  APIs and must not be used for Python-visible dictionaries such as
+  `sys.modules`.
+- General-key promotion and delegation are still out of scope; non-string `Value`
+  keys still fail before 9c/9d wire the general path into public `dict`.
 
 ### 9c. Shape-Only Promotion And Assignment
 
 - [ ] Add private C++ shape-only promotion from the canonical string-keyed shape
   to the exact-dict general shape.
 - [ ] Wire explicit assignment promotion first, such as `d = {}; d[1] = "x"`.
+- [ ] Route insertion-delegating operations through the promoted assignment path
+  once assignment promotion is correct: `setdefault` on miss, `update` for each
+  contributed key/value pair, `fromkeys`, and dict display construction.
+- [ ] Add tests that `d.update(other)` promotes `d` when `other` contributes a
+  non-string key.
 - [ ] Add hash/equality exception tests for promoted assignment.
 
 Stage invariant:
 
 - Dict displays with general keys are still out of scope.
 
-### 9d. Public Lookup, Membership, And Deletion
+### 9d. Public Lookup, Membership, Deletion, And Delegators
 
-- [ ] Route public `dict` lookup, membership, and deletion through the chosen
-  unified design.
-- [ ] Add tests for `d[1]`, `1 in d`, and `del d[1]` on promoted/general public
-  dicts.
+- [ ] Route public `dict` lookup, membership, deletion, and lookup/deletion
+  delegators through the chosen unified design.
+- [ ] Add tests for `d[1]`, `d.get(1)`, `d.pop(1)`, `1 in d`, and `del d[1]`
+  on promoted/general public dicts.
 - [ ] Add tests for propagated `__hash__` and `__eq__` exceptions and mutation
   during equality.
 

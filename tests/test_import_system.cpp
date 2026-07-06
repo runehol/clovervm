@@ -83,6 +83,34 @@ namespace
         return module->get_own_property(module_name(context, name));
     }
 
+    Value sys_modules_get(test::VmTestContext &context, TValue<String> name)
+    {
+        return context.vm()
+            .imported_modules()
+            .extract()
+            ->get_item_for_str(context.thread(), name)
+            .value();
+    }
+
+    void sys_modules_set(test::VmTestContext &context, TValue<String> name,
+                         Value value)
+    {
+        ASSERT_FALSE(context.vm()
+                         .imported_modules()
+                         .extract()
+                         ->set_item_for_str(context.thread(), name, value)
+                         .has_exception());
+    }
+
+    bool sys_modules_contains(test::VmTestContext &context, TValue<String> name)
+    {
+        return context.vm()
+            .imported_modules()
+            .extract()
+            ->contains_for_str(context.thread(), name)
+            .value();
+    }
+
     void use_source_tree_python_path(test::VmTestContext &context)
     {
         List *path = make_sys_path(context);
@@ -207,8 +235,7 @@ TEST(ImportSystem, ImportModuleAbsoluteLoadsExistingSourceTreeModule)
     ASSERT_TRUE(can_convert_to<ModuleObject>(imported));
     ModuleObject *module = imported.get_ptr<ModuleObject>();
 
-    EXPECT_EQ(imported, context.vm().imported_modules().extract()->get_item(
-                            name.raw_value()));
+    EXPECT_EQ(imported, sys_modules_get(context, name));
     EXPECT_EQ(L"assignment",
               value_as_wstring(module_attr(context, module, L"__name__")));
     EXPECT_EQ(Value::None(), module_attr(context, module, L"__doc__"));
@@ -237,8 +264,7 @@ TEST(ImportSystem, ImportModuleAbsoluteReturnsExistingSysModulesValue)
     use_source_tree_python_path(context);
 
     TValue<String> name = module_name(context, L"assignment");
-    context.vm().imported_modules().extract()->set_item(name.raw_value(),
-                                                        Value::from_smi(77));
+    sys_modules_set(context, name, Value::from_smi(77));
 
     EXPECT_EQ(Value::from_smi(77),
               import_module_absolute(context.thread(), name));
@@ -251,8 +277,7 @@ TEST(ImportSystem, ImportModuleAbsoluteRaisesWhenSysModulesValueIsNone)
     use_source_tree_python_path(context);
 
     TValue<String> name = module_name(context, L"assignment");
-    context.vm().imported_modules().extract()->set_item(name.raw_value(),
-                                                        Value::None());
+    sys_modules_set(context, name, Value::None());
 
     Value imported = import_module_absolute(context.thread(), name);
     EXPECT_TRUE(imported.is_exception_marker());
@@ -280,9 +305,7 @@ TEST(ImportSystem, ImportModuleAbsoluteReturnsSysModulesReplacementAfterExec)
     TValue<String> name = module_name(context, L"replacement");
     Value imported = import_module_absolute(context.thread(), name);
     EXPECT_EQ(Value::from_smi(42), imported);
-    EXPECT_EQ(
-        Value::from_smi(42),
-        context.vm().imported_modules().extract()->get_item(name.raw_value()));
+    EXPECT_EQ(Value::from_smi(42), sys_modules_get(context, name));
 }
 
 TEST(ImportSystem, ImportModuleAbsoluteInstallsPackagePath)
@@ -398,13 +421,12 @@ TEST(ImportSystem, ImportModuleAbsoluteLoadsDottedModuleAndBindsParentAttribute)
               value_as_wstring(module_attr(context, child, L"__package__")));
     EXPECT_EQ(Value::from_smi(42), module_attr(context, child, L"value"));
 
-    Value parent_value = context.vm().imported_modules().extract()->get_item(
-        module_name(context, L"pkg").raw_value());
+    Value parent_value = sys_modules_get(context, module_name(context, L"pkg"));
     ASSERT_TRUE(can_convert_to<ModuleObject>(parent_value));
     ModuleObject *parent = parent_value.get_ptr<ModuleObject>();
     EXPECT_EQ(imported, module_attr(context, parent, L"mod"));
-    EXPECT_EQ(imported, context.vm().imported_modules().extract()->get_item(
-                            module_name(context, L"pkg.mod").raw_value()));
+    EXPECT_EQ(imported,
+              sys_modules_get(context, module_name(context, L"pkg.mod")));
 }
 
 TEST(ImportSystem, ImportModuleAbsoluteRaisesModuleNotFoundForMiss)
@@ -423,8 +445,7 @@ TEST(ImportSystem, ImportModuleAbsoluteRaisesModuleNotFoundForMiss)
               exception.extract()->get_shape()->get_class());
     EXPECT_EQ(L"No module named 'notpresent'",
               value_as_wstring(exception.extract()->message.value()));
-    EXPECT_FALSE(
-        context.vm().imported_modules().extract()->contains(name.raw_value()));
+    EXPECT_FALSE(sys_modules_contains(context, name));
 }
 
 TEST(ImportSystem, ImportModuleAbsoluteRaisesWhenParentIsNotPackage)
@@ -448,10 +469,9 @@ TEST(ImportSystem, ImportModuleAbsoluteRaisesWhenParentIsNotPackage)
               exception.extract()->get_shape()->get_class());
     EXPECT_EQ(L"No module named 'pkg.mod'; 'pkg' is not a package",
               value_as_wstring(exception.extract()->message.value()));
-    EXPECT_TRUE(context.vm().imported_modules().extract()->contains(
-        module_name(context, L"pkg").raw_value()));
-    EXPECT_FALSE(context.vm().imported_modules().extract()->contains(
-        module_name(context, L"pkg.mod").raw_value()));
+    EXPECT_TRUE(sys_modules_contains(context, module_name(context, L"pkg")));
+    EXPECT_FALSE(
+        sys_modules_contains(context, module_name(context, L"pkg.mod")));
 }
 
 TEST(ImportSystem, ImportModuleAbsoluteRemovesModuleOnExecutionFailure)
@@ -476,8 +496,7 @@ TEST(ImportSystem, ImportModuleAbsoluteRemovesModuleOnExecutionFailure)
                   .extract()
                   ->get_shape()
                   ->get_class());
-    EXPECT_FALSE(
-        context.vm().imported_modules().extract()->contains(name.raw_value()));
+    EXPECT_FALSE(sys_modules_contains(context, name));
 }
 
 TEST(ImportSystem, ImportModuleAbsoluteRemovesModuleOnCompileFailure)
@@ -500,8 +519,7 @@ TEST(ImportSystem, ImportModuleAbsoluteRemovesModuleOnCompileFailure)
     EXPECT_EQ(L"SyntaxError",
               value_as_wstring(
                   exception.extract()->get_shape()->get_class()->get_name()));
-    EXPECT_FALSE(
-        context.vm().imported_modules().extract()->contains(name.raw_value()));
+    EXPECT_FALSE(sys_modules_contains(context, name));
 }
 
 TEST(ImportSystem, BuiltinImportLoadsAbsoluteModule)
@@ -525,8 +543,7 @@ TEST(ImportSystem, BuiltinImportUsesDefaultsAndReturnsCachedValue)
     use_source_tree_python_path(context);
 
     TValue<String> name = module_name(context, L"assignment");
-    context.vm().imported_modules().extract()->set_item(name.raw_value(),
-                                                        Value::from_smi(55));
+    sys_modules_set(context, name, Value::from_smi(55));
 
     EXPECT_EQ(Value::from_smi(55),
               context.run_file(L"__import__('assignment')\n"));

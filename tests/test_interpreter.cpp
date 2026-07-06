@@ -4262,8 +4262,15 @@ TEST(Interpreter, dict_literal_returns_dict_object)
     Value beta = test_context.vm()
                      .get_or_create_interned_string_value(L"beta")
                      .raw_value();
-    EXPECT_EQ(Value::from_smi(7), dict->get_item(alpha));
-    EXPECT_EQ(Value::from_smi(9), dict->get_item(beta));
+    EXPECT_EQ(
+        Value::from_smi(7),
+        dict->get_item_for_str(test_context.thread(),
+                               TValue<String>::from_value_unchecked(alpha))
+            .value());
+    EXPECT_EQ(Value::from_smi(9),
+              dict->get_item_for_str(test_context.thread(),
+                                     TValue<String>::from_value_unchecked(beta))
+                  .value());
 }
 
 TEST(Interpreter,
@@ -5775,18 +5782,31 @@ TEST(Interpreter, call_clovervm_method_calls_builtin_repr_methods)
         test_context.vm().get_or_create_interned_string_value(L"beta");
     TValue<String> removed =
         test_context.vm().get_or_create_interned_string_value(L"removed");
-    dict->set_item(alpha.raw_value(), Value::from_smi(1));
-    dict->set_item(removed.raw_value(), Value::from_smi(99));
-    dict->set_item(beta.raw_value(), Value::True());
-    ASSERT_EQ(Value::None(), dict->del_item(removed.raw_value()));
+    ASSERT_FALSE(
+        dict->set_item_for_str(test_context.thread(), alpha, Value::from_smi(1))
+            .has_exception());
+    ASSERT_FALSE(dict->set_item_for_str(test_context.thread(), removed,
+                                        Value::from_smi(99))
+                     .has_exception());
+    ASSERT_FALSE(
+        dict->set_item_for_str(test_context.thread(), beta, Value::True())
+            .has_exception());
+    ASSERT_FALSE(
+        dict->del_item_for_str(test_context.thread(), removed).has_exception());
     expect_method_string(Value::from_oop(dict), dunder_repr_name,
                          L"{'alpha': 1, 'beta': True}");
     expect_method_string(Value::from_oop(dict), dunder_str_name,
                          L"{'alpha': 1, 'beta': True}");
 
     Dict *reordered_dict = test_context.thread()->make_object_raw<Dict>();
-    reordered_dict->set_item(beta.raw_value(), Value::True());
-    reordered_dict->set_item(alpha.raw_value(), Value::from_smi(1));
+    ASSERT_FALSE(
+        reordered_dict
+            ->set_item_for_str(test_context.thread(), beta, Value::True())
+            .has_exception());
+    ASSERT_FALSE(
+        reordered_dict
+            ->set_item_for_str(test_context.thread(), alpha, Value::from_smi(1))
+            .has_exception());
     Value dict_str = test_context.thread()->call_clovervm_method(
         Value::from_oop(dict), dunder_str_name);
     Value reordered_dict_str = test_context.thread()->call_clovervm_method(

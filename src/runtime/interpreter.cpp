@@ -1783,8 +1783,10 @@ namespace cl
                 if(dest == KeywordDestKwargsDict)
                 {
                     assert(kwargs_dict != nullptr);
-                    kwargs_dict->set_item(
-                        keyword_names.extract()->item_unchecked(kw_idx), value);
+                    kwargs_dict->string_keyed_insert(
+                        TValue<String>::from_value_unchecked(
+                            keyword_names.extract()->item_unchecked(kw_idx)),
+                        value);
                     continue;
                 }
                 new_fp[dest] = value;
@@ -4158,7 +4160,18 @@ namespace cl
         {
             Value key = fp[reg - int8_t(idx * 2)];
             Value value = fp[reg - int8_t(idx * 2 + 1)];
-            dict.extract()->set_item(key, value);
+            Expected<void> inserted =
+                dict.extract()->set_item(thread, key, value);
+            if(unlikely(inserted.has_exception()))
+            {
+                ExceptionalTarget target =
+                    resolve_exceptional_frame_exit(thread, fp, pc, code_object);
+                fp = target.fp;
+                code_object = target.code_object;
+                pc = target.interpreted_pc;
+                START(0);
+                COMPLETE();
+            }
         }
         accumulator = dict.raw_value();
 

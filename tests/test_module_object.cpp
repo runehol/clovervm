@@ -98,9 +98,11 @@ TEST(ModuleObject, SysModulesIsCanonicalImportedModulesDict)
         context.vm().get_or_create_interned_string_value(L"sys");
     TValue<String> builtins_name =
         context.vm().get_or_create_interned_string_value(L"builtins");
-    EXPECT_EQ(Value::from_oop(sys), modules->get_item(sys_name.raw_value()));
-    EXPECT_EQ(context.vm().global_builtins_module().raw_value(),
-              modules->get_item(builtins_name.raw_value()));
+    EXPECT_EQ(Value::from_oop(sys),
+              modules->get_item_for_str(context.thread(), sys_name).value());
+    EXPECT_EQ(
+        context.vm().global_builtins_module().raw_value(),
+        modules->get_item_for_str(context.thread(), builtins_name).value());
 }
 
 TEST(ModuleObject, SysPathStartsWithEmptyStringBuildStdlibAndStdlib)

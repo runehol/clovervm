@@ -5,6 +5,7 @@
 #include "runtime/exception_object.h"
 #include "runtime/thread_state.h"
 #include "test_helpers.h"
+#include <cassert>
 #include <gtest/gtest.h>
 #include <string>
 #include <vector>
@@ -16,6 +17,40 @@ namespace
     static Value make_string(test::VmTestContext &context, const wchar_t *text)
     {
         return context.thread()->make_internal_value<String>(text).raw_value();
+    }
+
+    static TValue<String> string_key(Value key)
+    {
+        return TValue<String>::from_value_unchecked(key);
+    }
+
+    static void set_dict_item(ThreadState *thread, Dict *dict, Value key,
+                              Value value)
+    {
+        ASSERT_FALSE(dict->set_item_for_str(thread, string_key(key), value)
+                         .has_exception());
+    }
+
+    static Value get_dict_item(ThreadState *thread, Dict *dict, Value key)
+    {
+        Expected<Value> result =
+            dict->get_item_for_str(thread, string_key(key));
+        return result.has_exception() ? Value::exception_marker()
+                                      : result.value();
+    }
+
+    static Value del_dict_item(ThreadState *thread, Dict *dict, Value key)
+    {
+        Expected<void> result = dict->del_item_for_str(thread, string_key(key));
+        return result.has_exception() ? Value::exception_marker()
+                                      : Value::None();
+    }
+
+    static bool dict_contains(ThreadState *thread, Dict *dict, Value key)
+    {
+        Expected<bool> result = dict->contains_for_str(thread, string_key(key));
+        assert(!result.has_exception());
+        return result.value();
     }
 
     static void expect_pending_exception(ThreadState *thread,
@@ -44,15 +79,94 @@ TEST(Dict, SetGetAndContainsWorkForStringKeys)
     Value alpha = make_string(context, L"alpha");
     Value beta = make_string(context, L"beta");
 
-    dict->set_item(alpha, Value::from_smi(11));
-    dict->set_item(beta, Value::from_smi(22));
+    set_dict_item(context.thread(), dict, alpha, Value::from_smi(11));
+    set_dict_item(context.thread(), dict, beta, Value::from_smi(22));
 
     EXPECT_EQ(2u, dict->size());
     EXPECT_FALSE(dict->empty());
-    EXPECT_TRUE(dict->contains(alpha));
-    EXPECT_TRUE(dict->contains(beta));
-    EXPECT_EQ(Value::from_smi(11), dict->get_item(alpha));
-    EXPECT_EQ(Value::from_smi(22), dict->get_item(beta));
+    EXPECT_TRUE(dict_contains(context.thread(), dict, alpha));
+    EXPECT_TRUE(dict_contains(context.thread(), dict, beta));
+    EXPECT_EQ(Value::from_smi(11),
+              get_dict_item(context.thread(), dict, alpha));
+    EXPECT_EQ(Value::from_smi(22), get_dict_item(context.thread(), dict, beta));
+}
+
+TEST(Dict, SemanticApiAcceptsStringValueKeys)
+{
+    test::VmTestContext context;
+    ThreadState *thread = context.thread();
+    ThreadState::ActivationScope activation_scope(thread);
+    Dict *dict = thread->make_object_raw<Dict>();
+
+    Value key = make_string(context, L"key");
+
+    ASSERT_FALSE(
+        dict->set_item(thread, key, Value::from_smi(42)).has_exception());
+    EXPECT_TRUE(dict->contains(thread, key).value());
+    EXPECT_EQ(Value::from_smi(42), dict->get_item(thread, key).value());
+    ASSERT_FALSE(dict->del_item(thread, key).has_exception());
+    EXPECT_FALSE(dict->contains(thread, key).value());
+}
+
+TEST(Dict, SemanticApiPopAndSetdefaultAcceptStringValueKeys)
+{
+    test::VmTestContext context;
+    ThreadState *thread = context.thread();
+    ThreadState::ActivationScope activation_scope(thread);
+    Dict *dict = thread->make_object_raw<Dict>();
+
+    Value key = make_string(context, L"key");
+
+    EXPECT_EQ(Value::from_smi(10),
+              dict->setdefault(thread, key, Value::from_smi(10)).value());
+    EXPECT_EQ(Value::from_smi(10), dict->get_item(thread, key).value());
+    EXPECT_EQ(Value::from_smi(10),
+              dict->setdefault(thread, key, Value::from_smi(20)).value());
+    EXPECT_EQ(Value::from_smi(10), dict->get_item(thread, key).value());
+
+    EXPECT_EQ(Value::from_smi(10), dict->pop(thread, key).value());
+    EXPECT_FALSE(dict->contains(thread, key).value());
+}
+
+TEST(Dict, SemanticApiRejectsNonStringKeysUntilPromotionStage)
+{
+    test::VmTestContext context;
+    ThreadState *thread = context.thread();
+    ThreadState::ActivationScope activation_scope(thread);
+    Dict *dict = thread->make_object_raw<Dict>();
+
+    EXPECT_TRUE(dict->get_item(thread, Value::from_smi(1)).has_exception());
+    expect_pending_exception(thread, L"TypeError", L"dict keys must be str");
+    thread->clear_pending_exception();
+
+    EXPECT_TRUE(dict->set_item(thread, Value::from_smi(1), Value::from_smi(11))
+                    .has_exception());
+    expect_pending_exception(thread, L"TypeError", L"dict keys must be str");
+    thread->clear_pending_exception();
+
+    EXPECT_TRUE(dict->del_item(thread, Value::from_smi(1)).has_exception());
+    expect_pending_exception(thread, L"TypeError", L"dict keys must be str");
+    thread->clear_pending_exception();
+
+    EXPECT_TRUE(dict->contains(thread, Value::from_smi(1)).has_exception());
+    expect_pending_exception(thread, L"TypeError", L"dict keys must be str");
+}
+
+TEST(Dict, SemanticApiPopAndSetdefaultRejectNonStringKeysUntilPromotionStage)
+{
+    test::VmTestContext context;
+    ThreadState *thread = context.thread();
+    ThreadState::ActivationScope activation_scope(thread);
+    Dict *dict = thread->make_object_raw<Dict>();
+
+    EXPECT_TRUE(dict->pop(thread, Value::from_smi(1)).has_exception());
+    expect_pending_exception(thread, L"TypeError", L"dict keys must be str");
+    thread->clear_pending_exception();
+
+    EXPECT_TRUE(
+        dict->setdefault(thread, Value::from_smi(1), Value::from_smi(11))
+            .has_exception());
+    expect_pending_exception(thread, L"TypeError", L"dict keys must be str");
 }
 
 TEST(Dict, ExactBuiltinDictShapesAreCached)
@@ -100,24 +214,24 @@ TEST(Dict, TableGenerationChangesOnlyWhenProbeStructureChanges)
     Value beta = make_string(context, L"beta");
 
     EXPECT_EQ(0u, dict->table_generation());
-    dict->set_item(alpha, Value::from_smi(11));
+    set_dict_item(context.thread(), dict, alpha, Value::from_smi(11));
     EXPECT_EQ(0u, dict->table_generation());
-    dict->set_item(alpha, Value::from_smi(99));
+    set_dict_item(context.thread(), dict, alpha, Value::from_smi(99));
     EXPECT_EQ(0u, dict->table_generation());
-    EXPECT_EQ(Value::None(), dict->del_item(alpha));
+    EXPECT_EQ(Value::None(), del_dict_item(context.thread(), dict, alpha));
     EXPECT_EQ(0u, dict->table_generation());
 
     dict->clear();
     EXPECT_EQ(1u, dict->table_generation());
-    dict->set_item(beta, Value::from_smi(22));
+    set_dict_item(context.thread(), dict, beta, Value::from_smi(22));
     EXPECT_EQ(1u, dict->table_generation());
 
     for(int64_t key = 0; key < 20; ++key)
     {
         std::wstring text = L"key";
         text += std::to_wstring(key);
-        dict->set_item(make_string(context, text.c_str()),
-                       Value::from_smi(key));
+        set_dict_item(context.thread(), dict,
+                      make_string(context, text.c_str()), Value::from_smi(key));
     }
 
     EXPECT_GT(dict->table_generation(), 1u);
@@ -133,10 +247,10 @@ TEST(Dict, ReinsertReusesTombstoneWithoutChangingEntryOrder)
     Value second = make_string(context, L"second");
     Value third = make_string(context, L"third");
 
-    dict->set_item(first, Value::from_smi(1));
-    dict->set_item(second, Value::from_smi(2));
-    EXPECT_EQ(Value::None(), dict->del_item(first));
-    dict->set_item(third, Value::from_smi(3));
+    set_dict_item(context.thread(), dict, first, Value::from_smi(1));
+    set_dict_item(context.thread(), dict, second, Value::from_smi(2));
+    EXPECT_EQ(Value::None(), del_dict_item(context.thread(), dict, first));
+    set_dict_item(context.thread(), dict, third, Value::from_smi(3));
 
     EXPECT_EQ(2u, dict->size());
     EXPECT_EQ(3u, dict->entry_storage_size());
@@ -622,11 +736,11 @@ TEST(Dict, SetItemOverwritesExistingValue)
 
     Value key = make_string(context, L"shared");
 
-    dict->set_item(key, Value::from_smi(1));
-    dict->set_item(key, Value::from_smi(99));
+    set_dict_item(context.thread(), dict, key, Value::from_smi(1));
+    set_dict_item(context.thread(), dict, key, Value::from_smi(99));
 
     EXPECT_EQ(1u, dict->size());
-    EXPECT_EQ(Value::from_smi(99), dict->get_item(key));
+    EXPECT_EQ(Value::from_smi(99), get_dict_item(context.thread(), dict, key));
 }
 
 TEST(Dict, SetItemOverwriteEnqueuesOverwrittenObject)
@@ -642,13 +756,13 @@ TEST(Dict, SetItemOverwriteEnqueuesOverwrittenObject)
     Owned<Value> keep_new(new_value);
     HeapObject *old_object = old_value.as.ptr;
     HeapObject *new_object = new_value.as.ptr;
-    dict->set_item(key, old_value);
+    set_dict_item(context.thread(), dict, key, old_value);
     ASSERT_FALSE(thread->zero_count_table_contains_for_testing(old_object));
     ASSERT_EQ(HeapLifecycleState::Normal, old_object->lifecycle_state);
 
-    dict->set_item(key, new_value);
+    set_dict_item(context.thread(), dict, key, new_value);
 
-    EXPECT_EQ(new_value, dict->get_item(key));
+    EXPECT_EQ(new_value, get_dict_item(context.thread(), dict, key));
     EXPECT_EQ(0, old_object->refcount);
     EXPECT_EQ(HeapLifecycleState::InZct, old_object->lifecycle_state);
     EXPECT_TRUE(thread->zero_count_table_contains_for_testing(old_object));
@@ -664,15 +778,16 @@ TEST(Dict, DelItemRemovesKeyFromLookupAndLogicalSize)
     Value keep = make_string(context, L"keep");
     Value erase = make_string(context, L"erase");
 
-    dict->set_item(keep, Value::from_smi(1));
-    dict->set_item(erase, Value::from_smi(2));
-    EXPECT_EQ(Value::None(), dict->del_item(erase));
+    set_dict_item(context.thread(), dict, keep, Value::from_smi(1));
+    set_dict_item(context.thread(), dict, erase, Value::from_smi(2));
+    EXPECT_EQ(Value::None(), del_dict_item(context.thread(), dict, erase));
 
     EXPECT_EQ(1u, dict->size());
-    EXPECT_TRUE(dict->contains(keep));
-    EXPECT_FALSE(dict->contains(erase));
-    EXPECT_EQ(Value::from_smi(1), dict->get_item(keep));
-    EXPECT_TRUE(dict->get_item(erase).is_exception_marker());
+    EXPECT_TRUE(dict_contains(context.thread(), dict, keep));
+    EXPECT_FALSE(dict_contains(context.thread(), dict, erase));
+    EXPECT_EQ(Value::from_smi(1), get_dict_item(context.thread(), dict, keep));
+    EXPECT_TRUE(
+        get_dict_item(context.thread(), dict, erase).is_exception_marker());
     expect_pending_exception(context.thread(), L"KeyError", L"");
 }
 
@@ -685,18 +800,20 @@ TEST(Dict, CopyConstructorPreservesLiveEntriesOnly)
     Value first = make_string(context, L"first");
     Value second = make_string(context, L"second");
 
-    dict->set_item(first, Value::from_smi(10));
-    dict->set_item(second, Value::from_smi(20));
-    EXPECT_EQ(Value::None(), dict->del_item(first));
+    set_dict_item(context.thread(), dict, first, Value::from_smi(10));
+    set_dict_item(context.thread(), dict, second, Value::from_smi(20));
+    EXPECT_EQ(Value::None(), del_dict_item(context.thread(), dict, first));
 
     Dict copy(context.thread()->class_for_native_layout(Dict::native_layout),
               *dict);
 
     EXPECT_EQ(1u, copy.size());
-    EXPECT_FALSE(copy.contains(first));
-    EXPECT_TRUE(copy.contains(second));
-    EXPECT_EQ(Value::from_smi(20), copy.get_item(second));
-    EXPECT_TRUE(copy.get_item(first).is_exception_marker());
+    EXPECT_FALSE(dict_contains(context.thread(), &copy, first));
+    EXPECT_TRUE(dict_contains(context.thread(), &copy, second));
+    EXPECT_EQ(Value::from_smi(20),
+              get_dict_item(context.thread(), &copy, second));
+    EXPECT_TRUE(
+        get_dict_item(context.thread(), &copy, first).is_exception_marker());
     expect_pending_exception(context.thread(), L"KeyError", L"");
 }
 
@@ -711,12 +828,12 @@ TEST(Dict, IteratorVisitsLiveEntriesInInsertionOrder)
     Value third = make_string(context, L"third");
     Value fourth = make_string(context, L"fourth");
 
-    dict->set_item(first, Value::from_smi(10));
-    dict->set_item(second, Value::from_smi(20));
-    dict->set_item(third, Value::from_smi(30));
-    EXPECT_EQ(Value::None(), dict->del_item(first));
-    EXPECT_EQ(Value::None(), dict->del_item(third));
-    dict->set_item(fourth, Value::from_smi(40));
+    set_dict_item(context.thread(), dict, first, Value::from_smi(10));
+    set_dict_item(context.thread(), dict, second, Value::from_smi(20));
+    set_dict_item(context.thread(), dict, third, Value::from_smi(30));
+    EXPECT_EQ(Value::None(), del_dict_item(context.thread(), dict, first));
+    EXPECT_EQ(Value::None(), del_dict_item(context.thread(), dict, third));
+    set_dict_item(context.thread(), dict, fourth, Value::from_smi(40));
 
     Value expected_keys[] = {second, fourth};
     Value expected_values[] = {Value::from_smi(20), Value::from_smi(40)};
@@ -743,13 +860,14 @@ TEST(Dict, GrowCompactsDeletedEntriesAndPreservesLiveEntries)
     {
         keys.push_back(
             make_string(context, (L"key-" + std::to_wstring(idx)).c_str()));
-        dict->set_item(keys.back(), Value::from_smi(idx));
+        set_dict_item(context.thread(), dict, keys.back(),
+                      Value::from_smi(idx));
     }
 
-    EXPECT_EQ(Value::None(), dict->del_item(keys[0]));
-    EXPECT_EQ(Value::None(), dict->del_item(keys[2]));
-    EXPECT_EQ(Value::None(), dict->del_item(keys[4]));
-    EXPECT_EQ(Value::None(), dict->del_item(keys[6]));
+    EXPECT_EQ(Value::None(), del_dict_item(context.thread(), dict, keys[0]));
+    EXPECT_EQ(Value::None(), del_dict_item(context.thread(), dict, keys[2]));
+    EXPECT_EQ(Value::None(), del_dict_item(context.thread(), dict, keys[4]));
+    EXPECT_EQ(Value::None(), del_dict_item(context.thread(), dict, keys[6]));
 
     std::vector<Value> new_keys;
     new_keys.reserve(13);
@@ -757,7 +875,8 @@ TEST(Dict, GrowCompactsDeletedEntriesAndPreservesLiveEntries)
     {
         new_keys.push_back(
             make_string(context, (L"new-key-" + std::to_wstring(idx)).c_str()));
-        dict->set_item(new_keys.back(), Value::from_smi(100 + idx));
+        set_dict_item(context.thread(), dict, new_keys.back(),
+                      Value::from_smi(100 + idx));
     }
 
     EXPECT_EQ(25u, dict->size());
@@ -765,16 +884,16 @@ TEST(Dict, GrowCompactsDeletedEntriesAndPreservesLiveEntries)
     {
         if(idx % 2 == 0 && idx < 8)
         {
-            EXPECT_FALSE(dict->contains(keys[idx]));
+            EXPECT_FALSE(dict_contains(context.thread(), dict, keys[idx]));
             continue;
         }
         EXPECT_EQ(Value::from_smi(static_cast<int64_t>(idx)),
-                  dict->get_item(keys[idx]));
+                  get_dict_item(context.thread(), dict, keys[idx]));
     }
     for(size_t idx = 0; idx < new_keys.size(); ++idx)
     {
         EXPECT_EQ(Value::from_smi(100 + static_cast<int64_t>(idx)),
-                  dict->get_item(new_keys[idx]));
+                  get_dict_item(context.thread(), dict, new_keys[idx]));
     }
 
     std::vector<Value> expected_keys = {keys[1],  keys[3],  keys[5],  keys[7],
@@ -801,8 +920,8 @@ TEST(Dict, EmptyIteratorEqualsEnd)
     EXPECT_EQ(dict->begin(), dict->end());
 
     Value key = make_string(context, L"key");
-    dict->set_item(key, Value::from_smi(1));
-    EXPECT_EQ(Value::None(), dict->del_item(key));
+    set_dict_item(context.thread(), dict, key, Value::from_smi(1));
+    EXPECT_EQ(Value::None(), del_dict_item(context.thread(), dict, key));
 
     EXPECT_EQ(dict->begin(), dict->end());
 }
@@ -816,19 +935,20 @@ TEST(Dict, ClearRemovesAllEntriesAndAllowsReuse)
     Value alpha = make_string(context, L"alpha");
     Value beta = make_string(context, L"beta");
 
-    dict->set_item(alpha, Value::from_smi(1));
-    dict->set_item(beta, Value::from_smi(2));
+    set_dict_item(context.thread(), dict, alpha, Value::from_smi(1));
+    set_dict_item(context.thread(), dict, beta, Value::from_smi(2));
     dict->clear();
 
     EXPECT_EQ(0u, dict->size());
     EXPECT_TRUE(dict->empty());
-    EXPECT_FALSE(dict->contains(alpha));
-    EXPECT_TRUE(dict->get_item(alpha).is_exception_marker());
+    EXPECT_FALSE(dict_contains(context.thread(), dict, alpha));
+    EXPECT_TRUE(
+        get_dict_item(context.thread(), dict, alpha).is_exception_marker());
     expect_pending_exception(context.thread(), L"KeyError", L"");
     context.thread()->clear_pending_exception();
 
-    dict->set_item(alpha, Value::from_smi(7));
+    set_dict_item(context.thread(), dict, alpha, Value::from_smi(7));
     EXPECT_EQ(1u, dict->size());
-    EXPECT_TRUE(dict->contains(alpha));
-    EXPECT_EQ(Value::from_smi(7), dict->get_item(alpha));
+    EXPECT_TRUE(dict_contains(context.thread(), dict, alpha));
+    EXPECT_EQ(Value::from_smi(7), get_dict_item(context.thread(), dict, alpha));
 }

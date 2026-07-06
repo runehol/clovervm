@@ -402,8 +402,11 @@ namespace cl
             main_name, machine->global_builtins_module().raw_value(),
             Value::None(), Value::None(), Value::None(), Value::None(), file);
 
-        machine->imported_modules().extract()->set_item(
-            main_name.raw_value(), Value::from_oop(module));
+        Expected<void> stored =
+            machine->imported_modules().extract()->set_item_for_str(
+                this, main_name, Value::from_oop(module));
+        assert(!stored.has_exception());
+        (void)stored;
         return module;
     }
 

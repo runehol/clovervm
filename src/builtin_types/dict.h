@@ -12,6 +12,7 @@ namespace cl
     class ClassObject;
     struct DictStorageLayoutAssertions;
     class List;
+    class String;
     class ThreadState;
     class Tuple;
 
@@ -70,12 +71,28 @@ namespace cl
 
         Dict(ClassObject *cls, const Dict &other);
 
-        void set_item(Value key, Value value);
-        [[nodiscard]] Value get_item(Value key) const;
+        [[nodiscard]] Expected<Value> get_item(ThreadState *thread, Value key);
+        [[nodiscard]] Expected<void> set_item(ThreadState *thread, Value key,
+                                              Value value);
+        [[nodiscard]] Expected<void> del_item(ThreadState *thread, Value key);
+        [[nodiscard]] Expected<bool> contains(ThreadState *thread, Value key);
+        [[nodiscard]] Expected<Value> pop(ThreadState *thread, Value key);
+        [[nodiscard]] Expected<Value> setdefault(ThreadState *thread, Value key,
+                                                 Value default_value);
 
-        [[nodiscard]] Value del_item(Value key);
-
-        bool contains(Value key) const;
+        [[nodiscard]] Expected<Value> get_item_for_str(ThreadState *thread,
+                                                       TValue<String> key);
+        [[nodiscard]] Expected<void>
+        set_item_for_str(ThreadState *thread, TValue<String> key, Value value);
+        [[nodiscard]] Expected<void> del_item_for_str(ThreadState *thread,
+                                                      TValue<String> key);
+        [[nodiscard]] Expected<bool> contains_for_str(ThreadState *thread,
+                                                      TValue<String> key);
+        [[nodiscard]] Expected<Value> pop_for_str(ThreadState *thread,
+                                                  TValue<String> key);
+        [[nodiscard]] Expected<Value> setdefault_for_str(ThreadState *thread,
+                                                         TValue<String> key,
+                                                         Value default_value);
 
         size_t size() const { return n_valid_entries; }
         bool empty() const { return n_valid_entries == 0; }
@@ -91,14 +108,21 @@ namespace cl
         [[nodiscard]] Value keys();
         [[nodiscard]] Value values();
         [[nodiscard]] Value items();
-        [[nodiscard]] Value pop(Value key);
         [[nodiscard]] Value popitem();
-        [[nodiscard]] Value setdefault(Value key, Value default_value);
         void update_from_dict(const Dict *other);
         [[nodiscard]] static Value from_tuple_keys(const Tuple *keys,
                                                    Value value);
         [[nodiscard]] static Value from_list_keys(const List *keys,
                                                   Value value);
+
+        // Raw string-keyed storage operations. These are only for VM-owned
+        // dictionaries whose shape and contents are known string-keyed, or for
+        // trusted handlers after exact receiver/key guards. Python-visible dict
+        // operations must use the semantic APIs above.
+        [[nodiscard]] Value string_keyed_lookup(TValue<String> key) const;
+        void string_keyed_insert(TValue<String> key, Value value);
+        [[nodiscard]] Value string_keyed_delete(TValue<String> key);
+        bool string_keyed_contains(TValue<String> key) const;
 
     private:
         constexpr static uint32_t max_load_nom = 3;
@@ -107,11 +131,13 @@ namespace cl
         constexpr static int32_t not_present = -1;
         constexpr static size_t min_table_size = 16;
 
-        const int32_t *find_entry(Value key) const;
+        const int32_t *find_entry(TValue<String> key) const;
         const int32_t *
-        find_entry_with_provided_hash(Value key, TValue<SMI> hash_smi) const;
-        int32_t *find_entry(Value key);
-        int32_t *find_entry_with_provided_hash(Value key, TValue<SMI> hash_smi);
+        find_entry_with_provided_hash(TValue<String> key,
+                                      TValue<SMI> hash_smi) const;
+        int32_t *find_entry(TValue<String> key);
+        int32_t *find_entry_with_provided_hash(TValue<String> key,
+                                               TValue<SMI> hash_smi);
 
         void grow();
 

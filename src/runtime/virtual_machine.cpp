@@ -301,14 +301,15 @@ namespace cl
             }
             if(can_convert_to<Dict>(globals_arg))
             {
-                Value result =
-                    globals_arg.get_ptr<Dict>()->get_item(key.raw_value());
-                if(result.is_exception_marker())
+                Expected<Value> result =
+                    globals_arg.get_ptr<Dict>()->get_item_for_str(
+                        active_thread(), key);
+                if(result.has_exception())
                 {
                     active_thread()->clear_pending_exception();
                     return Value::not_present();
                 }
-                return result;
+                return result.value();
             }
             return Value::not_present();
         };
@@ -405,11 +406,11 @@ namespace cl
         TValue<String> top_name =
             active_thread()->get_machine()->get_or_create_interned_string_value(
                 full_name.substr(0, dot));
-        return active_thread()
-            ->get_machine()
-            ->imported_modules()
-            .extract()
-            ->get_item(top_name.raw_value());
+        return CL_TRY(active_thread()
+                          ->get_machine()
+                          ->imported_modules()
+                          .extract()
+                          ->get_item_for_str(active_thread(), top_name));
     }
 
     VirtualMachine::VirtualMachine()
@@ -1159,10 +1160,16 @@ namespace cl
 
         install_sys_static_attributes(this, sys_module_);
 
-        imported_modules_->set_item(sys_name.raw_value(),
-                                    Value::from_oop(sys_module_));
-        imported_modules_->set_item(builtins_name.raw_value(),
-                                    builtins_module.raw_value());
+        unwrap_bootstrap_expected(
+            this,
+            imported_modules_->set_item_for_str(get_default_thread(), sys_name,
+                                                Value::from_oop(sys_module_)),
+            "installing sys module");
+        unwrap_bootstrap_expected(this,
+                                  imported_modules_->set_item_for_str(
+                                      get_default_thread(), builtins_name,
+                                      builtins_module.raw_value()),
+                                  "installing builtins module");
     }
 
     void VirtualMachine::initialize_builtins()

@@ -17,6 +17,27 @@
 
 using namespace cl;
 
+namespace
+{
+    Value sys_modules_get(test::VmTestContext &context, TValue<String> name)
+    {
+        return context.vm()
+            .imported_modules()
+            .extract()
+            ->get_item_for_str(context.thread(), name)
+            .value();
+    }
+
+    bool sys_modules_contains(test::VmTestContext &context, TValue<String> name)
+    {
+        return context.vm()
+            .imported_modules()
+            .extract()
+            ->contains_for_str(context.thread(), name)
+            .value();
+    }
+}  // namespace
+
 TEST(NativeModuleBuild, TestModuleBuildsIntoBuildStdlib)
 {
     std::filesystem::path module_path =
@@ -230,8 +251,7 @@ TEST(NativeModuleBuild, ImportingNativeExtensionPopulatesModuleGlobals)
                       Value::from_smi(5), Value::from_smi(6),
                       Value::from_smi(7));
 
-    EXPECT_EQ(imported, context.vm().imported_modules().extract()->get_item(
-                            name.raw_value()));
+    EXPECT_EQ(imported, sys_modules_get(context, name));
 }
 
 TEST(NativeModuleBuild, TimeWrapperImportsNativeExtensionFunctions)
@@ -395,8 +415,7 @@ expect_native_import_error_and_uncached(test::VmTestContext &context,
               exception.extract()->get_shape()->get_class());
     EXPECT_EQ(expected_message, std::wstring(string_as_wchar_t(
                                     exception.extract()->message.value())));
-    EXPECT_FALSE(
-        context.vm().imported_modules().extract()->contains(name.raw_value()));
+    EXPECT_FALSE(sys_modules_contains(context, name));
 }
 
 TEST(NativeModuleBuild, ImportingNativeExtensionWithoutInitSymbolRaises)
@@ -417,8 +436,7 @@ TEST(NativeModuleBuild, ImportingNativeExtensionWithoutInitSymbolRaises)
         L"native module '_test_native_missing_symbol' does not export "
         L"'clover_module_init__test_native_missing_symbol'",
         std::wstring(string_as_wchar_t(exception.extract()->message.value())));
-    EXPECT_FALSE(
-        context.vm().imported_modules().extract()->contains(name.raw_value()));
+    EXPECT_FALSE(sys_modules_contains(context, name));
 }
 
 TEST(NativeModuleBuild, AddValuePropagatesExceptionMarker)
@@ -438,8 +456,7 @@ TEST(NativeModuleBuild, AddValuePropagatesExceptionMarker)
     EXPECT_EQ(
         L"integer is outside the supported native API range",
         std::wstring(string_as_wchar_t(exception.extract()->message.value())));
-    EXPECT_FALSE(
-        context.vm().imported_modules().extract()->contains(name.raw_value()));
+    EXPECT_FALSE(sys_modules_contains(context, name));
 }
 
 TEST(NativeModuleBuild, InitFailureWithoutExceptionRaisesImportError)

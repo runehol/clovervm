@@ -14,4 +14,15 @@
     }                                                                          \
     while(false)
 
+#define CL_SWALLOW_EXCEPTION(thread, expr)                                     \
+    do                                                                         \
+    {                                                                          \
+        auto cl_exception_swallow_result = (expr);                             \
+        if(unlikely(!cl_exception_swallow_result))                             \
+        {                                                                      \
+            (thread)->clear_pending_exception();                               \
+        }                                                                      \
+    }                                                                          \
+    while(false)
+
 #endif  // CL_EXCEPTION_PROPAGATION_H

@@ -18,6 +18,7 @@
 #include "object_model/owned.h"
 #include "object_model/slot_dict.h"
 #include "runtime/exception_object.h"
+#include "runtime/exception_propagation.h"
 #include "runtime/thread_state.h"
 #include "runtime/virtual_machine.h"
 #include <vector>
@@ -84,14 +85,8 @@ namespace cl
         void remove_imported_module(ThreadState *thread, TValue<String> name)
         {
             Dict *modules = thread->get_machine()->imported_modules().extract();
-            if(modules->contains(name.raw_value()))
-            {
-                Value deleted = modules->del_item(name.raw_value());
-                if(deleted.is_exception_marker())
-                {
-                    thread->clear_pending_exception();
-                }
-            }
+            CL_SWALLOW_EXCEPTION(thread,
+                                 modules->del_item_for_str(thread, name));
         }
 
         Value set_module_not_found(ThreadState *thread,
@@ -107,12 +102,12 @@ namespace cl
         Value get_cached_module(ThreadState *thread, TValue<String> name)
         {
             Dict *modules = thread->get_machine()->imported_modules().extract();
-            if(!modules->contains(name.raw_value()))
+            if(!CL_TRY(modules->contains_for_str(thread, name)))
             {
                 return Value::not_present();
             }
 
-            Value module = modules->get_item(name.raw_value());
+            Value module = CL_TRY(modules->get_item_for_str(thread, name));
             if(module == Value::None())
             {
                 return set_module_not_found(thread, string_to_wstring(name));
@@ -335,8 +330,8 @@ namespace cl
                 return set_module_not_found(thread, spec.name);
             }
 
-            machine->imported_modules().extract()->set_item(name.raw_value(),
-                                                            module);
+            CL_TRY(machine->imported_modules().extract()->set_item_for_str(
+                thread, name, module));
             return module;
         }
 
@@ -369,14 +364,14 @@ namespace cl
                                                  TValue<String> name)
         {
             Dict *modules = thread->get_machine()->imported_modules().extract();
-            if(!modules->contains(name.raw_value()))
+            if(!CL_TRY(modules->contains_for_str(thread, name)))
             {
                 return thread->set_pending_builtin_exception_string(
                     L"ImportError",
                     L"loader removed module from sys.modules during import");
             }
 
-            Value module = modules->get_item(name.raw_value());
+            Value module = CL_TRY(modules->get_item_for_str(thread, name));
             if(module == Value::None())
             {
                 return set_module_not_found(thread, string_to_wstring(name));
@@ -438,7 +433,7 @@ namespace cl
             Dict *modules = thread->get_machine()->imported_modules().extract();
             Owned<TValue<ModuleObject>> module(
                 create_module_from_spec(thread, spec, name));
-            modules->set_item(name.raw_value(), module.raw_value());
+            CL_TRY(modules->set_item_for_str(thread, name, module.raw_value()));
             return exec_source_module(thread, spec, name, module.extract());
         }
 
@@ -448,7 +443,7 @@ namespace cl
             Dict *modules = thread->get_machine()->imported_modules().extract();
             Owned<TValue<ModuleObject>> module(
                 create_module_from_spec(thread, spec, name));
-            modules->set_item(name.raw_value(), module.raw_value());
+            CL_TRY(modules->set_item_for_str(thread, name, module.raw_value()));
             return module.raw_value();
         }
 
@@ -459,7 +454,7 @@ namespace cl
             Dict *modules = thread->get_machine()->imported_modules().extract();
             Owned<TValue<ModuleObject>> module(
                 create_module_from_spec(thread, spec, name));
-            modules->set_item(name.raw_value(), module.raw_value());
+            CL_TRY(modules->set_item_for_str(thread, name, module.raw_value()));
 
             Value result =
                 exec_native_extension_module(thread, spec, module.extract());
