@@ -561,6 +561,24 @@ namespace cl
         }
     }
 
+    void VirtualMachine::install_exact_dict_shapes(ClassObject *cls,
+                                                   Shape *string_key_shape,
+                                                   Shape *general_shape)
+    {
+        assert(cls != nullptr);
+        assert(string_key_shape != nullptr);
+        assert(general_shape != nullptr);
+        assert(string_key_shape->get_class() == cls);
+        assert(general_shape->get_class() == cls);
+        assert(string_key_shape != general_shape);
+        exact_dict_string_key_shape_ = string_key_shape;
+        exact_dict_general_shape_ = general_shape;
+        for(const std::unique_ptr<ThreadState> &thread: threads)
+        {
+            thread->cache_exact_dict_shapes(string_key_shape, general_shape);
+        }
+    }
+
     void VirtualMachine::install_bootstrap_string_class()
     {
         str_class_ = class_for_native_layout(NativeLayoutId::String);

@@ -152,6 +152,14 @@ namespace cl
         {
             return class_for_native_layout(NativeLayoutId::Dict);
         }
+        Shape *exact_dict_string_key_shape() const
+        {
+            return exact_dict_string_key_shape_;
+        }
+        Shape *exact_dict_general_shape() const
+        {
+            return exact_dict_general_shape_;
+        }
         ClassObject *general_dict_class() const
         {
             return class_for_native_layout(NativeLayoutId::GeneralDict);
@@ -306,6 +314,9 @@ namespace cl
             slice_step_none_shape_ = slice_step_none_shape;
             slice_general_shape_ = slice_general_shape;
         }
+        void install_exact_dict_shapes(ClassObject *cls,
+                                       Shape *string_key_shape,
+                                       Shape *general_shape);
 
         template <typename T, typename... Args>
         T *make_immortal_internal_raw(Args &&...args)
@@ -397,6 +408,8 @@ namespace cl
         Shape *not_implemented_shape_ = nullptr;
         Shape *ellipsis_shape_ = nullptr;
         Shape *str_instance_root_shape_ = nullptr;
+        Shape *exact_dict_string_key_shape_ = nullptr;
+        Shape *exact_dict_general_shape_ = nullptr;
         Shape *slice_step_none_shape_ = nullptr;
         Shape *slice_general_shape_ = nullptr;
         std::array<ClassObject *, NativeLayoutCount> class_for_native_layouts =

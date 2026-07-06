@@ -55,6 +55,41 @@ TEST(Dict, SetGetAndContainsWorkForStringKeys)
     EXPECT_EQ(Value::from_smi(22), dict->get_item(beta));
 }
 
+TEST(Dict, ExactBuiltinDictShapesAreCached)
+{
+    test::VmTestContext context;
+    ThreadState *thread = context.thread();
+    ThreadState::ActivationScope activation_scope(thread);
+
+    Shape *string_key_shape = thread->get_exact_dict_string_key_shape();
+    Shape *general_shape = thread->get_exact_dict_general_shape();
+
+    ASSERT_NE(nullptr, string_key_shape);
+    ASSERT_NE(nullptr, general_shape);
+    EXPECT_NE(string_key_shape, general_shape);
+    EXPECT_EQ(context.vm().dict_class(), string_key_shape->get_class());
+    EXPECT_EQ(context.vm().dict_class(), general_shape->get_class());
+}
+
+TEST(Dict, ExactBuiltinDictConstructionStartsStringKeyed)
+{
+    test::VmTestContext context;
+    ThreadState *thread = context.thread();
+    ThreadState::ActivationScope activation_scope(thread);
+    Shape *string_key_shape = thread->get_exact_dict_string_key_shape();
+
+    Dict *native_dict = thread->make_object_raw<Dict>();
+    EXPECT_EQ(string_key_shape, native_dict->get_shape());
+
+    Value literal = context.run_file(L"{}\n");
+    ASSERT_TRUE(can_convert_to<Dict>(literal));
+    EXPECT_EQ(string_key_shape, literal.get_ptr<Dict>()->get_shape());
+
+    Value constructed = context.run_file(L"dict()\n");
+    ASSERT_TRUE(can_convert_to<Dict>(constructed));
+    EXPECT_EQ(string_key_shape, constructed.get_ptr<Dict>()->get_shape());
+}
+
 TEST(Dict, TableGenerationChangesOnlyWhenProbeStructureChanges)
 {
     test::VmTestContext context;

@@ -85,6 +85,8 @@ namespace cl
             class_for_native_layouts[idx] = machine->class_for_native_layout(
                 static_cast<NativeLayoutId>(idx));
         }
+        cache_exact_dict_shapes(machine->exact_dict_string_key_shape(),
+                                machine->exact_dict_general_shape());
     }
 
     void

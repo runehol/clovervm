@@ -720,10 +720,11 @@ as an optimization, but public general-key correctness does not need to wait for
 the bytecode/trusted-opcode hot path.
 
 Exact empty `dict` instances start string-keyed and may promote during
-population. Dict subclass instances start with their subclass shape and general
-dict behavior. The initial promotion helper should be private C++; trusted
-bytecode/opcode promotion can wait until insertion, lookup, and deletion move
-into bytecode-backed dict methods.
+population. Dict subclass native-layout construction is a separate object-model
+milestone; until native-type subclassing is solved, the exact-shape work is
+limited to builtin `dict` instances. The initial promotion helper should be
+private C++; trusted bytecode/opcode promotion can wait until insertion, lookup,
+and deletion move into bytecode-backed dict methods.
 
 ## Reentrancy and Probe Revalidation
 
@@ -1115,9 +1116,12 @@ factoring, not a place to settle public dict representation questions.
 Resolved representation direction:
 
 - Public `dict` uses one native layout, one C++ class, and one Python class.
-- Exact `dict` instances use one canonical string-keyed fast-path shape and an
-  exact-dict general shape. Dict subclasses keep their own shapes, but those
-  shapes behave as general dictionaries for dict operations.
+- Exact builtin `dict` instances use one canonical string-keyed fast-path shape
+  and an exact-dict general shape.
+- Dict subclass native-layout construction is out of scope for this stage. Once
+  native-type subclassing is solved, dict subclasses should keep their own
+  shapes, and those shapes should behave as general dictionaries for dict
+  operations.
 - The canonical exact-dict shapes should be cached directly on `ThreadState`.
   They logically belong to the VM, but they do not change and dict operations are
   hot enough that repeated broader VM lookups should be avoided.
@@ -1135,8 +1139,9 @@ Resolved representation direction:
   lookup/insert/delete/membership. Misses raise `KeyError` for get/delete and
   return `False` for contains. Exact string set inserts or overwrites without
   promotion.
-- Exact string-key operations on dict subclasses still use the general path,
-  because subclass shapes behave as general dict shapes.
+- Exact string-key operations on dict subclasses should still use the general
+  path once native-type subclassing is supported, because subclass shapes behave
+  as general dict shapes.
 - String-key semantic C++ helpers should use explicit names like
   `get_item_for_str`; private canonical-shape helpers should be private `Dict`
   methods named like `string_keyed_lookup`.
@@ -1190,18 +1195,18 @@ Stage invariants:
 
 ### 9a. Exact Dict Shapes
 
-- [ ] Cache the exact-dict shapes on `ThreadState` with explicit names such as
+- [x] Cache the exact-dict shapes on `ThreadState` with explicit names such as
   `get_exact_dict_string_key_shape()` and `get_exact_dict_general_shape()`.
-- [ ] Exact `dict()` starts with the `ThreadState` canonical string-keyed dict
-  shape.
-- [ ] Dict subclass construction leaves the subclass shape in place and uses
-  general dict behavior.
-- [ ] Add focused tests for exact `dict` shape initialization and subclass shape
-  behavior.
+- [x] Exact builtin `dict` construction starts with the `ThreadState` canonical
+  string-keyed dict shape.
+- [x] Add focused tests for exact builtin `dict` shape initialization and cached
+  exact general shape identity.
 
 Stage invariant:
 
 - This stage does not add public non-string-key support yet.
+- This stage does not solve native-type subclass construction for dict
+  subclasses.
 
 ### 9b. Public Dict Semantic C++ API
 

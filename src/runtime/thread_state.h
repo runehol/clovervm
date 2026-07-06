@@ -105,6 +105,12 @@ namespace cl
         {
             class_for_native_layouts[static_cast<size_t>(id)] = cls;
         }
+        void cache_exact_dict_shapes(Shape *string_key_shape,
+                                     Shape *general_shape)
+        {
+            exact_dict_string_key_shape_ = string_key_shape;
+            exact_dict_general_shape_ = general_shape;
+        }
         static void add_to_active_zero_count_table_if_needed(HeapObject *obj);
         void add_to_zero_count_table_if_needed(HeapObject *obj);
         void adopt_reclamation_state_from(ThreadState &child);
@@ -288,6 +294,16 @@ namespace cl
             assert(cls != nullptr);
             return cls;
         }
+        Shape *get_exact_dict_string_key_shape() const
+        {
+            assert(exact_dict_string_key_shape_ != nullptr);
+            return exact_dict_string_key_shape_;
+        }
+        Shape *get_exact_dict_general_shape() const
+        {
+            assert(exact_dict_general_shape_ != nullptr);
+            return exact_dict_general_shape_;
+        }
         ALWAYSINLINE Shape *shape_of_value(Value value) const
         {
             value.assert_not_vm_sentinel();
@@ -363,6 +379,8 @@ namespace cl
         ThreadLocalHeap refcounted_heap;
         std::array<ClassObject *, static_cast<size_t>(NativeLayoutId::Count)>
             class_for_native_layouts = {};
+        Shape *exact_dict_string_key_shape_ = nullptr;
+        Shape *exact_dict_general_shape_ = nullptr;
 
         std::vector<Value> stack;
         std::vector<HeapObject *> zero_count_table;

@@ -8,6 +8,7 @@
 #include "object_model/native_function.h"
 #include "object_model/owned.h"
 #include "object_model/refcount.h"
+#include "object_model/shape.h"
 #include "runtime/exception_propagation.h"
 #include "runtime/thread_state.h"
 #include "runtime/virtual_machine.h"
@@ -60,6 +61,10 @@ namespace cl
             vm->get_or_create_interned_string_value(L"dict"),
             Dict::native_static_release_count(), nullptr, 0,
             vm->object_class());
+        Shape *string_key_shape = cls->get_instance_root_shape();
+        Shape *general_shape =
+            string_key_shape->clone_with_flags(string_key_shape->flags());
+        vm->install_exact_dict_shapes(cls, string_key_shape, general_shape);
         return builtin_class_definition(cls, native_layout_ids,
                                         BuiltinsVisibility::Public);
     }
@@ -80,6 +85,16 @@ namespace cl
             vm->object_class());
         return builtin_class_definition(cls, native_layout_ids,
                                         BuiltinsVisibility::Public);
+    }
+
+    static Value native_dict_new(ThreadState *thread, Value cls_value)
+    {
+        if(cls_value != Value::from_oop(thread->get_machine()->dict_class()))
+        {
+            return thread->set_pending_builtin_exception_string(
+                L"TypeError", L"dict.__new__ expects dict as cls");
+        }
+        return thread->make_object_value<Dict>().raw_value();
     }
 
     static Value native_general_dict_new(ThreadState *thread, Value cls_value)
@@ -519,6 +534,8 @@ namespace cl
     void install_dict_class_methods(VirtualMachine *vm)
     {
         BuiltinIntrinsicMethod methods[] = {
+            builtin_intrinsic_method(L"__new__", native_dict_new,
+                                     L"Create a dict object."),
             builtin_intrinsic_method(L"__str__", native_dict_repr,
                                      L"Return str(self)."),
             builtin_intrinsic_method(L"__repr__", native_dict_repr,
