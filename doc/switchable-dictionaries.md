@@ -1188,28 +1188,73 @@ Stage invariants:
 - This stage does not wire public promotion yet.
 - Shape-only promotion must not require table copying or reinsertion once enabled.
 
-### 9. Public Dict Shape Shifting And C API Integration
+### 9a. Exact Dict Shapes
 
-- [ ] Route public `dict` lookup, assignment, deletion, membership, and public
-  methods through the chosen unified design.
-- [ ] Exact `dict()` starts with the `ThreadContext` canonical string-keyed dict
-  shape; `dict` subclass construction leaves the subclass shape in place and uses
-  general dict behavior.
-- [ ] Add private C++ shape-only promotion from the canonical string-keyed shape
-  to the exact-dict general shape.
 - [ ] Cache the exact-dict shapes on `ThreadContext` with explicit names such as
   `get_exact_dict_string_key_shape()` and `get_exact_dict_general_shape()`.
-- [ ] Implement explicit assignment/subscription promotion, such as
-  `d = {}; d[1] = "x"`, before changing dict-display lowering for general keys.
+- [ ] Exact `dict()` starts with the `ThreadContext` canonical string-keyed dict
+  shape.
+- [ ] Dict subclass construction leaves the subclass shape in place and uses
+  general dict behavior.
+- [ ] Add focused tests for exact `dict` shape initialization and subclass shape
+  behavior.
+
+Stage invariant:
+
+- This stage does not add public non-string-key support yet.
+
+### 9b. Public Dict Semantic C++ API
+
+- [ ] Introduce semantic `Dict` C++ operations with explicit fallibility:
+  `get_item(ThreadState *, Value)`, `set_item(ThreadState *, Value, Value)`,
+  `del_item(ThreadState *, Value)`, and `contains(ThreadState *, Value)`.
+- [ ] Introduce typed-string-key semantic variants:
+  `get_item_for_str`, `set_item_for_str`, `del_item_for_str`, and
+  `contains_for_str`.
+- [ ] Keep private exact-shape helpers visually distinct with names such as
+  `string_keyed_lookup`, `string_keyed_insert`, `string_keyed_delete`, and
+  `string_keyed_contains`.
+- [ ] Add focused C++ API tests for exact string-keyed fast paths,
+  `*_for_str` typed-key operations, and general semantic delegation.
+
+Stage invariant:
+
+- Private `string_keyed_*` helpers are usable only after proving canonical
+  string-keyed shape and exact `str` key. They are not semantic APIs.
+
+### 9c. Shape-Only Promotion And Assignment
+
+- [ ] Add private C++ shape-only promotion from the canonical string-keyed shape
+  to the exact-dict general shape.
+- [ ] Wire explicit assignment promotion first, such as `d = {}; d[1] = "x"`.
+- [ ] Add hash/equality exception tests for promoted assignment.
+
+Stage invariant:
+
+- Dict displays with general keys are still out of scope.
+
+### 9d. Public Lookup, Membership, And Deletion
+
+- [ ] Route public `dict` lookup, membership, and deletion through the chosen
+  unified design.
+- [ ] Add tests for `d[1]`, `1 in d`, and `del d[1]` on promoted/general public
+  dicts.
+- [ ] Add tests for propagated `__hash__` and `__eq__` exceptions and mutation
+  during equality.
+
+Stage invariant:
+
+- Exact string-key operations on canonical string-keyed dicts still use the
+  trusted non-Python fast path.
+
+### 9e. C API Integration
+
 - [ ] Add C API functions for semantic lookup, assignment, deletion, membership,
   and length operations.
 - [ ] Document which C API functions may re-enter Python.
 - [ ] Add native module tests that build string-key dicts, integer-key dicts,
   propagated `__hash__` and `__eq__` exceptions, and mutation during equality
   through the C API surface.
-- [ ] Add focused C++ API tests for semantic arbitrary-key operations,
-  `*_for_str` typed-key operations, exact string-keyed fast paths, promotion, and
-  subclass/general-shape behavior.
 
 Stage invariant:
 
