@@ -128,7 +128,7 @@ TEST(Dict, SemanticApiPopAndSetdefaultAcceptStringValueKeys)
     EXPECT_FALSE(dict->contains(thread, key).value());
 }
 
-TEST(Dict, SemanticApiRejectsNonStringKeysUntilPromotionStage)
+TEST(Dict, SemanticApiRejectsNonStringLookupKeysUntilLookupPromotionStage)
 {
     test::VmTestContext context;
     ThreadState *thread = context.thread();
@@ -139,17 +139,118 @@ TEST(Dict, SemanticApiRejectsNonStringKeysUntilPromotionStage)
     expect_pending_exception(thread, L"TypeError", L"dict keys must be str");
     thread->clear_pending_exception();
 
-    EXPECT_TRUE(dict->set_item(thread, Value::from_smi(1), Value::from_smi(11))
-                    .has_exception());
-    expect_pending_exception(thread, L"TypeError", L"dict keys must be str");
-    thread->clear_pending_exception();
-
     EXPECT_TRUE(dict->del_item(thread, Value::from_smi(1)).has_exception());
     expect_pending_exception(thread, L"TypeError", L"dict keys must be str");
     thread->clear_pending_exception();
 
     EXPECT_TRUE(dict->contains(thread, Value::from_smi(1)).has_exception());
     expect_pending_exception(thread, L"TypeError", L"dict keys must be str");
+}
+
+TEST(Dict, SemanticApiSetItemPromotesNonStringKeys)
+{
+    test::VmTestContext context;
+    ThreadState *thread = context.thread();
+    ThreadState::ActivationScope activation_scope(thread);
+    Dict *dict = thread->make_object_raw<Dict>();
+
+    Shape *string_key_shape = thread->get_exact_dict_string_key_shape();
+
+    ASSERT_EQ(string_key_shape, dict->get_shape());
+    EXPECT_EQ(0u, dict->table_generation());
+
+    ASSERT_FALSE(dict->set_item(thread, Value::from_smi(1), Value::from_smi(11))
+                     .has_exception());
+
+    EXPECT_NE(string_key_shape, dict->get_shape());
+    EXPECT_EQ(1u, dict->table_generation());
+    EXPECT_EQ(1u, dict->size());
+
+    Dict::EntryView entry = {Value::not_present(), Value::not_present()};
+    ASSERT_TRUE(dict->entry_at(0, entry));
+    EXPECT_EQ(Value::from_smi(1), entry.key);
+    EXPECT_EQ(Value::from_smi(11), entry.value);
+}
+
+TEST(Dict, PublicAssignmentPromotesNonStringKeys)
+{
+    test::VmTestContext context;
+
+    EXPECT_EQ(Value::from_smi(2), context.run_file(L"d = {}\n"
+                                                   L"d[1] = 'one'\n"
+                                                   L"d['two'] = 2\n"
+                                                   L"len(d)\n"));
+}
+
+TEST(Dict, SemanticApiSetItemKeepsStringShapeForStringKeys)
+{
+    test::VmTestContext context;
+    ThreadState *thread = context.thread();
+    ThreadState::ActivationScope activation_scope(thread);
+    Dict *dict = thread->make_object_raw<Dict>();
+
+    Shape *string_key_shape = thread->get_exact_dict_string_key_shape();
+    Value key = make_string(context, L"key");
+
+    ASSERT_FALSE(
+        dict->set_item(thread, key, Value::from_smi(42)).has_exception());
+
+    EXPECT_EQ(string_key_shape, dict->get_shape());
+    EXPECT_EQ(0u, dict->table_generation());
+    EXPECT_EQ(Value::from_smi(42), dict->get_item(thread, key).value());
+}
+
+TEST(Dict, SemanticApiSetItemUsesGeneralSemanticsAfterPromotion)
+{
+    test::VmTestContext context;
+    ThreadState *thread = context.thread();
+    ThreadState::ActivationScope activation_scope(thread);
+    Dict *dict = thread->make_object_raw<Dict>();
+    Shape *string_key_shape = thread->get_exact_dict_string_key_shape();
+
+    ASSERT_FALSE(dict->set_item(thread, Value::from_smi(1), Value::from_smi(11))
+                     .has_exception());
+    Owned<TValue<String>> string_key(
+        thread->make_object_value<String>(L"later"));
+    ASSERT_FALSE(
+        dict->set_item(thread, string_key.raw_value(), Value::from_smi(33))
+            .has_exception());
+
+    EXPECT_NE(string_key_shape, dict->get_shape());
+    EXPECT_EQ(2u, dict->size());
+
+    Dict::EntryView first = {Value::not_present(), Value::not_present()};
+    Dict::EntryView second = {Value::not_present(), Value::not_present()};
+    ASSERT_TRUE(dict->entry_at(0, first));
+    ASSERT_TRUE(dict->entry_at(1, second));
+    EXPECT_EQ(Value::from_smi(1), first.key);
+    EXPECT_EQ(Value::from_smi(11), first.value);
+    EXPECT_EQ(string_key.raw_value(), second.key);
+    EXPECT_EQ(Value::from_smi(33), second.value);
+}
+
+TEST(Dict, SemanticApiSetItemKeepsPromotionWhenHashFails)
+{
+    test::VmTestContext context;
+    ThreadState *thread = context.thread();
+    ThreadState::ActivationScope activation_scope(thread);
+    Dict *dict = thread->make_object_raw<Dict>();
+    Shape *string_key_shape = thread->get_exact_dict_string_key_shape();
+
+    Value bad_hash_key = context.run_file(L"class BadHash:\n"
+                                          L"    def __hash__(self):\n"
+                                          L"        return 'bad'\n"
+                                          L"BadHash()\n");
+    ASSERT_FALSE(thread->has_pending_exception());
+
+    EXPECT_TRUE(dict->set_item(thread, bad_hash_key, Value::from_smi(1))
+                    .has_exception());
+
+    EXPECT_NE(string_key_shape, dict->get_shape());
+    EXPECT_EQ(1u, dict->table_generation());
+    EXPECT_EQ(0u, dict->size());
+    expect_pending_exception(thread, L"TypeError",
+                             L"__hash__ method should return an integer");
 }
 
 TEST(Dict, SemanticApiPopAndSetdefaultRejectNonStringKeysUntilPromotionStage)

@@ -784,6 +784,12 @@ namespace cl
         return true;
     }
 
+    static bool is_exact_dict_string_key_shape(ThreadState *thread,
+                                               const Dict *dict)
+    {
+        return dict->get_shape() == thread->get_exact_dict_string_key_shape();
+    }
+
     static Expected<TValue<String>> dict_key_as_string(Value key)
     {
         if(!can_convert_to<String>(key))
@@ -803,8 +809,16 @@ namespace cl
 
     Expected<void> Dict::set_item(ThreadState *thread, Value key, Value value)
     {
-        TValue<String> string_key = CL_TRY(dict_key_as_string(key));
-        return set_item_for_str(thread, string_key, value);
+        if(is_exact_dict_string_key_shape(thread, this))
+        {
+            if(can_convert_to<String>(key))
+            {
+                return set_item_for_str(
+                    thread, TValue<String>::from_value_unchecked(key), value);
+            }
+            promote_to_general_shape(thread);
+        }
+        return general_set_item(thread, key, value);
     }
 
     Expected<void> Dict::del_item(ThreadState *thread, Value key)
@@ -847,9 +861,12 @@ namespace cl
     Expected<void> Dict::set_item_for_str(ThreadState *thread,
                                           TValue<String> key, Value value)
     {
-        (void)thread;
-        string_keyed_insert(key, value);
-        return Expected<void>::ok();
+        if(is_exact_dict_string_key_shape(thread, this))
+        {
+            string_keyed_insert(key, value);
+            return Expected<void>::ok();
+        }
+        return general_set_item(thread, key.raw_value(), value);
     }
 
     Expected<void> Dict::del_item_for_str(ThreadState *thread,
@@ -904,6 +921,98 @@ namespace cl
         }
         string_keyed_insert(key, default_value);
         return Expected<Value>::ok(default_value);
+    }
+
+    void Dict::promote_to_general_shape(ThreadState *thread)
+    {
+        if(!is_exact_dict_string_key_shape(thread, this))
+        {
+            return;
+        }
+        set_shape(thread->get_exact_dict_general_shape());
+        ++table_generation_;
+    }
+
+    Expected<size_t>
+    Dict::find_entry_slot_for_general_insert(ThreadState *thread, Value key,
+                                             TValue<SMI> hash_smi)
+    {
+        while(true)
+        {
+            Probe probe = probe_start(hash_smi);
+
+            while(true)
+            {
+                int32_t entry_status = hash_table[probe.hash_idx];
+                if(entry_status == not_present)
+                {
+                    return Expected<size_t>::ok(probe_write_slot(probe));
+                }
+                if(entry_status == tombstone)
+                {
+                    probe_record_tombstone(probe, entry_status);
+                    probe_advance(probe);
+                    continue;
+                }
+
+                Entry entry = entries[entry_status];
+                if(entry.hash == hash_smi)
+                {
+                    if(entry.key == key)
+                    {
+                        return Expected<size_t>::ok(probe.hash_idx);
+                    }
+
+                    Owned<Value> candidate_key(entry.key);
+                    bool equal =
+                        CL_TRY(thread->test_equal(candidate_key.value(), key));
+                    if(!entry_still_matches(probe.table_generation,
+                                            probe.hash_idx, entry_status,
+                                            candidate_key.value()))
+                    {
+                        break;
+                    }
+                    if(!probe_recorded_tombstone_still_available(probe))
+                    {
+                        probe_clear_recorded_tombstone(probe);
+                    }
+                    if(equal)
+                    {
+                        return Expected<size_t>::ok(probe.hash_idx);
+                    }
+                }
+
+                probe_advance(probe);
+            }
+        }
+    }
+
+    Expected<void> Dict::general_set_item(ThreadState *thread, Value key,
+                                          Value value)
+    {
+        key.assert_not_vm_sentinel();
+        value.assert_not_vm_sentinel();
+
+        Owned<Value> live_key(key);
+        Owned<Value> live_value(value);
+        TValue<SMI> hash = CL_TRY(thread->hash_value(live_key.value()));
+
+        resize_general_if_needed();
+
+        size_t entry_slot = CL_TRY(
+            find_entry_slot_for_general_insert(thread, live_key.value(), hash));
+        int32_t idx = hash_table[entry_slot];
+        if(idx < 0)
+        {
+            write_new_at_slot(entry_slot, hash, live_key.value(),
+                              live_value.value());
+        }
+        else
+        {
+            write_existing(idx, live_value.value());
+        }
+
+        return Expected<void>::ok();
     }
 
     const int32_t *Dict::find_entry(TValue<String> key) const
@@ -1054,10 +1163,14 @@ namespace cl
             {
                 entries.set(write_idx, entry);
             }
-            int32_t *hash_entry = find_entry_with_provided_hash(
-                TValue<String>::from_value_unchecked(entries[write_idx].key),
-                entries[write_idx].hash);
-            *hash_entry = static_cast<int32_t>(write_idx);
+            uint64_t hash = entries[write_idx].hash.extract();
+            uint32_t hash_table_size_m1 = hash_table.size() - 1;
+            uint32_t hash_idx = hash & hash_table_size_m1;
+            while(hash_table[hash_idx] != not_present)
+            {
+                hash_idx = (hash_idx + 1) & hash_table_size_m1;
+            }
+            hash_table[hash_idx] = static_cast<int32_t>(write_idx);
             ++write_idx;
         }
         entries.resize(write_idx, Entry(Value::not_present(), Value::None(),

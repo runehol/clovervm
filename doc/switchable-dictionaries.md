@@ -1266,9 +1266,9 @@ Stage invariant:
 
 ### 9c. Shape-Only Promotion And Assignment
 
-- [ ] Add private C++ shape-only promotion from the canonical string-keyed shape
+- [x] Add private C++ shape-only promotion from the canonical string-keyed shape
   to the exact-dict general shape.
-- [ ] Wire explicit assignment promotion first, such as `d = {}; d[1] = "x"`.
+- [x] Wire explicit assignment promotion first, such as `d = {}; d[1] = "x"`.
 - [ ] Route insertion-delegating operations through the promoted assignment path
   once assignment promotion is correct: `setdefault` on miss, `update` for each
   contributed key/value pair, `fromkeys`, and dict display construction.
