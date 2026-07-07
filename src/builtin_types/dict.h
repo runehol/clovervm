@@ -230,9 +230,15 @@ namespace cl
         [[nodiscard]] Expected<size_t>
         find_entry_slot_for_general_insert(ThreadState *thread, Value key,
                                            TValue<SMI> hash_smi);
+        [[nodiscard]] Expected<int32_t>
+        find_entry_index_for_general_lookup(ThreadState *thread, Value key,
+                                            TValue<SMI> hash_smi);
         [[nodiscard]] Expected<void> general_set_item(ThreadState *thread,
                                                       Value key, Value value);
-        void promote_to_general_shape(ThreadState *thread);
+        [[nodiscard]] Expected<Value>
+        general_setdefault(ThreadState *thread, Value key, Value default_value);
+        void always_promote_to_general_shape(ThreadState *thread);
+        void maybe_promote_to_general_shape(ThreadState *thread);
         void grow();
 
         RawArray<int32_t> hash_table;

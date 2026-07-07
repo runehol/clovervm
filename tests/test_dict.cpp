@@ -253,7 +253,7 @@ TEST(Dict, SemanticApiSetItemKeepsPromotionWhenHashFails)
                              L"__hash__ method should return an integer");
 }
 
-TEST(Dict, SemanticApiPopAndSetdefaultRejectNonStringKeysUntilPromotionStage)
+TEST(Dict, SemanticApiPopRejectsNonStringKeysUntilDeletionPromotionStage)
 {
     test::VmTestContext context;
     ThreadState *thread = context.thread();
@@ -262,12 +262,58 @@ TEST(Dict, SemanticApiPopAndSetdefaultRejectNonStringKeysUntilPromotionStage)
 
     EXPECT_TRUE(dict->pop(thread, Value::from_smi(1)).has_exception());
     expect_pending_exception(thread, L"TypeError", L"dict keys must be str");
-    thread->clear_pending_exception();
+}
 
-    EXPECT_TRUE(
-        dict->setdefault(thread, Value::from_smi(1), Value::from_smi(11))
-            .has_exception());
-    expect_pending_exception(thread, L"TypeError", L"dict keys must be str");
+TEST(Dict, SemanticApiSetdefaultPromotesNonStringMiss)
+{
+    test::VmTestContext context;
+    ThreadState *thread = context.thread();
+    ThreadState::ActivationScope activation_scope(thread);
+    Dict *dict = thread->make_object_raw<Dict>();
+    Shape *string_key_shape = thread->get_exact_dict_string_key_shape();
+
+    EXPECT_EQ(Value::from_smi(11),
+              dict->setdefault(thread, Value::from_smi(1), Value::from_smi(11))
+                  .value());
+
+    EXPECT_NE(string_key_shape, dict->get_shape());
+    EXPECT_EQ(1u, dict->table_generation());
+    EXPECT_EQ(1u, dict->size());
+
+    Dict::EntryView entry = {Value::not_present(), Value::not_present()};
+    ASSERT_TRUE(dict->entry_at(0, entry));
+    EXPECT_EQ(Value::from_smi(1), entry.key);
+    EXPECT_EQ(Value::from_smi(11), entry.value);
+}
+
+TEST(Dict, SemanticApiSetdefaultDoesNotOverwritePromotedHit)
+{
+    test::VmTestContext context;
+    ThreadState *thread = context.thread();
+    ThreadState::ActivationScope activation_scope(thread);
+    Dict *dict = thread->make_object_raw<Dict>();
+
+    ASSERT_FALSE(dict->set_item(thread, Value::from_smi(1), Value::from_smi(11))
+                     .has_exception());
+
+    EXPECT_EQ(
+        Value::from_smi(11),
+        dict->setdefault(thread, Value::True(), Value::from_smi(22)).value());
+    EXPECT_EQ(1u, dict->size());
+
+    Dict::EntryView entry = {Value::not_present(), Value::not_present()};
+    ASSERT_TRUE(dict->entry_at(0, entry));
+    EXPECT_EQ(Value::from_smi(1), entry.key);
+    EXPECT_EQ(Value::from_smi(11), entry.value);
+}
+
+TEST(Dict, PublicSetdefaultPromotesNonStringMiss)
+{
+    test::VmTestContext context;
+
+    EXPECT_EQ(Value::from_smi(1), context.run_file(L"d = {}\n"
+                                                   L"d.setdefault(1, 'one')\n"
+                                                   L"len(d)\n"));
 }
 
 TEST(Dict, ExactBuiltinDictShapesAreCached)

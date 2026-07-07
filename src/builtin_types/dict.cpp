@@ -816,7 +816,7 @@ namespace cl
                 return set_item_for_str(
                     thread, TValue<String>::from_value_unchecked(key), value);
             }
-            promote_to_general_shape(thread);
+            always_promote_to_general_shape(thread);
         }
         return general_set_item(thread, key, value);
     }
@@ -842,8 +842,17 @@ namespace cl
     Expected<Value> Dict::setdefault(ThreadState *thread, Value key,
                                      Value default_value)
     {
-        TValue<String> string_key = CL_TRY(dict_key_as_string(key));
-        return setdefault_for_str(thread, string_key, default_value);
+        if(is_exact_dict_string_key_shape(thread, this))
+        {
+            if(can_convert_to<String>(key))
+            {
+                return setdefault_for_str(
+                    thread, TValue<String>::from_value_unchecked(key),
+                    default_value);
+            }
+            always_promote_to_general_shape(thread);
+        }
+        return general_setdefault(thread, key, default_value);
     }
 
     Expected<Value> Dict::get_item_for_str(ThreadState *thread,
@@ -909,28 +918,37 @@ namespace cl
                                              TValue<String> key,
                                              Value default_value)
     {
-        (void)thread;
-        if(string_keyed_contains(key))
+        if(is_exact_dict_string_key_shape(thread, this))
         {
-            Value result = string_keyed_lookup(key);
-            if(result.is_exception_marker())
+            if(string_keyed_contains(key))
             {
-                return Expected<Value>::propagate_exception();
+                Value result = string_keyed_lookup(key);
+                if(result.is_exception_marker())
+                {
+                    return Expected<Value>::propagate_exception();
+                }
+                return Expected<Value>::ok(result);
             }
-            return Expected<Value>::ok(result);
+            string_keyed_insert(key, default_value);
+            return Expected<Value>::ok(default_value);
         }
-        string_keyed_insert(key, default_value);
-        return Expected<Value>::ok(default_value);
+
+        return general_setdefault(thread, key.raw_value(), default_value);
     }
 
-    void Dict::promote_to_general_shape(ThreadState *thread)
+    void Dict::always_promote_to_general_shape(ThreadState *thread)
     {
-        if(!is_exact_dict_string_key_shape(thread, this))
-        {
-            return;
-        }
+        assert(is_exact_dict_string_key_shape(thread, this));
         set_shape(thread->get_exact_dict_general_shape());
         ++table_generation_;
+    }
+
+    void Dict::maybe_promote_to_general_shape(ThreadState *thread)
+    {
+        if(is_exact_dict_string_key_shape(thread, this))
+        {
+            always_promote_to_general_shape(thread);
+        }
     }
 
     Expected<size_t>
@@ -987,6 +1005,55 @@ namespace cl
         }
     }
 
+    Expected<int32_t>
+    Dict::find_entry_index_for_general_lookup(ThreadState *thread, Value key,
+                                              TValue<SMI> hash_smi)
+    {
+        while(true)
+        {
+            Probe probe = probe_start(hash_smi);
+
+            while(true)
+            {
+                int32_t entry_status = hash_table[probe.hash_idx];
+                if(entry_status == not_present)
+                {
+                    return Expected<int32_t>::ok(not_present);
+                }
+                if(entry_status == tombstone)
+                {
+                    probe_advance(probe);
+                    continue;
+                }
+
+                Entry entry = entries[entry_status];
+                if(entry.hash == hash_smi)
+                {
+                    if(entry.key == key)
+                    {
+                        return Expected<int32_t>::ok(entry_status);
+                    }
+
+                    Owned<Value> candidate_key(entry.key);
+                    bool equal =
+                        CL_TRY(thread->test_equal(candidate_key.value(), key));
+                    if(!entry_still_matches(probe.table_generation,
+                                            probe.hash_idx, entry_status,
+                                            candidate_key.value()))
+                    {
+                        break;
+                    }
+                    if(equal)
+                    {
+                        return Expected<int32_t>::ok(entry_status);
+                    }
+                }
+
+                probe_advance(probe);
+            }
+        }
+    }
+
     Expected<void> Dict::general_set_item(ThreadState *thread, Value key,
                                           Value value)
     {
@@ -1013,6 +1080,41 @@ namespace cl
         }
 
         return Expected<void>::ok();
+    }
+
+    Expected<Value> Dict::general_setdefault(ThreadState *thread, Value key,
+                                             Value default_value)
+    {
+        key.assert_not_vm_sentinel();
+        default_value.assert_not_vm_sentinel();
+
+        Owned<Value> live_key(key);
+        Owned<Value> live_default(default_value);
+        TValue<SMI> hash = CL_TRY(thread->hash_value(live_key.value()));
+
+        int32_t idx = CL_TRY(find_entry_index_for_general_lookup(
+            thread, live_key.value(), hash));
+        if(idx >= 0)
+        {
+            return Expected<Value>::ok(entries[idx].value);
+        }
+
+        resize_general_if_needed();
+
+        size_t entry_slot = CL_TRY(
+            find_entry_slot_for_general_insert(thread, live_key.value(), hash));
+        int32_t slot_value = hash_table[entry_slot];
+        if(slot_value < 0)
+        {
+            write_new_at_slot(entry_slot, hash, live_key.value(),
+                              live_default.value());
+        }
+        else
+        {
+            write_existing(slot_value, live_default.value());
+        }
+
+        return Expected<Value>::ok(live_default.value());
     }
 
     const int32_t *Dict::find_entry(TValue<String> key) const
