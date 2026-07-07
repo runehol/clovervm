@@ -773,8 +773,13 @@ namespace cl
 
     Expected<Value> Dict::get_item(ThreadState *thread, Value key)
     {
-        TValue<String> string_key = CL_TRY(dict_key_as_string(key));
-        return get_item_for_str(thread, string_key);
+        if(is_exact_dict_string_key_shape(thread, this) &&
+           can_convert_to<String>(key))
+        {
+            return get_item_for_str(thread,
+                                    TValue<String>::from_value_unchecked(key));
+        }
+        return general_get_item(thread, key);
     }
 
     Expected<void> Dict::set_item(ThreadState *thread, Value key, Value value)
@@ -799,8 +804,13 @@ namespace cl
 
     Expected<bool> Dict::contains(ThreadState *thread, Value key)
     {
-        TValue<String> string_key = CL_TRY(dict_key_as_string(key));
-        return contains_for_str(thread, string_key);
+        if(is_exact_dict_string_key_shape(thread, this) &&
+           can_convert_to<String>(key))
+        {
+            return contains_for_str(thread,
+                                    TValue<String>::from_value_unchecked(key));
+        }
+        return general_contains(thread, key);
     }
 
     Expected<Value> Dict::pop(ThreadState *thread, Value key)
@@ -828,13 +838,16 @@ namespace cl
     Expected<Value> Dict::get_item_for_str(ThreadState *thread,
                                            TValue<String> key)
     {
-        (void)thread;
-        Value result = string_keyed_lookup(key);
-        if(result.is_exception_marker())
+        if(is_exact_dict_string_key_shape(thread, this))
         {
-            return Expected<Value>::propagate_exception();
+            Value result = string_keyed_lookup(key);
+            if(result.is_exception_marker())
+            {
+                return Expected<Value>::propagate_exception();
+            }
+            return Expected<Value>::ok(result);
         }
-        return Expected<Value>::ok(result);
+        return general_get_item(thread, key.raw_value());
     }
 
     Expected<void> Dict::set_item_for_str(ThreadState *thread,
@@ -863,8 +876,11 @@ namespace cl
     Expected<bool> Dict::contains_for_str(ThreadState *thread,
                                           TValue<String> key)
     {
-        (void)thread;
-        return Expected<bool>::ok(string_keyed_contains(key));
+        if(is_exact_dict_string_key_shape(thread, this))
+        {
+            return Expected<bool>::ok(string_keyed_contains(key));
+        }
+        return general_contains(thread, key.raw_value());
     }
 
     Expected<Value> Dict::pop_for_str(ThreadState *thread, TValue<String> key)
@@ -1024,6 +1040,21 @@ namespace cl
         }
     }
 
+    Expected<Value> Dict::general_get_item(ThreadState *thread, Value key)
+    {
+        key.assert_not_vm_sentinel();
+
+        Owned<Value> live_key(key);
+        TValue<SMI> hash = CL_TRY(thread->hash_value(live_key.value()));
+        int32_t idx = CL_TRY(find_entry_index_for_general_lookup(
+            thread, live_key.value(), hash));
+        if(idx < 0)
+        {
+            return Expected<Value>::raise_exception(L"KeyError", L"");
+        }
+        return Expected<Value>::ok(entries[idx].value);
+    }
+
     Expected<void> Dict::general_set_item(ThreadState *thread, Value key,
                                           Value value)
     {
@@ -1050,6 +1081,17 @@ namespace cl
         }
 
         return Expected<void>::ok();
+    }
+
+    Expected<bool> Dict::general_contains(ThreadState *thread, Value key)
+    {
+        key.assert_not_vm_sentinel();
+
+        Owned<Value> live_key(key);
+        TValue<SMI> hash = CL_TRY(thread->hash_value(live_key.value()));
+        int32_t idx = CL_TRY(find_entry_index_for_general_lookup(
+            thread, live_key.value(), hash));
+        return Expected<bool>::ok(idx >= 0);
     }
 
     Expected<Value> Dict::general_setdefault(ThreadState *thread, Value key,

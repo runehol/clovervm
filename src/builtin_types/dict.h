@@ -234,8 +234,12 @@ namespace cl
         [[nodiscard]] Expected<int32_t>
         find_entry_index_for_general_lookup(ThreadState *thread, Value key,
                                             TValue<SMI> hash_smi);
+        [[nodiscard]] Expected<Value> general_get_item(ThreadState *thread,
+                                                       Value key);
         [[nodiscard]] Expected<void> general_set_item(ThreadState *thread,
                                                       Value key, Value value);
+        [[nodiscard]] Expected<bool> general_contains(ThreadState *thread,
+                                                      Value key);
         [[nodiscard]] Expected<Value>
         general_setdefault(ThreadState *thread, Value key, Value default_value);
         void always_promote_to_general_shape(ThreadState *thread);
