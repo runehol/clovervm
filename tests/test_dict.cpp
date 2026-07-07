@@ -1,5 +1,7 @@
 #include "builtin_types/dict.h"
+#include "builtin_types/list.h"
 #include "builtin_types/str.h"
+#include "builtin_types/tuple.h"
 #include "object_model/owned.h"
 #include "object_model/typed_value.h"
 #include "runtime/exception_object.h"
@@ -387,6 +389,111 @@ TEST(Dict, SemanticApiUpdateKeepsEarlierEntriesIfLaterHashFails)
     EXPECT_EQ(Value::from_smi(1),
               target->get_item(thread, good_key.raw_value()).value());
     expect_pending_exception(thread, L"TypeError",
+                             L"__hash__ method should return an integer");
+}
+
+TEST(Dict, FromTupleKeysPromotesForNonStringKeys)
+{
+    test::VmTestContext context;
+    ThreadState *thread = context.thread();
+    ThreadState::ActivationScope activation_scope(thread);
+    Shape *string_key_shape = thread->get_exact_dict_string_key_shape();
+
+    Owned<TValue<Tuple>> keys(thread->make_object_value<Tuple>(2));
+    Owned<TValue<String>> string_key(thread->make_object_value<String>(L"a"));
+    keys.extract()->initialize_item_unchecked(0, Value::from_smi(1));
+    keys.extract()->initialize_item_unchecked(1, string_key.raw_value());
+
+    Value result = Dict::from_tuple_keys(keys.extract(), Value::from_smi(7));
+
+    ASSERT_FALSE(result.is_exception_marker());
+    ASSERT_TRUE(can_convert_to<Dict>(result));
+    Dict *dict = result.get_ptr<Dict>();
+    EXPECT_NE(string_key_shape, dict->get_shape());
+    EXPECT_EQ(1u, dict->table_generation());
+    EXPECT_EQ(2u, dict->size());
+
+    Dict::EntryView first = {Value::not_present(), Value::not_present()};
+    Dict::EntryView second = {Value::not_present(), Value::not_present()};
+    ASSERT_TRUE(dict->entry_at(0, first));
+    ASSERT_TRUE(dict->entry_at(1, second));
+    EXPECT_EQ(Value::from_smi(1), first.key);
+    EXPECT_EQ(Value::from_smi(7), first.value);
+    EXPECT_EQ(string_key.raw_value(), second.key);
+    EXPECT_EQ(Value::from_smi(7), second.value);
+}
+
+TEST(Dict, FromListKeysPromotesForNonStringKeys)
+{
+    test::VmTestContext context;
+    ThreadState *thread = context.thread();
+    ThreadState::ActivationScope activation_scope(thread);
+    Shape *string_key_shape = thread->get_exact_dict_string_key_shape();
+
+    Owned<TValue<List>> keys(thread->make_object_value<List>());
+    keys.extract()->append(Value::from_smi(1));
+    keys.extract()->append(Value::True());
+
+    Value result = Dict::from_list_keys(keys.extract(), Value::from_smi(7));
+
+    ASSERT_FALSE(result.is_exception_marker());
+    ASSERT_TRUE(can_convert_to<Dict>(result));
+    Dict *dict = result.get_ptr<Dict>();
+    EXPECT_NE(string_key_shape, dict->get_shape());
+    EXPECT_EQ(1u, dict->table_generation());
+    EXPECT_EQ(1u, dict->size());
+
+    Dict::EntryView entry = {Value::not_present(), Value::not_present()};
+    ASSERT_TRUE(dict->entry_at(0, entry));
+    EXPECT_EQ(Value::from_smi(1), entry.key);
+    EXPECT_EQ(Value::from_smi(7), entry.value);
+}
+
+TEST(Dict, FromTupleKeysKeepsStringShapeForStringKeys)
+{
+    test::VmTestContext context;
+    ThreadState *thread = context.thread();
+    ThreadState::ActivationScope activation_scope(thread);
+    Shape *string_key_shape = thread->get_exact_dict_string_key_shape();
+
+    Owned<TValue<Tuple>> keys(thread->make_object_value<Tuple>(1));
+    Owned<TValue<String>> string_key(thread->make_object_value<String>(L"a"));
+    keys.extract()->initialize_item_unchecked(0, string_key.raw_value());
+
+    Value result = Dict::from_tuple_keys(keys.extract(), Value::from_smi(7));
+
+    ASSERT_FALSE(result.is_exception_marker());
+    ASSERT_TRUE(can_convert_to<Dict>(result));
+    Dict *dict = result.get_ptr<Dict>();
+    EXPECT_EQ(string_key_shape, dict->get_shape());
+    EXPECT_EQ(0u, dict->table_generation());
+    EXPECT_EQ(Value::from_smi(7),
+              dict->get_item(thread, string_key.raw_value()).value());
+}
+
+TEST(Dict, PublicFromkeysPromotesNonStringTupleAndListKeys)
+{
+    test::VmTestContext context;
+
+    EXPECT_EQ(Value::from_smi(2),
+              context.run_file(L"d = dict.fromkeys((1, 'a'), 0)\n"
+                               L"len(d)\n"));
+    EXPECT_EQ(Value::from_smi(1),
+              context.run_file(L"d = dict.fromkeys([1, True], 0)\n"
+                               L"len(d)\n"));
+}
+
+TEST(Dict, PublicFromkeysPropagatesHashFailure)
+{
+    test::VmTestContext context;
+
+    Value result = context.run_file(L"class BadHash:\n"
+                                    L"    def __hash__(self):\n"
+                                    L"        return 'bad'\n"
+                                    L"dict.fromkeys(('good', BadHash()), 0)\n");
+
+    EXPECT_TRUE(result.is_exception_marker());
+    expect_pending_exception(context.thread(), L"TypeError",
                              L"__hash__ method should return an integer");
 }
 

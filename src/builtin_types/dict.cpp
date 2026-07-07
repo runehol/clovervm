@@ -242,36 +242,6 @@ namespace cl
         return Value::None();
     }
 
-    static Value require_string_key(Value key)
-    {
-        if(!can_convert_to<String>(key))
-        {
-            return active_thread()->set_pending_builtin_exception_string(
-                L"TypeError", L"dict keys must be str");
-        }
-        return Value::None();
-    }
-
-    static Value require_tuple_string_keys(const Tuple *keys)
-    {
-        for(size_t idx = 0; idx < keys->size(); ++idx)
-        {
-            CL_PROPAGATE_EXCEPTION(
-                require_string_key(keys->item_unchecked(idx)));
-        }
-        return Value::None();
-    }
-
-    static Value require_list_string_keys(const List *keys)
-    {
-        for(size_t idx = 0; idx < keys->size(); ++idx)
-        {
-            CL_PROPAGATE_EXCEPTION(
-                require_string_key(keys->item_unchecked(idx)));
-        }
-        return Value::None();
-    }
-
     static Value native_dict_clear(ThreadState *thread, Value self)
     {
         CL_PROPAGATE_EXCEPTION(require_dict_receiver(self, L"clear"));
@@ -505,13 +475,11 @@ namespace cl
         if(can_convert_to<Tuple>(keys))
         {
             Tuple *tuple = keys.get_ptr<Tuple>();
-            CL_PROPAGATE_EXCEPTION(require_tuple_string_keys(tuple));
             return Dict::from_tuple_keys(tuple, value);
         }
         if(can_convert_to<List>(keys))
         {
             List *list = keys.get_ptr<List>();
-            CL_PROPAGATE_EXCEPTION(require_list_string_keys(list));
             return Dict::from_list_keys(list, value);
         }
 
@@ -700,26 +668,26 @@ namespace cl
 
     Value Dict::from_tuple_keys(const Tuple *keys, Value value)
     {
+        ThreadState *thread = active_thread();
         Owned<TValue<Dict>> result(make_object_value<Dict>());
+        Owned<Value> live_value(value);
         for(size_t idx = 0; idx < keys->size(); ++idx)
         {
-            CL_TRY(result.extract()->set_item_for_str(
-                active_thread(),
-                TValue<String>::from_value_unchecked(keys->item_unchecked(idx)),
-                value));
+            CL_TRY(result.extract()->set_item(thread, keys->item_unchecked(idx),
+                                              live_value.value()));
         }
         return result.raw_value();
     }
 
     Value Dict::from_list_keys(const List *keys, Value value)
     {
+        ThreadState *thread = active_thread();
         Owned<TValue<Dict>> result(make_object_value<Dict>());
+        Owned<Value> live_value(value);
         for(size_t idx = 0; idx < keys->size(); ++idx)
         {
-            CL_TRY(result.extract()->set_item_for_str(
-                active_thread(),
-                TValue<String>::from_value_unchecked(keys->item_unchecked(idx)),
-                value));
+            CL_TRY(result.extract()->set_item(thread, keys->item_unchecked(idx),
+                                              live_value.value()));
         }
         return result.raw_value();
     }
