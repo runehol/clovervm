@@ -494,7 +494,8 @@ namespace cl
                 L"TypeError", L"dict.update expects a dict argument");
         }
 
-        self.get_ptr<Dict>()->update_from_dict(other.get_ptr<Dict>());
+        CL_TRY(self.get_ptr<Dict>()->update_from_dict(thread,
+                                                      other.get_ptr<Dict>()));
         return Value::None();
     }
 
@@ -687,13 +688,14 @@ namespace cl
         return result.raw_value();
     }
 
-    void Dict::update_from_dict(const Dict *other)
+    Expected<void> Dict::update_from_dict(ThreadState *thread,
+                                          const Dict *other)
     {
         for(EntryView entry: *other)
         {
-            string_keyed_insert(TValue<String>::from_value_unchecked(entry.key),
-                                entry.value);
+            CL_TRY(set_item(thread, entry.key, entry.value));
         }
+        return Expected<void>::ok();
     }
 
     Value Dict::from_tuple_keys(const Tuple *keys, Value value)

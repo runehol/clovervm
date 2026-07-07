@@ -1272,7 +1272,7 @@ Stage invariant:
 - [ ] Route insertion-delegating operations through the promoted assignment path
   once assignment promotion is correct: `setdefault` on miss, `update` for each
   contributed key/value pair, `fromkeys`, and dict display construction.
-- [ ] Add tests that `d.update(other)` promotes `d` when `other` contributes a
+- [x] Add tests that `d.update(other)` promotes `d` when `other` contributes a
   non-string key.
 - [ ] Add hash/equality exception tests for promoted assignment.
 

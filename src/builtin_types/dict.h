@@ -109,7 +109,8 @@ namespace cl
         [[nodiscard]] Value values();
         [[nodiscard]] Value items();
         [[nodiscard]] Value popitem();
-        void update_from_dict(const Dict *other);
+        [[nodiscard]] Expected<void> update_from_dict(ThreadState *thread,
+                                                      const Dict *other);
         [[nodiscard]] static Value from_tuple_keys(const Tuple *keys,
                                                    Value value);
         [[nodiscard]] static Value from_list_keys(const List *keys,

@@ -316,6 +316,80 @@ TEST(Dict, PublicSetdefaultPromotesNonStringMiss)
                                                    L"len(d)\n"));
 }
 
+TEST(Dict, SemanticApiUpdatePromotesFromNonStringSourceKey)
+{
+    test::VmTestContext context;
+    ThreadState *thread = context.thread();
+    ThreadState::ActivationScope activation_scope(thread);
+    Dict *target = thread->make_object_raw<Dict>();
+    Dict *source = thread->make_object_raw<Dict>();
+    Shape *string_key_shape = thread->get_exact_dict_string_key_shape();
+
+    ASSERT_FALSE(
+        source->set_item(thread, Value::from_smi(1), Value::from_smi(11))
+            .has_exception());
+
+    ASSERT_FALSE(target->update_from_dict(thread, source).has_exception());
+
+    EXPECT_NE(string_key_shape, target->get_shape());
+    EXPECT_EQ(1u, target->size());
+
+    Dict::EntryView entry = {Value::not_present(), Value::not_present()};
+    ASSERT_TRUE(target->entry_at(0, entry));
+    EXPECT_EQ(Value::from_smi(1), entry.key);
+    EXPECT_EQ(Value::from_smi(11), entry.value);
+}
+
+TEST(Dict, PublicUpdatePromotesFromNonStringSourceKey)
+{
+    test::VmTestContext context;
+
+    EXPECT_EQ(Value::from_smi(1), context.run_file(L"target = {}\n"
+                                                   L"source = {}\n"
+                                                   L"source[1] = 'one'\n"
+                                                   L"target.update(source)\n"
+                                                   L"len(target)\n"));
+}
+
+TEST(Dict, SemanticApiUpdateKeepsEarlierEntriesIfLaterHashFails)
+{
+    test::VmTestContext context;
+    ThreadState *thread = context.thread();
+    ThreadState::ActivationScope activation_scope(thread);
+    Dict *target = thread->make_object_raw<Dict>();
+    Dict *source = thread->make_object_raw<Dict>();
+    Shape *string_key_shape = thread->get_exact_dict_string_key_shape();
+
+    Owned<TValue<String>> good_key(thread->make_object_value<String>(L"good"));
+    Owned<Value> bad_hash_key(context.run_file(L"hash_count = 0\n"
+                                               L"class MaybeBadHash:\n"
+                                               L"    def __hash__(self):\n"
+                                               L"        global hash_count\n"
+                                               L"        hash_count = "
+                                               L"hash_count + 1\n"
+                                               L"        if hash_count > 1:\n"
+                                               L"            return 'bad'\n"
+                                               L"        return 42\n"
+                                               L"MaybeBadHash()\n"));
+    ASSERT_FALSE(thread->has_pending_exception());
+
+    ASSERT_FALSE(
+        source->set_item(thread, good_key.raw_value(), Value::from_smi(1))
+            .has_exception());
+    ASSERT_FALSE(
+        source->set_item(thread, bad_hash_key.value(), Value::from_smi(2))
+            .has_exception());
+
+    EXPECT_TRUE(target->update_from_dict(thread, source).has_exception());
+
+    EXPECT_NE(string_key_shape, target->get_shape());
+    EXPECT_EQ(1u, target->size());
+    EXPECT_EQ(Value::from_smi(1),
+              target->get_item(thread, good_key.raw_value()).value());
+    expect_pending_exception(thread, L"TypeError",
+                             L"__hash__ method should return an integer");
+}
+
 TEST(Dict, ExactBuiltinDictShapesAreCached)
 {
     test::VmTestContext context;
