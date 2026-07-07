@@ -147,15 +147,22 @@ TEST(Dict, SemanticApiLooksUpNonStringMissesWithoutPromotion)
     EXPECT_EQ(0u, dict->table_generation());
 }
 
-TEST(Dict, SemanticApiDelItemRejectsNonStringKeysUntilDeletionPromotionStage)
+TEST(Dict, SemanticApiDeletesNonStringMissesWithoutPromotion)
 {
     test::VmTestContext context;
     ThreadState *thread = context.thread();
     ThreadState::ActivationScope activation_scope(thread);
     Dict *dict = thread->make_object_raw<Dict>();
+    Shape *string_key_shape = thread->get_exact_dict_string_key_shape();
 
     EXPECT_TRUE(dict->del_item(thread, Value::from_smi(1)).has_exception());
-    expect_pending_exception(thread, L"TypeError", L"dict keys must be str");
+    expect_pending_exception(thread, L"KeyError", L"");
+    thread->clear_pending_exception();
+
+    EXPECT_TRUE(dict->pop(thread, Value::from_smi(1)).has_exception());
+    expect_pending_exception(thread, L"KeyError", L"");
+    EXPECT_EQ(string_key_shape, dict->get_shape());
+    EXPECT_EQ(0u, dict->table_generation());
 }
 
 TEST(Dict, SemanticApiSetItemPromotesNonStringKeys)
@@ -283,6 +290,41 @@ TEST(Dict, PublicLookupMissesUnpromotedNonStringKeys)
                                     L"d[1]\n");
     EXPECT_TRUE(result.is_exception_marker());
     expect_pending_exception(context.thread(), L"KeyError", L"");
+}
+
+TEST(Dict, SemanticApiDeleteUsesGeneralSemanticsAfterPromotion)
+{
+    test::VmTestContext context;
+    ThreadState *thread = context.thread();
+    ThreadState::ActivationScope activation_scope(thread);
+    Dict *dict = thread->make_object_raw<Dict>();
+
+    ASSERT_FALSE(dict->set_item(thread, Value::from_smi(1), Value::from_smi(11))
+                     .has_exception());
+
+    EXPECT_EQ(Value::from_smi(11), dict->pop(thread, Value::True()).value());
+    EXPECT_EQ(0u, dict->size());
+
+    ASSERT_FALSE(dict->set_item(thread, Value::from_smi(1), Value::from_smi(11))
+                     .has_exception());
+    ASSERT_FALSE(dict->del_item(thread, Value::True()).has_exception());
+    EXPECT_EQ(0u, dict->size());
+    EXPECT_FALSE(dict->contains(thread, Value::from_smi(1)).value());
+}
+
+TEST(Dict, PublicDeleteAndPopPromotedNonStringKeys)
+{
+    test::VmTestContext context;
+
+    EXPECT_EQ(Value::True(),
+              context.run_file(L"d = {}\n"
+                               L"d[1] = 'one'\n"
+                               L"popped = d.pop(True)\n"
+                               L"after_pop = len(d) == 0 and not (1 in d)\n"
+                               L"d[1] = 'one'\n"
+                               L"del d[True]\n"
+                               L"popped == 'one' and after_pop and "
+                               L"len(d) == 0 and not (1 in d)\n"));
 }
 
 TEST(Dict, SemanticApiSetItemKeepsPromotionWhenHashFails)
@@ -471,15 +513,131 @@ TEST(Dict, PublicContainsRestartsAfterEqualityInsertionResize)
                                               L"Probe() in d\n"));
 }
 
-TEST(Dict, SemanticApiPopRejectsNonStringKeysUntilDeletionPromotionStage)
+TEST(Dict, PublicDeletePropagatesHashExceptions)
 {
     test::VmTestContext context;
-    ThreadState *thread = context.thread();
-    ThreadState::ActivationScope activation_scope(thread);
-    Dict *dict = thread->make_object_raw<Dict>();
 
-    EXPECT_TRUE(dict->pop(thread, Value::from_smi(1)).has_exception());
-    expect_pending_exception(thread, L"TypeError", L"dict keys must be str");
+    Value result = context.run_file(L"class BadHash:\n"
+                                    L"    def __hash__(self):\n"
+                                    L"        return 'bad'\n"
+                                    L"d = {}\n"
+                                    L"d[1] = 'one'\n"
+                                    L"del d[BadHash()]\n");
+
+    EXPECT_TRUE(result.is_exception_marker());
+    expect_pending_exception(context.thread(), L"TypeError",
+                             L"__hash__ method should return an integer");
+}
+
+TEST(Dict, PublicPopPropagatesHashExceptions)
+{
+    test::VmTestContext context;
+
+    Value result = context.run_file(L"class BadHash:\n"
+                                    L"    def __hash__(self):\n"
+                                    L"        return 'bad'\n"
+                                    L"d = {}\n"
+                                    L"d[1] = 'one'\n"
+                                    L"d.pop(BadHash())\n");
+
+    EXPECT_TRUE(result.is_exception_marker());
+    expect_pending_exception(context.thread(), L"TypeError",
+                             L"__hash__ method should return an integer");
+}
+
+TEST(Dict, PublicDeletePropagatesEqualityExceptions)
+{
+    test::VmTestContext context;
+
+    Value result = context.run_file(L"class Stored:\n"
+                                    L"    def __hash__(self):\n"
+                                    L"        return 7\n"
+                                    L"    def __eq__(self, other):\n"
+                                    L"        raise ValueError\n"
+                                    L"class Probe:\n"
+                                    L"    def __hash__(self):\n"
+                                    L"        return 7\n"
+                                    L"d = {}\n"
+                                    L"d[Stored()] = 1\n"
+                                    L"del d[Probe()]\n");
+
+    EXPECT_TRUE(result.is_exception_marker());
+    expect_pending_exception(context.thread(), L"ValueError", L"");
+}
+
+TEST(Dict, PublicPopPropagatesEqualityExceptions)
+{
+    test::VmTestContext context;
+
+    Value result = context.run_file(L"class Stored:\n"
+                                    L"    def __hash__(self):\n"
+                                    L"        return 7\n"
+                                    L"    def __eq__(self, other):\n"
+                                    L"        raise ValueError\n"
+                                    L"class Probe:\n"
+                                    L"    def __hash__(self):\n"
+                                    L"        return 7\n"
+                                    L"d = {}\n"
+                                    L"d[Stored()] = 1\n"
+                                    L"d.pop(Probe())\n");
+
+    EXPECT_TRUE(result.is_exception_marker());
+    expect_pending_exception(context.thread(), L"ValueError", L"");
+}
+
+TEST(Dict, PublicDeleteRestartsAfterEqualityInsertionResize)
+{
+    test::VmTestContext context;
+
+    EXPECT_EQ(Value::True(),
+              context.run_file(L"d = {}\n"
+                               L"mutated = False\n"
+                               L"class Stored:\n"
+                               L"    def __hash__(self):\n"
+                               L"        return 7\n"
+                               L"    def __eq__(self, other):\n"
+                               L"        global mutated\n"
+                               L"        if not mutated:\n"
+                               L"            mutated = True\n"
+                               L"            i = 20\n"
+                               L"            while i < 40:\n"
+                               L"                d[i] = i\n"
+                               L"                i = i + 1\n"
+                               L"        return True\n"
+                               L"class Probe:\n"
+                               L"    def __hash__(self):\n"
+                               L"        return 7\n"
+                               L"d[Stored()] = 99\n"
+                               L"del d[Probe()]\n"
+                               L"len(d) == 20 and d[39] == 39\n"));
+}
+
+TEST(Dict, PublicPopRestartsAfterEqualityInsertionResize)
+{
+    test::VmTestContext context;
+
+    EXPECT_EQ(Value::True(),
+              context.run_file(L"d = {}\n"
+                               L"mutated = False\n"
+                               L"class Stored:\n"
+                               L"    def __hash__(self):\n"
+                               L"        return 7\n"
+                               L"    def __eq__(self, other):\n"
+                               L"        global mutated\n"
+                               L"        if not mutated:\n"
+                               L"            mutated = True\n"
+                               L"            i = 20\n"
+                               L"            while i < 40:\n"
+                               L"                d[i] = i\n"
+                               L"                i = i + 1\n"
+                               L"        return True\n"
+                               L"class Probe:\n"
+                               L"    def __hash__(self):\n"
+                               L"        return 7\n"
+                               L"d[Stored()] = 99\n"
+                               L"popped = d.pop(Probe())\n"
+                               L"popped == 99 and len(d) == 20 and "
+                               L"d[39] == 39\n"));
 }
 
 TEST(Dict, SemanticApiSetdefaultPromotesNonStringMiss)

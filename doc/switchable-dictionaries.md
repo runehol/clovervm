@@ -1284,11 +1284,11 @@ Stage invariant:
 
 - [x] Route public `dict` lookup, membership, and lookup delegators through the
   chosen unified design.
-- [ ] Route public `dict` deletion and deletion delegators through the chosen
+- [x] Route public `dict` deletion and deletion delegators through the chosen
   unified design.
 - [x] Add tests for `d[1]`, `d.get(1)`, and `1 in d` on promoted/general public
   dicts.
-- [ ] Add tests for `d.pop(1)` and `del d[1]` on promoted/general public dicts.
+- [x] Add tests for `d.pop(1)` and `del d[1]` on promoted/general public dicts.
 - [x] Add lookup/membership tests for propagated `__hash__` and `__eq__`
   exceptions and mutation during equality.
 

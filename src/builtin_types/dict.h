@@ -199,6 +199,15 @@ namespace cl
             Entry existing = entries[entry_idx];
             entries.set(entry_idx, Entry(existing.key, value, existing.hash));
         }
+        void delete_entry_at_slot(size_t hash_idx)
+        {
+            int32_t entry_idx = hash_table[hash_idx];
+            assert(entry_idx >= 0);
+            entries.set(entry_idx, Entry(Value::not_present(), Value::None(),
+                                         TValue<SMI>::from_smi(0)));
+            hash_table[hash_idx] = tombstone;
+            --n_valid_entries;
+        }
         void resize_general_if_needed()
         {
             if(entries.size() >
@@ -234,12 +243,19 @@ namespace cl
         [[nodiscard]] Expected<int32_t>
         find_entry_index_for_general_lookup(ThreadState *thread, Value key,
                                             TValue<SMI> hash_smi);
+        [[nodiscard]] Expected<int64_t>
+        find_entry_slot_for_general_lookup(ThreadState *thread, Value key,
+                                           TValue<SMI> hash_smi);
         [[nodiscard]] Expected<Value> general_get_item(ThreadState *thread,
                                                        Value key);
         [[nodiscard]] Expected<void> general_set_item(ThreadState *thread,
                                                       Value key, Value value);
+        [[nodiscard]] Expected<void> general_del_item(ThreadState *thread,
+                                                      Value key);
         [[nodiscard]] Expected<bool> general_contains(ThreadState *thread,
                                                       Value key);
+        [[nodiscard]] Expected<Value> general_pop(ThreadState *thread,
+                                                  Value key);
         [[nodiscard]] Expected<Value>
         general_setdefault(ThreadState *thread, Value key, Value default_value);
         void always_promote_to_general_shape(ThreadState *thread);
