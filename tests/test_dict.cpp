@@ -255,6 +255,45 @@ TEST(Dict, SemanticApiSetItemKeepsPromotionWhenHashFails)
                              L"__hash__ method should return an integer");
 }
 
+TEST(Dict, SemanticApiSetItemPropagatesEqualityExceptionAfterPromotion)
+{
+    test::VmTestContext context;
+    ThreadState *thread = context.thread();
+    ThreadState::ActivationScope activation_scope(thread);
+    Dict *dict = thread->make_object_raw<Dict>();
+    Shape *string_key_shape = thread->get_exact_dict_string_key_shape();
+
+    Owned<Value> keys_value(context.run_file(L"class Stored:\n"
+                                             L"    def __hash__(self):\n"
+                                             L"        return 7\n"
+                                             L"    def __eq__(self, other):\n"
+                                             L"        raise ValueError\n"
+                                             L"class Probe:\n"
+                                             L"    def __hash__(self):\n"
+                                             L"        return 7\n"
+                                             L"(Stored(), Probe())\n"));
+    ASSERT_FALSE(thread->has_pending_exception());
+    ASSERT_TRUE(can_convert_to<Tuple>(keys_value.value()));
+    Tuple *keys = keys_value.value().get_ptr<Tuple>();
+    Value stored_key = keys->item_unchecked(0);
+    Value probe_key = keys->item_unchecked(1);
+
+    ASSERT_FALSE(
+        dict->set_item(thread, stored_key, Value::from_smi(1)).has_exception());
+    EXPECT_TRUE(
+        dict->set_item(thread, probe_key, Value::from_smi(2)).has_exception());
+
+    EXPECT_NE(string_key_shape, dict->get_shape());
+    EXPECT_EQ(1u, dict->table_generation());
+    EXPECT_EQ(1u, dict->size());
+
+    Dict::EntryView entry = {Value::not_present(), Value::not_present()};
+    ASSERT_TRUE(dict->entry_at(0, entry));
+    EXPECT_EQ(stored_key, entry.key);
+    EXPECT_EQ(Value::from_smi(1), entry.value);
+    expect_pending_exception(thread, L"ValueError", L"");
+}
+
 TEST(Dict, SemanticApiPopRejectsNonStringKeysUntilDeletionPromotionStage)
 {
     test::VmTestContext context;

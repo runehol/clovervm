@@ -1274,7 +1274,7 @@ Stage invariant:
   contributed key/value pair, and `fromkeys`.
 - [x] Add tests that `d.update(other)` promotes `d` when `other` contributes a
   non-string key.
-- [ ] Add hash/equality exception tests for promoted assignment.
+- [x] Add hash/equality exception tests for promoted assignment.
 
 Stage invariant:
 
