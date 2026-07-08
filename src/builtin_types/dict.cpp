@@ -32,6 +32,12 @@ namespace cl
         return string_eq(a, b);
     }
 
+    static bool is_exact_dict_string_key_shape(ThreadState *thread,
+                                               const Dict *dict)
+    {
+        return dict->get_shape() == thread->get_exact_dict_string_key_shape();
+    }
+
     Dict::Dict(ClassObject *cls)
         : Object(cls, native_layout), hash_table(min_table_size, not_present),
           n_valid_entries(0), table_generation_(0)
@@ -42,12 +48,16 @@ namespace cl
         : Object(cls, native_layout), hash_table(min_table_size, not_present),
           n_valid_entries(0), table_generation_(0)
     {
+        ThreadState *thread = active_thread();
+        if(!is_exact_dict_string_key_shape(thread, &other))
+        {
+            promote_to_general_shape(thread);
+        }
         for(const Entry &e: other.entries)
         {
             if(e.valid())
             {
-                string_keyed_insert(TValue<String>::from_value_unchecked(e.key),
-                                    e.value);
+                copy_stored_entry(e.key, e.value, e.hash);
             }
         }
     }
@@ -259,12 +269,8 @@ namespace cl
                                  Value default_value)
     {
         CL_PROPAGATE_EXCEPTION(require_dict_receiver(self, L"get"));
-        Dict *dict = self.get_ptr<Dict>();
-        if(!CL_TRY(dict->contains(thread, key)))
-        {
-            return default_value;
-        }
-        return CL_TRY(dict->get_item(thread, key));
+        return CL_TRY(self.get_ptr<Dict>()->get_item_or_default(thread, key,
+                                                                default_value));
     }
 
     static Value native_dict_getitem(ThreadState *thread, Value self, Value key)
@@ -642,26 +648,47 @@ namespace cl
                 L"KeyError");
         }
 
-        EntryView last = {Value::not_present(), Value::not_present()};
-        for(EntryView entry: *this)
+        int32_t last_entry_idx = -1;
+        for(size_t entry_idx = 0; entry_idx < entries.size(); ++entry_idx)
         {
-            last = entry;
+            if(entries[entry_idx].valid())
+            {
+                last_entry_idx = static_cast<int32_t>(entry_idx);
+            }
         }
-        assert(!last.key.is_not_present());
-        CL_PROPAGATE_EXCEPTION(string_keyed_delete(
-            TValue<String>::from_value_unchecked(last.key)));
+        assert(last_entry_idx >= 0);
+        Entry last = entries[last_entry_idx];
+        int64_t last_hash_idx = -1;
+        for(size_t hash_idx = 0; hash_idx < hash_table.size(); ++hash_idx)
+        {
+            if(hash_table[hash_idx] == last_entry_idx)
+            {
+                last_hash_idx = static_cast<int64_t>(hash_idx);
+                break;
+            }
+        }
+        assert(last_hash_idx >= 0);
+        Owned<Value> last_key(last.key);
+        Owned<Value> last_value(last.value);
+        delete_entry_at_slot(static_cast<size_t>(last_hash_idx));
         Owned<TValue<Tuple>> result(make_object_value<Tuple>(2));
-        result.extract()->initialize_item_unchecked(0, last.key);
-        result.extract()->initialize_item_unchecked(1, last.value);
+        result.extract()->initialize_item_unchecked(0, last_key.value());
+        result.extract()->initialize_item_unchecked(1, last_value.value());
         return result.raw_value();
     }
 
     Expected<void> Dict::update_from_dict(ThreadState *thread,
                                           const Dict *other)
     {
-        for(EntryView entry: *other)
+        for(size_t idx = 0; idx < other->entries.size(); ++idx)
         {
-            CL_TRY(set_item(thread, entry.key, entry.value));
+            Entry entry = other->entries[idx];
+            if(!entry.valid())
+            {
+                continue;
+            }
+            CL_TRY(set_item_with_known_hash(thread, entry.key, entry.value,
+                                            entry.hash));
         }
         return Expected<void>::ok();
     }
@@ -754,12 +781,6 @@ namespace cl
         return true;
     }
 
-    static bool is_exact_dict_string_key_shape(ThreadState *thread,
-                                               const Dict *dict)
-    {
-        return dict->get_shape() == thread->get_exact_dict_string_key_shape();
-    }
-
     Expected<Value> Dict::get_item(ThreadState *thread, Value key)
     {
         if(is_exact_dict_string_key_shape(thread, this) &&
@@ -771,6 +792,29 @@ namespace cl
         return general_get_item(thread, key);
     }
 
+    Expected<Value> Dict::get_item_or_default(ThreadState *thread, Value key,
+                                              Value default_value)
+    {
+        default_value.assert_not_vm_sentinel();
+        if(is_exact_dict_string_key_shape(thread, this) &&
+           can_convert_to<String>(key))
+        {
+            TValue<String> string_key =
+                TValue<String>::from_value_unchecked(key);
+            if(!string_keyed_contains(string_key))
+            {
+                return Expected<Value>::ok(default_value);
+            }
+            Value result = string_keyed_lookup(string_key);
+            if(result.is_exception_marker())
+            {
+                return Expected<Value>::propagate_exception();
+            }
+            return Expected<Value>::ok(result);
+        }
+        return general_get_item_or_default(thread, key, default_value);
+    }
+
     Expected<void> Dict::set_item(ThreadState *thread, Value key, Value value)
     {
         if(is_exact_dict_string_key_shape(thread, this))
@@ -780,7 +824,7 @@ namespace cl
                 return set_item_for_str(
                     thread, TValue<String>::from_value_unchecked(key), value);
             }
-            always_promote_to_general_shape(thread);
+            promote_to_general_shape(thread);
         }
         return general_set_item(thread, key, value);
     }
@@ -829,7 +873,7 @@ namespace cl
                     thread, TValue<String>::from_value_unchecked(key),
                     default_value);
             }
-            always_promote_to_general_shape(thread);
+            promote_to_general_shape(thread);
         }
         return general_setdefault(thread, key, default_value);
     }
@@ -927,7 +971,7 @@ namespace cl
         return general_setdefault(thread, key.raw_value(), default_value);
     }
 
-    void Dict::always_promote_to_general_shape(ThreadState *thread)
+    void Dict::promote_to_general_shape(ThreadState *thread)
     {
         assert(is_exact_dict_string_key_shape(thread, this));
         set_shape(thread->get_exact_dict_general_shape());
@@ -938,7 +982,7 @@ namespace cl
     {
         if(is_exact_dict_string_key_shape(thread, this))
         {
-            always_promote_to_general_shape(thread);
+            promote_to_general_shape(thread);
         }
     }
 
@@ -1109,6 +1153,63 @@ namespace cl
             return Expected<Value>::raise_exception(L"KeyError", L"");
         }
         return Expected<Value>::ok(entries[idx].value);
+    }
+
+    Expected<Value> Dict::general_get_item_or_default(ThreadState *thread,
+                                                      Value key,
+                                                      Value default_value)
+    {
+        key.assert_not_vm_sentinel();
+        default_value.assert_not_vm_sentinel();
+
+        Owned<Value> live_key(key);
+        Owned<Value> live_default(default_value);
+        TValue<SMI> hash = CL_TRY(thread->hash_value(live_key.value()));
+        int32_t idx = CL_TRY(find_entry_index_for_general_lookup(
+            thread, live_key.value(), hash));
+        if(idx < 0)
+        {
+            return Expected<Value>::ok(live_default.value());
+        }
+        return Expected<Value>::ok(entries[idx].value);
+    }
+
+    Expected<void> Dict::set_item_with_known_hash(ThreadState *thread,
+                                                  Value key, Value value,
+                                                  TValue<SMI> hash)
+    {
+        key.assert_not_vm_sentinel();
+        value.assert_not_vm_sentinel();
+
+        if(is_exact_dict_string_key_shape(thread, this))
+        {
+            if(can_convert_to<String>(key))
+            {
+                string_keyed_insert(TValue<String>::from_value_unchecked(key),
+                                    value);
+                return Expected<void>::ok();
+            }
+            promote_to_general_shape(thread);
+        }
+
+        Owned<Value> live_key(key);
+        Owned<Value> live_value(value);
+        resize_general_if_needed();
+
+        size_t entry_slot = CL_TRY(
+            find_entry_slot_for_general_insert(thread, live_key.value(), hash));
+        int32_t idx = hash_table[entry_slot];
+        if(idx < 0)
+        {
+            write_new_at_slot(entry_slot, hash, live_key.value(),
+                              live_value.value());
+        }
+        else
+        {
+            write_existing(idx, live_value.value());
+        }
+
+        return Expected<void>::ok();
     }
 
     Expected<void> Dict::general_set_item(ThreadState *thread, Value key,

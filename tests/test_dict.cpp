@@ -277,6 +277,49 @@ TEST(Dict, PublicLookupAndContainsPromotedNonStringKeys)
                                L"1 in d and True in d and not (2 in d)\n"));
 }
 
+TEST(Dict, PublicGetUsesSingleGeneralLookup)
+{
+    test::VmTestContext context;
+
+    EXPECT_EQ(Value::True(),
+              context.run_file(L"d = {}\n"
+                               L"calls = 0\n"
+                               L"class Stored:\n"
+                               L"    def __hash__(self):\n"
+                               L"        return 7\n"
+                               L"    def __eq__(self, other):\n"
+                               L"        global calls\n"
+                               L"        calls = calls + 1\n"
+                               L"        if calls > 1:\n"
+                               L"            raise ValueError\n"
+                               L"        return True\n"
+                               L"class Probe:\n"
+                               L"    def __hash__(self):\n"
+                               L"        return 7\n"
+                               L"d[Stored()] = 'value'\n"
+                               L"d.get(Probe()) == 'value' and calls == 1\n"));
+}
+
+TEST(Dict, PublicGetPropagatesEqualityKeyError)
+{
+    test::VmTestContext context;
+
+    Value result = context.run_file(L"d = {}\n"
+                                    L"class Stored:\n"
+                                    L"    def __hash__(self):\n"
+                                    L"        return 7\n"
+                                    L"    def __eq__(self, other):\n"
+                                    L"        raise KeyError\n"
+                                    L"class Probe:\n"
+                                    L"    def __hash__(self):\n"
+                                    L"        return 7\n"
+                                    L"d[Stored()] = 'value'\n"
+                                    L"d.get(Probe(), 'fallback')\n");
+
+    EXPECT_TRUE(result.is_exception_marker());
+    expect_pending_exception(context.thread(), L"KeyError", L"");
+}
+
 TEST(Dict, PublicLookupMissesUnpromotedNonStringKeys)
 {
     test::VmTestContext context;
@@ -325,6 +368,29 @@ TEST(Dict, PublicDeleteAndPopPromotedNonStringKeys)
                                L"del d[True]\n"
                                L"popped == 'one' and after_pop and "
                                L"len(d) == 0 and not (1 in d)\n"));
+}
+
+TEST(Dict, PublicCopyPreservesPromotedNonStringKeys)
+{
+    test::VmTestContext context;
+
+    EXPECT_EQ(Value::True(),
+              context.run_file(L"d = {}\n"
+                               L"d[1] = 'one'\n"
+                               L"copy = d.copy()\n"
+                               L"copy[1] == 'one' and len(copy) == 1\n"));
+}
+
+TEST(Dict, PublicPopitemRemovesPromotedNonStringKey)
+{
+    test::VmTestContext context;
+
+    EXPECT_EQ(Value::True(),
+              context.run_file(L"d = {}\n"
+                               L"d[1] = 'one'\n"
+                               L"item = d.popitem()\n"
+                               L"item[0] == 1 and item[1] == 'one' and "
+                               L"len(d) == 0\n"));
 }
 
 TEST(Dict, SemanticApiSetItemKeepsPromotionWhenHashFails)
@@ -727,7 +793,7 @@ TEST(Dict, PublicUpdatePromotesFromNonStringSourceKey)
                                                    L"len(target)\n"));
 }
 
-TEST(Dict, SemanticApiUpdateKeepsEarlierEntriesIfLaterHashFails)
+TEST(Dict, SemanticApiUpdateReusesStoredSourceHashes)
 {
     test::VmTestContext context;
     ThreadState *thread = context.thread();
@@ -756,14 +822,24 @@ TEST(Dict, SemanticApiUpdateKeepsEarlierEntriesIfLaterHashFails)
         source->set_item(thread, bad_hash_key.value(), Value::from_smi(2))
             .has_exception());
 
-    EXPECT_TRUE(target->update_from_dict(thread, source).has_exception());
+    EXPECT_FALSE(target->update_from_dict(thread, source).has_exception());
 
     EXPECT_NE(string_key_shape, target->get_shape());
-    EXPECT_EQ(1u, target->size());
+    EXPECT_EQ(2u, target->size());
     EXPECT_EQ(Value::from_smi(1),
               target->get_item(thread, good_key.raw_value()).value());
-    expect_pending_exception(thread, L"TypeError",
-                             L"__hash__ method should return an integer");
+    bool found_bad_hash_key = false;
+    for(size_t idx = 0; idx < target->entry_storage_size(); ++idx)
+    {
+        Dict::EntryView entry = {Value::not_present(), Value::not_present()};
+        if(target->entry_at(idx, entry) && entry.key == bad_hash_key.value())
+        {
+            found_bad_hash_key = true;
+            EXPECT_EQ(Value::from_smi(2), entry.value);
+        }
+    }
+    EXPECT_TRUE(found_bad_hash_key);
+    EXPECT_FALSE(thread->has_pending_exception());
 }
 
 TEST(Dict, FromTupleKeysPromotesForNonStringKeys)

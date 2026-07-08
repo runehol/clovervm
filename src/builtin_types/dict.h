@@ -72,6 +72,9 @@ namespace cl
         Dict(ClassObject *cls, const Dict &other);
 
         [[nodiscard]] Expected<Value> get_item(ThreadState *thread, Value key);
+        [[nodiscard]] Expected<Value> get_item_or_default(ThreadState *thread,
+                                                          Value key,
+                                                          Value default_value);
         [[nodiscard]] Expected<void> set_item(ThreadState *thread, Value key,
                                               Value value);
         [[nodiscard]] Expected<void> del_item(ThreadState *thread, Value key);
@@ -199,6 +202,17 @@ namespace cl
             Entry existing = entries[entry_idx];
             entries.set(entry_idx, Entry(existing.key, value, existing.hash));
         }
+        void copy_stored_entry(Value key, Value value, TValue<SMI> hash)
+        {
+            resize_general_if_needed();
+            uint64_t raw_hash = hash.extract();
+            size_t hash_idx = raw_hash & (hash_table.size() - 1);
+            while(hash_table[hash_idx] != not_present)
+            {
+                hash_idx = (hash_idx + 1) & (hash_table.size() - 1);
+            }
+            write_new_at_slot(hash_idx, hash, key, value);
+        }
         void delete_entry_at_slot(size_t hash_idx)
         {
             int32_t entry_idx = hash_table[hash_idx];
@@ -248,6 +262,12 @@ namespace cl
                                            TValue<SMI> hash_smi);
         [[nodiscard]] Expected<Value> general_get_item(ThreadState *thread,
                                                        Value key);
+        [[nodiscard]] Expected<Value>
+        general_get_item_or_default(ThreadState *thread, Value key,
+                                    Value default_value);
+        [[nodiscard]] Expected<void>
+        set_item_with_known_hash(ThreadState *thread, Value key, Value value,
+                                 TValue<SMI> hash);
         [[nodiscard]] Expected<void> general_set_item(ThreadState *thread,
                                                       Value key, Value value);
         [[nodiscard]] Expected<void> general_del_item(ThreadState *thread,
@@ -258,7 +278,7 @@ namespace cl
                                                   Value key);
         [[nodiscard]] Expected<Value>
         general_setdefault(ThreadState *thread, Value key, Value default_value);
-        void always_promote_to_general_shape(ThreadState *thread);
+        void promote_to_general_shape(ThreadState *thread);
         void maybe_promote_to_general_shape(ThreadState *thread);
         void grow();
 
