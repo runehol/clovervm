@@ -758,6 +758,30 @@ TEST(Dict, PublicSetdefaultPromotesNonStringMiss)
                                                    L"len(d)\n"));
 }
 
+TEST(Dict, PublicSetdefaultUsesSingleGeneralLookup)
+{
+    test::VmTestContext context;
+
+    EXPECT_EQ(Value::True(),
+              context.run_file(L"d = {}\n"
+                               L"calls = 0\n"
+                               L"class Stored:\n"
+                               L"    def __hash__(self):\n"
+                               L"        return 7\n"
+                               L"    def __eq__(self, other):\n"
+                               L"        global calls\n"
+                               L"        calls = calls + 1\n"
+                               L"        if calls > 1:\n"
+                               L"            raise ValueError\n"
+                               L"        return False\n"
+                               L"class Probe:\n"
+                               L"    def __hash__(self):\n"
+                               L"        return 7\n"
+                               L"d[Stored()] = 'stored'\n"
+                               L"d.setdefault(Probe(), 'new') == 'new' and "
+                               L"calls == 1 and len(d) == 2\n"));
+}
+
 TEST(Dict, SemanticApiUpdatePromotesFromNonStringSourceKey)
 {
     test::VmTestContext context;

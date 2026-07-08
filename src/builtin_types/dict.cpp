@@ -1301,28 +1301,18 @@ namespace cl
         Owned<Value> live_default(default_value);
         TValue<SMI> hash = CL_TRY(thread->hash_value(live_key.value()));
 
-        int32_t idx = CL_TRY(find_entry_index_for_general_lookup(
-            thread, live_key.value(), hash));
-        if(idx >= 0)
-        {
-            return Expected<Value>::ok(entries[idx].value);
-        }
-
         resize_general_if_needed();
 
         size_t entry_slot = CL_TRY(
             find_entry_slot_for_general_insert(thread, live_key.value(), hash));
         int32_t slot_value = hash_table[entry_slot];
-        if(slot_value < 0)
+        if(slot_value >= 0)
         {
-            write_new_at_slot(entry_slot, hash, live_key.value(),
-                              live_default.value());
-        }
-        else
-        {
-            write_existing(slot_value, live_default.value());
+            return Expected<Value>::ok(entries[slot_value].value);
         }
 
+        write_new_at_slot(entry_slot, hash, live_key.value(),
+                          live_default.value());
         return Expected<Value>::ok(live_default.value());
     }
 
