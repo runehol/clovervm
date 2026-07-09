@@ -4852,42 +4852,87 @@ namespace cl
         COMPLETE();
     }
 
+    template <uint32_t NUserArgs>
+    static constexpr TrustedHandlerArity special_method_trusted_handler_arity()
+    {
+        static_assert(NUserArgs <= 2);
+        if constexpr(NUserArgs == 0)
+        {
+            return TrustedHandlerArity::Unary;
+        }
+        if constexpr(NUserArgs == 1)
+        {
+            return TrustedHandlerArity::Binary;
+        }
+        return TrustedHandlerArity::Ternary;
+    }
+
+    template <uint32_t NUserArgs>
+    static ALWAYSINLINE bool
+    special_method_cache_matches(const OperatorInlineCache &cache, Value *fp,
+                                 int32_t receiver_reg, Value receiver)
+    {
+        static_assert(NUserArgs <= 3);
+        if(cache.trusted_handler.is_null())
+        {
+            return cache.matches_unary(receiver);
+        }
+
+        if constexpr(NUserArgs == 0)
+        {
+            return cache.matches_unary(receiver);
+        }
+        if constexpr(NUserArgs == 1)
+        {
+            return cache.matches_binary(receiver, fp[receiver_reg - 1]);
+        }
+        if constexpr(NUserArgs == 2)
+        {
+            return cache.matches_ternary(receiver, fp[receiver_reg - 1]);
+        }
+        return false;
+    }
+
+    template <uint32_t NUserArgs>
+    static ALWAYSINLINE Value invoke_special_method_trusted_handler(
+        ThreadState *thread, const OperatorInlineCache &cache, Value *fp,
+        int32_t receiver_reg, Value receiver)
+    {
+        static_assert(NUserArgs <= 2);
+        if constexpr(NUserArgs == 0)
+        {
+            return cache.trusted_handler.unary(thread, receiver);
+        }
+        if constexpr(NUserArgs == 1)
+        {
+            return cache.trusted_handler.binary(thread, receiver,
+                                                fp[receiver_reg - 1]);
+        }
+        return cache.trusted_handler.ternary(
+            thread, receiver, fp[receiver_reg - 1], fp[receiver_reg - 2]);
+    }
+
+    template <uint32_t NUserArgs>
     NOINLINE static INTERP_CC Value op_call_special_method_slow(PARAMS)
     {
-        static constexpr uint32_t call_instr_len = 8;
+        static_assert(NUserArgs <= 3);
+        static constexpr uint32_t call_instr_len = 6;
         int32_t receiver_reg = int8_t(pc[1]);
         uint8_t const_offset = pc[2];
-        uint8_t read_cache_idx = pc[3];
-        uint8_t call_cache_idx = pc[4];
-        uint32_t n_user_args = uint8_t(pc[5]);
-        uint8_t missing_exception_type_idx = pc[6];
-        uint8_t missing_exception_message_idx = pc[7];
+        uint8_t cache_idx = pc[3];
+        uint8_t missing_exception_type_idx = pc[4];
+        uint8_t missing_exception_message_idx = pc[5];
         Value receiver = fp[receiver_reg];
         TValue<String> method_name = TValue<String>::from_value_assumed(
             code_object->constant_table[const_offset].value());
 
-        AttributeReadInlineCache &cache =
-            code_object->attribute_read_caches[read_cache_idx];
         Value callable;
         Value self;
-        MethodCallTargetStatus target_status;
-        if(cache.matches(receiver))
-        {
-            target_status = prepare_method_call_target_from_plan(
-                receiver, cache.plan, callable, self);
-        }
-        else
-        {
-            AttributeReadDescriptor descriptor =
-                resolve_special_method_read_descriptor(receiver, method_name);
-            target_status = prepare_method_call_target_from_descriptor(
-                receiver, descriptor, callable, self);
-            if(target_status == MethodCallTargetStatus::Ready &&
-               descriptor.is_cacheable())
-            {
-                cache.populate(receiver, descriptor);
-            }
-        }
+        AttributeReadDescriptor descriptor =
+            resolve_special_method_read_descriptor(receiver, method_name);
+        MethodCallTargetStatus target_status =
+            prepare_method_call_target_from_descriptor(receiver, descriptor,
+                                                       callable, self);
         if(unlikely(target_status == MethodCallTargetStatus::Missing))
         {
             TValue<ClassObject> exception_type =
@@ -4913,7 +4958,7 @@ namespace cl
         }
 
         bool has_self = !self.is_not_present();
-        uint32_t n_args = n_user_args + (has_self ? 1 : 0);
+        uint32_t n_args = NUserArgs + (has_self ? 1 : 0);
 
         if(unlikely(!callable.is_ptr()))
         {
@@ -4928,36 +4973,89 @@ namespace cl
 
         TValue<Function> function =
             TValue<Function>::from_value_assumed(callable);
-        FunctionCallInlineCache &call_cache =
-            code_object->function_call_caches[call_cache_idx];
-        if(function_call_cache_matches(call_cache, callable, n_args))
-        {
-            int32_t first_arg_reg = prepare_method_call_argument_slots(
-                fp, receiver_reg, n_user_args, self);
-            TValue<Function> cached_function =
-                TValue<Function>::from_oop(call_cache.function);
-            enter_function_frame_from_positional_args(
-                thread, fp, pc, code_object, cached_function, first_arg_reg,
-                n_args, call_instr_len, call_cache.adaptation);
-            if(unlikely(thread->safepoint_requested()))
-            {
-                MUSTTAIL return op_committed_safepoint_slow(ARGS);
-            }
-
-            START(0);
-            COMPLETE();
-        }
         if(unlikely(
                !function.extract()->accepts_positional_only_call_arity(n_args)))
         {
             MUSTTAIL return wrong_arity_error(ARGS);
         }
+
+        ShapeKey receiver_shape_key = ShapeKey::from_value(receiver);
+        ShapeKey operand1_shape_key =
+            NUserArgs == 0 ? ShapeKey::from_value(Value::not_present())
+                           : ShapeKey::from_value(fp[receiver_reg - 1]);
+        TrustedResolution trusted_resolution =
+            TrustedResolution::no_trusted_handler_call_untrusted();
+        CodeObject *target_code_object =
+            function.extract()->code_object.extract();
+        if constexpr(NUserArgs <= 2)
+        {
+            if(!self.is_not_present() &&
+               target_code_object->trusted_handler_resolver != nullptr)
+            {
+                TrustedHandlerArity trusted_arity =
+                    special_method_trusted_handler_arity<NUserArgs>();
+                TrustedResolution resolution =
+                    target_code_object->trusted_handler_resolver(
+                        thread->get_machine(), receiver_shape_key,
+                        operand1_shape_key, TrustedHandlerOperandOrder::Normal,
+                        trusted_arity);
+                if(resolution.kind == TrustedResolutionKind::TrustedHandler)
+                {
+                    assert(resolution.arity == trusted_arity);
+                    trusted_resolution = resolution;
+                }
+            }
+        }
+
+        OperatorInlineCache &cache = code_object->operator_caches[cache_idx];
+        if constexpr(NUserArgs <= 2)
+        {
+            if(trusted_resolution.has_trusted_handler())
+            {
+                OperatorInlineCache entry =
+                    OperatorInlineCache::trusted_handler_call(
+                        receiver_shape_key, operand1_shape_key,
+                        trusted_resolution, descriptor.lookup_validity_cell,
+                        nullptr);
+                if(descriptor.is_cacheable())
+                {
+                    cache = entry;
+                }
+                accumulator = invoke_special_method_trusted_handler<NUserArgs>(
+                    thread, entry, fp, receiver_reg, receiver);
+                if(unlikely(accumulator.is_exception_marker()))
+                {
+                    ExceptionalTarget target = resolve_exceptional_frame_exit(
+                        thread, fp, pc, code_object);
+                    fp = target.fp;
+                    code_object = target.code_object;
+                    pc = target.interpreted_pc;
+                    START(0);
+                    COMPLETE();
+                }
+                pc += call_instr_len;
+                START(0);
+                COMPLETE();
+            }
+        }
+
+        FunctionCallAdaptation adaptation =
+            function_call_adaptation_for_positional_call(function, n_args);
+        OperatorInlineCache entry =
+            OperatorInlineCache::untrusted_function_call(
+                receiver_shape_key, ShapeKey::from_value(Value::not_present()),
+                function.extract(), target_code_object, n_args, UINT32_MAX,
+                false, !self.is_not_present(), adaptation,
+                descriptor.lookup_validity_cell, nullptr);
+        if(descriptor.is_cacheable())
+        {
+            cache = entry;
+        }
         int32_t first_arg_reg = prepare_method_call_argument_slots(
-            fp, receiver_reg, n_user_args, self);
-        populate_function_call_cache(call_cache, function, n_args);
+            fp, receiver_reg, NUserArgs, self);
         enter_function_frame_from_positional_args(
             thread, fp, pc, code_object, function, first_arg_reg, n_args,
-            call_instr_len, call_cache.adaptation);
+            call_instr_len, adaptation);
         if(unlikely(thread->safepoint_requested()))
         {
             MUSTTAIL return op_committed_safepoint_slow(ARGS);
@@ -4969,54 +5067,141 @@ namespace cl
         }
     }
 
-    static INTERP_CC Value op_call_special_method(PARAMS)
+    template <uint32_t NUserArgs>
+    NOINLINE static INTERP_CC Value op_call_special_method_trusted(PARAMS)
     {
-        static constexpr uint32_t call_instr_len = 8;
+        static_assert(NUserArgs <= 2);
+        static constexpr uint32_t call_instr_len = 6;
         int32_t receiver_reg = int8_t(pc[1]);
-        uint8_t read_cache_idx = pc[3];
-        uint8_t call_cache_idx = pc[4];
-        uint32_t n_user_args = uint8_t(pc[5]);
+        uint8_t cache_idx = pc[3];
         Value receiver = fp[receiver_reg];
-        AttributeReadInlineCache &cache =
-            code_object->attribute_read_caches[read_cache_idx];
-        if(unlikely(!cache.matches(receiver)))
+        OperatorInlineCache &cache = code_object->operator_caches[cache_idx];
+        assert(!cache.trusted_handler.is_null());
+
+        accumulator = invoke_special_method_trusted_handler<NUserArgs>(
+            thread, cache, fp, receiver_reg, receiver);
+        if(unlikely(accumulator.is_exception_marker()))
         {
-            MUSTTAIL return op_call_special_method_slow(ARGS);
+            ExceptionalTarget target =
+                resolve_exceptional_frame_exit(thread, fp, pc, code_object);
+            fp = target.fp;
+            code_object = target.code_object;
+            pc = target.interpreted_pc;
+            START(0);
+            COMPLETE();
         }
+        pc += call_instr_len;
+        START(0);
+        COMPLETE();
+    }
 
-        Value callable;
-        Value self;
-        MethodCallFastTargetStatus target_status =
-            prepare_method_call_target_from_plan_fast(receiver, cache.plan,
-                                                      callable, self);
-        if(unlikely(target_status == MethodCallFastTargetStatus::Slow))
-        {
-            MUSTTAIL return op_call_special_method_slow(ARGS);
-        }
+    template <uint32_t NUserArgs>
+    NOINLINE static INTERP_CC Value op_call_special_method_adapted(PARAMS)
+    {
+        static_assert(NUserArgs <= 3);
+        static constexpr uint32_t call_instr_len = 6;
+        int32_t receiver_reg = int8_t(pc[1]);
+        uint8_t cache_idx = pc[3];
+        Value receiver = fp[receiver_reg];
+        OperatorInlineCache &cache = code_object->operator_caches[cache_idx];
+        assert(cache.trusted_handler.is_null());
+        assert(cache.function != nullptr);
+        assert(cache.adaptation != FunctionCallAdaptation::FixedArity);
 
-        bool has_self = !self.is_not_present();
-        uint32_t n_args = n_user_args + (has_self ? 1 : 0);
-        FunctionCallInlineCache &call_cache =
-            code_object->function_call_caches[call_cache_idx];
-
-        if(unlikely(!function_call_cache_matches(call_cache, callable, n_args)))
-        {
-            MUSTTAIL return op_call_special_method_slow(ARGS);
-        }
-
-        if(unlikely(call_cache.adaptation !=
-                    FunctionCallAdaptation::FixedArity))
-        {
-            MUSTTAIL return op_call_special_method_slow(ARGS);
-        }
-
+        Value self = cache.has_self ? receiver : Value::not_present();
         int32_t first_arg_reg = prepare_method_call_argument_slots(
-            fp, receiver_reg, n_user_args, self);
-        TValue<Function> function =
-            TValue<Function>::from_oop(call_cache.function);
+            fp, receiver_reg, NUserArgs, self);
         enter_function_frame_from_positional_args(
-            thread, fp, pc, code_object, function, first_arg_reg, n_args,
-            call_instr_len, FunctionCallAdaptation::FixedArity);
+            thread, fp, pc, code_object,
+            TValue<Function>::from_oop(cache.function), first_arg_reg,
+            cache.n_args, call_instr_len, cache.adaptation);
+        if(unlikely(thread->safepoint_requested()))
+        {
+            MUSTTAIL return op_committed_safepoint_slow(ARGS);
+        }
+
+        START(0);
+        COMPLETE();
+    }
+
+#define DEFINE_CALL_SPECIAL_METHOD_HANDLER(NUserArgs)                          \
+    static INTERP_CC Value op_call_special_method##NUserArgs(PARAMS)           \
+    {                                                                          \
+        static constexpr uint32_t call_instr_len = 6;                          \
+        int32_t receiver_reg = int8_t(pc[1]);                                  \
+        uint8_t cache_idx = pc[3];                                             \
+        Value receiver = fp[receiver_reg];                                     \
+        OperatorInlineCache &cache = code_object->operator_caches[cache_idx];  \
+        if(unlikely(!special_method_cache_matches<NUserArgs>(                  \
+               cache, fp, receiver_reg, receiver)))                            \
+        {                                                                      \
+            MUSTTAIL return op_call_special_method_slow<NUserArgs>(ARGS);      \
+        }                                                                      \
+                                                                               \
+        if(!cache.trusted_handler.is_null())                                   \
+        {                                                                      \
+            MUSTTAIL return op_call_special_method_trusted<NUserArgs>(ARGS);   \
+        }                                                                      \
+                                                                               \
+        if(unlikely(cache.function == nullptr))                                \
+        {                                                                      \
+            MUSTTAIL return op_call_special_method_slow<NUserArgs>(ARGS);      \
+        }                                                                      \
+                                                                               \
+        if(unlikely(cache.adaptation != FunctionCallAdaptation::FixedArity))   \
+        {                                                                      \
+            MUSTTAIL return op_call_special_method_adapted<NUserArgs>(ARGS);   \
+        }                                                                      \
+                                                                               \
+        Value self = cache.has_self ? receiver : Value::not_present();         \
+        int32_t first_arg_reg = prepare_method_call_argument_slots(            \
+            fp, receiver_reg, NUserArgs, self);                                \
+        enter_function_frame_from_positional_args(                             \
+            thread, fp, pc, code_object,                                       \
+            TValue<Function>::from_oop(cache.function), first_arg_reg,         \
+            cache.n_args, call_instr_len, FunctionCallAdaptation::FixedArity); \
+        if(unlikely(thread->safepoint_requested()))                            \
+        {                                                                      \
+            MUSTTAIL return op_committed_safepoint_slow(ARGS);                 \
+        }                                                                      \
+                                                                               \
+        START(0);                                                              \
+        COMPLETE();                                                            \
+    }
+
+    DEFINE_CALL_SPECIAL_METHOD_HANDLER(0)
+    DEFINE_CALL_SPECIAL_METHOD_HANDLER(1)
+    DEFINE_CALL_SPECIAL_METHOD_HANDLER(2)
+
+#undef DEFINE_CALL_SPECIAL_METHOD_HANDLER
+
+    static INTERP_CC Value op_call_special_method3(PARAMS)
+    {
+        static constexpr uint32_t call_instr_len = 6;
+        int32_t receiver_reg = int8_t(pc[1]);
+        uint8_t cache_idx = pc[3];
+        Value receiver = fp[receiver_reg];
+        OperatorInlineCache &cache = code_object->operator_caches[cache_idx];
+        if(unlikely(!special_method_cache_matches<3>(cache, fp, receiver_reg,
+                                                     receiver) ||
+                    cache.function == nullptr))
+        {
+            MUSTTAIL return op_call_special_method_slow<3>(ARGS);
+        }
+        assert(cache.trusted_handler.is_null());
+
+        if(unlikely(cache.adaptation != FunctionCallAdaptation::FixedArity))
+        {
+            MUSTTAIL return op_call_special_method_adapted<3>(ARGS);
+        }
+
+        Value self = cache.has_self ? receiver : Value::not_present();
+        int32_t first_arg_reg =
+            prepare_method_call_argument_slots(fp, receiver_reg, 3, self);
+        enter_function_frame_from_positional_args(
+            thread, fp, pc, code_object,
+            TValue<Function>::from_oop(cache.function), first_arg_reg,
+            cache.n_args, call_instr_len, FunctionCallAdaptation::FixedArity);
         if(unlikely(thread->safepoint_requested()))
         {
             MUSTTAIL return op_committed_safepoint_slow(ARGS);
@@ -5716,7 +5901,10 @@ namespace cl
                         op_call_method_attr_positional);
         SET_TABLE_ENTRY(Bytecode::CallMethodAttrKeyword,
                         op_call_method_attr_keyword);
-        SET_TABLE_ENTRY(Bytecode::CallSpecialMethod, op_call_special_method);
+        SET_TABLE_ENTRY(Bytecode::CallSpecialMethod0, op_call_special_method0);
+        SET_TABLE_ENTRY(Bytecode::CallSpecialMethod1, op_call_special_method1);
+        SET_TABLE_ENTRY(Bytecode::CallSpecialMethod2, op_call_special_method2);
+        SET_TABLE_ENTRY(Bytecode::CallSpecialMethod3, op_call_special_method3);
 
         SET_TABLE_ENTRY(Bytecode::Neg, op_negate);
         SET_TABLE_ENTRY(Bytecode::Pos, op_plus);

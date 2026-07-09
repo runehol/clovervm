@@ -670,11 +670,31 @@ namespace cl
         uint8_t missing_exception_message_idx)
     {
         assert_call_args_are_topmost(first_arg_reg, uint32_t(argc) + 1);
-        uint8_t read_cache_idx = CL_TRY(allocate_attribute_read_cache());
-        uint8_t call_cache_idx = CL_TRY(allocate_function_call_cache());
-        uint32_t result = CL_TRY(emit_opcode_reg_constant_idx_cache_idx_argc(
-            source_offset, Bytecode::CallSpecialMethod, first_arg_reg, name_idx,
-            read_cache_idx, call_cache_idx, argc));
+        Bytecode opcode;
+        switch(argc)
+        {
+            case 0:
+                opcode = Bytecode::CallSpecialMethod0;
+                break;
+            case 1:
+                opcode = Bytecode::CallSpecialMethod1;
+                break;
+            case 2:
+                opcode = Bytecode::CallSpecialMethod2;
+                break;
+            case 3:
+                opcode = Bytecode::CallSpecialMethod3;
+                break;
+            default:
+                return Expected<uint32_t>::raise_exception(
+                    L"OverflowError",
+                    L"special method calls support at most 3 arguments");
+        }
+        uint8_t cache_idx = CL_TRY(allocate_operator_cache());
+        uint32_t result = emplace_back(source_offset, uint8_t(opcode));
+        emplace_back(source_offset, encode_reg(first_arg_reg));
+        emplace_back(source_offset, name_idx);
+        emplace_back(source_offset, cache_idx);
         emplace_back(source_offset, missing_exception_type_idx);
         emplace_back(source_offset, missing_exception_message_idx);
         return Expected<uint32_t>::ok(result);

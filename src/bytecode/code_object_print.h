@@ -238,8 +238,14 @@ template <> struct fmt::formatter<cl::Bytecode>
                 return format_to(out, "CallMethodAttrPositional");
             case cl::Bytecode::CallMethodAttrKeyword:
                 return format_to(out, "CallMethodAttrKeyword");
-            case cl::Bytecode::CallSpecialMethod:
-                return format_to(out, "CallSpecialMethod");
+            case cl::Bytecode::CallSpecialMethod0:
+                return format_to(out, "CallSpecialMethod0");
+            case cl::Bytecode::CallSpecialMethod1:
+                return format_to(out, "CallSpecialMethod1");
+            case cl::Bytecode::CallSpecialMethod2:
+                return format_to(out, "CallSpecialMethod2");
+            case cl::Bytecode::CallSpecialMethod3:
+                return format_to(out, "CallSpecialMethod3");
 
             case cl::Bytecode::Add:
                 return format_to(out, "Add");
@@ -796,17 +802,16 @@ template <> struct fmt::formatter<cl::CodeObject>
                 }
                 break;
 
-            case cl::Bytecode::CallSpecialMethod:
+            case cl::Bytecode::CallSpecialMethod0:
+            case cl::Bytecode::CallSpecialMethod1:
+            case cl::Bytecode::CallSpecialMethod2:
+            case cl::Bytecode::CallSpecialMethod3:
                 format_to(out, " ");
                 disassemble_reg(code_obj, out, pc++);
                 format_to(out, ", ");
                 disassemble_constant(code_obj, out, pc++);
                 format_to(out, ", ");
-                disassemble_read_cache(code_obj, out, pc++);
-                format_to(out, ", ");
-                disassemble_function_call_cache(code_obj, out, pc++);
-                format_to(out, ", ");
-                format_to(out, "{}", code_obj.code[pc++]);
+                disassemble_operator_cache(code_obj, out, pc++);
                 format_to(out, ", ");
                 disassemble_constant(code_obj, out, pc++);
                 format_to(out, ", ");

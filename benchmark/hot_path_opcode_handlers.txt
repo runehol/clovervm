@@ -5,7 +5,10 @@ op_add
 op_add_smi
 op_call_positional
 op_call_method_attr_positional
-op_call_special_method
+op_call_special_method0
+op_call_special_method1
+op_call_special_method2
+op_call_special_method3
 op_check_init_returned_none
 op_clear_local
 op_del_local

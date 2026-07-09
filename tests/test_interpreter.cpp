@@ -8096,6 +8096,52 @@ TEST(Interpreter, generic_for_loop_propagates_non_stop_iteration)
                         L"ValueError", L"");
 }
 
+TEST(Interpreter, cached_next_call_invalidates_when_method_is_replaced)
+{
+    test::FileRunner file_runner(L"class Iterator:\n"
+                                 L"    def __iter__(self):\n"
+                                 L"        return self\n"
+                                 L"    def __next__(self):\n"
+                                 L"        raise StopIteration\n"
+                                 L"def first_or_zero(iterator):\n"
+                                 L"    for value in iterator:\n"
+                                 L"        return value\n"
+                                 L"    return 0\n"
+                                 L"iterator = Iterator()\n"
+                                 L"before = first_or_zero(iterator)\n"
+                                 L"def replacement(self):\n"
+                                 L"    return 7\n"
+                                 L"Iterator.__next__ = replacement\n"
+                                 L"after = first_or_zero(iterator)\n"
+                                 L"before * 10 + after\n");
+
+    EXPECT_EQ(Value::from_smi(7), file_runner.return_value);
+}
+
+TEST(Interpreter, cached_special_method_call_replays_varargs_adaptation)
+{
+    test::FileRunner file_runner(L"class Iterator:\n"
+                                 L"    def __init__(self):\n"
+                                 L"        self.done = False\n"
+                                 L"    def __iter__(*args):\n"
+                                 L"        self = args[0]\n"
+                                 L"        self.done = False\n"
+                                 L"        return self\n"
+                                 L"    def __next__(*args):\n"
+                                 L"        self = args[0]\n"
+                                 L"        if self.done:\n"
+                                 L"            raise StopIteration\n"
+                                 L"        self.done = True\n"
+                                 L"        return 3\n"
+                                 L"def first(iterator):\n"
+                                 L"    for value in iterator:\n"
+                                 L"        return value\n"
+                                 L"iterator = Iterator()\n"
+                                 L"first(iterator) * 10 + first(iterator)\n");
+
+    EXPECT_EQ(Value::from_smi(33), file_runner.return_value);
+}
+
 TEST(Interpreter, with_statement_calls_enter_and_exit)
 {
     test::FileRunner file_runner(L"log = 0\n"

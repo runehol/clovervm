@@ -1198,6 +1198,22 @@ TEST(Dict, GeneratedReadMethodsContainProtocolCacheSites)
     }
 }
 
+TEST(Dict, GeneralStringLookupCachesTrustedHashHandler)
+{
+    test::VmTestContext context;
+
+    EXPECT_EQ(Value::from_smi(1), context.run_file(L"d = {'alpha': 1}\n"
+                                                   L"0 in d\n"
+                                                   L"d['alpha']\n"));
+
+    Function *method = dict_method_function(context, L"__getitem__");
+    ASSERT_GE(method->code_object.extract()->operator_caches.size(), 1u);
+    const OperatorInlineCache &hash_cache =
+        method->code_object.extract()->operator_caches[0];
+    EXPECT_FALSE(hash_cache.trusted_handler.is_null());
+    EXPECT_EQ(nullptr, hash_cache.function);
+}
+
 TEST(Dict, DirectReadMethodCallsKeepStringKeyShape)
 {
     test::VmTestContext context;

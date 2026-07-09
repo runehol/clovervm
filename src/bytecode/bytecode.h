@@ -86,7 +86,10 @@ namespace cl
         DelItem,
         CallMethodAttrPositional,
         CallMethodAttrKeyword,
-        CallSpecialMethod,
+        CallSpecialMethod0,
+        CallSpecialMethod1,
+        CallSpecialMethod2,
+        CallSpecialMethod3,
 
         // binary on accumulator. reg op acc
         Add,
