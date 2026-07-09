@@ -962,8 +962,6 @@ exact-string and measurements show the specialization is worthwhile.
 
 ## Open Questions
 
-- What exact C API names and missing-key contracts best match the existing
-  status-plus-output conventions?
 - When the hot general path moves to trusted bytecode, should `CreateDict` gain
   per-entry cache storage or lower to repeated cache-bearing insertion?
 - Should the deferred mapping-compatibility work include native-type subclass
@@ -1308,13 +1306,22 @@ Stage invariant:
 
 ### 9e. C API Integration
 
-- [ ] Add public C API construction for a fresh builtin dict.
-- [ ] Add C API functions for semantic lookup, assignment, deletion,
-  membership, and length operations, following the existing
-  status-plus-output convention where an operation needs an output value.
-- [ ] Specify lookup-miss behavior separately from API misuse and propagated
-  Python exceptions. Ordinary item lookup and deletion should raise `KeyError`;
-  membership should return a boolean output without using missing as an error.
+- [ ] Add the currently implementable core of CPython's dictionary C API with
+  `clover_dict_*` names: type checks, construction, clear, copy, membership,
+  assignment, deletion, lookup, setdefault, pop, key/value/item snapshots,
+  length, and positional iteration.
+- [ ] Add UTF-8 string-key variants wherever CPython provides them and the
+  corresponding Clover operation is in the first slice.
+- [ ] Use only the modern explicit lookup contract: status reports success or
+  error, a boolean output reports found or missing, and the value output is
+  semantically valid only on a hit. Missing and error paths set `found` to false
+  and store the `None` handle in the value output. Do not add legacy lookup
+  variants that suppress hash/equality exceptions or require callers to inspect
+  pending exception state to distinguish missing from failure.
+- [ ] Give `setdefault` and `pop` equivalent explicit result contracts.
+  `setdefault` reports whether the key was already present and returns the
+  resulting value; `pop` reports found/missing without raising `KeyError` for an
+  ordinary miss.
 - [ ] Document output-handle ownership and which functions may re-enter Python.
   Construction and length do not run Python; semantic key operations may run
   hash and equality.
@@ -1327,6 +1334,10 @@ Stage invariant:
 - Raw string-shape helpers remain unavailable through the C API.
 - C API implementation delegates to the semantic `Dict` interface rather than
   duplicating probing or promotion policy.
+- Do not add partial mapping merge/update, mapping proxies, watchers, view-type
+  checks, `OrderedDict`, unchecked-size macros, or other CPython surfaces whose
+  underlying Clover behavior does not exist yet. They can be added later if a
+  concrete native-module need justifies them.
 
 ### 10. Remove Bootstrap GeneralDict
 

@@ -259,25 +259,166 @@ indirect.
 Public `dict` now supports arbitrary Python keys, but dictionary C API entry
 points have not landed yet. The next dictionary API slice must include:
 
-- construction of a fresh exact builtin dict
-- semantic item lookup, assignment, deletion, and membership
-- length
+- dict/exact-dict type checks and construction of a fresh exact builtin dict
+- clear and copy
+- semantic lookup, assignment, deletion, membership, setdefault, and pop
+- UTF-8 string-key variants of those operations where CPython provides them
+- key, value, and item snapshots
+- length and positional key/value iteration
 
 Dictionary construction and length cannot run Python. Key operations may invoke
 `__hash__`, equality, descriptors, and arbitrary Python code, and therefore may
-set pending exception state. Item lookup and deletion use ordinary Python
-`KeyError` semantics for a missing key; membership reports a boolean output and
-does not treat a miss as an error.
+set pending exception state. Deletion raises `KeyError` for a missing key.
+Lookup, membership, and C API pop report an ordinary miss explicitly without
+raising `KeyError`.
 
-Functions returning an item or length should follow the existing
-`clover_status` plus output-pointer convention. Returned value handles have the
-same context-managed lifetime as other runtime API handles. The implementation
-must delegate to the semantic C++ `Dict` interface so shape promotion,
-reentrant-equality defense, and pending-exception behavior are shared. Raw
-`string_keyed_*` storage helpers are not exposed through the C API.
+The proposed signatures are:
 
-Exact function names remain to be selected before implementation and added to
-the public header and implemented-API list together.
+```c
+clover_status clover_dict_check(
+    clover_context *ctx,
+    clover_handle value,
+    bool *out);
+clover_status clover_dict_check_exact(
+    clover_context *ctx,
+    clover_handle value,
+    bool *out);
+clover_handle clover_dict_new(clover_context *ctx);
+
+clover_status clover_dict_clear(
+    clover_context *ctx,
+    clover_handle dict);
+clover_handle clover_dict_copy(
+    clover_context *ctx,
+    clover_handle dict);
+clover_status clover_dict_size(
+    clover_context *ctx,
+    clover_handle dict,
+    size_t *out);
+
+clover_status clover_dict_contains(
+    clover_context *ctx,
+    clover_handle dict,
+    clover_handle key,
+    bool *out);
+clover_status clover_dict_set_item(
+    clover_context *ctx,
+    clover_handle dict,
+    clover_handle key,
+    clover_handle value);
+clover_status clover_dict_del_item(
+    clover_context *ctx,
+    clover_handle dict,
+    clover_handle key);
+clover_status clover_dict_get_item(
+    clover_context *ctx,
+    clover_handle dict,
+    clover_handle key,
+    bool *found,
+    clover_handle *out_value);
+clover_status clover_dict_set_default(
+    clover_context *ctx,
+    clover_handle dict,
+    clover_handle key,
+    clover_handle default_value,
+    bool *was_present,
+    clover_handle *out_value);
+clover_status clover_dict_pop(
+    clover_context *ctx,
+    clover_handle dict,
+    clover_handle key,
+    bool *found,
+    clover_handle *out_value);
+
+clover_status clover_dict_contains_string(
+    clover_context *ctx,
+    clover_handle dict,
+    const char *key,
+    bool *out);
+clover_status clover_dict_set_item_string(
+    clover_context *ctx,
+    clover_handle dict,
+    const char *key,
+    clover_handle value);
+clover_status clover_dict_del_item_string(
+    clover_context *ctx,
+    clover_handle dict,
+    const char *key);
+clover_status clover_dict_get_item_string(
+    clover_context *ctx,
+    clover_handle dict,
+    const char *key,
+    bool *found,
+    clover_handle *out_value);
+clover_status clover_dict_pop_string(
+    clover_context *ctx,
+    clover_handle dict,
+    const char *key,
+    bool *found,
+    clover_handle *out_value);
+
+clover_handle clover_dict_keys(
+    clover_context *ctx,
+    clover_handle dict);
+clover_handle clover_dict_values(
+    clover_context *ctx,
+    clover_handle dict);
+clover_handle clover_dict_items(
+    clover_context *ctx,
+    clover_handle dict);
+clover_status clover_dict_next(
+    clover_context *ctx,
+    clover_handle dict,
+    size_t *position,
+    bool *found,
+    clover_handle *out_key,
+    clover_handle *out_value);
+```
+
+Lookup uses the modern explicit contract modeled on `PyDict_GetItemRef`, without
+copying CPython reference ownership. On a hit, it returns
+`CLOVER_STATUS_OK`, sets `found` to true, and stores the value in `out_value`.
+On an ordinary miss, it returns `CLOVER_STATUS_OK`, sets `found` to false, and
+stores the `None` handle in `out_value`. On failure, it returns
+`CLOVER_STATUS_ERROR`, sets `found` to false, stores the `None` handle in
+`out_value`, and preserves the pending exception. Both output pointers are
+required. The value output is semantically meaningful only on a hit.
+
+The public header includes `<stdbool.h>`, so `bool` is available to C callers
+and is already part of the API through `clover_is`.
+
+`set_default` uses the same status-plus-output style, reports whether the key was
+already present, and returns the resulting value. On error it sets
+`was_present` to false and stores the `None` handle in `out_value`. C API pop
+reports found/missing and optionally returns the removed value; on a miss or
+error, a non-null `out_value` receives the `None` handle. Unlike Python
+`dict.pop()` without a default, an ordinary C API pop miss does not raise
+`KeyError`. These choices follow the modern CPython `PyDict_SetDefaultRef` and
+`PyDict_Pop` contracts.
+
+The snapshot functions return new list objects, matching CPython's dictionary C
+API rather than Python-level dict views. `clover_dict_next` treats `position` as
+opaque and starts when the caller initializes it to zero. `found` is required;
+`out_key` and `out_value` may be null when the caller does not need that output.
+At end of iteration it sets `found` to false and stores `None` in each non-null
+handle output. The set of dictionary keys must not change during positional
+iteration.
+
+Clover does not initially expose CPython's legacy lookup variants that silently
+suppress hash/equality exceptions or use a null result plus pending-exception
+inspection to distinguish missing from failure.
+
+Returned value handles have the same context-managed lifetime as other runtime
+API handles. The implementation must delegate to the semantic C++ `Dict`
+interface so shape promotion, reentrant-equality defense, and pending-exception
+behavior are shared. Raw `string_keyed_*` storage helpers are not exposed
+through the C API.
+
+The first slice deliberately omits mapping merge/update, mapping proxies,
+watchers, view-type checks, `OrderedDict`, unchecked-size macros, and legacy
+lookup variants. The CPython API remains the naming and behavioral reference
+when an omitted surface becomes implementable and is justified by a concrete
+native-module need.
 
 Explicit semantic errors use a raise helper directly. Raise helpers set the
 pending exception and return the same error marker.
