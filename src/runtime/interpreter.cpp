@@ -4003,6 +4003,38 @@ namespace cl
         COMPLETE();
     }
 
+    NOINLINE static INTERP_CC Value
+    op_dict_prepare_set_item_string_shape(PARAMS)
+    {
+        START(4);
+        int8_t receiver_reg = pc[1];
+        int8_t key_reg = pc[2];
+        int8_t value_reg = pc[3];
+        assert(can_convert_to<Dict>(fp[receiver_reg]));
+        int64_t result = TrustedDictBytecodeAccess::prepare_set_item(
+            thread, fp[receiver_reg].get_ptr<Dict>(), fp[key_reg],
+            fp[value_reg]);
+        accumulator = Value::from_smi(result);
+        COMPLETE();
+    }
+
+    static INTERP_CC Value op_dict_prepare_set_item(PARAMS)
+    {
+        int8_t receiver_reg = pc[1];
+        assert(can_convert_to<Dict>(fp[receiver_reg]));
+        Dict *dict = fp[receiver_reg].get_ptr<Dict>();
+        if(unlikely(dict->get_shape() ==
+                    thread->get_exact_dict_string_key_shape()))
+        {
+            MUSTTAIL return op_dict_prepare_set_item_string_shape(ARGS);
+        }
+
+        START(4);
+        accumulator =
+            Value::from_smi(TrustedDictBytecodeAccess::SetItemGeneral);
+        COMPLETE();
+    }
+
     static INTERP_CC Value op_dict_probe_start(PARAMS)
     {
         START(4);
@@ -4118,6 +4150,80 @@ namespace cl
             fp[candidate_key_reg]);
         accumulator = matches ? Value::True() : Value::False();
         COMPLETE();
+    }
+
+    NOINLINE static INTERP_CC Value op_dict_resize_for_insert_slow(PARAMS)
+    {
+        START(2);
+        int8_t receiver_reg = pc[1];
+        assert(can_convert_to<Dict>(fp[receiver_reg]));
+        TrustedDictBytecodeAccess::resize_for_insert(
+            fp[receiver_reg].get_ptr<Dict>());
+        COMPLETE();
+    }
+
+    static INTERP_CC Value op_dict_resize_for_insert(PARAMS)
+    {
+        int8_t receiver_reg = pc[1];
+        assert(can_convert_to<Dict>(fp[receiver_reg]));
+        if(unlikely(TrustedDictBytecodeAccess::needs_resize_for_insert(
+               fp[receiver_reg].get_ptr<Dict>())))
+        {
+            MUSTTAIL return op_dict_resize_for_insert_slow(ARGS);
+        }
+
+        START(2);
+        COMPLETE();
+    }
+
+    NOINLINE static INTERP_CC Value op_dict_insert_new_slow(PARAMS)
+    {
+        START(7);
+        int8_t receiver_reg = pc[1];
+        int8_t hash_idx_reg = pc[2];
+        int8_t first_tombstone_idx_reg = pc[3];
+        int8_t hash_reg = pc[4];
+        int8_t key_reg = pc[5];
+        int8_t value_reg = pc[6];
+        assert(can_convert_to<Dict>(fp[receiver_reg]));
+        assert(fp[hash_idx_reg].is_smi());
+        assert(fp[hash_idx_reg].get_smi() >= 0);
+        assert(fp[first_tombstone_idx_reg].is_smi());
+        assert(fp[hash_reg].is_smi());
+        TrustedDictBytecodeAccess::insert_new(
+            fp[receiver_reg].get_ptr<Dict>(),
+            static_cast<size_t>(fp[hash_idx_reg].get_smi()),
+            fp[first_tombstone_idx_reg].get_smi(),
+            TValue<SMI>::from_value_unchecked(fp[hash_reg]), fp[key_reg],
+            fp[value_reg]);
+        accumulator = Value::None();
+        COMPLETE();
+    }
+
+    static INTERP_CC Value op_dict_insert_new(PARAMS)
+    {
+        MUSTTAIL return op_dict_insert_new_slow(ARGS);
+    }
+
+    NOINLINE static INTERP_CC Value op_dict_overwrite_entry_slow(PARAMS)
+    {
+        START(4);
+        int8_t receiver_reg = pc[1];
+        int8_t entry_idx_reg = pc[2];
+        int8_t value_reg = pc[3];
+        assert(can_convert_to<Dict>(fp[receiver_reg]));
+        assert(fp[entry_idx_reg].is_smi());
+        assert(fp[entry_idx_reg].get_smi() >= 0);
+        TrustedDictBytecodeAccess::overwrite_entry(
+            fp[receiver_reg].get_ptr<Dict>(),
+            static_cast<int32_t>(fp[entry_idx_reg].get_smi()), fp[value_reg]);
+        accumulator = Value::None();
+        COMPLETE();
+    }
+
+    static INTERP_CC Value op_dict_overwrite_entry(PARAMS)
+    {
+        MUSTTAIL return op_dict_overwrite_entry_slow(ARGS);
     }
 
     static INTERP_CC Value op_write_stdout(PARAMS)
@@ -5929,6 +6035,7 @@ namespace cl
         SET_TABLE_ENTRY(Bytecode::Sqrt, op_sqrt);
         SET_TABLE_ENTRY(Bytecode::CanonicalizeHash, op_canonicalize_hash);
         SET_TABLE_ENTRY(Bytecode::DictPrepareRead, op_dict_prepare_read);
+        SET_TABLE_ENTRY(Bytecode::DictPrepareSetItem, op_dict_prepare_set_item);
         SET_TABLE_ENTRY(Bytecode::DictProbeStart, op_dict_probe_start);
         SET_TABLE_ENTRY(Bytecode::DictProbeForLookup, op_dict_probe_for_lookup);
         SET_TABLE_ENTRY(Bytecode::DictProbeForInsert, op_dict_probe_for_insert);
@@ -5937,6 +6044,10 @@ namespace cl
         SET_TABLE_ENTRY(Bytecode::DictEntryValue, op_dict_entry_value);
         SET_TABLE_ENTRY(Bytecode::DictEntryStillMatches,
                         op_dict_entry_still_matches);
+        SET_TABLE_ENTRY(Bytecode::DictResizeForInsert,
+                        op_dict_resize_for_insert);
+        SET_TABLE_ENTRY(Bytecode::DictInsertNew, op_dict_insert_new);
+        SET_TABLE_ENTRY(Bytecode::DictOverwriteEntry, op_dict_overwrite_entry);
         SET_TABLE_ENTRY(Bytecode::Not, op_not);
         SET_TABLE_ENTRY(Bytecode::ToBool, op_to_bool);
         SET_TABLE_ENTRY(Bytecode::ToBoolNot, op_to_bool_not);

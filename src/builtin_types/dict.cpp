@@ -88,6 +88,25 @@ namespace cl
         return {ReadGeneral, Value::None()};
     }
 
+    int64_t TrustedDictBytecodeAccess::prepare_set_item(ThreadState *thread,
+                                                        Dict *dict, Value key,
+                                                        Value value)
+    {
+        key.assert_not_vm_sentinel();
+        value.assert_not_vm_sentinel();
+        if(is_exact_dict_string_key_shape(thread, dict))
+        {
+            if(can_convert_to<String>(key))
+            {
+                dict->string_keyed_insert(
+                    TValue<String>::from_value_unchecked(key), value);
+                return SetItemStringDone;
+            }
+            dict->promote_to_general_shape(thread);
+        }
+        return SetItemGeneral;
+    }
+
     BuiltinClassDefinition make_dict_class(VirtualMachine *vm)
     {
         static constexpr NativeLayoutId native_layout_ids[] = {
@@ -177,14 +196,6 @@ namespace cl
     {
         CL_PROPAGATE_EXCEPTION(require_dict_receiver(self, L"copy"));
         return self.get_ptr<Dict>()->copy().raw_value();
-    }
-
-    static Value native_dict_setitem(ThreadState *thread, Value self, Value key,
-                                     Value value)
-    {
-        CL_PROPAGATE_EXCEPTION(require_dict_receiver(self, L"__setitem__"));
-        CL_TRY(self.get_ptr<Dict>()->set_item(thread, key, value));
-        return Value::None();
     }
 
     static Value native_dict_delitem(ThreadState *thread, Value self, Value key)
@@ -417,6 +428,12 @@ namespace cl
             L"TypeError", L"dict.__contains__ expects a dict receiver");
     }
 
+    static Value dict_setitem_receiver_error(ThreadState *thread)
+    {
+        return thread->set_pending_builtin_exception_string(
+            L"TypeError", L"dict.__setitem__ expects a dict receiver");
+    }
+
     static Value dict_getitem_key_error(ThreadState *thread)
     {
         return thread->set_pending_builtin_exception_none(L"KeyError");
@@ -626,6 +643,153 @@ namespace cl
                 code_object, Optional<TValue<String>>::none(), defaults));
     }
 
+    static Expected<TValue<Function>>
+    make_dict_setitem_function(VirtualMachine *vm,
+                               ClassObject *type_error_class,
+                               TrustedHandlerResolver trusted_handler_resolver)
+    {
+        Scope *local_scope = vm->make_immortal_internal_raw<Scope>(nullptr);
+        CodeObjectBuilder code(
+            vm, nullptr, vm->global_builtins_module(), local_scope,
+            vm->get_or_create_interned_string_value(L"<dict.__setitem__>"));
+        code.configure_positional_function(3);
+
+        uint8_t dict_class_idx =
+            CL_TRY(code.allocate_constant(Value::from_oop(vm->dict_class())));
+        uint8_t hash_name_idx = CL_TRY(code.allocate_constant(
+            vm->get_or_create_interned_string_value(L"__hash__")));
+        uint8_t type_error_idx =
+            CL_TRY(code.allocate_constant(Value::from_oop(type_error_class)));
+        uint8_t unhashable_idx = CL_TRY(code.allocate_constant(
+            vm->get_or_create_interned_string_value(L"object is unhashable")));
+        NativeFunctionTarget receiver_error_target;
+        receiver_error_target.fixed0 = dict_setitem_receiver_error;
+        uint8_t receiver_error_target_idx =
+            CL_TRY(code.add_native_function_target(receiver_error_target));
+
+        {
+            CodeObjectBuilder::TemporaryReg temporaries(code, 7);
+            uint32_t hash_reg = temporaries;
+            uint32_t generation_reg = temporaries + 1;
+            uint32_t hash_idx_reg = temporaries + 2;
+            uint32_t probe_result_reg = temporaries + 3;
+            uint32_t candidate_key_reg = temporaries + 4;
+            uint32_t equality_reg = temporaries + 5;
+            uint32_t first_tombstone_idx_reg = temporaries + 6;
+
+            JumpTarget receiver_ok(&code);
+            JumpTarget restart_probe(&code);
+            JumpTarget probe_loop(&code);
+            JumpTarget tombstone(&code);
+            JumpTarget record_tombstone(&code);
+            JumpTarget advance_probe(&code);
+            JumpTarget insert_new(&code);
+            JumpTarget overwrite(&code);
+            JumpTarget done(&code);
+
+            CL_TRY(code.emit_ldar(0, 0));
+            CL_TRY(code.emit_is_instance_of_known_class(0, dict_class_idx));
+            CL_TRY(code.emit_jump_if_true(0, receiver_ok));
+            CL_TRY(emit_native_error(code, receiver_error_target_idx));
+            CL_TRY(receiver_ok.resolve());
+
+            CL_TRY(code.emit_dict_prepare_set_item(0, 0, 1, 2));
+            CL_TRY(code.emit_jump_if_equal_smi(
+                0, TrustedDictBytecodeAccess::SetItemStringDone, done));
+
+            {
+                CodeObjectBuilder::TemporaryReg call_args(
+                    code, 1, RegisterAlignment::CallFrame);
+                CL_TRY(code.emit_mov(0, call_args, 1));
+                CL_TRY(code.emit_call_special_method(
+                    0, call_args, hash_name_idx, 0, type_error_idx,
+                    unhashable_idx));
+            }
+            CL_TRY(code.emit_unary_op(0, Bytecode::CanonicalizeHash,
+                                      OperatorBytecodeFormat::Plain));
+            CL_TRY(code.emit_star(0, hash_reg));
+
+            CL_TRY(restart_probe.resolve());
+            CL_TRY(code.emit_dict_resize_for_insert(0, 0));
+            CL_TRY(code.emit_lda_smi(0, -1));
+            CL_TRY(code.emit_star(0, first_tombstone_idx_reg));
+            CL_TRY(code.emit_ldar(0, hash_reg));
+            CL_TRY(
+                code.emit_dict_probe_start(0, 0, generation_reg, hash_idx_reg));
+
+            CL_TRY(probe_loop.resolve());
+            CL_TRY(code.emit_ldar(0, hash_reg));
+            CL_TRY(code.emit_dict_probe_for_insert(0, 0, hash_idx_reg));
+            CL_TRY(code.emit_jump_if_equal_smi(
+                0, TrustedDictBytecodeAccess::InsertProbeEmpty, insert_new));
+            CL_TRY(code.emit_jump_if_equal_smi(
+                0, TrustedDictBytecodeAccess::InsertProbeTombstone, tombstone));
+            CL_TRY(code.emit_jump_if_equal_smi(
+                0, TrustedDictBytecodeAccess::InsertProbeHashMiss,
+                advance_probe));
+
+            CL_TRY(code.emit_star(0, probe_result_reg));
+            CL_TRY(code.emit_dict_entry_key(0, 0));
+            CL_TRY(code.emit_star(0, candidate_key_reg));
+            CL_TRY(code.emit_ldar(0, 1));
+            CL_TRY(code.emit_operator_reg(0, Bytecode::TestIs,
+                                          candidate_key_reg,
+                                          OperatorBytecodeFormat::Plain));
+            CL_TRY(code.emit_jump_if_true(0, overwrite));
+
+            CL_TRY(code.emit_ldar(0, 1));
+            CL_TRY(code.emit_operator_reg(
+                0, Bytecode::TestEqual, candidate_key_reg,
+                OperatorBytecodeFormat::WithCacheAndNotImplementedCheck));
+            CL_TRY(code.emit_to_bool(0));
+            CL_TRY(code.emit_star(0, equality_reg));
+            CL_TRY(code.emit_dict_entry_still_matches(
+                0, 0, generation_reg, hash_idx_reg, probe_result_reg,
+                candidate_key_reg));
+            CL_TRY(code.emit_jump_if_false(0, restart_probe));
+            CL_TRY(code.emit_ldar(0, equality_reg));
+            CL_TRY(code.emit_jump_if_true(0, overwrite));
+            CL_TRY(code.emit_jump(0, advance_probe));
+
+            CL_TRY(tombstone.resolve());
+            CL_TRY(code.emit_ldar(0, first_tombstone_idx_reg));
+            CL_TRY(code.emit_jump_if_equal_smi(0, -1, record_tombstone));
+            CL_TRY(code.emit_jump(0, advance_probe));
+
+            CL_TRY(record_tombstone.resolve());
+            CL_TRY(code.emit_ldar(0, hash_idx_reg));
+            CL_TRY(code.emit_star(0, first_tombstone_idx_reg));
+
+            CL_TRY(advance_probe.resolve());
+            CL_TRY(code.emit_ldar(0, hash_idx_reg));
+            CL_TRY(code.emit_dict_probe_advance(0, 0));
+            CL_TRY(code.emit_star(0, hash_idx_reg));
+            CL_TRY(code.emit_jump(0, probe_loop));
+
+            CL_TRY(insert_new.resolve());
+            CL_TRY(code.emit_dict_insert_new(
+                0, 0, hash_idx_reg, first_tombstone_idx_reg, hash_reg, 1, 2));
+            CL_TRY(code.emit_return(0));
+
+            CL_TRY(overwrite.resolve());
+            CL_TRY(code.emit_dict_overwrite_entry(0, 0, probe_result_reg, 2));
+            CL_TRY(code.emit_return(0));
+
+            CL_TRY(done.resolve());
+            CL_TRY(code.emit_lda_none(0));
+            CL_TRY(code.emit_return(0));
+        }
+
+        TValue<CodeObject> code_object =
+            TValue<CodeObject>::from_oop(CL_TRY(code.finalize()));
+        code_object.extract()->trusted_handler_resolver =
+            trusted_handler_resolver;
+        return Expected<TValue<Function>>::ok(
+            vm->make_immortal_object_value<Function>(
+                code_object, Optional<TValue<String>>::none(),
+                Optional<TValue<Tuple>>::none()));
+    }
+
     void install_dict_class_methods(VirtualMachine *vm,
                                     ClassObject *type_error_class)
     {
@@ -704,8 +868,20 @@ namespace cl
         };
         install_generated(L"__getitem__", DictReadKind::GetItem,
                           resolve_trusted_dict_getitem_handler);
-        install_trusted(L"__setitem__", native_dict_setitem,
-                        resolve_trusted_dict_setitem_handler);
+        {
+            bool stored = cls->define_own_property(
+                vm->get_or_create_interned_string_value(L"__setitem__"),
+                unwrap_bootstrap_expected(
+                    vm,
+                    make_dict_setitem_function(
+                        vm, type_error_class,
+                        resolve_trusted_dict_setitem_handler),
+                    "creating generated dict setitem function")
+                    .raw_value(),
+                method_flags);
+            assert(stored);
+            (void)stored;
+        }
         install_trusted(L"__delitem__", native_dict_delitem,
                         resolve_trusted_dict_delitem_handler);
 

@@ -420,6 +420,10 @@ namespace cl
                                                   uint32_t receiver_reg,
                                                   uint32_t key_reg,
                                                   uint32_t value_reg);
+        Expected<uint32_t> emit_dict_prepare_set_item(uint32_t source_offset,
+                                                      uint32_t receiver_reg,
+                                                      uint32_t key_reg,
+                                                      uint32_t value_reg);
         Expected<uint32_t> emit_dict_probe_start(uint32_t source_offset,
                                                  uint32_t receiver_reg,
                                                  uint32_t generation_reg,
@@ -440,6 +444,16 @@ namespace cl
             uint32_t source_offset, uint32_t receiver_reg,
             uint32_t generation_reg, uint32_t hash_idx_reg,
             uint32_t entry_idx_reg, uint32_t candidate_key_reg);
+        Expected<uint32_t> emit_dict_resize_for_insert(uint32_t source_offset,
+                                                       uint32_t receiver_reg);
+        Expected<uint32_t> emit_dict_insert_new(
+            uint32_t source_offset, uint32_t receiver_reg,
+            uint32_t hash_idx_reg, uint32_t first_tombstone_idx_reg,
+            uint32_t hash_reg, uint32_t key_reg, uint32_t value_reg);
+        Expected<uint32_t> emit_dict_overwrite_entry(uint32_t source_offset,
+                                                     uint32_t receiver_reg,
+                                                     uint32_t entry_idx_reg,
+                                                     uint32_t value_reg);
         Expected<uint32_t> emit_to_bool(uint32_t source_offset);
         Expected<uint32_t> emit_to_bool_not(uint32_t source_offset);
         Expected<uint32_t> emit_call_code_object(uint32_t source_offset,

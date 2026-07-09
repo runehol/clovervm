@@ -588,6 +588,30 @@ TEST(Dict, SemanticApiSetItemKeepsPromotionWhenHashFails)
                              L"__hash__ method should return an integer");
 }
 
+TEST(Dict, PublicAssignmentKeepsPromotionWhenHashFails)
+{
+    test::VmTestContext context;
+    ThreadState *thread = context.thread();
+    ThreadState::ActivationScope activation_scope(thread);
+    Shape *string_key_shape = thread->get_exact_dict_string_key_shape();
+
+    Value result = context.run_file(L"d = {}\n"
+                                    L"class BadHash:\n"
+                                    L"    def __hash__(self):\n"
+                                    L"        return 'bad'\n"
+                                    L"try:\n"
+                                    L"    d[BadHash()] = 1\n"
+                                    L"except TypeError:\n"
+                                    L"    pass\n"
+                                    L"d\n");
+
+    ASSERT_TRUE(can_convert_to<Dict>(result));
+    Dict *dict = result.get_ptr<Dict>();
+    EXPECT_NE(string_key_shape, dict->get_shape());
+    EXPECT_EQ(1u, dict->table_generation());
+    EXPECT_EQ(0u, dict->size());
+}
+
 TEST(Dict, SemanticApiSetItemPropagatesEqualityExceptionAfterPromotion)
 {
     test::VmTestContext context;
@@ -625,6 +649,30 @@ TEST(Dict, SemanticApiSetItemPropagatesEqualityExceptionAfterPromotion)
     EXPECT_EQ(stored_key, entry.key);
     EXPECT_EQ(Value::from_smi(1), entry.value);
     expect_pending_exception(thread, L"ValueError", L"");
+}
+
+TEST(Dict, PublicAssignmentPropagatesEqualityExceptionAfterPromotion)
+{
+    test::VmTestContext context;
+
+    EXPECT_EQ(Value::True(),
+              context.run_file(L"d = {}\n"
+                               L"class Stored:\n"
+                               L"    def __hash__(self):\n"
+                               L"        return 7\n"
+                               L"    def __eq__(self, other):\n"
+                               L"        raise ValueError\n"
+                               L"class Probe:\n"
+                               L"    def __hash__(self):\n"
+                               L"        return 7\n"
+                               L"stored = Stored()\n"
+                               L"d[stored] = 1\n"
+                               L"caught = False\n"
+                               L"try:\n"
+                               L"    d[Probe()] = 2\n"
+                               L"except ValueError:\n"
+                               L"    caught = True\n"
+                               L"caught and len(d) == 1 and d[stored] == 1\n"));
 }
 
 TEST(Dict, PublicLookupPropagatesHashExceptions)
@@ -1198,6 +1246,26 @@ TEST(Dict, GeneratedReadMethodsContainProtocolCacheSites)
     }
 }
 
+TEST(Dict, GeneratedSetItemContainsProtocolCacheAndMutationSites)
+{
+    test::VmTestContext context;
+
+    Function *method = dict_method_function(context, L"__setitem__");
+    std::string bytecode = fmt::to_string(*method->code_object.extract());
+    EXPECT_NE(std::string::npos, bytecode.find("CallSpecialMethod0"));
+    EXPECT_NE(std::string::npos, bytecode.find("CanonicalizeHash"));
+    EXPECT_NE(std::string::npos, bytecode.find("TestEqual"));
+    EXPECT_NE(std::string::npos, bytecode.find("ToBool"));
+    EXPECT_NE(std::string::npos, bytecode.find("DictPrepareSetItem"));
+    EXPECT_NE(std::string::npos, bytecode.find("DictResizeForInsert"));
+    EXPECT_NE(std::string::npos, bytecode.find("DictProbeStart"));
+    EXPECT_NE(std::string::npos, bytecode.find("DictProbeForInsert"));
+    EXPECT_NE(std::string::npos, bytecode.find("DictEntryStillMatches"));
+    EXPECT_NE(std::string::npos, bytecode.find("DictInsertNew"));
+    EXPECT_NE(std::string::npos, bytecode.find("DictOverwriteEntry"));
+    EXPECT_NE(std::string::npos, bytecode.find("JumpIfEqualSmi"));
+}
+
 TEST(Dict, InsertProbeReadDistinguishesSlotStates)
 {
     test::VmTestContext context;
@@ -1277,6 +1345,23 @@ TEST(Dict, GeneralStringLookupCachesTrustedHashHandler)
     EXPECT_EQ(nullptr, hash_cache.function);
 }
 
+TEST(Dict, GeneralStringAssignmentCachesTrustedHashHandler)
+{
+    test::VmTestContext context;
+
+    EXPECT_EQ(Value::from_smi(1), context.run_file(L"d = {}\n"
+                                                   L"d[0] = 0\n"
+                                                   L"d['alpha'] = 1\n"
+                                                   L"d['alpha']\n"));
+
+    Function *method = dict_method_function(context, L"__setitem__");
+    ASSERT_GE(method->code_object.extract()->operator_caches.size(), 1u);
+    const OperatorInlineCache &hash_cache =
+        method->code_object.extract()->operator_caches[0];
+    EXPECT_FALSE(hash_cache.trusted_handler.is_null());
+    EXPECT_EQ(nullptr, hash_cache.function);
+}
+
 TEST(Dict, DirectReadMethodCallsKeepStringKeyShape)
 {
     test::VmTestContext context;
@@ -1288,6 +1373,22 @@ TEST(Dict, DirectReadMethodCallsKeepStringKeyShape)
                                     L"assert dict.__getitem__(d, 'key') == 1\n"
                                     L"assert dict.get(d, 'key') == 1\n"
                                     L"assert dict.__contains__(d, 'key')\n"
+                                    L"d\n");
+
+    ASSERT_TRUE(can_convert_to<Dict>(result));
+    EXPECT_EQ(string_key_shape, result.get_ptr<Dict>()->get_shape());
+}
+
+TEST(Dict, DirectSetItemMethodCallKeepsStringKeyShape)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation_scope(context.thread());
+    Shape *string_key_shape =
+        context.thread()->get_exact_dict_string_key_shape();
+
+    Value result = context.run_file(L"d = {}\n"
+                                    L"dict.__setitem__(d, 'key', 1)\n"
+                                    L"assert d['key'] == 1\n"
                                     L"d\n");
 
     ASSERT_TRUE(can_convert_to<Dict>(result));
@@ -1310,6 +1411,16 @@ TEST(Dict, GeneratedReadMethodsRejectWrongReceiver)
         EXPECT_TRUE(result.is_exception_marker());
         expect_pending_exception(context.thread(), L"TypeError", messages[idx]);
     }
+}
+
+TEST(Dict, GeneratedSetItemRejectsWrongReceiver)
+{
+    test::VmTestContext context;
+
+    Value result = context.run_file(L"dict.__setitem__(1, 1, 1)\n");
+    EXPECT_TRUE(result.is_exception_marker());
+    expect_pending_exception(context.thread(), L"TypeError",
+                             L"dict.__setitem__ expects a dict receiver");
 }
 
 TEST(Dict, TableGenerationChangesOnlyWhenProbeStructureChanges)

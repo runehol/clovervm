@@ -359,19 +359,16 @@ def _general_dict_setitem_driver(self, key, value):
         _dict_probe_advance(probe)
 ```
 
-Probe results should be integer-shaped, not strings or public status objects.
-One convenient contract is:
-
-- `_dict_probe_step` returns `entry >= 0` for an occupied entry index
-- `DICT_PROBE_EMPTY == -1`
-- `DICT_PROBE_TOMBSTONE == -2`
+Probe results are integer-shaped, not strings or public status objects.
+Non-negative results are occupied entry indexes; reserved negative SMIs encode
+the operation-specific probe outcomes.
 
 The implementation keeps lookup and insertion inspection separate so lookup
 does not pay for insertion-only distinctions. `DictProbeForLookup` returns
 `ProbeMiss == -1`, `ProbeContinue == -2`, or a non-negative entry index whose
 stored hash matches. `DictProbeForInsert` instead returns
-`InsertProbeEmpty == -1`, `InsertProbeTombstone == -2`,
-`InsertProbeHashMiss == -3`, or a non-negative matching entry index. Neither
+`InsertProbeEmpty == -3`, `InsertProbeTombstone == -4`,
+`InsertProbeHashMiss == -5`, or a non-negative matching entry index. Neither
 opcode advances the probe.
 
 This matches the current table representation style and keeps trusted bytecode
@@ -1411,10 +1408,22 @@ Stage invariant:
 
 #### 11b. Mutation Paths
 
-- [ ] Add trusted opcodes for tombstone-aware insertion, entry overwrite and
-  deletion, resize, and shape transition.
-- [ ] Generate cache-bearing bytecode bodies for assignment, deletion, pop, and
-  setdefault while preserving mutation revalidation behavior.
+##### 11b1. Assignment
+
+- [x] Add trusted opcodes for shape preparation, resize, insertion-aware probe
+  inspection, tombstone-aware insertion, and entry overwrite.
+- [x] Generate a cache-bearing `__setitem__` body while preserving promotion,
+  insertion order, exception propagation, and mutation revalidation behavior.
+
+##### 11b2. Deletion
+
+- [ ] Add the trusted deletion primitive and generate a cache-bearing
+  `__delitem__` body.
+
+##### 11b3. Composed Mutation
+
+- [ ] Generate cache-bearing `pop` and `setdefault` bodies using one semantic
+  probe per operation.
 
 #### 11c. Dict Displays
 

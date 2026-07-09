@@ -343,6 +343,8 @@ template <> struct fmt::formatter<cl::Bytecode>
                 return format_to(out, "CanonicalizeHash");
             case cl::Bytecode::DictPrepareRead:
                 return format_to(out, "DictPrepareRead");
+            case cl::Bytecode::DictPrepareSetItem:
+                return format_to(out, "DictPrepareSetItem");
             case cl::Bytecode::DictProbeStart:
                 return format_to(out, "DictProbeStart");
             case cl::Bytecode::DictProbeForLookup:
@@ -357,6 +359,12 @@ template <> struct fmt::formatter<cl::Bytecode>
                 return format_to(out, "DictEntryValue");
             case cl::Bytecode::DictEntryStillMatches:
                 return format_to(out, "DictEntryStillMatches");
+            case cl::Bytecode::DictResizeForInsert:
+                return format_to(out, "DictResizeForInsert");
+            case cl::Bytecode::DictInsertNew:
+                return format_to(out, "DictInsertNew");
+            case cl::Bytecode::DictOverwriteEntry:
+                return format_to(out, "DictOverwriteEntry");
 
             case cl::Bytecode::CallPositional:
                 return format_to(out, "CallPositional");
@@ -911,6 +919,7 @@ template <> struct fmt::formatter<cl::CodeObject>
                 break;
 
             case cl::Bytecode::DictPrepareRead:
+            case cl::Bytecode::DictPrepareSetItem:
                 format_to(out, " ");
                 disassemble_reg(code_obj, out, pc++);
                 format_to(out, ", ");
@@ -939,6 +948,7 @@ template <> struct fmt::formatter<cl::CodeObject>
             case cl::Bytecode::DictProbeAdvance:
             case cl::Bytecode::DictEntryKey:
             case cl::Bytecode::DictEntryValue:
+            case cl::Bytecode::DictResizeForInsert:
                 format_to(out, " ");
                 disassemble_reg(code_obj, out, pc++);
                 break;
@@ -953,6 +963,30 @@ template <> struct fmt::formatter<cl::CodeObject>
                 format_to(out, ", ");
                 disassemble_reg(code_obj, out, pc++);
                 format_to(out, ", ");
+                disassemble_reg(code_obj, out, pc++);
+                break;
+
+            case cl::Bytecode::DictInsertNew:
+                format_to(out, " ");
+                disassemble_reg(code_obj, out, pc++);
+                format_to(out, ", hash_index=");
+                disassemble_reg(code_obj, out, pc++);
+                format_to(out, ", first_tombstone_index=");
+                disassemble_reg(code_obj, out, pc++);
+                format_to(out, ", hash=");
+                disassemble_reg(code_obj, out, pc++);
+                format_to(out, ", key=");
+                disassemble_reg(code_obj, out, pc++);
+                format_to(out, ", value=");
+                disassemble_reg(code_obj, out, pc++);
+                break;
+
+            case cl::Bytecode::DictOverwriteEntry:
+                format_to(out, " ");
+                disassemble_reg(code_obj, out, pc++);
+                format_to(out, ", entry=");
+                disassemble_reg(code_obj, out, pc++);
+                format_to(out, ", value=");
                 disassemble_reg(code_obj, out, pc++);
                 break;
 

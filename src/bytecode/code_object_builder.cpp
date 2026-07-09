@@ -857,6 +857,18 @@ namespace cl
         return Expected<uint32_t>::ok(result);
     }
 
+    Expected<uint32_t> CodeObjectBuilder::emit_dict_prepare_set_item(
+        uint32_t source_offset, uint32_t receiver_reg, uint32_t key_reg,
+        uint32_t value_reg)
+    {
+        uint32_t result =
+            emplace_back(source_offset, uint8_t(Bytecode::DictPrepareSetItem));
+        emplace_back(source_offset, encode_reg(receiver_reg));
+        emplace_back(source_offset, encode_reg(key_reg));
+        emplace_back(source_offset, encode_reg(value_reg));
+        return Expected<uint32_t>::ok(result);
+    }
+
     Expected<uint32_t> CodeObjectBuilder::emit_dict_probe_start(
         uint32_t source_offset, uint32_t receiver_reg, uint32_t generation_reg,
         uint32_t hash_idx_reg)
@@ -925,6 +937,42 @@ namespace cl
         emplace_back(source_offset, encode_reg(hash_idx_reg));
         emplace_back(source_offset, encode_reg(entry_idx_reg));
         emplace_back(source_offset, encode_reg(candidate_key_reg));
+        return Expected<uint32_t>::ok(result);
+    }
+
+    Expected<uint32_t>
+    CodeObjectBuilder::emit_dict_resize_for_insert(uint32_t source_offset,
+                                                   uint32_t receiver_reg)
+    {
+        return emit_opcode_reg(source_offset, Bytecode::DictResizeForInsert,
+                               receiver_reg);
+    }
+
+    Expected<uint32_t> CodeObjectBuilder::emit_dict_insert_new(
+        uint32_t source_offset, uint32_t receiver_reg, uint32_t hash_idx_reg,
+        uint32_t first_tombstone_idx_reg, uint32_t hash_reg, uint32_t key_reg,
+        uint32_t value_reg)
+    {
+        uint32_t result =
+            emplace_back(source_offset, uint8_t(Bytecode::DictInsertNew));
+        emplace_back(source_offset, encode_reg(receiver_reg));
+        emplace_back(source_offset, encode_reg(hash_idx_reg));
+        emplace_back(source_offset, encode_reg(first_tombstone_idx_reg));
+        emplace_back(source_offset, encode_reg(hash_reg));
+        emplace_back(source_offset, encode_reg(key_reg));
+        emplace_back(source_offset, encode_reg(value_reg));
+        return Expected<uint32_t>::ok(result);
+    }
+
+    Expected<uint32_t> CodeObjectBuilder::emit_dict_overwrite_entry(
+        uint32_t source_offset, uint32_t receiver_reg, uint32_t entry_idx_reg,
+        uint32_t value_reg)
+    {
+        uint32_t result =
+            emplace_back(source_offset, uint8_t(Bytecode::DictOverwriteEntry));
+        emplace_back(source_offset, encode_reg(receiver_reg));
+        emplace_back(source_offset, encode_reg(entry_idx_reg));
+        emplace_back(source_offset, encode_reg(value_reg));
         return Expected<uint32_t>::ok(result);
     }
 

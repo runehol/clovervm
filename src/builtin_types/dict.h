@@ -245,11 +245,15 @@ namespace cl
         }
         void resize_general_if_needed()
         {
-            if(entries.size() >
-               hash_table.size() * max_load_nom / max_load_denom)
+            if(needs_resize_for_insert())
             {
                 grow();
             }
+        }
+        bool needs_resize_for_insert() const
+        {
+            return entries.size() >
+                   hash_table.size() * max_load_nom / max_load_denom;
         }
         bool entry_still_matches(TValue<SMI> generation, size_t hash_idx,
                                  int32_t entry_idx, Value candidate_key) const
@@ -325,11 +329,13 @@ namespace cl
         static constexpr int64_t ReadStringMiss = 0;
         static constexpr int64_t ReadStringHit = 1;
         static constexpr int64_t ReadGeneral = 2;
+        static constexpr int64_t SetItemStringDone = 3;
+        static constexpr int64_t SetItemGeneral = 4;
         static constexpr int64_t ProbeMiss = -1;
         static constexpr int64_t ProbeContinue = -2;
-        static constexpr int64_t InsertProbeEmpty = -1;
-        static constexpr int64_t InsertProbeTombstone = -2;
-        static constexpr int64_t InsertProbeHashMiss = -3;
+        static constexpr int64_t InsertProbeEmpty = -3;
+        static constexpr int64_t InsertProbeTombstone = -4;
+        static constexpr int64_t InsertProbeHashMiss = -5;
 
         struct PrepareReadResult
         {
@@ -339,6 +345,8 @@ namespace cl
 
         static PrepareReadResult prepare_read(ThreadState *thread, Dict *dict,
                                               Value key);
+        static int64_t prepare_set_item(ThreadState *thread, Dict *dict,
+                                        Value key, Value value);
         static void probe_start(const Dict *dict, TValue<SMI> hash,
                                 TValue<SMI> *generation, size_t *hash_idx)
         {
@@ -406,6 +414,39 @@ namespace cl
         {
             return dict->entry_still_matches(generation, hash_idx, entry_idx,
                                              candidate_key);
+        }
+        static bool needs_resize_for_insert(const Dict *dict)
+        {
+            return dict->needs_resize_for_insert();
+        }
+        static void resize_for_insert(Dict *dict)
+        {
+            dict->resize_general_if_needed();
+        }
+        static void insert_new(Dict *dict, size_t hash_idx,
+                               int64_t first_tombstone_idx, TValue<SMI> hash,
+                               Value key, Value value)
+        {
+            assert(hash_idx < dict->hash_table.size());
+            assert(dict->hash_table[hash_idx] == Dict::not_present);
+            size_t write_idx = hash_idx;
+            if(first_tombstone_idx >= 0)
+            {
+                size_t tombstone_idx = static_cast<size_t>(first_tombstone_idx);
+                if(tombstone_idx < dict->hash_table.size() &&
+                   dict->hash_table[tombstone_idx] == Dict::tombstone)
+                {
+                    write_idx = tombstone_idx;
+                }
+            }
+            dict->write_new_at_slot(write_idx, hash, key, value);
+        }
+        static void overwrite_entry(Dict *dict, int32_t entry_idx, Value value)
+        {
+            assert(entry_idx >= 0 &&
+                   static_cast<size_t>(entry_idx) < dict->entries.size());
+            assert(dict->entries[entry_idx].valid());
+            dict->write_existing(entry_idx, value);
         }
     };
 
