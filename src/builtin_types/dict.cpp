@@ -486,7 +486,7 @@ namespace cl
             CL_TRY(code.add_native_function_target(key_error_target));
 
         {
-            CodeObjectBuilder::TemporaryReg temporaries(code, 8);
+            CodeObjectBuilder::TemporaryReg temporaries(code, 7);
             uint32_t string_value_reg = temporaries;
             uint32_t hash_reg = temporaries + 1;
             uint32_t generation_reg = temporaries + 2;
@@ -494,7 +494,6 @@ namespace cl
             uint32_t probe_result_reg = temporaries + 4;
             uint32_t candidate_key_reg = temporaries + 5;
             uint32_t equality_reg = temporaries + 6;
-            uint32_t constant_reg = temporaries + 7;
 
             JumpTarget receiver_ok(&code);
             JumpTarget string_hit(&code);
@@ -512,13 +511,10 @@ namespace cl
             CL_TRY(receiver_ok.resolve());
 
             CL_TRY(code.emit_dict_prepare_read(0, 0, 1, string_value_reg));
-            CL_TRY(code.emit_star(0, probe_result_reg));
-            CL_TRY(code.emit_jump_if_equal_to_smi_immediate(
-                0, probe_result_reg, constant_reg,
-                TrustedDictBytecodeAccess::ReadStringHit, string_hit));
-            CL_TRY(code.emit_jump_if_equal_to_smi_immediate(
-                0, probe_result_reg, constant_reg,
-                TrustedDictBytecodeAccess::ReadStringMiss, miss));
+            CL_TRY(code.emit_jump_if_equal_smi(
+                0, TrustedDictBytecodeAccess::ReadStringHit, string_hit));
+            CL_TRY(code.emit_jump_if_equal_smi(
+                0, TrustedDictBytecodeAccess::ReadStringMiss, miss));
             CL_TRY(code.emit_jump(0, general_path));
 
             CL_TRY(general_path.resolve());
@@ -542,15 +538,12 @@ namespace cl
             CL_TRY(probe_loop.resolve());
             CL_TRY(code.emit_ldar(0, hash_reg));
             CL_TRY(code.emit_dict_probe_read(0, 0, hash_idx_reg));
-            CL_TRY(code.emit_star(0, probe_result_reg));
-            CL_TRY(code.emit_jump_if_equal_to_smi_immediate(
-                0, probe_result_reg, constant_reg,
-                TrustedDictBytecodeAccess::ProbeMiss, miss));
-            CL_TRY(code.emit_jump_if_equal_to_smi_immediate(
-                0, probe_result_reg, constant_reg,
-                TrustedDictBytecodeAccess::ProbeContinue, advance_probe));
+            CL_TRY(code.emit_jump_if_equal_smi(
+                0, TrustedDictBytecodeAccess::ProbeMiss, miss));
+            CL_TRY(code.emit_jump_if_equal_smi(
+                0, TrustedDictBytecodeAccess::ProbeContinue, advance_probe));
 
-            CL_TRY(code.emit_ldar(0, probe_result_reg));
+            CL_TRY(code.emit_star(0, probe_result_reg));
             CL_TRY(code.emit_dict_entry_key(0, 0));
             CL_TRY(code.emit_star(0, candidate_key_reg));
             CL_TRY(code.emit_ldar(0, 1));

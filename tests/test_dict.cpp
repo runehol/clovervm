@@ -1194,6 +1194,7 @@ TEST(Dict, GeneratedReadMethodsContainProtocolCacheSites)
         EXPECT_NE(std::string::npos, bytecode.find("DictProbeStart"));
         EXPECT_NE(std::string::npos, bytecode.find("DictProbeRead"));
         EXPECT_NE(std::string::npos, bytecode.find("DictEntryStillMatches"));
+        EXPECT_NE(std::string::npos, bytecode.find("JumpIfEqualSmi"));
     }
 }
 

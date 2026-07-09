@@ -735,17 +735,17 @@ namespace cl
         return emit_jump(source_offset, Bytecode::JumpIfTrue, target);
     }
 
-    Expected<void> CodeObjectBuilder::emit_jump_if_equal_to_smi_immediate(
-        uint32_t source_offset, uint32_t value_reg, uint32_t scratch_reg,
-        int8_t expected, JumpTarget &target)
+    Expected<uint32_t> CodeObjectBuilder::emit_jump_if_equal_smi(
+        uint32_t source_offset, int8_t expected, JumpTarget &target)
     {
-        CL_TRY(emit_lda_smi(source_offset, expected));
-        CL_TRY(emit_star(source_offset, scratch_reg));
-        CL_TRY(emit_ldar(source_offset, value_reg));
-        CL_TRY(emit_operator_reg(source_offset, Bytecode::TestIs, scratch_reg,
-                                 OperatorBytecodeFormat::Plain));
-        CL_TRY(emit_jump_if_true(source_offset, target));
-        return Expected<void>::ok();
+        uint32_t result =
+            emplace_back(source_offset, uint8_t(Bytecode::JumpIfEqualSmi));
+        emplace_back(source_offset, uint8_t(expected));
+        uint32_t relocation_pos = code_obj->code.size();
+        emplace_back(source_offset, 0);
+        emplace_back(source_offset, 0);
+        CL_TRY(target.add_relocation(relocation_pos));
+        return Expected<uint32_t>::ok(result);
     }
 
     Expected<uint32_t> CodeObjectBuilder::emit_for_iter(uint32_t source_offset,

@@ -392,9 +392,9 @@ namespace cl
                                               JumpTarget &target);
         Expected<uint32_t> emit_jump_if_true(uint32_t source_offset,
                                              JumpTarget &target);
-        Expected<void> emit_jump_if_equal_to_smi_immediate(
-            uint32_t source_offset, uint32_t value_reg, uint32_t scratch_reg,
-            int8_t expected, JumpTarget &target);
+        Expected<uint32_t> emit_jump_if_equal_smi(uint32_t source_offset,
+                                                  int8_t expected,
+                                                  JumpTarget &target);
         Expected<uint32_t> emit_for_iter(uint32_t source_offset,
                                          uint32_t iterator_reg,
                                          JumpTarget &target);

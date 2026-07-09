@@ -21,6 +21,7 @@ op_for_iter
 op_for_iter_range1
 op_for_iter_range_step
 op_jump
+op_jump_if_equal_smi
 op_jump_if_false
 op_jump_if_false_float_truthiness
 op_jump_if_true

@@ -4415,6 +4415,20 @@ namespace cl
         COMPLETE();
     }
 
+    static INTERP_CC Value op_jump_if_equal_smi(PARAMS)
+    {
+        int8_t expected = pc[1];
+        int16_t rel_target = read_int16_le(&pc[2]);
+        pc += 4;
+        if(accumulator == Value::from_smi(expected))
+        {
+            pc += rel_target;
+        }
+
+        START(0);
+        COMPLETE();
+    }
+
     static INTERP_CC Value op_raise_assertion_error(PARAMS)
     {
         MUSTTAIL return assertion_error(ARGS);
@@ -5780,6 +5794,7 @@ namespace cl
         SET_TABLE_ENTRY(Bytecode::Jump, op_jump);
         SET_TABLE_ENTRY(Bytecode::JumpIfTrue, op_jump_if_true);
         SET_TABLE_ENTRY(Bytecode::JumpIfFalse, op_jump_if_false);
+        SET_TABLE_ENTRY(Bytecode::JumpIfEqualSmi, op_jump_if_equal_smi);
         SET_TABLE_ENTRY(Bytecode::Return, op_return);
         SET_TABLE_ENTRY(Bytecode::ReturnOrRaiseException,
                         op_return_or_raise_exception);

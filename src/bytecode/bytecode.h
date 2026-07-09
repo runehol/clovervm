@@ -214,6 +214,7 @@ namespace cl
         Jump,
         JumpIfTrue,
         JumpIfFalse,
+        JumpIfEqualSmi,
 
         Invalid
     };

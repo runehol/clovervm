@@ -450,6 +450,8 @@ template <> struct fmt::formatter<cl::Bytecode>
                 return format_to(out, "JumpIfTrue");
             case cl::Bytecode::JumpIfFalse:
                 return format_to(out, "JumpIfFalse");
+            case cl::Bytecode::JumpIfEqualSmi:
+                return format_to(out, "JumpIfEqualSmi");
             case cl::Bytecode::Return:
                 return format_to(out, "Return");
             case cl::Bytecode::ReturnOrRaiseException:
@@ -1124,6 +1126,13 @@ template <> struct fmt::formatter<cl::CodeObject>
             case cl::Bytecode::JumpIfTrue:
             case cl::Bytecode::JumpIfFalse:
                 format_to(out, " ");
+                disassemble_jump_target(code_obj, out, pc);
+                pc += 2;
+                break;
+            case cl::Bytecode::JumpIfEqualSmi:
+                format_to(out, " ");
+                disassemble_smi8(code_obj, out, pc++);
+                format_to(out, ", ");
                 disassemble_jump_target(code_obj, out, pc);
                 pc += 2;
                 break;
