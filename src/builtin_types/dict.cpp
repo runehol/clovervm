@@ -783,38 +783,41 @@ namespace cl
 
     Expected<Value> Dict::get_item(ThreadState *thread, Value key)
     {
+        ItemResult result = CL_TRY(get_item_if_present(thread, key));
+        if(!result.found)
+        {
+            return Expected<Value>::raise_exception(L"KeyError", L"");
+        }
+        return Expected<Value>::ok(result.value);
+    }
+
+    Expected<Dict::ItemResult> Dict::get_item_if_present(ThreadState *thread,
+                                                         Value key)
+    {
         if(is_exact_dict_string_key_shape(thread, this) &&
            can_convert_to<String>(key))
         {
-            return get_item_for_str(thread,
-                                    TValue<String>::from_value_unchecked(key));
+            int32_t idx =
+                *find_entry(TValue<String>::from_value_unchecked(key));
+            if(idx >= 0)
+            {
+                return Expected<ItemResult>::ok(
+                    ItemResult{entries[idx].value, true});
+            }
+            return Expected<ItemResult>::ok(ItemResult{Value::None(), false});
         }
         maybe_promote_to_general_shape(thread);
-        return general_get_item(thread, key);
+        return general_get_item_if_present(thread, key);
     }
 
     Expected<Value> Dict::get_item_or_default(ThreadState *thread, Value key,
                                               Value default_value)
     {
         default_value.assert_not_vm_sentinel();
-        if(is_exact_dict_string_key_shape(thread, this) &&
-           can_convert_to<String>(key))
-        {
-            TValue<String> string_key =
-                TValue<String>::from_value_unchecked(key);
-            if(!string_keyed_contains(string_key))
-            {
-                return Expected<Value>::ok(default_value);
-            }
-            Value result = string_keyed_lookup(string_key);
-            if(result.is_exception_marker())
-            {
-                return Expected<Value>::propagate_exception();
-            }
-            return Expected<Value>::ok(result);
-        }
-        maybe_promote_to_general_shape(thread);
-        return general_get_item_or_default(thread, key, default_value);
+        Owned<Value> live_default(default_value);
+        ItemResult result = CL_TRY(get_item_if_present(thread, key));
+        return Expected<Value>::ok(result.found ? result.value
+                                                : live_default.value());
     }
 
     Expected<void> Dict::set_item(ThreadState *thread, Value key, Value value)
@@ -855,43 +858,81 @@ namespace cl
 
     Expected<Value> Dict::pop(ThreadState *thread, Value key)
     {
+        ItemResult result = CL_TRY(pop_item_if_present(thread, key));
+        if(!result.found)
+        {
+            return Expected<Value>::raise_exception(L"KeyError", L"");
+        }
+        return Expected<Value>::ok(result.value);
+    }
+
+    Expected<Dict::ItemResult> Dict::pop_item_if_present(ThreadState *thread,
+                                                         Value key)
+    {
         if(is_exact_dict_string_key_shape(thread, this) &&
            can_convert_to<String>(key))
         {
-            return pop_for_str(thread,
-                               TValue<String>::from_value_unchecked(key));
+            int32_t *entry =
+                find_entry(TValue<String>::from_value_unchecked(key));
+            int32_t idx = *entry;
+            if(idx < 0)
+            {
+                return Expected<ItemResult>::ok(
+                    ItemResult{Value::None(), false});
+            }
+
+            Owned<Value> result(entries[idx].value);
+            entries.set(idx, Entry(Value::not_present(), Value::None(),
+                                   TValue<SMI>::from_smi(0)));
+            *entry = tombstone;
+            --n_valid_entries;
+            return Expected<ItemResult>::ok(ItemResult{result.value(), true});
         }
         maybe_promote_to_general_shape(thread);
-        return general_pop(thread, key);
+        return general_pop_item_if_present(thread, key);
     }
 
     Expected<Value> Dict::setdefault(ThreadState *thread, Value key,
                                      Value default_value)
     {
+        SetDefaultResult result =
+            CL_TRY(setdefault_with_presence(thread, key, default_value));
+        return Expected<Value>::ok(result.value);
+    }
+
+    Expected<Dict::SetDefaultResult>
+    Dict::setdefault_with_presence(ThreadState *thread, Value key,
+                                   Value default_value)
+    {
         if(is_exact_dict_string_key_shape(thread, this) &&
            can_convert_to<String>(key))
         {
-            return setdefault_for_str(thread,
-                                      TValue<String>::from_value_unchecked(key),
-                                      default_value);
+            TValue<String> string_key =
+                TValue<String>::from_value_unchecked(key);
+            int32_t idx = *find_entry(string_key);
+            if(idx >= 0)
+            {
+                return Expected<SetDefaultResult>::ok(
+                    SetDefaultResult{entries[idx].value, true});
+            }
+            string_keyed_insert(string_key, default_value);
+            return Expected<SetDefaultResult>::ok(
+                SetDefaultResult{default_value, false});
         }
         maybe_promote_to_general_shape(thread);
-        return general_setdefault(thread, key, default_value);
+        return general_setdefault_with_presence(thread, key, default_value);
     }
 
     Expected<Value> Dict::get_item_for_str(ThreadState *thread,
                                            TValue<String> key)
     {
-        if(is_exact_dict_string_key_shape(thread, this))
+        ItemResult result =
+            CL_TRY(get_item_if_present(thread, key.raw_value()));
+        if(!result.found)
         {
-            Value result = string_keyed_lookup(key);
-            if(result.is_exception_marker())
-            {
-                return Expected<Value>::propagate_exception();
-            }
-            return Expected<Value>::ok(result);
+            return Expected<Value>::raise_exception(L"KeyError", L"");
         }
-        return general_get_item(thread, key.raw_value());
+        return Expected<Value>::ok(result.value);
     }
 
     Expected<void> Dict::set_item_for_str(ThreadState *thread,
@@ -932,44 +973,22 @@ namespace cl
 
     Expected<Value> Dict::pop_for_str(ThreadState *thread, TValue<String> key)
     {
-        if(is_exact_dict_string_key_shape(thread, this))
+        ItemResult result =
+            CL_TRY(pop_item_if_present(thread, key.raw_value()));
+        if(!result.found)
         {
-            Value found = string_keyed_lookup(key);
-            if(found.is_exception_marker())
-            {
-                return Expected<Value>::propagate_exception();
-            }
-            Owned<Value> result(found);
-            Value deleted = string_keyed_delete(key);
-            if(deleted.is_exception_marker())
-            {
-                return Expected<Value>::propagate_exception();
-            }
-            return Expected<Value>::ok(result.value());
+            return Expected<Value>::raise_exception(L"KeyError", L"");
         }
-        return general_pop(thread, key.raw_value());
+        return Expected<Value>::ok(result.value);
     }
 
     Expected<Value> Dict::setdefault_for_str(ThreadState *thread,
                                              TValue<String> key,
                                              Value default_value)
     {
-        if(is_exact_dict_string_key_shape(thread, this))
-        {
-            if(string_keyed_contains(key))
-            {
-                Value result = string_keyed_lookup(key);
-                if(result.is_exception_marker())
-                {
-                    return Expected<Value>::propagate_exception();
-                }
-                return Expected<Value>::ok(result);
-            }
-            string_keyed_insert(key, default_value);
-            return Expected<Value>::ok(default_value);
-        }
-
-        return general_setdefault(thread, key.raw_value(), default_value);
+        SetDefaultResult result = CL_TRY(
+            setdefault_with_presence(thread, key.raw_value(), default_value));
+        return Expected<Value>::ok(result.value);
     }
 
     void Dict::promote_to_general_shape(ThreadState *thread)
@@ -1141,7 +1160,8 @@ namespace cl
         }
     }
 
-    Expected<Value> Dict::general_get_item(ThreadState *thread, Value key)
+    Expected<Dict::ItemResult>
+    Dict::general_get_item_if_present(ThreadState *thread, Value key)
     {
         key.assert_not_vm_sentinel();
 
@@ -1151,28 +1171,9 @@ namespace cl
             thread, live_key.value(), hash));
         if(idx < 0)
         {
-            return Expected<Value>::raise_exception(L"KeyError", L"");
+            return Expected<ItemResult>::ok(ItemResult{Value::None(), false});
         }
-        return Expected<Value>::ok(entries[idx].value);
-    }
-
-    Expected<Value> Dict::general_get_item_or_default(ThreadState *thread,
-                                                      Value key,
-                                                      Value default_value)
-    {
-        key.assert_not_vm_sentinel();
-        default_value.assert_not_vm_sentinel();
-
-        Owned<Value> live_key(key);
-        Owned<Value> live_default(default_value);
-        TValue<SMI> hash = CL_TRY(thread->hash_value(live_key.value()));
-        int32_t idx = CL_TRY(find_entry_index_for_general_lookup(
-            thread, live_key.value(), hash));
-        if(idx < 0)
-        {
-            return Expected<Value>::ok(live_default.value());
-        }
-        return Expected<Value>::ok(entries[idx].value);
+        return Expected<ItemResult>::ok(ItemResult{entries[idx].value, true});
     }
 
     Expected<void> Dict::set_item_with_known_hash(ThreadState *thread,
@@ -1272,7 +1273,8 @@ namespace cl
         return Expected<bool>::ok(idx >= 0);
     }
 
-    Expected<Value> Dict::general_pop(ThreadState *thread, Value key)
+    Expected<Dict::ItemResult>
+    Dict::general_pop_item_if_present(ThreadState *thread, Value key)
     {
         key.assert_not_vm_sentinel();
 
@@ -1282,18 +1284,19 @@ namespace cl
             find_entry_slot_for_general_lookup(thread, live_key.value(), hash));
         if(entry_slot < 0)
         {
-            return Expected<Value>::raise_exception(L"KeyError", L"");
+            return Expected<ItemResult>::ok(ItemResult{Value::None(), false});
         }
 
         int32_t idx = hash_table[static_cast<size_t>(entry_slot)];
         assert(idx >= 0);
         Owned<Value> result(entries[idx].value);
         delete_entry_at_slot(static_cast<size_t>(entry_slot));
-        return Expected<Value>::ok(result.value());
+        return Expected<ItemResult>::ok(ItemResult{result.value(), true});
     }
 
-    Expected<Value> Dict::general_setdefault(ThreadState *thread, Value key,
-                                             Value default_value)
+    Expected<Dict::SetDefaultResult>
+    Dict::general_setdefault_with_presence(ThreadState *thread, Value key,
+                                           Value default_value)
     {
         key.assert_not_vm_sentinel();
         default_value.assert_not_vm_sentinel();
@@ -1309,12 +1312,14 @@ namespace cl
         int32_t slot_value = hash_table[entry_slot];
         if(slot_value >= 0)
         {
-            return Expected<Value>::ok(entries[slot_value].value);
+            return Expected<SetDefaultResult>::ok(
+                SetDefaultResult{entries[slot_value].value, true});
         }
 
         write_new_at_slot(entry_slot, hash, live_key.value(),
                           live_default.value());
-        return Expected<Value>::ok(live_default.value());
+        return Expected<SetDefaultResult>::ok(
+            SetDefaultResult{live_default.value(), false});
     }
 
     const int32_t *Dict::find_entry(TValue<String> key) const

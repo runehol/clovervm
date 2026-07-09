@@ -130,6 +130,91 @@ TEST(Dict, SemanticApiPopAndSetdefaultAcceptStringValueKeys)
     EXPECT_FALSE(dict->contains(thread, key).value());
 }
 
+TEST(Dict, SemanticApiGetItemIfPresentDistinguishesNoneFromMissing)
+{
+    test::VmTestContext context;
+    ThreadState *thread = context.thread();
+    ThreadState::ActivationScope activation_scope(thread);
+    Dict *dict = thread->make_object_raw<Dict>();
+    Value key = make_string(context, L"key");
+    Value missing = make_string(context, L"missing");
+
+    ASSERT_FALSE(dict->set_item(thread, key, Value::None()).has_exception());
+
+    Dict::ItemResult found = dict->get_item_if_present(thread, key).value();
+    EXPECT_TRUE(found.found);
+    EXPECT_EQ(Value::None(), found.value);
+
+    Dict::ItemResult absent =
+        dict->get_item_if_present(thread, missing).value();
+    EXPECT_FALSE(absent.found);
+    EXPECT_EQ(Value::None(), absent.value);
+    EXPECT_FALSE(thread->has_pending_exception());
+}
+
+TEST(Dict, SemanticApiPopItemIfPresentDistinguishesNoneFromMissing)
+{
+    test::VmTestContext context;
+    ThreadState *thread = context.thread();
+    ThreadState::ActivationScope activation_scope(thread);
+    Dict *dict = thread->make_object_raw<Dict>();
+
+    ASSERT_FALSE(dict->set_item(thread, Value::from_smi(1), Value::None())
+                     .has_exception());
+
+    Dict::ItemResult found =
+        dict->pop_item_if_present(thread, Value::True()).value();
+    EXPECT_TRUE(found.found);
+    EXPECT_EQ(Value::None(), found.value);
+
+    Dict::ItemResult absent =
+        dict->pop_item_if_present(thread, Value::from_smi(1)).value();
+    EXPECT_FALSE(absent.found);
+    EXPECT_EQ(Value::None(), absent.value);
+    EXPECT_FALSE(thread->has_pending_exception());
+}
+
+TEST(Dict, SemanticApiSetdefaultWithPresenceReportsInsertionAndHit)
+{
+    test::VmTestContext context;
+    ThreadState *thread = context.thread();
+    ThreadState::ActivationScope activation_scope(thread);
+    Dict *dict = thread->make_object_raw<Dict>();
+
+    Dict::SetDefaultResult inserted =
+        dict->setdefault_with_presence(thread, Value::from_smi(1),
+                                       Value::None())
+            .value();
+    EXPECT_FALSE(inserted.was_present);
+    EXPECT_EQ(Value::None(), inserted.value);
+
+    Dict::SetDefaultResult present =
+        dict->setdefault_with_presence(thread, Value::True(),
+                                       Value::from_smi(2))
+            .value();
+    EXPECT_TRUE(present.was_present);
+    EXPECT_EQ(Value::None(), present.value);
+    EXPECT_EQ(1u, dict->size());
+}
+
+TEST(Dict, SemanticApiGetItemIfPresentPropagatesHashFailure)
+{
+    test::VmTestContext context;
+    ThreadState *thread = context.thread();
+    ThreadState::ActivationScope activation_scope(thread);
+    Dict *dict = thread->make_object_raw<Dict>();
+    Value bad_hash_key = context.run_file(L"class BadHash:\n"
+                                          L"    def __hash__(self):\n"
+                                          L"        return 'bad'\n"
+                                          L"BadHash()\n");
+    ASSERT_FALSE(thread->has_pending_exception());
+
+    EXPECT_TRUE(
+        dict->get_item_if_present(thread, bad_hash_key).has_exception());
+    expect_pending_exception(thread, L"TypeError",
+                             L"__hash__ method should return an integer");
+}
+
 TEST(Dict, SemanticApiLookupAndContainsPromoteNonStringMisses)
 {
     test::VmTestContext context;

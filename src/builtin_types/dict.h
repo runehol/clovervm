@@ -67,11 +67,25 @@ namespace cl
             size_t idx;
         };
 
+        struct ItemResult
+        {
+            Value value;
+            bool found;
+        };
+
+        struct SetDefaultResult
+        {
+            Value value;
+            bool was_present;
+        };
+
         explicit Dict(ClassObject *cls);
 
         Dict(ClassObject *cls, const Dict &other);
 
         [[nodiscard]] Expected<Value> get_item(ThreadState *thread, Value key);
+        [[nodiscard]] Expected<ItemResult>
+        get_item_if_present(ThreadState *thread, Value key);
         [[nodiscard]] Expected<Value> get_item_or_default(ThreadState *thread,
                                                           Value key,
                                                           Value default_value);
@@ -80,8 +94,13 @@ namespace cl
         [[nodiscard]] Expected<void> del_item(ThreadState *thread, Value key);
         [[nodiscard]] Expected<bool> contains(ThreadState *thread, Value key);
         [[nodiscard]] Expected<Value> pop(ThreadState *thread, Value key);
+        [[nodiscard]] Expected<ItemResult>
+        pop_item_if_present(ThreadState *thread, Value key);
         [[nodiscard]] Expected<Value> setdefault(ThreadState *thread, Value key,
                                                  Value default_value);
+        [[nodiscard]] Expected<SetDefaultResult>
+        setdefault_with_presence(ThreadState *thread, Value key,
+                                 Value default_value);
 
         [[nodiscard]] Expected<Value> get_item_for_str(ThreadState *thread,
                                                        TValue<String> key);
@@ -260,11 +279,8 @@ namespace cl
         [[nodiscard]] Expected<int64_t>
         find_entry_slot_for_general_lookup(ThreadState *thread, Value key,
                                            TValue<SMI> hash_smi);
-        [[nodiscard]] Expected<Value> general_get_item(ThreadState *thread,
-                                                       Value key);
-        [[nodiscard]] Expected<Value>
-        general_get_item_or_default(ThreadState *thread, Value key,
-                                    Value default_value);
+        [[nodiscard]] Expected<ItemResult>
+        general_get_item_if_present(ThreadState *thread, Value key);
         [[nodiscard]] Expected<void>
         set_item_with_known_hash(ThreadState *thread, Value key, Value value,
                                  TValue<SMI> hash);
@@ -274,10 +290,11 @@ namespace cl
                                                       Value key);
         [[nodiscard]] Expected<bool> general_contains(ThreadState *thread,
                                                       Value key);
-        [[nodiscard]] Expected<Value> general_pop(ThreadState *thread,
-                                                  Value key);
-        [[nodiscard]] Expected<Value>
-        general_setdefault(ThreadState *thread, Value key, Value default_value);
+        [[nodiscard]] Expected<ItemResult>
+        general_pop_item_if_present(ThreadState *thread, Value key);
+        [[nodiscard]] Expected<SetDefaultResult>
+        general_setdefault_with_presence(ThreadState *thread, Value key,
+                                         Value default_value);
         void promote_to_general_shape(ThreadState *thread);
         void maybe_promote_to_general_shape(ThreadState *thread);
         void grow();

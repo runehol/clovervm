@@ -816,18 +816,36 @@ lookup into a general-shaped dict can still require Python-visible equality
 against a non-string candidate. The C++ signature should reflect that both
 exact-string semantic operations and general semantic operations can fail.
 
-A possible naming shape is:
+The semantic C++ interface is:
 
 ```cpp
+struct ItemResult
+{
+    Value value;
+    bool found;
+};
+
+struct SetDefaultResult
+{
+    Value value;
+    bool was_present;
+};
+
 // Semantic operations. May run Python, may promote, may raise.
 [[nodiscard]] Expected<Value> get_item(ThreadState *thread, Value key);
+[[nodiscard]] Expected<ItemResult>
+get_item_if_present(ThreadState *thread, Value key);
 [[nodiscard]] Expected<void> set_item(ThreadState *thread, Value key,
                                       Value value);
 [[nodiscard]] Expected<void> del_item(ThreadState *thread, Value key);
 [[nodiscard]] Expected<bool> contains(ThreadState *thread, Value key);
 [[nodiscard]] Expected<Value> pop(ThreadState *thread, Value key);
+[[nodiscard]] Expected<ItemResult>
+pop_item_if_present(ThreadState *thread, Value key);
 [[nodiscard]] Expected<Value> setdefault(ThreadState *thread, Value key,
                                          Value default_value);
+[[nodiscard]] Expected<SetDefaultResult>
+setdefault_with_presence(ThreadState *thread, Value key, Value default_value);
 
 // Same semantics, but the incoming lookup key is known exact str.
 [[nodiscard]] Expected<Value> get_item_for_str(ThreadState *thread,
@@ -844,6 +862,11 @@ A possible naming shape is:
                                                  TValue<String> key,
                                                  Value default_value);
 ```
+
+The typed result methods perform the semantic operation once. `ItemResult`
+distinguishes a missing key from a present Python `None` without a VM sentinel.
+The existing raising methods delegate to these forms and translate absence into
+`KeyError`; the modern C API consumes the explicit result directly.
 
 The string-key semantic helpers should use distinct names rather than overloads.
 They are not raw string-dict operations: the typed key is only an input fact. If
@@ -1306,6 +1329,9 @@ Stage invariant:
 
 ### 9e. C API Integration
 
+- [x] Add typed C++ semantic results for non-raising lookup and pop, and for
+  setdefault with presence reporting, so C API wrappers do not repeat probes or
+  inspect pending exception state to detect misses.
 - [ ] Add the currently implementable core of CPython's dictionary C API with
   `clover_dict_*` names: type checks, construction, clear, copy, membership,
   assignment, deletion, lookup, setdefault, pop, key/value/item snapshots,
