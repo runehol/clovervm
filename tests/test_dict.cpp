@@ -130,7 +130,7 @@ TEST(Dict, SemanticApiPopAndSetdefaultAcceptStringValueKeys)
     EXPECT_FALSE(dict->contains(thread, key).value());
 }
 
-TEST(Dict, SemanticApiLooksUpNonStringMissesWithoutPromotion)
+TEST(Dict, SemanticApiLookupAndContainsPromoteNonStringMisses)
 {
     test::VmTestContext context;
     ThreadState *thread = context.thread();
@@ -143,11 +143,11 @@ TEST(Dict, SemanticApiLooksUpNonStringMissesWithoutPromotion)
     thread->clear_pending_exception();
 
     EXPECT_FALSE(dict->contains(thread, Value::from_smi(1)).value());
-    EXPECT_EQ(string_key_shape, dict->get_shape());
-    EXPECT_EQ(0u, dict->table_generation());
+    EXPECT_NE(string_key_shape, dict->get_shape());
+    EXPECT_EQ(1u, dict->table_generation());
 }
 
-TEST(Dict, SemanticApiDeletesNonStringMissesWithoutPromotion)
+TEST(Dict, SemanticApiDeleteAndPopPromoteNonStringMisses)
 {
     test::VmTestContext context;
     ThreadState *thread = context.thread();
@@ -161,8 +161,29 @@ TEST(Dict, SemanticApiDeletesNonStringMissesWithoutPromotion)
 
     EXPECT_TRUE(dict->pop(thread, Value::from_smi(1)).has_exception());
     expect_pending_exception(thread, L"KeyError", L"");
-    EXPECT_EQ(string_key_shape, dict->get_shape());
-    EXPECT_EQ(0u, dict->table_generation());
+    EXPECT_NE(string_key_shape, dict->get_shape());
+    EXPECT_EQ(1u, dict->table_generation());
+}
+
+TEST(Dict, SemanticApiLookupKeepsPromotionWhenHashFails)
+{
+    test::VmTestContext context;
+    ThreadState *thread = context.thread();
+    ThreadState::ActivationScope activation_scope(thread);
+    Dict *dict = thread->make_object_raw<Dict>();
+    Shape *string_key_shape = thread->get_exact_dict_string_key_shape();
+
+    Value bad_hash_key = context.run_file(L"class BadHash:\n"
+                                          L"    def __hash__(self):\n"
+                                          L"        return 'bad'\n"
+                                          L"BadHash()\n");
+    ASSERT_FALSE(thread->has_pending_exception());
+
+    EXPECT_TRUE(dict->get_item(thread, bad_hash_key).has_exception());
+    EXPECT_NE(string_key_shape, dict->get_shape());
+    EXPECT_EQ(1u, dict->table_generation());
+    expect_pending_exception(thread, L"TypeError",
+                             L"__hash__ method should return an integer");
 }
 
 TEST(Dict, SemanticApiSetItemPromotesNonStringKeys)
@@ -320,7 +341,7 @@ TEST(Dict, PublicGetPropagatesEqualityKeyError)
     expect_pending_exception(context.thread(), L"KeyError", L"");
 }
 
-TEST(Dict, PublicLookupMissesUnpromotedNonStringKeys)
+TEST(Dict, PublicNonStringLookupMisses)
 {
     test::VmTestContext context;
 
@@ -333,6 +354,58 @@ TEST(Dict, PublicLookupMissesUnpromotedNonStringKeys)
                                     L"d[1]\n");
     EXPECT_TRUE(result.is_exception_marker());
     expect_pending_exception(context.thread(), L"KeyError", L"");
+}
+
+TEST(Dict, PromotionDoesNotInvalidateExistingIterator)
+{
+    test::VmTestContext context;
+
+    EXPECT_EQ(Value::True(), context.run_file(L"d = {'key': 1}\n"
+                                              L"iterator = iter(d.keys())\n"
+                                              L"d.get(1)\n"
+                                              L"next(iterator) == 'key'\n"));
+}
+
+TEST(Dict, TrustedStringLookupFallsBackAfterPromotion)
+{
+    test::VmTestContext context;
+
+    EXPECT_EQ(Value::from_smi(2), context.run_file(L"def read(d):\n"
+                                                   L"    return d['key']\n"
+                                                   L"d = {'key': 1}\n"
+                                                   L"first = read(d)\n"
+                                                   L"d.get(1)\n"
+                                                   L"first + read(d)\n"));
+}
+
+TEST(Dict, DisplayEvaluatesExpressionsBeforeHashingAndPromotes)
+{
+    test::VmTestContext context;
+
+    EXPECT_EQ(Value::True(),
+              context.run_file(L"events = []\n"
+                               L"class Key:\n"
+                               L"    def __init__(self, name, hash_value):\n"
+                               L"        self.name = name\n"
+                               L"        self.hash_value = hash_value\n"
+                               L"    def __hash__(self):\n"
+                               L"        events.append('hash ' + self.name)\n"
+                               L"        return self.hash_value\n"
+                               L"def key(name, hash_value):\n"
+                               L"    events.append('key ' + name)\n"
+                               L"    return Key(name, hash_value)\n"
+                               L"def value(name):\n"
+                               L"    events.append('value ' + name)\n"
+                               L"    return name\n"
+                               L"d = {key('a', 4): value('a'), "
+                               L"key('b', 5): value('b')}\n"
+                               L"len(d) == 2 and len(events) == 6 and "
+                               L"events[0] == 'key a' and "
+                               L"events[1] == 'value a' and "
+                               L"events[2] == 'key b' and "
+                               L"events[3] == 'value b' and "
+                               L"events[4] == 'hash a' and "
+                               L"events[5] == 'hash b'\n"));
 }
 
 TEST(Dict, SemanticApiDeleteUsesGeneralSemanticsAfterPromotion)

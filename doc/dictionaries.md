@@ -1,66 +1,51 @@
 # Dictionaries
 
-See also [Switchable Dictionaries](switchable-dictionaries.md) for the planned
-shape-backed split between string-only dictionaries and general Python
-dictionaries.
+See [Switchable Dictionaries](switchable-dictionaries.md) for the detailed
+shape, protocol, reentrancy, C API, and staging design.
 
-Insertion ordered dictionaries:
+## Current Representation
 
-- <https://morepypy.blogspot.com/2015/01/faster-more-memory-efficient-and-more.html>
+Public `dict` uses one Python class, one C++ `Dict` class, and one native layout.
+Exact builtin instances have two canonical shapes:
 
-Two tables:
+- the string-keyed shape, whose live keys are all exact strings
+- the general shape, which permits arbitrary Python keys
 
-- insertion order table of `[hash, key, value]`, all in `CLValue` representation. For scopes, this is also a good place to hang invalidation tables
-- open probe table of `[position]`, with special values for empty and tombstone. representation TBD
+An exact builtin dict starts string-keyed. A semantic operation involving a
+non-string key promotes it in place to the general shape. Promotion changes only
+the shape and probe generation; it does not copy entries, replace the object, or
+change insertion order. Promotion is one-way.
 
-Would be interesting to do the swiss table trick, but since we need the indirection to get insertion order, it's probably not possible:
+Dict storage consists of:
 
-- <https://abseil.io/about/design/swisstables>
+- an insertion-ordered entry array containing key, value, and canonical SMI hash
+- an open-addressed probe table containing entry indexes plus empty and
+  tombstone sentinels
+- a live-entry count
+- a probe-structure generation used to revalidate indexes across reentrant
+  equality calls
 
-Both tables should be refcounted and have allocator headers. No need for hidden class pointers and such.
+The string-keyed and general shapes use the same storage layout. Exact-string
+operations on the canonical string-keyed shape use trusted native hashing and
+equality and cannot run Python. General operations use Python `hash` and
+equality semantics and may raise, mutate the dict, or re-enter the VM.
 
-Allocator header:
+## Hashes
 
-- refcount, 32 bit or 16 bit
-- number of `CLValue` cells
-- number of non-`CLValue` cells, for string bytes, probe table contents, and so on
-- could we store things as `log2` to fit large values into few bytes?
-- ideally the entire allocator header fits within 64 bits
+Stored hashes are canonical SMI values. Public `hash()` and builtin hash helpers
+use the same normalization, including BigInt reduction through CloverVM's
+Mersenne-form hash modulus and `-1` to `-2` remapping. Equal integer values must
+therefore have the same stored hash whether represented as bool, SMI, or BigInt.
 
-Possible layout:
+## Remaining Work
 
-```c
-uint32_t refcount;
-uint16_t n_value_cells;
-uint8_t n_raw_cells;
-uint8_t log2_n_raw_cells;
-```
+The public general path currently uses C++ semantic drivers calling cached
+`ThreadState` hash and equality helpers. The intended hot path moves those
+protocol calls into trusted bytecode so their inline-cache sites are explicit.
+The bootstrap `GeneralDict` class remains temporarily as a test/reference
+implementation and should be removed after equivalent public coverage is in
+place.
 
-`hash()` truncates the value returned from an object’s custom `__hash__()` method to the size of a `Py_ssize_t`. This is typically 8 bytes on 64-bit builds and 4 bytes on 32-bit builds. If an object’s `__hash__()` must interoperate on builds of different bit sizes, be sure to check the width on all supported builds. An easy way to do this is with `python -c "import sys; print(sys.hash_info.width)"`.
-
-- <https://docs.python.org/3.11/reference/datamodel.html#specialnames>
-- Descriptor arrays for hidden classes: <https://v8.dev/docs/hidden-classes>
-
-Scopes:
-
-- pointer to parent scope, `CLValue` refcounted
-- open probe hash table to insertion order table
-- insertion order table
-
-Status note:
-
-- the VM-managed array substrate and scope-specific split storage have now
-  landed
-- `Scope` no longer uses `std::vector`
-- the remaining work here is to build full dictionary payloads and mapping
-  behavior on top of that substrate
-
-The insertion order table should contain:
-
-- `CLValue` key
-- `CLValue` value
-- `invalidate_array`, an array of code objects that depend on the current value of the variable
-
-We never delete a value, simply set the value to `cl_value_not_present`. We also encode the index into the parent table into the upper 32 bits of this value, or `-1` if not known.
-
-This means that we can look up a global by index alone. If we have to recurse into the parent scope and we don't have the index, pick up the key from the table itself.
+Scopes and namespace storage are separate structures. They may share broad
+open-addressing ideas with `Dict`, but their invalidation and parent-lookup
+requirements should not be folded into the public dictionary representation.

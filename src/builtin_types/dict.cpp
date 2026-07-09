@@ -789,6 +789,7 @@ namespace cl
             return get_item_for_str(thread,
                                     TValue<String>::from_value_unchecked(key));
         }
+        maybe_promote_to_general_shape(thread);
         return general_get_item(thread, key);
     }
 
@@ -812,20 +813,19 @@ namespace cl
             }
             return Expected<Value>::ok(result);
         }
+        maybe_promote_to_general_shape(thread);
         return general_get_item_or_default(thread, key, default_value);
     }
 
     Expected<void> Dict::set_item(ThreadState *thread, Value key, Value value)
     {
-        if(is_exact_dict_string_key_shape(thread, this))
+        if(is_exact_dict_string_key_shape(thread, this) &&
+           can_convert_to<String>(key))
         {
-            if(can_convert_to<String>(key))
-            {
-                return set_item_for_str(
-                    thread, TValue<String>::from_value_unchecked(key), value);
-            }
-            promote_to_general_shape(thread);
+            return set_item_for_str(
+                thread, TValue<String>::from_value_unchecked(key), value);
         }
+        maybe_promote_to_general_shape(thread);
         return general_set_item(thread, key, value);
     }
 
@@ -837,6 +837,7 @@ namespace cl
             return del_item_for_str(thread,
                                     TValue<String>::from_value_unchecked(key));
         }
+        maybe_promote_to_general_shape(thread);
         return general_del_item(thread, key);
     }
 
@@ -848,6 +849,7 @@ namespace cl
             return contains_for_str(thread,
                                     TValue<String>::from_value_unchecked(key));
         }
+        maybe_promote_to_general_shape(thread);
         return general_contains(thread, key);
     }
 
@@ -859,22 +861,21 @@ namespace cl
             return pop_for_str(thread,
                                TValue<String>::from_value_unchecked(key));
         }
+        maybe_promote_to_general_shape(thread);
         return general_pop(thread, key);
     }
 
     Expected<Value> Dict::setdefault(ThreadState *thread, Value key,
                                      Value default_value)
     {
-        if(is_exact_dict_string_key_shape(thread, this))
+        if(is_exact_dict_string_key_shape(thread, this) &&
+           can_convert_to<String>(key))
         {
-            if(can_convert_to<String>(key))
-            {
-                return setdefault_for_str(
-                    thread, TValue<String>::from_value_unchecked(key),
-                    default_value);
-            }
-            promote_to_general_shape(thread);
+            return setdefault_for_str(thread,
+                                      TValue<String>::from_value_unchecked(key),
+                                      default_value);
         }
+        maybe_promote_to_general_shape(thread);
         return general_setdefault(thread, key, default_value);
     }
 

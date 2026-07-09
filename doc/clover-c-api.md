@@ -254,6 +254,31 @@ Conversion helpers set a pending exception on failure and return
 identity. It must not compare handle storage addresses once handles become
 indirect.
 
+### Planned Dictionary API
+
+Public `dict` now supports arbitrary Python keys, but dictionary C API entry
+points have not landed yet. The next dictionary API slice must include:
+
+- construction of a fresh exact builtin dict
+- semantic item lookup, assignment, deletion, and membership
+- length
+
+Dictionary construction and length cannot run Python. Key operations may invoke
+`__hash__`, equality, descriptors, and arbitrary Python code, and therefore may
+set pending exception state. Item lookup and deletion use ordinary Python
+`KeyError` semantics for a missing key; membership reports a boolean output and
+does not treat a miss as an error.
+
+Functions returning an item or length should follow the existing
+`clover_status` plus output-pointer convention. Returned value handles have the
+same context-managed lifetime as other runtime API handles. The implementation
+must delegate to the semantic C++ `Dict` interface so shape promotion,
+reentrant-equality defense, and pending-exception behavior are shared. Raw
+`string_keyed_*` storage helpers are not exposed through the C API.
+
+Exact function names remain to be selected before implementation and added to
+the public header and implemented-API list together.
+
 Explicit semantic errors use a raise helper directly. Raise helpers set the
 pending exception and return the same error marker.
 

@@ -112,19 +112,21 @@ JIT, language, and runtime work.
    namespaces, keyword-name tables, and other maps whose key contract is
    deliberately narrower than public Python `dict`.
 
-   Add a separate general Python dictionary path for arbitrary keys. General
-   dict lookup, insertion, and deletion must route `__hash__` and equality
-   through explicit protocol dispatch with inspectable inline-cache metadata,
-   because those operations can run Python bytecode, raise, mutate, or re-enter
-   the VM. A future JIT should be able to distinguish native string-key lookup
-   from general dict lookup with guarded hash/equality calls, not rediscover
-   those hidden call sites inside dict probing helpers.
+   The first public general Python dictionary path for arbitrary keys has
+   landed, including shape-only promotion and reentrant lookup, insertion, and
+   deletion through C++ semantic drivers. The remaining performance-critical
+   step is to move `__hash__` and equality into explicit cache-bearing bytecode
+   call sites. Those operations can run Python bytecode, raise, mutate, or
+   re-enter the VM. A future JIT should be able to distinguish native
+   string-key lookup from general dict lookup with guarded hash/equality calls,
+   not rediscover hidden call sites inside dict probing helpers.
 
    Standard-library bringup has started to hit this boundary directly:
    `errno.errorcode` is specified as a real `dict` keyed by integer errno
    values. Do not work around that with a non-dict substitute; treat it as
-   evidence that general public dictionaries have become a compatibility
-   blocker for otherwise small modules.
+   evidence that general public dictionaries were a compatibility blocker for
+   otherwise small modules. The dictionary blocker is now removed; implementing
+   the module and completing the C API/hot-path work remain.
 
 7. **Attribute hooks and escaped bound methods**
 

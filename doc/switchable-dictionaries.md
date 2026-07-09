@@ -1,27 +1,43 @@
 # Switchable Dictionaries
 
-This document sketches the staged path from CloverVM's current exact-string
-`dict` to a future Python-compatible general dictionary.
+This document records the staged path from CloverVM's original exact-string
+`dict` to a Python-compatible general dictionary while preserving a canonical
+exact-string fast-path shape.
 
 The motivating case is `errno.errorcode`: CPython exposes it as a real `dict`
-keyed by integer errno values. CloverVM's current `dict` implementation is
-string-key-only, which keeps namespace-style maps simple but blocks compatible
+keyed by integer errno values. The original CloverVM `dict` implementation was
+string-key-only, which kept namespace-style maps simple but blocked compatible
 stdlib modules.
 
-The first implementation step is deliberately not CPython-compatible. It adds a
-separate internal Python class, backed by a separate C++ `GeneralDict` native
-layout, so the general-key table semantics can be built and tested without
-forcing automatic switching or a unified C++ `dict` interface immediately.
+The bootstrap implementation used a separate internal Python class backed by a
+separate C++ `GeneralDict` native layout. That class established general-key
+table semantics before automatic switching and the unified C++ `Dict` interface
+were ready.
+
+## Current Status
+
+Public exact builtin `dict` instances now start with the canonical string-keyed
+shape and promote in place to the exact-dict general shape when a non-string key
+participates in semantic insertion, lookup, membership, deletion, `get`, `pop`,
+or `setdefault`. `update`, `fromkeys`, and dict displays route contributed keys
+through semantic insertion. Exact-string operations on the canonical
+string-keyed shape retain trusted native fast paths.
+
+The public general path currently uses C++ semantic drivers backed by
+`ThreadState::hash_value` and `ThreadState::test_equal`. The remaining major
+work is to expose the semantic C API, remove the bootstrap `GeneralDict`, move
+the hot public general path into cache-bearing trusted bytecode, and complete
+the deliberately deferred mapping-method compatibility work.
 
 ## Goals
 
 - Preserve one public Python `dict` class.
-- Bootstrap general-key dictionary mechanics in a separate internal class before
-  unifying them with public `dict`.
-- Keep dict literal construction on the existing string-only `dict` path during
-  the bootstrap phase.
+- Preserve the completed bootstrap history until `GeneralDict` is removed.
+- Keep dict literal construction on public `Dict` and insert arbitrary keys
+  semantically.
 - Keep exact-string dictionaries fast and non-reentrant.
-- Promote dictionaries to a general shape when non-string keys are inserted.
+- Promote exact string-keyed dictionaries when a non-string key participates in
+  a semantic key operation.
 - Eventually route public general-dictionary hashing and equality through
   bytecode-visible calls with normal inline caches.
 - For the future public-dict hot path, avoid C++ helpers that invoke
@@ -143,8 +159,8 @@ and the operation proceeds through the general path.
 
 ## Dispatch Model
 
-This section describes the later public-dict unification target, not the initial
-bootstrap `GeneralDict` class.
+This section describes the public-dict dispatch now in use and the later
+cache-bearing bytecode target, not the bootstrap `GeneralDict` class.
 
 `dict.__getitem__`, `dict.__setitem__`, `dict.__delitem__`, and related
 operations should dispatch by the canonical string-keyed receiver shape:
@@ -480,16 +496,15 @@ still valid after `candidate == key` returns.
 
 ```python
 def _general_dict_contains(self, key):
-    try:
-        _general_dict_getitem(self, key)
-        return True
-    except KeyError:
-        return False
+    entry = _general_dict_find_entry(self, key)
+    return entry != DICT_PROBE_EMPTY
 ```
 
-This can be optimized later with a lookup helper that returns a found/missing
-status without materializing the value path. Semantically it has the same
-hashing, equality, exception, and mutation behavior as lookup.
+`_general_dict_find_entry` is shorthand for the same hash/probe/equality loop as
+lookup, returning an entry index or the integer missing sentinel. It propagates
+all exceptions. Membership must not implement missing detection by catching
+`KeyError`, because `__hash__` or equality may itself raise `KeyError` and that
+exception must remain observable.
 
 ### Assignment
 
@@ -573,53 +588,50 @@ def _general_dict_delitem(self, key):
 
 ### Public Method Wrappers
 
-Most public methods should be thin bytecode wrappers around the core lookup,
-assignment, and deletion paths so they share the same hash/equality cache
-behavior.
+Public methods should use operation-specific single-probe drivers so they share
+the same hash/equality cache behavior without translating arbitrary exceptions
+into misses.
 
 ```python
 def _general_dict_get(self, key, default=None):
-    try:
-        return _general_dict_getitem(self, key)
-    except KeyError:
+    entry = _general_dict_find_entry(self, key)
+    if entry == DICT_PROBE_EMPTY:
         return default
+    return _dict_entry_value(self, entry)
 
 
 def _general_dict_setdefault(self, key, default=None):
-    try:
-        return _general_dict_getitem(self, key)
-    except KeyError:
-        _general_dict_setitem(self, key, default)
-        return default
+    # One insertion-style probe. On a hit, return the existing value. On a
+    # miss, write default into the recorded empty/tombstone slot.
+    return _general_dict_setdefault_driver(self, key, default)
 
 
 def _general_dict_pop(self, key, default=_missing):
-    try:
-        value = _general_dict_getitem(self, key)
-    except KeyError:
-        if default is _missing:
-            raise
-        return default
-    _general_dict_delitem(self, key)
-    return value
+    # One deletion-style probe. On a hit, retain the value and delete that
+    # entry. Only an ordinary miss selects default or raises KeyError(key).
+    return _general_dict_pop_driver(self, key, default)
 
 
 def _general_dict_update_from_dict(self, other):
-    for item in other.items():
-        _general_dict_setitem(self, item[0], item[1])
-    return None
-
-
-def _general_dict_update(self, other=None):
-    if other is None:
-        return None
-    _general_dict_update_from_dict(self, other)
+    for entry in _dict_stored_entries(other):
+        _general_dict_setitem_with_known_hash(
+            self, entry.key, entry.value, entry.hash
+        )
     return None
 ```
 
-`update` is intentionally incomplete as a sketch. Full CPython behavior also
-accepts iterables of pairs and keyword arguments. Those can be added when the
-iterator and keyword-call surfaces are ready enough to support them honestly.
+The helpers in these sketches return integer entry indexes or missing sentinels,
+not string status objects. `get`, `contains`, `setdefault`, and `pop` must
+distinguish an ordinary miss from every exception raised by hash or equality.
+`pop` and `setdefault` must not compose two independent public operations: doing
+so would hash and compare twice and expose extra reentrancy points.
+
+An exact dict-to-dict `update` may reuse canonical hashes already stored in the
+source, as CPython does. It still probes the target semantically and may execute
+target-key equality. General mapping, iterable-of-pairs, and keyword update
+forms are deferred compatibility work. `update(None)` is not a no-op; it must
+eventually raise `TypeError` through the ordinary iterable/mapping validation
+path.
 
 Methods that do not perform key lookup can stay mostly opcode-backed, but
 they must work for either dict shape:
@@ -658,11 +670,15 @@ setitem path, so non-string keys promote the result naturally:
 
 ```python
 def _dict_fromkeys(cls, keys, value=None):
-    result = dict()
+    result = cls()
     for key in keys:
         result[key] = value
     return result
 ```
+
+The current exact-builtin implementation accepts only tuple/list key sources.
+General iterable support and subclass-aware `cls()` construction belong to the
+deferred mapping-compatibility milestone.
 
 ## Promotion Sketch
 
@@ -769,18 +785,18 @@ JIT.
 
 ## C++ Dict Interface Boundary
 
-The current C++ `Dict` interface is a design hazard because methods named
+The original C++ `Dict` interface was a design hazard because methods named
 `get_item`, `set_item`, `contains`, and `del_item` accept arbitrary `Value`
-keys while the table implementation is actually exact-string-only. That makes
+keys while the table implementation was actually exact-string-only. That made
 it easy for native VM code to bypass Python-visible method guards and call raw
-string hashing/equality on non-string keys. Dict literal construction already
-has this shape: evaluated Python keys are passed directly to `Dict::set_item`.
+string hashing/equality on non-string keys. The completed semantic C++ API and
+shape-guarded raw helper split below resolved that hazard.
 
 The C++ API should make the operation's semantic level explicit. Raw
 string-shape operations are not a public C++ API category. They are private
 implementation details of `Dict` and trusted handlers, guarded by receiver
 shape and exact `str` key checks before use. Exposing them as a separate API
-would only move the current string-only hazard behind a different name.
+would only have moved the original string-only hazard behind a different name.
 
 The useful public/internal split is:
 
@@ -929,50 +945,36 @@ audited into these buckets:
 - Trusted string fast paths may call private raw string-shape helpers only after
   guards prove both receiver shape and key shape.
 
-`CreateDict` needs special attention later. Bootstrap `GeneralDict` does not
-change dict-display lowering: `{}` and dict displays continue to construct the
-existing string-only `Dict`. Once public dicts support general keys, insertion
-can call `hash(key)`, which can execute Python. Dict display semantics require
-each key/value pair to be evaluated and inserted before the next pair's
-expressions are evaluated. A bulk `CreateDict` opcode that evaluates all
-expressions first and inserts afterward is not a good general insertion
-boundary.
+`CreateDict` currently receives already-evaluated key/value pairs, constructs an
+exact builtin `Dict`, and applies semantic insertion to each pair in source
+order. This matches CPython's ordinary display ordering: all key/value
+expressions are evaluated left to right before `BUILD_MAP` hashes and inserts
+the accumulated pairs. General keys therefore promote naturally inside the
+opcode, and hash/equality exceptions propagate from semantic insertion.
 
-The intended direction is to narrow the bulk opcode to empty dict construction or
-deliberately proven exact-string-key construction, and to name that exact-string
-bulk path `CreateStringKeyDict` if the current `CreateDict` name becomes
-misleading. Ordinary general-key dict displays should lower to create-empty plus
-per-entry semantic insertion so the insertion path gets its ordinary inline
-caches.
+The bulk opcode may remain while the public general path is C++-backed. When
+general insertion moves into cache-bearing bytecode, revisit whether
+`CreateDict` should keep a C++ semantic loop, gain per-entry inline-cache
+storage, or lower to create-empty plus per-entry insertion. That is a
+performance/cache-placement decision, not an expression-order requirement. A
+separate `CreateStringKeyDict` is justified only if codegen can prove every key
+exact-string and measurements show the specialization is worthwhile.
 
 ## Open Questions
 
-Bootstrap questions:
-
-- Should `GeneralDict.__repr__` be implemented in the first functional slice, or
-  deferred until core lookup/assignment is stable?
-- What minimal iteration or `items` surface is needed for tests without dragging
-  in full dict view semantics?
-
-Later public-dict unification questions:
-
-- Where should the built-in bytecode method bodies live so they are available
-  during bootstrap while still being the only code allowed to emit trusted dict
-  opcodes?
-- What exact C++ and C API surfaces should be provided for semantic dict
-  operations and exact-string fast-path operations?
-- What table generation mechanism should stale-entry defense use
-  once public general dict lookup needs CPython-style revalidation?
-- Should exact-string semantic helpers be separate overloads of the general
-  helpers, or separate names, given that they can still be fallible in
-  general-shaped dicts?
+- What exact C API names and missing-key contracts best match the existing
+  status-plus-output conventions?
+- When the hot general path moves to trusted bytecode, should `CreateDict` gain
+  per-entry cache storage or lower to repeated cache-bearing insertion?
+- Should the deferred mapping-compatibility work include native-type subclass
+  construction, or should that remain entirely in the native subtype plan?
 
 ## Milestones
 
-Each milestone should preserve a working tree where existing string-key dicts
-continue to work. The first track is intentionally a temporary internal
-parallel class. It is a staging tool for the hard general-key semantics, not a
-CPython-compatible public `dict` implementation.
+Each milestone should preserve a working tree where exact-string dicts continue
+to use the trusted fast path. Stages 0 through 6 record the completed temporary
+parallel-class bootstrap. Stages 7 onward describe public unification and the
+remaining work.
 
 ### 0. Internal GeneralDict Skeleton
 
@@ -1176,15 +1178,14 @@ Resolved representation direction:
   non-semantic names like `string_keyed_lookup`.
 - A failed non-string insertion does not need to roll back promotion if hashing
   or equality raises after the shape transition.
-- The first public general-key path may use the existing C++ semantic drivers and
+- The current public general-key path uses the existing C++ semantic drivers and
   `ThreadState` protocol helpers. The bytecode/trusted-opcode path remains the
-  intended hot path, but it is not required for the first public correctness
-  slice.
+  intended hot path.
 - The first promotion helper should be private C++; trusted bytecode promotion is
   deferred until general insertion, lookup, and deletion move into bytecode.
-- Dict displays with possibly general keys should lower to create-empty plus
-  per-entry semantic insertion. Bulk dict creation should be limited to empty or
-  proven exact-string construction and may need a more explicit opcode name.
+- Dict displays use bulk `CreateDict` with semantic insertion today. Revisit
+  its cache placement when the general path moves to bytecode; expression order
+  does not require changing the current lowering.
 - Promotion should not change iterator behavior by itself; active iterators care
   about the same lookup/insertion/deletion mutation effects they already observe.
 
@@ -1196,9 +1197,8 @@ Later hot-path direction:
   exposing trusted dict opcodes through general Python source or importable helper
   modules.
 
-This is the point to revisit the older switchable-dictionary design. Do not
-answer any remaining implementation details in the bootstrap implementation by
-accident.
+Remaining hot-path work should follow this resolved public representation rather
+than adding behavior to the bootstrap `GeneralDict` implementation.
 
 ### 8. Make Dict Storage General-Compatible
 
@@ -1275,10 +1275,13 @@ Stage invariant:
 - [x] Add tests that `d.update(other)` promotes `d` when `other` contributes a
   non-string key.
 - [x] Add hash/equality exception tests for promoted assignment.
+- [x] Route dict displays through semantic insertion so arbitrary keys promote
+  and hash/equality failures propagate.
 
 Stage invariant:
 
-- Dict displays with general keys are still out of scope.
+- Dict-display key/value expressions retain CPython evaluation order: evaluate
+  all pairs left to right, then hash and insert them in source order.
 
 ### 9d. Public Lookup, Membership, Deletion, And Delegators
 
@@ -1286,11 +1289,17 @@ Stage invariant:
   chosen unified design.
 - [x] Route public `dict` deletion and deletion delegators through the chosen
   unified design.
+- [x] Promote an exact string-keyed dict before any non-string lookup,
+  membership, deletion, `get`, or `pop` probe. Failed operations do not roll the
+  promotion back.
 - [x] Add tests for `d[1]`, `d.get(1)`, and `1 in d` on promoted/general public
   dicts.
 - [x] Add tests for `d.pop(1)` and `del d[1]` on promoted/general public dicts.
 - [x] Add lookup/membership tests for propagated `__hash__` and `__eq__`
   exceptions and mutation during equality.
+- [x] Add focused tests that promotion does not invalidate an existing iterator
+  and that a warmed trusted string lookup falls back after the receiver shape
+  changes.
 
 Stage invariant:
 
@@ -1299,9 +1308,16 @@ Stage invariant:
 
 ### 9e. C API Integration
 
-- [ ] Add C API functions for semantic lookup, assignment, deletion, membership,
-  and length operations.
-- [ ] Document which C API functions may re-enter Python.
+- [ ] Add public C API construction for a fresh builtin dict.
+- [ ] Add C API functions for semantic lookup, assignment, deletion,
+  membership, and length operations, following the existing
+  status-plus-output convention where an operation needs an output value.
+- [ ] Specify lookup-miss behavior separately from API misuse and propagated
+  Python exceptions. Ordinary item lookup and deletion should raise `KeyError`;
+  membership should return a boolean output without using missing as an error.
+- [ ] Document output-handle ownership and which functions may re-enter Python.
+  Construction and length do not run Python; semantic key operations may run
+  hash and equality.
 - [ ] Add native module tests that build string-key dicts, integer-key dicts,
   propagated `__hash__` and `__eq__` exceptions, and mutation during equality
   through the C API surface.
@@ -1309,6 +1325,8 @@ Stage invariant:
 Stage invariant:
 
 - Raw string-shape helpers remain unavailable through the C API.
+- C API implementation delegates to the semantic `Dict` interface rather than
+  duplicating probing or promotion policy.
 
 ### 10. Remove Bootstrap GeneralDict
 
@@ -1322,13 +1340,50 @@ Stage invariant:
 - This should be a separate cleanup from the shape-shifting behavior change, so
   representation migration and bootstrap deletion stay reviewable independently.
 
-### 11. Cleanup, Performance, And Stdlib Unblock
+### 11. Cache-Bearing General Dict Bytecode
+
+- [ ] Add the trusted dict opcodes needed for protocol-free probe, entry access,
+  revalidation, mutation, resize, and shape transition.
+- [ ] Generate bytecode-backed public general-dict method bodies with
+  `CodeObjectBuilder` functions near `dict.cpp`.
+- [ ] Inline the public hash protocol in those method bodies with a dedicated
+  cache-bearing special-method call followed by `CanonicalizeHash`.
+- [ ] Put equality dispatch and `ToBool` at cache-bearing bytecode sites and
+  preserve the existing generation-plus-candidate revalidation contract.
+- [ ] Decide and implement the cache placement for general-key `CreateDict`.
+- [ ] Add structural codegen tests proving that general lookup, insertion, and
+  deletion contain the intended hash/equality cache sites.
+
+Stage invariants:
+
+- Trusted dict opcodes never invoke Python-visible protocols.
+- Exact-string operations on the canonical string-keyed shape retain their
+  existing trusted native handlers.
+- C++ semantic helpers remain available for native and C API callers, but the
+  hot Python-visible general path no longer hides protocol calls inside C++.
+
+### 12. Deferred Mapping Compatibility
+
+- [ ] Implement `dict.update` for mappings, iterables of pairs, and keyword
+  arguments with CPython-compatible validation and exception behavior.
+- [ ] Implement `dict.fromkeys` for general iterables and class-aware
+  construction once native builtin subtype construction is available.
+- [ ] Implement remaining constructor population forms through semantic
+  insertion.
+- [ ] Add tests for malformed update elements, `update(None)`, hash/equality
+  exceptions, duplicate/equal keys, and evaluation order.
+
+This stage is separate from representation switching. If native dict subtypes
+remain unavailable, subclass-specific constructor behavior stays deferred to
+the native subtype plan rather than being approximated here.
+
+### 13. Cleanup, Performance, And Stdlib Unblock
 
 - [ ] Remove obsolete string-only `TODO`s and helper names that imply raw hash
   storage.
 - [ ] Audit dict fast paths so exact-string dictionaries still avoid Python
-  bytecode and general dictionaries still expose cache-bearing hash/equality
-  calls where required by the final design.
+  bytecode and general dictionaries use the completed cache-bearing
+  hash/equality path.
 - [ ] Add focused performance checks for unchanged string-key workloads.
 - [ ] Implement or unblock `errno.errorcode` using a real public integer-key
   `dict`.
@@ -1341,10 +1396,9 @@ dictionary semantics.
 
 ## Test Plan
 
-Bootstrap interpreter and native tests should cover:
+Completed bootstrap interpreter and native coverage includes:
 
-- ordinary `{}` and dict displays still construct the existing string-only
-  `dict`
+- ordinary `{}` and dict displays construct public `Dict`
 - the internal `__clover_general_dict` class can be constructed directly
 - `GeneralDict` stores and retrieves integer, bool, string, and object keys
 - `True` and `1` collide according to Python equality and hash behavior inside
@@ -1352,20 +1406,24 @@ Bootstrap interpreter and native tests should cover:
 - custom `__hash__` is called for lookup, insertion, deletion, and membership
 - custom `__eq__` is called only after matching hashes and non-identical keys
 - exceptions from `__hash__` and `__eq__` propagate
-- equality mutation cases are covered only to the extent supported by the
-  bootstrap operations available so far; full stale-probe defense is a later
-  unification requirement
+- equality mutation cases cover stale-probe restart after insertion, resize,
+  deletion, and clear where supported
 - deleting arbitrary keys leaves the table valid and preserves remaining
   insertion order
 
-Later unification tests should cover:
+Public unification and remaining-stage tests should cover:
 
 - public string-key dicts still use the trusted fast path and preserve insertion
   order
-- inserting an integer key promotes or otherwise routes public `dict` to the
-  chosen general representation
+- inserting, looking up, testing membership for, deleting, or popping an integer
+  key promotes exact string-keyed public `dict`
 - deleting the non-string key does not incorrectly demote or corrupt the dict
-- caches miss correctly after any public representation transition
+- warmed trusted caches miss correctly after any public representation
+  transition
+- promotion without size mutation does not invalidate active iterators
+- dict displays preserve expression evaluation order and insert arbitrary keys
+- C API operations preserve the same promotion, exception, and revalidation
+  behavior as the C++ semantic interface
 - `errno.errorcode` is represented as a real public integer-key `dict`
 
 Codegen tests apply only once the public general-dict path becomes bytecode
