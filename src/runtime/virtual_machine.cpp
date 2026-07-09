@@ -999,7 +999,6 @@ namespace cl
             0, 0, fixed_attribute_shape_flags());
         register_builtin_class(make_list_class(this));
         register_builtin_class(make_dict_class(this));
-        register_builtin_class(make_general_dict_class(this));
         register_builtin_class(make_slotdict_class(this));
         register_builtin_class(make_slice_class(this));
         register_builtin_class(make_float_class(this));
@@ -1079,7 +1078,6 @@ namespace cl
         install_list_class_methods(this);
         install_tuple_class_methods(this);
         install_dict_class_methods(this);
-        install_general_dict_class_methods(this);
         install_slotdict_class_methods(this);
         install_slice_class_methods(this);
         install_float_class_methods(this);

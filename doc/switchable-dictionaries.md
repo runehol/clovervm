@@ -25,14 +25,15 @@ string-keyed shape retain trusted native fast paths.
 
 The public general path currently uses C++ semantic drivers backed by
 `ThreadState::hash_value` and `ThreadState::test_equal`. The remaining major
-work is to expose the semantic C API, remove the bootstrap `GeneralDict`, move
-the hot public general path into cache-bearing trusted bytecode, and complete
-the deliberately deferred mapping-method compatibility work.
+work is to move the hot public general path into cache-bearing trusted
+bytecode and complete the deliberately deferred mapping-method compatibility
+work. The semantic C API is available, and the bootstrap `GeneralDict` has been
+removed after its unique coverage was migrated to public `dict`.
 
 ## Goals
 
 - Preserve one public Python `dict` class.
-- Preserve the completed bootstrap history until `GeneralDict` is removed.
+- Preserve the completed bootstrap history in this document.
 - Keep dict literal construction on public `Dict` and insert arbitrary keys
   semantically.
 - Keep exact-string dictionaries fast and non-reentrant.
@@ -55,10 +56,10 @@ the deliberately deferred mapping-method compatibility work.
 - Do not make dict literals choose between `Dict` and `GeneralDict` during the
   bootstrap phase.
 
-## Bootstrap GeneralDict Class
+## Bootstrap GeneralDict Class (Historical)
 
-The initial general-key implementation should be an internal Python-visible
-class named `__clover_general_dict`, backed by a new C++ class:
+The initial general-key implementation was an internal Python-visible class
+named `__clover_general_dict`, backed by a separate C++ class:
 
 ```cpp
 class GeneralDict : public Object
@@ -222,7 +223,7 @@ The exact opcode names are placeholders. The contract matters more than the
 names: all Python-visible calls happen in bytecode, and all raw table
 manipulation happens in dedicated trusted dict opcodes.
 
-The current bootstrap `GeneralDict` C++ methods intentionally mix the protocol
+The bootstrap `GeneralDict` C++ methods intentionally mixed the protocol
 driver and raw table work: they call `ThreadState::hash_value` /
 `ThreadState::test_equal`, then probe or mutate storage directly. Before public
 dict unification, that implementation should be factored into two layers:
@@ -1232,8 +1233,8 @@ than adding behavior to the bootstrap `GeneralDict` implementation.
   `-1` to `-2` remapping, so promotion can reuse stored hashes.
 - [x] Add focused storage-alignment tests where easy, such as entry order, table
   generation changes, tombstone reuse, or normalized string hashes. Do not overfit
-  this stage to `GeneralDict`, since the bootstrap class should be deleted soon
-  after public shape shifting works.
+  this stage to `GeneralDict`, since the bootstrap class was intended for
+  deletion after public shape shifting worked.
 - [x] Keep public `dict` behavior unchanged while this storage pipe-cleaning lands.
 - [x] Keep `__clover_general_dict` as the bootstrap reference and test vehicle for
   this stage.
@@ -1367,9 +1368,9 @@ Stage invariant:
 
 ### 10. Remove Bootstrap GeneralDict
 
-- [ ] Migrate remaining `GeneralDict` behavior tests to public `dict` tests.
-- [ ] Remove the temporary `__clover_general_dict` builtins exposure.
-- [ ] Delete the C++ `GeneralDict` class once public `Dict` has shape-shifting
+- [x] Migrate remaining `GeneralDict` behavior tests to public `dict` tests.
+- [x] Remove the temporary `__clover_general_dict` builtins exposure.
+- [x] Delete the C++ `GeneralDict` class once public `Dict` has shape-shifting
   behavior and equivalent test coverage.
 
 Stage invariant:
@@ -1433,13 +1434,11 @@ dictionary semantics.
 
 ## Test Plan
 
-Completed bootstrap interpreter and native coverage includes:
+Completed public interpreter and native coverage includes:
 
 - ordinary `{}` and dict displays construct public `Dict`
-- the internal `__clover_general_dict` class can be constructed directly
-- `GeneralDict` stores and retrieves integer, bool, string, and object keys
-- `True` and `1` collide according to Python equality and hash behavior inside
-  `GeneralDict`
+- public `dict` stores and retrieves integer, bool, string, and object keys
+- `True` and `1` collide according to Python equality and hash behavior
 - custom `__hash__` is called for lookup, insertion, deletion, and membership
 - custom `__eq__` is called only after matching hashes and non-identical keys
 - exceptions from `__hash__` and `__eq__` propagate

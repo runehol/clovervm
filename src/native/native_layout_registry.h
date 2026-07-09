@@ -48,7 +48,6 @@
     V(Float);                                                                  \
     V(Function);                                                               \
     V(Dict);                                                                   \
-    V(GeneralDict);                                                            \
     V(SlotDict);                                                               \
     V(Slice);                                                                  \
     V(String);                                                                 \

@@ -160,10 +160,6 @@ namespace cl
         {
             return exact_dict_general_shape_;
         }
-        ClassObject *general_dict_class() const
-        {
-            return class_for_native_layout(NativeLayoutId::GeneralDict);
-        }
         ClassObject *slotdict_class() const
         {
             return class_for_native_layout(NativeLayoutId::SlotDict);

@@ -42,9 +42,8 @@ therefore have the same stored hash whether represented as bool, SMI, or BigInt.
 The public general path currently uses C++ semantic drivers calling cached
 `ThreadState` hash and equality helpers. The intended hot path moves those
 protocol calls into trusted bytecode so their inline-cache sites are explicit.
-The bootstrap `GeneralDict` class remains temporarily as a test/reference
-implementation and should be removed after equivalent public coverage is in
-place.
+The former bootstrap `GeneralDict` class has been removed after its unique
+coverage was migrated to public `dict`.
 
 Scopes and namespace storage are separate structures. They may share broad
 open-addressing ideas with `Dict`, but their invalidation and parent-lookup
