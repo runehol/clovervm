@@ -1615,6 +1615,24 @@ TEST(Dict, SetItemOverwriteEnqueuesOverwrittenObject)
     EXPECT_FALSE(thread->zero_count_table_contains_for_testing(new_object));
 }
 
+TEST(Dict, SetItemOverwriteWithSameObjectDoesNotChangeOwnership)
+{
+    test::VmTestContext context;
+    ThreadState *thread = context.thread();
+    ThreadState::ActivationScope activation_scope(thread);
+    Dict *dict = thread->make_object_raw<Dict>();
+    Value key = make_string(context, L"shared");
+    Owned<Value> value(make_string(context, L"same-value"));
+    HeapObject *value_object = value.value().as.ptr;
+
+    set_dict_item(thread, dict, key, value.value());
+    int64_t refcount_before = value_object->refcount;
+    set_dict_item(thread, dict, key, value.value());
+
+    EXPECT_EQ(refcount_before, value_object->refcount);
+    EXPECT_FALSE(thread->zero_count_table_contains_for_testing(value_object));
+}
+
 TEST(Dict, DelItemRemovesKeyFromLookupAndLogicalSize)
 {
     test::VmTestContext context;

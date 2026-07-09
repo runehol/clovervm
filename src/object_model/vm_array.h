@@ -320,6 +320,23 @@ namespace cl
             return capacity * values_per_element;
         }
 
+        static HeapObject *write_value_slot_returning_zero_ref(Value *slot,
+                                                               Value value)
+        {
+            Value old = *slot;
+            if(old == value)
+            {
+                return nullptr;
+            }
+
+            *slot = incref(value);
+            if(old.is_refcounted_ptr() && --old.as.ptr->refcount == 0)
+            {
+                return old.as.ptr;
+            }
+            return nullptr;
+        }
+
     public:
         static constexpr uint64_t embedded_value_count = 3;
 
@@ -483,25 +500,19 @@ namespace cl
             static_assert(std::is_same_v<T, Value>);
             assert(idx < size());
             Value *slot = mutable_non_empty_data() + idx;
-            Value old = *slot;
-            if(old == value)
-            {
-                return nullptr;
-            }
+            return write_value_slot_returning_zero_ref(slot, value);
+        }
 
-            if(value.is_refcounted_ptr())
+        void write_value_member(size_t idx, Value T::*member, Value value)
+        {
+            assert(idx < size());
+            T *element = mutable_non_empty_data() + idx;
+            HeapObject *zct_object =
+                write_value_slot_returning_zero_ref(&(element->*member), value);
+            if(unlikely(zct_object != nullptr))
             {
-                ++value.as.ptr->refcount;
+                add_to_active_zero_count_table_if_needed(zct_object);
             }
-            *slot = value;
-            if(old.is_refcounted_ptr())
-            {
-                if(--old.as.ptr->refcount == 0)
-                {
-                    return old.as.ptr;
-                }
-            }
-            return nullptr;
         }
 
         template <typename... Args> const T emplace_back(Args &&...args)

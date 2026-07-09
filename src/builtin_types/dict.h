@@ -220,8 +220,8 @@ namespace cl
         }
         void write_existing(int32_t entry_idx, Value value)
         {
-            Entry existing = entries[entry_idx];
-            entries.set(entry_idx, Entry(existing.key, value, existing.hash));
+            entries.write_value_member(static_cast<size_t>(entry_idx),
+                                       &Entry::value, value);
         }
         void copy_stored_entry(Value key, Value value, TValue<SMI> hash)
         {
