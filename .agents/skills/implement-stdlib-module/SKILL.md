@@ -129,7 +129,9 @@ Cover representative cases for:
 - constants, aliases, and module-level metadata users are likely to inspect
 - unsupported protocol cases omitted or documented
 
-If a test exposes a general VM bug unrelated to the module, either fix it in the proper layer or reshape the test/module code conservatively without hiding the limitation.
+If a test exposes a general VM bug unrelated to the module, report it and ask
+before expanding the task to fix it. Reshape a test only when it exceeds the
+explicitly supported surface, and document the limitation rather than hiding it.
 
 9. Update the stdlib bringup checklist.
 

@@ -7,16 +7,22 @@ This repository contains clovervm, a Python VM.
 - Treat collaboration as engineering review, not automatic agreement. Challenge assumptions when they seem wrong or under-supported.
 - If the user states a preference that conflicts with maintainability, performance evidence, Python semantics, or the existing codebase, push back clearly and explain the specific risk.
 - When uncertain, say what would change your mind instead of agreeing provisionally.
-- When implementing an agreed-upon plan, if you encounter a case the plan did not call out or anticipate, stop and ask for clarification before inventing or implementing a new design.
-- If an implementation exposes a significant design gap in an agreed plan, especially around public API shape, Python-visible semantics, error behavior, cache invalidation policy, object layout, ownership/lifetime rules, or cross-cutting VM invariants, stop and ask before deciding. Do not quietly add compatibility machinery, new metadata, new special cases, fallback behavior, or inferred policy just to keep moving.
+- Implement agreed work autonomously within its established design. Stop and ask
+  before deciding a material gap the plan did not settle, especially one involving
+  public API shape, Python-visible semantics, error behavior, cache invalidation,
+  object layout, ownership/lifetime, cross-layer coupling, or VM invariants. Do
+  not quietly add compatibility machinery, metadata, special cases, fallback
+  behavior, or inferred policy to keep moving.
 
 # Architecture and layering
 
 - Keep behavior in the layer that owns it. Parser and AST code should describe syntax and source structure; codegen should lower Python-visible semantics into bytecode; opcode handlers should execute bytecode while preserving dispatch shape; runtime object helpers should own object semantics, allocation, descriptors, and type behavior; native modules should expose Python behavior without reaching into interpreter frame machinery.
-- Before introducing a new helper, type, enum, opcode, AST node, cache structure, ownership pattern, or subsystem boundary, inspect nearby existing code and name the closest local pattern being followed. If no good local pattern exists, call that out before editing.
+- Before introducing a new helper, type, enum, opcode, AST node, cache structure,
+  ownership pattern, or subsystem boundary, inspect nearby existing code and
+  follow the closest local pattern. If no good pattern exists, treat that as a
+  material design gap under the collaboration rule above.
 - For changes touching more than one subsystem, first state which layer owns the behavior, which existing pattern the change follows, what invariants must remain true, and what tests or checks will prove the behavior.
 - Do not solve layering friction by adding broad compatibility paths, new metadata, or cross-layer shortcuts unless that design has been explicitly agreed. In this greenfield repository, prefer updating all in-repo users to match the chosen design.
-- If a proposed change requires one layer to know details from an unrelated layer, stop and explain the coupling pressure before implementing it.
 - For new builtin dunder methods and trusted handlers, keep type-specific coercion, receiver checks, result construction, and trusted resolver logic in the owning builtin type file. Use the `clovervm-builtin-dunder-handlers` project skill for the established float/int operator-template pattern.
 - New abstractions must earn their weight by removing real complexity, preserving a VM invariant, or matching an established project pattern. Do not add a helper or framework solely to reduce one or two local call sites.
 - Keep Python-visible semantics out of convenience code whose layer should only represent structure or mechanics, such as parser/AST plumbing, inline opcode classification helpers, or low-level unchecked primitives.
@@ -34,21 +40,6 @@ This repository contains clovervm, a Python VM.
 - Run `gh` commands with elevated privileges so GitHub authentication works.
 - Prefer interpreter tests for semantics and end-to-end behavior. Keep codegen tests focused on high-value structural guarantees such as specific lowering patterns, call conventions, or optimizations that interpreter tests would not pin down well.
 - When designing AST shapes for Python syntax, consult CPython's `Parser/Python.asdl` and borrow its structure where it fits clovervm before inventing a different local representation.
-
-# Interpreter code
-
-`src/interpreter.cpp` is unusually sensitive: it is hot code, and the dispatch loop depends on Clang's `musttail` support. Treat changes there as performance- and control-flow-sensitive.
-
-- Preserve the opcode-handler shape. Handlers should continue to use the existing `PARAMS` / `ARGS`, `START`, `COMPLETE`, and `MUSTTAIL return ...` conventions unless the dispatch design itself is being changed.
-- Functions that are targets of `MUSTTAIL return ...` must have exactly the `PARAMS` signature. Do not add extra parameters, omit parameters, reorder parameters, or wrap the signature in a variant form; Clang's `musttail` requires the caller and callee signatures to match exactly. Pass any extra context through existing interpreter state, frame/register state, or a non-tail-called helper before the `MUSTTAIL` edge.
-- Keep exceptional and slow paths out of inlineable hot helpers. Raising C++ exceptions, formatting messages, and other cold behavior should live in separate `NOINLINE` functions that opcode handlers tail-call.
-- Use `ALWAYSINLINE` only for small, mechanical helpers that avoid duplication in hot paths, such as frame setup, register-span interpretation, or simple descriptor classification. Do not hide large semantic operations behind inline helpers.
-- Avoid adding broad generic dispatch layers in front of common opcodes unless there is a measured reason or the change is part of an explicit interpreter/JIT design step. Prefer explicit branches in the opcode handler when that keeps the hot path obvious.
-- Be careful with helper calls from opcode handlers: anything that may run Python bytecode, allocate observably, invoke descriptors, or raise should happen through an explicit opcode slow path or a clearly cold helper, not from lookup/classification code that is meant to be inlineable.
-- Keep instruction length handling explicit when an opcode has custom control flow. If a handler cannot use `START(len)` directly, use a clearly named local such as `call_instr_len`; avoid names that collide with `START`'s internal declarations.
-- `tools/check_opcode_frames.py` checks that release-build hot-path opcode handlers enter without setting up stack frames. It is wired into `benchmark/check_opcode_frames` and `benchmark/run_benchmark` through CMake; when debugging it directly, pass the release `clovervm` binary and `benchmark/hot_path_opcode_handlers.txt` as the required list.
-- If you add an opcode, consider whether its handler is on the interpreter hot path. Add hot-path handlers to `benchmark/hot_path_opcode_handlers.txt` so the stack checker protects them. If you rename an opcode handler, update the same list in the same change.
-- After touching `src/interpreter.cpp`, build with Clang through `build-debug/` and run `ninja -C build-debug all check`. For performance-sensitive refactors, also consider `cmake --build build-release --target run_benchmark`.
 
 # Code style
 - This is a C++17 code base.

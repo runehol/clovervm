@@ -32,7 +32,7 @@ Run focused tests while iterating. For completed code changes, use the project-r
 ninja -C build-debug all check
 ```
 
-For `src/interpreter.cpp`, preserve the opcode-handler shape and `MUSTTAIL` conventions. If a handler has custom control flow, keep instruction length handling explicit and avoid hiding slow semantics in inline helpers.
+For `src/runtime/interpreter.cpp`, preserve the opcode-handler shape and `MUSTTAIL` conventions. If a handler has custom control flow, keep instruction length handling explicit and avoid hiding slow semantics in inline helpers.
 
 3. Use release builds for performance claims.
 

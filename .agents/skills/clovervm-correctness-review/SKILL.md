@@ -68,7 +68,7 @@ Prefer narrow tests for suspected issues. For completed local code changes, run:
 ninja -C build-debug all check
 ```
 
-When reviewing `src/interpreter.cpp` or hot opcode handlers, also consider the release hot-path checker:
+When reviewing `src/runtime/interpreter.cpp` or hot opcode handlers, also consider the release hot-path checker:
 
 ```bash
 cmake --build build-release --target check_opcode_frames
