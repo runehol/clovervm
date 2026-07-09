@@ -62,6 +62,9 @@ namespace
             {"benchmark/getitem_dict.py",
              {benchmark_cpp::getitem_dict_run,
               benchmark_cpp::getitem_dict_items}},
+            {"benchmark/getitem_dict_general.py",
+             {benchmark_cpp::getitem_dict_run,
+              benchmark_cpp::getitem_dict_items}},
             {"benchmark/getitem_str.py",
              {benchmark_cpp::getitem_str_run,
               benchmark_cpp::getitem_str_items}},
@@ -90,6 +93,9 @@ namespace
              {benchmark_cpp::setitem_list_run,
               benchmark_cpp::setitem_list_items}},
             {"benchmark/setitem_dict.py",
+             {benchmark_cpp::setitem_dict_run,
+              benchmark_cpp::setitem_dict_items}},
+            {"benchmark/setitem_dict_general.py",
              {benchmark_cpp::setitem_dict_run,
               benchmark_cpp::setitem_dict_items}},
             {"benchmark/setitem_user.py",
@@ -628,13 +634,24 @@ BENCHMARK_TEMPLATE(BM_GetItemTuple, CloverProgram)
     ->Name("BM_GetItemTuple")
     ->Arg(100000);
 
-template <typename Program> static void BM_GetItemDict(benchmark::State &state)
+template <typename Program>
+static void BM_GetItemDictStringKeyed(benchmark::State &state)
 {
     run_benchmark_case<Program>(state, "benchmark/getitem_dict.py",
                                 state.range(0));
 }
-BENCHMARK_TEMPLATE(BM_GetItemDict, CloverProgram)
-    ->Name("BM_GetItemDict")
+BENCHMARK_TEMPLATE(BM_GetItemDictStringKeyed, CloverProgram)
+    ->Name("BM_GetItemDictStringKeyed")
+    ->Arg(100000);
+
+template <typename Program>
+static void BM_GetItemDictGeneral(benchmark::State &state)
+{
+    run_benchmark_case<Program>(state, "benchmark/getitem_dict_general.py",
+                                state.range(0));
+}
+BENCHMARK_TEMPLATE(BM_GetItemDictGeneral, CloverProgram)
+    ->Name("BM_GetItemDictGeneral")
     ->Arg(100000);
 
 template <typename Program> static void BM_GetItemStr(benchmark::State &state)
@@ -724,13 +741,24 @@ BENCHMARK_TEMPLATE(BM_SetItemList, CloverProgram)
     ->Name("BM_SetItemList")
     ->Arg(100000);
 
-template <typename Program> static void BM_SetItemDict(benchmark::State &state)
+template <typename Program>
+static void BM_SetItemDictStringKeyed(benchmark::State &state)
 {
     run_benchmark_case<Program>(state, "benchmark/setitem_dict.py",
                                 state.range(0));
 }
-BENCHMARK_TEMPLATE(BM_SetItemDict, CloverProgram)
-    ->Name("BM_SetItemDict")
+BENCHMARK_TEMPLATE(BM_SetItemDictStringKeyed, CloverProgram)
+    ->Name("BM_SetItemDictStringKeyed")
+    ->Arg(100000);
+
+template <typename Program>
+static void BM_SetItemDictGeneral(benchmark::State &state)
+{
+    run_benchmark_case<Program>(state, "benchmark/setitem_dict_general.py",
+                                state.range(0));
+}
+BENCHMARK_TEMPLATE(BM_SetItemDictGeneral, CloverProgram)
+    ->Name("BM_SetItemDictGeneral")
     ->Arg(100000);
 
 template <typename Program> static void BM_SetItemUser(benchmark::State &state)
