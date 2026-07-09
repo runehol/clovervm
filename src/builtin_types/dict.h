@@ -15,11 +15,13 @@ namespace cl
     class String;
     class ThreadState;
     class Tuple;
+    struct TrustedDictBytecodeAccess;
 
     class Dict : public Object
     {
     private:
         friend struct DictStorageLayoutAssertions;
+        friend struct TrustedDictBytecodeAccess;
 
         class Entry
         {
@@ -118,7 +120,7 @@ namespace cl
 
         size_t size() const { return n_valid_entries; }
         bool empty() const { return n_valid_entries == 0; }
-        uint64_t table_generation() const { return table_generation_; }
+        int64_t table_generation() const { return table_generation_.extract(); }
 
         Iterator begin() const;
         Iterator end() const;
@@ -167,7 +169,7 @@ namespace cl
             TValue<SMI> hash;
             size_t hash_idx;
             int64_t first_tombstone_idx;
-            uint64_t table_generation;
+            TValue<SMI> table_generation;
         };
 
         Probe probe_start(TValue<SMI> hash) const
@@ -249,7 +251,7 @@ namespace cl
                 grow();
             }
         }
-        bool entry_still_matches(uint64_t generation, size_t hash_idx,
+        bool entry_still_matches(TValue<SMI> generation, size_t hash_idx,
                                  int32_t entry_idx, Value candidate_key) const
         {
             if(table_generation_ != generation)
@@ -298,11 +300,17 @@ namespace cl
         void promote_to_general_shape(ThreadState *thread);
         void maybe_promote_to_general_shape(ThreadState *thread);
         void grow();
+        void increment_table_generation()
+        {
+            int64_t generation = table_generation_.extract();
+            assert(generation < value_smi_max);
+            table_generation_ = TValue<SMI>::from_smi(generation + 1);
+        }
 
         RawArray<int32_t> hash_table;
         ValueArray<Entry> entries;
         size_t n_valid_entries;
-        uint64_t table_generation_;
+        TValue<SMI> table_generation_;
 
     public:
         CL_DECLARE_STATIC_VALUE_SPAN_EXTENDS(
@@ -312,9 +320,78 @@ namespace cl
         CL_DECLARE_STATIC_OBJECT_SIZE(Dict);
     };
 
+    struct TrustedDictBytecodeAccess
+    {
+        static constexpr int64_t ReadStringMiss = 0;
+        static constexpr int64_t ReadStringHit = 1;
+        static constexpr int64_t ReadGeneral = 2;
+        static constexpr int64_t ProbeMiss = -1;
+        static constexpr int64_t ProbeContinue = -2;
+
+        struct PrepareReadResult
+        {
+            int64_t status;
+            Value value;
+        };
+
+        static PrepareReadResult prepare_read(ThreadState *thread, Dict *dict,
+                                              Value key);
+        static void probe_start(const Dict *dict, TValue<SMI> hash,
+                                TValue<SMI> *generation, size_t *hash_idx)
+        {
+            Dict::Probe probe = dict->probe_start(hash);
+            *generation = probe.table_generation;
+            *hash_idx = probe.hash_idx;
+        }
+        static int64_t probe_read(const Dict *dict, TValue<SMI> hash,
+                                  size_t hash_idx)
+        {
+            assert(hash_idx < dict->hash_table.size());
+            int32_t entry_idx = dict->hash_table[hash_idx];
+            if(entry_idx == Dict::not_present)
+            {
+                return ProbeMiss;
+            }
+            if(entry_idx == Dict::tombstone)
+            {
+                return ProbeContinue;
+            }
+            assert(entry_idx >= 0 &&
+                   static_cast<size_t>(entry_idx) < dict->entries.size());
+            return dict->entries[entry_idx].hash == hash ? entry_idx
+                                                         : ProbeContinue;
+        }
+        static size_t probe_advance(const Dict *dict, size_t hash_idx)
+        {
+            return (hash_idx + 1) & (dict->hash_table.size() - 1);
+        }
+        static Value entry_key(const Dict *dict, int32_t entry_idx)
+        {
+            assert(entry_idx >= 0 &&
+                   static_cast<size_t>(entry_idx) < dict->entries.size());
+            assert(dict->entries[entry_idx].valid());
+            return dict->entries[entry_idx].key;
+        }
+        static Value entry_value(const Dict *dict, int32_t entry_idx)
+        {
+            assert(entry_idx >= 0 &&
+                   static_cast<size_t>(entry_idx) < dict->entries.size());
+            assert(dict->entries[entry_idx].valid());
+            return dict->entries[entry_idx].value;
+        }
+        static bool entry_still_matches(const Dict *dict,
+                                        TValue<SMI> generation, size_t hash_idx,
+                                        int32_t entry_idx, Value candidate_key)
+        {
+            return dict->entry_still_matches(generation, hash_idx, entry_idx,
+                                             candidate_key);
+        }
+    };
+
     class VirtualMachine;
     BuiltinClassDefinition make_dict_class(VirtualMachine *vm);
-    void install_dict_class_methods(VirtualMachine *vm);
+    void install_dict_class_methods(VirtualMachine *vm,
+                                    ClassObject *type_error_class);
 
 };  // namespace cl
 

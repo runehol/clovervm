@@ -392,6 +392,9 @@ namespace cl
                                               JumpTarget &target);
         Expected<uint32_t> emit_jump_if_true(uint32_t source_offset,
                                              JumpTarget &target);
+        Expected<void> emit_jump_if_equal_to_smi_immediate(
+            uint32_t source_offset, uint32_t value_reg, uint32_t scratch_reg,
+            int8_t expected, JumpTarget &target);
         Expected<uint32_t> emit_for_iter(uint32_t source_offset,
                                          uint32_t iterator_reg,
                                          JumpTarget &target);
@@ -413,6 +416,27 @@ namespace cl
                                                  uint32_t operand1_reg);
         Expected<uint32_t> emit_unary_op(uint32_t source_offset, Bytecode op,
                                          OperatorBytecodeFormat format);
+        Expected<uint32_t> emit_dict_prepare_read(uint32_t source_offset,
+                                                  uint32_t receiver_reg,
+                                                  uint32_t key_reg,
+                                                  uint32_t value_reg);
+        Expected<uint32_t> emit_dict_probe_start(uint32_t source_offset,
+                                                 uint32_t receiver_reg,
+                                                 uint32_t generation_reg,
+                                                 uint32_t hash_idx_reg);
+        Expected<uint32_t> emit_dict_probe_read(uint32_t source_offset,
+                                                uint32_t receiver_reg,
+                                                uint32_t hash_idx_reg);
+        Expected<uint32_t> emit_dict_probe_advance(uint32_t source_offset,
+                                                   uint32_t receiver_reg);
+        Expected<uint32_t> emit_dict_entry_key(uint32_t source_offset,
+                                               uint32_t receiver_reg);
+        Expected<uint32_t> emit_dict_entry_value(uint32_t source_offset,
+                                                 uint32_t receiver_reg);
+        Expected<uint32_t> emit_dict_entry_still_matches(
+            uint32_t source_offset, uint32_t receiver_reg,
+            uint32_t generation_reg, uint32_t hash_idx_reg,
+            uint32_t entry_idx_reg, uint32_t candidate_key_reg);
         Expected<uint32_t> emit_to_bool(uint32_t source_offset);
         Expected<uint32_t> emit_to_bool_not(uint32_t source_offset);
         Expected<uint32_t> emit_call_code_object(uint32_t source_offset,

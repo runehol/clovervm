@@ -3970,6 +3970,139 @@ namespace cl
         COMPLETE();
     }
 
+    NOINLINE static INTERP_CC Value op_dict_prepare_read_string_shape(PARAMS)
+    {
+        START(4);
+        int8_t receiver_reg = pc[1];
+        int8_t key_reg = pc[2];
+        int8_t value_reg = pc[3];
+        assert(can_convert_to<Dict>(fp[receiver_reg]));
+        TrustedDictBytecodeAccess::PrepareReadResult result =
+            TrustedDictBytecodeAccess::prepare_read(
+                thread, fp[receiver_reg].get_ptr<Dict>(), fp[key_reg]);
+        fp[value_reg] = result.value;
+        accumulator = Value::from_smi(result.status);
+        COMPLETE();
+    }
+
+    static INTERP_CC Value op_dict_prepare_read(PARAMS)
+    {
+        int8_t receiver_reg = pc[1];
+        assert(can_convert_to<Dict>(fp[receiver_reg]));
+        Dict *dict = fp[receiver_reg].get_ptr<Dict>();
+        if(unlikely(dict->get_shape() ==
+                    thread->get_exact_dict_string_key_shape()))
+        {
+            MUSTTAIL return op_dict_prepare_read_string_shape(ARGS);
+        }
+
+        START(4);
+        int8_t value_reg = pc[3];
+        fp[value_reg] = Value::None();
+        accumulator = Value::from_smi(TrustedDictBytecodeAccess::ReadGeneral);
+        COMPLETE();
+    }
+
+    static INTERP_CC Value op_dict_probe_start(PARAMS)
+    {
+        START(4);
+        int8_t receiver_reg = pc[1];
+        int8_t generation_reg = pc[2];
+        int8_t hash_idx_reg = pc[3];
+        assert(can_convert_to<Dict>(fp[receiver_reg]));
+        assert(accumulator.is_smi());
+
+        TValue<SMI> generation = TValue<SMI>::from_smi(0);
+        size_t hash_idx;
+        TrustedDictBytecodeAccess::probe_start(
+            fp[receiver_reg].get_ptr<Dict>(),
+            TValue<SMI>::from_value_unchecked(accumulator), &generation,
+            &hash_idx);
+        assert(hash_idx <= static_cast<size_t>(value_smi_max));
+        fp[generation_reg] = generation.raw_value();
+        fp[hash_idx_reg] = Value::from_smi(static_cast<int64_t>(hash_idx));
+        COMPLETE();
+    }
+
+    static INTERP_CC Value op_dict_probe_read(PARAMS)
+    {
+        START(3);
+        int8_t receiver_reg = pc[1];
+        int8_t hash_idx_reg = pc[2];
+        assert(can_convert_to<Dict>(fp[receiver_reg]));
+        assert(accumulator.is_smi());
+        assert(fp[hash_idx_reg].is_smi());
+
+        int64_t result = TrustedDictBytecodeAccess::probe_read(
+            fp[receiver_reg].get_ptr<Dict>(),
+            TValue<SMI>::from_value_unchecked(accumulator),
+            static_cast<size_t>(fp[hash_idx_reg].get_smi()));
+        accumulator = Value::from_smi(result);
+        COMPLETE();
+    }
+
+    static INTERP_CC Value op_dict_probe_advance(PARAMS)
+    {
+        START(2);
+        int8_t receiver_reg = pc[1];
+        assert(can_convert_to<Dict>(fp[receiver_reg]));
+        assert(accumulator.is_smi());
+
+        size_t hash_idx = TrustedDictBytecodeAccess::probe_advance(
+            fp[receiver_reg].get_ptr<Dict>(),
+            static_cast<size_t>(accumulator.get_smi()));
+        assert(hash_idx <= static_cast<size_t>(value_smi_max));
+        accumulator = Value::from_smi(static_cast<int64_t>(hash_idx));
+        COMPLETE();
+    }
+
+    static INTERP_CC Value op_dict_entry_key(PARAMS)
+    {
+        START(2);
+        int8_t receiver_reg = pc[1];
+        assert(can_convert_to<Dict>(fp[receiver_reg]));
+        assert(accumulator.is_smi());
+        accumulator = TrustedDictBytecodeAccess::entry_key(
+            fp[receiver_reg].get_ptr<Dict>(),
+            static_cast<int32_t>(accumulator.get_smi()));
+        COMPLETE();
+    }
+
+    static INTERP_CC Value op_dict_entry_value(PARAMS)
+    {
+        START(2);
+        int8_t receiver_reg = pc[1];
+        assert(can_convert_to<Dict>(fp[receiver_reg]));
+        assert(accumulator.is_smi());
+        accumulator = TrustedDictBytecodeAccess::entry_value(
+            fp[receiver_reg].get_ptr<Dict>(),
+            static_cast<int32_t>(accumulator.get_smi()));
+        COMPLETE();
+    }
+
+    static INTERP_CC Value op_dict_entry_still_matches(PARAMS)
+    {
+        START(6);
+        int8_t receiver_reg = pc[1];
+        int8_t generation_reg = pc[2];
+        int8_t hash_idx_reg = pc[3];
+        int8_t entry_idx_reg = pc[4];
+        int8_t candidate_key_reg = pc[5];
+        assert(can_convert_to<Dict>(fp[receiver_reg]));
+        assert(fp[generation_reg].is_smi());
+        assert(fp[hash_idx_reg].is_smi());
+        assert(fp[entry_idx_reg].is_smi());
+
+        bool matches = TrustedDictBytecodeAccess::entry_still_matches(
+            fp[receiver_reg].get_ptr<Dict>(),
+            TValue<SMI>::from_value_unchecked(fp[generation_reg]),
+            static_cast<size_t>(fp[hash_idx_reg].get_smi()),
+            static_cast<int32_t>(fp[entry_idx_reg].get_smi()),
+            fp[candidate_key_reg]);
+        accumulator = matches ? Value::True() : Value::False();
+        COMPLETE();
+    }
+
     static INTERP_CC Value op_write_stdout(PARAMS)
     {
         START(1);
@@ -5576,6 +5709,14 @@ namespace cl
         SET_TABLE_ENTRY(Bytecode::Invert, op_invert);
         SET_TABLE_ENTRY(Bytecode::Sqrt, op_sqrt);
         SET_TABLE_ENTRY(Bytecode::CanonicalizeHash, op_canonicalize_hash);
+        SET_TABLE_ENTRY(Bytecode::DictPrepareRead, op_dict_prepare_read);
+        SET_TABLE_ENTRY(Bytecode::DictProbeStart, op_dict_probe_start);
+        SET_TABLE_ENTRY(Bytecode::DictProbeRead, op_dict_probe_read);
+        SET_TABLE_ENTRY(Bytecode::DictProbeAdvance, op_dict_probe_advance);
+        SET_TABLE_ENTRY(Bytecode::DictEntryKey, op_dict_entry_key);
+        SET_TABLE_ENTRY(Bytecode::DictEntryValue, op_dict_entry_value);
+        SET_TABLE_ENTRY(Bytecode::DictEntryStillMatches,
+                        op_dict_entry_still_matches);
         SET_TABLE_ENTRY(Bytecode::Not, op_not);
         SET_TABLE_ENTRY(Bytecode::ToBool, op_to_bool);
         SET_TABLE_ENTRY(Bytecode::ToBoolNot, op_to_bool_not);

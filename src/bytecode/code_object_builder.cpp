@@ -735,6 +735,19 @@ namespace cl
         return emit_jump(source_offset, Bytecode::JumpIfTrue, target);
     }
 
+    Expected<void> CodeObjectBuilder::emit_jump_if_equal_to_smi_immediate(
+        uint32_t source_offset, uint32_t value_reg, uint32_t scratch_reg,
+        int8_t expected, JumpTarget &target)
+    {
+        CL_TRY(emit_lda_smi(source_offset, expected));
+        CL_TRY(emit_star(source_offset, scratch_reg));
+        CL_TRY(emit_ldar(source_offset, value_reg));
+        CL_TRY(emit_operator_reg(source_offset, Bytecode::TestIs, scratch_reg,
+                                 OperatorBytecodeFormat::Plain));
+        CL_TRY(emit_jump_if_true(source_offset, target));
+        return Expected<void>::ok();
+    }
+
     Expected<uint32_t> CodeObjectBuilder::emit_for_iter(uint32_t source_offset,
                                                         uint32_t iterator_reg,
                                                         JumpTarget &target)
@@ -809,6 +822,79 @@ namespace cl
     {
         uint32_t result = CL_TRY(emit_opcode(source_offset, op));
         CL_TRY(emit_operator_cache_suffix(source_offset, format));
+        return Expected<uint32_t>::ok(result);
+    }
+
+    Expected<uint32_t> CodeObjectBuilder::emit_dict_prepare_read(
+        uint32_t source_offset, uint32_t receiver_reg, uint32_t key_reg,
+        uint32_t value_reg)
+    {
+        uint32_t result =
+            emplace_back(source_offset, uint8_t(Bytecode::DictPrepareRead));
+        emplace_back(source_offset, encode_reg(receiver_reg));
+        emplace_back(source_offset, encode_reg(key_reg));
+        emplace_back(source_offset, encode_reg(value_reg));
+        return Expected<uint32_t>::ok(result);
+    }
+
+    Expected<uint32_t> CodeObjectBuilder::emit_dict_probe_start(
+        uint32_t source_offset, uint32_t receiver_reg, uint32_t generation_reg,
+        uint32_t hash_idx_reg)
+    {
+        uint32_t result =
+            emplace_back(source_offset, uint8_t(Bytecode::DictProbeStart));
+        emplace_back(source_offset, encode_reg(receiver_reg));
+        emplace_back(source_offset, encode_reg(generation_reg));
+        emplace_back(source_offset, encode_reg(hash_idx_reg));
+        return Expected<uint32_t>::ok(result);
+    }
+
+    Expected<uint32_t> CodeObjectBuilder::emit_dict_probe_read(
+        uint32_t source_offset, uint32_t receiver_reg, uint32_t hash_idx_reg)
+    {
+        uint32_t result =
+            emplace_back(source_offset, uint8_t(Bytecode::DictProbeRead));
+        emplace_back(source_offset, encode_reg(receiver_reg));
+        emplace_back(source_offset, encode_reg(hash_idx_reg));
+        return Expected<uint32_t>::ok(result);
+    }
+
+    Expected<uint32_t>
+    CodeObjectBuilder::emit_dict_probe_advance(uint32_t source_offset,
+                                               uint32_t receiver_reg)
+    {
+        return emit_opcode_reg(source_offset, Bytecode::DictProbeAdvance,
+                               receiver_reg);
+    }
+
+    Expected<uint32_t>
+    CodeObjectBuilder::emit_dict_entry_key(uint32_t source_offset,
+                                           uint32_t receiver_reg)
+    {
+        return emit_opcode_reg(source_offset, Bytecode::DictEntryKey,
+                               receiver_reg);
+    }
+
+    Expected<uint32_t>
+    CodeObjectBuilder::emit_dict_entry_value(uint32_t source_offset,
+                                             uint32_t receiver_reg)
+    {
+        return emit_opcode_reg(source_offset, Bytecode::DictEntryValue,
+                               receiver_reg);
+    }
+
+    Expected<uint32_t> CodeObjectBuilder::emit_dict_entry_still_matches(
+        uint32_t source_offset, uint32_t receiver_reg, uint32_t generation_reg,
+        uint32_t hash_idx_reg, uint32_t entry_idx_reg,
+        uint32_t candidate_key_reg)
+    {
+        uint32_t result = emplace_back(
+            source_offset, uint8_t(Bytecode::DictEntryStillMatches));
+        emplace_back(source_offset, encode_reg(receiver_reg));
+        emplace_back(source_offset, encode_reg(generation_reg));
+        emplace_back(source_offset, encode_reg(hash_idx_reg));
+        emplace_back(source_offset, encode_reg(entry_idx_reg));
+        emplace_back(source_offset, encode_reg(candidate_key_reg));
         return Expected<uint32_t>::ok(result);
     }
 

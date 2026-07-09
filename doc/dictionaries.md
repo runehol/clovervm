@@ -39,9 +39,10 @@ therefore have the same stored hash whether represented as bool, SMI, or BigInt.
 
 ## Remaining Work
 
-The public general path currently uses C++ semantic drivers calling cached
-`ThreadState` hash and equality helpers. The intended hot path moves those
-protocol calls into trusted bytecode so their inline-cache sites are explicit.
+Public `__getitem__`, `get`, and `__contains__` general-key paths use generated
+bytecode with explicit hash and equality cache sites. Mutation paths still use
+C++ semantic drivers calling cached `ThreadState` hash and equality helpers;
+their intended hot path moves those protocol calls into trusted bytecode too.
 The former bootstrap `GeneralDict` class has been removed after its unique
 coverage was migrated to public `dict`.
 

@@ -2,12 +2,15 @@
 #include "builtin_types/list.h"
 #include "builtin_types/str.h"
 #include "builtin_types/tuple.h"
+#include "bytecode/code_object_print.h"
+#include "object_model/function.h"
 #include "object_model/owned.h"
 #include "object_model/typed_value.h"
 #include "runtime/exception_object.h"
 #include "runtime/thread_state.h"
 #include "test_helpers.h"
 #include <cassert>
+#include <fmt/xchar.h>
 #include <gtest/gtest.h>
 #include <string>
 #include <vector>
@@ -69,6 +72,16 @@ namespace
                                      .extract()
                                      ->data);
         EXPECT_STREQ(message, exception.extract()->message.extract()->data);
+    }
+
+    static Function *dict_method_function(test::VmTestContext &context,
+                                          const wchar_t *name)
+    {
+        TValue<String> method_name =
+            context.vm().get_or_create_interned_string_value(name);
+        Value method = context.vm().dict_class()->get_own_property(method_name);
+        assert(can_convert_to<Function>(method));
+        return method.get_ptr<Function>();
     }
 }  // namespace
 
@@ -1162,6 +1175,61 @@ TEST(Dict, ExactBuiltinDictConstructionStartsStringKeyed)
     Value constructed = context.run_file(L"dict()\n");
     ASSERT_TRUE(can_convert_to<Dict>(constructed));
     EXPECT_EQ(string_key_shape, constructed.get_ptr<Dict>()->get_shape());
+}
+
+TEST(Dict, GeneratedReadMethodsContainProtocolCacheSites)
+{
+    test::VmTestContext context;
+
+    const wchar_t *method_names[] = {L"__getitem__", L"get", L"__contains__"};
+    for(const wchar_t *method_name: method_names)
+    {
+        Function *method = dict_method_function(context, method_name);
+        std::string bytecode = fmt::to_string(*method->code_object.extract());
+        EXPECT_NE(std::string::npos, bytecode.find("CallSpecialMethod"));
+        EXPECT_NE(std::string::npos, bytecode.find("CanonicalizeHash"));
+        EXPECT_NE(std::string::npos, bytecode.find("TestEqual"));
+        EXPECT_NE(std::string::npos, bytecode.find("ToBool"));
+        EXPECT_NE(std::string::npos, bytecode.find("DictPrepareRead"));
+        EXPECT_NE(std::string::npos, bytecode.find("DictProbeStart"));
+        EXPECT_NE(std::string::npos, bytecode.find("DictProbeRead"));
+        EXPECT_NE(std::string::npos, bytecode.find("DictEntryStillMatches"));
+    }
+}
+
+TEST(Dict, DirectReadMethodCallsKeepStringKeyShape)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation_scope(context.thread());
+    Shape *string_key_shape =
+        context.thread()->get_exact_dict_string_key_shape();
+
+    Value result = context.run_file(L"d = {'key': 1}\n"
+                                    L"assert dict.__getitem__(d, 'key') == 1\n"
+                                    L"assert dict.get(d, 'key') == 1\n"
+                                    L"assert dict.__contains__(d, 'key')\n"
+                                    L"d\n");
+
+    ASSERT_TRUE(can_convert_to<Dict>(result));
+    EXPECT_EQ(string_key_shape, result.get_ptr<Dict>()->get_shape());
+}
+
+TEST(Dict, GeneratedReadMethodsRejectWrongReceiver)
+{
+    const wchar_t *expressions[] = {L"dict.__getitem__(1, 1)\n",
+                                    L"dict.get(1, 1)\n",
+                                    L"dict.__contains__(1, 1)\n"};
+    const wchar_t *messages[] = {L"dict.__getitem__ expects a dict receiver",
+                                 L"dict.get expects a dict receiver",
+                                 L"dict.__contains__ expects a dict receiver"};
+
+    for(size_t idx = 0; idx < 3; ++idx)
+    {
+        test::VmTestContext context;
+        Value result = context.run_file(expressions[idx]);
+        EXPECT_TRUE(result.is_exception_marker());
+        expect_pending_exception(context.thread(), L"TypeError", messages[idx]);
+    }
 }
 
 TEST(Dict, TableGenerationChangesOnlyWhenProbeStructureChanges)

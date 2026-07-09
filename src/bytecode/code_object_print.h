@@ -335,6 +335,20 @@ template <> struct fmt::formatter<cl::Bytecode>
                 return format_to(out, "Invert");
             case cl::Bytecode::CanonicalizeHash:
                 return format_to(out, "CanonicalizeHash");
+            case cl::Bytecode::DictPrepareRead:
+                return format_to(out, "DictPrepareRead");
+            case cl::Bytecode::DictProbeStart:
+                return format_to(out, "DictProbeStart");
+            case cl::Bytecode::DictProbeRead:
+                return format_to(out, "DictProbeRead");
+            case cl::Bytecode::DictProbeAdvance:
+                return format_to(out, "DictProbeAdvance");
+            case cl::Bytecode::DictEntryKey:
+                return format_to(out, "DictEntryKey");
+            case cl::Bytecode::DictEntryValue:
+                return format_to(out, "DictEntryValue");
+            case cl::Bytecode::DictEntryStillMatches:
+                return format_to(out, "DictEntryStillMatches");
 
             case cl::Bytecode::CallPositional:
                 return format_to(out, "CallPositional");
@@ -885,6 +899,51 @@ template <> struct fmt::formatter<cl::CodeObject>
             case cl::Bytecode::CanonicalizeHash:
             case cl::Bytecode::CheckOperatorNotImplemented:
             case cl::Bytecode::CheckTernaryOperatorNotImplemented:
+                break;
+
+            case cl::Bytecode::DictPrepareRead:
+                format_to(out, " ");
+                disassemble_reg(code_obj, out, pc++);
+                format_to(out, ", ");
+                disassemble_reg(code_obj, out, pc++);
+                format_to(out, ", value=");
+                disassemble_reg(code_obj, out, pc++);
+                break;
+
+            case cl::Bytecode::DictProbeStart:
+                format_to(out, " ");
+                disassemble_reg(code_obj, out, pc++);
+                format_to(out, ", generation=");
+                disassemble_reg(code_obj, out, pc++);
+                format_to(out, ", hash_index=");
+                disassemble_reg(code_obj, out, pc++);
+                break;
+
+            case cl::Bytecode::DictProbeRead:
+                format_to(out, " ");
+                disassemble_reg(code_obj, out, pc++);
+                format_to(out, ", ");
+                disassemble_reg(code_obj, out, pc++);
+                break;
+
+            case cl::Bytecode::DictProbeAdvance:
+            case cl::Bytecode::DictEntryKey:
+            case cl::Bytecode::DictEntryValue:
+                format_to(out, " ");
+                disassemble_reg(code_obj, out, pc++);
+                break;
+
+            case cl::Bytecode::DictEntryStillMatches:
+                format_to(out, " ");
+                disassemble_reg(code_obj, out, pc++);
+                format_to(out, ", ");
+                disassemble_reg(code_obj, out, pc++);
+                format_to(out, ", ");
+                disassemble_reg(code_obj, out, pc++);
+                format_to(out, ", ");
+                disassemble_reg(code_obj, out, pc++);
+                format_to(out, ", ");
+                disassemble_reg(code_obj, out, pc++);
                 break;
 
             case cl::Bytecode::CallPositional:

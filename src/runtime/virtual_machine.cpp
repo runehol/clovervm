@@ -1040,8 +1040,10 @@ namespace cl
             this, L"ModuleNotFoundError", import_error));
         register_builtin_class(
             make_exception_subclass(this, L"NameError", exception));
-        register_builtin_class(
-            make_exception_subclass(this, L"TypeError", exception));
+        BuiltinClassDefinition type_error_definition =
+            make_exception_subclass(this, L"TypeError", exception);
+        ClassObject *type_error = type_error_definition.cls;
+        register_builtin_class(type_error_definition);
         register_builtin_class(
             make_exception_subclass(this, L"ValueError", exception));
         register_builtin_class(
@@ -1077,7 +1079,7 @@ namespace cl
         install_ellipsis_type_class_methods(this);
         install_list_class_methods(this);
         install_tuple_class_methods(this);
-        install_dict_class_methods(this);
+        install_dict_class_methods(this, type_error);
         install_slotdict_class_methods(this);
         install_slice_class_methods(this);
         install_float_class_methods(this);

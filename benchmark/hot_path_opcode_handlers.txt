@@ -9,6 +9,13 @@ op_call_special_method
 op_check_init_returned_none
 op_clear_local
 op_del_local
+op_dict_entry_key
+op_dict_entry_still_matches
+op_dict_entry_value
+op_dict_prepare_read
+op_dict_probe_advance
+op_dict_probe_read
+op_dict_probe_start
 op_call_code_object
 op_for_iter
 op_for_iter_range1

@@ -138,6 +138,15 @@ namespace cl
         Invert,
         CanonicalizeHash,
 
+        // trusted protocol-free dict table operations
+        DictPrepareRead,
+        DictProbeStart,
+        DictProbeRead,
+        DictProbeAdvance,
+        DictEntryKey,
+        DictEntryValue,
+        DictEntryStillMatches,
+
         Nop,
 
         // function calls
