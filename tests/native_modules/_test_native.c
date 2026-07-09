@@ -181,6 +181,223 @@ static clover_handle sum7_func(clover_context *ctx, clover_handle arg0,
     return clover_float_from_double(ctx, v0 + v1 + v2 + v3 + v4 + v5 + v6);
 }
 
+static clover_handle dict_new_func(clover_context *ctx)
+{
+    return clover_dict_new(ctx);
+}
+
+static clover_handle dict_check_func(clover_context *ctx, clover_handle value)
+{
+    bool is_dict;
+    bool is_exact;
+    if(clover_dict_check(ctx, value, &is_dict) != CLOVER_STATUS_OK ||
+       clover_dict_check_exact(ctx, value, &is_exact) != CLOVER_STATUS_OK)
+    {
+        return clover_propagate_error(ctx);
+    }
+    return clover_tuple_from_pair(ctx,
+                                  clover_int_from_int64(ctx, is_dict ? 1 : 0),
+                                  clover_int_from_int64(ctx, is_exact ? 1 : 0));
+}
+
+static clover_handle dict_size_func(clover_context *ctx, clover_handle dict)
+{
+    size_t size;
+    if(clover_dict_size(ctx, dict, &size) != CLOVER_STATUS_OK)
+    {
+        return clover_propagate_error(ctx);
+    }
+    return clover_int_from_int64(ctx, (int64_t)size);
+}
+
+static clover_handle dict_clear_func(clover_context *ctx, clover_handle dict)
+{
+    if(clover_dict_clear(ctx, dict) != CLOVER_STATUS_OK)
+    {
+        return clover_propagate_error(ctx);
+    }
+    return clover_none(ctx);
+}
+
+static clover_handle dict_copy_func(clover_context *ctx, clover_handle dict)
+{
+    return clover_dict_copy(ctx, dict);
+}
+
+static clover_handle dict_set_item_func(clover_context *ctx, clover_handle dict,
+                                        clover_handle key, clover_handle value)
+{
+    if(clover_dict_set_item(ctx, dict, key, value) != CLOVER_STATUS_OK)
+    {
+        return clover_propagate_error(ctx);
+    }
+    return clover_none(ctx);
+}
+
+static clover_handle dict_del_item_func(clover_context *ctx, clover_handle dict,
+                                        clover_handle key)
+{
+    if(clover_dict_del_item(ctx, dict, key) != CLOVER_STATUS_OK)
+    {
+        return clover_propagate_error(ctx);
+    }
+    return clover_none(ctx);
+}
+
+static clover_handle dict_contains_func(clover_context *ctx, clover_handle dict,
+                                        clover_handle key)
+{
+    bool contains;
+    if(clover_dict_contains(ctx, dict, key, &contains) != CLOVER_STATUS_OK)
+    {
+        return clover_propagate_error(ctx);
+    }
+    return clover_int_from_int64(ctx, contains ? 1 : 0);
+}
+
+static clover_handle dict_get_item_func(clover_context *ctx, clover_handle dict,
+                                        clover_handle key)
+{
+    bool found;
+    clover_handle value;
+    if(clover_dict_get_item(ctx, dict, key, &found, &value) != CLOVER_STATUS_OK)
+    {
+        return clover_propagate_error(ctx);
+    }
+    return clover_tuple_from_pair(
+        ctx, clover_int_from_int64(ctx, found ? 1 : 0), value);
+}
+
+static clover_handle dict_set_default_func(clover_context *ctx,
+                                           clover_handle dict,
+                                           clover_handle key,
+                                           clover_handle default_value)
+{
+    bool was_present;
+    clover_handle value;
+    if(clover_dict_set_default(ctx, dict, key, default_value, &was_present,
+                               &value) != CLOVER_STATUS_OK)
+    {
+        return clover_propagate_error(ctx);
+    }
+    return clover_tuple_from_pair(
+        ctx, clover_int_from_int64(ctx, was_present ? 1 : 0), value);
+}
+
+static clover_handle dict_pop_func(clover_context *ctx, clover_handle dict,
+                                   clover_handle key)
+{
+    bool found;
+    clover_handle value;
+    if(clover_dict_pop(ctx, dict, key, &found, &value) != CLOVER_STATUS_OK)
+    {
+        return clover_propagate_error(ctx);
+    }
+    return clover_tuple_from_pair(
+        ctx, clover_int_from_int64(ctx, found ? 1 : 0), value);
+}
+
+static clover_handle dict_set_item_string_func(clover_context *ctx,
+                                               clover_handle dict,
+                                               clover_handle value)
+{
+    if(clover_dict_set_item_string(ctx, dict, "key", value) != CLOVER_STATUS_OK)
+    {
+        return clover_propagate_error(ctx);
+    }
+    return clover_none(ctx);
+}
+
+static clover_handle dict_get_item_string_func(clover_context *ctx,
+                                               clover_handle dict)
+{
+    bool found;
+    clover_handle value;
+    if(clover_dict_get_item_string(ctx, dict, "key", &found, &value) !=
+       CLOVER_STATUS_OK)
+    {
+        return clover_propagate_error(ctx);
+    }
+    return clover_tuple_from_pair(
+        ctx, clover_int_from_int64(ctx, found ? 1 : 0), value);
+}
+
+static clover_handle dict_contains_string_func(clover_context *ctx,
+                                               clover_handle dict)
+{
+    bool contains;
+    if(clover_dict_contains_string(ctx, dict, "key", &contains) !=
+       CLOVER_STATUS_OK)
+    {
+        return clover_propagate_error(ctx);
+    }
+    return clover_int_from_int64(ctx, contains ? 1 : 0);
+}
+
+static clover_handle dict_del_item_string_func(clover_context *ctx,
+                                               clover_handle dict)
+{
+    if(clover_dict_del_item_string(ctx, dict, "key") != CLOVER_STATUS_OK)
+    {
+        return clover_propagate_error(ctx);
+    }
+    return clover_none(ctx);
+}
+
+static clover_handle dict_pop_string_func(clover_context *ctx,
+                                          clover_handle dict)
+{
+    bool found;
+    clover_handle value;
+    if(clover_dict_pop_string(ctx, dict, "key", &found, &value) !=
+       CLOVER_STATUS_OK)
+    {
+        return clover_propagate_error(ctx);
+    }
+    return clover_tuple_from_pair(
+        ctx, clover_int_from_int64(ctx, found ? 1 : 0), value);
+}
+
+static clover_handle dict_keys_func(clover_context *ctx, clover_handle dict)
+{
+    return clover_dict_keys(ctx, dict);
+}
+
+static clover_handle dict_values_func(clover_context *ctx, clover_handle dict)
+{
+    return clover_dict_values(ctx, dict);
+}
+
+static clover_handle dict_items_func(clover_context *ctx, clover_handle dict)
+{
+    return clover_dict_items(ctx, dict);
+}
+
+static clover_handle dict_next_func(clover_context *ctx, clover_handle dict,
+                                    clover_handle position_value)
+{
+    int64_t position_int;
+    if(clover_int_as_int64(ctx, position_value, &position_int) !=
+           CLOVER_STATUS_OK ||
+       position_int < 0)
+    {
+        return clover_propagate_error(ctx);
+    }
+    size_t position = (size_t)position_int;
+    bool found;
+    clover_handle key;
+    clover_handle value;
+    if(clover_dict_next(ctx, dict, &position, &found, &key, &value) !=
+       CLOVER_STATUS_OK)
+    {
+        return clover_propagate_error(ctx);
+    }
+    clover_handle result[] = {clover_int_from_int64(ctx, found ? 1 : 0),
+                              clover_int_from_int64(ctx, (int64_t)position),
+                              key, value};
+    return clover_tuple_from_array(ctx, result, 4);
+}
+
 CL_NATIVE_MODULE_EXPORT clover_status clover_module_init__test_native(
     clover_context *ctx, clover_native_module_builder *builder)
 {
@@ -283,6 +500,64 @@ CL_NATIVE_MODULE_EXPORT clover_status clover_module_init__test_native(
     {
         return CLOVER_STATUS_ERROR;
     }
-    return clover_module_add_function_7(builder, "sum7", sum7_func,
-                                        "Return the argument sum.");
+    if(clover_module_add_function_7(builder, "sum7", sum7_func,
+                                    "Return the argument sum.") !=
+       CLOVER_STATUS_OK)
+    {
+        return CLOVER_STATUS_ERROR;
+    }
+    if(clover_module_add_function_0(builder, "dict_new", dict_new_func, 0) !=
+           CLOVER_STATUS_OK ||
+       clover_module_add_function_1(builder, "dict_check", dict_check_func,
+                                    0) != CLOVER_STATUS_OK ||
+       clover_module_add_function_1(builder, "dict_size", dict_size_func, 0) !=
+           CLOVER_STATUS_OK ||
+       clover_module_add_function_1(builder, "dict_clear", dict_clear_func,
+                                    0) != CLOVER_STATUS_OK ||
+       clover_module_add_function_1(builder, "dict_copy", dict_copy_func, 0) !=
+           CLOVER_STATUS_OK ||
+       clover_module_add_function_3(builder, "dict_set_item",
+                                    dict_set_item_func,
+                                    0) != CLOVER_STATUS_OK ||
+       clover_module_add_function_2(builder, "dict_del_item",
+                                    dict_del_item_func,
+                                    0) != CLOVER_STATUS_OK ||
+       clover_module_add_function_2(builder, "dict_contains",
+                                    dict_contains_func,
+                                    0) != CLOVER_STATUS_OK ||
+       clover_module_add_function_2(builder, "dict_get_item",
+                                    dict_get_item_func,
+                                    0) != CLOVER_STATUS_OK ||
+       clover_module_add_function_3(builder, "dict_set_default",
+                                    dict_set_default_func,
+                                    0) != CLOVER_STATUS_OK ||
+       clover_module_add_function_2(builder, "dict_pop", dict_pop_func, 0) !=
+           CLOVER_STATUS_OK ||
+       clover_module_add_function_2(builder, "dict_set_item_string",
+                                    dict_set_item_string_func,
+                                    0) != CLOVER_STATUS_OK ||
+       clover_module_add_function_1(builder, "dict_get_item_string",
+                                    dict_get_item_string_func,
+                                    0) != CLOVER_STATUS_OK ||
+       clover_module_add_function_1(builder, "dict_contains_string",
+                                    dict_contains_string_func,
+                                    0) != CLOVER_STATUS_OK ||
+       clover_module_add_function_1(builder, "dict_del_item_string",
+                                    dict_del_item_string_func,
+                                    0) != CLOVER_STATUS_OK ||
+       clover_module_add_function_1(builder, "dict_pop_string",
+                                    dict_pop_string_func,
+                                    0) != CLOVER_STATUS_OK ||
+       clover_module_add_function_1(builder, "dict_keys", dict_keys_func, 0) !=
+           CLOVER_STATUS_OK ||
+       clover_module_add_function_1(builder, "dict_values", dict_values_func,
+                                    0) != CLOVER_STATUS_OK ||
+       clover_module_add_function_1(builder, "dict_items", dict_items_func,
+                                    0) != CLOVER_STATUS_OK ||
+       clover_module_add_function_2(builder, "dict_next", dict_next_func, 0) !=
+           CLOVER_STATUS_OK)
+    {
+        return CLOVER_STATUS_ERROR;
+    }
+    return CLOVER_STATUS_OK;
 }

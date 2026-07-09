@@ -399,6 +399,182 @@ TEST(NativeModuleBuild, StdlibMathSqrtReportsTrustedErrors)
                   type_exception.extract()->message.value())));
 }
 
+TEST(NativeModuleBuild, DictionaryCApiCoreOperations)
+{
+    test::VmTestContext context;
+
+    EXPECT_EQ(Value::True(),
+              context.run_file(
+                  L"from _test_native import dict_new, dict_check, dict_size, "
+                  L"dict_set_item, dict_get_item, dict_contains, "
+                  L"dict_set_default, dict_pop, dict_del_item, dict_copy, "
+                  L"dict_clear\n"
+                  L"d = dict_new()\n"
+                  L"dict_kind = dict_check(d)\n"
+                  L"non_dict_kind = dict_check(1)\n"
+                  L"dict_set_item(d, 1, None)\n"
+                  L"present_none = dict_get_item(d, True)\n"
+                  L"missing = dict_get_item(d, 2)\n"
+                  L"default_hit = dict_set_default(d, True, 8)\n"
+                  L"default_insert = dict_set_default(d, 2, 8)\n"
+                  L"copy = dict_copy(d)\n"
+                  L"popped = dict_pop(d, 1)\n"
+                  L"pop_miss = dict_pop(d, 1)\n"
+                  L"dict_del_item(d, 2)\n"
+                  L"before_clear = dict_size(copy)\n"
+                  L"dict_clear(copy)\n"
+                  L"dict_kind[0] == 1 and dict_kind[1] == 1 and "
+                  L"non_dict_kind[0] == 0 and non_dict_kind[1] == 0 and "
+                  L"present_none[0] == 1 and present_none[1] is None and "
+                  L"missing[0] == 0 and missing[1] is None and "
+                  L"dict_contains(d, True) == 0 and "
+                  L"default_hit[0] == 1 and default_hit[1] is None and "
+                  L"default_insert[0] == 0 and default_insert[1] == 8 and "
+                  L"popped[0] == 1 and popped[1] is None and "
+                  L"pop_miss[0] == 0 and pop_miss[1] is None and "
+                  L"dict_size(d) == 0 and before_clear == 2 and "
+                  L"dict_size(copy) == 0\n"));
+}
+
+TEST(NativeModuleBuild, DictionaryCApiStringSnapshotsAndIteration)
+{
+    test::VmTestContext context;
+
+    EXPECT_EQ(
+        Value::True(),
+        context.run_file(
+            L"from _test_native import dict_new, dict_set_item_string, "
+            L"dict_get_item_string, dict_contains_string, "
+            L"dict_del_item_string, dict_pop_string, dict_keys, dict_values, "
+            L"dict_items, dict_next\n"
+            L"d = dict_new()\n"
+            L"dict_set_item_string(d, 9)\n"
+            L"got = dict_get_item_string(d)\n"
+            L"keys = dict_keys(d)\n"
+            L"values = dict_values(d)\n"
+            L"items = dict_items(d)\n"
+            L"first = dict_next(d, 0)\n"
+            L"end = dict_next(d, first[1])\n"
+            L"contained = dict_contains_string(d)\n"
+            L"popped = dict_pop_string(d)\n"
+            L"dict_set_item_string(d, 10)\n"
+            L"dict_del_item_string(d)\n"
+            L"after_delete = dict_contains_string(d)\n"
+            L"missing = dict_pop_string(d)\n"
+            L"got[0] == 1 and got[1] == 9 and "
+            L"contained == 1 and after_delete == 0 and "
+            L"len(keys) == 1 and keys[0] == 'key' and "
+            L"len(values) == 1 and values[0] == 9 and "
+            L"len(items) == 1 and items[0][0] == 'key' and "
+            L"items[0][1] == 9 and first[0] == 1 and "
+            L"first[2] == 'key' and first[3] == 9 and "
+            L"end[0] == 0 and end[2] is None and end[3] is None and "
+            L"popped[0] == 1 and popped[1] == 9 and "
+            L"missing[0] == 0 and missing[1] is None\n"));
+}
+
+TEST(NativeModuleBuild, DictionaryCApiPropagatesHashAndEqualityFailures)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation_scope(context.thread());
+
+    Value hash_result =
+        context.run_file(L"from _test_native import dict_new, dict_get_item\n"
+                         L"class BadHash:\n"
+                         L"    def __hash__(self):\n"
+                         L"        return 'bad'\n"
+                         L"dict_get_item(dict_new(), BadHash())\n");
+    EXPECT_TRUE(hash_result.is_exception_marker());
+    ASSERT_EQ(PendingExceptionKind::Object,
+              context.thread()->pending_exception_kind());
+    EXPECT_EQ(context.thread()->class_for_builtin_name(L"TypeError"),
+              context.thread()
+                  ->pending_exception_object()
+                  .extract()
+                  ->get_shape()
+                  ->get_class());
+    context.thread()->clear_pending_exception();
+
+    Value equality_result = context.run_file(
+        L"from _test_native import dict_new, dict_set_item, dict_get_item\n"
+        L"class Stored:\n"
+        L"    def __hash__(self):\n"
+        L"        return 7\n"
+        L"    def __eq__(self, other):\n"
+        L"        raise ValueError\n"
+        L"class Probe:\n"
+        L"    def __hash__(self):\n"
+        L"        return 7\n"
+        L"d = dict_new()\n"
+        L"dict_set_item(d, Stored(), 1)\n"
+        L"dict_get_item(d, Probe())\n");
+    EXPECT_TRUE(equality_result.is_exception_marker());
+    ASSERT_EQ(PendingExceptionKind::Object,
+              context.thread()->pending_exception_kind());
+    EXPECT_EQ(context.thread()->class_for_builtin_name(L"ValueError"),
+              context.thread()
+                  ->pending_exception_object()
+                  .extract()
+                  ->get_shape()
+                  ->get_class());
+    context.thread()->clear_pending_exception();
+
+    Value wrong_receiver =
+        context.run_file(L"from _test_native import dict_size\n"
+                         L"dict_size(1)\n");
+    EXPECT_TRUE(wrong_receiver.is_exception_marker());
+    ASSERT_EQ(PendingExceptionKind::Object,
+              context.thread()->pending_exception_kind());
+    EXPECT_EQ(context.thread()->class_for_builtin_name(L"TypeError"),
+              context.thread()
+                  ->pending_exception_object()
+                  .extract()
+                  ->get_shape()
+                  ->get_class());
+    context.thread()->clear_pending_exception();
+
+    Value missing_delete =
+        context.run_file(L"from _test_native import dict_new, dict_del_item\n"
+                         L"dict_del_item(dict_new(), 'missing')\n");
+    EXPECT_TRUE(missing_delete.is_exception_marker());
+    ASSERT_EQ(PendingExceptionKind::Object,
+              context.thread()->pending_exception_kind());
+    EXPECT_EQ(context.thread()->class_for_builtin_name(L"KeyError"),
+              context.thread()
+                  ->pending_exception_object()
+                  .extract()
+                  ->get_shape()
+                  ->get_class());
+}
+
+TEST(NativeModuleBuild, DictionaryCApiRestartsAfterEqualityMutation)
+{
+    test::VmTestContext context;
+
+    EXPECT_EQ(Value::from_smi(99),
+              context.run_file(L"from _test_native import dict_new, "
+                               L"dict_set_item, dict_get_item\n"
+                               L"d = dict_new()\n"
+                               L"mutated = False\n"
+                               L"class Stored:\n"
+                               L"    def __hash__(self):\n"
+                               L"        return 7\n"
+                               L"    def __eq__(self, other):\n"
+                               L"        global mutated\n"
+                               L"        if not mutated:\n"
+                               L"            mutated = True\n"
+                               L"            i = 20\n"
+                               L"            while i < 40:\n"
+                               L"                dict_set_item(d, i, i)\n"
+                               L"                i = i + 1\n"
+                               L"        return True\n"
+                               L"class Probe:\n"
+                               L"    def __hash__(self):\n"
+                               L"        return 7\n"
+                               L"dict_set_item(d, Stored(), 99)\n"
+                               L"dict_get_item(d, Probe())[1]\n"));
+}
+
 static void
 expect_native_import_error_and_uncached(test::VmTestContext &context,
                                         const wchar_t *module_name,

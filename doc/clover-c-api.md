@@ -254,10 +254,10 @@ Conversion helpers set a pending exception on failure and return
 identity. It must not compare handle storage addresses once handles become
 indirect.
 
-### Planned Dictionary API
+### Dictionary API
 
-Public `dict` now supports arbitrary Python keys, but dictionary C API entry
-points have not landed yet. The next dictionary API slice must include:
+The dictionary C API provides the currently implementable core of CPython's
+dictionary surface:
 
 - dict/exact-dict type checks and construction of a fresh exact builtin dict
 - clear and copy
@@ -272,7 +272,7 @@ set pending exception state. Deletion raises `KeyError` for a missing key.
 Lookup, membership, and C API pop report an ordinary miss explicitly without
 raising `KeyError`.
 
-The proposed signatures are:
+The signatures are:
 
 ```c
 clover_status clover_dict_check(
@@ -409,7 +409,7 @@ suppress hash/equality exceptions or use a null result plus pending-exception
 inspection to distinguish missing from failure.
 
 Returned value handles have the same context-managed lifetime as other runtime
-API handles. The implementation must delegate to the semantic C++ `Dict`
+API handles. The implementation delegates to the semantic C++ `Dict`
 interface so shape promotion, reentrant-equality defense, and pending-exception
 behavior are shared. Raw `string_keyed_*` storage helpers are not exposed
 through the C API.

@@ -122,6 +122,75 @@ extern "C"
                                                 int64_t *out);
     CL_EXPORT clover_status clover_is(clover_context *ctx, clover_handle left,
                                       clover_handle right, bool *out);
+
+    CL_EXPORT clover_status clover_dict_check(clover_context *ctx,
+                                              clover_handle value, bool *out);
+    CL_EXPORT clover_status clover_dict_check_exact(clover_context *ctx,
+                                                    clover_handle value,
+                                                    bool *out);
+    CL_EXPORT clover_handle clover_dict_new(clover_context *ctx);
+    CL_EXPORT clover_status clover_dict_clear(clover_context *ctx,
+                                              clover_handle dict);
+    CL_EXPORT clover_handle clover_dict_copy(clover_context *ctx,
+                                             clover_handle dict);
+    CL_EXPORT clover_status clover_dict_size(clover_context *ctx,
+                                             clover_handle dict, size_t *out);
+    CL_EXPORT clover_status clover_dict_contains(clover_context *ctx,
+                                                 clover_handle dict,
+                                                 clover_handle key, bool *out);
+    CL_EXPORT clover_status clover_dict_set_item(clover_context *ctx,
+                                                 clover_handle dict,
+                                                 clover_handle key,
+                                                 clover_handle value);
+    CL_EXPORT clover_status clover_dict_del_item(clover_context *ctx,
+                                                 clover_handle dict,
+                                                 clover_handle key);
+    CL_EXPORT clover_status clover_dict_get_item(clover_context *ctx,
+                                                 clover_handle dict,
+                                                 clover_handle key, bool *found,
+                                                 clover_handle *out_value);
+    CL_EXPORT clover_status clover_dict_set_default(clover_context *ctx,
+                                                    clover_handle dict,
+                                                    clover_handle key,
+                                                    clover_handle default_value,
+                                                    bool *was_present,
+                                                    clover_handle *out_value);
+    CL_EXPORT clover_status clover_dict_pop(clover_context *ctx,
+                                            clover_handle dict,
+                                            clover_handle key, bool *found,
+                                            clover_handle *out_value);
+
+    CL_EXPORT clover_status clover_dict_contains_string(clover_context *ctx,
+                                                        clover_handle dict,
+                                                        const char *key,
+                                                        bool *out);
+    CL_EXPORT clover_status clover_dict_set_item_string(clover_context *ctx,
+                                                        clover_handle dict,
+                                                        const char *key,
+                                                        clover_handle value);
+    CL_EXPORT clover_status clover_dict_del_item_string(clover_context *ctx,
+                                                        clover_handle dict,
+                                                        const char *key);
+    CL_EXPORT clover_status clover_dict_get_item_string(
+        clover_context *ctx, clover_handle dict, const char *key, bool *found,
+        clover_handle *out_value);
+    CL_EXPORT clover_status clover_dict_pop_string(clover_context *ctx,
+                                                   clover_handle dict,
+                                                   const char *key, bool *found,
+                                                   clover_handle *out_value);
+
+    CL_EXPORT clover_handle clover_dict_keys(clover_context *ctx,
+                                             clover_handle dict);
+    CL_EXPORT clover_handle clover_dict_values(clover_context *ctx,
+                                               clover_handle dict);
+    CL_EXPORT clover_handle clover_dict_items(clover_context *ctx,
+                                              clover_handle dict);
+    CL_EXPORT clover_status clover_dict_next(clover_context *ctx,
+                                             clover_handle dict,
+                                             size_t *position, bool *found,
+                                             clover_handle *out_key,
+                                             clover_handle *out_value);
+
     CL_EXPORT clover_handle
     clover_raise_overflow_error(clover_context *ctx, const char *utf8_message);
     CL_EXPORT clover_handle clover_raise_value_error(clover_context *ctx,

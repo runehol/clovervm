@@ -1332,26 +1332,26 @@ Stage invariant:
 - [x] Add typed C++ semantic results for non-raising lookup and pop, and for
   setdefault with presence reporting, so C API wrappers do not repeat probes or
   inspect pending exception state to detect misses.
-- [ ] Add the currently implementable core of CPython's dictionary C API with
+- [x] Add the currently implementable core of CPython's dictionary C API with
   `clover_dict_*` names: type checks, construction, clear, copy, membership,
   assignment, deletion, lookup, setdefault, pop, key/value/item snapshots,
   length, and positional iteration.
-- [ ] Add UTF-8 string-key variants wherever CPython provides them and the
+- [x] Add UTF-8 string-key variants wherever CPython provides them and the
   corresponding Clover operation is in the first slice.
-- [ ] Use only the modern explicit lookup contract: status reports success or
+- [x] Use only the modern explicit lookup contract: status reports success or
   error, a boolean output reports found or missing, and the value output is
   semantically valid only on a hit. Missing and error paths set `found` to false
   and store the `None` handle in the value output. Do not add legacy lookup
   variants that suppress hash/equality exceptions or require callers to inspect
   pending exception state to distinguish missing from failure.
-- [ ] Give `setdefault` and `pop` equivalent explicit result contracts.
+- [x] Give `setdefault` and `pop` equivalent explicit result contracts.
   `setdefault` reports whether the key was already present and returns the
   resulting value; `pop` reports found/missing without raising `KeyError` for an
   ordinary miss.
-- [ ] Document output-handle ownership and which functions may re-enter Python.
+- [x] Document output-handle ownership and which functions may re-enter Python.
   Construction and length do not run Python; semantic key operations may run
   hash and equality.
-- [ ] Add native module tests that build string-key dicts, integer-key dicts,
+- [x] Add native module tests that build string-key dicts, integer-key dicts,
   propagated `__hash__` and `__eq__` exceptions, and mutation during equality
   through the C API surface.
 

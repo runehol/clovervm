@@ -26,6 +26,27 @@ set(CLOVERVM_EXTENSION_MODULE_BUILDER_API_SYMBOLS
     clover_module_add_value)
 
 set(CLOVERVM_EXTENSION_RUNTIME_API_SYMBOLS
+    clover_dict_check
+    clover_dict_check_exact
+    clover_dict_clear
+    clover_dict_contains
+    clover_dict_contains_string
+    clover_dict_copy
+    clover_dict_del_item
+    clover_dict_del_item_string
+    clover_dict_get_item
+    clover_dict_get_item_string
+    clover_dict_items
+    clover_dict_keys
+    clover_dict_new
+    clover_dict_next
+    clover_dict_pop
+    clover_dict_pop_string
+    clover_dict_set_default
+    clover_dict_set_item
+    clover_dict_set_item_string
+    clover_dict_size
+    clover_dict_values
     clover_float_as_double
     clover_float_from_double
     clover_int_from_int64
