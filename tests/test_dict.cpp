@@ -1223,340 +1223,27 @@ TEST(Dict, ReinsertReusesTombstoneWithoutChangingEntryOrder)
     EXPECT_EQ(third, third_entry.key);
 }
 
-TEST(GeneralDict, ConstructsAsInternalClassAndStartsEmpty)
-{
-    test::VmTestContext context;
-    ThreadState::ActivationScope activation_scope(context.thread());
-    GeneralDict *dict = context.thread()->make_object_raw<GeneralDict>();
-
-    EXPECT_EQ(context.vm().general_dict_class(),
-              dict->get_shape()->get_class());
-    EXPECT_STREQ(L"__clover_general_dict",
-                 dict->get_shape()->get_class()->get_name().extract()->data);
-    EXPECT_EQ(0u, dict->size());
-    EXPECT_TRUE(dict->empty());
-}
-
-TEST(GeneralDict, LenMethodReturnsLiveEntryCount)
-{
-    test::VmTestContext context;
-    ThreadState::ActivationScope activation_scope(context.thread());
-    GeneralDict *dict = context.thread()->make_object_raw<GeneralDict>();
-    TValue<String> dunder_len_name =
-        context.vm().get_or_create_interned_string_value(L"__len__");
-
-    Value result = context.thread()->call_clovervm_method(Value::from_oop(dict),
-                                                          dunder_len_name);
-
-    EXPECT_EQ(Value::from_smi(0), result);
-    EXPECT_FALSE(context.thread()->has_pending_exception());
-}
-
-TEST(GeneralDict, TemporaryBuiltinBindingCanConstructAndLen)
-{
-    test::VmTestContext context;
-
-    EXPECT_EQ(Value::from_smi(0),
-              context.run_file(L"len(__clover_general_dict())\n"));
-}
-
-TEST(GeneralDict, SetItemInsertsIntegerKeysThroughTemporaryBuiltin)
-{
-    test::VmTestContext context;
-
-    EXPECT_EQ(Value::from_smi(2),
-              context.run_file(L"d = __clover_general_dict()\n"
-                               L"d[1] = 'one'\n"
-                               L"d[2] = 'two'\n"
-                               L"len(d)\n"));
-}
-
-TEST(GeneralDict, SetItemOverwritesEqualBoolAndIntKey)
-{
-    test::VmTestContext context;
-    ThreadState *thread = context.thread();
-    ThreadState::ActivationScope activation_scope(thread);
-    GeneralDict *dict = thread->make_object_raw<GeneralDict>();
-
-    ASSERT_FALSE(dict->set_item(thread, Value::from_smi(1), Value::from_smi(11))
-                     .has_exception());
-    ASSERT_FALSE(dict->set_item(thread, Value::True(), Value::from_smi(22))
-                     .has_exception());
-
-    EXPECT_EQ(1u, dict->size());
-    ASSERT_EQ(1u, dict->entry_storage_size());
-    GeneralDict::EntryView entry = {Value::not_present(), Value::not_present()};
-    ASSERT_TRUE(dict->entry_at(0, entry));
-    EXPECT_EQ(Value::from_smi(1), entry.key);
-    EXPECT_EQ(Value::from_smi(22), entry.value);
-}
-
-TEST(GeneralDict, SetItemOverwritePreservesEntryOrder)
-{
-    test::VmTestContext context;
-    ThreadState *thread = context.thread();
-    ThreadState::ActivationScope activation_scope(thread);
-    GeneralDict *dict = thread->make_object_raw<GeneralDict>();
-
-    ASSERT_FALSE(dict->set_item(thread, Value::from_smi(1), Value::from_smi(11))
-                     .has_exception());
-    ASSERT_FALSE(dict->set_item(thread, Value::from_smi(2), Value::from_smi(22))
-                     .has_exception());
-    ASSERT_FALSE(dict->set_item(thread, Value::from_smi(1), Value::from_smi(99))
-                     .has_exception());
-
-    EXPECT_EQ(2u, dict->size());
-    ASSERT_EQ(2u, dict->entry_storage_size());
-    GeneralDict::EntryView first = {Value::not_present(), Value::not_present()};
-    GeneralDict::EntryView second = {Value::not_present(),
-                                     Value::not_present()};
-    ASSERT_TRUE(dict->entry_at(0, first));
-    ASSERT_TRUE(dict->entry_at(1, second));
-    EXPECT_EQ(Value::from_smi(1), first.key);
-    EXPECT_EQ(Value::from_smi(99), first.value);
-    EXPECT_EQ(Value::from_smi(2), second.key);
-    EXPECT_EQ(Value::from_smi(22), second.value);
-}
-
-TEST(GeneralDict, SetItemPropagatesHashExceptions)
-{
-    test::VmTestContext context;
-
-    Value result = context.run_file(L"class C:\n"
-                                    L"    def __hash__(self):\n"
-                                    L"        raise ValueError\n"
-                                    L"d = __clover_general_dict()\n"
-                                    L"d[C()] = 1\n");
-
-    EXPECT_TRUE(result.is_exception_marker());
-    expect_pending_exception(context.thread(), L"ValueError", L"");
-}
-
-TEST(GeneralDict, SetItemPropagatesEqualityExceptions)
-{
-    test::VmTestContext context;
-
-    Value result = context.run_file(L"class C:\n"
-                                    L"    def __hash__(self):\n"
-                                    L"        return 7\n"
-                                    L"    def __eq__(self, other):\n"
-                                    L"        raise ValueError\n"
-                                    L"d = __clover_general_dict()\n"
-                                    L"d[C()] = 1\n"
-                                    L"d[C()] = 2\n");
-
-    EXPECT_TRUE(result.is_exception_marker());
-    expect_pending_exception(context.thread(), L"ValueError", L"");
-}
-
-TEST(GeneralDict, GetItemReturnsInsertedIntegerKey)
-{
-    test::VmTestContext context;
-
-    EXPECT_EQ(Value::True(), context.run_file(L"d = __clover_general_dict()\n"
-                                              L"d[1] = 'one'\n"
-                                              L"d[1] == 'one'\n"));
-}
-
-TEST(GeneralDict, GetItemRaisesKeyErrorForMissingKey)
-{
-    test::VmTestContext context;
-
-    Value result = context.run_file(L"d = __clover_general_dict()\n"
-                                    L"d[1]\n");
-
-    EXPECT_TRUE(result.is_exception_marker());
-    expect_pending_exception(context.thread(), L"KeyError", L"");
-}
-
-TEST(GeneralDict, ContainsReportsPresentAndMissingKeys)
-{
-    test::VmTestContext context;
-
-    EXPECT_EQ(Value::True(), context.run_file(L"d = __clover_general_dict()\n"
-                                              L"d[1] = 'one'\n"
-                                              L"(1 in d) and not (2 in d)\n"));
-}
-
-TEST(GeneralDict, GetItemFindsEqualBoolAndIntKey)
-{
-    test::VmTestContext context;
-
-    EXPECT_EQ(Value::True(), context.run_file(L"d = __clover_general_dict()\n"
-                                              L"d[True] = 'truthy'\n"
-                                              L"d[1] == 'truthy'\n"));
-}
-
-TEST(GeneralDict, ContainsFindsEqualBoolAndIntKey)
-{
-    test::VmTestContext context;
-
-    EXPECT_EQ(Value::True(), context.run_file(L"d = __clover_general_dict()\n"
-                                              L"d[1] = 'one'\n"
-                                              L"True in d\n"));
-}
-
-TEST(GeneralDict, GetItemPropagatesHashExceptions)
-{
-    test::VmTestContext context;
-
-    Value result = context.run_file(L"class C:\n"
-                                    L"    def __hash__(self):\n"
-                                    L"        raise ValueError\n"
-                                    L"d = __clover_general_dict()\n"
-                                    L"d[C()]\n");
-
-    EXPECT_TRUE(result.is_exception_marker());
-    expect_pending_exception(context.thread(), L"ValueError", L"");
-}
-
-TEST(GeneralDict, ContainsPropagatesHashExceptions)
-{
-    test::VmTestContext context;
-
-    Value result = context.run_file(L"class C:\n"
-                                    L"    def __hash__(self):\n"
-                                    L"        raise ValueError\n"
-                                    L"d = __clover_general_dict()\n"
-                                    L"C() in d\n");
-
-    EXPECT_TRUE(result.is_exception_marker());
-    expect_pending_exception(context.thread(), L"ValueError", L"");
-}
-
-TEST(GeneralDict, GetItemPropagatesEqualityExceptions)
-{
-    test::VmTestContext context;
-
-    Value result = context.run_file(L"class C:\n"
-                                    L"    def __hash__(self):\n"
-                                    L"        return 7\n"
-                                    L"    def __eq__(self, other):\n"
-                                    L"        raise ValueError\n"
-                                    L"d = __clover_general_dict()\n"
-                                    L"d[C()] = 1\n"
-                                    L"d[C()]\n");
-
-    EXPECT_TRUE(result.is_exception_marker());
-    expect_pending_exception(context.thread(), L"ValueError", L"");
-}
-
-TEST(GeneralDict, ContainsPropagatesEqualityExceptions)
-{
-    test::VmTestContext context;
-
-    Value result = context.run_file(L"class C:\n"
-                                    L"    def __hash__(self):\n"
-                                    L"        return 7\n"
-                                    L"    def __eq__(self, other):\n"
-                                    L"        raise ValueError\n"
-                                    L"d = __clover_general_dict()\n"
-                                    L"d[C()] = 1\n"
-                                    L"C() in d\n");
-
-    EXPECT_TRUE(result.is_exception_marker());
-    expect_pending_exception(context.thread(), L"ValueError", L"");
-}
-
-TEST(GeneralDict, GetItemRestartsAfterEqualityInsertionResize)
-{
-    test::VmTestContext context;
-
-    EXPECT_EQ(Value::from_smi(99),
-              context.run_file(L"d = __clover_general_dict()\n"
-                               L"mutated = False\n"
-                               L"class Stored:\n"
-                               L"    def __hash__(self):\n"
-                               L"        return 7\n"
-                               L"    def __eq__(self, other):\n"
-                               L"        global mutated\n"
-                               L"        if not mutated:\n"
-                               L"            mutated = True\n"
-                               L"            i = 20\n"
-                               L"            while i < 40:\n"
-                               L"                d[i] = i\n"
-                               L"                i = i + 1\n"
-                               L"        return True\n"
-                               L"class Probe:\n"
-                               L"    def __hash__(self):\n"
-                               L"        return 7\n"
-                               L"d[Stored()] = 99\n"
-                               L"d[Probe()]\n"));
-}
-
-TEST(GeneralDict, DelItemRemovesKeyAndPreservesCollidingLookup)
+TEST(Dict, PublicOverwritePreservesEntryOrderAfterPromotion)
 {
     test::VmTestContext context;
 
     EXPECT_EQ(Value::True(),
-              context.run_file(L"d = __clover_general_dict()\n"
-                               L"d[1] = 'one'\n"
-                               L"d[17] = 'seventeen'\n"
-                               L"del d[1]\n"
-                               L"len(d) == 1 and not (1 in d) and "
-                               L"d[17] == 'seventeen'\n"));
+              context.run_file(L"d = {}\n"
+                               L"d[1] = 11\n"
+                               L"d[2] = 22\n"
+                               L"d[1] = 99\n"
+                               L"last = d.popitem()\n"
+                               L"last[0] == 2 and last[1] == 22 and "
+                               L"d[1] == 99\n"));
 }
 
-TEST(GeneralDict, DelItemRaisesKeyErrorForMissingKey)
-{
-    test::VmTestContext context;
-
-    Value result = context.run_file(L"d = __clover_general_dict()\n"
-                                    L"del d[1]\n");
-
-    EXPECT_TRUE(result.is_exception_marker());
-    expect_pending_exception(context.thread(), L"KeyError", L"");
-}
-
-TEST(GeneralDict, DelItemFindsEqualBoolAndIntKey)
-{
-    test::VmTestContext context;
-
-    EXPECT_EQ(Value::True(),
-              context.run_file(L"d = __clover_general_dict()\n"
-                               L"d[True] = 'truthy'\n"
-                               L"del d[1]\n"
-                               L"len(d) == 0 and not (True in d)\n"));
-}
-
-TEST(GeneralDict, DelItemPropagatesHashExceptions)
-{
-    test::VmTestContext context;
-
-    Value result = context.run_file(L"class C:\n"
-                                    L"    def __hash__(self):\n"
-                                    L"        raise ValueError\n"
-                                    L"d = __clover_general_dict()\n"
-                                    L"del d[C()]\n");
-
-    EXPECT_TRUE(result.is_exception_marker());
-    expect_pending_exception(context.thread(), L"ValueError", L"");
-}
-
-TEST(GeneralDict, DelItemPropagatesEqualityExceptions)
-{
-    test::VmTestContext context;
-
-    Value result = context.run_file(L"class C:\n"
-                                    L"    def __hash__(self):\n"
-                                    L"        return 7\n"
-                                    L"    def __eq__(self, other):\n"
-                                    L"        raise ValueError\n"
-                                    L"d = __clover_general_dict()\n"
-                                    L"d[C()] = 1\n"
-                                    L"del d[C()]\n");
-
-    EXPECT_TRUE(result.is_exception_marker());
-    expect_pending_exception(context.thread(), L"ValueError", L"");
-}
-
-TEST(GeneralDict, SetItemReusesTombstoneAndPreservesProbeChain)
+TEST(Dict, PublicTombstoneReusePreservesGeneralProbeChain)
 {
     test::VmTestContext context;
 
     EXPECT_EQ(
         Value::True(),
-        context.run_file(L"d = __clover_general_dict()\n"
+        context.run_file(L"d = {}\n"
                          L"d[1] = 1\n"
                          L"d[17] = 17\n"
                          L"del d[1]\n"
@@ -1564,12 +1251,12 @@ TEST(GeneralDict, SetItemReusesTombstoneAndPreservesProbeChain)
                          L"len(d) == 2 and d[17] == 17 and d[33] == 33\n"));
 }
 
-TEST(GeneralDict, TombstoneResizeStressKeepsRemainingEntriesReachable)
+TEST(Dict, PublicGeneralTombstoneResizeKeepsEntriesReachable)
 {
     test::VmTestContext context;
 
     EXPECT_EQ(Value::True(),
-              context.run_file(L"d = __clover_general_dict()\n"
+              context.run_file(L"d = {}\n"
                                L"i = 0\n"
                                L"while i < 40:\n"
                                L"    d[i] = i\n"
@@ -1583,72 +1270,12 @@ TEST(GeneralDict, TombstoneResizeStressKeepsRemainingEntriesReachable)
                                L"and d[100] == 100 and not (2 in d)\n"));
 }
 
-TEST(GeneralDict, DelItemRestartsAfterEqualityInsertionResize)
+TEST(Dict, PublicClearRemovesPromotedEntries)
 {
     test::VmTestContext context;
 
     EXPECT_EQ(Value::True(),
-              context.run_file(L"d = __clover_general_dict()\n"
-                               L"mutated = False\n"
-                               L"class Stored:\n"
-                               L"    def __hash__(self):\n"
-                               L"        return 7\n"
-                               L"    def __eq__(self, other):\n"
-                               L"        global mutated\n"
-                               L"        if not mutated:\n"
-                               L"            mutated = True\n"
-                               L"            i = 20\n"
-                               L"            while i < 40:\n"
-                               L"                d[i] = i\n"
-                               L"                i = i + 1\n"
-                               L"        return True\n"
-                               L"class Probe:\n"
-                               L"    def __hash__(self):\n"
-                               L"        return 7\n"
-                               L"d[Stored()] = 99\n"
-                               L"del d[Probe()]\n"
-                               L"len(d) == 20 and d[39] == 39\n"));
-}
-
-TEST(GeneralDict, TableGenerationChangesOnlyWhenProbeStructureChanges)
-{
-    test::VmTestContext context;
-    ThreadState *thread = context.thread();
-    ThreadState::ActivationScope activation_scope(thread);
-    GeneralDict *dict = thread->make_object_raw<GeneralDict>();
-
-    EXPECT_EQ(0u, dict->table_generation());
-    ASSERT_FALSE(dict->set_item(thread, Value::from_smi(1), Value::from_smi(11))
-                     .has_exception());
-    EXPECT_EQ(0u, dict->table_generation());
-    ASSERT_FALSE(dict->set_item(thread, Value::from_smi(1), Value::from_smi(99))
-                     .has_exception());
-    EXPECT_EQ(0u, dict->table_generation());
-    ASSERT_FALSE(dict->del_item(thread, Value::from_smi(1)).has_exception());
-    EXPECT_EQ(0u, dict->table_generation());
-
-    dict->clear();
-    EXPECT_EQ(1u, dict->table_generation());
-    ASSERT_FALSE(dict->set_item(thread, Value::from_smi(2), Value::from_smi(22))
-                     .has_exception());
-    EXPECT_EQ(1u, dict->table_generation());
-
-    for(int64_t key = 0; key < 20; ++key)
-    {
-        ASSERT_FALSE(
-            dict->set_item(thread, Value::from_smi(key), Value::from_smi(key))
-                .has_exception());
-    }
-
-    EXPECT_GT(dict->table_generation(), 0u);
-}
-
-TEST(GeneralDict, ClearRemovesEntriesAndChangesTableGeneration)
-{
-    test::VmTestContext context;
-
-    EXPECT_EQ(Value::True(),
-              context.run_file(L"d = __clover_general_dict()\n"
+              context.run_file(L"d = {}\n"
                                L"d[1] = 'one'\n"
                                L"d[2] = 'two'\n"
                                L"d.clear()\n"
@@ -1656,12 +1283,12 @@ TEST(GeneralDict, ClearRemovesEntriesAndChangesTableGeneration)
                                L"not (2 in d)\n"));
 }
 
-TEST(GeneralDict, SetItemDoesNotReuseTombstoneFilledDuringEquality)
+TEST(Dict, PublicSetItemRevalidatesTombstoneFilledDuringEquality)
 {
     test::VmTestContext context;
 
     EXPECT_EQ(Value::True(),
-              context.run_file(L"d = __clover_general_dict()\n"
+              context.run_file(L"d = {}\n"
                                L"filler = None\n"
                                L"class Tomb:\n"
                                L"    def __hash__(self):\n"
