@@ -424,9 +424,12 @@ namespace cl
                                                  uint32_t receiver_reg,
                                                  uint32_t generation_reg,
                                                  uint32_t hash_idx_reg);
-        Expected<uint32_t> emit_dict_probe_read(uint32_t source_offset,
-                                                uint32_t receiver_reg,
-                                                uint32_t hash_idx_reg);
+        Expected<uint32_t> emit_dict_probe_for_lookup(uint32_t source_offset,
+                                                      uint32_t receiver_reg,
+                                                      uint32_t hash_idx_reg);
+        Expected<uint32_t> emit_dict_probe_for_insert(uint32_t source_offset,
+                                                      uint32_t receiver_reg,
+                                                      uint32_t hash_idx_reg);
         Expected<uint32_t> emit_dict_probe_advance(uint32_t source_offset,
                                                    uint32_t receiver_reg);
         Expected<uint32_t> emit_dict_entry_key(uint32_t source_offset,

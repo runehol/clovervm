@@ -345,8 +345,10 @@ template <> struct fmt::formatter<cl::Bytecode>
                 return format_to(out, "DictPrepareRead");
             case cl::Bytecode::DictProbeStart:
                 return format_to(out, "DictProbeStart");
-            case cl::Bytecode::DictProbeRead:
-                return format_to(out, "DictProbeRead");
+            case cl::Bytecode::DictProbeForLookup:
+                return format_to(out, "DictProbeForLookup");
+            case cl::Bytecode::DictProbeForInsert:
+                return format_to(out, "DictProbeForInsert");
             case cl::Bytecode::DictProbeAdvance:
                 return format_to(out, "DictProbeAdvance");
             case cl::Bytecode::DictEntryKey:
@@ -926,7 +928,8 @@ template <> struct fmt::formatter<cl::CodeObject>
                 disassemble_reg(code_obj, out, pc++);
                 break;
 
-            case cl::Bytecode::DictProbeRead:
+            case cl::Bytecode::DictProbeForLookup:
+            case cl::Bytecode::DictProbeForInsert:
                 format_to(out, " ");
                 disassemble_reg(code_obj, out, pc++);
                 format_to(out, ", ");

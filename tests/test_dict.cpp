@@ -1192,10 +1192,73 @@ TEST(Dict, GeneratedReadMethodsContainProtocolCacheSites)
         EXPECT_NE(std::string::npos, bytecode.find("ToBool"));
         EXPECT_NE(std::string::npos, bytecode.find("DictPrepareRead"));
         EXPECT_NE(std::string::npos, bytecode.find("DictProbeStart"));
-        EXPECT_NE(std::string::npos, bytecode.find("DictProbeRead"));
+        EXPECT_NE(std::string::npos, bytecode.find("DictProbeForLookup"));
         EXPECT_NE(std::string::npos, bytecode.find("DictEntryStillMatches"));
         EXPECT_NE(std::string::npos, bytecode.find("JumpIfEqualSmi"));
     }
+}
+
+TEST(Dict, InsertProbeReadDistinguishesSlotStates)
+{
+    test::VmTestContext context;
+    ThreadState *thread = context.thread();
+    ThreadState::ActivationScope activation_scope(thread);
+
+    Dict *empty_dict = thread->make_object_raw<Dict>();
+    Expected<TValue<SMI>> hash_one_result =
+        thread->hash_value(Value::from_smi(1));
+    ASSERT_FALSE(hash_one_result.has_exception());
+    TValue<SMI> hash_one = hash_one_result.value();
+    TValue<SMI> empty_generation = TValue<SMI>::from_smi(0);
+    size_t empty_hash_idx;
+    TrustedDictBytecodeAccess::probe_start(empty_dict, hash_one,
+                                           &empty_generation, &empty_hash_idx);
+    EXPECT_EQ(TrustedDictBytecodeAccess::InsertProbeEmpty,
+              TrustedDictBytecodeAccess::probe_for_insert(empty_dict, hash_one,
+                                                          empty_hash_idx));
+
+    Dict *dict = thread->make_object_raw<Dict>();
+    Expected<void> inserted =
+        dict->set_item(thread, Value::from_smi(1), Value::None());
+    ASSERT_FALSE(inserted.has_exception());
+
+    TValue<SMI> generation = TValue<SMI>::from_smi(0);
+    size_t hash_idx;
+    TrustedDictBytecodeAccess::probe_start(dict, hash_one, &generation,
+                                           &hash_idx);
+    EXPECT_GE(
+        TrustedDictBytecodeAccess::probe_for_insert(dict, hash_one, hash_idx),
+        0);
+
+    TValue<SMI> colliding_hash = TValue<SMI>::from_smi(0);
+    size_t colliding_hash_idx = 0;
+    bool found_collision = false;
+    for(int64_t candidate = 2; candidate < 1024; ++candidate)
+    {
+        Expected<TValue<SMI>> candidate_hash_result =
+            thread->hash_value(Value::from_smi(candidate));
+        ASSERT_FALSE(candidate_hash_result.has_exception());
+        TValue<SMI> candidate_hash = candidate_hash_result.value();
+        TValue<SMI> candidate_generation = TValue<SMI>::from_smi(0);
+        TrustedDictBytecodeAccess::probe_start(
+            dict, candidate_hash, &candidate_generation, &colliding_hash_idx);
+        if(colliding_hash_idx == hash_idx && candidate_hash != hash_one)
+        {
+            colliding_hash = candidate_hash;
+            found_collision = true;
+            break;
+        }
+    }
+    ASSERT_TRUE(found_collision);
+    EXPECT_EQ(TrustedDictBytecodeAccess::InsertProbeHashMiss,
+              TrustedDictBytecodeAccess::probe_for_insert(dict, colliding_hash,
+                                                          colliding_hash_idx));
+
+    Expected<void> deleted = dict->del_item(thread, Value::from_smi(1));
+    ASSERT_FALSE(deleted.has_exception());
+    EXPECT_EQ(
+        TrustedDictBytecodeAccess::InsertProbeTombstone,
+        TrustedDictBytecodeAccess::probe_for_insert(dict, hash_one, hash_idx));
 }
 
 TEST(Dict, GeneralStringLookupCachesTrustedHashHandler)

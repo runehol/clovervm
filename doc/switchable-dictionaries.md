@@ -366,6 +366,14 @@ One convenient contract is:
 - `DICT_PROBE_EMPTY == -1`
 - `DICT_PROBE_TOMBSTONE == -2`
 
+The implementation keeps lookup and insertion inspection separate so lookup
+does not pay for insertion-only distinctions. `DictProbeForLookup` returns
+`ProbeMiss == -1`, `ProbeContinue == -2`, or a non-negative entry index whose
+stored hash matches. `DictProbeForInsert` instead returns
+`InsertProbeEmpty == -1`, `InsertProbeTombstone == -2`,
+`InsertProbeHashMiss == -3`, or a non-negative matching entry index. Neither
+opcode advances the probe.
+
 This matches the current table representation style and keeps trusted bytecode
 branches cheap. Named constants in trusted source can carry readability; the
 runtime value should remain a small integer.

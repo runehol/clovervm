@@ -4024,7 +4024,7 @@ namespace cl
         COMPLETE();
     }
 
-    static INTERP_CC Value op_dict_probe_read(PARAMS)
+    static INTERP_CC Value op_dict_probe_for_lookup(PARAMS)
     {
         START(3);
         int8_t receiver_reg = pc[1];
@@ -4033,7 +4033,24 @@ namespace cl
         assert(accumulator.is_smi());
         assert(fp[hash_idx_reg].is_smi());
 
-        int64_t result = TrustedDictBytecodeAccess::probe_read(
+        int64_t result = TrustedDictBytecodeAccess::probe_for_lookup(
+            fp[receiver_reg].get_ptr<Dict>(),
+            TValue<SMI>::from_value_unchecked(accumulator),
+            static_cast<size_t>(fp[hash_idx_reg].get_smi()));
+        accumulator = Value::from_smi(result);
+        COMPLETE();
+    }
+
+    static INTERP_CC Value op_dict_probe_for_insert(PARAMS)
+    {
+        START(3);
+        int8_t receiver_reg = pc[1];
+        int8_t hash_idx_reg = pc[2];
+        assert(can_convert_to<Dict>(fp[receiver_reg]));
+        assert(accumulator.is_smi());
+        assert(fp[hash_idx_reg].is_smi());
+
+        int64_t result = TrustedDictBytecodeAccess::probe_for_insert(
             fp[receiver_reg].get_ptr<Dict>(),
             TValue<SMI>::from_value_unchecked(accumulator),
             static_cast<size_t>(fp[hash_idx_reg].get_smi()));
@@ -5913,7 +5930,8 @@ namespace cl
         SET_TABLE_ENTRY(Bytecode::CanonicalizeHash, op_canonicalize_hash);
         SET_TABLE_ENTRY(Bytecode::DictPrepareRead, op_dict_prepare_read);
         SET_TABLE_ENTRY(Bytecode::DictProbeStart, op_dict_probe_start);
-        SET_TABLE_ENTRY(Bytecode::DictProbeRead, op_dict_probe_read);
+        SET_TABLE_ENTRY(Bytecode::DictProbeForLookup, op_dict_probe_for_lookup);
+        SET_TABLE_ENTRY(Bytecode::DictProbeForInsert, op_dict_probe_for_insert);
         SET_TABLE_ENTRY(Bytecode::DictProbeAdvance, op_dict_probe_advance);
         SET_TABLE_ENTRY(Bytecode::DictEntryKey, op_dict_entry_key);
         SET_TABLE_ENTRY(Bytecode::DictEntryValue, op_dict_entry_value);

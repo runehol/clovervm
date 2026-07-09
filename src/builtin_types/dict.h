@@ -327,6 +327,9 @@ namespace cl
         static constexpr int64_t ReadGeneral = 2;
         static constexpr int64_t ProbeMiss = -1;
         static constexpr int64_t ProbeContinue = -2;
+        static constexpr int64_t InsertProbeEmpty = -1;
+        static constexpr int64_t InsertProbeTombstone = -2;
+        static constexpr int64_t InsertProbeHashMiss = -3;
 
         struct PrepareReadResult
         {
@@ -343,8 +346,8 @@ namespace cl
             *generation = probe.table_generation;
             *hash_idx = probe.hash_idx;
         }
-        static int64_t probe_read(const Dict *dict, TValue<SMI> hash,
-                                  size_t hash_idx)
+        static int64_t probe_for_lookup(const Dict *dict, TValue<SMI> hash,
+                                        size_t hash_idx)
         {
             assert(hash_idx < dict->hash_table.size());
             int32_t entry_idx = dict->hash_table[hash_idx];
@@ -360,6 +363,24 @@ namespace cl
                    static_cast<size_t>(entry_idx) < dict->entries.size());
             return dict->entries[entry_idx].hash == hash ? entry_idx
                                                          : ProbeContinue;
+        }
+        static int64_t probe_for_insert(const Dict *dict, TValue<SMI> hash,
+                                        size_t hash_idx)
+        {
+            assert(hash_idx < dict->hash_table.size());
+            int32_t entry_idx = dict->hash_table[hash_idx];
+            if(entry_idx == Dict::not_present)
+            {
+                return InsertProbeEmpty;
+            }
+            if(entry_idx == Dict::tombstone)
+            {
+                return InsertProbeTombstone;
+            }
+            assert(entry_idx >= 0 &&
+                   static_cast<size_t>(entry_idx) < dict->entries.size());
+            return dict->entries[entry_idx].hash == hash ? entry_idx
+                                                         : InsertProbeHashMiss;
         }
         static size_t probe_advance(const Dict *dict, size_t hash_idx)
         {

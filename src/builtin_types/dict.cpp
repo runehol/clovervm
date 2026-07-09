@@ -537,7 +537,7 @@ namespace cl
 
             CL_TRY(probe_loop.resolve());
             CL_TRY(code.emit_ldar(0, hash_reg));
-            CL_TRY(code.emit_dict_probe_read(0, 0, hash_idx_reg));
+            CL_TRY(code.emit_dict_probe_for_lookup(0, 0, hash_idx_reg));
             CL_TRY(code.emit_jump_if_equal_smi(
                 0, TrustedDictBytecodeAccess::ProbeMiss, miss));
             CL_TRY(code.emit_jump_if_equal_smi(
