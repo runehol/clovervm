@@ -1733,7 +1733,7 @@ namespace cl
         ThreadState *thread, Value *&fp, const uint8_t *&pc,
         CodeObject *&code_object, KeywordCallInlineCache &cache,
         int32_t first_arg_reg, uint32_t n_pos_args, int32_t first_kw_value_reg,
-        uint32_t n_kw_args, uint32_t instr_len)
+        uint32_t n_kw_args, uint8_t keyword_names_idx, uint32_t instr_len)
     {
         TValue<Function> fun = TValue<Function>::from_oop(cache.function);
         Value *new_fp = new_frame_pointer_from_first_arg(fp, cache.code_object,
@@ -1780,7 +1780,7 @@ namespace cl
                     has_kwargs))
         {
             Value keyword_names_value =
-                code_object->constant_table[pc[6]].value();
+                code_object->constant_table[keyword_names_idx].value();
             TValue<Tuple> keyword_names =
                 TValue<Tuple>::from_value_assumed(keyword_names_value);
             assert(keyword_names.extract()->size() == n_kw_args);
@@ -4719,7 +4719,7 @@ namespace cl
 
         enter_function_frame_from_keyword_args(
             thread, fp, pc, code_object, cache, first_arg_reg, n_pos_args,
-            first_kw_value_reg, n_kw_args, call_instr_len);
+            first_kw_value_reg, n_kw_args, keyword_names_idx, call_instr_len);
         if(unlikely(thread->safepoint_requested()))
         {
             MUSTTAIL return op_committed_safepoint_slow(ARGS);
@@ -4737,6 +4737,7 @@ namespace cl
         uint8_t n_pos_args = pc[3];
         int8_t first_kw_value_reg = pc[4];
         uint8_t n_kw_args = pc[5];
+        uint8_t keyword_names_idx = pc[6];
         uint8_t cache_idx = pc[7];
         Value fun = fp[callable_reg];
         KeywordCallInlineCache &cache =
@@ -4749,7 +4750,7 @@ namespace cl
 
         enter_function_frame_from_keyword_args(
             thread, fp, pc, code_object, cache, first_arg_reg, n_pos_args,
-            first_kw_value_reg, n_kw_args, call_instr_len);
+            first_kw_value_reg, n_kw_args, keyword_names_idx, call_instr_len);
         if(unlikely(thread->safepoint_requested()))
         {
             MUSTTAIL return op_committed_safepoint_slow(ARGS);
@@ -4947,7 +4948,7 @@ namespace cl
             fp, receiver_reg, n_user_pos_args, self);
         enter_function_frame_from_keyword_args(
             thread, fp, pc, code_object, call_cache, first_arg_reg, n_pos_args,
-            first_kw_value_reg, n_kw_args, call_instr_len);
+            first_kw_value_reg, n_kw_args, keyword_names_idx, call_instr_len);
         if(unlikely(thread->safepoint_requested()))
         {
             MUSTTAIL return op_committed_safepoint_slow(ARGS);
@@ -4966,6 +4967,7 @@ namespace cl
         uint32_t n_user_pos_args = uint8_t(pc[5]);
         int8_t first_kw_value_reg = pc[6];
         uint8_t n_kw_args = pc[7];
+        uint8_t keyword_names_idx = pc[8];
         Value receiver = fp[receiver_reg];
         AttributeReadInlineCache &attr_cache =
             code_object->attribute_read_caches[read_cache_idx];
@@ -4998,7 +5000,7 @@ namespace cl
             fp, receiver_reg, n_user_pos_args, self);
         enter_function_frame_from_keyword_args(
             thread, fp, pc, code_object, call_cache, first_arg_reg, n_pos_args,
-            first_kw_value_reg, n_kw_args, call_instr_len);
+            first_kw_value_reg, n_kw_args, keyword_names_idx, call_instr_len);
         if(unlikely(thread->safepoint_requested()))
         {
             MUSTTAIL return op_committed_safepoint_slow(ARGS);

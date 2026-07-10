@@ -1271,6 +1271,8 @@ namespace cl
                 thread, "initializing trusted builtins.py");
         }
 
+        install_dict_python_methods(this);
+
         TValue<String> membership_iter_fallback_name =
             get_or_create_interned_string_value(
                 L"__clover_iter_membership_fallback");

@@ -1193,6 +1193,15 @@ TEST(Interpreter, function_varargs_and_kwargs_collect_independently)
     EXPECT_EQ(Value::from_smi(124), file_runner.return_value);
 }
 
+TEST(Interpreter, bound_method_kwargs_collect_explicit_keywords)
+{
+    test::FileRunner file_runner(L"class C:\n"
+                                 L"    def f(self, **kwargs):\n"
+                                 L"        return kwargs['x']\n"
+                                 L"C().f(x=7)\n");
+    EXPECT_EQ(Value::from_smi(7), file_runner.return_value);
+}
+
 TEST(Interpreter, class_constructor_accepts_keyword_calls)
 {
     test::FileRunner file_runner(L"class C:\n"

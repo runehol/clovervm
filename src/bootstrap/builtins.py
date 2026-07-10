@@ -159,6 +159,47 @@ If the iterable is empty, return True."""
     return True
 
 
+def __clover_dict_update(self, *args, **kwargs):
+    if not isinstance(self, dict):
+        raise TypeError
+    if len(args) > 1:
+        raise TypeError
+    if len(args) == 1:
+        source = args[0]
+        if hasattr(source, "keys"):
+            for key in source.keys():
+                self[key] = source[key]
+        else:
+            for element in source:
+                element_iterator = iter(element)
+                try:
+                    key = next(element_iterator)
+                    value = next(element_iterator)
+                except StopIteration:
+                    raise ValueError
+                try:
+                    next(element_iterator)
+                except StopIteration:
+                    self[key] = value
+                else:
+                    raise ValueError
+    for key in kwargs.keys():
+        self[key] = kwargs[key]
+
+
+def __clover_dict_new(cls, *args, **kwargs):
+    if cls is not dict:
+        raise TypeError
+    if len(args) == 0:
+        return kwargs
+    if len(args) > 1:
+        raise TypeError
+    result = {}
+    result.update(args[0])
+    result.update(kwargs)
+    return result
+
+
 def __clover_iter_membership_fallback(container, needle):
     for item in container:
         if item == needle:

@@ -1440,18 +1440,18 @@ Stage invariants:
 
 ### 12. Deferred Mapping Compatibility
 
-- [ ] Implement `dict.update` for mappings, iterables of pairs, and keyword
+- [x] Implement `dict.update` for mappings, iterables of pairs, and keyword
   arguments with CPython-compatible validation and exception behavior.
-- [ ] Implement `dict.fromkeys` for general iterables and class-aware
-  construction once native builtin subtype construction is available.
-- [ ] Implement remaining constructor population forms through semantic
-  insertion.
-- [ ] Add tests for malformed update elements, `update(None)`, hash/equality
+- [x] Implement exact builtin `dict` constructor population forms through
+  private Python bootstrap functions and semantic insertion.
+- [x] Add tests for malformed update elements, `update(None)`, hash/equality
   exceptions, duplicate/equal keys, and evaluation order.
 
-This stage is separate from representation switching. If native dict subtypes
-remain unavailable, subclass-specific constructor behavior stays deferred to
-the native subtype plan rather than being approximated here.
+`dict.fromkeys` remains deferred until classmethod descriptors exist, so class
+and instance access do not acquire inconsistent binding behavior. Native dict
+subtypes and subclass-specific construction remain in the native subtype plan.
+Exact dict construction is new-only in CloverVM: the private Python `__new__`
+performs population and no `dict.__init__` method is installed.
 
 ### 13. Cleanup, Performance, And Stdlib Unblock
 

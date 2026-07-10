@@ -1132,6 +1132,160 @@ TEST(Dict, SemanticApiUpdatePromotesFromNonStringSourceKey)
     EXPECT_EQ(Value::from_smi(11), entry.value);
 }
 
+TEST(Dict, PublicUpdateAcceptsMappingsPairIterablesAndKeywords)
+{
+    test::VmTestContext context;
+
+    EXPECT_EQ(Value::True(),
+              context.run_file(L"class Mapping:\n"
+                               L"    def keys(self):\n"
+                               L"        return ['mapped']\n"
+                               L"    def __getitem__(self, key):\n"
+                               L"        return 1\n"
+                               L"d = {}\n"
+                               L"d.update(Mapping())\n"
+                               L"d.update([['paired', 2]], keyword=3)\n"
+                               L"len(d) == 3 and d['mapped'] == 1 and "
+                               L"d['paired'] == 2 and d['keyword'] == 3\n"));
+}
+
+TEST(Dict, PublicDictConstructorAcceptsMappingsPairIterablesAndKeywords)
+{
+    test::VmTestContext context;
+
+    EXPECT_EQ(Value::True(),
+              context.run_file(L"class Mapping:\n"
+                               L"    def keys(self):\n"
+                               L"        return ['mapped']\n"
+                               L"    def __getitem__(self, key):\n"
+                               L"        return 1\n"
+                               L"mapped = dict(Mapping(), keyword=2)\n"
+                               L"paired = dict([['paired', 3]], keyword=4)\n"
+                               L"len(mapped) == 2 and mapped['mapped'] == 1 "
+                               L"and mapped['keyword'] == 2 and "
+                               L"len(paired) == 2 and paired['paired'] == 3 "
+                               L"and paired['keyword'] == 4\n"));
+}
+
+TEST(Dict, PublicUpdateProcessesPositionalInputBeforeKeywords)
+{
+    test::VmTestContext context;
+
+    EXPECT_EQ(Value::True(),
+              context.run_file(L"d = {}\n"
+                               L"d.update([['b', 1], ['a', 0]], a=2)\n"
+                               L"str(d) == \"{'b': 1, 'a': 2}\"\n"));
+}
+
+TEST(Dict, PublicUpdateEvaluatesCallArgumentsBeforeReadingMapping)
+{
+    test::VmTestContext context;
+
+    EXPECT_EQ(Value::True(),
+              context.run_file(L"events = []\n"
+                               L"def keyword_value():\n"
+                               L"    events.append('keyword')\n"
+                               L"    return 2\n"
+                               L"class Mapping:\n"
+                               L"    def keys(self):\n"
+                               L"        events.append('keys')\n"
+                               L"        return ['mapped']\n"
+                               L"    def __getitem__(self, key):\n"
+                               L"        events.append('getitem')\n"
+                               L"        return 1\n"
+                               L"d = {}\n"
+                               L"d.update(Mapping(), keyword=keyword_value())\n"
+                               L"len(events) == 3 and "
+                               L"events[0] == 'keyword' and "
+                               L"events[1] == 'keys' and "
+                               L"events[2] == 'getitem'\n"));
+}
+
+TEST(Dict, PublicUpdateRejectsInvalidInputs)
+{
+    const wchar_t *expressions[] = {
+        L"{}.update(None)\n", L"{}.update([], [])\n",
+        L"{}.update([['only-one']])\n", L"{}.update([['one', 2, 'three']])\n"};
+    const wchar_t *exception_names[] = {L"TypeError", L"TypeError",
+                                        L"ValueError", L"ValueError"};
+    const wchar_t *messages[] = {L"object is not iterable", L"", L"", L""};
+
+    for(size_t idx = 0; idx < std::size(expressions); ++idx)
+    {
+        test::VmTestContext context;
+        Value result = context.run_file(expressions[idx]);
+        EXPECT_TRUE(result.is_exception_marker());
+        expect_pending_exception(context.thread(), exception_names[idx],
+                                 messages[idx]);
+    }
+}
+
+TEST(Dict, PublicDictConstructorRejectsInvalidInputs)
+{
+    const wchar_t *expressions[] = {L"dict(None)\n", L"dict([], [])\n"};
+    const wchar_t *messages[] = {L"object is not iterable", L""};
+
+    for(size_t idx = 0; idx < std::size(expressions); ++idx)
+    {
+        test::VmTestContext context;
+        Value result = context.run_file(expressions[idx]);
+        EXPECT_TRUE(result.is_exception_marker());
+        expect_pending_exception(context.thread(), L"TypeError", messages[idx]);
+    }
+}
+
+TEST(Dict, PublicUpdatePropagatesInsertionExceptions)
+{
+    test::VmTestContext context;
+
+    Value result = context.run_file(L"class BadHash:\n"
+                                    L"    def __hash__(self):\n"
+                                    L"        raise ValueError\n"
+                                    L"{}.update([[BadHash(), 1]])\n");
+    EXPECT_TRUE(result.is_exception_marker());
+    expect_pending_exception(context.thread(), L"ValueError", L"");
+}
+
+TEST(Dict, PublicUpdatePropagatesEqualityExceptions)
+{
+    test::VmTestContext context;
+
+    Value result = context.run_file(L"class Stored:\n"
+                                    L"    def __hash__(self):\n"
+                                    L"        return 7\n"
+                                    L"    def __eq__(self, other):\n"
+                                    L"        raise ValueError\n"
+                                    L"class Probe:\n"
+                                    L"    def __hash__(self):\n"
+                                    L"        return 7\n"
+                                    L"d = {}\n"
+                                    L"d[Stored()] = 1\n"
+                                    L"d.update([[Probe(), 2]])\n");
+    EXPECT_TRUE(result.is_exception_marker());
+    expect_pending_exception(context.thread(), L"ValueError", L"");
+}
+
+TEST(Dict, PublicUpdateMergesEqualKeys)
+{
+    test::VmTestContext context;
+
+    EXPECT_EQ(Value::True(),
+              context.run_file(L"d = {}\n"
+                               L"d.update([[1, 'one'], [True, 'true']])\n"
+                               L"len(d) == 1 and d[1] == 'true'\n"));
+}
+
+TEST(Dict, PythonDictBootstrapHelpersAreHidden)
+{
+    test::VmTestContext context;
+
+    EXPECT_EQ(Value::False(),
+              context.run_file(L"hasattr(__import__('builtins'), "
+                               L"'__clover_dict_update') or "
+                               L"hasattr(__import__('builtins'), "
+                               L"'__clover_dict_new')\n"));
+}
+
 TEST(Dict, PublicUpdatePromotesFromNonStringSourceKey)
 {
     test::VmTestContext context;

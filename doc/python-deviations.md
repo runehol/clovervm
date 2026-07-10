@@ -71,6 +71,24 @@ To close: teach class calls to handle the combined custom `__new__` plus
 `__init__` protocol, including non-instance returns and conditional `__init__`
 dispatch.
 
+### `dict` construction is implemented by `__new__` only
+
+CPython's `dict.__new__` allocates an empty dictionary and `dict.__init__`
+populates it. CloverVM's exact builtin `dict` instead installs a private
+Python-backed `__new__` that accepts mapping, iterable-of-pairs, and keyword
+inputs and returns the populated dictionary. It does not install
+`dict.__init__`.
+
+Consequently, direct calls to `dict.__new__` return populated dictionaries and
+direct reinitialization through `dict.__init__` is unavailable. Ordinary
+`dict(...)` construction preserves positional-input-before-keyword ordering.
+
+Reason: CloverVM's constructor thunks support new-only construction directly,
+while the combined `__new__`/`__init__` protocol remains incomplete.
+
+To close: implement the full combined constructor protocol, then restore the
+CPython allocation/population split.
+
 ## Methods And Attribute Access
 
 ### `obj.method` does not produce a bound method object

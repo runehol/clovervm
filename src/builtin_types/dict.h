@@ -471,6 +471,7 @@ namespace cl
     BuiltinClassDefinition make_dict_class(VirtualMachine *vm);
     void install_dict_class_methods(VirtualMachine *vm,
                                     ClassObject *type_error_class);
+    void install_dict_python_methods(VirtualMachine *vm);
 
 };  // namespace cl
 

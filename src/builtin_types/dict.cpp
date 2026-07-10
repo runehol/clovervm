@@ -6,6 +6,7 @@
 #include "builtin_types/tuple.h"
 #include "bytecode/code_object_builder.h"
 #include "compiler/scope.h"
+#include "import_system/module_global.h"
 #include "object_model/class_object.h"
 #include "object_model/function.h"
 #include "object_model/native_function.h"
@@ -1163,6 +1164,47 @@ namespace cl
                     make_single_default(vm, Value::None())));
 
         cls->set_shape(cls->get_shape()->clone_with_flags(class_shape_flags));
+    }
+
+    void install_dict_python_methods(VirtualMachine *vm)
+    {
+        ModuleObject *builtins = vm->global_builtins_module().extract();
+        ClassObject *dict_class = vm->dict_class();
+        assert(dict_class->current_mro_shape_and_contents_validity_cell() ==
+               nullptr);
+        assert(
+            dict_class
+                ->current_mro_shape_and_metaclass_mro_shape_and_contents_validity_cell() ==
+            nullptr);
+        assert(
+            dict_class->attached_mro_shape_and_contents_validity_cell_count() ==
+            0);
+        assert(dict_class->current_constructor_thunk() == nullptr);
+        const wchar_t *method_names[] = {L"update", L"__new__"};
+        const wchar_t *helper_names[] = {L"__clover_dict_update",
+                                         L"__clover_dict_new"};
+
+        for(size_t idx = 0; idx < std::size(method_names); ++idx)
+        {
+            TValue<String> helper_name =
+                vm->get_or_create_interned_string_value(helper_names[idx]);
+            Value function = builtins->get_own_property(helper_name);
+            if(!can_convert_to<Function>(function))
+            {
+                fatal("trusted builtins.py did not define dict method");
+            }
+
+            TValue<String> method_name =
+                vm->get_or_create_interned_string_value(method_names[idx]);
+            StorageLocation location =
+                dict_class->get_shape()->resolve_present_property(method_name);
+            assert(location.is_found());
+            dict_class->write_storage_location(location, function);
+            if(!delete_module_global(builtins, helper_name))
+            {
+                fatal("failed to hide Python dict method from builtins");
+            }
+        }
     }
 
     TValue<Dict> Dict::copy() const { return make_object_value<Dict>(*this); }
