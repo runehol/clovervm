@@ -222,6 +222,74 @@ Disposition:
 
 Open.
 
+### CVR-012: Inherited constructor changes leave stale derived thunks
+
+- Severity: P1
+- Status: open
+- Review unit: R5
+- Found at: `ea912bc`
+- Affected code: `src/object_model/class_object.cpp:680`,
+  `src/object_model/class_object.cpp:717`
+- Affected tests: none
+
+Invariant or semantic rule:
+
+A derived class's construction behavior and accepted call signature must follow
+the current `__new__` and `__init__` resolved through its MRO. Mutating an
+inherited constructor method must invalidate both the call cache and the
+generated constructor thunk that captured the old method.
+
+Reachable path:
+
+After `D()` creates a constructor thunk from `B.__init__` or `B.__new__`, a
+write to the method on `B` invalidates `D`'s MRO validity cell. On the next
+call, `create_constructor_thunk_slow()` first creates a fresh valid cell, then
+returns the existing `D.constructor_thunk` merely because that new cell is
+valid. The old thunk is not associated with the invalidated cell. Constructor
+thunks are cleared for contents mutations on the class itself, but not when an
+attached base invalidates a derived class's MRO cell.
+
+Observable impact:
+
+Derived classes continue calling replaced or deleted inherited constructors,
+ignore newly added inherited constructors, and retain stale accepted argument
+shapes. Ordinary method lookup observes the mutation correctly; class calls do
+not.
+
+Evidence and reproduction:
+
+A base `B.__init__` that sets `self.x = 1` and derived `D(B)` first produce
+`D().x == 1`. After assigning a replacement `B.__init__` that sets `x = 2`,
+CloverVM still produces `D().x == 1`; CPython produces `2`. Replacing an
+inherited `__new__` that returns `1` with one that returns `2` likewise leaves
+`D()` returning `1`. Adding `B.__init__(self, x)` after the first `D()` also
+leaves `D(x)` incorrectly rejecting the argument.
+
+Disproof attempts:
+
+The review confirmed that base mutation does invalidate the derived MRO cell
+and makes the class-call inline cache miss. Ordinary inherited method reads,
+replacement by a non-callable, class-chain writes and deletes, multiple
+inheritance lookup, and `SlotDict` mutation paths all observed invalidation.
+The stale state is isolated to reuse of the generated constructor thunk.
+
+Recommended fix boundary:
+
+Tie each constructor thunk to the validity cell under which its `__new__` and
+`__init__` lookup was resolved, or clear the derived thunk when that dependency
+is invalidated. Rebuild before pairing a thunk with a newly created cell. Add
+interpreter tests for inherited constructor add, replace, and delete across
+both `__init__` and `__new__`, including signature changes.
+
+Verification:
+
+Confirmed with direct CloverVM and CPython reproductions. No fix has been
+implemented.
+
+Disposition:
+
+Open.
+
 ### CVR-001: Slab allocation advances beyond its mapped extent
 
 - Severity: P2
@@ -900,6 +968,44 @@ Use this template:
   Packed 16-bit reads remain isolated in a target-specific primitive that must
   be replaced when bringing CloverVM to a target without suitable unaligned
   access support.
+
+### R5: Object Model, Attributes, Shapes, And Caches At `ea912bc`
+
+- Scope: instance and class attribute lookup, descriptor classification and
+  precedence, attribute writes and deletes, shape transitions and overflow
+  storage, MRO and contents validity cells, attribute inline-cache replay,
+  `__class__` reassignment, class calls, generated constructor thunks, and
+  adjacent class/metaclass behavior.
+- Design documents read: `descriptor-execution.md`, `object-model.md`,
+  `builtin-object-model.md`, `python-deviations.md`, and the object-model
+  priorities in `development-priorities.md`.
+- Code and tests reviewed: `object_model/attr.cpp`, attribute descriptors and
+  caches, shapes and validity cells, `object.cpp`, `class_object.cpp`,
+  constructor-thunk generation, attribute and class-call interpreter handlers,
+  and focused attribute, shape, method, and interpreter tests.
+- Confirmed findings: CVR-012.
+- Investigations: none.
+- Verification commands: focused attribute/method tests; direct CloverVM and
+  CPython inherited-constructor differential probes; cached class read,
+  deletion, `__class__` reassignment, and allocation-gap probes; ASan+UBSan
+  stress across 100,000 class mutations and allocations; and
+  `ninja -C build-debug all check`.
+- Verification result: direct probes reproduced CVR-012 for inherited
+  `__init__`, inherited `__new__`, and post-cache signature changes. Focused
+  lookup tests passed, mutation/cache stress passed under ASan+UBSan, and the
+  final debug gate passed all enabled tests.
+- Unreviewed edges: descriptor `__get__`, `__set__`, and `__delete__`
+  execution, custom `__getattribute__`/`__getattr__`, custom-metaclass Python
+  construction, complete `type` behavior, and some `__bases__` mutation paths
+  are documented incomplete features rather than implemented R5 surfaces.
+- Residual risk: class-object lookup currently searches the class MRO before
+  the metaclass MRO, so a metaclass data descriptor cannot win as Python
+  requires; this is latent because custom metaclasses are not Python-
+  constructible yet. Attribute-cache payloads are non-owning pointers; stress
+  found no lifetime failure, but an every-safepoint reclamation test for a
+  dormant invalidated cache would strengthen the proof. Instance `__dict__`
+  and class `__dict__` intentionally use live `SlotDict` views rather than
+  CPython's exact exposure model.
 
 ## Resolved And Rejected Index
 
