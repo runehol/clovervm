@@ -422,6 +422,504 @@ Disposition:
 
 Open.
 
+### CVR-015: Cyclic container representation overflows the native stack
+
+- Severity: P1
+- Status: open
+- Review unit: R7
+- Found at: `e2c5c3b`
+- Affected code: `src/builtin_types/dict.cpp:150`,
+  `src/builtin_types/list.cpp:18`, `src/builtin_types/tuple.cpp:18`,
+  `src/builtin_types/string_builder.cpp:20`
+- Affected tests: none
+
+Invariant or semantic rule:
+
+Representing recursive builtin containers must terminate using Python's
+recursion markers. A supported cyclic object graph must not recursively consume
+the native stack.
+
+Reachable path:
+
+Dict, list, and tuple representation recursively append each contained value's
+representation through `StringBuilder::append_repr()`. No active-container set
+or equivalent recursion guard detects that the same container is already being
+formatted.
+
+Observable impact:
+
+`repr()` or `print()` on a directly or indirectly cyclic builtin container
+overflows the native stack and terminates the process. CPython renders recursive
+positions as `{...}` or `[...]`.
+
+Evidence and reproduction:
+
+Both `d = {}; d['x'] = d; repr(d)` and
+`a = []; a.append(a); repr(a)` exit with status 139 in CloverVM. CPython returns
+`{'x': {...}}` and `[[...]]`. Indirect tuple/list cycles reach the same path.
+ASan identifies native stack overflow through repeated representation calls.
+
+Disproof attempts:
+
+The review checked `StringBuilder`, individual container implementations, and
+the general repr dispatch for an existing recursion sentinel or thread-local
+active-object guard; none exists. This is distinct from CVR-014 because no
+recursive Python function call is involved.
+
+Recommended fix boundary:
+
+Add an exception-safe per-thread representation recursion guard keyed by object
+identity, with container-specific recursion markers, and cover direct and
+indirect cycles plus cleanup after an element repr raises.
+
+Verification:
+
+Confirmed in debug, release, and ASan+UBSan against CPython. No fix has been
+implemented.
+
+Disposition:
+
+Open.
+
+### CVR-016: Sequence search methods compare identity instead of equality
+
+- Severity: P2
+- Status: open
+- Review unit: R7
+- Found at: `e2c5c3b`
+- Affected code: `src/builtin_types/list.cpp:516`,
+  `src/builtin_types/tuple.cpp:376`
+- Affected tests: none
+
+Invariant or semantic rule:
+
+`list.count`, `list.index`, `list.remove`, `tuple.count`, and `tuple.index` use
+Python equality for each candidate. Equality calls may return true for distinct
+representations, raise exceptions, or mutate observable state.
+
+Reachable path:
+
+The installed search methods compare stored `Value` handles directly. They do
+not dispatch `==`, so only identical encodings match and user `__eq__` methods
+are never called.
+
+Observable impact:
+
+`[True].count(1)` and `(True,).count(1)` return `0` rather than `1`;
+corresponding `index` and `remove` operations raise `ValueError`. Distinct
+objects that compare equal are missed, and equality exceptions or side effects
+are suppressed.
+
+Evidence and reproduction:
+
+Direct CloverVM probes reproduced incorrect `count`, `index`, and `remove`
+results for `True` versus `1`; CPython treats them as equal. Inspection confirms
+raw handle comparison in every affected installed method.
+
+Disproof attempts:
+
+Primitive identity is not an accepted fast path without a semantic equality
+fallback: bool and SMI already demonstrate different handles with equal Python
+values. General membership dispatch uses Python equality and therefore does not
+justify the search-method implementation.
+
+Recommended fix boundary:
+
+Route candidate comparison through the existing fallible equality protocol,
+propagate exceptions, and define mutation-safe iteration behavior matching the
+sequence method contract. Add primitive cross-type and custom-`__eq__` tests.
+
+Verification:
+
+Confirmed with CloverVM and CPython probes. No fix has been implemented.
+
+Disposition:
+
+Open.
+
+### CVR-017: Unicode case conversion loses expanding mappings
+
+- Severity: P2
+- Status: open
+- Review unit: R7
+- Found at: `e2c5c3b`
+- Affected code: `src/builtin_types/str.cpp:753`
+- Affected tests: none
+
+Invariant or semantic rule:
+
+Python string case conversion follows Unicode mappings, including mappings that
+expand one code point into multiple code points. The output length need not
+equal the input length.
+
+Reachable path:
+
+`str.upper()` and `str.lower()` transform one `cl_wchar` at a time into one
+output element using locale wide-character helpers. That representation cannot
+emit expanding Unicode mappings.
+
+Observable impact:
+
+Common non-ASCII strings receive incorrect results: `"ß".upper()` remains
+`"ß"` rather than `"SS"`, `"Straße".upper()` produces `"STRAßE"`, and
+`"İ".lower()` loses the combining dot required by Python's Unicode mapping.
+
+Evidence and reproduction:
+
+Direct CloverVM and CPython probes reproduced each differing result. The fixed
+one-input/one-output loop structurally cannot represent the expected strings.
+
+Disproof attempts:
+
+No later normalization or expansion phase exists. These methods are installed
+as supported string operations and the behavior is not recorded as an
+intentional deviation.
+
+Recommended fix boundary:
+
+Use a deterministic Unicode case-mapping table or library that supports full
+mappings and allocate output for expansion. Pin locale-independent ASCII and
+multi-code-point Unicode cases.
+
+Verification:
+
+Confirmed with differential probes. No fix has been implemented.
+
+Disposition:
+
+Open.
+
+### CVR-018: Float floor division mishandles underflowed negative quotients
+
+- Severity: P2
+- Status: open
+- Review unit: R7
+- Found at: `e2c5c3b`
+- Affected code: `src/builtin_types/float.cpp:214`,
+  `src/builtin_types/float.cpp:230`
+- Affected tests: none
+
+Invariant or semantic rule:
+
+Float floor division and modulo must preserve Python's coupled quotient and
+remainder sign rules even when the mathematical quotient is too small for a
+nonzero binary floating-point result.
+
+Reachable path:
+
+Normal and reflected float floor division compute `std::floor(left / right)`
+directly. A tiny negative quotient can underflow to negative zero before
+`floor`, yielding `-0.0` instead of the required `-1.0`, while the modulo path
+still returns a positive divisor-signed remainder.
+
+Observable impact:
+
+Floor division returns the wrong numeric result and becomes inconsistent with
+the corresponding modulo result.
+
+Evidence and reproduction:
+
+For `a = -8.122808264515302e-272` and
+`b = 7.866340851152702e98`, CPython produces `a // b == -1.0` and
+`a % b == b`; CloverVM produces `-0.0` and the same positive remainder.
+
+Disproof attempts:
+
+Integer and BigInt differential fuzzing found no analogous division/modulo
+errors. Directed mixed numeric, signed modulo, power, bool-as-int, and shift
+probes passed. The reflected float implementation repeats the same direct
+division and is affected symmetrically.
+
+Recommended fix boundary:
+
+Derive quotient and remainder with one Python-compatible float divmod helper,
+including sign adjustment and underflow handling, and share it across normal
+and reflected floor division/modulo methods.
+
+Verification:
+
+Confirmed with CloverVM and CPython. No fix has been implemented.
+
+Disposition:
+
+Open.
+
+### CVR-019: Exception handler targets remain bound after exit
+
+- Severity: P2
+- Status: open
+- Review unit: R8
+- Found at: `e2c5c3b`
+- Affected code: `src/compiler/codegen.cpp:2159`,
+  `src/compiler/codegen.cpp:2203`
+- Affected tests: none
+
+Invariant or semantic rule:
+
+Python implicitly deletes the name bound by `except ... as name` when the
+handler exits, including when that name had a prior binding. Cleanup must occur
+on normal and nonlocal exits to preserve visible scope semantics and break
+exception/traceback cycles.
+
+Reachable path:
+
+Handler lowering drains and stores the active exception into the target, emits
+the body, then transfers directly to common completion. Neither the ordinary
+nor saved-original-exception branch emits deletion of the handler target.
+
+Observable impact:
+
+The caught exception remains visible after the handler. A previous binding is
+left replaced by the exception rather than becoming unbound, and the retained
+reference defeats Python's cycle-breaking cleanup rule.
+
+Evidence and reproduction:
+
+After `try: raise ValueError` and `except ValueError as e: pass`, CloverVM
+prints `e`; CPython raises `NameError`. The same difference occurs when `e` was
+assigned before the `try`.
+
+Disproof attempts:
+
+The review traced typed and bare handlers, saved exception registers, handler
+completion, and cleanup contexts. No later delete runs. Existing finally and
+nonlocal-control-flow coverage does not implement target cleanup implicitly.
+
+Recommended fix boundary:
+
+Lower the handler binding as an implicit cleanup region that clears and deletes
+the name on normal completion, `return`, `break`, `continue`, and exceptional
+exit. Add local, global, prior-binding, nested-handler, and nonlocal-exit tests.
+
+Verification:
+
+Confirmed with CloverVM and CPython. No fix has been implemented.
+
+Disposition:
+
+Open.
+
+### CVR-020: Parenthesized assignment expressions are rejected
+
+- Severity: P2
+- Status: open
+- Review unit: R8
+- Found at: `e2c5c3b`
+- Affected code: `src/compiler/parser.cpp:637`,
+  `src/compiler/parser.cpp:698`, `src/compiler/parser.cpp:1268`
+- Affected tests: none
+
+Invariant or semantic rule:
+
+Where assignment expressions are supported, parenthesized named expressions
+are valid expression atoms and may appear on assignment right-hand sides and
+as call arguments.
+
+Reachable path:
+
+Parenthesized content is parsed through `genexp()` and ordinary `expression()`.
+Only `named_expression()` recognizes `NAME := value`, so the colon-equals token
+is left unconsumed before the parser requires the closing parenthesis.
+
+Observable impact:
+
+Valid programs such as `x = (y := 4)` and `print((x := 3), x)` fail with
+`SyntaxError: Expected token RPAR, got COLONEQUAL`, despite assignment
+expressions working in CloverVM condition contexts.
+
+Evidence and reproduction:
+
+CPython executes both programs and exposes the assigned values. CloverVM
+rejects both, while `if x := 3: print(x)` succeeds, demonstrating a grammar hole
+inside an implemented syntax feature.
+
+Disproof attempts:
+
+Assignment-expression AST and codegen support exist, and the construct is not
+listed as intentionally unsupported. The failure occurs before AST creation,
+specifically at the parenthesized grammar route.
+
+Recommended fix boundary:
+
+Use the named-expression grammar at parenthesized expression positions while
+preserving generator-expression and tuple disambiguation. Add assignments,
+calls, nesting, and invalid-unparenthesized-context parser/interpreter tests.
+
+Verification:
+
+Confirmed with CloverVM and CPython parser/runtime probes. No fix has been
+implemented.
+
+Disposition:
+
+Open.
+
+### CVR-021: Star import converts missing exported attributes to ImportError
+
+- Severity: P2
+- Status: open
+- Review unit: R9
+- Found at: `e2c5c3b`
+- Affected code: `src/import_system/import_system.cpp:731`
+- Affected tests: none
+
+Invariant or semantic rule:
+
+After `from module import *` obtains `module.__all__`, each listed name is an
+attribute retrieval. A missing listed attribute raises `AttributeError`, unlike
+an explicit `from module import name` failure.
+
+Reachable path:
+
+Star import loops over `__all__` but reuses `import_from()`, whose explicit
+from-import contract converts a missing attribute into `ImportError`.
+
+Observable impact:
+
+Modules with a stale or dynamic `__all__` expose the wrong exception type and
+message to importers, preventing callers from distinguishing a broken export
+list from an unavailable explicit import.
+
+Evidence and reproduction:
+
+Setting an existing module's `__all__` to `("nope",)` and executing
+`from module import *` raises `ImportError` in CloverVM and `AttributeError` in
+CPython.
+
+Disproof attempts:
+
+This does not depend on package child-import fallback and is distinct from
+CVR-002. The module is already loaded and the missing name is purely an
+attribute named by `__all__`.
+
+Recommended fix boundary:
+
+Give star import a direct attribute-fetch path that preserves `AttributeError`
+while retaining explicit-from conversion in `import_from()`. Add present,
+missing, and raising-attribute `__all__` tests.
+
+Verification:
+
+Confirmed with differential import probes. No fix has been implemented.
+
+Disposition:
+
+Open.
+
+### CVR-022: Relative import ignores the module spec parent fallback
+
+- Severity: P2
+- Status: open
+- Review unit: R9
+- Found at: `e2c5c3b`
+- Affected code: `src/runtime/virtual_machine.cpp:325`
+- Affected tests: none
+
+Invariant or semantic rule:
+
+Explicit relative import derives package context from `globals['__package__']`
+when valid and falls back to `globals['__spec__'].parent` when the package value
+is `None`. The spec is the modern source of import metadata.
+
+Reachable path:
+
+The builtin import implementation reads only `__package__` and immediately
+raises `ImportError` when it is `None`, without consulting a valid module spec.
+
+Observable impact:
+
+Relative imports fail in module globals whose package field was cleared or
+otherwise left `None` even though their spec identifies the correct parent.
+
+Evidence and reproduction:
+
+Calling `__import__` at level one with globals containing
+`__package__ = None` and a real imported module's `__spec__` succeeds and
+returns the sibling in CPython. CloverVM raises
+`ImportError: attempted relative import with no known parent package`.
+
+Disproof attempts:
+
+The reviewed `ModuleSpecObject` stores parent metadata, and the import design
+explicitly names spec parent as the modern source of truth. The failure occurs
+before module search, so finder or `sys.modules` behavior cannot repair it.
+
+Recommended fix boundary:
+
+Implement the documented metadata precedence and validation for package/spec
+fallback, then retain older `__name__`/`__path__` behavior only to the extent
+explicitly chosen. Add direct builtin-hook and ordinary relative-import tests.
+
+Verification:
+
+Confirmed with CloverVM and CPython. No fix has been implemented.
+
+Disposition:
+
+Open.
+
+### CVR-023: Public value APIs mishandle propagated error handles
+
+- Severity: P2
+- Status: open
+- Review unit: R9
+- Found at: `e2c5c3b`
+- Affected code: `src/api/extension_api.cpp:250`,
+  `src/api/extension_api.cpp:271`, `src/api/extension_api.cpp:301`,
+  `src/api/extension_api.cpp:338`, `src/api/extension_api.cpp:365`,
+  `src/api/extension_api.cpp:386`
+- Affected tests: none
+
+Invariant or semantic rule:
+
+The public error-marker handle is a sanctioned propagation value. Passing it
+through another C API value consumer must return failure without replacing the
+pending exception or treating two markers as ordinary identical values.
+
+Reachable path:
+
+Tuple size/item, string conversion, float conversion, and integer conversion
+directly unwrap and type-check handles, so an error marker overwrites the
+original exception with a conversion `TypeError`. `clover_is` directly compares
+the marker values and returns success, including when both arguments are the
+same propagated error marker.
+
+Observable impact:
+
+Native extension code that chains a failed helper result into another public
+API loses the original exception or receives a false successful identity
+answer while pending failure remains.
+
+Evidence and reproduction:
+
+Control-flow tracing confirms every listed API bypasses the sentinel-aware
+`unwrap_extension_value()` used by the newer dictionary APIs. The public raise
+helpers and `clover_propagate_error()` produce exactly the reachable marker
+handle in question; tuple construction already detects it correctly.
+
+Disproof attempts:
+
+Fabricated opaque handles remain outside the API contract, but the error marker
+is explicitly public. Ordinary wrong-type and bounds failures behave as
+documented. CVR-005 and CVR-006 concern callback/module success with pending
+state, not corruption while consuming the propagation handle.
+
+Recommended fix boundary:
+
+Route all public value consumers through one sentinel-aware unwrap helper that
+preserves existing pending state, initializes outputs consistently on failure,
+and never exposes marker identity as a successful result. Add native harness
+tests for every consumer.
+
+Verification:
+
+Confirmed by implementation and contract audit against existing sentinel-aware
+APIs. No fix has been implemented.
+
+Disposition:
+
+Open.
+
 ### CVR-001: Slab allocation advances beyond its mapped extent
 
 - Severity: P2
@@ -1176,6 +1674,144 @@ Use this template:
   Exact CPython diagnostic wording is intentionally not complete. Existing
   byte-sized argument counts remain part of CVR-011's width boundary rather
   than a separate finding.
+
+### R7: Builtin Types And Operators At `e2c5c3b`
+
+- Scope: numeric builtins and SMI/BigInt transitions, normal/reflected operator
+  dispatch, `NotImplemented`, strings and Unicode, lists, tuples, slices,
+  ranges, iterators, container repr, sequence searches, hashing/equality
+  integration, membership, subscription, and trusted-handler cache replay.
+- Design documents read: `fast-operator-dispatch.md`, `bigint.md`,
+  `iteration-plans.md`, `python-deviations.md`, and builtin/operator priorities
+  in `development-priorities.md`.
+- Code and tests reviewed: builtin type implementations, operator tables and
+  walk/cache machinery, string building and repr dispatch, sequence/slice
+  normalization, range loops, numeric kernels, trusted resolver registrations,
+  and focused builtin, BigInt, operator, sequence, and interpreter tests.
+- Confirmed findings: CVR-015, CVR-016, CVR-017, CVR-018.
+- Investigations: none.
+- Verification commands: focused debug and release builtin/operator tests;
+  integer/BigInt differential fuzzing; directed reflected, mixed-numeric,
+  Unicode, sequence-search, and cyclic-repr probes; ASan+UBSan cyclic-repr
+  reproduction; release opcode-frame checking; and
+  `ninja -C build-debug all check`.
+- Verification result: direct probes reproduced all four findings. Numeric
+  fuzzing and directed operator probes found no additional differences, focused
+  debug/release suites passed, cyclic repr reproduced under sanitizers, and the
+  final debug gate passed all enabled tests.
+- Unreviewed edges: absent list/tuple structural equality and sequence
+  repetition, float and tuple hashing, set-like dict-view operations, and other
+  wholly absent builtin methods are missing feature coverage rather than
+  implemented-path defects under the ledger rules.
+- Residual risk: non-SMI range and slice behavior, including bool range
+  arguments and oversized slice-field clipping, is explicitly documented as
+  incomplete. Exact Unicode behavior beyond the directed casing probes was not
+  exhaustively compared against the Unicode database. Mutable callbacks during
+  every sequence method remain broader than the exercised search paths.
+
+### R8: Compiler And Python Semantics At `e2c5c3b`
+
+- Scope: tokenizer/parser grammar, AST and binding analysis, assignments and
+  deletion, globals/locals and class scope, expression evaluation order,
+  comparisons and short-circuiting, loops, calls, imports at the compiler
+  boundary, and `try`/`except`/`else`/`finally`/`with` cleanup lowering.
+- Design documents read: `python-opcode-design-notes.md`,
+  `python-deviations.md`, `development-priorities.md`, and compiler/runtime
+  sections of `architecture.md`.
+- Code and tests reviewed: tokenizer and parser expression/statement grammar,
+  AST analysis, codegen lowering and cleanup contexts, exception tables,
+  assignment/subscript/attribute operations, comparison and membership
+  handlers, class body execution, import lowering, and focused parser, codegen,
+  and interpreter tests.
+- Confirmed findings: CVR-019, CVR-020.
+- Investigations: none.
+- Verification commands: focused parser/scope/assignment and
+  exception/control-flow suites; side-effecting CloverVM/CPython differential
+  programs; direct exception-target and assignment-expression probes; and
+  `ninja -C build-debug all check`.
+- Verification result: direct probes reproduced both findings. Comparison,
+  boolean, membership, assignment, loop, finally, with, and import-order probes
+  found no additional supported-path differences. Focused suites and the final
+  debug gate passed.
+- Unreviewed edges: chained and unpacking assignment targets, comprehensions,
+  lambdas, closures/nonlocal capture, Python-correct dynamic class scope,
+  custom truthiness, descriptor execution, and metaclass keywords are explicit
+  missing or documented incomplete features.
+- Residual risk: no broad randomized AST differential campaign was run. The
+  cleanup-state matrix is large despite strong focused coverage, and future
+  closure support must ensure handler-target deletion clears captured cells as
+  well as ordinary locals.
+
+### R9: Imports, Native Modules, And Public APIs At `e2c5c3b`
+
+- Scope: source/package/native import state, `sys.modules`, partial
+  initialization and retry, cycles, fromlist/star and relative imports, module
+  metadata, filesystem/native loader failures, builder initialization, public
+  extension handles, argument validation, ownership, and native-managed entry.
+- Design documents read: `import-system-design.md`,
+  `module-global-namespace-design.md`, `native-c-modules.md`,
+  `native-managed-boundaries.md`, and `clover-c-api.md`.
+- Code and tests reviewed: import finder/loader and builtin import paths,
+  `ModuleSpecObject`, source/native module execution, dynamic library caching,
+  native module builder APIs, all declarations and implementations in the
+  extension C API, call frontier publication, and focused import/native/API
+  tests.
+- Confirmed findings: CVR-021, CVR-022, CVR-023.
+- Investigations: none.
+- Verification commands: focused import tests; debug and release native/API
+  tests; direct CloverVM/CPython star and relative import probes; public handle
+  contract tracing; and `ninja -C build-debug all check`.
+- Verification result: differential probes reproduced CVR-021 and CVR-022;
+  contract/implementation tracing confirmed CVR-023 against the marker-aware
+  APIs. Focused import and native suites passed in debug and release, and the
+  final debug gate passed all enabled tests.
+- Unreviewed edges: full importlib meta-path/path-hook protocols, namespace and
+  zip packages beyond the implemented finder, reload, Windows dynamic loading,
+  stable third-party ABI compatibility, and general CPython C API compatibility
+  are explicit non-goals or future surfaces.
+- Residual risk: the native library init mutex is unused and no broader import
+  lock exists, but current execution did not expose a provable concurrent init
+  path. Native libraries intentionally remain loaded. ABI version negotiation
+  is intentionally absent for VM-version-matched modules, and current POSIX
+  wrappers' errno-to-`ValueError` policy was not reclassified here.
+
+### R10: Cross-Cutting Adversarial And Release Review At `e2c5c3b`
+
+- Scope: callback mutation across caches and containers, allocation during call
+  and operator adaptation, exceptions during cleanup and failed imports,
+  native re-entry, large integers entering narrow consumers, dormant cache
+  lifetime, reclamation, allocation arithmetic, builder/interpreter bounds,
+  `NDEBUG` divergence, and release hot-handler frame shape.
+- Design documents read: the campaign's prior R1-R9 design set plus
+  `function-calling-convention.md`, `fast-operator-dispatch.md`,
+  `native-managed-boundaries.md`, and release checker configuration.
+- Code and tests reviewed: cross-subsystem cache guards and payload lifetimes,
+  call/operator continuations, cleanup lowering, import teardown, native frame
+  frontier, heap reclamation, dynamic layout sizing, VM arrays, BigInt scratch
+  capacity, bytecode/table/index builders, interpreter operands, and hot opcode
+  symbols.
+- Confirmed findings: none new. Adversarial repr probes reconfirmed CVR-015.
+- Investigations: none.
+- Verification commands: focused debug/release adversarial and boundary tests;
+  ASan+UBSan cache, reclamation, failed-import, and native-reentry suites;
+  10,000-iteration dormant/inherited-method cache stress; strict release opcode
+  frame checking; direct cyclic-container probes; and
+  `ninja -C build-debug all check`.
+- Verification result: focused sanitizer testing passed 85 tests with the known
+  macOS libc++ container-overflow detector disabled; cache/allocation stress
+  completed without a sanitizer report; 89 focused release invariant tests and
+  the opcode-frame checker passed; cleanup/mutation probes produced no new
+  defect; and the final debug gate passed all enabled tests.
+- Unreviewed edges: future multithreaded execution, JIT entry/deoptimization,
+  moving-GC barriers, full cycle collection, Windows loading, and unsupported
+  Python protocols are not current cross-cutting implementation surfaces.
+- Residual risk: non-owning cache payload pointers still rely on validity and
+  owner lifetime conventions; a purpose-built every-safepoint reclamation test
+  would strengthen the dormant-cache proof. Very large shape/parameter metadata
+  reaches earlier limits before its assertion-backed terminal bounds. The
+  packed-read portability decision remains rejected as CVR-010, and the
+  warning-only frame-target policy remains rejected as CVR-008; neither was
+  reopened without new target evidence.
 
 ## Resolved And Rejected Index
 
