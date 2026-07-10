@@ -170,7 +170,9 @@ Open.
 - Review unit: R4
 - Found at: `af8b450`
 - Affected code: `src/bytecode/code_object.h:592`,
-  `src/bytecode/code_object_builder.cpp:1161`
+  `src/bytecode/code_object_builder.cpp:1161`,
+  `src/bytecode/code_object_builder.cpp:1535`,
+  `src/compiler/codegen.cpp:1211`, `src/compiler/codegen.cpp:1284`
 - Affected tests: none
 
 Invariant or semantic rule:
@@ -196,7 +198,13 @@ Evidence and reproduction:
 
 A generated function assigning `v0` through `v126` and returning
 `(v0, v126)` exits with status 139 in both CloverVM builds. The corresponding
-126-local function succeeds.
+126-local function succeeds. R6 found the same unchecked register frontier in
+call lowering: a generated call with 124 distinct explicit keywords
+deterministically crashes the debug compiler/CLI, while CPython prints the
+expected result. Calls with 120 keywords succeed; 124 through 130 crash in the
+tested shape. Positional and method-keyword lowering share the unchecked
+temporary-register reservation, and keyword counts are additionally narrowed
+to `uint8_t` after reservation.
 
 Disproof attempts:
 
@@ -217,6 +225,130 @@ Verification:
 
 Confirmed with independent generated-source runs in debug and release. No fix
 has been implemented.
+
+Disposition:
+
+Open.
+
+### CVR-013: Fused method calls resolve attributes after arguments
+
+- Severity: P1
+- Status: open
+- Review unit: R6
+- Found at: `477e1af`
+- Affected code: `src/compiler/codegen.cpp:1204`,
+  `src/runtime/interpreter.cpp:4760`
+- Affected tests: none
+
+Invariant or semantic rule:
+
+Python evaluates the callable expression in a call before evaluating any
+argument expression. For `obj.method(arg())`, attribute lookup and binding must
+therefore complete before `arg()` runs, and the resolved callable must remain
+the target even if argument evaluation mutates `obj` or its class.
+
+Reachable path:
+
+The direct-method lowering saves only the receiver, evaluates every positional
+or keyword argument, and then emits `CallMethodAttrPositional` or
+`CallMethodAttrKeyword`. The interpreter performs the attribute lookup for the
+first time when that fused opcode executes, after all argument side effects.
+
+Observable impact:
+
+Argument evaluation can replace the method and make the call invoke the new
+function rather than the one Python already resolved. It can also install an
+attribute that was absent when the call expression began, turning a call that
+must raise `AttributeError` before evaluating arguments into a successful call.
+
+Evidence and reproduction:
+
+With `C.m` initially returning `1`, an argument function that replaces `C.m`
+with a method returning `2` makes `c.m(arg())` return `2` in CloverVM; CPython
+returns `1`. With no `c.m` initially present, an argument function that installs
+`c.m` makes the CloverVM call succeed, while CPython raises `AttributeError`
+without evaluating the argument. The replacement result also reproduces on the
+keyword-call path.
+
+Disproof attempts:
+
+Direct method caches correctly reload class slots and adapt binding after
+ordinary mutations between calls. The defect is independent of cache warmth:
+the callable has not been resolved at all when arguments begin. Non-attribute
+call lowering already evaluates and stores the callable before its arguments.
+
+Recommended fix boundary:
+
+Resolve the attribute in call context before evaluating arguments and preserve
+the resulting callable plus optional receiver binding across argument
+evaluation. Keep descriptor execution and escaped bound-method construction as
+their separately documented contracts. Add positional and keyword differential
+tests with mutation and missing-attribute side effects.
+
+Verification:
+
+Confirmed with direct CloverVM and CPython reproductions for replacement and
+missing-method cases. No fix has been implemented.
+
+Disposition:
+
+Open.
+
+### CVR-014: Recursive calls overrun the fixed Clover stack
+
+- Severity: P1
+- Status: open
+- Review unit: R6
+- Found at: `477e1af`
+- Affected code: `src/runtime/thread_state.cpp:66`,
+  `src/runtime/interpreter.cpp:1572`
+- Affected tests: none
+
+Invariant or semantic rule:
+
+Managed frame entry must never write outside the allocated Clover stack.
+Python recursion must fail with `RecursionError` before the physical stack
+boundary, respecting the exposed recursion-limit contract where supported.
+
+Reachable path:
+
+Each thread allocates a fixed stack of 1,048,576 `Value` slots. Frame-entry
+helpers compute the next lower frame pointer from the call window and callee
+layout, then initialize the frame without checking it against
+`clover_stack_begin()`. The `sys` recursion-limit API updates metadata but no
+call path consults it.
+
+Observable impact:
+
+Unbounded ordinary Python recursion walks off the managed stack and terminates
+the process with `SIGSEGV` instead of raising `RecursionError`. This is a
+Python-reachable out-of-bounds managed-frame write.
+
+Evidence and reproduction:
+
+`def f(): return f()` followed by `f()` exits with status 139 in both debug and
+release builds. A finite recursion of 1,100 levels succeeds even though
+`sys.getrecursionlimit()` reports the default limit of 1,000, confirming that
+the public limit is not enforced.
+
+Disproof attempts:
+
+The review traced positional, keyword, method, constructor, native-thunk, and
+internal prepared-code entries. None performs a physical stack-bound check.
+The frame frontier supports scanning and re-entry but does not enforce stack
+capacity.
+
+Recommended fix boundary:
+
+Centralize a checked frame-entry calculation that reserves the complete callee
+frame before any header or adapted argument write. Raise `RecursionError` at
+the configured limit and retain an independent physical bound guard for large
+frames or altered limits. Cover every managed entry path in debug and release.
+
+Verification:
+
+Confirmed in debug and release, with a finite probe demonstrating that the
+reported recursion limit is metadata-only. No fix has been implemented.
 
 Disposition:
 
@@ -1006,6 +1138,44 @@ Use this template:
   dormant invalidated cache would strengthen the proof. Instance `__dict__`
   and class `__dict__` intentionally use live `SlotDict` views rather than
   CPython's exact exposure model.
+
+### R6: Calls, Frames, And Argument Adaptation At `477e1af`
+
+- Scope: positional and keyword calls, fixed/default/full adaptation, grouped
+  signature binding, positional-only and keyword-only parameters, callee
+  `*args` and `**kwargs`, caller/callee frame windows, call caches,
+  continuations, direct methods, class calls, constructor thunks, native
+  thunks, and managed/native entry bridges.
+- Design documents read: `function-calling-convention.md`,
+  `function-call-adaptation.md`, `native-managed-boundaries.md`,
+  `inline-cache-slot-layout.md`, `python-deviations.md`, and the call priorities
+  in `development-priorities.md`.
+- Code and tests reviewed: call and method lowering in `codegen.cpp`, call
+  emitters and frame sizing, positional/keyword/method/special-method handlers,
+  `Function` signature metadata, keyword and function call caches, constructor
+  thunks, native functions and extension entry, frame-frontier management, and
+  focused parser, codegen, interpreter, constructor, and native tests.
+- Confirmed findings: CVR-013, CVR-014. R6 also expanded CVR-011 with the
+  explicit-keyword call crash.
+- Investigations: none.
+- Verification commands: focused debug and release call/adaptation tests;
+  direct CloverVM and CPython method-ordering probes; generated large-keyword
+  calls; finite and unbounded recursion probes in debug and release; release
+  opcode-frame checking; and `ninja -C build-debug all check`.
+- Verification result: method replacement, missing-method, and keyword probes
+  reproduced CVR-013; debug and release recursion reproduced CVR-014; a
+  124-keyword call reproduced the additional CVR-011 crash. Focused call,
+  binding, constructor, method, codegen, and native tests passed, the release
+  frame checker passed, and the final debug gate passed all enabled tests.
+- Unreviewed edges: caller `*args` and `**kwargs` expansion, arbitrary callable
+  objects, descriptor-produced callables, and full combined custom
+  `__new__`/`__init__` construction are documented incomplete features rather
+  than implemented R6 surfaces.
+- Residual risk: call-cache payloads are non-owning pointers that rely on
+  guard/owner lifetime conventions; no reclamation failure was reproduced.
+  Exact CPython diagnostic wording is intentionally not complete. Existing
+  byte-sized argument counts remain part of CVR-011's width boundary rather
+  than a separate finding.
 
 ## Resolved And Rejected Index
 
