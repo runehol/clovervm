@@ -137,7 +137,7 @@ source:
 | [ ] | `contextlib` | Useful after context-manager semantics are solid. |
 | [ ] | `os` | Start with path/environment basics before process-heavy APIs. |
 | [ ] | `io` | Foundational for files, codecs, archives, and testing tools. |
-| [ ] | `errno` | Small constants module with broad utility; blocked by integer-key `errorcode` until public dict supports non-string keys deliberately. |
+| [ ] | `errno` | Small constants module with broad utility; integer-key `errorcode` is now supported by public dict, so module constants, platform extraction, and compatibility tests are the remaining work. |
 | [ ] | `stat` | Small constants/helpers module with broad utility. |
 | [ ] | `pathlib` | Depends on enough `os`/`stat` support to be meaningful. |
 | [ ] | `re` | Large but unlocks a lot of parsers and stdlib modules. |

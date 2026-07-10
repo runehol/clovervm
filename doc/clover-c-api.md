@@ -256,8 +256,8 @@ indirect.
 
 ### Dictionary API
 
-The dictionary C API provides the currently implementable core of CPython's
-dictionary surface:
+The implemented dictionary C API provides the currently implementable core of
+CPython's dictionary surface:
 
 - dict/exact-dict type checks and construction of a fresh exact builtin dict
 - clear and copy
@@ -271,6 +271,11 @@ Dictionary construction and length cannot run Python. Key operations may invoke
 set pending exception state. Deletion raises `KeyError` for a missing key.
 Lookup, membership, and C API pop report an ordinary miss explicitly without
 raising `KeyError`.
+
+Fresh exact builtin dictionaries start in the canonical string-keyed shape.
+Arbitrary-key operations promote them in place to the general shape as needed;
+UTF-8 string-key operations retain the exact-string fast path when the receiver
+shape permits it. The C API does not expose either shape as a separate type.
 
 The signatures are:
 
@@ -409,10 +414,10 @@ suppress hash/equality exceptions or use a null result plus pending-exception
 inspection to distinguish missing from failure.
 
 Returned value handles have the same context-managed lifetime as other runtime
-API handles. The implementation delegates to the semantic C++ `Dict`
-interface so shape promotion, reentrant-equality defense, and pending-exception
-behavior are shared. Raw `string_keyed_*` storage helpers are not exposed
-through the C API.
+API handles. The implementation delegates to the semantic C++ `Dict` interface,
+so shape promotion, reentrant-equality defense, canonical hash handling, and
+pending-exception behavior are shared with Python-visible dictionaries. Raw
+`string_keyed_*` storage helpers are not exposed through the C API.
 
 The first slice deliberately omits mapping merge/update, mapping proxies,
 watchers, view-type checks, `OrderedDict`, unchecked-size macros, and legacy
