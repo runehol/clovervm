@@ -29,7 +29,8 @@ cache-bearing hash and equality sites. Mapping and iterable-of-pairs `update`
 and exact builtin constructor population are implemented. The semantic C API is
 available, and the bootstrap `GeneralDict` has been removed. Remaining work is
 limited to compatibility follow-through such as classmethod-correct `fromkeys`,
-native subtype behavior, and the now-unblocked `errno` module.
+and native subtype behavior. The `errno` module now uses a real integer-key
+public dict for `errorcode`.
 
 ## Goals
 
@@ -1466,7 +1467,7 @@ performs population and no `dict.__init__` method is installed.
 - [x] Add focused performance checks for unchanged string-key workloads through
   `BM_GetItemDictStringKeyed` and `BM_SetItemDictStringKeyed`, paired with their
   promoted-general variants.
-- [ ] Implement or unblock `errno.errorcode` using a real public integer-key
+- [x] Implement or unblock `errno.errorcode` using a real public integer-key
   `dict`.
 - [x] Update `doc/dictionaries.md`, `doc/clover-c-api.md`,
   `doc/development-priorities.md`, and the stdlib bringup checklist to reflect
@@ -1500,9 +1501,7 @@ Completed public interpreter and native coverage includes:
 - dict displays preserve expression evaluation order and insert arbitrary keys
 - C API operations preserve the same promotion, exception, and revalidation
   behavior as the C++ semantic interface
-
-The remaining stdlib integration check is that `errno.errorcode` is represented
-as a real public integer-key `dict` once the module is implemented.
+- `errno.errorcode` is represented as a real public integer-key `dict`
 
 Codegen tests are limited to structural guarantees, such as general dict methods
 containing cache-bearing hash and equality call sites rather than native helper

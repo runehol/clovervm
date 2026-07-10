@@ -130,10 +130,10 @@ For bounded work that can land independently of this priority order, see
    `errno.errorcode` is specified as a real `dict` keyed by integer errno
    values. Do not work around that with a non-dict substitute; treat it as
    evidence that general public dictionaries were a compatibility blocker for
-   otherwise small modules. The dictionary and C API blockers are now removed;
-   implementing the module remains. Broader dictionary follow-through is
-   limited to compatibility work such as classmethod-correct `fromkeys` and
-   native subtype behavior.
+   otherwise small modules. `errno` now uses the completed public dictionary and
+   C API support for its integer-key `errorcode` mapping. Broader dictionary
+   follow-through is limited to compatibility work such as classmethod-correct
+   `fromkeys` and native subtype behavior.
 
 7. **Attribute hooks and escaped bound methods**
 
