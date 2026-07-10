@@ -21,7 +21,6 @@ op_dict_probe_for_lookup
 op_dict_probe_for_insert
 op_dict_probe_start
 op_dict_resize_for_insert
-op_dict_insert_new
 op_dict_overwrite_entry
 op_call_code_object
 op_for_iter

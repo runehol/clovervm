@@ -4124,7 +4124,7 @@ namespace cl
         COMPLETE();
     }
 
-    NOINLINE static INTERP_CC Value op_dict_insert_new_slow(PARAMS)
+    static INTERP_CC Value op_dict_insert_new(PARAMS)
     {
         START(7);
         int8_t receiver_reg = pc[1];
@@ -4148,12 +4148,7 @@ namespace cl
         COMPLETE();
     }
 
-    static INTERP_CC Value op_dict_insert_new(PARAMS)
-    {
-        MUSTTAIL return op_dict_insert_new_slow(ARGS);
-    }
-
-    NOINLINE static INTERP_CC Value op_dict_overwrite_entry_slow(PARAMS)
+    static INTERP_CC Value op_dict_overwrite_entry(PARAMS)
     {
         START(4);
         int8_t receiver_reg = pc[1];
@@ -4169,12 +4164,7 @@ namespace cl
         COMPLETE();
     }
 
-    static INTERP_CC Value op_dict_overwrite_entry(PARAMS)
-    {
-        MUSTTAIL return op_dict_overwrite_entry_slow(ARGS);
-    }
-
-    NOINLINE static INTERP_CC Value op_dict_delete_entry_slow(PARAMS)
+    static INTERP_CC Value op_dict_delete_entry(PARAMS)
     {
         START(3);
         int8_t receiver_reg = pc[1];
@@ -4187,11 +4177,6 @@ namespace cl
             static_cast<size_t>(fp[hash_idx_reg].get_smi()));
         accumulator = Value::None();
         COMPLETE();
-    }
-
-    static INTERP_CC Value op_dict_delete_entry(PARAMS)
-    {
-        MUSTTAIL return op_dict_delete_entry_slow(ARGS);
     }
 
     static INTERP_CC Value op_write_stdout(PARAMS)
