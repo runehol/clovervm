@@ -387,6 +387,66 @@ Disposition:
 
 Open.
 
+### CVR-007: Dictionary iterators revive after invalidation
+
+- Severity: P2
+- Status: open
+- Review unit: R3
+- Found at: `b9ed3d9`
+- Affected code: `src/builtin_types/dict_view.cpp:99`,
+  `src/builtin_types/dict_view.h:79`
+- Affected tests: none
+
+Invariant or semantic rule:
+
+Once a dictionary iterator observes an invalidating size change and raises
+`RuntimeError`, it must remain invalid. Restoring the dictionary's original size
+must not make iteration resume.
+
+Reachable path:
+
+All three view iterator `__next__` implementations call
+`check_expected_size()`, which compares the current length with the original
+length but stores no invalid state. After a mismatch raises, deleting or adding
+entries until the original length is restored makes the next comparison pass.
+
+Observable impact:
+
+An iterator that already reported `dictionary changed size during iteration`
+can later yield keys, values, or items from the mutated dictionary. CPython
+continues raising `RuntimeError` from the poisoned iterator.
+
+Evidence and reproduction:
+
+Create `{'a': 1, 'b': 2}`, advance its keys-view iterator once, insert `'c'`,
+and confirm that the next call raises `RuntimeError`. Then delete `'c'` and call
+`__next__` again. CloverVM resumes and yields `'b'`; CPython raises
+`RuntimeError` again. The iterator records only `dict`, `index`, and
+`expected_size`.
+
+Disproof attempts:
+
+The audit checked for invalidation in the error path, iterator object shape, and
+dictionary generation metadata. The error helper receives only the dictionary
+and expected size, and no iterator field is changed. Table generation is not
+stored on the iterator.
+
+Recommended fix boundary:
+
+Add an explicit poisoned state shared by key, value, and item iterators, set it
+before returning the first mutation error, and keep returning `RuntimeError` on
+later calls. Preserve the separately documented length-only detection policy
+for same-size mutations unless that design is intentionally revisited.
+
+Verification:
+
+Confirmed with direct CloverVM and CPython command-line reproductions. No fix
+has been implemented.
+
+Disposition:
+
+Open.
+
 Add findings in descending severity, then ascending ID. Use this template:
 
 ```md
@@ -535,6 +595,40 @@ Use this template:
   reject error-marker input consistently; current C API rules require extension
   code to propagate such a handle immediately, so this was not split into a
   separate finding.
+
+### R3: Dictionaries, Hashing, And Equality At `b9ed3d9`
+
+- Scope: canonical exact-string and general dictionary shapes, promotion,
+  trusted dunder handlers, generated method bytecode, semantic C++ and C APIs,
+  hashing and equality callbacks, probe restart and mutation revalidation,
+  insertion order, bulk operations, views, and iterators.
+- Design documents read: `dictionaries.md`, `iteration-plans.md`, and the
+  dictionary sections of `clover-c-api.md`.
+- Code and tests reviewed: `dict.cpp`, `dict.h`, `dict_view.cpp`,
+  `dict_view.h`, dictionary bytecodes and trusted resolver paths, hash
+  canonicalization, `ThreadState` hash/equality helpers, import-system
+  `sys.modules` operations, and focused dictionary/hash/import tests.
+- Confirmed findings: CVR-007.
+- Investigations: none.
+- Verification commands: focused debug and release
+  `Dict.*:Hash.*:ImportSystem.*` filters; direct CloverVM and CPython iterator
+  probes; release opcode-frame checking; and `ninja -C build-debug all check`.
+- Verification result: the focused debug and release filters each passed 174
+  tests. The iterator poisoning differential probe reproduced CVR-007. The
+  release opcode-frame checker passed, and the final debug gate passed all
+  1,237 enabled tests; one test remains disabled.
+- Unreviewed edges: general dictionary subclass construction, future classmethod
+  descriptor behavior, and general iteration-plan integration are not currently
+  implemented surfaces.
+- Residual risk: static generated-bytecode/register invariants are not
+  mechanically derived from the dict probe contract. Table generation can
+  theoretically overflow its SMI representation but is unreachable at
+  practical operation counts. Exact-string assumptions must be revisited if
+  constructible `str` subclasses make overridden hash/equality behavior
+  reachable. The iteration design intentionally detects length changes rather
+  than every same-size key-set mutation; `dict.fromkeys` tuple/list restriction
+  and non-classmethod binding are also documented current limitations rather
+  than new findings.
 
 ## Resolved And Rejected Index
 
