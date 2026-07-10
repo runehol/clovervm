@@ -141,8 +141,8 @@ object would have been exposed by the direct plan path.
 
 Returned-iterator recognition should be narrower. Its main early use is for
 iterator objects that are themselves the right place to store cursor state, such
-as future dict-key, dict-value, and dict-item iterators returned by `__iter__` on
-dict view objects. In that form, frame-local state should hold the plan tag and
+as dict-key, dict-value, and dict-item iterators returned by `__iter__` on dict
+view objects. In that form, frame-local state should hold the plan tag and
 the iterator object, while the scan cursor, expected length, and any mutation
 check state live in the iterator object and are advanced there on every
 `ForIterPlan` step. Returned-iterator plans should avoid detached frame-local
@@ -495,9 +495,9 @@ targets directly without allocating an immediately unpacked tuple.
 
 ## Dict Views
 
-`dict.keys()`, `dict.values()`, and `dict.items()` should return distinct
-internal view objects. Those view objects are exactly the values the loop-site
-profiler can observe:
+`dict.keys()`, `dict.values()`, and `dict.items()` return distinct internal view
+objects. Those view objects are exactly the values the loop-site profiler can
+observe:
 
 ```text
 for k in d:          iterable shape = dict
@@ -511,8 +511,8 @@ state block and selects the appropriate dict plan. This is the preferred direct
 plan shape for loops over exact dict view objects because no public iterator has
 been exposed yet.
 
-The corresponding dict view iterators should also be eligible for a returned
-iterator plan after a Python-visible `__iter__` call. In that case, the plan
+The corresponding dict view iterators are available to a returned-iterator plan
+after a Python-visible `__iter__` call. Such a plan
 must advance the iterator object itself rather than an independent frame-local
 copy of the scan state:
 
@@ -837,10 +837,9 @@ Implement this in narrow, testable slices:
    Use live-length semantics. Re-read `list.size()` on every `ForIterPlan`
    execution and do not cache the loop end.
 
-9. Add dict views and `Dict*Plan` later.
+9. Add `Dict*Plan` using the existing dict views and iterators.
 
-   Do this after `dict_keys`, `dict_values`, and `dict_items` exist. Use
-   expected iteration length as the compact mutation check.
+   Use expected iteration length as the compact mutation check.
 
 10. Leave `GeneratorPlan` provisional.
 

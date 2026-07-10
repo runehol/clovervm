@@ -23,8 +23,6 @@ adds a heap `BigInt` representation for integer values outside the SMI range.
 - No BigInt-aware `range`.
 - No BigInt indexing support for large containers. List, tuple, string, and
   slice internals remain SMI-sized for now.
-- No BigInt hashing while `hash()` and non-string dictionary keys are not
-  exposed.
 - No ternary integer power with modulo yet. CPython supports negative exponents
   there by computing a modular inverse, so this should be implemented together
   with an extended-gcd/modular-inverse helper rather than as a simple binary
@@ -298,18 +296,19 @@ binary power and future modular power.
 
 ## Hashing
 
-Hashing is deferred while `hash()` and non-string dictionary keys are not
-exposed. Before either becomes Python-visible for integers, BigInt hashing must
-preserve Python equality requirements:
+BigInt hashing is implemented as part of the shared canonical integer hash
+path. Values that fit in SMI range preserve the equivalent SMI hash. Larger
+values reduce their normalized signed magnitude through CloverVM's
+Mersenne-form hash modulus, and the shared canonicalization path remaps `-1` to
+`-2`.
+
+This preserves the Python equality requirements:
 
 - `True == 1` and `hash(True) == hash(1)`.
 - `False == 0` and `hash(False) == hash(0)`.
 - BigInts that compare equal must hash equal.
-- Any noncanonical small heap integer that appears through a future edge path
+- Any noncanonical small heap integer that appears through an edge path
   must hash the same as the equivalent SMI.
-
-The BigInt hash should be simple, deterministic, and based on normalized signed
-magnitude digits.
 
 ## SMI-Sized Boundaries
 

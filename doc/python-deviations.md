@@ -200,12 +200,11 @@ and promotes many arithmetic overflow paths out of the tagged SMI range, but the
 BigInt surface is still partial.
 
 Known remaining gaps include APIs that still require SMI-sized values, non-SMI
-BigInt indexing and range support, and integer hashing once non-string
-dictionary keys or `hash()` become Python-visible.
+BigInt indexing, and range support. Integer hashing and arbitrary-key public
+dictionaries are implemented.
 
 Reason: the first BigInt slice added the representation and core arithmetic
 surface without converting every integer consumer in the runtime.
 
-To close: complete the remaining integer-protocol consumers, add compatible
-hashing before exposing integer hashing broadly, and remove SMI-only argument
-paths where Python accepts wider integers.
+To close: complete the remaining integer-protocol consumers and remove SMI-only
+argument paths where Python accepts wider integers.
