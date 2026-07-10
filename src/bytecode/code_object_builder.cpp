@@ -869,6 +869,16 @@ namespace cl
         return Expected<uint32_t>::ok(result);
     }
 
+    Expected<uint32_t> CodeObjectBuilder::emit_dict_prepare_delete(
+        uint32_t source_offset, uint32_t receiver_reg, uint32_t key_reg)
+    {
+        uint32_t result =
+            emplace_back(source_offset, uint8_t(Bytecode::DictPrepareDelete));
+        emplace_back(source_offset, encode_reg(receiver_reg));
+        emplace_back(source_offset, encode_reg(key_reg));
+        return Expected<uint32_t>::ok(result);
+    }
+
     Expected<uint32_t> CodeObjectBuilder::emit_dict_probe_start(
         uint32_t source_offset, uint32_t receiver_reg, uint32_t generation_reg,
         uint32_t hash_idx_reg)
@@ -973,6 +983,16 @@ namespace cl
         emplace_back(source_offset, encode_reg(receiver_reg));
         emplace_back(source_offset, encode_reg(entry_idx_reg));
         emplace_back(source_offset, encode_reg(value_reg));
+        return Expected<uint32_t>::ok(result);
+    }
+
+    Expected<uint32_t> CodeObjectBuilder::emit_dict_delete_entry(
+        uint32_t source_offset, uint32_t receiver_reg, uint32_t hash_idx_reg)
+    {
+        uint32_t result =
+            emplace_back(source_offset, uint8_t(Bytecode::DictDeleteEntry));
+        emplace_back(source_offset, encode_reg(receiver_reg));
+        emplace_back(source_offset, encode_reg(hash_idx_reg));
         return Expected<uint32_t>::ok(result);
     }
 

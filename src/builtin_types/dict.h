@@ -163,6 +163,7 @@ namespace cl
         int32_t *find_entry(TValue<String> key);
         int32_t *find_entry_with_provided_hash(TValue<String> key,
                                                TValue<SMI> hash_smi);
+        bool string_keyed_delete_if_present(TValue<String> key);
 
         struct Probe
         {
@@ -331,6 +332,9 @@ namespace cl
         static constexpr int64_t ReadGeneral = 2;
         static constexpr int64_t SetItemStringDone = 3;
         static constexpr int64_t SetItemGeneral = 4;
+        static constexpr int64_t DeleteStringDone = 5;
+        static constexpr int64_t DeleteStringMiss = 6;
+        static constexpr int64_t DeleteGeneral = 7;
         static constexpr int64_t ProbeMiss = -1;
         static constexpr int64_t ProbeContinue = -2;
         static constexpr int64_t InsertProbeEmpty = -3;
@@ -347,6 +351,8 @@ namespace cl
                                               Value key);
         static int64_t prepare_set_item(ThreadState *thread, Dict *dict,
                                         Value key, Value value);
+        static int64_t prepare_delete(ThreadState *thread, Dict *dict,
+                                      Value key);
         static void probe_start(const Dict *dict, TValue<SMI> hash,
                                 TValue<SMI> *generation, size_t *hash_idx)
         {
@@ -447,6 +453,12 @@ namespace cl
                    static_cast<size_t>(entry_idx) < dict->entries.size());
             assert(dict->entries[entry_idx].valid());
             dict->write_existing(entry_idx, value);
+        }
+        static void delete_entry(Dict *dict, size_t hash_idx)
+        {
+            assert(hash_idx < dict->hash_table.size());
+            assert(dict->hash_table[hash_idx] >= 0);
+            dict->delete_entry_at_slot(hash_idx);
         }
     };
 

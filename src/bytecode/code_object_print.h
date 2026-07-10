@@ -345,6 +345,8 @@ template <> struct fmt::formatter<cl::Bytecode>
                 return format_to(out, "DictPrepareRead");
             case cl::Bytecode::DictPrepareSetItem:
                 return format_to(out, "DictPrepareSetItem");
+            case cl::Bytecode::DictPrepareDelete:
+                return format_to(out, "DictPrepareDelete");
             case cl::Bytecode::DictProbeStart:
                 return format_to(out, "DictProbeStart");
             case cl::Bytecode::DictProbeForLookup:
@@ -365,6 +367,8 @@ template <> struct fmt::formatter<cl::Bytecode>
                 return format_to(out, "DictInsertNew");
             case cl::Bytecode::DictOverwriteEntry:
                 return format_to(out, "DictOverwriteEntry");
+            case cl::Bytecode::DictDeleteEntry:
+                return format_to(out, "DictDeleteEntry");
 
             case cl::Bytecode::CallPositional:
                 return format_to(out, "CallPositional");
@@ -928,6 +932,13 @@ template <> struct fmt::formatter<cl::CodeObject>
                 disassemble_reg(code_obj, out, pc++);
                 break;
 
+            case cl::Bytecode::DictPrepareDelete:
+                format_to(out, " ");
+                disassemble_reg(code_obj, out, pc++);
+                format_to(out, ", ");
+                disassemble_reg(code_obj, out, pc++);
+                break;
+
             case cl::Bytecode::DictProbeStart:
                 format_to(out, " ");
                 disassemble_reg(code_obj, out, pc++);
@@ -987,6 +998,13 @@ template <> struct fmt::formatter<cl::CodeObject>
                 format_to(out, ", entry=");
                 disassemble_reg(code_obj, out, pc++);
                 format_to(out, ", value=");
+                disassemble_reg(code_obj, out, pc++);
+                break;
+
+            case cl::Bytecode::DictDeleteEntry:
+                format_to(out, " ");
+                disassemble_reg(code_obj, out, pc++);
+                format_to(out, ", hash_index=");
                 disassemble_reg(code_obj, out, pc++);
                 break;
 

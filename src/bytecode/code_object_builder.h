@@ -424,6 +424,9 @@ namespace cl
                                                       uint32_t receiver_reg,
                                                       uint32_t key_reg,
                                                       uint32_t value_reg);
+        Expected<uint32_t> emit_dict_prepare_delete(uint32_t source_offset,
+                                                    uint32_t receiver_reg,
+                                                    uint32_t key_reg);
         Expected<uint32_t> emit_dict_probe_start(uint32_t source_offset,
                                                  uint32_t receiver_reg,
                                                  uint32_t generation_reg,
@@ -454,6 +457,9 @@ namespace cl
                                                      uint32_t receiver_reg,
                                                      uint32_t entry_idx_reg,
                                                      uint32_t value_reg);
+        Expected<uint32_t> emit_dict_delete_entry(uint32_t source_offset,
+                                                  uint32_t receiver_reg,
+                                                  uint32_t hash_idx_reg);
         Expected<uint32_t> emit_to_bool(uint32_t source_offset);
         Expected<uint32_t> emit_to_bool_not(uint32_t source_offset);
         Expected<uint32_t> emit_call_code_object(uint32_t source_offset,

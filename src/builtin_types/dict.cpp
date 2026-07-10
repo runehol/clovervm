@@ -107,6 +107,24 @@ namespace cl
         return SetItemGeneral;
     }
 
+    int64_t TrustedDictBytecodeAccess::prepare_delete(ThreadState *thread,
+                                                      Dict *dict, Value key)
+    {
+        key.assert_not_vm_sentinel();
+        if(is_exact_dict_string_key_shape(thread, dict))
+        {
+            if(can_convert_to<String>(key))
+            {
+                return dict->string_keyed_delete_if_present(
+                           TValue<String>::from_value_unchecked(key))
+                           ? DeleteStringDone
+                           : DeleteStringMiss;
+            }
+            dict->promote_to_general_shape(thread);
+        }
+        return DeleteGeneral;
+    }
+
     BuiltinClassDefinition make_dict_class(VirtualMachine *vm)
     {
         static constexpr NativeLayoutId native_layout_ids[] = {
@@ -196,13 +214,6 @@ namespace cl
     {
         CL_PROPAGATE_EXCEPTION(require_dict_receiver(self, L"copy"));
         return self.get_ptr<Dict>()->copy().raw_value();
-    }
-
-    static Value native_dict_delitem(ThreadState *thread, Value self, Value key)
-    {
-        CL_PROPAGATE_EXCEPTION(require_dict_receiver(self, L"__delitem__"));
-        CL_TRY(self.get_ptr<Dict>()->del_item(thread, key));
-        return Value::None();
     }
 
     static Value trusted_dict_getitem_str_handler(ThreadState *thread,
@@ -432,6 +443,12 @@ namespace cl
     {
         return thread->set_pending_builtin_exception_string(
             L"TypeError", L"dict.__setitem__ expects a dict receiver");
+    }
+
+    static Value dict_delitem_receiver_error(ThreadState *thread)
+    {
+        return thread->set_pending_builtin_exception_string(
+            L"TypeError", L"dict.__delitem__ expects a dict receiver");
     }
 
     static Value dict_getitem_key_error(ThreadState *thread)
@@ -790,6 +807,138 @@ namespace cl
                 Optional<TValue<Tuple>>::none()));
     }
 
+    static Expected<TValue<Function>>
+    make_dict_delitem_function(VirtualMachine *vm,
+                               ClassObject *type_error_class,
+                               TrustedHandlerResolver trusted_handler_resolver)
+    {
+        Scope *local_scope = vm->make_immortal_internal_raw<Scope>(nullptr);
+        CodeObjectBuilder code(
+            vm, nullptr, vm->global_builtins_module(), local_scope,
+            vm->get_or_create_interned_string_value(L"<dict.__delitem__>"));
+        code.configure_positional_function(2);
+
+        uint8_t dict_class_idx =
+            CL_TRY(code.allocate_constant(Value::from_oop(vm->dict_class())));
+        uint8_t hash_name_idx = CL_TRY(code.allocate_constant(
+            vm->get_or_create_interned_string_value(L"__hash__")));
+        uint8_t type_error_idx =
+            CL_TRY(code.allocate_constant(Value::from_oop(type_error_class)));
+        uint8_t unhashable_idx = CL_TRY(code.allocate_constant(
+            vm->get_or_create_interned_string_value(L"object is unhashable")));
+        NativeFunctionTarget receiver_error_target;
+        receiver_error_target.fixed0 = dict_delitem_receiver_error;
+        uint8_t receiver_error_target_idx =
+            CL_TRY(code.add_native_function_target(receiver_error_target));
+        NativeFunctionTarget key_error_target;
+        key_error_target.fixed0 = dict_getitem_key_error;
+        uint8_t key_error_target_idx =
+            CL_TRY(code.add_native_function_target(key_error_target));
+
+        {
+            CodeObjectBuilder::TemporaryReg temporaries(code, 6);
+            uint32_t hash_reg = temporaries;
+            uint32_t generation_reg = temporaries + 1;
+            uint32_t hash_idx_reg = temporaries + 2;
+            uint32_t probe_result_reg = temporaries + 3;
+            uint32_t candidate_key_reg = temporaries + 4;
+            uint32_t equality_reg = temporaries + 5;
+
+            JumpTarget receiver_ok(&code);
+            JumpTarget restart_probe(&code);
+            JumpTarget probe_loop(&code);
+            JumpTarget advance_probe(&code);
+            JumpTarget hit(&code);
+            JumpTarget miss(&code);
+            JumpTarget done(&code);
+
+            CL_TRY(code.emit_ldar(0, 0));
+            CL_TRY(code.emit_is_instance_of_known_class(0, dict_class_idx));
+            CL_TRY(code.emit_jump_if_true(0, receiver_ok));
+            CL_TRY(emit_native_error(code, receiver_error_target_idx));
+            CL_TRY(receiver_ok.resolve());
+
+            CL_TRY(code.emit_dict_prepare_delete(0, 0, 1));
+            CL_TRY(code.emit_jump_if_equal_smi(
+                0, TrustedDictBytecodeAccess::DeleteStringDone, done));
+            CL_TRY(code.emit_jump_if_equal_smi(
+                0, TrustedDictBytecodeAccess::DeleteStringMiss, miss));
+
+            {
+                CodeObjectBuilder::TemporaryReg call_args(
+                    code, 1, RegisterAlignment::CallFrame);
+                CL_TRY(code.emit_mov(0, call_args, 1));
+                CL_TRY(code.emit_call_special_method(
+                    0, call_args, hash_name_idx, 0, type_error_idx,
+                    unhashable_idx));
+            }
+            CL_TRY(code.emit_unary_op(0, Bytecode::CanonicalizeHash,
+                                      OperatorBytecodeFormat::Plain));
+            CL_TRY(code.emit_star(0, hash_reg));
+
+            CL_TRY(restart_probe.resolve());
+            CL_TRY(code.emit_ldar(0, hash_reg));
+            CL_TRY(
+                code.emit_dict_probe_start(0, 0, generation_reg, hash_idx_reg));
+
+            CL_TRY(probe_loop.resolve());
+            CL_TRY(code.emit_ldar(0, hash_reg));
+            CL_TRY(code.emit_dict_probe_for_lookup(0, 0, hash_idx_reg));
+            CL_TRY(code.emit_jump_if_equal_smi(
+                0, TrustedDictBytecodeAccess::ProbeMiss, miss));
+            CL_TRY(code.emit_jump_if_equal_smi(
+                0, TrustedDictBytecodeAccess::ProbeContinue, advance_probe));
+
+            CL_TRY(code.emit_star(0, probe_result_reg));
+            CL_TRY(code.emit_dict_entry_key(0, 0));
+            CL_TRY(code.emit_star(0, candidate_key_reg));
+            CL_TRY(code.emit_ldar(0, 1));
+            CL_TRY(code.emit_operator_reg(0, Bytecode::TestIs,
+                                          candidate_key_reg,
+                                          OperatorBytecodeFormat::Plain));
+            CL_TRY(code.emit_jump_if_true(0, hit));
+
+            CL_TRY(code.emit_ldar(0, 1));
+            CL_TRY(code.emit_operator_reg(
+                0, Bytecode::TestEqual, candidate_key_reg,
+                OperatorBytecodeFormat::WithCacheAndNotImplementedCheck));
+            CL_TRY(code.emit_to_bool(0));
+            CL_TRY(code.emit_star(0, equality_reg));
+            CL_TRY(code.emit_dict_entry_still_matches(
+                0, 0, generation_reg, hash_idx_reg, probe_result_reg,
+                candidate_key_reg));
+            CL_TRY(code.emit_jump_if_false(0, restart_probe));
+            CL_TRY(code.emit_ldar(0, equality_reg));
+            CL_TRY(code.emit_jump_if_true(0, hit));
+
+            CL_TRY(advance_probe.resolve());
+            CL_TRY(code.emit_ldar(0, hash_idx_reg));
+            CL_TRY(code.emit_dict_probe_advance(0, 0));
+            CL_TRY(code.emit_star(0, hash_idx_reg));
+            CL_TRY(code.emit_jump(0, probe_loop));
+
+            CL_TRY(hit.resolve());
+            CL_TRY(code.emit_dict_delete_entry(0, 0, hash_idx_reg));
+            CL_TRY(code.emit_return(0));
+
+            CL_TRY(done.resolve());
+            CL_TRY(code.emit_lda_none(0));
+            CL_TRY(code.emit_return(0));
+
+            CL_TRY(miss.resolve());
+            CL_TRY(emit_native_error(code, key_error_target_idx));
+        }
+
+        TValue<CodeObject> code_object =
+            TValue<CodeObject>::from_oop(CL_TRY(code.finalize()));
+        code_object.extract()->trusted_handler_resolver =
+            trusted_handler_resolver;
+        return Expected<TValue<Function>>::ok(
+            vm->make_immortal_object_value<Function>(
+                code_object, Optional<TValue<String>>::none(),
+                Optional<TValue<Tuple>>::none()));
+    }
+
     void install_dict_class_methods(VirtualMachine *vm,
                                     ClassObject *type_error_class)
     {
@@ -835,22 +984,6 @@ namespace cl
         install(L"clear", native_dict_clear);
         install(L"copy", native_dict_copy);
 
-        auto install_trusted = [&](const wchar_t *name, auto function,
-                                   TrustedHandlerResolver resolver) {
-            bool stored = cls->define_own_property(
-                vm->get_or_create_interned_string_value(name),
-                unwrap_bootstrap_expected(
-                    vm,
-                    make_intrinsic_function(
-                        vm, with_trusted_handler_resolver(
-                                builtin_intrinsic_method(name, function),
-                                resolver)),
-                    "creating intrinsic function")
-                    .raw_value(),
-                method_flags);
-            assert(stored);
-            (void)stored;
-        };
         auto install_generated = [&](const wchar_t *name, DictReadKind kind,
                                      TrustedHandlerResolver resolver =
                                          nullptr) {
@@ -882,8 +1015,20 @@ namespace cl
             assert(stored);
             (void)stored;
         }
-        install_trusted(L"__delitem__", native_dict_delitem,
-                        resolve_trusted_dict_delitem_handler);
+        {
+            bool stored = cls->define_own_property(
+                vm->get_or_create_interned_string_value(L"__delitem__"),
+                unwrap_bootstrap_expected(
+                    vm,
+                    make_dict_delitem_function(
+                        vm, type_error_class,
+                        resolve_trusted_dict_delitem_handler),
+                    "creating generated dict delitem function")
+                    .raw_value(),
+                method_flags);
+            assert(stored);
+            (void)stored;
+        }
 
         install_generated(L"__contains__", DictReadKind::Contains,
                           resolve_trusted_dict_contains_handler);
@@ -1678,7 +1823,7 @@ namespace cl
         return active_thread()->set_pending_builtin_exception_none(L"KeyError");
     }
 
-    Value Dict::string_keyed_delete(TValue<String> key)
+    bool Dict::string_keyed_delete_if_present(TValue<String> key)
     {
         int32_t *iidx = find_entry(key);
         int32_t idx = *iidx;
@@ -1688,6 +1833,15 @@ namespace cl
                                    TValue<SMI>::from_smi(0)));
             *iidx = tombstone;
             --n_valid_entries;
+            return true;
+        }
+        return false;
+    }
+
+    Value Dict::string_keyed_delete(TValue<String> key)
+    {
+        if(string_keyed_delete_if_present(key))
+        {
             return Value::None();
         }
         return active_thread()->set_pending_builtin_exception_none(L"KeyError");

@@ -1417,8 +1417,8 @@ Stage invariant:
 
 ##### 11b2. Deletion
 
-- [ ] Add the trusted deletion primitive and generate a cache-bearing
-  `__delitem__` body.
+- [x] Add trusted shape-aware deletion preparation and slot-deletion primitives,
+  then generate a cache-bearing `__delitem__` body.
 
 ##### 11b3. Composed Mutation
 

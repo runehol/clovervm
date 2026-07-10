@@ -1266,6 +1266,52 @@ TEST(Dict, GeneratedSetItemContainsProtocolCacheAndMutationSites)
     EXPECT_NE(std::string::npos, bytecode.find("JumpIfEqualSmi"));
 }
 
+TEST(Dict, GeneratedDelItemContainsProtocolCacheAndMutationSites)
+{
+    test::VmTestContext context;
+
+    Function *method = dict_method_function(context, L"__delitem__");
+    std::string bytecode = fmt::to_string(*method->code_object.extract());
+    EXPECT_NE(std::string::npos, bytecode.find("CallSpecialMethod0"));
+    EXPECT_NE(std::string::npos, bytecode.find("CanonicalizeHash"));
+    EXPECT_NE(std::string::npos, bytecode.find("TestEqual"));
+    EXPECT_NE(std::string::npos, bytecode.find("ToBool"));
+    EXPECT_NE(std::string::npos, bytecode.find("DictPrepareDelete"));
+    EXPECT_NE(std::string::npos, bytecode.find("DictProbeStart"));
+    EXPECT_NE(std::string::npos, bytecode.find("DictProbeForLookup"));
+    EXPECT_NE(std::string::npos, bytecode.find("DictEntryStillMatches"));
+    EXPECT_NE(std::string::npos, bytecode.find("DictDeleteEntry"));
+    EXPECT_NE(std::string::npos, bytecode.find("JumpIfEqualSmi"));
+}
+
+TEST(Dict, PrepareDeletePreservesStringShapeAndPromotesNonStringKeys)
+{
+    test::VmTestContext context;
+    ThreadState *thread = context.thread();
+    ThreadState::ActivationScope activation_scope(thread);
+    Shape *string_key_shape = thread->get_exact_dict_string_key_shape();
+    Shape *general_shape = thread->get_exact_dict_general_shape();
+
+    Dict *dict = thread->make_object_raw<Dict>();
+    TValue<String> key = string_key(make_string(context, L"key"));
+    dict->string_keyed_insert(key, Value::from_smi(1));
+
+    EXPECT_EQ(TrustedDictBytecodeAccess::DeleteStringDone,
+              TrustedDictBytecodeAccess::prepare_delete(thread, dict,
+                                                        key.raw_value()));
+    EXPECT_EQ(string_key_shape, dict->get_shape());
+    EXPECT_FALSE(dict->string_keyed_contains(key));
+    EXPECT_EQ(TrustedDictBytecodeAccess::DeleteStringMiss,
+              TrustedDictBytecodeAccess::prepare_delete(thread, dict,
+                                                        key.raw_value()));
+    EXPECT_EQ(string_key_shape, dict->get_shape());
+
+    EXPECT_EQ(TrustedDictBytecodeAccess::DeleteGeneral,
+              TrustedDictBytecodeAccess::prepare_delete(thread, dict,
+                                                        Value::from_smi(1)));
+    EXPECT_EQ(general_shape, dict->get_shape());
+}
+
 TEST(Dict, InsertProbeReadDistinguishesSlotStates)
 {
     test::VmTestContext context;
@@ -1362,6 +1408,24 @@ TEST(Dict, GeneralStringAssignmentCachesTrustedHashHandler)
     EXPECT_EQ(nullptr, hash_cache.function);
 }
 
+TEST(Dict, GeneralStringDeletionCachesTrustedHashHandler)
+{
+    test::VmTestContext context;
+
+    EXPECT_EQ(Value::True(), context.run_file(L"d = {}\n"
+                                              L"d[0] = 0\n"
+                                              L"d['alpha'] = 1\n"
+                                              L"del d['alpha']\n"
+                                              L"'alpha' not in d\n"));
+
+    Function *method = dict_method_function(context, L"__delitem__");
+    ASSERT_GE(method->code_object.extract()->operator_caches.size(), 1u);
+    const OperatorInlineCache &hash_cache =
+        method->code_object.extract()->operator_caches[0];
+    EXPECT_FALSE(hash_cache.trusted_handler.is_null());
+    EXPECT_EQ(nullptr, hash_cache.function);
+}
+
 TEST(Dict, DirectReadMethodCallsKeepStringKeyShape)
 {
     test::VmTestContext context;
@@ -1395,6 +1459,22 @@ TEST(Dict, DirectSetItemMethodCallKeepsStringKeyShape)
     EXPECT_EQ(string_key_shape, result.get_ptr<Dict>()->get_shape());
 }
 
+TEST(Dict, DirectDelItemMethodCallKeepsStringKeyShape)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation_scope(context.thread());
+    Shape *string_key_shape =
+        context.thread()->get_exact_dict_string_key_shape();
+
+    Value result = context.run_file(L"d = {'key': 1}\n"
+                                    L"dict.__delitem__(d, 'key')\n"
+                                    L"d\n");
+
+    ASSERT_TRUE(can_convert_to<Dict>(result));
+    EXPECT_EQ(0u, result.get_ptr<Dict>()->size());
+    EXPECT_EQ(string_key_shape, result.get_ptr<Dict>()->get_shape());
+}
+
 TEST(Dict, GeneratedReadMethodsRejectWrongReceiver)
 {
     const wchar_t *expressions[] = {L"dict.__getitem__(1, 1)\n",
@@ -1421,6 +1501,16 @@ TEST(Dict, GeneratedSetItemRejectsWrongReceiver)
     EXPECT_TRUE(result.is_exception_marker());
     expect_pending_exception(context.thread(), L"TypeError",
                              L"dict.__setitem__ expects a dict receiver");
+}
+
+TEST(Dict, GeneratedDelItemRejectsWrongReceiver)
+{
+    test::VmTestContext context;
+
+    Value result = context.run_file(L"dict.__delitem__(1, 1)\n");
+    EXPECT_TRUE(result.is_exception_marker());
+    expect_pending_exception(context.thread(), L"TypeError",
+                             L"dict.__delitem__ expects a dict receiver");
 }
 
 TEST(Dict, TableGenerationChangesOnlyWhenProbeStructureChanges)

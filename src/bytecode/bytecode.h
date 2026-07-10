@@ -144,6 +144,7 @@ namespace cl
         // trusted protocol-free dict table operations
         DictPrepareRead,
         DictPrepareSetItem,
+        DictPrepareDelete,
         DictProbeStart,
         DictProbeForLookup,
         DictProbeForInsert,
@@ -154,6 +155,7 @@ namespace cl
         DictResizeForInsert,
         DictInsertNew,
         DictOverwriteEntry,
+        DictDeleteEntry,
 
         Nop,
 
