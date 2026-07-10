@@ -5,6 +5,9 @@ development. It is not a short-lived task checklist. The goal is to make the
 next few large moves explicit, including the dependencies that should constrain
 JIT, language, and runtime work.
 
+For bounded work that can land independently of this priority order, see
+[Small Tasks](small-tasks.md).
+
 ## Hard Constraints
 
 - Real JIT work must preserve the current memory substrate assumptions: root
