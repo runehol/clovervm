@@ -407,6 +407,14 @@ wrapper or stable extension object while native references exist.
 The CPython Limited API layer remains restricted: downcasts to CPython internal
 object layouts and direct field access are unsupported.
 
+CloverVM presents a CPython Limited API with a compatible `PyObject` header, but
+for VM-owned objects that header is only a shell. The authoritative object state
+lives in the Clover object reached through the wrapper. An explicit wrapper flag
+distinguishes VM-object proxies from real extension-owned objects, and CPython
+type information for proxies is computed only on demand. The CPython C API
+remains correct but intentionally slower; native Clover interfaces are the fast
+path.
+
 ## Compatibility Target
 
 The intended native compatibility target is closer to CPython's Limited API /
@@ -417,8 +425,9 @@ Supported direction:
 ```text
 extension code
   holds PyObject *
-  calls supported API functions/macros
-  never relies on object layout
+  uses supported refcount and type API over a compatible PyObject header
+  calls other supported API functions/macros
+  never relies on object body layout
 ```
 
 Unsupported direction:
@@ -476,6 +485,31 @@ stable, while the target slot may be rewritten when the target object moves.
 This is similar to CPython closure cells as an indirection pattern, but the
 wrapper is not a Python-visible `cell` object and must not expose cell semantics.
 
+Every C-visible `PyObject *` allocation starts with a CPython-compatible object
+header. For VM-object proxies, that header is the prefix of the stable native
+wrapper. For extension-owned objects, it is the prefix of the extension-owned
+allocation. The header should contain:
+
+- a native-visible refcount, with the exact width still TBD; 64 bits may be
+  necessary to match CPython's practical ABI expectations;
+- a flags field. The initial required flag distinguishes VM-object proxies from
+  extension-owned objects;
+- a pointer to a Python type object. For VM-object proxies this pointer remains
+  null permanently. For extension-owned objects it points at the real Python
+  type object.
+
+For VM-object proxies, `Py_TYPE` must not fill or cache the header type pointer.
+It should dereference the wrapped Clover value each time, inspect the value's
+current shape, read the class from that shape, and materialize a CPython type
+wrapper for that Clover class object as needed. The class observed through a
+shape can change, so caching the result in the proxy header would create stale
+type information and require invalidation machinery.
+
+Materialized CPython type wrappers still need stable identity. The VM should
+keep a canonical mapping from Clover class objects to their CPython type wrapper
+objects, so repeated materialization of the same Clover class produces the same
+C-visible type object while that wrapper identity is live.
+
 ### Extension-Owned Objects
 
 Objects whose body layout is controlled by a native extension cannot move,
@@ -521,6 +555,10 @@ managed object identity to stable native wrapper:
 ```text
 VM object identity -> NativeWrapper *
 ```
+
+This table is for ordinary VM objects exposed as `PyObject *`. It is distinct
+from the Clover-class to CPython-type-wrapper identity map used by `Py_TYPE` for
+VM-object proxies.
 
 Looking up the same VM object for CPython Limited API exposure must return the
 same wrapper while a live native reference to that wrapper exists. This
@@ -811,8 +849,10 @@ unrestricted CPython C API's layout and address-stability assumptions.
 - What exact Limited API / Stable ABI version or subset is targeted first?
 - Which macros are supported, and which are rejected because they imply layout
   access?
-- What is the concrete wrapper layout, and does it need to be CPython-header
-  shaped for source compatibility with Limited-API code?
+- What is the concrete CPython-compatible wrapper header layout: refcount width
+  and flags packing?
+- What lifetime and cleanup rules should the Clover-class to CPython-type-wrapper
+  identity map use?
 - What is the concrete `clover_handle` storage layout: one allocation per handle,
   arena-allocated handles, freelists, debug cookies, and whether immediates get
   direct singleton handles or per-call/per-retain handles?
