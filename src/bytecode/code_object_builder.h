@@ -419,6 +419,9 @@ namespace cl
         Expected<uint32_t>
         emit_dict_promote_string_keyed(uint32_t source_offset,
                                        uint32_t receiver_reg);
+        Expected<uint32_t> emit_dict_try_string_keyed_setdefault(
+            uint32_t source_offset, uint32_t receiver_reg, uint32_t key_reg,
+            uint32_t default_reg, uint32_t result_reg);
         Expected<uint32_t> emit_dict_probe_start(uint32_t source_offset,
                                                  uint32_t receiver_reg,
                                                  uint32_t generation_reg,

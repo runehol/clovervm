@@ -332,12 +332,21 @@ namespace cl
         static constexpr int64_t InsertProbeTombstone = -4;
         static constexpr int64_t InsertProbeHashMiss = -5;
 
+        struct StringKeyedSetDefaultResult
+        {
+            bool handled;
+            Value value;
+        };
+
         static void promote_string_keyed(ThreadState *thread, Dict *dict)
         {
             assert(dict->get_shape() ==
                    thread->get_exact_dict_string_key_shape());
             dict->promote_to_general_shape(thread);
         }
+        static StringKeyedSetDefaultResult
+        try_string_keyed_setdefault(ThreadState *thread, Dict *dict, Value key,
+                                    Value default_value);
         static void probe_start(const Dict *dict, TValue<SMI> hash,
                                 TValue<SMI> *generation, size_t *hash_idx)
         {

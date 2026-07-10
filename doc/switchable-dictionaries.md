@@ -1422,10 +1422,20 @@ Stage invariant:
 - [x] Add a trusted slot-deletion primitive, reuse conditional string-keyed
   promotion, and generate a cache-bearing `__delitem__` body.
 
-##### 11b3. Composed Mutation
+##### 11b3a. Setdefault
 
-- [ ] Generate cache-bearing `pop` and `setdefault` bodies using one semantic
-  probe per operation.
+- [x] Generate a cache-bearing `setdefault` body using one insertion-style
+  semantic probe and an in-method exact-string fast path.
+
+Normal method-call caches do not consult special-method trusted-handler
+resolvers. The generated body therefore starts with a protocol-free trusted
+opcode that completes exact-string `setdefault` or promotes before falling
+through to the general path.
+
+##### 11b3b. Pop
+
+- [ ] Generate a cache-bearing `pop` body using one deletion-style semantic
+  probe and an in-method exact-string fast path.
 
 #### 11c. Dict Displays
 
@@ -1436,8 +1446,9 @@ Stage invariant:
 Stage invariants:
 
 - Trusted dict opcodes never invoke Python-visible protocols.
-- Exact-string operations on the canonical string-keyed shape retain their
-  existing trusted native handlers.
+- Exact-string operations on the canonical string-keyed shape retain trusted
+  protocol-free fast paths: existing native handlers where special-method
+  dispatch supports them, and in-method trusted opcodes for regular methods.
 - C++ semantic helpers remain available for native and C API callers. Completed
   Python-visible paths must not hide protocol calls inside C++.
 

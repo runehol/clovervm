@@ -65,6 +65,34 @@ namespace cl
         }
     }
 
+    TrustedDictBytecodeAccess::StringKeyedSetDefaultResult
+    TrustedDictBytecodeAccess::try_string_keyed_setdefault(ThreadState *thread,
+                                                           Dict *dict,
+                                                           Value key,
+                                                           Value default_value)
+    {
+        key.assert_not_vm_sentinel();
+        default_value.assert_not_vm_sentinel();
+        assert(is_exact_dict_string_key_shape(thread, dict));
+        if(!can_convert_to<String>(key))
+        {
+            dict->promote_to_general_shape(thread);
+            return {false, Value::None()};
+        }
+
+        TValue<String> string_key = TValue<String>::from_value_unchecked(key);
+        int32_t entry_idx = *dict->find_entry(string_key);
+        if(entry_idx >= 0)
+        {
+            assert(static_cast<size_t>(entry_idx) < dict->entries.size());
+            assert(dict->entries[entry_idx].valid());
+            return {true, dict->entries[entry_idx].value};
+        }
+
+        dict->string_keyed_insert(string_key, default_value);
+        return {true, default_value};
+    }
+
     BuiltinClassDefinition make_dict_class(VirtualMachine *vm)
     {
         static constexpr NativeLayoutId native_layout_ids[] = {
@@ -301,14 +329,6 @@ namespace cl
         return self.get_ptr<Dict>()->popitem();
     }
 
-    static Value native_dict_setdefault(ThreadState *thread, Value self,
-                                        Value key, Value default_value)
-    {
-        CL_PROPAGATE_EXCEPTION(require_dict_receiver(self, L"setdefault"));
-        return CL_TRY(
-            self.get_ptr<Dict>()->setdefault(thread, key, default_value));
-    }
-
     static Value native_dict_update(ThreadState *thread, Value self,
                                     Value other)
     {
@@ -361,6 +381,12 @@ namespace cl
         Contains,
     };
 
+    enum class DictInsertKind
+    {
+        SetItem,
+        SetDefault,
+    };
+
     static Value dict_getitem_receiver_error(ThreadState *thread)
     {
         return thread->set_pending_builtin_exception_string(
@@ -383,6 +409,12 @@ namespace cl
     {
         return thread->set_pending_builtin_exception_string(
             L"TypeError", L"dict.__setitem__ expects a dict receiver");
+    }
+
+    static Value dict_setdefault_receiver_error(ThreadState *thread)
+    {
+        return thread->set_pending_builtin_exception_string(
+            L"TypeError", L"dict.setdefault expects a dict receiver");
     }
 
     static Value dict_delitem_receiver_error(ThreadState *thread)
@@ -579,16 +611,34 @@ namespace cl
                 code_object, Optional<TValue<String>>::none(), defaults));
     }
 
-    static Expected<TValue<Function>>
-    make_dict_setitem_function(VirtualMachine *vm,
-                               ClassObject *type_error_class,
-                               TrustedHandlerResolver trusted_handler_resolver)
+    static Expected<TValue<Function>> make_dict_insert_function(
+        VirtualMachine *vm, DictInsertKind kind, ClassObject *type_error_class,
+        TrustedHandlerResolver trusted_handler_resolver = nullptr)
     {
+        const wchar_t *name_text;
+        IntrinsicFunction0 receiver_error_function;
+        switch(kind)
+        {
+            case DictInsertKind::SetItem:
+                name_text = L"<dict.__setitem__>";
+                receiver_error_function = dict_setitem_receiver_error;
+                break;
+            case DictInsertKind::SetDefault:
+                name_text = L"<dict.setdefault>";
+                receiver_error_function = dict_setdefault_receiver_error;
+                break;
+        }
+
         Scope *local_scope = vm->make_immortal_internal_raw<Scope>(nullptr);
         CodeObjectBuilder code(
             vm, nullptr, vm->global_builtins_module(), local_scope,
-            vm->get_or_create_interned_string_value(L"<dict.__setitem__>"));
+            vm->get_or_create_interned_string_value(name_text));
         code.configure_positional_function(3);
+        if(kind == DictInsertKind::SetDefault)
+        {
+            code.function_signature().first_default_slot = 2;
+            code.function_signature().default_presence_mask = 1;
+        }
 
         uint8_t dict_class_idx =
             CL_TRY(code.allocate_constant(Value::from_oop(vm->dict_class())));
@@ -599,12 +649,14 @@ namespace cl
         uint8_t unhashable_idx = CL_TRY(code.allocate_constant(
             vm->get_or_create_interned_string_value(L"object is unhashable")));
         NativeFunctionTarget receiver_error_target;
-        receiver_error_target.fixed0 = dict_setitem_receiver_error;
+        receiver_error_target.fixed0 = receiver_error_function;
         uint8_t receiver_error_target_idx =
             CL_TRY(code.add_native_function_target(receiver_error_target));
 
         {
-            CodeObjectBuilder::TemporaryReg temporaries(code, 7);
+            uint32_t temporary_count =
+                kind == DictInsertKind::SetDefault ? 8 : 7;
+            CodeObjectBuilder::TemporaryReg temporaries(code, temporary_count);
             uint32_t hash_reg = temporaries;
             uint32_t generation_reg = temporaries + 1;
             uint32_t hash_idx_reg = temporaries + 2;
@@ -612,6 +664,9 @@ namespace cl
             uint32_t candidate_key_reg = temporaries + 4;
             uint32_t equality_reg = temporaries + 5;
             uint32_t first_tombstone_idx_reg = temporaries + 6;
+            uint32_t string_result_reg = kind == DictInsertKind::SetDefault
+                                             ? temporaries + 7
+                                             : temporaries;
 
             JumpTarget receiver_ok(&code);
             JumpTarget restart_probe(&code);
@@ -620,7 +675,7 @@ namespace cl
             JumpTarget record_tombstone(&code);
             JumpTarget advance_probe(&code);
             JumpTarget insert_new(&code);
-            JumpTarget overwrite(&code);
+            JumpTarget hit(&code);
 
             CL_TRY(code.emit_ldar(0, 0));
             CL_TRY(code.emit_is_instance_of_known_class(0, dict_class_idx));
@@ -628,7 +683,20 @@ namespace cl
             CL_TRY(emit_native_error(code, receiver_error_target_idx));
             CL_TRY(receiver_ok.resolve());
 
-            CL_TRY(code.emit_dict_promote_string_keyed(0, 0));
+            if(kind == DictInsertKind::SetDefault)
+            {
+                JumpTarget general_path(&code);
+                CL_TRY(code.emit_dict_try_string_keyed_setdefault(
+                    0, 0, 1, 2, string_result_reg));
+                CL_TRY(code.emit_jump_if_false(0, general_path));
+                CL_TRY(code.emit_ldar(0, string_result_reg));
+                CL_TRY(code.emit_return(0));
+                CL_TRY(general_path.resolve());
+            }
+            else
+            {
+                CL_TRY(code.emit_dict_promote_string_keyed(0, 0));
+            }
 
             {
                 CodeObjectBuilder::TemporaryReg call_args(
@@ -668,7 +736,7 @@ namespace cl
             CL_TRY(code.emit_operator_reg(0, Bytecode::TestIs,
                                           candidate_key_reg,
                                           OperatorBytecodeFormat::Plain));
-            CL_TRY(code.emit_jump_if_true(0, overwrite));
+            CL_TRY(code.emit_jump_if_true(0, hit));
 
             CL_TRY(code.emit_ldar(0, 1));
             CL_TRY(code.emit_operator_reg(
@@ -681,7 +749,7 @@ namespace cl
                 candidate_key_reg));
             CL_TRY(code.emit_jump_if_false(0, restart_probe));
             CL_TRY(code.emit_ldar(0, equality_reg));
-            CL_TRY(code.emit_jump_if_true(0, overwrite));
+            CL_TRY(code.emit_jump_if_true(0, hit));
             CL_TRY(code.emit_jump(0, advance_probe));
 
             CL_TRY(tombstone.resolve());
@@ -702,10 +770,23 @@ namespace cl
             CL_TRY(insert_new.resolve());
             CL_TRY(code.emit_dict_insert_new(
                 0, 0, hash_idx_reg, first_tombstone_idx_reg, hash_reg, 1, 2));
+            if(kind == DictInsertKind::SetDefault)
+            {
+                CL_TRY(code.emit_ldar(0, 2));
+            }
             CL_TRY(code.emit_return(0));
 
-            CL_TRY(overwrite.resolve());
-            CL_TRY(code.emit_dict_overwrite_entry(0, 0, probe_result_reg, 2));
+            CL_TRY(hit.resolve());
+            if(kind == DictInsertKind::SetItem)
+            {
+                CL_TRY(
+                    code.emit_dict_overwrite_entry(0, 0, probe_result_reg, 2));
+            }
+            else
+            {
+                CL_TRY(code.emit_ldar(0, probe_result_reg));
+                CL_TRY(code.emit_dict_entry_value(0, 0));
+            }
             CL_TRY(code.emit_return(0));
         }
 
@@ -713,10 +794,15 @@ namespace cl
             TValue<CodeObject>::from_oop(CL_TRY(code.finalize()));
         code_object.extract()->trusted_handler_resolver =
             trusted_handler_resolver;
+        Optional<TValue<Tuple>> defaults = Optional<TValue<Tuple>>::none();
+        if(kind == DictInsertKind::SetDefault)
+        {
+            defaults = Optional<TValue<Tuple>>::some(
+                make_single_default(vm, Value::None()));
+        }
         return Expected<TValue<Function>>::ok(
             vm->make_immortal_object_value<Function>(
-                code_object, Optional<TValue<String>>::none(),
-                Optional<TValue<Tuple>>::none()));
+                code_object, Optional<TValue<String>>::none(), defaults));
     }
 
     static Expected<TValue<Function>>
@@ -902,22 +988,25 @@ namespace cl
             assert(stored);
             (void)stored;
         };
+        auto install_generated_insert =
+            [&](const wchar_t *name, DictInsertKind kind,
+                TrustedHandlerResolver resolver = nullptr) {
+                bool stored = cls->define_own_property(
+                    vm->get_or_create_interned_string_value(name),
+                    unwrap_bootstrap_expected(
+                        vm,
+                        make_dict_insert_function(vm, kind, type_error_class,
+                                                  resolver),
+                        "creating generated dict insertion function")
+                        .raw_value(),
+                    method_flags);
+                assert(stored);
+                (void)stored;
+            };
         install_generated(L"__getitem__", DictReadKind::GetItem,
                           resolve_trusted_dict_getitem_handler);
-        {
-            bool stored = cls->define_own_property(
-                vm->get_or_create_interned_string_value(L"__setitem__"),
-                unwrap_bootstrap_expected(
-                    vm,
-                    make_dict_setitem_function(
-                        vm, type_error_class,
-                        resolve_trusted_dict_setitem_handler),
-                    "creating generated dict setitem function")
-                    .raw_value(),
-                method_flags);
-            assert(stored);
-            (void)stored;
-        }
+        install_generated_insert(L"__setitem__", DictInsertKind::SetItem,
+                                 resolve_trusted_dict_setitem_handler);
         {
             bool stored = cls->define_own_property(
                 vm->get_or_create_interned_string_value(L"__delitem__"),
@@ -941,9 +1030,7 @@ namespace cl
         install(L"items", native_dict_items);
         install(L"pop", native_dict_pop);
         install(L"popitem", native_dict_popitem);
-        install(L"setdefault", native_dict_setdefault,
-                Optional<TValue<Tuple>>::some(
-                    make_single_default(vm, Value::None())));
+        install_generated_insert(L"setdefault", DictInsertKind::SetDefault);
         install(L"update", native_dict_update,
                 Optional<TValue<Tuple>>::some(
                     make_single_default(vm, Value::None())));

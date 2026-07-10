@@ -143,6 +143,7 @@ namespace cl
 
         // trusted protocol-free dict table operations
         DictPromoteStringKeyed,
+        DictTryStringKeyedSetDefault,
         DictProbeStart,
         DictProbeForLookup,
         DictProbeForInsert,

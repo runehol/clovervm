@@ -977,6 +977,33 @@ TEST(Dict, PublicSetdefaultPromotesNonStringMiss)
                                                    L"len(d)\n"));
 }
 
+TEST(Dict, PublicSetdefaultUsesNoneWhenDefaultIsOmitted)
+{
+    test::VmTestContext context;
+
+    EXPECT_EQ(Value::True(), context.run_file(L"d = {}\n"
+                                              L"result = d.setdefault(1)\n"
+                                              L"result is None and "
+                                              L"d[1] is None\n"));
+}
+
+TEST(Dict, PublicStringSetdefaultKeepsStringKeyShape)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation_scope(context.thread());
+    Shape *string_key_shape =
+        context.thread()->get_exact_dict_string_key_shape();
+
+    Value result = context.run_file(L"d = {}\n"
+                                    L"assert d.setdefault('key', 11) == 11\n"
+                                    L"assert d.setdefault('key', 22) == 11\n"
+                                    L"d\n");
+
+    ASSERT_TRUE(can_convert_to<Dict>(result));
+    EXPECT_EQ(string_key_shape, result.get_ptr<Dict>()->get_shape());
+    EXPECT_EQ(1u, result.get_ptr<Dict>()->size());
+}
+
 TEST(Dict, PublicSetdefaultUsesSingleGeneralLookup)
 {
     test::VmTestContext context;
@@ -999,6 +1026,41 @@ TEST(Dict, PublicSetdefaultUsesSingleGeneralLookup)
                                L"d[Stored()] = 'stored'\n"
                                L"d.setdefault(Probe(), 'new') == 'new' and "
                                L"calls == 1 and len(d) == 2\n"));
+}
+
+TEST(Dict, PublicSetdefaultPropagatesHashExceptions)
+{
+    test::VmTestContext context;
+
+    Value result = context.run_file(L"class BadHash:\n"
+                                    L"    def __hash__(self):\n"
+                                    L"        return 'bad'\n"
+                                    L"d = {}\n"
+                                    L"d.setdefault(BadHash(), 1)\n");
+
+    EXPECT_TRUE(result.is_exception_marker());
+    expect_pending_exception(context.thread(), L"TypeError",
+                             L"__hash__ method should return an integer");
+}
+
+TEST(Dict, PublicSetdefaultPropagatesEqualityExceptions)
+{
+    test::VmTestContext context;
+
+    Value result = context.run_file(L"class Stored:\n"
+                                    L"    def __hash__(self):\n"
+                                    L"        return 7\n"
+                                    L"    def __eq__(self, other):\n"
+                                    L"        raise ValueError\n"
+                                    L"class Probe:\n"
+                                    L"    def __hash__(self):\n"
+                                    L"        return 7\n"
+                                    L"d = {}\n"
+                                    L"d[Stored()] = 1\n"
+                                    L"d.setdefault(Probe(), 2)\n");
+
+    EXPECT_TRUE(result.is_exception_marker());
+    expect_pending_exception(context.thread(), L"ValueError", L"");
 }
 
 TEST(Dict, SemanticApiUpdatePromotesFromNonStringSourceKey)
@@ -1266,6 +1328,27 @@ TEST(Dict, GeneratedSetItemContainsProtocolCacheAndMutationSites)
     EXPECT_NE(std::string::npos, bytecode.find("JumpIfEqualSmi"));
 }
 
+TEST(Dict, GeneratedSetdefaultContainsProtocolCacheAndMutationSites)
+{
+    test::VmTestContext context;
+
+    Function *method = dict_method_function(context, L"setdefault");
+    std::string bytecode = fmt::to_string(*method->code_object.extract());
+    EXPECT_NE(std::string::npos, bytecode.find("CallSpecialMethod0"));
+    EXPECT_NE(std::string::npos, bytecode.find("CanonicalizeHash"));
+    EXPECT_NE(std::string::npos, bytecode.find("TestEqual"));
+    EXPECT_NE(std::string::npos, bytecode.find("ToBool"));
+    EXPECT_NE(std::string::npos, bytecode.find("DictTryStringKeyedSetDefault"));
+    EXPECT_NE(std::string::npos, bytecode.find("DictResizeForInsert"));
+    EXPECT_NE(std::string::npos, bytecode.find("DictProbeStart"));
+    EXPECT_NE(std::string::npos, bytecode.find("DictProbeForInsert"));
+    EXPECT_NE(std::string::npos, bytecode.find("DictEntryStillMatches"));
+    EXPECT_NE(std::string::npos, bytecode.find("DictEntryValue"));
+    EXPECT_NE(std::string::npos, bytecode.find("DictInsertNew"));
+    EXPECT_EQ(std::string::npos, bytecode.find("DictOverwriteEntry"));
+    EXPECT_NE(std::string::npos, bytecode.find("JumpIfEqualSmi"));
+}
+
 TEST(Dict, GeneratedDelItemContainsProtocolCacheAndMutationSites)
 {
     test::VmTestContext context;
@@ -1454,6 +1537,16 @@ TEST(Dict, GeneratedSetItemRejectsWrongReceiver)
     EXPECT_TRUE(result.is_exception_marker());
     expect_pending_exception(context.thread(), L"TypeError",
                              L"dict.__setitem__ expects a dict receiver");
+}
+
+TEST(Dict, GeneratedSetdefaultRejectsWrongReceiver)
+{
+    test::VmTestContext context;
+
+    Value result = context.run_file(L"dict.setdefault(1, 1)\n");
+    EXPECT_TRUE(result.is_exception_marker());
+    expect_pending_exception(context.thread(), L"TypeError",
+                             L"dict.setdefault expects a dict receiver");
 }
 
 TEST(Dict, GeneratedDelItemRejectsWrongReceiver)
