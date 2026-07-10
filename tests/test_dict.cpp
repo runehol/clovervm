@@ -1721,6 +1721,7 @@ TEST(Dict, TrustedStringOperationsKeepStringKeyShape)
     Value result = context.run_file(L"d = {}\n"
                                     L"d['key'] = 1\n"
                                     L"assert d['key'] == 1\n"
+                                    L"assert 'key' in d\n"
                                     L"del d['key']\n"
                                     L"d\n");
 

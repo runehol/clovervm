@@ -22,16 +22,12 @@
 namespace cl
 {
 
-    /*
-      TODO: these just assume string keys. replace with full equality machinery
-      when we have calling Python-defined methods from C++ up and running */
-
-    static TValue<SMI> internal_hash(TValue<String> key)
+    static TValue<SMI> string_keyed_hash(TValue<String> key)
     {
         return string_hash_normalized(key);
     }
 
-    static bool internal_eq(TValue<String> a, TValue<String> b)
+    static bool string_keyed_equal(TValue<String> a, TValue<String> b)
     {
         return string_eq(a, b);
     }
@@ -240,14 +236,9 @@ namespace cl
         return Value::None();
     }
 
-    static Value trusted_dict_contains_handler(ThreadState *thread, Value self,
-                                               Value key)
+    static Value trusted_dict_contains_str_handler(ThreadState *thread,
+                                                   Value self, Value key)
     {
-        if(!can_convert_to<String>(key))
-        {
-            return thread->set_pending_builtin_exception_string(
-                L"TypeError", L"dict keys must be str");
-        }
         return CL_TRY(self.get_ptr<Dict>()->contains_for_str(
                    thread, TValue<String>::from_value_unchecked(key)))
                    ? Value::True()
@@ -292,7 +283,7 @@ namespace cl
         if(trusted_dict_str_key_shapes_match(vm, container_key, key_key))
         {
             return TrustedResolution::call_trusted(
-                trusted_dict_contains_handler);
+                trusted_dict_contains_str_handler);
         }
         return TrustedResolution::no_trusted_handler_call_untrusted();
     }
@@ -1911,12 +1902,12 @@ namespace cl
 
     const int32_t *Dict::find_entry(TValue<String> key) const
     {
-        return find_entry_with_provided_hash(key, internal_hash(key));
+        return find_entry_with_provided_hash(key, string_keyed_hash(key));
     }
 
     int32_t *Dict::find_entry(TValue<String> key)
     {
-        return find_entry_with_provided_hash(key, internal_hash(key));
+        return find_entry_with_provided_hash(key, string_keyed_hash(key));
     }
 
     int32_t *Dict::find_entry_with_provided_hash(TValue<String> key,
@@ -1954,8 +1945,8 @@ namespace cl
                 hash_idx = (hash_idx + 1) & hash_table_size_m1;
                 continue;
             }
-            if(internal_eq(key, TValue<String>::from_value_unchecked(
-                                    entries[entry_idx].key)))
+            if(string_keyed_equal(key, TValue<String>::from_value_unchecked(
+                                           entries[entry_idx].key)))
             {
                 return &hash_table[hash_idx];
             }
@@ -2003,7 +1994,7 @@ namespace cl
             grow();
         }
 
-        TValue<SMI> hash = internal_hash(key);
+        TValue<SMI> hash = string_keyed_hash(key);
         int32_t *entry = find_entry_with_provided_hash(key, hash);
         int32_t idx = *entry;
         if(idx < 0)

@@ -1455,12 +1455,14 @@ performs population and no `dict.__init__` method is installed.
 
 ### 13. Cleanup, Performance, And Stdlib Unblock
 
-- [ ] Remove obsolete string-only `TODO`s and helper names that imply raw hash
+- [x] Remove obsolete string-only `TODO`s and helper names that imply raw hash
   storage.
-- [ ] Audit dict fast paths so exact-string dictionaries still avoid Python
+- [x] Audit dict fast paths so exact-string dictionaries still avoid Python
   bytecode and general dictionaries use the completed cache-bearing
   hash/equality path.
-- [ ] Add focused performance checks for unchanged string-key workloads.
+- [x] Add focused performance checks for unchanged string-key workloads through
+  `BM_GetItemDictStringKeyed` and `BM_SetItemDictStringKeyed`, paired with their
+  promoted-general variants.
 - [ ] Implement or unblock `errno.errorcode` using a real public integer-key
   `dict`.
 - [ ] Update `doc/dictionaries.md`, `doc/clover-c-api.md`,
