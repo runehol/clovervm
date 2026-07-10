@@ -345,6 +345,8 @@ template <> struct fmt::formatter<cl::Bytecode>
                 return format_to(out, "DictPromoteStringKeyed");
             case cl::Bytecode::DictTryStringKeyedSetDefault:
                 return format_to(out, "DictTryStringKeyedSetDefault");
+            case cl::Bytecode::DictTryStringKeyedPop:
+                return format_to(out, "DictTryStringKeyedPop");
             case cl::Bytecode::DictProbeStart:
                 return format_to(out, "DictProbeStart");
             case cl::Bytecode::DictProbeForLookup:
@@ -952,6 +954,15 @@ template <> struct fmt::formatter<cl::CodeObject>
                 format_to(out, ", key=");
                 disassemble_reg(code_obj, out, pc++);
                 format_to(out, ", default=");
+                disassemble_reg(code_obj, out, pc++);
+                format_to(out, ", result=");
+                disassemble_reg(code_obj, out, pc++);
+                break;
+
+            case cl::Bytecode::DictTryStringKeyedPop:
+                format_to(out, " ");
+                disassemble_reg(code_obj, out, pc++);
+                format_to(out, ", key=");
                 disassemble_reg(code_obj, out, pc++);
                 format_to(out, ", result=");
                 disassemble_reg(code_obj, out, pc++);

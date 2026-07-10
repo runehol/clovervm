@@ -541,6 +541,41 @@ TEST(Dict, PublicDeleteAndPopPromotedNonStringKeys)
                                L"len(d) == 0 and not (1 in d)\n"));
 }
 
+TEST(Dict, PublicPopReturnsDefaultOnlyWhenProvided)
+{
+    test::VmTestContext context;
+
+    EXPECT_EQ(Value::True(), context.run_file(L"d = {}\n"
+                                              L"d.pop('missing', None) "
+                                              L"is None\n"));
+
+    Value result = context.run_file(L"d = {}\n"
+                                    L"d.pop('missing')\n");
+    EXPECT_TRUE(result.is_exception_marker());
+    expect_pending_exception(context.thread(), L"KeyError", L"");
+}
+
+TEST(Dict, PublicStringPopKeepsStringKeyShape)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation_scope(context.thread());
+    Shape *string_key_shape =
+        context.thread()->get_exact_dict_string_key_shape();
+
+    Value result = context.run_file(L"value = []\n"
+                                    L"d = {'key': value}\n"
+                                    L"popped = d.pop('key')\n"
+                                    L"popped.append(11)\n"
+                                    L"assert len(popped) == 1\n"
+                                    L"assert popped[0] == 11\n"
+                                    L"assert d.pop('missing', 22) == 22\n"
+                                    L"d\n");
+
+    ASSERT_TRUE(can_convert_to<Dict>(result));
+    EXPECT_EQ(string_key_shape, result.get_ptr<Dict>()->get_shape());
+    EXPECT_EQ(0u, result.get_ptr<Dict>()->size());
+}
+
 TEST(Dict, PublicCopyPreservesPromotedNonStringKeys)
 {
     test::VmTestContext context;
@@ -1367,6 +1402,25 @@ TEST(Dict, GeneratedDelItemContainsProtocolCacheAndMutationSites)
     EXPECT_NE(std::string::npos, bytecode.find("JumpIfEqualSmi"));
 }
 
+TEST(Dict, GeneratedPopContainsProtocolCacheAndMutationSites)
+{
+    test::VmTestContext context;
+
+    Function *method = dict_method_function(context, L"pop");
+    std::string bytecode = fmt::to_string(*method->code_object.extract());
+    EXPECT_NE(std::string::npos, bytecode.find("CallSpecialMethod0"));
+    EXPECT_NE(std::string::npos, bytecode.find("CanonicalizeHash"));
+    EXPECT_NE(std::string::npos, bytecode.find("TestEqual"));
+    EXPECT_NE(std::string::npos, bytecode.find("ToBool"));
+    EXPECT_NE(std::string::npos, bytecode.find("DictTryStringKeyedPop"));
+    EXPECT_NE(std::string::npos, bytecode.find("DictProbeStart"));
+    EXPECT_NE(std::string::npos, bytecode.find("DictProbeForLookup"));
+    EXPECT_NE(std::string::npos, bytecode.find("DictEntryStillMatches"));
+    EXPECT_NE(std::string::npos, bytecode.find("DictEntryValue"));
+    EXPECT_NE(std::string::npos, bytecode.find("DictDeleteEntry"));
+    EXPECT_NE(std::string::npos, bytecode.find("JumpIfEqualSmi"));
+}
+
 TEST(Dict, TrustedPromotionConvertsStringKeyedShape)
 {
     test::VmTestContext context;
@@ -1557,6 +1611,16 @@ TEST(Dict, GeneratedDelItemRejectsWrongReceiver)
     EXPECT_TRUE(result.is_exception_marker());
     expect_pending_exception(context.thread(), L"TypeError",
                              L"dict.__delitem__ expects a dict receiver");
+}
+
+TEST(Dict, GeneratedPopRejectsWrongReceiver)
+{
+    test::VmTestContext context;
+
+    Value result = context.run_file(L"dict.pop(1, 1)\n");
+    EXPECT_TRUE(result.is_exception_marker());
+    expect_pending_exception(context.thread(), L"TypeError",
+                             L"dict.pop expects a dict receiver");
 }
 
 TEST(Dict, TableGenerationChangesOnlyWhenProbeStructureChanges)

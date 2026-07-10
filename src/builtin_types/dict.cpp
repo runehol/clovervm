@@ -93,6 +93,37 @@ namespace cl
         return {true, default_value};
     }
 
+    TrustedDictBytecodeAccess::StringKeyedPopResult
+    TrustedDictBytecodeAccess::try_string_keyed_pop(ThreadState *thread,
+                                                    Dict *dict, Value key)
+    {
+        key.assert_not_vm_sentinel();
+        assert(is_exact_dict_string_key_shape(thread, dict));
+        if(!can_convert_to<String>(key))
+        {
+            dict->promote_to_general_shape(thread);
+            return {PopGeneral, Value::None()};
+        }
+
+        int32_t *entry =
+            dict->find_entry(TValue<String>::from_value_unchecked(key));
+        int32_t entry_idx = *entry;
+        if(entry_idx < 0)
+        {
+            return {PopStringMiss, Value::None()};
+        }
+
+        assert(static_cast<size_t>(entry_idx) < dict->entries.size());
+        assert(dict->entries[entry_idx].valid());
+        Owned<Value> result(dict->entries[entry_idx].value);
+        dict->entries.set(entry_idx,
+                          Dict::Entry(Value::not_present(), Value::None(),
+                                      TValue<SMI>::from_smi(0)));
+        *entry = Dict::tombstone;
+        --dict->n_valid_entries;
+        return {PopStringHit, result.value()};
+    }
+
     BuiltinClassDefinition make_dict_class(VirtualMachine *vm)
     {
         static constexpr NativeLayoutId native_layout_ids[] = {
@@ -317,12 +348,6 @@ namespace cl
         return self.get_ptr<Dict>()->items();
     }
 
-    static Value native_dict_pop(ThreadState *thread, Value self, Value key)
-    {
-        CL_PROPAGATE_EXCEPTION(require_dict_receiver(self, L"pop"));
-        return CL_TRY(self.get_ptr<Dict>()->pop(thread, key));
-    }
-
     static Value native_dict_popitem(ThreadState *thread, Value self)
     {
         CL_PROPAGATE_EXCEPTION(require_dict_receiver(self, L"popitem"));
@@ -387,6 +412,12 @@ namespace cl
         SetDefault,
     };
 
+    enum class DictDeleteKind
+    {
+        DelItem,
+        Pop,
+    };
+
     static Value dict_getitem_receiver_error(ThreadState *thread)
     {
         return thread->set_pending_builtin_exception_string(
@@ -421,6 +452,12 @@ namespace cl
     {
         return thread->set_pending_builtin_exception_string(
             L"TypeError", L"dict.__delitem__ expects a dict receiver");
+    }
+
+    static Value dict_pop_receiver_error(ThreadState *thread)
+    {
+        return thread->set_pending_builtin_exception_string(
+            L"TypeError", L"dict.pop expects a dict receiver");
     }
 
     static Value dict_getitem_key_error(ThreadState *thread)
@@ -805,16 +842,28 @@ namespace cl
                 code_object, Optional<TValue<String>>::none(), defaults));
     }
 
-    static Expected<TValue<Function>>
-    make_dict_delitem_function(VirtualMachine *vm,
-                               ClassObject *type_error_class,
-                               TrustedHandlerResolver trusted_handler_resolver)
+    static Expected<TValue<Function>> make_dict_delete_function(
+        VirtualMachine *vm, DictDeleteKind kind, ClassObject *type_error_class,
+        Value pop_missing_sentinel,
+        TrustedHandlerResolver trusted_handler_resolver = nullptr)
     {
+        const wchar_t *name_text = kind == DictDeleteKind::DelItem
+                                       ? L"<dict.__delitem__>"
+                                       : L"<dict.pop>";
+        IntrinsicFunction0 receiver_error_function =
+            kind == DictDeleteKind::DelItem ? dict_delitem_receiver_error
+                                            : dict_pop_receiver_error;
         Scope *local_scope = vm->make_immortal_internal_raw<Scope>(nullptr);
         CodeObjectBuilder code(
             vm, nullptr, vm->global_builtins_module(), local_scope,
-            vm->get_or_create_interned_string_value(L"<dict.__delitem__>"));
-        code.configure_positional_function(2);
+            vm->get_or_create_interned_string_value(name_text));
+        code.configure_positional_function(kind == DictDeleteKind::DelItem ? 2
+                                                                           : 3);
+        if(kind == DictDeleteKind::Pop)
+        {
+            code.function_signature().first_default_slot = 2;
+            code.function_signature().default_presence_mask = 1;
+        }
 
         uint8_t dict_class_idx =
             CL_TRY(code.allocate_constant(Value::from_oop(vm->dict_class())));
@@ -824,8 +873,14 @@ namespace cl
             CL_TRY(code.allocate_constant(Value::from_oop(type_error_class)));
         uint8_t unhashable_idx = CL_TRY(code.allocate_constant(
             vm->get_or_create_interned_string_value(L"object is unhashable")));
+        uint8_t pop_missing_idx = 0;
+        if(kind == DictDeleteKind::Pop)
+        {
+            pop_missing_idx =
+                CL_TRY(code.allocate_constant(pop_missing_sentinel));
+        }
         NativeFunctionTarget receiver_error_target;
-        receiver_error_target.fixed0 = dict_delitem_receiver_error;
+        receiver_error_target.fixed0 = receiver_error_function;
         uint8_t receiver_error_target_idx =
             CL_TRY(code.add_native_function_target(receiver_error_target));
         NativeFunctionTarget key_error_target;
@@ -834,13 +889,18 @@ namespace cl
             CL_TRY(code.add_native_function_target(key_error_target));
 
         {
-            CodeObjectBuilder::TemporaryReg temporaries(code, 6);
+            uint32_t temporary_count = kind == DictDeleteKind::DelItem ? 6 : 8;
+            CodeObjectBuilder::TemporaryReg temporaries(code, temporary_count);
             uint32_t hash_reg = temporaries;
             uint32_t generation_reg = temporaries + 1;
             uint32_t hash_idx_reg = temporaries + 2;
             uint32_t probe_result_reg = temporaries + 3;
             uint32_t candidate_key_reg = temporaries + 4;
             uint32_t equality_reg = temporaries + 5;
+            uint32_t pop_result_reg =
+                kind == DictDeleteKind::Pop ? temporaries + 6 : temporaries;
+            uint32_t pop_missing_reg =
+                kind == DictDeleteKind::Pop ? temporaries + 7 : temporaries;
 
             JumpTarget receiver_ok(&code);
             JumpTarget restart_probe(&code);
@@ -848,6 +908,7 @@ namespace cl
             JumpTarget advance_probe(&code);
             JumpTarget hit(&code);
             JumpTarget miss(&code);
+            JumpTarget string_hit(&code);
 
             CL_TRY(code.emit_ldar(0, 0));
             CL_TRY(code.emit_is_instance_of_known_class(0, dict_class_idx));
@@ -855,7 +916,19 @@ namespace cl
             CL_TRY(emit_native_error(code, receiver_error_target_idx));
             CL_TRY(receiver_ok.resolve());
 
-            CL_TRY(code.emit_dict_promote_string_keyed(0, 0));
+            if(kind == DictDeleteKind::Pop)
+            {
+                CL_TRY(code.emit_dict_try_string_keyed_pop(0, 0, 1,
+                                                           pop_result_reg));
+                CL_TRY(code.emit_jump_if_equal_smi(
+                    0, TrustedDictBytecodeAccess::PopStringHit, string_hit));
+                CL_TRY(code.emit_jump_if_equal_smi(
+                    0, TrustedDictBytecodeAccess::PopStringMiss, miss));
+            }
+            else
+            {
+                CL_TRY(code.emit_dict_promote_string_keyed(0, 0));
+            }
 
             {
                 CodeObjectBuilder::TemporaryReg call_args(
@@ -911,10 +984,41 @@ namespace cl
             CL_TRY(code.emit_jump(0, probe_loop));
 
             CL_TRY(hit.resolve());
+            if(kind == DictDeleteKind::Pop)
+            {
+                CL_TRY(code.emit_ldar(0, probe_result_reg));
+                CL_TRY(code.emit_dict_entry_value(0, 0));
+                CL_TRY(code.emit_star(0, pop_result_reg));
+            }
             CL_TRY(code.emit_dict_delete_entry(0, 0, hash_idx_reg));
+            if(kind == DictDeleteKind::Pop)
+            {
+                CL_TRY(code.emit_ldar(0, pop_result_reg));
+            }
             CL_TRY(code.emit_return(0));
 
+            CL_TRY(string_hit.resolve());
+            if(kind == DictDeleteKind::Pop)
+            {
+                CL_TRY(code.emit_ldar(0, pop_result_reg));
+                CL_TRY(code.emit_return(0));
+            }
+
             CL_TRY(miss.resolve());
+            if(kind == DictDeleteKind::Pop)
+            {
+                JumpTarget key_error(&code);
+                CL_TRY(code.emit_lda_constant(0, pop_missing_idx));
+                CL_TRY(code.emit_star(0, pop_missing_reg));
+                CL_TRY(code.emit_ldar(0, 2));
+                CL_TRY(code.emit_operator_reg(0, Bytecode::TestIs,
+                                              pop_missing_reg,
+                                              OperatorBytecodeFormat::Plain));
+                CL_TRY(code.emit_jump_if_true(0, key_error));
+                CL_TRY(code.emit_ldar(0, 2));
+                CL_TRY(code.emit_return(0));
+                CL_TRY(key_error.resolve());
+            }
             CL_TRY(emit_native_error(code, key_error_target_idx));
         }
 
@@ -922,10 +1026,15 @@ namespace cl
             TValue<CodeObject>::from_oop(CL_TRY(code.finalize()));
         code_object.extract()->trusted_handler_resolver =
             trusted_handler_resolver;
+        Optional<TValue<Tuple>> defaults = Optional<TValue<Tuple>>::none();
+        if(kind == DictDeleteKind::Pop)
+        {
+            defaults = Optional<TValue<Tuple>>::some(
+                make_single_default(vm, pop_missing_sentinel));
+        }
         return Expected<TValue<Function>>::ok(
             vm->make_immortal_object_value<Function>(
-                code_object, Optional<TValue<String>>::none(),
-                Optional<TValue<Tuple>>::none()));
+                code_object, Optional<TValue<String>>::none(), defaults));
     }
 
     void install_dict_class_methods(VirtualMachine *vm,
@@ -1012,9 +1121,9 @@ namespace cl
                 vm->get_or_create_interned_string_value(L"__delitem__"),
                 unwrap_bootstrap_expected(
                     vm,
-                    make_dict_delitem_function(
-                        vm, type_error_class,
-                        resolve_trusted_dict_delitem_handler),
+                    make_dict_delete_function(
+                        vm, DictDeleteKind::DelItem, type_error_class,
+                        Value::None(), resolve_trusted_dict_delitem_handler),
                     "creating generated dict delitem function")
                     .raw_value(),
                 method_flags);
@@ -1028,7 +1137,22 @@ namespace cl
         install(L"keys", native_dict_keys);
         install(L"values", native_dict_values);
         install(L"items", native_dict_items);
-        install(L"pop", native_dict_pop);
+        TValue<Tuple> pop_missing_sentinel =
+            vm->make_immortal_object_value<Tuple>(0);
+        {
+            bool stored = cls->define_own_property(
+                vm->get_or_create_interned_string_value(L"pop"),
+                unwrap_bootstrap_expected(
+                    vm,
+                    make_dict_delete_function(vm, DictDeleteKind::Pop,
+                                              type_error_class,
+                                              pop_missing_sentinel.raw_value()),
+                    "creating generated dict pop function")
+                    .raw_value(),
+                method_flags);
+            assert(stored);
+            (void)stored;
+        }
         install(L"popitem", native_dict_popitem);
         install_generated_insert(L"setdefault", DictInsertKind::SetDefault);
         install(L"update", native_dict_update,

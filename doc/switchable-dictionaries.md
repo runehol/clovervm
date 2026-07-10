@@ -1434,7 +1434,7 @@ through to the general path.
 
 ##### 11b3b. Pop
 
-- [ ] Generate a cache-bearing `pop` body using one deletion-style semantic
+- [x] Generate a cache-bearing `pop` body using one deletion-style semantic
   probe and an in-method exact-string fast path.
 
 #### 11c. Dict Displays

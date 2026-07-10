@@ -866,6 +866,18 @@ namespace cl
         return Expected<uint32_t>::ok(result);
     }
 
+    Expected<uint32_t> CodeObjectBuilder::emit_dict_try_string_keyed_pop(
+        uint32_t source_offset, uint32_t receiver_reg, uint32_t key_reg,
+        uint32_t result_reg)
+    {
+        uint32_t result = emplace_back(
+            source_offset, uint8_t(Bytecode::DictTryStringKeyedPop));
+        emplace_back(source_offset, encode_reg(receiver_reg));
+        emplace_back(source_offset, encode_reg(key_reg));
+        emplace_back(source_offset, encode_reg(result_reg));
+        return Expected<uint32_t>::ok(result);
+    }
+
     Expected<uint32_t> CodeObjectBuilder::emit_dict_probe_start(
         uint32_t source_offset, uint32_t receiver_reg, uint32_t generation_reg,
         uint32_t hash_idx_reg)

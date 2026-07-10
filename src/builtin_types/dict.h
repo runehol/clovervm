@@ -331,10 +331,19 @@ namespace cl
         static constexpr int64_t InsertProbeEmpty = -3;
         static constexpr int64_t InsertProbeTombstone = -4;
         static constexpr int64_t InsertProbeHashMiss = -5;
+        static constexpr int64_t PopStringHit = -6;
+        static constexpr int64_t PopStringMiss = -7;
+        static constexpr int64_t PopGeneral = -8;
 
         struct StringKeyedSetDefaultResult
         {
             bool handled;
+            Value value;
+        };
+
+        struct StringKeyedPopResult
+        {
+            int64_t status;
             Value value;
         };
 
@@ -347,6 +356,8 @@ namespace cl
         static StringKeyedSetDefaultResult
         try_string_keyed_setdefault(ThreadState *thread, Dict *dict, Value key,
                                     Value default_value);
+        static StringKeyedPopResult try_string_keyed_pop(ThreadState *thread,
+                                                         Dict *dict, Value key);
         static void probe_start(const Dict *dict, TValue<SMI> hash,
                                 TValue<SMI> *generation, size_t *hash_idx)
         {

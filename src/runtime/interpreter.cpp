@@ -4020,6 +4020,40 @@ namespace cl
         COMPLETE();
     }
 
+    NOINLINE static INTERP_CC Value
+    op_dict_try_string_keyed_pop_string_shape(PARAMS)
+    {
+        START(4);
+        int8_t receiver_reg = pc[1];
+        int8_t key_reg = pc[2];
+        int8_t result_reg = pc[3];
+        assert(can_convert_to<Dict>(fp[receiver_reg]));
+        TrustedDictBytecodeAccess::StringKeyedPopResult result =
+            TrustedDictBytecodeAccess::try_string_keyed_pop(
+                thread, fp[receiver_reg].get_ptr<Dict>(), fp[key_reg]);
+        fp[result_reg] = result.value;
+        accumulator = Value::from_smi(result.status);
+        COMPLETE();
+    }
+
+    static INTERP_CC Value op_dict_try_string_keyed_pop(PARAMS)
+    {
+        int8_t receiver_reg = pc[1];
+        assert(can_convert_to<Dict>(fp[receiver_reg]));
+        Dict *dict = fp[receiver_reg].get_ptr<Dict>();
+        if(unlikely(dict->get_shape() ==
+                    thread->get_exact_dict_string_key_shape()))
+        {
+            MUSTTAIL return op_dict_try_string_keyed_pop_string_shape(ARGS);
+        }
+
+        START(4);
+        int8_t result_reg = pc[3];
+        fp[result_reg] = Value::None();
+        accumulator = Value::from_smi(TrustedDictBytecodeAccess::PopGeneral);
+        COMPLETE();
+    }
+
     static INTERP_CC Value op_dict_probe_start(PARAMS)
     {
         START(4);
@@ -6028,6 +6062,8 @@ namespace cl
                         op_dict_promote_string_keyed);
         SET_TABLE_ENTRY(Bytecode::DictTryStringKeyedSetDefault,
                         op_dict_try_string_keyed_setdefault);
+        SET_TABLE_ENTRY(Bytecode::DictTryStringKeyedPop,
+                        op_dict_try_string_keyed_pop);
         SET_TABLE_ENTRY(Bytecode::DictProbeStart, op_dict_probe_start);
         SET_TABLE_ENTRY(Bytecode::DictProbeForLookup, op_dict_probe_for_lookup);
         SET_TABLE_ENTRY(Bytecode::DictProbeForInsert, op_dict_probe_for_insert);
