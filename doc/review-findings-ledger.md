@@ -26,6 +26,8 @@ Finding status is one of:
 - `fix in progress`: an authorized fix is being developed;
 - `resolved`: the fix and regression coverage have landed;
 - `accepted`: confirmed behavior intentionally remains;
+- `rejected`: reviewed evidence is retained, but the project does not classify
+  the entry as a defect;
 - `superseded`: replaced by another finding with a more accurate boundary.
 
 Investigation status is one of:
@@ -101,6 +103,120 @@ Verification:
 
 Confirmed with CloverVM and CPython command-line reproductions. No fix has been
 implemented.
+
+Disposition:
+
+Open.
+
+### CVR-009: Large right shifts execute undefined native shifts
+
+- Severity: P1
+- Status: open
+- Review unit: R4
+- Found at: `af8b450`
+- Affected code: `src/runtime/interpreter.cpp:3556`,
+  `src/runtime/interpreter.cpp:3576`, `src/compiler/codegen.cpp:288`
+- Affected tests: none
+
+Invariant or semantic rule:
+
+Python right shift accepts arbitrary nonnegative counts. Counts at least the
+native word width must saturate an SMI result to `0` for nonnegative values or
+`-1` for negative values; they must never reach a C++ shift expression.
+
+Reachable path:
+
+Both register and immediate SMI handlers execute `a.as.integer >> shift_count`
+without guarding counts of 64 or greater. Codegen restricts large immediate
+left shifts but applies no corresponding right-shift restriction, so constants
+reach `RShiftSmi`; variable counts reach `RShift`.
+
+Observable impact:
+
+The shift is C++ undefined behavior. On the current arm64 debug and release
+builds, the hardware masks the count: `1 >> 64` and `1 >> 128` both produce `1`
+instead of Python's `0`.
+
+Evidence and reproduction:
+
+`build-debug/src/clovervm -c 'assert 1 >> 64 == 0'` fails, as does the release
+binary. CPython satisfies the assertion. Inspection confirms that both handlers
+perform the unchecked shift.
+
+Disproof attempts:
+
+The slow dispatch path runs only for non-SMI operands. Shift counts are full
+SMIs in the generic handler, and the immediate selector accepts signed-byte
+constants including 64 through 127.
+
+Recommended fix boundary:
+
+Handle counts at least 64 before the native shift in both handlers, preserving
+negative-count `ValueError`, and add constant and variable-count tests for
+positive and negative operands around 63, 64, and larger counts.
+
+Verification:
+
+Confirmed in debug and release against CPython. No fix has been implemented.
+
+Disposition:
+
+Open.
+
+### CVR-011: Register encoding wraps and crashes large functions
+
+- Severity: P1
+- Status: open
+- Review unit: R4
+- Found at: `af8b450`
+- Affected code: `src/bytecode/code_object.h:592`,
+  `src/bytecode/code_object_builder.cpp:1161`
+- Affected tests: none
+
+Invariant or semantic rule:
+
+Every semantic register emitted into a signed-byte operand must be representable
+in that operand and decode back to the same frame slot. Unsupported frame sizes
+must be rejected before bytecode emission rather than silently narrowed.
+
+Reachable path:
+
+`CodeObject::encode_reg()` returns an `int8_t` from unchecked unsigned register
+arithmetic. Builder emitters and finalization store the narrowed result. A
+function with 127 named locals places its last semantic register outside the
+signed-byte reach and wraps it into a positive frame offset.
+
+Observable impact:
+
+The interpreter accesses the wrong frame location and crashes with signal 11 in
+both debug and release builds. This is reachable from ordinary valid Python
+source without unusual runtime state.
+
+Evidence and reproduction:
+
+A generated function assigning `v0` through `v126` and returning
+`(v0, v126)` exits with status 139 in both CloverVM builds. The corresponding
+126-local function succeeds.
+
+Disproof attempts:
+
+No parser, scope, codegen, builder, or finalization limit rejects the frame
+before narrowing. Debug `decode_reg()` assertions operate only after the encoded
+operand has already lost its identity. Large-call argument counts have related
+unchecked `uint8_t` narrowing but currently encounter this register-window
+failure first.
+
+Recommended fix boundary:
+
+Establish an explicit representability check or widen the register encoding
+across builder, bytecode, and interpreter layers. Reject unsupported frames with
+a deliberate compilation error. Audit argument-count operands when settling
+the chosen width.
+
+Verification:
+
+Confirmed with independent generated-source runs in debug and release. No fix
+has been implemented.
 
 Disposition:
 
@@ -447,6 +563,120 @@ Disposition:
 
 Open.
 
+### CVR-008: Opcode-frame verification cannot fail its build target
+
+- Severity: P2
+- Status: rejected
+- Review unit: R4
+- Found at: `af8b450`
+- Affected code: `benchmark/CMakeLists.txt:80`,
+  `tools/check_opcode_frames.py:157`
+- Affected tests: none
+
+Invariant or semantic rule:
+
+The required release opcode-frame verification gate must fail when a listed hot
+handler is missing, cannot be inspected, or gains stack-frame setup.
+
+Reachable path:
+
+The `check_opcode_frames` CMake target always passes `--warn-only`. In that mode
+the checker deliberately converts missing binaries, missing required handlers,
+tool failures, and detected frames into a successful exit status.
+`run_benchmark` depends on the same non-enforcing target.
+
+Observable impact:
+
+The documented verification command remains green after the exact regressions
+it is intended to prevent. This allows release-only handler-shape regressions to
+land without failing the build or benchmark gate.
+
+Evidence and reproduction:
+
+The CMake command line contains `--warn-only`, and every checker error return is
+conditionalized to success in that mode. A direct strict invocation against the
+current release object succeeds and reports 98 required handlers out of 229
+discovered, confirming that current handlers pass while the target itself does
+not enforce future results.
+
+Disproof attempts:
+
+No enclosing CMake command parses warning output or converts it back to failure.
+The custom target and `run_benchmark` rely only on the script exit status.
+
+Recommended fix boundary:
+
+Remove `--warn-only` from the required verification target, or split explicit
+enforcing and diagnostic targets. Keep platform-specific diagnostic policy out
+of the gate used by repository checks.
+
+Verification:
+
+The ordinary CMake target succeeded in warning mode; the equivalent strict
+checker invocation passed the current tree. No fix has been implemented.
+
+Disposition:
+
+Rejected by project decision. Warning-only frame reporting is not treated as a
+correctness defect or required failing gate.
+
+### CVR-010: Packed jump operands use unaligned typed reads
+
+- Severity: P2
+- Status: rejected
+- Review unit: R4
+- Found at: `af8b450`
+- Affected code: `src/runtime/interpreter.cpp:105`
+- Affected tests: none
+
+Invariant or semantic rule:
+
+Packed bytecode operands must be decoded without assuming typed alignment or an
+`int16_t` object at the byte address.
+
+Reachable path:
+
+Ordinary builds cast arbitrary bytecode addresses to `const int16_t *` and
+dereference them. Relative jump operands begin at offsets such as `pc + 1` and
+`pc + 2`, so alignment is not guaranteed. Only builds defining
+`NDEBUG_SANITIZER` use safe byte assembly.
+
+Observable impact:
+
+The typed dereference is C++ undefined behavior and is unsafe on strict-alignment
+targets or under optimizer assumptions. Current arm64 hardware tolerates the
+access, while the sanitizer-specific safe path prevents sanitizer builds from
+exercising the ordinary implementation.
+
+Evidence and reproduction:
+
+All relative jump handlers use `read_int16_le()` on packed operands. Lines
+107-113 select bytewise decoding only for the sanitizer macro and otherwise
+perform the unaligned typed load.
+
+Disproof attempts:
+
+Bytecode storage is byte-aligned, and instruction positions/operand offsets vary;
+there is no builder alignment invariant for every jump operand. Hardware support
+for unaligned loads does not make the C++ expression defined.
+
+Recommended fix boundary:
+
+Use the bytewise decoder in every build, or an equivalent `memcpy`-based load
+with explicit little-endian conversion. Remove the sanitizer-only semantic
+difference.
+
+Verification:
+
+Confirmed by packed-layout and C++ alignment analysis. No current-hardware
+failure was required or observed, and no fix has been implemented.
+
+Disposition:
+
+Rejected by project decision. The typed load is intentionally isolated in the
+target-specific `read_int16_le()` primitive, which is designed to be replaced
+on targets that cannot safely support it.
+
 Add findings in descending severity, then ascending ID. Use this template:
 
 ```md
@@ -630,9 +860,52 @@ Use this template:
   and non-classmethod binding are also documented current limitations rather
   than new findings.
 
+### R4: Bytecode And Interpreter Integrity At `af8b450`
+
+- Scope: bytecode enum and formatting, builder emitters and relocations,
+  codegen selection, operand widths, register/frame encoding, dispatch-table
+  coverage, handler instruction lengths, jumps and exception continuations,
+  release `musttail` shape, and the hot-handler frame gate.
+- Design documents read: `python-opcode-design-notes.md`,
+  `function-calling-convention.md`, `inline-cache-slot-layout.md`, and the
+  interpreter sections of `architecture.md`.
+- Code and tests reviewed: `src/bytecode`, codegen bytecode emission,
+  `interpreter.cpp`, opcode printing/disassembly, exception-table relocation and
+  lookup, call-window setup, `tools/check_opcode_frames.py`, the required hot
+  handler list, and focused codegen/interpreter tests.
+- Confirmed findings: CVR-009, CVR-011.
+- Rejected entries: CVR-008, CVR-010.
+- Investigations: none.
+- Verification commands: enum/dispatch/formatter consistency scans;
+  `Codegen.*:Interpreter.*` tests; direct debug and release reproductions for
+  large right shifts and 127-local functions; CMake and strict opcode-frame
+  checker invocations; release focused tests; and
+  `ninja -C build-debug all check`.
+- Verification result: focused debug and release filters each passed 562 tests.
+  The strict frame checker passed all 98 required handlers out of 229 discovered
+  opcode symbols. Debug and release reproductions confirmed CVR-009 and
+  CVR-011. The final debug gate passed all 1,237 enabled tests; one test remains
+  disabled.
+- Unreviewed edges: JIT bytecode entry/deoptimization and compiled exception
+  targets are designs rather than implemented R4 surfaces.
+- Residual risk: opcode definitions are duplicated across enum, builders,
+  dispatch, handlers, and printers rather than generated from one schema.
+  `Bytecode::Nop` has no handler but also has no emitter or caller. Signed
+  16-bit jump relocations reject very large valid function bodies with a
+  controlled `SystemError`; this is an undocumented bytecode capacity limit,
+  not a memory-safety failure. Argument counts also narrow to `uint8_t`, though
+  the current signed-byte register limit fails first. The frame checker covers
+  98 of 229 discovered `op_*` symbols; the unlisted set mixes deliberate cold
+  helpers with handlers whose performance policy has not been classified.
+  Packed 16-bit reads remain isolated in a target-specific primitive that must
+  be replaced when bringing CloverVM to a target without suitable unaligned
+  access support.
+
 ## Resolved And Rejected Index
 
 Keep a compact index here after entries acquire final dispositions:
 
 | ID | Type | Final status | Resolution |
 | --- | --- | --- | --- |
+| CVR-008 | finding | rejected | Warning-only frame reporting is intentional policy. |
+| CVR-010 | finding | rejected | Packed reads are an isolated target-specific primitive. |
