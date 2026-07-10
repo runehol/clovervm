@@ -476,6 +476,14 @@ namespace cl
         return fp - int32_t(n_below_frame_slots);
     }
 
+    static ALWAYSINLINE void
+    set_clover_frame_frontier_for_native_call(ThreadState *thread, Value *fp,
+                                              CodeObject *code_object)
+    {
+        thread->set_clover_frame_frontier(
+            lowest_live_stack_slot_for_current_frame(fp, code_object));
+    }
+
     NOINLINE static INTERP_CC Value op_committed_safepoint_slow(PARAMS)
     {
         thread->publish_safepoint_scan_record(
@@ -4435,6 +4443,7 @@ namespace cl
         int8_t reg = pc[1];
         uint8_t n_items = pc[2];
 
+        set_clover_frame_frontier_for_native_call(thread, fp, code_object);
         TValue<Dict> dict = thread->make_object_value<Dict>();
         for(uint8_t idx = 0; idx < n_items; ++idx)
         {
@@ -5624,7 +5633,8 @@ namespace cl
                 }
             case RuntimeIntrinsic0::ImportStar:
                 {
-                    thread->set_clover_frame_frontier(fp);
+                    set_clover_frame_frontier_for_native_call(thread, fp,
+                                                              code_object);
                     accumulator = import_star(thread, code_object, accumulator);
                     if(unlikely(accumulator.is_exception_marker()))
                     {
@@ -5642,7 +5652,7 @@ namespace cl
         uint8_t name_idx = pc[1];
         uint8_t level = pc[2];
         Value fromlist = accumulator;
-        thread->set_clover_frame_frontier(fp);
+        set_clover_frame_frontier_for_native_call(thread, fp, code_object);
         accumulator =
             import_name_from_code(thread, code_object,
                                   TValue<String>::from_value_assumed(
@@ -5659,7 +5669,7 @@ namespace cl
     {
         START(2);
         uint8_t name_idx = pc[1];
-        thread->set_clover_frame_frontier(fp);
+        set_clover_frame_frontier_for_native_call(thread, fp, code_object);
         accumulator = import_from(thread, accumulator,
                                   TValue<String>::from_value_assumed(
                                       code_object->constant_table[name_idx]));

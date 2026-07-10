@@ -506,6 +506,16 @@ TEST(Dict, DisplayEvaluatesExpressionsBeforeHashingAndPromotes)
                                L"events[5] == 'hash b'\n"));
 }
 
+TEST(Dict, MixedDisplayPreservesPairsAcrossHashCalls)
+{
+    test::VmTestContext context;
+
+    EXPECT_EQ(Value::True(),
+              context.run_file(L"d = {'a': 1, 2: 'two', 'b': 3}\n"
+                               L"len(d) == 3 and d['a'] == 1 and "
+                               L"d[2] == 'two' and d['b'] == 3\n"));
+}
+
 TEST(Dict, SemanticApiDeleteUsesGeneralSemanticsAfterPromotion)
 {
     test::VmTestContext context;
