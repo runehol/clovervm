@@ -89,12 +89,15 @@ JIT, language, and runtime work.
 
 5. **Memory strategy and JIT root metadata**
 
-   Decide whether first JIT work targets the current deferred-refcounting
-   substrate or a generational non-moving mark-sweep collector. The decision
-   must settle the contracts for write barriers or retain/release operations,
-   safepoint records, accumulator publication, deopt metadata, transition
-   stubs, native-stack switching, descriptor-driven teardown, and native object
-   pinning.
+   The intended long-term memory substrate is the generational moving collector
+   described in [Generational Copying GC Design Notes](generational-copying-gc.md).
+   First JIT work may still target the current deferred-refcounting substrate,
+   but its root and heap-write contracts should be designed toward that collector
+   rather than a generational non-moving mark-sweep design. The contracts must
+   cover write barriers or temporary retain/release operations, safepoint
+   records, accumulator publication, deopt metadata, transition stubs,
+   native-stack switching, descriptor-driven teardown, handles or stable
+   wrappers for native objects, and specialized pinning or stable-storage rules.
 
    Implementing a new collector is not necessarily a prerequisite for the first
    compiler, but starting JIT code generation before the root and heap-write
