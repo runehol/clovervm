@@ -3275,8 +3275,8 @@ namespace cl
         MUSTTAIL return next_dispatch_fun(ARGS);
     }
 
-#define DEFINE_BINARY_REG_OPERATOR_DISPATCH(name, table_id)                    \
-    NOINLINE static INTERP_CC Value op_##name##_dispatch(PARAMS)               \
+#define DEFINE_BINARY_REG_OPERATOR_HANDLER(function_name, table_id)            \
+    NOINLINE static INTERP_CC Value function_name(PARAMS)                      \
     {                                                                          \
         int8_t reg = pc[1];                                                    \
         uint8_t cache_idx = pc[2];                                             \
@@ -3290,8 +3290,8 @@ namespace cl
         MUSTTAIL return next_dispatch_fun(ARGS);                               \
     }
 
-#define DEFINE_BINARY_SMI_OPERATOR_DISPATCH(name, table_id)                    \
-    NOINLINE static INTERP_CC Value op_##name##_smi_dispatch(PARAMS)           \
+#define DEFINE_BINARY_SMI_OPERATOR_HANDLER(function_name, table_id)            \
+    NOINLINE static INTERP_CC Value function_name(PARAMS)                      \
     {                                                                          \
         uint8_t cache_idx = pc[2];                                             \
         Value a = accumulator;                                                 \
@@ -3304,26 +3304,29 @@ namespace cl
         MUSTTAIL return next_dispatch_fun(ARGS);                               \
     }
 
-#define DEFINE_BINARY_OPERATOR_DISPATCH(name, table_id)                        \
-    DEFINE_BINARY_REG_OPERATOR_DISPATCH(name, table_id)                        \
-    DEFINE_BINARY_SMI_OPERATOR_DISPATCH(name, table_id)
+#define DEFINE_BINARY_OPERATOR_HANDLER(reg_function, smi_function, table_id)   \
+    DEFINE_BINARY_REG_OPERATOR_HANDLER(reg_function, table_id)                 \
+    DEFINE_BINARY_SMI_OPERATOR_HANDLER(smi_function, table_id)
 
-    DEFINE_BINARY_OPERATOR_DISPATCH(sub, Sub)
-    DEFINE_BINARY_OPERATOR_DISPATCH(mul, Mul)
-    DEFINE_BINARY_REG_OPERATOR_DISPATCH(matmul, MatMul)
-    DEFINE_BINARY_OPERATOR_DISPATCH(binary_pow, BinaryPow)
-    DEFINE_BINARY_REG_OPERATOR_DISPATCH(truediv, TrueDiv)
-    DEFINE_BINARY_OPERATOR_DISPATCH(floordiv, FloorDiv)
-    DEFINE_BINARY_OPERATOR_DISPATCH(mod, Mod)
-    DEFINE_BINARY_OPERATOR_DISPATCH(lshift, LShift)
-    DEFINE_BINARY_OPERATOR_DISPATCH(rshift, RShift)
-    DEFINE_BINARY_OPERATOR_DISPATCH(and, And)
-    DEFINE_BINARY_OPERATOR_DISPATCH(xor, Xor)
-    DEFINE_BINARY_OPERATOR_DISPATCH(or, Or)
+    DEFINE_BINARY_OPERATOR_HANDLER(op_sub_dispatch, op_sub_smi_dispatch, Sub)
+    DEFINE_BINARY_OPERATOR_HANDLER(op_mul_dispatch, op_mul_smi_dispatch, Mul)
+    DEFINE_BINARY_REG_OPERATOR_HANDLER(op_matmul, MatMul)
+    DEFINE_BINARY_OPERATOR_HANDLER(op_binary_pow, op_binary_pow_smi, BinaryPow)
+    DEFINE_BINARY_REG_OPERATOR_HANDLER(op_truediv_dispatch, TrueDiv)
+    DEFINE_BINARY_OPERATOR_HANDLER(op_floordiv_dispatch,
+                                   op_floordiv_smi_dispatch, FloorDiv)
+    DEFINE_BINARY_OPERATOR_HANDLER(op_mod_dispatch, op_mod_smi_dispatch, Mod)
+    DEFINE_BINARY_OPERATOR_HANDLER(op_lshift_dispatch, op_lshift_smi_dispatch,
+                                   LShift)
+    DEFINE_BINARY_OPERATOR_HANDLER(op_rshift_dispatch, op_rshift_smi_dispatch,
+                                   RShift)
+    DEFINE_BINARY_OPERATOR_HANDLER(op_and_dispatch, op_and_smi_dispatch, And)
+    DEFINE_BINARY_OPERATOR_HANDLER(op_xor_dispatch, op_xor_smi_dispatch, Xor)
+    DEFINE_BINARY_OPERATOR_HANDLER(op_or_dispatch, op_or_smi_dispatch, Or)
 
-#undef DEFINE_BINARY_OPERATOR_DISPATCH
-#undef DEFINE_BINARY_SMI_OPERATOR_DISPATCH
-#undef DEFINE_BINARY_REG_OPERATOR_DISPATCH
+#undef DEFINE_BINARY_OPERATOR_HANDLER
+#undef DEFINE_BINARY_SMI_OPERATOR_HANDLER
+#undef DEFINE_BINARY_REG_OPERATOR_HANDLER
 
     NOINLINE static INTERP_CC Value op_ternary_pow(PARAMS)
     {
@@ -3488,21 +3491,6 @@ namespace cl
         accumulator = dest;
 
         COMPLETE();
-    }
-
-    static INTERP_CC Value op_binary_pow(PARAMS)
-    {
-        MUSTTAIL return op_binary_pow_dispatch(ARGS);
-    }
-
-    static INTERP_CC Value op_matmul(PARAMS)
-    {
-        MUSTTAIL return op_matmul_dispatch(ARGS);
-    }
-
-    static INTERP_CC Value op_binary_pow_smi(PARAMS)
-    {
-        MUSTTAIL return op_binary_pow_smi_dispatch(ARGS);
     }
 
     static INTERP_CC Value op_lshift(PARAMS)
