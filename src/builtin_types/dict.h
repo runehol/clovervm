@@ -163,7 +163,6 @@ namespace cl
         int32_t *find_entry(TValue<String> key);
         int32_t *find_entry_with_provided_hash(TValue<String> key,
                                                TValue<SMI> hash_smi);
-        bool string_keyed_delete_if_present(TValue<String> key);
 
         struct Probe
         {
@@ -327,32 +326,18 @@ namespace cl
 
     struct TrustedDictBytecodeAccess
     {
-        static constexpr int64_t ReadStringMiss = 0;
-        static constexpr int64_t ReadStringHit = 1;
-        static constexpr int64_t ReadGeneral = 2;
-        static constexpr int64_t SetItemStringDone = 3;
-        static constexpr int64_t SetItemGeneral = 4;
-        static constexpr int64_t DeleteStringDone = 5;
-        static constexpr int64_t DeleteStringMiss = 6;
-        static constexpr int64_t DeleteGeneral = 7;
         static constexpr int64_t ProbeMiss = -1;
         static constexpr int64_t ProbeContinue = -2;
         static constexpr int64_t InsertProbeEmpty = -3;
         static constexpr int64_t InsertProbeTombstone = -4;
         static constexpr int64_t InsertProbeHashMiss = -5;
 
-        struct PrepareReadResult
+        static void promote_string_keyed(ThreadState *thread, Dict *dict)
         {
-            int64_t status;
-            Value value;
-        };
-
-        static PrepareReadResult prepare_read(ThreadState *thread, Dict *dict,
-                                              Value key);
-        static int64_t prepare_set_item(ThreadState *thread, Dict *dict,
-                                        Value key, Value value);
-        static int64_t prepare_delete(ThreadState *thread, Dict *dict,
-                                      Value key);
+            assert(dict->get_shape() ==
+                   thread->get_exact_dict_string_key_shape());
+            dict->promote_to_general_shape(thread);
+        }
         static void probe_start(const Dict *dict, TValue<SMI> hash,
                                 TValue<SMI> *generation, size_t *hash_idx)
         {

@@ -1238,7 +1238,7 @@ TEST(Dict, GeneratedReadMethodsContainProtocolCacheSites)
         EXPECT_NE(std::string::npos, bytecode.find("CanonicalizeHash"));
         EXPECT_NE(std::string::npos, bytecode.find("TestEqual"));
         EXPECT_NE(std::string::npos, bytecode.find("ToBool"));
-        EXPECT_NE(std::string::npos, bytecode.find("DictPrepareRead"));
+        EXPECT_NE(std::string::npos, bytecode.find("DictPromoteStringKeyed"));
         EXPECT_NE(std::string::npos, bytecode.find("DictProbeStart"));
         EXPECT_NE(std::string::npos, bytecode.find("DictProbeForLookup"));
         EXPECT_NE(std::string::npos, bytecode.find("DictEntryStillMatches"));
@@ -1256,7 +1256,7 @@ TEST(Dict, GeneratedSetItemContainsProtocolCacheAndMutationSites)
     EXPECT_NE(std::string::npos, bytecode.find("CanonicalizeHash"));
     EXPECT_NE(std::string::npos, bytecode.find("TestEqual"));
     EXPECT_NE(std::string::npos, bytecode.find("ToBool"));
-    EXPECT_NE(std::string::npos, bytecode.find("DictPrepareSetItem"));
+    EXPECT_NE(std::string::npos, bytecode.find("DictPromoteStringKeyed"));
     EXPECT_NE(std::string::npos, bytecode.find("DictResizeForInsert"));
     EXPECT_NE(std::string::npos, bytecode.find("DictProbeStart"));
     EXPECT_NE(std::string::npos, bytecode.find("DictProbeForInsert"));
@@ -1276,7 +1276,7 @@ TEST(Dict, GeneratedDelItemContainsProtocolCacheAndMutationSites)
     EXPECT_NE(std::string::npos, bytecode.find("CanonicalizeHash"));
     EXPECT_NE(std::string::npos, bytecode.find("TestEqual"));
     EXPECT_NE(std::string::npos, bytecode.find("ToBool"));
-    EXPECT_NE(std::string::npos, bytecode.find("DictPrepareDelete"));
+    EXPECT_NE(std::string::npos, bytecode.find("DictPromoteStringKeyed"));
     EXPECT_NE(std::string::npos, bytecode.find("DictProbeStart"));
     EXPECT_NE(std::string::npos, bytecode.find("DictProbeForLookup"));
     EXPECT_NE(std::string::npos, bytecode.find("DictEntryStillMatches"));
@@ -1284,31 +1284,15 @@ TEST(Dict, GeneratedDelItemContainsProtocolCacheAndMutationSites)
     EXPECT_NE(std::string::npos, bytecode.find("JumpIfEqualSmi"));
 }
 
-TEST(Dict, PrepareDeletePreservesStringShapeAndPromotesNonStringKeys)
+TEST(Dict, TrustedPromotionConvertsStringKeyedShape)
 {
     test::VmTestContext context;
     ThreadState *thread = context.thread();
     ThreadState::ActivationScope activation_scope(thread);
-    Shape *string_key_shape = thread->get_exact_dict_string_key_shape();
     Shape *general_shape = thread->get_exact_dict_general_shape();
 
     Dict *dict = thread->make_object_raw<Dict>();
-    TValue<String> key = string_key(make_string(context, L"key"));
-    dict->string_keyed_insert(key, Value::from_smi(1));
-
-    EXPECT_EQ(TrustedDictBytecodeAccess::DeleteStringDone,
-              TrustedDictBytecodeAccess::prepare_delete(thread, dict,
-                                                        key.raw_value()));
-    EXPECT_EQ(string_key_shape, dict->get_shape());
-    EXPECT_FALSE(dict->string_keyed_contains(key));
-    EXPECT_EQ(TrustedDictBytecodeAccess::DeleteStringMiss,
-              TrustedDictBytecodeAccess::prepare_delete(thread, dict,
-                                                        key.raw_value()));
-    EXPECT_EQ(string_key_shape, dict->get_shape());
-
-    EXPECT_EQ(TrustedDictBytecodeAccess::DeleteGeneral,
-              TrustedDictBytecodeAccess::prepare_delete(thread, dict,
-                                                        Value::from_smi(1)));
+    TrustedDictBytecodeAccess::promote_string_keyed(thread, dict);
     EXPECT_EQ(general_shape, dict->get_shape());
 }
 
@@ -1426,24 +1410,7 @@ TEST(Dict, GeneralStringDeletionCachesTrustedHashHandler)
     EXPECT_EQ(nullptr, hash_cache.function);
 }
 
-TEST(Dict, DirectReadMethodCallsKeepStringKeyShape)
-{
-    test::VmTestContext context;
-    ThreadState::ActivationScope activation_scope(context.thread());
-    Shape *string_key_shape =
-        context.thread()->get_exact_dict_string_key_shape();
-
-    Value result = context.run_file(L"d = {'key': 1}\n"
-                                    L"assert dict.__getitem__(d, 'key') == 1\n"
-                                    L"assert dict.get(d, 'key') == 1\n"
-                                    L"assert dict.__contains__(d, 'key')\n"
-                                    L"d\n");
-
-    ASSERT_TRUE(can_convert_to<Dict>(result));
-    EXPECT_EQ(string_key_shape, result.get_ptr<Dict>()->get_shape());
-}
-
-TEST(Dict, DirectSetItemMethodCallKeepsStringKeyShape)
+TEST(Dict, TrustedStringOperationsKeepStringKeyShape)
 {
     test::VmTestContext context;
     ThreadState::ActivationScope activation_scope(context.thread());
@@ -1451,23 +1418,9 @@ TEST(Dict, DirectSetItemMethodCallKeepsStringKeyShape)
         context.thread()->get_exact_dict_string_key_shape();
 
     Value result = context.run_file(L"d = {}\n"
-                                    L"dict.__setitem__(d, 'key', 1)\n"
+                                    L"d['key'] = 1\n"
                                     L"assert d['key'] == 1\n"
-                                    L"d\n");
-
-    ASSERT_TRUE(can_convert_to<Dict>(result));
-    EXPECT_EQ(string_key_shape, result.get_ptr<Dict>()->get_shape());
-}
-
-TEST(Dict, DirectDelItemMethodCallKeepsStringKeyShape)
-{
-    test::VmTestContext context;
-    ThreadState::ActivationScope activation_scope(context.thread());
-    Shape *string_key_shape =
-        context.thread()->get_exact_dict_string_key_shape();
-
-    Value result = context.run_file(L"d = {'key': 1}\n"
-                                    L"dict.__delitem__(d, 'key')\n"
+                                    L"del d['key']\n"
                                     L"d\n");
 
     ASSERT_TRUE(can_convert_to<Dict>(result));

@@ -3958,22 +3958,17 @@ namespace cl
         COMPLETE();
     }
 
-    NOINLINE static INTERP_CC Value op_dict_prepare_read_string_shape(PARAMS)
+    NOINLINE static INTERP_CC Value op_dict_promote_string_keyed_slow(PARAMS)
     {
-        START(4);
+        START(2);
         int8_t receiver_reg = pc[1];
-        int8_t key_reg = pc[2];
-        int8_t value_reg = pc[3];
         assert(can_convert_to<Dict>(fp[receiver_reg]));
-        TrustedDictBytecodeAccess::PrepareReadResult result =
-            TrustedDictBytecodeAccess::prepare_read(
-                thread, fp[receiver_reg].get_ptr<Dict>(), fp[key_reg]);
-        fp[value_reg] = result.value;
-        accumulator = Value::from_smi(result.status);
+        TrustedDictBytecodeAccess::promote_string_keyed(
+            thread, fp[receiver_reg].get_ptr<Dict>());
         COMPLETE();
     }
 
-    static INTERP_CC Value op_dict_prepare_read(PARAMS)
+    static INTERP_CC Value op_dict_promote_string_keyed(PARAMS)
     {
         int8_t receiver_reg = pc[1];
         assert(can_convert_to<Dict>(fp[receiver_reg]));
@@ -3981,73 +3976,10 @@ namespace cl
         if(unlikely(dict->get_shape() ==
                     thread->get_exact_dict_string_key_shape()))
         {
-            MUSTTAIL return op_dict_prepare_read_string_shape(ARGS);
+            MUSTTAIL return op_dict_promote_string_keyed_slow(ARGS);
         }
 
-        START(4);
-        int8_t value_reg = pc[3];
-        fp[value_reg] = Value::None();
-        accumulator = Value::from_smi(TrustedDictBytecodeAccess::ReadGeneral);
-        COMPLETE();
-    }
-
-    NOINLINE static INTERP_CC Value
-    op_dict_prepare_set_item_string_shape(PARAMS)
-    {
-        START(4);
-        int8_t receiver_reg = pc[1];
-        int8_t key_reg = pc[2];
-        int8_t value_reg = pc[3];
-        assert(can_convert_to<Dict>(fp[receiver_reg]));
-        int64_t result = TrustedDictBytecodeAccess::prepare_set_item(
-            thread, fp[receiver_reg].get_ptr<Dict>(), fp[key_reg],
-            fp[value_reg]);
-        accumulator = Value::from_smi(result);
-        COMPLETE();
-    }
-
-    static INTERP_CC Value op_dict_prepare_set_item(PARAMS)
-    {
-        int8_t receiver_reg = pc[1];
-        assert(can_convert_to<Dict>(fp[receiver_reg]));
-        Dict *dict = fp[receiver_reg].get_ptr<Dict>();
-        if(unlikely(dict->get_shape() ==
-                    thread->get_exact_dict_string_key_shape()))
-        {
-            MUSTTAIL return op_dict_prepare_set_item_string_shape(ARGS);
-        }
-
-        START(4);
-        accumulator =
-            Value::from_smi(TrustedDictBytecodeAccess::SetItemGeneral);
-        COMPLETE();
-    }
-
-    NOINLINE static INTERP_CC Value op_dict_prepare_delete_string_shape(PARAMS)
-    {
-        START(3);
-        int8_t receiver_reg = pc[1];
-        int8_t key_reg = pc[2];
-        assert(can_convert_to<Dict>(fp[receiver_reg]));
-        int64_t result = TrustedDictBytecodeAccess::prepare_delete(
-            thread, fp[receiver_reg].get_ptr<Dict>(), fp[key_reg]);
-        accumulator = Value::from_smi(result);
-        COMPLETE();
-    }
-
-    static INTERP_CC Value op_dict_prepare_delete(PARAMS)
-    {
-        int8_t receiver_reg = pc[1];
-        assert(can_convert_to<Dict>(fp[receiver_reg]));
-        Dict *dict = fp[receiver_reg].get_ptr<Dict>();
-        if(unlikely(dict->get_shape() ==
-                    thread->get_exact_dict_string_key_shape()))
-        {
-            MUSTTAIL return op_dict_prepare_delete_string_shape(ARGS);
-        }
-
-        START(3);
-        accumulator = Value::from_smi(TrustedDictBytecodeAccess::DeleteGeneral);
+        START(2);
         COMPLETE();
     }
 
@@ -6070,9 +6002,8 @@ namespace cl
         SET_TABLE_ENTRY(Bytecode::Invert, op_invert);
         SET_TABLE_ENTRY(Bytecode::Sqrt, op_sqrt);
         SET_TABLE_ENTRY(Bytecode::CanonicalizeHash, op_canonicalize_hash);
-        SET_TABLE_ENTRY(Bytecode::DictPrepareRead, op_dict_prepare_read);
-        SET_TABLE_ENTRY(Bytecode::DictPrepareSetItem, op_dict_prepare_set_item);
-        SET_TABLE_ENTRY(Bytecode::DictPrepareDelete, op_dict_prepare_delete);
+        SET_TABLE_ENTRY(Bytecode::DictPromoteStringKeyed,
+                        op_dict_promote_string_keyed);
         SET_TABLE_ENTRY(Bytecode::DictProbeStart, op_dict_probe_start);
         SET_TABLE_ENTRY(Bytecode::DictProbeForLookup, op_dict_probe_for_lookup);
         SET_TABLE_ENTRY(Bytecode::DictProbeForInsert, op_dict_probe_for_insert);

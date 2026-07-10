@@ -416,17 +416,9 @@ namespace cl
                                                  uint32_t operand1_reg);
         Expected<uint32_t> emit_unary_op(uint32_t source_offset, Bytecode op,
                                          OperatorBytecodeFormat format);
-        Expected<uint32_t> emit_dict_prepare_read(uint32_t source_offset,
-                                                  uint32_t receiver_reg,
-                                                  uint32_t key_reg,
-                                                  uint32_t value_reg);
-        Expected<uint32_t> emit_dict_prepare_set_item(uint32_t source_offset,
-                                                      uint32_t receiver_reg,
-                                                      uint32_t key_reg,
-                                                      uint32_t value_reg);
-        Expected<uint32_t> emit_dict_prepare_delete(uint32_t source_offset,
-                                                    uint32_t receiver_reg,
-                                                    uint32_t key_reg);
+        Expected<uint32_t>
+        emit_dict_promote_string_keyed(uint32_t source_offset,
+                                       uint32_t receiver_reg);
         Expected<uint32_t> emit_dict_probe_start(uint32_t source_offset,
                                                  uint32_t receiver_reg,
                                                  uint32_t generation_reg,

@@ -65,66 +65,6 @@ namespace cl
         }
     }
 
-    TrustedDictBytecodeAccess::PrepareReadResult
-    TrustedDictBytecodeAccess::prepare_read(ThreadState *thread, Dict *dict,
-                                            Value key)
-    {
-        if(is_exact_dict_string_key_shape(thread, dict))
-        {
-            if(can_convert_to<String>(key))
-            {
-                int32_t entry_idx = *dict->find_entry(
-                    TValue<String>::from_value_unchecked(key));
-                if(entry_idx < 0)
-                {
-                    return {ReadStringMiss, Value::None()};
-                }
-                assert(static_cast<size_t>(entry_idx) < dict->entries.size());
-                assert(dict->entries[entry_idx].valid());
-                return {ReadStringHit, dict->entries[entry_idx].value};
-            }
-            dict->promote_to_general_shape(thread);
-        }
-        return {ReadGeneral, Value::None()};
-    }
-
-    int64_t TrustedDictBytecodeAccess::prepare_set_item(ThreadState *thread,
-                                                        Dict *dict, Value key,
-                                                        Value value)
-    {
-        key.assert_not_vm_sentinel();
-        value.assert_not_vm_sentinel();
-        if(is_exact_dict_string_key_shape(thread, dict))
-        {
-            if(can_convert_to<String>(key))
-            {
-                dict->string_keyed_insert(
-                    TValue<String>::from_value_unchecked(key), value);
-                return SetItemStringDone;
-            }
-            dict->promote_to_general_shape(thread);
-        }
-        return SetItemGeneral;
-    }
-
-    int64_t TrustedDictBytecodeAccess::prepare_delete(ThreadState *thread,
-                                                      Dict *dict, Value key)
-    {
-        key.assert_not_vm_sentinel();
-        if(is_exact_dict_string_key_shape(thread, dict))
-        {
-            if(can_convert_to<String>(key))
-            {
-                return dict->string_keyed_delete_if_present(
-                           TValue<String>::from_value_unchecked(key))
-                           ? DeleteStringDone
-                           : DeleteStringMiss;
-            }
-            dict->promote_to_general_shape(thread);
-        }
-        return DeleteGeneral;
-    }
-
     BuiltinClassDefinition make_dict_class(VirtualMachine *vm)
     {
         static constexpr NativeLayoutId native_layout_ids[] = {
@@ -520,18 +460,15 @@ namespace cl
             CL_TRY(code.add_native_function_target(key_error_target));
 
         {
-            CodeObjectBuilder::TemporaryReg temporaries(code, 7);
-            uint32_t string_value_reg = temporaries;
-            uint32_t hash_reg = temporaries + 1;
-            uint32_t generation_reg = temporaries + 2;
-            uint32_t hash_idx_reg = temporaries + 3;
-            uint32_t probe_result_reg = temporaries + 4;
-            uint32_t candidate_key_reg = temporaries + 5;
-            uint32_t equality_reg = temporaries + 6;
+            CodeObjectBuilder::TemporaryReg temporaries(code, 6);
+            uint32_t hash_reg = temporaries;
+            uint32_t generation_reg = temporaries + 1;
+            uint32_t hash_idx_reg = temporaries + 2;
+            uint32_t probe_result_reg = temporaries + 3;
+            uint32_t candidate_key_reg = temporaries + 4;
+            uint32_t equality_reg = temporaries + 5;
 
             JumpTarget receiver_ok(&code);
-            JumpTarget string_hit(&code);
-            JumpTarget general_path(&code);
             JumpTarget restart_probe(&code);
             JumpTarget probe_loop(&code);
             JumpTarget advance_probe(&code);
@@ -544,14 +481,7 @@ namespace cl
             CL_TRY(emit_native_error(code, receiver_error_target_idx));
             CL_TRY(receiver_ok.resolve());
 
-            CL_TRY(code.emit_dict_prepare_read(0, 0, 1, string_value_reg));
-            CL_TRY(code.emit_jump_if_equal_smi(
-                0, TrustedDictBytecodeAccess::ReadStringHit, string_hit));
-            CL_TRY(code.emit_jump_if_equal_smi(
-                0, TrustedDictBytecodeAccess::ReadStringMiss, miss));
-            CL_TRY(code.emit_jump(0, general_path));
-
-            CL_TRY(general_path.resolve());
+            CL_TRY(code.emit_dict_promote_string_keyed(0, 0));
             {
                 CodeObjectBuilder::TemporaryReg call_args(
                     code, 1, RegisterAlignment::CallFrame);
@@ -604,17 +534,6 @@ namespace cl
             CL_TRY(code.emit_dict_probe_advance(0, 0));
             CL_TRY(code.emit_star(0, hash_idx_reg));
             CL_TRY(code.emit_jump(0, probe_loop));
-
-            CL_TRY(string_hit.resolve());
-            if(kind == DictReadKind::Contains)
-            {
-                CL_TRY(code.emit_lda_true(0));
-            }
-            else
-            {
-                CL_TRY(code.emit_ldar(0, string_value_reg));
-            }
-            CL_TRY(code.emit_return(0));
 
             CL_TRY(general_hit.resolve());
             if(kind == DictReadKind::Contains)
@@ -702,7 +621,6 @@ namespace cl
             JumpTarget advance_probe(&code);
             JumpTarget insert_new(&code);
             JumpTarget overwrite(&code);
-            JumpTarget done(&code);
 
             CL_TRY(code.emit_ldar(0, 0));
             CL_TRY(code.emit_is_instance_of_known_class(0, dict_class_idx));
@@ -710,9 +628,7 @@ namespace cl
             CL_TRY(emit_native_error(code, receiver_error_target_idx));
             CL_TRY(receiver_ok.resolve());
 
-            CL_TRY(code.emit_dict_prepare_set_item(0, 0, 1, 2));
-            CL_TRY(code.emit_jump_if_equal_smi(
-                0, TrustedDictBytecodeAccess::SetItemStringDone, done));
+            CL_TRY(code.emit_dict_promote_string_keyed(0, 0));
 
             {
                 CodeObjectBuilder::TemporaryReg call_args(
@@ -791,10 +707,6 @@ namespace cl
             CL_TRY(overwrite.resolve());
             CL_TRY(code.emit_dict_overwrite_entry(0, 0, probe_result_reg, 2));
             CL_TRY(code.emit_return(0));
-
-            CL_TRY(done.resolve());
-            CL_TRY(code.emit_lda_none(0));
-            CL_TRY(code.emit_return(0));
         }
 
         TValue<CodeObject> code_object =
@@ -850,7 +762,6 @@ namespace cl
             JumpTarget advance_probe(&code);
             JumpTarget hit(&code);
             JumpTarget miss(&code);
-            JumpTarget done(&code);
 
             CL_TRY(code.emit_ldar(0, 0));
             CL_TRY(code.emit_is_instance_of_known_class(0, dict_class_idx));
@@ -858,11 +769,7 @@ namespace cl
             CL_TRY(emit_native_error(code, receiver_error_target_idx));
             CL_TRY(receiver_ok.resolve());
 
-            CL_TRY(code.emit_dict_prepare_delete(0, 0, 1));
-            CL_TRY(code.emit_jump_if_equal_smi(
-                0, TrustedDictBytecodeAccess::DeleteStringDone, done));
-            CL_TRY(code.emit_jump_if_equal_smi(
-                0, TrustedDictBytecodeAccess::DeleteStringMiss, miss));
+            CL_TRY(code.emit_dict_promote_string_keyed(0, 0));
 
             {
                 CodeObjectBuilder::TemporaryReg call_args(
@@ -919,10 +826,6 @@ namespace cl
 
             CL_TRY(hit.resolve());
             CL_TRY(code.emit_dict_delete_entry(0, 0, hash_idx_reg));
-            CL_TRY(code.emit_return(0));
-
-            CL_TRY(done.resolve());
-            CL_TRY(code.emit_lda_none(0));
             CL_TRY(code.emit_return(0));
 
             CL_TRY(miss.resolve());
@@ -1823,7 +1726,7 @@ namespace cl
         return active_thread()->set_pending_builtin_exception_none(L"KeyError");
     }
 
-    bool Dict::string_keyed_delete_if_present(TValue<String> key)
+    Value Dict::string_keyed_delete(TValue<String> key)
     {
         int32_t *iidx = find_entry(key);
         int32_t idx = *iidx;
@@ -1833,15 +1736,6 @@ namespace cl
                                    TValue<SMI>::from_smi(0)));
             *iidx = tombstone;
             --n_valid_entries;
-            return true;
-        }
-        return false;
-    }
-
-    Value Dict::string_keyed_delete(TValue<String> key)
-    {
-        if(string_keyed_delete_if_present(key))
-        {
             return Value::None();
         }
         return active_thread()->set_pending_builtin_exception_none(L"KeyError");

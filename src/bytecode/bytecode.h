@@ -142,9 +142,7 @@ namespace cl
         CanonicalizeHash,
 
         // trusted protocol-free dict table operations
-        DictPrepareRead,
-        DictPrepareSetItem,
-        DictPrepareDelete,
+        DictPromoteStringKeyed,
         DictProbeStart,
         DictProbeForLookup,
         DictProbeForInsert,

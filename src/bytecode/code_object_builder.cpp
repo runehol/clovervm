@@ -845,38 +845,12 @@ namespace cl
         return Expected<uint32_t>::ok(result);
     }
 
-    Expected<uint32_t> CodeObjectBuilder::emit_dict_prepare_read(
-        uint32_t source_offset, uint32_t receiver_reg, uint32_t key_reg,
-        uint32_t value_reg)
+    Expected<uint32_t>
+    CodeObjectBuilder::emit_dict_promote_string_keyed(uint32_t source_offset,
+                                                      uint32_t receiver_reg)
     {
-        uint32_t result =
-            emplace_back(source_offset, uint8_t(Bytecode::DictPrepareRead));
-        emplace_back(source_offset, encode_reg(receiver_reg));
-        emplace_back(source_offset, encode_reg(key_reg));
-        emplace_back(source_offset, encode_reg(value_reg));
-        return Expected<uint32_t>::ok(result);
-    }
-
-    Expected<uint32_t> CodeObjectBuilder::emit_dict_prepare_set_item(
-        uint32_t source_offset, uint32_t receiver_reg, uint32_t key_reg,
-        uint32_t value_reg)
-    {
-        uint32_t result =
-            emplace_back(source_offset, uint8_t(Bytecode::DictPrepareSetItem));
-        emplace_back(source_offset, encode_reg(receiver_reg));
-        emplace_back(source_offset, encode_reg(key_reg));
-        emplace_back(source_offset, encode_reg(value_reg));
-        return Expected<uint32_t>::ok(result);
-    }
-
-    Expected<uint32_t> CodeObjectBuilder::emit_dict_prepare_delete(
-        uint32_t source_offset, uint32_t receiver_reg, uint32_t key_reg)
-    {
-        uint32_t result =
-            emplace_back(source_offset, uint8_t(Bytecode::DictPrepareDelete));
-        emplace_back(source_offset, encode_reg(receiver_reg));
-        emplace_back(source_offset, encode_reg(key_reg));
-        return Expected<uint32_t>::ok(result);
+        return emit_opcode_reg(source_offset, Bytecode::DictPromoteStringKeyed,
+                               receiver_reg);
     }
 
     Expected<uint32_t> CodeObjectBuilder::emit_dict_probe_start(

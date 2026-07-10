@@ -1401,8 +1401,9 @@ Stage invariant:
 - [x] Put equality dispatch and `ToBool` at independent cache-bearing bytecode
   sites and preserve generation-plus-candidate revalidation after Python code
   runs.
-- [x] Preserve the raw exact-string fallback for direct or uncached method calls
-  as well as the existing trusted handlers for hot exact-string operations.
+- [x] Preserve existing trusted handlers for hot exact-string operations.
+  Direct or uncached calls to generated dict methods may promote a string-keyed
+  dict before running the general path.
 - [x] Add structural tests proving that all three generated read methods contain
   the intended hash, equality, probe, and revalidation sites.
 
@@ -1410,15 +1411,16 @@ Stage invariant:
 
 ##### 11b1. Assignment
 
-- [x] Add trusted opcodes for shape preparation, resize, insertion-aware probe
-  inspection, tombstone-aware insertion, and entry overwrite.
+- [x] Add trusted opcodes for conditional string-keyed promotion, resize,
+  insertion-aware probe inspection, tombstone-aware insertion, and entry
+  overwrite.
 - [x] Generate a cache-bearing `__setitem__` body while preserving promotion,
   insertion order, exception propagation, and mutation revalidation behavior.
 
 ##### 11b2. Deletion
 
-- [x] Add trusted shape-aware deletion preparation and slot-deletion primitives,
-  then generate a cache-bearing `__delitem__` body.
+- [x] Add a trusted slot-deletion primitive, reuse conditional string-keyed
+  promotion, and generate a cache-bearing `__delitem__` body.
 
 ##### 11b3. Composed Mutation
 

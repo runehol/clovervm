@@ -341,12 +341,8 @@ template <> struct fmt::formatter<cl::Bytecode>
                 return format_to(out, "Invert");
             case cl::Bytecode::CanonicalizeHash:
                 return format_to(out, "CanonicalizeHash");
-            case cl::Bytecode::DictPrepareRead:
-                return format_to(out, "DictPrepareRead");
-            case cl::Bytecode::DictPrepareSetItem:
-                return format_to(out, "DictPrepareSetItem");
-            case cl::Bytecode::DictPrepareDelete:
-                return format_to(out, "DictPrepareDelete");
+            case cl::Bytecode::DictPromoteStringKeyed:
+                return format_to(out, "DictPromoteStringKeyed");
             case cl::Bytecode::DictProbeStart:
                 return format_to(out, "DictProbeStart");
             case cl::Bytecode::DictProbeForLookup:
@@ -922,23 +918,6 @@ template <> struct fmt::formatter<cl::CodeObject>
             case cl::Bytecode::CheckTernaryOperatorNotImplemented:
                 break;
 
-            case cl::Bytecode::DictPrepareRead:
-            case cl::Bytecode::DictPrepareSetItem:
-                format_to(out, " ");
-                disassemble_reg(code_obj, out, pc++);
-                format_to(out, ", ");
-                disassemble_reg(code_obj, out, pc++);
-                format_to(out, ", value=");
-                disassemble_reg(code_obj, out, pc++);
-                break;
-
-            case cl::Bytecode::DictPrepareDelete:
-                format_to(out, " ");
-                disassemble_reg(code_obj, out, pc++);
-                format_to(out, ", ");
-                disassemble_reg(code_obj, out, pc++);
-                break;
-
             case cl::Bytecode::DictProbeStart:
                 format_to(out, " ");
                 disassemble_reg(code_obj, out, pc++);
@@ -960,6 +939,7 @@ template <> struct fmt::formatter<cl::CodeObject>
             case cl::Bytecode::DictEntryKey:
             case cl::Bytecode::DictEntryValue:
             case cl::Bytecode::DictResizeForInsert:
+            case cl::Bytecode::DictPromoteStringKeyed:
                 format_to(out, " ");
                 disassemble_reg(code_obj, out, pc++);
                 break;
