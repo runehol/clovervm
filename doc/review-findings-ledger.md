@@ -111,12 +111,12 @@ Open.
 ### CVR-009: Large right shifts execute undefined native shifts
 
 - Severity: P1
-- Status: open
+- Status: resolved
 - Review unit: R4
 - Found at: `af8b450`
 - Affected code: `src/runtime/interpreter.cpp:3556`,
   `src/runtime/interpreter.cpp:3576`, `src/compiler/codegen.cpp:288`
-- Affected tests: none
+- Affected tests: `tests/test_interpreter.cpp`
 
 Invariant or semantic rule:
 
@@ -157,11 +157,16 @@ positive and negative operands around 63, 64, and larger counts.
 
 Verification:
 
-Confirmed in debug and release against CPython. No fix has been implemented.
+Added focused immediate and register-count coverage around counts 63, 64, 127,
+and 128 for positive and negative operands. The focused interpreter tests and
+`ninja -C build-debug all check` pass with 1,239 tests in 35 suites and one
+disabled test. The release `check_opcode_frames` target also passes.
 
 Disposition:
 
-Open.
+Resolved by saturating SMI right shifts before executing the native shift in
+both `RShift` and `RShiftSmi`, while preserving the existing negative-count
+error path.
 
 ### CVR-011: Register encoding wraps and crashes large functions
 

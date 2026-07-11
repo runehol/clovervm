@@ -8346,6 +8346,35 @@ TEST(Interpreter, right_shift_negative_count)
                         L"ValueError", L"negative shift count");
 }
 
+TEST(Interpreter, right_shift_large_immediate_count_saturates)
+{
+    EXPECT_EQ(Value::from_smi(0), test::FileRunner(L"1 >> 63\n").return_value);
+    EXPECT_EQ(Value::from_smi(0), test::FileRunner(L"1 >> 64\n").return_value);
+    EXPECT_EQ(Value::from_smi(0), test::FileRunner(L"1 >> 127\n").return_value);
+    EXPECT_EQ(Value::from_smi(-1),
+              test::FileRunner(L"-9 >> 63\n").return_value);
+    EXPECT_EQ(Value::from_smi(-1),
+              test::FileRunner(L"-9 >> 64\n").return_value);
+    EXPECT_EQ(Value::from_smi(-1),
+              test::FileRunner(L"-9 >> 127\n").return_value);
+}
+
+TEST(Interpreter, right_shift_large_register_count_saturates)
+{
+    EXPECT_EQ(Value::from_smi(0),
+              test::FileRunner(L"a = 1\nb = 63\na >> b\n").return_value);
+    EXPECT_EQ(Value::from_smi(0),
+              test::FileRunner(L"a = 1\nb = 64\na >> b\n").return_value);
+    EXPECT_EQ(Value::from_smi(0),
+              test::FileRunner(L"a = 1\nb = 128\na >> b\n").return_value);
+    EXPECT_EQ(Value::from_smi(-1),
+              test::FileRunner(L"a = -9\nb = 63\na >> b\n").return_value);
+    EXPECT_EQ(Value::from_smi(-1),
+              test::FileRunner(L"a = -9\nb = 64\na >> b\n").return_value);
+    EXPECT_EQ(Value::from_smi(-1),
+              test::FileRunner(L"a = -9\nb = 128\na >> b\n").return_value);
+}
+
 TEST(Interpreter, negative_shift_count_unwinds_nested_frames)
 {
     expect_python_error(L"def fail():\n"

@@ -3567,6 +3567,11 @@ namespace cl
         int64_t shift_count = b.get_smi();
         if(unlikely(shift_count < 0))
             MUSTTAIL return raise_value_error_negative_shift_count(ARGS);
+        if(unlikely(shift_count >= 64))
+        {
+            accumulator = Value::from_smi(a.get_smi() < 0 ? -1 : 0);
+            COMPLETE();
+        }
         accumulator.as.integer = a.as.integer >> shift_count;
         accumulator.as.integer &= ~value_not_smi_mask;
 
@@ -3585,6 +3590,11 @@ namespace cl
         int64_t shift_count = b.get_smi();
         if(unlikely(shift_count < 0))
             MUSTTAIL return raise_value_error_negative_shift_count(ARGS);
+        if(unlikely(shift_count >= 64))
+        {
+            accumulator = Value::from_smi(a.get_smi() < 0 ? -1 : 0);
+            COMPLETE();
+        }
         accumulator.as.integer = a.as.integer >> shift_count;
         accumulator.as.integer &= ~value_not_smi_mask;
 
