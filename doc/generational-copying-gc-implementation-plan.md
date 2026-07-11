@@ -16,12 +16,30 @@ Refactor the existing Clover native API boundary before moving ordinary VM
 objects.
 
 - Make `clover_handle` an opaque handle to VM-managed storage rather than a raw
-  `Value` copy.
-- Define the active native-call handle frame that owns transitory handles.
-- Convert extension-call thunks to materialize argument handles in that frame
-  and resolve returned handles through that frame.
+  `Value` copy. Internally, a transitory handle is a `Value *` to a rooted slot.
+- Point incoming argument handles directly at their existing stable `Value`
+  slots in the managed native thunk frame; do not copy or materialize arguments
+  into separate handle storage.
+- Reserve the first fixed-size API-storage chunk in that managed frame for
+  handles created by C API operations. Use its final cell as an encoded pointer
+  to overflow storage rather than as a scannable handle slot.
+- Add fixed-size native/non-moving overflow chunks as a singly linked list. Each
+  chunk holds managed `Value` slots plus an encoded next-chunk link, and all
+  overflow chunks are released when the native call returns.
+- Make `clover_context` identify the active frame's argument-slot range and track
+  the current API allocation chunk and next free slot.
+- Convert extension-call thunks to pass pointers to existing argument slots and
+  resolve returned handles through the active frame or its overflow chain.
 - Route C API helper validation through handle-frame lookup instead of raw
-  `Value` bit decoding.
+  `Value` bit decoding. Validation must accept only occupied slots in the active
+  argument range, occupied inline API storage, or overflow chain before
+  dereferencing a handle.
+- Keep argument slots in ordinary managed-frame root scanning. Precisely scan
+  occupied inline and overflow API-storage slots as mutable roots while excluding
+  encoded chunk-link cells and unused capacity.
+- Make C API constructors and other value-producing helpers claim a frame slot
+  for their result; they must not leave a newly created value live only in an
+  unregistered native local across a later safepoint.
 - Keep module-builder values rooted while the module initializer runs.
 - Ensure C API helpers resolve handles before storing managed values into VM
   objects.
@@ -29,6 +47,13 @@ objects.
 This stage does not require removing deferred refcounting. Refcounting remains
 the lifetime authority while the native boundary stops exposing raw movable
 `Value` storage.
+
+The stage is complete when tests prove argument handles alias the original
+managed argument slots, and cover handles returned by C API constructors,
+transition to one and multiple overflow chunks, scanning and updating slots in
+every chunk, invalid or expired handle rejection, cleanup on normal and
+exceptional return, and nested native-to-managed calls while the outer handle
+frame remains active.
 
 `clover_persistent_handle` is a separate follow-up after transitory handles are
 working. It is needed for native state that intentionally outlives one API entry,
