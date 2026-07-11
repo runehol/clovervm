@@ -39,3 +39,65 @@ first = RebuildInit()
 RebuildInit.__init__ = replacement
 second = RebuildInit()
 assert first.value * 10 + second.value == 12
+
+class InheritedInitBase:
+    def __init__(self):
+        self.value = 1
+
+class InheritedInitDerived(InheritedInitBase):
+    pass
+
+assert InheritedInitDerived().value == 1
+
+def inherited_init_replacement(self):
+    self.value = 2
+
+InheritedInitBase.__init__ = inherited_init_replacement
+assert InheritedInitDerived().value == 2
+
+class AddedInitBase:
+    pass
+
+class AddedInitDerived(AddedInitBase):
+    pass
+
+AddedInitDerived()
+
+def added_init(self, value):
+    self.value = value
+
+AddedInitBase.__init__ = added_init
+assert AddedInitDerived(3).value == 3
+del AddedInitBase.__init__
+assert AddedInitDerived().__class__ is AddedInitDerived
+
+class InheritedNewBase:
+    def __new__(cls):
+        return 1
+
+class InheritedNewDerived(InheritedNewBase):
+    pass
+
+assert InheritedNewDerived() == 1
+
+def inherited_new_replacement(cls):
+    return 2
+
+InheritedNewBase.__new__ = inherited_new_replacement
+assert InheritedNewDerived() == 2
+
+class AddedNewBase:
+    pass
+
+class AddedNewDerived(AddedNewBase):
+    pass
+
+AddedNewDerived()
+
+def added_new(cls, value):
+    return value
+
+AddedNewBase.__new__ = added_new
+assert AddedNewDerived(4) == 4
+del AddedNewBase.__new__
+assert AddedNewDerived().__class__ is AddedNewDerived

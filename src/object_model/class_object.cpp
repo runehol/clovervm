@@ -593,6 +593,7 @@ namespace cl
     ValidityCell *
     ClassObject::create_mro_shape_and_contents_validity_cell_slow() const
     {
+        constructor_thunk = nullptr;
         ValidityCell *cell = make_internal_raw<ValidityCell>();
         mro_shape_and_contents_validity_cell = cell;
         install_validity_cell_along_mro(

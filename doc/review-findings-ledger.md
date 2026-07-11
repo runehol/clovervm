@@ -362,12 +362,12 @@ Open.
 ### CVR-012: Inherited constructor changes leave stale derived thunks
 
 - Severity: P1
-- Status: open
+- Status: resolved
 - Review unit: R5
 - Found at: `ea912bc`
 - Affected code: `src/object_model/class_object.cpp:680`,
   `src/object_model/class_object.cpp:717`
-- Affected tests: none
+- Affected tests: `tests/python/class_constructors.py`
 
 Invariant or semantic rule:
 
@@ -420,12 +420,16 @@ both `__init__` and `__new__`, including signature changes.
 
 Verification:
 
-Confirmed with direct CloverVM and CPython reproductions. No fix has been
-implemented.
+Added inherited `__init__` and `__new__` add, replace, and delete coverage,
+including signature changes. The constructor regression file passes directly,
+and `ninja -C build-debug all check` passes with 1,239 tests in 35 suites and
+one disabled test.
 
 Disposition:
 
-Open.
+Resolved by clearing the cached constructor thunk whenever its MRO
+shape-and-contents validity cell is replaced, preventing an old thunk from
+being paired with a newly valid cell.
 
 ### CVR-015: Cyclic container representation overflows the native stack
 
