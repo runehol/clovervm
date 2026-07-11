@@ -262,3 +262,82 @@ validated:
 - region-style remembered sets;
 - concurrent copying;
 - load barriers.
+
+## Open Questions
+
+### Non-Moving GC Participants
+
+Stable/non-moving storage does not mean outside GC. CPython extension-owned
+objects are the important unresolved case: they may be small, they must keep a
+stable `PyObject *` address for native code, and they may still reference or be
+referenced by movable VM objects.
+
+The plan needs a separate policy for non-moving GC participants before real
+CPython extension-owned objects are implemented. Open questions include:
+
+- What is the exact stable object header shape for extension-owned objects?
+- Is native refcount alone a liveness source, or does the tracing collector also
+  own reachability for these objects?
+- What does refcount-zero mean: immediate native deallocation, enqueue for a GC
+  finalization pass, or different behavior for different object categories?
+- How do `tp_traverse`-style hooks expose references from extension-owned objects
+  into movable VM objects?
+- How do `tp_clear`, weakrefs, finalizers, resurrection, and native
+  `tp_dealloc` semantics fit into the collector's stop-the-world phases?
+- How are extension-owned-object-to-young-object references remembered for minor
+  GC?
+- Are cycles that cross extension-owned objects and movable VM objects supported
+  in the first implementation, deliberately leaked, or rejected by the supported
+  API subset?
+
+Until these questions are answered, extension-owned objects should be treated as
+deferred stable-heap participants: never nursery allocated, never evacuated by
+minor GC, and not assumed to be collectible merely because ordinary movable VM
+objects are collectible.
+
+### Large Objects And Older Generations
+
+The nursery plan does not settle how large objects, direct-old objects, stable
+objects, and older generations are collected. These policies should be decided
+before a major collection is implemented.
+
+Large objects need their own allocation and collection policy. They may be too
+large to copy cheaply, may be poor fits for nursery evacuation, and may be root
+containers whose outgoing references are expensive to rescan on every minor GC.
+Open questions include:
+
+- What size or layout threshold sends an object to large-object storage instead
+  of the nursery?
+- Are large objects always non-moving, or can some large layouts become
+  explicitly movable after custom copy/update policy exists?
+- How are large-object-to-young-object references remembered for minor GC:
+  object-level remembered state, slot/range metadata, card marking, or a
+  large-object-specific remembered set?
+- Are large objects scanned during every minor GC when remembered, or only the
+  remembered slots/ranges?
+- Are large objects allocated in direct-old movable storage, stable storage, or a
+  separate large-object space?
+
+Older generations also need an explicit major-collection policy. The first
+copying nursery can promote every survivor into old storage, but that does not
+decide whether old storage later moves.
+
+Open questions include:
+
+- Is the initial major collector non-moving mark-sweep over old, stable, and
+  large-object storage?
+- If old objects eventually move, which layouts are eligible for old-generation
+  compaction and which remain non-moving forever?
+- Does the old generation use one space, multiple spaces by copyability class,
+  or separate spaces for movable-old, stable, large, and extension-owned records?
+- How are references among old, large, stable, and extension-owned objects traced
+  during major GC?
+- What heap metadata records whether an object is nursery-copyable,
+  direct-old-movable, large, stable, or extension-owned?
+- Can a major collection reclaim cycles that include non-moving participants, or
+  is that deferred until the extension-owned-object policy is settled?
+
+Until these questions are answered, the safe initial assumption is that minor GC
+only copies nursery objects, while old, large, stable, and extension-owned
+objects are non-evacuated trace sources and targets. That assumption should not
+be mistaken for a final major-GC design.
