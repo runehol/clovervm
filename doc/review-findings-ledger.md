@@ -1232,12 +1232,12 @@ normal import failure cleanup to remove the module from `sys.modules`.
 ### CVR-007: Dictionary iterators revive after invalidation
 
 - Severity: P2
-- Status: open
+- Status: resolved
 - Review unit: R3
 - Found at: `b9ed3d9`
 - Affected code: `src/builtin_types/dict_view.cpp:99`,
   `src/builtin_types/dict_view.h:79`
-- Affected tests: none
+- Affected tests: `tests/test_dict.cpp`
 
 Invariant or semantic rule:
 
@@ -1282,12 +1282,16 @@ for same-size mutations unless that design is intentionally revisited.
 
 Verification:
 
-Confirmed with direct CloverVM and CPython command-line reproductions. No fix
-has been implemented.
+Added shared regression coverage for key, value, and item iterators that
+restores the original dictionary size after the first mutation error. The
+focused test passes, and `ninja -C build-debug all check` passes with 1,244
+tests in 36 suites and one disabled test.
 
 Disposition:
 
-Open.
+Resolved by poisoning the existing expected-size field with `-1` before
+raising the first mutation error, ensuring every later size comparison fails
+without changing iterator layout or the successful `__next__` path.
 
 ### CVR-008: Opcode-frame verification cannot fail its build target
 

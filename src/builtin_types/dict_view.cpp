@@ -96,10 +96,12 @@ namespace cl
         return self;
     }
 
-    static Value check_expected_size(Dict *dict, TValue<SMI> expected_size)
+    static Value check_expected_size(Dict *dict,
+                                     Member<TValue<SMI>> &expected_size)
     {
         if(static_cast<int64_t>(dict->size()) != expected_size.extract())
         {
+            expected_size = TValue<SMI>::from_smi(-1);
             return active_thread()->set_pending_builtin_exception_string(
                 L"RuntimeError", L"dictionary changed size during iteration");
         }

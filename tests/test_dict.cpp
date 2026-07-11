@@ -2155,6 +2155,34 @@ TEST(Dict, EmptyIteratorEqualsEnd)
     EXPECT_EQ(dict->begin(), dict->end());
 }
 
+TEST(Dict, ViewIteratorsRemainInvalidAfterSizeIsRestored)
+{
+    const wchar_t *view_names[] = {L"keys", L"values", L"items"};
+    for(const wchar_t *view_name: view_names)
+    {
+        test::VmTestContext context;
+        std::wstring source = L"d = {'a': 1, 'b': 2}\niterator = d.";
+        source += view_name;
+        source += L"().__iter__()\n"
+                  L"iterator.__next__()\n"
+                  L"d['c'] = 3\n"
+                  L"first_error = 0\n"
+                  L"try:\n"
+                  L"    iterator.__next__()\n"
+                  L"except RuntimeError:\n"
+                  L"    first_error = 1\n"
+                  L"del d['c']\n"
+                  L"second_error = 0\n"
+                  L"try:\n"
+                  L"    iterator.__next__()\n"
+                  L"except RuntimeError:\n"
+                  L"    second_error = 1\n"
+                  L"first_error * 10 + second_error\n";
+
+        EXPECT_EQ(Value::from_smi(11), context.run_file(source.c_str()));
+    }
+}
+
 TEST(Dict, ClearRemovesAllEntriesAndAllowsReuse)
 {
     test::VmTestContext context;
