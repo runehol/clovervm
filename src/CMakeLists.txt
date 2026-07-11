@@ -130,6 +130,8 @@ add_library(libclovervm_objects OBJECT
     import_system/module_global_cache.h
     native/native_module_api.cpp
     native/native_module_api_internal.h
+    native/native_handle.cpp
+    native/native_handle.h
     native/native_module_loader.cpp
     native/native_module_loader.h
     native/native_module_loader_internal.h

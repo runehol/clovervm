@@ -3,6 +3,7 @@
 #include "builtin_types/module_object.h"
 #include "builtin_types/tuple.h"
 #include "bytecode/code_object_builder.h"
+#include "native/native_handle.h"
 #include "object_model/attribute_descriptor.h"
 #include "object_model/class_object.h"
 #include "runtime/thread_state.h"
@@ -56,8 +57,21 @@ namespace cl
             CL_TRY(builder.add_native_function_target(target));
         if(function_kind == NativeFunctionKind::Extension)
         {
-            CL_TRY(builder.emit_call_extension(0, call_opcode,
-                                               uint8_t(target_idx)));
+            if constexpr(native_handle_detail::cl_indirect_handles)
+            {
+                // Reserve ordinary frame cells for the extension's initial
+                // handle chunk. TemporaryReg records them in the generated
+                // thunk's frame layout; it does not allocate per invocation.
+                CodeObjectBuilder::TemporaryReg reserved_handle_cells(
+                    builder, native_handle_detail::frame_handle_cell_count);
+                CL_TRY(builder.emit_call_extension(0, call_opcode,
+                                                   uint8_t(target_idx)));
+            }
+            else
+            {
+                CL_TRY(builder.emit_call_extension(0, call_opcode,
+                                                   uint8_t(target_idx)));
+            }
         }
         else
         {

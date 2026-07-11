@@ -57,6 +57,16 @@ static clover_handle empty_tuple_func(clover_context *ctx)
     return clover_tuple_from_array(ctx, 0, 0);
 }
 
+static clover_handle overflow_handles_func(clover_context *ctx)
+{
+    clover_handle result = clover_none(ctx);
+    for(int idx = 0; idx < 70; ++idx)
+    {
+        result = clover_float_from_double(ctx, (double)idx + 0.5);
+    }
+    return result;
+}
+
 static clover_handle bad_tuple_func(clover_context *ctx)
 {
     return clover_tuple_from_array(ctx, 0, 1);
@@ -482,6 +492,24 @@ CL_NATIVE_MODULE_EXPORT clover_status clover_module_init__test_native(
     {
         return CLOVER_STATUS_ERROR;
     }
+    if(clover_module_add_value(builder, "init_handle_0",
+                               clover_int_from_int64(ctx, 0)) !=
+           CLOVER_STATUS_OK ||
+       clover_module_add_value(builder, "init_handle_1",
+                               clover_int_from_int64(ctx, 1)) !=
+           CLOVER_STATUS_OK ||
+       clover_module_add_value(builder, "init_handle_2",
+                               clover_int_from_int64(ctx, 2)) !=
+           CLOVER_STATUS_OK ||
+       clover_module_add_value(builder, "init_handle_3",
+                               clover_int_from_int64(ctx, 3)) !=
+           CLOVER_STATUS_OK ||
+       clover_module_add_value(builder, "overflow_init_value",
+                               clover_float_from_double(ctx, 4.5)) !=
+           CLOVER_STATUS_OK)
+    {
+        return CLOVER_STATUS_ERROR;
+    }
     if(clover_module_add_function_0(builder, "answer_func", answer_func,
                                     "Return 42.") != CLOVER_STATUS_OK)
     {
@@ -524,6 +552,13 @@ CL_NATIVE_MODULE_EXPORT clover_status clover_module_init__test_native(
     }
     if(clover_module_add_function_0(builder, "empty_tuple", empty_tuple_func,
                                     "Return an empty tuple.") !=
+       CLOVER_STATUS_OK)
+    {
+        return CLOVER_STATUS_ERROR;
+    }
+    if(clover_module_add_function_0(
+           builder, "overflow_handles", overflow_handles_func,
+           "Return a value after overflowing indirect handle storage.") !=
        CLOVER_STATUS_OK)
     {
         return CLOVER_STATUS_ERROR;

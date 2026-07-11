@@ -220,7 +220,7 @@ clover_module_add_value(clover_native_module_builder *builder, const char *name,
         return CLOVER_STATUS_ERROR;
     }
 
-    cl::Value unwrapped = cl::unwrap_clover_handle(value);
+    cl::Value unwrapped = cl::resolve_handle(value);
     if(unwrapped.is_exception_marker())
     {
         if(builder->thread->pending_exception_kind() ==

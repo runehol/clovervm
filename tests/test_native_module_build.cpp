@@ -7,6 +7,7 @@
 #include "builtin_types/tuple.h"
 #include "import_system/import_system.h"
 #include "import_system/module_finder.h"
+#include "native/native_handle.h"
 #include "object_model/function.h"
 #include "runtime/exception_object.h"
 #include "runtime/thread_state.h"
@@ -93,10 +94,27 @@ TEST(NativeModuleBuild, ImportingNativeExtensionPopulatesModuleGlobals)
     TValue<String> nothing_name =
         context.vm().get_or_create_interned_string_value(L"nothing");
     EXPECT_EQ(Value::None(), module->get_own_property(nothing_name));
+    TValue<String> overflow_init_name =
+        context.vm().get_or_create_interned_string_value(
+            L"overflow_init_value");
+    Value overflow_init = module->get_own_property(overflow_init_name);
+    ASSERT_TRUE(can_convert_to<Float>(overflow_init));
+    EXPECT_DOUBLE_EQ(4.5, overflow_init.get_ptr<Float>()->value);
     TValue<String> answer_func_name =
         context.vm().get_or_create_interned_string_value(L"answer_func");
     Value answer_func = module->get_own_property(answer_func_name);
     ASSERT_TRUE(can_convert_to<Function>(answer_func));
+    CodeObject *answer_code =
+        answer_func.get_ptr<Function>()->code_object.extract();
+    if constexpr(native_handle_detail::cl_indirect_handles)
+    {
+        EXPECT_EQ(native_handle_detail::frame_handle_cell_count,
+                  answer_code->get_padded_n_ordinary_below_frame_slots());
+    }
+    else
+    {
+        EXPECT_EQ(0u, answer_code->get_padded_n_ordinary_below_frame_slots());
+    }
     Optional<TValue<String>> answer_func_docstring =
         assume_convert_to<Function>(answer_func)->docstring.value();
     ASSERT_TRUE(answer_func_docstring.has_value());
@@ -252,6 +270,17 @@ TEST(NativeModuleBuild, ImportingNativeExtensionPopulatesModuleGlobals)
                       Value::from_smi(7));
 
     EXPECT_EQ(imported, sys_modules_get(context, name));
+}
+
+TEST(NativeModuleBuild, ExtensionCallCanOverflowIndirectHandleStorage)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation_scope(context.thread());
+
+    EXPECT_EQ(Value::None(),
+              context.run_file(L"from _test_native import overflow_handles\n"
+                               L"assert overflow_handles() == 69.5\n"
+                               L"None\n"));
 }
 
 TEST(NativeModuleBuild, TimeWrapperImportsNativeExtensionFunctions)

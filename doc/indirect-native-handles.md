@@ -147,8 +147,19 @@ allocating storage for a new handle.
 
 ## Managed Frame Storage
 
-The native thunk frame reserves a fixed-size API-handle chunk on the stable
-Clover stack. This storage is separate from the existing argument slots.
+When an extension thunk is generated in indirect mode, its builder reserves
+`frame_handle_cell_count` ordinary temporary-register cells. This changes the
+recorded frame size of the generated thunk; it is not a dynamic allocation or
+reservation performed on each call. Every invocation therefore enters with a
+fixed-size API-handle chunk already present on the stable Clover stack. The
+storage is separate from the existing argument slots, whose handles continue to
+point directly at those slots.
+
+The implementation uses a scoped `CodeObjectBuilder::TemporaryReg` while
+emitting the extension call. The C++ object's lifetime is only a code-generation
+device: it makes the cells live in the thunk's frame layout across the emitted
+call. The thunk does not read or initialize a separate temporary value at run
+time. Direct mode omits this reservation entirely.
 
 The final cell is not available for handle allocation. It is a managed link to
 the first overflow chunk:

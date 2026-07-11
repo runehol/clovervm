@@ -22,28 +22,20 @@ namespace cl
                                               const wchar_t *type_name,
                                               const wchar_t *message)
         {
-            if(ctx != nullptr && ctx->thread != nullptr)
-            {
-                (void)ctx->thread->set_pending_builtin_exception_string(
-                    type_name, message);
-            }
+            (void)ctx->thread->set_pending_builtin_exception_string(type_name,
+                                                                    message);
             return CLOVER_STATUS_ERROR;
-        }
-
-        bool valid_context(clover_context *ctx)
-        {
-            return ctx != nullptr && ctx->thread != nullptr;
         }
 
         bool unwrap_extension_value(clover_context *ctx, clover_handle handle,
                                     Value &out)
         {
-            out = unwrap_clover_handle(handle);
+            out = resolve_handle(handle);
             if(!out.is_vm_sentinel())
             {
                 return true;
             }
-            if(valid_context(ctx) && !ctx->thread->has_pending_exception())
+            if(!ctx->thread->has_pending_exception())
             {
                 (void)set_extension_api_error(
                     ctx, L"TypeError",
@@ -71,14 +63,11 @@ namespace cl
         std::optional<Owned<TValue<String>>>
         decode_dict_string_key(clover_context *ctx, const char *key)
         {
-            if(!valid_context(ctx) || key == nullptr)
+            if(key == nullptr)
             {
-                if(valid_context(ctx))
-                {
-                    (void)set_extension_api_error(
-                        ctx, L"ValueError",
-                        L"native extension dict key must not be null");
-                }
+                (void)set_extension_api_error(
+                    ctx, L"ValueError",
+                    L"native extension dict key must not be null");
                 return std::nullopt;
             }
             std::optional<TValue<String>> string =
@@ -93,7 +82,8 @@ namespace cl
             return Owned<TValue<String>>(*string);
         }
 
-        void initialize_item_outputs(bool *found, clover_handle *out_value)
+        void initialize_item_outputs(clover_context *ctx, bool *found,
+                                     clover_handle *out_value)
         {
             if(found != nullptr)
             {
@@ -101,7 +91,7 @@ namespace cl
             }
             if(out_value != nullptr)
             {
-                *out_value = wrap_clover_handle(Value::None());
+                *out_value = allocate_handle(ctx, Value::None());
             }
         }
 
@@ -115,10 +105,6 @@ namespace cl
         clover_handle dict_snapshot(clover_context *ctx, clover_handle handle,
                                     DictSnapshotKind kind)
         {
-            if(!valid_context(ctx))
-            {
-                return clover_propagate_error(ctx);
-            }
             Dict *dict = unwrap_dict(ctx, handle);
             if(dict == nullptr)
             {
@@ -146,15 +132,14 @@ namespace cl
                     result.extract()->append(item.raw_value());
                 }
             }
-            return wrap_clover_handle(result.raw_value());
+            return allocate_handle(ctx, result.raw_value());
         }
     }  // namespace
 }  // namespace cl
 
 extern "C" CL_EXPORT clover_handle clover_none(clover_context *ctx)
 {
-    (void)ctx;
-    return cl::wrap_clover_handle(cl::Value::None());
+    return cl::allocate_handle(ctx, cl::Value::None());
 }
 
 extern "C" CL_EXPORT clover_handle clover_int_from_int64(clover_context *ctx,
@@ -162,32 +147,25 @@ extern "C" CL_EXPORT clover_handle clover_int_from_int64(clover_context *ctx,
 {
     if(value < cl::value_smi_min || value > cl::value_smi_max)
     {
-        if(ctx != nullptr && ctx->thread != nullptr)
-        {
-            (void)ctx->thread->set_pending_builtin_exception_string(
-                L"OverflowError",
-                L"integer is outside the supported native API range");
-        }
+        (void)ctx->thread->set_pending_builtin_exception_string(
+            L"OverflowError",
+            L"integer is outside the supported native API range");
         return clover_propagate_error(ctx);
     }
-    return cl::wrap_clover_handle(cl::Value::from_smi(value));
+    return cl::allocate_handle(ctx, cl::Value::from_smi(value));
 }
 
 extern "C" CL_EXPORT clover_handle clover_float_from_double(clover_context *ctx,
                                                             double value)
 {
-    if(ctx == nullptr || ctx->thread == nullptr)
-    {
-        return clover_propagate_error(ctx);
-    }
-    return cl::wrap_clover_handle(
-        ctx->thread->make_object_value<cl::Float>(value).raw_value());
+    return cl::allocate_handle(
+        ctx, ctx->thread->make_object_value<cl::Float>(value).raw_value());
 }
 
 extern "C" CL_EXPORT clover_handle
 clover_string_from_utf8(clover_context *ctx, const char *utf8_value)
 {
-    if(ctx == nullptr || ctx->thread == nullptr || utf8_value == nullptr)
+    if(utf8_value == nullptr)
     {
         return clover_propagate_error(ctx);
     }
@@ -201,16 +179,12 @@ clover_string_from_utf8(clover_context *ctx, const char *utf8_value)
             L"ValueError", L"native extension string must be valid UTF-8");
         return clover_propagate_error(ctx);
     }
-    return cl::wrap_clover_handle(string->raw_value());
+    return cl::allocate_handle(ctx, string->raw_value());
 }
 
 extern "C" CL_EXPORT clover_handle clover_tuple_from_array(
     clover_context *ctx, const clover_handle *items, size_t count)
 {
-    if(ctx == nullptr || ctx->thread == nullptr)
-    {
-        return clover_propagate_error(ctx);
-    }
     if(items == nullptr && count != 0)
     {
         (void)ctx->thread->set_pending_builtin_exception_string(
@@ -229,14 +203,14 @@ extern "C" CL_EXPORT clover_handle clover_tuple_from_array(
         ctx->thread->make_object_value<cl::Tuple>(count);
     for(size_t idx = 0; idx < count; ++idx)
     {
-        cl::Value item = cl::unwrap_clover_handle(items[idx]);
+        cl::Value item = cl::resolve_handle(items[idx]);
         if(item.is_exception_marker())
         {
             return clover_propagate_error(ctx);
         }
         tuple.extract()->initialize_item_unchecked(idx, item);
     }
-    return cl::wrap_clover_handle(tuple.raw_value());
+    return cl::allocate_handle(ctx, tuple.raw_value());
 }
 
 extern "C" CL_EXPORT clover_handle clover_tuple_from_pair(clover_context *ctx,
@@ -255,7 +229,7 @@ extern "C" CL_EXPORT clover_status clover_tuple_size(clover_context *ctx,
     {
         *out = 0;
     }
-    if(ctx == nullptr || ctx->thread == nullptr || out == nullptr)
+    if(out == nullptr)
     {
         return CLOVER_STATUS_ERROR;
     }
@@ -283,9 +257,9 @@ extern "C" CL_EXPORT clover_status clover_tuple_get_item(clover_context *ctx,
 {
     if(out != nullptr)
     {
-        *out = cl::wrap_clover_handle(cl::Value::None());
+        *out = cl::allocate_handle(ctx, cl::Value::None());
     }
-    if(ctx == nullptr || ctx->thread == nullptr || out == nullptr)
+    if(out == nullptr)
     {
         return CLOVER_STATUS_ERROR;
     }
@@ -310,7 +284,7 @@ extern "C" CL_EXPORT clover_status clover_tuple_get_item(clover_context *ctx,
         return CLOVER_STATUS_ERROR;
     }
 
-    *out = cl::wrap_clover_handle(tuple->item_unchecked(index));
+    *out = cl::allocate_handle(ctx, tuple->item_unchecked(index));
     return CLOVER_STATUS_OK;
 }
 
@@ -324,7 +298,7 @@ extern "C" CL_EXPORT clover_status clover_string_as_utf8(clover_context *ctx,
     {
         *out_size = 0;
     }
-    if(ctx == nullptr || ctx->thread == nullptr || out_size == nullptr)
+    if(out_size == nullptr)
     {
         return CLOVER_STATUS_ERROR;
     }
@@ -367,7 +341,7 @@ extern "C" CL_EXPORT clover_status clover_float_as_double(clover_context *ctx,
     {
         *out = 0.0;
     }
-    if(ctx == nullptr || ctx->thread == nullptr || out == nullptr)
+    if(out == nullptr)
     {
         return CLOVER_STATUS_ERROR;
     }
@@ -402,7 +376,7 @@ extern "C" CL_EXPORT clover_status clover_int_as_int64(clover_context *ctx,
     {
         *out = 0;
     }
-    if(ctx == nullptr || ctx->thread == nullptr || out == nullptr)
+    if(out == nullptr)
     {
         return CLOVER_STATUS_ERROR;
     }
@@ -431,7 +405,7 @@ extern "C" CL_EXPORT clover_status clover_is(clover_context *ctx,
     {
         *out = false;
     }
-    if(ctx == nullptr || ctx->thread == nullptr || out == nullptr)
+    if(out == nullptr)
     {
         return CLOVER_STATUS_ERROR;
     }
@@ -451,7 +425,7 @@ extern "C" CL_EXPORT clover_status clover_dict_check(clover_context *ctx,
                                                      clover_handle value,
                                                      bool *out)
 {
-    if(!cl::valid_context(ctx) || out == nullptr)
+    if(out == nullptr)
     {
         return CLOVER_STATUS_ERROR;
     }
@@ -480,7 +454,7 @@ extern "C" CL_EXPORT clover_status clover_dict_check_exact(clover_context *ctx,
         return CLOVER_STATUS_OK;
     }
 
-    cl::Dict *dict = cl::unwrap_clover_handle(value).get_ptr<cl::Dict>();
+    cl::Dict *dict = cl::resolve_handle(value).get_ptr<cl::Dict>();
     *out = dict->get_shape()->get_class() ==
            ctx->thread->get_machine()->dict_class();
     return CLOVER_STATUS_OK;
@@ -488,21 +462,13 @@ extern "C" CL_EXPORT clover_status clover_dict_check_exact(clover_context *ctx,
 
 extern "C" CL_EXPORT clover_handle clover_dict_new(clover_context *ctx)
 {
-    if(!cl::valid_context(ctx))
-    {
-        return clover_propagate_error(ctx);
-    }
-    return cl::wrap_clover_handle(
-        ctx->thread->make_object_value<cl::Dict>().raw_value());
+    return cl::allocate_handle(
+        ctx, ctx->thread->make_object_value<cl::Dict>().raw_value());
 }
 
 extern "C" CL_EXPORT clover_status clover_dict_clear(clover_context *ctx,
                                                      clover_handle dict)
 {
-    if(!cl::valid_context(ctx))
-    {
-        return CLOVER_STATUS_ERROR;
-    }
     cl::Dict *unwrapped = cl::unwrap_dict(ctx, dict);
     if(unwrapped == nullptr)
     {
@@ -515,23 +481,19 @@ extern "C" CL_EXPORT clover_status clover_dict_clear(clover_context *ctx,
 extern "C" CL_EXPORT clover_handle clover_dict_copy(clover_context *ctx,
                                                     clover_handle dict)
 {
-    if(!cl::valid_context(ctx))
-    {
-        return clover_propagate_error(ctx);
-    }
     cl::Dict *unwrapped = cl::unwrap_dict(ctx, dict);
     if(unwrapped == nullptr)
     {
         return clover_propagate_error(ctx);
     }
-    return cl::wrap_clover_handle(unwrapped->copy().raw_value());
+    return cl::allocate_handle(ctx, unwrapped->copy().raw_value());
 }
 
 extern "C" CL_EXPORT clover_status clover_dict_size(clover_context *ctx,
                                                     clover_handle dict,
                                                     size_t *out)
 {
-    if(!cl::valid_context(ctx) || out == nullptr)
+    if(out == nullptr)
     {
         return CLOVER_STATUS_ERROR;
     }
@@ -549,7 +511,7 @@ extern "C" CL_EXPORT clover_status clover_dict_contains(clover_context *ctx,
                                                         clover_handle key,
                                                         bool *out)
 {
-    if(!cl::valid_context(ctx) || out == nullptr)
+    if(out == nullptr)
     {
         return CLOVER_STATUS_ERROR;
     }
@@ -576,10 +538,6 @@ extern "C" CL_EXPORT clover_status clover_dict_set_item(clover_context *ctx,
                                                         clover_handle key,
                                                         clover_handle value)
 {
-    if(!cl::valid_context(ctx))
-    {
-        return CLOVER_STATUS_ERROR;
-    }
     cl::Dict *unwrapped_dict = cl::unwrap_dict(ctx, dict);
     cl::Value unwrapped_key;
     cl::Value unwrapped_value;
@@ -599,10 +557,6 @@ extern "C" CL_EXPORT clover_status clover_dict_del_item(clover_context *ctx,
                                                         clover_handle dict,
                                                         clover_handle key)
 {
-    if(!cl::valid_context(ctx))
-    {
-        return CLOVER_STATUS_ERROR;
-    }
     cl::Dict *unwrapped_dict = cl::unwrap_dict(ctx, dict);
     cl::Value unwrapped_key;
     if(unwrapped_dict == nullptr ||
@@ -619,8 +573,8 @@ extern "C" CL_EXPORT clover_status
 clover_dict_get_item(clover_context *ctx, clover_handle dict, clover_handle key,
                      bool *found, clover_handle *out_value)
 {
-    cl::initialize_item_outputs(found, out_value);
-    if(!cl::valid_context(ctx) || found == nullptr || out_value == nullptr)
+    cl::initialize_item_outputs(ctx, found, out_value);
+    if(found == nullptr || out_value == nullptr)
     {
         return CLOVER_STATUS_ERROR;
     }
@@ -640,7 +594,7 @@ clover_dict_get_item(clover_context *ctx, clover_handle dict, clover_handle key,
     *found = result.value().found;
     if(*found)
     {
-        *out_value = cl::wrap_clover_handle(result.value().value);
+        *out_value = cl::allocate_handle(ctx, result.value().value);
     }
     return CLOVER_STATUS_OK;
 }
@@ -649,9 +603,8 @@ extern "C" CL_EXPORT clover_status clover_dict_set_default(
     clover_context *ctx, clover_handle dict, clover_handle key,
     clover_handle default_value, bool *was_present, clover_handle *out_value)
 {
-    cl::initialize_item_outputs(was_present, out_value);
-    if(!cl::valid_context(ctx) || was_present == nullptr ||
-       out_value == nullptr)
+    cl::initialize_item_outputs(ctx, was_present, out_value);
+    if(was_present == nullptr || out_value == nullptr)
     {
         return CLOVER_STATUS_ERROR;
     }
@@ -672,7 +625,7 @@ extern "C" CL_EXPORT clover_status clover_dict_set_default(
         return CLOVER_STATUS_ERROR;
     }
     *was_present = result.value().was_present;
-    *out_value = cl::wrap_clover_handle(result.value().value);
+    *out_value = cl::allocate_handle(ctx, result.value().value);
     return CLOVER_STATUS_OK;
 }
 
@@ -682,8 +635,8 @@ extern "C" CL_EXPORT clover_status clover_dict_pop(clover_context *ctx,
                                                    bool *found,
                                                    clover_handle *out_value)
 {
-    cl::initialize_item_outputs(found, out_value);
-    if(!cl::valid_context(ctx) || found == nullptr)
+    cl::initialize_item_outputs(ctx, found, out_value);
+    if(found == nullptr)
     {
         return CLOVER_STATUS_ERROR;
     }
@@ -703,7 +656,7 @@ extern "C" CL_EXPORT clover_status clover_dict_pop(clover_context *ctx,
     *found = result.value().found;
     if(*found && out_value != nullptr)
     {
-        *out_value = cl::wrap_clover_handle(result.value().value);
+        *out_value = cl::allocate_handle(ctx, result.value().value);
     }
     return CLOVER_STATUS_OK;
 }
@@ -718,7 +671,7 @@ extern "C" CL_EXPORT clover_status clover_dict_contains_string(
         return CLOVER_STATUS_ERROR;
     }
     return clover_dict_contains(
-        ctx, dict, cl::wrap_clover_handle(string->raw_value()), out);
+        ctx, dict, cl::allocate_handle(ctx, string->raw_value()), out);
 }
 
 extern "C" CL_EXPORT clover_status
@@ -732,7 +685,7 @@ clover_dict_set_item_string(clover_context *ctx, clover_handle dict,
         return CLOVER_STATUS_ERROR;
     }
     return clover_dict_set_item(
-        ctx, dict, cl::wrap_clover_handle(string->raw_value()), value);
+        ctx, dict, cl::allocate_handle(ctx, string->raw_value()), value);
 }
 
 extern "C" CL_EXPORT clover_status clover_dict_del_item_string(
@@ -745,14 +698,14 @@ extern "C" CL_EXPORT clover_status clover_dict_del_item_string(
         return CLOVER_STATUS_ERROR;
     }
     return clover_dict_del_item(ctx, dict,
-                                cl::wrap_clover_handle(string->raw_value()));
+                                cl::allocate_handle(ctx, string->raw_value()));
 }
 
 extern "C" CL_EXPORT clover_status clover_dict_get_item_string(
     clover_context *ctx, clover_handle dict, const char *key, bool *found,
     clover_handle *out_value)
 {
-    cl::initialize_item_outputs(found, out_value);
+    cl::initialize_item_outputs(ctx, found, out_value);
     std::optional<cl::Owned<cl::TValue<cl::String>>> string =
         cl::decode_dict_string_key(ctx, key);
     if(!string.has_value())
@@ -760,7 +713,7 @@ extern "C" CL_EXPORT clover_status clover_dict_get_item_string(
         return CLOVER_STATUS_ERROR;
     }
     return clover_dict_get_item(ctx, dict,
-                                cl::wrap_clover_handle(string->raw_value()),
+                                cl::allocate_handle(ctx, string->raw_value()),
                                 found, out_value);
 }
 
@@ -768,7 +721,7 @@ extern "C" CL_EXPORT clover_status
 clover_dict_pop_string(clover_context *ctx, clover_handle dict, const char *key,
                        bool *found, clover_handle *out_value)
 {
-    cl::initialize_item_outputs(found, out_value);
+    cl::initialize_item_outputs(ctx, found, out_value);
     std::optional<cl::Owned<cl::TValue<cl::String>>> string =
         cl::decode_dict_string_key(ctx, key);
     if(!string.has_value())
@@ -776,7 +729,7 @@ clover_dict_pop_string(clover_context *ctx, clover_handle dict, const char *key,
         return CLOVER_STATUS_ERROR;
     }
     return clover_dict_pop(ctx, dict,
-                           cl::wrap_clover_handle(string->raw_value()), found,
+                           cl::allocate_handle(ctx, string->raw_value()), found,
                            out_value);
 }
 
@@ -802,12 +755,12 @@ extern "C" CL_EXPORT clover_status
 clover_dict_next(clover_context *ctx, clover_handle dict, size_t *position,
                  bool *found, clover_handle *out_key, clover_handle *out_value)
 {
-    cl::initialize_item_outputs(found, out_key);
+    cl::initialize_item_outputs(ctx, found, out_key);
     if(out_value != nullptr)
     {
-        *out_value = cl::wrap_clover_handle(cl::Value::None());
+        *out_value = cl::allocate_handle(ctx, cl::Value::None());
     }
-    if(!cl::valid_context(ctx) || position == nullptr || found == nullptr)
+    if(position == nullptr || found == nullptr)
     {
         return CLOVER_STATUS_ERROR;
     }
@@ -828,11 +781,11 @@ clover_dict_next(clover_context *ctx, clover_handle dict, size_t *position,
         *found = true;
         if(out_key != nullptr)
         {
-            *out_key = cl::wrap_clover_handle(entry.key);
+            *out_key = cl::allocate_handle(ctx, entry.key);
         }
         if(out_value != nullptr)
         {
-            *out_value = cl::wrap_clover_handle(entry.value);
+            *out_value = cl::allocate_handle(ctx, entry.value);
         }
         return CLOVER_STATUS_OK;
     }
@@ -843,21 +796,17 @@ static clover_handle clover_raise_builtin_error(clover_context *ctx,
                                                 const wchar_t *type_name,
                                                 const char *utf8_message)
 {
-    if(ctx != nullptr && ctx->thread != nullptr)
+    std::optional<std::wstring> decoded_message =
+        cl::unicode::decode_utf8_c_string(utf8_message);
+    if(decoded_message.has_value())
     {
-        std::optional<std::wstring> decoded_message =
-            cl::unicode::decode_utf8_c_string(utf8_message);
-        if(decoded_message.has_value())
-        {
-            (void)ctx->thread->set_pending_builtin_exception_string(
-                type_name, decoded_message->c_str());
-        }
-        else
-        {
-            (void)ctx->thread->set_pending_builtin_exception_string(
-                type_name,
-                L"native extension error message must be valid UTF-8");
-        }
+        (void)ctx->thread->set_pending_builtin_exception_string(
+            type_name, decoded_message->c_str());
+    }
+    else
+    {
+        (void)ctx->thread->set_pending_builtin_exception_string(
+            type_name, L"native extension error message must be valid UTF-8");
     }
     return clover_propagate_error(ctx);
 }
@@ -876,6 +825,5 @@ clover_raise_value_error(clover_context *ctx, const char *utf8_message)
 
 extern "C" CL_EXPORT clover_handle clover_propagate_error(clover_context *ctx)
 {
-    (void)ctx;
-    return cl::wrap_clover_handle(cl::Value::exception_marker());
+    return cl::allocate_handle(ctx, cl::Value::exception_marker());
 }

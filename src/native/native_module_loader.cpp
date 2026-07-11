@@ -162,9 +162,19 @@ namespace cl
 
         auto init_function = reinterpret_cast<clover_status (*)(
             clover_context *, clover_native_module_builder *)>(init_symbol);
-        clover_context ctx{thread};
         clover_native_module_builder builder{thread, module};
-        clover_status status = init_function(&ctx, &builder);
+        clover_status status;
+        if constexpr(native_handle_detail::cl_indirect_handles)
+        {
+            NativeHandleRootRegion handle_roots(thread);
+            clover_context ctx = handle_roots.make_context();
+            status = init_function(&ctx, &builder);
+        }
+        else
+        {
+            clover_context ctx{thread, nullptr, nullptr, false};
+            status = init_function(&ctx, &builder);
+        }
         if(status == CLOVER_STATUS_OK)
         {
             if(thread->has_pending_exception())

@@ -42,6 +42,7 @@ namespace cl
         RawArrayBacking,
         ValueArrayBacking,
         HeapPtrArrayBacking,
+        HandleChunk,
         TestOnly,
 
         Count,

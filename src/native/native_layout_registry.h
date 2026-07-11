@@ -17,6 +17,7 @@
 #include "builtin_types/tuple_iterator.h"
 #include "bytecode/code_object.h"
 #include "compiler/scope.h"
+#include "native/native_handle.h"
 #include "object_model/class_object.h"
 #include "object_model/function.h"
 #include "object_model/instance.h"
@@ -60,6 +61,7 @@
     V(RawArrayBacking);                                                        \
     V(ValueArrayBacking);                                                      \
     V(HeapPtrArrayBacking);                                                    \
+    V(HandleChunk);                                                            \
     V(ClassObject);
 
 #endif  // CL_NATIVE_LAYOUT_REGISTRY_H

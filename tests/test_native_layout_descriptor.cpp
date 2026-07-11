@@ -1,5 +1,6 @@
 #include "builtin_types/bigint.h"
 #include "builtin_types/dict.h"
+#include "builtin_types/float.h"
 #include "builtin_types/list.h"
 #include "builtin_types/list_iterator.h"
 #include "builtin_types/module_object.h"
@@ -8,6 +9,7 @@
 #include "builtin_types/tuple.h"
 #include "builtin_types/tuple_iterator.h"
 #include "compiler/scope.h"
+#include "native/native_handle.h"
 #include "native/native_layout_descriptor.h"
 #include "object_model/class_object.h"
 #include "object_model/function.h"
@@ -209,6 +211,58 @@ TEST(NativeLayoutDescriptor, ValidityCellUsesEmptyStaticDescriptor)
 {
     expect_static_native_layout_descriptor<ValidityCell>();
     EXPECT_EQ(0u, ValidityCell::native_static_release_count());
+}
+
+TEST(NativeLayoutDescriptor, HandleChunkUsesStaticManagedCellSpan)
+{
+    expect_static_native_layout_descriptor<HandleChunk>();
+    EXPECT_EQ(HandleChunk::CellCount,
+              HandleChunk::native_static_release_count());
+}
+
+TEST(NativeHandle, OverflowStorageRetainsValuesButFrameStorageDoesNot)
+{
+    if constexpr(!native_handle_detail::cl_indirect_handles)
+    {
+        GTEST_SKIP() << "indirect handles are disabled";
+    }
+
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation_scope(context.thread());
+    Value frame_cells[native_handle_detail::frame_handle_cell_count];
+    for(Value &cell: frame_cells)
+    {
+        cell = Value::not_present();
+    }
+    clover_context handle_context{
+        context.thread(), frame_cells,
+        frame_cells + native_handle_detail::frame_handle_cell_count - 1, false};
+
+    Float *frame_float =
+        context.thread()->make_object_value<Float>(1.5).extract();
+    EXPECT_EQ(0, frame_float->refcount);
+    (void)allocate_handle(&handle_context, Value::from_oop(frame_float));
+    EXPECT_EQ(0, frame_float->refcount);
+
+    for(size_t idx = 1; idx < native_handle_detail::frame_handle_cell_count - 1;
+        ++idx)
+    {
+        (void)allocate_handle(&handle_context, Value::from_smi(int64_t(idx)));
+    }
+    ASSERT_TRUE(handle_context.handle_chunk_is_overflow);
+    ASSERT_TRUE(frame_cells[native_handle_detail::frame_handle_cell_count - 1]
+                    .is_refcounted_ptr());
+    EXPECT_EQ(NativeLayoutId::HandleChunk,
+              frame_cells[native_handle_detail::frame_handle_cell_count - 1]
+                  .as.ptr->native_layout_id());
+
+    Float *overflow_float =
+        context.thread()->make_object_value<Float>(2.5).extract();
+    EXPECT_EQ(0, overflow_float->refcount);
+    clover_handle overflow_handle =
+        allocate_handle(&handle_context, Value::from_oop(overflow_float));
+    EXPECT_EQ(1, overflow_float->refcount);
+    EXPECT_EQ(Value::from_oop(overflow_float), resolve_handle(overflow_handle));
 }
 
 TEST(NativeLayoutDescriptor, ScopeUsesNativeStaticReleaseDescriptor)
