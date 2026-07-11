@@ -201,11 +201,11 @@ Refactor and extend the native-layout descriptor system described in
 [Native Layout Descriptors](native-layout-descriptors.md), then use it in
 non-moving validation passes before implementing physical copying.
 
-The common descriptor query reports independent trace and update counts over one
-contiguous `Value` span. These counts are equal for ordinary strong slots, so a
-collector traces and rewrites them in one pass. Dedicated weak-reference layouts
-retain their ordinary strong `shape` prefix and may add an update-only weak
-suffix. Release count remains independent for deferred-refcount teardown.
+The common descriptor query reports one contiguous strong owned `Value` span,
+which the collector traces and rewrites in one pass. Deferred refcounting
+releases that same ownership set while it remains. Weak references are exposed
+only through a separate post-closure operation; a dedicated weak-reference
+layout still retains its ordinary strong `shape` prefix.
 
 The first implementation should support:
 
@@ -255,25 +255,34 @@ At safepoints, the validation pass should:
 This stage validates root publication, trace descriptors, remembered sets, and
 barrier coverage while deferred refcounting still provides object lifetime.
 
-## Stage 9: Copyability Classification
+## Stage 9: Allocation-Space Eligibility
 
-Classify each native layout before physical copying.
+Define which allocation spaces may accept each object before physical copying.
+The containing space, determined from the object address or allocator metadata,
+controls whether an object moves; relocation policy is not stored in the object
+or native-layout descriptor.
 
-Each layout should be assigned one initial policy:
+The initial spaces are:
 
-- nursery-copyable: safe to evacuate with the copying nursery;
-- direct-old movable: not nursery allocated, but may move during a later major
-  collection after its custom copy/update policy exists;
-- stable/non-moving: must not be copied by the ordinary evacuation path.
+- nursery: evacuated and then bulk discarded;
+- stable: individually discoverable and non-moving;
+- future direct-old movable storage, whose major-collection policy is deferred.
+
+Nursery objects must have no custom destructor because dead from-space objects
+are never traversed. A null relocation callback means byte-copying the
+initialized extent; a non-null callback relocates a live object into storage
+already allocated from its reported allocation extent. A custom relocator does
+not make external resource ownership nursery-safe because dead sources must
+still be abandonable.
 
 Start conservatively. Layouts with C++ containers, native-owned storage, custom
-deallocation, or pointer fields outside descriptor-covered slots should bypass
-the nursery until their copy policy is explicit. This keeps `Shape`, `CodeObject`,
-native wrapper storage, and extension-owned records from accidentally entering a
-`memcpy` evacuation path.
+destruction, or unenumerated pointer fields bypass the nursery. `CodeObject`,
+native wrapper storage, and extension-owned records initially use stable space.
+Large objects may use the same space for a separate size-based reason.
 
-The classification should be checked at allocation time in debug builds: a
-nursery allocation for a non-nursery-copyable layout is a bug.
+Eligibility should be checked at allocation time in debug builds. Placing a
+destructor-requiring or otherwise incompatible layout in a moving space is a
+bug.
 
 ## Stage 10: Copying Nursery
 
@@ -355,8 +364,8 @@ Open questions include:
 
 - What size or layout threshold sends an object to large-object storage instead
   of the nursery?
-- Are large objects always non-moving, or can some large layouts become
-  explicitly movable after custom copy/update policy exists?
+- Are large objects always non-moving, or can some large allocations enter a
+  moving large-object space after their layouts support relocation?
 - How are large-object-to-young-object references remembered for minor GC:
   object-level remembered state, slot/range metadata, card marking, or a
   large-object-specific remembered set?
@@ -379,8 +388,8 @@ Open questions include:
   or separate spaces for movable-old, stable, large, and extension-owned records?
 - How are references among old, large, stable, and extension-owned objects traced
   during major GC?
-- What heap metadata records whether an object is nursery-copyable,
-  direct-old-movable, large, stable, or extension-owned?
+- How do address ranges and allocator metadata identify whether an object is in
+  nursery, direct-old-movable, large, stable, or extension-owned storage?
 - Can a major collection reclaim cycles that include non-moving participants, or
   is that deferred until the extension-owned-object policy is settled?
 

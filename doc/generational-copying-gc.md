@@ -103,11 +103,11 @@ slot-span, weak-reference, teardown, and copy-policy design is in
 [Native Layout Descriptors](native-layout-descriptors.md).
 
 In summary, one descriptor lookup and per-object query report allocated and
-initialized byte extents plus independent trace, update, and release counts over
-one contiguous `Value` span. Ordinary strong slots are traced and updated in one
-pass. Weak targets use a separate object and `NativeLayoutId`, avoiding mixed
-per-slot tags in common layouts; the weak object retains its ordinary strong
-`shape` prefix and places the weak target in an update-only suffix.
+initialized byte extents plus one contiguous strong owned `Value` span. Those
+slots are traced and rewritten in one pass and, while deferred refcounting
+remains, released as the same ownership set. Weak references are enumerated
+separately after strong closure; an ordinary weak object still retains its
+strong `shape` slot.
 
 The GC-specific object state needed for ordinary copied objects is much smaller:
 

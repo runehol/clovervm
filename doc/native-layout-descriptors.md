@@ -162,9 +162,7 @@ struct NativeLayoutInfo
     size_t initialized_size;
 
     uint32_t value_offset_words;
-    uint32_t trace_value_count;
-    uint32_t update_value_count;
-    uint32_t release_value_count;
+    uint32_t strong_value_count;
 };
 ```
 
@@ -205,53 +203,35 @@ Spare capacity is preserved without reading uninitialized bytes. Shrinking a
 copied allocation is explicit collector policy, not an implicit descriptor
 behavior.
 
-Knowing both extents does not make a layout safe to copy. Non-trivially-copyable
-C++ state, external allocations, native payloads, and custom teardown still
-require an explicit copy policy.
+Knowing both extents does not make an object safe to copy. The space containing
+the object determines whether the collector evacuates it. A moving space admits
+only layouts compatible with bulk discard, as described below.
 
 ### Managed Value Span
 
-Ordinary managed slots described by one layout form a contiguous span beginning
-at `value_offset_words`. Trace, update, and release each consume a prefix of
-that same span:
+Ordinary managed slots described by one layout form one contiguous strong,
+owned span beginning at `value_offset_words`. `strong_value_count` is both the
+number of references traced and rewritten by the collector and, while deferred
+refcounting remains, the number released during teardown.
 
-- `trace_value_count` identifies strong outgoing references that keep targets
-  live;
-- `update_value_count` identifies slots that may be rewritten when targets
-  move;
-- `release_value_count` identifies owned references released during teardown
-  while deferred refcounting remains.
+There is deliberately no persistent borrowed-strong heap-field policy. A heap
+field that keeps its target semantically reachable owns that target during the
+refcount transition. Removing deferred refcounting therefore removes the
+release operation without changing the descriptor's strong-reference meaning.
 
-The common cases are:
-
-| Slot policy | Trace | Update | Release |
-|---|---:|---:|---:|
-| Strong owned | `N` | `N` | `N` |
-| Strong borrowed | `N` | `N` | `0` |
-| Weak-reference object with `shape` then target | `1` | `2` | `1` |
-
-For ordinary strong slots, trace and update counts are equal. A copying
-collector therefore traces and repairs each slot in one pass:
+A copying collector traces and repairs the strong span in one pass:
 
 ```cpp
 Value *slots = reinterpret_cast<Value *>(obj) + layout.value_offset_words;
-for(uint32_t idx = 0; idx < layout.trace_value_count; ++idx)
+for(uint32_t idx = 0; idx < layout.strong_value_count; ++idx)
 {
     slots[idx] = evacuate(slots[idx]);
 }
 ```
 
-Weak targets live in a dedicated object with its own `NativeLayoutId`. That
-object still begins with the ordinary strong, owned `shape` slot, followed by
-its weak target. The normal trace pass processes the strong prefix. The weak
-phase selects the layout and processes the update-only suffix in
-`[trace_value_count, update_value_count)`. Ordinary layouts do not need
-per-slot strong/weak tags.
-
-The prefix representation also deliberately avoids interleaved owned and
-borrowed fields. A layout that cannot arrange its slots as compatible prefixes
-must put exceptional references in a separate backing object with its own
-`NativeLayoutId`, or use a custom layout policy.
+Weak references are not part of this span. A weak-reference object still has
+the ordinary strong `shape` slot, so its `strong_value_count` is one, while its
+target is exposed only through the separate weak operation described below.
 
 ### Custom Layout Policy
 
@@ -262,23 +242,53 @@ Some layouts cannot be fully represented by byte extents and one contiguous
 struct NativeLayoutDescriptor
 {
     NativeLayoutInfo (*query)(const HeapObject *);
-    void (*custom_trace_update)(HeapObject *, SlotVisitor);
-    void (*custom_dealloc)(HeapObject *);
-    CopyPolicy copy_policy;
+
+    void (*custom_trace_strong)(HeapObject *, StrongSlotVisitor);
+    void (*process_weak)(HeapObject *, WeakTargetResolver);
+
+    void (*custom_release)(HeapObject *);
+    void (*destroy)(HeapObject *);
+    HeapObject *(*relocate)(HeapObject *source, void *destination);
 };
 ```
 
-A custom trace/update operation supplements the ordinary span with mutable
-managed slots stored in C++ containers, pointer arrays, or other non-contiguous
-storage. Custom teardown handles native resources and exceptional ownership.
-Copy policy states whether and how non-trivial object state can move.
+A custom strong operation supplements the ordinary span with strong owned slots
+stored in C++ containers, pointer arrays, or other non-contiguous storage.
+Those references are followed and rewritten during strong closure.
+
+`process_weak` is called only after strong closure is complete. A weak target
+that was otherwise reached is rewritten to its forwarding address; an
+unreached target is cleared. For coherent structures such as inline caches, the
+operation repairs the complete entry or clears the complete entry rather than
+exposing partially valid cache state.
+
+`custom_release` releases exceptional strong ownership while deferred
+refcounting remains. `destroy` runs C++ destructors and releases native
+resources after managed references have been cleared.
+
+`relocate` is used only when an object resides in a moving space. A null
+callback means the collector copies `initialized_size` bytes into the already
+allocated destination. A non-null callback constructs the live destination in
+that storage without allocating, safepointing, executing Python, or failing.
+The callback is not an object policy: objects in stable spaces are not relocated
+regardless of whether their descriptor provides it.
 
 These are layout-level escape hatches, not per-slot policy in the common path.
 The exact callback representation should follow existing low-overhead project
 patterns and must not require virtual dispatch on every object.
 
-Until a layout has complete trace/update and copy policy, it stays outside a
-moving nursery even when its byte extents are known.
+A moving space is bulk discarded after evacuation. It must therefore reject any
+layout with a non-null `destroy` callback: otherwise dead from-space objects
+would have to be traversed solely to release their native resources. A custom
+relocator is permitted only when dead source objects remain safely abandonable.
+It cannot make ownership of external allocations safe, because an unreachable
+source would still leak them.
+
+Stable spaces may contain layouts with or without custom destruction and ignore
+the relocation callback. Large objects may use stable space because of size,
+while layouts such as `CodeObject` use it because destruction is required. The
+object's address range or allocator metadata identifies its space; relocation
+policy is not stored in the object or native-layout descriptor.
 
 ### Refactor Sequence
 
@@ -286,14 +296,15 @@ moving nursery even when its byte extents are known.
 2. Generate static-layout queries from the existing declaration macros.
 3. Convert SMI-count and auxiliary-count layouts to return dynamic sizes and
    counts through the same query.
-4. Move reclamation from `ReleaseDescriptor` to `release_value_count` plus
-   custom teardown.
+4. Move reclamation from `ReleaseDescriptor` to `strong_value_count` plus
+   custom release and destruction.
 5. Move opaque allocation-size queries from `ObjectSizeDescriptor` to
    `allocated_size`.
 6. Populate and test `initialized_size` without changing allocation or copying
    behavior.
 7. Add non-moving trace/update validation over the ordinary spans.
-8. Classify and implement custom layouts before making them nursery-movable.
+8. Add debug allocation checks that reject destructor-requiring layouts from
+   moving spaces and verify custom relocation contracts.
 
 The initial refactor preserves deferred refcounting as lifetime authority. It
 consolidates metadata and exposes precise slots without requiring generation
