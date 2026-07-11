@@ -1,4 +1,4 @@
-#include "native/native_module_loader_internal.h"
+#include "import_system/native_extension_loader_internal.h"
 
 #include <dlfcn.h>
 #include <filesystem>

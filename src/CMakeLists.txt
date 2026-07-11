@@ -132,10 +132,10 @@ add_library(libclovervm_objects OBJECT
     builtin_types/module_spec_object.cpp
     builtin_types/module_spec_object.h
     import_system/module_global_cache.h
-    native/native_module_loader.cpp
-    native/native_module_loader.h
-    native/native_module_loader_internal.h
-    native/native_module_loader_posix.cpp
+    import_system/native_extension_loader.cpp
+    import_system/native_extension_loader.h
+    import_system/native_extension_loader_internal.h
+    import_system/native_extension_loader_posix.cpp
     import_system/module_global.cpp
     import_system/module_global.h
     import_system/module_global_descriptor.h

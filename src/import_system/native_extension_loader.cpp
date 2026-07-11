@@ -1,4 +1,4 @@
-#include "native/native_module_loader.h"
+#include "import_system/native_extension_loader.h"
 
 #include <clovervm/native_module.h>
 
@@ -7,7 +7,7 @@
 #include "builtin_types/module_object.h"
 #include "builtin_types/str.h"
 #include "import_system/module_finder.h"
-#include "native/native_module_loader_internal.h"
+#include "import_system/native_extension_loader_internal.h"
 #include "runtime/runtime_helpers.h"
 #include "runtime/thread_state.h"
 #include "runtime/virtual_machine.h"

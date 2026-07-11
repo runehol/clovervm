@@ -1,5 +1,5 @@
-#ifndef CL_NATIVE_MODULE_LOADER_INTERNAL_H
-#define CL_NATIVE_MODULE_LOADER_INTERNAL_H
+#ifndef CL_NATIVE_EXTENSION_LOADER_INTERNAL_H
+#define CL_NATIVE_EXTENSION_LOADER_INTERNAL_H
 
 #include "absl/container/flat_hash_map.h"
 #include <memory>
@@ -27,4 +27,4 @@ namespace cl
 
 }  // namespace cl
 
-#endif  // CL_NATIVE_MODULE_LOADER_INTERNAL_H
+#endif  // CL_NATIVE_EXTENSION_LOADER_INTERNAL_H

@@ -12,7 +12,7 @@
 #include "compiler/parser.h"
 #include "compiler/source_text.h"
 #include "import_system/module_finder.h"
-#include "native/native_module_loader.h"
+#include "import_system/native_extension_loader.h"
 #include "object_model/class_object.h"
 #include "object_model/function.h"
 #include "object_model/owned.h"

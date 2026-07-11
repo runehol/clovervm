@@ -1,5 +1,5 @@
-#ifndef CL_NATIVE_MODULE_LOADER_H
-#define CL_NATIVE_MODULE_LOADER_H
+#ifndef CL_NATIVE_EXTENSION_LOADER_H
+#define CL_NATIVE_EXTENSION_LOADER_H
 
 #include "object_model/value.h"
 
@@ -15,4 +15,4 @@ namespace cl
 
 }  // namespace cl
 
-#endif  // CL_NATIVE_MODULE_LOADER_H
+#endif  // CL_NATIVE_EXTENSION_LOADER_H
