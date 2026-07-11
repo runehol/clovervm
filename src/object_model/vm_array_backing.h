@@ -1,7 +1,7 @@
 #ifndef CL_VM_ARRAY_BACKING_H
 #define CL_VM_ARRAY_BACKING_H
 
-#include "native/native_layout_declarations.h"
+#include "memory/native_layout_declarations.h"
 #include "object_model/heap_object.h"
 #include "object_model/owned.h"
 #include "object_model/typed_value.h"

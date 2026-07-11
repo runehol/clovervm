@@ -1,8 +1,8 @@
 #include "memory/heap_reclamation.h"
 
 #include "memory/global_heap.h"
+#include "memory/native_layout_descriptor.h"
 #include "memory/slab_allocator.h"
-#include "native/native_layout_descriptor.h"
 #include "runtime/thread_state.h"
 #include "runtime/virtual_machine.h"
 

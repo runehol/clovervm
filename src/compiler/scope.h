@@ -2,7 +2,7 @@
 #define CL_SCOPE_H
 
 #include "builtin_types/str.h"
-#include "native/native_layout_declarations.h"
+#include "memory/native_layout_declarations.h"
 #include "object_model/object.h"
 #include "object_model/owned.h"
 #include "object_model/typed_value.h"

@@ -1,9 +1,9 @@
 #ifndef CL_NATIVE_LAYOUT_DESCRIPTOR_H
 #define CL_NATIVE_LAYOUT_DESCRIPTOR_H
 
-#include "native/native_layout_declarations.h"
-#include "native/native_layout_id.h"
-#include "native/native_layout_registry.h"
+#include "memory/native_layout_declarations.h"
+#include "memory/native_layout_id.h"
+#include "memory/native_layout_registry.h"
 #include "object_model/heap_object.h"
 #include "object_model/value.h"
 

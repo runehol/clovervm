@@ -1,7 +1,7 @@
 #ifndef CL_HEAP_OBJECT_H
 #define CL_HEAP_OBJECT_H
 
-#include "native/native_layout_id.h"
+#include "memory/native_layout_id.h"
 
 #include <cassert>
 #include <cstddef>

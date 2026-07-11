@@ -1,7 +1,7 @@
 #ifndef CL_OVERFLOW_SLOTS_H
 #define CL_OVERFLOW_SLOTS_H
 
-#include "native/native_layout_declarations.h"
+#include "memory/native_layout_declarations.h"
 #include "object_model/value.h"
 #include <algorithm>
 #include <cstdint>

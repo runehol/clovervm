@@ -1,8 +1,8 @@
 #ifndef CL_HEAP_CONSTRUCTION_H
 #define CL_HEAP_CONSTRUCTION_H
 
+#include "memory/native_layout_declarations.h"
 #include "memory/slab_allocator.h"
-#include "native/native_layout_declarations.h"
 #include "object_model/value.h"
 #include <new>
 #include <type_traits>

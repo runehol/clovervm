@@ -141,11 +141,11 @@ add_library(libclovervm_objects OBJECT
     import_system/module_global_descriptor.h
     object_model/native_function.cpp
     object_model/native_function.h
-    native/native_layout_declarations.h
-    native/native_layout_descriptor.cpp
-    native/native_layout_descriptor.h
-    native/native_layout_id.h
-    native/native_layout_registry.h
+    memory/native_layout_declarations.h
+    memory/native_layout_descriptor.cpp
+    memory/native_layout_descriptor.h
+    memory/native_layout_id.h
+    memory/native_layout_registry.h
     builtin_types/none_type.cpp
     builtin_types/none_type.h
     builtin_types/not_implemented_type.cpp

@@ -1,7 +1,7 @@
 #ifndef CL_BUILTIN_CLASS_REGISTRY_H
 #define CL_BUILTIN_CLASS_REGISTRY_H
 
-#include "native/native_layout_id.h"
+#include "memory/native_layout_id.h"
 #include <cstddef>
 
 namespace cl

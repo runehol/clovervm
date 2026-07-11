@@ -1,7 +1,7 @@
 #ifndef CL_VALIDITY_CELL_H
 #define CL_VALIDITY_CELL_H
 
-#include "native/native_layout_declarations.h"
+#include "memory/native_layout_declarations.h"
 #include "object_model/heap_object.h"
 
 namespace cl
