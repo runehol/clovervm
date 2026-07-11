@@ -79,7 +79,8 @@ object's outgoing references, copying any not-yet-forwarded collected objects,
 and appending those copies after the frontier. The worklist is complete when the
 scan frontier catches up with the allocation frontier.
 
-The collector must be able to enumerate and update:
+The collector must be able to enumerate and update precise slots, not just
+discover object identities:
 
 - managed stack slots and accumulators;
 - VM/runtime roots;
@@ -110,16 +111,19 @@ release layout = descriptor.release_layout(obj)
 
 The collector should extend the existing native-layout descriptor system rather
 than introduce a separate GC descriptor framework. The layout descriptors should
-answer three different questions:
+answer four different questions:
 
 - layout size: how much storage should the collector allocate and copy;
 - trace layout: which outgoing GC references the object contains;
+- update layout: which outgoing GC reference slots can be rewritten when a
+  referenced object moves;
 - release layout: which owned references should be released when the object
   dies.
 
-Trace and release often describe the same `Value` spans today, but they should
-remain separate concepts. Future weak references, borrowed references, caches,
-or native-owned storage may be traced differently from how they are released.
+Trace, update, and release often describe the same `Value` spans today, but they
+should remain separate concepts. Future weak references, borrowed references,
+caches, or native-owned storage may be traced differently from how they are
+rewritten or released.
 
 For copying GC, a single object-size answer is not enough. A descriptor should
 report both allocated extent and initialized extent:
@@ -153,6 +157,13 @@ uninitialized capacity. Tracing should still use the logical initialized object
 contents, not spare capacity. Any future policy that wants to shrink copied
 objects should be explicit collector policy, not something forced by the layout
 descriptor API.
+
+Object extent and initialized extent do not by themselves make a layout safe to
+copy. Layouts that contain C++ containers, `Owned` fields outside descriptor
+covered spans, native payloads, or custom deallocation need explicit trace,
+update, and copy policy before they can enter a moving generation. Until then,
+they should be allocated directly into old movable storage or stable storage and
+handled by the appropriate tracing path.
 
 The GC-specific object state needed for ordinary copied objects is much smaller:
 

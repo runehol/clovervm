@@ -10,7 +10,7 @@ Limited API surface. The first steps should therefore make the existing native
 boundary compatible with movable objects before adding compatibility layers that
 no current caller uses.
 
-## Stage 1: Clover Native API Handles
+## Stage 1: Clover Native API Transitory Handles
 
 Refactor the existing Clover native API boundary before moving ordinary VM
 objects.
@@ -18,7 +18,11 @@ objects.
 - Make `clover_handle` an opaque handle to VM-managed storage rather than a raw
   `Value` copy.
 - Define the active native-call handle frame that owns transitory handles.
-- Add `clover_persistent_handle` for native state that outlives one API entry.
+- Convert extension-call thunks to materialize argument handles in that frame
+  and resolve returned handles through that frame.
+- Route C API helper validation through handle-frame lookup instead of raw
+  `Value` bit decoding.
+- Keep module-builder values rooted while the module initializer runs.
 - Ensure C API helpers resolve handles before storing managed values into VM
   objects.
 
@@ -26,7 +30,56 @@ This stage does not require removing deferred refcounting. Refcounting remains
 the lifetime authority while the native boundary stops exposing raw movable
 `Value` storage.
 
-## Stage 2: Barrier Call Sites While Refcounting Remains
+`clover_persistent_handle` is a separate follow-up after transitory handles are
+working. It is needed for native state that intentionally outlives one API entry,
+but it should not be bundled into the first handle-frame patch unless an existing
+native-module use requires cross-entry retention.
+
+## Stage 2: Precise Managed Root Publication
+
+Add precise managed-root publication as an early, independently useful
+safepoint capability.
+
+The current deferred-refcounting scanner may build a temporary set of pointer
+identities and use it only as a ZCT filter. A precise root publisher can improve
+that path before moving GC exists by identifying the live managed slots for the
+current safepoint instead of treating the whole conservative scan range as equally
+live.
+
+This stage should cover:
+
+- managed frame slots known live at function-entry, normal-return, and future
+  loop-back safepoints;
+- accumulator/register roots published through explicit safepoint records;
+- native-to-managed boundary frame roots;
+- transitory Clover native handle slots once Stage 1 handle frames exist.
+
+The first consumer can still be the existing ZCT reclamation path: publish exact
+root identities from exact slots, then use those identities as the safepoint root
+filter. The important design choice is that the publisher records slots or slot
+provenance, not only object identities, so the same machinery can later become
+the moving collector's root-update path.
+
+This stage should not depend on generation state, write barriers, or physical
+copying.
+
+## Stage 3: Generation State And Remembered Sets
+
+Add the generational metadata that later barrier call sites can update.
+
+- Add ordinary object generation state, initially enough to distinguish
+  `Young`, `Old`, and `OldRemembered`.
+- Add per-thread remembered-set storage and debug counters.
+- Define allocation policy for young ordinary objects versus direct-old metadata
+  objects.
+- Add debug validation for generation-state transitions and duplicate remembered
+  entries.
+
+This stage should not instrument every store yet. Its purpose is to make the
+state model concrete so barrier call sites have something real to update and
+tests can assert the intended transitions.
+
+## Stage 4: Barrier Call Sites While Refcounting Remains
 
 Introduce the generational write-barrier API while refcounting still keeps
 objects alive. The first barrier implementation can be no-op or diagnostic-only,
@@ -54,7 +107,12 @@ The early barrier shape should preserve hot-path factoring:
 - call `active_thread()` only after proving a store really needs to record an
   old-to-young edge.
 
-## Stage 3: Class And Shape Metadata Policy
+This stage should include a whole-heap debug checker that proves no unremembered
+old object points into the nursery after barrier-capable workloads. That checker
+uses descriptor-based tracing once Stage 6 exists; before then, it can be limited
+to layouts already covered by explicit probes.
+
+## Stage 5: Class And Shape Metadata Policy
 
 Class and shape metadata should bypass the nursery and be allocated directly in
 old movable storage. They are not immortal: major GC traces and may reclaim or
@@ -79,10 +137,65 @@ construction or transition creation must either promote the name or record the
 shape in a cold metadata remembered set. The cold metadata barrier belongs in
 shape construction and transition code, not in `Object::set_shape`.
 
-## Stage 4: Trace Descriptors And Logical Promotion
+This stage should be split internally:
 
-Add native-layout trace descriptors and use them in a non-moving validation
-pass before implementing physical copying.
+1. allocate `ClassObject` and `Shape` directly in old storage;
+2. keep `Object::shape` stores out of the ordinary minor-GC barrier path;
+3. add the cold metadata policy for shape-owned descriptor names and transition
+   edges.
+
+Do not treat the entire shape graph as solved by direct-old allocation alone.
+`Shape` owns descriptor names, transition records, `previous_shape`, and class
+metadata links; the minor collector still needs a precise way to find any
+nursery object reachable from that graph.
+
+## Stage 6: Trace And Update Descriptors
+
+Add native-layout trace/update descriptors and use them in non-moving validation
+passes before implementing physical copying.
+
+Trace descriptors answer which outgoing managed references an object contains.
+Update descriptors answer which slots can be rewritten when a referenced object
+moves. They are related but not identical: a conservative root identity is enough
+for deferred refcounting, while a moving collector must enumerate precise,
+mutable slots.
+
+The first implementation should support:
+
+- ordinary static and dynamic `Value` spans;
+- `HeapPtrArray` backing records;
+- custom visitors for layouts with C++ containers, such as `Shape` transitions
+  and `CodeObject` owned constants/caches;
+- VM/runtime roots;
+- Clover native handle frames.
+
+Do not use a raw object-size-plus-`memcpy` path as a substitute for trace/update
+coverage. Layouts with C++ ownership, custom deallocation, native payloads, or
+internal vectors need explicit visitor policy before they are eligible for
+physical copying.
+
+## Stage 7: Relocation Simulation
+
+Use the precise root publication and trace/update descriptors to simulate the
+slot-repair work required by a moving collector.
+
+At safepoints, the relocation simulation pass should:
+
+1. publish managed roots as mutable slots where possible;
+2. publish accumulator/register roots through explicit safepoint records;
+3. publish transitory native handle slots, plus persistent handle slots once
+   that API exists;
+4. visit heap references through trace/update descriptors;
+5. rewrite selected test references to equivalent same-address values or
+   synthetic forwarding targets;
+6. debug-check that no stale old address remains in any published root or visited
+   heap slot.
+
+This stage is non-moving. It proves that the runtime can find and update the
+places a moving collector must repair without also changing allocation and object
+identity in the same patch.
+
+## Stage 8: Logical Promotion
 
 At safepoints, the validation pass should:
 
@@ -95,17 +208,37 @@ At safepoints, the validation pass should:
 This stage validates root publication, trace descriptors, remembered sets, and
 barrier coverage while deferred refcounting still provides object lifetime.
 
-## Stage 5: Copying Nursery
+## Stage 9: Copyability Classification
 
-Implement the copying nursery using the same roots, trace descriptors, and
-remembered sets validated earlier.
+Classify each native layout before physical copying.
+
+Each layout should be assigned one initial policy:
+
+- nursery-copyable: safe to evacuate with the copying nursery;
+- direct-old movable: not nursery allocated, but may move during a later major
+  collection after its custom copy/update policy exists;
+- stable/non-moving: must not be copied by the ordinary evacuation path.
+
+Start conservatively. Layouts with C++ containers, native-owned storage, custom
+deallocation, or pointer fields outside descriptor-covered slots should bypass
+the nursery until their copy policy is explicit. This keeps `Shape`, `CodeObject`,
+native wrapper storage, and extension-owned records from accidentally entering a
+`memcpy` evacuation path.
+
+The classification should be checked at allocation time in debug builds: a
+nursery allocation for a non-nursery-copyable layout is a bug.
+
+## Stage 10: Copying Nursery
+
+Implement the copying nursery using the same roots, trace descriptors, update
+descriptors, and remembered sets validated earlier.
 
 The first nursery policy should remain simple:
 
 - stop the world at safepoints;
 - evacuate reachable young objects;
 - promote every young survivor en masse;
-- update roots, handles, wrapper targets, and remembered old objects;
+- update roots, Clover native handles, and remembered old objects;
 - clear remembered state and rebuild it through future write barriers.
 
 Deferred refcounting can still remain during this stage as a compatibility and
@@ -118,6 +251,9 @@ Defer these until the native-handle and managed-collector pieces have been
 validated:
 
 - CPython Limited API wrapper identity machinery;
+- CPython Limited API wrapper target updates;
+- `clover_persistent_handle`, unless an existing native-module use needs it
+  earlier;
 - remembered module slots;
 - survivor spaces;
 - promotion heuristics;
