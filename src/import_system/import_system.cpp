@@ -544,10 +544,59 @@ namespace cl
                 find_module_spec(thread, full_name, leaf_name, path);
             if(!spec.has_value())
             {
-                return set_module_not_found(thread, full_name);
+                return Value::not_present();
             }
 
             return load_from_spec(thread, *spec, name);
+        }
+
+        Value load_package_child(ThreadState *thread, ModuleObject *package,
+                                 TValue<String> name)
+        {
+            Value imported = package->get_own_property(name);
+            if(!imported.is_not_present())
+            {
+                return imported;
+            }
+
+            Value package_path =
+                package->get_own_property(interned_string(thread, L"__path__"));
+            Value package_name = package->get_name_binding();
+            if(!can_convert_to<List>(package_path) ||
+               !can_convert_to<String>(package_name))
+            {
+                return Value::not_present();
+            }
+
+            std::wstring child_name = string_to_wstring(
+                TValue<String>::from_value_assumed(package_name));
+            child_name += L".";
+            child_name += string_to_wstring(name);
+            Owned<Value> child(load_module_from_path(
+                thread, child_name, string_to_wstring(name),
+                package_path.get_ptr<List>()));
+            if(child.value().is_exception_marker() ||
+               child.value().is_not_present())
+            {
+                return child.value();
+            }
+
+            bool stored = package->set_own_property(name, child.value());
+            assert(stored);
+            (void)stored;
+            return child.value();
+        }
+
+        Value set_missing_star_export(ThreadState *thread, Value module,
+                                      TValue<String> name)
+        {
+            std::wstring message = L"module '";
+            message += module_name_for_message(module);
+            message += L"' has no attribute '";
+            message += string_to_wstring(name);
+            message += L"'";
+            return thread->set_pending_builtin_exception_string(
+                L"AttributeError", string_value(thread, message));
         }
     }  // namespace
 
@@ -571,6 +620,10 @@ namespace cl
         std::wstring current_name = components[0];
         Owned<Value> current(load_module_from_path(thread, current_name,
                                                    components[0], top_path));
+        if(current.value().is_not_present())
+        {
+            return set_module_not_found(thread, current_name);
+        }
         if(current.value().is_exception_marker())
         {
             return current.value();
@@ -592,6 +645,10 @@ namespace cl
             Owned<Value> child(load_module_from_path(
                 thread, current_name, components[component_idx],
                 path.value().get_ptr<List>()));
+            if(child.value().is_not_present())
+            {
+                return set_module_not_found(thread, current_name);
+            }
             if(child.value().is_exception_marker())
             {
                 return child.value();
@@ -644,38 +701,9 @@ namespace cl
             return set_cannot_import_name(thread, module, name);
         }
         ModuleObject *module_object = module.get_ptr<ModuleObject>();
-        Value imported = module_object->get_own_property(name);
+        Value imported = load_package_child(thread, module_object, name);
         if(imported.is_not_present())
         {
-            Value package_path = module_object->get_own_property(
-                interned_string(thread, L"__path__"));
-            Value module_name = module_object->get_name_binding();
-            if(can_convert_to<List>(package_path) &&
-               can_convert_to<String>(module_name))
-            {
-                std::wstring child_name = string_to_wstring(
-                    TValue<String>::from_value_assumed(module_name));
-                child_name += L".";
-                child_name += string_to_wstring(name);
-                Value child = import_module_absolute(
-                    thread, interned_string(thread, child_name));
-                if(!child.is_exception_marker())
-                {
-                    return child;
-                }
-                if(thread->pending_exception_kind() ==
-                       PendingExceptionKind::Object &&
-                   thread->pending_exception_object()
-                           .extract()
-                           ->get_shape()
-                           ->get_class() ==
-                       thread->class_for_builtin_name(L"ModuleNotFoundError"))
-                {
-                    thread->clear_pending_exception();
-                    return set_cannot_import_name(thread, module, name);
-                }
-                return child;
-            }
             return set_cannot_import_name(thread, module, name);
         }
         return imported;
@@ -732,7 +760,12 @@ namespace cl
             for(const Owned<TValue<String>> &name: names)
             {
                 Owned<Value> imported(
-                    import_from(thread, source.raw_value(), name.value()));
+                    load_package_child(thread, source.extract(), name.value()));
+                if(imported.value().is_not_present())
+                {
+                    return set_missing_star_export(thread, source.raw_value(),
+                                                   name.value());
+                }
                 if(imported.value().is_exception_marker())
                 {
                     return imported.value();

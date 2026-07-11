@@ -1081,6 +1081,79 @@ TEST(ImportSystem, FromImportMissingNameRaisesImportError)
               value_as_wstring(exception.extract()->message.value()));
 }
 
+TEST(ImportSystem, FromImportPreservesMissingTransitiveDependency)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation_scope(context.thread());
+    TemporaryImportRoot root;
+    root.write_file(L"pkg/__init__.py", "");
+    root.write_file(L"pkg/child.py",
+                    "import missing_transitive_dependency_r2\n");
+
+    List *path = make_sys_path(context);
+    path->append(module_name(context, root.path.wstring().c_str()).raw_value());
+    replace_sys_path(context, path);
+
+    Value imported = context.run_file(L"from pkg import child\n");
+    EXPECT_TRUE(imported.is_exception_marker());
+    ASSERT_EQ(PendingExceptionKind::Object,
+              context.thread()->pending_exception_kind());
+    TValue<Exception> exception = context.thread()->pending_exception_object();
+    EXPECT_EQ(context.thread()->class_for_builtin_name(L"ModuleNotFoundError"),
+              exception.extract()->get_shape()->get_class());
+    EXPECT_EQ(L"No module named 'missing_transitive_dependency_r2'",
+              value_as_wstring(exception.extract()->message.value()));
+}
+
+TEST(ImportSystem, FromImportMissingPackageChildRaisesImportError)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation_scope(context.thread());
+    TemporaryImportRoot root;
+    root.write_file(L"pkg/__init__.py", "");
+
+    List *path = make_sys_path(context);
+    path->append(module_name(context, root.path.wstring().c_str()).raw_value());
+    replace_sys_path(context, path);
+
+    Value imported = context.run_file(L"from pkg import child\n");
+    EXPECT_TRUE(imported.is_exception_marker());
+    ASSERT_EQ(PendingExceptionKind::Object,
+              context.thread()->pending_exception_kind());
+    TValue<Exception> exception = context.thread()->pending_exception_object();
+    EXPECT_EQ(context.thread()->class_for_builtin_name(L"ImportError"),
+              exception.extract()->get_shape()->get_class());
+    EXPECT_EQ(L"cannot import name 'child' from 'pkg'",
+              value_as_wstring(exception.extract()->message.value()));
+}
+
+TEST(ImportSystem,
+     FromImportPackageChildBlockedBySysModulesRaisesModuleNotFound)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation_scope(context.thread());
+    TemporaryImportRoot root;
+    root.write_file(L"pkg/__init__.py", "");
+
+    List *path = make_sys_path(context);
+    path->append(module_name(context, root.path.wstring().c_str()).raw_value());
+    replace_sys_path(context, path);
+
+    Value package = context.run_file(L"import pkg\npkg\n");
+    ASSERT_TRUE(can_convert_to<ModuleObject>(package));
+    sys_modules_set(context, module_name(context, L"pkg.child"), Value::None());
+
+    Value imported = context.run_file(L"from pkg import child\n");
+    EXPECT_TRUE(imported.is_exception_marker());
+    ASSERT_EQ(PendingExceptionKind::Object,
+              context.thread()->pending_exception_kind());
+    TValue<Exception> exception = context.thread()->pending_exception_object();
+    EXPECT_EQ(context.thread()->class_for_builtin_name(L"ModuleNotFoundError"),
+              exception.extract()->get_shape()->get_class());
+    EXPECT_EQ(L"No module named 'pkg.child'",
+              value_as_wstring(exception.extract()->message.value()));
+}
+
 TEST(ImportSystem, FromImportPassesFullFromlistToImportHook)
 {
     test::VmTestContext context;
@@ -1162,6 +1235,28 @@ TEST(ImportSystem, FromImportStarUsesAll)
                                     L"    hidden = 1\n"
                                     L"_private * 10 + hidden\n");
     EXPECT_EQ(Value::from_smi(111), actual);
+}
+
+TEST(ImportSystem, FromImportStarMissingAllNameRaisesAttributeError)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation_scope(context.thread());
+    TemporaryImportRoot root;
+    root.write_file(L"mod.py", "__all__ = (\"missing\",)\n");
+
+    List *path = make_sys_path(context);
+    path->append(module_name(context, root.path.wstring().c_str()).raw_value());
+    replace_sys_path(context, path);
+
+    Value imported = context.run_file(L"from mod import *\n");
+    EXPECT_TRUE(imported.is_exception_marker());
+    ASSERT_EQ(PendingExceptionKind::Object,
+              context.thread()->pending_exception_kind());
+    TValue<Exception> exception = context.thread()->pending_exception_object();
+    EXPECT_EQ(context.thread()->class_for_builtin_name(L"AttributeError"),
+              exception.extract()->get_shape()->get_class());
+    EXPECT_EQ(L"module 'mod' has no attribute 'missing'",
+              value_as_wstring(exception.extract()->message.value()));
 }
 
 TEST(ImportSystem, FromImportStarAllCanImportPackageSubmodule)

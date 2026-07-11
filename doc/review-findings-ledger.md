@@ -51,7 +51,7 @@ Investigation status is one of:
 ### CVR-002: Child imports mask missing transitive dependencies
 
 - Severity: P1
-- Status: open
+- Status: resolved
 - Review unit: R2
 - Found at: `e7bd814`
 - Affected code: `src/import_system/import_system.cpp:659`
@@ -95,18 +95,21 @@ existing child.
 
 Recommended fix boundary:
 
-Preserve the original exception unless the import machinery can prove that the
-requested child module itself was absent. Add separate tests for absent child
-and missing transitive dependency.
+The internal path loader now returns `not_present` only when discovery proves
+that the requested module has no spec. Failures raised while loading an
+existing child propagate unchanged, while callers translate a proven miss
+according to their own import contract.
 
 Verification:
 
-Confirmed with CloverVM and CPython command-line reproductions. No fix has been
-implemented.
+Added separate coverage for a genuinely absent package child, a missing
+transitive dependency, and a child blocked by a `None` `sys.modules` entry.
+`ninja -C build-debug all check` passes with 1,248 tests across 36 suites; one
+test is disabled.
 
 Disposition:
 
-Open.
+Resolved locally; uncommitted.
 
 ### CVR-009: Large right shifts execute undefined native shifts
 
@@ -769,7 +772,7 @@ Open.
 ### CVR-021: Star import converts missing exported attributes to ImportError
 
 - Severity: P2
-- Status: open
+- Status: resolved
 - Review unit: R9
 - Found at: `e2c5c3b`
 - Affected code: `src/import_system/import_system.cpp:731`
@@ -806,17 +809,20 @@ attribute named by `__all__`.
 
 Recommended fix boundary:
 
-Give star import a direct attribute-fetch path that preserves `AttributeError`
-while retaining explicit-from conversion in `import_from()`. Add present,
-missing, and raising-attribute `__all__` tests.
+Star and explicit from-import now share package-child discovery while retaining
+caller-specific missing-name errors. Star import raises `AttributeError` for a
+proven missing `__all__` export, but still loads existing package children and
+propagates child-load failures.
 
 Verification:
 
-Confirmed with differential import probes. No fix has been implemented.
+Added coverage for a missing `__all__` export and retained coverage for loading
+an existing package child through `__all__`. The full debug gate passes with
+1,248 tests across 36 suites; one test is disabled.
 
 Disposition:
 
-Open.
+Resolved locally; uncommitted.
 
 ### CVR-022: Relative import ignores the module spec parent fallback
 
