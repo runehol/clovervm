@@ -251,12 +251,20 @@ extern "C" CL_EXPORT clover_status clover_tuple_size(clover_context *ctx,
                                                      clover_handle value,
                                                      size_t *out)
 {
+    if(out != nullptr)
+    {
+        *out = 0;
+    }
     if(ctx == nullptr || ctx->thread == nullptr || out == nullptr)
     {
         return CLOVER_STATUS_ERROR;
     }
 
-    cl::Value unwrapped = cl::unwrap_clover_handle(value);
+    cl::Value unwrapped;
+    if(!cl::unwrap_extension_value(ctx, value, unwrapped))
+    {
+        return CLOVER_STATUS_ERROR;
+    }
     if(!cl::can_convert_to<cl::Tuple>(unwrapped))
     {
         (void)ctx->thread->set_pending_builtin_exception_string(
@@ -273,12 +281,20 @@ extern "C" CL_EXPORT clover_status clover_tuple_get_item(clover_context *ctx,
                                                          size_t index,
                                                          clover_handle *out)
 {
+    if(out != nullptr)
+    {
+        *out = cl::wrap_clover_handle(cl::Value::None());
+    }
     if(ctx == nullptr || ctx->thread == nullptr || out == nullptr)
     {
         return CLOVER_STATUS_ERROR;
     }
 
-    cl::Value unwrapped = cl::unwrap_clover_handle(value);
+    cl::Value unwrapped;
+    if(!cl::unwrap_extension_value(ctx, value, unwrapped))
+    {
+        return CLOVER_STATUS_ERROR;
+    }
     if(!cl::can_convert_to<cl::Tuple>(unwrapped))
     {
         (void)ctx->thread->set_pending_builtin_exception_string(
@@ -304,12 +320,20 @@ extern "C" CL_EXPORT clover_status clover_string_as_utf8(clover_context *ctx,
                                                          size_t out_capacity,
                                                          size_t *out_size)
 {
+    if(out_size != nullptr)
+    {
+        *out_size = 0;
+    }
     if(ctx == nullptr || ctx->thread == nullptr || out_size == nullptr)
     {
         return CLOVER_STATUS_ERROR;
     }
 
-    cl::Value unwrapped = cl::unwrap_clover_handle(value);
+    cl::Value unwrapped;
+    if(!cl::unwrap_extension_value(ctx, value, unwrapped))
+    {
+        return CLOVER_STATUS_ERROR;
+    }
     if(!cl::can_convert_to<cl::String>(unwrapped))
     {
         (void)ctx->thread->set_pending_builtin_exception_string(
@@ -339,12 +363,20 @@ extern "C" CL_EXPORT clover_status clover_float_as_double(clover_context *ctx,
                                                           clover_handle value,
                                                           double *out)
 {
+    if(out != nullptr)
+    {
+        *out = 0.0;
+    }
     if(ctx == nullptr || ctx->thread == nullptr || out == nullptr)
     {
         return CLOVER_STATUS_ERROR;
     }
 
-    cl::Value unwrapped = cl::unwrap_clover_handle(value);
+    cl::Value unwrapped;
+    if(!cl::unwrap_extension_value(ctx, value, unwrapped))
+    {
+        return CLOVER_STATUS_ERROR;
+    }
     if(unwrapped.is_smi())
     {
         *out = static_cast<double>(unwrapped.get_smi());
@@ -366,12 +398,20 @@ extern "C" CL_EXPORT clover_status clover_int_as_int64(clover_context *ctx,
                                                        clover_handle value,
                                                        int64_t *out)
 {
+    if(out != nullptr)
+    {
+        *out = 0;
+    }
     if(ctx == nullptr || ctx->thread == nullptr || out == nullptr)
     {
         return CLOVER_STATUS_ERROR;
     }
 
-    cl::Value unwrapped = cl::unwrap_clover_handle(value);
+    cl::Value unwrapped;
+    if(!cl::unwrap_extension_value(ctx, value, unwrapped))
+    {
+        return CLOVER_STATUS_ERROR;
+    }
     if(unwrapped.is_smi())
     {
         *out = unwrapped.get_smi();
@@ -387,12 +427,23 @@ extern "C" CL_EXPORT clover_status clover_is(clover_context *ctx,
                                              clover_handle left,
                                              clover_handle right, bool *out)
 {
+    if(out != nullptr)
+    {
+        *out = false;
+    }
     if(ctx == nullptr || ctx->thread == nullptr || out == nullptr)
     {
         return CLOVER_STATUS_ERROR;
     }
 
-    *out = cl::unwrap_clover_handle(left) == cl::unwrap_clover_handle(right);
+    cl::Value unwrapped_left;
+    cl::Value unwrapped_right;
+    if(!cl::unwrap_extension_value(ctx, left, unwrapped_left) ||
+       !cl::unwrap_extension_value(ctx, right, unwrapped_right))
+    {
+        return CLOVER_STATUS_ERROR;
+    }
+    *out = unwrapped_left == unwrapped_right;
     return CLOVER_STATUS_OK;
 }
 

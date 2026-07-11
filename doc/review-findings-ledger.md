@@ -870,14 +870,15 @@ Open.
 ### CVR-023: Public value APIs mishandle propagated error handles
 
 - Severity: P2
-- Status: open
+- Status: resolved
 - Review unit: R9
 - Found at: `e2c5c3b`
 - Affected code: `src/api/extension_api.cpp:250`,
   `src/api/extension_api.cpp:271`, `src/api/extension_api.cpp:301`,
   `src/api/extension_api.cpp:338`, `src/api/extension_api.cpp:365`,
   `src/api/extension_api.cpp:386`
-- Affected tests: none
+- Affected tests: `tests/native_modules/_test_native.c`,
+  `tests/test_native_module_build.cpp`
 
 Invariant or semantic rule:
 
@@ -922,12 +923,17 @@ tests for every consumer.
 
 Verification:
 
-Confirmed by implementation and contract audit against existing sentinel-aware
-APIs. No fix has been implemented.
+Added a native callback that passes a genuine propagated error handle through
+all six affected consumers, checks deterministic failure outputs, and confirms
+that the original `OverflowError` remains pending. The focused native tests
+pass, and `ninja -C build-debug all check` passes with 1,241 tests in 35 suites
+and one disabled test.
 
 Disposition:
 
-Open.
+Resolved by routing all public value consumers through the sentinel-aware
+unwrap helper, initializing outputs before validation, and preventing
+`clover_is` from comparing error markers as ordinary values.
 
 ### CVR-001: Slab allocation advances beyond its mapped extent
 

@@ -1,4 +1,5 @@
 #include <clovervm/native_module.h>
+#include <stdint.h>
 
 static clover_handle answer_func(clover_context *ctx)
 {
@@ -59,6 +60,69 @@ static clover_handle empty_tuple_func(clover_context *ctx)
 static clover_handle bad_tuple_func(clover_context *ctx)
 {
     return clover_tuple_from_array(ctx, 0, 1);
+}
+
+static clover_handle propagated_error_consumers_func(clover_context *ctx)
+{
+    clover_handle error = clover_int_from_int64(ctx, INT64_MAX);
+
+    size_t tuple_size = 42;
+    if(clover_tuple_size(ctx, error, &tuple_size) != CLOVER_STATUS_ERROR ||
+       tuple_size != 0)
+    {
+        return clover_raise_value_error(ctx,
+                                        "clover_tuple_size contract failure");
+    }
+
+    clover_handle tuple_item = error;
+    if(clover_tuple_get_item(ctx, error, 0, &tuple_item) != CLOVER_STATUS_ERROR)
+    {
+        return clover_raise_value_error(
+            ctx, "clover_tuple_get_item contract failure");
+    }
+    bool item_is_none = false;
+    if(clover_is(ctx, tuple_item, clover_none(ctx), &item_is_none) !=
+           CLOVER_STATUS_OK ||
+       !item_is_none)
+    {
+        return clover_raise_value_error(
+            ctx, "clover_tuple_get_item output contract failure");
+    }
+
+    size_t string_size = 42;
+    if(clover_string_as_utf8(ctx, error, 0, 0, &string_size) !=
+           CLOVER_STATUS_ERROR ||
+       string_size != 0)
+    {
+        return clover_raise_value_error(
+            ctx, "clover_string_as_utf8 contract failure");
+    }
+
+    double float_value = 42.0;
+    if(clover_float_as_double(ctx, error, &float_value) !=
+           CLOVER_STATUS_ERROR ||
+       float_value != 0.0)
+    {
+        return clover_raise_value_error(
+            ctx, "clover_float_as_double contract failure");
+    }
+
+    int64_t int_value = 42;
+    if(clover_int_as_int64(ctx, error, &int_value) != CLOVER_STATUS_ERROR ||
+       int_value != 0)
+    {
+        return clover_raise_value_error(ctx,
+                                        "clover_int_as_int64 contract failure");
+    }
+
+    bool identical = true;
+    if(clover_is(ctx, error, error, &identical) != CLOVER_STATUS_ERROR ||
+       identical)
+    {
+        return clover_raise_value_error(ctx, "clover_is contract failure");
+    }
+
+    return error;
 }
 
 static clover_status read_double(clover_context *ctx, clover_handle value,
@@ -466,6 +530,14 @@ CL_NATIVE_MODULE_EXPORT clover_status clover_module_init__test_native(
     }
     if(clover_module_add_function_0(builder, "bad_tuple", bad_tuple_func,
                                     "Try to construct an invalid tuple.") !=
+       CLOVER_STATUS_OK)
+    {
+        return CLOVER_STATUS_ERROR;
+    }
+    if(clover_module_add_function_0(
+           builder, "propagated_error_consumers",
+           propagated_error_consumers_func,
+           "Exercise value consumers with a propagated error handle.") !=
        CLOVER_STATUS_OK)
     {
         return CLOVER_STATUS_ERROR;

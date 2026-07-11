@@ -635,6 +635,33 @@ TEST(NativeModuleBuild, AddValuePropagatesExceptionMarker)
     EXPECT_FALSE(sys_modules_contains(context, name));
 }
 
+TEST(NativeModuleBuild, ValueConsumersPreservePropagatedErrorHandles)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation_scope(context.thread());
+
+    TValue<String> module_name =
+        context.vm().get_or_create_interned_string_value(L"_test_native");
+    Value imported = import_module_absolute(context.thread(), module_name);
+    ASSERT_TRUE(can_convert_to<ModuleObject>(imported));
+    Value function = imported.get_ptr<ModuleObject>()->get_own_property(
+        context.vm().get_or_create_interned_string_value(
+            L"propagated_error_consumers"));
+    ASSERT_TRUE(can_convert_to<Function>(function));
+
+    Value result = context.thread()->call_clovervm_function(
+        TValue<Function>::from_value_assumed(function));
+    EXPECT_TRUE(result.is_exception_marker());
+    ASSERT_EQ(PendingExceptionKind::Object,
+              context.thread()->pending_exception_kind());
+    TValue<Exception> exception = context.thread()->pending_exception_object();
+    EXPECT_EQ(context.thread()->class_for_builtin_name(L"OverflowError"),
+              exception.extract()->get_shape()->get_class());
+    EXPECT_EQ(
+        L"integer is outside the supported native API range",
+        std::wstring(string_as_wchar_t(exception.extract()->message.value())));
+}
+
 TEST(NativeModuleBuild, InitFailureWithoutExceptionRaisesImportError)
 {
     test::VmTestContext context;
