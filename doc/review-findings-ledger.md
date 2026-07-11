@@ -827,7 +827,7 @@ Resolved locally; uncommitted.
 ### CVR-022: Relative import ignores the module spec parent fallback
 
 - Severity: P2
-- Status: open
+- Status: resolved
 - Review unit: R9
 - Found at: `e2c5c3b`
 - Affected code: `src/runtime/virtual_machine.cpp:325`
@@ -864,17 +864,21 @@ before module search, so finder or `sys.modules` behavior cannot repair it.
 
 Recommended fix boundary:
 
-Implement the documented metadata precedence and validation for package/spec
-fallback, then retain older `__name__`/`__path__` behavior only to the extent
-explicitly chosen. Add direct builtin-hook and ordinary relative-import tests.
+Relative-name resolution now gives an explicit string `__package__`
+precedence, falls back to a valid `ModuleSpecObject.parent` when `__package__`
+is `None` or absent, and rejects other package values with `TypeError`. The
+deprecated `__name__`/`__path__` fallback remains unsupported.
 
 Verification:
 
-Confirmed with CloverVM and CPython. No fix has been implemented.
+Added direct builtin-hook coverage for `None`, missing, empty, and invalid
+`__package__` values, plus an ordinary module that clears `__package__` before
+a relative import. `ninja -C build-debug all check` passes with 1,253 tests
+across 36 suites; one test is disabled.
 
 Disposition:
 
-Open.
+Resolved locally; uncommitted.
 
 ### CVR-023: Public value APIs mishandle propagated error handles
 

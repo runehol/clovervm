@@ -327,8 +327,31 @@ namespace cl
                     ->get_machine()
                     ->get_or_create_interned_string_value(L"__package__");
             Value package_value = globals_item(globals, package_key);
+            if(package_value.is_none() || package_value.is_not_present())
+            {
+                TValue<String> spec_key =
+                    active_thread()
+                        ->get_machine()
+                        ->get_or_create_interned_string_value(L"__spec__");
+                Value spec_value = globals_item(globals, spec_key);
+                if(can_convert_to<ModuleSpecObject>(spec_value))
+                {
+                    Value parent =
+                        spec_value.get_ptr<ModuleSpecObject>()->parent;
+                    if(can_convert_to<String>(parent))
+                    {
+                        package_value = parent;
+                    }
+                }
+            }
             if(!can_convert_to<String>(package_value))
             {
+                if(!package_value.is_none() && !package_value.is_not_present())
+                {
+                    (void)active_thread()->set_pending_builtin_exception_string(
+                        L"TypeError", L"package must be a string");
+                    return Optional<TValue<String>>::none();
+                }
                 import_error(
                     L"attempted relative import with no known parent package");
                 return Optional<TValue<String>>::none();

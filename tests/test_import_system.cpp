@@ -670,6 +670,104 @@ TEST(ImportSystem, BuiltinImportRelativeImportWithoutPackageRaisesImportError)
               value_as_wstring(exception.extract()->message.value()));
 }
 
+TEST(ImportSystem, BuiltinImportRelativeUsesSpecParentWhenPackageIsNone)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation_scope(context.thread());
+    TemporaryImportRoot root;
+    root.write_file(L"pkg/__init__.py", "");
+    root.write_file(L"pkg/current.py", "value = 1\n");
+    root.write_file(L"pkg/sibling.py", "value = 42\n");
+
+    List *path = make_sys_path(context);
+    path->append(module_name(context, root.path.wstring().c_str()).raw_value());
+    replace_sys_path(context, path);
+
+    Value actual = context.run_file(
+        L"import pkg.current\n"
+        L"g = {'__package__': None, '__spec__': pkg.current.__spec__}\n"
+        L"__import__('sibling', g, g, ('value',), 1).value\n");
+    EXPECT_EQ(Value::from_smi(42), actual);
+}
+
+TEST(ImportSystem, RelativeImportUsesSpecAfterModuleClearsPackage)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation_scope(context.thread());
+    TemporaryImportRoot root;
+    root.write_file(L"pkg/__init__.py", "");
+    root.write_file(L"pkg/current.py", "__package__ = None\n"
+                                       "from . import sibling\n"
+                                       "value = sibling.value\n");
+    root.write_file(L"pkg/sibling.py", "value = 42\n");
+
+    List *path = make_sys_path(context);
+    path->append(module_name(context, root.path.wstring().c_str()).raw_value());
+    replace_sys_path(context, path);
+
+    Value actual = context.run_file(L"import pkg.current\n"
+                                    L"pkg.current.value\n");
+    EXPECT_EQ(Value::from_smi(42), actual);
+}
+
+TEST(ImportSystem, BuiltinImportRelativeUsesSpecParentWhenPackageIsMissing)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation_scope(context.thread());
+    TemporaryImportRoot root;
+    root.write_file(L"pkg/__init__.py", "");
+    root.write_file(L"pkg/current.py", "value = 1\n");
+    root.write_file(L"pkg/sibling.py", "value = 42\n");
+
+    List *path = make_sys_path(context);
+    path->append(module_name(context, root.path.wstring().c_str()).raw_value());
+    replace_sys_path(context, path);
+
+    Value actual =
+        context.run_file(L"import pkg.current\n"
+                         L"g = {'__spec__': pkg.current.__spec__}\n"
+                         L"__import__('sibling', g, g, ('value',), 1).value\n");
+    EXPECT_EQ(Value::from_smi(42), actual);
+}
+
+TEST(ImportSystem, BuiltinImportRelativeDoesNotOverrideEmptyPackageFromSpec)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation_scope(context.thread());
+
+    Value imported =
+        context.run_file(L"import sys\n"
+                         L"g = {'__package__': '', '__spec__': sys.__spec__}\n"
+                         L"__import__('sibling', g, g, (), 1)\n");
+    EXPECT_TRUE(imported.is_exception_marker());
+    ASSERT_EQ(PendingExceptionKind::Object,
+              context.thread()->pending_exception_kind());
+    TValue<Exception> exception = context.thread()->pending_exception_object();
+    EXPECT_EQ(context.thread()->class_for_builtin_name(L"ImportError"),
+              exception.extract()->get_shape()->get_class());
+    EXPECT_EQ(L"attempted relative import with no known parent package",
+              value_as_wstring(exception.extract()->message.value()));
+}
+
+TEST(ImportSystem, BuiltinImportRelativeRejectsNonStringPackage)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation_scope(context.thread());
+
+    Value imported =
+        context.run_file(L"import sys\n"
+                         L"g = {'__package__': 42, '__spec__': sys.__spec__}\n"
+                         L"__import__('sibling', g, g, (), 1)\n");
+    EXPECT_TRUE(imported.is_exception_marker());
+    ASSERT_EQ(PendingExceptionKind::Object,
+              context.thread()->pending_exception_kind());
+    TValue<Exception> exception = context.thread()->pending_exception_object();
+    EXPECT_EQ(context.thread()->class_for_builtin_name(L"TypeError"),
+              exception.extract()->get_shape()->get_class());
+    EXPECT_EQ(L"package must be a string",
+              value_as_wstring(exception.extract()->message.value()));
+}
+
 TEST(ImportSystem, ImportStatementLoadsModuleAndStoresBinding)
 {
     test::VmTestContext context;
