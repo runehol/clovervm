@@ -201,6 +201,13 @@ Refactor and extend the native-layout descriptor system described in
 [Native Layout Descriptors](native-layout-descriptors.md), then use it in
 non-moving validation passes before implementing physical copying.
 
+Keep the common path table-driven. Static layouts use constant LUT entries;
+dynamic layouts use compact formulas over local SMI, integer, or
+`native_layout_aux_count` fields. Indirect custom queries are reserved for
+layouts that cannot express their extents or strong span with those formulas.
+Allocated and initialized extents share base and stride constants but may read
+different count fields.
+
 The common descriptor query reports one contiguous strong owned `Value` span,
 which the collector traces and rewrites in one pass. Deferred refcounting
 releases that same ownership set while it remains. Weak references are exposed
@@ -215,6 +222,12 @@ The first implementation should support:
   and `CodeObject` owned constants/caches;
 - VM/runtime roots;
 - Clover native handle frames.
+
+Before copying, audit every dynamic layout to ensure allocation extent is
+recoverable without dereferencing another movable object. In particular,
+`Instance` capacity must move out of `Shape` and into object-local physical
+metadata; the current auxiliary count records initialized inline-slot usage,
+not allocated capacity.
 
 Do not use a raw object-size-plus-`memcpy` path as a substitute for trace/update
 coverage. Layouts with C++ ownership, custom deallocation, native payloads, or

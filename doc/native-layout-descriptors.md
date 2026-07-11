@@ -151,9 +151,11 @@ debugging, and slab policy code to query opaque object extents.
 ## Unified Layout Query Design
 
 The separate release and object-size tables should be refactored into one
-descriptor table keyed by `NativeLayoutId`. A per-object query returns the
-complete scalar description needed by allocation accounting, copying, tracing,
-slot repair, and deferred-refcount teardown:
+descriptor table keyed by `NativeLayoutId`. The table primarily contains
+compact formulas, not one indirect query function per layout. An inline query
+evaluates those formulas and returns the complete scalar description needed by
+allocation accounting, copying, tracing, slot repair, and deferred-refcount
+teardown:
 
 ```cpp
 struct NativeLayoutInfo
@@ -162,22 +164,71 @@ struct NativeLayoutInfo
     size_t initialized_size;
 
     uint32_t value_offset_words;
-    uint32_t strong_value_count;
+    size_t strong_value_count;
 };
 ```
 
-Conceptually:
+The current descriptors establish the expected distribution:
+
+- most layouts have a static object size and static strong span;
+- `Tuple`, `ValueArrayBacking`, and `HeapPtrArrayBacking` read a dynamic count
+  from an SMI field;
+- `Instance` and `OverflowSlots` use `native_layout_aux_count`;
+- most existing custom size helpers are `base + count * stride` formulas;
+- only `CodeObject` and `Shape` currently have custom deallocators.
+
+The common representation should preserve those LUT and arithmetic paths:
 
 ```cpp
-const NativeLayoutDescriptor &descriptor =
-    descriptor_for(obj->native_layout_id());
-NativeLayoutInfo layout = descriptor.query(obj);
+enum class CountSourceKind : uint8_t
+{
+    Constant,
+    LayoutAux,
+    SmiField,
+    IntegerField,
+    SameAsAllocated,
+};
+
+struct CountSource
+{
+    CountSourceKind kind;
+    uint16_t field_offset_words;
+    size_t constant;
+};
+
+struct ExtentDescriptor
+{
+    size_t base_size;
+    size_t element_size;
+    CountSource allocated_count;
+    CountSource initialized_count;
+};
+
+struct StrongSpanDescriptor
+{
+    uint16_t value_offset_words;
+    CountSource count;
+};
 ```
 
-The descriptor lookup is static for a `NativeLayoutId`. The query resolves
-dynamic sizes and counts from the object and `native_layout_aux_count`.
-Consumers call the query when they need it; the result does not have to remain
-live across collector phases.
+`constant` is either the complete static count or the additive count for a
+dynamic source. `SameAsAllocated` avoids duplicating count metadata when both
+extents use the same source.
+
+The inline common query performs one `NativeLayoutId`-indexed table lookup,
+loads only the selected count fields, and applies straight-line arithmetic:
+
+```cpp
+allocated_size = extent.base_size +
+                 extent.element_size * evaluate(allocated_count, obj);
+initialized_size = extent.base_size +
+                   extent.element_size * evaluate(initialized_count, obj);
+strong_value_count = evaluate(strong_span.count, obj);
+```
+
+Static layouts require no object-dependent count load. Auxiliary and SMI
+layouts add one field load and arithmetic. Only a descriptor with a non-null
+`custom_query` takes an indirect call.
 
 ### Byte Extents
 
@@ -191,10 +242,10 @@ that is safe to read or copy. The invariant is:
 initialized_size <= allocated_size
 ```
 
-A copying path uses both values:
+A copying path uses both values returned by the inline query:
 
 ```cpp
-NativeLayoutInfo layout = descriptor.query(obj);
+NativeLayoutInfo layout = native_layout_info(obj);
 HeapObject *dst = allocate(layout.allocated_size);
 memcpy(dst, obj, layout.initialized_size);
 ```
@@ -206,6 +257,53 @@ behavior.
 Knowing both extents does not make an object safe to copy. The space containing
 the object determines whether the collector evacuates it. A moving space admits
 only layouts compatible with bulk discard, as described below.
+
+Allocated and initialized extents share `base_size` and `element_size`, but may
+read different count fields. A capacity-backed object normally uses capacity
+for `allocated_count` and logical size for `initialized_count`. An object that
+initializes its complete capacity uses `SameAsAllocated`.
+
+### Extent Source Invariant
+
+Physical extent metadata must be recoverable from the object header, a field in
+the object allocation, or the descriptor LUT. The query must not dereference a
+different movable object such as `Shape` or `ClassObject`.
+
+This is required by copying order. The collector needs the source object's
+extent before it can copy the object and before its managed fields have been
+traced or rewritten. Following an unrepaired `shape` pointer to recover physical
+capacity creates a relocation dependency cycle.
+
+`Instance` currently exposes this layout debt:
+
+- allocation calls `Instance::size_for(ClassObject *)`, which obtains inline
+  capacity from the class's instance root `Shape`;
+- `Instance::object_size_in_bytes()` instead uses
+  `native_layout_aux_count_value()`;
+- that auxiliary count currently grows as inline slots are lazily initialized,
+  so it records initialized usage rather than physical allocation capacity.
+
+The current opaque size query therefore reports an initialized extent for
+`Instance`, while the physical allocated extent remains recoverable only by
+following class and shape metadata. That representation is not nursery-safe.
+
+The simplest repair is to store the selected physical capacity in
+`native_layout_aux_count`, initialize every allocated inline slot to
+`not_present`, and use the same capacity for allocated, initialized, and strong
+counts. This trades eager slot clearing for one local count and safe full-span
+copying and tracing. If that cost is unacceptable, `Instance` needs two local
+counts: immutable allocation capacity and initialized usage. Capacity must not
+remain solely in `Shape`.
+
+The layout audit should flag any native ID with:
+
+- physical extent derived from another managed object;
+- allocation capacity that is no longer locally recoverable;
+- unused capacity containing uninitialized bytes;
+- logical size conflated with physical capacity;
+- a count mutated during backing ownership transfer;
+- a count that cannot fit in `native_layout_aux_count`;
+- undocumented alignment, rounding, or minimum-capacity rules.
 
 ### Managed Value Span
 
@@ -223,7 +321,7 @@ A copying collector traces and repairs the strong span in one pass:
 
 ```cpp
 Value *slots = reinterpret_cast<Value *>(obj) + layout.value_offset_words;
-for(uint32_t idx = 0; idx < layout.strong_value_count; ++idx)
+for(size_t idx = 0; idx < layout.strong_value_count; ++idx)
 {
     slots[idx] = evacuate(slots[idx]);
 }
@@ -241,7 +339,10 @@ Some layouts cannot be fully represented by byte extents and one contiguous
 ```cpp
 struct NativeLayoutDescriptor
 {
-    NativeLayoutInfo (*query)(const HeapObject *);
+    ExtentDescriptor extent;
+    StrongSpanDescriptor strong_span;
+
+    NativeLayoutInfo (*custom_query)(const HeapObject *);
 
     void (*custom_trace_strong)(HeapObject *, StrongSlotVisitor);
     void (*process_weak)(HeapObject *, WeakTargetResolver);
@@ -277,6 +378,12 @@ These are layout-level escape hatches, not per-slot policy in the common path.
 The exact callback representation should follow existing low-overhead project
 patterns and must not require virtual dispatch on every object.
 
+All callback fields are nullable. A null `custom_query` selects the LUT/formula
+path. A null custom strong callback means the ordinary strong span is complete.
+A null weak callback means the object is not added to weak work. Null release,
+destroy, and relocate callbacks likewise select the ordinary behavior or no
+operation appropriate to the containing space.
+
 A moving space is bulk discarded after evacuation. It must therefore reject any
 layout with a non-null `destroy` callback: otherwise dead from-space objects
 would have to be traversed solely to release their native resources. A custom
@@ -292,18 +399,22 @@ policy is not stored in the object or native-layout descriptor.
 
 ### Refactor Sequence
 
-1. Introduce `NativeLayoutInfo` and one `NativeLayoutDescriptor` table.
-2. Generate static-layout queries from the existing declaration macros.
-3. Convert SMI-count and auxiliary-count layouts to return dynamic sizes and
-   counts through the same query.
+1. Introduce `NativeLayoutInfo`, count-source and extent formulas, and one
+   `NativeLayoutDescriptor` table.
+2. Generate static LUT entries from the existing declaration macros.
+3. Convert SMI-count and auxiliary-count layouts to formula entries without
+   indirect query calls.
 4. Move reclamation from `ReleaseDescriptor` to `strong_value_count` plus
    custom release and destruction.
 5. Move opaque allocation-size queries from `ObjectSizeDescriptor` to
    `allocated_size`.
-6. Populate and test `initialized_size` without changing allocation or copying
+6. Audit allocated, initialized, and strong count sources for every native ID;
+   fix object-local metadata where the answers currently depend on `Shape` or
+   other movable state.
+7. Populate and test `initialized_size` without changing allocation or copying
    behavior.
-7. Add non-moving trace/update validation over the ordinary spans.
-8. Add debug allocation checks that reject destructor-requiring layouts from
+8. Add non-moving trace/update validation over the ordinary spans.
+9. Add debug allocation checks that reject destructor-requiring layouts from
    moving spaces and verify custom relocation contracts.
 
 The initial refactor preserves deferred refcounting as lifetime authority. It
