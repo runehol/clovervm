@@ -464,6 +464,12 @@ return clover_propagate_error(ctx) after a helper has set a pending exception
 return a raise-helper result for explicit semantic errors
 ```
 
+Callbacks are trusted to preserve this pairing. In particular, a callback must
+not ignore a failing helper and then return a normal handle while an exception
+is pending. The VM does not validate that case on every callback return; doing
+so violates the extension contract and may leave the VM in an inconsistent
+state.
+
 For init functions:
 
 ```text

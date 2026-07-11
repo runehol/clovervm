@@ -1117,7 +1117,7 @@ Open.
 ### CVR-005: Native callbacks can return normally with pending exceptions
 
 - Severity: P2
-- Status: open
+- Status: accepted
 - Review unit: R2
 - Found at: `e7bd814`
 - Affected code: `src/runtime/interpreter.cpp:5481`
@@ -1158,18 +1158,21 @@ on ordinary completion.
 
 Recommended fix boundary:
 
-Validate both halves of the callback result/pending-state contract in the
-shared extension-call path and raise `SystemError` for mismatches. Add a test
-extension callback that returns normally after a helper failure.
+No runtime fix. Extension callbacks are trusted native code, and checking this
+contract after every callback would add work to all valid extension calls only
+to diagnose an extension bug. Keep the normal callback path unchanged and make
+the trust boundary explicit in `doc/clover-c-api.md`.
 
 Verification:
 
-Established from the documented extension contract and complete opcode paths.
-No fix has been implemented.
+Established from the extension contract and complete opcode paths. The C API
+documentation now explicitly states that callbacks must preserve the
+result/pending-exception pairing and that the VM does not validate a normal
+return with a pending exception.
 
 Disposition:
 
-Open.
+Accepted as a trusted-extension contract. No runtime change.
 
 ### CVR-006: Native module initialization accepts success with an exception
 
