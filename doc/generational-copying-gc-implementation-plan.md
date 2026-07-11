@@ -197,14 +197,15 @@ nursery object reachable from that graph.
 
 ## Stage 6: Trace And Update Descriptors
 
-Add native-layout trace/update descriptors and use them in non-moving validation
-passes before implementing physical copying.
+Refactor and extend the native-layout descriptor system described in
+[Native Layout Descriptors](native-layout-descriptors.md), then use it in
+non-moving validation passes before implementing physical copying.
 
-Trace descriptors answer which outgoing managed references an object contains.
-Update descriptors answer which slots can be rewritten when a referenced object
-moves. They are related but not identical: a conservative root identity is enough
-for deferred refcounting, while a moving collector must enumerate precise,
-mutable slots.
+The common descriptor query reports independent trace and update counts over one
+contiguous `Value` span. These counts are equal for ordinary strong slots, so a
+collector traces and rewrites them in one pass. Dedicated weak-reference layouts
+retain their ordinary strong `shape` prefix and may add an update-only weak
+suffix. Release count remains independent for deferred-refcount teardown.
 
 The first implementation should support:
 

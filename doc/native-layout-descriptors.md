@@ -148,6 +148,157 @@ T::size_for(...)   // dynamic/custom-size layouts
 This keeps allocation type-directed while still allowing validation, accounting,
 debugging, and slab policy code to query opaque object extents.
 
+## Unified Layout Query Design
+
+The separate release and object-size tables should be refactored into one
+descriptor table keyed by `NativeLayoutId`. A per-object query returns the
+complete scalar description needed by allocation accounting, copying, tracing,
+slot repair, and deferred-refcount teardown:
+
+```cpp
+struct NativeLayoutInfo
+{
+    size_t allocated_size;
+    size_t initialized_size;
+
+    uint32_t value_offset_words;
+    uint32_t trace_value_count;
+    uint32_t update_value_count;
+    uint32_t release_value_count;
+};
+```
+
+Conceptually:
+
+```cpp
+const NativeLayoutDescriptor &descriptor =
+    descriptor_for(obj->native_layout_id());
+NativeLayoutInfo layout = descriptor.query(obj);
+```
+
+The descriptor lookup is static for a `NativeLayoutId`. The query resolves
+dynamic sizes and counts from the object and `native_layout_aux_count`.
+Consumers call the query when they need it; the result does not have to remain
+live across collector phases.
+
+### Byte Extents
+
+`allocated_size` is the complete allocation extent, including spare capacity.
+It is the number of bytes a copying collector reserves for the destination.
+
+`initialized_size` is the contiguous prefix containing initialized object state
+that is safe to read or copy. The invariant is:
+
+```text
+initialized_size <= allocated_size
+```
+
+A copying path uses both values:
+
+```cpp
+NativeLayoutInfo layout = descriptor.query(obj);
+HeapObject *dst = allocate(layout.allocated_size);
+memcpy(dst, obj, layout.initialized_size);
+```
+
+Spare capacity is preserved without reading uninitialized bytes. Shrinking a
+copied allocation is explicit collector policy, not an implicit descriptor
+behavior.
+
+Knowing both extents does not make a layout safe to copy. Non-trivially-copyable
+C++ state, external allocations, native payloads, and custom teardown still
+require an explicit copy policy.
+
+### Managed Value Span
+
+Ordinary managed slots described by one layout form a contiguous span beginning
+at `value_offset_words`. Trace, update, and release each consume a prefix of
+that same span:
+
+- `trace_value_count` identifies strong outgoing references that keep targets
+  live;
+- `update_value_count` identifies slots that may be rewritten when targets
+  move;
+- `release_value_count` identifies owned references released during teardown
+  while deferred refcounting remains.
+
+The common cases are:
+
+| Slot policy | Trace | Update | Release |
+|---|---:|---:|---:|
+| Strong owned | `N` | `N` | `N` |
+| Strong borrowed | `N` | `N` | `0` |
+| Weak-reference object with `shape` then target | `1` | `2` | `1` |
+
+For ordinary strong slots, trace and update counts are equal. A copying
+collector therefore traces and repairs each slot in one pass:
+
+```cpp
+Value *slots = reinterpret_cast<Value *>(obj) + layout.value_offset_words;
+for(uint32_t idx = 0; idx < layout.trace_value_count; ++idx)
+{
+    slots[idx] = evacuate(slots[idx]);
+}
+```
+
+Weak targets live in a dedicated object with its own `NativeLayoutId`. That
+object still begins with the ordinary strong, owned `shape` slot, followed by
+its weak target. The normal trace pass processes the strong prefix. The weak
+phase selects the layout and processes the update-only suffix in
+`[trace_value_count, update_value_count)`. Ordinary layouts do not need
+per-slot strong/weak tags.
+
+The prefix representation also deliberately avoids interleaved owned and
+borrowed fields. A layout that cannot arrange its slots as compatible prefixes
+must put exceptional references in a separate backing object with its own
+`NativeLayoutId`, or use a custom layout policy.
+
+### Custom Layout Policy
+
+Some layouts cannot be fully represented by byte extents and one contiguous
+`Value` span. The static descriptor therefore retains cold custom operations:
+
+```cpp
+struct NativeLayoutDescriptor
+{
+    NativeLayoutInfo (*query)(const HeapObject *);
+    void (*custom_trace_update)(HeapObject *, SlotVisitor);
+    void (*custom_dealloc)(HeapObject *);
+    CopyPolicy copy_policy;
+};
+```
+
+A custom trace/update operation supplements the ordinary span with mutable
+managed slots stored in C++ containers, pointer arrays, or other non-contiguous
+storage. Custom teardown handles native resources and exceptional ownership.
+Copy policy states whether and how non-trivial object state can move.
+
+These are layout-level escape hatches, not per-slot policy in the common path.
+The exact callback representation should follow existing low-overhead project
+patterns and must not require virtual dispatch on every object.
+
+Until a layout has complete trace/update and copy policy, it stays outside a
+moving nursery even when its byte extents are known.
+
+### Refactor Sequence
+
+1. Introduce `NativeLayoutInfo` and one `NativeLayoutDescriptor` table.
+2. Generate static-layout queries from the existing declaration macros.
+3. Convert SMI-count and auxiliary-count layouts to return dynamic sizes and
+   counts through the same query.
+4. Move reclamation from `ReleaseDescriptor` to `release_value_count` plus
+   custom teardown.
+5. Move opaque allocation-size queries from `ObjectSizeDescriptor` to
+   `allocated_size`.
+6. Populate and test `initialized_size` without changing allocation or copying
+   behavior.
+7. Add non-moving trace/update validation over the ordinary spans.
+8. Classify and implement custom layouts before making them nursery-movable.
+
+The initial refactor preserves deferred refcounting as lifetime authority. It
+consolidates metadata and exposes precise slots without requiring generation
+state, barriers, or physical relocation.
+
 ## Declaration Macros
 
 Native layout facts are declared near each C++ class definition with class-local
@@ -202,12 +353,15 @@ The registered native layouts currently include:
   `TupleIterator`, `ListIterator`, `ExceptionObject`, `StopIterationObject`,
   `Function`, `Dict`, `String`, `Instance`, `CodeObject`, `ClassObject`
 - internal heap records: `ValidityCell`, `Scope`, `Shape`, `OverflowSlots`,
-  `RawArrayBacking`, `ValueArrayBacking`, `HeapPtrArrayBacking`
+  `RawArrayBacking`, `ValueArrayBacking`, `HeapPtrArrayBacking`, `HandleChunk`
 
 `NativeLayoutId::TestOnly` is intentionally allowed to remain invalid while the
 remaining test-only uses are parked.
 
-## Current Layout Classification
+## Representative Current Layout Classification
+
+This table records the layouts most relevant to the current descriptor
+mechanics; the registry remains the exhaustive source of registered IDs.
 
 | Native layout | Release | Object size |
 |---|---|---|
@@ -231,6 +385,7 @@ remaining test-only uses are parked.
 | `RawArrayBacking` | empty `StaticSpan` | custom from storage bytes |
 | `ValueArrayBacking` | `DynamicAuxSpan` | custom from value-cell count |
 | `HeapPtrArrayBacking` | `DynamicAuxSpan` using pointer-compatible cells | custom from cell count |
+| `HandleChunk` | `StaticSpan` | static |
 
 ## Teardown Rules
 

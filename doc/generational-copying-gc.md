@@ -96,74 +96,18 @@ by movable VM objects.
 
 ## Heap Object Metadata
 
-The collector should keep layout metadata separate from GC state.
+The collector keeps object-layout metadata separate from GC state and extends
+the existing native-layout descriptor system rather than introducing a second
+GC descriptor framework. The authoritative descriptor query, size, contiguous
+slot-span, weak-reference, teardown, and copy-policy design is in
+[Native Layout Descriptors](native-layout-descriptors.md).
 
-The current heap header already carries `native_layout_id_` and
-`native_layout_aux_count`. For a copying collector, the GC should treat those as
-inputs to the native-layout descriptor system:
-
-```text
-descriptor = descriptor_for(obj->native_layout_id())
-size = descriptor.layout_size(obj)
-trace layout = descriptor.trace_layout(obj)
-release layout = descriptor.release_layout(obj)
-```
-
-The collector should extend the existing native-layout descriptor system rather
-than introduce a separate GC descriptor framework. The layout descriptors should
-answer four different questions:
-
-- layout size: how much storage should the collector allocate and copy;
-- trace layout: which outgoing GC references the object contains;
-- update layout: which outgoing GC reference slots can be rewritten when a
-  referenced object moves;
-- release layout: which owned references should be released when the object
-  dies.
-
-Trace, update, and release often describe the same `Value` spans today, but they
-should remain separate concepts. Future weak references, borrowed references,
-caches, or native-owned storage may be traced differently from how they are
-rewritten or released.
-
-For copying GC, a single object-size answer is not enough. A descriptor should
-report both allocated extent and initialized extent:
-
-```cpp
-struct LayoutSize {
-    size_t allocated_size;
-    size_t initialized_size;
-};
-```
-
-`allocated_size` is the full object allocation, including spare capacity.
-`initialized_size` is the contiguous prefix containing valid object state that
-can be copied with `memcpy`. The invariant is:
-
-```text
-initialized_size <= allocated_size
-```
-
-The copying path should allocate the full extent but copy only initialized
-state:
-
-```cpp
-LayoutSize size = descriptor.layout_size(obj);
-HeapObject *dst = allocate(size.allocated_size);
-memcpy(dst, obj, size.initialized_size);
-```
-
-This preserves over-allocation for amortized-growth containers without reading
-uninitialized capacity. Tracing should still use the logical initialized object
-contents, not spare capacity. Any future policy that wants to shrink copied
-objects should be explicit collector policy, not something forced by the layout
-descriptor API.
-
-Object extent and initialized extent do not by themselves make a layout safe to
-copy. Layouts that contain C++ containers, `Owned` fields outside descriptor
-covered spans, native payloads, or custom deallocation need explicit trace,
-update, and copy policy before they can enter a moving generation. Until then,
-they should be allocated directly into old movable storage or stable storage and
-handled by the appropriate tracing path.
+In summary, one descriptor lookup and per-object query report allocated and
+initialized byte extents plus independent trace, update, and release counts over
+one contiguous `Value` span. Ordinary strong slots are traced and updated in one
+pass. Weak targets use a separate object and `NativeLayoutId`, avoiding mixed
+per-slot tags in common layouts; the weak object retains its ordinary strong
+`shape` prefix and places the weak target in an update-only suffix.
 
 The GC-specific object state needed for ordinary copied objects is much smaller:
 
