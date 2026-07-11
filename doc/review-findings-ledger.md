@@ -1160,11 +1160,12 @@ Open.
 ### CVR-006: Native module initialization accepts success with an exception
 
 - Severity: P2
-- Status: open
+- Status: resolved
 - Review unit: R2
 - Found at: `e7bd814`
 - Affected code: `src/native/native_module_loader.cpp:162`
-- Affected tests: none
+- Affected tests: `tests/test_native_module_build.cpp`,
+  `tests/native_modules/_test_native_success_with_exception.c`
 
 Invariant or semantic rule:
 
@@ -1203,12 +1204,16 @@ native test module that returns OK after establishing an exception.
 
 Verification:
 
-Established from the documented initializer contract and loader control flow.
-No fix has been implemented.
+Added a malformed native module that sets an exception and returns
+`CLOVER_STATUS_OK`. The focused native-module status-matrix tests pass, and
+`ninja -C build-debug all check` passes with 1,240 tests in 35 suites and one
+disabled test.
 
 Disposition:
 
-Open.
+Resolved by rejecting successful native initialization when an exception is
+pending, replacing the inconsistent state with `SystemError`, and allowing the
+normal import failure cleanup to remove the module from `sys.modules`.
 
 ### CVR-007: Dictionary iterators revive after invalidation
 

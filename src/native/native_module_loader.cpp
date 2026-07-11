@@ -120,6 +120,17 @@ namespace cl
             message += L"'";
             return set_native_import_error(thread, message);
         }
+
+        Value set_native_init_succeeded_with_exception(ThreadState *thread,
+                                                       const ModuleSpec &spec)
+        {
+            std::wstring message = L"native module init returned success with "
+                                   L"an exception set for '";
+            message += spec.name;
+            message += L"'";
+            return thread->set_pending_builtin_exception_string(
+                L"SystemError", interned_string(thread, message));
+        }
     }  // namespace
 
     Value exec_native_extension_module(ThreadState *thread,
@@ -162,6 +173,10 @@ namespace cl
         clover_status status = init_function(&ctx, &builder);
         if(status == CLOVER_STATUS_OK)
         {
+            if(thread->has_pending_exception())
+            {
+                return set_native_init_succeeded_with_exception(thread, spec);
+            }
             return Value::None();
         }
         if(thread->pending_exception_kind() == PendingExceptionKind::None)

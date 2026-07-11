@@ -72,6 +72,11 @@ clovervm_add_native_module(_test_native_fail_no_exception
 		native_modules/_test_native_fail_no_exception.c)
 add_dependencies(test_clovervm
 	clovervm_native_module__test_native_fail_no_exception)
+clovervm_add_native_module(_test_native_success_with_exception
+	SOURCES
+		native_modules/_test_native_success_with_exception.c)
+add_dependencies(test_clovervm
+	clovervm_native_module__test_native_success_with_exception)
 
 add_custom_target(check_native_module_linkage
 	COMMAND ${CMAKE_COMMAND}

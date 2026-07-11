@@ -645,3 +645,24 @@ TEST(NativeModuleBuild, InitFailureWithoutExceptionRaisesImportError)
         L"native module init failed without setting an exception for "
         L"'_test_native_fail_no_exception'");
 }
+
+TEST(NativeModuleBuild, InitSuccessWithExceptionRaisesSystemError)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation_scope(context.thread());
+
+    TValue<String> name = context.vm().get_or_create_interned_string_value(
+        L"_test_native_success_with_exception");
+    Value imported = import_module_absolute(context.thread(), name);
+    EXPECT_TRUE(imported.is_exception_marker());
+    ASSERT_EQ(PendingExceptionKind::Object,
+              context.thread()->pending_exception_kind());
+    TValue<Exception> exception = context.thread()->pending_exception_object();
+    EXPECT_EQ(context.thread()->class_for_builtin_name(L"SystemError"),
+              exception.extract()->get_shape()->get_class());
+    EXPECT_EQ(
+        L"native module init returned success with an exception set for "
+        L"'_test_native_success_with_exception'",
+        std::wstring(string_as_wchar_t(exception.extract()->message.value())));
+    EXPECT_FALSE(sys_modules_contains(context, name));
+}
