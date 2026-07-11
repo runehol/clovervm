@@ -12,6 +12,10 @@ no current caller uses.
 
 ## Stage 1: Switchable Clover Native API Indirect Handles
 
+**Status: implemented.** Indirect mode is enabled, while the direct
+representation remains available through the compile-time switch. Persistent
+handles remain explicitly deferred.
+
 Refactor the existing Clover native API boundary before moving ordinary VM
 objects. The authoritative storage and switching design is in
 [Switchable Indirect Native Handles](indirect-native-handles.md).
@@ -63,16 +67,19 @@ This stage does not require removing deferred refcounting. Refcounting remains
 the lifetime authority while the native boundary stops exposing raw movable
 `Value` storage.
 
-The stage is complete when tests prove argument handles alias the original
-managed argument slots, and cover handles returned by C API constructors,
-transition to one and multiple overflow chunks, scanning and updating slots in
-every chunk, cleanup on normal and exceptional return, and nested
-native-to-managed calls while the outer handle frame remains active.
+The implemented stage has coverage for C API constructors, exceptional returns,
+frame-versus-overflow refcount ownership, and transition through multiple
+overflow chunks. Its remaining confidence tests should prove that argument
+handles alias their original managed slots and that reclamation keeps frame and
+overflow handle targets live while the native root region is published. Slot
+rewriting belongs to the trace/update and relocation-simulation stages below.
+Nested native-to-managed re-entry should be tested when the Clover C API gains
+such an entry point; there is no current API operation that can exercise it.
 
-`clover_persistent_handle` is a separate follow-up after indirect handles are
-working. It is needed for native state that intentionally outlives one API entry,
-but it should not be bundled into the first handle-frame patch unless an existing
-native-module use requires cross-entry retention.
+Persistent native handles are a separate follow-up. They are needed for native
+state that intentionally outlives one API entry, but their API and storage
+should be designed only when an existing native-module use requires cross-entry
+retention.
 
 ## Stage 2: Precise Managed Root Publication
 
@@ -291,7 +298,7 @@ validated:
 
 - CPython Limited API wrapper identity machinery;
 - CPython Limited API wrapper target updates;
-- `clover_persistent_handle`, unless an existing native-module use needs it
+- persistent native handles, unless an existing native-module use needs them
   earlier;
 - remembered module slots;
 - survivor spaces;

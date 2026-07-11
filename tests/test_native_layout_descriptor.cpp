@@ -10,6 +10,7 @@
 #include "builtin_types/tuple.h"
 #include "builtin_types/tuple_iterator.h"
 #include "compiler/scope.h"
+#include "memory/global_heap.h"
 #include "memory/native_layout_descriptor.h"
 #include "object_model/class_object.h"
 #include "object_model/function.h"
@@ -215,9 +216,34 @@ TEST(NativeLayoutDescriptor, ValidityCellUsesEmptyStaticDescriptor)
 
 TEST(NativeLayoutDescriptor, HandleChunkUsesStaticManagedCellSpan)
 {
+    if constexpr(!native_handle_detail::cl_indirect_handles)
+    {
+        GTEST_SKIP() << "indirect handles are disabled";
+    }
+
     expect_static_native_layout_descriptor<HandleChunk>();
     EXPECT_EQ(HandleChunk::CellCount,
               HandleChunk::native_static_release_count());
+}
+
+TEST(NativeHandle, ArgumentHandleAliasesOriginalRootedSlot)
+{
+    if constexpr(!native_handle_detail::cl_indirect_handles)
+    {
+        GTEST_SKIP() << "indirect handles are disabled";
+    }
+
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation_scope(context.thread());
+    Value slot = Value::from_smi(1);
+    clover_context handle_context{context.thread(), nullptr, nullptr, false};
+
+    clover_handle handle = handle_from_rooted_slot(&handle_context, &slot);
+
+    EXPECT_EQ(reinterpret_cast<uintptr_t>(&slot), handle);
+    EXPECT_EQ(Value::from_smi(1), resolve_handle(handle));
+    slot = Value::from_smi(2);
+    EXPECT_EQ(Value::from_smi(2), resolve_handle(handle));
 }
 
 TEST(NativeHandle, OverflowStorageRetainsValuesButFrameStorageDoesNot)
@@ -263,6 +289,67 @@ TEST(NativeHandle, OverflowStorageRetainsValuesButFrameStorageDoesNot)
         allocate_handle(&handle_context, Value::from_oop(overflow_float));
     EXPECT_EQ(1, overflow_float->refcount);
     EXPECT_EQ(Value::from_oop(overflow_float), resolve_handle(overflow_handle));
+}
+
+TEST(NativeHandle, PublishedFrameAndOverflowHandlesSurviveReclamation)
+{
+    if constexpr(!native_handle_detail::cl_indirect_handles)
+    {
+        GTEST_SKIP() << "indirect handles are disabled";
+    }
+
+    test::VmTestContext context;
+    ThreadState *thread = context.thread();
+    ThreadState::ActivationScope activation_scope(thread);
+    GlobalHeap &heap = context.vm().get_refcounted_global_heap();
+    context.vm().run_heap_reclamation();
+    uint64_t valid_objects_before = heap.count_valid_objects_slow();
+
+    Float *frame_float = nullptr;
+    Float *overflow_float = nullptr;
+    HandleChunk *first_chunk = nullptr;
+    {
+        NativeHandleRootRegion root_region(thread);
+        clover_context handle_context = root_region.make_context();
+
+        frame_float = thread->make_object_value<Float>(1.5).extract();
+        clover_handle frame_handle =
+            allocate_handle(&handle_context, Value::from_oop(frame_float));
+        thread->add_to_zero_count_table_if_needed(frame_float);
+
+        for(size_t idx = 1;
+            idx < native_handle_detail::frame_handle_cell_count - 1; ++idx)
+        {
+            (void)allocate_handle(&handle_context,
+                                  Value::from_smi(int64_t(idx)));
+        }
+        Value chunk_value =
+            *(thread->clover_frame_frontier() +
+              native_handle_detail::frame_handle_cell_count - 1);
+        ASSERT_TRUE(chunk_value.is_refcounted_ptr());
+        first_chunk = static_cast<HandleChunk *>(chunk_value.as.ptr);
+        thread->add_to_zero_count_table_if_needed(first_chunk);
+
+        overflow_float = thread->make_object_value<Float>(2.5).extract();
+        clover_handle overflow_handle =
+            allocate_handle(&handle_context, Value::from_oop(overflow_float));
+
+        ASSERT_EQ(valid_objects_before + 3, heap.count_valid_objects_slow());
+        context.vm().run_heap_reclamation();
+
+        EXPECT_EQ(Value::from_oop(frame_float), resolve_handle(frame_handle));
+        EXPECT_EQ(Value::from_oop(overflow_float),
+                  resolve_handle(overflow_handle));
+        EXPECT_TRUE(thread->zero_count_table_contains_for_testing(frame_float));
+        EXPECT_TRUE(thread->zero_count_table_contains_for_testing(first_chunk));
+    }
+
+    context.vm().run_heap_reclamation();
+
+    EXPECT_EQ(valid_objects_before, heap.count_valid_objects_slow());
+    EXPECT_FALSE(thread->zero_count_table_contains_for_testing(frame_float));
+    EXPECT_FALSE(thread->zero_count_table_contains_for_testing(first_chunk));
+    EXPECT_FALSE(thread->zero_count_table_contains_for_testing(overflow_float));
 }
 
 TEST(NativeLayoutDescriptor, ScopeUsesNativeStaticReleaseDescriptor)

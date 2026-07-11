@@ -274,6 +274,11 @@ TEST(NativeModuleBuild, ImportingNativeExtensionPopulatesModuleGlobals)
 
 TEST(NativeModuleBuild, ExtensionCallCanOverflowIndirectHandleStorage)
 {
+    if constexpr(!native_handle_detail::cl_indirect_handles)
+    {
+        GTEST_SKIP() << "indirect handles are disabled";
+    }
+
     test::VmTestContext context;
     ThreadState::ActivationScope activation_scope(context.thread());
 

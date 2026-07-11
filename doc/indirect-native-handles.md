@@ -46,10 +46,10 @@ a valid context.
 
 ## Internal Handle Operations
 
-The representation operations should be small inline functions in an internal
-header, for example `native/native_handle.h`. C API implementation files and
-extension-call thunks use this header; it is not installed as part of the public
-extension API.
+The representation operations are small inline functions in the internal
+`api/extension_handle.h` header. C API implementation files and extension-call
+thunks use this header; it is not installed as part of the public extension
+API.
 
 The implementation distinguishes an existing rooted slot from a value that
 needs a new root:
@@ -58,8 +58,7 @@ needs a new root:
 clover_handle handle_from_rooted_slot(clover_context *ctx, Value *slot);
 clover_handle allocate_handle(clover_context *ctx, Value value);
 
-[[nodiscard]] Value resolve_handle(clover_context *ctx,
-                                   clover_handle handle);
+[[nodiscard]] Value resolve_handle(clover_handle handle);
 ```
 
 `handle_from_rooted_slot` does not allocate. Managed arguments already occupy
