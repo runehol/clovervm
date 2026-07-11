@@ -2082,6 +2082,11 @@ TEST(Interpreter, floor_division_values)
     expect_float_result(L"5.0 // 2\n", 2.0);
     expect_float_result(L"5 // 2.0\n", 2.0);
     expect_float_result(L"-5.0 // 2\n", -3.0);
+    expect_float_result(L"-8.122808264515302e-272 // 7.866340851152702e98\n",
+                        -1.0);
+    expect_float_result(L"(7.866340851152702e98).__rfloordiv__("
+                        L"-8.122808264515302e-272)\n",
+                        -1.0);
 }
 
 TEST(Interpreter, floor_division_reports_errors)
@@ -2131,6 +2136,11 @@ TEST(Interpreter, modulo_values)
     expect_float_result(L"5 % 2.0\n", 1.0);
     expect_float_result(L"-5.0 % 2\n", 1.0);
     expect_float_result(L"5.0 % -2\n", -1.0);
+    expect_float_result(L"-8.122808264515302e-272 % 7.866340851152702e98\n",
+                        7.866340851152702e98);
+    expect_float_result(L"(7.866340851152702e98).__rmod__("
+                        L"-8.122808264515302e-272)\n",
+                        7.866340851152702e98);
 }
 
 TEST(Interpreter, modulo_reports_errors)

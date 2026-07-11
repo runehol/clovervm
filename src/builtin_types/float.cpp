@@ -181,6 +181,46 @@ namespace cl
             L"ZeroDivisionError", L"division by zero");
     }
 
+    struct FloatDivModResult
+    {
+        double quotient;
+        double remainder;
+    };
+
+    static FloatDivModResult float_divmod(double left, double right)
+    {
+        double remainder = std::fmod(left, right);
+        double quotient = (left - remainder) / right;
+
+        if(remainder != 0.0)
+        {
+            if((right < 0.0) != (remainder < 0.0))
+            {
+                remainder += right;
+                quotient -= 1.0;
+            }
+        }
+        else
+        {
+            remainder = std::copysign(0.0, right);
+        }
+
+        double floored_quotient;
+        if(quotient != 0.0)
+        {
+            floored_quotient = std::floor(quotient);
+            if(quotient - floored_quotient > 0.5)
+            {
+                floored_quotient += 1.0;
+            }
+        }
+        else
+        {
+            floored_quotient = std::copysign(0.0, left / right);
+        }
+        return {floored_quotient, remainder};
+    }
+
     struct FloatTrueDivOperator
     {
         static constexpr const wchar_t *receiver_error =
@@ -222,7 +262,8 @@ namespace cl
             {
                 return float_zero_division_error(thread);
             }
-            return thread->make_object_value<Float>(std::floor(left / right))
+            return thread
+                ->make_object_value<Float>(float_divmod(left, right).quotient)
                 .raw_value();
         }
     };
@@ -238,7 +279,8 @@ namespace cl
             {
                 return float_zero_division_error(thread);
             }
-            return thread->make_object_value<Float>(std::floor(right / left))
+            return thread
+                ->make_object_value<Float>(float_divmod(right, left).quotient)
                 .raw_value();
         }
     };
@@ -251,16 +293,9 @@ namespace cl
             return float_zero_division_error(thread);
         }
 
-        double result = std::fmod(left, right);
-        if(result != 0.0 && (std::signbit(result) != std::signbit(right)))
-        {
-            result += right;
-        }
-        else if(result == 0.0)
-        {
-            result = std::copysign(0.0, right);
-        }
-        return thread->make_object_value<Float>(result).raw_value();
+        return thread
+            ->make_object_value<Float>(float_divmod(left, right).remainder)
+            .raw_value();
     }
 
     struct FloatModOperator

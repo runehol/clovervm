@@ -601,7 +601,7 @@ Open.
 ### CVR-018: Float floor division mishandles underflowed negative quotients
 
 - Severity: P2
-- Status: open
+- Status: resolved
 - Review unit: R7
 - Found at: `e2c5c3b`
 - Affected code: `src/builtin_types/float.cpp:214`,
@@ -641,17 +641,20 @@ division and is affected symmetrically.
 
 Recommended fix boundary:
 
-Derive quotient and remainder with one Python-compatible float divmod helper,
-including sign adjustment and underflow handling, and share it across normal
-and reflected floor division/modulo methods.
+Implemented a Python-compatible float divmod helper, including remainder sign
+adjustment, quotient correction, rounding stabilization, and signed-zero
+handling. Normal and reflected floor division and modulo now use the shared
+calculation.
 
 Verification:
 
-Confirmed with CloverVM and CPython. No fix has been implemented.
+Added interpreter coverage for the underflowed negative quotient and remainder
+through both normal and reflected methods. `ninja -C build-debug all check`
+passes with 1,244 tests across 36 suites; one test is disabled.
 
 Disposition:
 
-Open.
+Resolved locally; uncommitted.
 
 ### CVR-019: Exception handler targets remain bound after exit
 
