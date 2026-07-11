@@ -164,7 +164,7 @@ struct NativeLayoutInfo
     size_t initialized_size;
 
     uint32_t value_offset_words;
-    size_t strong_value_count;
+    uint32_t strong_value_count;
 };
 ```
 
@@ -180,49 +180,63 @@ The current descriptors establish the expected distribution:
 The common representation should preserve those LUT and arithmetic paths:
 
 ```cpp
-enum class CountSourceKind : uint8_t
+enum class CountFieldKind : uint8_t
 {
-    Constant,
     LayoutAux,
     SmiField,
     IntegerField,
-    SameAsAllocated,
 };
 
-struct CountSource
+struct CountFieldSource
 {
-    CountSourceKind kind;
     uint16_t field_offset_words;
-    size_t constant;
+    CountFieldKind field_kind;
+};
+
+struct CountFormula
+{
+    uint32_t addend;
+    uint16_t field_offset_words;
+    uint8_t multiplier;
+    CountFieldKind field_kind;
 };
 
 struct ExtentDescriptor
 {
     size_t base_size;
     size_t element_size;
-    CountSource allocated_count;
-    CountSource initialized_count;
+    CountFieldSource allocated_field;
+    CountFieldSource initialized_field;
 };
 
 struct StrongSpanDescriptor
 {
     uint16_t value_offset_words;
-    CountSource count;
+    CountFormula count;
 };
 ```
 
-`constant` is either the complete static count or the additive count for a
-dynamic source. `SameAsAllocated` avoids duplicating count metadata when both
-extents use the same source.
+Every count uses the same affine form:
+
+```text
+count = multiplier * field_value + addend
+```
+
+A static count `c` uses `multiplier = 0` and `addend = c`; no field is read.
+A dynamic SMI, integer, or auxiliary count normally uses `multiplier = 1` and
+the existing additional count as `addend`. There is no separate constant source
+or constant-field encoding. The compact formula is eight bytes. Evaluation
+checks that the resolved count fits the descriptor system's `uint32_t` object
+span limit before returning `NativeLayoutInfo`.
 
 The inline common query performs one `NativeLayoutId`-indexed table lookup,
 loads only the selected count fields, and applies straight-line arithmetic:
 
 ```cpp
-allocated_size = extent.base_size +
-                 extent.element_size * evaluate(allocated_count, obj);
-initialized_size = extent.base_size +
-                   extent.element_size * evaluate(initialized_count, obj);
+allocated_size = extent.base_size + extent.element_size *
+                 read(extent.allocated_field, obj);
+initialized_size = extent.base_size + extent.element_size *
+                   read(extent.initialized_field, obj);
 strong_value_count = evaluate(strong_span.count, obj);
 ```
 
@@ -258,10 +272,18 @@ Knowing both extents does not make an object safe to copy. The space containing
 the object determines whether the collector evacuates it. A moving space admits
 only layouts compatible with bulk discard, as described below.
 
-Allocated and initialized extents share `base_size` and `element_size`, but may
-read different count fields. A capacity-backed object normally uses capacity
-for `allocated_count` and logical size for `initialized_count`. An object that
-initializes its complete capacity uses `SameAsAllocated`.
+Allocated and initialized extents share one byte formula:
+
+```text
+extent = base_size + element_size * field_value
+```
+
+They may read different fields. A capacity-backed object normally uses capacity
+for `allocated_field` and logical size for `initialized_field`. An object that
+initializes its complete capacity uses the same field for both. A static extent
+uses `base_size = sizeof(T)` and `element_size = 0`, so neither field is read. A
+layout whose allocated and initialized extents do not share the same base and
+element sizes uses the rare custom query.
 
 ### Extent Source Invariant
 
@@ -399,7 +421,7 @@ policy is not stored in the object or native-layout descriptor.
 
 ### Refactor Sequence
 
-1. Introduce `NativeLayoutInfo`, count-source and extent formulas, and one
+1. Introduce `NativeLayoutInfo`, affine count and extent formulas, and one
    `NativeLayoutDescriptor` table.
 2. Generate static LUT entries from the existing declaration macros.
 3. Convert SMI-count and auxiliary-count layouts to formula entries without
