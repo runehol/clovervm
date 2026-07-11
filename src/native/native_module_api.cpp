@@ -5,6 +5,7 @@
 #include "builtin_types/unicode.h"
 #include "object_model/native_function.h"
 #include "object_model/typed_value.h"
+#include "runtime/runtime_helpers.h"
 #include "runtime/thread_state.h"
 #include "runtime/virtual_machine.h"
 #include <string_view>
@@ -27,7 +28,7 @@ namespace cl
             if(builder != nullptr && builder->thread != nullptr)
             {
                 (void)builder->thread->set_pending_builtin_exception_string(
-                    L"ImportError", interned_string(builder->thread, message));
+                    L"ImportError", string_value(builder->thread, message));
             }
             return CLOVER_STATUS_ERROR;
         }
@@ -82,7 +83,7 @@ namespace cl
                 return std::nullopt;
             }
             return Optional<TValue<String>>::some(
-                interned_string(builder->thread, *decoded_docstring));
+                string_value(builder->thread, *decoded_docstring));
         }
 
         bool valid_builder(clover_native_module_builder *builder)

@@ -114,17 +114,15 @@ namespace cl
     TValue<Exception> make_exception_object(TValue<ClassObject> type,
                                             const wchar_t *message)
     {
-        return make_exception_object(type, interned_string(message));
+        return make_exception_object(type, string_value(message));
     }
 
     TValue<Exception> make_exception_object(ThreadState *thread,
                                             TValue<ClassObject> type,
                                             const wchar_t *message)
     {
-        return make_exception_object(
-            thread, type,
-            thread->get_machine()->get_or_create_interned_string_value(
-                message));
+        return make_exception_object(thread, type,
+                                     string_value(thread, message));
     }
 
     TValue<StopIterationObject>

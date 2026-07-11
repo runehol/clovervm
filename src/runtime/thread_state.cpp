@@ -325,8 +325,7 @@ namespace cl
     Value ThreadState::set_pending_exception_string(TValue<ClassObject> type,
                                                     const wchar_t *message)
     {
-        return set_pending_exception_string(
-            type, machine->get_or_create_interned_string_value(message));
+        return set_pending_exception_string(type, string_value(this, message));
     }
 
     Value ThreadState::set_pending_exception_none(TValue<ClassObject> type)
@@ -347,8 +346,8 @@ namespace cl
     ThreadState::set_pending_builtin_exception_string(const wchar_t *type_name,
                                                       const wchar_t *message)
     {
-        return set_pending_builtin_exception_string(type_name,
-                                                    interned_string(message));
+        return set_pending_builtin_exception_string(
+            type_name, string_value(this, message));
     }
 
     Value

@@ -100,8 +100,8 @@ TEST(NativeModuleBuild, ImportingNativeExtensionPopulatesModuleGlobals)
     Optional<TValue<String>> answer_func_docstring =
         assume_convert_to<Function>(answer_func)->docstring.value();
     ASSERT_TRUE(answer_func_docstring.has_value());
-    EXPECT_EQ(context.vm().get_or_create_interned_string_value(L"Return 42."),
-              answer_func_docstring.value());
+    EXPECT_EQ(L"Return 42.",
+              std::wstring(string_as_wchar_t(answer_func_docstring.value())));
     EXPECT_EQ(Value::from_smi(42),
               context.thread()->call_clovervm_function(
                   TValue<Function>::from_value_assumed(answer_func)));

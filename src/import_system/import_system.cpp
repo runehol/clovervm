@@ -19,6 +19,7 @@
 #include "object_model/slot_dict.h"
 #include "runtime/exception_object.h"
 #include "runtime/exception_propagation.h"
+#include "runtime/runtime_helpers.h"
 #include "runtime/thread_state.h"
 #include "runtime/virtual_machine.h"
 #include <vector>
@@ -96,7 +97,7 @@ namespace cl
             message += module_name;
             message += L"'";
             return thread->set_pending_builtin_exception_string(
-                L"ModuleNotFoundError", interned_string(thread, message));
+                L"ModuleNotFoundError", string_value(thread, message));
         }
 
         Value get_cached_module(ThreadState *thread, TValue<String> name)
@@ -125,7 +126,7 @@ namespace cl
             message += parent_name;
             message += L"' is not a package";
             return thread->set_pending_builtin_exception_string(
-                L"ModuleNotFoundError", interned_string(thread, message));
+                L"ModuleNotFoundError", string_value(thread, message));
         }
 
         Value set_module_load_failed(ThreadState *thread,
@@ -135,7 +136,7 @@ namespace cl
             message += module_name;
             message += L"'";
             return thread->set_pending_builtin_exception_string(
-                L"ImportError", interned_string(thread, message));
+                L"ImportError", string_value(thread, message));
         }
 
         Value set_cannot_import_name(ThreadState *thread, Value module,
@@ -164,7 +165,7 @@ namespace cl
             }
             message += L"'";
             return thread->set_pending_builtin_exception_string(
-                L"ImportError", interned_string(thread, message));
+                L"ImportError", string_value(thread, message));
         }
 
         std::wstring module_name_for_message(Value module)
@@ -210,7 +211,7 @@ namespace cl
             message +=
                 string_to_wstring(thread->class_of_value(item)->get_name());
             return thread->set_pending_builtin_exception_string(
-                L"TypeError", interned_string(thread, message));
+                L"TypeError", string_value(thread, message));
         }
 
         bool string_starts_with_underscore(TValue<String> name)

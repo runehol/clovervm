@@ -7,6 +7,7 @@
 #include "import_system/module_finder.h"
 #include "native/native_module_api_internal.h"
 #include "native/native_module_loader_internal.h"
+#include "runtime/runtime_helpers.h"
 #include "runtime/thread_state.h"
 #include "runtime/virtual_machine.h"
 #include <string>
@@ -15,18 +16,11 @@ namespace cl
 {
     namespace
     {
-        TValue<String> interned_string(ThreadState *thread,
-                                       const std::wstring &text)
-        {
-            return thread->get_machine()->get_or_create_interned_string_value(
-                text);
-        }
-
         Value set_native_import_error(ThreadState *thread,
                                       const std::wstring &message)
         {
             return thread->set_pending_builtin_exception_string(
-                L"ImportError", interned_string(thread, message));
+                L"ImportError", string_value(thread, message));
         }
 
         Value native_init_symbol_name(ThreadState *thread,
@@ -129,7 +123,7 @@ namespace cl
             message += spec.name;
             message += L"'";
             return thread->set_pending_builtin_exception_string(
-                L"SystemError", interned_string(thread, message));
+                L"SystemError", string_value(thread, message));
         }
     }  // namespace
 
