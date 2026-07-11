@@ -41,7 +41,7 @@ namespace cl
         uint32_t slab_pin_count() const { return n_slab_pins; }
 
         char *start() const { return start_ptr; }
-        char *end() const { return end_ptr; }
+        char *end() const { return start_ptr + slab_size; }
         char *first_object_slot() const { return first_object_header; }
 
         void mark_valid_object(HeapObject *obj);
@@ -109,7 +109,7 @@ namespace cl
                     char *header = first_object_header +
                                    bit_idx * ValidObjectBitmapGranule;
                     assert(header >= start_ptr);
-                    assert(header < end_ptr);
+                    assert(header < allocation_end_ptr);
                     fn(reinterpret_cast<HeapObject *>(header));
                     word &= word - 1;
                 }
@@ -118,7 +118,9 @@ namespace cl
 
         char *allocate(size_t n_bytes)
         {
-            if(curr_ptr + n_bytes > end_ptr)
+            size_t remaining =
+                static_cast<size_t>(allocation_end_ptr - curr_ptr);
+            if(unlikely(n_bytes > remaining))
             {
                 return nullptr;
             }
@@ -136,7 +138,7 @@ namespace cl
             assert(first_object_header != nullptr);
             char *object_header = reinterpret_cast<char *>(obj);
             assert(object_header >= first_object_header);
-            assert(object_header < end_ptr);
+            assert(object_header < allocation_end_ptr);
             uintptr_t delta =
                 static_cast<uintptr_t>(object_header - first_object_header);
             assert(delta % ValidObjectBitmapGranule == 0);
@@ -147,7 +149,7 @@ namespace cl
 
         char *start_ptr;
         char *curr_ptr;
-        char *end_ptr;
+        char *allocation_end_ptr;
         char *first_object_header;
         size_t slab_size;
         std::array<uint64_t, ValidObjectBitmapWords> valid_object_bitmap = {};
@@ -158,7 +160,7 @@ namespace cl
     {
         assert(obj != nullptr);
         assert(reinterpret_cast<char *>(obj) >= start_ptr);
-        assert(reinterpret_cast<char *>(obj) < end_ptr);
+        assert(reinterpret_cast<char *>(obj) < allocation_end_ptr);
 
         size_t bit_idx = valid_object_bit_index(obj);
         uint64_t mask = uint64_t(1) << (bit_idx % 64);

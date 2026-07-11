@@ -19,7 +19,10 @@ namespace cl
         assert(reinterpret_cast<uintptr_t>(start_ptr) % SlabLookupGranuleSize ==
                0);
         curr_ptr = start_ptr + offset;
-        end_ptr = start_ptr + slab_size;
+        char *mapping_end = start_ptr + slab_size;
+        size_t usable_bytes = static_cast<size_t>(mapping_end - curr_ptr);
+        usable_bytes -= usable_bytes % value_ptr_granularity;
+        allocation_end_ptr = curr_ptr + usable_bytes;
         first_object_header = curr_ptr;
     }
 

@@ -938,11 +938,12 @@ unwrap helper, initializing outputs before validation, and preventing
 ### CVR-001: Slab allocation advances beyond its mapped extent
 
 - Severity: P2
-- Status: open
+- Status: resolved
 - Review unit: R1
 - Found at: `c289490`
-- Affected code: `src/memory/slab_allocator.h:119`
-- Affected tests: none
+- Affected code: `src/memory/slab_allocator.h`,
+  `src/memory/slab_allocator.cpp`, `src/memory/global_heap.cpp`
+- Affected tests: `tests/test_heap.cpp`
 
 Invariant or semantic rule:
 
@@ -993,12 +994,19 @@ count. Add ordinary-end and non-aligned dedicated-allocation regression tests.
 
 Verification:
 
-The finding is established by allocator arithmetic and reachable slab layouts.
-No fix has been implemented or verified yet.
+Added direct coverage for exact aligned exhaustion, rejection of an incomplete
+tail slot, and `SIZE_MAX`, plus a non-aligned dedicated-allocation test. The
+focused allocator tests pass, and `ninja -C build-debug all check` passes with
+1,243 tests in 36 suites and one disabled test. Release assembly retains one
+failure branch before the existing rounding and cursor update. Targeted release
+benchmarks for class instantiation and memory reclamation showed no regression
+against the pre-change baseline.
 
 Disposition:
 
-Open pending authorization to implement the focused allocator fix and tests.
+Resolved by precomputing the complete-slot allocation boundary for each slab,
+checking the request against remaining allocatable bytes before rounding, and
+sizing dedicated slabs for the rounded payload extent.
 
 ### CVR-003: Re-raising an exception creates a self context
 

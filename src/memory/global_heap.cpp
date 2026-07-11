@@ -163,9 +163,13 @@ namespace cl
 
     HeapAllocation GlobalHeap::allocate_large_object(size_t n_bytes)
     {
-        size_t required_slab_size =
-            n_bytes + value_ptr_granularity -
-            offset;  // make sure we have space for the pointer offset
+        size_t padding = (size_t(0) - n_bytes) & (value_ptr_granularity - 1);
+        size_t aligned_size = n_bytes + padding;
+        if(unlikely(aligned_size < n_bytes || aligned_size > SIZE_MAX - offset))
+        {
+            fatal("large allocation size overflow");
+        }
+        size_t required_slab_size = offset + aligned_size;
         SlabAllocator *single_allocator = make_new_slab(required_slab_size);
         char *memory = single_allocator->allocate(n_bytes);
         assert(memory != nullptr);

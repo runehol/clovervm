@@ -49,6 +49,17 @@ namespace
 
 }  // namespace
 
+TEST(SlabAllocator, UsesOnlyCompleteAlignedSlots)
+{
+    SlabAllocator slab(value_refcounted_ptr_tag, 64);
+
+    EXPECT_NE(nullptr, slab.allocate(value_ptr_granularity));
+    EXPECT_EQ(nullptr, slab.allocate(1));
+
+    SlabAllocator overflow_slab(value_refcounted_ptr_tag, 64);
+    EXPECT_EQ(nullptr, overflow_slab.allocate(SIZE_MAX));
+}
+
 TEST(GlobalHeap, SlabMapFindsAllocatedAddresses)
 {
     GlobalHeap heap = GlobalHeap::refcounted_heap();
@@ -157,6 +168,20 @@ TEST(GlobalHeap, DedicatedLargeRawAllocationHasEpochPin)
     EXPECT_EQ(2u, local_heap.epoch_slab_count());
     EXPECT_EQ(LargeAllocationSize,
               local_heap.dedicated_large_bytes_since_reclamation_count());
+}
+
+TEST(GlobalHeap, NonAlignedDedicatedAllocationReservesRoundedExtent)
+{
+    GlobalHeap heap = GlobalHeap::refcounted_heap();
+    ThreadLocalHeap local_heap(&heap);
+    size_t allocation_size = LargeAllocationSize + 8;
+
+    char *memory = local_heap.allocate(allocation_size).memory;
+    SlabAllocator *slab = heap.slab_for_address_unlocked(memory);
+    size_t rounded_size = (allocation_size + value_ptr_granularity - 1) &
+                          ~(value_ptr_granularity - 1);
+
+    EXPECT_GE(static_cast<size_t>(slab->end() - memory), rounded_size);
 }
 
 TEST(GlobalHeap, DedicatedLargeAbandonedAllocationReleasesAfterEpochFinish)
