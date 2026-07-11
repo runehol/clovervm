@@ -1,6 +1,7 @@
 #ifndef CL_NATIVE_LAYOUT_REGISTRY_H
 #define CL_NATIVE_LAYOUT_REGISTRY_H
 
+#include "api/extension_handle.h"
 #include "builtin_types/bigint.h"
 #include "builtin_types/dict.h"
 #include "builtin_types/dict_view.h"
@@ -17,7 +18,6 @@
 #include "builtin_types/tuple_iterator.h"
 #include "bytecode/code_object.h"
 #include "compiler/scope.h"
-#include "native/native_handle.h"
 #include "object_model/class_object.h"
 #include "object_model/function.h"
 #include "object_model/instance.h"

@@ -1,3 +1,4 @@
+#include "api/extension_handle.h"
 #include "builtin_types/bigint.h"
 #include "builtin_types/dict.h"
 #include "builtin_types/float.h"
@@ -10,7 +11,6 @@
 #include "builtin_types/tuple_iterator.h"
 #include "compiler/scope.h"
 #include "memory/native_layout_descriptor.h"
-#include "native/native_handle.h"
 #include "object_model/class_object.h"
 #include "object_model/function.h"
 #include "object_model/instance.h"

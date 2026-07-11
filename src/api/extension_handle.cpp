@@ -1,4 +1,4 @@
-#include "native/native_handle.h"
+#include "api/extension_handle.h"
 
 #include "runtime/thread_state.h"
 

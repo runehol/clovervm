@@ -1,9 +1,9 @@
 #include "object_model/native_function.h"
 
+#include "api/extension_handle.h"
 #include "builtin_types/module_object.h"
 #include "builtin_types/tuple.h"
 #include "bytecode/code_object_builder.h"
-#include "native/native_handle.h"
 #include "object_model/attribute_descriptor.h"
 #include "object_model/class_object.h"
 #include "runtime/thread_state.h"

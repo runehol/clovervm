@@ -1,5 +1,6 @@
-#include "native/native_module_api_internal.h"
+#include "api/native_module_api_internal.h"
 
+#include "api/extension_handle.h"
 #include "builtin_types/module_object.h"
 #include "builtin_types/str.h"
 #include "builtin_types/unicode.h"

@@ -1,5 +1,6 @@
 #include "runtime/interpreter.h"
 
+#include "api/extension_handle.h"
 #include "builtin_types/dict.h"
 #include "builtin_types/float.h"
 #include "builtin_types/hash.h"
@@ -12,7 +13,6 @@
 #include "bytecode/code_object_print.h"
 #include "import_system/import_system.h"
 #include "import_system/module_global.h"
-#include "native/native_module_api_internal.h"
 #include "object_model/attr.h"
 #include "object_model/class_object.h"
 #include "object_model/function.h"

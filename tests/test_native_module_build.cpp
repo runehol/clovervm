@@ -1,3 +1,4 @@
+#include "api/extension_handle.h"
 #include "build_config.h"
 #include "builtin_types/dict.h"
 #include "builtin_types/float.h"
@@ -7,7 +8,6 @@
 #include "builtin_types/tuple.h"
 #include "import_system/import_system.h"
 #include "import_system/module_finder.h"
-#include "native/native_handle.h"
 #include "object_model/function.h"
 #include "runtime/exception_object.h"
 #include "runtime/thread_state.h"

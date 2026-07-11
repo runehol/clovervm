@@ -52,6 +52,10 @@ add_library(libclovervm_objects OBJECT
     builtin_types/ellipsis_type.cpp
     builtin_types/ellipsis_type.h
     api/extension_api.cpp
+    api/extension_handle.cpp
+    api/extension_handle.h
+    api/native_module_api.cpp
+    api/native_module_api_internal.h
     runtime/exception_handling.h
     runtime/exception_object.cpp
     runtime/exception_object.h
@@ -128,10 +132,6 @@ add_library(libclovervm_objects OBJECT
     builtin_types/module_spec_object.cpp
     builtin_types/module_spec_object.h
     import_system/module_global_cache.h
-    native/native_module_api.cpp
-    native/native_module_api_internal.h
-    native/native_handle.cpp
-    native/native_handle.h
     native/native_module_loader.cpp
     native/native_module_loader.h
     native/native_module_loader_internal.h

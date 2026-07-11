@@ -1,4 +1,4 @@
-#include "native/native_module_api_internal.h"
+#include "api/extension_handle.h"
 
 #include "builtin_types/dict.h"
 #include "builtin_types/float.h"

@@ -1,5 +1,5 @@
-#ifndef CL_NATIVE_HANDLE_H
-#define CL_NATIVE_HANDLE_H
+#ifndef CL_EXTENSION_HANDLE_H
+#define CL_EXTENSION_HANDLE_H
 
 #include "object_model/refcount.h"
 #include "object_model/value.h"
@@ -180,4 +180,4 @@ namespace cl
     };
 }  // namespace cl
 
-#endif  // CL_NATIVE_HANDLE_H
+#endif  // CL_EXTENSION_HANDLE_H
