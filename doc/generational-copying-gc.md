@@ -615,12 +615,16 @@ per-native-call handle storage.
 
 ## CloverVM C API Handles
 
-The CloverVM C API needs handles because native C stack/register state is not
-precisely scannable as managed `Value` storage. In a moving collector,
-`clover_handle` should be an opaque C representation of a pointer to a rooted
-`Value` slot rather than contain raw `Value` bits. Internally, a transitory
-handle is a `Value *`. The collector updates the `Value` in that slot when its
-target moves; the handle pointer itself remains unchanged.
+The compile-time-switchable representation and storage design is specified in
+[Switchable Indirect Native Handles](indirect-native-handles.md). The public
+`clover_handle` remains an opaque machine word in both modes.
+
+With indirect handles enabled, a handle is internally a pointer to a rooted
+`Value` slot. Incoming arguments use their existing managed frame slots. Values
+created through the C API use fixed storage in that frame and then stable,
+managed `HandleChunk` objects linked through the final cell of each chunk. The
+collector updates the slot when its target moves; the handle pointer itself
+remains unchanged.
 
 There are two expected handle lifetimes:
 
@@ -629,64 +633,9 @@ There are two expected handle lifetimes:
 - `clover_persistent_handle` objects explicitly retained by native code and
   released later.
 
-Both storage classes contain a managed `Value` slot that the collector can scan
-and update when movable objects are copied. The difference is ownership and
-lifetime, not the external handle concept.
-
-Incoming arguments already occupy stable `Value` slots in the managed native
-thunk frame on the Clover stack. Their transitory handles point directly at
-those existing argument slots; the thunk does not copy or materialize arguments
-into separate handle storage.
-
-The same managed frame reserves a fixed-size inline API-storage chunk for
-handles created by C API operations. The final reserved cell in that chunk is
-frame metadata: it contains an encoded pointer to the first overflow chunk, not
-a managed `Value`.
-
-If the inline chunk fills, the handle frame allocates fixed-size overflow chunks
-from native non-moving storage. Each overflow chunk contains more `Value` slots
-and an encoded link to the next chunk. The chunks form a singly linked list and
-are released together when the native call returns. The active `clover_context`
-identifies the frame's existing argument-slot range and tracks the current API
-allocation chunk and its next free slot. Producing a handle for an argument is
-therefore just taking that argument slot's address; producing a handle for a C
-API result normally requires only a bump to the next API-storage slot. Overflow
-allocation is amortized across a chunk rather than performed once per handle.
-
-Conceptually:
-
-```text
-VM Value[] args
-  -> managed native thunk frame on the Clover stack
-       existing argument Value slots
-         handle(argN) -> &argument_slot[N]
-       inline API-storage chunk
-         [C API result Value slots]
-         [encoded first-overflow pointer]
-       overflow chunk -> overflow chunk -> ...
-         [more Value slots]
-         [encoded next pointer]
-       pass opaque Value-slot pointers to native code
-       GC scans and updates occupied Value slots
-       resolve the returned handle through its Value slot
-       free overflow chunks on return
-```
-
-Handles created inside native code use the reserved API storage, while incoming
-argument handles continue to denote their original argument slots. For example,
-`clover_list_new(ctx)` claims the next free API-storage slot in the active frame,
-stores the newly created list `Value` there, and returns that slot's address as
-an opaque `clover_handle`. An operation that may safepoint must ensure its result
-becomes rooted in the reserved slot before any later safepoint; allocating
-another handle slot must never leave the result live only in an unregistered
-native local.
-
-Argument slots remain ordinary managed-frame roots. Precise API-storage scanning
-visits occupied inline and overflow slots as mutable `Value` roots and treats
-each encoded link cell as frame or chunk metadata. Unused slots are initialized
-to `Value::not_present()` or are excluded by the chunk's occupied count. The
-scanner must not conservatively interpret an encoded overflow link as a managed
-value.
+Both transitory and persistent storage contain managed `Value` slots that the
+collector can scan and update when movable objects are copied. The difference is
+ownership and lifetime, not the external handle concept.
 
 Transitory handles are valid only for the active API entry that produced or
 received them. `clover_persistent_handle` objects are created by an explicit
@@ -697,7 +646,7 @@ allocations, or callbacks until released.
 be a distinct opaque C type from `clover_handle`:
 
 ```c
-typedef struct clover_handle clover_handle;
+typedef uintptr_t clover_handle;
 typedef struct clover_persistent_handle clover_persistent_handle;
 ```
 
@@ -705,9 +654,9 @@ The expected API shape is:
 
 ```c
 clover_persistent_handle *clover_handle_retain(clover_context *ctx,
-                                               clover_handle *handle);
+                                               clover_handle handle);
 void clover_persistent_handle_release(clover_persistent_handle *handle);
-clover_handle *clover_persistent_handle_get(
+clover_handle clover_persistent_handle_get(
     clover_context *ctx, clover_persistent_handle *handle);
 ```
 
@@ -735,7 +684,7 @@ old call stack when the value originated from a `clover_persistent_handle`.
 ```text
 clover_handle
   -> rooted Value slot
-       storage -> managed native frame or native overflow chunk
+       storage -> managed native frame or stable managed HandleChunk
        value -> movable VM object or immediate Value
        lifetime -> active native call
 ```
@@ -749,10 +698,10 @@ clover_* API(ctx, handle)
   read or update *slot
 ```
 
-Validation should prove that a transitory handle points to an argument slot in
-the active managed frame, an occupied inline API-storage slot, or an occupied
-slot in one of its overflow chunks before dereferencing it. A transitory handle
-used after its context has returned should fail validation. A
+Validation should prove that an indirect handle points to an argument slot in
+the active managed frame, an occupied fixed frame API-storage slot, or an
+occupied slot in a live `HandleChunk` before dereferencing it. An indirect
+handle used after its context has returned should fail validation. A
 `clover_persistent_handle` remains valid until
 `clover_persistent_handle_release` is called.
 

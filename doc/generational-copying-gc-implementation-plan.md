@@ -10,37 +10,52 @@ Limited API surface. The first steps should therefore make the existing native
 boundary compatible with movable objects before adding compatibility layers that
 no current caller uses.
 
-## Stage 1: Clover Native API Transitory Handles
+## Stage 1: Switchable Clover Native API Indirect Handles
 
 Refactor the existing Clover native API boundary before moving ordinary VM
-objects.
+objects. The authoritative storage and switching design is in
+[Switchable Indirect Native Handles](indirect-native-handles.md).
 
-- Make `clover_handle` an opaque handle to VM-managed storage rather than a raw
-  `Value` copy. Internally, a transitory handle is a `Value *` to a rooted slot.
+- Keep `clover_handle` an opaque machine word and add the compile-time
+  `native_handle_detail::cl_indirect_handles` switch. Keep the representation
+  helpers inline in an internal header so direct mode compiles down to the
+  current raw `Value` conversion without context, allocation, or validation
+  overhead. In indirect mode the handle is internally a `Value *` to a rooted
+  slot.
 - Point incoming argument handles directly at their existing stable `Value`
   slots in the managed native thunk frame; do not copy or materialize arguments
   into separate handle storage.
 - Reserve the first fixed-size API-storage chunk in that managed frame for
-  handles created by C API operations. Use its final cell as an encoded pointer
-  to overflow storage rather than as a scannable handle slot.
-- Add fixed-size native/non-moving overflow chunks as a singly linked list. Each
-  chunk holds managed `Value` slots plus an encoded next-chunk link, and all
-  overflow chunks are released when the native call returns.
-- Make `clover_context` identify the active frame's argument-slot range and track
-  the current API allocation chunk and next free slot.
+  handles created by C API operations. Use its final cell as the managed link to
+  overflow storage rather than as an allocatable handle slot.
+- Add fixed-size, stable `HandleChunk` heap objects as a singly linked list.
+  Every cell is initialized to `not_present`; the final cell is the managed link
+  to the next chunk, and the layout descriptor scans and updates every cell.
+- Give `clover_context` the shared `handle_chunk_next` and `handle_chunk_end`
+  allocation pointers. They address either fixed frame storage or the current
+  overflow chunk; add a boolean selecting frame versus overflow refcount store
+  policy. The managed link chain, not the context, retains the chunks.
 - Convert extension-call thunks to pass pointers to existing argument slots and
   resolve returned handles through the active frame or its overflow chain.
-- Route C API helper validation through handle-frame lookup instead of raw
-  `Value` bit decoding. Validation must accept only occupied slots in the active
-  argument range, occupied inline API storage, or overflow chain before
-  dereferencing a handle.
-- Keep argument slots in ordinary managed-frame root scanning. Precisely scan
-  occupied inline and overflow API-storage slots as mutable roots while excluding
-  encoded chunk-link cells and unused capacity.
-- Make C API constructors and other value-producing helpers claim a frame slot
-  for their result; they must not leave a newly created value live only in an
-  unregistered native local across a later safepoint.
+- Treat a valid active `clover_context *` and valid opaque handles as C API
+  preconditions. Handle-source validation is not part of the first design.
+- Keep argument slots and fixed API storage in ordinary managed-frame root
+  scanning. Scan and update every `HandleChunk` cell through its layout
+  descriptor; unused cells contain `not_present`, and the final cell is the
+  managed next-chunk link.
+- Publish managed-frame boundaries that keep the entire fixed API-storage region
+  and link cell live throughout native execution and nested managed re-entry.
+- Store a produced value into the final allocatable cell before eagerly
+  allocating and publishing the next overflow chunk, so the value is rooted if
+  allocation reaches a safepoint.
+- Preserve deferred-refcount ownership explicitly: frame handle slots do not
+  retain values, while overflow value and link cells retain on store and release
+  through the `HandleChunk` layout descriptor.
 - Keep module-builder values rooted while the module initializer runs.
+- Give native module initialization an RAII Clover-stack root region below the
+  current published frontier. Initialize the context's fixed handle chunk from
+  that region, publish it for both GC scanning and nested managed-entry
+  allocation, and restore the previous frontier on exit.
 - Ensure C API helpers resolve handles before storing managed values into VM
   objects.
 
@@ -51,11 +66,10 @@ the lifetime authority while the native boundary stops exposing raw movable
 The stage is complete when tests prove argument handles alias the original
 managed argument slots, and cover handles returned by C API constructors,
 transition to one and multiple overflow chunks, scanning and updating slots in
-every chunk, invalid or expired handle rejection, cleanup on normal and
-exceptional return, and nested native-to-managed calls while the outer handle
-frame remains active.
+every chunk, cleanup on normal and exceptional return, and nested
+native-to-managed calls while the outer handle frame remains active.
 
-`clover_persistent_handle` is a separate follow-up after transitory handles are
+`clover_persistent_handle` is a separate follow-up after indirect handles are
 working. It is needed for native state that intentionally outlives one API entry,
 but it should not be bundled into the first handle-frame patch unless an existing
 native-module use requires cross-entry retention.
