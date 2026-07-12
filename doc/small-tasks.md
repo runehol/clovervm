@@ -53,23 +53,28 @@ existing out-of-range or unsupported-value behavior.
 
 ### Construct builtin objects without per-type `__new__`
 
-Add a standard allocation path for builtin classes whose native layout already
-defines how to create an empty instance, without requiring every such class to
-publish a type-specific `__new__`. Use builtin exceptions as the first slice so
-calls such as `ValueError()` and `ValueError("message")` construct objects that
-can subsequently be raised.
+Add a standard allocation path for builtin classes whose construction policy is
+already settled, without requiring every such class to publish a type-specific
+`__new__`. Use builtin exceptions as the first slice so calls such as
+`ValueError()` and `ValueError("message")` construct objects that can
+subsequently be raised.
 
-Before implementation, pin down the eligibility guard using the existing class
-and native-layout metadata: which builtin classes may use standard allocation,
-how constructor arguments are initialized, and how an inherited or overridden
-`__new__` takes precedence. Do not add a fallback that guesses how to allocate
-arbitrary builtin layouts.
+Before implementation, pin down the eligibility guard and internal allocation
+contract: which builtin classes may use standard allocation, how constructor
+arguments are initialized, and how an inherited or overridden `__new__` takes
+precedence. `NativeLayoutId` describes how to interpret an object that already
+exists; it is not by itself an allocation recipe. Do not add a fallback that
+guesses how to allocate arbitrary builtin layouts.
 
 The exception slice is done when interpreter tests cover zero and one argument,
 raising a constructed exception, its Python-visible arguments/message state,
 invalid argument counts, exception subclasses, and precedence for an explicit
 `__new__`. If the eligibility rule needs new public metadata or changes the
 general class-call protocol, settle that design before implementation.
+Native-subtype storage, extension-type allocation, and copying-GC extent
+metadata remain related design questions recorded in
+[Native Subtype Storage](native-subtype-storage.md); this task must not settle
+them accidentally.
 
 ### Non-starred unpacking assignment
 
