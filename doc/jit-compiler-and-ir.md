@@ -247,9 +247,12 @@ Bytecode operations are then expanded into smaller semantic operations. For
 example, an `AddBytecode` becomes its required shape and validity guards plus an
 `SmiAdd`, recognized trusted operation, generic trusted call, or Python call.
 
-This level owns proof-producing guards, common proof elimination, effect-aware
-code motion, and other high-level optimizations. Bytecode frame states remain
-attached to deoptimizing operations.
+This level owns proof-producing guards, realization of demanded type partitions
+as control flow, common proof elimination, effect-aware code motion, and other
+high-level optimizations. Bytecode frame states remain attached to deoptimizing
+operations. Guard IR carries the same semantic type facts and partition
+identities as Semantic IR; lowering does not translate them into a second type
+system.
 
 ### Machine IR
 
@@ -277,7 +280,7 @@ This is required for:
 - IC specialization with multiple cases;
 - arithmetic overflow and other deoptimization exits;
 - inlining a callee CFG;
-- out-of-line trusted, Python-call, or materialization paths;
+- out-of-line trusted, Python-call, or reification paths;
 - future compiled exception handling;
 - machine slow paths, stubs, and target-specific branches.
 
@@ -337,14 +340,16 @@ A successful guard establishes a fact only in regions where:
 - the guard dominates the use;
 - no intervening operation invalidates the kind of fact established.
 
-At control-flow merges, incoming facts are intersected. A fact remains known
-only if it is established on every incoming path and remains valid along each
-path.
+At control-flow merges, possible-value sets are joined by union. Predicate-style
+facts are retained only when every incoming path establishes them and they
+remain valid along every path. Thus an exact incoming `SMI` and an exact incoming
+`Float` produce the guaranteed union `SMI | Float`, while a predicate unrelated
+to that union survives only if both paths prove it.
 
-The IR must distinguish probable facts from proven facts. Profile or IC
-information may motivate a guard, but it cannot be consumed as proof until the
-guard succeeds. Once established, the proven fact is available to dominated
-uses under the applicable invalidation rules.
+The IR must distinguish likely facts from guaranteed facts. Profile or IC
+information may motivate a guard, but it cannot be consumed as a guaranteed
+fact until the guard succeeds. Once established, the guaranteed fact is
+available to dominated uses under the applicable invalidation rules.
 
 ### Preserve semantic value identity
 
@@ -373,9 +378,267 @@ Mov r2, r3     r3          -> %v1
 
 All of these bytecode locations refer to the same semantic value `%v1`.
 
+### SSA construction and value facts
+
+Function arguments are semantic SSA definitions at function entry:
+
+```text
+%arg0 = Parameter 0
+%arg1 = Parameter 1
+```
+
+Their initial machine locations are canonical argument slots, but their semantic
+definitions do not begin at the first load. Machine lowering may load an argument
+early for an entry guard or delay the load until its first use. Inlining replaces
+callee parameter uses directly with caller argument SSA values.
+
+During Semantic IR construction, the compiler maintains an environment mapping
+the accumulator and bytecode registers to SSA values. At a CFG join, a register
+or accumulator with different incoming values receives a block argument or phi
+value. SSA construction should be pruned so only interpreter locations live at
+the block entry require merges.
+
+Types and shapes describe SSA values, not bytecode slots. An instruction kind
+declares how facts about its operands produce inherent facts about its result:
+
+```text
+infer_result(operation, operand facts) -> ValueFacts
+```
+
+Examples include:
+
+```text
+ConstantSmi  -> exact SMI
+ConstantNone -> exact None
+CreateTuple  -> exact tuple shape
+```
+
+A minimal initial fact lattice may be limited to:
+
+```text
+Bottom                  # unreachable or no possible value
+ExactConstant(Value)
+ShapeSet{ShapeKey, ...}
+Unknown
+```
+
+`ExactShape(ShapeKey)` is the singleton `ShapeSet` case. Joining different exact
+shapes produces their union rather than immediately yielding `Unknown`; a
+bounded implementation may widen an excessively large set to `Unknown`.
+Joining an unreachable input with a reachable fact yields the reachable fact.
+Integer ranges, truthiness, callable targets, and other domains may be added
+later.
+
+Inherent facts are valid everywhere the defining SSA value is available.
+Flow-sensitive refinements live in block or edge fact environments. The same SSA
+value may be unknown before a branch and known to be an SMI on one outgoing
+edge. At control-flow joins, possible-value types are joined; equivalently,
+predicate-style facts survive only when every incoming path establishes them.
+
+Semantic IR type propagation is a forward abstract interpretation using a block
+worklist. Instruction transfer functions update facts, branches refine outgoing
+states, and successor states are joined until a fixed point is reached. The
+initial bounded lattice has small height and should stabilize without special
+loop widening.
+
+Inline-cache feedback is a guarded hypothesis, not an inherent fact. A
+compilation-local specialization plan records:
+
+```text
+required predicates
+selected successful action
+facts true on the successful compiled continuation
+```
+
+Semantic IR may propagate successful-continuation facts only while retaining
+the guard obligations that justify them. Lowering to Guard IR emits the required
+checks and turns their success into explicit proof values. Facts supplied by a
+producer, such as the SMI result of `ConstantSmi`, require no runtime guard.
+
+### Likely and guaranteed type evidence
+
+The following design for polymorphic evidence and conditional facts is
+plausible, but remains tentative. Its complexity and concrete representation
+need further evaluation before implementation.
+
+Likely and guaranteed evidence use the same `ValueFacts` lattice. They differ
+in epistemic status, not in the kinds of facts they can express:
+
+```text
+TypeEvidence {
+    guaranteed: ValueFacts
+    likely: ValueFacts
+}
+```
+
+A guaranteed union is exhaustive. If a value has guaranteed facts
+`SMI | Float`, it cannot have another shape on that continuation. A likely union
+identifies profitable cases but does not exclude other runtime shapes. Likely
+evidence may select a specialization and create guard obligations; only
+guaranteed evidence may justify a specialized operation without a new guard.
+No numeric confidence is implied or required.
+
+Likely evidence needs provenance, such as a particular inline cache or caller
+specialization context. Propagation must not amplify evidence by cycling it
+through SSA uses, phis, or recursive inlining. More-specific caller evidence may
+replace less-specific aggregate callee feedback, but any selected semantic
+action must still be confirmed by the trusted resolver rather than inferred
+from shapes alone.
+
+### Polymorphic specialization and type partitions
+
+A polymorphic inline cache can describe correlated alternatives that cannot be
+represented by independent facts on its operands. For example, an addition may
+have observed:
+
+```text
+case 0: (Float, Float) -> FloatAdd        -> result Float
+case 1: (Float, SMI)   -> FloatAddWithSMI -> result Float
+```
+
+Flattening this to `lhs: Float` and `rhs: Float | SMI` loses the association
+between the operand combination, selected semantic action, and result facts.
+A compile-local specialization plan should therefore retain a finite set of
+correlated cases:
+
+```text
+SpecializationCase {
+    operand predicates
+    semantic action
+    successful-continuation facts
+    evidence provenance
+}
+```
+
+These cases form a **type partition**: an abstract branch recorded by the shared
+Semantic/Guard type analysis without introducing Semantic IR control flow. A
+partition may provide both unconditional joined facts and facts conditional on
+one of its named cases:
+
+```text
+partition P:
+    case P.float:
+        a: Float
+        b: Float
+        result: Float
+
+    case P.smi:
+        a: SMI
+        b: SMI
+        result: SMI
+
+unconditional:
+    a: Float | SMI
+    b: Float | SMI
+    result: Float | SMI
+```
+
+Existing program control flow produces the same abstraction. If two leaves of
+an `if` define several values, the phis at their join have individually joined
+types but share one predecessor partition:
+
+```text
+then:
+    a1: SMI
+    b1: Float
+
+else:
+    a2: Float
+    b2: SMI
+
+join:
+    a = phi(a1, a2)       # guaranteed SMI | Float
+    b = phi(b1, b2)       # guaranteed Float | SMI
+
+partition P:
+    P.then: a is SMI,   b is Float
+    P.else: a is Float, b is SMI
+```
+
+Independent unions appear to permit four combinations, but the shared
+partition retains the two environments that can actually occur. One later
+split can therefore refine all coordinated phis together. Because this
+partition came from existing CFG edges, Guard IR may realize a type-sensitive
+consumer by duplicating it onto those predecessor edges without emitting new
+type checks. A partition originating in a polymorphic IC instead requires Guard
+IR to emit the checks that choose a successful case.
+
+This preserves relational information such as "if `a` is Float under
+`P.float`, then `b` is also Float" even though Semantic IR contains only one
+physical instruction stream. Semantic type inference may propagate facts
+conditional on a named partition case. The initial design should restrict these
+conditions to finite cases originating in structures the compiler already
+understands, such as polymorphic IC entries, existing CFG edges, and inlined
+call-site specializations. It should not attempt to discover or solve arbitrary
+logical implications.
+
+IC observations alone do not make the joined result type globally guaranteed.
+For a speculative partition, the joined result becomes guaranteed only on the
+successful compiled continuation after Guard IR has checked that one of the
+supported cases applies; unmatched cases deoptimize. A genuinely exhaustive
+guaranteed partition may use elimination: after proving that a two-case value is
+not in one case, the other case is known without a second runtime test.
+
+Guard IR alone decides whether to realize an abstract type partition as actual
+control flow. This decision is driven by consumers rather than by the mere
+existence of a union:
+
+- A union-transparent consumer, such as storing a tagged `Value` into a list,
+  accepts the union directly and creates no branch.
+- A type-specialized consumer, such as arithmetic requiring different integer
+  and floating-point instructions, may request a split.
+- Guard lowering emits the checks and bailout edges, creates proofs for each
+  successful arm, and makes that case's conditional facts guaranteed within the
+  arm.
+- The arms may merge immediately after one operation, or Guard IR may duplicate
+  a larger region when several nearby consumers benefit from the same exact
+  facts.
+
+Code duplication is therefore a profitability decision with an explicit
+growth budget, not an automatic consequence of a guaranteed union. If a
+partition is never demanded by a type-sensitive consumer, it remains type
+metadata and never becomes runtime control flow.
+
+### One type system across Semantic and Guard IR
+
+Semantic IR and Guard IR share `ValueFacts`, `TypeEvidence`, type-partition
+identities, and their join and refinement rules. The physical split belongs to
+the IR, not to a separate Guard-only type system:
+
+```text
+Semantic IR:
+    guaranteed and likely facts
+    latent type partitions
+    guard obligations
+
+Guard IR:
+    the same guaranteed and likely facts
+    latent or CFG-realized type partitions
+    explicit guards and proof values
+```
+
+When Guard IR realizes a partition, it refines the same facts along concrete
+CFG edges. A value that is unconditionally `SMI | Float` may become `SMI` in one
+arm and `Float` in another. Transformations that create branches, clone regions,
+or rebuild the CFG must rerun or incrementally update this shared analysis.
+This is continued propagation in the same lattice, not a second inference
+system.
+
+Proof values record why Guard IR may rely on a fact at a particular use; they do
+not introduce a second notion of type. Machine IR has a different concern:
+physical representation classes such as tagged `Value`, `Float64`, address, and
+condition code. Python-level facts may remain attached as lowering and recovery
+metadata, but Machine IR should not define another Python type lattice.
+
+The concrete representation and propagation algorithm for type partitions is
+still open. In particular, the design must bound nested or intersecting
+partitions without losing soundness or causing combinatorial code growth.
+
 ### Proof values
 
-A guard produces an SSA proof value rather than a narrowed runtime value:
+Proof values are introduced when Semantic IR is lowered to Guard IR; they are
+not part of the parsed Semantic IR. A guard produces an SSA proof value rather
+than a narrowed runtime value:
 
 ```text
 %lhs_is_smi = ShapeKeyCheck %lhs, Smi
@@ -429,7 +692,7 @@ crossed work may safely be replayed.
 Proof values are erased before machine lowering. They constrain transformations
 but consume no machine registers and emit no code beyond the guards that remain.
 
-### Logical and materialized frame state
+### Logical and synchronized frame state
 
 Canonical bytecode slots are properties of logical frames, not properties of
 SSA values. The same SSA value may inhabit several registers, the accumulator,
@@ -458,7 +721,7 @@ The compiler should distinguish:
 logical frame state:
     the SSA value each interpreter-visible location currently denotes
 
-materialized frame state:
+synchronized frame state:
     the value currently committed to each canonical memory slot
 ```
 
@@ -601,13 +864,15 @@ function is globally polymorphic but one call site supplies well-known types.
 Bytecode-to-IR construction should therefore accept an incoming abstract state:
 
 ```text
-bytecode register -> SSA value + proven facts
+bytecode register -> SSA value + available facts + guard obligations
 ```
 
 When a callee is inlined, its parameter registers bind directly to the caller's
-argument SSA values. Proven caller facts become entry facts for the inlined
-callee. Callee guards that are redundant under those facts may be removed,
-provided their shape-stability and effect constraints are satisfied.
+argument SSA values. Caller facts and their provenance become entry information
+for the inlined callee. Guard obligations remain attached until Guard IR makes
+them explicit. Callee guard requirements that are redundant under inherent or
+already-available facts may be removed, provided their shape-stability and
+effect constraints are satisfied.
 
 These facts belong to a compilation and inline context, not to the `CodeObject`
 globally. The same bytecode may be compiled standalone or inlined under several
@@ -620,7 +885,7 @@ resolution mechanism used by the runtime.
 
 ### Deoptimizing inlined code
 
-A bailout inside an inlined callee may need to materialize more than one
+A bailout inside an inlined callee may need to reconstruct more than one
 bytecode frame. Once the inlined callee has performed effects, the caller's call
 opcode generally cannot be retried.
 
@@ -628,7 +893,26 @@ Deoptimization state is therefore logically a stack of bytecode frames. Each
 inlined instance needs recoverable identities for its `CodeObject`, bytecode PC,
 accumulator, and canonical registers. The design should prefer stable homes and
 per-inline-instance layout over arbitrary per-exit interpreter maps, but the
-exact materialization scheme remains open.
+exact frame-reconstruction scheme remains open.
+
+## Location and Recovery Terminology
+
+Use distinct terms for operations that are easily conflated:
+
+- **load** or **cache**: move a value from a canonical frame slot into a machine
+  register;
+- **spill**: move a machine-register value into a machine spill slot;
+- **frame synchronization**: write current interpreter-visible values into
+  their canonical frame slots;
+- **frame reconstruction**: create interpreter frames during deoptimization,
+  including logical frames introduced by inlining;
+- **boxing** or **reification**: create a concrete heap object for a virtual
+  semantic value;
+- **root publication**: expose synchronized frames and the accumulator to the
+  safepoint machinery.
+
+`Materialization` should not be used as the precise name for these distinct
+operations.
 
 ## Value Representation
 
@@ -651,6 +935,20 @@ The IR should nevertheless keep semantic value identity separate from physical
 representation so later representation selection is possible. It must not
 assume that one SSA value corresponds to exactly one canonical bytecode slot.
 
+Lowering is also not required to map one semantic SSA value to exactly one
+machine virtual register. A semantic value may have several simultaneously
+available machine representations:
+
+```text
+semantic %v
+    -> %v.boxed : Value
+    -> %v.f64   : Float64
+```
+
+Machine liveness and residency remain separate from semantic definition and
+liveness. An argument exists semantically at function entry while remaining in
+its canonical slot until a guard or other use makes loading it profitable.
+
 ## Future Unboxed Floats
 
 Unboxed floats are an advanced optimization, not an initial requirement. The
@@ -659,19 +957,19 @@ design must leave room for two different cases:
 1. An unboxed cache of an existing boxed float. The original box remains the
    canonical value and preserves identity; deoptimization discards the cache.
 2. A new unboxed result produced by arithmetic. It represents a virtual Python
-   float object and must be materialized into a new box when required by
+   float object and must be reified into a new box when required by
    deoptimization, escape, or an identity-sensitive operation.
 
-A virtual float result has a materialization identity as well as a numeric
+A virtual float result has a semantic identity as well as a numeric
 value. If one virtual result is present in multiple bytecode slots or inlined
-frames, materialization must allocate one box and place that same `Value` in
+frames, reification must allocate one box and place that same `Value` in
 every location. Independently boxing each occurrence would break Python `is`
 semantics.
 
-For this design, materialization allocation may be treated as infallible. The
+For this design, reification allocation may be treated as infallible. The
 runtime is expected to request a reclamation safepoint before memory exhaustion.
 
-No unboxed-float nodes, representation selection, or materialization machinery
+No unboxed-float nodes, representation selection, or reification machinery
 need to be implemented in the first JIT. The initial IR must only avoid making
 them impossible to add.
 
@@ -682,7 +980,7 @@ require canonical bytecode frames and PCs even without a failed speculative
 guard.
 
 A plausible initial policy is to treat activation of such facilities as a
-deoptimization request, returning execution to fully materialized interpreter
+deoptimization request, returning execution to fully reconstructed interpreter
 frames. This policy has not yet been selected as a firm design requirement.
 
 ## Deliberately Open Questions
@@ -696,10 +994,12 @@ The following have not yet been designed or agreed:
 - the exact side-exit and canonical-slot synchronization mechanism;
 - how machine locations are recovered without large arbitrary maps at every
   deoptimization point;
-- the physical layout used to materialize nested inlined frames;
+- the physical layout used to reconstruct nested inlined frames;
 - the stable-shape classification mechanism;
 - compilation, invalidation, and lifetime rules for code derived from changing
   inline-cache contents;
+- the concrete representation, propagation limits, and profitability policy for
+  tentative Semantic IR type partitions;
 - normal compiled-return dispatch through the compiled-PC frame slot;
 - general compiled exception handling and cross-frame compiled unwinding;
 - the exact observability and tracing policy;
