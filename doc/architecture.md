@@ -227,6 +227,7 @@ pending-exception/sentinel protocol as interpreter native thunks.
 
 Detailed docs:
 
+- [JIT Compiler and IR](jit-compiler-and-ir.md)
 - [Optimization Ideas](optimization-ideas.md)
 - [Exception Transport And Protocols](exception-transport-and-protocols.md),
   especially "JIT Direction"
