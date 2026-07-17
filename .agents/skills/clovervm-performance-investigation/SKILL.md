@@ -1,6 +1,6 @@
 ---
 name: clovervm-performance-investigation
-description: Investigate, benchmark, or review clovervm performance changes. Use when a request involves interpreter hot paths, inline caches, dispatch overhead, call overhead, object layout, allocation cost, shape lookup, benchmark comparisons, profiling, regressions, or checking that hot opcode handlers still satisfy release-build frame and musttail constraints.
+description: Measure, profile, benchmark, or review an implemented clovervm change for performance. Use when a request asks for a performance investigation, before-and-after comparison, profile, regression analysis, or validation of hot-path frame and musttail constraints. Do not use for speculative architecture, design, or documentation work merely because it mentions inline caches, JIT compilation, dispatch, object layout, or another performance-sensitive mechanism.
 ---
 
 # clovervm Performance Investigation
