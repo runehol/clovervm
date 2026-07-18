@@ -1,18 +1,18 @@
 # Engineering with Coding Agents
 
-This document records working principles for developing clovervm as a small,
-high-capability software team working with coding agents. It describes practices
-that appear to become more valuable as implementation capacity increases. These
-are not claims that every task should use the same process; they are defaults to
-test and refine through the project.
+This document records working principles for developing clovervm as a small
+software team working with coding agents. It describes practices that appear to
+become more valuable as implementation capacity increases. These are not claims
+that every task should use the same process; they are defaults to test and
+refine through the project.
 
 ## Operating Model
 
 Coding agents make producing code, documentation, tests, and alternative
-designs much cheaper. They do not make those outputs correct. The central
-engineering model is therefore:
+designs much cheaper. They do not make those outputs correct. A useful operating
+model is:
 
-> Put probabilistic proposal inside a system of explicit constraints,
+> Surround probabilistic proposals with explicit constraints,
 > deterministic consistency checks, independent evidence, and accountable
 > judgment.
 
@@ -25,18 +25,6 @@ mechanical details. The human grants authority and remains accountable for
 accepted outcomes. The repository supplies durable shared memory. Measurements,
 independent evidence, and deterministic tools arbitrate claims that should not
 be settled by confidence or taste.
-
-The effective team is:
-
-```text
-human taste, priorities, final judgment, authority, and accountability
-            +
-agent exploration, alternatives, critique, and implementation bandwidth
-            +
-repository memory and deterministic consistency checks
-            +
-independent evidence and empirical measurement
-```
 
 Determinism provides consistency, not correctness. A checker reliably enforces
 only the properties it encodes, and a test can consistently assert the wrong
@@ -58,10 +46,8 @@ typing capacity toward:
 - reviewing integration across subsystems;
 - maintaining a coherent architectural model.
 
-Good engineering practices become leverage rather than administrative
-overhead. The objective is not to slow production to the former rate. It is to
-increase trustworthy validation capacity to match the expanded implementation
-capacity.
+As implementation gets cheaper, good engineering practices become leverage.
+Validation capacity must grow alongside implementation capacity.
 
 ## Move Taste and Judgment Earlier
 
@@ -108,14 +94,14 @@ where the team discovers what the change was supposed to mean.
 
 Small teams have an advantage when the person directing the agent also carries
 the architectural model and can correct course during generation. Larger teams
-can obtain the same leverage only if they invest in clear ownership, early
-design gates, shared context, and deterministic checks. The objective is not to
-generate code faster than judgment can support it.
+need clear ownership, early design gates, shared context, and deterministic
+checks to obtain the same leverage. In either case, code generation must stay
+within the team's capacity for judgment.
 
 ## Durable Architectural Memory
 
-Design documents are shared external memory, not merely plans written before
-coding. They should:
+Design documents serve as shared external memory as well as plans for
+implementation. They should:
 
 - preserve decisions across human and agent context boundaries;
 - state the layer that owns a behavior;
@@ -179,13 +165,13 @@ human or agent notices a bug pattern
     -> make the invalid state difficult or impossible to represent
 ```
 
-The strongest general rule is:
+A useful rule is:
 
 > Convert recurring review lessons into the cheapest reliable structural check
 > when that check costs less than continuing manual review.
 
-The best response may be a representation that excludes the invalid state, a
-smaller API, or a clearer ownership boundary rather than another test or
+Often, the right response is a representation that excludes the invalid state,
+a smaller API, or a clearer ownership boundary rather than another test or
 analyser. Checks have runtime, maintenance, false-positive, and attention costs;
 a growing stream of noisy output is not effective verification.
 
@@ -304,9 +290,8 @@ reviewed against project experience. Periodically ask:
 - which design documents or decision-log entries have become stale;
 - whether commits remain small enough to review causally.
 
-The objective is not to optimize a process dashboard. It is to notice when the
-current bottleneck or failure mode has moved and adjust the engineering system
-accordingly.
+Use these questions to notice when the current bottleneck or failure mode has
+moved, then adjust the engineering system accordingly.
 
 ## Working Principles
 
@@ -329,5 +314,5 @@ accordingly.
 - Revisit these principles as the project reveals where collaboration with
   coding agents actually succeeds or fails.
 
-The objective is not maximal output. It is to expand the scale of software that
-a very small team can understand, validate, and sustain.
+Success means expanding the scale of software that a very small team can
+understand, validate, and sustain.
