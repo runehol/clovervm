@@ -36,8 +36,9 @@ incomplete form of the Semantic pipeline.
 The following choices are design guardrails rather than tentative suggestions:
 
 - bytecode is the canonical execution and recovery model;
-- the generic runtime consumes canonical interpreter frame state, not optimized
-  register state or compiled stack maps;
+- every safepoint provides precise root discovery through a supported frame
+  scanning policy;
+- interpreter resumption always receives exact canonical bytecode frame state;
 - interpreted and compiled Python calls initially share the existing managed
   calling convention;
 - inline caches drive specialization, and misses return to the interpreter;
@@ -61,8 +62,12 @@ Use distinct terms for operations that are easily conflated:
   canonical backing region; active inlined frames do not require this;
 - **boxing** or **reification**: create a heap object for a virtual semantic
   value;
-- **root publication**: expose synchronized frames and the accumulator to
-  reclamation machinery.
+- **root publication**: expose roots to reclamation machinery; the initial
+  policy does this by synchronizing canonical frames and the accumulator;
+- **safepoint map**: metadata identifying the current machine locations of
+  managed roots at one compiled safepoint;
+- **deoptimization translation**: metadata mapping optimized locations,
+  constants, and recipes to complete logical interpreter frame state.
 
 `Materialization` is too ambiguous to be the precise name for these operations.
 
@@ -88,23 +93,54 @@ At such an exit, the JIT must recover the interpreter-visible state at the
 appropriate bytecode position. Designs that make bytecode state expensive or
 impossible to reconstruct are out of scope.
 
-### Runtime invariant: canonical frame publication
+### Runtime invariant: precise discovery and exact recovery
 
-The interpreter, garbage collector, and runtime side of deoptimization consume
-only canonical interpreter frame state. Compiled code may temporarily cache
-newer interpreter-visible values in machine registers, but before any operation
-that may reclaim memory, it synchronizes every dirty canonical frame home in
-the complete active logical frame chain and publishes the innermost active
-accumulator through `ThreadState`. Before transferring execution back to the
-interpreter, the JIT exit machinery also finalizes bytecode PCs and other frame
-metadata and reifies any virtual values required by those frames.
+At every safepoint, all managed roots in every active interpreted and compiled
+frame are precisely discoverable through a supported frame-scanning policy.
+Before execution transfers from compiled code to the interpreter, every
+interpreter-visible value, accumulator, bytecode PC, and structural frame field
+is reconstructed in canonical bytecode frame form. Reification produces each
+required virtual object once per semantic identity.
+
+This is the permanent runtime contract. It does not require optimized values to
+occupy canonical homes at all times. Canonical publication and precise compiled
+stack maps are alternative implementations of root discovery; generated
+recovery code and an interpreted deoptimization translation are alternative
+implementations of exact interpreter reconstruction.
+
+The two choices are related but independent:
+
+```text
+safepoint root discovery:
+    CanonicalPublished | PreciseStackMap
+
+deoptimization recovery:
+    GeneratedRecovery | InterpretedTranslation
+```
+
+Safepoint maps need describe only managed roots. Deoptimization translations
+must describe all interpreter-visible values, including non-roots, constants,
+inlined logical frames, and future reification recipes. They should share
+location encodings and frame-state construction without being forced into one
+metadata format.
+
+### Initial implementation policy: canonical frame publication
+
+The initial interpreter, garbage collector, and runtime side of deoptimization
+consume only canonical interpreter frame state. Compiled code may temporarily
+cache newer interpreter-visible values in machine registers, but before any
+operation that may reclaim memory, it synchronizes every dirty canonical frame
+home in the complete active logical frame chain and publishes the innermost
+active accumulator through `ThreadState`. Before transferring execution back to
+the interpreter, initial JIT exit machinery also finalizes bytecode PCs and
+other frame metadata and reifies any virtual values required by those frames.
 
 Once publication or interpreter handoff begins, every interpreter-visible root
 is therefore available through canonical frames and `ThreadState`. The generic
-runtime never scans optimized register state and does not require compiled-frame
-stack maps. JIT-generated publication and exit machinery may know how optimized
-locations correspond to logical frame state; that knowledge does not escape
-into the collector or interpreter.
+runtime does not initially scan optimized register state or require
+compiled-frame stack maps. JIT-generated publication and exit machinery knows
+how optimized locations correspond to logical frame state, but the collector
+does not yet consume that knowledge.
 
 Immediate consequences include:
 
@@ -122,8 +158,38 @@ Immediate consequences include:
   because compiler metadata could reconstruct them later.
 
 Treating a tripped safepoint as a deoptimization boundary is an intentional
-initial simplification. Compiled-frame scanning can be considered later only if
-measurements justify replacing this invariant.
+initial simplification. It is an implementation policy rather than a permanent
+restriction on compiled-frame scanning.
+
+### Staged path to precise compiled-frame maps
+
+The initial compiler still constructs declarative post-allocation safepoint and
+deoptimization state before lowering it into publication and recovery code.
+This preserves a migration path without making the collector depend on new
+metadata immediately:
+
+1. **Canonical publication only.** Generated publication and recovery remain
+   authoritative; the existing collector and stack walker are unchanged.
+2. **Shadow safepoint maps.** Serialize maps while continuing to publish. A
+   debug stack walker compares roots found through maps with roots exposed by
+   canonical frames, but publication remains authoritative.
+3. **Generic deoptimization.** A common entry saves machine registers and
+   interprets deoptimization translations. Reclamation remains forbidden until
+   the saved state or reconstructed frames are safely scannable, so this step
+   need not first change ordinary GC stack walking.
+4. **Opt-in precise scanning.** Selected compiled frames use safepoint maps and
+   omit continuing publication. The stack walker dispatches by frame scanning
+   mode, allowing mapped and canonically published frames to coexist.
+5. **Revisit canonical backing.** Only after mapped frames are established do
+   we reconsider whether every inlined logical frame needs permanent canonical
+   backing storage.
+
+The initial frame and code layout must not obstruct this path. Compiled frames
+have an unambiguous kind and walkable structural layout; compiled PCs resolve to
+their code objects and safepoint IDs; and backends report actual root and value
+locations after allocation. A future walker must also recover callee-saved
+register state correctly through mixed interpreted, compiled, and native frame
+chains.
 
 ### Interpreter-visible state
 
@@ -194,9 +260,10 @@ the outer frame pointer and branches to its caller continuation.
 Compiled-to-compiled performance should initially come from inlining rather
 than a second fast-entry ABI.
 
-Native and C++ calls remain a separate ABI boundary. State must be published
-before any native call that may allocate, reclaim, call Python, or otherwise
-require managed roots.
+Native and C++ calls remain a separate ABI boundary. Under the initial policy,
+state must be published before any native call that may allocate, reclaim, call
+Python, or otherwise require managed roots. A future mapped frame instead needs
+a precise safepoint entry for such a call.
 
 A real Python call can also be the successful action of any overloaded
 operator IC. Publication before such a call is continuing fast-path code, not a
@@ -232,7 +299,8 @@ without measurements.
 Trusted native calls have a related but firmer distinction. A semantic
 descriptor certified `NoSafepoint`, `NoReclaim`, and `NoCallPython` requires only
 native ABI call-clobber handling; it does not publish canonical state. Unknown
-or safepoint-capable trusted calls remain conservative publication boundaries.
+or safepoint-capable trusted calls remain conservative safepoint boundaries and
+use the active root-discovery policy.
 
 ### Exceptions and observability
 
@@ -355,7 +423,8 @@ This representation fits clovervm because:
 - guards have bytecode locations and bailout frame states;
 - effectful operations create commit boundaries;
 - shape and validity facts have control- and effect-bounded lifetimes;
-- calls and safepoints require canonical publication;
+- calls and safepoints require explicit root-discovery state and, under the
+  initial policy, canonical publication;
 - moving an instruction changes what is live at a deoptimization point;
 - generic Python arithmetic may call overloaded methods, making source order a
   useful conservative default.
@@ -412,6 +481,8 @@ optional backend-defined MachineNodeId, MachineValueId, MachineBlockId,
 
 PartitionId
 FrameStateId
+SafepointStateId
+DeoptStateId
 InlineFrameId
 ResumeStateId
 RecoveryPlanId
@@ -1019,9 +1090,10 @@ contract, the pass constructs a replacement node of that operation kind.
 Effect implications are centralized. `MayCallPython`, for example, implies
 broad heap access, possible shape mutation, validity invalidation, raising, and
 safepoint behavior. Unless the call has been eliminated by inlining or replaced
-by a certified no-safepoint entry, it also requires continuing canonical
-publication before the call. An omitted effect is a correctness bug, not merely
-a missed optimization.
+by a certified no-safepoint entry, it also requires the active safepoint policy:
+continuing canonical publication initially, or a precise compiled safepoint map
+later. An omitted effect is a correctness bug, not merely a missed
+optimization.
 
 ### Shape facts
 
@@ -1101,6 +1173,37 @@ consume no registers and emit no code beyond remaining guards.
 
 ## Backend Lowering and Value Representation
 
+### Declarative safepoint and deoptimization state
+
+After locations have been assigned, every compiled safepoint and deoptimization
+exit has an immutable declarative description independent of how the initial
+runtime consumes it:
+
+```text
+SafepointState {
+    safepoint ID and compiled PC
+    frame scanning mode
+    managed root -> register | spill | canonical slot
+}
+
+DeoptState {
+    resume state
+    active logical frame chain
+    interpreter-visible value -> register | spill | canonical slot
+                                 | constant | reification recipe
+}
+```
+
+The initial backend lowers `SafepointState` into continuing publication code
+and lowers `DeoptState` into generated cold recovery plans. A future mapped
+backend serializes the first for the compiled-frame stack walker and the second
+for a generic deoptimizer. Location assignment, logical frame construction, and
+Guard IR do not change merely because the consumer changes.
+
+Compiled code and its metadata remain alive as one code object. Safepoint lookup
+from a compiled PC is deterministic, and a call safepoint can be identified
+from the compiled caller return PC while walking a suspended callee chain.
+
 ### Generated side exits and recovery plans
 
 Guard IR retains an explicit non-returning `DeoptExit(FrameStateId)` until the
@@ -1129,9 +1232,11 @@ backing regions and do not require allocation or layout reconstruction. Machine
 liveness at the exit includes the transitive closure of values required by the
 plan.
 
-These tables are compiler inputs to generated cold code, not runtime stack maps.
-After the generated sequence publishes canonical state, the generic runtime
-does not inspect optimized locations.
+Under the initial policy these tables are compiler inputs to generated cold
+code, not runtime stack maps. After the generated sequence publishes canonical
+state, the initial generic runtime does not inspect optimized locations. Their
+declarative form is deliberately suitable for later serialization as
+deoptimization translations.
 
 Side-exit code is factored into three levels:
 
@@ -1179,12 +1284,14 @@ constants, and reaching the final dispatcher. The initial AArch64 backend
 reserves this register globally; avoiding that reservation is not worth adding
 complexity to cold exits on a register-rich target.
 
-### Continuing multi-frame call publication
+### Initial continuing multi-frame call publication
 
-Safepointing Python calls use the same logical-versus-synchronized frame
-analysis as side exits, but not the same non-returning code shape. A
-call-publication plan covers every active logical frame, including outer frames
-whose slots remain dirty while execution is inside an inlined callee.
+Under the initial safepoint policy, Python calls use the same
+logical-versus-synchronized frame analysis as side exits, but not the same
+non-returning code shape. A call-publication plan covers every active logical
+frame, including outer frames whose slots remain dirty while execution is
+inside an inlined callee. A future precise-map call site retains the declarative
+root state but omits these continuing synchronization instructions.
 
 For example, if `B` is inlined into `A` and calls a non-inlined `C`, the active
 chain before the call is `A -> B`. Publication synchronizes dirty homes in both
@@ -1344,7 +1451,7 @@ A polymorphic addition illustrates the complete flow:
 7. Failed pre-effect checks return to the original `Add`; overflow or committed
    exits use the appropriate bytecode state.
 8. The target backend selects tagged or future unboxed representations and
-   assigns locations while preserving canonical publication requirements.
+   assigns locations while preserving the active safepoint and recovery policy.
 9. Post-allocation exit expansion interns the required recovery plans, emits
    resume-state stubs and shared synchronization blocks, and tails them into the
    common interpreter handoff.
@@ -1387,9 +1494,14 @@ A polymorphic addition illustrates the complete flow:
 ### Deoptimization and execution boundaries
 
 - whether publication at every potentially safepointing Python call is
-  affordable in practice, or whether the JIT eventually needs runtime
-  stack/register maps, a fixed root-register convention, or broader certified
-  no-safepoint entries;
+  affordable in practice and what measurements should trigger opt-in precise
+  stack-map scanning;
+- compiled frame-kind, PC lookup, unwind, and callee-saved-register recovery
+  contracts needed by a mixed-frame stack walker;
+- concrete encodings and validation strategy for shadow safepoint maps and
+  deoptimization translations;
+- whether a fixed root-register convention or broader certified no-safepoint
+  entries remain useful alongside precise maps;
 - how often inlining actually removes small hot Python call boundaries, and how
   many dirty managed values remain live at the calls it does not remove;
 - exact encoding of post-allocation machine locations, rematerialization, and
@@ -1408,6 +1520,6 @@ A polymorphic addition illustrates the complete flow:
 
 These questions must be answered without weakening bytecode compatibility. If
 semantic inference is implemented, Semantic and Guard IR must share one type
-system rather than acquire competing notions of Python type. Any future
-replacement for canonical frame publication must provide equally explicit and
-verifiable root-discovery and interpreter-recovery guarantees.
+system rather than acquire competing notions of Python type. Every safepoint
+policy must provide explicit and verifiable root discovery, and every
+deoptimization policy must reconstruct the same canonical interpreter state.
