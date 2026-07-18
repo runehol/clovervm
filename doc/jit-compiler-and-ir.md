@@ -1551,6 +1551,17 @@ continuing canonical publication initially, or a precise compiled safepoint map
 later. An omitted effect is a correctness bug, not merely a missed
 optimization.
 
+As a possible future optimization for generational GC, Core IR may distinguish
+establishing remembered-set coverage for an object from renewing that coverage
+after a possible collection. `EnsureRememberedIfOld` is idempotent within one
+GC epoch, so dominated instances for the same object identity can be removed.
+After a safepoint, previously established coverage can be renewed immediately
+and guarded by a shared runtime epoch comparison: when no collection occurred,
+all renewals are skipped; when the epoch changed, they execute before later
+barrier-free stores. First-time establishment remains unconditional, and shape
+transitions that produce new SSA receiver values must preserve the underlying
+object identity for this analysis.
+
 ### Shape facts
 
 Shape facts have different lifetimes.
