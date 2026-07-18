@@ -1,5 +1,15 @@
 # JIT Compiler and IR
 
+| Field | Value |
+|---|---|
+| Document type | Design |
+| Status | Proposed |
+| Implementation | Not started |
+| Scope | JIT pipeline, compiler IRs, specialization, recovery, safepoints, backend lowering, and compiled-frame policy |
+| Owning layers | The JIT owns IR and compiled execution; bytecode, runtime frames, object semantics, and reclamation remain authoritative contracts |
+| Validated against | `518630e` (2026-07-18) |
+| Supersedes | N/A |
+
 This document records the current assumptions, constraints, and design
 guardrails for a future clovervm JIT compiler. It is not an implementation plan
 or a complete IR specification. Its purpose is to keep compiled execution

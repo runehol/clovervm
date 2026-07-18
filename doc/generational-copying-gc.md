@@ -1,5 +1,15 @@
 # Generational Copying GC Design Notes
 
+| Field | Value |
+|---|---|
+| Document type | Design |
+| Status | Proposed |
+| Implementation | Not started |
+| Scope | Generational moving collection, root and slot rewriting, stable native objects, and native API compatibility |
+| Owning layers | The memory manager owns collection; object layouts, root publication, and native APIs provide trace/update boundaries |
+| Validated against | `ad0a158` (2026-07-18) |
+| Supersedes | Earlier non-moving generational mark-sweep direction |
+
 This document sketches an alternative garbage-collection direction for CloverVM:
 a generational, moving collector that copies ordinary VM objects and handles
 native API boundaries through explicit handles or stable wrappers.

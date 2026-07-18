@@ -1,5 +1,15 @@
 # Generational Copying GC Implementation Plan
 
+| Field | Value |
+|---|---|
+| Document type | Implementation plan |
+| Status | Proposed |
+| Implementation | Partial |
+| Scope | Staged migration from deferred refcounting to the proposed generational moving collector |
+| Owning layers | The memory manager owns collector staging; runtime roots, native handles, object layouts, and heap stores supply required migration boundaries |
+| Validated against | `85845ae` (2026-07-11) |
+| Supersedes | N/A |
+
 This document describes staging for the collector direction in
 [Generational Copying GC Design Notes](generational-copying-gc.md). It is an
 implementation plan, not a second collector design.
