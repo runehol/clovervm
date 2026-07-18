@@ -166,10 +166,10 @@ implementation details are not automatically required semantics.
 
 ## Failure Modes of High-Throughput Development
 
-**Plausibility cascades.** A shaky premise can quickly produce a coherent
-design, implementation, tests, and documentation. Substantial mainline code
-requires design clarity proportional to its blast radius; a working
-implementation does not establish that its architecture is sound.
+**Plausibility cascades.** Agents can carry a shaky premise coherently through
+design, code, tests, and documentation without the unease that often makes a
+human implementer stop and question it. Working code therefore does not
+establish sound architecture.
 
 **Prototype sedimentation.** Exploratory code can become permanent because it
 already exists. A successful experiment still requires an explicit adoption
@@ -181,7 +181,7 @@ drift visible.
 
 **Guardrail accretion.** Agents readily answer each finding with another focused
 test or checker. Periodically consolidate or remove overly specific guardrails
-that no longer earn their cost.
+that no longer earn their keep.
 
 ## Inspect the Engineering Process
 
