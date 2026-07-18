@@ -1,36 +1,19 @@
 # Engineering with Coding Agents
 
-This document records working principles for a small team developing software
-with coding agents. They are defaults to test and refine through the project,
-not a process required for every task.
+Coding agents change what limits a small software team. Code, tests,
+documentation, and design alternatives become much cheaper; architectural
+judgment, validation, and integration remain scarce. This document describes a
+process for turning that extra implementation capacity into software the team
+can understand, verify, and sustain.
 
-## Operating Model
-
-Coding agents make producing code, documentation, tests, and alternative
-designs much cheaper. They do not make those outputs correct. A useful operating
-model is:
-
-> Surround probabilistic proposals with explicit constraints, deterministic
-> consistency checks, independent evidence, and accountable judgment.
-
-The human supplies architectural taste and final judgment, priorities,
-historical context, and the decision about which complexity is worth accepting.
-The agent contributes to judgment by exploring alternatives, tracing
-consequences, and challenging assumptions; it also supplies implementation
-bandwidth, consistency checks, and the ability to carry decisions through many
-mechanical details. The human grants authority and remains accountable for
-accepted outcomes. The repository supplies durable shared memory. Measurements,
-independent evidence, and deterministic tools arbitrate claims that should not
-be settled by confidence or taste.
-
-Determinism provides consistency, not correctness. A checker enforces only the
-properties it encodes, and a test can consistently assert the wrong behavior.
-Correctness depends on adequate specifications, independent oracles, sound
-models, and evidence that the encoded constraints cover the claim being made.
-
-As implementation gets cheaper, validation, architectural judgment, and
-integration become the scarce resources. Validation capacity must grow
-alongside implementation capacity.
+The human supplies architectural taste, priorities, and historical context,
+chooses direction and acceptable complexity, grants authority, and remains
+accountable for accepted outcomes. The agent widens the search and contributes
+to judgment by exploring alternatives, tracing consequences, and challenging
+assumptions, while expanding the team's capacity to carry decisions through
+implementation. The repository supplies durable shared memory.
+Independent evidence and deterministic tools keep both honest by arbitrating
+claims that confidence or taste alone cannot settle.
 
 ## Keep Judgment in the Loop
 
@@ -141,7 +124,7 @@ architectural documents should use the
 ## Build a Validation System
 
 The engineering system, rather than the agent's reasoning alone, provides
-repeatable consistency checking. Its layers include:
+repeatable consistency checking. The validation system includes:
 
 - types, ownership rules, verifiers, and constrained representations that make
   invalid states difficult to express;
@@ -151,6 +134,11 @@ repeatable consistency checking. Its layers include:
   discover interactions outside anticipated examples;
 - builds, sanitizers, static analysis, and benchmarks that check integration,
   safety, performance, and code size.
+
+Determinism provides consistency, not correctness. A checker enforces only the
+properties it encodes, and a test can consistently assert the wrong behavior.
+Correctness depends on adequate specifications, independent oracles, sound
+models, and evidence that the encoded constraints cover the claim being made.
 
 A recurring review finding may reveal a missing guardrail. Convert it into the
 cheapest reliable structural check when that costs less than continuing manual
