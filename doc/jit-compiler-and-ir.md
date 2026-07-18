@@ -6,16 +6,32 @@ or a complete IR specification. Its purpose is to keep compiled execution
 compatible with the existing bytecode, object model, inline caches, calling
 convention, and reclamation machinery.
 
-The design currently has three principal IR levels:
+The mandatory compiler pipeline has one principal compiler IR:
 
 ```text
-Semantic IR -> Guard IR -> Machine IR
+encoded bytecode + IC snapshots -> Guard IR -> target backend -> machine code
 ```
 
-All three are ordered, list-based SSA control-flow graphs. Semantic IR preserves
-atomic bytecode semantics and performs inference and inlining. Guard IR makes
-speculative checks, effects, and proof dependencies explicit. Machine IR owns
-target representation, register allocation, and encoding.
+Guard IR makes speculative checks, effects, proof dependencies, and control
+flow explicit in an ordered, list-based SSA CFG. A target backend assigns
+physical locations and emits machine code. It may lower through a separate
+Machine IR when that representation pays for itself, but Machine IR is not a
+mandatory whole-function phase.
+
+Semantic IR is an optional optimization frontend, not a prerequisite for
+compiled execution:
+
+```text
+encoded bytecode + IC snapshots -> Semantic IR -> Guard IR
+    -> target backend -> machine code
+```
+
+It preserves atomic bytecode semantics so that type inference,
+caller-context-sensitive inlining, polymorphic reasoning, and other
+higher-effort optimization can happen before checks and actions are expanded.
+The initial JIT may lower directly into Guard IR, without function inlining or a
+semantic type system. This is an intentional compilation mode rather than an
+incomplete form of the Semantic pipeline.
 
 The following choices are design guardrails rather than tentative suggestions:
 
@@ -25,11 +41,11 @@ The following choices are design guardrails rather than tentative suggestions:
 - interpreted and compiled Python calls initially share the existing managed
   calling convention;
 - inline caches drive specialization, and misses return to the interpreter;
-- Semantic IR and Guard IR share one semantic type system;
 - the initial JIT operates on tagged `Value`s and does not require unboxing.
 
-Type partitions, the detailed effect taxonomy, and many backend policies remain
-plausible or open designs as noted below.
+Semantic type inference, type partitions, the detailed effect taxonomy, and
+many backend policies remain optional, plausible, or open designs as noted
+below.
 
 ## Terminology
 
@@ -232,15 +248,37 @@ request. This is not yet a firm design decision.
 
 ## Compiler Pipeline and Phase Ownership
 
-### Semantic IR
+### Direct Guard compilation
+
+The first implementation lowers decoded bytecode and IC snapshots directly
+into Guard IR. The shared frontend discovers bytecode basic blocks and captures
+the semantic content of relevant ICs. Guard construction then creates SSA for
+the accumulator and bytecode registers while expanding each supported IC case
+into explicit checks, actions, and side exits.
+
+This path deliberately omits:
+
+- Python function inlining;
+- general semantic type inference;
+- caller-to-callee fact propagation;
+- relational type partitions and polymorphic code duplication.
+
+It can still generate useful code. Monomorphic IC cases already identify the
+predicates and successful action, while unknown or unsupported cases can use a
+conservative Python call or return to the interpreter. Guard IR can perform
+ordinary SSA optimization, dominator-based redundant-check elimination, and
+effect-aware local code motion without a general Python type lattice.
+
+### Optional Semantic IR frontend
 
 Semantic IR is a parsed SSA representation of bytecode semantics, not a wrapper
 around the encoded bytes in `CodeObject::code`. Its atomic operations resemble
-the semantic bytecode operations emitted by the high-level compiler.
+the semantic bytecode operations emitted by the high-level compiler. It is
+inserted before Guard IR only when the compiler chooses to spend more effort on
+inference, inlining, or polymorphic specialization.
 
 Semantic IR owns:
 
-- parsing encoded bytecode into basic blocks;
 - SSA construction for the accumulator and bytecode registers;
 - compilation-local inline-cache specialization plans;
 - type and shape inference;
@@ -250,6 +288,8 @@ Semantic IR owns:
 ### Guard IR
 
 Guard IR expands atomic semantic operations into checks and smaller actions.
+It may instead construct those checks and actions directly from decoded
+bytecode and IC snapshots when Semantic IR is absent.
 It owns:
 
 - proof-producing guards and deoptimization exits;
@@ -258,28 +298,51 @@ It owns:
 - common proof elimination and effect-aware code motion;
 - ordered calls, operations, and commit points.
 
-Guard IR carries the same semantic facts and partition identities as Semantic
-IR. Lowering does not translate them into a second type system.
+When Semantic IR is present, Guard IR carries forward its semantic facts and
+partition identities rather than translating them into a second type system.
+Neither those facts nor a general semantic type system are required by the
+direct compilation path.
 
-### Machine IR
+### Optional backend Machine IR
 
-Machine IR is a machine-oriented SSA or virtual-register representation. It
-owns register classes, target operations, calls, flags, addressing constraints,
-spills, branches, register allocation, scheduling, and final encoding.
+A target backend owns register classes, target operations, calls, flags,
+addressing constraints, spills, branches, register allocation, scheduling, and
+final encoding. A simple backend may assign locations to Guard values in side
+tables and emit directly from the Guard schedule. A harder target may introduce
+a machine-oriented SSA or virtual-register representation for one block, one
+region, or the complete function.
 
-Machine copies, spills, and reloads change physical location, not Python value
-identity. Machine IR should remain primarily a lowering and allocation
-representation unless measurements justify broader machine-level optimization.
+A direct backend may maintain tables such as:
+
+```text
+GuardValueId -> register | spill | canonical slot | constant
+GuardEdgeId  -> parallel move bundle
+GuardNodeId  -> target constraints and lowering choice
+```
+
+These are backend results, not mutations of Guard nodes. Internal temporaries
+belong to the selected lowering and may use reserved scratch locations. If a
+backend needs enough independently allocated temporaries or cross-node machine
+optimization that these tables become an implicit instruction graph, that is
+evidence for introducing an explicit Machine IR at the required scope.
+
+This choice belongs to each target backend; the common compiler does not
+require all targets to pay for another graph construction and traversal.
+Backend-local machine copies, spills, and reloads change physical location, not
+Python value identity. If a Machine IR is used, it should remain primarily a
+lowering and allocation representation unless measurements justify broader
+machine-level optimization.
 
 ## Shared IR Foundations
 
 ### Ordered list-based SSA
 
 The canonical function representation is a CFG of basic blocks with an ordered
-instruction list in each block. Instructions have SSA operands and results.
-Blocks begin with parameters or phi nodes and end with explicit normal-flow
-terminators. Instructions may also carry explicit non-returning deoptimization
-side exits.
+parameter list and instruction list in each block. Instructions have SSA
+operands and results. Terminators pass an ordered argument list to each normal
+successor, matching that successor's block parameters. Blocks end with explicit
+normal-flow terminators. Instructions may also carry explicit non-returning
+deoptimization side exits.
 
 The list is the current schedule. SSA edges expose value dependencies, proof
 values expose guard dependencies, and effect annotations constrain movement.
@@ -302,9 +365,10 @@ parallelism dynamically. A temporary DAG or sea-of-nodes form may still help a
 narrow optimization or instruction-selection task, but it is not the canonical
 whole-function representation.
 
-Ordered lists are used at every level. Semantic IR begins in decoded bytecode
-order, Guard IR orders checks and effects, and Machine IR records the final
-target schedule with room for measured local scheduling.
+Ordered lists are used at every instantiated level. Optional Semantic IR begins
+in decoded bytecode order, Guard IR orders checks and effects, and an optional
+Machine IR records whatever target schedule its backend needs. A direct backend
+uses the Guard schedule plus backend location and edge-move side tables.
 
 ### Preserve semantic value identity
 
@@ -315,8 +379,9 @@ SSA identities:
   reference an existing value;
 - guards refine facts about an input rather than return a narrowed replacement;
 - expanding a bytecode preserves the semantic identity of its result;
-- only genuine producers and non-trivial merges introduce identities;
-- trivial phis with identical incoming values are eliminated.
+- only genuine producers and non-trivial block parameters introduce identities;
+- a block parameter whose incoming arguments are all the same value can be
+  eliminated.
 
 For example:
 
@@ -339,9 +404,11 @@ Compiler objects use strongly typed integer identities rather than pointer
 identity:
 
 ```text
-SemanticNodeId, SemanticValueId, SemanticBlockId
-GuardNodeId,    GuardValueId,    GuardBlockId
-MachineNodeId,  MachineValueId,  MachineBlockId
+SemanticNodeId, SemanticValueId, SemanticBlockId, SemanticEdgeId
+GuardNodeId,    GuardValueId,    GuardBlockId,    GuardEdgeId
+
+optional backend-defined MachineNodeId, MachineValueId, MachineBlockId,
+                         MachineEdgeId
 
 PartitionId
 FrameStateId
@@ -350,8 +417,8 @@ ResumeStateId
 RecoveryPlanId
 ```
 
-Node, value, and block IDs are specific to their IR level and cannot be mixed
-implicitly with one another or with raw integers. Partition IDs are
+Node, value, block, and edge IDs are specific to their IR level and cannot be
+mixed implicitly with one another or with raw integers. Partition IDs are
 compilation-wide because Semantic and Guard IR refer to the same logical
 partitions. IDs are allocated monotonically in a deterministic construction
 order and are not reused during a compilation.
@@ -359,7 +426,16 @@ order and are not reused during a compilation.
 Node identity and semantic value identity remain distinct. Replacing an
 instruction creates a new node ID. A replacement that preserves the same
 semantic result may deliberately retain its result `ValueId`; an independently
-produced value receives a new one.
+produced value receives a new one. Block parameters also have `ValueId`s but no
+producing instruction `NodeId`; they are definitions owned by the destination
+block. This is one reason not to unify instruction and value numbering.
+
+A block owns one ordered parameter vector, and every incoming edge supplies an
+equally sized argument vector. The entire edge transfer has parallel-copy
+semantics. It is never interpreted as a sequence of assignments in which an
+earlier destination can overwrite a source still needed by a later one. The
+backend resolves the parallel copy after locations have been assigned, using an
+edge block or scratch location to break cycles when necessary.
 
 Compilation behavior must not depend on pointer addresses or hash-table
 iteration order. Pointer addresses are neither compiler identities nor analysis
@@ -382,10 +458,11 @@ semantic descriptor, guard obligations, and partition IDs are fixed when the
 node is constructed. A transformation changes any of these properties by
 constructing a replacement node.
 
-Graph structure remains mutable. Block instruction lists, predecessor and
-successor sets, placement, definition indexes, and use indexes are maintained by
-the IR editor. Replacing a node updates these structures transactionally; it
-does not mutate the old node in place.
+Graph structure remains mutable. Block parameter and instruction lists,
+predecessor and successor sets, edge argument lists, placement, definition
+indexes, and use indexes are maintained by the IR editor. Replacing a node
+updates these structures transactionally; it does not mutate the old node in
+place.
 
 Derived knowledge is not written into immutable nodes. Analyses own
 generation-scoped side tables such as:
@@ -415,14 +492,16 @@ therefore needs first-class operations to:
 - split a block at an instruction;
 - insert branches and joins;
 - add, remove, and redirect edges;
-- update block parameters and phi inputs;
+- update block parameters and edge arguments;
 - clone and splice regions;
 - attach bytecode origins and frame states to new exits.
 
 Major representation boundaries normally build fresh destination CFGs.
-Semantic-to-Guard and Guard-to-Machine lowering leave their source graphs intact
-and naturally support one-to-region translation. Optimizations within one IR
-may use an in-place CFG editor.
+Semantic-to-Guard lowering leaves its source graph intact and naturally
+supports one-to-region translation. A backend that chooses Machine IR follows
+the same rule; a direct backend instead records locations, edge moves, and
+emission metadata in side tables. Optimizations within one IR may use an
+in-place CFG editor.
 
 Deoptimization exits must remain visible to correctness and frame-state
 analysis, but need not be ordinary successors in the normal CFG used for loops
@@ -445,6 +524,10 @@ graph structures directly.
 Verification at pass boundaries should require:
 
 - exactly one live definition for every reachable SSA value;
+- every normal edge to supply exactly one argument of the required kind for
+  each destination block parameter;
+- every edge argument definition to dominate that edge;
+- every block parameter to be owned by exactly one reachable block;
 - every referenced partition to have a live defining object or realized region
   in that IR;
 - no reachable conditional fact to depend on a disconnected partition anchor;
@@ -461,23 +544,36 @@ Verification at pass boundaries should require:
 Narrow preservation declarations or incremental maintenance may be added later
 if broad invalidation is measurably expensive.
 
-### One semantic type system
+### One optional semantic type system
 
-Semantic IR and Guard IR share `ValueFacts`, `TypeEvidence`, type-partition
-identities, and their join and refinement rules. The physical split belongs to
-the IR, not to a separate Guard-only type system.
+If semantic inference is implemented, Semantic IR and Guard IR share
+`ValueFacts`, `TypeEvidence`, type-partition identities, and their join and
+refinement rules. The physical split belongs to the IR, not to a separate
+Guard-only type system. The initial direct-to-Guard compiler does not need to
+instantiate this analysis or attach general type facts to its values.
 
-Proof values record why Guard IR may rely on a fact at a particular use; they do
-not introduce another notion of type. Machine IR has a different concern:
-physical representation classes such as tagged `Value`, `Float64`, address, and
-condition code. Python-level facts may remain as lowering and recovery metadata,
-but Machine IR does not define another Python type lattice.
+Guard IR may still use explicit proof dependencies for predicates established
+by emitted guards; these do not require a general inference lattice. In the
+optional typed pipeline, proof values record why Guard IR may rely on an
+inferred or guarded fact at a particular use and do not introduce another
+notion of type. The backend has a different concern: physical representation
+classes such as tagged `Value`, `Float64`, address, and condition code.
+Python-level facts may remain as lowering and recovery metadata, but an optional
+Machine IR does not define another Python type lattice.
 
-## Semantic IR
+## Optional Semantic IR Optimization Frontend
+
+Everything in this section describes a higher-effort optimization frontend. It
+is not required for the initial direct-to-Guard compiler. The representations
+are recorded now so the core IR does not preclude later inference and inlining,
+not as an obligation to implement them before useful machine code can be
+generated.
 
 ### Parsed bytecode and inline-cache snapshots
 
-Parsing decodes instructions, forms blocks and edges, records bytecode PCs, and
+This parsing machinery is shared with direct Guard compilation; it is described
+here because Semantic IR retains its results as atomic operations. Parsing
+decodes instructions, forms blocks and edges, records bytecode PCs, and
 snapshots relevant inline-cache semantics into compilation-local data. Encoded
 instructions, operand bytes, and runtime cache arrays are inputs to parsing,
 not the optimized representation.
@@ -512,8 +608,9 @@ Semantic definition and machine residency are separate.
 
 During construction, an environment maps the accumulator and bytecode registers
 to SSA values. A live location with different incoming values receives a block
-parameter or phi at a CFG join. Construction is pruned so dead interpreter
-locations do not receive unnecessary phis.
+parameter at a CFG join, and each predecessor edge supplies the corresponding
+argument. Construction is pruned so dead interpreter locations do not receive
+unnecessary block parameters.
 
 Each recoverable bytecode boundary has an immutable, structurally shared logical
 frame state:
@@ -621,10 +718,10 @@ create guard obligations; only guaranteed evidence justifies specialization
 without a new guard. No numeric confidence is required.
 
 Likely evidence retains provenance such as an IC or caller context. Propagation
-must not amplify evidence by cycling it through phis, SSA uses, recursive
-inlining, or repeated analysis. More-specific caller evidence may replace
-less-specific aggregate callee feedback, but semantic actions still require
-trusted runtime resolution.
+must not amplify evidence by cycling it through block parameters, SSA uses,
+recursive inlining, or repeated analysis. More-specific caller evidence may
+replace less-specific aggregate callee feedback, but semantic actions still
+require trusted runtime resolution.
 
 ### Type partitions
 
@@ -710,8 +807,8 @@ unconditional:
     result: Float | SMI
 ```
 
-Existing program control flow creates the same abstraction. Multiple phis at
-one join share a predecessor partition:
+Existing program control flow creates the same abstraction. Multiple block
+parameters at one join share a predecessor partition:
 
 ```text
 then:
@@ -722,9 +819,12 @@ else:
     a2: Float
     b2: SMI
 
-join:
-    a = phi(a1, a2)       # guaranteed SMI | Float
-    b = phi(b1, b2)       # guaranteed Float | SMI
+then -> join(a1, b1)
+else -> join(a2, b2)
+
+join(a, b):
+    a: guaranteed SMI | Float
+    b: guaranteed Float | SMI
 
 partition P:
     P.then: a is SMI,   b is Float
@@ -834,8 +934,9 @@ is exhausted.
 
 ### Expanding semantic operations
 
-Guard lowering breaks an atomic bytecode operation into checks and its selected
-action. For example:
+Guard construction breaks an atomic bytecode operation into checks and its
+selected action. It may consume an operation preserved in Semantic IR or lower
+directly from decoded bytecode and its IC snapshot. For example:
 
 ```text
 Add
@@ -960,7 +1061,8 @@ evidence shows it is worthwhile.
 
 ### Proof values and guard optimization
 
-Proof values appear when Semantic IR lowers to Guard IR. A guard produces an SSA
+Proof values are created during Guard IR construction, whether it consumes
+Semantic IR or lowers directly from decoded bytecode. A guard produces an SSA
 proof rather than a narrowed runtime value:
 
 ```text
@@ -994,16 +1096,17 @@ guard retains its original bytecode bailout location. Equivalent sibling guards
 do not dominate one another; hoisting them is a separate transformation that
 must establish a legal bailout state and safe replay of crossed work.
 
-Proofs disappear before machine lowering. They constrain transformations but
+Proofs disappear before backend emission. They constrain transformations but
 consume no registers and emit no code beyond remaining guards.
 
-## Machine IR and Value Representation
+## Backend Lowering and Value Representation
 
 ### Generated side exits and recovery plans
 
-Machine IR retains an explicit non-returning `DeoptExit(FrameStateId)` until
-register allocation determines the location of every value needed for recovery.
-Post-allocation exit expansion combines three inputs:
+Guard IR retains an explicit non-returning `DeoptExit(FrameStateId)` until the
+backend has determined the location of every value needed for recovery. A
+backend may carry the exit through Machine IR or consume it directly from Guard
+IR. Post-allocation exit expansion combines three inputs:
 
 ```text
 logical FrameState:
@@ -1199,12 +1302,36 @@ inline sites may eventually share backing regions when their lifetimes cannot
 overlap, but assigning fixed distinct regions is the initial policy and their
 stack cost contributes to the inlining budget.
 
-## End-to-End Example: Polymorphic Add
+## End-to-End Examples
+
+### Initial direct compilation: monomorphic Add
+
+The initial path requires neither Semantic IR nor type inference:
+
+1. The shared frontend decodes `Add`, records its bytecode PC and logical frame
+   state, and snapshots its monomorphic IC case.
+2. The trusted handler descriptor identifies the selected semantic action and
+   the predicates that justify it.
+3. Guard IR construction creates the required shape and validity checks, proof
+   dependencies, bailout state, and selected action directly.
+4. Failed pre-effect checks return to the original `Add`; overflow or committed
+   exits use the appropriate bytecode state.
+5. Guard optimization may remove a redundant dominating check when effects and
+   control flow preserve its predicate.
+6. The target backend assigns locations, emits publication and recovery
+   machinery, and encodes the function, optionally through Machine IR.
+
+Unsupported or polymorphic cases may conservatively call Python or return to
+the interpreter. The initial compiler need not infer a type merely to reproduce
+an IC specialization that already names its predicates and action.
+
+### Optional optimized compilation: polymorphic Add
 
 A polymorphic addition illustrates the complete flow:
 
-1. Semantic IR parses one atomic `Add`, records its bytecode PC and logical
-   frame state, and snapshots its IC cases.
+1. The shared frontend decodes `Add` and snapshots its IC cases; Semantic IR
+   preserves it as one atomic operation with its bytecode PC and logical frame
+   state.
 2. Trusted handler descriptors identify the semantic actions for those cases.
 3. Type inference records likely or guaranteed operand facts, result unions,
    guard obligations, and any correlated type partition.
@@ -1216,8 +1343,8 @@ A polymorphic addition illustrates the complete flow:
    duplication without new checks.
 7. Failed pre-effect checks return to the original `Add`; overflow or committed
    exits use the appropriate bytecode state.
-8. Machine IR selects tagged or future unboxed representations and assigns
-   locations while preserving canonical publication requirements.
+8. The target backend selects tagged or future unboxed representations and
+   assigns locations while preserving canonical publication requirements.
 9. Post-allocation exit expansion interns the required recovery plans, emits
    resume-state stubs and shared synchronization blocks, and tails them into the
    common interpreter handoff.
@@ -1229,7 +1356,15 @@ A polymorphic addition illustrates the complete flow:
 - concrete storage layouts and APIs for SSA nodes and blocks;
 - optimizer and register allocator organization;
 - whether any narrow pass benefits from a temporary graph representation;
-- when analysis preservation or incremental CFG maintenance is worthwhile.
+- whether a target benefits from no Machine IR, per-block or per-region Machine
+  IR, or a whole-function Machine IR;
+- the threshold at which direct Guard emission has accumulated enough hidden
+  target-specific lowering state that an explicit Machine IR would be simpler;
+- when analysis preservation or incremental CFG maintenance is worthwhile;
+- what evidence should trigger recompilation through the optional Semantic IR
+  frontend rather than direct Guard compilation;
+- how much construction and lowering machinery the two paths should share
+  without turning them into independent compiler implementations.
 
 ### Type evidence and specialization
 
@@ -1271,7 +1406,8 @@ A polymorphic addition illustrates the complete flow:
 - tiering and compilation triggers;
 - invalidation and lifetime of generated code.
 
-These questions must be answered without weakening bytecode compatibility or
-the single semantic type system shared by Semantic and Guard IR. Any future
+These questions must be answered without weakening bytecode compatibility. If
+semantic inference is implemented, Semantic and Guard IR must share one type
+system rather than acquire competing notions of Python type. Any future
 replacement for canonical frame publication must provide equally explicit and
 verifiable root-discovery and interpreter-recovery guarantees.
