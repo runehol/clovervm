@@ -702,6 +702,62 @@ facts may refine a plan but cannot invent a trusted handler or Python target;
 the selected action remains justified by cache feedback or the runtime's
 trusted resolution mechanism.
 
+An eventual IC may classify its observed specialization space directly:
+
+```text
+Uninitialized
+Monomorphic(case)
+Polymorphic(case...)
+Megamorphic
+```
+
+The cases retain operand shapes, validity requirements, the resolved semantic
+action, and successful-continuation facts. Contextual likely evidence selects
+within this recorded space rather than competing with it as another confidence
+score:
+
+- a compatible monomorphic case is selected regardless of a conflicting
+  merely-likely caller prediction;
+- guaranteed caller facts incompatible with the sole case make that case
+  unreachable in the current context, requiring fresh resolution or fallback;
+- a polymorphic IC is restricted to cases compatible with guaranteed facts,
+  then contextual likely facts select a preferred remaining case when they
+  identify one;
+- a megamorphic IC has no trustworthy small recorded subset, so contextual
+  facts may propose shapes for fresh trusted runtime resolution;
+- without usable cases or contextual facts, compilation remains generic or
+  returns to the interpreter.
+
+Caller facts and callee feedback have different roles during inlining. Caller
+evidence describes the particular inline context and may replace aggregate
+callee entry predictions. An operation IC still owns the semantic actions
+observed or freshly resolved for that operation; caller evidence can select or
+request resolution, but cannot manufacture an action.
+
+The initial runtime need not pay for true polymorphic case arrays. A one-case IC
+can approximate feedback stability with a small saturating case-install count:
+
+```text
+0             uninitialized
+1             monomorphic observation
+2..threshold  replacement churn; polymorphism suspected
+saturated     highly unstable or megamorphic-like
+```
+
+First population sets the count to one. It thereafter advances when the cached
+operand-shape tuple changes, not merely when the same tuple is repopulated after
+validity invalidation. A one-case cache cannot distinguish repeated `A/B`
+alternation from many distinct shapes, so a high count means **unstable**, not
+proof of true megamorphism. That distinction is sufficient for an initial
+policy: trust the current case when monomorphic, treat it cautiously under low
+churn, and under high churn prefer contextual evidence plus fresh resolution or
+generic handling.
+
+This counter is a provisional feedback mechanism, not a committed cache-layout
+requirement. If true polymorphic ICs later earn their space, the same churn
+signal can govern promotion to a small case array and eventual transition to an
+explicit megamorphic state.
+
 ### SSA construction and logical frame states
 
 Function arguments are semantic definitions at function entry:
@@ -816,8 +872,8 @@ bounded initial lattice should stabilize without special loop widening.
 
 ### Likely and guaranteed evidence
 
-Likely and guaranteed evidence use the same fact lattice. They differ in
-epistemic status:
+Likely and guaranteed evidence use the same bounded `ValueFacts` vocabulary,
+but differ in epistemic status and use:
 
 ```text
 TypeEvidence {
@@ -832,11 +888,15 @@ exclude other runtime values. Likely evidence can select a specialization and
 create guard obligations; only guaranteed evidence justifies specialization
 without a new guard. No numeric confidence is required.
 
-Likely evidence retains provenance such as an IC or caller context. Propagation
-must not amplify evidence by cycling it through block parameters, SSA uses,
-recursive inlining, or repeated analysis. More-specific caller evidence may
-replace less-specific aggregate callee feedback, but semantic actions still
-require trusted runtime resolution.
+Likely evidence is principally a preferred specialization-case key, not a
+probability attached to a value. It retains provenance such as an IC, caller
+context, or weakened earlier shape. Propagation must not amplify evidence by
+cycling it through block parameters, SSA uses, recursive inlining, or repeated
+analysis. More-specific caller evidence may replace less-specific aggregate
+callee entry feedback. At an operation, however, the IC-state selection rules
+above determine whether that context chooses a recorded case, requests fresh
+trusted resolution, or is ignored. Semantic actions always remain justified by
+cache feedback or trusted runtime resolution.
 
 ### Type partitions
 
@@ -1137,6 +1197,45 @@ using the old shape-bearing value after the transition. Operations that may
 change the shape through an unknown alias invalidate affected mutable-shape
 refinements and require a new guard.
 
+An operation that may change a mutable shape without describing the resulting
+transition weakens each affected live receiver value. `WeakenShape` is a
+zero-code SSA operation that preserves the runtime `Value` bits while replacing
+an exact mutable-shape guarantee with a broader guaranteed type and retaining
+the old shape only as likely persistence evidence:
+
+```text
+%self_s1: Shape<S1> = AddOwnProperty(
+    %self, %a, location, next_shape=S1)
+
+StoreExisting %self_s1, %incremented, location
+    # No guard: no intervening shape clobber.
+
+%method = LoadMethod %self_s1, method_plan
+%result = PythonFunctionCall %method, %self_s1
+%self_after: Object = WeakenShape %self_s1
+    # likely Shape<S1>, but no longer guaranteed
+
+%self_s1_again: Shape<S1> = ShapeKeyCheck %self_after, S1
+StoreExisting %self_s1_again, %multiplied, location
+```
+
+The call does not change `%self_s1`'s static type. Its shape-clobbering effect
+ends the region in which that refined receiver may be used for shape-sensitive
+operations, and construction rebinds subsequent interpreter locations to the
+weakened successor. Bindings containing the same exact `ValueId` share that
+successor. A general Python call conservatively weakens every live
+mutable-shape-refined value that remains live afterward; inline values and
+lifetime-stable shapes survive unchanged.
+
+`WeakenShape` does not claim that the shape changed. Its likely `S1` is a cheap
+persistence prediction used only when the next operation's IC permits it. A
+monomorphic consumer selects its recorded case; a polymorphic consumer may use
+the prediction to select a matching case; an unstable or megamorphic-like
+consumer may use it as the proposed input to fresh runtime resolution. More
+applicable consumer or inline-context evidence may therefore displace the
+prediction for that consumer's case selection without changing
+`%self_after`'s guaranteed `Object` type.
+
 A later optimization may recognize an uninterrupted canonical transition
 chain, particularly in `__init__`:
 
@@ -1235,8 +1334,9 @@ insufficient: a shape fact can cross only operations proven not to change that
 object's shape, including indirectly. A recognized `AddOwnProperty`,
 `DeleteOwnProperty`, or `ChangeClass` consumes the current receiver version and
 produces its successor. Exact `next_shape` metadata gives add and delete
-successors a guaranteed shape; an imprecise mutation produces an unknown-shape
-successor or deoptimizes.
+successors a guaranteed shape. An imprecise mutation produces a weakened
+unknown-shape successor, or deoptimizes when the compiler cannot represent the
+required clobber safely.
 
 **Stable-shape heap values.** Some exact heap values, such as tuples, have
 lifetime-stable instance shapes. Once proved, that fact survives calls for the
@@ -1592,6 +1692,8 @@ A polymorphic addition illustrates the complete flow:
 - the exact verifier and effect-state representation that prevents stale
   mutable-shape receiver versions from being used after direct or aliased
   mutation;
+- the precise construction and liveness policy for inserting `WeakenShape`
+  successors without generating unnecessary SSA values at broad clobbers;
 - concrete representation and propagation limits for type partitions;
 - profitability and code-growth policy for partition realization;
 - depth, leaf-count, and propagation budgets for recursive partitions;
