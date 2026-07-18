@@ -20,24 +20,32 @@ exception-handling slice, including nonlocal `return`, `break`, and `continue`
 through `finally`. Classes support ordinary `__init__`, explicit bases,
 `__bases__`, `__mro__`, and C3 method resolution order. Attribute,
 method-call, function-call, constructor-call, and common subscript operations
-are all exercised by the interpreter tests and benchmarks.
+are all exercised by the interpreter tests and benchmarks. Source modules,
+packages, relative imports, and native extension modules can be loaded through
+the implemented import system. Integer literals and common arithmetic operations
+promote beyond the tagged small-integer range to heap-allocated arbitrary-
+precision integers.
 
 ## Known limitations
 
 This is still a deliberately small Python subset. Large parts of the language
-and standard library are absent, including imports, generators, comprehensions,
-broad descriptor and metaclass semantics, custom `__new__`, complex assignment
-targets, richer string syntax, arbitrary-precision integer arithmetic, full
-tracebacks, range-object semantics, and `yield from` / generator iterator
-semantics. Error messages and runtime semantics are improving, but CPython
-compatibility is not yet a project guarantee.
+and standard library are absent, including generators, comprehensions, broad
+descriptor and metaclass semantics, the full `__new__`/`__init__` construction
+protocol, complex assignment targets, richer string syntax, full tracebacks,
+range-object semantics, and `yield from` / generator iterator semantics. The
+import system does not yet expose the full `importlib` protocol, and some
+integer-consuming APIs remain limited to tagged small integers even though
+general arithmetic supports arbitrary precision. Error messages and runtime
+semantics are improving, but CPython compatibility is not yet a project
+guarantee.
 
 ## Runtime design
 
 - Python 3 source subset.
 - V8-inspired register/accumulator bytecode.
-- Tagged value representation with integers, booleans, and `None` represented
-  without indirection or allocation.
+- Tagged value representation with small integers, booleans, and `None`
+  represented without indirection or allocation; larger integers use a heap
+  `BigInt` representation while retaining Python-visible `int` semantics.
 - Shape-based object layouts, including transition chains for instance and
   class attributes.
 - Inline caches for attribute reads, attribute writes/deletes, function calls,

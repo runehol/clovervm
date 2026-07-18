@@ -4,10 +4,9 @@ This document sketches an alternative garbage-collection direction for CloverVM:
 a generational, moving collector that copies ordinary VM objects and handles
 native API boundaries through explicit handles or stable wrappers.
 
-It is intentionally separate from
-[Generational Mark-Sweep GC Design Notes](generational-mark-sweep-gc.md):
-this design allows ordinary VM objects to move, so it is incompatible with a
-collector strategy that preserves raw managed-object addresses for native code.
+This design supersedes the earlier non-moving generational mark-sweep direction.
+It allows ordinary VM objects to move, so it is incompatible with a collector
+strategy that preserves raw managed-object addresses for native code.
 
 The collector goal is a stop-the-world generational copying runtime:
 
