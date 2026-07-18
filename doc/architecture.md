@@ -134,7 +134,7 @@ Detailed docs:
 - [Object Model](object-model.md)
 - [Descriptor Execution](descriptor-execution.md)
 - [Builtin Object Model](builtin-object-model.md)
-- [Module Global Namespace Design Sketch](module-global-namespace-design.md)
+- [Module Global Namespace Design](module-global-namespace-design.md)
 
 ## Inline Caches And Validity Cells
 
@@ -206,10 +206,11 @@ string-keyed tables, shape slots, and namespace-specific storage.
 Detailed docs:
 
 - [Dictionaries](dictionaries.md)
-- [Module Global Namespace Design Sketch](module-global-namespace-design.md)
+- [Module Global Namespace Design](module-global-namespace-design.md)
 - [Module Global Namespace Implementation Plan](module-global-namespace-implementation.md)
 - [Object Model](object-model.md)
-- [Specialized list storage design](specialized-list-storage.md)
+- [Specialized list storage design](specialized-list-storage.md) (speculative,
+  not accepted)
 
 ## JIT Direction
 

@@ -1,424 +1,267 @@
 # CloverVM Function Calling Convention
 
-This note documents the calling convention currently implemented by CloverVM's bytecode compiler and interpreter. It is based on the runtime behavior in [src/interpreter.cpp](../src/interpreter.cpp) and the lowering logic in [src/codegen.cpp](../src/codegen.cpp).
+Status: accepted architecture contract.
 
-## Executive Summary
+This document defines CloverVM's managed frame and call conventions. It focuses
+on the layout and transition rules shared by the interpreter, runtime-generated
+thunks, native boundary adapters, and future compiled managed code. Opcode
+inventories, copied implementation snippets, and helper signatures are not part
+of the contract.
 
-- CloverVM uses a register-based bytecode.
-- The interpreter also carries key VM state in native function arguments/registers: `fp`, `pc`, `accumulator`, `dispatch`, and `code_object`.
-- Call arguments are laid out in a contiguous register window in the caller.
-- Entering a function does not copy arguments into a separate argument array. Instead, the interpreter moves `fp` so the existing call window becomes the callee's frame.
-- Internal forwarding thunks can enter an explicit `CodeObject` with
-  `CallCodeObject` after preparing the call window themselves.
-- Fixed-arity native functions use the same managed frame path: a native thunk
-  `CodeObject` reads `p0`, `p1`, ... directly and calls a C++ target on the
-  native stack.
-- The stack grows toward lower addresses.
-- Parameters live at positive offsets from `fp`.
-- Locals and temporaries live at negative offsets from `fp`.
-- A small frame header is kept around `fp`; current call paths store:
-  - interpreter return program counter at `fp[3]`
-  - interpreter return code object at `fp[2]`
-  - return pc for JITed code at `fp[1]`
-  - previous frame pointer at `fp[0]`
+## Core Model
 
-This layout is intended to be friendly to future compiled managed code while
-still having enough metadata to jump back to the interpreter when needed. It is
-not a native C++ frame layout: arbitrary native frames must not be placed on the
-Clover stack.
+CloverVM uses register/accumulator bytecode over an explicit managed stack:
 
-Native function thunks build on the same layout. A `CallIntrinsic0`,
-`CallIntrinsic1`, `CallIntrinsic2`, or `CallIntrinsic3` opcode runs inside an ordinary
-managed function frame, reads fixed positional parameters from the `p`
-registers, calls the native C++ target on the native stack, and returns through
-`ReturnOrRaiseException`. See
-[native-managed-boundaries.md](native-managed-boundaries.md) for native thunk
-and native-to-managed call boundary planning.
+- parameters, locals, temporaries, and call argument windows live in Clover
+  stack slots;
+- most expression results and every ordinary return value travel through the
+  accumulator;
+- the frame pointer identifies the current managed frame;
+- the interpreter and native runtime execute on the native machine stack while
+  accessing Clover frames explicitly.
 
-For native AArch64 stack-frame convention details, use LLVM's frame lowering
-implementation as the reference point:
-[AArch64FrameLowering.cpp](https://github.com/llvm/llvm-project/blob/main/llvm/lib/Target/AArch64/AArch64FrameLowering.cpp).
+The Clover stack is not a C or C++ ABI stack. Arbitrary native frames must never
+be placed on it. Native/managed transition rules are defined separately in
+[Native/Managed Boundary Contracts](native-managed-boundaries.md).
 
-## Native Interpreter State
+## Logical Registers
 
-The CloverVM frame layout is only part of the calling convention. The threaded interpreter also passes its live execution state as native function parameters:
+Each `CodeObject` describes three logical slot groups:
 
-```cpp
-#define PARAMS                                                                 \
-    Value *fp, const uint8_t *pc, Value accumulator, void *dispatch,           \
-        CodeObject *code_object
-#define ARGS fp, pc, accumulator, dispatch, code_object
+- parameters, printed as `p0`, `p1`, ...;
+- locals and temporaries, printed as `r0`, `r1`, ...;
+- a fixed frame header around the frame pointer.
+
+Parameters occupy positive offsets from the frame pointer. Locals and
+temporaries occupy negative offsets and grow downward as their logical register
+number increases.
+
+Physical parameter storage is padded to the native ABI alignment. With the
+current 8-byte `Value` and 16-byte alignment, an odd parameter count reserves
+one padding slot. Padding is not a logical Python parameter and must never be
+treated as one by binding or introspection.
+
+## Frame Header
+
+The current managed frame header occupies four slots at and above the frame
+pointer:
+
+```text
+fp[3]  interpreter return program counter
+fp[2]  interpreter return code object
+fp[1]  compiled-code return program counter
+fp[0]  previous managed frame pointer
 ```
 
-from [src/interpreter.cpp](../src/interpreter.cpp).
+The slots have distinct roles:
 
-Conceptually:
+- `fp[0]` links the active managed frame chain;
+- `fp[2]` and `fp[3]` restore interpreter execution after an interpreted
+  callee returns;
+- `fp[1]` is reserved for compiled managed return state and is not a place to
+  store arbitrary native ABI data.
 
-- `fp` is the current CloverVM frame pointer
-- `pc` is the current bytecode program counter
-- `accumulator` is the current accumulator value
-- `code_object` is the current bytecode object
-- `dispatch` is the dispatch table pointer
+Frame payload pointers stored in header slots use the runtime's documented
+frame-payload encoding. Code that scans ordinary managed `Value` slots must not
+mistake header payloads or padding for Python object references.
 
-With the `MUSTTAIL` threaded-dispatch style in the interpreter, these values are intended to stay live in native calling-convention registers across opcode handlers, rather than being reloaded from the CloverVM stack frame on each step. In particular, the dispatch table pointer is kept permanently live as part of that native register state.
-
-## Relevant Definitions
-
-In [src/code_object.h](../src/code_object.h):
-
-```cpp
-static constexpr int32_t FrameHeaderSizeAboveFp = 4;
-static constexpr int32_t FrameHeaderSizeBelowFp = 0;
-static constexpr int32_t FrameHeaderSize =
-    FrameHeaderSizeAboveFp + FrameHeaderSizeBelowFp;
-```
-
-Each `CodeObject` tracks:
-
-- `n_parameters`
-- `n_locals`
-- `n_temporaries`
-
-Parameter slots are physically padded to the ABI alignment. Since `Value` is 8
-bytes and the ABI alignment is 16 bytes, this currently means rounding slot
-counts up to an even number:
-
-```cpp
-constexpr uint32_t round_up_to_abi_alignment(uint32_t value)
-{
-    return (value + 1u) & ~1u;
-}
-
-uint32_t get_padded_n_parameters() const
-{
-    return round_up_to_abi_alignment(n_parameters);
-}
-
-uint32_t get_padded_n_ordinary_below_frame_slots() const
-{
-    return round_up_to_abi_alignment(n_locals + n_temporaries);
-}
-```
-
-and reports total register storage as:
-
-```cpp
-uint32_t get_n_registers() const
-{
-    return n_parameters + n_temporaries + n_locals;
-}
-```
-
-Codegen reserves any parameter padding and the header slots in function and
-class scopes before collecting locals:
-
-- function bodies: [src/codegen.cpp](../src/codegen.cpp)
-- class bodies: [src/codegen.cpp](../src/codegen.cpp)
-
-## Register Naming and Placement
-
-The bytecode printer exposes the register naming convention in [src/code_object_print.h](../src/code_object_print.h):
-
-- `p0`, `p1`, ... are parameter registers
-- `r0`, `r1`, ... are local/temporary registers
-
-The encoding rule is in [src/code_object.h](../src/code_object.h):
-
-```cpp
-int8_t encode_reg(uint32_t reg)
-{
-    return get_padded_n_parameters() - 1 + FrameHeaderSizeAboveFp - reg;
-}
-```
-
-Combined with interpreter access through `fp[reg]`, this gives the physical layout:
+The conceptual layout is:
 
 ```text
 higher addresses
 
-    fp[padded_n_parameters + 3]   p0
-    fp[padded_n_parameters + 2]   p1
+    p0
+    p1
     ...
-    fp[5]                         p(n-1) if n is even, padding if n is odd
-    fp[4]                         p(n-1) if n is odd, otherwise last param
-    fp[3]                  interpreter return program counter
-    fp[2]                  interpreter return code object
-    fp[1]                  return pc for JITed code
-fp->fp[0]                  previous frame pointer
-    fp[-1]                 r0
-    fp[-2]                 r1
-    fp[-3]                 r2
+    final parameter
+    optional ABI padding
+    interpreter return pc       fp[3]
+    interpreter return code     fp[2]
+    compiled return pc          fp[1]
+fp  previous frame pointer      fp[0]
+    r0                          fp[-1]
+    r1                          fp[-2]
     ...
 
 lower addresses
 ```
 
-So:
+Frame construction, stack scanning, unwinding, native entry, and future JIT
+code must agree on this layout. Changing it is a cross-layer architecture
+change, not a local opcode refactor.
 
-- parameters are above `fp`
-- locals/temporaries are below `fp`
-- larger logical register numbers move downward in memory
+## Call Argument Windows
 
-## Call Argument Layout
+The caller reserves a contiguous, ABI-aligned temporary window for positional
+arguments. The callable lives outside that window. For a zero-argument call,
+the caller still reserves an anchor slot so entry and default-argument
+adaptation have a well-defined boundary.
 
-### Simple calls
+Before a managed callee is entered, the argument window must contain the
+callee's physical parameter values in parameter order. Depending on the call
+shape, the managed adaptation path may:
 
-For a direct call like `f(x, y)`, codegen reserves one ABI-aligned temporary
-span for the positional call arguments:
+- validate arity;
+- copy default values;
+- bind explicit keyword values;
+- construct callee `*args` or `**kwargs` values;
+- insert a bound receiver;
+- reject duplicates or missing required arguments.
 
-- the callable itself lives outside the call argument span
-- the first temporary in the span is the first user argument
-- the next temporary in the span is the second user argument
-- and so on
+Those are Python call semantics owned by
+[Function Call Adaptation](function-call-adaptation.md). The calling convention
+only requires that the resulting parameter window match the selected target
+`CodeObject` before entry.
 
-For a zero-argument call, codegen still reserves a one-register call argument
-span and emits an argument count of zero. That anchor gives the callee a
-well-defined place to append default arguments before entering the frame.
-
-### Method calls
-
-For direct method-call syntax such as `obj.method(x)`, the receiver and
-explicit arguments occupy one contiguous temporary call argument span:
-
-- receiver
-- user argument 0
-- user argument 1
-- ...
-
-At runtime, `CallMethodAttrPositional` resolves the attribute in call context. If the
-cached or resolved plan binds the receiver as `self`, the handler writes `self`
-into the receiver register and uses that register as the first argument. If no
-implicit receiver is needed, the handler copies the explicit arguments up by
-one slot so the first explicit argument occupies the receiver register.
-
-When `self` is inserted, the callee sees:
-
-- `p0 = self`
-- `p1 = first user arg`
-- ...
-
-When no `self` is inserted, the callee sees:
-
-- `p0 = first user arg`
-- `p1 = second user arg`
-- ...
+The call argument window must be the topmost live temporary range at the entry
+point. This allows the interpreter to place the callee frame immediately below
+the window and reinterpret the existing argument cells as `p0`, `p1`, ...
+without allocating a second parameter array.
 
 ## Function Entry
 
-The core transition for function calls is shared by `op_call_positional` and
-`op_call_method_attr_positional` in [src/interpreter.cpp](../src/interpreter.cpp):
+Ordinary Python-visible calls enter through a `Function`. The `Function` entry
+path owns target selection and call adaptation; a call site must not select an
+arbitrary code object and bypass those semantics.
 
-```cpp
-int32_t new_fp_reg = first_arg_reg - round_up_to_abi_alignment(n_args) + 1 -
-                     FrameHeaderSizeAboveFp;
-Value *new_fp = fp + new_fp_reg;
+After adaptation, frame entry:
 
-new_fp[0].as.ptr = (Object *)fp;
-new_fp[2] = Value::from_oop(code_object);
-new_fp[3].as.ptr = (Object *)pc;
+1. derives the callee frame pointer from the prepared argument window and the
+   target's padded parameter count;
+2. links the callee to the caller through the previous-frame slot;
+3. records the interpreter return code object and program counter when the
+   caller is interpreted;
+4. initializes the target's required local/temporary state;
+5. begins execution at the selected code object's entry point.
 
-fp = new_fp;
-code_object = fun.get_ptr<Function>()->code_object.extract();
-pc = code_object->code.data();
-```
+The argument cells are not copied merely to establish the frame. Moving the
+frame pointer changes their interpretation from caller temporaries to callee
+parameters.
 
-This is the key idea: the interpreter does not allocate/copy a fresh argument block. It reinterprets the caller's already-laid-out call window as the callee frame.
+### Method Calls
 
-`CallPositional` is the public callable path: it resolves a callable's `Function`
-semantics, including selecting the `ordinary_code_object` and applying any
-arity/default adaptation. Future call-site policies may choose an alternate code
-object such as `stop_returning_code_object` when available. Some VM-generated
-thunks instead need to forward into already selected code. Those thunks can use
-`CallCodeObject`:
+Direct method-call lowering reserves room for the receiver and explicit
+arguments in one call window. Method lookup decides whether the receiver must be
+inserted as `self`. After that decision, the physical argument window follows
+the same parameter-order contract as every other function entry.
 
-```text
-CallCodeObject target_code_object, first_arg, argc
-```
+Receiver binding belongs to guarded method lookup and call adaptation. It is
+not encoded as a different callee frame layout.
 
-`CallCodeObject` has a narrower contract:
+### Internal Code-Object Entry
 
-- the target is an explicit `CodeObject` value
-- the surrounding thunk has already prepared the argument/register window
-- no `Function` entry selection, default handling, or callable protocol lookup
-  happens at the opcode
-- the interpreter enters exactly the supplied `CodeObject` using the ordinary
-  frame setup/return machinery
+VM-generated thunks sometimes enter an already-selected `CodeObject`. That is a
+narrow internal operation with these preconditions:
 
-This keeps constructor thunks and future protocol adapters from having to say
-"call this `Function`, but ignore the normal `Function` call behavior".
+- the thunk has selected the correct code object;
+- the complete parameter window has already been prepared;
+- no public callable lookup or argument binding remains to perform.
 
-Class bodies are adjacent but already have their own direct-code path:
-`CreateClass` loads a class body `CodeObject`, prepares the class-body frame,
-and enters that code object internally. It does not need to be expressed through
-`CallCodeObject` unless the implementation later chooses to unify those paths.
+Internal code-object entry uses the ordinary frame construction and return
+layout, but it must not become a public shortcut around `Function` semantics.
+Class bodies, module startup, protocol adapters, and constructor thunks may have
+different target-selection policy while still sharing the managed frame
+contract.
 
-### Why `new_fp` is computed this way
+### Native Function Thunks
 
-At the call site:
+Python-visible native implementations are represented through managed
+`Function` entry. Their thunk frames receive parameters through the same `p`
+slots, then cross to native execution through the native/managed boundary.
 
-- `first_arg_reg` points at the first argument slot, or at the reserved
-  zero-argument anchor
-- the `n_args` argument values sit at that slot and the slots immediately below
-  it
+The number of intrinsic helper variants and their concrete bytecodes are not
+part of this calling convention. Adding a helper arity does not change the
+managed frame contract.
 
-So:
+## Return
 
-```text
-first argument slot  = fp[first_arg_reg]
-last argument slot   = fp[first_arg_reg - n_args + 1]
-new fp               = fp[first_arg_reg - round_up_to_abi_alignment(n_args) + 1 - 4]
-```
+An ordinary managed return carries its result in the accumulator. It restores:
 
-The extra `4` is `FrameHeaderSizeAboveFp`, which places the new `fp` so that:
+- the previous frame pointer from `fp[0]`;
+- the caller's interpreter code object from `fp[2]`;
+- the caller's interpreter program counter from `fp[3]`.
 
-- the last parameter lands above any odd-argument padding
-- the first parameter lands at `fp[round_up_to_abi_alignment(n_args) + 3]`
-- header words occupy `fp[3]`, `fp[2]`, `fp[1]`, and `fp[0]`
+Compiled returns use the compiled return state reserved by the header contract.
+Native boundary returns additionally restore the thread's published Clover
+frame frontier as described in the boundary document.
 
-## Frame Diagrams
+Exception propagation may leave a frame through unwind machinery rather than
+ordinary return, but it must preserve the same frame-chain and caller-state
+invariants. `Value::exception_marker()` is a boundary/protocol result, not an
+ordinary Python return value.
 
-The following shows a normal function frame for a function with two parameters
-and two local/temporary registers. Even parameter counts need no padding:
+## Threaded Interpreter State
 
-```text
-stack grows downward
+The threaded interpreter carries its hot execution state through a fixed native
+handler signature:
 
-    higher addresses
-        |
-        v
+- current managed frame pointer;
+- bytecode program counter;
+- accumulator;
+- dispatch table;
+- current code object.
 
-    fp[5]   p0   first parameter
-    fp[4]   p1   last parameter
-    fp[3]        interpreter return PC
-    fp[2]        interpreter return code object
-    fp[1]        return pc for JITed code
-fp  fp[0]        previous frame pointer
-    fp[-1]  r0   first local/temporary
-    fp[-2]  r1
+Handler-to-handler dispatch uses `musttail`. The fixed signature and frameless
+hot handlers are performance constraints: they allow the compiler to keep
+interpreter state in stable native registers across dispatch. Adding persistent
+interpreter state to that signature or introducing native frames in hot handlers
+requires measurement and frame-shape verification.
 
-    lower addresses
-```
+Only the managed frame pointer belongs to the Clover frame chain. The other
+interpreter values are live execution state and must be published explicitly
+when a safepoint or native transition requires them to become durable roots or
+resume metadata.
 
-The following shows a normal function frame for a function with three
-parameters and two local/temporary registers. Odd parameter counts are padded to
-the next even physical slot count:
+## Stack Ownership And Root Visibility
 
-```text
-stack grows downward
+The Clover stack contains only VM-controlled managed state:
 
-    higher addresses
-        |
-        v
+- frame headers;
+- parameters;
+- locals and temporaries;
+- call argument windows;
+- future compiled managed frames that obey this convention.
 
-    fp[7]   p0   first parameter
-    fp[6]   p1
-    fp[5]   p2   last parameter
-    fp[4]        parameter padding
-    fp[3]        interpreter return PC
-    fp[2]        interpreter return code object
-    fp[1]        return pc for JITed code
-fp  fp[0]        previous frame pointer
-    fp[-1]  r0   first local/temporary
-    fp[-2]  r1
+The native stack contains interpreter implementation frames, runtime helpers,
+native builtins, extension code, ABI spills, and native return addresses.
 
-    lower addresses
-```
+Managed stack scanning must understand which Clover slots are live values,
+padding, or frame metadata. It must not rely on scanning arbitrary native stack
+words. Values held outside the published live Clover range at a safepoint must
+be rooted or owned through the appropriate explicit mechanism.
 
-The caller-to-callee transition for `f(x, y)` looks like this:
+## Required Invariants
 
-```text
-Before call in caller frame:
+- Parameters live above the frame pointer; locals and temporaries live below
+  it.
+- Physical parameter storage is ABI-aligned without changing the logical
+  Python signature.
+- The caller prepares one contiguous argument window in callee parameter order.
+- The argument window is the topmost live temporary range when the callee frame
+  is established.
+- Frame entry reuses the prepared argument cells as callee parameter slots.
+- Every managed frame links to the previous frame through the fixed header.
+- Interpreter return state and compiled return state remain distinct.
+- Ordinary return values travel in the accumulator.
+- Public calls use `Function` entry semantics; direct code-object entry is an
+  internal pre-adapted operation.
+- Method receiver binding changes argument contents, not frame layout.
+- Native execution remains on the native stack.
+- Safepoint scanning distinguishes live managed values from padding and frame
+  payload metadata.
+- Changes to header layout, register encoding, alignment, or entry/return shape
+  are coordinated across codegen, interpreter, unwinding, safepoints, native
+  boundaries, tests, and future JIT metadata.
 
-    ... caller locals/temps ...
-    [callable = f]
-    [aligned call arg 0 = x]
-    [call arg 1 = y]
-    ...
+## Related Documents
 
-After `new_fp = fp + first_arg_reg - round_up_to_abi_alignment(n_args) + 1 - 4`:
-
-    new_fp[5]  p0 = x
-    new_fp[4]  p1 = y
-    new_fp[3]      interpreter return PC
-    new_fp[2]      interpreter return code object
-    new_fp[1]      return pc for JITed code
-    new_fp[0]      previous fp
-    new_fp[-1]     r0
-    ...
-```
-
-## Return Path
-
-Returning is the inverse operation. `op_return` in [src/interpreter.cpp](../src/interpreter.cpp) restores the caller context from the frame header:
-
-```cpp
-pc = (const uint8_t *)fp[3].as.ptr;
-code_object = fp[2].get_ptr<CodeObject>();
-fp = (Value *)fp[0].as.ptr;
-```
-
-The return value itself is carried in the interpreter accumulator, not in a stack slot.
-
-So the full convention is:
-
-- arguments flow into the callee through frame slots
-- return values flow back in the accumulator
-- return control state is restored from `fp[0]`, `fp[2]`, and `fp[3]`
-
-## Top-Level Entry
-
-The module entrypoint is special. `ThreadState::run` starts interpretation at a fixed location near the end of the thread stack:
-
-```cpp
-return run_interpreter(&stack[stack.size() - 1024], obj, 0);
-```
-
-from [src/thread_state.cpp](../src/thread_state.cpp).
-
-`ThreadState::run` passes a Clover frame pointer into the interpreter. It does
-not switch the machine stack pointer. The interpreter itself runs on the native
-C++ stack and mutates Clover frames explicitly through `fp`.
-
-Top-level module code is not expected to execute `Return`; the parser/codegen reject `return` outside a function. So the normal saved-caller metadata contract applies to nested function/class execution, not to the initial module entry frame.
-
-## Stack Ownership
-
-The calling convention describes managed Clover frames, not arbitrary native
-stack frames.
-
-```text
-Clover stack:
-  VM-managed frame headers, parameters, locals, temporaries, temporary call
-  argument spans, interpreted frame materialization, and future JIT frames
-
-native stack:
-  threaded interpreter implementation frames, C++ runtime helpers, native
-  builtin functions, host ABI spills, and return-address bookkeeping
-```
-
-Native functions may receive `Value` arguments loaded from Clover frame slots,
-but their own machine stack activity must remain on the native stack. This keeps
-the Clover stack understandable to root scanning, exception unwinding, and
-future deoptimization metadata.
-
-## Practical Rules
-
-If you are reasoning about CloverVM calls, the safest mental model is:
-
-1. The callable lives separately from the temporary call argument span.
-2. The call argument span is ABI-aligned and must be the topmost live
-   temporary range when the call opcode is emitted.
-3. The interpreter moves `fp` below the argument window padded up to the ABI alignment, so those argument cells become `p0`, `p1`, ...
-4. `fp[0]`, `fp[2]`, and `fp[3]` hold the caller state needed by `Return`.
-5. Locals/temporaries for the callee start at `r0 = fp[-1]`.
-6. The accumulator carries the return value across the `Return` instruction.
-7. Native C++ callees run on the native stack; the Clover stack contains only
-   VM-managed frame/register state.
-
-## Source Pointers
-
-- Call lowering: [src/codegen.cpp](../src/codegen.cpp)
-- Frame/header constants and register encoding: [src/code_object.h](../src/code_object.h)
-- Register names in disassembly: [src/code_object_print.h](../src/code_object_print.h)
-- Call and return execution: [src/interpreter.cpp](../src/interpreter.cpp)
-- Top-level interpreter entry: [src/thread_state.cpp](../src/thread_state.cpp)
+- [Function Call Adaptation](function-call-adaptation.md) owns Python signature
+  binding, defaults, keyword calls, `*args`, and `**kwargs` policy.
+- [Native/Managed Boundary Contracts](native-managed-boundaries.md) owns stack
+  transitions, frame-frontier publication, and native result conventions.
+- [Exception Transport And Protocols](exception-transport-and-protocols.md) owns
+  managed unwinding and exception-marker adaptation.
+- [Refcounting and Reclamation](refcounting-and-reclamation.md) owns live-stack
+  publication and root scanning.
+- [JIT Compiler and IR](jit-compiler-and-ir.md) owns compiled entry, return, and
+  deoptimization requirements built on this frame contract.

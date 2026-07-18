@@ -67,7 +67,7 @@ The repository includes Google Benchmark-based microbenchmarks that run
 clovervm and CPython on the same workloads. The suite reports normalized
 throughput and a `vs_cpython` counter for quick comparison.
 
-Representative output from a Mac Mini M4:
+Historical snapshot from a Mac Mini M4, committed on May 3, 2026:
 
 | Benchmark | Throughput | vs CPython 3.14.4 |
 | --- | ---: | ---: |
