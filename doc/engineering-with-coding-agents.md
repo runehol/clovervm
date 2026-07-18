@@ -8,30 +8,41 @@ test and refine through the project.
 
 ## Operating Model
 
-AI makes producing code, documentation, tests, and alternative designs much
-cheaper. It does not make those outputs correct. The central engineering model
-is therefore:
+Coding agents make producing code, documentation, tests, and alternative
+designs much cheaper. They do not make those outputs correct. The central
+engineering model is therefore:
 
-> Put a probabilistic proposer inside a deterministic system of constraints.
+> Put probabilistic proposal inside a system of explicit constraints,
+> deterministic consistency checks, independent evidence, and accountable
+> judgment.
 
-The human supplies architectural judgment, priorities, historical context, and
-the decision about which complexity is worth accepting. The AI supplies broad
-exploration, implementation bandwidth, consistency checks, and the ability to
-carry decisions through many mechanical details. The repository supplies
-durable shared memory. Measurements and deterministic tools arbitrate claims
-that should not be settled by confidence or taste.
+The human supplies architectural taste and final judgment, priorities,
+historical context, and the decision about which complexity is worth accepting.
+The agent contributes to judgment by exploring alternatives, tracing
+consequences, and challenging assumptions; it also supplies implementation
+bandwidth, consistency checks, and the ability to carry decisions through many
+mechanical details. The human grants authority and remains accountable for
+accepted outcomes. The repository supplies durable shared memory. Measurements,
+independent evidence, and deterministic tools arbitrate claims that should not
+be settled by confidence or taste.
 
 The effective team is:
 
 ```text
-human judgment and direction
+human taste, priorities, final judgment, authority, and accountability
             +
-AI exploration and implementation
+agent exploration, alternatives, critique, and implementation bandwidth
             +
-repository memory and deterministic verification
+repository memory and deterministic consistency checks
             +
-empirical measurement
+independent evidence and empirical measurement
 ```
+
+Determinism provides consistency, not correctness. A checker reliably enforces
+only the properties it encodes, and a test can consistently assert the wrong
+behavior. Correctness depends on adequate specifications, independent oracles,
+sound models, and evidence that the encoded constraints cover the claim being
+made.
 
 ## The Bottleneck Moves to Validation
 
@@ -74,7 +85,7 @@ answer:
 - which tests, verifiers, or measurements will establish success;
 - which result would cause the design itself to be reconsidered.
 
-The intended flow is:
+For committed implementation, the intended flow is:
 
 ```text
 architectural context
@@ -84,6 +95,11 @@ architectural context
     -> deterministic checks
     -> focused human code review
 ```
+
+Some designs need experimental evidence. Use a bounded prototype or benchmark
+to answer a specific feasibility question, then make an explicit design
+decision before experimental code enters mainline. Clovervm's experimental
+generational-GC write barriers followed this pattern.
 
 An underspecified task followed by voluminous agent-generated code transfers
 design work into the review queue. Code review should verify an understood
@@ -101,7 +117,7 @@ generate code faster than judgment can support it.
 Design documents are shared external memory, not merely plans written before
 coding. They should:
 
-- preserve decisions across human and AI context boundaries;
+- preserve decisions across human and agent context boundaries;
 - state the layer that owns a behavior;
 - distinguish permanent invariants from initial implementation policies;
 - distinguish agreed decisions from plausible future mechanisms and open
@@ -114,6 +130,19 @@ A design document must not become an inventory of attractive ideas. It should
 record commitment level explicitly and become simpler when investigation shows
 that a mechanism has not yet earned its cost.
 
+Different repository artifacts preserve different kinds of memory:
+
+- design documents describe the current coherent design;
+- the [decision log](decision-log.md) preserves consequential historical
+  rationale, rejected alternatives, and conditions for reconsideration;
+- Git records the concrete sequence of changes;
+- tests and verifiers encode executable contracts, within the limits of what
+  they actually check.
+
+Project-level decisions belong in the decision log only when they shape a whole
+subsystem or establish contracts across subsystem boundaries. Locally
+refactorable choices should remain fluid rather than appear permanently fixed.
+
 New or materially revised architectural documents should use the
 [Architecture Document Template](architecture-document-template.md) to separate
 document type, commitment status, implementation state, layer ownership, and
@@ -125,8 +154,8 @@ understand why the change was made.
 
 ## Deterministic Guardrails
 
-The engineering system, rather than the language model alone, provides the
-equivalent of deliberate checking. Useful guardrails include:
+The engineering system, rather than the agent's reasoning alone, provides
+repeatable consistency checking. Useful guardrails include:
 
 - compiler errors and strong types;
 - ownership and fallibility contracts;
@@ -139,11 +168,11 @@ equivalent of deliberate checking. Useful guardrails include:
 - benchmark thresholds and code-size measurements;
 - reproducible random seeds and minimized failures.
 
-A recurring review finding is evidence that a guardrail is missing. The
+A recurring review finding is evidence that a guardrail may be missing. The
 preferred progression is:
 
 ```text
-human or AI notices a bug pattern
+human or agent notices a bug pattern
     -> document the invariant
     -> add a focused regression test
     -> encode a verifier, type, or analyser when practical
@@ -152,8 +181,13 @@ human or AI notices a bug pattern
 
 The strongest general rule is:
 
-> Every recurring review lesson that can become a deterministic check should
-> eventually become one.
+> Convert recurring review lessons into the cheapest reliable structural check
+> when that check costs less than continuing manual review.
+
+The best response may be a representation that excludes the invalid state, a
+smaller API, or a clearer ownership boundary rather than another test or
+analyser. Checks have runtime, maintenance, false-positive, and attention costs;
+a growing stream of noisy output is not effective verification.
 
 ## A Layered Testing Portfolio
 
@@ -176,52 +210,40 @@ Focused tests should remain small enough that a failure identifies the broken
 contract. Broad tests should cross the boundaries where individually correct
 components may compose incorrectly.
 
-Randomized testing is useful only when failures are reproducible. Every random
-test should report and accept a stable seed. Where feasible, a failing program,
-heap graph, CFG, or parameter set should be minimized and retained as a focused
-regression test.
+Tests should assert durable semantics and intentionally chosen invariants, not
+incidental implementation details. Structural tests are appropriate when the
+structure itself is a design guarantee. Redundant, obsolete, and flaky tests
+are validation defects: they consume review and execution capacity while
+making legitimate refactoring harder.
+
+Randomized testing becomes operationally useful when failures are reproducible.
+Every random test should report and accept a stable seed. Where feasible, a
+failing program, heap graph, CFG, or parameter set should be minimized and
+retained as a focused regression test.
 
 ## Independent Oracles
 
-An AI may implement a feature and write tests that encode the same mistaken
+An agent may implement a feature and write tests that encode the same mistaken
 interpretation. Test quantity alone does not remove this correlated-error risk.
-Expected results are strongest when obtained independently through:
+Two implementations are not independent merely because their code differs if
+they were derived from the same mistaken premise. Expected results are strongest
+when their derivation is independent through:
 
-- CPython behavior;
+- an authoritative external implementation for the behavior actually in scope;
 - a deliberately simple reference interpreter or model;
-- two structurally different implementations;
+- independently derived implementations with structurally different failure
+  modes;
 - algebraic or metamorphic properties;
 - shadow mechanisms that run beside an authoritative implementation;
 - separately specified invariants checked by a verifier.
 
-For example, canonical frame publication can remain authoritative while a
-future shadow stack-map walker independently enumerates roots and compares its
-result. Agreement between independently structured mechanisms provides much
-stronger evidence than tests written directly against either representation.
-
-## CloverVM Verification Opportunities
-
-High-value future systems include:
-
-- generating valid Python programs and comparing clovervm with CPython;
-- executing the same bytecode in interpreted and compiled modes and comparing
-  values, exceptions, and visible mutations;
-- forcing each eligible JIT guard or side exit to fail and checking exact
-  interpreter continuation;
-- injecting safepoints and collections at every permitted boundary;
-- generating heap graphs and comparing collection with a simple reachability
-  model;
-- running IR verification after every mutating pass in debug builds;
-- generating CFGs with block arguments and stressing edge splitting, loops,
-  parallel-copy cycles, and critical edges;
-- shadowing future compiled-frame stack maps against canonical publication;
-- checking pending-exception, ownership, and root-discovery contracts at native
-  and interpreter boundaries;
-- retaining performance benchmarks whose hypotheses affect architecture.
-
-These mechanisms should be introduced where they protect real implementation
-work, not all constructed speculatively before the corresponding subsystem
-exists.
+For example, an authoritative implementation can remain active while a new
+shadow mechanism independently computes the same externally observable result.
+Agreement between independently derived mechanisms provides much stronger
+evidence than tests written directly against either representation. Reference
+implementations still need an explicit version and comparison scope: their
+implementation details and documented project deviations are not automatically
+part of the required semantics.
 
 ## Failure Modes of High-Throughput Development
 
@@ -230,6 +252,14 @@ Expanded implementation reach creates characteristic risks:
 **Plausibility cascades.** A mistaken premise can quickly produce a coherent
 design, implementation, tests, and documentation. Important premises must be
 made explicit and tested independently.
+
+**Premature implementation.** Cheap code generation makes it easy to turn a
+shaky, insufficiently examined design into a substantial implementation before
+ownership, invariants, alternatives, and validation are understood. That is
+acceptable for an explicitly bounded and disposable prototype whose purpose is
+to answer a design question. Code intended to land in the maintained mainline
+requires design clarity proportional to its blast radius; the existence of a
+working implementation is not evidence that its architecture is sound.
 
 **Correlated tests.** Tests written from the implementation may confirm its
 misconception. Prefer external, reference, property-based, or shadow oracles for
@@ -247,16 +277,46 @@ require evidence before every mechanism is built.
 apparently productive but increasingly fragile repository. Verification work
 is part of implementation, not a later cleanup phase.
 
+**Prototype sedimentation.** Exploratory code can become permanent because it
+already exists, even when the experiment did not justify its architecture.
+Successful experiments still require an explicit adoption decision and normal
+implementation standards.
+
+**Guardrail accretion.** Tests and analysers can grow faster than their signal.
+Noisy, redundant, or implementation-specific checks consume the same validation
+capacity they were intended to protect.
+
 **Tool confidence replacing evidence.** Fluent explanations and clean diffs do
 not establish correctness or performance. Builds, tests, sanitizers, verifiers,
 and measurements remain authoritative.
 
+## Inspect the Engineering Process
+
+These principles are hypotheses about effective collaboration and should be
+reviewed against project experience. Periodically ask:
+
+- where escaped defects are first discovered;
+- how often code review uncovers unresolved design rather than implementation
+  mistakes;
+- which agent-produced changes require substantial rework or reversion;
+- whether validation time is growing faster than implementation capacity;
+- which tests and checks are flaky, redundant, or routinely ignored;
+- which design documents or decision-log entries have become stale;
+- whether commits remain small enough to review causally.
+
+The objective is not to optimize a process dashboard. It is to notice when the
+current bottleneck or failure mode has moved and adjust the engineering system
+accordingly.
+
 ## Working Principles
 
 - Externalize architectural memory.
+- Move taste and judgment earlier, not merely faster.
 - Make commitment levels explicit.
 - Keep a narrow, well-verified architectural core.
-- Prefer deterministic rejection over relying on careful generation.
+- Use bounded experiments when feasibility cannot be settled by reasoning.
+- Treat deterministic checks as consistency mechanisms, not proof that the
+  specification is correct.
 - Maintain independent correctness oracles.
 - Use focused tests for diagnosis and generative tests for discovery.
 - Preserve and minimize randomized failures.
@@ -266,8 +326,8 @@ and measurements remain authoritative.
 - Let sophisticated mechanisms remain optional until evidence justifies them.
 - Treat implementation friction as feedback on the design, not something to
   route around automatically.
-- Revisit these principles as the project reveals where human-AI collaboration
-  actually succeeds or fails.
+- Revisit these principles as the project reveals where collaboration with
+  coding agents actually succeeds or fails.
 
 The objective is not maximal output. It is to expand the scale of software that
 a very small team can understand, validate, and sustain.
