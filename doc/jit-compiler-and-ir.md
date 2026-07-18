@@ -385,24 +385,30 @@ direct compilation path.
 
 A target backend owns register classes, target operations, calls, flags,
 addressing constraints, spills, branches, register allocation, scheduling, and
-final encoding. A simple backend may assign locations to Guard values in side
-tables and emit directly from the Guard schedule. A harder target may introduce
-a machine-oriented SSA or virtual-register representation for one block, one
-region, or the complete function.
+final encoding. A simple backend may assign locations to Guard program values
+in side tables and emit directly from the Guard schedule. A harder target may
+introduce a machine-oriented SSA or virtual-register representation for one
+block, one region, or the complete function.
 
 A direct backend may maintain tables such as:
 
 ```text
-GuardValueId -> register | spill | canonical slot | constant
-GuardEdgeId  -> parallel move bundle
-GuardNodeId  -> target constraints and lowering choice
+ProgramValueRef    -> register | spill | canonical slot | constant
+GuardEdgeId        -> parallel move bundle
+GuardInstructionId -> target constraints and lowering choice
 ```
 
-These are backend results, not mutations of Guard nodes. Internal temporaries
-belong to the selected lowering and may use reserved scratch locations. If a
-backend needs enough independently allocated temporaries or cross-node machine
-optimization that these tables become an implicit instruction graph, that is
-evidence for introducing an explicit Machine IR at the required scope.
+These are backend results, not mutations of Guard instructions. Internal
+temporaries belong to the selected lowering and may use reserved scratch
+locations. If a backend needs enough independently allocated temporaries or
+cross-instruction machine optimization that these tables become an implicit
+instruction graph, that is evidence for introducing an explicit Machine IR at
+the required scope.
+
+The register allocator and location tables accept only `ProgramValueRef`s.
+Instructions with `ResultClass::None` and compiler-only `SnapshotRef`s receive
+no location, although the program-value operands named by a Snapshot remain
+point uses for liveness and recovery.
 
 This choice belongs to each target backend; the common compiler does not
 require all targets to pay for another graph construction and traversal.
@@ -417,10 +423,10 @@ machine-level optimization.
 
 The canonical function representation is a CFG of basic blocks with an ordered
 parameter list and instruction list in each block. Instructions have SSA
-operands and results. Terminators pass an ordered argument list to each normal
-successor, matching that successor's block parameters. Blocks end with explicit
-normal-flow terminators. Instructions may also carry explicit non-returning
-deoptimization side exits.
+operands and may have one result. Terminators pass an ordered argument list to
+each normal successor, matching that successor's block parameters. Blocks end
+with explicit normal-flow terminators. Instructions may also carry explicit
+non-returning deoptimization side exits.
 
 The list is the current schedule. SSA edges expose value and guard-result
 dependencies, while effect annotations constrain movement. List order does not
@@ -497,40 +503,72 @@ Canonical slots belong to logical frame states, not SSA values. One value may
 appear in several registers or in several inlined frames, while one canonical
 slot denotes different SSA values at different program points.
 
-### Typed identities and deterministic traversal
+### Instruction results, typed identities, and deterministic traversal
 
 Compiler objects use strongly typed integer identities rather than pointer
 identity:
 
 ```text
-SemanticNodeId, SemanticValueId, SemanticBlockId, SemanticEdgeId
-GuardNodeId,    GuardValueId,    GuardBlockId,    GuardEdgeId
+SemanticInstructionId, SemanticBlockId, SemanticEdgeId
+GuardInstructionId,    GuardBlockId,    GuardEdgeId
 
-optional backend-defined MachineNodeId, MachineValueId, MachineBlockId,
-                         MachineEdgeId
+optional backend-defined MachineInstructionId, MachineBlockId, MachineEdgeId
 
+# compilation-wide semantic identities
 PartitionId
 FrameStateId
-SnapshotId
-SafepointStateId
-DeoptStateId
-InlineFrameId
+
+# backend-interned recovery identities
 ResumeStateId
 RecoveryPlanId
 ```
 
-Node, value, block, and edge IDs are specific to their IR level and cannot be
+Instruction, block, and edge IDs are specific to their IR level and cannot be
 mixed implicitly with one another or with raw integers. Partition IDs are
 compilation-wide because Semantic and Guard IR refer to the same logical
 partitions. IDs are allocated monotonically in a deterministic construction
 order and are not reused during a compilation.
 
-Node identity and semantic value identity remain distinct. Replacing an
-instruction creates a new node ID. A replacement that preserves the same
-semantic result may deliberately retain its result `ValueId`; an independently
-produced value receives a new one. Block parameters also have `ValueId`s but no
-producing instruction `NodeId`; they are definitions owned by the destination
-block. This is one reason not to unify instruction and value numbering.
+Snapshots do not have a separate ID namespace: a `SnapshotRef` is the typed
+result of a Guard instruction. A `FrameStateId` identifies the structurally
+shared logical frame chain named by that Snapshot, including any inlined
+frames. Post-allocation `SafepointState` and `DeoptState` records are attached
+to machine-code positions and exits rather than given independent identities.
+`ResumeStateId` and `RecoveryPlanId` exist only where the backend interns the
+two independently shareable parts of generated side-exit code.
+
+Every instruction has an `InstructionId` and an intrinsic result class:
+
+```text
+ResultClass::None
+ResultClass::ProgramValue
+ResultClass::Snapshot
+```
+
+The instruction ID also identifies its result when it has one. Typed result
+references are zero-overhead views of that same integer identity:
+
+```text
+ProgramValueRef = ResultRef<ResultClass::ProgramValue>
+SnapshotRef     = ResultRef<ResultClass::Snapshot>
+```
+
+The reference type is also parameterized by IR level, so Semantic and Guard
+program-value references cannot be mixed. Constructing a result reference
+requires the producer's intrinsic class to match. A value-less instruction
+retains an ID for traversal, diagnostics, effects, and rewriting, but cannot be
+used as a result operand. A Snapshot can be used only through `SnapshotRef`,
+never as a program value. This gives C++ analyses and backends useful static
+distinctions without a second numbering scheme. Here, a program value is a
+value in the compiled program's SSA semantics; it does not prescribe the
+concrete `cl::Value` representation.
+
+The initial IRs permit at most one result per instruction. Block parameters
+are output-producing `Parameter` pseudo-instructions referenced by
+`ProgramValueRef`; the block stores their IDs in its ordered parameter vector.
+This keeps joins within the unified numbering scheme. A genuine need for
+multi-result instructions would justify revisiting this rule, but none is
+currently required.
 
 A block owns one ordered parameter vector, and every incoming edge supplies an
 equally sized argument vector. The entire edge transfer has parallel-copy
@@ -541,45 +579,50 @@ edge block or scratch location to break cycles when necessary.
 
 Compilation behavior must not depend on pointer addresses or hash-table
 iteration order. Pointer addresses are neither compiler identities nor analysis
-keys. Passes traverse blocks, nodes, edges, and worklists in defined orders,
-using typed IDs as stable tie-breakers. If a hash table is needed, any results
-that affect compiler output are ordered by typed ID before use. Dense side
-tables should use IDs directly as indexes. Dumps and diagnostics print typed IDs
-rather than addresses.
+keys. Passes traverse blocks, instructions, edges, and worklists in defined
+orders, using typed IDs as stable tie-breakers. If a hash table is needed, any
+results that affect compiler output are ordered by typed ID before use. Dense
+side tables should use instruction IDs directly as indexes where their entry
+applies to every result class, and typed result references where the class
+matters. Dumps and diagnostics print typed IDs rather than addresses.
 
-IR nodes, partition anchors, frame states, and related compilation objects have
-compilation-scoped lifetime. Their IDs remain valid for that lifetime. The
-container and allocation strategy used to provide this lifetime is an
-implementation detail rather than an IR design constraint.
+IR instructions, partition anchors, frame states, and related compilation
+objects have compilation-scoped lifetime. Their IDs remain valid for that
+lifetime. The container and allocation strategy used to provide this lifetime
+is an implementation detail rather than an IR design constraint.
 
-### Immutable nodes, mutable graphs, and analysis side tables
+### Immutable instructions, mutable graphs, and analysis side tables
 
-IR nodes are immutable descriptions of operations. Their operation kind,
+IR instructions are immutable descriptions of operations. Their operation kind,
 operands, results, bytecode origin, intrinsic effects, semantic descriptor,
 guard obligations, partition IDs, and any FrameState or Snapshot references are
-fixed when the node is constructed. A transformation changes any of these
-properties by constructing a replacement node.
+fixed when the instruction is constructed. A transformation changes any of
+these properties by constructing a replacement instruction with a new
+`InstructionId`.
 
 Graph structure remains mutable. Block parameter and instruction lists,
 predecessor and successor sets, edge argument lists, placement, definition
-indexes, and use indexes are maintained by the IR editor. Replacing a node
-updates these structures transactionally; it does not mutate the old node in
-place.
+indexes, and use indexes are maintained by the IR editor. Replacing an
+instruction rewrites its uses and updates these structures transactionally; it
+does not mutate the old instruction in place. Logical interpreter homes are
+tracked by FrameStates and Snapshots rather than by preserving an SSA result
+identity across rewrites.
 
-Derived knowledge is not written into immutable nodes. Analyses own
+Derived knowledge is not written into immutable instructions. Analyses own
 generation-scoped side tables such as:
 
 ```text
-ValueId     -> TypeEvidence
-NodeId      -> RefinedEffects
-PartitionId -> ConditionalFacts
+ProgramValueRef -> TypeEvidence
+InstructionId   -> RefinedEffects
+PartitionId     -> ConditionalFacts
 ```
 
 Fixed-point inference may update these tables repeatedly without rebuilding
-nodes. Intrinsic effects remain a conservative immutable operation contract;
-contextual effect refinements belong to analysis. Selecting a genuinely more
-specific semantic operation, such as replacing a generic call with recognized
-float addition, creates a new node with the corresponding intrinsic contract.
+instructions. Intrinsic effects remain a conservative immutable operation
+contract; contextual effect refinements belong to analysis. Selecting a
+genuinely more specific semantic operation, such as replacing a generic call
+with recognized float addition, creates a new instruction with the
+corresponding intrinsic contract.
 
 ### Mutable CFG and control-flow-producing lowering
 
@@ -596,7 +639,7 @@ therefore needs first-class operations to:
 - add, remove, and redirect edges;
 - update block parameters and edge arguments;
 - clone and splice regions;
-- attach bytecode origins and Snapshot values to new exits.
+- attach bytecode origins and Snapshot references to new exits.
 
 Major representation boundaries normally build fresh destination CFGs.
 Semantic-to-Guard lowering leaves its source graph intact and naturally
@@ -617,17 +660,19 @@ and partition state are derived from the current IR. The initial implementation
 invalidates them broadly and recomputes lazily.
 
 A function has an IR mutation generation, and cached analyses record their
-source generation. Inserting, removing, or replacing a node; changing a
-definition; associating a new partition anchor through node replacement; or
-structurally editing the CFG advances the generation through the official IR
-editor. Requesting stale analysis recomputes it. Passes must not mutate nodes or
-graph structures directly.
+source generation. Inserting, removing, or replacing an instruction; changing
+a definition; associating a new partition anchor through instruction
+replacement; or structurally editing the CFG advances the generation through
+the official IR editor. Requesting stale analysis recomputes it. Passes must
+not mutate instructions or graph structures directly.
 
 Verification at pass boundaries should require:
 
+- every result reference to match its producer's intrinsic `ResultClass`, and
+  no result reference to be formed from a value-less instruction;
 - exactly one live definition for every reachable SSA value;
 - exactly one guaranteed static type for each SSA value, compatible with its
-  defining instruction or block parameter;
+  producing instruction;
 - every specialized use of a guard result to be dominated by that result's
   definition;
 - every mutable-shape-sensitive use to consume a current receiver version whose
@@ -789,9 +834,9 @@ FrameState:
     CodeObject
     bytecode pc
     parent FrameState       # inlined caller
-    accumulator -> SSA value
-    register 0  -> SSA value
-    register 1  -> SSA value
+    accumulator -> ProgramValueRef
+    register 0  -> ProgramValueRef
+    register 1  -> ProgramValueRef
     ...
 ```
 
@@ -805,21 +850,21 @@ current environment:
 ```text
 BuilderContext:
     active logical frame chain
-    (frame instance, accumulator or register) -> ValueId
+    (frame instance, accumulator or register) -> ProgramValueRef
     current bytecode position
     current inferred and available facts
 ```
 
-The context is transient construction state, not an IR node and not a physical
-register map. Updating an accumulator or bytecode register changes this mapping
-without writing its canonical frame home.
+The context is transient construction state, not an IR instruction and not a
+physical register map. Updating an accumulator or bytecode register changes
+this mapping without writing its canonical frame home.
 
 Semantic IR, when present, retains immutable `FrameStateId` metadata at the
 semantic operations and bytecode boundaries from which lowering may need to
 exit. It does not need Snapshot instructions. Guard lowering materializes only
 the recovery states actually referenced by emitted speculative exits.
 
-### Guard IR Snapshot values
+### Guard IR Snapshot results
 
 Guard IR represents a recoverable state with a zero-code `Snapshot`
 instruction:
@@ -833,11 +878,11 @@ instruction:
     parent frame = ...)
 ```
 
-`Snapshot` produces a compiler-only `SnapshotId`. It has no runtime `Value`
-representation, receives no machine register, and carries no type evidence.
-Its operands are the SSA values required to reconstruct the active logical
-frames. Guards and speculative actions consume the snapshot as their failure
-continuation:
+`Snapshot` has `ResultClass::Snapshot`; its `SnapshotRef` is a typed view of the
+instruction's `GuardInstructionId`. It has no runtime `Value` representation,
+receives no machine register, and carries no type evidence. Its operands are
+`ProgramValueRef`s required to reconstruct the active logical frames. Guards
+and speculative actions consume the reference as their failure continuation:
 
 ```text
 %lhs_smi: Smi = ShapeKeyCheck %lhs, Smi
@@ -852,7 +897,7 @@ continuation:
 
 The snapshot answers what interpreter state a failed continuation requires;
 the narrowed guard result answers what successful compiled execution may
-assume. Snapshot values are recovery dependencies, not predicate evidence for
+assume. Snapshot results are recovery dependencies, not predicate evidence for
 the successful continuation.
 
 Several checks and a speculative action may share one snapshot when all their
@@ -920,10 +965,10 @@ CreateTuple  -> exact tuple shape
 ```
 
 The current facts for a value live in type-analysis side tables keyed by its
-typed `ValueId`; they are not mutable annotations on the defining node. An
-analysis pass may replace the side table as inference converges, but within one
-analysis result a `ValueId` does not acquire different guaranteed types at
-different program positions.
+typed `ProgramValueRef`; they are not mutable annotations on the defining
+instruction. An analysis pass may replace the side table as inference
+converges, but within one analysis result a `ProgramValueRef` does not acquire
+different guaranteed types at different program positions.
 
 A minimal bounded fact lattice is:
 
@@ -1002,7 +1047,8 @@ A polymorphic semantic operation defines the anchor for its latent cases. A
 join or block-header control object defines the anchor for a predecessor
 partition. Each IR maintains a deterministic index from `PartitionId` to its
 local defining object or realized CFG region. The anchor does not contain a
-mutable back-pointer to whichever node currently represents it.
+mutable back-pointer to whichever instruction or CFG region currently
+represents it.
 
 `PartitionCaseRef` identifies one case of another partition. It scopes a child
 anchor beneath that case without requiring the immutable parent anchor to be
@@ -1010,8 +1056,8 @@ mutated when children are discovered. A deterministic analysis index may
 enumerate the child anchors of each case.
 
 Semantic and Guard IR use the same partition ID for one logical choice. Lowering
-projects the Semantic definition to a Guard-local node or region without
-changing that identity. A semantics-preserving node replacement may explicitly
+projects the Semantic definition to a Guard-local instruction or region without
+changing that identity. A semantics-preserving instruction replacement may explicitly
 reuse the same partition ID. Cloning a discriminator into independently
 executed choices creates fresh partition IDs, optionally retaining
 `derived-from` provenance.
@@ -1066,9 +1112,9 @@ unconditional:
 
 The unconditional joined fact is the guaranteed static type of each listed SSA
 value. Case facts are conditional evidence attached to the partition, not
-alternate position-dependent types for that `ValueId`. Realizing a case creates
-narrowed guard results or block parameters with their own `ValueId`s and those
-case-specific guaranteed types.
+alternate position-dependent types for that `ProgramValueRef`. Realizing a case
+creates narrowed guard results or block parameters with their own
+`ProgramValueRef`s and those case-specific guaranteed types.
 
 Existing program control flow creates the same abstraction. Multiple block
 parameters at one join share a predecessor partition:
@@ -1162,7 +1208,7 @@ Inlining binds callee parameter uses directly to caller argument SSA values. IR
 construction accepts an incoming abstract state:
 
 ```text
-bytecode register -> SSA value + available facts + guard obligations
+bytecode register -> ProgramValueRef + available facts + guard obligations
 ```
 
 Caller evidence and provenance become entry information for the inlined callee.
@@ -1191,7 +1237,11 @@ call-site specializations.
 
 Inference and inlining may run iteratively: propagate, inline newly eligible
 calls, rebuild affected analyses, and propagate again until stable or a budget
-is exhausted.
+is exhausted. The optimizer uses an explicit maximum iteration count and graph-
+growth budget rather than assuming that mutually enabling passes converge
+cheaply. If the final permitted iteration still inlines code, one trailing
+propagation, canonicalization, CFG cleanup, and dead-code pass runs with
+inlining disabled so that the last expansion is fully optimized.
 
 ## Guard IR
 
@@ -1271,8 +1321,8 @@ mutable-object shape or the initial compiler deoptimizes instead.
 
 When a receiver comes from an interpreter slot, construction updates that
 slot's current SSA binding to the successor. Bindings known to contain exactly
-the same input `ValueId` may be updated together. Unknown heap aliases remain
-conservative.
+the same input `ProgramValueRef` may be updated together. Unknown heap aliases
+remain conservative.
 
 Shape-sensitive uses of mutable objects must consume the current shape-bearing
 version. A shape-changing operation supersedes its input receiver's mutable
@@ -1306,8 +1356,8 @@ StoreExisting %self_s1_again, %multiplied, location
 The call does not change `%self_s1`'s static type. Its shape-clobbering effect
 ends the region in which that refined receiver may be used for shape-sensitive
 operations, and construction rebinds subsequent interpreter locations to the
-weakened successor. Bindings containing the same exact `ValueId` share that
-successor. A general Python call conservatively weakens every live
+weakened successor. Bindings containing the same exact `ProgramValueRef` share
+that successor. A general Python call conservatively weakens every live
 mutable-shape-refined value that remains live afterward; inline values and
 lifetime-stable shapes survive unchanged.
 
@@ -1391,11 +1441,11 @@ Operation definitions provide precise defaults where possible.
 shape. Recognized operations inherit effects from semantic descriptors. Python
 calls and unknown operations begin maximally conservative.
 
-This conservative intrinsic summary is part of the immutable node. A
+This conservative intrinsic summary is part of the immutable instruction. A
 generation-scoped effect-analysis side table may derive a more precise summary
-from current facts, but it does not erase effects from the node. When
+from current facts, but it does not erase effects from the instruction. When
 specialization selects a different semantic operation with a genuinely narrower
-contract, the pass constructs a replacement node of that operation kind.
+contract, the pass constructs a replacement instruction of that operation kind.
 
 Effect implications are centralized. `MayCallPython`, for example, implies
 broad heap access, possible shape mutation, validity invalidation, raising, and
@@ -1499,8 +1549,9 @@ for a generic deoptimizer. Location assignment, logical frame construction, and
 Guard IR do not change merely because the consumer changes.
 
 `DeoptState` is the post-allocation physical projection of a Guard IR Snapshot.
-The Snapshot remains semantic and names `ValueId`s; `DeoptState` records where
-those values can be obtained at that particular machine-code point.
+The Snapshot remains semantic and names `ProgramValueRef`s; `DeoptState`
+records where those values can be obtained at that particular machine-code
+point.
 
 Compiled code and its metadata remain alive as one code object. Safepoint lookup
 from a compiled PC is deterministic, and a call safepoint can be identified
@@ -1509,7 +1560,7 @@ from the compiled caller return PC while walking a suspended callee chain.
 ### Generated side exits and recovery plans
 
 Each Guard IR failure retains an explicit non-returning exit consuming a
-`SnapshotId` until the backend has determined the location of every value
+`SnapshotRef` until the backend has determined the location of every value
 needed for recovery. A backend may carry the exit through Machine IR or consume
 it directly from Guard IR. Post-allocation exit expansion combines three
 inputs:
@@ -1518,14 +1569,14 @@ inputs:
 logical Snapshot and FrameState:
     resume state
     active frame chain
-    (frame instance, canonical slot) -> ValueId
-    innermost accumulator            -> ValueId
+    (frame instance, canonical slot) -> ProgramValueRef
+    innermost accumulator            -> ProgramValueRef
 
 machine location state at the exit:
-    ValueId -> register | spill | canonical slot | constant | recipe
+    ProgramValueRef -> register | spill | canonical slot | constant | recipe
 
 canonical HomeState:
-    (frame instance, canonical slot) -> ValueId currently stored there
+    (frame instance, canonical slot) -> ProgramValueRef currently stored there
 ```
 
 The resulting recovery plan is the parallel assignment needed to make logical
@@ -1537,12 +1588,12 @@ liveness at the exit includes the transitive closure of SSA operands named by
 the Snapshot, whether or not normal compiled control flow uses them afterward.
 
 Location assignment and `HomeState` answer different questions. Location
-assignment says where a `ValueId` can be obtained at the exit. `HomeState`
-records which `ValueId`, if any, is already synchronized in each canonical
-home. Changing the builder's slot binding does not update `HomeState`; only an
-explicit publication store does. Exit planning skips a destination whose home
-already contains the Snapshot's desired value and otherwise obtains that value
-from its allocated location or recipe.
+assignment says where a `ProgramValueRef` can be obtained at the exit.
+`HomeState` records which `ProgramValueRef`, if any, is already synchronized in
+each canonical home. Changing the builder's slot binding does not update
+`HomeState`; only an explicit publication store does. Exit planning skips a
+destination whose home already contains the Snapshot's desired value and
+otherwise obtains that value from its allocated location or recipe.
 
 Under the initial policy these tables are compiler inputs to generated cold
 code, not runtime stack maps. After the generated sequence publishes canonical
@@ -1777,7 +1828,7 @@ A polymorphic addition illustrates the complete flow:
 
 ### IR representation and optimization
 
-- concrete storage layouts and APIs for SSA nodes and blocks;
+- concrete storage layouts and APIs for SSA instructions and blocks;
 - optimizer and register allocator organization;
 - whether any narrow pass benefits from a temporary graph representation;
 - whether a target benefits from no Machine IR, per-block or per-region Machine
