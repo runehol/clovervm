@@ -51,7 +51,7 @@ rationale that remains clear from those sources.
 | ID | Decision | Status |
 |---|---|---|
 | D-0001 | Compile whole functions rather than hot traces | Accepted |
-| D-0002 | Use Guard IR as the mandatory compiler waist | Accepted |
+| D-0002 | Use Core IR as the mandatory compiler waist | Accepted |
 | D-0003 | Use block parameters for SSA joins | Accepted |
 | D-0004 | Start with canonical publication while preserving a path to precise maps | Accepted |
 | D-0005 | Use tagged `Value` as the initial JIT representation | Accepted |
@@ -118,7 +118,7 @@ recording, stitching, and side-trace infrastructure.
 - `doc/jit-compiler-and-ir.md`
 - Commit `ad0988a`
 
-## D-0002: Use Guard IR as the Mandatory Compiler Waist
+## D-0002: Use Core IR as the Mandatory Compiler Waist
 
 **Date:** 2026-07-18
 **Status:** Accepted
@@ -127,27 +127,27 @@ recording, stitching, and side-trace infrastructure.
 
 ### Decision
 
-Guard IR is the only mandatory compiler IR. The initial compiler lowers decoded
-bytecode and IC snapshots directly into Guard IR. Semantic IR is an optional
+Core IR is the only mandatory compiler IR. The initial compiler lowers decoded
+bytecode and IC snapshots directly into Core IR. Semantic IR is an optional
 optimization frontend for type inference, caller-context-sensitive inlining,
 polymorphic reasoning, and other higher-effort work.
 
 ### Context
 
-The original design required Semantic IR, Guard IR, and Machine IR for every
+The original design required Semantic IR, Core IR, and Machine IR for every
 compilation. Review of fast optimizing JITs showed that monomorphic IC feedback
 already supplies enough predicates and successful actions to generate useful
-Guard IR without first implementing a general type system or inliner.
+Core IR without first implementing a general type system or inliner.
 
 ### Alternatives Considered
 
-- require Semantic IR before every Guard IR compilation;
+- require Semantic IR before every Core IR compilation;
 - maintain separate low-effort and optimizing compiler pipelines;
 - lower bytecode directly into a target-specific representation.
 
 ### Why Chosen
 
-Guard IR is the narrow correctness-critical waist. It can express checks,
+Core IR is the narrow correctness-critical waist. It can express checks,
 proofs, effects, calls, control flow, SSA, bytecode recovery states, and
 conservative generic actions. Both direct and inference-driven compilation can
 converge on one optimizer, verifier, recovery model, and backend interface.
@@ -155,19 +155,19 @@ converge on one optimizer, verifier, recovery model, and backend interface.
 ### Consequences
 
 - the first JIT does not require function inlining or semantic type inference;
-- Semantic IR must produce ordinary valid Guard IR and remain invisible to
+- Semantic IR must produce ordinary valid Core IR and remain invisible to
   later optimization and backend stages;
-- Guard IR must support unknown types and conservative Python calls;
+- Core IR must support unknown types and conservative Python calls;
 - compilation effort can increase without creating a second executable tier or
   backend contract.
 
 ### Revisit When
 
-- direct Guard construction materially constrains optimization;
-- inference-driven compilation requires incompatible Guard operations or CFG
+- direct Core construction materially constrains optimization;
+- inference-driven compilation requires incompatible Core operations or CFG
   policies;
 - conditionals for the two construction paths begin spreading through the
-  shared Guard optimizer.
+  shared Core optimizer.
 
 ### References
 
@@ -179,7 +179,7 @@ converge on one optimizer, verifier, recovery model, and backend interface.
 **Date:** 2026-07-18
 **Status:** Accepted
 **Scope:** SSA joins and backend edge transfers
-**Commitment:** Guard and optional Semantic IR representation
+**Commitment:** Core and optional Semantic IR representation
 
 ### Decision
 
@@ -362,7 +362,7 @@ selection. It also minimizes conversion at JIT/interpreter boundaries.
 
 ### Decision
 
-Semantic IR, when present, and Guard IR use conventional SSA CFGs with an
+Semantic IR, when present, and Core IR use conventional SSA CFGs with an
 ordered instruction list in each basic block. The list records the current
 schedule. SSA operands, proof dependencies, explicit effects, and control edges
 state the constraints under which a pass may deliberately change that schedule.
@@ -419,7 +419,7 @@ of the remaining dynamic scheduling.
 - the compiler may miss profitable global reorderings that a more aggressive
   graph optimizer could discover;
 - backend-local scheduling or graph construction remains possible without
-  changing the common Guard representation;
+  changing the common Core representation;
 - measurements, rather than representational fashion, must justify adding a
   less ordered optimization form.
 

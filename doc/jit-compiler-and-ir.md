@@ -19,10 +19,10 @@ convention, and reclamation machinery.
 The mandatory compiler pipeline has one principal compiler IR:
 
 ```text
-encoded bytecode + IC snapshots -> Guard IR -> target backend -> machine code
+encoded bytecode + IC snapshots -> Core IR -> target backend -> machine code
 ```
 
-Guard IR makes speculative checks, narrowed guard results, effects, and control
+Core IR makes speculative checks, narrowed guard results, effects, and control
 flow explicit in an ordered, list-based SSA CFG. A target backend assigns
 physical locations and emits machine code. It may lower through a separate
 Machine IR when that representation pays for itself, but Machine IR is not a
@@ -32,14 +32,14 @@ Semantic IR is an optional optimization frontend, not a prerequisite for
 compiled execution:
 
 ```text
-encoded bytecode + IC snapshots -> Semantic IR -> Guard IR
+encoded bytecode + IC snapshots -> Semantic IR -> Core IR
     -> target backend -> machine code
 ```
 
 It preserves atomic bytecode semantics so that type inference,
 caller-context-sensitive inlining, polymorphic reasoning, and other
 higher-effort optimization can happen before checks and actions are expanded.
-The initial JIT may lower directly into Guard IR, without function inlining or a
+The initial JIT may lower directly into Core IR, without function inlining or a
 semantic type system. This is an intentional compilation mode rather than an
 incomplete form of the Semantic pipeline.
 
@@ -70,8 +70,9 @@ Use distinct terms for operations that are easily conflated:
   logical Python frame and initialize its structural metadata;
 - **frame reconstruction**: create an interpreter frame that has no existing
   canonical backing region; active inlined frames do not require this;
-- **boxing** or **reification**: create a heap object for a virtual semantic
-  value;
+- **boxing**: create a tagged heap object for an unboxed scalar value;
+- **reification**: create runtime object state for a virtual semantic value;
+  boxing is its simplest instance;
 - **root publication**: expose roots to reclamation machinery; the initial
   policy does this by synchronizing canonical frames and the accumulator;
 - **safepoint map**: metadata identifying the current machine locations of
@@ -326,11 +327,11 @@ request. This is not yet a firm design decision.
 
 ## Compiler Pipeline and Phase Ownership
 
-### Direct Guard compilation
+### Direct Core compilation
 
 The first implementation lowers decoded bytecode and IC snapshots directly
-into Guard IR. The shared frontend discovers bytecode basic blocks and captures
-the semantic content of relevant ICs. Guard construction then creates SSA for
+into Core IR. The shared frontend discovers bytecode basic blocks and captures
+the semantic content of relevant ICs. Core construction then creates SSA for
 the accumulator and bytecode registers while expanding each supported IC case
 into explicit checks, actions, and side exits.
 
@@ -343,7 +344,7 @@ This path deliberately omits:
 
 It can still generate useful code. Monomorphic IC cases already identify the
 predicates and successful action, while unknown or unsupported cases can use a
-conservative Python call or return to the interpreter. Guard IR can perform
+conservative Python call or return to the interpreter. Core IR can perform
 ordinary SSA optimization, dominator-based redundant-check elimination, and
 effect-aware local code motion without a general Python type lattice.
 
@@ -352,7 +353,7 @@ effect-aware local code motion without a general Python type lattice.
 Semantic IR is a parsed SSA representation of bytecode semantics, not a wrapper
 around the encoded bytes in `CodeObject::code`. Its atomic operations resemble
 the semantic bytecode operations emitted by the high-level compiler. It is
-inserted before Guard IR only when the compiler chooses to spend more effort on
+inserted before Core IR only when the compiler chooses to spend more effort on
 inference, inlining, or polymorphic specialization.
 
 Semantic IR owns:
@@ -363,9 +364,9 @@ Semantic IR owns:
 - context-sensitive inlining;
 - logical bytecode frame states.
 
-### Guard IR
+### Core IR
 
-Guard IR expands atomic semantic operations into checks and smaller actions.
+Core IR expands atomic semantic operations into checks and smaller actions.
 It may instead construct those checks and actions directly from decoded
 bytecode and IC snapshots when Semantic IR is absent.
 It owns:
@@ -374,19 +375,35 @@ It owns:
 - realization of demanded type partitions as control flow;
 - explicit operation effects and dependencies;
 - redundant-guard elimination and effect-aware code motion;
+- target-independent value representations and explicit representation
+  conversions;
 - ordered calls, operations, and commit points.
 
-When Semantic IR is present, Guard IR carries forward its semantic facts and
+When Semantic IR is present, Core IR carries forward its semantic facts and
 partition identities rather than translating them into a second type system.
 Neither those facts nor a general semantic type system are required by the
 direct compilation path.
+
+Core IR is the stable SSA CFG carried through progressively stronger verified
+forms rather than three mandatory representations:
+
+```text
+constructed Core IR  -> explicit checks, effects, Snapshots, tagged values
+represented Core IR  -> selected operations and one representation per value
+allocated Core IR    -> LocationSummary, location, spill, and edge-move tables
+```
+
+Phase verification prevents arbitrary mixtures of these forms. Common
+instructions remain target-neutral; target constraints and allocated locations
+belong to backend side tables. If those tables grow into an implicit machine
+instruction graph, the backend may introduce Machine IR instead.
 
 ### Optional backend Machine IR
 
 A target backend owns register classes, target operations, calls, flags,
 addressing constraints, spills, branches, register allocation, scheduling, and
-final encoding. A simple backend may assign locations to Guard program values
-in side tables and emit directly from the Guard schedule. A harder target may
+final encoding. A simple backend may assign locations to Core program values
+in side tables and emit directly from the Core schedule. A harder target may
 introduce a machine-oriented SSA or virtual-register representation for one
 block, one region, or the complete function.
 
@@ -394,11 +411,33 @@ A direct backend may maintain tables such as:
 
 ```text
 ProgramValueRef    -> register | spill | canonical slot | constant
-GuardEdgeId        -> parallel move bundle
-GuardInstructionId -> target constraints and lowering choice
+CoreEdgeId         -> parallel move bundle
+CoreInstructionId -> LocationSummary and lowering choice
 ```
 
-These are backend results, not mutations of Guard instructions. Internal
+A target-specific `LocationSummary` describes the input, output, and temporary
+location constraints of one selected lowering, including fixed registers,
+register classes, same-as-input constraints, and whether the lowering contains
+a general call, a callee-safe call, a native leaf call, or a call only on a
+slow path. It is backend analysis data rather than part of the immutable common
+IR operation.
+
+The Core representation of a `ProgramValueRef` determines the compatible
+target register and spill classes. The backend maps target-independent
+representations to its own classes, for example:
+
+```text
+TaggedValue -> general-purpose register class
+Float64     -> floating-point/SIMD register class
+Address     -> general-purpose register class
+```
+
+`LocationSummary` may narrow that default to a fixed register or another
+operation-specific constraint, but it may not assign an incompatible class.
+`UnboxFloat` therefore crosses from a general-purpose input to a floating-point
+output, while `BoxFloat` crosses in the opposite direction.
+
+These are backend results, not mutations of Core instructions. Internal
 temporaries belong to the selected lowering and may use reserved scratch
 locations. If a backend needs enough independently allocated temporaries or
 cross-instruction machine optimization that these tables become an implicit
@@ -408,7 +447,13 @@ the required scope.
 The register allocator and location tables accept only `ProgramValueRef`s.
 Instructions with `ResultClass::None` and compiler-only `SnapshotRef`s receive
 no location, although the program-value operands named by a Snapshot remain
-point uses for liveness and recovery.
+point uses for liveness and recovery. Every live `ProgramValueRef` has one
+authoritative allocated location at a particular machine-code position. Live
+range splitting may move it between locations over time; synchronized canonical
+homes and temporary machine copies do not become additional allocator-owned
+locations for the same SSA value. A move over a split live range remains within
+the representation's compatible register or spill class; changing class
+requires an explicit representation-conversion instruction.
 
 This choice belongs to each target backend; the common compiler does not
 require all targets to pay for another graph construction and traversal.
@@ -450,9 +495,9 @@ narrow optimization or instruction-selection task, but it is not the canonical
 whole-function representation.
 
 Ordered lists are used at every instantiated level. Optional Semantic IR begins
-in decoded bytecode order, Guard IR orders checks and effects, and an optional
+in decoded bytecode order, Core IR orders checks and effects, and an optional
 Machine IR records whatever target schedule its backend needs. A direct backend
-uses the Guard schedule plus backend location and edge-move side tables.
+uses the Core schedule plus backend location and edge-move side tables.
 
 ### Preserve runtime value identity without gratuitous SSA identities
 
@@ -464,6 +509,8 @@ SSA identities:
 - expanding a bytecode preserves the semantic identity of its result;
 - guards and shape-changing mutations may introduce a new statically refined
   identity for the same runtime `Value` bits;
+- boxing, unboxing, and other representation conversions produce explicit new
+  SSA identities;
 - only genuine producers, refinements, shape-state successors, and non-trivial
   block parameters introduce identities;
 - a block parameter whose incoming arguments are all the same value can be
@@ -497,11 +544,14 @@ established by explicit guards and facts established by visible CFG branches.
 
 This refinement is not a machine copy and does not require a new register.
 Backend coalescing should normally give the input and refined result the same
-location.
+location when they have the same representation and their live ranges permit
+it.
 
-Canonical slots belong to logical frame states, not SSA values. One value may
-appear in several registers or in several inlined frames, while one canonical
-slot denotes different SSA values at different program points.
+Canonical slots belong to logical frame states, not SSA values. One
+`ProgramValueRef` may supply several logical slots or inlined frames, while one
+canonical slot denotes different SSA values at different program points. A
+logical Python value represented in several machine forms has a distinct
+`ProgramValueRef` for each form rather than several locations for one SSA value.
 
 ### Instruction results, typed identities, and deterministic traversal
 
@@ -510,7 +560,7 @@ identity:
 
 ```text
 SemanticInstructionId, SemanticBlockId, SemanticEdgeId
-GuardInstructionId,    GuardBlockId,    GuardEdgeId
+CoreInstructionId,     CoreBlockId,     CoreEdgeId
 
 optional backend-defined MachineInstructionId, MachineBlockId, MachineEdgeId
 
@@ -525,12 +575,12 @@ RecoveryPlanId
 
 Instruction, block, and edge IDs are specific to their IR level and cannot be
 mixed implicitly with one another or with raw integers. Partition IDs are
-compilation-wide because Semantic and Guard IR refer to the same logical
+compilation-wide because Semantic and Core IR refer to the same logical
 partitions. IDs are allocated monotonically in a deterministic construction
 order and are not reused during a compilation.
 
 Snapshots do not have a separate ID namespace: a `SnapshotRef` is the typed
-result of a Guard instruction. A `FrameStateId` identifies the structurally
+result of a Core instruction. A `FrameStateId` identifies the structurally
 shared logical frame chain named by that Snapshot, including any inlined
 frames. Post-allocation `SafepointState` and `DeoptState` records are attached
 to machine-code positions and exits rather than given independent identities.
@@ -553,7 +603,7 @@ ProgramValueRef = ResultRef<ResultClass::ProgramValue>
 SnapshotRef     = ResultRef<ResultClass::Snapshot>
 ```
 
-The reference type is also parameterized by IR level, so Semantic and Guard
+The reference type is also parameterized by IR level, so Semantic and Core
 program-value references cannot be mixed. Constructing a result reference
 requires the producer's intrinsic class to match. A value-less instruction
 retains an ID for traversal, diagnostics, effects, and rewriting, but cannot be
@@ -642,7 +692,7 @@ therefore needs first-class operations to:
 - attach bytecode origins and Snapshot references to new exits.
 
 Major representation boundaries normally build fresh destination CFGs.
-Semantic-to-Guard lowering leaves its source graph intact and naturally
+Semantic-to-Core lowering leaves its source graph intact and naturally
 supports one-to-region translation. A backend that chooses Machine IR follows
 the same rule; a direct backend instead records locations, edge moves, and
 emission metadata in side tables. Optimizations within one IR may use an
@@ -673,6 +723,10 @@ Verification at pass boundaries should require:
 - exactly one live definition for every reachable SSA value;
 - exactly one guaranteed static type for each SSA value, compatible with its
   producing instruction;
+- exactly one machine representation for each Core `ProgramValueRef`, with all
+  representation changes expressed by explicit conversion instructions;
+- every allocated register or spill location to belong to a class compatible
+  with that representation and the instruction's `LocationSummary`;
 - every specialized use of a guard result to be dominated by that result's
   definition;
 - every mutable-shape-sensitive use to consume a current receiver version whose
@@ -681,8 +735,12 @@ Verification at pass boundaries should require:
   state for every active logical frame;
 - every SSA value transitively named by that Snapshot to be defined and
   available at the consuming exit, even when it is dead on normal control flow;
-- every normal edge to supply exactly one argument of the required kind for
-  each destination block parameter;
+- every Snapshot recovery action to accept the representation of its operands
+  and produce the interpreter representation required by its destination;
+- every sunk boxing action to have no remaining normal use, and every logical
+  alias of its result within one Snapshot to share one recovery-local box;
+- every normal edge to supply exactly one argument of the required kind and
+  representation for each destination block parameter;
 - every edge argument definition to dominate that edge;
 - every block parameter to be owned by exactly one reachable block;
 - every referenced partition to have a live defining object or realized region
@@ -703,13 +761,13 @@ if broad invalidation is measurably expensive.
 
 ### One optional semantic type system
 
-If semantic inference is implemented, Semantic IR and Guard IR share
+If semantic inference is implemented, Semantic IR and Core IR share
 `ValueFacts`, `TypeEvidence`, type-partition identities, and their join and
 refinement rules. The physical split belongs to the IR, not to a separate
-Guard-only type system. The initial direct-to-Guard compiler does not need to
+Core-only type system. The initial direct-to-Core compiler does not need to
 instantiate this analysis or attach general type facts to its values.
 
-Guard IR does not need the optional inference lattice merely to type the result
+Core IR does not need the optional inference lattice merely to type the result
 of an emitted guard. A value-refining guard creates an SSA result with the
 narrowed guaranteed type, and specialized consumers use that result directly.
 Non-value guards, such as validity-cell checks, constrain control and effect
@@ -722,14 +780,14 @@ type lattice.
 ## Optional Semantic IR Optimization Frontend
 
 Everything in this section describes a higher-effort optimization frontend. It
-is not required for the initial direct-to-Guard compiler. The representations
+is not required for the initial direct-to-Core compiler. The representations
 are recorded now so the core IR does not preclude later inference and inlining,
 not as an obligation to implement them before useful machine code can be
 generated.
 
 ### Parsed bytecode and inline-cache snapshots
 
-This parsing machinery is shared with direct Guard compilation; it is described
+This parsing machinery is shared with direct Core compilation; it is described
 here because Semantic IR retains its results as atomic operations. Parsing
 decodes instructions, forms blocks and edges, records bytecode PCs, and
 snapshots relevant inline-cache semantics into compilation-local data. Encoded
@@ -861,12 +919,12 @@ this mapping without writing its canonical frame home.
 
 Semantic IR, when present, retains immutable `FrameStateId` metadata at the
 semantic operations and bytecode boundaries from which lowering may need to
-exit. It does not need Snapshot instructions. Guard lowering materializes only
+exit. It does not need Snapshot instructions. Core lowering materializes only
 the recovery states actually referenced by emitted speculative exits.
 
-### Guard IR Snapshot results
+### Core IR Snapshot results
 
-Guard IR represents a recoverable state with a zero-code `Snapshot`
+Core IR represents a recoverable state with a zero-code `Snapshot`
 instruction:
 
 ```text
@@ -879,7 +937,7 @@ instruction:
 ```
 
 `Snapshot` has `ResultClass::Snapshot`; its `SnapshotRef` is a typed view of the
-instruction's `GuardInstructionId`. It has no runtime `Value` representation,
+instruction's `CoreInstructionId`. It has no runtime `Value` representation,
 receives no machine register, and carries no type evidence. Its operands are
 `ProgramValueRef`s required to reconstruct the active logical frames. Guards
 and speculative actions consume the reference as their failure continuation:
@@ -909,9 +967,47 @@ irreversible commit so that no intermediate mutation snapshot is required.
 Snapshot operands are point uses for deoptimization liveness at every consuming
 exit, even when side exits are not ordinary normal-CFG successors. Register
 allocation must keep their transitive values recoverable at that point in a
-register, spill, synchronized canonical home, constant, or future reification
-recipe. A value need not remain live on the successful continuation unless
-normal uses require it.
+register, spill, synchronized canonical home, or constant. A Snapshot entry may
+also capture an explicit recovery action over those values, such as boxing an
+unboxed float into the tagged representation required by an interpreter slot:
+
+```text
+%snapshot: Snapshot = Snapshot(
+    resume = Add@17,
+    recover %boxed_sum = BoxFloatForRecovery(%sum_f64),
+    frame A accumulator = %boxed_sum,
+    frame A register 0  = %boxed_sum,
+    ...)
+```
+
+The boxing action executes only on a taken exit. It is recorded in the Snapshot
+and later projected into the recovery plan; it does not force a normal-path
+`BoxFloat` instruction. `%boxed_sum` is a recovery-local result rather than a
+`ProgramValueRef`; several logical homes can reference it so the exit allocates
+one box and preserves object identity. A value need not remain live on the
+successful continuation unless normal uses require it.
+
+Recovery boxing normally arises by sinking an explicit boxing instruction whose
+only remaining consumers are Snapshots:
+
+```text
+# Before sinking.
+%sum_f64: Float64 = FloatAdd %left_f64, %right_f64
+%sum_boxed: Tagged<Float> = BoxFloat %sum_f64
+%snapshot = Snapshot(frame A accumulator = %sum_boxed, ...)
+
+# After sinking.
+%sum_f64: Float64 = FloatAdd %left_f64, %right_f64
+%snapshot = Snapshot(
+    recover %sum_boxed = BoxFloatForRecovery(%sum_f64),
+    frame A accumulator = %sum_boxed,
+    ...)
+```
+
+This is a representation change on the latent recovery path, not a change to
+the representation of `%sum_f64`. The backend keeps the Snapshot operand live
+and emits the boxing in generated side-exit code without constructing ordinary
+CFG edges or exposing the recovery-local result to register allocation.
 
 Snapshots are immutable and structurally shared through their `FrameStateId`s.
 They are anchored to their consuming exits rather than freely scheduled as
@@ -1055,8 +1151,8 @@ anchor beneath that case without requiring the immutable parent anchor to be
 mutated when children are discovered. A deterministic analysis index may
 enumerate the child anchors of each case.
 
-Semantic and Guard IR use the same partition ID for one logical choice. Lowering
-projects the Semantic definition to a Guard-local instruction or region without
+Semantic and Core IR use the same partition ID for one logical choice. Lowering
+projects the Semantic definition to a Core-local instruction or region without
 changing that identity. A semantics-preserving instruction replacement may explicitly
 reuse the same partition ID. Cloning a discriminator into independently
 executed choices creates fresh partition IDs, optionally retaining
@@ -1089,7 +1185,7 @@ SpecializationCase {
 ```
 
 These cases form a **type partition**: an abstract branch recorded by shared
-Semantic/Guard type analysis without adding speculative Semantic CFG edges.
+Semantic/Core type analysis without adding speculative Semantic CFG edges.
 The partition supplies both joined facts and facts conditional on a named case:
 
 ```text
@@ -1187,7 +1283,7 @@ parent-case cycle. The system does not attempt arbitrary logical implication
 solving.
 
 When a type-sensitive consumer demands realization, that demand traces back to
-the defining partition anchor. Guard lowering therefore knows the earliest
+the defining partition anchor. Core lowering therefore knows the earliest
 logical point at which to introduce a discriminator, or which existing
 predecessor edges already embody the cases.
 
@@ -1197,7 +1293,7 @@ Within `P_x.true`, a later consumer may realize `P_y` locally. This preserves
 correlation without generating all leaf combinations eagerly.
 
 IC observations alone do not make the joined result globally guaranteed. For a
-speculative partition, result facts become guaranteed only after Guard IR has
+speculative partition, result facts become guaranteed only after Core IR has
 checked that a supported case applies; unmatched cases deoptimize. A genuinely
 exhaustive guaranteed partition may use elimination: disproving one of two
 cases proves the other without another runtime test.
@@ -1214,7 +1310,7 @@ bytecode register -> ProgramValueRef + available facts + guard obligations
 Caller evidence and provenance become entry information for the inlined callee.
 Redundant callee requirements may be removed under inherent or already-proven
 facts, subject to effect and stability rules. Obligations remain attached until
-Guard IR makes their checks explicit.
+Core IR makes their checks explicit.
 
 Inlining removes machine call and dispatch overhead, not Python frame
 structure. Each inline instance receives a fixed canonical backing region in
@@ -1243,11 +1339,11 @@ cheaply. If the final permitted iteration still inlines code, one trailing
 propagation, canonicalization, CFG cleanup, and dead-code pass runs with
 inlining disabled so that the last expansion is fully optimized.
 
-## Guard IR
+## Core IR
 
 ### Expanding semantic operations
 
-Guard construction breaks an atomic bytecode operation into checks and its
+Core construction breaks an atomic bytecode operation into checks and its
 selected action. It may consume an operation preserved in Semantic IR or lower
 directly from decoded bytecode and its IC snapshot. For example:
 
@@ -1286,7 +1382,7 @@ later use and remains valid across the intervening effects.
 
 ### Expanding attribute mutations
 
-`StoreAttr` and `DelAttr` are semantic operations. Guard construction inspects
+`StoreAttr` and `DelAttr` are semantic operations. Core construction inspects
 the snapshotted mutation IC and lowers them to the operation selected by its
 `AttributeMutationPlan`:
 
@@ -1388,7 +1484,7 @@ must remain equivalent.
 
 ### Realizing type partitions
 
-Guard IR alone decides whether an abstract partition becomes actual control
+Core IR alone decides whether an abstract partition becomes actual control
 flow. Realization is consumer-driven rather than an automatic response to a
 union type:
 
@@ -1414,7 +1510,7 @@ profitability decision with an explicit growth budget. A partition never
 demanded by a type-sensitive consumer remains metadata and produces no runtime
 branch.
 
-When Guard IR realizes a partition, it continues propagation in the shared
+When Core IR realizes a partition, it continues propagation in the shared
 fact lattice. CFG edits, cloning, and joins must invalidate or update the same
 analysis used by Semantic IR.
 
@@ -1538,7 +1634,7 @@ DeoptState {
     resume state
     active logical frame chain
     interpreter-visible value -> register | spill | canonical slot
-                                 | constant | reification recipe
+                                 | constant | boxing/reification recipe
 }
 ```
 
@@ -1546,12 +1642,15 @@ The initial backend lowers `SafepointState` into continuing publication code
 and lowers `DeoptState` into generated cold recovery plans. A future mapped
 backend serializes the first for the compiled-frame stack walker and the second
 for a generic deoptimizer. Location assignment, logical frame construction, and
-Guard IR do not change merely because the consumer changes.
+Core IR do not change merely because the consumer changes.
 
-`DeoptState` is the post-allocation physical projection of a Guard IR Snapshot.
+`DeoptState` is the post-allocation physical projection of a Core IR Snapshot.
 The Snapshot remains semantic and names `ProgramValueRef`s; `DeoptState`
 records where those values can be obtained at that particular machine-code
-point.
+point. Each source location is interpreted using its value's representation and
+therefore its register or spill class. An unboxed float needed by recovery may
+be live in an FP/SIMD register even though it is not a managed root and does not
+appear in the safepoint root map.
 
 Compiled code and its metadata remain alive as one code object. Safepoint lookup
 from a compiled PC is deterministic, and a call safepoint can be identified
@@ -1559,21 +1658,23 @@ from the compiled caller return PC while walking a suspended callee chain.
 
 ### Generated side exits and recovery plans
 
-Each Guard IR failure retains an explicit non-returning exit consuming a
+Each Core IR failure retains an explicit non-returning exit consuming a
 `SnapshotRef` until the backend has determined the location of every value
 needed for recovery. A backend may carry the exit through Machine IR or consume
-it directly from Guard IR. Post-allocation exit expansion combines three
+it directly from Core IR. Post-allocation exit expansion combines three
 inputs:
 
 ```text
 logical Snapshot and FrameState:
     resume state
     active frame chain
-    (frame instance, canonical slot) -> ProgramValueRef
-    innermost accumulator            -> ProgramValueRef
+    (frame instance, canonical slot) -> Direct(ProgramValueRef)
+                                      | RecoveryAction(ProgramValueRef, ...)
+    innermost accumulator            -> Direct(ProgramValueRef)
+                                      | RecoveryAction(ProgramValueRef, ...)
 
 machine location state at the exit:
-    ProgramValueRef -> register | spill | canonical slot | constant | recipe
+    ProgramValueRef -> register | spill | canonical slot | constant
 
 canonical HomeState:
     (frame instance, canonical slot) -> ProgramValueRef currently stored there
@@ -1582,10 +1683,11 @@ canonical HomeState:
 The resulting recovery plan is the parallel assignment needed to make logical
 and synchronized state agree. It includes dirty canonical-slot writes, the
 accumulator source, final bytecode and return metadata for every active frame,
-and any future reification recipes. Active inline frames already have canonical
-backing regions and do not require allocation or layout reconstruction. Machine
-liveness at the exit includes the transitive closure of SSA operands named by
-the Snapshot, whether or not normal compiled control flow uses them afterward.
+and any boxing or reification actions captured by the Snapshot. Active inline
+frames already have canonical backing regions and do not require allocation or
+layout reconstruction. Machine liveness at the exit includes the transitive
+closure of SSA operands named by the Snapshot, whether or not normal compiled
+control flow uses them afterward.
 
 Location assignment and `HomeState` answer different questions. Location
 assignment says where a `ProgramValueRef` can be obtained at the exit.
@@ -1593,7 +1695,8 @@ assignment says where a `ProgramValueRef` can be obtained at the exit.
 each canonical home. Changing the builder's slot binding does not update
 `HomeState`; only an explicit publication store does. Exit planning skips a
 destination whose home already contains the Snapshot's desired value and
-otherwise obtains that value from its allocated location or recipe.
+otherwise obtains the source from its allocated location and evaluates any
+captured recovery action before publishing it.
 
 Under the initial policy these tables are compiler inputs to generated cold
 code, not runtime stack maps. After the generated sequence publishes canonical
@@ -1685,43 +1788,93 @@ The existing `Value` representation is the initial JIT representation:
 - multiplication and address indexing shift only where required;
 - tagged values move directly between registers and canonical frame homes.
 
-The initial JIT uses boxed `Value`s exclusively. It does not require general
+The initial JIT uses tagged `Value`s exclusively. It does not require general
 unboxing to execute ordinary compiled code.
 
-### Semantic identity and machine representation
+### One representation and location per Core SSA value
 
-Semantic identity is separate from physical representation. A value does not
-own a canonical bytecode slot and need not map to exactly one virtual register.
-Later lowering may keep several representations simultaneously:
+Every Core `ProgramValueRef` has exactly one machine representation, such as
+tagged `Value` or `Float64`. Semantic IR, when present, may defer this choice;
+its lowering creates the represented Core values. Boxing, unboxing, and any
+other representation changes are explicit Core SSA instructions that produce
+new values:
 
 ```text
-semantic %v
-    -> %v.boxed : Value
-    -> %v.f64   : Float64
+%boxed: Tagged<Float>
+%raw:   Float64       = UnboxFloat %boxed
+%sum:   Float64       = FloatAdd %raw, %other_raw
+%result: Tagged<Float> = BoxFloat %sum
 ```
 
-Machine liveness is separate from semantic liveness. A function argument exists
-semantically at entry while remaining in its canonical slot until a guard or use
-makes loading it profitable.
+Representation also determines the value's default backend register class and
+spill layout. On AArch64 a tagged `Value` normally occupies an `X` register and
+an unboxed `Float64` a scalar lane of a NEON/FP register; x86-64 uses its
+corresponding general-purpose and XMM classes. These target classes belong to
+the backend, while `TaggedValue` and `Float64` remain common Core
+representations.
+
+Several representations of one logical Python value may therefore coexist, but
+they are separate SSA values connected by visible conversion operations. This
+lets ordinary use lists, dominance, CSE, and liveness describe exactly which
+form each consumer requires. Optimizations may eliminate inverse boxing and
+unboxing pairs only in the identity-safe direction: an
+`UnboxFloat(BoxFloat(%raw))` may simplify to `%raw` when the intermediate box
+has no other use and removing its allocation has no observable effect. The
+optimizer may thereby connect arithmetic directly in unboxed form.
+
+Core block parameters also have one representation. Every incoming edge must
+supply that representation, inserting an explicit conversion in the
+predecessor or edge block when necessary.
+
+At each machine-code position, a live SSA value has one authoritative allocated
+location. Live-range splitting may move that value between a register, spill,
+canonical slot, or constant location over time. A synchronized canonical home
+or temporary machine copy does not give the same `ProgramValueRef` a second
+allocator-owned location. If tagged and unboxed forms must both remain live,
+each has its own `ProgramValueRef` and location.
+
+Machine liveness remains separate from logical availability. A function
+argument is defined at entry and may initially use its canonical argument slot
+as its authoritative location until a guard or use makes loading it profitable.
 
 ### Future unboxed floats and reification
 
-Unboxed floats are an advanced optimization, not an initial requirement. The
-design distinguishes:
+Unboxed floats are an advanced optimization, not an initial requirement. An
+`UnboxFloat` of an existing tagged float produces a separate `Float64` SSA value
+while the original tagged value preserves the existing object identity. If
+interpreter state still denotes that object, its Snapshot entry uses the
+original tagged `ProgramValueRef`; the compiler must not discard it and later
+manufacture a replacement box from the unboxed value.
 
-1. an unboxed cache of an existing boxed float, where deoptimization discards
-   the cache and retains the original identity;
-2. a new unboxed arithmetic result representing a virtual Python float, which
-   must be reified before deoptimization, escape, or identity-sensitive use.
+`BoxFloat(UnboxFloat(%boxed))` must not simplify to `%boxed`: the explicit
+boxing operation creates a new Python object, and reusing the input box would
+change observable identity. Only `UnboxFloat(BoxFloat(%raw))` cancels, and only
+when the newly allocated box has no other consumer or observable effect.
 
-A virtual result has one semantic identity. If it appears in multiple bytecode
-slots or inlined frames, reification allocates one box and places that same
-`Value` everywhere. Boxing each occurrence independently would break `is`.
+A new unboxed arithmetic result has no box until compiled execution or recovery
+needs one. A normal-path `BoxFloat` explicitly produces the tagged SSA value
+used by later compiled operations. It may be sunk into Snapshots only when it
+has no normal consumers, deferring its allocation has no observable effect, and
+every affected Snapshot preserves one shared recovery result for all logical
+homes that require the object.
 
-Reification allocation may initially be treated as infallible because the
-runtime requests a reclamation safepoint before memory exhaustion. The first
-JIT needs no unboxed-float nodes or reification implementation; its IR must only
-avoid precluding them.
+After sinking, each Snapshot captures a boxing recovery action over the unboxed
+operand. The backend emits that action on the cold exit path and keeps the hot
+path unboxed. Separate exits may contain separate recipes because only one exit
+can be taken in an execution; within one exit, every alias of the virtual result
+must use the same recovery-local box.
+
+If one unboxed result appears in multiple bytecode slots or inlined frames, its
+recovery actions must allocate one box and place that same `Value` everywhere.
+Boxing each occurrence independently would break `is`. Equivalent normal-path
+boxing operations may likewise be commoned only when doing so preserves the
+required Python object identity and effects.
+
+Boxing or reification allocation may initially be treated as infallible because
+the runtime requests a reclamation safepoint before memory exhaustion. The
+first JIT needs no unboxed-float instructions or recovery boxing implementation;
+its IR must only preserve the representation, location, and Snapshot rules that
+allow them to be added later.
 
 ## Inlined Frame Backing and Deoptimization
 
@@ -1782,14 +1935,14 @@ The initial path requires neither Semantic IR nor type inference:
    state, and snapshots its monomorphic IC case.
 2. The trusted handler descriptor identifies the selected semantic action and
    the predicates that justify it.
-3. Guard IR construction captures the current `BuilderContext` as one Snapshot
+3. Core IR construction captures the current `BuilderContext` as one Snapshot
    value shared by the pre-effect shape checks, validity checks, and overflow
    exit, then emits the narrowed results and selected action.
 4. Snapshot operands make every interpreter-visible value required by the
    failed continuation live and recoverable at those exits.
 5. Failed pre-effect checks return to the original `Add`; committed exits, when
    present, use a distinct post-effect Snapshot.
-6. Guard optimization may remove a redundant dominating check when effects,
+6. Core optimization may remove a redundant dominating check when effects,
    Snapshot availability, and replay semantics permit it.
 7. The target backend assigns locations, combines each Snapshot with physical
    and canonical-home state, interns recovery plans, and encodes the function,
@@ -1811,8 +1964,8 @@ A polymorphic addition illustrates the complete flow:
    guard obligations, and any correlated type partition.
 4. Inlining may refine the same plan using caller-context evidence.
 5. A union-transparent consumer leaves the partition latent. A type-sensitive
-   consumer asks Guard lowering to realize the relevant alternatives.
-6. Guard IR materializes the required Snapshots and emits narrowed shape-check
+   consumer asks Core lowering to realize the relevant alternatives.
+6. Core IR materializes the required Snapshots and emits narrowed shape-check
    results, validity checks, and specialized actions. Existing predecessor
    partitions may instead permit code duplication without new checks.
 7. Failed pre-effect checks consume the Snapshot returning to the original
@@ -1833,11 +1986,11 @@ A polymorphic addition illustrates the complete flow:
 - whether any narrow pass benefits from a temporary graph representation;
 - whether a target benefits from no Machine IR, per-block or per-region Machine
   IR, or a whole-function Machine IR;
-- the threshold at which direct Guard emission has accumulated enough hidden
+- the threshold at which direct Core emission has accumulated enough hidden
   target-specific lowering state that an explicit Machine IR would be simpler;
 - when analysis preservation or incremental CFG maintenance is worthwhile;
 - what evidence should trigger recompilation through the optional Semantic IR
-  frontend rather than direct Guard compilation;
+  frontend rather than direct Core compilation;
 - how much construction and lowering machinery the two paths should share
   without turning them into independent compiler implementations.
 
@@ -1874,7 +2027,7 @@ A polymorphic addition illustrates the complete flow:
   entries remain useful alongside precise maps;
 - how often inlining actually removes small hot Python call boundaries, and how
   many dirty managed values remain live at the calls it does not remove;
-- exact encoding of post-allocation machine locations, rematerialization, and
+- exact encoding of post-allocation machine locations, recovery boxing, and
   future reification recipes in recovery plans;
 - recovery-plan interning and code-size policy beyond exact-plan deduplication;
 - normal compiled returns through the compiled-PC frame slot;
@@ -1889,7 +2042,7 @@ A polymorphic addition illustrates the complete flow:
 - invalidation and lifetime of generated code.
 
 These questions must be answered without weakening bytecode compatibility. If
-semantic inference is implemented, Semantic and Guard IR must share one type
+semantic inference is implemented, Semantic and Core IR must share one type
 system rather than acquire competing notions of Python type. Every safepoint
 policy must provide explicit and verifiable root discovery, and every
 deoptimization policy must reconstruct the same canonical interpreter state.
