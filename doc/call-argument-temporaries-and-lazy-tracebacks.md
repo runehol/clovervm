@@ -1,5 +1,15 @@
 # Call Argument Temporaries And Lazy Tracebacks
 
+| Field | Value |
+|---|---|
+| Document type | Design |
+| Status | Accepted |
+| Implementation | Partial |
+| Scope | Call argument staging, evaluation order, and traceback-safe temporary lifetimes |
+| Owning layers | Codegen, managed frames, interpreter calls, and exception handling |
+| Validated against | `ec7d0ff` (2026-05-30) |
+| Supersedes | N/A |
+
 ## Goal
 
 This note ties together two constraints on call lowering:

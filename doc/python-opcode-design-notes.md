@@ -1,5 +1,15 @@
 # Python Opcode Design Notes
 
+| Field | Value |
+|---|---|
+| Document type | Investigation |
+| Status | Speculative |
+| Implementation | Not started |
+| Scope | Candidate opcode and inline-cache structures for Python protocol operations |
+| Owning layers | Codegen, bytecode, interpreter, inline caches, and runtime protocols |
+| Validated against | N/A |
+| Supersedes | N/A |
+
 This note captures design pressure exposed by the subscript set/delete
 experiment. It is not an implementation plan yet. The goal is to make the
 opcode and inline-cache tradeoffs explicit before we commit to a broader VM

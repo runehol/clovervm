@@ -1,6 +1,14 @@
 # Native/Managed Boundary Contracts
 
-Status: accepted architecture contract.
+| Field | Value |
+|---|---|
+| Document type | Architecture contract |
+| Status | Accepted |
+| Implementation | Implemented |
+| Scope | Contracts for managed-to-native calls and native re-entry into managed execution |
+| Owning layers | Managed frames, interpreter, runtime calls, native APIs, exceptions, and root publication |
+| Validated against | `ad0a158` (2026-07-18) |
+| Supersedes | N/A |
 
 This document defines the contracts for crossing between CloverVM-managed
 execution and native C or C++ execution. It intentionally does not specify

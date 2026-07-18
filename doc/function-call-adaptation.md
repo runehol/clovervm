@@ -1,5 +1,15 @@
 # Function Call Adaptation
 
+| Field | Value |
+|---|---|
+| Document type | Design |
+| Status | Accepted |
+| Implementation | Implemented |
+| Scope | Python argument binding and adaptation above the managed frame convention |
+| Owning layers | Parser, codegen, function metadata, runtime call adaptation, and interpreter |
+| Validated against | `a909d10` (2026-06-25) |
+| Supersedes | N/A |
+
 This note records the implemented function-call adaptation model for Python
 keyword calls and the remaining design work for richer signatures. It builds on
 the low-level frame mechanics documented in

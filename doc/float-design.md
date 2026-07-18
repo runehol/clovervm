@@ -1,11 +1,20 @@
 # Float Design
 
+| Field | Value |
+|---|---|
+| Document type | Design |
+| Status | Accepted |
+| Implementation | Implemented |
+| Scope | Float representation, literals, arithmetic, comparison, display, and benchmark support |
+| Owning layers | Runtime float type, parser, codegen, interpreter, and builtins |
+| Validated against | `77ea62f` (2026-06-14) |
+| Supersedes | N/A |
+
 This document describes the first `float` implementation for clovervm. The
 initial target is not complete Python numeric behavior. The target is enough
 correct, explicit float support to run an adapted Benchmarks Game `nbody`
 benchmark while preserving the existing small-integer fast paths.
 
-Status: this design has been implemented through the adapted `nbody` benchmark.
 This document is retained as rationale and future-work context; the completed
 execution checklist lives in `doc/float-staging-plan.md`.
 

@@ -1,5 +1,15 @@
 # No-Reference Slabs
 
+| Field | Value |
+|---|---|
+| Document type | Design |
+| Status | Proposed |
+| Implementation | Not started |
+| Scope | Specialized allocation and reclamation for heap objects without managed references |
+| Owning layers | Allocator, native layout descriptors, refcounting, and safepoint reclamation |
+| Validated against | N/A |
+| Supersedes | N/A |
+
 ## Context
 
 The adapted `nbody` benchmark exposes a different allocation profile than the

@@ -1,5 +1,15 @@
 # Heap Object Metadata
 
+| Field | Value |
+|---|---|
+| Document type | Architecture contract |
+| Status | Accepted |
+| Implementation | Implemented |
+| Scope | Heap record headers, lifecycle metadata, layout identity, and object sizing |
+| Owning layers | Heap objects, native layout descriptors, allocator, and reclamation |
+| Validated against | `6120300` (2026-05-15) |
+| Supersedes | N/A |
+
 This document describes the current heap object metadata shape. The older
 packed `HeapLayout` word and expanded-header scheme have been removed.
 

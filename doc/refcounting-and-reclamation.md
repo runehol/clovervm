@@ -1,5 +1,15 @@
 # Refcounting and Reclamation
 
+| Field | Value |
+|---|---|
+| Document type | Architecture contract |
+| Status | Accepted |
+| Implementation | Implemented |
+| Scope | Deferred reference counting, zero-count processing, roots, safepoints, and slab release |
+| Owning layers | Runtime ownership, thread state, managed frames, allocator, and reclamation |
+| Validated against | `3f5f608` (2026-05-30) |
+| Supersedes | N/A |
+
 We want to have a GIL-less implementation. However, we still want Python C extension compatibility, so we need to do something here.
 
 We prefer to do deferred reference counting. This means that we don't refcount values on the stack, only on the heap. Loading values from the heap to a local variable, as well as moving values between local variables and temporaries is therefore a matter of a `MOV`, whereas we only need to adjust refcounts when storing to a heap, such as when assigning to a dictionary, object, list or similar. When we do this, we `INCREF` the object we're storing, and we `DECREF` the object we're overwriting, if any.

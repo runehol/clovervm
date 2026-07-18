@@ -1,5 +1,15 @@
 # Value Representation
 
+| Field | Value |
+|---|---|
+| Document type | Architecture contract |
+| Status | Accepted |
+| Implementation | Implemented |
+| Scope | Tagged runtime value layout, integer and special encodings, heap pointers, and ABI constraints |
+| Owning layers | Runtime values, object layouts, bytecode frames, native boundaries, and future compiler |
+| Validated against | `87c32e1` (2026-05-20) |
+| Supersedes | N/A |
+
 This document describes clovervm's runtime `Value` representation. `Value` is
 the common currency used by bytecode registers, the accumulator, object slots,
 containers, native helpers, inline caches, and future JIT code.

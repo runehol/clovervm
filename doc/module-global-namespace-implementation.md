@@ -1,5 +1,15 @@
 # Module Global Namespace Implementation Plan
 
+| Field | Value |
+|---|---|
+| Document type | Implementation plan |
+| Status | Accepted |
+| Implementation | Partial |
+| Scope | Staged delivery of module namespace storage, lookup, imports, and mapping compatibility |
+| Owning layers | Runtime modules, scope metadata, interpreter, import system, and mappings |
+| Validated against | `c98c0d7` (2026-05-23) |
+| Supersedes | N/A |
+
 This file tracks follow-up work after the module-global namespace migration.
 The implemented design is described in
 [Module Global Namespace Design](module-global-namespace-design.md).

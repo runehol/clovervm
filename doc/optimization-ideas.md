@@ -1,5 +1,15 @@
 # Optimization Ideas
 
+| Field | Value |
+|---|---|
+| Document type | Investigation |
+| Status | Experimental |
+| Implementation | Partial |
+| Scope | Interpreter optimization inventory, implemented baselines, and candidate follow-ups |
+| Owning layers | Codegen, interpreter, inline caches, runtime calls, and object protocols |
+| Validated against | `755d08b` (2026-05-26) |
+| Supersedes | N/A |
+
 This note collects interpreter optimization ideas. Some sections describe
 implemented baseline machinery plus remaining follow-ups.
 

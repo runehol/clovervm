@@ -1,5 +1,15 @@
 # Typed Values, Optional, Expected, And Ownership
 
+| Field | Value |
+|---|---|
+| Document type | Architecture contract |
+| Status | Accepted |
+| Implementation | Implemented |
+| Scope | Typed values, optionality, fallible results, and C++ ownership wrappers |
+| Owning layers | Runtime C++ APIs, value representation, pending exceptions, and ownership management |
+| Validated against | `87c32e1` (2026-05-20) |
+| Supersedes | N/A |
+
 This note documents the current direction for CloverVM's C++ value wrappers.
 `Value` remains the compact runtime word and ABI representation. The wrapper
 types describe what a C++ API has already proved about that word: semantic type,

@@ -1,5 +1,15 @@
 # BigInt Design
 
+| Field | Value |
+|---|---|
+| Document type | Design |
+| Status | Accepted |
+| Implementation | Implemented |
+| Scope | Arbitrary-precision integer representation and operations |
+| Owning layers | Runtime values, builtin integer type, and numeric dispatch |
+| Validated against | `239e397` (2026-07-10) |
+| Supersedes | N/A |
+
 This document describes the arbitrary-precision integer implementation for
 clovervm. The design keeps the existing SMI representation as the fast path and
 adds a heap `BigInt` representation for integer values outside the SMI range.

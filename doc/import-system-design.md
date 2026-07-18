@@ -1,5 +1,15 @@
 # Import System Design
 
+| Field | Value |
+|---|---|
+| Document type | Design |
+| Status | Accepted |
+| Implementation | Partial |
+| Scope | Python import resolution, module loading, packages, globals, and bootstrap behavior |
+| Owning layers | Parser, codegen, runtime modules, import system, native loader, and stdlib bootstrap |
+| Validated against | `a6b5a7b` (2026-06-03) |
+| Supersedes | N/A |
+
 This document sketches a staged design for Python module imports in clovervm.
 It builds on the existing module-global namespace work described in
 [Module Global Namespace Design](module-global-namespace-design.md).

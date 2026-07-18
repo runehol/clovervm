@@ -1,5 +1,15 @@
 # Native Layout Descriptors
 
+| Field | Value |
+|---|---|
+| Document type | Architecture contract |
+| Status | Accepted |
+| Implementation | Implemented |
+| Scope | Descriptor-driven heap record sizing, reference release, and teardown |
+| Owning layers | Heap metadata, runtime object layouts, allocator, and reclamation |
+| Validated against | `6d661a8` (2026-07-11) |
+| Supersedes | N/A |
+
 ## Current Model
 
 Every VM heap record derives from `HeapObject`. `HeapObject` carries:

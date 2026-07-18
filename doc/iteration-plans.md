@@ -1,5 +1,15 @@
 # Iteration Plans
 
+| Field | Value |
+|---|---|
+| Document type | Design |
+| Status | Accepted |
+| Implementation | Partial |
+| Scope | Loop-site iteration plans, internal iterator state, fallback, and invalidation |
+| Owning layers | Codegen, interpreter, runtime iterators, inline caches, and exception transport |
+| Validated against | `239e397` (2026-07-10) |
+| Supersedes | N/A |
+
 ## Goal
 
 Define a fast `for` loop substrate for VM-internal iterable types without making

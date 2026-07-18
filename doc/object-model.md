@@ -1,5 +1,15 @@
 # Object Model
 
+| Field | Value |
+|---|---|
+| Document type | Architecture contract |
+| Status | Accepted |
+| Implementation | Implemented |
+| Scope | Python-visible objects, shapes, classes, attributes, descriptors, and cache validity |
+| Owning layers | Runtime object model, shapes, class construction, attribute semantics, and inline caches |
+| Validated against | `755d08b` (2026-05-26) |
+| Supersedes | N/A |
+
 ## Core Concepts
 
 ### Shape

@@ -1,5 +1,15 @@
 # Closure Cells Design Sketch
 
+| Field | Value |
+|---|---|
+| Document type | Design |
+| Status | Proposed |
+| Implementation | Not started |
+| Scope | Closure cell representation, lowering, and runtime access |
+| Owning layers | Parser, scope analysis, codegen, managed frames, and runtime objects |
+| Validated against | N/A |
+| Supersedes | N/A |
+
 This note captures a CPython-style closure-cell representation for Python
 closure variables in clovervm. In this model, a variable captured by a nested
 function is represented by a stable heap cell, and all closures that capture the

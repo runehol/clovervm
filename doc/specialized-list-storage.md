@@ -1,11 +1,20 @@
 # Specialized list storage design
 
-Status: speculative and not accepted. The current runtime uses boxed
-`ValueArray<Value>` storage for lists. This note records a possible future
-optimization, not an agreed implementation direction. Adopting it requires
-performance evidence and a fresh design review covering list semantics,
-allocation failure, ownership, tracing/relocation, iterator behavior, and
-concurrency.
+| Field | Value |
+|---|---|
+| Document type | Design |
+| Status | Speculative |
+| Implementation | Not started |
+| Scope | Possible element-specialized storage strategies for Python lists |
+| Owning layers | Runtime list type, storage representation, allocation, and iteration |
+| Validated against | N/A |
+| Supersedes | N/A |
+
+The current runtime uses boxed `ValueArray<Value>` storage for lists. This note
+records a possible future optimization, not an agreed implementation direction.
+Adopting it requires performance evidence and a fresh design review covering
+list semantics, allocation failure, ownership, tracing/relocation, iterator
+behavior, and concurrency.
 
 ## Goal
 

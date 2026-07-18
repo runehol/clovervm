@@ -1,5 +1,15 @@
 # Module Global Namespace Design
 
+| Field | Value |
+|---|---|
+| Document type | Design |
+| Status | Accepted |
+| Implementation | Implemented |
+| Scope | Module globals storage, lookup, builtins resolution, mapping views, and cache validity |
+| Owning layers | Runtime modules, scope metadata, interpreter globals access, and inline caches |
+| Validated against | `112cfe9` (2026-05-22) |
+| Supersedes | N/A |
+
 This note describes the implemented split between lexical scope metadata,
 module objects, and runtime global lookup.
 
@@ -224,4 +234,3 @@ This design does not:
 - make class-body locals ordinary closure parents for methods
 - force Python `dict`, symbol scopes, and object shapes into one concrete table
   type
-

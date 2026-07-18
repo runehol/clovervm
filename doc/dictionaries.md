@@ -1,5 +1,15 @@
 # Dictionaries
 
+| Field | Value |
+|---|---|
+| Document type | Architecture contract |
+| Status | Accepted |
+| Implementation | Implemented |
+| Scope | Dictionary representation, probing, Python dispatch, namespaces, and C API behavior |
+| Owning layers | Runtime dictionary type, object protocols, namespaces, interpreter, and C API |
+| Validated against | `8cf6c1c` (2026-07-10) |
+| Supersedes | N/A |
+
 Most dictionaries in Python programs are string-keyed. Module namespaces,
 object and class namespaces, keyword arguments, configuration data, and many
 ordinary application mappings use exact strings as keys. When the VM can prove

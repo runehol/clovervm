@@ -1,5 +1,15 @@
 # Switchable Indirect Native Handles
 
+| Field | Value |
+|---|---|
+| Document type | Architecture contract |
+| Status | Accepted |
+| Implementation | Implemented |
+| Scope | Call-scoped native handles, root publication, overflow storage, and relocation |
+| Owning layers | Native extension API, managed frames, thread state, and memory management |
+| Validated against | `ef528a2` (2026-07-11) |
+| Supersedes | N/A |
+
 ## Purpose
 
 The CloverVM C API exposes `clover_handle` as an opaque machine word. The VM

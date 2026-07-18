@@ -1,5 +1,15 @@
 # Constructor Thunks
 
+| Field | Value |
+|---|---|
+| Document type | Design |
+| Status | Accepted |
+| Implementation | Implemented |
+| Scope | Cached class-call adaptation through constructor thunks |
+| Owning layers | Runtime class objects, call caches, interpreter, and managed calls |
+| Validated against | `755d08b` (2026-05-26) |
+| Supersedes | N/A |
+
 This note documents the first constructor-call implementation for `Class(...)`.
 The design keeps the common case fast without turning `CallPositional` into a large
 constructor protocol engine.

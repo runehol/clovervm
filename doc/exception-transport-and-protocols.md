@@ -1,5 +1,15 @@
 # Exception Transport And Protocols
 
+| Field | Value |
+|---|---|
+| Document type | Architecture contract |
+| Status | Accepted |
+| Implementation | Partial |
+| Scope | Pending-exception transport, unwinding, iteration termination, and traceback state |
+| Owning layers | Runtime APIs, interpreter, managed frames, codegen, and future compiled execution |
+| Validated against | `12ce21f` (2026-05-24) |
+| Supersedes | N/A |
+
 ## Goal
 
 Define an exception substrate that keeps ordinary call/return fast, makes real

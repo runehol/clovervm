@@ -1,5 +1,15 @@
 # Clover C API
 
+| Field | Value |
+|---|---|
+| Document type | Architecture contract |
+| Status | Accepted |
+| Implementation | Implemented |
+| Scope | Public native extension API, module initialization, values, errors, and lifetimes |
+| Owning layers | Public C API, native modules, runtime values, and managed/native boundaries |
+| Validated against | `a9b8b0a` (2026-07-11) |
+| Supersedes | N/A |
+
 This document describes clovervm's native extension API.
 
 The API is currently intended for in-tree and VM-version-matched native modules,

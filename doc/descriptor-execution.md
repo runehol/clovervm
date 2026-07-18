@@ -1,5 +1,15 @@
 # Descriptor Execution
 
+| Field | Value |
+|---|---|
+| Document type | Design |
+| Status | Proposed |
+| Implementation | Partial |
+| Scope | Executing descriptor `__get__` during attribute reads |
+| Owning layers | Runtime attribute semantics, inline caches, interpreter, and call adaptation |
+| Validated against | `d25fe55` (2026-06-28) |
+| Supersedes | N/A |
+
 This document covers descriptor `__get__` execution for attribute reads.
 `obj.method(...)` keyword handling, descriptor writes, descriptor deletes, and
 `__set_name__` are separate design slices.

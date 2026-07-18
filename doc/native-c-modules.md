@@ -1,5 +1,15 @@
 # Native C Modules
 
+| Field | Value |
+|---|---|
+| Document type | Design |
+| Status | Accepted |
+| Implementation | Implemented |
+| Scope | Building, locating, loading, and initializing native extension modules |
+| Owning layers | Native module build, dynamic loader, import system, public C API, and runtime modules |
+| Validated against | `8b76359` (2026-05-24) |
+| Supersedes | N/A |
+
 This document describes how clovervm should build, locate, and load native C
 extension modules. The C API itself is described separately in
 [Clover C API](clover-c-api.md).

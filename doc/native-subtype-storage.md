@@ -1,5 +1,15 @@
 # Native Subtype Storage
 
+| Field | Value |
+|---|---|
+| Document type | Investigation |
+| Status | Proposed |
+| Implementation | Not started |
+| Scope | Storage and construction options for Python subclasses of native builtin types |
+| Owning layers | Runtime object model, native layouts, allocation, class construction, and extension API |
+| Validated against | N/A |
+| Supersedes | N/A |
+
 This note records the design problem around subclassing native builtin types.
 It is intentionally not a decision. The immediate dictionary-shape work should
 not solve this problem by accident.

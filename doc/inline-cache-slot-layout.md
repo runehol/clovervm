@@ -1,5 +1,15 @@
 # Inline Cache Slot Layout
 
+| Field | Value |
+|---|---|
+| Document type | Design |
+| Status | Speculative |
+| Implementation | Not started |
+| Scope | Possible compact slot and side-payload layout for inline caches |
+| Owning layers | Bytecode metadata, inline caches, interpreter, and future compiler |
+| Validated against | N/A |
+| Supersedes | N/A |
+
 This note sketches a possible future inline-cache layout for clovervm. It is
 not an implementation plan yet. The motivation is that more Python bytecodes
 are becoming cache-bearing: attribute reads and writes, global loads and
@@ -258,4 +268,3 @@ tests:
   complex states share the same validity checks?
 - Which opcode handlers are hot enough that cached-complex hits should tail-call
   a helper instead of branching through a larger inline body?
-

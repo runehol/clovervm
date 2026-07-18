@@ -1,5 +1,15 @@
 # Fast Operator Dispatch
 
+| Field | Value |
+|---|---|
+| Document type | Design |
+| Status | Accepted |
+| Implementation | Implemented |
+| Scope | Cached Python special-method and operator dispatch |
+| Owning layers | Runtime type semantics, trusted handlers, inline caches, and interpreter |
+| Validated against | `704b9c9` (2026-06-22) |
+| Supersedes | N/A |
+
 This document describes inline caching for Python special-method dispatch in
 clovervm. The operator-cache design has two targets:
 

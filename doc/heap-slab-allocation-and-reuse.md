@@ -1,5 +1,15 @@
 # Heap Slab Allocation and Reuse
 
+| Field | Value |
+|---|---|
+| Document type | Architecture contract |
+| Status | Accepted |
+| Implementation | Implemented |
+| Scope | Heap slab allocation, accounting, reclamation, release, and reuse |
+| Owning layers | Allocator, heap metadata, deferred reclamation, and safepoints |
+| Validated against | `6120300` (2026-05-15) |
+| Supersedes | N/A |
+
 ## Overview
 
 This document describes the heap slab allocation and reuse part of CloverVM's

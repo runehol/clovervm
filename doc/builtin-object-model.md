@@ -1,5 +1,15 @@
 # Builtin Object Model
 
+| Field | Value |
+|---|---|
+| Document type | Design |
+| Status | Accepted |
+| Implementation | Implemented |
+| Scope | Representation and bootstrap of builtin and runtime object types |
+| Owning layers | Runtime object model, shapes, native layouts, and builtin types |
+| Validated against | `88e2106` (2026-05-15) |
+| Supersedes | N/A |
+
 ## Purpose
 
 This document describes how builtin/runtime objects fit into the unified object
