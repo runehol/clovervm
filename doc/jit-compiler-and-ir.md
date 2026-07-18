@@ -28,8 +28,8 @@ The following choices are design guardrails rather than tentative suggestions:
 - Semantic IR and Guard IR share one semantic type system;
 - the initial JIT operates on tagged `Value`s and does not require unboxing.
 
-Type partitions, the detailed effect taxonomy, physical frame reconstruction,
-and many backend policies remain plausible or open designs as noted below.
+Type partitions, the detailed effect taxonomy, and many backend policies remain
+plausible or open designs as noted below.
 
 ## Terminology
 
@@ -39,7 +39,10 @@ Use distinct terms for operations that are easily conflated:
 - **spill**: move a register value into a machine spill slot;
 - **frame synchronization**: write current interpreter-visible values into
   canonical frame homes;
-- **frame reconstruction**: create missing interpreter frames during deopt;
+- **frame activation**: make a preallocated canonical frame region the current
+  logical Python frame and initialize its structural metadata;
+- **frame reconstruction**: create an interpreter frame that has no existing
+  canonical backing region; active inlined frames do not require this;
 - **boxing** or **reification**: create a heap object for a virtual semantic
   value;
 - **root publication**: expose synchronized frames and the accumulator to
@@ -74,10 +77,11 @@ impossible to reconstruct are out of scope.
 The interpreter, garbage collector, and runtime side of deoptimization consume
 only canonical interpreter frame state. Compiled code may temporarily cache
 newer interpreter-visible values in machine registers, but before any operation
-that may reclaim memory, it synchronizes every dirty canonical frame home and
-publishes the active accumulator through `ThreadState`. Before transferring
-execution back to the interpreter, the JIT exit machinery also reconstructs any
-missing logical frames and reifies any virtual values required by those frames.
+that may reclaim memory, it synchronizes every dirty canonical frame home in
+the complete active logical frame chain and publishes the innermost active
+accumulator through `ThreadState`. Before transferring execution back to the
+interpreter, the JIT exit machinery also finalizes bytecode PCs and other frame
+metadata and reifies any virtual values required by those frames.
 
 Once publication or interpreter handoff begins, every interpreter-visible root
 is therefore available through canonical frames and `ThreadState`. The generic
@@ -92,6 +96,8 @@ Immediate consequences include:
   asynchronously;
 - a tripped poll synchronizes, publishes, and deoptimizes before reclamation;
 - calls that may reclaim require publication before entry;
+- publication covers dirty homes in outer and inlined active frames, not only
+  the frame containing the current operation;
 - a register copy of a synchronized frame value is a cache, not a second root
   model;
 - a value live across reclamation must have a managed canonical home or be
@@ -120,6 +126,13 @@ home even when its current value is cached in a machine register.
 The accumulator already has special safepoint treatment: it is published
 through `ThreadState` separately from the scanned frame range. The JIT reuses
 that mechanism rather than adding an accumulator frame slot.
+
+Inlining does not remove the corresponding Python frame activation. Every
+active inlined function has a stable canonical backing region laid out
+contiguously after its caller's region. Entering it advances the managed frame
+pointer to that region and initializes its structural metadata. Returning from
+it restores the caller's frame pointer. Canonical values in both regions may
+remain stale until publication is required.
 
 ### Deoptimization and commit boundaries
 
@@ -155,13 +168,55 @@ This convention applies to interpreted-to-compiled, compiled-to-interpreted,
 and compiled-to-compiled calls. Cross-mode stubs may select the execution engine
 and continuation, but do not translate between separate argument ABIs.
 
-Frames already have interpreted and compiled return-PC slots. Their exact use
-for normal compiled continuations remains open. Compiled-to-compiled performance
-should initially come from inlining rather than a second fast-entry ABI.
+Frames already have interpreted and compiled return-PC slots. An inlined frame
+initializes its return FP, return PC, and return `CodeObject` exactly as a real
+activation would. The managed frame pointer always identifies the innermost
+active logical Python frame, including an inlined one. A real callee therefore
+returns normally to that inline frame; the lowered inline return later restores
+the outer frame pointer and branches to its caller continuation.
+
+Compiled-to-compiled performance should initially come from inlining rather
+than a second fast-entry ABI.
 
 Native and C++ calls remain a separate ABI boundary. State must be published
 before any native call that may allocate, reclaim, call Python, or otherwise
 require managed roots.
+
+A real Python call can also be the successful action of any overloaded
+operator IC. Publication before such a call is continuing fast-path code, not a
+failed-speculation side exit: it synchronizes dirty canonical homes, invokes the
+callee, and then resumes compiled execution on normal return. It cannot be
+delegated to the non-returning deduplicated recovery tails used by guards.
+
+If the call occurs inside one or more inlined functions, continuing publication
+synchronizes dirty homes across the entire active outer-to-inner frame chain.
+The frame regions already exist, so this is multi-frame synchronization and
+metadata finalization rather than allocation of missing frames.
+
+Native ABI preservation and runtime root discovery are separate concerns.
+Callee-saved registers can preserve caller values across a tiny function, but
+under canonical publication the collector still cannot discover a managed
+value that exists only in one of those registers. Publication need not evict the
+register cache or reload it after a non-moving reclamation; it still adds stores
+that may dominate the cost of a very small callee.
+
+Inlining removes this boundary and is expected to cover important tiny Python
+functions when their targets and bytecode are visible. A certified compiled
+no-safepoint entry could also use only native ABI preservation, but it would
+need a transitive guarantee that the selected path cannot reclaim, enter
+Python, poll, or deopt directly into the interpreter. A failed entry guard would
+use the publishing generic path instead.
+
+Whether inlining and such leaf entries cover enough real calls to make
+unconditional publication practical is deliberately open. JIT compilation
+makes small callees more visible than separate static compilation does in
+principle, but the design should not depend on that theoretical advantage
+without measurements.
+
+Trusted native calls have a related but firmer distinction. A semantic
+descriptor certified `NoSafepoint`, `NoReclaim`, and `NoCallPython` requires only
+native ABI call-clobber handling; it does not publish canonical state. Unknown
+or safepoint-capable trusted calls remain conservative publication boundaries.
 
 ### Exceptions and observability
 
@@ -698,6 +753,21 @@ Redundant callee requirements may be removed under inherent or already-proven
 facts, subject to effect and stability rules. Obligations remain attached until
 Guard IR makes their checks explicit.
 
+Inlining removes machine call and dispatch overhead, not Python frame
+structure. Each inline instance receives a fixed canonical backing region in
+the compiled frame layout. Inline entry advances the managed FP, initializes
+the callee and return metadata, and binds the argument SSA values to the new
+logical frame. It need not immediately store those arguments or other slot
+values. Inline return places the result in the accumulator, restores the return
+FP, and branches to the caller continuation.
+
+Outer and inner frame slots may both be stale while reclamation is impossible.
+A reclaiming call or other publication boundary synchronizes every active
+logical frame. If the inline body reaches no such boundary, many of its slots
+may never be written before the frame is popped. Before publication, every slot
+the runtime will scan must nevertheless contain a valid tagged value or the
+interpreter's ordinary empty or unbound sentinel.
+
 Facts belong to a compilation and inline context, not globally to a
 `CodeObject`. The same function may be compiled standalone or under several
 call-site specializations.
@@ -787,8 +857,10 @@ contract, the pass constructs a replacement node of that operation kind.
 
 Effect implications are centralized. `MayCallPython`, for example, implies
 broad heap access, possible shape mutation, validity invalidation, raising, and
-safepoint behavior. An omitted effect is a correctness bug, not merely a missed
-optimization.
+safepoint behavior. Unless the call has been eliminated by inlining or replaced
+by a certified no-safepoint entry, it also requires continuing canonical
+publication before the call. An omitted effect is a correctness bug, not merely
+a missed optimization.
 
 ### Shape facts
 
@@ -875,22 +947,24 @@ Post-allocation exit expansion combines three inputs:
 
 ```text
 logical FrameState:
-    canonical slot -> ValueId
-    accumulator    -> ValueId
-    parent frames
+    active frame chain
+    (frame instance, canonical slot) -> ValueId
+    innermost accumulator            -> ValueId
 
 machine location state at the exit:
     ValueId -> register | spill | canonical slot | constant | recipe
 
 synchronized state:
-    canonical slot -> ValueId currently stored there
+    (frame instance, canonical slot) -> ValueId currently stored there
 ```
 
 The resulting recovery plan is the parallel assignment needed to make logical
 and synchronized state agree. It includes dirty canonical-slot writes, the
-accumulator source, required inline-frame reconstruction, and any future
-reification recipes. Machine liveness at the exit includes the transitive
-closure of values required by that plan.
+accumulator source, final bytecode and return metadata for every active frame,
+and any future reification recipes. Active inline frames already have canonical
+backing regions and do not require allocation or layout reconstruction. Machine
+liveness at the exit includes the transitive closure of values required by the
+plan.
 
 These tables are compiler inputs to generated cold code, not runtime stack maps.
 After the generated sequence publishes canonical state, the generic runtime
@@ -925,7 +999,7 @@ stub for each `(ResumeStateId, RecoveryPlanId)` pair.
 
 A recovery plan is interned from a canonical, deterministic signature containing
 its destination homes, physical or rematerialized sources, representations,
-accumulator action, frame reconstruction, and reification requirements.
+accumulator action, frame metadata finalization, and reification requirements.
 Interning assigns a typed `RecoveryPlanId`; it never depends on pointer hashes
 or hash-table iteration order. Identical plans share one emitted block, and all
 ordinary recovery blocks tail into a common interpreter-dispatch handoff.
@@ -941,6 +1015,31 @@ constructing bytecode PCs, breaking parallel-copy cycles, forming addresses and
 constants, and reaching the final dispatcher. The initial AArch64 backend
 reserves this register globally; avoiding that reservation is not worth adding
 complexity to cold exits on a register-rich target.
+
+### Continuing multi-frame call publication
+
+Safepointing Python calls use the same logical-versus-synchronized frame
+analysis as side exits, but not the same non-returning code shape. A
+call-publication plan covers every active logical frame, including outer frames
+whose slots remain dirty while execution is inside an inlined callee.
+
+For example, if `B` is inlined into `A` and calls a non-inlined `C`, the active
+chain before the call is `A -> B`. Publication synchronizes dirty homes in both
+backing regions, publishes `B`'s accumulator, establishes `C`'s outgoing
+arguments, and then performs the call. Normal return restores `FP = B` and
+continues compiled execution in the inlined body. A later inline return restores
+`FP = A`.
+
+The planner may share frame-difference, location, and parallel-copy machinery
+with side-exit recovery. Its generated instructions remain at the continuing
+call site because they must preserve post-call liveness and return to compiled
+code; they are not delegated to deduplicated cold exit tails.
+
+Without inlining, `A` would publish before calling `B`, and `B` would publish
+again before calling `C`. Inlining can replace those two boundaries with one
+larger multi-frame publication. The eventual inlining cost model should account
+for both eliminated boundaries and the dirty homes at reclaiming calls that
+remain inside the inline region.
 
 ### Tagged `Value` baseline
 
@@ -991,14 +1090,31 @@ runtime requests a reclamation safepoint before memory exhaustion. The first
 JIT needs no unboxed-float nodes or reification implementation; its IR must only
 avoid precluding them.
 
-## Deoptimizing Inlined Code
+## Inlined Frame Backing and Deoptimization
 
-A bailout inside an inlined callee may need to reconstruct multiple logical
-bytecode frames. Once the callee has performed effects, the caller's call
-bytecode generally cannot be retried.
+Inlining preserves the Python frame stack structurally. The compiled outer
+frame reserves stable, contiguous backing regions for its active inline depth:
 
-Each inlined instance therefore retains recoverable identities for its
-`CodeObject`, bytecode PC, accumulator, registers, and parent frame state.
+```text
+outer frame A
+inline frame B
+inline frame C
+...
+```
+
+Each inline instance has a fixed base offset and the ordinary interpreter frame
+layout for its arguments, locals, temporaries, outgoing arguments, return FP,
+return PC, return `CodeObject`, and other required metadata. The managed frame
+pointer always identifies the innermost active logical frame.
+
+Inline entry advances FP to the preallocated region and initializes the
+structural callee and return metadata. Slot values may remain represented only
+by SSA values in machine registers until publication. Inline return places the
+result in the accumulator, restores the recorded return FP, and branches to the
+compiled caller continuation. A real call made from an inline frame uses the
+same convention and returns with one ordinary frame pop; it does not require a
+depth-specific or double-pop return thunk.
+
 Deoptimization distinguishes:
 
 ```text
@@ -1009,14 +1125,19 @@ synchronized frame state:
     the Value currently committed to each canonical frame home
 ```
 
-Exit machinery synchronizes differences, reconstructs missing frames, reifies
-virtual objects once per semantic identity, and publishes the resulting roots
-before interpreter handoff or reclamation. The design should prefer stable homes
-and per-inline-instance layouts over arbitrary per-exit interpreter maps.
+A bailout inside an inlined callee may expose several bytecode frames. Once the
+callee has performed effects, the caller's call bytecode generally cannot be
+retried. Exit machinery therefore synchronizes every dirty active frame region,
+sets the appropriate interpreted PCs and return metadata, reifies virtual
+objects once per semantic identity, publishes the innermost accumulator, and
+hands the already-backed frame chain to the interpreter.
 
-The physical backing of inlined logical frames remains open. Whatever design is
-chosen must satisfy canonical frame publication: values live across reclaiming
-operations cannot exist solely in optimized registers or metadata.
+Outer and inner regions may both remain stale until that boundary. This does
+not require frame allocation or arbitrary per-exit layouts: only value
+synchronization and metadata finalization are exit-specific. Inactive sibling
+inline sites may eventually share backing regions when their lifetimes cannot
+overlap, but assigning fixed distinct regions is the initial policy and their
+stack cost contributes to the inlining budget.
 
 ## End-to-End Example: Polymorphic Add
 
@@ -1068,10 +1189,15 @@ A polymorphic addition illustrates the complete flow:
 
 ### Deoptimization and execution boundaries
 
+- whether publication at every potentially safepointing Python call is
+  affordable in practice, or whether the JIT eventually needs runtime
+  stack/register maps, a fixed root-register convention, or broader certified
+  no-safepoint entries;
+- how often inlining actually removes small hot Python call boundaries, and how
+  many dirty managed values remain live at the calls it does not remove;
 - exact encoding of post-allocation machine locations, rematerialization, and
   future reification recipes in recovery plans;
 - recovery-plan interning and code-size policy beyond exact-plan deduplication;
-- physical backing and reconstruction of nested inlined frames;
 - normal compiled returns through the compiled-PC frame slot;
 - compiled exception handling and cross-frame unwinding;
 - final observability and tracing policy.
@@ -1083,6 +1209,7 @@ A polymorphic addition illustrates the complete flow:
 - tiering and compilation triggers;
 - invalidation and lifetime of generated code.
 
-These questions must be answered without weakening bytecode compatibility,
-canonical frame publication, or the single semantic type system shared by
-Semantic and Guard IR.
+These questions must be answered without weakening bytecode compatibility or
+the single semantic type system shared by Semantic and Guard IR. Any future
+replacement for canonical frame publication must provide equally explicit and
+verifiable root-discovery and interpreter-recovery guarantees.
