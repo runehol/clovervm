@@ -240,9 +240,9 @@ Exit state must therefore distinguish:
 - exceptional exits that preserve pending exception state without repeating an
   already-performed effect.
 
-Every deoptimizing check retains a bytecode origin and logical frame state.
-Moving or commoning checks must preserve a legal bailout state, not merely the
-same successful-path computation.
+Every deoptimizing check retains a bytecode origin and consumes a Snapshot of
+its logical resume state. Moving or commoning checks must preserve a legal
+Snapshot and replay point, not merely the same successful-path computation.
 
 ### One managed calling convention
 
@@ -429,7 +429,7 @@ chosen placement until a pass deliberately moves them.
 
 This representation fits clovervm because:
 
-- guards have bytecode locations and bailout frame states;
+- guards have bytecode locations and explicit Snapshot bailout operands;
 - effectful operations create commit boundaries;
 - shape and validity facts have control- and effect-bounded lifetimes;
 - calls and safepoints require explicit root-discovery state and, under the
@@ -511,6 +511,7 @@ optional backend-defined MachineNodeId, MachineValueId, MachineBlockId,
 
 PartitionId
 FrameStateId
+SnapshotId
 SafepointStateId
 DeoptStateId
 InlineFrameId
@@ -554,10 +555,10 @@ implementation detail rather than an IR design constraint.
 ### Immutable nodes, mutable graphs, and analysis side tables
 
 IR nodes are immutable descriptions of operations. Their operation kind,
-operands, results, bytecode origin, logical frame state, intrinsic effects,
-semantic descriptor, guard obligations, and partition IDs are fixed when the
-node is constructed. A transformation changes any of these properties by
-constructing a replacement node.
+operands, results, bytecode origin, intrinsic effects, semantic descriptor,
+guard obligations, partition IDs, and any FrameState or Snapshot references are
+fixed when the node is constructed. A transformation changes any of these
+properties by constructing a replacement node.
 
 Graph structure remains mutable. Block parameter and instruction lists,
 predecessor and successor sets, edge argument lists, placement, definition
@@ -595,7 +596,7 @@ therefore needs first-class operations to:
 - add, remove, and redirect edges;
 - update block parameters and edge arguments;
 - clone and splice regions;
-- attach bytecode origins and frame states to new exits.
+- attach bytecode origins and Snapshot values to new exits.
 
 Major representation boundaries normally build fresh destination CFGs.
 Semantic-to-Guard lowering leaves its source graph intact and naturally
@@ -607,7 +608,7 @@ in-place CFG editor.
 Deoptimization exits must remain visible to correctness and frame-state
 analysis, but need not be ordinary successors in the normal CFG used for loops
 and dominance. An ordered guard may own an explicit non-returning side exit and
-frame state while successful execution falls through.
+Snapshot operand while successful execution falls through.
 
 ### Analysis invalidation
 
@@ -631,6 +632,10 @@ Verification at pass boundaries should require:
   definition;
 - every mutable-shape-sensitive use to consume a current receiver version whose
   shape observation has not been superseded or invalidated through an alias;
+- every deoptimizing exit to consume one live Snapshot with a complete resume
+  state for every active logical frame;
+- every SSA value transitively named by that Snapshot to be defined and
+  available at the consuming exit, even when it is dead on normal control flow;
 - every normal edge to supply exactly one argument of the required kind for
   each destination block parameter;
 - every edge argument definition to dominate that edge;
@@ -793,6 +798,83 @@ FrameState:
 Sparse structural sharing avoids copying the complete register mapping at every
 bytecode. A frame state describes interpreter meaning; it does not assert that
 the corresponding canonical slots are currently synchronized.
+
+During bytecode abstract interpretation, a mutable `BuilderContext` owns the
+current environment:
+
+```text
+BuilderContext:
+    active logical frame chain
+    (frame instance, accumulator or register) -> ValueId
+    current bytecode position
+    current inferred and available facts
+```
+
+The context is transient construction state, not an IR node and not a physical
+register map. Updating an accumulator or bytecode register changes this mapping
+without writing its canonical frame home.
+
+Semantic IR, when present, retains immutable `FrameStateId` metadata at the
+semantic operations and bytecode boundaries from which lowering may need to
+exit. It does not need Snapshot instructions. Guard lowering materializes only
+the recovery states actually referenced by emitted speculative exits.
+
+### Guard IR Snapshot values
+
+Guard IR represents a recoverable state with a zero-code `Snapshot`
+instruction:
+
+```text
+%snapshot: Snapshot = Snapshot(
+    resume = Add@17,
+    frame A accumulator = %acc,
+    frame A register 0  = %lhs,
+    frame A register 1  = %rhs,
+    parent frame = ...)
+```
+
+`Snapshot` produces a compiler-only `SnapshotId`. It has no runtime `Value`
+representation, receives no machine register, and carries no type evidence.
+Its operands are the SSA values required to reconstruct the active logical
+frames. Guards and speculative actions consume the snapshot as their failure
+continuation:
+
+```text
+%lhs_smi: Smi = ShapeKeyCheck %lhs, Smi
+    deopt %snapshot
+
+%rhs_smi: Smi = ShapeKeyCheck %rhs, Smi
+    deopt %snapshot
+
+%result: Smi = SmiAdd %lhs_smi, %rhs_smi
+    overflow %snapshot
+```
+
+The snapshot answers what interpreter state a failed continuation requires;
+the narrowed guard result answers what successful compiled execution may
+assume. Snapshot values are recovery dependencies, not predicate evidence for
+the successful continuation.
+
+Several checks and a speculative action may share one snapshot when all their
+failures replay the same bytecode from the same logical state. A distinct
+pre-effect, post-commit, exception, or other resume state receives a distinct
+snapshot. Operations should normally arrange all fallible checks before an
+irreversible commit so that no intermediate mutation snapshot is required.
+
+Snapshot operands are point uses for deoptimization liveness at every consuming
+exit, even when side exits are not ordinary normal-CFG successors. Register
+allocation must keep their transitive values recoverable at that point in a
+register, spill, synchronized canonical home, constant, or future reification
+recipe. A value need not remain live on the successful continuation unless
+normal uses require it.
+
+Snapshots are immutable and structurally shared through their `FrameStateId`s.
+They are anchored to their consuming exits rather than freely scheduled as
+ordinary pure computations. Moving a guard is legal only when every snapshot
+operand is available at the new position and interpreter replay from the
+snapshot's resume state remains correct. The guard retains its own bytecode or
+IC origin for diagnostics; that origin need not equal the retained resume state
+after legal code motion.
 
 ### Trusted handlers and semantic recognition
 
@@ -1121,6 +1203,7 @@ directly from decoded bytecode and its IC snapshot. For example:
 
 ```text
 Add
+    -> Snapshot(entry frame state)
     -> ShapeKeyCheck
     -> ShapeKeyCheck
     -> ValidityCellCheck          # when required
@@ -1129,7 +1212,8 @@ Add
 
 Pre-operation checks have no Python-visible side effects. Only the selected
 action may perform the operation's effects. Failed checks return to the
-original bytecode so the interpreter can run the generic protocol.
+original bytecode through their shared Snapshot so the interpreter can run the
+generic protocol.
 
 An action may have its own speculative exit. SMI overflow, for example, returns
 to the original bytecode, which may create a heap integer or select another
@@ -1414,19 +1498,25 @@ backend serializes the first for the compiled-frame stack walker and the second
 for a generic deoptimizer. Location assignment, logical frame construction, and
 Guard IR do not change merely because the consumer changes.
 
+`DeoptState` is the post-allocation physical projection of a Guard IR Snapshot.
+The Snapshot remains semantic and names `ValueId`s; `DeoptState` records where
+those values can be obtained at that particular machine-code point.
+
 Compiled code and its metadata remain alive as one code object. Safepoint lookup
 from a compiled PC is deterministic, and a call safepoint can be identified
 from the compiled caller return PC while walking a suspended callee chain.
 
 ### Generated side exits and recovery plans
 
-Guard IR retains an explicit non-returning `DeoptExit(FrameStateId)` until the
-backend has determined the location of every value needed for recovery. A
-backend may carry the exit through Machine IR or consume it directly from Guard
-IR. Post-allocation exit expansion combines three inputs:
+Each Guard IR failure retains an explicit non-returning exit consuming a
+`SnapshotId` until the backend has determined the location of every value
+needed for recovery. A backend may carry the exit through Machine IR or consume
+it directly from Guard IR. Post-allocation exit expansion combines three
+inputs:
 
 ```text
-logical FrameState:
+logical Snapshot and FrameState:
+    resume state
     active frame chain
     (frame instance, canonical slot) -> ValueId
     innermost accumulator            -> ValueId
@@ -1434,7 +1524,7 @@ logical FrameState:
 machine location state at the exit:
     ValueId -> register | spill | canonical slot | constant | recipe
 
-synchronized state:
+canonical HomeState:
     (frame instance, canonical slot) -> ValueId currently stored there
 ```
 
@@ -1443,8 +1533,16 @@ and synchronized state agree. It includes dirty canonical-slot writes, the
 accumulator source, final bytecode and return metadata for every active frame,
 and any future reification recipes. Active inline frames already have canonical
 backing regions and do not require allocation or layout reconstruction. Machine
-liveness at the exit includes the transitive closure of values required by the
-plan.
+liveness at the exit includes the transitive closure of SSA operands named by
+the Snapshot, whether or not normal compiled control flow uses them afterward.
+
+Location assignment and `HomeState` answer different questions. Location
+assignment says where a `ValueId` can be obtained at the exit. `HomeState`
+records which `ValueId`, if any, is already synchronized in each canonical
+home. Changing the builder's slot binding does not update `HomeState`; only an
+explicit publication store does. Exit planning skips a destination whose home
+already contains the Snapshot's desired value and otherwise obtains that value
+from its allocated location or recipe.
 
 Under the initial policy these tables are compiler inputs to generated cold
 code, not runtime stack maps. After the generated sequence publishes canonical
@@ -1633,14 +1731,18 @@ The initial path requires neither Semantic IR nor type inference:
    state, and snapshots its monomorphic IC case.
 2. The trusted handler descriptor identifies the selected semantic action and
    the predicates that justify it.
-3. Guard IR construction creates narrowed shape-check results, required
-   validity checks, bailout state, and the selected action directly.
-4. Failed pre-effect checks return to the original `Add`; overflow or committed
-   exits use the appropriate bytecode state.
-5. Guard optimization may remove a redundant dominating check when effects and
-   control flow preserve its predicate.
-6. The target backend assigns locations, emits publication and recovery
-   machinery, and encodes the function, optionally through Machine IR.
+3. Guard IR construction captures the current `BuilderContext` as one Snapshot
+   value shared by the pre-effect shape checks, validity checks, and overflow
+   exit, then emits the narrowed results and selected action.
+4. Snapshot operands make every interpreter-visible value required by the
+   failed continuation live and recoverable at those exits.
+5. Failed pre-effect checks return to the original `Add`; committed exits, when
+   present, use a distinct post-effect Snapshot.
+6. Guard optimization may remove a redundant dominating check when effects,
+   Snapshot availability, and replay semantics permit it.
+7. The target backend assigns locations, combines each Snapshot with physical
+   and canonical-home state, interns recovery plans, and encodes the function,
+   optionally through Machine IR.
 
 Unsupported or polymorphic cases may conservatively call Python or return to
 the interpreter. The initial compiler need not infer a type merely to reproduce
@@ -1659,11 +1761,12 @@ A polymorphic addition illustrates the complete flow:
 4. Inlining may refine the same plan using caller-context evidence.
 5. A union-transparent consumer leaves the partition latent. A type-sensitive
    consumer asks Guard lowering to realize the relevant alternatives.
-6. Guard IR emits narrowed shape-check results, validity checks, bailout states,
-   and specialized actions. Existing predecessor partitions may instead permit
-   code duplication without new checks.
-7. Failed pre-effect checks return to the original `Add`; overflow or committed
-   exits use the appropriate bytecode state.
+6. Guard IR materializes the required Snapshots and emits narrowed shape-check
+   results, validity checks, and specialized actions. Existing predecessor
+   partitions may instead permit code duplication without new checks.
+7. Failed pre-effect checks consume the Snapshot returning to the original
+   `Add`; committed exits, when present, consume the appropriate distinct
+   post-effect Snapshot.
 8. The target backend selects tagged or future unboxed representations and
    assigns locations while preserving the active safepoint and recovery policy.
 9. Post-allocation exit expansion interns the required recovery plans, emits
