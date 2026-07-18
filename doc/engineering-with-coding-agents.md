@@ -32,7 +32,7 @@ As implementation gets cheaper, validation, architectural judgment, and
 integration become the scarce resources. Validation capacity must grow
 alongside implementation capacity.
 
-## Move Taste and Judgment Earlier
+## Keep Judgment in the Loop
 
 Coding agents can increase code-production capacity much faster than a team can
 increase experienced review capacity. If architectural judgment remains at the
@@ -79,6 +79,10 @@ the current design: challenge premises, seek contradictions, expose ambiguity,
 and compare credible alternatives. Revision turns the surviving conclusions
 into constraints on later work.
 
+Some designs need experimental evidence. Use a bounded prototype or benchmark
+to answer a specific feasibility question, then make an explicit design
+decision before experimental code enters mainline.
+
 The implementation plan should divide work into reviewable milestones, identify
 the checks that complete each step, and separate prerequisite experiments from
 production changes. Work through it incrementally, reviewing and committing
@@ -86,16 +90,25 @@ coherent steps rather than accumulating one large implementation. Implementation
 may expose facts the design missed; revise the document and plan rather than
 allowing the code to become an unrecorded design decision.
 
-Some designs need experimental evidence. Use a bounded prototype or benchmark
-to answer a specific feasibility question, then make an explicit design
-decision before experimental code enters mainline.
+The appropriate degree of autonomy varies by task. Size is a poor proxy for how
+safely work can proceed without guidance; the important variables are:
 
-Code review should verify an understood design and catch implementation
-mistakes, not receive design work hidden inside voluminous generated code.
-Small teams benefit when the person directing the agent carries the
-architectural model and can correct course during generation. Larger teams need
-clear ownership, early design gates, shared context, and deterministic checks
-to obtain the same leverage.
+- **Discretion:** how often implementation requires an unsettled choice about
+  semantics, ownership, architecture, or policy;
+- **Validation:** how independently and mechanically success can be checked;
+- **Reversibility:** how expensive a mistaken choice becomes once propagated
+  through code, tests, and documentation.
+
+Agent autonomy works best when semantics come from an external authority,
+integration follows an established pattern, and completion can be judged by
+independent tests. A substantial standard-library module may meet these
+conditions, while a small runtime change may carry enough architectural
+discretion to require frequent guidance. Low discretion, strong validation,
+and cheap reversibility support longer autonomous runs. Shorten the feedback
+loop as those conditions weaken and review decisions as they emerge.
+
+Early design work leaves code review focused on implementation mistakes and
+integration, with the reviewer already understanding the intended architecture.
 
 As implementation concludes, reconcile the design document with what was
 actually built. Rewrite proposals as the present design, record consequential
@@ -153,10 +166,6 @@ durable semantics and intentionally chosen invariants, not incidental
 implementation details. Redundant, obsolete, and flaky tests are validation
 defects that impede legitimate refactoring.
 
-Randomized failures should report a stable seed and accept it for reproduction.
-Where feasible, minimize a failing program or state and retain it as a focused
-regression test.
-
 An agent may implement a feature and tests that encode the same mistaken
 interpretation. Test quantity does not remove this correlated-error risk, and
 two implementations derived from the same premise are not independent merely
@@ -182,12 +191,9 @@ decision and normal implementation standards.
 ownership and invariants. Durable design documents and narrow interfaces make
 drift visible.
 
-**Guardrail accretion.** Agents readily answer each bug or review finding with
-another focused test or checker. Individually sensible additions can accumulate
-into redundant, overly specific coverage that ossifies implementation details
-and consumes more attention than it saves. Prefer guardrails at the strongest
-useful abstraction, and periodically consolidate or remove those that no longer
-earn their cost.
+**Guardrail accretion.** Agents readily answer each finding with another focused
+test or checker. Periodically consolidate or remove overly specific guardrails
+that no longer earn their cost.
 
 ## Inspect the Engineering Process
 
@@ -210,13 +216,15 @@ modes move.
 - Iterate working design documents through explicit adversarial review.
 - Derive milestone plans from coherent designs and implement them in reviewable,
   validated steps.
-- Use bounded experiments when feasibility cannot be settled by reasoning.
+- Grant more autonomy as discretion falls, independent validation strengthens,
+  and mistakes become cheaper to reverse.
+- Use bounded experiments and measurements to resolve hinge assumptions, and
+  revisit the process as bottlenecks move.
 - Externalize architectural memory, make commitment levels explicit, and
   reconcile completed designs with the implementation.
 - Treat deterministic checks as consistency mechanisms and maintain
   independently derived correctness oracles.
 - Combine focused tests for diagnosis with generative tests for discovery.
-- Measure hinge assumptions and revisit the process as bottlenecks move.
 
 Success means expanding the scale of software that a very small team can
 understand, validate, and sustain.
