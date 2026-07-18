@@ -449,6 +449,11 @@ Verification at pass boundaries should require:
   in that IR;
 - no reachable conditional fact to depend on a disconnected partition anchor;
 - partition definitions to dominate conditional uses where required;
+- every child partition to name an existing parent case and be defined within
+  that case's scope;
+- partition parent links to be acyclic;
+- child facts not to escape their inherited parent context without the required
+  joins;
 - every referenced case and realized case edge to remain valid;
 - values named by conditional facts to remain valid in their scopes;
 - every consumed analysis result to match the current IR generation.
@@ -631,6 +636,7 @@ Every partition has an immutable, compilation-wide anchor:
 ```text
 PartitionAnchor {
     PartitionId
+    optional parent PartitionCaseRef
     cases
     semantic provenance
     optional derived-from PartitionId
@@ -643,6 +649,11 @@ join or block-header control object defines the anchor for a predecessor
 partition. Each IR maintains a deterministic index from `PartitionId` to its
 local defining object or realized CFG region. The anchor does not contain a
 mutable back-pointer to whichever node currently represents it.
+
+`PartitionCaseRef` identifies one case of another partition. It scopes a child
+anchor beneath that case without requiring the immutable parent anchor to be
+mutated when children are discovered. A deterministic analysis index may
+enumerate the child anchors of each case.
 
 Semantic and Guard IR use the same partition ID for one logical choice. Lowering
 projects the Semantic definition to a Guard-local node or region without
@@ -724,14 +735,57 @@ Independent unions appear to allow four combinations; the partition retains
 the two environments that can actually occur. Conditional inference can then
 preserve facts such as "if `a` is Float in this case, `b` is also Float."
 
+Partitions are recursive. Nested control flow and specializations retain their
+structure rather than flattening into the Cartesian product of every leaf. For
+example:
+
+```text
+partition P_x:
+    case P_x.true:
+        facts:
+            x is Truthy
+
+        partition P_y [parent = P_x.true]:
+            case P_y.true:
+                facts:
+                    y is Truthy
+
+            case P_y.false:
+                facts:
+                    y is Falsy
+
+    case P_x.false:
+        facts:
+            x is Falsy
+```
+
+Facts under a child case inherit the complete parent environment. The context
+of `P_y.false` is therefore the partition path
+`P_x.true / P_y.false`, under which both `x is Truthy` and `y is Falsy` hold.
+Following immutable parent-case links reconstructs this path; it need not be
+stored redundantly on every conditional fact.
+
+A case may scope several independent child partitions. Each child remains a
+separate anchor rather than forcing their alternatives into one flat case set.
+Joins are performed at the appropriate nesting level: child alternatives join
+within their parent case before that parent is joined with its siblings.
+
 The initial design restricts partitions to finite cases originating in known
 structures such as polymorphic ICs, existing CFG edges, and inlined call-site
-specializations. It does not attempt arbitrary logical implication solving.
+specializations. Recursion means finite nesting, not cyclic anchors. A loop
+backedge must join, widen, or discard conditional structure rather than create a
+parent-case cycle. The system does not attempt arbitrary logical implication
+solving.
 
 When a type-sensitive consumer demands realization, that demand traces back to
 the defining partition anchor. Guard lowering therefore knows the earliest
 logical point at which to introduce a discriminator, or which existing
 predecessor edges already embody the cases.
+
+Demand may realize only part of a partition tree. A consumer needing the
+`P_x` distinction can split the outer partition while leaving `P_y` latent.
+Within `P_x.true`, a later consumer may realize `P_y` locally. This preserves
+correlation without generating all leaf combinations eagerly.
 
 IC observations alone do not make the joined result globally guaranteed. For a
 speculative partition, result facts become guaranteed only after Guard IR has
@@ -815,6 +869,12 @@ union type:
   predecessor edges without new type checks;
 - each realized arm converts its conditional facts into guaranteed facts and
   explicit proofs.
+
+Recursive partitions lower recursively. Realizing a parent creates or reuses
+its case arms and establishes the inherited fact environment in each arm. A
+child can be realized only within its parent case, where it introduces its own
+nested split. Unneeded child partitions remain latent even when their ancestors
+have become CFG.
 
 The arms may merge immediately after one operation or remain separate across a
 larger cloned region when several consumers benefit. Code duplication is a
@@ -1178,7 +1238,9 @@ A polymorphic addition illustrates the complete flow:
   guard obligations, and effect-state validity mechanically verifiable;
 - concrete representation and propagation limits for type partitions;
 - profitability and code-growth policy for partition realization;
-- handling nested or intersecting partitions without combinatorial growth;
+- depth, leaf-count, and propagation budgets for recursive partitions;
+- joins of intersecting partition trees and loop-carried facts without
+  combinatorial growth or cyclic anchors;
 - compilation, invalidation, and lifetime rules for changing IC contents.
 
 ### Effects and runtime assumptions
