@@ -22,7 +22,7 @@ The mandatory compiler pipeline has one principal compiler IR:
 encoded bytecode + IC snapshots -> Guard IR -> target backend -> machine code
 ```
 
-Guard IR makes speculative checks, effects, proof dependencies, and control
+Guard IR makes speculative checks, narrowed guard results, effects, and control
 flow explicit in an ordered, list-based SSA CFG. A target backend assigns
 physical locations and emits machine code. It may lower through a separate
 Machine IR when that representation pays for itself, but Machine IR is not a
@@ -370,10 +370,10 @@ It may instead construct those checks and actions directly from decoded
 bytecode and IC snapshots when Semantic IR is absent.
 It owns:
 
-- proof-producing guards and deoptimization exits;
+- value-refining guards and deoptimization exits;
 - realization of demanded type partitions as control flow;
 - explicit operation effects and dependencies;
-- common proof elimination and effect-aware code motion;
+- redundant-guard elimination and effect-aware code motion;
 - ordered calls, operations, and commit points.
 
 When Semantic IR is present, Guard IR carries forward its semantic facts and
@@ -422,11 +422,10 @@ successor, matching that successor's block parameters. Blocks end with explicit
 normal-flow terminators. Instructions may also carry explicit non-returning
 deoptimization side exits.
 
-The list is the current schedule. SSA edges expose value dependencies, proof
-values expose guard dependencies, and effect annotations constrain movement.
-List order does not create false dependencies between independent pure
-operations; it records their chosen placement until a pass deliberately moves
-them.
+The list is the current schedule. SSA edges expose value and guard-result
+dependencies, while effect annotations constrain movement. List order does not
+create false dependencies between independent pure operations; it records their
+chosen placement until a pass deliberately moves them.
 
 This representation fits clovervm because:
 
@@ -449,16 +448,18 @@ in decoded bytecode order, Guard IR orders checks and effects, and an optional
 Machine IR records whatever target schedule its backend needs. A direct backend
 uses the Guard schedule plus backend location and edge-move side tables.
 
-### Preserve semantic value identity
+### Preserve runtime value identity without gratuitous SSA identities
 
 Operations that only move an existing Python value do not create new semantic
 SSA identities:
 
 - `Ldar`, `Star`, and `Mov` update the accumulator/register environment to
   reference an existing value;
-- guards refine facts about an input rather than return a narrowed replacement;
 - expanding a bytecode preserves the semantic identity of its result;
-- only genuine producers and non-trivial block parameters introduce identities;
+- guards and shape-changing mutations may introduce a new statically refined
+  identity for the same runtime `Value` bits;
+- only genuine producers, refinements, shape-state successors, and non-trivial
+  block parameters introduce identities;
 - a block parameter whose incoming arguments are all the same value can be
   eliminated.
 
@@ -472,6 +473,25 @@ Mov r2, r3     r3          -> %v1
 ```
 
 All four interpreter locations refer to the same semantic value `%v1`.
+
+An SSA value has one guaranteed static type. A value-refining guard therefore
+returns a new SSA value rather than changing the facts attached to its input:
+
+```text
+%value: Value
+%smi: Smi = ShapeKeyCheck %value, Smi
+%result: Smi = SmiAdd %smi, %other_smi
+```
+
+`%value` and `%smi` contain the same runtime bits, but they are distinct SSA
+identities with different guaranteed types. Ordinary dominance determines
+where `%smi` is available. At a merge, block parameters join the incoming
+types, such as `Smi | Float`. This uses the same SSA mechanism for facts
+established by explicit guards and facts established by visible CFG branches.
+
+This refinement is not a machine copy and does not require a new register.
+Backend coalescing should normally give the input and refined result the same
+location.
 
 Canonical slots belong to logical frame states, not SSA values. One value may
 appear in several registers or in several inlined frames, while one canonical
@@ -605,6 +625,12 @@ graph structures directly.
 Verification at pass boundaries should require:
 
 - exactly one live definition for every reachable SSA value;
+- exactly one guaranteed static type for each SSA value, compatible with its
+  defining instruction or block parameter;
+- every specialized use of a guard result to be dominated by that result's
+  definition;
+- every mutable-shape-sensitive use to consume a current receiver version whose
+  shape observation has not been superseded or invalidated through an alias;
 - every normal edge to supply exactly one argument of the required kind for
   each destination block parameter;
 - every edge argument definition to dominate that edge;
@@ -633,14 +659,15 @@ refinement rules. The physical split belongs to the IR, not to a separate
 Guard-only type system. The initial direct-to-Guard compiler does not need to
 instantiate this analysis or attach general type facts to its values.
 
-Guard IR may still use explicit proof dependencies for predicates established
-by emitted guards; these do not require a general inference lattice. In the
-optional typed pipeline, proof values record why Guard IR may rely on an
-inferred or guarded fact at a particular use and do not introduce another
-notion of type. The backend has a different concern: physical representation
-classes such as tagged `Value`, `Float64`, address, and condition code.
-Python-level facts may remain as lowering and recovery metadata, but an optional
-Machine IR does not define another Python type lattice.
+Guard IR does not need the optional inference lattice merely to type the result
+of an emitted guard. A value-refining guard creates an SSA result with the
+narrowed guaranteed type, and specialized consumers use that result directly.
+Non-value guards, such as validity-cell checks, constrain control and effect
+ordering without manufacturing a Python value. The backend has a different
+concern: physical representation classes such as tagged `Value`, `Float64`,
+address, and condition code. Python-level facts may remain as lowering and
+recovery metadata, but an optional Machine IR does not define another Python
+type lattice.
 
 ## Optional Semantic IR Optimization Frontend
 
@@ -738,8 +765,9 @@ retain every shape and validity guard required by the IC.
 
 ### Value facts and inference
 
-Types and shapes describe SSA values, not bytecode slots. An operation declares
-how operand facts produce inherent result facts:
+Types and shapes describe SSA values, not bytecode slots. Each SSA value has one
+guaranteed static `ValueFacts` result in a given IR analysis generation. An
+operation declares how operand facts produce its result facts:
 
 ```text
 infer_result(operation, operand facts) -> ValueFacts
@@ -754,7 +782,10 @@ CreateTuple  -> exact tuple shape
 ```
 
 The current facts for a value live in type-analysis side tables keyed by its
-typed `ValueId`; they are not mutable annotations on the defining node.
+typed `ValueId`; they are not mutable annotations on the defining node. An
+analysis pass may replace the side table as inference converges, but within one
+analysis result a `ValueId` does not acquire different guaranteed types at
+different program positions.
 
 A minimal bounded fact lattice is:
 
@@ -771,14 +802,17 @@ an unreachable state with a reachable fact yields the reachable fact. Integer
 ranges, truthiness, callable targets, and other domains may be added later.
 
 Inherent facts are valid everywhere their defining value is available.
-Flow-sensitive refinements live in block or edge environments. At a merge,
-possible-value sets join by union, while predicate facts survive only when every
-incoming path establishes them.
+Analysis may discover a narrower fact on a control-flow edge, but the IR
+represents that fact with a distinct destination block parameter or explicit
+refinement result. It does not retag the incoming value according to the
+position of its use. At a merge, block-parameter possible-value sets join by
+union, while predicate facts survive only when every incoming path establishes
+them.
 
 Type propagation is forward abstract interpretation over a block worklist.
 Instruction transfer functions update facts, branches refine outgoing states,
-and successor states join until a fixed point. The bounded initial lattice
-should stabilize without special loop widening.
+and successor states determine block-parameter types until a fixed point. The
+bounded initial lattice should stabilize without special loop widening.
 
 ### Likely and guaranteed evidence
 
@@ -887,6 +921,12 @@ unconditional:
     b: Float | SMI
     result: Float | SMI
 ```
+
+The unconditional joined fact is the guaranteed static type of each listed SSA
+value. Case facts are conditional evidence attached to the partition, not
+alternate position-dependent types for that `ValueId`. Realizing a case creates
+narrowed guard results or block parameters with their own `ValueId`s and those
+case-specific guaranteed types.
 
 Existing program control flow creates the same abstraction. Multiple block
 parameters at one join share a predecessor partition:
@@ -1036,6 +1076,83 @@ to the original bytecode, which may create a heap integer or select another
 Python path. The action and all guards required to justify it remain one
 semantic unit.
 
+Value-refining checks return narrowed SSA values. A specialized action consumes
+those results, making its dependence on the successful guards an ordinary SSA
+dependency:
+
+```text
+%lhs_smi: Smi = ShapeKeyCheck %lhs, Smi
+%rhs_smi: Smi = ShapeKeyCheck %rhs, Smi
+%result: Smi = SmiAdd %lhs_smi, %rhs_smi
+```
+
+The checks retain their original bytecode PCs and bailout states. A check can
+replace a later equivalent check only when its narrowed result dominates the
+later use and remains valid across the intervening effects.
+
+### Expanding attribute mutations
+
+`StoreAttr` and `DelAttr` are semantic operations. Guard construction inspects
+the snapshotted mutation IC and lowers them to the operation selected by its
+`AttributeMutationPlan`:
+
+```text
+StoreAttr -> StoreExisting | AddOwnProperty | ChangeClass
+DelAttr   -> DeleteOwnProperty
+```
+
+The IC supplies the required input `receiver_shape`, lookup validity cell,
+storage location, and mutation kind. `AddOwnProperty` and
+`DeleteOwnProperty` also carry the plan's explicit `next_shape`; the compiler
+does not need to infer the transition from a later IC.
+
+`StoreExisting` does not change the receiver shape and need not create a new
+receiver SSA value. Shape-changing operations produce a successor receiver:
+
+```text
+%receiver_s0: Shape<S0> = ShapeKeyCheck %receiver, S0
+
+%receiver_s1: Shape<S1> = AddOwnProperty(
+    %receiver_s0, %stored_value, location, next_shape=S1)
+
+%receiver_s2: Shape<S2> = DeleteOwnProperty(
+    %receiver_s1, location, next_shape=S2)
+```
+
+The input and output receivers contain the same object pointer. Their distinct
+SSA identities describe that mutable object before and after the known shape
+transition. `ChangeClass` likewise creates a successor receiver, but unless its
+selected semantics provide an exact result shape, that result has an unknown
+mutable-object shape or the initial compiler deoptimizes instead.
+
+When a receiver comes from an interpreter slot, construction updates that
+slot's current SSA binding to the successor. Bindings known to contain exactly
+the same input `ValueId` may be updated together. Unknown heap aliases remain
+conservative.
+
+Shape-sensitive uses of mutable objects must consume the current shape-bearing
+version. A shape-changing operation supersedes its input receiver's mutable
+shape refinement. Verification and effect analysis must prevent a rewrite from
+using the old shape-bearing value after the transition. Operations that may
+change the shape through an unknown alias invalidate affected mutable-shape
+refinements and require a new guard.
+
+A later optimization may recognize an uninterrupted canonical transition
+chain, particularly in `__init__`:
+
+```text
+AddOwnProperty S0 -> S1, a
+AddOwnProperty S1 -> S2, b
+AddOwnProperty S2 -> S3, c
+```
+
+and fuse it into one initialization operation that installs the properties and
+produces `Shape<S3>`. This is deferred. It is legal only when intermediate
+shapes cannot be observed, value evaluation order is preserved, all guards run
+before mutation begins, and the commit sequence cannot safepoint, fail, or
+deoptimize partway through. Reference-counting and future write-barrier effects
+must remain equivalent.
+
 ### Realizing type partitions
 
 Guard IR alone decides whether an abstract partition becomes actual control
@@ -1049,8 +1166,8 @@ union type:
 - an IC partition emits guards and bailout edges that select supported cases;
 - a partition inherited from existing CFG edges may duplicate a consumer onto
   predecessor edges without new type checks;
-- each realized arm converts its conditional facts into guaranteed facts and
-  explicit proofs.
+- each realized arm converts its conditional facts into guaranteed SSA result
+  types and block arguments.
 
 Recursive partitions lower recursively. Realizing a parent creates or reuses
 its case arms and establishes the inherited fact environment in each arm. A
@@ -1115,7 +1232,11 @@ the bits. It remains valid while the SSA value is unchanged.
 **Mutable-shape heap values.** General objects may change shape through property
 mutation, supported `__class__` assignment, or aliases. Dominance alone is
 insufficient: a shape fact can cross only operations proven not to change that
-object's shape, including indirectly.
+object's shape, including indirectly. A recognized `AddOwnProperty`,
+`DeleteOwnProperty`, or `ChangeClass` consumes the current receiver version and
+produces its successor. Exact `next_shape` metadata gives add and delete
+successors a guaranteed shape; an imprecise mutation produces an unknown-shape
+successor or deoptimizes.
 
 **Stable-shape heap values.** Some exact heap values, such as tuples, have
 lifetime-stable instance shapes. Once proved, that fact survives calls for the
@@ -1141,45 +1262,28 @@ initial optimizer is conservative:
 Validity optimization should not force an elaborate memory model before
 evidence shows it is worthwhile.
 
-### Proof values and guard optimization
+### Guard-result optimization
 
-Proof values are created during Guard IR construction, whether it consumes
-Semantic IR or lowers directly from decoded bytecode. A guard produces an SSA
-proof rather than a narrowed runtime value:
+A value guard produces the narrowed runtime value consumed by specialized
+operations. Redundant-guard elimination therefore uses ordinary SSA
+replacement: a later guard can be removed when an equivalent earlier guard
+result dominates all rewritten uses and no intervening effect invalidates the
+observed property.
 
-```text
-%lhs_is_smi = ShapeKeyCheck %lhs, Smi
-%rhs_is_smi = ShapeKeyCheck %rhs, Smi
+The retained guard keeps its own bytecode bailout location. Equivalent guards
+in sibling blocks do not dominate one another. Hoisting them is a separate CFG
+transformation that must choose a legal bailout state and prove that replaying
+crossed work in the interpreter is safe.
 
-%result = SmiAdd %lhs, %rhs
-    requires %lhs_is_smi, %rhs_is_smi
-```
+Inline and lifetime-stable properties need only the guarded value and
+dominance. Mutable heap properties additionally depend on relevant effect
+state, even though the narrowed value has one fixed static type. The verifier
+rejects a shape-sensitive use of a superseded mutable receiver version or one
+whose observation has been invalidated through a possible alias.
 
-Proofs have no runtime `Value` representation. They make the dependency between
-a guard and specialized operation explicit without changing the guarded
-value's identity.
-
-Proof kinds may include relevant effect state:
-
-```text
-InlineShapeProof(value, shape)
-StableShapeProof(value, shape)
-MutableShapeProof(value, shape, shape-effect state)
-ValidityProof(cell, validity-effect state)
-```
-
-Operations that may invalidate an assumption advance its effect state. An IR
-verifier rejects a required proof that refers to the wrong value or property,
-fails to dominate its use, or depends on obsolete state.
-
-Optimization commons proofs rather than blindly hash-consing guards. A later
-guard can be removed when an equivalent valid proof dominates it. The earlier
-guard retains its original bytecode bailout location. Equivalent sibling guards
-do not dominate one another; hoisting them is a separate transformation that
-must establish a legal bailout state and safe replay of crossed work.
-
-Proofs disappear before backend emission. They constrain transformations but
-consume no registers and emit no code beyond remaining guards.
+Validity-cell checks do not refine a Python value. They remain value-less guard
+operations whose reuse is governed by dominance, effect dependencies, and
+their bailout state.
 
 ## Backend Lowering and Value Representation
 
@@ -1429,8 +1533,8 @@ The initial path requires neither Semantic IR nor type inference:
    state, and snapshots its monomorphic IC case.
 2. The trusted handler descriptor identifies the selected semantic action and
    the predicates that justify it.
-3. Guard IR construction creates the required shape and validity checks, proof
-   dependencies, bailout state, and selected action directly.
+3. Guard IR construction creates narrowed shape-check results, required
+   validity checks, bailout state, and the selected action directly.
 4. Failed pre-effect checks return to the original `Add`; overflow or committed
    exits use the appropriate bytecode state.
 5. Guard optimization may remove a redundant dominating check when effects and
@@ -1455,9 +1559,9 @@ A polymorphic addition illustrates the complete flow:
 4. Inlining may refine the same plan using caller-context evidence.
 5. A union-transparent consumer leaves the partition latent. A type-sensitive
    consumer asks Guard lowering to realize the relevant alternatives.
-6. Guard IR emits shape and validity checks, bailout states, proof values, and
-   specialized actions. Existing predecessor partitions may instead permit code
-   duplication without new checks.
+6. Guard IR emits narrowed shape-check results, validity checks, bailout states,
+   and specialized actions. Existing predecessor partitions may instead permit
+   code duplication without new checks.
 7. Failed pre-effect checks return to the original `Add`; overflow or committed
    exits use the appropriate bytecode state.
 8. The target backend selects tagged or future unboxed representations and
@@ -1485,9 +1589,9 @@ A polymorphic addition illustrates the complete flow:
 
 ### Type evidence and specialization
 
-- whether explicit Guard IR proof SSA values are necessary, or can be unified
-  with the shared fact and partition system while still making dominance,
-  guard obligations, and effect-state validity mechanically verifiable;
+- the exact verifier and effect-state representation that prevents stale
+  mutable-shape receiver versions from being used after direct or aliased
+  mutation;
 - concrete representation and propagation limits for type partitions;
 - profitability and code-growth policy for partition realization;
 - depth, leaf-count, and propagation budgets for recursive partitions;
