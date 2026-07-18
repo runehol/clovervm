@@ -1,8 +1,8 @@
 # Engineering with Coding Agents
 
-This document records working principles for developing clovervm as a small
-software team working with coding agents. They are defaults to test and refine
-through the project, not a process required for every task.
+This document records working principles for a small team developing software
+with coding agents. They are defaults to test and refine through the project,
+not a process required for every task.
 
 ## Operating Model
 
@@ -57,29 +57,34 @@ collaboration rather than writing it once as a preliminary specification:
 ```text
 architectural context
     -> working design document
-       <-> adversarial review and revision
-           challenge premises, seek contradictions, expose ambiguity,
-           and compare credible alternatives
-       <-> repeat until coherent
+       +-> adversarial review -> revision -+
+       |                                   |
+       +-------- repeat until coherent ----+
     -> explicit decisions, invariants, open questions, and validation plan
-    -> staged implementation plan
-    -> agent-assisted implementation
-    -> deterministic checks and focused human review
-       -> architectural discoveries return to the working design document
+    -> milestone implementation plan
+       +-> reviewable step -> agent-assisted implementation
+       |       -> deterministic checks -> focused review -> coherent commit -+
+       |                                                                    |
+       +-------------- adjust plan and repeat until complete ---------------+
+                              |
+                              +-> architectural discoveries return to the
+                                  working design document
+    -> reconcile design with the implemented system
 ```
 
 Coding agents are naturally agreeable, so adversarial review must be assigned
 explicitly. An agent asked to develop a design may accept its framing and make a
 weak premise sound increasingly coherent. Prompt it separately to argue against
-the current design and to root out inconsistencies and premises that sound
-plausible but remain vague or unsupported. Revision turns the surviving
-conclusions into constraints on later work.
+the current design: challenge premises, seek contradictions, expose ambiguity,
+and compare credible alternatives. Revision turns the surviving conclusions
+into constraints on later work.
 
-The implementation plan should order work into reviewable steps, identify the
-checks that complete each step, and separate prerequisite experiments from
-production changes. Implementation may expose facts the design missed; revise
-the document and plan rather than allowing the code to become an unrecorded
-design decision.
+The implementation plan should divide work into reviewable milestones, identify
+the checks that complete each step, and separate prerequisite experiments from
+production changes. Work through it incrementally, reviewing and committing
+coherent steps rather than accumulating one large implementation. Implementation
+may expose facts the design missed; revise the document and plan rather than
+allowing the code to become an unrecorded design decision.
 
 Some designs need experimental evidence. Use a bounded prototype or benchmark
 to answer a specific feasibility question, then make an explicit design
@@ -92,12 +97,18 @@ architectural model and can correct course during generation. Larger teams need
 clear ownership, early design gates, shared context, and deterministic checks
 to obtain the same leverage.
 
+As implementation concludes, reconcile the design document with what was
+actually built. Rewrite proposals as the present design, record consequential
+departures from the original plan, and focus the result on the ownership,
+invariants, and reasoning future readers will need. Git already preserves the
+incidental steps and discarded implementation details.
+
 ## Durable Architectural Memory
 
-Design documents serve as shared external memory as well as plans for
-implementation. They should state ownership and invariants, distinguish current
-commitments from initial policies and open possibilities, and become simpler
-when a mechanism has not earned its cost.
+Design documents serve as shared external memory and as the basis for
+implementation plans. They should state ownership and invariants, distinguish
+current commitments from initial policies and open possibilities, and become
+simpler when a mechanism has not earned its cost.
 
 Different repository artifacts preserve different kinds of memory:
 
@@ -107,12 +118,6 @@ Different repository artifacts preserve different kinds of memory:
 - Git records the concrete sequence of changes;
 - tests and verifiers encode executable contracts, within the limits of what
   they actually check.
-
-As implementation concludes, reconcile the design document with what was
-actually built. Rewrite proposals as the present design, record consequential
-departures from the original plan, and focus the result on the ownership,
-invariants, and reasoning future readers will need. Git already preserves the
-incidental steps and discarded implementation details.
 
 Project-level decisions belong in the decision log when they shape a whole
 subsystem or establish contracts across subsystem boundaries. Locally
@@ -173,10 +178,6 @@ implementation does not establish that its architecture is sound.
 already exists. A successful experiment still requires an explicit adoption
 decision and normal implementation standards.
 
-**Correlated validation.** Tests and implementations derived from the same
-misconception can reinforce false confidence. Important claims need an
-independently derived oracle or property.
-
 **Architectural drift.** Many locally reasonable changes can erode subsystem
 ownership and invariants. Durable design documents and narrow interfaces make
 drift visible.
@@ -195,6 +196,8 @@ ask:
 
 - where defects and unresolved design are first discovered;
 - which changes require substantial rework or reversion;
+- whether milestone steps remain reviewable, architectural discoveries return
+  to the design, and completed documents match the implementation;
 - which validation mechanisms are noisy, stale, or routinely ignored;
 - whether validation or review has become the current bottleneck.
 
@@ -204,9 +207,12 @@ modes move.
 ## Working Principles
 
 - Move taste and judgment earlier, not merely faster.
+- Iterate working design documents through explicit adversarial review.
+- Derive milestone plans from coherent designs and implement them in reviewable,
+  validated steps.
 - Use bounded experiments when feasibility cannot be settled by reasoning.
-- Externalize architectural memory and make commitment levels explicit.
-- Keep a narrow, well-verified architectural core.
+- Externalize architectural memory, make commitment levels explicit, and
+  reconcile completed designs with the implementation.
 - Treat deterministic checks as consistency mechanisms and maintain
   independently derived correctness oracles.
 - Combine focused tests for diagnosis with generative tests for discovery.
