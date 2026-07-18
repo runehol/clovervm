@@ -261,6 +261,11 @@ to answer a design question. Code intended to land in the maintained mainline
 requires design clarity proportional to its blast radius; the existence of a
 working implementation is not evidence that its architecture is sound.
 
+**Prototype sedimentation.** Exploratory code can become permanent because it
+already exists, even when the experiment did not justify its architecture.
+Successful experiments still require an explicit adoption decision and normal
+implementation standards.
+
 **Correlated tests.** Tests written from the implementation may confirm its
 misconception. Prefer external, reference, property-based, or shadow oracles for
 important semantics.
@@ -276,11 +281,6 @@ require evidence before every mechanism is built.
 **Validation debt.** Producing code faster than it can be checked creates an
 apparently productive but increasingly fragile repository. Verification work
 is part of implementation, not a later cleanup phase.
-
-**Prototype sedimentation.** Exploratory code can become permanent because it
-already exists, even when the experiment did not justify its architecture.
-Successful experiments still require an explicit adoption decision and normal
-implementation standards.
 
 **Guardrail accretion.** Tests and analysers can grow faster than their signal.
 Noisy, redundant, or implementation-specific checks consume the same validation
@@ -310,11 +310,11 @@ accordingly.
 
 ## Working Principles
 
-- Externalize architectural memory.
 - Move taste and judgment earlier, not merely faster.
+- Use bounded experiments when feasibility cannot be settled by reasoning.
+- Externalize architectural memory.
 - Make commitment levels explicit.
 - Keep a narrow, well-verified architectural core.
-- Use bounded experiments when feasibility cannot be settled by reasoning.
 - Treat deterministic checks as consistency mechanisms, not proof that the
   specification is correct.
 - Maintain independent correctness oracles.
