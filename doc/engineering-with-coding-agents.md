@@ -1,10 +1,10 @@
-# Human-AI Engineering Principles
+# Engineering with Coding Agents
 
 This document records working principles for developing clovervm as a small,
-high-capability human-AI engineering team. It describes practices that appear
-to become more valuable as implementation capacity increases. These are not
-claims that every task should use the same process; they are defaults to test
-and refine through the project.
+high-capability software team working with coding agents. It describes practices
+that appear to become more valuable as implementation capacity increases. These
+are not claims that every task should use the same process; they are defaults to
+test and refine through the project.
 
 ## Operating Model
 
@@ -51,6 +51,50 @@ Good engineering practices become leverage rather than administrative
 overhead. The objective is not to slow production to the former rate. It is to
 increase trustworthy validation capacity to match the expanded implementation
 capacity.
+
+## Move Taste and Judgment Earlier
+
+Coding agents can increase code-production capacity much faster than a team can
+increase experienced review capacity. If implementation is multiplied while
+architectural judgment remains concentrated at the end of the process, senior
+engineers become bottlenecked reconstructing design intent from large diffs and
+rejecting flaws that should have been found before code generation.
+
+The preferred principle is:
+
+> Move taste and judgment earlier, not merely faster.
+
+Before substantial implementation begins, settle enough of the design to
+answer:
+
+- which layer owns the behavior;
+- which invariants and external contracts must remain true;
+- which existing project pattern the change follows;
+- which alternatives were considered and why they were rejected;
+- which tests, verifiers, or measurements will establish success;
+- which result would cause the design itself to be reconsidered.
+
+The intended flow is:
+
+```text
+architectural context
+    -> design review
+    -> explicit invariants and validation plan
+    -> agent-assisted implementation
+    -> deterministic checks
+    -> focused human code review
+```
+
+An underspecified task followed by voluminous agent-generated code transfers
+design work into the review queue. Code review should verify an understood
+design and catch implementation mistakes; it should not be the first place
+where the team discovers what the change was supposed to mean.
+
+Small teams have an advantage when the person directing the agent also carries
+the architectural model and can correct course during generation. Larger teams
+can obtain the same leverage only if they invest in clear ownership, early
+design gates, shared context, and deterministic checks. The objective is not to
+generate code faster than judgment can support it.
 
 ## Durable Architectural Memory
 
