@@ -1,7 +1,14 @@
 # Slice Support
 
-Status: accepted and implemented, except for builtin list slice assignment and
-deletion.
+| Field | Value |
+|---|---|
+| Document type | Design |
+| Status | Accepted |
+| Implementation | Partial |
+| Scope | Slice objects, syntax, normalization, subscript dispatch, and builtin sequence consumption |
+| Owning layers | Parser owns slice syntax structure; codegen owns evaluation order and construction; the slice builtin owns representation and normalization; operator dispatch owns guarded method selection; builtin sequences own consumption |
+| Validated against | `df8fe91` (2026-07-18) |
+| Supersedes | N/A |
 
 This document records CloverVM's slice contracts. It describes the
 Python-visible behavior and the internal invariants that other runtime work may

@@ -1,14 +1,20 @@
 # CloverVM Function Calling Convention
 
-Status: accepted architecture contract.
+| Field | Value |
+|---|---|
+| Document type | Architecture contract |
+| Status | Accepted |
+| Implementation | Implemented |
+| Scope | Managed frame layout, call argument windows, entry, return, and interpreter dispatch state |
+| Owning layers | `CodeObject` owns frame metadata; codegen owns call-window construction; the interpreter owns managed entry and return; native boundaries and the JIT consume the contract |
+| Validated against | `df8fe91` (2026-07-18) |
+| Supersedes | N/A |
 
 This document defines CloverVM's managed frame and call conventions. It focuses
 on the layout and transition rules shared by the interpreter, runtime-generated
 thunks, native boundary adapters, and future compiled managed code. Opcode
 inventories, copied implementation snippets, and helper signatures are not part
 of the contract.
-
-## Core Model
 
 CloverVM uses register/accumulator bytecode over an explicit managed stack:
 

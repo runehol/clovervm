@@ -70,6 +70,11 @@ A design document must not become an inventory of attractive ideas. It should
 record commitment level explicitly and become simpler when investigation shows
 that a mechanism has not yet earned its cost.
 
+New or materially revised architectural documents should use the
+[Architecture Document Template](architecture-document-template.md) to separate
+document type, commitment status, implementation state, layer ownership, and
+validation evidence.
+
 Small, intentional commits provide another level of durable memory. A commit
 should make one reviewable claim about the system and leave enough context to
 understand why the change was made.
