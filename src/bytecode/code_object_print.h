@@ -227,6 +227,13 @@ template <> struct fmt::formatter<cl::CodeObject>
     }
 
     template <typename Out>
+    void disassemble_keyword_call_cache(const cl::CodeObject &code_obj,
+                                        Out &out, uint32_t pc) const
+    {
+        format_to(out, "keyword_call_ic[{}]", code_obj.code[pc]);
+    }
+
+    template <typename Out>
     void disassemble_operator_cache(const cl::CodeObject &code_obj, Out &out,
                                     uint32_t pc) const
     {
@@ -432,8 +439,8 @@ template <> struct fmt::formatter<cl::CodeObject>
                     format_to(out, ", ");
                     disassemble_read_cache(code_obj, out, read_cache_idx);
                     format_to(out, ", ");
-                    disassemble_function_call_cache(code_obj, out,
-                                                    call_cache_idx);
+                    disassemble_keyword_call_cache(code_obj, out,
+                                                   call_cache_idx);
                     format_to(out, ", ");
                     print_reg_span(out, code_obj, first_arg_reg, n_pos_args);
                     format_to(out, ", kw_values=");
@@ -697,8 +704,8 @@ template <> struct fmt::formatter<cl::CodeObject>
                         disassemble_constant(code_obj, out, keyword_names_idx);
                     }
                     format_to(out, ", ");
-                    disassemble_function_call_cache(code_obj, out,
-                                                    cache_idx_offset);
+                    disassemble_keyword_call_cache(code_obj, out,
+                                                   cache_idx_offset);
                 }
                 break;
 
