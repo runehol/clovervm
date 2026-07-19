@@ -35,7 +35,7 @@ BytecodeDecoder
 flow. `BytecodeDecoder` owns compilation-scoped feedback snapshots and the list
 of bytecode blocks.
 
-The authoritative physical opcode schema, standalone semantic decoding,
+The authoritative opcode schema, standalone semantic decoding,
 printer and tracer migration, compilation-scoped feedback snapshots, and
 bytecode block discovery are implemented.
 
@@ -72,7 +72,7 @@ that needs dominance computes it over the completed JIT CFG.
 There must be one authoritative mapping from an encoded opcode to the
 information required for structural scanning:
 
-- encoded instruction length;
+- instruction length, including an operator's continuation byte;
 - control-flow classification;
 - location and encoding of any explicit branch target;
 - whether execution falls through;
@@ -85,10 +85,11 @@ standalone decoder. The interpreter remains free to use literal operand
 offsets and lengths in its handlers, but tests and debug validation must detect
 disagreement with the authoritative format metadata.
 
-The structural format is distinct from the semantic instruction span. For
-example, an operator and its encoded `CheckOperatorNotImplemented`
-continuation are separate physical opcodes but may decode as one semantic
-`BytecodeInstruction`.
+The format length is the only bytecode instruction length. An operator's
+format includes its encoded `CheckOperatorNotImplemented` continuation byte,
+so every sequential consumer advances uniformly by `bytecode_length(opcode)`.
+The continuation opcode retains its own one-byte format for standalone
+decoding when the interpreter tracer observes its PC.
 
 ## Standalone Instruction Decoding
 
@@ -180,10 +181,11 @@ continuation when a snapshotted trusted cache action cannot produce
 `NotImplemented`, or use it for an untrusted call path or post-effect recovery.
 
 Ordinary jumps, exception-table boundaries, and block entrances must not split
-a compound semantic instruction. The bytecode verifier must reject such a
-target. Standalone decoding at the continuation offset remains supported
-because the interpreter tracer may observe execution of that physical
-continuation opcode.
+a compound instruction. Structural scanning skips the continuation naturally
+because it is included in the preceding operator's format length. Standalone
+decoding at the continuation offset remains supported because the interpreter
+tracer may observe execution of that physical continuation opcode; that query
+returns a one-byte instruction with no `continuation_pc_offset`.
 
 ## BytecodeDecoder Lifetime and Feedback
 
@@ -406,7 +408,7 @@ moves, and backend layout.
 
 The implementation should include structural tests for:
 
-- the authoritative encoded length of every opcode;
+- the authoritative length of every opcode, including operator continuations;
 - agreement between builder output, decoding, printing, tracing, and
   interpreter handler lengths;
 - full-stream iteration ending exactly at `CodeObject::code.size()`;

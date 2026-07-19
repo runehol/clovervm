@@ -662,8 +662,8 @@ namespace cl
 
         const BytecodeInfo &info = bytecode_info(instruction.encoded_opcode_);
         BytecodeFormatInfo format = info.format_info();
-        uint32_t physical_next_pc_offset = pc_offset + format.length();
-        assert(physical_next_pc_offset <= code_object.size());
+        instruction.next_pc_offset_ = pc_offset + format.length();
+        assert(instruction.next_pc_offset_ <= code_object.size());
 
         for(size_t idx = 0; idx < format.operand_count; ++idx)
         {
@@ -757,7 +757,6 @@ namespace cl
                                         FrameHeaderSizeBelowFp - 1)});
         }
 
-        instruction.next_pc_offset_ = physical_next_pc_offset;
         if(info.compound_role == BytecodeCompoundRole::BinaryOperator ||
            info.compound_role == BytecodeCompoundRole::TernaryOperator)
         {
@@ -765,13 +764,12 @@ namespace cl
                 info.compound_role == BytecodeCompoundRole::BinaryOperator
                     ? Bytecode::CheckOperatorNotImplemented
                     : Bytecode::CheckTernaryOperatorNotImplemented;
-            assert(physical_next_pc_offset < code_object.size());
-            assert(Bytecode(code_object.code[physical_next_pc_offset]) ==
-                   expected_continuation);
-            instruction.continuation_pc_offset_ = physical_next_pc_offset;
-            instruction.next_pc_offset_ =
-                physical_next_pc_offset +
-                bytecode_length(expected_continuation);
+            instruction.continuation_pc_offset_ =
+                instruction.next_pc_offset_ - 1;
+            assert(
+                Bytecode(
+                    code_object.code[*instruction.continuation_pc_offset_]) ==
+                expected_continuation);
         }
 
         BytecodeInstruction::decode_value_effects(code_object, instruction);

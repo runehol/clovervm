@@ -64,28 +64,48 @@ CL_BYTECODE(CallSpecialMethod1, SpecialMethodCall, Fallthrough, None)
 CL_BYTECODE(CallSpecialMethod2, SpecialMethodCall, Fallthrough, None)
 CL_BYTECODE(CallSpecialMethod3, SpecialMethodCall, Fallthrough, None)
 
-CL_BYTECODE(Add, RegisterOperatorCache, Fallthrough, BinaryOperator)
-CL_BYTECODE(Sub, RegisterOperatorCache, Fallthrough, BinaryOperator)
-CL_BYTECODE(Mul, RegisterOperatorCache, Fallthrough, BinaryOperator)
-CL_BYTECODE(MatMul, RegisterOperatorCache, Fallthrough, BinaryOperator)
-CL_BYTECODE(TrueDiv, RegisterOperatorCache, Fallthrough, BinaryOperator)
-CL_BYTECODE(FloorDiv, RegisterOperatorCache, Fallthrough, BinaryOperator)
-CL_BYTECODE(BinaryPow, RegisterOperatorCache, Fallthrough, BinaryOperator)
-CL_BYTECODE(TernaryPow, RegisterRegisterOperatorCache, Fallthrough,
+CL_BYTECODE(Add, RegisterOperatorCacheWithContinuation, Fallthrough,
+            BinaryOperator)
+CL_BYTECODE(Sub, RegisterOperatorCacheWithContinuation, Fallthrough,
+            BinaryOperator)
+CL_BYTECODE(Mul, RegisterOperatorCacheWithContinuation, Fallthrough,
+            BinaryOperator)
+CL_BYTECODE(MatMul, RegisterOperatorCacheWithContinuation, Fallthrough,
+            BinaryOperator)
+CL_BYTECODE(TrueDiv, RegisterOperatorCacheWithContinuation, Fallthrough,
+            BinaryOperator)
+CL_BYTECODE(FloorDiv, RegisterOperatorCacheWithContinuation, Fallthrough,
+            BinaryOperator)
+CL_BYTECODE(BinaryPow, RegisterOperatorCacheWithContinuation, Fallthrough,
+            BinaryOperator)
+CL_BYTECODE(TernaryPow, RegisterRegisterOperatorCacheWithContinuation,
+            Fallthrough,
             TernaryOperator)
-CL_BYTECODE(LShift, RegisterOperatorCache, Fallthrough, BinaryOperator)
-CL_BYTECODE(RShift, RegisterOperatorCache, Fallthrough, BinaryOperator)
-CL_BYTECODE(Mod, RegisterOperatorCache, Fallthrough, BinaryOperator)
-CL_BYTECODE(Or, RegisterOperatorCache, Fallthrough, BinaryOperator)
-CL_BYTECODE(And, RegisterOperatorCache, Fallthrough, BinaryOperator)
-CL_BYTECODE(Xor, RegisterOperatorCache, Fallthrough, BinaryOperator)
+CL_BYTECODE(LShift, RegisterOperatorCacheWithContinuation, Fallthrough,
+            BinaryOperator)
+CL_BYTECODE(RShift, RegisterOperatorCacheWithContinuation, Fallthrough,
+            BinaryOperator)
+CL_BYTECODE(Mod, RegisterOperatorCacheWithContinuation, Fallthrough,
+            BinaryOperator)
+CL_BYTECODE(Or, RegisterOperatorCacheWithContinuation, Fallthrough,
+            BinaryOperator)
+CL_BYTECODE(And, RegisterOperatorCacheWithContinuation, Fallthrough,
+            BinaryOperator)
+CL_BYTECODE(Xor, RegisterOperatorCacheWithContinuation, Fallthrough,
+            BinaryOperator)
 
-CL_BYTECODE(TestEqual, RegisterOperatorCache, Fallthrough, BinaryOperator)
-CL_BYTECODE(TestNotEqual, RegisterOperatorCache, Fallthrough, BinaryOperator)
-CL_BYTECODE(TestLess, RegisterOperatorCache, Fallthrough, BinaryOperator)
-CL_BYTECODE(TestLessEqual, RegisterOperatorCache, Fallthrough, BinaryOperator)
-CL_BYTECODE(TestGreater, RegisterOperatorCache, Fallthrough, BinaryOperator)
-CL_BYTECODE(TestGreaterEqual, RegisterOperatorCache, Fallthrough,
+CL_BYTECODE(TestEqual, RegisterOperatorCacheWithContinuation, Fallthrough,
+            BinaryOperator)
+CL_BYTECODE(TestNotEqual, RegisterOperatorCacheWithContinuation, Fallthrough,
+            BinaryOperator)
+CL_BYTECODE(TestLess, RegisterOperatorCacheWithContinuation, Fallthrough,
+            BinaryOperator)
+CL_BYTECODE(TestLessEqual, RegisterOperatorCacheWithContinuation, Fallthrough,
+            BinaryOperator)
+CL_BYTECODE(TestGreater, RegisterOperatorCacheWithContinuation, Fallthrough,
+            BinaryOperator)
+CL_BYTECODE(TestGreaterEqual, RegisterOperatorCacheWithContinuation,
+            Fallthrough,
             BinaryOperator)
 CL_BYTECODE(TestIs, Register, Fallthrough, None)
 CL_BYTECODE(TestIsNot, Register, Fallthrough, None)
@@ -95,17 +115,28 @@ CL_BYTECODE(CheckOperatorNotImplemented, NoOperands, Fallthrough,
 CL_BYTECODE(CheckTernaryOperatorNotImplemented, NoOperands, Fallthrough,
             TernaryOperatorContinuation)
 
-CL_BYTECODE(AddSmi, Smi8OperatorCache, Fallthrough, BinaryOperator)
-CL_BYTECODE(SubSmi, Smi8OperatorCache, Fallthrough, BinaryOperator)
-CL_BYTECODE(MulSmi, Smi8OperatorCache, Fallthrough, BinaryOperator)
-CL_BYTECODE(FloorDivSmi, Smi8OperatorCache, Fallthrough, BinaryOperator)
-CL_BYTECODE(BinaryPowSmi, Smi8OperatorCache, Fallthrough, BinaryOperator)
-CL_BYTECODE(LShiftSmi, Smi8OperatorCache, Fallthrough, BinaryOperator)
-CL_BYTECODE(RShiftSmi, Smi8OperatorCache, Fallthrough, BinaryOperator)
-CL_BYTECODE(ModSmi, Smi8OperatorCache, Fallthrough, BinaryOperator)
-CL_BYTECODE(OrSmi, Smi8OperatorCache, Fallthrough, BinaryOperator)
-CL_BYTECODE(AndSmi, Smi8OperatorCache, Fallthrough, BinaryOperator)
-CL_BYTECODE(XorSmi, Smi8OperatorCache, Fallthrough, BinaryOperator)
+CL_BYTECODE(AddSmi, Smi8OperatorCacheWithContinuation, Fallthrough,
+            BinaryOperator)
+CL_BYTECODE(SubSmi, Smi8OperatorCacheWithContinuation, Fallthrough,
+            BinaryOperator)
+CL_BYTECODE(MulSmi, Smi8OperatorCacheWithContinuation, Fallthrough,
+            BinaryOperator)
+CL_BYTECODE(FloorDivSmi, Smi8OperatorCacheWithContinuation, Fallthrough,
+            BinaryOperator)
+CL_BYTECODE(BinaryPowSmi, Smi8OperatorCacheWithContinuation, Fallthrough,
+            BinaryOperator)
+CL_BYTECODE(LShiftSmi, Smi8OperatorCacheWithContinuation, Fallthrough,
+            BinaryOperator)
+CL_BYTECODE(RShiftSmi, Smi8OperatorCacheWithContinuation, Fallthrough,
+            BinaryOperator)
+CL_BYTECODE(ModSmi, Smi8OperatorCacheWithContinuation, Fallthrough,
+            BinaryOperator)
+CL_BYTECODE(OrSmi, Smi8OperatorCacheWithContinuation, Fallthrough,
+            BinaryOperator)
+CL_BYTECODE(AndSmi, Smi8OperatorCacheWithContinuation, Fallthrough,
+            BinaryOperator)
+CL_BYTECODE(XorSmi, Smi8OperatorCacheWithContinuation, Fallthrough,
+            BinaryOperator)
 
 CL_BYTECODE(Not, NoOperands, Fallthrough, None)
 CL_BYTECODE(ToBool, NoOperands, Fallthrough, None)

@@ -77,6 +77,9 @@ TEST(BytecodeFormat, representative_operand_formats_have_expected_lengths)
     EXPECT_EQ(9, bytecode_length(Bytecode::CallMethodAttrKeyword));
     EXPECT_EQ(8, bytecode_length(Bytecode::CallKeyword));
     EXPECT_EQ(7, bytecode_length(Bytecode::DictInsertNew));
+    EXPECT_EQ(4, bytecode_length(Bytecode::LShiftSmi));
+    EXPECT_EQ(3, bytecode_length(Bytecode::Contains));
+    EXPECT_EQ(1, bytecode_length(Bytecode::CheckOperatorNotImplemented));
 }
 
 TEST(BytecodeFormat, control_flow_metadata_identifies_jump_operands)
@@ -160,10 +163,9 @@ TEST(BytecodeInstruction, compound_operator_exposes_continuation)
     BytecodeInstruction instruction =
         find_instruction(*code_object, Bytecode::LShiftSmi);
     ASSERT_TRUE(instruction.continuation_pc_offset().has_value());
-    EXPECT_EQ(instruction.pc_offset() + bytecode_length(Bytecode::LShiftSmi),
+    EXPECT_EQ(instruction.next_pc_offset() - 1,
               *instruction.continuation_pc_offset());
-    EXPECT_EQ(*instruction.continuation_pc_offset() +
-                  bytecode_length(Bytecode::CheckOperatorNotImplemented),
+    EXPECT_EQ(instruction.pc_offset() + bytecode_length(Bytecode::LShiftSmi),
               instruction.next_pc_offset());
     EXPECT_EQ(nullptr, instruction.operator_cache());
     EXPECT_NE(instruction.operands().end(),
@@ -184,6 +186,7 @@ TEST(BytecodeInstruction, compound_operator_exposes_continuation)
     EXPECT_EQ(Bytecode::CheckOperatorNotImplemented,
               continuation.encoded_opcode());
     EXPECT_FALSE(continuation.continuation_pc_offset().has_value());
+    EXPECT_EQ(continuation.pc_offset() + 1, continuation.next_pc_offset());
 }
 
 TEST(BytecodeInstruction, two_cache_instruction_preserves_both_typed_operands)

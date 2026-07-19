@@ -13,12 +13,6 @@ namespace cl
         return int16_t(raw);
     }
 
-    static bool is_operator_continuation(BytecodeCompoundRole role)
-    {
-        return role == BytecodeCompoundRole::BinaryOperatorContinuation ||
-               role == BytecodeCompoundRole::TernaryOperatorContinuation;
-    }
-
     static bool is_jump(BytecodeControlFlow control_flow)
     {
         return control_flow == BytecodeControlFlow::ConditionalJump ||
@@ -50,8 +44,8 @@ namespace cl
     BytecodeInstructionIterator &BytecodeInstructionIterator::operator++()
     {
         assert(pc_offset_ < end_pc_offset_);
-        pc_offset_ =
-            decoder_->decode_instruction_at(pc_offset_).next_pc_offset();
+        Bytecode opcode = Bytecode(decoder_->code_object_.code[pc_offset_]);
+        pc_offset_ += bytecode_length(opcode);
         assert(pc_offset_ <= end_pc_offset_);
         return *this;
     }
@@ -84,14 +78,7 @@ namespace cl
             const BytecodeInfo &info = bytecode_info(opcode);
             uint32_t next_pc_offset = pc_offset + bytecode_length(opcode);
             assert(next_pc_offset <= code_size);
-            semantic_boundaries[pc_offset] =
-                !is_operator_continuation(info.compound_role);
-
-            if(is_operator_continuation(info.compound_role))
-            {
-                pc_offset = next_pc_offset;
-                continue;
-            }
+            semantic_boundaries[pc_offset] = true;
 
             if(is_jump(info.control_flow))
             {
@@ -160,11 +147,7 @@ namespace cl
             for(; pc_offset < block.end_pc_offset_;)
             {
                 Bytecode opcode = Bytecode(code_object_.code[pc_offset]);
-                if(!is_operator_continuation(
-                       bytecode_info(opcode).compound_role))
-                {
-                    last_pc_offset = pc_offset;
-                }
+                last_pc_offset = pc_offset;
                 pc_offset += bytecode_length(opcode);
             }
             assert(pc_offset == block.end_pc_offset_);

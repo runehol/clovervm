@@ -53,11 +53,14 @@ namespace cl
         RegisterConstantAttributeReadCache,
         RegisterConstantAttributeMutationCache,
         RegisterOperatorCache,
+        RegisterOperatorCacheWithContinuation,
         RegisterRegisterOperatorCache,
+        RegisterRegisterOperatorCacheWithContinuation,
         RegisterConstantAttributeReadCacheFunctionCallCacheArgCount,
         MethodKeywordCall,
         SpecialMethodCall,
         Smi8OperatorCache,
+        Smi8OperatorCacheWithContinuation,
         OperatorCache,
         ThreeRegisters,
         FourRegisters,
@@ -107,6 +110,7 @@ namespace cl
     {
         std::array<BytecodeOperandKind, BytecodeOperandLimit> operands{};
         uint8_t operand_count = 0;
+        uint8_t byte_length = 0;
         bool valid = false;
 
         constexpr uint8_t operand_width(size_t idx) const
@@ -127,20 +131,7 @@ namespace cl
             return offset;
         }
 
-        constexpr uint8_t length() const
-        {
-            if(!valid)
-            {
-                return 0;
-            }
-
-            uint8_t result = 1;
-            for(size_t idx = 0; idx < operand_count; ++idx)
-            {
-                result += operand_width(idx);
-            }
-            return result;
-        }
+        constexpr uint8_t length() const { return byte_length; }
 
         constexpr int8_t relative_jump_operand_index() const
         {
@@ -165,7 +156,13 @@ namespace cl
     constexpr BytecodeFormatInfo make_bytecode_format_info(Operands... operands)
     {
         static_assert(sizeof...(operands) <= BytecodeOperandLimit);
-        return {{{operands...}}, uint8_t(sizeof...(operands)), true};
+        BytecodeFormatInfo info = {
+            {{operands...}}, uint8_t(sizeof...(operands)), 1, true};
+        for(size_t idx = 0; idx < info.operand_count; ++idx)
+        {
+            info.byte_length += info.operand_width(idx);
+        }
+        return info;
     }
 
     constexpr BytecodeFormatInfo bytecode_format_info(BytecodeFormat format)
@@ -207,10 +204,25 @@ namespace cl
             case BytecodeFormat::RegisterOperatorCache:
                 return make_bytecode_format_info(Operand::Register,
                                                  Operand::OperatorCache);
+            case BytecodeFormat::RegisterOperatorCacheWithContinuation:
+                {
+                    BytecodeFormatInfo info = make_bytecode_format_info(
+                        Operand::Register, Operand::OperatorCache);
+                    ++info.byte_length;
+                    return info;
+                }
             case BytecodeFormat::RegisterRegisterOperatorCache:
                 return make_bytecode_format_info(Operand::Register,
                                                  Operand::Register,
                                                  Operand::OperatorCache);
+            case BytecodeFormat::RegisterRegisterOperatorCacheWithContinuation:
+                {
+                    BytecodeFormatInfo info = make_bytecode_format_info(
+                        Operand::Register, Operand::Register,
+                        Operand::OperatorCache);
+                    ++info.byte_length;
+                    return info;
+                }
             case BytecodeFormat::
                 RegisterConstantAttributeReadCacheFunctionCallCacheArgCount:
                 return make_bytecode_format_info(
@@ -231,6 +243,13 @@ namespace cl
             case BytecodeFormat::Smi8OperatorCache:
                 return make_bytecode_format_info(Operand::Smi8,
                                                  Operand::OperatorCache);
+            case BytecodeFormat::Smi8OperatorCacheWithContinuation:
+                {
+                    BytecodeFormatInfo info = make_bytecode_format_info(
+                        Operand::Smi8, Operand::OperatorCache);
+                    ++info.byte_length;
+                    return info;
+                }
             case BytecodeFormat::OperatorCache:
                 return make_bytecode_format_info(Operand::OperatorCache);
             case BytecodeFormat::ThreeRegisters:
