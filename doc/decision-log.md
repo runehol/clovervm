@@ -57,6 +57,7 @@ rationale that remains clear from those sources.
 | D-0005 | Use tagged `Value` as the initial JIT representation | Accepted |
 | D-0006 | Use ordered list-based SSA rather than a sea of nodes | Accepted |
 | D-0007 | Separate stable embedded metadata from movable compiled constants | Accepted |
+| D-0008 | Preserve separate managed and host stacks during JIT bring-up | Accepted |
 
 ## D-0001: Compile Whole Functions Rather Than Hot Traces
 
@@ -461,6 +462,10 @@ separate array of stable-addressed, GC-rewritten `Value` slots. Machine code
 must access those slots through PC-relative loads and must never embed the
 current managed-object pointer as an immediate.
 
+Inline `Value` constants with no managed-memory identity, including SMIs and
+booleans, may be embedded directly in machine instructions. They require no GC
+metadata because relocation cannot change their representation.
+
 ### Context
 
 The JIT frequently compares shape and validity-cell identity. Relocating these
@@ -514,3 +519,70 @@ whose stable identity materially simplifies both the JIT and collector.
 - `doc/jit-compiler-and-ir.md`
 - `doc/generational-copying-gc.md`
 - `doc/generational-copying-gc-implementation-plan.md`
+
+## D-0008: Preserve Separate Managed and Host Stacks During JIT Bring-up
+
+**Date:** 2026-07-19
+**Status:** Accepted
+**Scope:** JIT entry, native calls, interpreter transitions, and reclamation
+**Commitment:** Initial cross-subsystem execution policy
+
+### Decision
+
+The first JIT keeps all Python frames in the existing Clover stack. Generated
+Python code uses that storage as its architectural managed stack, while the
+hand-written interpreter, runtime, extensions, and every C or C++ target execute
+on the host stack. Reentrant transition thunks publish the managed frontier and
+preserve both stack positions while crossing between them.
+
+The eventual generated interpreter and runtime may instead use one exact-scanned
+mixed platform stack. That is a later migration, not a JIT bring-up prerequisite.
+
+### Context
+
+Putting generated frames directly on the host stack would require either a
+mixed-stack walker or disabling reclamation. It would also collide with the
+current interpreter's native activations when that interpreter allocates Python
+frames by managed-frame pointer arithmetic. The existing separate Clover stack
+already provides canonical storage understood by the reclaimer and interpreter.
+
+Native code may re-enter Python, so selectively leaving apparently small native
+calls on the managed stack would make bring-up transitions non-uniform. Switching
+all native calls to the host stack gives nested re-entry one consistent rule.
+
+### Alternatives Considered
+
+- place initial generated frames directly on a mixed host stack;
+- disable reclamation while bringing up the JIT;
+- copy or relocate canonical frames at every interpreted/compiled transition;
+- require the generated interpreter or mixed-stack walker before the first JIT.
+
+### Why Chosen
+
+The dual-stack policy composes with the implemented managed frame layout,
+native-boundary contract, and reclaimer. It isolates new assembly work in
+transition thunks while preserving one canonical Python frame chain across
+interpreted, compiled, native, and reentrant execution.
+
+### Consequences
+
+- the reclaimer remains enabled during JIT bring-up;
+- every initial JIT-to-native call switches to the host stack;
+- transition records nest and restore the immediately enclosing SP, FP,
+  frontier, and continuation;
+- generated call and return instructions may use the Clover stack, but native
+  ABI frames never reside there;
+- later mixed-stack execution requires an explicit migration and exact walker.
+
+### Revisit When
+
+- generated interpreter handlers replace the hand-written interpreter;
+- the mixed managed/native stack walker is implemented and validated;
+- measurements show stack-transition overhead justifies certified native leaf
+  calls on managed stack storage.
+
+### References
+
+- `doc/jit-compiler-and-ir.md`
+- `doc/function-calling-convention.md`
+- `doc/native-managed-boundaries.md`

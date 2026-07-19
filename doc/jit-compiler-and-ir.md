@@ -172,6 +172,34 @@ Treating a tripped safepoint as a deoptimization boundary is an intentional
 initial simplification. It is an implementation policy rather than a permanent
 restriction on compiled-frame scanning.
 
+### Initial execution-stack policy: managed stack and host stack remain separate
+
+During JIT bring-up, interpreted and compiled Python frames both remain in the
+existing Clover stack. Generated code temporarily uses that managed storage as
+its architectural stack so ordinary native call and return instructions can
+consume the compiled return state in managed frame headers. The hand-written
+interpreter, runtime helpers, extensions, and all other C or C++ code continue
+to execute on the host stack.
+
+Every initial JIT-to-native call crosses through a stack-transition thunk. The
+thunk publishes the managed frame frontier and any required roots, records the
+managed SP, FP, and continuation, restores the active host SP, and calls the
+native target. On return it restores the managed stack state and resumes the
+compiled continuation. Native code that re-enters Python may enter the
+interpreter on the host stack or compiled code on the managed stack; transition
+records nest so each return restores the immediately enclosing stack state.
+
+The exact transition-record encoding is an implementation detail, but its
+logical state includes the previous transition, both stack positions, the
+managed frame frontier, and the continuation needed to resume the suspended
+side. A transition must remain walkable for reclamation and re-entry until its
+native activation returns.
+
+This policy keeps the existing reclaimer and separate-stack scanner usable
+during bring-up. Moving interpreted and compiled frames onto one mixed platform
+stack is a later runtime migration associated with generated interpreter
+handlers and a mixed-stack walker; it is not a prerequisite for the first JIT.
+
 ### Staged path to precise compiled-frame maps
 
 The initial compiler still constructs declarative post-allocation safepoint and
@@ -279,25 +307,20 @@ stores the compiled continuation for the call site or operator continuation.
 In the target ABI there is no null compiled-return PC and no return-time mode
 branch.
 
-Generated managed execution uses the platform call stack under the managed frame
-discipline. Managed frame headers are laid out so the caller FP and compiled
-return state occupy the same positions expected by the target's native unwind
-convention. The current hand-written interpreter may continue to use its
-separate Clover stack, but generated JIT code and future generated interpreter
-handlers are designed for one mixed managed/native stack. The
-`compiled_return_pc` slot is therefore the architectural return address rather
-than a second logical copy of one. Call lowering arranges for the real native
-continuation to occupy that slot: an x86-64 `call` pushes it there, while
-AArch64 frame setup saves the link register there.
+Generated Python execution initially installs the architectural stack pointer
+in the existing Clover stack. Managed frame headers place the caller FP and
+compiled return state where the target's call and return instructions can
+consume them. The `compiled_return_pc` slot is therefore the architectural
+return address rather than a second logical copy of one. Call lowering arranges
+for the real continuation to occupy that slot: an x86-64 `call` pushes it there,
+while AArch64 frame setup saves the link register there.
 
-Function entry must move the architectural stack pointer to claim the generated
-managed frame before writing any durable managed state. GC-visible values,
-interpreter-visible canonical slots, frame headers, and call argument windows
-must not be stored in the ABI red zone or below the current stack pointer. A
-target may use red-zone bytes only for non-root scratch temporaries that are not
-live across calls, safepoints, or stack walking. This makes the architectural
-stack pointer the generated managed frame frontier: there is no hidden managed
-state below it that the moving GC must discover.
+Function entry must move the architectural stack pointer to claim managed frame
+storage before writing durable state. GC-visible values, interpreter-visible
+canonical slots, frame headers, and call argument windows must not be stored
+below the claimed managed frontier. The initial managed stack has no host ABI
+red zone; generated code treats any target red-zone convention as unavailable
+while SP addresses Clover storage.
 
 Managed frame teardown remains callee-pop. On AArch64 the essential return
 sequence is:
@@ -337,15 +360,12 @@ pointer and must consume it before changing that pointer or reaching another
 call or safepoint. It can then load `caller_code_object`,
 `interpreted_return_pc`, or other frame-local continuation data.
 
-The current hand-written interpreter may stage this target ABI with a temporary
-branch on return. If an interpreted callee observes that its
-`compiled_return_pc` is the interpreter-return thunk, it can use the existing
-interpreted return path. If the slot names a compiled continuation, it can take a
-mixed-mode return path that establishes the compiled post-return stack position,
-restores `caller_fp`, and enters the compiled target. This branch is a bootstrap
-mechanism, not the long-term return convention. Once interpreter handlers are
-generated by the same backend machinery, Python calls and returns should map to
-native calls and returns directly.
+The hand-written interpreter continues to return through its existing dispatch
+path on the host stack. A compiled/interpreted transition thunk reads the
+callee's compiled and interpreted continuation metadata, restores the required
+stack, and enters the selected continuation. Once interpreter handlers are
+generated by the same backend machinery and participate in the eventual mixed
+stack, Python calls and returns can map to native calls and returns directly.
 
 During the initial canonical-publication tier, an interpreted callee may also
 resume a compiled caller through `caller_code_object` and `interpreted_return_pc`
@@ -372,29 +392,31 @@ state must be published before any native call that may allocate, reclaim, call
 Python, or otherwise require managed roots. A future mapped frame instead needs
 a precise safepoint entry for such a call.
 
-The long-term mixed stack is still exact-scanned, not conservatively scanned.
-Native/managed and managed/native transition thunks are part of the GC contract:
-the stack walker recognizes them while unwinding and toggles managed-frame root
-scanning on or off. Generated managed frames are scanned from their frame kind,
-compiled PC metadata, safepoint maps, or canonical frame layout. Native C, C++,
-extension, runtime-helper, host-ABI spill, and host-ABI return-address frames are
-unwindable but opaque to managed root scanning. A managed value that must survive
-inside a native-opaque region must be published through an exact transition
-record, handle frame, or other explicitly walkable root mechanism before
-entering that region.
+During bring-up, every native target runs on the host stack, including targets
+that might be safe to execute directly on managed stack storage. This uniform
+rule keeps re-entry into the hand-written interpreter coherent. A transition
+thunk publishes the Clover frame frontier before switching stacks; native frames
+remain opaque to managed root scanning, while the existing reclaimer continues
+to scan canonical Clover storage.
 
-For generated managed frames, the architectural stack pointer supplies the stack
-frontier at safepoints. The hand-written interpreter still publishes its
-separate Clover stack frontier explicitly, but generated JIT code and future
-generated interpreter handlers should not need a second frontier for ordinary
-managed frame storage. Values outside the exact managed frame maps still require
-explicit roots or transition records.
+A later generated runtime may allow certified native leaf calls to remain on a
+mixed platform stack. That stack must be exact-scanned: recognized transition
+frames, frame kinds, compiled-PC metadata, and safepoint maps distinguish
+generated managed frames from opaque C, C++, extension, and runtime-helper
+frames. Managed roots crossing an opaque region still require an exact
+transition record, handle frame, or another walkable root mechanism.
 
 A real Python call can also be the successful action of any overloaded
 operator IC. Publication before such a call is continuing fast-path code, not a
 failed-speculation side exit: it synchronizes dirty canonical homes, invokes the
 callee, and then resumes compiled execution on normal return. It cannot be
 delegated to the non-returning deduplicated recovery tails used by guards.
+
+The initial call path selects the callee's execution engine dynamically from
+its `CodeObject`: a present JIT entry enters generated code on the managed
+stack, while an absent entry switches to the host stack and starts the
+hand-written interpreter. This is an execution choice within one managed frame
+and argument convention, not call rollback or a second Python ABI.
 
 If the call occurs inside one or more inlined functions, continuing publication
 synchronizes dirty homes across the entire active outer-to-inner frame chain.
@@ -429,10 +451,30 @@ use the active root-discovery policy.
 
 ### Exceptions and observability
 
-General compiled exception handling is deliberately parked. The current
-direction is to leave compiled mode when an operation raises and use the
-interpreter's existing exception tables and unwinding. The exact handoff after
-an effect has committed remains open.
+The bring-up compiler handles every unsupported bytecode with an unconditional
+side exit before executing it. This is the universal staging fallback, not a
+special exception mechanism. Explicit raising bytecodes and
+`ReturnOrRaiseException` are initially unsupported, so the JIT reconstructs
+their canonical entry state and the interpreter executes them. Existing
+bytecode exception tables and interpreter unwinding remain authoritative.
+
+A Python call may still be compiled. The call executes normally in whichever
+engine its callee selects. If a pending exception eventually reaches an
+unsupported raising or return-or-raise bytecode, that bytecode exits before
+execution and the interpreter performs the exception dispatch. The JIT never
+rolls back the already-executed call and does not confuse an ordinary Python
+call with the native `exception_marker()` return convention.
+
+The same rule applies to every other bytecode omitted from the first compiler:
+
+```text
+supported bytecode   -> execute compiled
+unsupported bytecode -> unconditional pre-bytecode side exit
+                      -> interpreter executes it
+```
+
+General compiled exception handling and continuing through exception tables in
+generated code remain later optimizations rather than bring-up requirements.
 
 Tracing, traceback construction, stack inspection, and similar facilities may
 require canonical frames and bytecode PCs even without failed speculation. A
@@ -449,6 +491,14 @@ the semantic content of relevant ICs. Core construction then creates SSA for
 the accumulator and bytecode registers while expanding each supported IC case
 into explicit checks, actions, and side exits.
 
+Bring-up begins with a zero-opcode compiler. Its generated entry captures the
+unchanged function-entry state and immediately takes an unconditional
+unsupported-bytecode side exit. Although it executes no Python operation, this
+first vertical slice validates compilation lookup, executable-code entry,
+managed/host stack transitions, frame metadata, Snapshot construction,
+generated recovery, accumulator publication, and interpreter resumption. Opcode
+support is then added incrementally without changing the fallback contract.
+
 This path deliberately omits:
 
 - Python function inlining;
@@ -461,6 +511,13 @@ predicates and successful action, while unknown or unsupported cases can use a
 conservative Python call or return to the interpreter. Core IR can perform
 ordinary SSA optimization, dominator-based redundant-check elimination, and
 effect-aware local code motion without a general Python type lattice.
+
+The initial optimizer preserves list order and performs only transformations
+whose effect proof is trivial, such as eliminating an identical dominating SMI
+check across pure arithmetic. Mutable-shape guard motion, validity-cell
+hoisting, and motion across calls wait for the precise effect taxonomy and
+alias model. An unavailable analysis disables an optimization rather than
+weakening its proof obligation.
 
 ### Optional Semantic IR frontend
 
@@ -1006,15 +1063,21 @@ FrameState:
     CodeObject
     bytecode pc
     parent FrameState       # inlined caller
-    accumulator -> ProgramValueRef
     register 0  -> ProgramValueRef
     register 1  -> ProgramValueRef
     ...
+
+ActiveState:
+    innermost FrameState
+    accumulator -> ProgramValueRef
 ```
 
 Sparse structural sharing avoids copying the complete register mapping at every
 bytecode. A frame state describes interpreter meaning; it does not assert that
-the corresponding canonical slots are currently synchronized.
+the corresponding canonical slots are currently synchronized. The accumulator
+is one thread execution value, analogous to a distinguished machine register;
+it belongs only to the active innermost state. Suspended parent frames do not
+have separate accumulator values.
 
 During bytecode abstract interpretation, a mutable `BuilderContext` owns the
 current environment:
@@ -1022,7 +1085,8 @@ current environment:
 ```text
 BuilderContext:
     active logical frame chain
-    (frame instance, accumulator or register) -> ProgramValueRef
+    (frame instance, register) -> ProgramValueRef
+    accumulator -> ProgramValueRef
     current bytecode position
     current inferred and available facts
 ```
@@ -1044,7 +1108,7 @@ instruction:
 ```text
 %snapshot: Snapshot = Snapshot(
     resume = Add@17,
-    frame A accumulator = %acc,
+    accumulator = %acc,
     frame A register 0  = %lhs,
     frame A register 1  = %rhs,
     parent frame = ...)
@@ -1089,7 +1153,7 @@ unboxed float into the tagged representation required by an interpreter slot:
 %snapshot: Snapshot = Snapshot(
     resume = Add@17,
     recover %boxed_sum = BoxFloatForRecovery(%sum_f64),
-    frame A accumulator = %boxed_sum,
+    accumulator = %boxed_sum,
     frame A register 0  = %boxed_sum,
     ...)
 ```
@@ -1108,13 +1172,13 @@ only remaining consumers are Snapshots:
 # Before sinking.
 %sum_f64: Float64 = FloatAdd %left_f64, %right_f64
 %sum_boxed: Tagged<Float> = BoxFloat %sum_f64
-%snapshot = Snapshot(frame A accumulator = %sum_boxed, ...)
+%snapshot = Snapshot(accumulator = %sum_boxed, ...)
 
 # After sinking.
 %sum_f64: Float64 = FloatAdd %left_f64, %right_f64
 %snapshot = Snapshot(
     recover %sum_boxed = BoxFloatForRecovery(%sum_f64),
-    frame A accumulator = %sum_boxed,
+    accumulator = %sum_boxed,
     ...)
 ```
 
@@ -1810,6 +1874,11 @@ Compiled code and its metadata remain alive as one code object. Safepoint lookup
 from a compiled PC is deterministic, and a call safepoint can be identified
 from the compiled caller return PC while walking a suspended callee chain.
 
+During bring-up, generated code is never reclaimed, relocated, or reused for a
+different compilation. Invalidation prevents new entry but does not destroy
+machine code that an active callee may still return into. Active-frame-aware
+retirement and eventual code-memory reclamation remain later lifecycle work.
+
 ### Generated side exits and recovery plans
 
 Each Core IR failure retains an explicit non-returning exit consuming a
@@ -1836,12 +1905,13 @@ canonical HomeState:
 
 The resulting recovery plan is the parallel assignment needed to make logical
 and synchronized state agree. It includes dirty canonical-slot writes, the
-accumulator source, final bytecode and return metadata for every active frame,
-and any boxing or reification actions captured by the Snapshot. Active inline
-frames already have canonical backing regions and do not require allocation or
-layout reconstruction. Machine liveness at the exit includes the transitive
-closure of SSA operands named by the Snapshot, whether or not normal compiled
-control flow uses them afterward.
+accumulator source, and any boxing or reification actions captured by the
+Snapshot. Resume-specific bytecode PCs, code objects, exit kinds, and return
+metadata belong to the resume-state stub instead. Active inline frames already
+have canonical backing regions and do not require allocation or layout
+reconstruction. Machine liveness at the exit includes the transitive closure of
+SSA operands named by the Snapshot, whether or not normal compiled control flow
+uses them afterward.
 
 Location assignment and `HomeState` answer different questions. Location
 assignment says where a `ProgramValueRef` can be obtained at the exit.
@@ -1858,12 +1928,14 @@ state, the initial generic runtime does not inspect optimized locations. Their
 declarative form is deliberately suitable for later serialization as
 deoptimization translations.
 
-Side-exit code is factored into three levels:
+Side-exit code is factored into independently shareable value-recovery and
+resume-state parts:
 
 ```text
 guard or speculative failure
-    -> resume-state stub
+    -> exit-selector stub
     -> shared recovery-plan block
+    -> resume-state stub
     -> common interpreter handoff
 ```
 
@@ -1874,23 +1946,30 @@ ResumeState {
     CodeObject
     bytecode pc
     inline instance
-    exit kind              # pre-effect, post-commit, exception, ...
+    exit kind              # retry, unsupported bytecode, post-commit, ...
 }
 ```
 
-All failures returning to the same logical bytecode state may share its small
-stub. The stub installs the interpreter resume state and jumps to a recovery
-block. Different resume states may share that block when their exact
-post-allocation recovery operations are identical. If one resume state is
-reached with different machine recovery plans, code generation emits a distinct
-stub for each `(ResumeStateId, RecoveryPlanId)` pair.
+The small selector for a `(ResumeStateId, RecoveryPlanId)` pair arranges the
+eventual resume target in the dedicated exit scratch state and jumps to the
+shared recovery block. After synchronizing values, that block transfers to the
+selected resume-state stub. All exits returning to the same logical bytecode
+state may share the resume stub, while exits with identical post-allocation
+value recovery may share the recovery block even when their bytecode PCs or
+exit kinds differ.
 
 A recovery plan is interned from a canonical, deterministic signature containing
 its destination homes, physical or rematerialized sources, representations,
-accumulator action, frame metadata finalization, and reification requirements.
+accumulator action, and reification requirements. Resume-specific frame
+metadata is deliberately excluded.
 Interning assigns a typed `RecoveryPlanId`; it never depends on pointer hashes
 or hash-table iteration order. Identical plans share one emitted block, and all
-ordinary recovery blocks tail into a common interpreter-dispatch handoff.
+resume-state stubs tail into a common interpreter-dispatch handoff after
+installing their code objects, bytecode PCs, return metadata, and exit kind.
+
+The first vertical slice need not implement interning: one selector, recovery
+sequence, and resume sequence may be emitted together. The separation becomes
+observable only when code generation begins sharing either component.
 
 Canonical-slot writes are parallel assignments. A source home may be overwritten
 before its old value has been copied elsewhere, so exit expansion uses ordinary
@@ -2085,6 +2164,26 @@ stack cost contributes to the inlining budget.
 
 ## End-to-End Examples
 
+### Bring-up: zero supported bytecodes
+
+The first executable compiler can deliberately support no bytecodes:
+
+1. Function dispatch finds the installed JIT entry and enters generated code.
+2. The entry establishes the managed SP and FP, preserving the unchanged
+   function-entry frame state.
+3. Core IR contains an entry Snapshot followed immediately by an unconditional
+   unsupported-bytecode exit for the first bytecode.
+4. The backend emits the initially trivial recovery and resume sequence. It
+   publishes the accumulator, installs the function-entry `CodeObject` and
+   bytecode PC, and selects the unsupported-bytecode exit kind.
+5. The interpreter handoff switches to the host stack and starts interpreting
+   that same managed frame at the first bytecode.
+
+This milestone validates the complete execution loop before opcode semantics,
+optimization, or register allocation can obscure boundary failures. Adding the
+first supported opcode merely moves the unconditional exit to the next
+unsupported bytecode.
+
 ### Initial direct compilation: monomorphic Add
 
 The initial path requires neither Semantic IR nor type inference:
@@ -2132,8 +2231,8 @@ A polymorphic addition illustrates the complete flow:
 8. The target backend selects tagged or future unboxed representations and
    assigns locations while preserving the active safepoint and recovery policy.
 9. Post-allocation exit expansion interns the required recovery plans, emits
-   resume-state stubs and shared synchronization blocks, and tails them into the
-   common interpreter handoff.
+   exit selectors, shared recovery blocks, and resume-state stubs, and tails
+   them into the common interpreter handoff.
 
 ## Deliberately Open Questions
 
@@ -2174,6 +2273,8 @@ A polymorphic addition illustrates the complete flow:
 
 ### Deoptimization and execution boundaries
 
+- concrete encoding, unwind behavior, and validation of the reentrant
+  managed/host stack-transition record used during bring-up;
 - whether publication at every potentially safepointing Python call is
   affordable in practice and what measurements should trigger opt-in precise
   stack-map scanning;
@@ -2196,7 +2297,8 @@ A polymorphic addition illustrates the complete flow:
 - backend selection and target-specific lowering structure;
 - code memory management;
 - tiering and compilation triggers;
-- invalidation and lifetime of generated code.
+- active-frame-aware retirement and reclamation of generated code after the
+  initial immortal-code policy.
 
 These questions must be answered without weakening bytecode compatibility. If
 semantic inference is implemented, Semantic and Core IR must share one type

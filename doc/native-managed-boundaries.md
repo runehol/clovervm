@@ -4,7 +4,7 @@
 |---|---|
 | Document type | Architecture contract |
 | Status | Accepted |
-| Implementation | Implemented |
+| Implementation | Interpreter/native boundary implemented; JIT stack-transition extension proposed |
 | Scope | Contracts for managed-to-native calls and native re-entry into managed execution |
 | Owning layers | Managed frames, interpreter, runtime calls, native APIs, exceptions, and root publication |
 | Validated against | `ad0a158` (2026-07-18) |
@@ -35,9 +35,11 @@ CloverVM uses two distinct stack roles:
 
 The interpreter itself runs on the native stack while accessing Clover frames
 through an explicit managed frame pointer. Native implementations also run on
-the native stack. Future generated managed code may use the Clover stack for
-execution, but it must cross to the native stack before calling arbitrary C or
-C++ code.
+the native stack. During JIT bring-up, generated Python code uses the Clover
+stack as its architectural managed stack but crosses to the native stack before
+calling any C or C++ target. Applying this rule even to certified leaf targets
+keeps re-entry into the hand-written interpreter uniform; selected native calls
+may remain on a future mixed stack only after that runtime exists.
 
 Only VM-controlled frame contents belong on the Clover stack. Arbitrary native
 frames contain return addresses, spills, untagged integers, temporary pointers,
@@ -153,6 +155,21 @@ scan record. Safepoint publication remains responsible for describing the live
 stack extent and any live accumulator or out-of-frame values required by the
 memory manager.
 
+An initial JIT stack-transition record logically preserves:
+
+```text
+previous transition record
+managed SP and FP
+host SP
+published managed frontier
+continuation for the suspended side
+```
+
+Its physical encoding is private to the boundary implementation. The record
+remains active until the native activation returns, allowing native code to
+re-enter interpreted or compiled Python and create a nested transition without
+losing either enclosing stack position.
+
 Completed boundary frames are not traceback history and must not remain live as
 roots. Traceback state is recorded separately from the active frame chain.
 
@@ -191,6 +208,11 @@ At every point, the managed frames form one walkable chain. Each native-to-
 managed entry links to the frontier it observed, and each return restores that
 frontier before control resumes in its native caller. Re-entry must not replace,
 detach, or hide the still-live managed frames below it.
+
+During dual-stack JIT bring-up, the corresponding transition records also form
+a strict stack. `managed A -> native f -> managed B -> native g -> managed C`
+alternates architectural stack positions, and each return restores the SP, FP,
+frontier, and continuation recorded by the immediately enclosing transition.
 
 The same nesting rule applies to pending exceptions and roots: an inner
 boundary may propagate or explicitly handle its own failure, but it must not
