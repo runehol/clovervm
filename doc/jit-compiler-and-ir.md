@@ -279,13 +279,25 @@ stores the compiled continuation for the call site or operator continuation.
 In the target ABI there is no null compiled-return PC and no return-time mode
 branch.
 
-Compiled managed execution uses the Clover stack as its architectural call
-stack. The hardware stack pointer tracks a backend-defined managed-stack
-frontier with a fixed relationship to the frame being entered or returned from.
-The `compiled_return_pc` slot is therefore the architectural return address
-rather than a second logical copy of one. Call lowering arranges for the real
-native continuation to occupy that slot: an x86-64 `call` pushes it there, while
+Generated managed execution uses the platform call stack under the managed frame
+discipline. Managed frame headers are laid out so the caller FP and compiled
+return state occupy the same positions expected by the target's native unwind
+convention. The current hand-written interpreter may continue to use its
+separate Clover stack, but generated JIT code and future generated interpreter
+handlers are designed for one mixed managed/native stack. The
+`compiled_return_pc` slot is therefore the architectural return address rather
+than a second logical copy of one. Call lowering arranges for the real native
+continuation to occupy that slot: an x86-64 `call` pushes it there, while
 AArch64 frame setup saves the link register there.
+
+Function entry must move the architectural stack pointer to claim the generated
+managed frame before writing any durable managed state. GC-visible values,
+interpreter-visible canonical slots, frame headers, and call argument windows
+must not be stored in the ABI red zone or below the current stack pointer. A
+target may use red-zone bytes only for non-root scratch temporaries that are not
+live across calls, safepoints, or stack walking. This makes the architectural
+stack pointer the generated managed frame frontier: there is no hidden managed
+state below it that the moving GC must discover.
 
 Managed frame teardown remains callee-pop. On AArch64 the essential return
 sequence is:
@@ -360,12 +372,23 @@ state must be published before any native call that may allocate, reclaim, call
 Python, or otherwise require managed roots. A future mapped frame instead needs
 a precise safepoint entry for such a call.
 
-Compiled managed code must switch from the Clover architectural stack to the
-saved native machine stack before entering arbitrary C or C++ code, as required
-by the native/managed boundary contract, and restore the Clover stack pointer on
-return. Native ABI frames, spills, and return addresses do not become managed
-frame contents merely because compiled Python calls use native call/return
-instructions on the Clover stack.
+The long-term mixed stack is still exact-scanned, not conservatively scanned.
+Native/managed and managed/native transition thunks are part of the GC contract:
+the stack walker recognizes them while unwinding and toggles managed-frame root
+scanning on or off. Generated managed frames are scanned from their frame kind,
+compiled PC metadata, safepoint maps, or canonical frame layout. Native C, C++,
+extension, runtime-helper, host-ABI spill, and host-ABI return-address frames are
+unwindable but opaque to managed root scanning. A managed value that must survive
+inside a native-opaque region must be published through an exact transition
+record, handle frame, or other explicitly walkable root mechanism before
+entering that region.
+
+For generated managed frames, the architectural stack pointer supplies the stack
+frontier at safepoints. The hand-written interpreter still publishes its
+separate Clover stack frontier explicitly, but generated JIT code and future
+generated interpreter handlers should not need a second frontier for ordinary
+managed frame storage. Values outside the exact managed frame maps still require
+explicit roots or transition records.
 
 A real Python call can also be the successful action of any overloaded
 operator IC. Publication before such a call is continuing fast-path code, not a
