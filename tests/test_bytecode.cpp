@@ -12,15 +12,15 @@ namespace
     BytecodeInstruction find_instruction(const CodeObject &code_object,
                                          Bytecode encoded_opcode)
     {
-        for(uint32_t pc = 0; pc < code_object.size();)
+        for(uint32_t pc_offset = 0; pc_offset < code_object.size();)
         {
             BytecodeInstruction instruction =
-                decode_instruction(code_object, pc);
+                decode_instruction(code_object, pc_offset);
             if(instruction.encoded_opcode() == encoded_opcode)
             {
                 return instruction;
             }
-            pc = instruction.next_pc();
+            pc_offset = instruction.next_pc_offset();
         }
         ADD_FAILURE() << "instruction not found: "
                       << bytecode_name(encoded_opcode);
@@ -141,12 +141,12 @@ TEST(BytecodeInstruction, compound_operator_exposes_continuation)
 
     BytecodeInstruction instruction =
         find_instruction(*code_object, Bytecode::LShiftSmi);
-    ASSERT_TRUE(instruction.continuation_pc().has_value());
-    EXPECT_EQ(instruction.pc() + bytecode_length(Bytecode::LShiftSmi),
-              *instruction.continuation_pc());
-    EXPECT_EQ(*instruction.continuation_pc() +
+    ASSERT_TRUE(instruction.continuation_pc_offset().has_value());
+    EXPECT_EQ(instruction.pc_offset() + bytecode_length(Bytecode::LShiftSmi),
+              *instruction.continuation_pc_offset());
+    EXPECT_EQ(*instruction.continuation_pc_offset() +
                   bytecode_length(Bytecode::CheckOperatorNotImplemented),
-              instruction.next_pc());
+              instruction.next_pc_offset());
     ASSERT_TRUE(instruction.cache().has_value());
     EXPECT_EQ(InlineCacheKind::Operator, instruction.cache()->kind);
     EXPECT_FALSE(instruction.cache2().has_value());
@@ -158,10 +158,10 @@ TEST(BytecodeInstruction, compound_operator_exposes_continuation)
               instruction.destinations()[0].kind);
 
     BytecodeInstruction continuation =
-        decode_instruction(*code_object, *instruction.continuation_pc());
+        decode_instruction(*code_object, *instruction.continuation_pc_offset());
     EXPECT_EQ(Bytecode::CheckOperatorNotImplemented,
               continuation.encoded_opcode());
-    EXPECT_FALSE(continuation.continuation_pc().has_value());
+    EXPECT_FALSE(continuation.continuation_pc_offset().has_value());
 }
 
 TEST(BytecodeInstruction, two_cache_instruction_uses_cache_and_cache2)
@@ -193,7 +193,9 @@ TEST(BytecodeInstruction, range_loop_effects_are_uniform_and_rmw)
         find_instruction(*code_object, Bytecode::ForPrepRange1);
     ASSERT_EQ(2, prep.operands().size());
     EXPECT_EQ(BytecodeOperandKind::RelativeJumpI16, prep.operands()[1].kind);
-    EXPECT_EQ(21, prep.operands()[1].value);
+    EXPECT_EQ(10, prep.operands()[1].signed_value());
+    ASSERT_TRUE(prep.jump_target_pc_offset().has_value());
+    EXPECT_EQ(21, *prep.jump_target_pc_offset());
     ASSERT_EQ(2, prep.sources().size());
     ASSERT_EQ(2, prep.destinations().size());
     EXPECT_EQ(prep.sources()[0].register_index,
@@ -209,4 +211,10 @@ TEST(BytecodeInstruction, range_loop_effects_are_uniform_and_rmw)
               iter.destinations()[0].kind);
     EXPECT_EQ(BytecodeValueLocationKind::Accumulator,
               iter.destinations()[1].kind);
+
+    BytecodeInstruction backedge =
+        find_instruction(*code_object, Bytecode::Jump);
+    ASSERT_TRUE(backedge.jump_target_pc_offset().has_value());
+    EXPECT_LT(backedge.operands()[0].signed_value(), 0);
+    EXPECT_EQ(11, *backedge.jump_target_pc_offset());
 }

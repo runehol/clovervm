@@ -257,10 +257,10 @@ template <> struct fmt::formatter<cl::CodeObject>
 
     template <typename Out>
     uint32_t disassemble_instruction(const cl::CodeObject &code_obj, Out &out,
-                                     uint32_t pc) const
+                                     uint32_t pc_offset) const
     {
-        return disassemble_instruction(code_obj, out,
-                                       cl::decode_instruction(code_obj, pc));
+        return disassemble_instruction(
+            code_obj, out, cl::decode_instruction(code_obj, pc_offset));
     }
 
     template <typename Out>
@@ -268,7 +268,7 @@ template <> struct fmt::formatter<cl::CodeObject>
     disassemble_instruction(const cl::CodeObject &code_obj, Out &out,
                             const cl::BytecodeInstruction &instruction) const
     {
-        uint32_t pc = instruction.pc();
+        uint32_t pc = instruction.pc_offset();
         cl::Bytecode bc = instruction.encoded_opcode();
         format_to(out, "{:5d} {}", pc, bc);
 
@@ -863,8 +863,8 @@ template <> struct fmt::formatter<cl::CodeObject>
                 break;
         }
         format_to(out, "\n");
-        assert(pc == instruction.next_pc());
-        return instruction.next_pc();
+        assert(pc == instruction.next_pc_offset());
+        return instruction.next_pc_offset();
     }
 
     template <typename FormatContext>

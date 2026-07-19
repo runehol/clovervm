@@ -610,43 +610,47 @@ namespace cl
     }
 
     BytecodeInstruction decode_instruction(const CodeObject &code_object,
-                                           uint32_t pc)
+                                           uint32_t pc_offset)
     {
-        assert(pc < code_object.size());
+        assert(pc_offset < code_object.size());
         BytecodeInstruction instruction;
-        instruction.pc_ = pc;
-        instruction.encoded_opcode_ = Bytecode(code_object.code[pc]);
+        instruction.pc_offset_ = pc_offset;
+        instruction.encoded_opcode_ = Bytecode(code_object.code[pc_offset]);
         assert(is_valid_bytecode(instruction.encoded_opcode_));
         instruction.semantic_opcode_ = instruction.encoded_opcode_;
 
         const BytecodeInfo &info = bytecode_info(instruction.encoded_opcode_);
         BytecodeFormatInfo format = info.format_info();
-        uint32_t physical_next_pc = pc + format.length();
-        assert(physical_next_pc <= code_object.size());
+        uint32_t physical_next_pc_offset = pc_offset + format.length();
+        assert(physical_next_pc_offset <= code_object.size());
 
         for(size_t idx = 0; idx < format.operand_count; ++idx)
         {
             BytecodeOperandKind kind = format.operands[idx];
-            uint32_t offset = pc + format.operand_offset(idx);
+            uint32_t operand_offset = pc_offset + format.operand_offset(idx);
             uint32_t value;
             if(kind == BytecodeOperandKind::Register)
             {
-                value =
-                    code_object.decode_reg(int8_t(code_object.code[offset]));
+                value = code_object.decode_reg(
+                    int8_t(code_object.code[operand_offset]));
             }
             else if(kind == BytecodeOperandKind::Smi8)
             {
-                value = uint32_t(int32_t(int8_t(code_object.code[offset])));
+                value =
+                    uint32_t(int32_t(int8_t(code_object.code[operand_offset])));
             }
             else if(kind == BytecodeOperandKind::RelativeJumpI16)
             {
-                value =
-                    uint32_t(int32_t(offset + 2) +
-                             int32_t(read_int16_le(&code_object.code[offset])));
+                int32_t relative_offset =
+                    read_int16_le(&code_object.code[operand_offset]);
+                value = uint32_t(relative_offset);
+                assert(!instruction.jump_target_pc_offset_.has_value());
+                instruction.jump_target_pc_offset_ =
+                    uint32_t(int32_t(operand_offset + 2) + relative_offset);
             }
             else
             {
-                value = code_object.code[offset];
+                value = code_object.code[operand_offset];
             }
 
             instruction.operands_.push_back({kind, value});
@@ -689,7 +693,7 @@ namespace cl
                                         FrameHeaderSizeBelowFp - 1)});
         }
 
-        instruction.next_pc_ = physical_next_pc;
+        instruction.next_pc_offset_ = physical_next_pc_offset;
         if(info.compound_role == BytecodeCompoundRole::BinaryOperator ||
            info.compound_role == BytecodeCompoundRole::TernaryOperator)
         {
@@ -697,12 +701,13 @@ namespace cl
                 info.compound_role == BytecodeCompoundRole::BinaryOperator
                     ? Bytecode::CheckOperatorNotImplemented
                     : Bytecode::CheckTernaryOperatorNotImplemented;
-            assert(physical_next_pc < code_object.size());
-            assert(Bytecode(code_object.code[physical_next_pc]) ==
+            assert(physical_next_pc_offset < code_object.size());
+            assert(Bytecode(code_object.code[physical_next_pc_offset]) ==
                    expected_continuation);
-            instruction.continuation_pc_ = physical_next_pc;
-            instruction.next_pc_ =
-                physical_next_pc + bytecode_length(expected_continuation);
+            instruction.continuation_pc_offset_ = physical_next_pc_offset;
+            instruction.next_pc_offset_ =
+                physical_next_pc_offset +
+                bytecode_length(expected_continuation);
         }
 
         BytecodeInstruction::decode_value_effects(code_object, instruction);

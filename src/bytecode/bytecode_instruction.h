@@ -13,6 +13,8 @@ namespace cl
     struct BytecodeOperand
     {
         BytecodeOperandKind kind;
+        // Signed operand kinds retain their encoded value, sign-extended to
+        // int32_t. Resolved control-flow targets are exposed separately.
         uint32_t value;
 
         int32_t signed_value() const { return int32_t(value); }
@@ -62,13 +64,20 @@ namespace cl
     class BytecodeInstruction
     {
     public:
+        // Every offset is relative to the CodeObject passed to
+        // decode_instruction(). Interpreter PCs are pointers and are not
+        // stored in a decoded instruction.
         Bytecode encoded_opcode() const { return encoded_opcode_; }
         Bytecode semantic_opcode() const { return semantic_opcode_; }
-        uint32_t pc() const { return pc_; }
-        uint32_t next_pc() const { return next_pc_; }
-        std::optional<uint32_t> continuation_pc() const
+        uint32_t pc_offset() const { return pc_offset_; }
+        uint32_t next_pc_offset() const { return next_pc_offset_; }
+        std::optional<uint32_t> continuation_pc_offset() const
         {
-            return continuation_pc_;
+            return continuation_pc_offset_;
+        }
+        std::optional<uint32_t> jump_target_pc_offset() const
+        {
+            return jump_target_pc_offset_;
         }
 
         BytecodeControlFlow control_flow() const
@@ -105,9 +114,10 @@ namespace cl
 
         Bytecode encoded_opcode_ = Bytecode::Invalid;
         Bytecode semantic_opcode_ = Bytecode::Invalid;
-        uint32_t pc_ = 0;
-        uint32_t next_pc_ = 0;
-        std::optional<uint32_t> continuation_pc_;
+        uint32_t pc_offset_ = 0;
+        uint32_t next_pc_offset_ = 0;
+        std::optional<uint32_t> continuation_pc_offset_;
+        std::optional<uint32_t> jump_target_pc_offset_;
 
         std::vector<BytecodeOperand> operands_;
         std::vector<BytecodeValueLocation> sources_;
@@ -117,7 +127,7 @@ namespace cl
     };
 
     BytecodeInstruction decode_instruction(const CodeObject &code_object,
-                                           uint32_t pc);
+                                           uint32_t pc_offset);
 
 }  // namespace cl
 

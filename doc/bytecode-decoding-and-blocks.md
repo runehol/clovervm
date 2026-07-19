@@ -49,7 +49,7 @@ The shared bytecode layer provides this pipeline:
 CodeObject::code
     -> opcode-format metadata
     -> structural scan
-    -> BytecodeBlock list in ascending PC order
+    -> BytecodeBlock list in ascending PC-offset order
     -> block-local BytecodeInstruction iteration
 ```
 
@@ -99,20 +99,21 @@ a `BytecodeDecoder`:
 
 ```cpp
 BytecodeInstruction
-decode_instruction(const CodeObject &code_object, uint32_t pc);
+decode_instruction(const CodeObject &code_object, uint32_t pc_offset);
 ```
 
-It decodes one semantic instruction starting at `pc`. The returned value owns
-its operands and value effects rather than referring to temporary decoder
-storage. It provides at least:
+It decodes one semantic instruction starting at `pc_offset` within the supplied
+code object. The returned value owns its operands and value effects rather than
+referring to temporary decoder storage. It provides at least:
 
 ```cpp
 class BytecodeInstruction
 {
 public:
-    uint32_t pc() const;
-    uint32_t next_pc() const;
-    std::optional<uint32_t> continuation_pc() const;
+    uint32_t pc_offset() const;
+    uint32_t next_pc_offset() const;
+    std::optional<uint32_t> continuation_pc_offset() const;
+    std::optional<uint32_t> jump_target_pc_offset() const;
 
     Bytecode encoded_opcode() const;
     Bytecode semantic_opcode() const;
@@ -136,9 +137,11 @@ The semantic requirements are:
 - accumulator reads and writes are explicit;
 - register operands are decoded into semantic locations;
 - constants and inline caches retain typed indexes rather than raw bytes;
-- branch targets are exposed as absolute bytecode PCs;
-- `next_pc` is the first PC after the complete semantic operation;
-- `continuation_pc` preserves a separately resumable internal continuation;
+- relative jump operands retain their signed encoded displacement, while
+  `jump_target_pc_offset` exposes the resolved code-object-relative target;
+- `next_pc_offset` is the first offset after the complete semantic operation;
+- `continuation_pc_offset` preserves a separately resumable internal
+  continuation;
 - standalone decoding does not snapshot or attach inline-cache state.
 
 For a standalone result, `cache()` and, where necessary, `cache2()` identify
@@ -148,9 +151,9 @@ compilation-scoped snapshot. The block iterator will resolve these references
 against decoder-owned snapshot storage.
 
 The full bytecode printer and instruction tracer are built on this API. Full
-printing repeatedly advances by `next_pc`; tracing decodes only the instruction
-at the current interpreter PC. Neither diagnostic consumer pays the cost of
-snapshotting all inline caches.
+printing repeatedly advances by `next_pc_offset`; tracing converts the current
+interpreter PC to its code-object-relative offset before decoding. Neither
+diagnostic consumer pays the cost of snapshotting all inline caches.
 
 ## Compound Operator Instructions
 
@@ -159,21 +162,21 @@ result of `NotImplemented`. JIT consumers should see the operator protocol as
 one semantic instruction:
 
 ```text
-pc               operator entry and pre-effect recovery point
-continuation_pc  CheckOperatorNotImplemented continuation
-next_pc          first instruction after the complete operator protocol
+pc_offset               operator entry and pre-effect recovery point
+continuation_pc_offset  CheckOperatorNotImplemented continuation
+next_pc_offset          first instruction after the complete operator protocol
 ```
 
-The continuation PC remains observable compiler metadata even though it is
-not an ordinary bytecode-block entrance. A lowering may ignore the
+The continuation offset remains observable compiler metadata even though it
+is not an ordinary bytecode-block entrance. A lowering may ignore the
 continuation when a snapshotted trusted cache action cannot produce
 `NotImplemented`, or use it for an untrusted call path or post-effect recovery.
 
 Ordinary jumps, exception-table boundaries, and block entrances must not split
 a compound semantic instruction. The bytecode verifier must reject such a
-target. Standalone decoding at the continuation PC remains supported because
-the interpreter tracer may observe execution of that physical continuation
-opcode.
+target. Standalone decoding at the continuation offset remains supported
+because the interpreter tracer may observe execution of that physical
+continuation opcode.
 
 ## BytecodeDecoder Lifetime and Feedback
 
@@ -196,7 +199,7 @@ Construction occurs in this order:
 2. Structurally scan the complete encoded bytecode.
 3. Validate instruction boundaries, control-flow targets, exception-table
    boundaries, and compound-operation boundaries.
-4. Construct the `BytecodeBlock` list in ascending PC order.
+4. Construct the `BytecodeBlock` list in ascending PC-offset order.
 
 All instructions produced through a block iterator refer to the same feedback
 snapshot. The iterator uses the standalone semantic decoder, resolves its
@@ -240,15 +243,16 @@ The structural scan decodes only enough information to determine physical
 instruction boundaries and control flow. It does not construct and retain a
 fully decoded semantic instruction stream.
 
-A block is a half-open PC range with bytecode-level connectivity:
+A block is a half-open range of code-object-relative bytecode offsets with
+bytecode-level connectivity:
 
 ```cpp
 class BytecodeBlock
 {
 public:
     BlockId id() const;
-    uint32_t start_pc() const;
-    uint32_t end_pc() const;
+    uint32_t start_pc_offset() const;
+    uint32_t end_pc_offset() const;
 
     ArrayRef<BlockId> predecessors() const;
     ArrayRef<BlockId> successors() const;
@@ -262,7 +266,8 @@ public:
 
 `BytecodeBlock` is a lightweight view tied to its owning decoder. Its
 instruction iterator decodes semantic instructions lazily within
-`[start_pc(), end_pc())` and attaches the decoder's feedback snapshots.
+`[start_pc_offset(), end_pc_offset())` and attaches the decoder's feedback
+snapshots.
 
 Block leaders include:
 
@@ -272,7 +277,7 @@ Block leaders include:
 - the encoded instruction after a non-fallthrough terminator when more code
   follows, so unreachable bytecode remains representable;
 - exception-table range starts and ends;
-- exception-handler PCs.
+- exception-handler offsets.
 
 Function calls, safepoints, and merely fallible instructions do not split
 blocks. Their runtime behavior is represented during JIT lowering rather than
@@ -346,7 +351,7 @@ therefore does not need a general edge-specific value-effect mechanism.
 
 Each JIT pre-creates an IR entry block for every `BytecodeBlock`, including its
 complete architectural-state interface, and then visits bytecode blocks in
-ascending PC order:
+ascending PC-offset order:
 
 ```cpp
 BytecodeDecoder decoder(code_object);
@@ -371,9 +376,10 @@ block-parameter pruning. It also makes lowering order independent of dominance:
 target parameters exist before predecessor arguments are attached, including
 for loop backedges.
 
-PC order is the standard frontend traversal order. It provides deterministic
-output, straightforward correspondence with bytecode dumps, and good decoding
-locality. It also visits unreachable ranges and secondary handler entrances.
+PC-offset order is the standard frontend traversal order. It provides
+deterministic output, straightforward correspondence with bytecode dumps, and
+good decoding locality. It also visits unreachable ranges and secondary
+handler entrances.
 
 The JIT is free to expand one bytecode block into multiple IR blocks and to
 choose how complete state flows through those internal blocks. After lowering,
@@ -393,7 +399,8 @@ The implementation should include structural tests for:
 - unreachable encoded ranges;
 - exception range splitting, handler entrances, and table priority;
 - rejection of targets into operands or compound continuations;
-- operator decoding with correct `pc`, `continuation_pc`, and `next_pc`;
+- operator decoding with correct `pc_offset`, `continuation_pc_offset`, and
+  `next_pc_offset`;
 - standalone decoding without feedback snapshots;
 - decoder-owned uninitialized and initialized feedback snapshots;
 - stable snapshot pointers throughout decoder lifetime;
