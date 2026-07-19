@@ -56,6 +56,7 @@ rationale that remains clear from those sources.
 | D-0004 | Start with canonical publication while preserving a path to precise maps | Accepted |
 | D-0005 | Use tagged `Value` as the initial JIT representation | Accepted |
 | D-0006 | Use ordered list-based SSA rather than a sea of nodes | Accepted |
+| D-0007 | Separate stable embedded metadata from movable compiled constants | Accepted |
 
 ## D-0001: Compile Whole Functions Rather Than Hot Traces
 
@@ -439,3 +440,77 @@ of the remaining dynamic scheduling.
 
 - `doc/jit-compiler-and-ir.md`
 - Commit `ad0988a`
+
+## D-0007: Separate Stable Embedded Metadata From Movable Compiled Constants
+
+**Date:** 2026-07-19
+**Status:** Accepted
+**Scope:** JIT code generation, object-model metadata, garbage collection, and
+compiled-code lifetime
+**Commitment:** Cross-subsystem runtime contract
+
+### Decision
+
+Shapes and validity cells are allocated from dedicated non-moving stable pools.
+Machine code may embed their addresses directly, and every embedded pointer is
+also recorded in the owning compiled code object's GC-visible stable-metadata
+array.
+
+Managed Python constants remain movable. Compiled code stores them in a
+separate array of stable-addressed, GC-rewritten `Value` slots. Machine code
+must access those slots through PC-relative loads and must never embed the
+current managed-object pointer as an immediate.
+
+### Context
+
+The JIT frequently compares shape and validity-cell identity. Relocating these
+small, shared metadata objects would require target-specific rewriting of
+embedded pointers or an extra indirection on hot checks. Ordinary Python
+constants, however, should retain the moving collector's placement and
+compaction benefits. Rewriting instruction bytes for their movement would
+interact with target encodings, W^X transitions, and instruction-cache
+coherency.
+
+### Alternatives Considered
+
+- allocate shapes and validity cells in moving generations and relocate every
+  embedded machine-code reference;
+- access all metadata and constants through indirect tables;
+- make every object referenced by compiled code stable;
+- embed movable constants directly and maintain target-specific instruction
+  relocation records.
+
+### Why Chosen
+
+Stable pools make the highest-frequency identity checks direct while retaining
+explicit GC lifetime through compiled-code metadata. Stable constant slots let
+the collector rewrite ordinary managed references without decoding or patching
+machine instructions. The split confines non-moving allocation to metadata
+whose stable identity materially simplifies both the JIT and collector.
+
+### Consequences
+
+- stable pool entries are never moved but are reclaimable after all runtime,
+  IC, compilation-session, and compiled-code references disappear;
+- compiled code owns a precise stable-metadata array and a distinct traced,
+  rewritten managed-constant array;
+- the constant array's slots and their PC-relative relationship to machine code
+  remain stable while the referenced objects may move;
+- backend verification rejects unlisted embedded metadata pointers and movable
+  managed pointers embedded as immediates;
+- compiled-code retirement and GC tracing jointly determine when metadata and
+  constant references cease to be live.
+
+### Revisit When
+
+- a target cannot address the compiled constant array efficiently with the
+  required PC-relative scheme;
+- stable shape or validity-cell retention becomes a measured memory problem;
+- code relocation or compaction introduces a broader relocation mechanism that
+  safely and profitably subsumes this split.
+
+### References
+
+- `doc/jit-compiler-and-ir.md`
+- `doc/generational-copying-gc.md`
+- `doc/generational-copying-gc-implementation-plan.md`

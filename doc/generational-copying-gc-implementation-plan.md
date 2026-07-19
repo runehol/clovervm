@@ -303,6 +303,14 @@ destruction, or unenumerated pointer fields bypass the nursery. `CodeObject`,
 native wrapper storage, and extension-owned records initially use stable space.
 Large objects may use the same space for a separate size-based reason.
 
+`Shape` and `ValidityCell` use dedicated stable pools as a permanent
+compiler-reference contract, not merely as an initial copy-eligibility
+fallback. Compiled code may embed their addresses and must list them in its
+GC-visible stable-metadata array. Managed Python constants instead occupy
+stable-addressed, GC-rewritten slots owned by the compiled code object; machine
+code accesses those slots PC-relatively and never embeds their movable object
+pointers.
+
 Eligibility should be checked at allocation time in debug builds. Placing a
 destructor-requiring or otherwise incompatible layout in a moving space is a
 bug.

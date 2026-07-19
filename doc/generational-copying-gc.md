@@ -161,6 +161,30 @@ Forwarding state is separate from generation state. `Forwarded` is a temporary
 evacuation state that changes how from-space memory is interpreted.
 `OldRemembered` is a persistent generational barrier state.
 
+## Stable JIT Metadata and Compiled Constants
+
+Shapes and validity cells are compiler-facing identity metadata and are
+allocated from dedicated non-moving stable pools. Generated machine code may
+embed their addresses directly. Every compiled code object also records those
+addresses in a stable-metadata array; the collector treats that array as the
+authoritative lifetime and tracing boundary for metadata referenced by code.
+Pool entries may be reclaimed and their addresses reused only after no runtime
+object, IC, compilation session, or executable compiled code references them.
+
+Managed Python constants remain movable. Each compiled code object owns a
+separate constant array whose slots have stable addresses but whose `Value`
+contents are traced and rewritten by the collector. Machine code reaches these
+slots through PC-relative loads and must not embed the current managed-object
+pointer as an immediate. Collection therefore updates constant slots without
+decoding, rewriting, or making instruction pages writable.
+
+The JIT backend records both kinds of reference during emission, and compiled
+code verification checks that every embedded stable-metadata pointer is listed
+and every managed constant use names a traced slot. Compiled code and both
+arrays remain alive as one lifecycle unit. Stable-pool entries that themselves
+own managed references participate in ordinary precise tracing even though the
+entries are not relocated.
+
 ## Generations
 
 The first policy should be a stop-the-world generational collector:

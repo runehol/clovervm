@@ -1628,6 +1628,29 @@ their bailout state.
 
 ## Backend Lowering and Value Representation
 
+### Embedded runtime references
+
+Compiled code distinguishes stable compiler-facing metadata from movable
+managed constants. `Shape` and `ValidityCell` objects are allocated from
+non-moving stable pools. A backend may embed their addresses directly in
+machine instructions, but every such pointer must also appear in the owning
+compiled code object's stable-metadata array so the GC can keep the pool entry
+alive and trace any managed references reachable through it.
+
+Python constants remain movable. A compiled code object stores them in a
+separate stable-addressed array of GC-rewritten `Value` slots. Machine code is
+forbidden to embed the current managed-object pointer from one of those slots;
+it must load the slot through a PC-relative reference. The slot address remains
+fixed with the compiled code while collection may rewrite its contents.
+
+Code generation records both reference classes during emission. Verification
+rejects a directly embedded Shape or ValidityCell pointer missing from the
+stable-metadata array, a movable managed pointer embedded as an immediate, or a
+managed constant use without a corresponding traced constant slot. This keeps
+ordinary moving collection out of instruction rewriting; backend relocation
+metadata remains for code targets and native symbols rather than managed
+object movement.
+
 ### Declarative safepoint and deoptimization state
 
 After locations have been assigned, every compiled safepoint and deoptimization
