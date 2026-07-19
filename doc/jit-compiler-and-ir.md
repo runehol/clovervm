@@ -5,16 +5,20 @@
 | Document type | Design |
 | Status | Proposed |
 | Implementation | Not started |
-| Scope | JIT pipeline, compiler IRs, specialization, recovery, safepoints, backend lowering, and compiled-frame policy |
+| Scope | JIT pipeline, Core IR, recovery state, effects, backend lowering, and compiled execution contracts |
 | Owning layers | The JIT owns IR and compiled execution; bytecode, runtime frames, object semantics, and reclamation remain authoritative contracts |
-| Validated against | `518630e` (2026-07-18) |
+| Validated against | N/A |
 | Supersedes | N/A |
 
-This document records the current assumptions, constraints, and design
-guardrails for a future clovervm JIT compiler. It is not an implementation plan
-or a complete IR specification. Its purpose is to keep compiled execution
-compatible with the existing bytecode, object model, inline caches, calling
-convention, and reclamation machinery.
+This document defines the durable architecture and IR contracts for a future
+clovervm JIT compiler. Its purpose is to keep compiled execution compatible
+with the existing bytecode, object model, inline caches, calling convention,
+and reclamation machinery.
+
+Implementation order and temporary runtime policies belong to the
+[JIT Compiler Bring-up Plan](jit-compiler-bring-up-plan.md). The optional
+higher-effort inference frontend belongs to
+[Semantic IR and Specialization](jit-semantic-ir-and-specialization.md).
 
 The mandatory compiler pipeline has one principal compiler IR:
 
@@ -39,7 +43,7 @@ encoded bytecode + IC snapshots -> Semantic IR -> Core IR
 It preserves atomic bytecode semantics so that type inference,
 caller-context-sensitive inlining, polymorphic reasoning, and other
 higher-effort optimization can happen before checks and actions are expanded.
-The initial JIT may lower directly into Core IR, without function inlining or a
+The baseline JIT may lower directly into Core IR, without function inlining or a
 semantic type system. This is an intentional compilation mode rather than an
 incomplete form of the Semantic pipeline.
 
@@ -49,14 +53,13 @@ The following choices are design guardrails rather than tentative suggestions:
 - every safepoint provides precise root discovery through a supported frame
   scanning policy;
 - interpreter resumption always receives exact canonical bytecode frame state;
-- interpreted and compiled Python calls initially share the existing managed
+- interpreted and compiled Python calls share the existing managed
   calling convention;
 - inline caches drive specialization, and misses return to the interpreter;
-- the initial JIT operates on tagged `Value`s and does not require unboxing.
+- the baseline JIT operates on tagged `Value`s and does not require unboxing.
 
-Semantic type inference, type partitions, the detailed effect taxonomy, and
-many backend policies remain optional, plausible, or open designs as noted
-below.
+Semantic type inference and type partitions remain optional. The detailed
+effect taxonomy and several backend policies remain open architectural work.
 
 ## Terminology
 
@@ -73,7 +76,7 @@ Use distinct terms for operations that are easily conflated:
 - **boxing**: create a tagged heap object for an unboxed scalar value;
 - **reification**: create runtime object state for a virtual semantic value;
   boxing is its simplest instance;
-- **root publication**: expose roots to reclamation machinery; the initial
+- **root publication**: expose roots to reclamation machinery; the bring-up
   policy does this by synchronizing canonical frames and the accumulator;
 - **safepoint map**: metadata identifying the current machine locations of
   managed roots at one compiled safepoint;
@@ -135,100 +138,19 @@ inlined logical frames, and future reification recipes. They should share
 location encodings and frame-state construction without being forced into one
 metadata format.
 
-### Initial implementation policy: canonical frame publication
+### Initial runtime policy
 
-The initial interpreter, garbage collector, and runtime side of deoptimization
-consume only canonical interpreter frame state. Compiled code may temporarily
-cache newer interpreter-visible values in machine registers, but before any
-operation that may reclaim memory, it synchronizes every dirty canonical frame
-home in the complete active logical frame chain and publishes the innermost
-active accumulator through `ThreadState`. Before transferring execution back to
-the interpreter, initial JIT exit machinery also finalizes bytecode PCs and
-other frame metadata and reifies any virtual values required by those frames.
+The first implementation uses canonical frame publication for root discovery
+and generated recovery code for interpreter reconstruction. Generated Python
+executes on the existing Clover stack, while the hand-written interpreter and
+all C or C++ targets execute on the host stack through reentrant transition
+thunks. These are staging policies rather than permanent runtime invariants.
 
-Once publication or interpreter handoff begins, every interpreter-visible root
-is therefore available through canonical frames and `ThreadState`. The generic
-runtime does not initially scan optimized register state or require
-compiled-frame stack maps. JIT-generated publication and exit machinery knows
-how optimized locations correspond to logical frame state, but the collector
-does not yet consume that knowledge.
-
-Immediate consequences include:
-
-- an untripped safepoint poll need not publish state if reclamation cannot begin
-  asynchronously;
-- a tripped poll synchronizes, publishes, and deoptimizes before reclamation;
-- calls that may reclaim require publication before entry;
-- publication covers dirty homes in outer and inlined active frames, not only
-  the frame containing the current operation;
-- a register copy of a synchronized frame value is a cache, not a second root
-  model;
-- a value live across reclamation must have a managed canonical home or be
-  placed into one by publication machinery;
-- non-bytecode IR temporaries cannot remain live across reclamation merely
-  because compiler metadata could reconstruct them later.
-
-Treating a tripped safepoint as a deoptimization boundary is an intentional
-initial simplification. It is an implementation policy rather than a permanent
-restriction on compiled-frame scanning.
-
-### Initial execution-stack policy: managed stack and host stack remain separate
-
-During JIT bring-up, interpreted and compiled Python frames both remain in the
-existing Clover stack. Generated code temporarily uses that managed storage as
-its architectural stack so ordinary native call and return instructions can
-consume the compiled return state in managed frame headers. The hand-written
-interpreter, runtime helpers, extensions, and all other C or C++ code continue
-to execute on the host stack.
-
-Every initial JIT-to-native call crosses through a stack-transition thunk. The
-thunk publishes the managed frame frontier and any required roots, records the
-managed SP, FP, and continuation, restores the active host SP, and calls the
-native target. On return it restores the managed stack state and resumes the
-compiled continuation. Native code that re-enters Python may enter the
-interpreter on the host stack or compiled code on the managed stack; transition
-records nest so each return restores the immediately enclosing stack state.
-
-The exact transition-record encoding is an implementation detail, but its
-logical state includes the previous transition, both stack positions, the
-managed frame frontier, and the continuation needed to resume the suspended
-side. A transition must remain walkable for reclamation and re-entry until its
-native activation returns.
-
-This policy keeps the existing reclaimer and separate-stack scanner usable
-during bring-up. Moving interpreted and compiled frames onto one mixed platform
-stack is a later runtime migration associated with generated interpreter
-handlers and a mixed-stack walker; it is not a prerequisite for the first JIT.
-
-### Staged path to precise compiled-frame maps
-
-The initial compiler still constructs declarative post-allocation safepoint and
-deoptimization state before lowering it into publication and recovery code.
-This preserves a migration path without making the collector depend on new
-metadata immediately:
-
-1. **Canonical publication only.** Generated publication and recovery remain
-   authoritative; the existing collector and stack walker are unchanged.
-2. **Shadow safepoint maps.** Serialize maps while continuing to publish. A
-   debug stack walker compares roots found through maps with roots exposed by
-   canonical frames, but publication remains authoritative.
-3. **Generic deoptimization.** A common entry saves machine registers and
-   interprets deoptimization translations. Reclamation remains forbidden until
-   the saved state or reconstructed frames are safely scannable, so this step
-   need not first change ordinary GC stack walking.
-4. **Opt-in precise scanning.** Selected compiled frames use safepoint maps and
-   omit continuing publication. The stack walker dispatches by frame scanning
-   mode, allowing mapped and canonically published frames to coexist.
-5. **Revisit canonical backing.** Only after mapped frames are established do
-   we reconsider whether every inlined logical frame needs permanent canonical
-   backing storage.
-
-The initial frame and code layout must not obstruct this path. Compiled frames
-have an unambiguous kind and walkable structural layout; compiled PCs resolve to
-their code objects and safepoint IDs; and backends report actual root and value
-locations after allocation. A future walker must also recover callee-saved
-register state correctly through mixed interpreted, compiled, and native frame
-chains.
+Their implementation order, consequences, and migration toward precise stack
+maps and a future mixed platform stack are owned by the
+[JIT Compiler Bring-up Plan](jit-compiler-bring-up-plan.md). The durable IR
+contract is that post-allocation metadata can describe both roots and complete
+interpreter state independently of which runtime policy currently consumes it.
 
 ### Interpreter-visible state
 
@@ -273,231 +195,67 @@ Every deoptimizing check retains a bytecode origin and consumes a Snapshot of
 its logical resume state. Moving or commoning checks must preserve a legal
 Snapshot and replay point, not merely the same successful-path computation.
 
-### One managed calling convention
+### Calls and runtime boundaries
 
-Interpreted and compiled Python calls initially use the existing managed calling
-convention:
+Interpreted and compiled Python execution share the managed calling convention:
+arguments occupy the outgoing argument window, moving the managed frame pointer
+activates the callee, and ordinary results travel through the accumulator.
+Every frame retains both its canonical interpreted continuation and an
+executable compiled return target. Cross-mode dispatch selects an engine and
+continuation without introducing a second Python argument ABI.
 
-- arguments pass through the stack-backed outgoing argument window;
-- moving the frame pointer establishes the callee frame;
-- the return value passes through the accumulator in its canonical machine
-  register;
-- the caller publishes state before a call that may reclaim or enter arbitrary
-  code.
-
-This convention applies to interpreted-to-compiled, compiled-to-interpreted,
-and compiled-to-compiled calls. Cross-mode stubs may select the execution engine
-and continuation, but do not translate between separate argument ABIs.
-
-Frames already have interpreted and compiled return-PC slots. Every call frame
-carries four compulsory caller-continuation fields:
-
-```text
-caller_fp
-compiled_return_pc       # always an executable native return target
-caller_code_object       # canonical bytecode owner for the caller
-interpreted_return_pc    # canonical bytecode continuation for the caller
-```
-
-The interpreted continuation is always present, even when normal execution will
-return to compiled code. It is the canonical bytecode recovery and observability
-continuation. The compiled continuation is also always present. An interpreted
-caller stores the address of an interpreter-return thunk; a compiled caller
-stores the compiled continuation for the call site or operator continuation.
-In the target ABI there is no null compiled-return PC and no return-time mode
-branch.
-
-Generated Python execution initially installs the architectural stack pointer
-in the existing Clover stack. Managed frame headers place the caller FP and
-compiled return state where the target's call and return instructions can
-consume them. The `compiled_return_pc` slot is therefore the architectural
-return address rather than a second logical copy of one. Call lowering arranges
-for the real continuation to occupy that slot: an x86-64 `call` pushes it there,
-while AArch64 frame setup saves the link register there.
-
-Function entry must move the architectural stack pointer to claim managed frame
-storage before writing durable state. GC-visible values, interpreter-visible
-canonical slots, frame headers, and call argument windows must not be stored
-below the claimed managed frontier. The initial managed stack has no host ABI
-red zone; generated code treats any target red-zone convention as unavailable
-while SP addresses Clover storage.
-
-Managed frame teardown remains callee-pop. On AArch64 the essential return
-sequence is:
-
-```asm
-mov sp, fp
-ldr fp, [sp, #0]    // caller_fp
-ldr lr, [sp, #8]    // compiled_return_pc
-ret
-```
-
-The native `call`/`ret` structure and the compiled-PC slot describe the same
-continuation, so the hardware return predictor sees matching calls and returns.
-An x86-64 backend uses the corresponding stack sequence: after rebasing `rsp`
-to the callee frame, `pop rbp; ret` consumes `caller_fp` and
-`compiled_return_pc` directly from the frame header.
-
-After return, the architectural stack pointer retains a target-defined fixed
-relationship to the just-popped callee header. On AArch64 it still points at the
-callee frame; on x86-64 it points immediately after the two consumed header
-words, so the continuation recovers the callee frame as `rsp - 16`. The
-interpreter-return thunk can therefore derive the old callee FP from the stack
-pointer and access the remaining continuation metadata without a dedicated
-return-frame register:
-
-```text
-result register              = return value
-managed frame pointer        = caller_fp
-native return target         = compiled_return_pc
-post-return stack pointer    = target-defined view of popped callee header
-```
-
-Ordinary compiled continuations may ignore the popped frame's remaining
-metadata. The interpreter-return thunk and any operator/adaptor continuation
-that needs call-site metadata obtain the old header from the post-return stack
-pointer and must consume it before changing that pointer or reaching another
-call or safepoint. It can then load `caller_code_object`,
-`interpreted_return_pc`, or other frame-local continuation data.
-
-The hand-written interpreter continues to return through its existing dispatch
-path on the host stack. A compiled/interpreted transition thunk reads the
-callee's compiled and interpreted continuation metadata, restores the required
-stack, and enters the selected continuation. Once interpreter handlers are
-generated by the same backend machinery and participate in the eventual mixed
-stack, Python calls and returns can map to native calls and returns directly.
-
-During the initial canonical-publication tier, an interpreted callee may also
-resume a compiled caller through `caller_code_object` and `interpreted_return_pc`
-instead of returning to `compiled_return_pc`, because the compiled caller keeps
-bytecode-visible state recoverable in canonical homes at such boundaries. That is
-a permitted fallback, not a semantic escape hatch. A later optimized tier that
-leaves values unmaterialized, unboxed, reordered, or only in machine locations
-across a call must either return to the compiled continuation or explicitly
-recover canonical interpreter state before using the interpreted continuation.
-
-An inlined frame initializes its caller FP, compiled return PC, interpreted
-return PC, and caller `CodeObject` exactly as a real activation would. The
-managed frame pointer always identifies the innermost active logical Python
-frame, including an inlined one. A real callee therefore returns normally to
-that inline frame's compiled return target; the return target observes the
-ordinary callee-pop result state and later inline return restores the outer
-frame pointer and branches to its caller continuation.
+The exact frame header, target return sequences, post-return stack position,
+and interpreter-return thunk are defined by the
+[Function Calling Convention](function-calling-convention.md). Host-stack
+switching, re-entry, native result transport, and root publication across C or
+C++ calls are defined by
+[Native/Managed Boundary Contracts](native-managed-boundaries.md).
 
 Compiled-to-compiled performance should initially come from inlining rather
-than a second fast-entry ABI.
+than a separate fast-entry convention. Inlining still creates a logical Python
+frame with canonical backing and ordinary caller metadata, so a real call from
+inside an inline instance uses the same managed ABI.
 
-Native and C++ calls remain a separate ABI boundary. Under the initial policy,
-state must be published before any native call that may allocate, reclaim, call
-Python, or otherwise require managed roots. A future mapped frame instead needs
-a precise safepoint entry for such a call.
+A Python call may be the successful action of any overloaded operator IC. State
+publication required before such a call is continuing successful-path work,
+not a non-returning speculative exit. A trusted handler certified
+`NoSafepoint`, `NoReclaim`, and `NoCallPython` requires only native ABI
+preservation; an unknown or safepoint-capable call uses the active root-discovery
+policy.
 
-During bring-up, every native target runs on the host stack, including targets
-that might be safe to execute directly on managed stack storage. This uniform
-rule keeps re-entry into the hand-written interpreter coherent. A transition
-thunk publishes the Clover frame frontier before switching stacks; native frames
-remain opaque to managed root scanning, while the existing reclaimer continues
-to scan canonical Clover storage.
+The cost of publishing dirty canonical homes at small non-inlined calls is a
+runtime-policy question rather than an IR ambiguity. Core IR and its backend
+metadata must support both generated publication and future precise stack maps.
+The initial choice and measurements that may replace it belong to the
+[JIT Compiler Bring-up Plan](jit-compiler-bring-up-plan.md).
 
-A later generated runtime may allow certified native leaf calls to remain on a
-mixed platform stack. That stack must be exact-scanned: recognized transition
-frames, frame kinds, compiled-PC metadata, and safepoint maps distinguish
-generated managed frames from opaque C, C++, extension, and runtime-helper
-frames. Managed roots crossing an opaque region still require an exact
-transition record, handle frame, or another walkable root mechanism.
+### Exceptions, unsupported operations, and observability
 
-A real Python call can also be the successful action of any overloaded
-operator IC. Publication before such a call is continuing fast-path code, not a
-failed-speculation side exit: it synchronizes dirty canonical homes, invokes the
-callee, and then resumes compiled execution on normal return. It cannot be
-delegated to the non-returning deduplicated recovery tails used by guards.
+An ordinary speculative failure resumes a state in which the failed semantic
+operation may be retried. Once a terminal effect has committed, generated code
+must continue normally, enter the appropriate exception or post-commit state,
+or recover a later bytecode boundary; it must not replay the effect.
 
-The initial call path selects the callee's execution engine dynamically from
-its `CodeObject`: a present JIT entry enters generated code on the managed
-stack, while an absent entry switches to the host stack and starts the
-hand-written interpreter. This is an execution choice within one managed frame
-and argument convention, not call rollback or a second Python ABI.
-
-If the call occurs inside one or more inlined functions, continuing publication
-synchronizes dirty homes across the entire active outer-to-inner frame chain.
-The frame regions already exist, so this is multi-frame synchronization and
-metadata finalization rather than allocation of missing frames.
-
-Native ABI preservation and runtime root discovery are separate concerns.
-Callee-saved registers can preserve caller values across a tiny function, but
-under canonical publication the collector still cannot discover a managed
-value that exists only in one of those registers. Publication need not evict the
-register cache or reload it after a non-moving reclamation; it still adds stores
-that may dominate the cost of a very small callee.
-
-Inlining removes this boundary and is expected to cover important tiny Python
-functions when their targets and bytecode are visible. A certified compiled
-no-safepoint entry could also use only native ABI preservation, but it would
-need a transitive guarantee that the selected path cannot reclaim, enter
-Python, poll, or deopt directly into the interpreter. A failed entry guard would
-use the publishing generic path instead.
-
-Whether inlining and such leaf entries cover enough real calls to make
-unconditional publication practical is deliberately open. JIT compilation
-makes small callees more visible than separate static compilation does in
-principle, but the design should not depend on that theoretical advantage
-without measurements.
-
-Trusted native calls have a related but firmer distinction. A semantic
-descriptor certified `NoSafepoint`, `NoReclaim`, and `NoCallPython` requires only
-native ABI call-clobber handling; it does not publish canonical state. Unknown
-or safepoint-capable trusted calls remain conservative safepoint boundaries and
-use the active root-discovery policy.
-
-### Exceptions and observability
-
-The bring-up compiler handles every unsupported bytecode with an unconditional
-side exit before executing it. This is the universal staging fallback, not a
-special exception mechanism. Explicit raising bytecodes and
-`ReturnOrRaiseException` are initially unsupported, so the JIT reconstructs
-their canonical entry state and the interpreter executes them. Existing
-bytecode exception tables and interpreter unwinding remain authoritative.
-
-A Python call may still be compiled. The call executes normally in whichever
-engine its callee selects. If a pending exception eventually reaches an
-unsupported raising or return-or-raise bytecode, that bytecode exits before
-execution and the interpreter performs the exception dispatch. The JIT never
-rolls back the already-executed call and does not confuse an ordinary Python
-call with the native `exception_marker()` return convention.
-
-The same rule applies to every other bytecode omitted from the first compiler:
-
-```text
-supported bytecode   -> execute compiled
-unsupported bytecode -> unconditional pre-bytecode side exit
-                      -> interpreter executes it
-```
-
-General compiled exception handling and continuing through exception tables in
-generated code remain later optimizations rather than bring-up requirements.
+Core IR therefore makes the exit kind and Snapshot explicit. The runtime policy
+may initially return to the interpreter for exception-table dispatch and every
+unsupported bytecode, while a later compiler may represent those paths in
+generated control flow. Both policies use the same commit-boundary rule.
 
 Tracing, traceback construction, stack inspection, and similar facilities may
-require canonical frames and bytecode PCs even without failed speculation. A
-plausible initial policy is to treat their activation as a deoptimization
-request. This is not yet a firm design decision.
+request exact logical frames and bytecode PCs without a failed speculation.
+Such requests use the same Snapshot and recovery model. The initial set of
+unsupported bytecodes and observability fallbacks belongs to the
+[JIT Compiler Bring-up Plan](jit-compiler-bring-up-plan.md).
 
 ## Compiler Pipeline and Phase Ownership
 
 ### Direct Core compilation
 
-The first implementation lowers decoded bytecode and IC snapshots directly
-into Core IR. The shared frontend discovers bytecode basic blocks and captures
+The direct path lowers decoded bytecode and IC snapshots into Core IR. The
+shared frontend discovers bytecode basic blocks and captures
 the semantic content of relevant ICs. Core construction then creates SSA for
 the accumulator and bytecode registers while expanding each supported IC case
 into explicit checks, actions, and side exits.
-
-Bring-up begins with a zero-opcode compiler. Its generated entry captures the
-unchanged function-entry state and immediately takes an unconditional
-unsupported-bytecode side exit. Although it executes no Python operation, this
-first vertical slice validates compilation lookup, executable-code entry,
-managed/host stack transitions, frame metadata, Snapshot construction,
-generated recovery, accumulator publication, and interpreter resumption. Opcode
-support is then added incrementally without changing the fallback contract.
 
 This path deliberately omits:
 
@@ -512,12 +270,9 @@ conservative Python call or return to the interpreter. Core IR can perform
 ordinary SSA optimization, dominator-based redundant-check elimination, and
 effect-aware local code motion without a general Python type lattice.
 
-The initial optimizer preserves list order and performs only transformations
-whose effect proof is trivial, such as eliminating an identical dominating SMI
-check across pure arithmetic. Mutable-shape guard motion, validity-cell
-hoisting, and motion across calls wait for the precise effect taxonomy and
-alias model. An unavailable analysis disables an optimization rather than
-weakening its proof obligation.
+The zero-opcode first vertical slice, conservative initial optimizer, and order
+in which opcode families enter this path are specified by the
+[JIT Compiler Bring-up Plan](jit-compiler-bring-up-plan.md).
 
 ### Optional Semantic IR frontend
 
@@ -527,13 +282,17 @@ the semantic bytecode operations emitted by the high-level compiler. It is
 inserted before Core IR only when the compiler chooses to spend more effort on
 inference, inlining, or polymorphic specialization.
 
-Semantic IR owns:
+When present, Semantic IR owns:
 
 - SSA construction for the accumulator and bytecode registers;
 - compilation-local inline-cache specialization plans;
 - type and shape inference;
 - context-sensitive inlining;
 - logical bytecode frame states.
+
+Its inference lattice, feedback selection, correlated partitions, and lowering
+rules are defined separately in
+[Semantic IR and Specialization](jit-semantic-ir-and-specialization.md).
 
 ### Core IR
 
@@ -654,8 +413,7 @@ This representation fits clovervm because:
 - guards have bytecode locations and explicit Snapshot bailout operands;
 - effectful operations create commit boundaries;
 - shape and validity facts have control- and effect-bounded lifetimes;
-- calls and safepoints require explicit root-discovery state and, under the
-  initial policy, canonical publication;
+- calls and safepoints require explicit root-discovery state;
 - moving an instruction changes what is live at a deoptimization point;
 - generic Python arithmetic may call overloaded methods, making source order a
   useful conservative default.
@@ -723,6 +481,90 @@ Canonical slots belong to logical frame states, not SSA values. One
 canonical slot denotes different SSA values at different program points. A
 logical Python value represented in several machine forms has a distinct
 `ProgramValueRef` for each form rather than several locations for one SSA value.
+
+### Logical frame states and Snapshot results
+
+Function arguments are SSA definitions at entry even when their values remain
+physically in canonical argument slots until first use. During construction, a
+mutable environment maps the global accumulator and each active logical
+frame's bytecode registers to `ProgramValueRef`s. Different live incoming values
+receive block parameters at a join; dead interpreter locations need none.
+
+Recoverable bytecode boundaries use immutable, structurally shared logical
+state:
+
+```text
+FrameState:
+    CodeObject
+    bytecode pc
+    parent FrameState       # inlined caller
+    register 0 -> ProgramValueRef
+    register 1 -> ProgramValueRef
+    ...
+
+ActiveState:
+    innermost FrameState
+    accumulator -> ProgramValueRef
+```
+
+There is one accumulator in thread execution state, analogous to a
+distinguished machine register. Suspended parent frames do not own separate
+accumulators. A `FrameState` describes interpreter meaning and does not claim
+that its canonical homes are synchronized.
+
+Core construction maintains transient state:
+
+```text
+BuilderContext:
+    active logical frame chain
+    (frame instance, register) -> ProgramValueRef
+    accumulator -> ProgramValueRef
+    current bytecode position
+    optional inferred and available facts
+```
+
+Updating this mapping changes the logical value of an accumulator or bytecode
+register without writing its canonical home.
+
+Core IR captures a recoverable state with a zero-code `Snapshot` instruction:
+
+```text
+%snapshot: Snapshot = Snapshot(
+    resume = Add@17,
+    accumulator = %acc,
+    frame A register 0 = %lhs,
+    frame A register 1 = %rhs,
+    parent frame = ...)
+```
+
+`Snapshot` has `ResultClass::Snapshot`. Its typed `SnapshotRef` receives no
+machine location and carries no Python type evidence. A speculative check or
+action consumes it as the failure continuation:
+
+```text
+%lhs_smi: Smi = ShapeKeyCheck %lhs, Smi
+    deopt %snapshot
+
+%result: Smi = SmiAdd %lhs_smi, %rhs_smi
+    overflow %snapshot
+```
+
+Snapshot operands are point uses for recovery liveness at every consuming
+exit, even when that exit is not an ordinary CFG successor. The allocator must
+make their transitive values recoverable from a register, spill, synchronized
+home, or constant at that position.
+
+Several failures may share one Snapshot when they replay the same bytecode from
+the same logical state. A pre-effect and post-commit continuation require
+different Snapshots. Snapshots are anchored to their exits rather than freely
+scheduled: moving a check is legal only when every operand remains available
+and replay from the retained state remains correct.
+
+A Snapshot may capture a recovery-only action such as boxing an unboxed float.
+The action produces a recovery-local value that several logical homes may share,
+so one taken exit creates one box and preserves Python object identity. It does
+not change the normal-path representation of the unboxed SSA value or create an
+allocator-visible program value.
 
 ### Instruction results, typed identities, and deterministic traversal
 
@@ -914,608 +756,29 @@ Verification at pass boundaries should require:
   representation for each destination block parameter;
 - every edge argument definition to dominate that edge;
 - every block parameter to be owned by exactly one reachable block;
-- every referenced partition to have a live defining object or realized region
-  in that IR;
-- no reachable conditional fact to depend on a disconnected partition anchor;
-- partition definitions to dominate conditional uses where required;
-- every child partition to name an existing parent case and be defined within
-  that case's scope;
-- partition parent links to be acyclic;
-- child facts not to escape their inherited parent context without the required
-  joins;
-- every referenced case and realized case edge to remain valid;
-- values named by conditional facts to remain valid in their scopes;
 - every consumed analysis result to match the current IR generation.
+
+The optional Semantic frontend adds its own fact and partition verification as
+defined in its design document.
 
 Narrow preservation declarations or incremental maintenance may be added later
 if broad invalidation is measurably expensive.
 
-### One optional semantic type system
-
-If semantic inference is implemented, Semantic IR and Core IR share
-`ValueFacts`, `TypeEvidence`, type-partition identities, and their join and
-refinement rules. The physical split belongs to the IR, not to a separate
-Core-only type system. The initial direct-to-Core compiler does not need to
-instantiate this analysis or attach general type facts to its values.
-
-Core IR does not need the optional inference lattice merely to type the result
-of an emitted guard. A value-refining guard creates an SSA result with the
-narrowed guaranteed type, and specialized consumers use that result directly.
-Non-value guards, such as validity-cell checks, constrain control and effect
-ordering without manufacturing a Python value. The backend has a different
-concern: physical representation classes such as tagged `Value`, `Float64`,
-address, and condition code. Python-level facts may remain as lowering and
-recovery metadata, but an optional Machine IR does not define another Python
-type lattice.
-
-## Optional Semantic IR Optimization Frontend
-
-Everything in this section describes a higher-effort optimization frontend. It
-is not required for the initial direct-to-Core compiler. The representations
-are recorded now so the core IR does not preclude later inference and inlining,
-not as an obligation to implement them before useful machine code can be
-generated.
-
-### Parsed bytecode and inline-cache snapshots
-
-This parsing machinery is shared with direct Core compilation; it is described
-here because Semantic IR retains its results as atomic operations. Parsing
-decodes instructions, forms blocks and edges, records bytecode PCs, and
-snapshots relevant inline-cache semantics into compilation-local data. Encoded
-instructions, operand bytes, and runtime cache arrays are inputs to parsing,
-not the optimized representation.
-
-The snapshot captures the semantic content needed for compilation rather than
-blindly copying mutable runtime cache structs. A specialization plan records:
-
-```text
-required predicates
-selected successful action
-facts true on the successful continuation
-evidence provenance
-```
-
-The JIT compiles successful IC paths and deoptimizes on misses. It does not
-reimplement the generic Python protocol at every compiled operation. Caller
-facts may refine a plan but cannot invent a trusted handler or Python target;
-the selected action remains justified by cache feedback or the runtime's
-trusted resolution mechanism.
-
-An eventual IC may classify its observed specialization space directly:
-
-```text
-Uninitialized
-Monomorphic(case)
-Polymorphic(case...)
-Megamorphic
-```
-
-The cases retain operand shapes, validity requirements, the resolved semantic
-action, and successful-continuation facts. Contextual likely evidence selects
-within this recorded space rather than competing with it as another confidence
-score:
-
-- a compatible monomorphic case is selected regardless of a conflicting
-  merely-likely caller prediction;
-- guaranteed caller facts incompatible with the sole case make that case
-  unreachable in the current context, requiring fresh resolution or fallback;
-- a polymorphic IC is restricted to cases compatible with guaranteed facts,
-  then contextual likely facts select a preferred remaining case when they
-  identify one;
-- a megamorphic IC has no trustworthy small recorded subset, so contextual
-  facts may propose shapes for fresh trusted runtime resolution;
-- without usable cases or contextual facts, compilation remains generic or
-  returns to the interpreter.
-
-Caller facts and callee feedback have different roles during inlining. Caller
-evidence describes the particular inline context and may replace aggregate
-callee entry predictions. An operation IC still owns the semantic actions
-observed or freshly resolved for that operation; caller evidence can select or
-request resolution, but cannot manufacture an action.
-
-The initial runtime need not pay for true polymorphic case arrays. A one-case IC
-can approximate feedback stability with a small saturating case-install count:
-
-```text
-0             uninitialized
-1             monomorphic observation
-2..threshold  replacement churn; polymorphism suspected
-saturated     highly unstable or megamorphic-like
-```
-
-First population sets the count to one. It thereafter advances when the cached
-operand-shape tuple changes, not merely when the same tuple is repopulated after
-validity invalidation. A one-case cache cannot distinguish repeated `A/B`
-alternation from many distinct shapes, so a high count means **unstable**, not
-proof of true megamorphism. That distinction is sufficient for an initial
-policy: trust the current case when monomorphic, treat it cautiously under low
-churn, and under high churn prefer contextual evidence plus fresh resolution or
-generic handling.
-
-This counter is a provisional feedback mechanism, not a committed cache-layout
-requirement. If true polymorphic ICs later earn their space, the same churn
-signal can govern promotion to a small case array and eventual transition to an
-explicit megamorphic state.
-
-### SSA construction and logical frame states
-
-Function arguments are semantic definitions at function entry:
-
-```text
-%arg0 = Parameter 0
-%arg1 = Parameter 1
-```
-
-Their physical values may remain in canonical argument slots until first use.
-Semantic definition and machine residency are separate.
-
-During construction, an environment maps the accumulator and bytecode registers
-to SSA values. A live location with different incoming values receives a block
-parameter at a CFG join, and each predecessor edge supplies the corresponding
-argument. Construction is pruned so dead interpreter locations do not receive
-unnecessary block parameters.
-
-Each recoverable bytecode boundary has an immutable, structurally shared logical
-frame state:
-
-```text
-FrameState:
-    CodeObject
-    bytecode pc
-    parent FrameState       # inlined caller
-    register 0  -> ProgramValueRef
-    register 1  -> ProgramValueRef
-    ...
-
-ActiveState:
-    innermost FrameState
-    accumulator -> ProgramValueRef
-```
-
-Sparse structural sharing avoids copying the complete register mapping at every
-bytecode. A frame state describes interpreter meaning; it does not assert that
-the corresponding canonical slots are currently synchronized. The accumulator
-is one thread execution value, analogous to a distinguished machine register;
-it belongs only to the active innermost state. Suspended parent frames do not
-have separate accumulator values.
-
-During bytecode abstract interpretation, a mutable `BuilderContext` owns the
-current environment:
-
-```text
-BuilderContext:
-    active logical frame chain
-    (frame instance, register) -> ProgramValueRef
-    accumulator -> ProgramValueRef
-    current bytecode position
-    current inferred and available facts
-```
-
-The context is transient construction state, not an IR instruction and not a
-physical register map. Updating an accumulator or bytecode register changes
-this mapping without writing its canonical frame home.
-
-Semantic IR, when present, retains immutable `FrameStateId` metadata at the
-semantic operations and bytecode boundaries from which lowering may need to
-exit. It does not need Snapshot instructions. Core lowering materializes only
-the recovery states actually referenced by emitted speculative exits.
-
-### Core IR Snapshot results
-
-Core IR represents a recoverable state with a zero-code `Snapshot`
-instruction:
-
-```text
-%snapshot: Snapshot = Snapshot(
-    resume = Add@17,
-    accumulator = %acc,
-    frame A register 0  = %lhs,
-    frame A register 1  = %rhs,
-    parent frame = ...)
-```
-
-`Snapshot` has `ResultClass::Snapshot`; its `SnapshotRef` is a typed view of the
-instruction's `CoreInstructionId`. It has no runtime `Value` representation,
-receives no machine register, and carries no type evidence. Its operands are
-`ProgramValueRef`s required to reconstruct the active logical frames. Guards
-and speculative actions consume the reference as their failure continuation:
-
-```text
-%lhs_smi: Smi = ShapeKeyCheck %lhs, Smi
-    deopt %snapshot
-
-%rhs_smi: Smi = ShapeKeyCheck %rhs, Smi
-    deopt %snapshot
-
-%result: Smi = SmiAdd %lhs_smi, %rhs_smi
-    overflow %snapshot
-```
-
-The snapshot answers what interpreter state a failed continuation requires;
-the narrowed guard result answers what successful compiled execution may
-assume. Snapshot results are recovery dependencies, not predicate evidence for
-the successful continuation.
-
-Several checks and a speculative action may share one snapshot when all their
-failures replay the same bytecode from the same logical state. A distinct
-pre-effect, post-commit, exception, or other resume state receives a distinct
-snapshot. Operations should normally arrange all fallible checks before an
-irreversible commit so that no intermediate mutation snapshot is required.
-
-Snapshot operands are point uses for deoptimization liveness at every consuming
-exit, even when side exits are not ordinary normal-CFG successors. Register
-allocation must keep their transitive values recoverable at that point in a
-register, spill, synchronized canonical home, or constant. A Snapshot entry may
-also capture an explicit recovery action over those values, such as boxing an
-unboxed float into the tagged representation required by an interpreter slot:
-
-```text
-%snapshot: Snapshot = Snapshot(
-    resume = Add@17,
-    recover %boxed_sum = BoxFloatForRecovery(%sum_f64),
-    accumulator = %boxed_sum,
-    frame A register 0  = %boxed_sum,
-    ...)
-```
-
-The boxing action executes only on a taken exit. It is recorded in the Snapshot
-and later projected into the recovery plan; it does not force a normal-path
-`BoxFloat` instruction. `%boxed_sum` is a recovery-local result rather than a
-`ProgramValueRef`; several logical homes can reference it so the exit allocates
-one box and preserves object identity. A value need not remain live on the
-successful continuation unless normal uses require it.
-
-Recovery boxing normally arises by sinking an explicit boxing instruction whose
-only remaining consumers are Snapshots:
-
-```text
-# Before sinking.
-%sum_f64: Float64 = FloatAdd %left_f64, %right_f64
-%sum_boxed: Tagged<Float> = BoxFloat %sum_f64
-%snapshot = Snapshot(accumulator = %sum_boxed, ...)
-
-# After sinking.
-%sum_f64: Float64 = FloatAdd %left_f64, %right_f64
-%snapshot = Snapshot(
-    recover %sum_boxed = BoxFloatForRecovery(%sum_f64),
-    accumulator = %sum_boxed,
-    ...)
-```
-
-This is a representation change on the latent recovery path, not a change to
-the representation of `%sum_f64`. The backend keeps the Snapshot operand live
-and emits the boxing in generated side-exit code without constructing ordinary
-CFG edges or exposing the recovery-local result to register allocation.
-
-Snapshots are immutable and structurally shared through their `FrameStateId`s.
-They are anchored to their consuming exits rather than freely scheduled as
-ordinary pure computations. Moving a guard is legal only when every snapshot
-operand is available at the new position and interpreter replay from the
-snapshot's resume state remains correct. The guard retains its own bytecode or
-IC origin for diagnostics; that origin need not equal the retained resume state
-after legal code motion.
-
-### Trusted handlers and semantic recognition
-
-Selected operator ICs name trusted native handlers. The JIT may recognize
-specific handlers and replace a generic call with specialized IR, but
-recognition is explicit and conservative:
-
-```text
-trusted handler pointer + arity
-    -> runtime-neutral trusted semantic descriptor
-    -> JIT-specific lowering
-```
-
-A descriptor identifies the semantic operation, operand convention, coercion
-case, result kind, and conservative effects. Float-float addition and
-float-intlike addition are distinct semantic cases even if their final machine
-sequences overlap.
-
-The owning builtin type declares or registers the meaning of its handlers.
-Type-specific coercion, reflected ordering, and handler semantics remain in
-that layer. The JIT maps descriptors to IR nodes. Trusted handlers do not name
-JIT opcodes directly.
-
-Unknown handlers remain generic `TrustedFunctionCall`s. Recognized handlers
-retain every shape and validity guard required by the IC.
-
-### Value facts and inference
-
-Types and shapes describe SSA values, not bytecode slots. Each SSA value has one
-guaranteed static `ValueFacts` result in a given IR analysis generation. An
-operation declares how operand facts produce its result facts:
-
-```text
-infer_result(operation, operand facts) -> ValueFacts
-```
-
-Examples include:
-
-```text
-ConstantSmi  -> exact SMI
-ConstantNone -> exact None
-CreateTuple  -> exact tuple shape
-```
-
-The current facts for a value live in type-analysis side tables keyed by its
-typed `ProgramValueRef`; they are not mutable annotations on the defining
-instruction. An analysis pass may replace the side table as inference
-converges, but within one analysis result a `ProgramValueRef` does not acquire
-different guaranteed types at different program positions.
-
-A minimal bounded fact lattice is:
-
-```text
-Bottom                  # unreachable or no possible value
-ExactConstant(Value)
-ShapeSet{ShapeKey, ...}
-Unknown
-```
-
-`ExactShape(ShapeKey)` is a singleton shape set. Joining different exact shapes
-produces their union; an excessively large set may widen to `Unknown`. Joining
-an unreachable state with a reachable fact yields the reachable fact. Integer
-ranges, truthiness, callable targets, and other domains may be added later.
-
-Inherent facts are valid everywhere their defining value is available.
-Analysis may discover a narrower fact on a control-flow edge, but the IR
-represents that fact with a distinct destination block parameter or explicit
-refinement result. It does not retag the incoming value according to the
-position of its use. At a merge, block-parameter possible-value sets join by
-union, while predicate facts survive only when every incoming path establishes
-them.
-
-Type propagation is forward abstract interpretation over a block worklist.
-Instruction transfer functions update facts, branches refine outgoing states,
-and successor states determine block-parameter types until a fixed point. The
-bounded initial lattice should stabilize without special loop widening.
-
-### Likely and guaranteed evidence
-
-Likely and guaranteed evidence use the same bounded `ValueFacts` vocabulary,
-but differ in epistemic status and use:
-
-```text
-TypeEvidence {
-    guaranteed: ValueFacts
-    likely: ValueFacts
-}
-```
-
-A guaranteed union is exhaustive: `SMI | Float` excludes every other shape on
-that continuation. A likely union identifies profitable cases but does not
-exclude other runtime values. Likely evidence can select a specialization and
-create guard obligations; only guaranteed evidence justifies specialization
-without a new guard. No numeric confidence is required.
-
-Likely evidence is principally a preferred specialization-case key, not a
-probability attached to a value. It retains provenance such as an IC, caller
-context, or weakened earlier shape. Propagation must not amplify evidence by
-cycling it through block parameters, SSA uses, recursive inlining, or repeated
-analysis. More-specific caller evidence may replace less-specific aggregate
-callee entry feedback. At an operation, however, the IC-state selection rules
-above determine whether that context chooses a recorded case, requests fresh
-trusted resolution, or is ignored. Semantic actions always remain justified by
-cache feedback or trusted runtime resolution.
-
-### Type partitions
-
-The following design is plausible and increasingly coherent, but its concrete
-representation and complexity limits remain tentative.
-
-Every partition has an immutable, compilation-wide anchor:
-
-```text
-PartitionAnchor {
-    PartitionId
-    optional parent PartitionCaseRef
-    cases
-    semantic provenance
-    optional derived-from PartitionId
-}
-```
-
-IR objects and type-analysis side tables refer to the anchor by `PartitionId`.
-A polymorphic semantic operation defines the anchor for its latent cases. A
-join or block-header control object defines the anchor for a predecessor
-partition. Each IR maintains a deterministic index from `PartitionId` to its
-local defining object or realized CFG region. The anchor does not contain a
-mutable back-pointer to whichever instruction or CFG region currently
-represents it.
-
-`PartitionCaseRef` identifies one case of another partition. It scopes a child
-anchor beneath that case without requiring the immutable parent anchor to be
-mutated when children are discovered. A deterministic analysis index may
-enumerate the child anchors of each case.
-
-Semantic and Core IR use the same partition ID for one logical choice. Lowering
-projects the Semantic definition to a Core-local instruction or region without
-changing that identity. A semantics-preserving instruction replacement may explicitly
-reuse the same partition ID. Cloning a discriminator into independently
-executed choices creates fresh partition IDs, optionally retaining
-`derived-from` provenance.
-
-Bytecode PCs remain semantic origins and bailout locations, not partition
-identities. Inlining can create several instances of one bytecode, a single
-bytecode can supply several partitions, and synthetic joins may have no direct
-bytecode operation at all.
-
-Per-value unions lose correlations between alternatives. A polymorphic IC may
-describe:
-
-```text
-case 0: (Float, Float) -> FloatAdd        -> result Float
-case 1: (Float, SMI)   -> FloatAddWithSMI -> result Float
-```
-
-Flattening this to `lhs: Float` and `rhs: Float | SMI` loses the association
-between operand combination, semantic action, and result. The specialization
-plan therefore retains finite correlated cases:
-
-```text
-SpecializationCase {
-    operand predicates
-    semantic action
-    successful-continuation facts
-    evidence provenance
-}
-```
-
-These cases form a **type partition**: an abstract branch recorded by shared
-Semantic/Core type analysis without adding speculative Semantic CFG edges.
-The partition supplies both joined facts and facts conditional on a named case:
-
-```text
-partition P:
-    case P.float:
-        a: Float
-        b: Float
-        result: Float
-
-    case P.smi:
-        a: SMI
-        b: SMI
-        result: SMI
-
-unconditional:
-    a: Float | SMI
-    b: Float | SMI
-    result: Float | SMI
-```
-
-The unconditional joined fact is the guaranteed static type of each listed SSA
-value. Case facts are conditional evidence attached to the partition, not
-alternate position-dependent types for that `ProgramValueRef`. Realizing a case
-creates narrowed guard results or block parameters with their own
-`ProgramValueRef`s and those case-specific guaranteed types.
-
-Existing program control flow creates the same abstraction. Multiple block
-parameters at one join share a predecessor partition:
-
-```text
-then:
-    a1: SMI
-    b1: Float
-
-else:
-    a2: Float
-    b2: SMI
-
-then -> join(a1, b1)
-else -> join(a2, b2)
-
-join(a, b):
-    a: guaranteed SMI | Float
-    b: guaranteed Float | SMI
-
-partition P:
-    P.then: a is SMI,   b is Float
-    P.else: a is Float, b is SMI
-```
-
-Independent unions appear to allow four combinations; the partition retains
-the two environments that can actually occur. Conditional inference can then
-preserve facts such as "if `a` is Float in this case, `b` is also Float."
-
-Partitions are recursive. Nested control flow and specializations retain their
-structure rather than flattening into the Cartesian product of every leaf. For
-example:
-
-```text
-partition P_x:
-    case P_x.true:
-        facts:
-            x is Truthy
-
-        partition P_y [parent = P_x.true]:
-            case P_y.true:
-                facts:
-                    y is Truthy
-
-            case P_y.false:
-                facts:
-                    y is Falsy
-
-    case P_x.false:
-        facts:
-            x is Falsy
-```
-
-Facts under a child case inherit the complete parent environment. The context
-of `P_y.false` is therefore the partition path
-`P_x.true / P_y.false`, under which both `x is Truthy` and `y is Falsy` hold.
-Following immutable parent-case links reconstructs this path; it need not be
-stored redundantly on every conditional fact.
-
-A case may scope several independent child partitions. Each child remains a
-separate anchor rather than forcing their alternatives into one flat case set.
-Joins are performed at the appropriate nesting level: child alternatives join
-within their parent case before that parent is joined with its siblings.
-
-The initial design restricts partitions to finite cases originating in known
-structures such as polymorphic ICs, existing CFG edges, and inlined call-site
-specializations. Recursion means finite nesting, not cyclic anchors. A loop
-backedge must join, widen, or discard conditional structure rather than create a
-parent-case cycle. The system does not attempt arbitrary logical implication
-solving.
-
-When a type-sensitive consumer demands realization, that demand traces back to
-the defining partition anchor. Core lowering therefore knows the earliest
-logical point at which to introduce a discriminator, or which existing
-predecessor edges already embody the cases.
-
-Demand may realize only part of a partition tree. A consumer needing the
-`P_x` distinction can split the outer partition while leaving `P_y` latent.
-Within `P_x.true`, a later consumer may realize `P_y` locally. This preserves
-correlation without generating all leaf combinations eagerly.
-
-IC observations alone do not make the joined result globally guaranteed. For a
-speculative partition, result facts become guaranteed only after Core IR has
-checked that a supported case applies; unmatched cases deoptimize. A genuinely
-exhaustive guaranteed partition may use elimination: disproving one of two
-cases proves the other without another runtime test.
-
-### Context-sensitive inlining
-
-Inlining binds callee parameter uses directly to caller argument SSA values. IR
-construction accepts an incoming abstract state:
-
-```text
-bytecode register -> ProgramValueRef + available facts + guard obligations
-```
-
-Caller evidence and provenance become entry information for the inlined callee.
-Redundant callee requirements may be removed under inherent or already-proven
-facts, subject to effect and stability rules. Obligations remain attached until
-Core IR makes their checks explicit.
-
-Inlining removes machine call and dispatch overhead, not Python frame
-structure. Each inline instance receives a fixed canonical backing region in
-the compiled frame layout. Inline entry advances the managed FP, initializes
-the callee and return metadata, and binds the argument SSA values to the new
-logical frame. It need not immediately store those arguments or other slot
-values. Inline return places the result in the accumulator, restores the return
-FP, and branches to the caller continuation.
-
-Outer and inner frame slots may both be stale while reclamation is impossible.
-A reclaiming call or other publication boundary synchronizes every active
-logical frame. If the inline body reaches no such boundary, many of its slots
-may never be written before the frame is popped. Before publication, every slot
-the runtime will scan must nevertheless contain a valid tagged value or the
-interpreter's ordinary empty or unbound sentinel.
-
-Facts belong to a compilation and inline context, not globally to a
-`CodeObject`. The same function may be compiled standalone or under several
-call-site specializations.
-
-Inference and inlining may run iteratively: propagate, inline newly eligible
-calls, rebuild affected analyses, and propagate again until stable or a budget
-is exhausted. The optimizer uses an explicit maximum iteration count and graph-
-growth budget rather than assuming that mutually enabling passes converge
-cheaply. If the final permitted iteration still inlines code, one trailing
-propagation, canonicalization, CFG cleanup, and dead-code pass runs with
-inlining disabled so that the last expansion is fully optimized.
+### Optional semantic facts
+
+The direct-to-Core compiler does not require a general Python type lattice.
+Value-refining guards create SSA results with narrowed guaranteed types, and
+ordinary dominance controls their availability. Non-value guards constrain
+control and effects without manufacturing a Python value.
+
+If higher-effort inference is implemented, Semantic and Core IR share the same
+`ValueFacts`, evidence, and partition identities rather than translating
+between separate Python type systems. Core realizes only the distinctions
+demanded by executable lowering. Physical representations such as
+`TaggedValue`, `Float64`, and `Address` remain a separate backend concern.
+
+The complete optional design is in
+[Semantic IR and Specialization](jit-semantic-ir-and-specialization.md).
 
 ## Core IR
 
@@ -1558,6 +821,23 @@ The checks retain their original bytecode PCs and bailout states. A check can
 replace a later equivalent check only when its narrowed result dominates the
 later use and remains valid across the intervening effects.
 
+### Trusted handler descriptors
+
+Selected ICs name trusted native handlers. Recognition is explicit and
+semantic rather than opcode-based:
+
+```text
+trusted handler pointer + arity
+    -> runtime-neutral semantic descriptor
+    -> Core lowering
+```
+
+The owning runtime type declares the handler's operand convention, coercion
+case, result kind, and conservative effects. Core maps selected descriptors to
+specialized operations. Unknown handlers remain generic trusted calls, and a
+recognized handler retains every shape and validity predicate required by its
+IC.
+
 ### Expanding attribute mutations
 
 `StoreAttr` and `DelAttr` are semantic operations. Core construction inspects
@@ -1591,7 +871,7 @@ The input and output receivers contain the same object pointer. Their distinct
 SSA identities describe that mutable object before and after the known shape
 transition. `ChangeClass` likewise creates a successor receiver, but unless its
 selected semantics provide an exact result shape, that result has an unknown
-mutable-object shape or the initial compiler deoptimizes instead.
+mutable-object shape or the lowering deoptimizes instead.
 
 When a receiver comes from an interpreter slot, construction updates that
 slot's current SSA binding to the successor. Bindings known to contain exactly
@@ -1608,8 +888,9 @@ refinements and require a new guard.
 An operation that may change a mutable shape without describing the resulting
 transition weakens each affected live receiver value. `WeakenShape` is a
 zero-code SSA operation that preserves the runtime `Value` bits while replacing
-an exact mutable-shape guarantee with a broader guaranteed type and retaining
-the old shape only as likely persistence evidence:
+an exact mutable-shape guarantee with a broader guaranteed type. When optional
+type evidence is active, its side table may retain the old shape as likely
+persistence evidence:
 
 ```text
 %self_s1: Shape<S1> = AddOwnProperty(
@@ -1635,14 +916,12 @@ that successor. A general Python call conservatively weakens every live
 mutable-shape-refined value that remains live afterward; inline values and
 lifetime-stable shapes survive unchanged.
 
-`WeakenShape` does not claim that the shape changed. Its likely `S1` is a cheap
-persistence prediction used only when the next operation's IC permits it. A
-monomorphic consumer selects its recorded case; a polymorphic consumer may use
-the prediction to select a matching case; an unstable or megamorphic-like
-consumer may use it as the proposed input to fresh runtime resolution. More
-applicable consumer or inline-context evidence may therefore displace the
-prediction for that consumer's case selection without changing
-`%self_after`'s guaranteed `Object` type.
+`WeakenShape` does not claim that the shape changed. A direct compiler may
+discard the optional prediction and let the next consumer select its recorded
+IC case normally. With evidence analysis, likely `S1` is a cheap persistence
+prediction used only when the consumer's IC permits it. More applicable
+consumer or inline-context evidence may displace that prediction without
+changing `%self_after`'s guaranteed `Object` type.
 
 A later optimization may recognize an uninterrupted canonical transition
 chain, particularly in `__init__`:
@@ -1660,37 +939,16 @@ before mutation begins, and the commit sequence cannot safepoint, fail, or
 deoptimize partway through. Reference-counting and future write-barrier effects
 must remain equivalent.
 
-### Realizing type partitions
+### Optional partition realization
 
-Core IR alone decides whether an abstract partition becomes actual control
-flow. Realization is consumer-driven rather than an automatic response to a
-union type:
+When optional Semantic inference retains a correlated union, Core lowering
+realizes it only when a type-sensitive consumer needs distinct executable
+operations. Realization creates ordinary branches, narrowed SSA values, and
+block parameters; union-transparent consumers leave the partition latent.
+Existing predecessor edges may already provide the required split.
 
-- a union-transparent consumer, such as storing a tagged `Value` in a list,
-  accepts the union without a split;
-- a type-specialized consumer, such as integer-versus-float arithmetic, may
-  demand different arms;
-- an IC partition emits guards and bailout edges that select supported cases;
-- a partition inherited from existing CFG edges may duplicate a consumer onto
-  predecessor edges without new type checks;
-- each realized arm converts its conditional facts into guaranteed SSA result
-  types and block arguments.
-
-Recursive partitions lower recursively. Realizing a parent creates or reuses
-its case arms and establishes the inherited fact environment in each arm. A
-child can be realized only within its parent case, where it introduces its own
-nested split. Unneeded child partitions remain latent even when their ancestors
-have become CFG.
-
-The arms may merge immediately after one operation or remain separate across a
-larger cloned region when several consumers benefit. Code duplication is a
-profitability decision with an explicit growth budget. A partition never
-demanded by a type-sensitive consumer remains metadata and produces no runtime
-branch.
-
-When Core IR realizes a partition, it continues propagation in the shared
-fact lattice. CFG edits, cloning, and joins must invalidate or update the same
-analysis used by Semantic IR.
+Partition identity, recursion, profitability, and demand propagation are owned
+by [Semantic IR and Specialization](jit-semantic-ir-and-specialization.md).
 
 ### Operation effects and dependencies
 
@@ -1768,18 +1026,12 @@ and validity facts remain independent.
 
 ### Validity-cell facts
 
-Validity cells capture assumptions about non-local mutable runtime state. The
-initial optimizer is conservative:
-
-- validity checks may be reused across pure arithmetic and similarly constrained
-  operations with no relevant memory access;
-- Python calls, arbitrary helpers, and possible non-local mutation are barriers
-  unless proved otherwise;
-- optimization initially emphasizes local redundancy elimination rather than
-  aggressive loop hoisting.
-
-Validity optimization should not force an elaborate memory model before
-evidence shows it is worthwhile.
+Validity cells capture assumptions about non-local mutable runtime state. A
+check can cross only operations whose effects prove that they cannot trip the
+cell. Python calls, arbitrary helpers, and possible non-local mutation are
+barriers unless a stronger semantic descriptor proves otherwise. The bring-up
+optimizer begins with local redundancy elimination rather than assuming an
+elaborate memory model.
 
 ### Guard-result optimization
 
@@ -1838,8 +1090,8 @@ managed object movement.
 ### Declarative safepoint and deoptimization state
 
 After locations have been assigned, every compiled safepoint and deoptimization
-exit has an immutable declarative description independent of how the initial
-runtime consumes it:
+exit has an immutable declarative description independent of how the runtime
+consumes it:
 
 ```text
 SafepointState {
@@ -1856,11 +1108,11 @@ DeoptState {
 }
 ```
 
-The initial backend lowers `SafepointState` into continuing publication code
-and lowers `DeoptState` into generated cold recovery plans. A future mapped
-backend serializes the first for the compiled-frame stack walker and the second
-for a generic deoptimizer. Location assignment, logical frame construction, and
-Core IR do not change merely because the consumer changes.
+One backend policy may lower `SafepointState` into continuing publication code
+and `DeoptState` into generated cold recovery plans. Another may serialize the
+first for a compiled-frame walker and the second for a generic deoptimizer.
+Location assignment, logical frame construction, and Core IR do not change
+merely because the consumer changes.
 
 `DeoptState` is the post-allocation physical projection of a Core IR Snapshot.
 The Snapshot remains semantic and names `ProgramValueRef`s; `DeoptState`
@@ -1872,12 +1124,9 @@ appear in the safepoint root map.
 
 Compiled code and its metadata remain alive as one code object. Safepoint lookup
 from a compiled PC is deterministic, and a call safepoint can be identified
-from the compiled caller return PC while walking a suspended callee chain.
-
-During bring-up, generated code is never reclaimed, relocated, or reused for a
-different compilation. Invalidation prevents new entry but does not destroy
-machine code that an active callee may still return into. Active-frame-aware
-retirement and eventual code-memory reclamation remain later lifecycle work.
+from the compiled caller return PC while walking a suspended callee chain. Code
+retirement must preserve every active return continuation; the initial immortal
+code policy is specified by the bring-up plan.
 
 ### Generated side exits and recovery plans
 
@@ -1922,11 +1171,9 @@ destination whose home already contains the Snapshot's desired value and
 otherwise obtains the source from its allocated location and evaluates any
 captured recovery action before publishing it.
 
-Under the initial policy these tables are compiler inputs to generated cold
-code, not runtime stack maps. After the generated sequence publishes canonical
-state, the initial generic runtime does not inspect optimized locations. Their
-declarative form is deliberately suitable for later serialization as
-deoptimization translations.
+These tables may be compiler inputs to generated cold code or serialized
+metadata interpreted at runtime. Their declarative form deliberately supports
+both generated recovery and later deoptimization translations.
 
 Side-exit code is factored into independently shareable value-recovery and
 resume-state parts:
@@ -1967,10 +1214,6 @@ or hash-table iteration order. Identical plans share one emitted block, and all
 resume-state stubs tail into a common interpreter-dispatch handoff after
 installing their code objects, bytecode PCs, return metadata, and exit kind.
 
-The first vertical slice need not implement interning: one selector, recovery
-sequence, and resume sequence may be emitted together. The separation becomes
-observable only when code generation begins sharing either component.
-
 Canonical-slot writes are parallel assignments. A source home may be overwritten
 before its old value has been copied elsewhere, so exit expansion uses ordinary
 parallel-copy scheduling.
@@ -1979,37 +1222,23 @@ Each backend provides one dedicated exit scratch general-purpose register. It is
 excluded from ordinary allocation, never appears as a live recovery source, and
 may be clobbered by resume stubs and recovery blocks. It is available for
 constructing bytecode PCs, breaking parallel-copy cycles, forming addresses and
-constants, and reaching the final dispatcher. The initial AArch64 backend
-reserves this register globally; avoiding that reservation is not worth adding
-complexity to cold exits on a register-rich target.
+constants, and reaching the final dispatcher. The AArch64 backend may reserve
+this register globally; avoiding that reservation is unlikely to justify added
+complexity in cold exits on a register-rich target.
 
-### Initial continuing multi-frame call publication
+### Continuing call state
 
-Under the initial safepoint policy, Python calls use the same
-logical-versus-synchronized frame analysis as side exits, but not the same
-non-returning code shape. A call-publication plan covers every active logical
-frame, including outer frames whose slots remain dirty while execution is
-inside an inlined callee. A future precise-map call site retains the declarative
-root state but omits these continuing synchronization instructions.
+Calls use the same logical-versus-synchronized frame analysis as exits but not
+the same non-returning code shape. A safepoint-capable call needs declarative
+root state for every active logical frame. Under canonical publication this
+becomes continuing synchronization at the call site; under precise maps it
+becomes metadata consumed by the stack walker.
 
-For example, if `B` is inlined into `A` and calls a non-inlined `C`, the active
-chain before the call is `A -> B`. Publication synchronizes dirty homes in both
-backing regions, publishes `B`'s accumulator, establishes `C`'s outgoing
-arguments, and then performs the call. `C`'s return epilogue restores the managed
-frame pointer to `B`, leaves the architectural stack pointer in the backend's
-defined post-return relationship to `C`'s frame, and returns to `B`'s compiled
-continuation. A later inline return restores `FP = A`.
-
-The planner may share frame-difference, location, and parallel-copy machinery
-with side-exit recovery. Its generated instructions remain at the continuing
-call site because they must preserve post-call liveness and return to compiled
-code; they are not delegated to deduplicated cold exit tails.
-
-Without inlining, `A` would publish before calling `B`, and `B` would publish
-again before calling `C`. Inlining can replace those two boundaries with one
-larger multi-frame publication. The eventual inlining cost model should account
-for both eliminated boundaries and the dirty homes at reclaiming calls that
-remain inside the inline region.
+The planner may share location, frame-difference, and parallel-copy machinery
+with exit recovery. Publication instructions themselves remain on the normal
+path because execution returns to compiled code. They cannot be delegated to a
+deduplicated cold recovery tail. When a call occurs inside an inline instance,
+the state covers the complete outer-to-inner active frame chain.
 
 ### Tagged `Value` baseline
 
@@ -2159,34 +1388,13 @@ Outer and inner regions may both remain stale until that boundary. This does
 not require frame allocation or arbitrary per-exit layouts: only value
 synchronization and metadata finalization are exit-specific. Inactive sibling
 inline sites may eventually share backing regions when their lifetimes cannot
-overlap, but assigning fixed distinct regions is the initial policy and their
-stack cost contributes to the inlining budget.
+overlap. Their backing-region stack cost contributes to the inlining budget.
 
-## End-to-End Examples
+## End-to-End Example
 
-### Bring-up: zero supported bytecodes
+### Direct Core compilation: monomorphic Add
 
-The first executable compiler can deliberately support no bytecodes:
-
-1. Function dispatch finds the installed JIT entry and enters generated code.
-2. The entry establishes the managed SP and FP, preserving the unchanged
-   function-entry frame state.
-3. Core IR contains an entry Snapshot followed immediately by an unconditional
-   unsupported-bytecode exit for the first bytecode.
-4. The backend emits the initially trivial recovery and resume sequence. It
-   publishes the accumulator, installs the function-entry `CodeObject` and
-   bytecode PC, and selects the unsupported-bytecode exit kind.
-5. The interpreter handoff switches to the host stack and starts interpreting
-   that same managed frame at the first bytecode.
-
-This milestone validates the complete execution loop before opcode semantics,
-optimization, or register allocation can obscure boundary failures. Adding the
-first supported opcode merely moves the unconditional exit to the next
-unsupported bytecode.
-
-### Initial direct compilation: monomorphic Add
-
-The initial path requires neither Semantic IR nor type inference:
+The direct path requires neither Semantic IR nor type inference:
 
 1. The shared frontend decodes `Add`, records its bytecode PC and logical frame
    state, and snapshots its monomorphic IC case.
@@ -2206,102 +1414,57 @@ The initial path requires neither Semantic IR nor type inference:
    optionally through Machine IR.
 
 Unsupported or polymorphic cases may conservatively call Python or return to
-the interpreter. The initial compiler need not infer a type merely to reproduce
+the interpreter. The direct compiler need not infer a type merely to reproduce
 an IC specialization that already names its predicates and action.
 
-### Optional optimized compilation: polymorphic Add
+The corresponding higher-effort polymorphic example is in
+[Semantic IR and Specialization](jit-semantic-ir-and-specialization.md).
 
-A polymorphic addition illustrates the complete flow:
+## Deliberately Open Architectural Questions
 
-1. The shared frontend decodes `Add` and snapshots its IC cases; Semantic IR
-   preserves it as one atomic operation with its bytecode PC and logical frame
-   state.
-2. Trusted handler descriptors identify the semantic actions for those cases.
-3. Type inference records likely or guaranteed operand facts, result unions,
-   guard obligations, and any correlated type partition.
-4. Inlining may refine the same plan using caller-context evidence.
-5. A union-transparent consumer leaves the partition latent. A type-sensitive
-   consumer asks Core lowering to realize the relevant alternatives.
-6. Core IR materializes the required Snapshots and emits narrowed shape-check
-   results, validity checks, and specialized actions. Existing predecessor
-   partitions may instead permit code duplication without new checks.
-7. Failed pre-effect checks consume the Snapshot returning to the original
-   `Add`; committed exits, when present, consume the appropriate distinct
-   post-effect Snapshot.
-8. The target backend selects tagged or future unboxed representations and
-   assigns locations while preserving the active safepoint and recovery policy.
-9. Post-allocation exit expansion interns the required recovery plans, emits
-   exit selectors, shared recovery blocks, and resume-state stubs, and tails
-   them into the common interpreter handoff.
+### Core IR and optimization
 
-## Deliberately Open Questions
-
-### IR representation and optimization
-
-- concrete storage layouts and APIs for SSA instructions and blocks;
+- concrete storage layouts and editing APIs for instructions, blocks, and edges;
 - optimizer and register allocator organization;
-- whether any narrow pass benefits from a temporary graph representation;
-- whether a target benefits from no Machine IR, per-block or per-region Machine
-  IR, or a whole-function Machine IR;
-- the threshold at which direct Core emission has accumulated enough hidden
-  target-specific lowering state that an explicit Machine IR would be simpler;
-- when analysis preservation or incremental CFG maintenance is worthwhile;
-- what evidence should trigger recompilation through the optional Semantic IR
-  frontend rather than direct Core compilation;
-- how much construction and lowering machinery the two paths should share
-  without turning them into independent compiler implementations.
-
-### Type evidence and specialization
-
-- the exact verifier and effect-state representation that prevents stale
-  mutable-shape receiver versions from being used after direct or aliased
-  mutation;
-- the precise construction and liveness policy for inserting `WeakenShape`
-  successors without generating unnecessary SSA values at broad clobbers;
-- concrete representation and propagation limits for type partitions;
-- profitability and code-growth policy for partition realization;
-- depth, leaf-count, and propagation budgets for recursive partitions;
-- joins of intersecting partition trees and loop-carried facts without
-  combinatorial growth or cyclic anchors;
-- compilation, invalidation, and lifetime rules for changing IC contents.
+- whether a narrow pass benefits from a temporary graph representation;
+- when direct backend side tables have become an implicit Machine IR and should
+  be replaced by an explicit backend-local representation;
+- when broad analysis invalidation becomes expensive enough to justify
+  preservation or incremental maintenance;
+- how much construction machinery direct Core and optional Semantic compilation
+  should share without becoming independent compilers.
 
 ### Effects and runtime assumptions
 
 - the precise effect taxonomy and alias model;
 - the runtime classification of stable-shape values;
-- how aggressively validity checks should eventually be optimized.
-
-### Deoptimization and execution boundaries
-
-- concrete encoding, unwind behavior, and validation of the reentrant
-  managed/host stack-transition record used during bring-up;
-- whether publication at every potentially safepointing Python call is
-  affordable in practice and what measurements should trigger opt-in precise
-  stack-map scanning;
-- compiled frame-kind, PC lookup, unwind, and callee-saved-register recovery
-  contracts needed by a mixed-frame stack walker;
-- concrete encodings and validation strategy for shadow safepoint maps and
-  deoptimization translations;
-- whether a fixed root-register convention or broader certified no-safepoint
-  entries remain useful alongside precise maps;
-- how often inlining actually removes small hot Python call boundaries, and how
-  many dirty managed values remain live at the calls it does not remove;
-- exact encoding of post-allocation machine locations, recovery boxing, and
-  future reification recipes in recovery plans;
-- recovery-plan interning and code-size policy beyond exact-plan deduplication;
+- how aggressively mutable-shape and validity checks can be optimized;
 - compiled exception handling and cross-frame unwinding;
-- final observability and tracing policy.
+- final tracing, traceback, and stack-observability policy.
 
-### Backend and code lifecycle
+### Recovery, maps, and backend lifecycle
 
-- backend selection and target-specific lowering structure;
-- code memory management;
-- tiering and compilation triggers;
-- active-frame-aware retirement and reclamation of generated code after the
-  initial immortal-code policy.
+- concrete encodings for machine locations, recovery actions, safepoint maps,
+  and deoptimization translations;
+- recovery-plan interning and code-size policy beyond exact-plan deduplication;
+- mixed-frame stack-walker contracts for frame kinds, PC lookup, unwind state,
+  and callee-saved registers;
+- whether certified no-safepoint entries remain useful alongside precise maps;
+- active-frame-aware generated-code retirement, relocation, and reclamation.
 
-These questions must be answered without weakening bytecode compatibility. If
-semantic inference is implemented, Semantic and Core IR must share one type
-system rather than acquire competing notions of Python type. Every safepoint
-policy must provide explicit and verifiable root discovery, and every
-deoptimization policy must reconstruct the same canonical interpreter state.
+Bring-up sequencing and temporary runtime-policy questions are tracked in the
+[JIT Compiler Bring-up Plan](jit-compiler-bring-up-plan.md). Optional inference,
+partition, feedback, and contextual-inlining questions are tracked in
+[Semantic IR and Specialization](jit-semantic-ir-and-specialization.md).
+
+These questions must be answered without weakening bytecode compatibility.
+Every safepoint policy must provide explicit and verifiable root discovery, and
+every recovery policy must reconstruct the same canonical interpreter state.
+
+## Related Documents
+
+- [JIT Compiler Bring-up Plan](jit-compiler-bring-up-plan.md)
+- [Semantic IR and Specialization](jit-semantic-ir-and-specialization.md)
+- [Function Calling Convention](function-calling-convention.md)
+- [Native/Managed Boundary Contracts](native-managed-boundaries.md)
+- [Decision Log](decision-log.md)
