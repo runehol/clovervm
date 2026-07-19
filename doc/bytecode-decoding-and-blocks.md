@@ -180,12 +180,13 @@ is not an ordinary bytecode-block entrance. A lowering may ignore the
 continuation when a snapshotted trusted cache action cannot produce
 `NotImplemented`, or use it for an untrusted call path or post-effect recovery.
 
-Ordinary jumps, exception-table boundaries, and block entrances must not split
-a compound instruction. Structural scanning skips the continuation naturally
-because it is included in the preceding operator's format length. Standalone
-decoding at the continuation offset remains supported because the interpreter
-tracer may observe execution of that physical continuation opcode; that query
-returns a one-byte instruction with no `continuation_pc_offset`.
+Explicit jump targets, exception-handler offsets, and other block entrances
+must not split a compound instruction. Structural scanning skips the
+continuation naturally because it is included in the preceding operator's
+format length. Standalone decoding at the continuation offset remains
+supported because the interpreter tracer may observe execution of that
+physical continuation opcode; that query returns a one-byte instruction with
+no `continuation_pc_offset`.
 
 ## BytecodeDecoder Lifetime and Feedback
 
@@ -198,6 +199,8 @@ public:
     explicit BytecodeDecoder(const CodeObject &code_object);
 
     const std::vector<BytecodeBlock> &blocks() const;
+    BytecodeBlockId entry_block_id() const;
+    const std::vector<BytecodeBlockId> &exception_handler_block_ids() const;
 };
 ```
 
@@ -206,8 +209,8 @@ Construction occurs in this order:
 1. Copy every allocated inline-cache table into decoder-owned snapshot
    storage.
 2. Structurally scan the complete encoded bytecode.
-3. Validate instruction boundaries, control-flow targets, exception-table
-   boundaries, and compound-operation boundaries.
+3. Validate instruction boundaries, control-flow targets, exception-handler
+   offsets, and compound-operation boundaries.
 4. Construct the `BytecodeBlock` list in ascending PC-offset order.
 
 All instructions produced through a block iterator refer to the same feedback
@@ -275,9 +278,6 @@ public:
     const std::vector<BytecodeBlockId> &predecessors() const;
     const std::vector<BytecodeBlockId> &successors() const;
 
-    std::optional<uint32_t> exception_handler_index() const;
-    const std::vector<uint32_t> &exception_entrances() const;
-
     InstructionRange instructions() const;
 };
 ```
@@ -294,35 +294,28 @@ Block leaders include:
 - fallthrough after conditional branches;
 - the encoded instruction after a non-fallthrough terminator when more code
   follows, so unreachable bytecode remains representable;
-- exception-table range starts and ends;
 - exception-handler offsets.
 
 Function calls, safepoints, and merely fallible instructions do not split
 blocks. Their runtime behavior is represented during JIT lowering rather than
 as bytecode CFG structure.
 
-Every explicit target and exception-table boundary must be a valid physical
+Every explicit target and exception-handler offset must be a valid physical
 instruction boundary. Every ordinary block boundary must also be a valid
 semantic boundary rather than an internal continuation.
 
-## Exception Entrances
+## Function Entrances
 
-Splitting at every exception-table start and end makes the applicable
-exception handler constant throughout a block. `exception_handler_index()`
-records the first covering exception-table entry according to the existing
-table priority rule.
+`entry_block_id()` names the ordinary function entry explicitly, even though
+it is always block zero. Every distinct exception-table handler offset also
+starts a block. `exception_handler_block_ids()` returns those blocks once each,
+in block/PC-offset order.
 
-Exception handlers are secondary entrances, not ordinary branches or calls.
-An entrance annotation identifies the exception-table entries that may enter a
-handler block and preserves the distinct entry contract: the logical frame is
-already active and a pending exception is present.
-
-The initial JIT may exit to the interpreter for exception dispatch. In that
-policy the bytecode block graph does not need an exceptional edge from every
-fallible instruction to its handler. A future JIT that compiles exception
-dispatch may turn the annotations into explicit IR control flow. That control
-flow belongs to the JIT CFG rather than changing the lightweight bytecode
-block representation.
+The decoder does not otherwise interpret exception-table spans. Range starts
+and ends do not split blocks, blocks do not record their covering exception
+handler, and the bytecode graph has no exceptional edge from fallible
+instructions. A JIT that compiles exception dispatch owns that information in
+its IR CFG.
 
 ## Instruction Value Effects
 

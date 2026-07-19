@@ -60,16 +60,12 @@ namespace cl
     {
         assert(code_object_.size() <= std::numeric_limits<uint32_t>::max());
         uint32_t code_size = uint32_t(code_object_.size());
-
-        if(code_size == 0)
-        {
-            assert(code_object_.exception_table.empty());
-            return;
-        }
+        assert(code_size > 0);
 
         std::vector<bool> semantic_boundaries(code_size + 1, false);
         semantic_boundaries[code_size] = true;
         std::vector<bool> leaders(code_size + 1, false);
+        std::vector<bool> exception_handler_offsets(code_size, false);
         leaders[0] = true;
         for(uint32_t pc_offset = 0; pc_offset < code_size;)
         {
@@ -97,15 +93,10 @@ namespace cl
 
         for(const ExceptionTableEntry &entry: code_object_.exception_table)
         {
-            assert(entry.start_pc < entry.end_pc);
-            assert(entry.end_pc <= code_size);
             assert(entry.handler_pc < code_size);
-            assert(semantic_boundaries[entry.start_pc]);
-            assert(semantic_boundaries[entry.end_pc]);
             assert(semantic_boundaries[entry.handler_pc]);
-            leaders[entry.start_pc] = true;
-            leaders[entry.end_pc] = true;
             leaders[entry.handler_pc] = true;
+            exception_handler_offsets[entry.handler_pc] = true;
         }
 
         std::vector<uint32_t> block_starts;
@@ -129,6 +120,10 @@ namespace cl
             BytecodeBlockId id = BytecodeBlockId(idx);
             block_at_offset[start] = id;
             blocks_.push_back(BytecodeBlock(this, id, start, end));
+            if(exception_handler_offsets[start])
+            {
+                exception_handler_block_ids_.push_back(id);
+            }
         }
 
         auto add_successor = [&](BytecodeBlock &block,
@@ -182,23 +177,6 @@ namespace cl
             for(BytecodeBlockId successor: block.successors_)
             {
                 blocks_[successor].predecessors_.push_back(block.id_);
-            }
-
-            for(size_t entry_idx = 0;
-                entry_idx < code_object_.exception_table.size(); ++entry_idx)
-            {
-                const ExceptionTableEntry &entry =
-                    code_object_.exception_table[entry_idx];
-                if(!block.exception_handler_index_.has_value() &&
-                   block.start_pc_offset_ >= entry.start_pc &&
-                   block.start_pc_offset_ < entry.end_pc)
-                {
-                    block.exception_handler_index_ = uint32_t(entry_idx);
-                }
-                if(block.start_pc_offset_ == entry.handler_pc)
-                {
-                    block.exception_entrances_.push_back(uint32_t(entry_idx));
-                }
             }
         }
     }

@@ -299,7 +299,7 @@ TEST(KeywordCallInlineCache, copy_clones_keyword_destination_registers)
     EXPECT_EQ(-2, snapshot.keyword_dest_regs[1]);
 }
 
-TEST(BytecodeDecoder, builds_normal_control_flow_and_exception_entrances)
+TEST(BytecodeDecoder, exposes_entry_and_exception_handler_blocks)
 {
     test::VmTestContext context;
     CodeObject *code_object = context.compile_file(L"try:\n"
@@ -312,23 +312,50 @@ TEST(BytecodeDecoder, builds_normal_control_flow_and_exception_entrances)
     ASSERT_EQ(4, decoder.blocks().size());
 
     const BytecodeBlock &protected_block = find_block(decoder, 0);
+    EXPECT_EQ(protected_block.id(), decoder.entry_block_id());
     EXPECT_EQ(4, protected_block.end_pc_offset());
     EXPECT_TRUE(protected_block.successors().empty());
-    ASSERT_TRUE(protected_block.exception_handler_index().has_value());
-    EXPECT_EQ(0, *protected_block.exception_handler_index());
 
     const BytecodeBlock &jump_over_handler = find_block(decoder, 4);
     ASSERT_EQ(1, jump_over_handler.successors().size());
     EXPECT_EQ(find_block(decoder, 16).id(), jump_over_handler.successors()[0]);
 
     const BytecodeBlock &handler = find_block(decoder, 7);
-    ASSERT_EQ(1, handler.exception_entrances().size());
-    EXPECT_EQ(0, handler.exception_entrances()[0]);
+    ASSERT_EQ(1, decoder.exception_handler_block_ids().size());
+    EXPECT_EQ(handler.id(), decoder.exception_handler_block_ids()[0]);
     ASSERT_EQ(1, handler.successors().size());
     EXPECT_EQ(find_block(decoder, 16).id(), handler.successors()[0]);
 
     const BytecodeBlock &join = find_block(decoder, 16);
     EXPECT_EQ(2, join.predecessors().size());
+}
+
+TEST(BytecodeDecoder, exception_spans_do_not_split_blocks)
+{
+    test::VmTestContext context;
+    CodeObject *code_object = context.compile_file(L"1\n2\n3\n4\n");
+
+    std::vector<uint32_t> instruction_offsets;
+    for(uint32_t pc_offset = 0; pc_offset < code_object->size();)
+    {
+        instruction_offsets.push_back(pc_offset);
+        pc_offset =
+            decode_instruction(*code_object, pc_offset).next_pc_offset();
+    }
+    ASSERT_GE(instruction_offsets.size(), 4);
+
+    uint32_t span_start = instruction_offsets[1];
+    uint32_t span_end = instruction_offsets[2];
+    uint32_t handler = instruction_offsets[3];
+    code_object->exception_table.push_back({span_start, span_end, handler});
+
+    BytecodeDecoder decoder(*code_object);
+    ASSERT_EQ(2, decoder.blocks().size());
+    EXPECT_EQ(0, decoder.blocks()[0].start_pc_offset());
+    EXPECT_EQ(handler, decoder.blocks()[1].start_pc_offset());
+    ASSERT_EQ(1, decoder.exception_handler_block_ids().size());
+    EXPECT_EQ(decoder.blocks()[1].id(),
+              decoder.exception_handler_block_ids()[0]);
 }
 
 TEST(BytecodeDecoder, records_conditional_edges_and_loop_backedges)

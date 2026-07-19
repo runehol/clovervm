@@ -5,7 +5,6 @@
 #include "bytecode/code_object.h"
 
 #include <cstdint>
-#include <optional>
 #include <vector>
 
 namespace cl
@@ -93,16 +92,6 @@ namespace cl
             return successors_;
         }
 
-        std::optional<uint32_t> exception_handler_index() const
-        {
-            return exception_handler_index_;
-        }
-
-        const std::vector<uint32_t> &exception_entrances() const
-        {
-            return exception_entrances_;
-        }
-
         BytecodeInstructionRange instructions() const
         {
             return {decoder_, start_pc_offset_, end_pc_offset_};
@@ -124,8 +113,6 @@ namespace cl
         uint32_t end_pc_offset_;
         std::vector<BytecodeBlockId> predecessors_;
         std::vector<BytecodeBlockId> successors_;
-        std::optional<uint32_t> exception_handler_index_;
-        std::vector<uint32_t> exception_entrances_;
     };
 
     class BytecodeDecoder
@@ -139,6 +126,12 @@ namespace cl
         BytecodeDecoder &operator=(BytecodeDecoder &&) = delete;
 
         const std::vector<BytecodeBlock> &blocks() const { return blocks_; }
+        BytecodeBlockId entry_block_id() const { return 0; }
+
+        const std::vector<BytecodeBlockId> &exception_handler_block_ids() const
+        {
+            return exception_handler_block_ids_;
+        }
 
     private:
         friend class BytecodeInstructionIterator;
@@ -149,6 +142,7 @@ namespace cl
         const CodeObject &code_object_;
         InlineCacheTables inline_caches_;
         std::vector<BytecodeBlock> blocks_;
+        std::vector<BytecodeBlockId> exception_handler_block_ids_;
     };
 
 }  // namespace cl
