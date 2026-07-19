@@ -449,13 +449,53 @@ namespace cl
 
     struct KeywordCallInlineCache
     {
+        KeywordCallInlineCache() = default;
+
+        KeywordCallInlineCache(const KeywordCallInlineCache &other)
+        {
+            *this = other;
+        }
+
+        KeywordCallInlineCache &operator=(const KeywordCallInlineCache &other)
+        {
+            if(this == &other)
+            {
+                return *this;
+            }
+
+            std::unique_ptr<int8_t[]> cloned_keyword_dest_regs;
+            if(other.keyword_dest_regs != nullptr)
+            {
+                cloned_keyword_dest_regs =
+                    std::make_unique<int8_t[]>(other.n_kw_args);
+                std::copy_n(other.keyword_dest_regs.get(), other.n_kw_args,
+                            cloned_keyword_dest_regs.get());
+            }
+
+            guard_value = other.guard_value;
+            function = other.function;
+            code_object = other.code_object;
+            validity_cell = other.validity_cell;
+            keyword_dest_regs = std::move(cloned_keyword_dest_regs);
+            default_fill_start_slot = other.default_fill_start_slot;
+            n_pos_args = other.n_pos_args;
+            n_kw_args = other.n_kw_args;
+            adaptation = other.adaptation;
+            return *this;
+        }
+
+        KeywordCallInlineCache(KeywordCallInlineCache &&) noexcept = default;
+        KeywordCallInlineCache &
+        operator=(KeywordCallInlineCache &&) noexcept = default;
+
         Value guard_value = Value::not_present();
         Function *function = nullptr;
         CodeObject *code_object = nullptr;
         ValidityCell *validity_cell = nullptr;
         std::unique_ptr<int8_t[]> keyword_dest_regs;
-        uint8_t n_pos_args = UINT8_MAX;
         uint16_t default_fill_start_slot = 0;
+        uint8_t n_pos_args = UINT8_MAX;
+        uint8_t n_kw_args = 0;
         FunctionCallAdaptation adaptation = FunctionCallAdaptation::FixedArity;
     };
 

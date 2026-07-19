@@ -1270,7 +1270,7 @@ namespace cl
 
     static ALWAYSINLINE void populate_keyword_call_cache_with_guard(
         KeywordCallInlineCache &cache, Value guard_value, TValue<Function> fun,
-        ValidityCell *validity_cell, uint32_t n_pos_args,
+        ValidityCell *validity_cell, uint32_t n_pos_args, uint32_t n_kw_args,
         uint32_t default_fill_start_slot,
         std::unique_ptr<int8_t[]> keyword_dest_regs)
     {
@@ -1280,6 +1280,8 @@ namespace cl
         cache.validity_cell = validity_cell;
         assert(n_pos_args <= UINT8_MAX);
         cache.n_pos_args = uint8_t(n_pos_args);
+        assert(n_kw_args <= UINT8_MAX);
+        cache.n_kw_args = uint8_t(n_kw_args);
         assert(default_fill_start_slot <= UINT16_MAX);
         cache.default_fill_start_slot = uint16_t(default_fill_start_slot);
         if(fun.extract()->has_varargs() || fun.extract()->has_kwargs())
@@ -1419,7 +1421,7 @@ namespace cl
         uint32_t default_fill_start_slot =
             default_fill_start_slot_for_keyword_call(fun, n_filled_by_position);
         populate_keyword_call_cache_with_guard(
-            candidate, guard_value, fun, validity_cell, n_pos_args,
+            candidate, guard_value, fun, validity_cell, n_pos_args, n_kw_args,
             default_fill_start_slot, std::move(keyword_dest_regs));
         cache = std::move(candidate);
         return Expected<void>::ok();

@@ -206,6 +206,11 @@ snapshot. The iterator uses the standalone semantic decoder, resolves its
 typed cache reference against the decoder-owned snapshot tables, and attaches
 a pointer to stable immutable snapshot storage.
 
+The snapshot tables use the same inline-cache structs as `CodeObject`; there
+is no parallel snapshot type hierarchy. Copying a `KeywordCallInlineCache`
+deep-copies its keyword-destination register array using the cache's stored
+`n_kw_args` length. All other current cache structs are directly copyable.
+
 The snapshot convention is:
 
 ```text

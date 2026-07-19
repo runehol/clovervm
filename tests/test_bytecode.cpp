@@ -3,7 +3,9 @@
 #include "bytecode/code_object.h"
 #include "test_helpers.h"
 #include <gtest/gtest.h>
+#include <memory>
 #include <string_view>
+#include <vector>
 
 using namespace cl;
 
@@ -217,4 +219,30 @@ TEST(BytecodeInstruction, range_loop_effects_are_uniform_and_rmw)
     ASSERT_TRUE(backedge.jump_target_pc_offset().has_value());
     EXPECT_LT(backedge.operands()[0].signed_value(), 0);
     EXPECT_EQ(11, *backedge.jump_target_pc_offset());
+}
+
+TEST(KeywordCallInlineCache, copy_clones_keyword_destination_registers)
+{
+    std::vector<KeywordCallInlineCache> live_caches(1);
+    KeywordCallInlineCache &live = live_caches[0];
+    live.guard_value = Value::from_smi(42);
+    live.n_kw_args = 3;
+    live.keyword_dest_regs = std::make_unique<int8_t[]>(live.n_kw_args);
+    live.keyword_dest_regs[0] = -1;
+    live.keyword_dest_regs[1] = -2;
+    live.keyword_dest_regs[2] = -3;
+
+    std::vector<KeywordCallInlineCache> snapshots = live_caches;
+    ASSERT_EQ(1, snapshots.size());
+    const KeywordCallInlineCache &snapshot = snapshots[0];
+    EXPECT_EQ(live.guard_value, snapshot.guard_value);
+    EXPECT_EQ(live.n_kw_args, snapshot.n_kw_args);
+    ASSERT_NE(nullptr, snapshot.keyword_dest_regs);
+    EXPECT_NE(live.keyword_dest_regs.get(), snapshot.keyword_dest_regs.get());
+    EXPECT_EQ(-1, snapshot.keyword_dest_regs[0]);
+    EXPECT_EQ(-2, snapshot.keyword_dest_regs[1]);
+    EXPECT_EQ(-3, snapshot.keyword_dest_regs[2]);
+
+    live.keyword_dest_regs[1] = -4;
+    EXPECT_EQ(-2, snapshot.keyword_dest_regs[1]);
 }
