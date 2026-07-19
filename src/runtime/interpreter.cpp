@@ -6321,8 +6321,9 @@ namespace cl
         fmt::memory_buffer buffer;
         auto out = std::back_inserter(buffer);
         fmt::formatter<CodeObject> formatter;
-        formatter.disassemble_instruction(
-            *code_object, out, code_object->offset_for_interpreted_pc(pc));
+        BytecodeInstruction instruction = decode_instruction(
+            *code_object, code_object->offset_for_interpreted_pc(pc));
+        formatter.disassemble_instruction(*code_object, out, instruction);
         fmt::print(stderr, "{}", fmt::to_string(buffer));
     }
 

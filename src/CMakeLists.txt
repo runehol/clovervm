@@ -26,6 +26,8 @@ add_library(libclovervm_objects OBJECT
     compiler/ast_print.h
     object_model/builtin_class_registry.h
     bytecode/bytecode.h
+    bytecode/bytecode_instruction.cpp
+    bytecode/bytecode_instruction.h
     api/clover_api.cpp
     "${CMAKE_SOURCE_DIR}/include/clovervm/clovervm.h"
     "${CMAKE_SOURCE_DIR}/include/clovervm/native_module.h"

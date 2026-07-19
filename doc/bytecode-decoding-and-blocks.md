@@ -36,9 +36,10 @@ flow. `BytecodeDecoder` owns compilation-scoped feedback snapshots and the list
 of bytecode blocks.
 
 The authoritative physical opcode schema, generated `Bytecode` enum, generated
-opcode names, and format metadata are implemented. Standalone semantic
-decoding, bytecode block discovery, and compilation-scoped feedback snapshots
-remain to be implemented.
+opcode names and format metadata, standalone semantic decoding, and migration
+of the printer and tracer to standalone decoding are implemented. Bytecode
+block discovery and compilation-scoped feedback snapshots remain to be
+implemented.
 
 ## Ownership and Pipeline
 
@@ -101,9 +102,9 @@ BytecodeInstruction
 decode_instruction(const CodeObject &code_object, uint32_t pc);
 ```
 
-It decodes one semantic instruction starting at `pc`. The returned value is
-self-contained: fixed-size operand data is stored inline rather than referring
-to temporary decoder storage. It provides at least:
+It decodes one semantic instruction starting at `pc`. The returned value owns
+its operands and value effects rather than referring to temporary decoder
+storage. It provides at least:
 
 ```cpp
 class BytecodeInstruction
@@ -111,19 +112,26 @@ class BytecodeInstruction
 public:
     uint32_t pc() const;
     uint32_t next_pc() const;
-    Optional<uint32_t> continuation_pc() const;
+    std::optional<uint32_t> continuation_pc() const;
 
-    SemanticOpcode opcode() const;
-    ArrayRef<ValueLocation> sources() const;
-    ArrayRef<ValueLocation> destinations() const;
+    Bytecode encoded_opcode() const;
+    Bytecode semantic_opcode() const;
+    const std::vector<BytecodeOperand> &operands() const;
+    const std::vector<BytecodeValueLocation> &sources() const;
+    const std::vector<BytecodeValueLocation> &destinations() const;
 
-    Optional<InlineCacheReference> inline_cache_reference() const;
-    const InlineCacheSnapshot *inline_cache_snapshot() const;
+    std::optional<InlineCacheReference> cache() const;
+    std::optional<InlineCacheReference> cache2() const;
 };
 ```
 
-The precise operand and feedback types remain implementation choices. The
-semantic requirements are:
+`encoded_opcode()` preserves compact physical spellings such as `Star0`, while
+`semantic_opcode()` normalizes them to their semantic operation such as
+`Star`. The second cache member is an intentionally temporary concession for
+the few current instructions that carry two cache indexes; it is not a general
+multi-cache abstraction.
+
+The semantic requirements are:
 
 - accumulator reads and writes are explicit;
 - register operands are decoded into semantic locations;
@@ -133,11 +141,11 @@ semantic requirements are:
 - `continuation_pc` preserves a separately resumable internal continuation;
 - standalone decoding does not snapshot or attach inline-cache state.
 
-For a standalone result, `inline_cache_reference()` identifies whether the
-encoded instruction has a cache and which typed cache entry it addresses.
-`inline_cache_snapshot()` is null because there is no compilation-scoped
-snapshot. Null snapshot state therefore does not conflate an instruction with
-no cache and an instruction whose cache is uninitialized.
+For a standalone result, `cache()` and, where necessary, `cache2()` identify
+whether the encoded instruction has a cache and which typed cache entry it
+addresses. There are no snapshot pointers because there is no
+compilation-scoped snapshot. The block iterator will resolve these references
+against decoder-owned snapshot storage.
 
 The full bytecode printer and instruction tracer are built on this API. Full
 printing repeatedly advances by `next_pc`; tracing decodes only the instruction
@@ -198,14 +206,14 @@ a pointer to stable immutable snapshot storage.
 The snapshot convention is:
 
 ```text
-no encoded IC       inline_cache_reference = none
-                    inline_cache_snapshot  = null
+no encoded IC       cache reference = none
+                    snapshot pointer = null
 
-uninitialized IC    inline_cache_reference = typed index
-                    inline_cache_snapshot  = non-null Uninitialized snapshot
+uninitialized IC    cache reference = typed index
+                    snapshot pointer = non-null Uninitialized snapshot
 
-initialized IC      inline_cache_reference = typed index
-                    inline_cache_snapshot  = non-null initialized snapshot
+initialized IC      cache reference = typed index
+                    snapshot pointer = non-null initialized snapshot
 ```
 
 The decoder and the storage referenced by its blocks, instruction views, and
@@ -321,12 +329,12 @@ both control edges: the body edge receives the next item and the exhausted edge
 receives `None`. They therefore have the same accumulator destination
 regardless of the successor.
 
-`ForPrepRange1`, `ForPrepRange2`, and `ForPrepRange3` expose their range-register
-span as read-modify-write state:
+`ForPrepRange1`, `ForPrepRange2`, and `ForPrepRange3` expose every range
+register as both a source and a destination:
 
 ```text
-sources:      range register span
-destinations: the same range register span
+sources:      each range register
+destinations: each range register
 ```
 
 On a fallback outcome a destination may retain its input value; on a prepared

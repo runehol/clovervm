@@ -3,6 +3,7 @@
 
 #include "builtin_types/str.h"
 #include "builtin_types/tuple.h"
+#include "bytecode/bytecode_instruction.h"
 #include "bytecode/code_object.h"
 #include "object_model/class_object.h"
 #include <cassert>
@@ -258,8 +259,17 @@ template <> struct fmt::formatter<cl::CodeObject>
     uint32_t disassemble_instruction(const cl::CodeObject &code_obj, Out &out,
                                      uint32_t pc) const
     {
+        return disassemble_instruction(code_obj, out,
+                                       cl::decode_instruction(code_obj, pc));
+    }
 
-        cl::Bytecode bc = cl::Bytecode(code_obj.code[pc]);
+    template <typename Out>
+    uint32_t
+    disassemble_instruction(const cl::CodeObject &code_obj, Out &out,
+                            const cl::BytecodeInstruction &instruction) const
+    {
+        uint32_t pc = instruction.pc();
+        cl::Bytecode bc = instruction.encoded_opcode();
         format_to(out, "{:5d} {}", pc, bc);
 
         ++pc;
@@ -853,7 +863,8 @@ template <> struct fmt::formatter<cl::CodeObject>
                 break;
         }
         format_to(out, "\n");
-        return pc;
+        assert(pc == instruction.next_pc());
+        return instruction.next_pc();
     }
 
     template <typename FormatContext>
