@@ -229,7 +229,11 @@ The Clover stack contains only VM-controlled managed state:
 - future compiled managed frames that obey this convention.
 
 The native stack contains interpreter implementation frames, runtime helpers,
-native builtins, extension code, ABI spills, and native return addresses.
+native builtins, extension code, host-ABI spills, and host-ABI return addresses.
+Future compiled managed code may use the Clover stack as its architectural
+stack and consume the compiled-return-PC header slot with a native return
+instruction. It must switch back to the native stack before calling arbitrary C
+or C++ code, as required by the native/managed boundary contract.
 
 Managed stack scanning must understand which Clover slots are live values,
 padding, or frame metadata. It must not rely on scanning arbitrary native stack
@@ -252,7 +256,7 @@ be rooted or owned through the appropriate explicit mechanism.
 - Public calls use `Function` entry semantics; direct code-object entry is an
   internal pre-adapted operation.
 - Method receiver binding changes argument contents, not frame layout.
-- Native execution remains on the native stack.
+- C, C++, and other host-ABI execution remains on the native stack.
 - Safepoint scanning distinguishes live managed values from padding and frame
   payload metadata.
 - Changes to header layout, register encoding, alignment, or entry/return shape
