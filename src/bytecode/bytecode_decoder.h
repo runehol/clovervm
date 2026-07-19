@@ -146,7 +146,6 @@ namespace cl
         void build_blocks();
         BytecodeInstruction decode_instruction_at(uint32_t pc_offset) const;
         uint32_t next_instruction_offset(uint32_t pc_offset) const;
-        void attach_snapshot(InlineCacheReference &cache) const;
 
         const CodeObject &code_object_;
         InlineCacheTables inline_caches_;

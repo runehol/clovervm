@@ -4,52 +4,79 @@
 
 namespace cl
 {
-    const AttributeReadInlineCache *
-    InlineCacheReference::attribute_read_snapshot() const
+    template <typename Cache>
+    static const Cache *cache_at(const std::vector<Cache> &caches,
+                                 int16_t index)
     {
-        assert(kind == InlineCacheKind::AttributeRead);
-        return static_cast<const AttributeReadInlineCache *>(snapshot_);
+        if(index < 0)
+        {
+            return nullptr;
+        }
+        assert(size_t(index) < caches.size());
+        return &caches[size_t(index)];
+    }
+
+    const AttributeReadInlineCache *
+    BytecodeInstruction::attribute_read_cache() const
+    {
+        return inline_cache_tables_ == nullptr
+                   ? nullptr
+                   : cache_at(inline_cache_tables_->attribute_read_caches,
+                              attribute_read_cache_index_);
     }
 
     const AttributeMutationInlineCache *
-    InlineCacheReference::attribute_mutation_snapshot() const
+    BytecodeInstruction::attribute_mutation_cache() const
     {
-        assert(kind == InlineCacheKind::AttributeMutation);
-        return static_cast<const AttributeMutationInlineCache *>(snapshot_);
+        return inline_cache_tables_ == nullptr
+                   ? nullptr
+                   : cache_at(inline_cache_tables_->attribute_mutation_caches,
+                              attribute_mutation_cache_index_);
     }
 
     const ModuleGlobalReadInlineCache *
-    InlineCacheReference::module_global_read_snapshot() const
+    BytecodeInstruction::module_global_read_cache() const
     {
-        assert(kind == InlineCacheKind::ModuleGlobalRead);
-        return static_cast<const ModuleGlobalReadInlineCache *>(snapshot_);
+        return inline_cache_tables_ == nullptr
+                   ? nullptr
+                   : cache_at(inline_cache_tables_->module_global_read_caches,
+                              module_global_read_cache_index_);
     }
 
     const ModuleGlobalMutationInlineCache *
-    InlineCacheReference::module_global_mutation_snapshot() const
+    BytecodeInstruction::module_global_mutation_cache() const
     {
-        assert(kind == InlineCacheKind::ModuleGlobalMutation);
-        return static_cast<const ModuleGlobalMutationInlineCache *>(snapshot_);
+        return inline_cache_tables_ == nullptr
+                   ? nullptr
+                   : cache_at(
+                         inline_cache_tables_->module_global_mutation_caches,
+                         module_global_mutation_cache_index_);
     }
 
     const FunctionCallInlineCache *
-    InlineCacheReference::function_call_snapshot() const
+    BytecodeInstruction::function_call_cache() const
     {
-        assert(kind == InlineCacheKind::FunctionCall);
-        return static_cast<const FunctionCallInlineCache *>(snapshot_);
+        return inline_cache_tables_ == nullptr
+                   ? nullptr
+                   : cache_at(inline_cache_tables_->function_call_caches,
+                              function_call_cache_index_);
     }
 
     const KeywordCallInlineCache *
-    InlineCacheReference::keyword_call_snapshot() const
+    BytecodeInstruction::keyword_call_cache() const
     {
-        assert(kind == InlineCacheKind::KeywordCall);
-        return static_cast<const KeywordCallInlineCache *>(snapshot_);
+        return inline_cache_tables_ == nullptr
+                   ? nullptr
+                   : cache_at(inline_cache_tables_->keyword_call_caches,
+                              keyword_call_cache_index_);
     }
 
-    const OperatorInlineCache *InlineCacheReference::operator_snapshot() const
+    const OperatorInlineCache *BytecodeInstruction::operator_cache() const
     {
-        assert(kind == InlineCacheKind::Operator);
-        return static_cast<const OperatorInlineCache *>(snapshot_);
+        return inline_cache_tables_ == nullptr
+                   ? nullptr
+                   : cache_at(inline_cache_tables_->operator_caches,
+                              operator_cache_index_);
     }
 
     static int16_t read_int16_le(const uint8_t *p)
@@ -76,40 +103,6 @@ namespace cl
             return {BytecodeValueLocationKind::Local, register_index};
         }
         return {BytecodeValueLocationKind::Temporary, register_index};
-    }
-
-    static std::optional<InlineCacheKind>
-    inline_cache_kind(BytecodeOperandKind kind)
-    {
-        switch(kind)
-        {
-            case BytecodeOperandKind::AttributeReadCache:
-                return InlineCacheKind::AttributeRead;
-            case BytecodeOperandKind::AttributeMutationCache:
-                return InlineCacheKind::AttributeMutation;
-            case BytecodeOperandKind::ModuleGlobalReadCache:
-                return InlineCacheKind::ModuleGlobalRead;
-            case BytecodeOperandKind::ModuleGlobalMutationCache:
-                return InlineCacheKind::ModuleGlobalMutation;
-            case BytecodeOperandKind::FunctionCallCache:
-                return InlineCacheKind::FunctionCall;
-            case BytecodeOperandKind::KeywordCallCache:
-                return InlineCacheKind::KeywordCall;
-            case BytecodeOperandKind::OperatorCache:
-                return InlineCacheKind::Operator;
-            case BytecodeOperandKind::Register:
-            case BytecodeOperandKind::Constant:
-            case BytecodeOperandKind::Smi8:
-            case BytecodeOperandKind::Count:
-            case BytecodeOperandKind::ArgumentCount:
-            case BytecodeOperandKind::KeywordCount:
-            case BytecodeOperandKind::ImportLevel:
-            case BytecodeOperandKind::RelativeJumpI16:
-            case BytecodeOperandKind::NativeTarget:
-            case BytecodeOperandKind::RuntimeIntrinsic:
-                return std::nullopt;
-        }
-        return std::nullopt;
     }
 
     class BytecodeInstruction::EffectsBuilder
@@ -702,19 +695,42 @@ namespace cl
             }
 
             instruction.operands_.push_back({kind, value});
-            std::optional<InlineCacheKind> cache_kind = inline_cache_kind(kind);
-            if(cache_kind.has_value())
+            switch(kind)
             {
-                InlineCacheReference cache = {*cache_kind, uint8_t(value)};
-                if(!instruction.cache_.has_value())
-                {
-                    instruction.cache_ = cache;
-                }
-                else
-                {
-                    assert(!instruction.cache2_.has_value());
-                    instruction.cache2_ = cache;
-                }
+                case BytecodeOperandKind::AttributeReadCache:
+                    assert(instruction.attribute_read_cache_index_ == -1);
+                    instruction.attribute_read_cache_index_ = int16_t(value);
+                    break;
+                case BytecodeOperandKind::AttributeMutationCache:
+                    assert(instruction.attribute_mutation_cache_index_ == -1);
+                    instruction.attribute_mutation_cache_index_ =
+                        int16_t(value);
+                    break;
+                case BytecodeOperandKind::ModuleGlobalReadCache:
+                    assert(instruction.module_global_read_cache_index_ == -1);
+                    instruction.module_global_read_cache_index_ =
+                        int16_t(value);
+                    break;
+                case BytecodeOperandKind::ModuleGlobalMutationCache:
+                    assert(instruction.module_global_mutation_cache_index_ ==
+                           -1);
+                    instruction.module_global_mutation_cache_index_ =
+                        int16_t(value);
+                    break;
+                case BytecodeOperandKind::FunctionCallCache:
+                    assert(instruction.function_call_cache_index_ == -1);
+                    instruction.function_call_cache_index_ = int16_t(value);
+                    break;
+                case BytecodeOperandKind::KeywordCallCache:
+                    assert(instruction.keyword_call_cache_index_ == -1);
+                    instruction.keyword_call_cache_index_ = int16_t(value);
+                    break;
+                case BytecodeOperandKind::OperatorCache:
+                    assert(instruction.operator_cache_index_ == -1);
+                    instruction.operator_cache_index_ = int16_t(value);
+                    break;
+                default:
+                    break;
             }
         }
 

@@ -165,9 +165,13 @@ TEST(BytecodeInstruction, compound_operator_exposes_continuation)
     EXPECT_EQ(*instruction.continuation_pc_offset() +
                   bytecode_length(Bytecode::CheckOperatorNotImplemented),
               instruction.next_pc_offset());
-    ASSERT_TRUE(instruction.cache().has_value());
-    EXPECT_EQ(InlineCacheKind::Operator, instruction.cache()->kind);
-    EXPECT_FALSE(instruction.cache2().has_value());
+    EXPECT_EQ(nullptr, instruction.operator_cache());
+    EXPECT_NE(instruction.operands().end(),
+              std::find_if(
+                  instruction.operands().begin(), instruction.operands().end(),
+                  [](const BytecodeOperand &operand) {
+                      return operand.kind == BytecodeOperandKind::OperatorCache;
+                  }));
     ASSERT_EQ(1, instruction.sources().size());
     ASSERT_EQ(1, instruction.destinations().size());
     EXPECT_EQ(BytecodeValueLocationKind::Accumulator,
@@ -182,23 +186,50 @@ TEST(BytecodeInstruction, compound_operator_exposes_continuation)
     EXPECT_FALSE(continuation.continuation_pc_offset().has_value());
 }
 
-TEST(BytecodeInstruction, two_cache_instruction_uses_cache_and_cache2)
+TEST(BytecodeInstruction, two_cache_instruction_preserves_both_typed_operands)
 {
     test::VmTestContext context;
     CodeObject *code_object = context.compile_file(L"x.bit_length()\n");
 
     BytecodeInstruction instruction =
         find_instruction(*code_object, Bytecode::CallMethodAttrPositional);
-    ASSERT_TRUE(instruction.cache().has_value());
-    ASSERT_TRUE(instruction.cache2().has_value());
-    EXPECT_EQ(InlineCacheKind::AttributeRead, instruction.cache()->kind);
-    EXPECT_EQ(InlineCacheKind::FunctionCall, instruction.cache2()->kind);
+    EXPECT_EQ(nullptr, instruction.attribute_read_cache());
+    EXPECT_EQ(nullptr, instruction.function_call_cache());
+    bool has_attribute_read_cache = false;
+    bool has_function_call_cache = false;
+    for(const BytecodeOperand &operand: instruction.operands())
+    {
+        has_attribute_read_cache |=
+            operand.kind == BytecodeOperandKind::AttributeReadCache;
+        has_function_call_cache |=
+            operand.kind == BytecodeOperandKind::FunctionCallCache;
+    }
+    EXPECT_TRUE(has_attribute_read_cache);
+    EXPECT_TRUE(has_function_call_cache);
     ASSERT_EQ(1, instruction.sources().size());
     EXPECT_EQ(BytecodeValueLocationKind::Temporary,
               instruction.sources()[0].kind);
     ASSERT_EQ(1, instruction.destinations().size());
     EXPECT_EQ(BytecodeValueLocationKind::Accumulator,
               instruction.destinations()[0].kind);
+
+    BytecodeDecoder decoder(*code_object);
+    bool found_decoded_call = false;
+    for(const BytecodeBlock &block: decoder.blocks())
+    {
+        for(BytecodeInstruction decoded: block.instructions())
+        {
+            if(decoded.encoded_opcode() == Bytecode::CallMethodAttrPositional)
+            {
+                found_decoded_call = true;
+                EXPECT_NE(nullptr, decoded.attribute_read_cache());
+                EXPECT_NE(nullptr, decoded.function_call_cache());
+                EXPECT_EQ(nullptr, decoded.keyword_call_cache());
+                EXPECT_EQ(nullptr, decoded.operator_cache());
+            }
+        }
+    }
+    EXPECT_TRUE(found_decoded_call);
 }
 
 TEST(BytecodeInstruction, range_loop_effects_are_uniform_and_rmw)
@@ -343,6 +374,8 @@ TEST(BytecodeDecoder, block_iteration_yields_compound_operator_once)
             {
                 ++operator_count;
                 ASSERT_TRUE(instruction.continuation_pc_offset().has_value());
+                EXPECT_NE(nullptr, instruction.operator_cache());
+                EXPECT_EQ(nullptr, instruction.function_call_cache());
             }
             EXPECT_NE(Bytecode::CheckOperatorNotImplemented,
                       instruction.encoded_opcode());
@@ -365,8 +398,7 @@ TEST(BytecodeDecoder, block_instructions_use_stable_cache_snapshots)
 
     BytecodeInstruction standalone =
         find_instruction(*code_object, Bytecode::CallPositional);
-    ASSERT_TRUE(standalone.cache().has_value());
-    EXPECT_EQ(nullptr, standalone.cache()->function_call_snapshot());
+    EXPECT_EQ(nullptr, standalone.function_call_cache());
 
     BytecodeDecoder decoder(*code_object);
     live_cache.n_args = 37;
@@ -378,8 +410,7 @@ TEST(BytecodeDecoder, block_instructions_use_stable_cache_snapshots)
         {
             if(instruction.encoded_opcode() == Bytecode::CallPositional)
             {
-                ASSERT_TRUE(instruction.cache().has_value());
-                snapshot = instruction.cache()->function_call_snapshot();
+                snapshot = instruction.function_call_cache();
             }
         }
     }

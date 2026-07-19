@@ -15,6 +15,7 @@ namespace cl
     class ModuleGlobalMutationInlineCache;
     class ModuleGlobalReadInlineCache;
     struct FunctionCallInlineCache;
+    struct InlineCacheTables;
     struct KeywordCallInlineCache;
     struct OperatorInlineCache;
 
@@ -50,41 +51,6 @@ namespace cl
         {
             return kind == BytecodeValueLocationKind::Accumulator;
         }
-    };
-
-    enum class InlineCacheKind : uint8_t
-    {
-        AttributeRead,
-        AttributeMutation,
-        ModuleGlobalRead,
-        ModuleGlobalMutation,
-        FunctionCall,
-        KeywordCall,
-        Operator,
-    };
-
-    struct InlineCacheReference
-    {
-        InlineCacheReference(InlineCacheKind kind, uint8_t index)
-            : kind(kind), index(index)
-        {
-        }
-
-        InlineCacheKind kind;
-        uint8_t index;
-
-        const AttributeReadInlineCache *attribute_read_snapshot() const;
-        const AttributeMutationInlineCache *attribute_mutation_snapshot() const;
-        const ModuleGlobalReadInlineCache *module_global_read_snapshot() const;
-        const ModuleGlobalMutationInlineCache *
-        module_global_mutation_snapshot() const;
-        const FunctionCallInlineCache *function_call_snapshot() const;
-        const KeywordCallInlineCache *keyword_call_snapshot() const;
-        const OperatorInlineCache *operator_snapshot() const;
-
-    private:
-        friend class BytecodeDecoder;
-        const void *snapshot_ = nullptr;
     };
 
     class BytecodeInstruction
@@ -126,9 +92,14 @@ namespace cl
             return destinations_;
         }
 
-        std::optional<InlineCacheReference> cache() const { return cache_; }
-
-        std::optional<InlineCacheReference> cache2() const { return cache2_; }
+        const AttributeReadInlineCache *attribute_read_cache() const;
+        const AttributeMutationInlineCache *attribute_mutation_cache() const;
+        const ModuleGlobalReadInlineCache *module_global_read_cache() const;
+        const ModuleGlobalMutationInlineCache *
+        module_global_mutation_cache() const;
+        const FunctionCallInlineCache *function_call_cache() const;
+        const KeywordCallInlineCache *keyword_call_cache() const;
+        const OperatorInlineCache *operator_cache() const;
 
     private:
         friend class BytecodeDecoder;
@@ -149,8 +120,15 @@ namespace cl
         std::vector<BytecodeOperand> operands_;
         std::vector<BytecodeValueLocation> sources_;
         std::vector<BytecodeValueLocation> destinations_;
-        std::optional<InlineCacheReference> cache_;
-        std::optional<InlineCacheReference> cache2_;
+
+        const InlineCacheTables *inline_cache_tables_ = nullptr;
+        int16_t attribute_read_cache_index_ = -1;
+        int16_t attribute_mutation_cache_index_ = -1;
+        int16_t module_global_read_cache_index_ = -1;
+        int16_t module_global_mutation_cache_index_ = -1;
+        int16_t function_call_cache_index_ = -1;
+        int16_t keyword_call_cache_index_ = -1;
+        int16_t operator_cache_index_ = -1;
     };
 
     BytecodeInstruction decode_instruction(const CodeObject &code_object,

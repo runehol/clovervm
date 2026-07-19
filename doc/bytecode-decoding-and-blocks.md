@@ -119,16 +119,19 @@ public:
     const std::vector<BytecodeValueLocation> &sources() const;
     const std::vector<BytecodeValueLocation> &destinations() const;
 
-    std::optional<InlineCacheReference> cache() const;
-    std::optional<InlineCacheReference> cache2() const;
+    const AttributeReadInlineCache *attribute_read_cache() const;
+    const AttributeMutationInlineCache *attribute_mutation_cache() const;
+    const ModuleGlobalReadInlineCache *module_global_read_cache() const;
+    const ModuleGlobalMutationInlineCache *module_global_mutation_cache() const;
+    const FunctionCallInlineCache *function_call_cache() const;
+    const KeywordCallInlineCache *keyword_call_cache() const;
+    const OperatorInlineCache *operator_cache() const;
 };
 ```
 
 `encoded_opcode()` preserves compact physical spellings such as `Star0`, while
 `semantic_opcode()` normalizes them to their semantic operation such as
-`Star`. The second cache member is an intentionally temporary concession for
-the few current instructions that carry two cache indexes; it is not a general
-multi-cache abstraction.
+`Star`.
 
 The semantic requirements are:
 
@@ -142,11 +145,17 @@ The semantic requirements are:
   continuation;
 - standalone decoding does not snapshot or attach inline-cache state.
 
-For a standalone result, `cache()` and, where necessary, `cache2()` identify
-whether the encoded instruction has a cache and which typed cache entry it
-addresses. There are no snapshot pointers because there is no
-compilation-scoped snapshot. The block iterator will resolve these references
-against decoder-owned snapshot storage.
+Internally, `BytecodeInstruction` has one signed `int16_t` index per cache
+table. An index of `-1` means that the instruction has no cache of that kind;
+otherwise it is the encoded cache index. This naturally handles instructions
+that have caches of two different kinds without a generic cache-reference
+abstraction.
+
+The instruction also has a possibly-null `InlineCacheTables` pointer. Each
+typed cache accessor returns null when its index is `-1` or the tables pointer
+is null, and otherwise returns the indexed entry. Standalone decoding leaves
+the tables pointer null. The typed cache operands remain available in
+`operands()` for diagnostic consumers that need the encoded indexes.
 
 The full bytecode printer and instruction tracer are built on this API. Full
 printing repeatedly advances by `next_pc_offset`; tracing converts the current
@@ -200,9 +209,8 @@ Construction occurs in this order:
 4. Construct the `BytecodeBlock` list in ascending PC-offset order.
 
 All instructions produced through a block iterator refer to the same feedback
-snapshot. The iterator uses the standalone semantic decoder, resolves its
-typed cache reference against the decoder-owned snapshot tables, and attaches
-a pointer to stable immutable snapshot storage.
+snapshot. The iterator uses the standalone semantic decoder and attaches a
+pointer to the decoder-owned immutable `InlineCacheTables` snapshot.
 
 `CodeObject` groups its seven cache vectors in an `InlineCacheTables`
 aggregate. The decoder copies that aggregate before structural scanning. The
@@ -215,14 +223,16 @@ are directly copyable.
 The snapshot convention is:
 
 ```text
-no encoded IC       cache reference = none
-                    snapshot pointer = null
+no encoded IC       typed index = -1
+                    typed accessor = null
 
-uninitialized IC    cache reference = typed index
-                    snapshot pointer = non-null Uninitialized snapshot
+standalone decode   typed index = encoded index
+                    tables pointer = null
+                    typed accessor = null
 
-initialized IC      cache reference = typed index
-                    snapshot pointer = non-null initialized snapshot
+decoder decode      typed index = encoded index
+                    tables pointer = decoder snapshot
+                    typed accessor = snapshotted entry
 ```
 
 The decoder and the storage referenced by its blocks, instruction views, and

@@ -33,6 +33,12 @@ namespace cl
                    : Bytecode::CheckTernaryOperatorNotImplemented;
     }
 
+    static bool is_jump(BytecodeControlFlow control_flow)
+    {
+        return control_flow == BytecodeControlFlow::ConditionalJump ||
+               control_flow == BytecodeControlFlow::UnconditionalJump;
+    }
+
     static uint32_t jump_target_offset(const CodeObject &code_object,
                                        uint32_t pc_offset,
                                        const BytecodeInfo &info)
@@ -82,12 +88,8 @@ namespace cl
             return;
         }
 
-        std::vector<bool> semantic_boundaries(code_size + 1, false);
-        semantic_boundaries[code_size] = true;
-
         for(uint32_t pc_offset = 0; pc_offset < code_size;)
         {
-            semantic_boundaries[pc_offset] = true;
             Bytecode opcode = Bytecode(code_object_.code[pc_offset]);
             assert(is_valid_bytecode(opcode));
             const BytecodeInfo &info = bytecode_info(opcode);
@@ -110,6 +112,13 @@ namespace cl
             pc_offset = next_pc_offset;
         }
 
+        auto is_semantic_boundary = [&](uint32_t pc_offset) {
+            return pc_offset == code_size ||
+                   (pc_offset < code_size &&
+                    next_instruction_offsets_[pc_offset] !=
+                        std::numeric_limits<uint32_t>::max());
+        };
+
         std::vector<bool> leaders(code_size + 1, false);
         leaders[0] = true;
 
@@ -120,18 +129,15 @@ namespace cl
             const BytecodeInfo &info = bytecode_info(opcode);
             uint32_t next_pc_offset = next_instruction_offset(pc_offset);
 
-            if(info.control_flow == BytecodeControlFlow::ConditionalJump ||
-               info.control_flow == BytecodeControlFlow::UnconditionalJump)
+            if(is_jump(info.control_flow))
             {
                 uint32_t target =
                     jump_target_offset(code_object_, pc_offset, info);
-                assert(semantic_boundaries[target]);
+                assert(is_semantic_boundary(target));
                 leaders[target] = true;
             }
 
-            if((info.control_flow == BytecodeControlFlow::ConditionalJump ||
-                info.control_flow == BytecodeControlFlow::UnconditionalJump ||
-                info.control_flow == BytecodeControlFlow::Terminator) &&
+            if(info.control_flow != BytecodeControlFlow::Fallthrough &&
                next_pc_offset < code_size)
             {
                 leaders[next_pc_offset] = true;
@@ -143,9 +149,9 @@ namespace cl
             assert(entry.start_pc < entry.end_pc);
             assert(entry.end_pc <= code_size);
             assert(entry.handler_pc < code_size);
-            assert(semantic_boundaries[entry.start_pc]);
-            assert(semantic_boundaries[entry.end_pc]);
-            assert(semantic_boundaries[entry.handler_pc]);
+            assert(is_semantic_boundary(entry.start_pc));
+            assert(is_semantic_boundary(entry.end_pc));
+            assert(is_semantic_boundary(entry.handler_pc));
             leaders[entry.start_pc] = true;
             leaders[entry.end_pc] = true;
             leaders[entry.handler_pc] = true;
@@ -156,7 +162,7 @@ namespace cl
         {
             if(leaders[pc_offset])
             {
-                assert(semantic_boundaries[pc_offset]);
+                assert(is_semantic_boundary(pc_offset));
                 block_starts.push_back(pc_offset);
             }
         }
@@ -209,8 +215,7 @@ namespace cl
                     add_successor(block, successor);
                 }
             }
-            if(info.control_flow == BytecodeControlFlow::ConditionalJump ||
-               info.control_flow == BytecodeControlFlow::UnconditionalJump)
+            if(is_jump(info.control_flow))
             {
                 uint32_t target =
                     jump_target_offset(code_object_, last_pc_offset, info);
@@ -252,14 +257,7 @@ namespace cl
     {
         BytecodeInstruction instruction =
             cl::decode_instruction(code_object_, pc_offset);
-        if(instruction.cache_.has_value())
-        {
-            attach_snapshot(*instruction.cache_);
-        }
-        if(instruction.cache2_.has_value())
-        {
-            attach_snapshot(*instruction.cache2_);
-        }
+        instruction.inline_cache_tables_ = &inline_caches_;
         return instruction;
     }
 
@@ -269,52 +267,6 @@ namespace cl
         uint32_t next = next_instruction_offsets_[pc_offset];
         assert(next != std::numeric_limits<uint32_t>::max());
         return next;
-    }
-
-    void BytecodeDecoder::attach_snapshot(InlineCacheReference &cache) const
-    {
-        switch(cache.kind)
-        {
-            case InlineCacheKind::AttributeRead:
-                assert(cache.index <
-                       inline_caches_.attribute_read_caches.size());
-                cache.snapshot_ =
-                    &inline_caches_.attribute_read_caches[cache.index];
-                break;
-            case InlineCacheKind::AttributeMutation:
-                assert(cache.index <
-                       inline_caches_.attribute_mutation_caches.size());
-                cache.snapshot_ =
-                    &inline_caches_.attribute_mutation_caches[cache.index];
-                break;
-            case InlineCacheKind::ModuleGlobalRead:
-                assert(cache.index <
-                       inline_caches_.module_global_read_caches.size());
-                cache.snapshot_ =
-                    &inline_caches_.module_global_read_caches[cache.index];
-                break;
-            case InlineCacheKind::ModuleGlobalMutation:
-                assert(cache.index <
-                       inline_caches_.module_global_mutation_caches.size());
-                cache.snapshot_ =
-                    &inline_caches_.module_global_mutation_caches[cache.index];
-                break;
-            case InlineCacheKind::FunctionCall:
-                assert(cache.index <
-                       inline_caches_.function_call_caches.size());
-                cache.snapshot_ =
-                    &inline_caches_.function_call_caches[cache.index];
-                break;
-            case InlineCacheKind::KeywordCall:
-                assert(cache.index < inline_caches_.keyword_call_caches.size());
-                cache.snapshot_ =
-                    &inline_caches_.keyword_call_caches[cache.index];
-                break;
-            case InlineCacheKind::Operator:
-                assert(cache.index < inline_caches_.operator_caches.size());
-                cache.snapshot_ = &inline_caches_.operator_caches[cache.index];
-                break;
-        }
     }
 
 }  // namespace cl
