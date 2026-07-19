@@ -5774,6 +5774,7 @@ namespace cl
         pc += 4;
         if(exhausted)
         {
+            accumulator = Value::None();
             pc += rel_target;
         }
         else
@@ -5892,6 +5893,7 @@ namespace cl
         pc += 4;
         if(current_smi >= stop_smi)
         {
+            accumulator = Value::None();
             pc += rel_target;
         }
         else
@@ -5935,6 +5937,7 @@ namespace cl
         pc += 4;
         if(exhausted)
         {
+            accumulator = Value::None();
             pc += rel_target;
         }
         else

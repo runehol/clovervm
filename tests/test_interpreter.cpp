@@ -7546,6 +7546,71 @@ TEST(Interpreter, range_builtin_three_arguments_returns_range_iterator)
     expect_range_iterator(actual, 2, 9, 3);
 }
 
+static Value run_exhausted_for_iter(test::VmTestContext &test_context,
+                                    Bytecode opcode)
+{
+    TValue<String> name = test_context.vm().get_or_create_interned_string_value(
+        L"<exhausted-for-iter-test>");
+    CodeObjectBuilder builder(
+        &test_context.vm(), nullptr,
+        TValue<ModuleObject>::from_oop(test_context.make_test_module_object(
+            name, test_context.vm().global_builtins_module().raw_value())),
+        nullptr, name);
+    JumpTarget exhausted_target(&builder);
+
+    if(opcode == Bytecode::ForIter)
+    {
+        CodeObjectBuilder::TemporaryReg iterator_reg(builder);
+        RangeIterator *iterator =
+            test_context.thread()->make_object_raw<RangeIterator>(
+                TValue<SMI>::from_smi(0), TValue<SMI>::from_smi(0),
+                TValue<SMI>::from_smi(1));
+        uint8_t iterator_idx = uint8_t(
+            builder.allocate_constant(Value::from_oop(iterator)).value());
+        builder.emit_lda_constant(0, iterator_idx).value();
+        builder.emit_star(0, iterator_reg).value();
+        builder.emit_lda_smi(0, 42).value();
+        builder.emit_for_iter(0, iterator_reg, exhausted_target).value();
+    }
+    else
+    {
+        assert(opcode == Bytecode::ForIterRange1 ||
+               opcode == Bytecode::ForIterRangeStep);
+        uint32_t n_range_regs = opcode == Bytecode::ForIterRange1 ? 2u : 3u;
+        CodeObjectBuilder::TemporaryReg range_regs(builder, n_range_regs);
+        builder.emit_lda_smi(0, 0).value();
+        builder.emit_star(0, range_regs).value();
+        builder.emit_lda_smi(0, 0).value();
+        builder.emit_star(0, range_regs + 1).value();
+        if(opcode == Bytecode::ForIterRangeStep)
+        {
+            builder.emit_lda_smi(0, 1).value();
+            builder.emit_star(0, range_regs + 2).value();
+        }
+        builder.emit_lda_smi(0, 42).value();
+        builder.emit_for_iter_range(0, opcode, range_regs, exhausted_target)
+            .value();
+    }
+
+    exhausted_target.resolve().value();
+    builder.emit_return(0).value();
+    return test_context.thread()->run_clovervm_code_object(
+        builder.finalize().value());
+}
+
+TEST(Interpreter, exhausted_for_iter_opcodes_set_accumulator_to_none)
+{
+    test::VmTestContext test_context;
+    ThreadState::ActivationScope activation_scope(test_context.thread());
+
+    EXPECT_EQ(Value::None(),
+              run_exhausted_for_iter(test_context, Bytecode::ForIter));
+    EXPECT_EQ(Value::None(),
+              run_exhausted_for_iter(test_context, Bytecode::ForIterRange1));
+    EXPECT_EQ(Value::None(),
+              run_exhausted_for_iter(test_context, Bytecode::ForIterRangeStep));
+}
+
 TEST(Interpreter, direct_range_for_loop_reports_integer_argument_errors)
 {
     expect_python_error(L"for x in range(False):\n"
