@@ -145,11 +145,9 @@ namespace cl
 
         void build_blocks();
         BytecodeInstruction decode_instruction_at(uint32_t pc_offset) const;
-        uint32_t next_instruction_offset(uint32_t pc_offset) const;
 
         const CodeObject &code_object_;
         InlineCacheTables inline_caches_;
-        std::vector<uint32_t> next_instruction_offsets_;
         std::vector<BytecodeBlock> blocks_;
     };
 

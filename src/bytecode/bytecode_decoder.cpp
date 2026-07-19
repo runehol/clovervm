@@ -13,24 +13,10 @@ namespace cl
         return int16_t(raw);
     }
 
-    static bool is_operator(BytecodeCompoundRole role)
-    {
-        return role == BytecodeCompoundRole::BinaryOperator ||
-               role == BytecodeCompoundRole::TernaryOperator;
-    }
-
     static bool is_operator_continuation(BytecodeCompoundRole role)
     {
         return role == BytecodeCompoundRole::BinaryOperatorContinuation ||
                role == BytecodeCompoundRole::TernaryOperatorContinuation;
-    }
-
-    static Bytecode expected_operator_continuation(BytecodeCompoundRole role)
-    {
-        assert(is_operator(role));
-        return role == BytecodeCompoundRole::BinaryOperator
-                   ? Bytecode::CheckOperatorNotImplemented
-                   : Bytecode::CheckTernaryOperatorNotImplemented;
     }
 
     static bool is_jump(BytecodeControlFlow control_flow)
@@ -64,7 +50,8 @@ namespace cl
     BytecodeInstructionIterator &BytecodeInstructionIterator::operator++()
     {
         assert(pc_offset_ < end_pc_offset_);
-        pc_offset_ = decoder_->next_instruction_offset(pc_offset_);
+        pc_offset_ =
+            decoder_->decode_instruction_at(pc_offset_).next_pc_offset();
         assert(pc_offset_ <= end_pc_offset_);
         return *this;
     }
@@ -79,8 +66,6 @@ namespace cl
     {
         assert(code_object_.size() <= std::numeric_limits<uint32_t>::max());
         uint32_t code_size = uint32_t(code_object_.size());
-        next_instruction_offsets_.assign(code_size,
-                                         std::numeric_limits<uint32_t>::max());
 
         if(code_size == 0)
         {
@@ -88,52 +73,30 @@ namespace cl
             return;
         }
 
+        std::vector<bool> semantic_boundaries(code_size + 1, false);
+        semantic_boundaries[code_size] = true;
+        std::vector<bool> leaders(code_size + 1, false);
+        leaders[0] = true;
         for(uint32_t pc_offset = 0; pc_offset < code_size;)
         {
             Bytecode opcode = Bytecode(code_object_.code[pc_offset]);
             assert(is_valid_bytecode(opcode));
             const BytecodeInfo &info = bytecode_info(opcode);
-            assert(!is_operator_continuation(info.compound_role));
-
-            uint32_t next_pc_offset = pc_offset + info.length();
+            uint32_t next_pc_offset = pc_offset + bytecode_length(opcode);
             assert(next_pc_offset <= code_size);
-            if(is_operator(info.compound_role))
+            semantic_boundaries[pc_offset] =
+                !is_operator_continuation(info.compound_role);
+
+            if(is_operator_continuation(info.compound_role))
             {
-                assert(next_pc_offset < code_size);
-                Bytecode continuation =
-                    Bytecode(code_object_.code[next_pc_offset]);
-                assert(continuation ==
-                       expected_operator_continuation(info.compound_role));
-                next_pc_offset += bytecode_length(continuation);
-                assert(next_pc_offset <= code_size);
+                pc_offset = next_pc_offset;
+                continue;
             }
-
-            next_instruction_offsets_[pc_offset] = next_pc_offset;
-            pc_offset = next_pc_offset;
-        }
-
-        auto is_semantic_boundary = [&](uint32_t pc_offset) {
-            return pc_offset == code_size ||
-                   (pc_offset < code_size &&
-                    next_instruction_offsets_[pc_offset] !=
-                        std::numeric_limits<uint32_t>::max());
-        };
-
-        std::vector<bool> leaders(code_size + 1, false);
-        leaders[0] = true;
-
-        for(uint32_t pc_offset = 0; pc_offset < code_size;
-            pc_offset = next_instruction_offset(pc_offset))
-        {
-            Bytecode opcode = Bytecode(code_object_.code[pc_offset]);
-            const BytecodeInfo &info = bytecode_info(opcode);
-            uint32_t next_pc_offset = next_instruction_offset(pc_offset);
 
             if(is_jump(info.control_flow))
             {
                 uint32_t target =
                     jump_target_offset(code_object_, pc_offset, info);
-                assert(is_semantic_boundary(target));
                 leaders[target] = true;
             }
 
@@ -142,6 +105,7 @@ namespace cl
             {
                 leaders[next_pc_offset] = true;
             }
+            pc_offset = next_pc_offset;
         }
 
         for(const ExceptionTableEntry &entry: code_object_.exception_table)
@@ -149,9 +113,9 @@ namespace cl
             assert(entry.start_pc < entry.end_pc);
             assert(entry.end_pc <= code_size);
             assert(entry.handler_pc < code_size);
-            assert(is_semantic_boundary(entry.start_pc));
-            assert(is_semantic_boundary(entry.end_pc));
-            assert(is_semantic_boundary(entry.handler_pc));
+            assert(semantic_boundaries[entry.start_pc]);
+            assert(semantic_boundaries[entry.end_pc]);
+            assert(semantic_boundaries[entry.handler_pc]);
             leaders[entry.start_pc] = true;
             leaders[entry.end_pc] = true;
             leaders[entry.handler_pc] = true;
@@ -162,7 +126,7 @@ namespace cl
         {
             if(leaders[pc_offset])
             {
-                assert(is_semantic_boundary(pc_offset));
+                assert(semantic_boundaries[pc_offset]);
                 block_starts.push_back(pc_offset);
             }
         }
@@ -192,14 +156,18 @@ namespace cl
         for(BytecodeBlock &block: blocks_)
         {
             uint32_t last_pc_offset = block.start_pc_offset_;
-            for(uint32_t pc_offset = block.start_pc_offset_;
-                pc_offset < block.end_pc_offset_;
-                pc_offset = next_instruction_offset(pc_offset))
+            uint32_t pc_offset = block.start_pc_offset_;
+            for(; pc_offset < block.end_pc_offset_;)
             {
-                last_pc_offset = pc_offset;
+                Bytecode opcode = Bytecode(code_object_.code[pc_offset]);
+                if(!is_operator_continuation(
+                       bytecode_info(opcode).compound_role))
+                {
+                    last_pc_offset = pc_offset;
+                }
+                pc_offset += bytecode_length(opcode);
             }
-            assert(next_instruction_offset(last_pc_offset) ==
-                   block.end_pc_offset_);
+            assert(pc_offset == block.end_pc_offset_);
 
             Bytecode opcode = Bytecode(code_object_.code[last_pc_offset]);
             const BytecodeInfo &info = bytecode_info(opcode);
@@ -259,14 +227,6 @@ namespace cl
             cl::decode_instruction(code_object_, pc_offset);
         instruction.inline_cache_tables_ = &inline_caches_;
         return instruction;
-    }
-
-    uint32_t BytecodeDecoder::next_instruction_offset(uint32_t pc_offset) const
-    {
-        assert(pc_offset < next_instruction_offsets_.size());
-        uint32_t next = next_instruction_offsets_[pc_offset];
-        assert(next != std::numeric_limits<uint32_t>::max());
-        return next;
     }
 
 }  // namespace cl
