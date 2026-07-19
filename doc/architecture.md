@@ -93,6 +93,7 @@ calling C++ runtime helpers or native functions.
 
 Detailed docs:
 
+- [Bytecode Decoding and Block Structure](bytecode-decoding-and-blocks.md)
 - [CloverVM Function Calling Convention](function-calling-convention.md)
 - [Function Call Adaptation](function-call-adaptation.md)
 - [Native/Managed Boundaries](native-managed-boundaries.md)
