@@ -1669,9 +1669,11 @@ TEST(Dict, GeneralStringLookupCachesTrustedHashHandler)
                                                    L"d['alpha']\n"));
 
     Function *method = dict_method_function(context, L"__getitem__");
-    ASSERT_GE(method->code_object.extract()->operator_caches.size(), 1u);
+    ASSERT_GE(
+        method->code_object.extract()->inline_caches.operator_caches.size(),
+        1u);
     const OperatorInlineCache &hash_cache =
-        method->code_object.extract()->operator_caches[0];
+        method->code_object.extract()->inline_caches.operator_caches[0];
     EXPECT_FALSE(hash_cache.trusted_handler.is_null());
     EXPECT_EQ(nullptr, hash_cache.function);
 }
@@ -1686,9 +1688,11 @@ TEST(Dict, GeneralStringAssignmentCachesTrustedHashHandler)
                                                    L"d['alpha']\n"));
 
     Function *method = dict_method_function(context, L"__setitem__");
-    ASSERT_GE(method->code_object.extract()->operator_caches.size(), 1u);
+    ASSERT_GE(
+        method->code_object.extract()->inline_caches.operator_caches.size(),
+        1u);
     const OperatorInlineCache &hash_cache =
-        method->code_object.extract()->operator_caches[0];
+        method->code_object.extract()->inline_caches.operator_caches[0];
     EXPECT_FALSE(hash_cache.trusted_handler.is_null());
     EXPECT_EQ(nullptr, hash_cache.function);
 }
@@ -1704,9 +1708,11 @@ TEST(Dict, GeneralStringDeletionCachesTrustedHashHandler)
                                               L"'alpha' not in d\n"));
 
     Function *method = dict_method_function(context, L"__delitem__");
-    ASSERT_GE(method->code_object.extract()->operator_caches.size(), 1u);
+    ASSERT_GE(
+        method->code_object.extract()->inline_caches.operator_caches.size(),
+        1u);
     const OperatorInlineCache &hash_cache =
-        method->code_object.extract()->operator_caches[0];
+        method->code_object.extract()->inline_caches.operator_caches[0];
     EXPECT_FALSE(hash_cache.trusted_handler.is_null());
     EXPECT_EQ(nullptr, hash_cache.function);
 }

@@ -2295,8 +2295,9 @@ TEST(Interpreter, membership_cache_hit_ignores_needle_shape)
     ASSERT_TRUE(can_convert_to<Function>(function_value));
     CodeObject *function_code =
         assume_convert_to<Function>(function_value)->code_object.extract();
-    ASSERT_EQ(1u, function_code->operator_caches.size());
-    const OperatorInlineCache &cache = function_code->operator_caches[0];
+    ASSERT_EQ(1u, function_code->inline_caches.operator_caches.size());
+    const OperatorInlineCache &cache =
+        function_code->inline_caches.operator_caches[0];
     ASSERT_NE(nullptr, cache.function);
     ASSERT_NE(nullptr, cache.operand_lookup_validity_cells[0]);
     EXPECT_EQ(nullptr, cache.operand_lookup_validity_cells[1]);
@@ -2398,9 +2399,9 @@ TEST(Interpreter, native_contains_membership_uses_trusted_handler)
     ASSERT_TRUE(can_convert_to<Function>(dict_function_value));
     CodeObject *dict_function_code =
         assume_convert_to<Function>(dict_function_value)->code_object.extract();
-    ASSERT_EQ(1u, dict_function_code->operator_caches.size());
+    ASSERT_EQ(1u, dict_function_code->inline_caches.operator_caches.size());
     const OperatorInlineCache &dict_cache =
-        dict_function_code->operator_caches[0];
+        dict_function_code->inline_caches.operator_caches[0];
     EXPECT_FALSE(dict_cache.trusted_handler.is_null());
     EXPECT_EQ(nullptr, dict_cache.function);
     EXPECT_NE(nullptr, dict_cache.operand_lookup_validity_cells[0]);
@@ -2425,9 +2426,9 @@ TEST(Interpreter, native_contains_membership_uses_trusted_handler)
     ASSERT_TRUE(can_convert_to<Function>(str_function_value));
     CodeObject *str_function_code =
         assume_convert_to<Function>(str_function_value)->code_object.extract();
-    ASSERT_EQ(1u, str_function_code->operator_caches.size());
+    ASSERT_EQ(1u, str_function_code->inline_caches.operator_caches.size());
     const OperatorInlineCache &str_cache =
-        str_function_code->operator_caches[0];
+        str_function_code->inline_caches.operator_caches[0];
     EXPECT_FALSE(str_cache.trusted_handler.is_null());
     EXPECT_EQ(nullptr, str_cache.function);
     EXPECT_NE(nullptr, str_cache.operand_lookup_validity_cells[0]);
@@ -2773,8 +2774,9 @@ TEST(Interpreter, operator_add_dispatch_python_cache_hit)
     ASSERT_TRUE(can_convert_to<Function>(function_value));
     CodeObject *function_code =
         assume_convert_to<Function>(function_value)->code_object.extract();
-    ASSERT_EQ(1u, function_code->operator_caches.size());
-    const OperatorInlineCache &cache = function_code->operator_caches[0];
+    ASSERT_EQ(1u, function_code->inline_caches.operator_caches.size());
+    const OperatorInlineCache &cache =
+        function_code->inline_caches.operator_caches[0];
     ASSERT_NE(nullptr, cache.function);
     EXPECT_FALSE(cache.reflected_untrusted_call);
     ASSERT_NE(nullptr, cache.operand_lookup_validity_cells[0]);
@@ -2811,8 +2813,9 @@ TEST(Interpreter, operator_add_dispatch_reflected_subclass_python_cache_hit)
     ASSERT_TRUE(can_convert_to<Function>(function_value));
     CodeObject *function_code =
         assume_convert_to<Function>(function_value)->code_object.extract();
-    ASSERT_EQ(1u, function_code->operator_caches.size());
-    const OperatorInlineCache &cache = function_code->operator_caches[0];
+    ASSERT_EQ(1u, function_code->inline_caches.operator_caches.size());
+    const OperatorInlineCache &cache =
+        function_code->inline_caches.operator_caches[0];
     ASSERT_NE(nullptr, cache.function);
     EXPECT_TRUE(cache.reflected_untrusted_call);
     ASSERT_NE(nullptr, cache.operand_lookup_validity_cells[0]);
@@ -2857,8 +2860,9 @@ TEST(Interpreter, operator_add_dispatch_trusted_str_handler_cache_hit)
     ASSERT_TRUE(can_convert_to<Function>(function_value));
     CodeObject *function_code =
         assume_convert_to<Function>(function_value)->code_object.extract();
-    ASSERT_EQ(1u, function_code->operator_caches.size());
-    const OperatorInlineCache &cache = function_code->operator_caches[0];
+    ASSERT_EQ(1u, function_code->inline_caches.operator_caches.size());
+    const OperatorInlineCache &cache =
+        function_code->inline_caches.operator_caches[0];
     EXPECT_FALSE(cache.trusted_handler.is_null());
     EXPECT_EQ(nullptr, cache.function);
     ASSERT_NE(nullptr, cache.operand_lookup_validity_cells[0]);
@@ -2887,8 +2891,9 @@ TEST(Interpreter, operator_add_dispatch_reflected_float_trusted_cache_hit)
     ASSERT_TRUE(can_convert_to<Function>(function_value));
     CodeObject *function_code =
         assume_convert_to<Function>(function_value)->code_object.extract();
-    ASSERT_EQ(1u, function_code->operator_caches.size());
-    const OperatorInlineCache &cache = function_code->operator_caches[0];
+    ASSERT_EQ(1u, function_code->inline_caches.operator_caches.size());
+    const OperatorInlineCache &cache =
+        function_code->inline_caches.operator_caches[0];
     EXPECT_FALSE(cache.trusted_handler.is_null());
     EXPECT_EQ(nullptr, cache.function);
     ASSERT_NE(nullptr, cache.operand_lookup_validity_cells[0]);
@@ -2926,8 +2931,9 @@ TEST(Interpreter, operator_dispatch_trusted_bigint_arithmetic_cache_hit)
         ASSERT_TRUE(can_convert_to<Function>(function_value));
         CodeObject *function_code =
             assume_convert_to<Function>(function_value)->code_object.extract();
-        ASSERT_EQ(1u, function_code->operator_caches.size());
-        const OperatorInlineCache &cache = function_code->operator_caches[0];
+        ASSERT_EQ(1u, function_code->inline_caches.operator_caches.size());
+        const OperatorInlineCache &cache =
+            function_code->inline_caches.operator_caches[0];
         EXPECT_FALSE(cache.trusted_handler.is_null());
         EXPECT_EQ(nullptr, cache.function);
         ASSERT_NE(nullptr, cache.operand_lookup_validity_cells[0]);
@@ -2969,8 +2975,9 @@ TEST(Interpreter, operator_eq_dispatch_reflected_python_cache_hit)
     ASSERT_TRUE(can_convert_to<Function>(function_value));
     CodeObject *function_code =
         assume_convert_to<Function>(function_value)->code_object.extract();
-    ASSERT_EQ(1u, function_code->operator_caches.size());
-    const OperatorInlineCache &cache = function_code->operator_caches[0];
+    ASSERT_EQ(1u, function_code->inline_caches.operator_caches.size());
+    const OperatorInlineCache &cache =
+        function_code->inline_caches.operator_caches[0];
     ASSERT_NE(nullptr, cache.function);
     EXPECT_TRUE(cache.reflected_untrusted_call);
     ASSERT_NE(nullptr, cache.operand_lookup_validity_cells[0]);
@@ -2998,8 +3005,9 @@ TEST(Interpreter, operator_eq_dispatch_trusted_handler_cache)
     ASSERT_TRUE(can_convert_to<Function>(function_value));
     CodeObject *function_code =
         assume_convert_to<Function>(function_value)->code_object.extract();
-    ASSERT_EQ(1u, function_code->operator_caches.size());
-    const OperatorInlineCache &cache = function_code->operator_caches[0];
+    ASSERT_EQ(1u, function_code->inline_caches.operator_caches.size());
+    const OperatorInlineCache &cache =
+        function_code->inline_caches.operator_caches[0];
     EXPECT_FALSE(cache.trusted_handler.is_null());
     EXPECT_EQ(nullptr, cache.function);
     ASSERT_NE(nullptr, cache.operand_lookup_validity_cells[0]);
@@ -3115,8 +3123,9 @@ TEST(Interpreter, operator_eq_dispatch_python_cache_installs_before_call)
     ASSERT_TRUE(can_convert_to<Function>(function_value));
     CodeObject *function_code =
         assume_convert_to<Function>(function_value)->code_object.extract();
-    ASSERT_EQ(1u, function_code->operator_caches.size());
-    const OperatorInlineCache &cache = function_code->operator_caches[0];
+    ASSERT_EQ(1u, function_code->inline_caches.operator_caches.size());
+    const OperatorInlineCache &cache =
+        function_code->inline_caches.operator_caches[0];
     ASSERT_NE(nullptr, cache.function);
     ASSERT_NE(nullptr, cache.operand_lookup_validity_cells[0]);
     ASSERT_NE(nullptr, cache.operand_lookup_validity_cells[1]);
@@ -3781,8 +3790,9 @@ TEST(Interpreter, subscript_load_caches_inline_key_shape)
     ASSERT_TRUE(can_convert_to<Function>(function_value));
     CodeObject *function_code =
         assume_convert_to<Function>(function_value)->code_object.extract();
-    ASSERT_EQ(1u, function_code->operator_caches.size());
-    const OperatorInlineCache &cache = function_code->operator_caches[0];
+    ASSERT_EQ(1u, function_code->inline_caches.operator_caches.size());
+    const OperatorInlineCache &cache =
+        function_code->inline_caches.operator_caches[0];
     ASSERT_NE(nullptr, cache.operand_lookup_validity_cells[0]);
     EXPECT_EQ(nullptr, cache.operand_lookup_validity_cells[1]);
     EXPECT_EQ(ShapeKey::from_value(Value::from_smi(1)),
@@ -3819,8 +3829,9 @@ TEST(Interpreter, subscript_load_caches_getitem_with_default_arguments)
     ASSERT_TRUE(can_convert_to<Function>(function_value));
     CodeObject *function_code =
         assume_convert_to<Function>(function_value)->code_object.extract();
-    ASSERT_EQ(1u, function_code->operator_caches.size());
-    const OperatorInlineCache &cache = function_code->operator_caches[0];
+    ASSERT_EQ(1u, function_code->inline_caches.operator_caches.size());
+    const OperatorInlineCache &cache =
+        function_code->inline_caches.operator_caches[0];
     ASSERT_NE(nullptr, cache.function);
     EXPECT_EQ(2u, cache.n_args);
     EXPECT_TRUE(cache.has_self);
@@ -3853,8 +3864,9 @@ TEST(Interpreter, subscript_load_replaces_cache_for_different_key_shape)
     ASSERT_TRUE(can_convert_to<Function>(function_value));
     CodeObject *function_code =
         assume_convert_to<Function>(function_value)->code_object.extract();
-    ASSERT_EQ(1u, function_code->operator_caches.size());
-    const OperatorInlineCache &cache = function_code->operator_caches[0];
+    ASSERT_EQ(1u, function_code->inline_caches.operator_caches.size());
+    const OperatorInlineCache &cache =
+        function_code->inline_caches.operator_caches[0];
     ASSERT_NE(nullptr, cache.operand_lookup_validity_cells[0]);
     EXPECT_EQ(nullptr, cache.operand_lookup_validity_cells[1]);
 
@@ -3893,8 +3905,9 @@ TEST(Interpreter, subscript_load_caches_slice_key_shape)
     ASSERT_TRUE(can_convert_to<Function>(function_value));
     CodeObject *function_code =
         assume_convert_to<Function>(function_value)->code_object.extract();
-    ASSERT_EQ(1u, function_code->operator_caches.size());
-    const OperatorInlineCache &cache = function_code->operator_caches[0];
+    ASSERT_EQ(1u, function_code->inline_caches.operator_caches.size());
+    const OperatorInlineCache &cache =
+        function_code->inline_caches.operator_caches[0];
     EXPECT_EQ(ShapeKey::from_shape(test_context.vm().slice_step_none_shape()),
               cache.operand_shape_keys[1]);
     EXPECT_EQ(test_context.vm().slice_step_none_shape(),
@@ -3929,10 +3942,11 @@ TEST(Interpreter, subscript_load_replaces_cache_for_different_slice_shapes)
     ASSERT_TRUE(can_convert_to<Function>(function_value));
     CodeObject *function_code =
         assume_convert_to<Function>(function_value)->code_object.extract();
-    ASSERT_EQ(2u, function_code->operator_caches.size());
+    ASSERT_EQ(2u, function_code->inline_caches.operator_caches.size());
     const OperatorInlineCache &general_cache =
-        function_code->operator_caches[0];
-    const OperatorInlineCache &none_cache = function_code->operator_caches[1];
+        function_code->inline_caches.operator_caches[0];
+    const OperatorInlineCache &none_cache =
+        function_code->inline_caches.operator_caches[1];
     EXPECT_EQ(ShapeKey::from_shape(test_context.vm().slice_general_shape()),
               general_cache.operand_shape_keys[1]);
     EXPECT_EQ(ShapeKey::from_shape(test_context.vm().slice_step_none_shape()),
@@ -4002,7 +4016,7 @@ TEST(Interpreter, subscript_load_caches_trusted_builtin_slice_handlers)
             assume_convert_to<Function>(function_value)->code_object.extract();
         const OperatorInlineCache *cache = nullptr;
         for(const OperatorInlineCache &candidate:
-            function_code->operator_caches)
+            function_code->inline_caches.operator_caches)
         {
             if(!candidate.trusted_handler.is_null() &&
                candidate.operand_shape_keys[1] ==
@@ -4175,8 +4189,9 @@ TEST(Interpreter, subscript_store_replaces_cache_for_different_key_shape)
     ASSERT_TRUE(can_convert_to<Function>(function_value));
     CodeObject *function_code =
         assume_convert_to<Function>(function_value)->code_object.extract();
-    ASSERT_EQ(1u, function_code->operator_caches.size());
-    const OperatorInlineCache &cache = function_code->operator_caches[0];
+    ASSERT_EQ(1u, function_code->inline_caches.operator_caches.size());
+    const OperatorInlineCache &cache =
+        function_code->inline_caches.operator_caches[0];
     ASSERT_NE(nullptr, cache.operand_lookup_validity_cells[0]);
     EXPECT_EQ(nullptr, cache.operand_lookup_validity_cells[1]);
     EXPECT_EQ(ShapeKey::from_value(Value::None()), cache.operand_shape_keys[1]);
@@ -4217,8 +4232,9 @@ TEST(Interpreter, subscript_store_cache_ignores_value_shape)
     ASSERT_TRUE(can_convert_to<Function>(function_value));
     CodeObject *function_code =
         assume_convert_to<Function>(function_value)->code_object.extract();
-    ASSERT_EQ(1u, function_code->operator_caches.size());
-    const OperatorInlineCache &cache = function_code->operator_caches[0];
+    ASSERT_EQ(1u, function_code->inline_caches.operator_caches.size());
+    const OperatorInlineCache &cache =
+        function_code->inline_caches.operator_caches[0];
     ASSERT_NE(nullptr, cache.operand_lookup_validity_cells[0]);
     EXPECT_EQ(ShapeKey::from_value(Value::from_smi(0)),
               cache.operand_shape_keys[1]);
@@ -4661,9 +4677,10 @@ TEST(Interpreter, store_attr_caches_instance_add_transition)
     ASSERT_TRUE(can_convert_to<Function>(function_value));
     CodeObject *function_code =
         assume_convert_to<Function>(function_value)->code_object.extract();
-    ASSERT_EQ(1u, function_code->attribute_mutation_caches.size());
+    ASSERT_EQ(1u,
+              function_code->inline_caches.attribute_mutation_caches.size());
     const AttributeMutationInlineCache &cache =
-        function_code->attribute_mutation_caches[0];
+        function_code->inline_caches.attribute_mutation_caches[0];
     ASSERT_NE(nullptr, cache.receiver_shape);
     ASSERT_NE(nullptr, cache.plan.next_shape);
     ASSERT_TRUE(cache.plan.storage_location().is_found());
@@ -4694,8 +4711,9 @@ TEST(Interpreter, del_attr_deletes_instance_property_and_caches_plan)
     CodeObject *function_code =
         assume_convert_to<Function>(function_value)->code_object.extract();
     ASSERT_EQ(uint8_t(Bytecode::DelAttr), function_code->code[0]);
-    ASSERT_TRUE(function_code->attribute_read_caches.empty());
-    ASSERT_EQ(1u, function_code->attribute_mutation_caches.size());
+    ASSERT_TRUE(function_code->inline_caches.attribute_read_caches.empty());
+    ASSERT_EQ(1u,
+              function_code->inline_caches.attribute_mutation_caches.size());
 
     ClassObject *cls = test_context.thread()->make_internal_raw<ClassObject>(
         cls_name, 2, test_context.vm().object_class(),
@@ -4713,9 +4731,10 @@ TEST(Interpreter, del_attr_deletes_instance_property_and_caches_plan)
               test_context.thread()->run_clovervm_code_object(call_code));
     EXPECT_TRUE(first->get_own_property(value_name).is_not_present());
 
-    ASSERT_EQ(1u, function_code->attribute_mutation_caches.size());
+    ASSERT_EQ(1u,
+              function_code->inline_caches.attribute_mutation_caches.size());
     const AttributeMutationInlineCache &cache =
-        function_code->attribute_mutation_caches[0];
+        function_code->inline_caches.attribute_mutation_caches[0];
     ASSERT_NE(nullptr, cache.receiver_shape);
     EXPECT_TRUE(cache.plan.is_delete_own_property());
     ASSERT_NE(nullptr, cache.plan.next_shape);

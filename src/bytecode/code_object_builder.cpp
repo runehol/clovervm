@@ -1202,55 +1202,56 @@ namespace cl
 
     Expected<uint8_t> CodeObjectBuilder::allocate_attribute_read_cache()
     {
-        uint32_t idx = code_obj->attribute_read_caches.size();
+        uint32_t idx = code_obj->inline_caches.attribute_read_caches.size();
         uint8_t encoded_idx =
             CL_TRY(check_u8_operand_index(idx, L"attribute read cache table"));
-        code_obj->attribute_read_caches.emplace_back();
+        code_obj->inline_caches.attribute_read_caches.emplace_back();
         return Expected<uint8_t>::ok(encoded_idx);
     }
 
     Expected<uint8_t> CodeObjectBuilder::allocate_attribute_mutation_cache()
     {
-        uint32_t idx = code_obj->attribute_mutation_caches.size();
+        uint32_t idx = code_obj->inline_caches.attribute_mutation_caches.size();
         uint8_t encoded_idx = CL_TRY(
             check_u8_operand_index(idx, L"attribute mutation cache table"));
-        code_obj->attribute_mutation_caches.emplace_back();
+        code_obj->inline_caches.attribute_mutation_caches.emplace_back();
         return Expected<uint8_t>::ok(encoded_idx);
     }
 
     Expected<uint8_t> CodeObjectBuilder::allocate_module_global_read_cache()
     {
-        uint32_t idx = code_obj->module_global_read_caches.size();
+        uint32_t idx = code_obj->inline_caches.module_global_read_caches.size();
         uint8_t encoded_idx = CL_TRY(
             check_u8_operand_index(idx, L"module global read cache table"));
-        code_obj->module_global_read_caches.emplace_back();
+        code_obj->inline_caches.module_global_read_caches.emplace_back();
         return Expected<uint8_t>::ok(encoded_idx);
     }
 
     Expected<uint8_t> CodeObjectBuilder::allocate_module_global_mutation_cache()
     {
-        uint32_t idx = code_obj->module_global_mutation_caches.size();
+        uint32_t idx =
+            code_obj->inline_caches.module_global_mutation_caches.size();
         uint8_t encoded_idx = CL_TRY(
             check_u8_operand_index(idx, L"module global mutation cache table"));
-        code_obj->module_global_mutation_caches.emplace_back();
+        code_obj->inline_caches.module_global_mutation_caches.emplace_back();
         return Expected<uint8_t>::ok(encoded_idx);
     }
 
     Expected<uint8_t> CodeObjectBuilder::allocate_function_call_cache()
     {
-        uint32_t idx = code_obj->function_call_caches.size();
+        uint32_t idx = code_obj->inline_caches.function_call_caches.size();
         uint8_t encoded_idx =
             CL_TRY(check_u8_operand_index(idx, L"function call cache table"));
-        code_obj->function_call_caches.emplace_back();
+        code_obj->inline_caches.function_call_caches.emplace_back();
         return Expected<uint8_t>::ok(encoded_idx);
     }
 
     Expected<uint8_t> CodeObjectBuilder::allocate_operator_cache()
     {
-        uint32_t idx = code_obj->operator_caches.size();
+        uint32_t idx = code_obj->inline_caches.operator_caches.size();
         uint8_t encoded_idx =
             CL_TRY(check_u8_operand_index(idx, L"operator cache table"));
-        code_obj->operator_caches.emplace_back();
+        code_obj->inline_caches.operator_caches.emplace_back();
         return Expected<uint8_t>::ok(encoded_idx);
     }
 
@@ -1285,10 +1286,10 @@ namespace cl
 
     Expected<uint8_t> CodeObjectBuilder::allocate_keyword_call_cache()
     {
-        uint32_t idx = code_obj->keyword_call_caches.size();
+        uint32_t idx = code_obj->inline_caches.keyword_call_caches.size();
         uint8_t encoded_idx =
             CL_TRY(check_u8_operand_index(idx, L"keyword call cache table"));
-        code_obj->keyword_call_caches.emplace_back();
+        code_obj->inline_caches.keyword_call_caches.emplace_back();
         return Expected<uint8_t>::ok(encoded_idx);
     }
 

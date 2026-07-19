@@ -247,8 +247,9 @@ namespace cl
             nullptr, TValue<ModuleObject>::from_oop(module), nullptr,
             code_name);
         code_object->constant_table.emplace_back(Value::from_oop(child));
-        code_object->function_call_caches.push_back(FunctionCallInlineCache{});
-        code_object->function_call_caches.back().guard_value =
+        code_object->inline_caches.function_call_caches.push_back(
+            FunctionCallInlineCache{});
+        code_object->inline_caches.function_call_caches.back().guard_value =
             Value::from_oop(child);
         ASSERT_EQ(1, child->refcount);
         SlabAllocator *child_slab = heap.slab_for_object_unlocked(child);

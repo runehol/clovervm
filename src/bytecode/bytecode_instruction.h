@@ -8,7 +8,15 @@
 
 namespace cl
 {
+    class AttributeMutationInlineCache;
+    class AttributeReadInlineCache;
+    class BytecodeDecoder;
     class CodeObject;
+    class ModuleGlobalMutationInlineCache;
+    class ModuleGlobalReadInlineCache;
+    struct FunctionCallInlineCache;
+    struct KeywordCallInlineCache;
+    struct OperatorInlineCache;
 
     struct BytecodeOperand
     {
@@ -57,8 +65,26 @@ namespace cl
 
     struct InlineCacheReference
     {
+        InlineCacheReference(InlineCacheKind kind, uint8_t index)
+            : kind(kind), index(index)
+        {
+        }
+
         InlineCacheKind kind;
         uint8_t index;
+
+        const AttributeReadInlineCache *attribute_read_snapshot() const;
+        const AttributeMutationInlineCache *attribute_mutation_snapshot() const;
+        const ModuleGlobalReadInlineCache *module_global_read_snapshot() const;
+        const ModuleGlobalMutationInlineCache *
+        module_global_mutation_snapshot() const;
+        const FunctionCallInlineCache *function_call_snapshot() const;
+        const KeywordCallInlineCache *keyword_call_snapshot() const;
+        const OperatorInlineCache *operator_snapshot() const;
+
+    private:
+        friend class BytecodeDecoder;
+        const void *snapshot_ = nullptr;
     };
 
     class BytecodeInstruction
@@ -105,6 +131,7 @@ namespace cl
         std::optional<InlineCacheReference> cache2() const { return cache2_; }
 
     private:
+        friend class BytecodeDecoder;
         friend BytecodeInstruction decode_instruction(const CodeObject &,
                                                       uint32_t);
 

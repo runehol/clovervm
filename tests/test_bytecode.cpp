@@ -1,7 +1,9 @@
 #include "bytecode/bytecode.h"
+#include "bytecode/bytecode_decoder.h"
 #include "bytecode/bytecode_instruction.h"
 #include "bytecode/code_object.h"
 #include "test_helpers.h"
+#include <algorithm>
 #include <gtest/gtest.h>
 #include <memory>
 #include <string_view>
@@ -27,6 +29,20 @@ namespace
         ADD_FAILURE() << "instruction not found: "
                       << bytecode_name(encoded_opcode);
         return {};
+    }
+
+    const BytecodeBlock &find_block(const BytecodeDecoder &decoder,
+                                    uint32_t start_pc_offset)
+    {
+        for(const BytecodeBlock &block: decoder.blocks())
+        {
+            if(block.start_pc_offset() == start_pc_offset)
+            {
+                return block;
+            }
+        }
+        ADD_FAILURE() << "block not found at offset " << start_pc_offset;
+        return decoder.blocks().front();
     }
 }  // namespace
 
@@ -223,8 +239,9 @@ TEST(BytecodeInstruction, range_loop_effects_are_uniform_and_rmw)
 
 TEST(KeywordCallInlineCache, copy_clones_keyword_destination_registers)
 {
-    std::vector<KeywordCallInlineCache> live_caches(1);
-    KeywordCallInlineCache &live = live_caches[0];
+    InlineCacheTables live_tables;
+    live_tables.keyword_call_caches.emplace_back();
+    KeywordCallInlineCache &live = live_tables.keyword_call_caches[0];
     live.guard_value = Value::from_smi(42);
     live.n_kw_args = 3;
     live.keyword_dest_regs = std::make_unique<int8_t[]>(live.n_kw_args);
@@ -232,9 +249,10 @@ TEST(KeywordCallInlineCache, copy_clones_keyword_destination_registers)
     live.keyword_dest_regs[1] = -2;
     live.keyword_dest_regs[2] = -3;
 
-    std::vector<KeywordCallInlineCache> snapshots = live_caches;
-    ASSERT_EQ(1, snapshots.size());
-    const KeywordCallInlineCache &snapshot = snapshots[0];
+    InlineCacheTables snapshot_tables = live_tables;
+    ASSERT_EQ(1, snapshot_tables.keyword_call_caches.size());
+    const KeywordCallInlineCache &snapshot =
+        snapshot_tables.keyword_call_caches[0];
     EXPECT_EQ(live.guard_value, snapshot.guard_value);
     EXPECT_EQ(live.n_kw_args, snapshot.n_kw_args);
     ASSERT_NE(nullptr, snapshot.keyword_dest_regs);
@@ -245,4 +263,128 @@ TEST(KeywordCallInlineCache, copy_clones_keyword_destination_registers)
 
     live.keyword_dest_regs[1] = -4;
     EXPECT_EQ(-2, snapshot.keyword_dest_regs[1]);
+}
+
+TEST(BytecodeDecoder, builds_normal_control_flow_and_exception_entrances)
+{
+    test::VmTestContext context;
+    CodeObject *code_object = context.compile_file(L"try:\n"
+                                                   L"    raise ValueError\n"
+                                                   L"except:\n"
+                                                   L"    result = 7\n"
+                                                   L"result\n");
+
+    BytecodeDecoder decoder(*code_object);
+    ASSERT_EQ(4, decoder.blocks().size());
+
+    const BytecodeBlock &protected_block = find_block(decoder, 0);
+    EXPECT_EQ(4, protected_block.end_pc_offset());
+    EXPECT_TRUE(protected_block.successors().empty());
+    ASSERT_TRUE(protected_block.exception_handler_index().has_value());
+    EXPECT_EQ(0, *protected_block.exception_handler_index());
+
+    const BytecodeBlock &jump_over_handler = find_block(decoder, 4);
+    ASSERT_EQ(1, jump_over_handler.successors().size());
+    EXPECT_EQ(find_block(decoder, 16).id(), jump_over_handler.successors()[0]);
+
+    const BytecodeBlock &handler = find_block(decoder, 7);
+    ASSERT_EQ(1, handler.exception_entrances().size());
+    EXPECT_EQ(0, handler.exception_entrances()[0]);
+    ASSERT_EQ(1, handler.successors().size());
+    EXPECT_EQ(find_block(decoder, 16).id(), handler.successors()[0]);
+
+    const BytecodeBlock &join = find_block(decoder, 16);
+    EXPECT_EQ(2, join.predecessors().size());
+}
+
+TEST(BytecodeDecoder, records_conditional_edges_and_loop_backedges)
+{
+    test::VmTestContext context;
+    CodeObject *code_object = context.compile_file(L"for x in range(5):\n"
+                                                   L"    pass\n");
+
+    BytecodeDecoder decoder(*code_object);
+    bool found_conditional = false;
+    bool found_backedge = false;
+    for(const BytecodeBlock &block: decoder.blocks())
+    {
+        found_conditional |= block.successors().size() == 2;
+        for(BytecodeBlockId successor: block.successors())
+        {
+            found_backedge |= successor <= block.id();
+            const std::vector<BytecodeBlockId> &predecessors =
+                decoder.blocks()[successor].predecessors();
+            EXPECT_NE(predecessors.end(),
+                      std::find(predecessors.begin(), predecessors.end(),
+                                block.id()));
+        }
+    }
+
+    EXPECT_TRUE(found_conditional);
+    EXPECT_TRUE(found_backedge);
+}
+
+TEST(BytecodeDecoder, block_iteration_yields_compound_operator_once)
+{
+    test::VmTestContext context;
+    CodeObject *code_object = context.compile_file(L"1 << 4\n");
+
+    BytecodeDecoder decoder(*code_object);
+    uint32_t instruction_count = 0;
+    uint32_t operator_count = 0;
+    for(const BytecodeBlock &block: decoder.blocks())
+    {
+        uint32_t final_next_pc_offset = block.start_pc_offset();
+        for(BytecodeInstruction instruction: block.instructions())
+        {
+            ++instruction_count;
+            final_next_pc_offset = instruction.next_pc_offset();
+            if(instruction.encoded_opcode() == Bytecode::LShiftSmi)
+            {
+                ++operator_count;
+                ASSERT_TRUE(instruction.continuation_pc_offset().has_value());
+            }
+            EXPECT_NE(Bytecode::CheckOperatorNotImplemented,
+                      instruction.encoded_opcode());
+        }
+        EXPECT_EQ(block.end_pc_offset(), final_next_pc_offset);
+    }
+
+    EXPECT_GT(instruction_count, 0);
+    EXPECT_EQ(1, operator_count);
+}
+
+TEST(BytecodeDecoder, block_instructions_use_stable_cache_snapshots)
+{
+    test::VmTestContext context;
+    CodeObject *code_object = context.compile_file(L"f(1)\n");
+    ASSERT_EQ(1, code_object->inline_caches.function_call_caches.size());
+    FunctionCallInlineCache &live_cache =
+        code_object->inline_caches.function_call_caches[0];
+    live_cache.n_args = 12;
+
+    BytecodeInstruction standalone =
+        find_instruction(*code_object, Bytecode::CallPositional);
+    ASSERT_TRUE(standalone.cache().has_value());
+    EXPECT_EQ(nullptr, standalone.cache()->function_call_snapshot());
+
+    BytecodeDecoder decoder(*code_object);
+    live_cache.n_args = 37;
+
+    const FunctionCallInlineCache *snapshot = nullptr;
+    for(const BytecodeBlock &block: decoder.blocks())
+    {
+        for(BytecodeInstruction instruction: block.instructions())
+        {
+            if(instruction.encoded_opcode() == Bytecode::CallPositional)
+            {
+                ASSERT_TRUE(instruction.cache().has_value());
+                snapshot = instruction.cache()->function_call_snapshot();
+            }
+        }
+    }
+
+    ASSERT_NE(nullptr, snapshot);
+    EXPECT_NE(&live_cache, snapshot);
+    EXPECT_EQ(12, snapshot->n_args);
 }

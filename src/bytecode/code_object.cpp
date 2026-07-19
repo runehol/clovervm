@@ -8,6 +8,35 @@
 
 namespace cl
 {
+    void InlineCacheTables::clear()
+    {
+        for(AttributeReadInlineCache &cache: attribute_read_caches)
+        {
+            cache.clear();
+        }
+        for(AttributeMutationInlineCache &cache: attribute_mutation_caches)
+        {
+            cache.clear();
+        }
+        for(ModuleGlobalReadInlineCache &cache: module_global_read_caches)
+        {
+            cache.clear();
+        }
+        for(ModuleGlobalMutationInlineCache &cache:
+            module_global_mutation_caches)
+        {
+            cache.clear();
+        }
+        for(FunctionCallInlineCache &cache: function_call_caches)
+        {
+            cache = FunctionCallInlineCache{};
+        }
+        for(OperatorInlineCache &cache: operator_caches)
+        {
+            cache.clear();
+        }
+    }
+
     void CodeObject::dealloc(HeapObject *obj)
     {
         assert(obj->native_layout_id() == native_layout);
@@ -22,33 +51,7 @@ namespace cl
         code_object->docstring.release_ref();
         code_object->function_keyword_remap.release_refs();
 
-        for(AttributeReadInlineCache &cache: code_object->attribute_read_caches)
-        {
-            cache.clear();
-        }
-        for(AttributeMutationInlineCache &cache:
-            code_object->attribute_mutation_caches)
-        {
-            cache.clear();
-        }
-        for(ModuleGlobalReadInlineCache &cache:
-            code_object->module_global_read_caches)
-        {
-            cache.clear();
-        }
-        for(ModuleGlobalMutationInlineCache &cache:
-            code_object->module_global_mutation_caches)
-        {
-            cache.clear();
-        }
-        for(FunctionCallInlineCache &cache: code_object->function_call_caches)
-        {
-            cache = FunctionCallInlineCache{};
-        }
-        for(OperatorInlineCache &cache: code_object->operator_caches)
-        {
-            cache.clear();
-        }
+        code_object->inline_caches.clear();
 
         code_object->~CodeObject();
     }

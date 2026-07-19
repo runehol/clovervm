@@ -4,6 +4,54 @@
 
 namespace cl
 {
+    const AttributeReadInlineCache *
+    InlineCacheReference::attribute_read_snapshot() const
+    {
+        assert(kind == InlineCacheKind::AttributeRead);
+        return static_cast<const AttributeReadInlineCache *>(snapshot_);
+    }
+
+    const AttributeMutationInlineCache *
+    InlineCacheReference::attribute_mutation_snapshot() const
+    {
+        assert(kind == InlineCacheKind::AttributeMutation);
+        return static_cast<const AttributeMutationInlineCache *>(snapshot_);
+    }
+
+    const ModuleGlobalReadInlineCache *
+    InlineCacheReference::module_global_read_snapshot() const
+    {
+        assert(kind == InlineCacheKind::ModuleGlobalRead);
+        return static_cast<const ModuleGlobalReadInlineCache *>(snapshot_);
+    }
+
+    const ModuleGlobalMutationInlineCache *
+    InlineCacheReference::module_global_mutation_snapshot() const
+    {
+        assert(kind == InlineCacheKind::ModuleGlobalMutation);
+        return static_cast<const ModuleGlobalMutationInlineCache *>(snapshot_);
+    }
+
+    const FunctionCallInlineCache *
+    InlineCacheReference::function_call_snapshot() const
+    {
+        assert(kind == InlineCacheKind::FunctionCall);
+        return static_cast<const FunctionCallInlineCache *>(snapshot_);
+    }
+
+    const KeywordCallInlineCache *
+    InlineCacheReference::keyword_call_snapshot() const
+    {
+        assert(kind == InlineCacheKind::KeywordCall);
+        return static_cast<const KeywordCallInlineCache *>(snapshot_);
+    }
+
+    const OperatorInlineCache *InlineCacheReference::operator_snapshot() const
+    {
+        assert(kind == InlineCacheKind::Operator);
+        return static_cast<const OperatorInlineCache *>(snapshot_);
+    }
+
     static int16_t read_int16_le(const uint8_t *p)
     {
         uint16_t raw = uint16_t(p[0]) | (uint16_t(p[1]) << 8);

@@ -509,6 +509,20 @@ namespace cl
         uint32_t handler_pc;
     };
 
+    struct InlineCacheTables
+    {
+        void clear();
+
+        std::vector<AttributeReadInlineCache> attribute_read_caches;
+        std::vector<AttributeMutationInlineCache> attribute_mutation_caches;
+        std::vector<ModuleGlobalReadInlineCache> module_global_read_caches;
+        std::vector<ModuleGlobalMutationInlineCache>
+            module_global_mutation_caches;
+        std::vector<FunctionCallInlineCache> function_call_caches;
+        std::vector<OperatorInlineCache> operator_caches;
+        std::vector<KeywordCallInlineCache> keyword_call_caches;
+    };
+
     static constexpr int32_t FrameHeaderPreviousFpOffset = 0;
     static constexpr int32_t FrameHeaderCompiledReturnPcOffset = 1;
     static constexpr int32_t FrameHeaderReturnCodeObjectOffset = 2;
@@ -597,14 +611,7 @@ namespace cl
 
         std::vector<uint32_t> source_offsets;
         std::vector<Owned<Value>> constant_table;
-        std::vector<AttributeReadInlineCache> attribute_read_caches;
-        std::vector<AttributeMutationInlineCache> attribute_mutation_caches;
-        std::vector<ModuleGlobalReadInlineCache> module_global_read_caches;
-        std::vector<ModuleGlobalMutationInlineCache>
-            module_global_mutation_caches;
-        std::vector<FunctionCallInlineCache> function_call_caches;
-        std::vector<OperatorInlineCache> operator_caches;
-        std::vector<KeywordCallInlineCache> keyword_call_caches;
+        InlineCacheTables inline_caches;
         std::vector<NativeFunctionTarget> native_function_targets;
         std::vector<ExceptionTableEntry> exception_table;
         TrustedHandlerResolver trusted_handler_resolver = nullptr;

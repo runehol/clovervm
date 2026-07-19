@@ -2332,7 +2332,8 @@ namespace cl
         OperatorDispatchTableId table_id, uint8_t cache_idx, Value operand0,
         Value operand1, const uint8_t *continuation_pc, const uint8_t *next_pc)
     {
-        OperatorInlineCache &cache = code_object->operator_caches[cache_idx];
+        OperatorInlineCache &cache =
+            code_object->inline_caches.operator_caches[cache_idx];
         if(likely(cache.matches_reflectable_binary(operand0, operand1)))
         {
             if(!cache.trusted_handler.is_null())
@@ -2374,7 +2375,8 @@ namespace cl
         Value operand1, Value operand2, const uint8_t *continuation_pc,
         const uint8_t *next_pc)
     {
-        OperatorInlineCache &cache = code_object->operator_caches[cache_idx];
+        OperatorInlineCache &cache =
+            code_object->inline_caches.operator_caches[cache_idx];
         if(likely(cache.matches_ternary(operand0, operand1)))
         {
             if(!cache.trusted_handler.is_null())
@@ -2416,7 +2418,8 @@ namespace cl
         OperatorDispatchTableId table_id, uint8_t cache_idx, Value operand0,
         Value operand1, const uint8_t *next_pc)
     {
-        OperatorInlineCache &cache = code_object->operator_caches[cache_idx];
+        OperatorInlineCache &cache =
+            code_object->inline_caches.operator_caches[cache_idx];
         if(likely(cache.matches_binary(operand0, operand1)))
         {
             if(!cache.trusted_handler.is_null())
@@ -2456,7 +2459,8 @@ namespace cl
         OperatorDispatchTableId table_id, uint8_t cache_idx, Value operand0,
         Value operand1, Value operand2, const uint8_t *next_pc)
     {
-        OperatorInlineCache &cache = code_object->operator_caches[cache_idx];
+        OperatorInlineCache &cache =
+            code_object->inline_caches.operator_caches[cache_idx];
         if(likely(cache.matches_ternary(operand0, operand1)))
         {
             if(!cache.trusted_handler.is_null())
@@ -2495,7 +2499,8 @@ namespace cl
         OperatorDispatchTableId table_id, uint8_t cache_idx, Value operand0,
         const uint8_t *next_pc)
     {
-        OperatorInlineCache &cache = code_object->operator_caches[cache_idx];
+        OperatorInlineCache &cache =
+            code_object->inline_caches.operator_caches[cache_idx];
         if(likely(cache.matches_unary(operand0)))
         {
             if(!cache.trusted_handler.is_null())
@@ -2531,7 +2536,8 @@ namespace cl
         CodeObject *&code_object, Value &accumulator, uint8_t cache_idx,
         Value container, Value needle, const uint8_t *next_pc)
     {
-        OperatorInlineCache &cache = code_object->operator_caches[cache_idx];
+        OperatorInlineCache &cache =
+            code_object->inline_caches.operator_caches[cache_idx];
         if(likely(cache.matches_unary(container)))
         {
             if(!cache.trusted_handler.is_null())
@@ -2743,7 +2749,7 @@ namespace cl
         TValue<String> attr_name = TValue<String>::from_value_assumed(
             code_object->constant_table[const_offset].value());
         AttributeReadInlineCache &cache =
-            code_object->attribute_read_caches[cache_idx];
+            code_object->inline_caches.attribute_read_caches[cache_idx];
         AttributeReadDescriptor descriptor =
             resolve_attr_read_descriptor(receiver, attr_name);
         if(!descriptor.is_found())
@@ -2782,7 +2788,7 @@ namespace cl
         TValue<String> attr_name = TValue<String>::from_value_assumed(
             code_object->constant_table[const_offset].value());
         AttributeMutationInlineCache &cache =
-            code_object->attribute_mutation_caches[cache_idx];
+            code_object->inline_caches.attribute_mutation_caches[cache_idx];
         AttributeWriteDescriptor descriptor =
             resolve_attr_write_descriptor(receiver, attr_name);
         if(descriptor.is_found())
@@ -2850,7 +2856,7 @@ namespace cl
         TValue<String> attr_name = TValue<String>::from_value_assumed(
             code_object->constant_table[const_offset].value());
         AttributeMutationInlineCache &cache =
-            code_object->attribute_mutation_caches[cache_idx];
+            code_object->inline_caches.attribute_mutation_caches[cache_idx];
         AttributeDeleteDescriptor descriptor =
             resolve_attr_delete_descriptor(receiver, attr_name);
         if(descriptor.is_found())
@@ -3021,7 +3027,7 @@ namespace cl
             code_object->constant_table[name_idx].value());
         ModuleObject *module = code_object->get_defining_module().extract();
         ModuleGlobalReadInlineCache &cache =
-            code_object->module_global_read_caches[cache_idx];
+            code_object->inline_caches.module_global_read_caches[cache_idx];
         ModuleGlobalReadDescriptor descriptor =
             resolve_module_global_read_descriptor(module, name);
         if(descriptor.is_cacheable())
@@ -3041,7 +3047,7 @@ namespace cl
         START(3);
         uint8_t cache_idx = pc[2];
         ModuleGlobalReadInlineCache &cache =
-            code_object->module_global_read_caches[cache_idx];
+            code_object->inline_caches.module_global_read_caches[cache_idx];
         if(unlikely(!cache.matches()))
         {
             MUSTTAIL return op_lda_global_cache_miss(ARGS);
@@ -3059,7 +3065,7 @@ namespace cl
             code_object->constant_table[name_idx].value());
         ModuleObject *module = code_object->get_defining_module().extract();
         ModuleGlobalMutationInlineCache &cache =
-            code_object->module_global_mutation_caches[cache_idx];
+            code_object->inline_caches.module_global_mutation_caches[cache_idx];
         ModuleGlobalWriteDescriptor descriptor =
             resolve_module_global_write_descriptor(module, name);
         if(unlikely(!descriptor.is_found()))
@@ -3084,7 +3090,7 @@ namespace cl
         START(3);
         uint8_t cache_idx = pc[2];
         ModuleGlobalMutationInlineCache &cache =
-            code_object->module_global_mutation_caches[cache_idx];
+            code_object->inline_caches.module_global_mutation_caches[cache_idx];
         if(unlikely(!cache.matches()))
         {
             MUSTTAIL return op_sta_global_cache_miss(ARGS);
@@ -3127,7 +3133,7 @@ namespace cl
         uint8_t cache_idx = pc[3];
         Value receiver = fp[reg];
         AttributeReadInlineCache &cache =
-            code_object->attribute_read_caches[cache_idx];
+            code_object->inline_caches.attribute_read_caches[cache_idx];
         if(unlikely(!cache.matches(receiver)))
         {
             MUSTTAIL return op_load_attr_cache_miss(ARGS);
@@ -3153,7 +3159,7 @@ namespace cl
         uint8_t cache_idx = pc[3];
         Value receiver = fp[reg];
         AttributeMutationInlineCache &cache =
-            code_object->attribute_mutation_caches[cache_idx];
+            code_object->inline_caches.attribute_mutation_caches[cache_idx];
         if(cache.plan.is_add_own_property())
         {
             store_attr_add_own_property_inline_fast(receiver, cache.plan,
@@ -3183,7 +3189,7 @@ namespace cl
         uint8_t cache_idx = pc[3];
         Value receiver = fp[reg];
         AttributeMutationInlineCache &cache =
-            code_object->attribute_mutation_caches[cache_idx];
+            code_object->inline_caches.attribute_mutation_caches[cache_idx];
         if(unlikely(!cache.matches(receiver)))
         {
             MUSTTAIL return op_store_attr_cache_miss(ARGS);
@@ -3203,7 +3209,7 @@ namespace cl
         uint8_t cache_idx = pc[3];
         Value receiver = fp[reg];
         AttributeMutationInlineCache &cache =
-            code_object->attribute_mutation_caches[cache_idx];
+            code_object->inline_caches.attribute_mutation_caches[cache_idx];
         if(unlikely(!cache.matches(receiver)))
         {
             MUSTTAIL return op_del_attr_cache_miss(ARGS);
@@ -4631,7 +4637,7 @@ namespace cl
         uint8_t cache_idx = pc[4];
         Value callable = fp[callable_reg];
         FunctionCallInlineCache &call_cache =
-            code_object->function_call_caches[cache_idx];
+            code_object->inline_caches.function_call_caches[cache_idx];
         if(unlikely(!function_call_cache_matches(call_cache, callable, n_args)))
         {
             INTERP_TRY(populate_positional_call_cache_from_callable(
@@ -4676,7 +4682,7 @@ namespace cl
         uint8_t cache_idx = pc[4];
         Value fun = fp[callable_reg];
         FunctionCallInlineCache &cache =
-            code_object->function_call_caches[cache_idx];
+            code_object->inline_caches.function_call_caches[cache_idx];
 
         if(unlikely(!function_call_cache_matches(cache, fun, n_args)))
         {
@@ -4722,7 +4728,7 @@ namespace cl
         Value keyword_names =
             code_object->constant_table[keyword_names_idx].value();
         KeywordCallInlineCache &cache =
-            code_object->keyword_call_caches[cache_idx];
+            code_object->inline_caches.keyword_call_caches[cache_idx];
         if(unlikely(!keyword_call_cache_matches(cache, fun, n_pos_args)))
         {
             INTERP_TRY(populate_keyword_call_cache_from_callable(
@@ -4753,7 +4759,7 @@ namespace cl
         uint8_t cache_idx = pc[7];
         Value fun = fp[callable_reg];
         KeywordCallInlineCache &cache =
-            code_object->keyword_call_caches[cache_idx];
+            code_object->inline_caches.keyword_call_caches[cache_idx];
 
         if(unlikely(!keyword_call_cache_matches(cache, fun, n_pos_args)))
         {
@@ -4785,7 +4791,7 @@ namespace cl
             code_object->constant_table[const_offset].value());
 
         AttributeReadInlineCache &cache =
-            code_object->attribute_read_caches[read_cache_idx];
+            code_object->inline_caches.attribute_read_caches[read_cache_idx];
         Value callable;
         Value self;
         MethodCallTargetStatus target_status;
@@ -4819,7 +4825,7 @@ namespace cl
         bool has_self = !self.is_not_present();
         uint32_t n_args = n_user_args + (has_self ? 1 : 0);
         FunctionCallInlineCache &call_cache =
-            code_object->function_call_caches[call_cache_idx];
+            code_object->inline_caches.function_call_caches[call_cache_idx];
         int32_t first_arg_reg = prepare_method_call_argument_slots(
             fp, receiver_reg, n_user_args, self);
         if(unlikely(!try_enter_cached_positional_call(
@@ -4850,7 +4856,7 @@ namespace cl
         uint32_t n_user_args = uint8_t(pc[5]);
         Value receiver = fp[receiver_reg];
         AttributeReadInlineCache &cache =
-            code_object->attribute_read_caches[read_cache_idx];
+            code_object->inline_caches.attribute_read_caches[read_cache_idx];
         if(unlikely(!cache.matches(receiver)))
         {
             MUSTTAIL return op_call_method_attr_positional_slow(ARGS);
@@ -4869,7 +4875,7 @@ namespace cl
         bool has_self = !self.is_not_present();
         uint32_t n_args = n_user_args + (has_self ? 1 : 0);
         FunctionCallInlineCache &call_cache =
-            code_object->function_call_caches[call_cache_idx];
+            code_object->inline_caches.function_call_caches[call_cache_idx];
 
         if(unlikely(!function_call_cache_matches(call_cache, callable, n_args)))
         {
@@ -4914,7 +4920,7 @@ namespace cl
             code_object->constant_table[keyword_names_idx].value();
 
         AttributeReadInlineCache &attr_cache =
-            code_object->attribute_read_caches[read_cache_idx];
+            code_object->inline_caches.attribute_read_caches[read_cache_idx];
         Value callable;
         Value self;
         MethodCallTargetStatus target_status;
@@ -4948,7 +4954,7 @@ namespace cl
         bool has_self = !self.is_not_present();
         uint32_t n_pos_args = n_user_pos_args + (has_self ? 1 : 0);
         KeywordCallInlineCache &call_cache =
-            code_object->keyword_call_caches[call_cache_idx];
+            code_object->inline_caches.keyword_call_caches[call_cache_idx];
         if(unlikely(
                !keyword_call_cache_matches(call_cache, callable, n_pos_args)))
         {
@@ -4982,7 +4988,7 @@ namespace cl
         uint8_t keyword_names_idx = pc[8];
         Value receiver = fp[receiver_reg];
         AttributeReadInlineCache &attr_cache =
-            code_object->attribute_read_caches[read_cache_idx];
+            code_object->inline_caches.attribute_read_caches[read_cache_idx];
         if(unlikely(!attr_cache.matches(receiver)))
         {
             MUSTTAIL return op_call_method_attr_keyword_slow(ARGS);
@@ -5001,7 +5007,7 @@ namespace cl
         bool has_self = !self.is_not_present();
         uint32_t n_pos_args = n_user_pos_args + (has_self ? 1 : 0);
         KeywordCallInlineCache &call_cache =
-            code_object->keyword_call_caches[call_cache_idx];
+            code_object->inline_caches.keyword_call_caches[call_cache_idx];
         if(unlikely(
                !keyword_call_cache_matches(call_cache, callable, n_pos_args)))
         {
@@ -5177,7 +5183,8 @@ namespace cl
             }
         }
 
-        OperatorInlineCache &cache = code_object->operator_caches[cache_idx];
+        OperatorInlineCache &cache =
+            code_object->inline_caches.operator_caches[cache_idx];
         if constexpr(NUserArgs <= 2)
         {
             if(trusted_resolution.has_trusted_handler())
@@ -5245,7 +5252,8 @@ namespace cl
         int32_t receiver_reg = int8_t(pc[1]);
         uint8_t cache_idx = pc[3];
         Value receiver = fp[receiver_reg];
-        OperatorInlineCache &cache = code_object->operator_caches[cache_idx];
+        OperatorInlineCache &cache =
+            code_object->inline_caches.operator_caches[cache_idx];
         assert(!cache.trusted_handler.is_null());
 
         accumulator = invoke_special_method_trusted_handler<NUserArgs>(
@@ -5273,7 +5281,8 @@ namespace cl
         int32_t receiver_reg = int8_t(pc[1]);
         uint8_t cache_idx = pc[3];
         Value receiver = fp[receiver_reg];
-        OperatorInlineCache &cache = code_object->operator_caches[cache_idx];
+        OperatorInlineCache &cache =
+            code_object->inline_caches.operator_caches[cache_idx];
         assert(cache.trusted_handler.is_null());
         assert(cache.function != nullptr);
         assert(cache.adaptation != FunctionCallAdaptation::FixedArity);
@@ -5301,7 +5310,8 @@ namespace cl
         int32_t receiver_reg = int8_t(pc[1]);                                  \
         uint8_t cache_idx = pc[3];                                             \
         Value receiver = fp[receiver_reg];                                     \
-        OperatorInlineCache &cache = code_object->operator_caches[cache_idx];  \
+        OperatorInlineCache &cache =                                           \
+            code_object->inline_caches.operator_caches[cache_idx];             \
         if(unlikely(!special_method_cache_matches<NUserArgs>(                  \
                cache, fp, receiver_reg, receiver)))                            \
         {                                                                      \
@@ -5351,7 +5361,8 @@ namespace cl
         int32_t receiver_reg = int8_t(pc[1]);
         uint8_t cache_idx = pc[3];
         Value receiver = fp[receiver_reg];
-        OperatorInlineCache &cache = code_object->operator_caches[cache_idx];
+        OperatorInlineCache &cache =
+            code_object->inline_caches.operator_caches[cache_idx];
         if(unlikely(!special_method_cache_matches<3>(cache, fp, receiver_reg,
                                                      receiver) ||
                     cache.function == nullptr))

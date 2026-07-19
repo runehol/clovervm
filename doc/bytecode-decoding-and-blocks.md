@@ -4,7 +4,7 @@
 |---|---|
 | Document type | Design |
 | Status | Proposed |
-| Implementation | Partial |
+| Implementation | Implemented |
 | Scope | Shared bytecode schema, instruction decoding, lightweight bytecode blocks, and compilation-time inline-cache snapshots |
 | Owning layers | The bytecode layer owns encoded-format metadata, decoding, and bytecode block discovery; each JIT owns its IR CFG, architectural-state flow, SSA construction, and later analyses |
 | Validated against | N/A |
@@ -35,11 +35,9 @@ BytecodeDecoder
 flow. `BytecodeDecoder` owns compilation-scoped feedback snapshots and the list
 of bytecode blocks.
 
-The authoritative physical opcode schema, generated `Bytecode` enum, generated
-opcode names and format metadata, standalone semantic decoding, and migration
-of the printer and tracer to standalone decoding are implemented. Bytecode
-block discovery and compilation-scoped feedback snapshots remain to be
-implemented.
+The authoritative physical opcode schema, standalone semantic decoding,
+printer and tracer migration, compilation-scoped feedback snapshots, and
+bytecode block discovery are implemented.
 
 ## Ownership and Pipeline
 
@@ -188,7 +186,7 @@ class BytecodeDecoder
 public:
     explicit BytecodeDecoder(const CodeObject &code_object);
 
-    BlockRange blocks() const;
+    const std::vector<BytecodeBlock> &blocks() const;
 };
 ```
 
@@ -206,10 +204,13 @@ snapshot. The iterator uses the standalone semantic decoder, resolves its
 typed cache reference against the decoder-owned snapshot tables, and attaches
 a pointer to stable immutable snapshot storage.
 
-The snapshot tables use the same inline-cache structs as `CodeObject`; there
-is no parallel snapshot type hierarchy. Copying a `KeywordCallInlineCache`
-deep-copies its keyword-destination register array using the cache's stored
-`n_kw_args` length. All other current cache structs are directly copyable.
+`CodeObject` groups its seven cache vectors in an `InlineCacheTables`
+aggregate. The decoder copies that aggregate before structural scanning. The
+snapshot tables therefore use the same inline-cache structs as `CodeObject`;
+there is no parallel snapshot type hierarchy. Copying a
+`KeywordCallInlineCache` deep-copies its keyword-destination register array
+using the cache's stored `n_kw_args` length. All other current cache structs
+are directly copyable.
 
 The snapshot convention is:
 
@@ -255,15 +256,15 @@ bytecode-level connectivity:
 class BytecodeBlock
 {
 public:
-    BlockId id() const;
+    BytecodeBlockId id() const;
     uint32_t start_pc_offset() const;
     uint32_t end_pc_offset() const;
 
-    ArrayRef<BlockId> predecessors() const;
-    ArrayRef<BlockId> successors() const;
+    const std::vector<BytecodeBlockId> &predecessors() const;
+    const std::vector<BytecodeBlockId> &successors() const;
 
-    Optional<ExceptionHandlerId> exception_handler() const;
-    ArrayRef<BlockEntrance> entrances() const;
+    std::optional<uint32_t> exception_handler_index() const;
+    const std::vector<uint32_t> &exception_entrances() const;
 
     InstructionRange instructions() const;
 };
@@ -295,9 +296,9 @@ semantic boundary rather than an internal continuation.
 ## Exception Entrances
 
 Splitting at every exception-table start and end makes the applicable
-exception handler constant throughout a block. `exception_handler()` records
-the first covering exception-table entry according to the existing table
-priority rule.
+exception handler constant throughout a block. `exception_handler_index()`
+records the first covering exception-table entry according to the existing
+table priority rule.
 
 Exception handlers are secondary entrances, not ordinary branches or calls.
 An entrance annotation identifies the exception-table entries that may enter a

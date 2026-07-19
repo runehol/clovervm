@@ -804,7 +804,7 @@ TEST(Codegen, equality_emits_paired_operator_check_byte)
     CodeObject *module_code = test_context.compile_file(test_case);
     CodeObject *function_code =
         module_code->constant_table[0].value().get_ptr<CodeObject>();
-    ASSERT_EQ(1u, function_code->operator_caches.size());
+    ASSERT_EQ(1u, function_code->inline_caches.operator_caches.size());
 
     std::string expected =
         "Code object:\n"
@@ -1407,7 +1407,7 @@ TEST(Codegen, subscript_load_uses_receiver_reg_and_accumulator_key)
     CodeObject *module_code = test_context.compile_file(test_case);
     CodeObject *function_code =
         module_code->constant_table[0].value().get_ptr<CodeObject>();
-    ASSERT_EQ(1u, function_code->operator_caches.size());
+    ASSERT_EQ(1u, function_code->inline_caches.operator_caches.size());
 
     std::string expected =
         "Code object:\n"

@@ -344,9 +344,9 @@ TEST(ModuleGlobalBytecode, LoadModuleGlobalReadsModuleSlot)
 
     EXPECT_EQ(Value::from_smi(42),
               context.thread()->run_clovervm_code_object(code));
-    ASSERT_EQ(1u, code->module_global_read_caches.size());
+    ASSERT_EQ(1u, code->inline_caches.module_global_read_caches.size());
     const ModuleGlobalReadInlineCache &cache =
-        code->module_global_read_caches[0];
+        code->inline_caches.module_global_read_caches[0];
     EXPECT_TRUE(cache.matches());
     EXPECT_EQ(module, cache.slot.storage_owner);
 }
@@ -379,9 +379,9 @@ TEST(ModuleGlobalBytecode, LoadModuleGlobalReadsBuiltinsAfterModuleMiss)
 
     EXPECT_EQ(Value::from_smi(7),
               context.thread()->run_clovervm_code_object(code));
-    ASSERT_EQ(1u, code->module_global_read_caches.size());
+    ASSERT_EQ(1u, code->inline_caches.module_global_read_caches.size());
     const ModuleGlobalReadInlineCache &cache =
-        code->module_global_read_caches[0];
+        code->inline_caches.module_global_read_caches[0];
     EXPECT_TRUE(cache.matches());
     EXPECT_EQ(builtins, cache.slot.storage_owner);
 }
@@ -409,8 +409,8 @@ TEST(ModuleGlobalBytecode, LoadModuleGlobalMissingNameRaisesNameError)
     Value result = context.thread()->run_clovervm_code_object(code);
 
     EXPECT_TRUE(result.is_exception_marker());
-    ASSERT_EQ(1u, code->module_global_read_caches.size());
-    EXPECT_FALSE(code->module_global_read_caches[0].matches());
+    ASSERT_EQ(1u, code->inline_caches.module_global_read_caches.size());
+    EXPECT_FALSE(code->inline_caches.module_global_read_caches[0].matches());
     EXPECT_STREQ(L"NameError: name 'not_present' is not defined",
                  module_global_pending_python_error(context.thread()).c_str());
     context.thread()->clear_pending_exception();
@@ -441,13 +441,14 @@ TEST(ModuleGlobalBytecode, StoreModuleGlobalWritesModuleSlot)
     EXPECT_EQ(Value::from_smi(11),
               context.thread()->run_clovervm_code_object(code));
     EXPECT_EQ(Value::from_smi(11), module->get_own_property(global_name));
-    ASSERT_EQ(1u, code->module_global_mutation_caches.size());
-    EXPECT_FALSE(code->module_global_mutation_caches[0].matches());
+    ASSERT_EQ(1u, code->inline_caches.module_global_mutation_caches.size());
+    EXPECT_FALSE(
+        code->inline_caches.module_global_mutation_caches[0].matches());
 
     EXPECT_EQ(Value::from_smi(11),
               context.thread()->run_clovervm_code_object(code));
     const ModuleGlobalMutationInlineCache &cache =
-        code->module_global_mutation_caches[0];
+        code->inline_caches.module_global_mutation_caches[0];
     EXPECT_TRUE(cache.matches());
     EXPECT_EQ(module, cache.store_existing.storage_owner);
 
@@ -489,9 +490,9 @@ TEST(ModuleGlobalBytecode, DeleteModuleGlobalDeletesModuleSlot)
               context.thread()->run_clovervm_code_object(code));
     EXPECT_TRUE(module->get_own_property(global_name).is_not_present());
     EXPECT_EQ(Value::from_smi(2), builtins->get_own_property(global_name));
-    ASSERT_EQ(1u, code->module_global_read_caches.size());
+    ASSERT_EQ(1u, code->inline_caches.module_global_read_caches.size());
     const ModuleGlobalReadInlineCache &cache =
-        code->module_global_read_caches[0];
+        code->inline_caches.module_global_read_caches[0];
     EXPECT_TRUE(cache.matches());
     EXPECT_EQ(builtins, cache.slot.storage_owner);
 }
@@ -547,13 +548,13 @@ TEST(ModuleGlobalBytecode, CachedLoadReadsReboundModuleValue)
 
     EXPECT_EQ(Value::from_smi(1),
               context.thread()->run_clovervm_code_object(code));
-    ASSERT_TRUE(code->module_global_read_caches[0].matches());
+    ASSERT_TRUE(code->inline_caches.module_global_read_caches[0].matches());
 
     ASSERT_TRUE(store_module_global(module, global_name, Value::from_smi(2)));
 
     EXPECT_EQ(Value::from_smi(2),
               context.thread()->run_clovervm_code_object(code));
-    EXPECT_TRUE(code->module_global_read_caches[0].matches());
+    EXPECT_TRUE(code->inline_caches.module_global_read_caches[0].matches());
 }
 
 TEST(ModuleGlobalBytecode, CachedModuleLoadInvalidatesAndRevealsBuiltin)
@@ -586,14 +587,16 @@ TEST(ModuleGlobalBytecode, CachedModuleLoadInvalidatesAndRevealsBuiltin)
     EXPECT_EQ(Value::from_smi(1),
               context.thread()->run_clovervm_code_object(code));
     ValidityCell *module_cell =
-        code->module_global_read_caches[0].lookup_validity_cell;
+        code->inline_caches.module_global_read_caches[0].lookup_validity_cell;
     ASSERT_TRUE(delete_module_global(module, global_name));
     EXPECT_FALSE(module_cell->is_valid());
 
     EXPECT_EQ(Value::from_smi(2),
               context.thread()->run_clovervm_code_object(code));
-    EXPECT_TRUE(code->module_global_read_caches[0].matches());
-    EXPECT_EQ(builtins, code->module_global_read_caches[0].slot.storage_owner);
+    EXPECT_TRUE(code->inline_caches.module_global_read_caches[0].matches());
+    EXPECT_EQ(
+        builtins,
+        code->inline_caches.module_global_read_caches[0].slot.storage_owner);
 }
 
 TEST(ModuleGlobalBytecode, CachedBuiltinsLoadReadsReboundBuiltinsValue)
@@ -624,13 +627,13 @@ TEST(ModuleGlobalBytecode, CachedBuiltinsLoadReadsReboundBuiltinsValue)
 
     EXPECT_EQ(Value::from_smi(1),
               context.thread()->run_clovervm_code_object(code));
-    ASSERT_TRUE(code->module_global_read_caches[0].matches());
+    ASSERT_TRUE(code->inline_caches.module_global_read_caches[0].matches());
 
     ASSERT_TRUE(store_module_global(builtins, global_name, Value::from_smi(2)));
 
     EXPECT_EQ(Value::from_smi(2),
               context.thread()->run_clovervm_code_object(code));
-    EXPECT_TRUE(code->module_global_read_caches[0].matches());
+    EXPECT_TRUE(code->inline_caches.module_global_read_caches[0].matches());
 }
 
 TEST(ModuleGlobalBytecode, CachedBuiltinsLoadInvalidatesOnBuiltinsReassignment)
@@ -670,14 +673,15 @@ TEST(ModuleGlobalBytecode, CachedBuiltinsLoadInvalidatesOnBuiltinsReassignment)
     EXPECT_EQ(Value::from_smi(1),
               context.thread()->run_clovervm_code_object(code));
     ValidityCell *builtins_cell =
-        code->module_global_read_caches[0].lookup_validity_cell;
+        code->inline_caches.module_global_read_caches[0].lookup_validity_cell;
 
     module->set_builtins_binding(Value::from_oop(second_builtins));
     EXPECT_FALSE(builtins_cell->is_valid());
 
     EXPECT_EQ(Value::from_smi(2),
               context.thread()->run_clovervm_code_object(code));
-    EXPECT_TRUE(code->module_global_read_caches[0].matches());
-    EXPECT_EQ(second_builtins,
-              code->module_global_read_caches[0].slot.storage_owner);
+    EXPECT_TRUE(code->inline_caches.module_global_read_caches[0].matches());
+    EXPECT_EQ(
+        second_builtins,
+        code->inline_caches.module_global_read_caches[0].slot.storage_owner);
 }
