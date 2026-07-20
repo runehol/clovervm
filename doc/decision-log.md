@@ -600,29 +600,31 @@ interpreted, compiled, native, and reentrant execution.
 ### Decision
 
 Target backends emit directly encodable instructions in program order into
-`CodeFragment`s. Any operation whose encoding depends on its final PC
-terminates a fragment for layout purposes and remains symbolic until final
-layout. This includes branches, jumps, calls, PC-relative loads, and address
-formation. `DeferredTransfer` is the linking or non-linking control-transfer
-kind of trailing deferred operation. Fragments are machine-code layout units
-rather than compiler basic blocks, so side-exit guards may split one compiler
-block into several fragments. A linking transfer returns to the beginning of
-the following fragment, while non-linking transfers include jumps and tail
-calls.
+`CodeFragment`s. A fixed-size instruction whose fields depend on its final PC
+is emitted as template bytes plus a machine-specific relocation. An operation
+whose size may change instead terminates a fragment for layout purposes and
+remains symbolic until final layout. `DeferredTransfer` is the linking or
+non-linking control-transfer kind of trailing deferred operation. Fragments are
+machine-code layout units rather than compiler basic blocks, so side-exit guards
+may split one compiler block into several fragments. A linking transfer returns
+to the beginning of the following fragment, while non-linking transfers include
+jumps and tail calls.
 
 Labels, code positions, fragments, and the three-pass finalizer are target-
 independent. The finalizer is a template over the target's deferred-operation
-type. That type supplies target-specific operation kinds, size and form
-selection, final encoding, scratch registers, PC-relative semantics, and the
-maximum pessimistic unit size. A label itself identifies only a fragment
-boundary and is not parameterized by the target or deferred-operation type.
+and relocation types. The deferred-operation type supplies target-specific
+operation kinds, size and form selection, final encoding, scratch registers,
+PC-relative semantics, and the maximum pessimistic unit size. The relocation
+type patches fixed-size instruction fields during final copying and cannot
+change layout. A label itself identifies only a fragment boundary and is not
+parameterized by either target type.
 
 Every machine-code `Value` constant resides in a naturally aligned slot in a
 separately identified GC-visible pool, including SMIs and booleans. The pool is
 aligned to `sizeof(Value)` in a stable code-cache slice within target reach.
-Fixed-size constant loads are inline deferred operations rather than fragment
-terminators: AArch64 uses a literal `LDR` or fixed far-pool `ADRP` plus `LDR`
-policy, while x86-64 rewrites one RIP-relative `MOV` after its final PC is
+Fixed-size constant loads use machine-specific relocations rather than fragment
+terminators: AArch64 patches a literal `LDR` or fixed far-pool `ADRP` plus `LDR`
+template, while x86-64 patches one RIP-relative `MOV` after its final PC is
 known.
 
 Non-`Value` constants are excluded from the initial pool. Target macro
@@ -647,12 +649,26 @@ is 128 MiB. The emitter requests stable code and pool slices from the code cache
 The second walk assigns actual fragment starts and selects forms in program
 order. Internal label targets use pessimistic source and target offsets,
 including unresolved forward targets; shortening between them can only reduce
-displacement magnitude. An outside-unit or constant-pool target uses its exact
-address and the actual source PC already assigned by the second-pass cursor.
-The third walk writes encoded bytes, inline fixups, and selected trailing
-operations directly into the destination buffer, then populates the pool. Form
+displacement magnitude. An outside-unit target uses its exact address and the
+actual executable source PC already assigned by the second-pass cursor. The
+third walk copies encoded templates, invokes relocations, and writes selected
+trailing operations directly into the destination buffer, then populates the
+pool. Relocations compute pool displacements from the final executable PC. Form
 selection is not iterated. Each target exposes a direct assembler for exact
 instructions and a macro assembler for operations that may expand.
+
+Both target hooks distinguish the writable destination from the executable PC.
+The writable destination is a `void *`; executable PCs, pool-slot addresses,
+and resolved machine targets are opaque `MachineAddress` values. The latter
+supports only checked offset advancement, checked signed byte or aligned
+displacement, offset within an alignment, and raw-bit extraction for
+materializing an indirect transfer target. The aligned queries provide the
+architectural-page operations needed by AArch64 `ADRP` plus `LDR` without
+exposing general address arithmetic. Target hooks store bytes through the
+writable pointer and perform every displacement, page-relative calculation,
+and reachability check through `MachineAddress`. This permits a Linux code
+cache to use distinct RW and RX aliases without changing the emitter or target
+encoders.
 
 On AArch64, the macro assembler emits linking and non-linking absolute-target
 transfers. Reachable targets use `BL` and `B`, respectively. Far targets are
@@ -702,7 +718,8 @@ few additional branches could shorten only after iteration.
   unconditional branches;
 - one compiler block may produce many code fragments without changing SSA or
   CFG structure;
-- fixed-size PC-dependent operations may use fragment-relative inline fixups;
+- fixed-size PC-dependent instructions use fragment-relative, machine-specific
+  relocations;
   only variable-size operations must terminate fragments;
 - final encoding asserts that every selected short or direct form still fits;
 - deferred operations store a caller-supplied scratch register, with AArch64
@@ -759,9 +776,14 @@ their permissions remain RW/NX. The later macOS implementation packs functions
 within `MAP_JIT` pages and uses thread-local JIT write protection without
 changing emitter APIs or executable addresses.
 
+The interface also supports the intended Linux implementation in which one
+physical code allocation has distinct RW and RX virtual aliases. Deferred
+operations and relocations receive both addresses, write only through the RW
+view, and calculate all encoded PCs from the RX view.
+
 The cache prefers placement within AArch64's approximately 1 MiB literal-load
 range. A far-pool path using `ADRP` plus `LDR` remains required for units that
-cannot use near placement. Fixed-size pool loads are inline fragment fixups;
+cannot use near placement. Fixed-size pool loads use per-fragment relocations;
 only operations whose size remains undecided terminate fragments.
 
 An AArch64 attempt first emits in near-literal mode. A typed near-placement
@@ -812,6 +834,8 @@ initial macOS target without exposing page mechanics to the compiler.
 - direct outside-unit targets must remain stable for the source unit's lifetime;
 - the allocator, not the emitter, owns page size, virtual placement, writable
   scopes, instruction-cache synchronization, and publication;
+- target encoders never derive an executable PC from a writable pointer, so
+  distinct Linux RW and RX aliases preserve correct relocation arithmetic;
 - unusually large units need a far-pool allocation/emission path rather than an
   unconditional permanent refusal to compile;
 - near-placement rejection causes one deterministic far-mode re-emission;

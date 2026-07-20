@@ -59,35 +59,66 @@ sequence.
 
 The target backend emits instructions in final program order. Directly
 encodable instructions are appended immediately to a byte buffer in the
-current `CodeFragment`. A branch, jump, call, PC-relative load, or other
-operation whose encoding depends on its final PC terminates the fragment for
-layout purposes and remains symbolic until final layout:
+current `CodeFragment`. A fixed-size instruction whose fields depend on its
+final PC appends an encoded template and a machine-specific relocation. Only an
+operation whose size may change terminates the fragment for layout purposes
+and remains symbolic until final layout:
 
 ```text
 CodeFragment
     directly encoded instruction bytes, including fixed-size placeholders
-    zero or more inline deferred operations at fragment-relative offsets
+    zero or more RelocationEntry<Relocation> records
+        fragment-relative instruction offset
+        machine-specific relocation payload
     optional trailing size-varying deferred operation
 ```
 
-A fixed-size PC-dependent operation reserves placeholder bytes inside the
-fragment and records an inline deferred operation at that byte offset. It does
-not end the fragment. A variable-size deferred operation is stored at the end
-of the fragment and starts a new fragment for the following instruction stream.
-`DeferredTransfer` is the branch, jump, and call kind; other kinds include
-PC-relative loads and address formation. Every kind records its minimum and
-maximum sizes and enough symbolic information to select and encode one form
-after layout. The generic emitter asserts that an inline operation has equal
-minimum and maximum sizes and that only the optional trailing operation may
-change fragment size.
+A fixed-size PC-dependent operation records the current byte offset, appends its
+complete instruction template with zeroed address fields, and pushes a
+relocation entry at that instruction offset. It does not end the fragment. A
+variable-size deferred operation is stored at the end of the fragment and
+starts a new fragment for the following instruction stream.
+`DeferredTransfer` is the branch, jump, and call kind; other deferred kinds may
+include variable-size PC-relative loads and address formation. Every deferred
+operation records its minimum and maximum sizes and enough symbolic information
+to select and encode one form after layout.
 
 The fragment container and three-pass finalizer are target-independent and are
-implemented as a template over the target's deferred-operation type:
+implemented as a template over the target's deferred-operation and relocation
+types:
 
 ```text
-MachineCodeEmitter<DeferredOperation>
-    vector<CodeFragment<DeferredOperation>>
+MachineCodeEmitter<DeferredOperation, Relocation>
+    vector<CodeFragment<DeferredOperation, Relocation>>
 ```
+
+Executable PCs, outside-unit targets, and pool-slot addresses use an opaque
+`MachineAddress`, not an integer alias or C++ pointer. Its deliberately narrow
+interface is conceptually:
+
+```text
+MachineAddress::offset_by(size_t bytes) -> MachineAddress
+MachineAddress::displacement_to(MachineAddress target) -> int64_t
+MachineAddress::aligned_displacement_to(
+    MachineAddress target, size_t alignment) -> int64_t
+MachineAddress::offset_within(size_t alignment) -> size_t
+MachineAddress::bits_for_indirect_target() -> uintptr_t
+```
+
+`offset_by` performs checked address advancement for fragment and slot layout.
+`displacement_to` computes a checked signed byte displacement without relying
+on signed integer overflow or implementation-defined unsigned-to-signed
+conversion. The aligned variants expose exactly the page displacement and
+within-page offset needed by encodings such as AArch64 `ADRP` plus `LDR`, using
+the architecture's 4 KiB page granule rather than the host OS page size.
+`bits_for_indirect_target` exists only so a target macro assembler can
+materialize an absolute address before an indirect jump or call. The type has
+no implicit pointer or integer conversion and no general arithmetic operators.
+
+Writable instruction destinations use `void *`. The generic finalizer computes
+the already-offset writable location before calling a target hook; target code
+may cast that pointer only to store encoded fields. It cannot use a writable
+pointer as a machine PC.
 
 `Label` and `CodePosition` are not template-dependent. A label identifies only
 a fragment boundary. A code position identifies a fragment plus an offset in
@@ -101,6 +132,29 @@ second layout pass, reports that selected size, and encodes only the stored form
 during the third pass. Selection is not rerun while encoding. It also provides
 the target's maximum pessimistic emission-unit size; the generic emitter does
 not hardcode AArch64's 128 MiB limit.
+
+Deferred-operation selection receives a `MachineAddress` executable source PC,
+never a writable pointer. Final encoding receives both a `void *` writable
+destination at which to store the selected bytes and the corresponding
+`MachineAddress` executable PC from which all displacements are calculated.
+Those addresses may differ when the code cache uses dual mappings.
+
+The relocation type is also machine-specific and uses a compact tagged-kind
+representation. Its enclosing target-independent `RelocationEntry` supplies
+the fragment-relative instruction offset; the payload supplies the symbolic
+data and field layout needed for patching, such as a constant-pool slot offset,
+instruction length, or displacement-field offset. It has no size-selection
+interface and cannot change fragment layout. During the third pass, after the
+fragment template bytes have been copied, the generic emitter invokes every
+relocation with the `void *` writable instruction location, the corresponding
+`MachineAddress` executable instruction PC, and the finalized code and pool
+address context. The writable location is used only as the destination of
+stores; every displacement, page calculation, and reachability check uses
+`MachineAddress`. A relocation may
+modify only fields reserved by its instruction template; a multi-instruction
+template such as AArch64 `ADRP` plus `LDR` uses one composite relocation.
+Relocations are consumed by finalization and are not retained as a relocation
+table after publication.
 
 Within-unit operations are constructed with a `Label` target. Outside-unit
 transfers are constructed through separate macro-assembler entry points that
@@ -127,14 +181,16 @@ without changing the emitter interface.
 The resulting intended reuse is:
 
 ```text
-using AArch64Emitter = MachineCodeEmitter<AArch64DeferredOperation>
-using X86_64Emitter = MachineCodeEmitter<X86_64DeferredOperation>
+using AArch64Emitter =
+    MachineCodeEmitter<AArch64DeferredOperation, AArch64Relocation>
+using X86_64Emitter =
+    MachineCodeEmitter<X86_64DeferredOperation, X86_64Relocation>
 ```
 
 The target assemblers append their already encoded instruction bytes to the
-same generic fragment interface and construct their own trailing operation
-types. Target-specific PC bases, displacement fields, selected forms, scratch
-registers, and final encoding remain contained in those operation types.
+same generic fragment interface and construct their own relocation and trailing
+operation types. Target-specific PC bases, displacement fields, selected forms,
+scratch registers, and final encoding remain contained in those types.
 
 Terminating a fragment is a layout property, not necessarily a control-flow
 property. A linking transfer returns to the beginning of the following
@@ -268,18 +324,20 @@ aligned to `sizeof(Value)`, separately identifiable, and writable by the moving
 collector. Detailed placement and publication policy are defined by
 [JIT Code Cache and Publication](jit-code-cache.md).
 
-A constant-pool load is a deferred PC-dependent operation even when its size is
-fixed. It stores a target register and pool offset. During the second pass its
-slot address is
+A constant-pool load with a form fixed by the attempt's pool mode is represented
+by encoded template bytes plus a machine-specific relocation. The relocation
+entry stores the fragment-relative instruction location; its payload stores the
+field layout, target register information needed for validation, and pool
+offset. Its slot address is
 
 ```text
 value_pool_address + constant_pool_offset
 ```
 
-and its target-specific form is selected from that fixed address and the actual
-source PC. During the third pass the selected instruction form is encoded and
-the owned pool values are copied into their final slots. Neither code nor pool
-may move relative to the other afterward.
+During the third pass the relocation computes the exact fields from that fixed
+address and the instruction's actual executable PC, patches the copied template,
+and revalidates its reach. The owned pool values are then copied into their
+final slots. Neither code nor pool may move relative to the other afterward.
 
 ## Non-`Value` immediate materialization
 
@@ -351,12 +409,15 @@ cursor has already assigned. The selected size advances the cursor to the next
 fragment's actual start address.
 
 The third pass walks the now-final fragments and writes directly into the
-allocated destination buffer. It copies each fragment's already encoded bytes,
-encodes its inline deferred operations at their recorded offsets, and encodes
-its selected trailing operation from the actual source and target addresses.
-It then copies the owned `Value`s into the stable pool slice. There is no
-intermediate final-layout buffer. The final code size may be smaller than its
-pessimistic capacity; the pool address does not change.
+allocated destination buffer. For each final byte offset it derives a writable
+destination from `CodeSlice::write_pointer` and an independent executable PC
+from `CodeSlice::execute_address`. It copies each fragment's already encoded
+template bytes, invokes its relocations with both addresses, and encodes its
+selected trailing operation using the writable address only as a destination
+and the executable address as its source PC. It then copies the owned `Value`s
+into the stable pool slice. There is no intermediate final-layout buffer. The
+final code size may be smaller than its pessimistic capacity; the pool address
+does not change.
 
 Form selection is not iterated. The design deliberately accepts conservative
 long forms for internal targets in exchange for simple and deterministic
@@ -408,8 +469,8 @@ is reachable from every other instruction address.
 ## AArch64 constant-pool loads
 
 The target backend begins an attempt in `NearLiteral` pool mode. It emits each
-near AArch64 `Value` constant-pool load as a fixed-size inline deferred
-operation using a literal load:
+near AArch64 `Value` constant-pool load as a fixed-size instruction template
+with a relocation for its literal displacement:
 
 ```asm
     ldr  destination, pool_slot
@@ -434,8 +495,10 @@ layout asserts that the complete code-to-pool span satisfies the `ADRP` range;
 the 128 MiB code cap leaves ample room for the pool.
 
 Both policies fix instruction size before the load is appended to its fragment.
-The instruction bytes remain deferred only because their final PC-relative
-fields must be written in the third pass.
+The assembler writes complete instruction templates with zeroed PC-relative
+fields and pushes an AArch64 relocation onto the fragment. The relocation
+patches `imm19` for the near form or the `ADRP` page displacement and scaled
+`LDR` page offset for the far form during the third pass.
 
 After pessimistic sizing, a near-mode attempt requests placement satisfying the
 literal-load reachability contract. If the cache reports that near placement is
@@ -480,18 +543,20 @@ the backend has not already removed it as a fall-through transfer. Calls and
 jumps to absolute targets use the same pass-two exact-PC rule when choosing a
 PC-relative form over a target-specific indirect form.
 
-A `Value` constant-pool load is an inline deferred operation with one
-instruction size. It uses a 64-bit RIP-relative memory operand:
+A `Value` constant-pool load is an encoded instruction template plus an
+x86-64 relocation. It uses a 64-bit RIP-relative memory operand:
 
 ```asm
     mov destination, qword ptr [rip + pool_slot]
 ```
 
 The signed `disp32` is relative to the end of the instruction and reaches from
--2 GiB through +2 GiB - 1 byte. The deferred operation therefore has equal
-minimum and maximum sizes but still waits until the third pass for its final
-PC-relative encoding. It does not end its fragment. Final layout asserts that
-the complete code-to-pool span fits `disp32`.
+-2 GiB through +2 GiB - 1 byte. The assembler appends the complete prefix,
+opcode, ModR/M byte, and a zero `disp32`, then records the displacement-field
+offset and instruction length in the relocation. The third pass derives the
+executable instruction-end PC and patches the copied `disp32`. This does not
+end the fragment. Final layout asserts that the complete code-to-pool span fits
+`disp32`.
 
 As on AArch64, selection is non-iterative. Some x86 branches that would fit
 only after other branches shrink remain in their near form. This is an
@@ -524,8 +589,10 @@ Emitter tests should cover:
   third pass;
 - separately allocated stable code and pool slices, with a
   `sizeof(Value)`-aligned pool and naturally aligned slots at recorded offsets;
-- inline fixed-size PC-dependent operations encoded at fragment-relative
-  offsets without creating fragment boundaries;
+- fixed-size PC-dependent instruction templates and per-fragment relocations
+  applied at fragment-relative offsets without creating fragment boundaries;
+- relocations and trailing deferred operations using distinct writable and
+  executable addresses, with all PC-relative calculations based on the latter;
 - all `Value` constants, including SMIs and booleans, loaded from pool slots
   rather than embedded in instruction bytes;
 - exclusion of non-`Value` literals from the pool and immediate AArch64

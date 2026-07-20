@@ -64,14 +64,25 @@ calculations from the executable address:
 
 ```text
 CodeSlice
-    write_pointer
-    execute_address
+    void *write_pointer
+    MachineAddress execute_address
     capacity
 ```
 
 Those addresses may be equal, as in the initial implementation and typical
-macOS `MAP_JIT` use, or may be aliases in a future platform implementation. The
-emitter must never infer executable addresses from writable pointers.
+macOS `MAP_JIT` use, or may be distinct aliases, as required by the intended
+Linux dual-mapping implementation. The emitter must never infer executable
+addresses from writable pointers.
+
+`write_pointer` is a `void *`, while `execute_address` and the pool slice's
+address are opaque `MachineAddress` values. `MachineAddress` supports checked
+offset advancement, checked signed byte and aligned displacement between two
+machine addresses, offset within an alignment, and extraction of address bits
+solely for materializing an indirect transfer target. The aligned queries
+support architectural page-relative encodings without exposing general integer
+arithmetic. The type has no implicit pointer or integer conversion. The cache
+constructs machine addresses from its mappings; target encoders do not
+construct them from writable pointers.
 
 Conceptually, finalization requests storage after its pessimistic sizing pass:
 
@@ -138,33 +149,40 @@ AArch64 far pool:   ADRP + LDR        8 bytes
 x86-64 pool:        RIP-relative MOV  fixed target-specific size
 ```
 
-Because the chosen policy fixes pool-load size, loads can use inline PC-
-relative fixups rather than terminating fragments.
+Because the chosen policy fixes pool-load size, loads can use per-fragment
+relocations rather than terminating fragments.
 
-## Inline fixups and fragment layout
+## Relocations and fragment layout
 
 The generic emitter distinguishes final-PC rewriting from size-dependent
-layout. A fixed-size PC-dependent operation may appear inside a fragment:
+layout. A fixed-size PC-dependent instruction may appear inside a fragment as
+encoded template bytes plus a machine-specific relocation:
 
 ```text
 CodeFragment
     encoded bytes containing fixed-size placeholders
-    inline deferred operations
+    RelocationEntry<Relocation> records
         fragment-relative byte offset
-        target-specific DeferredOperation with min_size == max_size
+        target-specific Relocation
     optional trailing DeferredOperation whose size may vary
 ```
 
-The third finalization pass copies ordinary bytes and encodes inline operations
-at their actual addresses. An inline operation never changes fragment size. A
-variable-size operation remains the sole trailing operation and ends the
-fragment for layout purposes.
+The third finalization pass copies the template bytes and invokes each
+relocation at its actual location. A relocation patches only reserved fields
+and never changes fragment size. A variable-size operation remains the sole
+trailing deferred operation and ends the fragment for layout purposes.
 
-This uses the same target-specific `DeferredOperation` template parameter for
-both roles and does not introduce a separate relocation framework. AArch64
-near-pool `LDR` operations and x86-64 RIP-relative pool loads are inline. An
-AArch64 far-pool `ADRP` plus `LDR` is also inline when far-pool mode was selected
-before emission.
+The generic emitter is parameterized independently by the target's
+`DeferredOperation` and `Relocation` types. AArch64 near-pool `LDR` instructions
+and x86-64 RIP-relative pool loads use relocations. An AArch64 far-pool `ADRP`
+plus `LDR` pair uses one relocation when far-pool mode was selected before
+emission.
+
+Every final-copy hook receives a writable destination and the independently
+computed executable PC. The former is used only to store instruction bytes;
+relocation arithmetic, deferred-operation selection, final encoding, and
+reachability checks all use the latter. This is required for Linux code caches
+that expose separate RW and RX virtual mappings of the same physical pages.
 
 ## Tier 1: page-rounded private code
 
@@ -251,7 +269,9 @@ Code-cache tests should cover:
 - injected code and pool allocation failures leaving no published entry point,
   no leaked reservation or owned `Value`, and no Python pending exception;
 - x86-64 RIP-relative pool reachability;
-- inline fixup encoding without fragment creation or size changes;
+- relocation patching without fragment creation or size changes;
+- deferred-operation and relocation calculations using `execute_address` when
+  the writable and executable mappings have different virtual addresses;
 - final instruction bytes verified through an independent disassembler;
 - simulated moving-GC rewrites changing pool slots without changing code bytes;
 - publication ordering under concurrent lookup and entry;
@@ -269,7 +289,8 @@ The design does not yet choose:
 - the concrete macOS writable-scope API wrapper and entitlement handling;
 - publication and cache-synchronization implementations for each target and
   platform;
-- code-cache policies for non-macOS platforms.
+- the concrete Linux dual-mapping implementation and policies for other
+  non-macOS platforms.
 
 Those choices must not leak virtual-memory or platform publication mechanics
 into the target assembler or fragment-layout algorithm.
