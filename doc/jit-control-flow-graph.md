@@ -14,8 +14,9 @@ This document describes the implemented structural control-flow representation
 shared in shape by Core IR and the optional Semantic IR. It also specifies the
 agreed block-parameter extension, which is not implemented yet. It refines the
 ordered list-based SSA direction in
-[JIT Compiler and IR](jit-compiler-and-ir.md) without settling the permanent
-instruction representation or a complete graph-editing API.
+[JIT Compiler and IR](jit-compiler-and-ir.md). The permanent instruction
+storage and typed-access direction is specified separately in
+[JIT Instruction Representation](jit-instruction-representation.md).
 
 The central representation is:
 
@@ -146,17 +147,16 @@ also carries a `TerminatorKind` and its ordered block-successor edges. The
 concrete branch classes provide the semantic edge accessors.
 
 This hierarchy is scaffolding, not a commitment to permanent virtual
-instructions. A later single instruction representation may use an opcode or
-terminator-kind enum and must continue to provide both:
+instructions. The accepted fixed-size, type-erased instruction representation
+will replace it and must continue to provide both:
 
 - a generic ordered block-successor interface for CFG algorithms;
 - checked semantic accessors such as `edge()`, `true_edge()`, and
   `false_edge()` for clients that understand the terminator kind.
 
-The concrete instruction representation remains deliberately open between a
-Carbon-style fixed erased record with typed views and a Turboshaft-style tagged,
-variable-sized operation representation. Both can implement this terminator
-contract without virtual dispatch or C++ RTTI.
+The typed terminator views and their underlying fixed instruction payload will
+implement this contract without virtual dispatch or C++ RTTI. See
+[JIT Instruction Representation](jit-instruction-representation.md).
 
 ## First-Class Block Edges
 
@@ -403,10 +403,6 @@ choice, not a change to the accepted block-argument design above.
 
 ## Open Decisions After Initial Implementation
 
-- Carbon-style fixed instruction records versus Turboshaft-style variable-sized
-  tagged operations;
-- final instruction and value representation, including any typed reference
-  views layered over arena pointers and serials;
 - whether editing pressure justifies replacing the initial vectors for block
   order, instruction order, or incoming edges;
 - the graph mutation/editor API and final visibility of raw arena allocation;
@@ -417,14 +413,9 @@ choice, not a change to the accepted block-argument design above.
 - the boundary between structural CFG verification and broader SSA or
   operation verification.
 
-The instruction representation should be chosen only after implementing a
-representative paper design for operations such as parameters, Snapshots,
-guards, arithmetic, calls, unconditional branches, and conditional branches.
-The CFG contract in this document is intended to support either candidate
-without prejudging that choice.
-
 ## Related Documents
 
+- [JIT Instruction Representation](jit-instruction-representation.md)
 - [JIT Compiler and IR](jit-compiler-and-ir.md)
 - [Semantic IR and Specialization](jit-semantic-ir-and-specialization.md)
 - [JIT Compiler Bring-up Plan](jit-compiler-bring-up-plan.md)

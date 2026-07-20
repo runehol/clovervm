@@ -144,8 +144,14 @@ control flow or a guard creates a new block parameter or refinement result; an
 existing value does not acquire a different guaranteed type at another program
 position.
 
-Analysis stores facts in side tables keyed by typed `ProgramValueRef`, leaving
-instructions immutable. An operation supplies a transfer function:
+The current inferred type and analyzed effects are the narrowly mutable
+analysis fields on an instruction and are updated only through the
+`InstructionAnalysisEditor` described in
+[JIT Instruction Representation](jit-instruction-representation.md). Updates
+occur within an analysis mutation phase; transformations consume only the
+validated state frozen when that phase commits. Richer evidence, conditional
+facts, and partition state remain in analysis side tables keyed by typed
+program-value references. An operation supplies a transfer function:
 
 ```text
 infer_result(operation, operand facts) -> ValueFacts

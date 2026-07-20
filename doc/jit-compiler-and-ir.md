@@ -18,7 +18,10 @@ and reclamation machinery.
 Implementation order and temporary runtime policies belong to the
 [JIT Compiler Bring-up Plan](jit-compiler-bring-up-plan.md). The optional
 higher-effort inference frontend belongs to
-[Semantic IR and Specialization](jit-semantic-ir-and-specialization.md).
+[Semantic IR and Specialization](jit-semantic-ir-and-specialization.md). The
+fixed instruction storage, typed read-only views, and restricted analysis
+mutation API belong to
+[JIT Instruction Representation](jit-instruction-representation.md).
 
 The mandatory compiler pipeline has one principal compiler IR:
 
@@ -340,9 +343,9 @@ block, one region, or the complete function.
 A direct backend may maintain tables such as:
 
 ```text
-ProgramValueRef    -> register | spill | canonical slot | constant
-CoreEdgeId         -> parallel move bundle
-CoreInstructionId -> LocationSummary and lowering choice
+ProgramValueRef -> register | spill | canonical slot | constant
+BlockEdge *      -> parallel move bundle
+Instruction *    -> LocationSummary and lowering choice
 ```
 
 A target-specific `LocationSummary` describes the input, output, and temporary
@@ -566,18 +569,19 @@ so one taken exit creates one box and preserves Python object identity. It does
 not change the normal-path representation of the unboxed SSA value or create an
 allocator-visible program value.
 
-### Instruction results, typed identities, and deterministic traversal
+### Instruction results, pointer references, and deterministic traversal
 
-Compiler objects use strongly typed integer identities rather than pointer
-identity:
+Instructions, blocks, and block edges use stable pointers for semantic
+references. A client can follow an operand or CFG edge without also carrying a
+container that translates an integer ID back into the referenced object. Each
+arena pool nevertheless assigns a strongly typed, monotonically increasing
+serial to every allocation. Serials identify objects for diagnostics, stable
+tie-breaking, and deterministic ordering; pointer values do not.
+
+Compilation-wide semantic identities remain integer IDs where they name
+logical records rather than directly traversable IR objects:
 
 ```text
-SemanticInstructionId, SemanticBlockId, SemanticEdgeId
-CoreInstructionId,     CoreBlockId,     CoreEdgeId
-
-optional backend-defined MachineInstructionId, MachineBlockId, MachineEdgeId
-
-# compilation-wide semantic identities
 PartitionId
 FrameStateId
 
@@ -586,11 +590,9 @@ ResumeStateId
 RecoveryPlanId
 ```
 
-Instruction, block, and edge IDs are specific to their IR level and cannot be
-mixed implicitly with one another or with raw integers. Partition IDs are
-compilation-wide because Semantic and Core IR refer to the same logical
-partitions. IDs are allocated monotonically in a deterministic construction
-order and are not reused during a compilation.
+Partition IDs are compilation-wide because Semantic and Core IR refer to the
+same logical partitions. They are allocated monotonically in deterministic
+construction order and are not reused during a compilation.
 
 Snapshots do not have a separate ID namespace: a `SnapshotRef` is the typed
 result of a Core instruction. A `FrameStateId` identifies the structurally
@@ -600,7 +602,7 @@ to machine-code positions and exits rather than given independent identities.
 `ResumeStateId` and `RecoveryPlanId` exist only where the backend interns the
 two independently shareable parts of generated side-exit code.
 
-Every instruction has an `InstructionId` and an intrinsic result class:
+Every instruction has a typed serial and an intrinsic result class:
 
 ```text
 ResultClass::None
@@ -608,30 +610,29 @@ ResultClass::ProgramValue
 ResultClass::Snapshot
 ```
 
-The instruction ID also identifies its result when it has one. Typed result
-references are zero-overhead views of that same integer identity:
+The instruction pointer also names its result when it has one. Typed result
+references may be zero-overhead pointer views:
 
 ```text
-ProgramValueRef = ResultRef<ResultClass::ProgramValue>
-SnapshotRef     = ResultRef<ResultClass::Snapshot>
+ProgramValueRef = ResultRef<ResultClass::ProgramValue, Instruction *>
+SnapshotRef     = ResultRef<ResultClass::Snapshot, Instruction *>
 ```
 
-The reference type is also parameterized by IR level, so Semantic and Core
+The reference type can also be parameterized by IR level, so Semantic and Core
 program-value references cannot be mixed. Constructing a result reference
 requires the producer's intrinsic class to match. A value-less instruction
-retains an ID for traversal, diagnostics, effects, and rewriting, but cannot be
-used as a result operand. A Snapshot can be used only through `SnapshotRef`,
-never as a program value. This gives C++ analyses and backends useful static
-distinctions without a second numbering scheme. Here, a program value is a
-value in the compiled program's SSA semantics; it does not prescribe the
-concrete `cl::Value` representation.
+retains its pointer and serial for traversal, diagnostics, effects, and
+rewriting, but cannot be used as a result operand. A Snapshot can be used only
+through `SnapshotRef`, never as a program value. This gives C++ analyses and
+backends useful static distinctions without container-relative instruction
+IDs. Here, a program value is a value in the compiled program's SSA semantics;
+it does not prescribe the concrete `cl::Value` representation.
 
 The initial IRs permit at most one result per instruction. Block parameters
 are output-producing `Parameter` pseudo-instructions referenced by
-`ProgramValueRef`; the block stores their IDs in its ordered parameter vector.
-This keeps joins within the unified numbering scheme. A genuine need for
-multi-result instructions would justify revisiting this rule, but none is
-currently required.
+`ProgramValueRef`; the block stores their references in its ordered parameter
+vector. A genuine need for multi-result instructions would justify revisiting
+this rule, but none is currently required.
 
 A block owns one ordered parameter vector, and every incoming edge supplies an
 equally sized argument vector. The entire edge transfer has parallel-copy
@@ -641,27 +642,28 @@ backend resolves the parallel copy after locations have been assigned, using an
 edge block or scratch location to break cycles when necessary.
 
 Compilation behavior must not depend on pointer addresses or hash-table
-iteration order. Pointer addresses are neither compiler identities nor analysis
-keys. Passes traverse blocks, instructions, edges, and worklists in defined
-orders, using typed IDs as stable tie-breakers. If a hash table is needed, any
-results that affect compiler output are ordered by typed ID before use. Dense
-side tables should use instruction IDs directly as indexes where their entry
-applies to every result class, and typed result references where the class
-matters. Dumps and diagnostics print typed IDs rather than addresses.
+iteration order. Passes traverse blocks, instructions, edges, and worklists in
+defined orders, using typed serials as stable tie-breakers. If a hash table is
+needed, any results that affect compiler output are ordered by serial before
+use. Dense side tables may use a pool serial's numeric value as an index where
+the table applies to every instruction. Dumps and diagnostics print typed
+serials rather than addresses.
 
 IR instructions, partition anchors, frame states, and related compilation
-objects have compilation-scoped lifetime. Their IDs remain valid for that
-lifetime. The container and allocation strategy used to provide this lifetime
-is an implementation detail rather than an IR design constraint.
+objects have compilation-scoped lifetime. Their pointers, serials, and IDs
+remain valid for that lifetime. The fixed, trivially destructible instruction
+storage and bulk arena lifetime are specified in
+[JIT Instruction Representation](jit-instruction-representation.md).
 
-### Immutable instructions, mutable graphs, and analysis side tables
+### Mostly immutable instructions, mutable graphs, and analysis state
 
-IR instructions are immutable descriptions of operations. Their operation kind,
-operands, results, bytecode origin, intrinsic effects, semantic descriptor,
+An instruction's operation kind, results, bytecode origin, semantic descriptor,
 guard obligations, partition IDs, and any FrameState or Snapshot references are
 fixed when the instruction is constructed. A transformation changes any of
-these properties by constructing a replacement instruction with a new
-`InstructionId`.
+these semantic properties by constructing a replacement instruction with a new
+serial. Operand slots are mutable only through the structural IR editor so
+ordinary SSA use rewriting does not require cascading replacement of every
+transitive user.
 
 Graph structure remains mutable. Block parameter and instruction lists,
 predecessor and successor sets, edge argument lists, placement, definition
@@ -671,21 +673,24 @@ does not mutate the old instruction in place. Logical interpreter homes are
 tracked by FrameStates and Snapshots rather than by preserving an SSA result
 identity across rewrites.
 
-Derived knowledge is not written into immutable instructions. Analyses own
-generation-scoped side tables such as:
+The current inferred type and analyzed effects are the two narrowly mutable
+instruction fields. Only an `InstructionAnalysisEditor` can update them. More
+complex derived knowledge remains in generation-scoped side tables such as:
 
 ```text
-ProgramValueRef -> TypeEvidence
-InstructionId   -> RefinedEffects
 PartitionId     -> ConditionalFacts
+ProgramValueRef -> CorrelatedEvidence
 ```
 
-Fixed-point inference may update these tables repeatedly without rebuilding
-instructions. Intrinsic effects remain a conservative immutable operation
-contract; contextual effect refinements belong to analysis. Selecting a
-genuinely more specific semantic operation, such as replacing a generic call
-with recognized float addition, creates a new instruction with the
-corresponding intrinsic contract.
+Fixed-point inference may update instruction analysis fields and these tables
+repeatedly within an analysis mutation phase. Transformations consume only the
+validated state frozen when that phase commits. Structural mutation invalidates
+affected frozen state and resets it conservatively before another dependent
+transformation. Unavoidable instruction-kind effects remain immutable;
+analyzed effects may be refined through the editor. Selecting a genuinely
+different semantic operation, such as replacing a generic call with recognized
+float addition, creates a replacement instruction with the corresponding kind
+contract.
 
 ### Mutable CFG and control-flow-producing lowering
 
@@ -722,12 +727,15 @@ Dominance, loop structure, reverse postorder, propagated facts, refined effects,
 and partition state are derived from the current IR. The initial implementation
 invalidates them broadly and recomputes lazily.
 
-A function has an IR mutation generation, and cached analyses record their
-source generation. Inserting, removing, or replacing an instruction; changing
-a definition; associating a new partition anchor through instruction
-replacement; or structurally editing the CFG advances the generation through
-the official IR editor. Requesting stale analysis recomputes it. Passes must
-not mutate instructions or graph structures directly.
+A CFG has an IR mutation generation, and cached analyses record their source
+generation. Inserting, removing, or replacing an instruction; changing a
+definition or operand; associating a new partition anchor through instruction
+replacement; or structurally editing the CFG advances the applicable
+generation and conservatively invalidates affected mutable analysis state. An
+analysis mutation phase may batch type and effect updates and advances its
+generation when validated state is committed. Requesting stale analysis
+recomputes it. Passes must not mutate instructions or graph structures
+directly.
 
 Verification at pass boundaries should require:
 
@@ -973,11 +981,14 @@ Operation definitions provide precise defaults where possible.
 shape. Recognized operations inherit effects from semantic descriptors. Python
 calls and unknown operations begin maximally conservative.
 
-This conservative intrinsic summary is part of the immutable instruction. A
-generation-scoped effect-analysis side table may derive a more precise summary
-from current facts, but it does not erase effects from the instruction. When
-specialization selects a different semantic operation with a genuinely narrower
-contract, the pass constructs a replacement instruction of that operation kind.
+Unavoidable effects are properties of the immutable instruction kind. Each
+instruction also carries analyzed effects, initialized conservatively and
+updated only through the `InstructionAnalysisEditor`. Effective effects are the
+union of unavoidable kind effects and the current analyzed effects. An effect
+that analysis may prove absent therefore belongs in the initial analyzed
+summary rather than the unavoidable kind summary. When specialization selects
+a different semantic operation, the pass constructs a replacement instruction
+of that operation kind.
 
 Effect implications are centralized. `MayCallPython`, for example, implies
 broad heap access, possible shape mutation, validity invalidation, raising, and
