@@ -254,13 +254,20 @@ namespace cl::jit
     class AArch64Assembler
     {
     public:
-        explicit AArch64Assembler(AArch64Emitter &emitter) : emitter_(&emitter)
+        explicit AArch64Assembler(AArch64ValuePoolMode pool_mode)
+            : emitter_(std::in_place, maximum_pool_span(pool_mode))
         {
         }
         explicit AArch64Assembler(void *output)
             : output_(static_cast<uint8_t *>(output))
         {
             assert(output != nullptr);
+        }
+
+        AArch64Emitter &emitter()
+        {
+            assert(emitter_.has_value());
+            return *emitter_;
         }
 
         void
@@ -403,6 +410,14 @@ namespace cl::jit
                                          int64_t page_displacement);
 
     private:
+        static constexpr size_t
+        maximum_pool_span(AArch64ValuePoolMode pool_mode)
+        {
+            return pool_mode == AArch64ValuePoolMode::NearLiteral
+                       ? 1024 * 1024
+                       : AArch64DirectBranch::MaximumUnitSize;
+        }
+
         void emit_arithmetic_imm12(GPRWidth width, ArithmeticOp operation,
                                    uint32_t destination, uint32_t source,
                                    uint16_t immediate, AddImmediateShift shift);
@@ -421,17 +436,15 @@ namespace cl::jit
                                       uint32_t base, uint32_t scaled_offset);
         void write_instruction(uint32_t instruction);
 
-        AArch64Emitter *emitter_ = nullptr;
+        std::optional<AArch64Emitter> emitter_;
         uint8_t *output_ = nullptr;
     };
 
     class AArch64MacroAssembler : public AArch64Assembler
     {
     public:
-        explicit AArch64MacroAssembler(AArch64Emitter &emitter,
-                                       AArch64ValuePoolMode pool_mode)
-            : AArch64Assembler(emitter), emitter_(emitter),
-              pool_mode_(pool_mode)
+        explicit AArch64MacroAssembler(AArch64ValuePoolMode pool_mode)
+            : AArch64Assembler(pool_mode), pool_mode_(pool_mode)
         {
         }
 
@@ -453,7 +466,6 @@ namespace cl::jit
         void bl(CodeTarget target, XRegister scratch = XRegister(16));
 
     private:
-        AArch64Emitter &emitter_;
         AArch64ValuePoolMode pool_mode_;
     };
 

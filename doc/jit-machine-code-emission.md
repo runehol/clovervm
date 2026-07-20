@@ -186,7 +186,7 @@ emit_bytes(const void *, size_t) -> void
 emit_relocatable(const void *, size_t, Relocation) -> void
 emit_direct_branch(DirectBranch) -> void
 add_value_to_constant_pool(Value) -> ValuePoolEntry
-finalize(CodeCache &, maximum_pool_span)
+finalize(CodeCache &)
     -> Result<CodeAllocation, JitCodeError>
 ```
 
@@ -634,15 +634,19 @@ fields and pushes an AArch64 relocation onto the fragment. The relocation
 patches `imm19` for the near form or the `ADRP` page displacement and scaled
 `LDR` page offset for the far form during the third pass.
 
-After pessimistic sizing, a near-mode attempt asks the cache whether the code
-and pool, rounded under its platform policy, fit within a one-MiB maximum span.
+After pessimistic sizing, the emitter asks the cache whether the code and pool,
+rounded under its platform policy, fit within the maximum span selected once
+for that emission attempt. An AArch64 macro assembler constructs its generic
+emitter with one MiB in `NearLiteral` mode or 128 MiB in `FarPageRelative`
+mode, and exposes that emitter for labels and finalization.
 If not, the JIT driver discards only that machine-emission attempt and re-emits
 deterministically from retained Core IR in forced `FarPageRelative` mode. The
 first emitter, including its fragments, relocations, and temporary pool
 ownership, is destroyed completely before the second is constructed. The far
-attempt uses the fixed eight-byte form from its first emitted pool load and
-supplies the `ADRP` maximum span to the same target-independent query. This
-typed retry occurs before allocation, final encoding, or publication, and tests
+attempt uses the fixed eight-byte form from its first emitted pool load and a
+128-MiB maximum span. Neither range is exposed to the emitter's caller. This
+typed retry occurs before allocation, final encoding, or
+publication, and tests
 may force either mode or force near rejection. It is not an allocation failure:
 an actual inability to allocate the requested far storage abandons JIT
 compilation and leaves execution in the interpreter.

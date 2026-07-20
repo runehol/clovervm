@@ -10,16 +10,15 @@ namespace cl::jit
     TEST(AArch64Execution, CallsGeneratedLeafFunction)
     {
         CodeCache cache;
-        AArch64Emitter emitter;
-        AArch64MacroAssembler assembler(emitter,
-                                        AArch64ValuePoolMode::NearLiteral);
+        AArch64MacroAssembler assembler(AArch64ValuePoolMode::NearLiteral);
+        AArch64Emitter &emitter = assembler.emitter();
 
         assembler.emit_arithmetic_reg(ArithmeticOp::Add, XRegister(0),
                                       XRegister(0), XRegister(1));
         assembler.emit_ret();
 
         Result<CodeAllocation, JitCodeError> finalization =
-            emitter.finalize(cache, 1);
+            emitter.finalize(cache);
         ASSERT_TRUE(finalization);
         CodeAllocation allocation = std::move(finalization).value();
 
@@ -37,9 +36,8 @@ namespace cl::jit
     TEST(AArch64Execution, CallsGeneratedFunctionWithBranches)
     {
         CodeCache cache;
-        AArch64Emitter emitter;
-        AArch64MacroAssembler assembler(emitter,
-                                        AArch64ValuePoolMode::NearLiteral);
+        AArch64MacroAssembler assembler(AArch64ValuePoolMode::NearLiteral);
+        AArch64Emitter &emitter = assembler.emitter();
         Label done = emitter.make_label();
 
         assembler.cmp(XRegister(0), XRegister(1));
@@ -54,7 +52,7 @@ namespace cl::jit
         assembler.emit_ret();
 
         Result<CodeAllocation, JitCodeError> finalization =
-            emitter.finalize(cache, 1);
+            emitter.finalize(cache);
         ASSERT_TRUE(finalization);
         CodeAllocation allocation = std::move(finalization).value();
 
@@ -74,14 +72,13 @@ namespace cl::jit
     TEST(AArch64Execution, LoadsAndRewritesValueFromPreferredConstantPool)
     {
         CodeCache cache;
-        AArch64Emitter emitter;
-        AArch64MacroAssembler assembler(emitter,
-                                        AArch64ValuePoolMode::NearLiteral);
+        AArch64MacroAssembler assembler(AArch64ValuePoolMode::NearLiteral);
+        AArch64Emitter &emitter = assembler.emitter();
         assembler.ldr(XRegister(0), Value::True());
         assembler.emit_ret();
 
         Result<CodeAllocation, JitCodeError> finalization =
-            emitter.finalize(cache, 1024 * 1024);
+            emitter.finalize(cache);
         ASSERT_TRUE(finalization);
         CodeAllocation allocation = std::move(finalization).value();
 
@@ -102,9 +99,8 @@ namespace cl::jit
     TEST(AArch64Execution, LoadsAndRewritesValueFromFarConstantPool)
     {
         CodeCache cache;
-        AArch64Emitter emitter;
-        AArch64MacroAssembler assembler(emitter,
-                                        AArch64ValuePoolMode::FarPageRelative);
+        AArch64MacroAssembler assembler(AArch64ValuePoolMode::FarPageRelative);
+        AArch64Emitter &emitter = assembler.emitter();
         assembler.ldr(XRegister(0), Value::True());
         assembler.emit_ret();
 
@@ -116,7 +112,7 @@ namespace cl::jit
         }
 
         Result<CodeAllocation, JitCodeError> finalization =
-            emitter.finalize(cache, uint64_t{1} << 32);
+            emitter.finalize(cache);
         ASSERT_TRUE(finalization);
         CodeAllocation allocation = std::move(finalization).value();
 

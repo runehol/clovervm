@@ -184,7 +184,7 @@ namespace cl::jit
 
     void AArch64Assembler::write_instruction(uint32_t instruction)
     {
-        if(emitter_ != nullptr)
+        if(emitter_.has_value())
         {
             emitter_->emit_bytes(&instruction, sizeof(instruction));
             return;
@@ -381,25 +381,25 @@ namespace cl::jit
 
     void AArch64MacroAssembler::ldr(XRegister destination, Value value)
     {
-        ValuePoolEntry entry = emitter_.add_value_to_constant_pool(value);
+        ValuePoolEntry entry = emitter().add_value_to_constant_pool(value);
         uint32_t instructions[2] = {};
         size_t size = pool_mode_ == AArch64ValuePoolMode::NearLiteral
                           ? sizeof(uint32_t)
                           : sizeof(instructions);
-        emitter_.emit_relocatable(
+        emitter().emit_relocatable(
             instructions, size,
             AArch64Relocation(entry, destination, pool_mode_));
     }
 
     void AArch64MacroAssembler::b(CodeTarget target, XRegister scratch)
     {
-        emitter_.emit_direct_branch(
+        emitter().emit_direct_branch(
             AArch64DirectBranch(target, AArch64BranchKind::Jump, scratch));
     }
 
     void AArch64MacroAssembler::bl(CodeTarget target, XRegister scratch)
     {
-        emitter_.emit_direct_branch(
+        emitter().emit_direct_branch(
             AArch64DirectBranch(target, AArch64BranchKind::Call, scratch));
     }
 

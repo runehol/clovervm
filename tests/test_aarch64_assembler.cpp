@@ -88,14 +88,13 @@ namespace cl::jit
     TEST(AArch64Assembler, EmitsOrdinaryInstructionsIntoMachineCodeEmitter)
     {
         CacheAndPlatform fixture(16);
-        AArch64Emitter emitter;
-        AArch64MacroAssembler assembler(emitter,
-                                        AArch64ValuePoolMode::NearLiteral);
+        AArch64MacroAssembler assembler(AArch64ValuePoolMode::NearLiteral);
+        AArch64Emitter &emitter = assembler.emitter();
 
         assembler.mov(XRegister(5), 0x123400005678ULL);
 
         CodeAllocation allocation =
-            take_allocation(emitter.finalize(*fixture.cache, 1024 * 1024));
+            take_allocation(emitter.finalize(*fixture.cache));
         const void *code = allocation.write_pointer();
         EXPECT_EQ(0xd28acf05, instruction_at(code, 0));
         EXPECT_EQ(0xf2c24685, instruction_at(code, 1));
@@ -104,9 +103,8 @@ namespace cl::jit
     TEST(AArch64Assembler, EmitsAliasesThroughEncodingFamilies)
     {
         CacheAndPlatform fixture(16);
-        AArch64Emitter emitter;
-        AArch64MacroAssembler assembler(emitter,
-                                        AArch64ValuePoolMode::NearLiteral);
+        AArch64MacroAssembler assembler(AArch64ValuePoolMode::NearLiteral);
+        AArch64Emitter &emitter = assembler.emitter();
 
         assembler.mov(XRegister(5), XRegister(6));
         assembler.mvn(XRegister(5), XRegister(6));
@@ -115,7 +113,7 @@ namespace cl::jit
         assembler.cmn(XRegister(5), XRegister(6));
 
         CodeAllocation allocation =
-            take_allocation(emitter.finalize(*fixture.cache, 1));
+            take_allocation(emitter.finalize(*fixture.cache));
         const void *code = allocation.write_pointer();
         EXPECT_EQ(0xaa0603e5, instruction_at(code, 0));
         EXPECT_EQ(0xaa2603e5, instruction_at(code, 1));
@@ -127,13 +125,12 @@ namespace cl::jit
     TEST(AArch64Assembler, RelocatesNearValuePoolLoad)
     {
         CacheAndPlatform fixture(16);
-        AArch64Emitter emitter;
-        AArch64MacroAssembler assembler(emitter,
-                                        AArch64ValuePoolMode::NearLiteral);
+        AArch64MacroAssembler assembler(AArch64ValuePoolMode::NearLiteral);
+        AArch64Emitter &emitter = assembler.emitter();
         assembler.ldr(XRegister(5), Value::True());
 
         CodeAllocation allocation =
-            take_allocation(emitter.finalize(*fixture.cache, 1024 * 1024));
+            take_allocation(emitter.finalize(*fixture.cache));
 
         int64_t displacement =
             allocation.code.execute_address().displacement_to(
@@ -148,13 +145,12 @@ namespace cl::jit
     TEST(AArch64Assembler, RelocatesFarValuePoolLoad)
     {
         CacheAndPlatform fixture(16);
-        AArch64Emitter emitter;
-        AArch64MacroAssembler assembler(emitter,
-                                        AArch64ValuePoolMode::FarPageRelative);
+        AArch64MacroAssembler assembler(AArch64ValuePoolMode::FarPageRelative);
+        AArch64Emitter &emitter = assembler.emitter();
         assembler.ldr(XRegister(5), Value::None());
 
-        CodeAllocation allocation = take_allocation(
-            emitter.finalize(*fixture.cache, uint64_t{1} << 32));
+        CodeAllocation allocation =
+            take_allocation(emitter.finalize(*fixture.cache));
 
         EXPECT_EQ(0xf0000065, instruction_at(allocation.write_pointer(), 0));
         EXPECT_EQ(0xf947fca5, instruction_at(allocation.write_pointer(), 1));
@@ -163,15 +159,14 @@ namespace cl::jit
     TEST(AArch64Assembler, SelectsDirectAndSynthesizedBranches)
     {
         CacheAndPlatform fixture(16);
-        AArch64Emitter emitter;
-        AArch64MacroAssembler assembler(emitter,
-                                        AArch64ValuePoolMode::NearLiteral);
+        AArch64MacroAssembler assembler(AArch64ValuePoolMode::NearLiteral);
+        AArch64Emitter &emitter = assembler.emitter();
         assembler.b(detail::MachineAddressAccess::from_bits(0x10000010));
         assembler.bl(
             detail::MachineAddressAccess::from_bits(0x1234000000005678));
 
         CodeAllocation allocation =
-            take_allocation(emitter.finalize(*fixture.cache, 1));
+            take_allocation(emitter.finalize(*fixture.cache));
         const void *code = allocation.write_pointer();
         EXPECT_EQ(0x14000004, instruction_at(code, 0));
         EXPECT_EQ(0xd28acf10, instruction_at(code, 1));

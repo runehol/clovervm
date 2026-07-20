@@ -56,7 +56,13 @@ namespace cl::jit
     class MachineCodeEmitter
     {
     public:
-        MachineCodeEmitter() { fragments_.emplace_back(); }
+        explicit MachineCodeEmitter(size_t maximum_pool_span)
+            : maximum_pool_span_(maximum_pool_span)
+        {
+            assert(maximum_pool_span != 0);
+            assert(maximum_pool_span <= DirectBranch::MaximumUnitSize);
+            fragments_.emplace_back();
+        }
 
         Label make_label()
         {
@@ -125,7 +131,7 @@ namespace cl::jit
         }
 
         [[nodiscard]] Result<CodeAllocation, JitCodeError>
-        finalize(CodeCache &cache, size_t maximum_pool_span)
+        finalize(CodeCache &cache)
         {
             assert(!finalization_attempted_);
             finalization_attempted_ = true;
@@ -134,7 +140,7 @@ namespace cl::jit
             assert(pessimistic_size <= DirectBranch::MaximumUnitSize);
 
             if(!cache.fits_within_span(pessimistic_size, values_.size(),
-                                       maximum_pool_span))
+                                       maximum_pool_span_))
             {
                 return Result<CodeAllocation, JitCodeError>::error(
                     JitCodeError::PoolOutOfRange);
@@ -331,6 +337,7 @@ namespace cl::jit
         std::vector<Fragment> fragments_;
         std::vector<std::optional<size_t>> label_bindings_;
         std::vector<Owned<Value>> values_;
+        size_t maximum_pool_span_;
         bool finalization_attempted_ = false;
     };
 

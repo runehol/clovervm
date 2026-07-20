@@ -137,12 +137,14 @@ carries its error explicitly and never reads or writes pending Python exception
 state. `CL_TRY` may be generalized through a `propagate_failure` operation so
 both result families retain the same concise call-site behavior.
 
-The target supplies an architectural maximum span; the cache applies its code
-granularity, page separation, and pool alignment to decide whether the complete
-layout fits. It does not know what instruction or target imposed that bound.
-The machine-emission driver calls `fits_within_span` before proposing placement
-and owns any near-to-far retry. It must not call `propose` after a failed fit
-query. The configured standard slab size must itself satisfy every target's
+The target assembler constructs its emitter with one architectural maximum
+span selected from the attempt's pool mode and maximum unit size. The cache
+applies its code granularity, page separation, and pool alignment to decide
+whether the complete layout fits. It does not know what instruction or target
+imposed that bound. The emitter calls
+`fits_within_span` before proposing placement, while the JIT driver owns any
+near-to-far retry. The emitter must not call `propose` after a failed fit query.
+The configured standard slab size must itself satisfy every target's
 normal near-placement limit when that target uses standard slabs; violating
 that is a cache configuration error, not a condition for `propose` to route
 around. A proposal may allocate a slab so it

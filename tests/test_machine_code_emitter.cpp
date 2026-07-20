@@ -15,7 +15,7 @@ namespace cl::jit
         class TestDirectBranch
         {
         public:
-            static constexpr size_t MaximumUnitSize = 1024;
+            static constexpr size_t MaximumUnitSize = 64 * 1024;
 
             TestDirectBranch(Label target, int64_t short_range)
                 : target_(target), short_range_(short_range)
@@ -80,7 +80,6 @@ namespace cl::jit
             }
 
             RelocationTarget target() const { return target_; }
-
             void apply(void *write_pointer, MachineAddress instruction_pc,
                        MachineAddress target) const
             {
@@ -112,7 +111,7 @@ namespace cl::jit
     TEST(MachineCodeEmitter, ResolvesForwardLabelsAndShrinksDirectBranches)
     {
         CacheAndPlatform fixture(16);
-        TestEmitter emitter;
+        TestEmitter emitter(64 * 1024);
         Label target = emitter.make_label();
         uint8_t prefix = 0x10;
         uint8_t middle[] = {0x20, 0x21};
@@ -125,7 +124,7 @@ namespace cl::jit
         emitter.emit_bytes(&suffix, sizeof(suffix));
 
         CodeAllocation allocation =
-            take_allocation(emitter.finalize(*fixture.cache, 64 * 1024));
+            take_allocation(emitter.finalize(*fixture.cache));
         auto *code = static_cast<uint8_t *>(allocation.write_pointer());
         EXPECT_EQ(0x10, code[0]);
         EXPECT_EQ(0x51, code[1]);
@@ -137,7 +136,7 @@ namespace cl::jit
     TEST(MachineCodeEmitter, KeepsConservativelyLongForwardDirectBranch)
     {
         CacheAndPlatform fixture(16);
-        TestEmitter emitter;
+        TestEmitter emitter(64 * 1024);
         Label target = emitter.make_label();
 
         emitter.emit_direct_branch(TestDirectBranch(target, 5));
@@ -146,7 +145,7 @@ namespace cl::jit
         emitter.resolve(target);
 
         CodeAllocation allocation =
-            take_allocation(emitter.finalize(*fixture.cache, 64 * 1024));
+            take_allocation(emitter.finalize(*fixture.cache));
         auto *code = static_cast<uint8_t *>(allocation.write_pointer());
         EXPECT_EQ(0x54, code[0]);
         EXPECT_EQ(0x51, code[4]);
@@ -155,20 +154,20 @@ namespace cl::jit
     TEST(MachineCodeEmitter, AcceptsLabelResolvedBeforeUse)
     {
         CacheAndPlatform fixture(16);
-        TestEmitter emitter;
+        TestEmitter emitter(64 * 1024);
         Label target = emitter.make_label();
         emitter.resolve(target);
         emitter.emit_direct_branch(TestDirectBranch(target, 4));
 
         CodeAllocation allocation =
-            take_allocation(emitter.finalize(*fixture.cache, 64 * 1024));
+            take_allocation(emitter.finalize(*fixture.cache));
         EXPECT_EQ(0x51, *static_cast<uint8_t *>(allocation.write_pointer()));
     }
 
     TEST(MachineCodeEmitter, RelocatesValuePoolLoadsUsingExecutableAddresses)
     {
         CacheAndPlatform fixture(16);
-        TestEmitter emitter;
+        TestEmitter emitter(64 * 1024);
         RelocationObservation observation;
         emitter.add_value_to_constant_pool(Value::None());
         ValuePoolEntry target =
@@ -178,7 +177,7 @@ namespace cl::jit
                                  TestRelocation(target, &observation));
 
         CodeAllocation allocation =
-            take_allocation(emitter.finalize(*fixture.cache, 64 * 1024));
+            take_allocation(emitter.finalize(*fixture.cache));
 
         EXPECT_EQ(0xcc, *static_cast<uint8_t *>(allocation.write_pointer()));
         EXPECT_EQ(allocation.code.execute_address().bits_for_indirect_target(),
@@ -193,16 +192,19 @@ namespace cl::jit
         EXPECT_EQ(Value::True(), allocation.value_pool.write_pointer()[1]);
     }
 
-    TEST(MachineCodeEmitter, RejectsPoolOutsideRequestedSpanBeforeAllocation)
+    TEST(MachineCodeEmitter, RejectsPoolOutsideRelocationSpanBeforeAllocation)
     {
         CacheAndPlatform fixture(16);
-        TestEmitter emitter;
-        emitter.add_value_to_constant_pool(Value::None());
+        TestEmitter emitter(8191);
+        RelocationObservation observation;
+        ValuePoolEntry target =
+            emitter.add_value_to_constant_pool(Value::None());
         uint8_t instruction = 0;
-        emitter.emit_bytes(&instruction, sizeof(instruction));
+        emitter.emit_relocatable(&instruction, sizeof(instruction),
+                                 TestRelocation(target, &observation));
 
         Result<CodeAllocation, JitCodeError> result =
-            emitter.finalize(*fixture.cache, 8191);
+            emitter.finalize(*fixture.cache);
 
         ASSERT_FALSE(result);
         EXPECT_EQ(JitCodeError::PoolOutOfRange, result.error());
@@ -213,12 +215,12 @@ namespace cl::jit
     {
         CacheAndPlatform fixture(16);
         fixture.platform->fail_allocation = true;
-        TestEmitter emitter;
+        TestEmitter emitter(64 * 1024);
         uint8_t instruction = 0;
         emitter.emit_bytes(&instruction, sizeof(instruction));
 
         Result<CodeAllocation, JitCodeError> result =
-            emitter.finalize(*fixture.cache, 1);
+            emitter.finalize(*fixture.cache);
 
         ASSERT_FALSE(result);
         EXPECT_EQ(JitCodeError::AllocationFailure, result.error());
@@ -228,12 +230,12 @@ namespace cl::jit
     {
         CacheAndPlatform fixture(16);
         fixture.platform->fail_commit = true;
-        TestEmitter emitter;
+        TestEmitter emitter(64 * 1024);
         uint8_t instruction = 0;
         emitter.emit_bytes(&instruction, sizeof(instruction));
 
         Result<CodeAllocation, JitCodeError> result =
-            emitter.finalize(*fixture.cache, 1);
+            emitter.finalize(*fixture.cache);
 
         ASSERT_FALSE(result);
         EXPECT_EQ(JitCodeError::AllocationFailure, result.error());
