@@ -84,6 +84,10 @@ add_library(libclovervm_objects OBJECT
     builtin_types/intern_store.h
     import_system/import_system.cpp
     import_system/import_system.h
+    jit/compilation_arena.h
+    jit/core_ir.h
+    jit/object_pool.h
+    jit/serial.h
     runtime/interpreter.cpp
     runtime/interpreter.h
     builtin_types/bool.cpp

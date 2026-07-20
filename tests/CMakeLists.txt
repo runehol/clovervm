@@ -20,6 +20,7 @@ target_sources(test_clovervm PRIVATE
 	test_hash.cpp
 	test_heap.cpp
 	test_import_system.cpp
+	test_jit_arena.cpp
 	test_native_module_build.cpp
 	test_python_source_files.cpp
 	test_attr.cpp
