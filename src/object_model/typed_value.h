@@ -2,6 +2,7 @@
 #define CL_TYPED_VALUE_H
 
 #include "object_model/value.h"
+#include "util/result.h"
 #include <cassert>
 #include <new>
 #include <type_traits>
@@ -545,6 +546,14 @@ namespace cl
         }
     };
 
+    template <typename T, bool IsValueLikePayload>
+    PropagatedException
+    propagate_failure(Expected<T, IsValueLikePayload> &&expected)
+    {
+        assert(expected.has_exception());
+        return PropagatedException();
+    }
+
     static_assert(sizeof(Optional<Value>) == sizeof(Value));
     static_assert(sizeof(Expected<Value>) == sizeof(Value));
 
@@ -580,18 +589,5 @@ namespace cl
     }
 
 }  // namespace cl
-
-// Unwrap an Expected-like result or propagate its pending exception from the
-// enclosing function. The enclosing function must return either Value or
-// Expected<T>.
-#define CL_TRY(expr)                                                           \
-    ({                                                                         \
-        auto cl_try_result = (expr);                                           \
-        if(unlikely(!cl_try_result))                                           \
-        {                                                                      \
-            return ::cl::PropagatedException();                                \
-        }                                                                      \
-        std::move(cl_try_result).value();                                      \
-    })
 
 #endif  // CL_TYPED_VALUE_H

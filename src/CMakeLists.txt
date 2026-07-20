@@ -66,6 +66,8 @@ add_library(libclovervm_objects OBJECT
     runtime/exception_propagation.h
     runtime/fatal.cpp
     runtime/fatal.h
+    util/compiler.h
+    util/result.h
     builtin_types/float.cpp
     builtin_types/float.h
     builtin_types/hash.cpp

@@ -2,6 +2,7 @@
 #define CL_VALUE_H
 
 #include "object_model/object.h"
+#include "util/compiler.h"
 #include <assert.h>
 #include <stdbool.h>
 #include <stdint.h>
@@ -43,25 +44,6 @@ namespace cl
           0x08: interned pointer
           0x10: refcounted pointer
     */
-#ifndef likely
-#define likely(x) __builtin_expect((x), 1)
-#endif
-#ifndef unlikely
-#define unlikely(x) __builtin_expect((x), 0)
-#endif
-#ifndef ALWAYSINLINE
-#define ALWAYSINLINE inline __attribute__((always_inline))
-#endif
-#ifndef INLINE
-#define INLINE inline
-#endif
-#ifndef NOINLINE
-#define NOINLINE __attribute__((noinline))
-#endif
-#ifndef MUSTTAIL
-#define MUSTTAIL __attribute__((musttail))
-#endif
-
     static constexpr uint64_t value_tag_bits = 5;
     static constexpr uint64_t value_tag_mask = 0x1f;
     static constexpr uint64_t value_ptr_granularity = value_tag_mask + 1;

@@ -4,17 +4,11 @@
 #include "memory/native_layout_declarations.h"
 #include "object_model/heap_object.h"
 #include "object_model/shape_descriptor.h"
+#include "util/compiler.h"
 
 #include <cassert>
 #include <cstdint>
 #include <type_traits>
-
-#ifndef ALWAYSINLINE
-#define ALWAYSINLINE inline __attribute__((always_inline))
-#endif
-#ifndef INLINE
-#define INLINE inline
-#endif
 
 namespace cl
 {

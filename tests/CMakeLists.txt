@@ -24,6 +24,7 @@ target_sources(test_clovervm PRIVATE
 	test_jit_cfg.cpp
 	test_native_module_build.cpp
 	test_python_source_files.cpp
+	test_result.cpp
 	test_attr.cpp
 	test_dict.cpp
 	test_parser.cpp
