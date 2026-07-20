@@ -6,6 +6,7 @@
 #include <cassert>
 #include <cstddef>
 #include <cstdint>
+#include <cstring>
 #include <optional>
 
 namespace cl::jit
@@ -203,6 +204,46 @@ namespace cl::jit
         Call,
     };
 
+    namespace aarch64_detail
+    {
+        constexpr uint32_t register_field(uint32_t encoding, uint8_t shift)
+        {
+            return encoding << shift;
+        }
+
+        template <typename Encoding>
+        constexpr uint32_t encoding_bits(Encoding encoding)
+        {
+            return static_cast<uint32_t>(encoding);
+        }
+
+        inline bool fits_signed_scaled_displacement(int64_t displacement,
+                                                    uint8_t immediate_bits,
+                                                    uint8_t scale_shift)
+        {
+            int64_t scale = int64_t{1} << scale_shift;
+            if(displacement % scale != 0)
+            {
+                return false;
+            }
+            int64_t scaled = displacement / scale;
+            int64_t minimum = -(int64_t{1} << (immediate_bits - 1));
+            int64_t maximum = (int64_t{1} << (immediate_bits - 1)) - 1;
+            return scaled >= minimum && scaled <= maximum;
+        }
+
+        inline uint32_t signed_immediate(int64_t displacement,
+                                         uint8_t immediate_bits,
+                                         uint8_t scale_shift)
+        {
+            assert(fits_signed_scaled_displacement(displacement, immediate_bits,
+                                                   scale_shift));
+            uint64_t mask = (uint64_t{1} << immediate_bits) - 1;
+            return static_cast<uint32_t>(
+                (static_cast<uint64_t>(displacement >> scale_shift)) & mask);
+        }
+    }  // namespace aarch64_detail
+
     class AArch64DirectBranch
     {
     public:
@@ -251,24 +292,54 @@ namespace cl::jit
     using AArch64Emitter =
         MachineCodeEmitter<AArch64DirectBranch, AArch64Relocation>;
 
-    class AArch64Assembler
+    class AArch64EmitterSink
     {
     public:
-        explicit AArch64Assembler(AArch64ValuePoolMode pool_mode)
-            : emitter_(std::in_place, maximum_pool_span(pool_mode))
+        explicit AArch64EmitterSink(size_t maximum_pool_span)
+            : emitter_(maximum_pool_span)
         {
         }
-        explicit AArch64Assembler(void *output)
+
+        void write(uint32_t instruction)
+        {
+            emitter_.emit_bytes(&instruction, sizeof(instruction));
+        }
+
+        AArch64Emitter &emitter() { return emitter_; }
+
+    private:
+        AArch64Emitter emitter_;
+    };
+
+    class AArch64BufferSink
+    {
+    public:
+        explicit AArch64BufferSink(void *output)
             : output_(static_cast<uint8_t *>(output))
         {
             assert(output != nullptr);
         }
 
-        AArch64Emitter &emitter()
+        void write(uint32_t instruction)
         {
-            assert(emitter_.has_value());
-            return *emitter_;
+            std::memcpy(output_, &instruction, sizeof(instruction));
+            output_ += sizeof(instruction);
         }
+
+    private:
+        uint8_t *output_;
+    };
+
+    template <typename Sink> class AArch64Assembler
+    {
+    public:
+        explicit AArch64Assembler(size_t maximum_pool_span)
+            : sink_(maximum_pool_span)
+        {
+        }
+        explicit AArch64Assembler(void *output) : sink_(output) {}
+
+        AArch64Emitter &emitter() { return sink_.emitter(); }
 
         void
         emit_arithmetic_imm12(ArithmeticOp operation,
@@ -397,54 +468,145 @@ namespace cl::jit
         }
 
         void emit_b_conditional_immediate(AArch64Condition condition,
-                                          int32_t byte_displacement);
-        void emit_b_immediate_26(int64_t byte_displacement);
-        void emit_bl_immediate_26(int64_t byte_displacement);
-        void emit_br(XRegister target);
-        void emit_blr(XRegister target);
-        void emit_ret(XRegister target = XRegister(30));
-
-        void emit_ldr_literal_immediate_19(XRegister destination,
-                                           int64_t byte_displacement);
-        void emit_adrp_page_immediate_21(XRegister destination,
-                                         int64_t page_displacement);
-
-    private:
-        static constexpr size_t
-        maximum_pool_span(AArch64ValuePoolMode pool_mode)
+                                          int32_t byte_displacement)
         {
-            return pool_mode == AArch64ValuePoolMode::NearLiteral
-                       ? 1024 * 1024
-                       : AArch64DirectBranch::MaximumUnitSize;
+            uint32_t immediate =
+                aarch64_detail::signed_immediate(byte_displacement, 19, 2);
+            write_instruction(0x54000000 | (immediate << 5) |
+                              static_cast<uint32_t>(condition));
         }
 
+        void emit_b_immediate_26(int64_t byte_displacement)
+        {
+            write_instruction(0x14000000 | aarch64_detail::signed_immediate(
+                                               byte_displacement, 26, 2));
+        }
+
+        void emit_bl_immediate_26(int64_t byte_displacement)
+        {
+            write_instruction(0x94000000 | aarch64_detail::signed_immediate(
+                                               byte_displacement, 26, 2));
+        }
+
+        void emit_br(XRegister target)
+        {
+            write_instruction(0xd61f0000 | aarch64_detail::register_field(
+                                               target.encoding(), 5));
+        }
+
+        void emit_blr(XRegister target)
+        {
+            write_instruction(0xd63f0000 | aarch64_detail::register_field(
+                                               target.encoding(), 5));
+        }
+
+        void emit_ret(XRegister target = XRegister(30))
+        {
+            write_instruction(0xd65f0000 | aarch64_detail::register_field(
+                                               target.encoding(), 5));
+        }
+
+        void emit_ldr_literal_immediate_19(XRegister destination,
+                                           int64_t byte_displacement)
+        {
+            write_instruction(
+                0x58000000 |
+                (aarch64_detail::signed_immediate(byte_displacement, 19, 2)
+                 << 5) |
+                destination.encoding());
+        }
+
+        void emit_adrp_page_immediate_21(XRegister destination,
+                                         int64_t page_displacement)
+        {
+            assert(page_displacement % 4096 == 0);
+            uint32_t immediate =
+                aarch64_detail::signed_immediate(page_displacement, 21, 12);
+            uint32_t immediate_low = immediate & 3;
+            uint32_t immediate_high = immediate >> 2;
+            write_instruction(0x90000000 | (immediate_low << 29) |
+                              (immediate_high << 5) | destination.encoding());
+        }
+
+    private:
         void emit_arithmetic_imm12(GPRWidth width, ArithmeticOp operation,
                                    uint32_t destination, uint32_t source,
-                                   uint16_t immediate, AddImmediateShift shift);
+                                   uint16_t immediate, AddImmediateShift shift)
+        {
+            write_instruction(
+                0x11000000 | aarch64_detail::encoding_bits(width) |
+                aarch64_detail::encoding_bits(operation) |
+                aarch64_detail::encoding_bits(shift) |
+                (static_cast<uint32_t>(immediate) << 10) |
+                aarch64_detail::register_field(source, 5) | destination);
+        }
+
         void emit_arithmetic_reg(GPRWidth width, ArithmeticOp operation,
                                  uint32_t destination, uint32_t source1,
                                  uint32_t source2, ArithmeticShift shift,
-                                 uint8_t shift_amount);
+                                 uint8_t shift_amount)
+        {
+            write_instruction(
+                0x0b000000 | aarch64_detail::encoding_bits(width) |
+                aarch64_detail::encoding_bits(operation) |
+                aarch64_detail::encoding_bits(shift) |
+                aarch64_detail::register_field(source2, 16) |
+                (static_cast<uint32_t>(shift_amount) << 10) |
+                aarch64_detail::register_field(source1, 5) | destination);
+        }
+
         void emit_logical_reg(GPRWidth width, LogicalOp operation,
                               uint32_t destination, uint32_t source1,
                               uint32_t source2, InvertMode invert,
-                              LogicalShift shift, uint8_t shift_amount);
+                              LogicalShift shift, uint8_t shift_amount)
+        {
+            write_instruction(
+                0x0a000000 | aarch64_detail::encoding_bits(width) |
+                aarch64_detail::encoding_bits(operation) |
+                aarch64_detail::encoding_bits(invert) |
+                aarch64_detail::encoding_bits(shift) |
+                aarch64_detail::register_field(source2, 16) |
+                (static_cast<uint32_t>(shift_amount) << 10) |
+                aarch64_detail::register_field(source1, 5) | destination);
+        }
+
         void emit_move_wide_imm16(GPRWidth width, MoveWideOp operation,
                                   uint32_t destination, uint16_t immediate,
-                                  MoveWideHalfword halfword);
-        void emit_ldr_unsigned_offset(GPRWidth width, uint32_t destination,
-                                      uint32_t base, uint32_t scaled_offset);
-        void write_instruction(uint32_t instruction);
+                                  MoveWideHalfword halfword)
+        {
+            write_instruction(
+                0x12800000 | aarch64_detail::encoding_bits(width) |
+                aarch64_detail::encoding_bits(operation) |
+                aarch64_detail::encoding_bits(halfword) |
+                (static_cast<uint32_t>(immediate) << 5) | destination);
+        }
 
-        std::optional<AArch64Emitter> emitter_;
-        uint8_t *output_ = nullptr;
+        void emit_ldr_unsigned_offset(GPRWidth width, uint32_t destination,
+                                      uint32_t base, uint32_t scaled_offset)
+        {
+            write_instruction(
+                0xb9400000 | (aarch64_detail::encoding_bits(width) >> 1) |
+                (scaled_offset << 10) |
+                aarch64_detail::register_field(base, 5) | destination);
+        }
+
+        void write_instruction(uint32_t instruction)
+        {
+            sink_.write(instruction);
+        }
+
+        Sink sink_;
     };
 
-    class AArch64MacroAssembler : public AArch64Assembler
+    using AArch64EmitterAssembler = AArch64Assembler<AArch64EmitterSink>;
+    using AArch64BufferAssembler = AArch64Assembler<AArch64BufferSink>;
+
+    class AArch64MacroAssembler : public AArch64EmitterAssembler
     {
     public:
         explicit AArch64MacroAssembler(AArch64ValuePoolMode pool_mode)
-            : AArch64Assembler(pool_mode), pool_mode_(pool_mode)
+            : AArch64EmitterAssembler(maximum_pool_span(pool_mode)),
+              pool_mode_(pool_mode)
         {
         }
 
@@ -466,6 +628,14 @@ namespace cl::jit
         void bl(CodeTarget target, XRegister scratch = XRegister(16));
 
     private:
+        static constexpr size_t
+        maximum_pool_span(AArch64ValuePoolMode pool_mode)
+        {
+            return pool_mode == AArch64ValuePoolMode::NearLiteral
+                       ? 1024 * 1024
+                       : AArch64DirectBranch::MaximumUnitSize;
+        }
+
         AArch64ValuePoolMode pool_mode_;
     };
 

@@ -53,14 +53,16 @@ assembler owns such expansion and selection. This preserves a useful boundary
 between knowing how one instruction is encoded and choosing an instruction
 sequence.
 
-The initial `AArch64Assembler` has two construction modes. During ordinary
-generation it appends each encoded instruction to an `AArch64Emitter`. During
-final direct-branch encoding or relocation it is constructed over the writable
-destination and advances that pointer as it emits. Both modes use the same
+`AArch64Assembler<Sink>` is specialized for two instruction sinks. The emitter
+sink owns an `AArch64Emitter` and appends each encoded instruction during
+ordinary generation. The buffer sink writes at the final writable destination
+and advances that pointer during direct-branch encoding and relocation. The
+sink choice is resolved statically, so exact instruction emission contains no
+per-instruction destination branch. Both specializations use the same inline
 instruction methods and encoding implementation. `AArch64MacroAssembler`
-publicly inherits the direct assembler so ordinary code can mix exact and macro
-operations without a forwarding method for every instruction; it can only be
-constructed over an emitter.
+publicly inherits only the emitter-backed specialization so ordinary code can
+mix exact and macro operations without a forwarding method for every
+instruction.
 
 The exact assembler follows the processor's encoding classes rather than
 providing a separate C++ method for every mnemonic. Typed operation enums hold

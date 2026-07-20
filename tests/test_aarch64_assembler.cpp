@@ -44,7 +44,7 @@ namespace cl::jit
     TEST(AArch64Assembler, EncodesRepresentativeExactInstructions)
     {
         uint32_t instructions[13] = {};
-        AArch64Assembler assembler(instructions);
+        AArch64BufferAssembler assembler(instructions);
 
         assembler.emit_arithmetic_imm12(ArithmeticOp::Add, XRegister(5),
                                         XRegister(6), 42);
