@@ -4,10 +4,10 @@
 |---|---|
 | Document type | Design |
 | Status | Accepted |
-| Implementation | Generic emitter and initial AArch64 assembler slice implemented |
+| Implementation | Complete |
 | Scope | Target instruction encoding, macro assembly, code fragments, labels, PC-dependent operation sizing, and final machine-code layout |
 | Owning layers | The target backend chooses machine operations and block layout; the machine-code emitter owns exact encoding, code fragments, label resolution, PC-dependent form selection, and final copying |
-| Validated against | [Arm A-profile A64 instruction-set architecture, 2026-06 encoding index](https://developer.arm.com/documentation/ddi0602/2026-06/Index-by-Encoding) |
+| Validated against | [Arm A-profile A64 instruction-set architecture, 2026-06 encoding index](https://developer.arm.com/documentation/ddi0602/2026-06/Index-by-Encoding); focused emitter/encoder tests and executable AArch64 leaf/control-flow tests on 2026-07-20 |
 | Supersedes | N/A |
 
 This document defines how a target backend turns its final program-order
@@ -79,10 +79,67 @@ compose the exact encoding families: for example, register `mov` is an `ORR`
 with the zero register and `neg` is a `SUB` from the zero register.
 
 AArch64 register types distinguish both width and the operand-specific meaning
-of encoding 31. `XRegister` and `WRegister` represent registers 0 through 30.
-They convert to the corresponding `RegisterOrSP` and `RegisterOrZero` operand
-wrappers. The distinct `xsp`/`wsp` and `xzr`/`wzr` values convert only to the
-appropriate wrapper, and W and X registers do not interconvert.
+of encoding 31. Shared `GPRRegister<Width>`, `GPRRegisterOrSP<Width>`,
+`GPRRegisterOrZero<Width>`, and `GPRAddSubDestination<Width>` templates provide
+the implementation, while `XRegister`, `WRegister`, and the corresponding role
+types are aliases. The distinct `xsp`/`wsp` and `xzr`/`wzr` values convert only
+to the appropriate role, and W and X registers do not interconvert. Thin inline
+W/X overloads validate typed operands and pass the width field and raw register
+numbers to one shared encoding implementation.
+
+### Encoding-shaped instruction families
+
+Future AArch64 expansion should follow the encoding tables rather than mirror
+the mnemonic index. Arm groups many instructions into encoding classes whose
+members differ only in a few regularly placed fields. This regularity is
+intentional: keeping related operations and operand fields in predictable bit
+positions makes the hardware instruction decoder as regular as possible. The
+assembler benefits from preserving the same structure instead of reconstructing
+a mnemonic-shaped abstraction over it. It represents each independent field
+with its own enum,
+with values already shifted into the architectural bit positions. A shared
+encoder then ORs the fixed class template, width, operation fields, and operands
+exactly as the hardware decoder separates them:
+
+```cpp
+write_instruction(0x0a000000 | encoding_bits(width) |
+                  encoding_bits(operation) | encoding_bits(invert) |
+                  encoding_bits(shift) | register_field(source2, 16) |
+                  (static_cast<uint32_t>(shift_amount) << 10) |
+                  register_field(source1, 5) | destination);
+```
+
+`LogicalOp`, `InvertMode`, and `LogicalShift` cannot be accidentally mixed with
+fields from another encoding class because they are distinct types. The same
+`LogicalOp` values can be reused by another class only when Arm assigns that
+class the same field meaning and bit positions.
+
+W and X public overloads retain the operand-role types, validate restrictions
+such as legal shift amounts and the meaning of register 31, and pass
+`GPRWidth` plus raw register encodings to one private implementation. This keeps
+the common call site typed and concise without duplicating the substantial bit-
+packing code. `GPRWidth::W` is zero and `GPRWidth::X` contains the architectural
+`sf` bit, so the shared implementation consumes it like any other encoding
+field. An encoding class whose width lives elsewhere may reposition or map that
+same width value locally, as unsigned-offset `LDR` does.
+
+Instruction aliases belong in the macro assembler and compose these encoding
+families. They do not receive duplicate exact encoders: `mov` uses `ORR` with
+the zero register, `neg` uses `SUB` from the zero register, and `cmp` uses
+flag-setting `SUBS` with the zero register as destination. The preferred order
+for adding instructions is therefore:
+
+1. identify the architectural encoding class and its independent fields;
+2. add or reuse typed field enums whose values match the documented bits;
+3. add one shared raw encoder for that class;
+4. add thin typed overloads for width or operand-role validation;
+5. express mnemonic aliases and multi-instruction selection in the macro
+   assembler.
+
+This pattern is documented by the
+[Arm encoding index](https://developer.arm.com/documentation/ddi0602/2026-06/Index-by-Encoding)
+and is also recorded beside the field enums in `aarch64_assembler.h` so later
+instruction work starts from the encoding layout.
 
 ## Program-order emission and `CodeFragment`
 
@@ -228,11 +285,10 @@ template such as AArch64 `ADRP` plus `LDR` uses one composite relocation.
 Relocations are consumed by finalization and are not retained as a relocation
 table after publication.
 
-Within-unit direct branches are constructed with a `Label` target. Outside-unit
-transfers are constructed through separate macro-assembler entry points that
-require a resolved absolute code address. The API does not expose one
-permissive target type that can accidentally represent an unresolved external
-symbol.
+`CodeTarget` is a variant of `Label` and `MachineAddress`. Within-unit direct
+branches use the label alternative; outside-unit transfers use an already
+resolved absolute machine address. No alternative can represent an unresolved
+external symbol.
 
 Each direct branch that may need a general-purpose scratch register stores
 the concrete scratch selected by its caller. Macro-assembler entry points
@@ -413,17 +469,18 @@ instructions are encoded immediately into the current fragment and do not
 create a direct branch.
 
 On AArch64 an arbitrary 64-bit bit pattern requires at most one `MOVZ` or
-`MOVN` followed by three `MOVK` instructions. The macro assembler may choose a
-one-instruction logical immediate or a shorter move-wide sequence when the bits
-permit it. Materializing an operand for a following instruction uses the
+`MOVN` followed by three `MOVK` instructions. The current macro assembler uses
+`MOVZ` plus only the required `MOVK` instructions. A later expansion may choose
+`MOVN` or a one-instruction logical immediate when that is shorter.
+Materializing an operand for a following instruction uses the
 direct branch's or lowering's caller-supplied scratch register when the
 destination cannot hold the temporary itself. It does not introduce a second
 hidden scratch.
 
-Far absolute calls, jumps, and tail calls follow the same move-wide policy when
-their direct form is not selected. They remain retained because the choice
-between direct and far transfer depends on the final PC, not because the far
-target bits require pool layout.
+Far absolute calls, jumps, and tail calls use a fixed four-instruction
+move-wide sequence followed by the indirect transfer. They remain retained
+because the choice between direct and far transfer depends on the final PC, not
+because the far target bits require pool layout.
 
 ## Conservative three-pass finalization
 
@@ -442,21 +499,20 @@ Finalization uses three fragment walks, with placement proposed between the
 first and second walks and the final size committed between the second and third
 walks.
 
-The first pass computes each fragment's minimum and maximum size and records
-its pessimistic start offset as a prefix sum of preceding maximum sizes:
+The first pass validates each branch's reported minimum and maximum sizes and
+records each fragment's pessimistic start offset as a prefix sum of preceding
+maximum sizes:
 
 ```text
-fragment.min_size = encoded_bytes.size + branch.min_size
 fragment.max_size = encoded_bytes.size + branch.max_size
 fragment[i].max_start = sum(fragment[j].max_size for j < i)
 ```
 
-For a fragment without a direct branch, its branch minimum and maximum
-sizes are zero. The final prefix end is the pessimistic code size; the sum of
-minimum sizes is a lower bound on the final code size. The emitter asserts on
-an oversized unit and requests stable proposed code and pool addresses from the
-code cache. A failed placement request ends the compilation attempt without
-publishing code.
+For a fragment without a direct branch, its branch maximum size is zero. The
+final prefix end is the pessimistic code size. No minimum-layout or movement-
+slack calculation is needed. The emitter asserts on an oversized unit and
+requests stable proposed code and pool addresses from the code cache. A failed
+placement request ends the compilation attempt without publishing code.
 
 The second pass walks fragments in program order, assigns each fragment its
 actual start address from a running cursor, and selects its trailing direct
@@ -503,6 +559,10 @@ code. Both keep pool storage on separate RW/NX pages and preserve the same
 emitter contract and stable executable addresses.
 
 ## AArch64 conditional branches
+
+The AArch64 assembler implements exact `B.cond` immediate encoding. Symbolic
+narrow conditional branches can be added using the following short/long form
+policy without changing the generic emitter.
 
 AArch64's fixed instruction width still has several materially different
 PC-relative branch ranges. In particular, `TBZ` and `TBNZ` use a signed 14-bit
@@ -601,9 +661,10 @@ The transfer records its caller-supplied scratch register, which defaults to
 `x16` (`IP0`). The far forms clobber that register. Direct `B` and `BL` forms
 are chosen only when the absolute-target displacement from the pass-two actual
 source PC fits. Otherwise the macro assembler's ordinary constant-
-materialization policy synthesizes the complete target address in the supplied
-scratch before the indirect transfer. The code allocation's base address must
-remain stable after this selection.
+materialization path emits one `MOVZ`, three `MOVK` instructions, and `BR` or
+`BLR` for a fixed 20-byte far form. Keeping that selected size fixed avoids
+making layout depend on the target's nonzero halfwords. The code allocation's
+base address must remain stable after this selection.
 
 ## x86-64 reuse
 
@@ -636,7 +697,8 @@ intentional policy, not a correctness limitation.
 
 ## Verification
 
-Emitter tests should cover:
+Emitter tests should cover the implemented generic contracts. Target-specific
+bullets apply when that target or instruction family is added:
 
 - every exact instruction and immediate-field encoder at its range boundaries;
 - rejection of values that an exact instruction cannot encode;
@@ -693,18 +755,11 @@ Tests should also verify the intended conservative case: a branch that fails
 the pessimistic fit test remains long even when final shortening would have
 made its short form fit.
 
-## Open implementation details
+## Future extensions
 
-The design does not yet choose:
-
-- concrete C++ representations for immediate fields and the payloads of
-  direct-branch kinds;
-- tie-breaking among equal-length AArch64 non-`Value` immediate sequences;
-- any future veneer policy outside the initial capped-unit design.
-
-Those choices belong to target-emitter implementation work and must preserve
-the direct-assembler/macro-assembler split and the code-fragment layout
-invariants above.
+Possible target-local extensions include better tie-breaking among equal-length
+AArch64 non-`Value` immediate sequences and a veneer policy outside the capped-
+unit design. They do not change or block the implemented generic emitter.
 
 ## Related documents
 

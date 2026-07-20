@@ -4,10 +4,10 @@
 |---|---|
 | Document type | Implementation plan |
 | Status | Proposed |
-| Implementation | Not started |
+| Implementation | Supporting CFG, code-cache, generic emitter, and initial executable AArch64 assembler infrastructure implemented; Milestone 0 compiler/runtime entry is not started |
 | Scope | Initial JIT staging, vertical slices, temporary runtime policies, and validation |
 | Owning layers | The JIT owns compilation and generated transitions; the interpreter, managed calling convention, native boundaries, and reclaimer retain their existing contracts |
-| Validated against | N/A |
+| Validated against | Supporting infrastructure and executable AArch64 tests in the working tree on 2026-07-20 |
 | Supersedes | Bring-up material formerly embedded in [JIT Compiler and IR](jit-compiler-and-ir.md) |
 
 This plan brings up compiled execution through small, executable vertical

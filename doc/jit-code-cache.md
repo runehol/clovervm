@@ -4,10 +4,10 @@
 |---|---|
 | Document type | Design |
 | Status | Accepted |
-| Implementation | Tier-1 cache and standard mapping backend implemented; emitter and GC publication integration pending |
+| Implementation | Tier 1 complete; packed macOS `MAP_JIT` allocation is the next planned backend; `CodeObject`/GC integration and other platform backends are deferred |
 | Scope | Stable code and constant-pool allocation, PC-relative reachability, writable and executable views, publication, and initial code lifetime |
-| Owning layers | The code cache owns virtual-memory placement, page protection, writable and executable views, and storage lifetime; the machine-code emitter owns sizing and encoding against addresses supplied by the cache; the compiled code object owns the resulting code and `Value`-pool slices |
-| Validated against | N/A |
+| Owning layers | The code cache owns virtual-memory placement, page protection, writable and executable views, and storage lifetime; the machine-code emitter owns sizing and encoding against addresses supplied by the cache; `JitCodeObject` records the resulting code and `Value`-pool slices |
+| Validated against | Working tree on 2026-07-20; focused code-cache and executable AArch64 tests plus the full debug `all check` suite |
 | Supersedes | The contiguous code-plus-pool placement in `doc/jit-machine-code-emission.md` |
 
 This document defines how compiled code and its GC-visible `Value` constant
@@ -32,7 +32,6 @@ CompiledCodeStorage
         writable view
         executable address
         committed capacity
-        final encoded size
 
     ValuePoolSlice
         writable, non-executable address
@@ -133,9 +132,10 @@ granularity, page separation, and pool alignment to decide whether the complete
 layout fits. It does not know what instruction or target imposed that bound.
 The machine-emission driver calls `fits_within_span` before proposing placement
 and owns any near-to-far retry. It must not call `propose` after a failed fit
-query. The configured standard slab size must itself satisfy the target's normal
-near-placement limit; violating that is a cache configuration error, not a
-condition for `propose` to route around. A proposal may allocate a slab so it
+query. The configured standard slab size must itself satisfy every target's
+normal near-placement limit when that target uses standard slabs; violating
+that is a cache configuration error, not a condition for `propose` to route
+around. A proposal may allocate a slab so it
 can return real stable code and pool addresses, but it does not advance either
 allocation frontier and exposes no writable pointers. `CodeAllocationProposal`
 directly holds the selected slab and prospective offsets. It is move-only so it
@@ -259,23 +259,23 @@ CodeFragment
     RelocationEntry<Relocation> records
         fragment-relative byte offset
         target-specific Relocation
-    optional trailing DeferredOperation whose size may vary
+    optional trailing DirectBranch whose size may vary
 ```
 
 The third finalization pass copies the template bytes and invokes each
 relocation at its actual location. A relocation patches only reserved fields
 and never changes fragment size. A variable-size operation remains the sole
-trailing deferred operation and ends the fragment for layout purposes.
+trailing direct branch and ends the fragment for layout purposes.
 
 The generic emitter is parameterized independently by the target's
-`DeferredOperation` and `Relocation` types. AArch64 near-pool `LDR` instructions
+`DirectBranch` and `Relocation` types. AArch64 near-pool `LDR` instructions
 and x86-64 RIP-relative pool loads use relocations. An AArch64 far-pool `ADRP`
 plus `LDR` pair uses one relocation when far-pool mode was selected before
 emission.
 
 Every final-copy hook receives a writable destination and the independently
 computed executable PC. The former is used only to store instruction bytes;
-relocation arithmetic, deferred-operation selection, final encoding, and
+relocation arithmetic, direct-branch selection, final encoding, and
 reachability checks all use the latter. This is required for Linux code caches
 that expose separate RW and RX virtual mappings of the same physical pages.
 
@@ -287,10 +287,16 @@ the code-allocation granularity it can safely reuse:
 
 ```text
 PlatformCodeMemory
-    allocate_slab(size) -> Result<PlatformSlab, CodeCacheError>
-    enter_writable(slab) -> writable scope
-    publish(code range) -> Result<void, CodeCacheError>
+    allocate_slab(size) -> Result<PlatformCodeSlab, CodeCacheError>
+    page_size() -> size_t
     code_allocation_granularity() -> size_t
+
+PlatformCodeSlab
+    size() -> size_t
+    write_pointer_at(offset) -> void *
+    executable_address_at(offset) -> MachineAddress
+    data_address_at(offset) -> MachineAddress
+    publish(code range) -> Result<void, CodeCacheError>
 ```
 
 The standard mapping backend reports the host page size. The macOS `MAP_JIT`
@@ -327,12 +333,13 @@ executable throughout their lifetime and may contain packed slices belonging
 to many code units.
 
 Code or pool allocation failure is a recoverable JIT outcome even during
-bring-up. The cache releases any unpublished reservation, the compiler releases
-its temporary emitter state and owned pool values, no entry point is installed,
-and the triggering execution continues in the interpreter. This is distinct
-from near-placement rejection, which requests the single far-mode re-emission,
-and from malformed encoding or failed final revalidation, which remain compiler
-invariant failures.
+bring-up. A failed proposal has not advanced either slab frontier; the compiler
+releases its temporary emitter state and owned pool values, no entry point is
+installed, and the triggering execution continues in the interpreter. Once a
+proposal is committed its space remains consumed even if publication later
+fails. This is distinct from near-placement rejection, which requests the
+single far-mode re-emission, and from malformed encoding or failed final
+revalidation, which remain compiler invariant failures.
 
 ## Tier 3 on macOS: packed `MAP_JIT` code
 
@@ -362,30 +369,30 @@ metadata unit:
 
 ```text
 JitCodeObject
-    CodeAllocation
-    MachineAddress entry
+    CodeSlice
+    ValuePoolSlice
     final code size
-    writable Value-pool pointer
-    pool MachineAddress
-    pool slot count
+    MachineAddress entry derived from CodeSlice
 ```
 
 The publishing per-thread cache retains the `JitCodeObject` and its physical
 storage until VM destruction. Publication returns a non-owning pointer for
 installation into the corresponding `CodeObject`.
 
-`CodeObject` may embed a nullable atomic `JitCodeObject *`. Compilation fully
-constructs the object, initializes every pool slot and metadata record, and
-publishes the pointer with release ordering. Entrants load it with acquire
-ordering. Initial publication is one-time; generated code is not replaced or
-retired. `CodeObject::dealloc` does not delete the installed object.
+The planned `CodeObject` integration may embed a nullable atomic
+`JitCodeObject *`. Compilation will fully construct the object, initialize every
+pool slot and metadata record, and publish the pointer with release ordering.
+Entrants will load it with acquire ordering. Initial publication is one-time;
+generated code is not replaced or retired. `CodeObject::dealloc` will not
+delete the installed object.
 
-The VM's immortal-code registry traces and rewrites every published object's
-recorded pool slots, including code whose original `CodeObject` has become
-unreachable but which remains callable through a direct cross-unit transfer.
-Until publication, temporary `Owned<Value>` instances in the emitter retain
-those values. Successful publication transfers their GC-visible ownership to
-the initialized pool; abandoning compilation destroys the temporary owners.
+GC integration is not implemented yet. It must trace and rewrite every cache-
+retained object's recorded pool slots, including code whose original
+`CodeObject` has become unreachable but which remains callable through a direct
+cross-unit transfer. Until publication, temporary `Owned<Value>` instances in
+the emitter retain those values. Successful publication will transfer their
+GC-visible ownership to the initialized pool; abandoning compilation destroys
+the temporary owners.
 
 ## Publication and concurrency invariants
 
@@ -434,27 +441,29 @@ Code-cache tests should cover:
   Python exception state;
 - x86-64 RIP-relative pool reachability;
 - relocation patching without fragment creation or size changes;
-- deferred-operation and relocation calculations using `execute_address` when
+- direct-branch and relocation calculations using `execute_address` when
   the writable and executable mappings have different virtual addresses;
 - final instruction bytes verified through an independent disassembler;
 - simulated moving-GC rewrites changing pool slots without changing code bytes;
-- publication ordering under concurrent lookup and entry;
 - later macOS tests in which one thread writes an unpublished slice while
   another executes published code in the same `MAP_JIT` page.
 
-## Open implementation details
+## Planned and deferred extensions
 
-The design does not yet choose:
+The current immortal lifetime policy is complete for bring-up. Reclamation,
+retirement, dependency tracking, and slice reuse are not current concerns and
+do not block the code cache.
 
-- reclamation and reuse strategies for fragmentation and region exhaustion;
-- code retirement, dependency tracking, and slice reuse;
-- the concrete macOS writable-scope API wrapper and entitlement handling;
-- publication and cache-synchronization implementations for each target and
-  platform;
-- the concrete Linux dual-mapping implementation and policies for other
-  non-macOS platforms.
+The next planned extension is the packed macOS `MAP_JIT` backend, including its
+thread-local writable scope, entitlement handling, 16-byte allocation
+granularity, and tests that emit while another thread executes previously
+published code in the same page.
 
-Those choices must not leak virtual-memory or platform publication mechanics
+Installation of cache-retained `JitCodeObject` pointers into `CodeObject`, GC
+tracing and rewriting of their pools, Linux dual RW/RX mappings, and policies
+for other platforms are explicitly deferred.
+
+Future choices must not leak virtual-memory or platform publication mechanics
 into the target assembler or fragment-layout algorithm.
 
 ## Related documents
