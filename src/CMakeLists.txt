@@ -91,12 +91,17 @@ add_library(libclovervm_objects OBJECT
     jit/compilation_arena.h
     jit/control_flow_graph.cpp
     jit/control_flow_graph.h
+    jit/code_cache.cpp
+    jit/code_cache.h
     jit/instruction.h
     jit/code_cache_types.h
     jit/machine_address.h
     jit/machine_address_internal.h
     jit/object_pool.h
+    jit/platform_code_memory.h
     jit/serial.h
+    jit/standard_code_memory.cpp
+    jit/standard_code_memory.h
     runtime/interpreter.cpp
     runtime/interpreter.h
     builtin_types/bool.cpp

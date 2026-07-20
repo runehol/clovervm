@@ -4,7 +4,7 @@
 |---|---|
 | Document type | Design |
 | Status | Accepted |
-| Implementation | Not started |
+| Implementation | Tier-1 cache and standard mapping backend implemented; emitter and GC publication integration pending |
 | Scope | Stable code and constant-pool allocation, PC-relative reachability, writable and executable views, publication, and initial code lifetime |
 | Owning layers | The code cache owns virtual-memory placement, page protection, writable and executable views, and storage lifetime; the machine-code emitter owns sizing and encoding against addresses supplied by the cache; the compiled code object owns the resulting code and `Value`-pool slices |
 | Validated against | N/A |
@@ -24,14 +24,14 @@ preserve the same executable addresses.
 
 ## Storage and ownership model
 
-A finalized compiled code unit owns two non-moving slices:
+A finalized compiled code unit identifies two non-moving slices:
 
 ```text
 CompiledCodeStorage
     CodeSlice
         writable view
         executable address
-        pessimistic capacity
+        committed capacity
         final encoded size
 
     ValuePoolSlice
@@ -40,11 +40,14 @@ CompiledCodeStorage
         slot count
 ```
 
-The two slices share one compiled-code lifetime but not necessarily one mapping
-or adjacent addresses. The code cache must place them within the target's
-required PC-relative reach. Neither slice may move while the compiled code can
-execute. The moving collector may rewrite pool-slot contents but does not move
-the pool slice itself.
+The two slices need not occupy one mapping or adjacent addresses. The code cache
+places them within the numeric span supplied by the target. Neither slice may
+move while the compiled code can execute. The moving collector may rewrite
+pool-slot contents but does not move the pool slice itself. A unit with no
+constants has a `ValuePoolSlice` at the current pool frontier with a slot count
+of zero. An existing `JitCodeObject` therefore always has both slices; absence
+of compiled code is represented by the containing `CodeObject`'s nullable
+`JitCodeObject` reference.
 
 Code and pool storage always occupy different physical pages. A page acquires a
 permanent code or pool role before its first suballocation and never changes
@@ -59,10 +62,13 @@ collection. Pool storage contains only `Value` slots and is aligned to
 same writable, non-executable pool pages. A function does not receive a whole
 pool page merely to preserve page-level protection.
 
-Initial generated code is immortal. Code-cache retirement, slice reuse, and
-dependency-aware reclamation are later policies. Until those exist, a direct
-outside-unit transfer may target only code or native entry points whose address
-remains stable for at least the complete lifetime of the source code unit.
+Initial generated code is immortal. Each thread has a non-thread-safe
+`CodeCache`, but the `VirtualMachine` owns every thread's cache and all of its
+slabs until VM destruction, including caches belonging to terminated threads.
+Each cache also retains every published `JitCodeObject` until VM destruction.
+Code-cache retirement, slice reuse, and dependency-aware reclamation are later
+policies. Direct outside-unit transfers and their target pool metadata are
+consequently stable until VM destruction.
 
 ## Code-cache interface
 
@@ -91,14 +97,19 @@ arithmetic. The type has no implicit pointer or integer conversion. The cache
 constructs machine addresses from its mappings; target encoders do not
 construct them from writable pointers.
 
-Conceptually, finalization requests storage after its pessimistic sizing pass:
+Conceptually, finalization proposes stable placement after its pessimistic
+sizing pass:
 
 ```text
-CodeCache::allocate(
+CodeCache::propose(
+    pessimistic_code_size,
+    value_pool_slot_count)
+        -> proposal result
+
+CodeCache::fits_within_span(
     pessimistic_code_size,
     value_pool_slot_count,
-    reachability_requirement)
-        -> allocation result
+    maximum_span) -> bool
 ```
 
 The concrete result is an exception-independent `Result<T, Error>` rather than
@@ -106,11 +117,10 @@ Python-exception-bearing `Expected<T>`:
 
 ```text
 enum CodeCacheError
-    NearPlacementUnavailable
     AllocationFailure
     PublicationFailure
 
-Result<PendingCodeAllocation, CodeCacheError>
+Result<CodeAllocationProposal, CodeCacheError>
 ```
 
 `Result` follows the existing `Expected` value/error and propagation shape but
@@ -118,29 +128,44 @@ carries its error explicitly and never reads or writes pending Python exception
 state. `CL_TRY` may be generalized through a `propagate_failure` operation so
 both result families retain the same concise call-site behavior.
 
-The result distinguishes successful slices, a near-placement rejection that
-requests a far-mode retry, and actual storage-allocation failure. Allocation
-failure abandons this JIT compilation and continues execution in the
-interpreter; it does not set Python pending-exception state or publish a partial
-code object. The attempt's pool-load width is already fixed; allocation success
-fixes both addresses before the emitter selects address-dependent forms and
-performs final PC-relative encoding. The emitter writes no more than the
-requested code capacity or pool slot count. Publication records the final code
-size, performs required instruction-cache synchronization, and makes the
-executable view callable.
+The target supplies an architectural maximum span; the cache applies its code
+granularity, page separation, and pool alignment to decide whether the complete
+layout fits. It does not know what instruction or target imposed that bound.
+The machine-emission driver calls `fits_within_span` before proposing placement
+and owns any near-to-far retry. It must not call `propose` after a failed fit
+query. The configured standard slab size must itself satisfy the target's normal
+near-placement limit; violating that is a cache configuration error, not a
+condition for `propose` to route around. A proposal may allocate a slab so it
+can return real stable code and pool addresses, but it does not advance either
+allocation frontier and exposes no writable pointers. `CodeAllocationProposal`
+directly holds the selected slab and prospective offsets. It is move-only so it
+cannot be duplicated, and commit disarms it. Destroying it before commit
+requires no action: the cache owns the slab, no frontier has moved, and no
+proposed-placement state resides in the cache.
+
+After address-dependent form selection determines the final encoded size,
+`CodeAllocationProposal::commit(final_size)` asks its selected slab to advance
+both frontiers and return a normal `CodeAllocation` containing the writable code
+and pool slices plus the slab offset and exact encoded size needed for
+publication. The emitter writes no more than the committed code capacity or
+pool slot count. `CodeAllocation` is an ordinary data object with no lifecycle
+behavior. After final emission, `CodeCache::publish(allocation)` performs
+required instruction-cache synchronization and makes the executable view
+callable.
+
+Failure to allocate a slab while proposing placement abandons this JIT
+compilation and continues execution in the interpreter; it does not set Python
+pending-exception state or publish a partial code object. The attempt's
+pool-load width is already fixed, and a successful proposal fixes both addresses
+before the emitter selects address-dependent forms and performs final
+PC-relative encoding.
 
 Failure of the platform protection transition or another fallible publication
-step returns `PublicationFailure`. The pending allocation remains unpublished,
-its RAII owner releases it, and execution continues in the interpreter without
-setting Python pending-exception state. This is distinct from failed final
-instruction revalidation, which is a hard compiler-invariant failure.
-
-`PendingCodeAllocation` is move-only RAII. Its destructor cancels an unpublished
-reservation. Publication consumes it and transfers both slices into a
-`JitCodeObject`; no unpublished allocation or pool ownership survives a failed
-attempt. The concrete C++ API may separate reservation, writable scope,
-publication, and ownership transfer, but it must preserve this ordering and
-address split.
+step returns `PublicationFailure`. The committed space remains consumed and
+execution continues in the interpreter without setting Python pending-exception
+state. This is distinct from failed final instruction revalidation, which is a
+hard compiler-invariant failure. Successful publication transfers both slices
+into a cache-retained `JitCodeObject`.
 
 ## Reachability slabs
 
@@ -169,19 +194,25 @@ displacement to a slot start is at most one MiB minus eight bytes. x86-64 RIP-
 relative loads have an approximately two-GiB signed range and therefore fit
 comfortably in the same placement scheme.
 
-An allocation first tries existing slabs. If none fits, the cache allocates a
-new one-MiB slab. A request whose combined pessimistic code and pool storage
-cannot fit in such a slab receives `NearPlacementUnavailable`; the driver
-destroys that near emitter and re-emits in far mode. The far request receives a
-dedicated page-rounded slab sized for that unit, with code at the beginning and
-pool pages at the end. Its complete span must satisfy the target's far
-reachability contract.
+Placement first tries existing standard slabs. If none fits and the unit's
+minimum page-rounded footprint is at most the standard slab size, the cache
+allocates a new standard slab. Otherwise it allocates a dedicated, minimally
+page-rounded slab for that unit, with code at the beginning and pool pages at
+the end. The emitter's preceding `fits_within_span` query establishes that the
+unit satisfies its target's numeric bound.
 
-Each slab permits at most one uncommitted frontier reservation at a time. Once
-finalization reports the actual code size, commit returns any unused trailing
-allocation granules before a later reservation can advance that frontier.
-Cancellation returns the complete reservation. Pool addresses do not move when
-code slack is recovered.
+The emitter uses one proposal at a time. Once finalization reports the actual
+code size, commit advances the code frontier by only the rounded final size,
+immediately recovering pessimistic slack. The returned allocation carries its
+publication information; the cache retains no active allocation state.
+Destroying a proposal leaves both frontiers unchanged. Once committed, neither
+abandonment nor publication failure restores either frontier. Pool addresses do
+not move when code slack is recovered.
+
+Proposing placement may allocate a new slab to establish real addresses. An
+abandoned standard slab remains available to later proposals. An abandoned
+oversized dedicated slab remains mapped and unused until VM destruction; this
+bounded loss on a failed compilation path is accepted during bring-up.
 
 AArch64 also has the `ADRP` plus `LDR` form with approximately 4 GiB page-
 relative reach. The code cache and emitter retain a far-pool path for a code
@@ -194,14 +225,14 @@ FarPageRelative   ADRP + LDR placeholders, 8 bytes per load
 ```
 
 The JIT driver retains Core IR, first emits and sizes in `NearLiteral` mode,
-then requests an
-allocation with the near reachability requirement. If the cache cannot satisfy
-that placement, it returns a typed near-placement rejection without allocating
-or publishing partial code. The driver discards that emitter attempt and
-re-emits from the retained Core IR once in forced `FarPageRelative` mode. The
-far attempt is independently sizeable and testable from its first instruction;
-there is no partially patched near-to-far conversion. Failure to allocate the
-far request abandons this compilation and retains interpreted execution.
+then asks whether the rounded code and pool layout fits within the literal-load
+span. If it does not, the driver returns a typed near-attempt rejection without
+asking the cache to allocate. It discards that emitter attempt and re-emits from
+the retained Core IR once in forced `FarPageRelative` mode. The far attempt is
+independently sizeable and testable from its first instruction; there is no
+partially patched near-to-far conversion. It supplies the wider `ADRP` span to
+the same target-independent fit query and allocation call. Failure to allocate
+the far request abandons this compilation and retains interpreted execution.
 
 For each accepted allocation the cache returns a reachability guarantee. The
 target backend may then choose a fixed-size pool-load policy before ordinary
@@ -326,8 +357,8 @@ the same cache interface.
 
 ## `JitCodeObject` ownership
 
-A non-GC `JitCodeObject` owns the published code and pool slices as one lifetime
-unit:
+A non-GC `JitCodeObject` records the published code and pool slices as one
+metadata unit:
 
 ```text
 JitCodeObject
@@ -339,18 +370,22 @@ JitCodeObject
     pool slot count
 ```
 
+The publishing per-thread cache retains the `JitCodeObject` and its physical
+storage until VM destruction. Publication returns a non-owning pointer for
+installation into the corresponding `CodeObject`.
+
 `CodeObject` may embed a nullable atomic `JitCodeObject *`. Compilation fully
 constructs the object, initializes every pool slot and metadata record, and
 publishes the pointer with release ordering. Entrants load it with acquire
 ordering. Initial publication is one-time; generated code is not replaced or
-retired. `CodeObject::dealloc` deletes the installed object after the code
-object is unreachable.
+retired. `CodeObject::dealloc` does not delete the installed object.
 
-The `CodeObject` native-layout visitor loads the published pointer and traces
-and rewrites exactly the recorded pool slots. Until publication, temporary
-`Owned<Value>` instances in the emitter retain those values. Successful
-publication transfers their GC-visible ownership to the initialized pool;
-cancellation destroys the temporary owners and the pending allocation.
+The VM's immortal-code registry traces and rewrites every published object's
+recorded pool slots, including code whose original `CodeObject` has become
+unreachable but which remains callable through a direct cross-unit transfer.
+Until publication, temporary `Owned<Value>` instances in the emitter retain
+those values. Successful publication transfers their GC-visible ownership to
+the initialized pool; abandoning compilation destroys the temporary owners.
 
 ## Publication and concurrency invariants
 
@@ -367,8 +402,9 @@ cancellation destroys the temporary owners and the pending allocation.
   code-page permission transition;
 - publication synchronizes all metadata and pool contents before another thread
   can enter the code;
-- direct cross-unit targets remain valid for the complete lifetime of every
-  source unit that embeds their address.
+- every generated-code address remains valid until VM destruction;
+- a `CodeCache` is used only by its owning thread and requires no allocator
+  mutex, while published code may execute on other threads.
 
 ## Verification
 
@@ -389,10 +425,10 @@ Code-cache tests should cover:
 - `write_pointer` and `execute_address` being treated independently;
 - near-region boundary checks for AArch64 literal loads;
 - far-region boundary checks for AArch64 `ADRP` plus `LDR`;
-- forced near-placement rejection followed by one far-mode emission attempt;
-- injected code and pool allocation failures leaving no published entry point,
-  no leaked reservation or owned `Value`, and no Python pending exception;
-- injected publication failure rolling back unpublished storage and retaining
+- target-owned numeric fit rejection followed by one far-mode emission attempt;
+- injected code and pool allocation failures leaving no published entry point
+  or owned `Value`, and no Python pending exception;
+- injected publication failure consuming the committed storage while retaining
   interpreted execution without a Python pending exception;
 - `Result` propagation preserving `CodeCacheError` without touching pending
   Python exception state;
@@ -410,7 +446,7 @@ Code-cache tests should cover:
 
 The design does not yet choose:
 
-- reclamation and retry strategies for fragmentation and region exhaustion;
+- reclamation and reuse strategies for fragmentation and region exhaustion;
 - code retirement, dependency tracking, and slice reuse;
 - the concrete macOS writable-scope API wrapper and entitlement handling;
 - publication and cache-synchronization implementations for each target and

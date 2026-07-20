@@ -16,6 +16,11 @@
 
 namespace cl
 {
+    namespace jit
+    {
+        class CodeCache;
+    }
+
     enum class StartRule;
     enum class LanguageMode;
     struct CompileContinuationInfo;
@@ -352,8 +357,15 @@ namespace cl
             CompileContinuationInfo *compile_continuation_info = nullptr);
 
         VirtualMachine *get_machine() const { return machine; }
+        jit::CodeCache &code_cache() const
+        {
+            assert(code_cache_ != nullptr);
+            return *code_cache_;
+        }
 
     private:
+        ThreadState(VirtualMachine *_machine, jit::CodeCache *_code_cache);
+
         [[nodiscard]] Value
         call_clovervm_function_with_args(TValue<Function> function,
                                          const Value *args, uint32_t n_args);
@@ -374,6 +386,7 @@ namespace cl
 #endif
 
         VirtualMachine *machine;
+        jit::CodeCache *code_cache_;
         bool *safepoint_requested_ptr;
 
         ThreadLocalHeap refcounted_heap;

@@ -64,12 +64,19 @@ namespace cl
     }
 
     ThreadState::ThreadState(VirtualMachine *_machine)
-        : machine(_machine),
+        : ThreadState(_machine, _machine->make_code_cache())
+    {
+    }
+
+    ThreadState::ThreadState(VirtualMachine *_machine,
+                             jit::CodeCache *_code_cache)
+        : machine(_machine), code_cache_(_code_cache),
           safepoint_requested_ptr(machine->safepoint_requested_ptr()),
           refcounted_heap(&machine->get_refcounted_global_heap(),
                           machine->safepoint_requested_ptr()),
           stack(1024 * 1024)
     {
+        assert(code_cache_ != nullptr);
         Value *sentinel_fp = compute_clover_frame_sentinel(stack);
         clover_frame_sentinel_ptr = sentinel_fp;
         initialize_clover_frame_sentinel(sentinel_fp);

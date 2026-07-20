@@ -12,15 +12,8 @@ namespace cl::jit
 {
     enum class CodeCacheError : uint8_t
     {
-        NearPlacementUnavailable,
         AllocationFailure,
         PublicationFailure,
-    };
-
-    enum class PoolReachability : uint8_t
-    {
-        Near,
-        Far,
     };
 
     class CodeSlice

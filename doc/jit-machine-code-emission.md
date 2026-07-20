@@ -334,14 +334,14 @@ its fragments. Target deferred operations refer to slots through generic
 constant-pool offsets; only the instruction used to load a slot is target-
 specific.
 
-The code cache allocates the finalized code and pool as separate stable slices
-within the required target reach:
+The code cache first proposes stable code and pool addresses within the required
+target reach, then commits the final size as separate writable slices:
 
 ```text
 CodeSlice
     writable view
     executable address
-    pessimistic capacity
+    committed capacity
 
 ValuePoolSlice
     writable, non-executable Value slots
@@ -351,12 +351,13 @@ ValuePoolSlice
 
 The slices share the compiled code object's lifetime but may occupy different
 mappings. The pool-load width is fixed by the attempt's near or far mode before
-allocation; allocation then fixes both addresses before address-dependent form
-selection and final PC-relative encoding. The emitter uses the executable code
-address for all PC calculations and writes through the code slice's writable
-view. The code cache guarantees that neither slice moves and that the pool is
-aligned to `sizeof(Value)`, separately identifiable, and writable by the moving
-collector. Detailed placement and publication policy are defined by
+placement. A proposal then fixes both addresses without exposing writable
+storage. After address-dependent form selection determines the final size,
+commit returns the writable slices. The emitter uses the executable code address
+for all PC calculations and writes through the code slice's writable view. The
+code cache guarantees that neither slice moves and that the pool is aligned to
+`sizeof(Value)`, separately identifiable, and writable by the moving collector.
+Detailed placement and publication policy are defined by
 [JIT Code Cache and Publication](jit-code-cache.md).
 
 A constant-pool load with a form fixed by the attempt's pool mode is represented
@@ -402,14 +403,16 @@ Every deferred PC-dependent operation has a pessimistic maximum-size form and,
 where the target ISA provides one, a shorter form. Initial layout assigns every
 deferred operation its maximum size. The pessimistic encoded size of one
 emission unit must not exceed the limit provided by the target deferred-
-operation type; the AArch64 limit is 128 MiB. The emitter requests the
-pessimistic code capacity and constant-pool slots from the code cache before
-choosing forms, giving the unit and pool stable final addresses. Allocation
-failure returns a recoverable compilation-abandoned result to the JIT driver
-rather than entering the remaining passes.
+operation type; the AArch64 limit is 128 MiB. The emitter requests a placement
+proposal for the pessimistic code capacity and constant-pool slots before
+choosing forms, giving the unit and pool stable final addresses without yet
+advancing allocation frontiers. Failure to obtain a proposal returns a
+recoverable compilation-abandoned result to the JIT driver rather than entering
+the remaining passes.
 
-Finalization uses three fragment walks, with allocation between the first and
-second walks.
+Finalization uses three fragment walks, with placement proposed between the
+first and second walks and the final size committed between the second and third
+walks.
 
 The first pass computes each fragment's minimum and maximum size and records
 its pessimistic start offset as a prefix sum of preceding maximum sizes:
@@ -423,9 +426,9 @@ fragment[i].max_start = sum(fragment[j].max_size for j < i)
 For a fragment without a deferred operation, its deferred minimum and maximum
 sizes are zero. The final prefix end is the pessimistic code size; the sum of
 minimum sizes is a lower bound on the final code size. The emitter asserts on
-an oversized unit and requests stable code and pool slices from the code cache,
-fixing both addresses. A failed storage request ends the compilation attempt
-without publishing code.
+an oversized unit and requests stable proposed code and pool addresses from the
+code cache. A failed placement request ends the compilation attempt without
+publishing code.
 
 The second pass walks fragments in program order, assigns each fragment its
 actual start address from a running cursor, and selects its trailing deferred
@@ -441,10 +444,12 @@ base and the current operation's actual source PC. It therefore tests the
 PC-relative form against the exact external target address without additional
 movement slack. Later choices cannot move a source address that the running
 cursor has already assigned. The selected size advances the cursor to the next
-fragment's actual start address.
+fragment's actual start address. After this pass, the emitter commits the final
+code size and receives a normal `CodeAllocation` with writable code and pool
+slices.
 
 The third pass walks the now-final fragments and writes directly into the
-allocated destination buffer. For each final byte offset it derives a writable
+committed allocation. For each final byte offset it derives a writable
 destination from `CodeSlice::write_pointer` and an independent executable PC
 from `CodeSlice::execute_address`. It copies each fragment's already encoded
 template bytes, invokes its relocations with both addresses, and encodes its
@@ -536,18 +541,18 @@ fields and pushes an AArch64 relocation onto the fragment. The relocation
 patches `imm19` for the near form or the `ADRP` page displacement and scaled
 `LDR` page offset for the far form during the third pass.
 
-After pessimistic sizing, a near-mode attempt requests placement satisfying the
-literal-load reachability contract. If the cache reports that near placement is
-unavailable, the JIT driver discards only that machine-emission attempt and
-re-emits deterministically from retained Core IR in forced `FarPageRelative`
-mode. The first emitter, including its fragments, relocations, and temporary
-pool ownership, is destroyed completely before the second is constructed. The
-far attempt uses the fixed eight-byte form from its first emitted pool load and
-requests the `ADRP` reachability contract. This typed retry occurs before final
-encoding or publication, and tests may force either mode or force near
-rejection. It is not an allocation failure: an actual inability to allocate
-the requested far storage abandons JIT compilation and leaves execution in the
-interpreter.
+After pessimistic sizing, a near-mode attempt asks the cache whether the code
+and pool, rounded under its platform policy, fit within a one-MiB maximum span.
+If not, the JIT driver discards only that machine-emission attempt and re-emits
+deterministically from retained Core IR in forced `FarPageRelative` mode. The
+first emitter, including its fragments, relocations, and temporary pool
+ownership, is destroyed completely before the second is constructed. The far
+attempt uses the fixed eight-byte form from its first emitted pool load and
+supplies the `ADRP` maximum span to the same target-independent query. This
+typed retry occurs before allocation, final encoding, or publication, and tests
+may force either mode or force near rejection. It is not an allocation failure:
+an actual inability to allocate the requested far storage abandons JIT
+compilation and leaves execution in the interpreter.
 
 ## AArch64 absolute jumps and calls
 

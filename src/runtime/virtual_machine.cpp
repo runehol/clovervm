@@ -1,4 +1,5 @@
 #include "runtime/virtual_machine.h"
+
 #include "api/clover_entry.h"
 #include "bootstrap/builtins.h"
 #include "build_config.h"
@@ -26,6 +27,8 @@
 #include "import_system/import_system.h"
 #include "import_system/module_global.h"
 #include "import_system/native_extension_loader_internal.h"
+#include "jit/code_cache.h"
+#include "jit/standard_code_memory.h"
 #include "memory/heap_reclamation.h"
 #include "object_model/function.h"
 #include "object_model/instance.h"
@@ -502,6 +505,15 @@ namespace cl
     NativeLibraryHandleCache &VirtualMachine::native_library_handle_cache()
     {
         return *native_library_handles_;
+    }
+
+    jit::CodeCache *VirtualMachine::make_code_cache()
+    {
+        auto code_cache = std::make_unique<jit::CodeCache>(
+            std::make_unique<jit::StandardCodeMemory>());
+        jit::CodeCache *result = code_cache.get();
+        jit_code_caches.push_back(std::move(code_cache));
+        return result;
     }
 
     ThreadState *VirtualMachine::make_new_thread()

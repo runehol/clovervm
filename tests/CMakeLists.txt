@@ -20,6 +20,7 @@ target_sources(test_clovervm PRIVATE
 	test_hash.cpp
 	test_heap.cpp
 	test_import_system.cpp
+	test_code_cache.cpp
 	test_jit_arena.cpp
 	test_jit_cfg.cpp
 	test_machine_address.cpp

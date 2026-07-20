@@ -24,6 +24,11 @@
 
 namespace cl
 {
+    namespace jit
+    {
+        class CodeCache;
+    }
+
     class ThreadState;
     class CodeObject;
     class Dict;
@@ -353,6 +358,8 @@ namespace cl
     private:
         friend class ThreadState;
 
+        jit::CodeCache *make_code_cache();
+
         static constexpr size_t NativeLayoutCount =
             static_cast<size_t>(NativeLayoutId::Count);
 
@@ -380,6 +387,9 @@ namespace cl
         void initialize_module_bootstrap();
         void initialize_builtins();
 
+        // Declared before the heaps so immortal JIT mappings are destroyed
+        // after every heap object and thread that may still refer to them.
+        std::vector<std::unique_ptr<jit::CodeCache>> jit_code_caches;
         GlobalHeap refcounted_global_heap;
         GlobalHeap interned_global_heap;
         std::vector<std::unique_ptr<ThreadState>> threads;
