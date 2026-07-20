@@ -4,10 +4,10 @@
 |---|---|
 | Document type | Design |
 | Status | Accepted |
-| Implementation | Generic emitter implemented; target assemblers not started |
+| Implementation | Generic emitter and initial AArch64 assembler slice implemented |
 | Scope | Target instruction encoding, macro assembly, code fragments, labels, PC-dependent operation sizing, and final machine-code layout |
 | Owning layers | The target backend chooses machine operations and block layout; the machine-code emitter owns exact encoding, code fragments, label resolution, PC-dependent form selection, and final copying |
-| Validated against | N/A |
+| Validated against | [Arm A-profile A64 instruction-set architecture, 2026-06 encoding index](https://developer.arm.com/documentation/ddi0602/2026-06/Index-by-Encoding) |
 | Supersedes | N/A |
 
 This document defines how a target backend turns its final program-order
@@ -30,9 +30,9 @@ contracts.
 
 The direct assembler represents instructions the processor can encode
 directly. Its operations accept only operands valid for that exact instruction
-form. Target-specific immediate classes or checked constructors should make
-encoding restrictions explicit, rather than routing unrelated immediate forms
-through one generic integer abstraction. Examples include AArch64 add/subtract,
+form. Target-specific operand types and exact method names make encoding
+restrictions explicit, rather than routing unrelated immediate forms through
+one generic integer abstraction. Examples include AArch64 add/subtract,
 logical, move-wide, load/store-offset, and PC-relative immediates.
 
 The macro assembler represents convenient target operations that may select or
@@ -52,6 +52,37 @@ The direct assembler never silently expands an exact instruction. The macro
 assembler owns such expansion and selection. This preserves a useful boundary
 between knowing how one instruction is encoded and choosing an instruction
 sequence.
+
+The initial `AArch64Assembler` has two construction modes. During ordinary
+generation it appends each encoded instruction to an `AArch64Emitter`. During
+final direct-branch encoding or relocation it is constructed over the writable
+destination and advances that pointer as it emits. Both modes use the same
+instruction methods and encoding implementation. `AArch64MacroAssembler`
+publicly inherits the direct assembler so ordinary code can mix exact and macro
+operations without a forwarding method for every instruction; it can only be
+constructed over an emitter.
+
+The exact assembler follows the processor's encoding classes rather than
+providing a separate C++ method for every mnemonic. Typed operation enums hold
+their architectural field bits in place, W and X operand overloads supply the
+instruction-width bit, and an encoding method combines those fields with the
+fixed template for that class. The initial families include
+`emit_arithmetic_imm12`, `emit_arithmetic_reg`, `emit_logical_reg`, and
+`emit_move_wide_imm16`. Operand wrappers and separate enum types prevent fields
+from unrelated encoding classes from being mixed.
+
+Methods with irregular immediate fields advertise the restriction in their
+names, such as `emit_ldr_unsigned_offset` and
+`emit_b_conditional_immediate`. Macro methods use the usual assembly operation
+names, including `mov`, `neg`, `cmp`, `ldr`, `b`, and `bl`. Instruction aliases
+compose the exact encoding families: for example, register `mov` is an `ORR`
+with the zero register and `neg` is a `SUB` from the zero register.
+
+AArch64 register types distinguish both width and the operand-specific meaning
+of encoding 31. `XRegister` and `WRegister` represent registers 0 through 30.
+They convert to the corresponding `RegisterOrSP` and `RegisterOrZero` operand
+wrappers. The distinct `xsp`/`wsp` and `xzr`/`wzr` values convert only to the
+appropriate wrapper, and W and X registers do not interconvert.
 
 ## Program-order emission and `CodeFragment`
 

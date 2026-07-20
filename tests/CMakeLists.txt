@@ -20,6 +20,7 @@ target_sources(test_clovervm PRIVATE
 	test_hash.cpp
 	test_heap.cpp
 	test_import_system.cpp
+	test_aarch64_assembler.cpp
 	test_code_cache.cpp
 	test_jit_arena.cpp
 	test_jit_cfg.cpp
@@ -97,6 +98,10 @@ add_custom_target(check_native_module_linkage
 	DEPENDS clovervm_native_module__test_native
 	USES_TERMINAL
 )
+
+if(CMAKE_SYSTEM_PROCESSOR MATCHES "^(arm64|aarch64|ARM64)$")
+	target_sources(test_clovervm PRIVATE test_aarch64_execution.cpp)
+endif()
 
 gtest_discover_tests(test_clovervm
 	WORKING_DIRECTORY "${PROJECT_SOURCE_DIR}"

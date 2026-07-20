@@ -86,6 +86,8 @@ add_library(libclovervm_objects OBJECT
     builtin_types/intern_store.h
     import_system/import_system.cpp
     import_system/import_system.h
+    jit/aarch64_assembler.cpp
+    jit/aarch64_assembler.h
     jit/cfg_verifier.cpp
     jit/cfg_verifier.h
     jit/compilation_arena.h
