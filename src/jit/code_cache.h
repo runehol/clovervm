@@ -65,6 +65,14 @@ namespace cl::jit
     class [[nodiscard]] CodeAllocation
     {
     public:
+        CodeAllocation(const CodeAllocation &) = delete;
+        CodeAllocation &operator=(const CodeAllocation &) = delete;
+        CodeAllocation(CodeAllocation &&other) noexcept;
+        CodeAllocation &operator=(CodeAllocation &&) = delete;
+        ~CodeAllocation();
+
+        void *write_pointer() const;
+
         CodeSlice code;
         ValuePoolSlice value_pool;
 
@@ -72,14 +80,13 @@ namespace cl::jit
         friend class CodeCache;
         friend class CodeCacheSlab;
 
-        CodeAllocation(CodeSlice code, ValuePoolSlice value_pool,
-                       CodeCacheSlab *slab, size_t code_offset,
-                       size_t final_code_size)
-            : code(code), value_pool(value_pool), slab_(slab),
-              code_offset_(code_offset), final_code_size_(final_code_size)
-        {
-        }
+        CodeAllocation(void *write_pointer, CodeSlice code,
+                       ValuePoolSlice value_pool, CodeCacheSlab *slab,
+                       size_t code_offset, size_t final_code_size);
 
+        void end_code_write();
+
+        void *write_pointer_;
         CodeCacheSlab *slab_;
         size_t code_offset_;
         size_t final_code_size_;
@@ -102,7 +109,7 @@ namespace cl::jit
         propose(size_t pessimistic_code_size, size_t pool_slot_count);
 
         [[nodiscard]] Result<JitCodeObject *, JitCodeError>
-        publish(const CodeAllocation &allocation);
+        publish(CodeAllocation &&allocation);
 
     private:
         size_t minimum_slab_size(size_t pessimistic_code_size,

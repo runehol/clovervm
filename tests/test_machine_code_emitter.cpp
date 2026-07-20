@@ -126,7 +126,7 @@ namespace cl::jit
 
         CodeAllocation allocation =
             take_allocation(emitter.finalize(*fixture.cache, 64 * 1024));
-        auto *code = static_cast<uint8_t *>(allocation.code.write_pointer());
+        auto *code = static_cast<uint8_t *>(allocation.write_pointer());
         EXPECT_EQ(0x10, code[0]);
         EXPECT_EQ(0x51, code[1]);
         EXPECT_EQ(0x20, code[2]);
@@ -147,7 +147,7 @@ namespace cl::jit
 
         CodeAllocation allocation =
             take_allocation(emitter.finalize(*fixture.cache, 64 * 1024));
-        auto *code = static_cast<uint8_t *>(allocation.code.write_pointer());
+        auto *code = static_cast<uint8_t *>(allocation.write_pointer());
         EXPECT_EQ(0x54, code[0]);
         EXPECT_EQ(0x51, code[4]);
     }
@@ -162,8 +162,7 @@ namespace cl::jit
 
         CodeAllocation allocation =
             take_allocation(emitter.finalize(*fixture.cache, 64 * 1024));
-        EXPECT_EQ(0x51,
-                  *static_cast<uint8_t *>(allocation.code.write_pointer()));
+        EXPECT_EQ(0x51, *static_cast<uint8_t *>(allocation.write_pointer()));
     }
 
     TEST(MachineCodeEmitter, RelocatesValuePoolLoadsUsingExecutableAddresses)
@@ -181,8 +180,7 @@ namespace cl::jit
         CodeAllocation allocation =
             take_allocation(emitter.finalize(*fixture.cache, 64 * 1024));
 
-        EXPECT_EQ(0xcc,
-                  *static_cast<uint8_t *>(allocation.code.write_pointer()));
+        EXPECT_EQ(0xcc, *static_cast<uint8_t *>(allocation.write_pointer()));
         EXPECT_EQ(allocation.code.execute_address().bits_for_indirect_target(),
                   observation.instruction_pc);
         EXPECT_NE(reinterpret_cast<uintptr_t>(observation.write_pointer),

@@ -27,6 +27,9 @@ namespace cl::jit
         commit(size_t code_offset, size_t code_size, size_t pool_offset,
                size_t pool_size) = 0;
 
+        virtual void begin_code_write() = 0;
+        virtual void end_code_write() = 0;
+
         [[nodiscard]] virtual Result<void, JitCodeError>
         publish(size_t offset, size_t encoded_size, size_t protected_size) = 0;
     };

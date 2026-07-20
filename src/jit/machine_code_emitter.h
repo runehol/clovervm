@@ -283,7 +283,7 @@ namespace cl::jit
         void encode(const CodeAllocation &allocation) const
         {
             auto *write_base =
-                static_cast<uint8_t *>(allocation.code.write_pointer());
+                static_cast<uint8_t *>(allocation.write_pointer());
             MachineAddress code_address = allocation.code.execute_address();
             MachineAddress pool_address = allocation.value_pool.address();
 

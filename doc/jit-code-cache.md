@@ -75,8 +75,10 @@ The emitter writes through a writable view but performs all PC-relative
 calculations from the executable address:
 
 ```text
-CodeSlice
+CodeAllocation
     void *write_pointer
+
+CodeSlice
     MachineAddress execute_address
     capacity
 ```
@@ -86,6 +88,8 @@ macOS `MAP_JIT` use, or may be distinct aliases, as required by the intended
 Linux dual-mapping implementation. The emitter must never infer executable
 addresses from writable pointers.
 
+The unpublished `CodeAllocation` alone exposes `write_pointer`; persistent
+`CodeSlice` metadata exposes only its executable address and capacity.
 `write_pointer` is a `void *`, while `execute_address` and the pool slice's
 address are opaque `MachineAddress` values. `MachineAddress` supports checked
 offset advancement, checked signed byte and aligned displacement between two
@@ -151,13 +155,16 @@ proposed-placement state resides in the cache.
 
 After address-dependent form selection determines the final encoded size,
 `CodeAllocationProposal::commit(final_size)` asks its selected slab to advance
-both frontiers and return a normal `CodeAllocation` containing the writable code
-and pool slices plus the slab offset and exact encoded size needed for
-publication. The emitter writes no more than the committed code capacity or
-pool slot count. `CodeAllocation` is an ordinary data object with no lifecycle
-behavior. After final emission, `CodeCache::publish(allocation)` performs
-required instruction-cache synchronization and makes the executable view
-callable.
+both frontiers, commit any platform page roles, enter the platform code-write
+mode, and return a move-only `CodeAllocation`. The allocation contains the
+writable code pointer and pool slice plus the executable `CodeSlice`, slab
+offset, and exact encoded size needed for publication. The emitter writes no
+more than the committed code capacity or pool slot count. Destroying an
+unpublished allocation leaves its storage consumed but restores platform
+code-write protection. After final emission,
+`CodeCache::publish(std::move(allocation))` restores code-write protection
+before performing instruction-cache synchronization and making the executable
+view callable.
 
 Failure to allocate a slab while proposing placement abandons this JIT
 compilation and continues execution in the interpreter; it does not set Python
@@ -302,6 +309,9 @@ PlatformCodeSlab
     write_pointer_at(offset) -> void *
     executable_address_at(offset) -> MachineAddress
     data_address_at(offset) -> MachineAddress
+    commit(code range, pool range) -> Result<void, JitCodeError>
+    begin_code_write() -> void
+    end_code_write() -> void
     publish(code range) -> Result<void, JitCodeError>
 ```
 
@@ -351,15 +361,14 @@ revalidation, which remain compiler invariant failures.
 
 The later macOS implementation allocates code pages with `MAP_JIT` and uses the
 platform's thread-local JIT write-protection mechanism. The compiling thread
-enters a scoped writable state while emitting through the code slice's writable
-view and restores executable state before publication. Other threads may
+enters a scoped writable state owned by its unpublished `CodeAllocation` and
+restores executable state on publication or abandonment. Other threads may
 continue executing already published functions in the same packed pages.
 
 This tier suballocates functions at 16-byte granularity within one code page.
 It must not use
 process-wide page-permission changes to reopen a page that another thread may
-be executing. The `CodeSlice` interface remains unchanged; only the cache's
-writable-scope and page-allocation implementation changes.
+be executing. Persistent `CodeSlice` metadata never exposes writable code.
 
 Pool pages remain ordinary writable, non-executable mappings. They do not use
 `MAP_JIT` and are not affected by thread-local code-write scopes.

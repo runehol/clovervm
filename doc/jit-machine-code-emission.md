@@ -419,11 +419,13 @@ byte offset. Target relocations retain that handle but cannot inspect or perform
 arithmetic on it; only the generic emitter resolves it to a final slot address.
 
 The code cache first proposes stable code and pool addresses within the required
-target reach, then commits the final size as separate writable slices:
+target reach, then commits the final size as an unpublished allocation:
 
 ```text
+CodeAllocation
+    writable code pointer
+
 CodeSlice
-    writable view
     executable address
     committed capacity
 
@@ -437,8 +439,9 @@ The slices share the compiled code object's lifetime but may occupy different
 mappings. The pool-load width is fixed by the attempt's near or far mode before
 placement. A proposal then fixes both addresses without exposing writable
 storage. After address-dependent form selection determines the final size,
-commit returns the writable slices. The emitter uses the executable code address
-for all PC calculations and writes through the code slice's writable view. The
+commit returns a move-only `CodeAllocation` that owns the active platform
+code-write mode. The emitter uses the executable code address for all PC
+calculations and writes through the allocation's writable pointer. The
 code cache guarantees that neither slice moves and that the pool is aligned to
 `sizeof(Value)`, separately identifiable, and writable by the moving collector.
 Detailed placement and publication policy are defined by
@@ -534,7 +537,7 @@ slices.
 
 The third pass walks the now-final fragments and writes directly into the
 committed allocation. For each final byte offset it derives a writable
-destination from `CodeSlice::write_pointer` and an independent executable PC
+destination from `CodeAllocation::write_pointer` and an independent executable PC
 from `CodeSlice::execute_address`. It copies each fragment's already encoded
 template bytes, invokes its relocations with both addresses, and encodes its
 selected trailing direct branch using the writable address only as a destination
@@ -551,7 +554,9 @@ Final encoding must assert that every selected PC-dependent form still fits its
 actual final PC and displacement.
 
 After the third pass, finalization returns the completed unpublished
-`CodeAllocation` to its caller. The caller then asks the code cache to publish it.
+`CodeAllocation` to its caller. The caller then moves it into the code cache for
+publication. Publication, or destruction after abandonment, restores platform
+code-write protection exactly once.
 Initial bring-up may validate writable bytes without entering them. The first
 executable tier uses page-rounded code ranges in standard `mmap` slabs with a
 one-way RW-to-RX transition; the later macOS tier uses 16-byte packed `MAP_JIT`

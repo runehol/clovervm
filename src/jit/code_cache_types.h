@@ -20,22 +20,16 @@ namespace cl::jit
     class CodeSlice
     {
     public:
-        CodeSlice(void *write_pointer, MachineAddress execute_address,
-                  size_t capacity)
-            : write_pointer_(write_pointer), execute_address_(execute_address),
-              capacity_(capacity)
+        CodeSlice(MachineAddress execute_address, size_t capacity)
+            : execute_address_(execute_address), capacity_(capacity)
         {
-            assert(write_pointer != nullptr);
-            assert(reinterpret_cast<uintptr_t>(write_pointer) % 16 == 0);
             assert(execute_address.offset_within(4) == 0);
         }
 
-        void *write_pointer() const { return write_pointer_; }
         MachineAddress execute_address() const { return execute_address_; }
         size_t capacity() const { return capacity_; }
 
     private:
-        void *write_pointer_;
         MachineAddress execute_address_;
         size_t capacity_;
     };

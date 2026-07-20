@@ -86,16 +86,12 @@ namespace cl::jit
         }
     }
 
-    TEST(CodeCacheTypes, PreserveWritableAndExecutableAddressSeparation)
+    TEST(CodeCacheTypes, DescribesExecutableCode)
     {
-        alignas(16) uint8_t writable_code[32] = {};
-        CodeSlice code(writable_code, address(0x4000), sizeof(writable_code));
+        CodeSlice code(address(0x4000), 32);
 
-        EXPECT_EQ(writable_code, code.write_pointer());
         EXPECT_EQ(address(0x4000), code.execute_address());
-        EXPECT_EQ(sizeof(writable_code), code.capacity());
-        EXPECT_NE(reinterpret_cast<uintptr_t>(writable_code),
-                  code.execute_address().bits_for_indirect_target());
+        EXPECT_EQ(32u, code.capacity());
     }
 
     TEST(CodeCacheTypes, DescribesGcVisiblePoolSlots)

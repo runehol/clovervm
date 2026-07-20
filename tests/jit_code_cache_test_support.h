@@ -24,6 +24,8 @@ namespace cl::jit::test_support
         {
         }
 
+        ~FakePlatformCodeSlab() override { assert(!code_write_active); }
+
         size_t size() const override { return size_; }
 
         void *write_pointer_at(size_t offset) const override
@@ -62,9 +64,24 @@ namespace cl::jit::test_support
             return Result<void, JitCodeError>::ok();
         }
 
+        void begin_code_write() override
+        {
+            assert(!code_write_active);
+            code_write_active = true;
+            ++begin_code_write_count;
+        }
+
+        void end_code_write() override
+        {
+            assert(code_write_active);
+            code_write_active = false;
+            ++end_code_write_count;
+        }
+
         Result<void, JitCodeError> publish(size_t, size_t encoded_size,
                                            size_t protected_size) override
         {
+            assert(!code_write_active);
             published_encoded_size = encoded_size;
             published_protected_size = protected_size;
             if(*fail_publication_)
@@ -81,6 +98,9 @@ namespace cl::jit::test_support
         size_t committed_code_size = 0;
         size_t committed_pool_offset = 0;
         size_t committed_pool_size = 0;
+        size_t begin_code_write_count = 0;
+        size_t end_code_write_count = 0;
+        bool code_write_active = false;
 
     private:
         std::unique_ptr<uint8_t[]> storage_;

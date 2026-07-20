@@ -64,6 +64,9 @@ namespace cl::jit
                 return Result<void, JitCodeError>::ok();
             }
 
+            void begin_code_write() override {}
+            void end_code_write() override {}
+
             Result<void, JitCodeError> publish(size_t offset,
                                                size_t encoded_size,
                                                size_t protected_size) override

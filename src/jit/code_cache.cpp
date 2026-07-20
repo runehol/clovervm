@@ -74,8 +74,7 @@ namespace cl::jit
 
         CodeSlice code_slice(size_t offset, size_t capacity) const
         {
-            return CodeSlice(platform_slab_->write_pointer_at(offset),
-                             platform_slab_->executable_address_at(offset),
+            return CodeSlice(platform_slab_->executable_address_at(offset),
                              capacity);
         }
 
@@ -102,11 +101,15 @@ namespace cl::jit
 
             CL_TRY(platform_slab_->commit(code_offset, committed_size,
                                           pool_offset, committed_pool_size));
+            platform_slab_->begin_code_write();
             return Result<CodeAllocation, JitCodeError>::ok(
-                CodeAllocation(code_slice(code_offset, committed_size),
+                CodeAllocation(platform_slab_->write_pointer_at(code_offset),
+                               code_slice(code_offset, committed_size),
                                pool_slice(pool_offset, pool_slot_count), this,
                                code_offset, final_code_size));
         }
+
+        void end_code_write() { platform_slab_->end_code_write(); }
 
         Result<JitCodeObject, JitCodeError>
         publish(const CodeAllocation &allocation)
@@ -149,6 +152,51 @@ namespace cl::jit
         size_t code_frontier_ = 0;
         size_t pool_frontier_;
     };
+
+    CodeAllocation::CodeAllocation(void *write_pointer, CodeSlice code,
+                                   ValuePoolSlice value_pool,
+                                   CodeCacheSlab *slab, size_t code_offset,
+                                   size_t final_code_size)
+        : code(code), value_pool(value_pool), write_pointer_(write_pointer),
+          slab_(slab), code_offset_(code_offset),
+          final_code_size_(final_code_size)
+    {
+        assert(write_pointer != nullptr);
+        assert(reinterpret_cast<uintptr_t>(write_pointer) % 16 == 0);
+        assert(slab != nullptr);
+    }
+
+    CodeAllocation::CodeAllocation(CodeAllocation &&other) noexcept
+        : code(other.code), value_pool(other.value_pool),
+          write_pointer_(other.write_pointer_), slab_(other.slab_),
+          code_offset_(other.code_offset_),
+          final_code_size_(other.final_code_size_)
+    {
+        other.write_pointer_ = nullptr;
+        other.slab_ = nullptr;
+    }
+
+    CodeAllocation::~CodeAllocation()
+    {
+        if(write_pointer_ != nullptr)
+        {
+            end_code_write();
+        }
+    }
+
+    void *CodeAllocation::write_pointer() const
+    {
+        assert(write_pointer_ != nullptr);
+        return write_pointer_;
+    }
+
+    void CodeAllocation::end_code_write()
+    {
+        assert(write_pointer_ != nullptr);
+        assert(slab_ != nullptr);
+        slab_->end_code_write();
+        write_pointer_ = nullptr;
+    }
 
     CodeAllocationProposal::CodeAllocationProposal(CodeCacheSlab *slab,
                                                    size_t code_offset,
@@ -287,8 +335,9 @@ namespace cl::jit
     }
 
     Result<JitCodeObject *, JitCodeError>
-    CodeCache::publish(const CodeAllocation &allocation)
+    CodeCache::publish(CodeAllocation &&allocation)
     {
+        allocation.end_code_write();
         JitCodeObject object = CL_TRY(allocation.slab_->publish(allocation));
         JitCodeObject *published =
             published_code_

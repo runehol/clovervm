@@ -25,7 +25,7 @@ namespace cl::jit
         CodeAllocation allocation = std::move(finalization).value();
 
         Result<JitCodeObject *, JitCodeError> publication =
-            cache.publish(allocation);
+            cache.publish(std::move(allocation));
         ASSERT_TRUE(publication);
         JitCodeObject *code = std::move(publication).value();
 
@@ -60,7 +60,7 @@ namespace cl::jit
         CodeAllocation allocation = std::move(finalization).value();
 
         Result<JitCodeObject *, JitCodeError> publication =
-            cache.publish(allocation);
+            cache.publish(std::move(allocation));
         ASSERT_TRUE(publication);
         JitCodeObject *code = std::move(publication).value();
 
