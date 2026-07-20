@@ -801,11 +801,12 @@ compilation, publishes nothing, sets no Python exception, and continues
 execution in the interpreter.
 
 Code-cache operations use an exception-independent `Result<T, CodeCacheError>`
-with `NearPlacementUnavailable` and `AllocationFailure` errors. A move-only
-pending allocation cancels itself unless publication consumes it into a
-non-GC `JitCodeObject`. `CodeObject` may publish a nullable atomic pointer to
-that object; it owns both code and pool slices and exposes the exact pool slots
-to garbage collection.
+with `NearPlacementUnavailable`, `AllocationFailure`, and `PublicationFailure`
+errors. Allocation or platform-publication failure abandons compilation without
+setting a Python exception. A move-only pending allocation cancels itself unless
+publication consumes it into a non-GC `JitCodeObject`. `CodeObject` may publish
+a nullable atomic pointer to that object; it owns both code and pool slices and
+exposes the exact pool slots to garbage collection.
 
 ### Context
 
@@ -859,6 +860,8 @@ initial macOS target without exposing page mechanics to the compiler.
 - near-placement rejection causes one deterministic far-mode re-emission;
 - actual code-cache allocation failure is a recoverable compilation outcome,
   leaving the interpreter as the executable implementation;
+- platform publication failure rolls back unpublished storage and likewise
+  retains interpreted execution;
 - unpublished reservations and temporary pool owners are released by RAII;
 - initial code is immortal until retirement, dependency tracking, and slice
   reuse are designed.

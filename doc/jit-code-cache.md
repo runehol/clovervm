@@ -108,6 +108,7 @@ Python-exception-bearing `Expected<T>`:
 enum CodeCacheError
     NearPlacementUnavailable
     AllocationFailure
+    PublicationFailure
 
 Result<PendingCodeAllocation, CodeCacheError>
 ```
@@ -127,6 +128,12 @@ performs final PC-relative encoding. The emitter writes no more than the
 requested code capacity or pool slot count. Publication records the final code
 size, performs required instruction-cache synchronization, and makes the
 executable view callable.
+
+Failure of the platform protection transition or another fallible publication
+step returns `PublicationFailure`. The pending allocation remains unpublished,
+its RAII owner releases it, and execution continues in the interpreter without
+setting Python pending-exception state. This is distinct from failed final
+instruction revalidation, which is a hard compiler-invariant failure.
 
 `PendingCodeAllocation` is move-only RAII. Its destructor cancels an unpublished
 reservation. Publication consumes it and transfers both slices into a
@@ -385,6 +392,8 @@ Code-cache tests should cover:
 - forced near-placement rejection followed by one far-mode emission attempt;
 - injected code and pool allocation failures leaving no published entry point,
   no leaked reservation or owned `Value`, and no Python pending exception;
+- injected publication failure rolling back unpublished storage and retaining
+  interpreted execution without a Python pending exception;
 - `Result` propagation preserving `CodeCacheError` without touching pending
   Python exception state;
 - x86-64 RIP-relative pool reachability;
