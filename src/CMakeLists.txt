@@ -97,6 +97,7 @@ add_library(libclovervm_objects OBJECT
     jit/code_cache_types.h
     jit/machine_address.h
     jit/machine_address_internal.h
+    jit/machine_code_emitter.h
     jit/object_pool.h
     jit/platform_code_memory.h
     jit/serial.h

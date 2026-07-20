@@ -4,7 +4,7 @@
 |---|---|
 | Document type | Design |
 | Status | Accepted |
-| Implementation | Not started |
+| Implementation | Generic emitter implemented; target assemblers not started |
 | Scope | Target instruction encoding, macro assembly, code fragments, labels, PC-dependent operation sizing, and final machine-code layout |
 | Owning layers | The target backend chooses machine operations and block layout; the machine-code emitter owns exact encoding, code fragments, label resolution, PC-dependent form selection, and final copying |
 | Validated against | N/A |
@@ -42,13 +42,11 @@ instructions. Python `Value` constants instead use the GC-visible constant pool
 defined below. Macro operations must make any scratch-register requirements and
 possible expansion visible to their callers.
 
-The macro assembler also owns linking and non-linking transfers to absolute
-targets. These operations remain deferred when their direct form depends on
-the final source address. The same rule applies to PC-relative loads, address
-formation, and any other operation whose encoding or selected form depends on
-its final PC. A far transfer receives a caller-supplied general-purpose scratch
-register, defaulting to AArch64 `IP0` (`x16`), that is unavailable to the
-register allocator across that operation.
+The macro assembler also owns linking and non-linking direct branches to known
+label or absolute targets. The emitter retains these branches when their form
+depends on the final source address. A far transfer receives a caller-supplied
+general-purpose scratch register, defaulting to AArch64 `IP0` (`x16`), that is
+unavailable to the register allocator across that branch.
 
 The direct assembler never silently expands an exact instruction. The macro
 assembler owns such expansion and selection. This preserves a useful boundary
@@ -60,9 +58,9 @@ sequence.
 The target backend emits instructions in final program order. Directly
 encodable instructions are appended immediately to a byte buffer in the
 current `CodeFragment`. A fixed-size instruction whose fields depend on its
-final PC appends an encoded template and a machine-specific relocation. Only an
-operation whose size may change terminates the fragment for layout purposes
-and remains symbolic until final layout:
+final PC appends an encoded template and a machine-specific relocation. A
+direct branch whose size may change terminates the fragment and remains
+symbolic until final layout:
 
 ```text
 CodeFragment
@@ -70,27 +68,43 @@ CodeFragment
     zero or more RelocationEntry<Relocation> records
         fragment-relative instruction offset
         machine-specific relocation payload
-    optional trailing size-varying deferred operation
+    optional trailing size-varying direct branch
 ```
 
 A fixed-size PC-dependent operation records the current byte offset, appends its
 complete instruction template with zeroed address fields, and pushes a
 relocation entry at that instruction offset. It does not end the fragment. A
-variable-size deferred operation is stored at the end of the fragment and
-starts a new fragment for the following instruction stream.
-`DeferredTransfer` is the branch, jump, and call kind; other deferred kinds may
-include variable-size PC-relative loads and address formation. Every deferred
-operation records its minimum and maximum sizes and enough symbolic information
-to select and encode one form after layout.
+variable-size direct branch is stored at the end of the fragment and starts a
+new fragment for the following instruction stream. Every direct branch records
+its minimum and maximum sizes and enough symbolic information to select and
+encode one form after layout. Genuine indirect branches such as `RET`, `BR xN`,
+or `BLR xN` contain no embedded `CodeTarget` and are encoded immediately.
 
 The fragment container and three-pass finalizer are target-independent and are
-implemented as a template over the target's deferred-operation and relocation
+implemented as a template over the target's direct-branch and relocation
 types:
 
 ```text
-MachineCodeEmitter<DeferredOperation, Relocation>
-    vector<CodeFragment<DeferredOperation, Relocation>>
+MachineCodeEmitter<DirectBranch, Relocation>
+    vector<CodeFragment<DirectBranch, Relocation>>
 ```
+
+Its backend-facing surface is deliberately small:
+
+```text
+make_label() -> Label
+resolve(Label) -> void
+emit_bytes(const void *, size_t) -> void
+emit_relocatable(const void *, size_t, Relocation) -> void
+emit_direct_branch(DirectBranch) -> void
+add_value_to_constant_pool(Value) -> ValuePoolEntry
+finalize(CodeCache &, maximum_pool_span)
+    -> Result<CodeAllocation, MachineCodeEmissionError>
+```
+
+Finalization is single-use. `PoolOutOfRange` asks the driver to discard this
+attempt and re-emit in far-pool mode; `AllocationFailure` abandons compilation.
+Publication remains a separate code-cache operation.
 
 Executable PCs, outside-unit targets, and pool-slot addresses use an opaque
 `MachineAddress`, not an integer alias or C++ pointer. Its deliberately narrow
@@ -124,15 +138,15 @@ the already-offset writable location before calling a target hook; target code
 may cast that pointer only to store encoded fields. It cannot use a writable
 pointer as a machine PC.
 
-`Label` and `CodePosition` are not template-dependent. A label identifies only
-a fragment boundary. A code position identifies a fragment plus an offset in
-its directly encoded bytes. Neither contains an instruction encoding,
-displacement rule, register, or other target property.
+`Label` and `ValuePoolEntry` are target-independent opaque handles. A label
+contains an index into the emitter's label-binding table. A pool entry contains
+a byte offset from the beginning of the `Value` pool. Neither exposes its
+stored integer or supports arithmetic.
 
-The deferred-operation type uses a target-specific tagged-kind representation
-rather than a virtual instruction hierarchy. Each operation reports its
+The direct-branch type uses a target-specific tagged-kind representation rather
+than a virtual instruction hierarchy. Each branch reports its
 minimum and maximum size, selects and stores one concrete form during the
-second layout pass, reports that selected size, and encodes only the stored form
+second layout pass, returns that selected size, and encodes only the stored form
 during the third pass. Selection is not rerun while encoding. It also provides
 the target's maximum pessimistic emission-unit size; the generic emitter does
 not hardcode AArch64's 128 MiB limit.
@@ -140,17 +154,19 @@ not hardcode AArch64's 128 MiB limit.
 The conceptual target contract is:
 
 ```text
-DeferredOperation
+DirectBranch
+    target() const -> const variant<Label, MachineAddress> &
     min_size() -> uint32_t
     max_size() -> uint32_t
-    select(const DeferredSelectionContext &) -> void
-    selected_size() -> uint32_t
-    encode(const DeferredEncodingContext &) const -> void
-    static max_unit_size() -> size_t
+    select(MachineAddress source, MachineAddress target) -> uint32_t
+    encode(void *write, MachineAddress source,
+           MachineAddress target) const -> void
+    static constexpr MaximumUnitSize
 
 Relocation
-    span_size() -> uint32_t
-    apply(const RelocationContext &) const -> void
+    target() const -> RelocationTarget
+    apply(void *write, MachineAddress instruction_pc,
+          MachineAddress resolved_target) const -> void
 ```
 
 These are compact tagged value types with no virtual dispatch. Selection stores
@@ -159,16 +175,7 @@ application are const, return no recoverable status, and hard-assert their final
 range and template invariants. Recoverable resource failure belongs to the code
 cache rather than target encoding.
 
-`DeferredSelectionContext` supplies the executable instruction PC and computes
-a displacement to a target with a candidate form's PC bias. This lets AArch64
-use an instruction-address PC while x86-64 uses the candidate instruction end.
-For an internal label it applies the conservative pass-one layout; for an
-absolute target it uses the pass-two executable PC. `DeferredEncodingContext`
-supplies the `void *` write destination, executable PC, and now-final target.
-`RelocationContext` similarly supplies the writable instruction location,
-executable PC, and stable pool base.
-
-Deferred-operation selection receives a `MachineAddress` executable source PC,
+Direct-branch selection receives a `MachineAddress` executable source PC,
 never a writable pointer. Final encoding receives both a `void *` writable
 destination at which to store the selected bytes and the corresponding
 `MachineAddress` executable PC from which all displacements are calculated.
@@ -176,36 +183,35 @@ Those addresses may differ when the code cache uses dual mappings.
 
 The relocation type is also machine-specific and uses a compact tagged-kind
 representation. Its enclosing target-independent `RelocationEntry` supplies
-the fragment-relative instruction offset; the payload supplies the symbolic
-data and field layout needed for patching, such as a constant-pool slot offset,
-instruction length, or displacement-field offset. It has no size-selection
-interface and cannot change fragment layout. During the third pass, after the
-fragment template bytes have been copied, the generic emitter invokes every
-relocation with the `void *` writable instruction location, the corresponding
-`MachineAddress` executable instruction PC, and the finalized code and pool
-address context. The writable location is used only as the destination of
-stores; every displacement, page calculation, and reachability check uses
-`MachineAddress`. A relocation may
+the fragment-relative instruction offset. Its payload retains an opaque
+`RelocationTarget` and the field layout needed for patching. Initially
+`RelocationTarget` is `ValuePoolEntry`; the name deliberately permits a later
+variant if another fixed-size relocation target is required. During the third
+pass, the generic emitter resolves the target and invokes the relocation with
+the `void *` writable instruction location, corresponding `MachineAddress`
+executable instruction PC, and resolved target address. The writable location
+is used only as the destination of stores; every displacement, page calculation,
+and reachability check uses `MachineAddress`. A relocation may
 modify only fields reserved by its instruction template; a multi-instruction
 template such as AArch64 `ADRP` plus `LDR` uses one composite relocation.
 Relocations are consumed by finalization and are not retained as a relocation
 table after publication.
 
-Within-unit operations are constructed with a `Label` target. Outside-unit
+Within-unit direct branches are constructed with a `Label` target. Outside-unit
 transfers are constructed through separate macro-assembler entry points that
 require a resolved absolute code address. The API does not expose one
 permissive target type that can accidentally represent an unresolved external
 symbol.
 
-Each deferred operation that may need a general-purpose scratch register stores
+Each direct branch that may need a general-purpose scratch register stores
 the concrete scratch selected by its caller. Macro-assembler entry points
 default that operand to AArch64 `x16`, but the emitter has no global scratch-
 register configuration. The backend must make the supplied register dead
-across every form the operation may select. An operation whose maximum form
+across every form the branch may select. A branch whose maximum form
 does not need scratch does not clobber it.
 
-The initial deferred-operation set requires at most one implicit scratch at a
-time. Macro operations accept register operands and may synthesize at most one
+The initial direct-branch set requires at most one implicit scratch at a time.
+Macro operations accept register operands and may synthesize at most one
 otherwise unavailable address or immediate. A lowering that needs two
 simultaneously synthesized values must expose an additional temporary through
 its `LocationSummary` and emit multiple operations; it may not consume a second
@@ -217,21 +223,19 @@ The resulting intended reuse is:
 
 ```text
 using AArch64Emitter =
-    MachineCodeEmitter<AArch64DeferredOperation, AArch64Relocation>
+    MachineCodeEmitter<AArch64DirectBranch, AArch64Relocation>
 using X86_64Emitter =
-    MachineCodeEmitter<X86_64DeferredOperation, X86_64Relocation>
+    MachineCodeEmitter<X86_64DirectBranch, X86_64Relocation>
 ```
 
 The target assemblers append their already encoded instruction bytes to the
-same generic fragment interface and construct their own relocation and trailing
-operation types. Target-specific PC bases, displacement fields, selected forms,
+same generic fragment interface and construct their own relocation and direct-
+branch types. Target-specific PC bases, displacement fields, selected forms,
 scratch registers, and final encoding remain contained in those types.
 
-Terminating a fragment is a layout property, not necessarily a control-flow
-property. A linking transfer returns to the beginning of the following
-fragment. A non-linking transfer has no runtime fall-through; it is used for
-ordinary jumps and tail calls. A trailing variable-size PC-relative non-
-transfer operation continues at the beginning of the following fragment.
+A linking direct branch returns to the beginning of the following fragment. A
+non-linking direct branch has no runtime fall-through; it is used for ordinary
+jumps and tail calls.
 
 `CodeFragment` is intentionally not called a basic block. The JIT CFG excludes
 non-returning side exits from its block edges, while the emitter must retain
@@ -254,13 +258,13 @@ parallel edge moves, and removes an unconditional branch whose target is the
 physical fall-through block. The emitter sees only the resulting program-order
 instruction stream and does not reconstruct CFG intent.
 
-## Labels and code positions
+## Labels
 
 An unresolved label names a code-fragment boundary, not a provisional absolute
-byte offset. Binding a label closes the current fragment first if it contains
-any directly encoded bytes; a deferred operation has already closed its
+byte offset. Resolving a label closes the current fragment first if it contains
+any directly encoded bytes; a direct branch has already closed its
 fragment. The label is then associated with the current empty boundary, and
-subsequent emission supplies that fragment's first byte. Binding consecutive
+subsequent emission supplies that fragment's first byte. Resolving consecutive
 labels associates them with the same boundary without creating redundant empty
 fragments. A label's target address is always the start address of its fragment
 and therefore the address of its first byte when the fragment is nonempty.
@@ -268,18 +272,11 @@ Empty target fragments are valid. Their labels resolve to the fragment's start
 boundary, which may be the same address as an adjacent empty fragment or the
 next nonempty fragment.
 
-The code position after any deferred operation, including the return PC of a
-linking transfer and the continuation after a PC-relative load, is offset zero
-in the following fragment.
-
-Machine-code metadata must also survive form shortening. Safepoints,
-snapshots, source positions, relocations, and other positions emitted before
-final layout should be represented by a fragment identity plus an offset within
-that fragment. Finalization translates these positions using the fragment's
-final absolute offset.
-
-No instruction or metadata consumer may retain an initial absolute offset
-across final layout.
+The initial emitter has no general code-position or post-layout metadata API.
+A polling safepoint side-exits to the interpreter after restoring live values
+to their canonical managed-frame slots, so the collector does not stop inside
+generated code or require machine-register maps. Other position metadata will
+be added only with a concrete consumer.
 
 ## Builder invariants and compilation failure
 
@@ -287,9 +284,9 @@ Malformed emitter state and impossible final encodings are compiler invariant
 failures. Code-cache allocation failure is instead a recoverable compilation
 outcome. Neither kind of failure sets Python pending-exception state.
 
-Labels follow the existing `CodeObjectBuilder` jump-target pattern. Binding a
-label more than once is a hard assertion. A referenced label that remains
-unbound is a hard assertion when the emitter or label is finalized. Labels from
+Labels follow the existing `CodeObjectBuilder` jump-target pattern. Resolving a
+label more than once is a hard assertion. Any label that remains unresolved is
+a hard assertion when the emitter is finalized. Labels from
 different emitter instances must not be mixed. Implementations should assert
 that precondition when it is cheaply visible, but the design does not require
 per-label ownership metadata solely to diagnose cross-emitter misuse.
@@ -297,7 +294,7 @@ per-label ownership metadata solely to diagnose cross-emitter misuse.
 Empty target fragments are not errors. Consecutive or otherwise empty
 fragments may share one final code address.
 
-The target deferred-operation policy's pessimistic unit-size limit is a hard
+The target direct-branch policy's pessimistic unit-size limit is a hard
 assertion; it is 128 MiB for AArch64. Failure to allocate code-cache storage
 abandons the compilation attempt, releases its fragments and owned pool
 values, installs no compiled entry point, and continues execution in the
@@ -330,9 +327,9 @@ pool requires a separate design and must justify its additional layout,
 identification, and memory-policy complexity.
 
 The target-independent `MachineCodeEmitter` owns this pool builder alongside
-its fragments. Target deferred operations refer to slots through generic
-constant-pool offsets; only the instruction used to load a slot is target-
-specific.
+its fragments. Adding a value returns an opaque `ValuePoolEntry` containing its
+byte offset. Target relocations retain that handle but cannot inspect or perform
+arithmetic on it; only the generic emitter resolves it to a final slot address.
 
 The code cache first proposes stable code and pool addresses within the required
 target reach, then commits the final size as separate writable slices:
@@ -363,8 +360,8 @@ Detailed placement and publication policy are defined by
 A constant-pool load with a form fixed by the attempt's pool mode is represented
 by encoded template bytes plus a machine-specific relocation. The relocation
 entry stores the fragment-relative instruction location; its payload stores the
-field layout, target register information needed for validation, and pool
-offset. Its slot address is
+field layout, target register information needed for validation, and opaque
+pool entry. The emitter resolves its slot address as
 
 ```text
 value_pool_address + constant_pool_offset
@@ -382,28 +379,28 @@ patterns, or other non-`Value` data in a literal pool. A target macro assembler
 materializes such constants with instructions. Because the constant bits and
 the resulting sequence size are known during program-order emission, these
 instructions are encoded immediately into the current fragment and do not
-create a deferred operation.
+create a direct branch.
 
 On AArch64 an arbitrary 64-bit bit pattern requires at most one `MOVZ` or
 `MOVN` followed by three `MOVK` instructions. The macro assembler may choose a
 one-instruction logical immediate or a shorter move-wide sequence when the bits
 permit it. Materializing an operand for a following instruction uses the
-deferred operation's or lowering's caller-supplied scratch register when the
+direct branch's or lowering's caller-supplied scratch register when the
 destination cannot hold the temporary itself. It does not introduce a second
 hidden scratch.
 
 Far absolute calls, jumps, and tail calls follow the same move-wide policy when
-their direct form is not selected. They remain deferred because the choice
+their direct form is not selected. They remain retained because the choice
 between direct and far transfer depends on the final PC, not because the far
 target bits require pool layout.
 
 ## Conservative three-pass finalization
 
-Every deferred PC-dependent operation has a pessimistic maximum-size form and,
+Every retained direct branch has a pessimistic maximum-size form and,
 where the target ISA provides one, a shorter form. Initial layout assigns every
-deferred operation its maximum size. The pessimistic encoded size of one
-emission unit must not exceed the limit provided by the target deferred-
-operation type; the AArch64 limit is 128 MiB. The emitter requests a placement
+direct branch its maximum size. The pessimistic encoded size of one
+emission unit must not exceed the limit provided by the target direct-branch
+type; the AArch64 limit is 128 MiB. The emitter requests a placement
 proposal for the pessimistic code capacity and constant-pool slots before
 choosing forms, giving the unit and pool stable final addresses without yet
 advancing allocation frontiers. Failure to obtain a proposal returns a
@@ -418,12 +415,12 @@ The first pass computes each fragment's minimum and maximum size and records
 its pessimistic start offset as a prefix sum of preceding maximum sizes:
 
 ```text
-fragment.min_size = encoded_bytes.size + deferred.min_size
-fragment.max_size = encoded_bytes.size + deferred.max_size
+fragment.min_size = encoded_bytes.size + branch.min_size
+fragment.max_size = encoded_bytes.size + branch.max_size
 fragment[i].max_start = sum(fragment[j].max_size for j < i)
 ```
 
-For a fragment without a deferred operation, its deferred minimum and maximum
+For a fragment without a direct branch, its branch minimum and maximum
 sizes are zero. The final prefix end is the pessimistic code size; the sum of
 minimum sizes is a lower bound on the final code size. The emitter asserts on
 an oversized unit and requests stable proposed code and pool addresses from the
@@ -431,8 +428,8 @@ code cache. A failed placement request ends the compilation attempt without
 publishing code.
 
 The second pass walks fragments in program order, assigns each fragment its
-actual start address from a running cursor, and selects its trailing deferred
-operation's form. A label target inside the unit is tested using the pass-one
+actual start address from a running cursor, and selects its trailing direct
+branch's form. A label target inside the unit is tested using the pass-one
 pessimistic source and target offsets, including for a forward target whose
 actual address is not assigned yet. Shortening fragments between an internal
 source and target can only reduce displacement magnitude, so a form that fits
@@ -440,7 +437,7 @@ the pessimistic internal layout remains safe. A form that would fit only after
 other operations shorten remains long.
 
 For a target outside the unit, the second pass already knows both the allocated
-base and the current operation's actual source PC. It therefore tests the
+base and the current branch's actual source PC. It therefore tests the
 PC-relative form against the exact external target address without additional
 movement slack. Later choices cannot move a source address that the running
 cursor has already assigned. The selected size advances the cursor to the next
@@ -453,7 +450,7 @@ committed allocation. For each final byte offset it derives a writable
 destination from `CodeSlice::write_pointer` and an independent executable PC
 from `CodeSlice::execute_address`. It copies each fragment's already encoded
 template bytes, invokes its relocations with both addresses, and encodes its
-selected trailing operation using the writable address only as a destination
+selected trailing direct branch using the writable address only as a destination
 and the executable address as its source PC. It then copies the owned `Value`s
 into the stable pool slice. There is no intermediate final-layout buffer. The
 final code size may be smaller than its pessimistic capacity; the pool address
@@ -466,8 +463,8 @@ layout.
 Final encoding must assert that every selected PC-dependent form still fits its
 actual final PC and displacement.
 
-After the third pass, finalization resolves fragment-relative metadata and
-returns the completed code and pool slices to the code cache for publication.
+After the third pass, finalization returns the completed unpublished
+`CodeAllocation` to its caller. The caller then asks the code cache to publish it.
 Initial bring-up may validate writable bytes without entering them. The first
 executable tier uses page-rounded code ranges in standard `mmap` slabs with a
 one-way RW-to-RX transition; the later macOS tier uses 16-byte packed `MAP_JIT`
@@ -556,7 +553,7 @@ compilation and leaves execution in the interpreter.
 
 ## AArch64 absolute jumps and calls
 
-An absolute-target `DeferredTransfer` records both its resolved target address
+An absolute-target `AArch64DirectBranch` records both its resolved target address
 and whether it links. The macro assembler supplies two variants:
 
 ```text
@@ -619,13 +616,12 @@ Emitter tests should cover:
 - multiple intervening branches shrinking without invalidating an already
   selected short branch;
 - one compiler basic block producing several fragments through side exits;
-- final metadata positions after branches shrink;
 - assertion on a pessimistic emission unit larger than its target policy's
   limit, including AArch64's 128 MiB limit;
 - linking and non-linking absolute transfers selecting both direct and far
   forms, including tail calls;
-- absolute transfers and PC-relative non-transfer operations selecting forms
-  from their exact pass-two source PC near both displacement limits;
+- absolute direct branches selecting forms from their exact pass-two source PC
+  near both displacement limits;
 - fragment minimum and maximum sizes and pessimistic start offsets computed in
   the first pass;
 - actual fragment starts assigned while selecting forms in the second pass;
@@ -635,7 +631,7 @@ Emitter tests should cover:
   `sizeof(Value)`-aligned pool and naturally aligned slots at recorded offsets;
 - fixed-size PC-dependent instruction templates and per-fragment relocations
   applied at fragment-relative offsets without creating fragment boundaries;
-- relocations and trailing deferred operations using distinct writable and
+- relocations and trailing direct branches using distinct writable and
   executable addresses, with all PC-relative calculations based on the latter;
 - all `Value` constants, including SMIs and booleans, loaded from pool slots
   rather than embedded in instruction bytes;
@@ -645,12 +641,12 @@ Emitter tests should cover:
   far-pool policy, and final code-to-pool page-range validation;
 - forced AArch64 near-pool emission, forced far-pool emission, and near
   placement rejection followed by deterministic far re-emission;
-- x86-64 RIP-relative pool loads at both `disp32` limits, including deferred
-  rewriting when minimum and maximum operation sizes are equal;
+- x86-64 RIP-relative pool loads at both `disp32` limits, including final
+  relocation rewriting;
 - code-cache allocation failure abandoning compilation without publication,
   leaking owned pool values, or setting Python pending-exception state;
 - simulated GC rewriting of pool slots without changing instruction bytes;
-- labels bound after encoded bytes, after a deferred operation, and
+- labels resolved after encoded bytes, after a direct branch, and
   consecutively, each resolving to the target fragment's start boundary;
 - empty target fragments sharing their final address with an adjacent boundary;
 - assertion on multiply bound and referenced-but-unbound labels;
@@ -671,7 +667,7 @@ made its short form fit.
 The design does not yet choose:
 
 - concrete C++ representations for immediate fields and the payloads of
-  deferred PC-dependent operation kinds;
+  direct-branch kinds;
 - tie-breaking among equal-length AArch64 non-`Value` immediate sequences;
 - any future veneer policy outside the initial capped-unit design.
 
