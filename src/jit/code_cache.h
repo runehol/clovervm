@@ -97,6 +97,7 @@ namespace cl::jit
     public:
         static constexpr size_t DefaultSlabSize = 1024 * 1024;
 
+        explicit CodeCache(size_t standard_slab_size = DefaultSlabSize);
         explicit CodeCache(std::unique_ptr<PlatformCodeMemory> platform_memory,
                            size_t standard_slab_size = DefaultSlabSize);
         ~CodeCache();

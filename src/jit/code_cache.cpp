@@ -245,6 +245,11 @@ namespace cl::jit
         return result;
     }
 
+    CodeCache::CodeCache(size_t standard_slab_size)
+        : CodeCache(make_preferred_code_memory(), standard_slab_size)
+    {
+    }
+
     CodeCache::CodeCache(std::unique_ptr<PlatformCodeMemory> platform_memory,
                          size_t standard_slab_size)
         : platform_memory_(std::move(platform_memory)),

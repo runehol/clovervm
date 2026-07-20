@@ -557,9 +557,9 @@ After the third pass, finalization returns the completed unpublished
 `CodeAllocation` to its caller. The caller then moves it into the code cache for
 publication. Publication, or destruction after abandonment, restores platform
 code-write protection exactly once.
-Initial bring-up may validate writable bytes without entering them. The first
-executable tier uses page-rounded code ranges in standard `mmap` slabs with a
-one-way RW-to-RX transition; the later macOS tier uses 16-byte packed `MAP_JIT`
+Initial bring-up may validate writable bytes without entering them. The
+standard backend uses page-rounded code ranges with a one-way RW-to-RX
+transition; the preferred macOS AArch64 backend uses 16-byte packed `MAP_JIT`
 code. Both keep pool storage on separate RW/NX pages and preserve the same
 emitter contract and stable executable addresses.
 

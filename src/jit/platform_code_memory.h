@@ -47,6 +47,8 @@ namespace cl::jit
         allocate_slab(size_t size) = 0;
     };
 
+    std::unique_ptr<PlatformCodeMemory> make_preferred_code_memory();
+
 }  // namespace cl::jit
 
 #endif  // CL_JIT_PLATFORM_CODE_MEMORY_H

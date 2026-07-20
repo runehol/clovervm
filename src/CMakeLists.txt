@@ -102,6 +102,7 @@ add_library(libclovervm_objects OBJECT
     jit/machine_code_emitter.h
     jit/object_pool.h
     jit/platform_code_memory.h
+    jit/preferred_code_memory.cpp
     jit/serial.h
     jit/standard_code_memory.cpp
     jit/standard_code_memory.h
@@ -212,6 +213,12 @@ add_library(libclovervm_objects OBJECT
     object_model/vm_array_backing.h
     object_model/vm_array.h
 )
+
+if(APPLE AND CMAKE_SYSTEM_PROCESSOR MATCHES "^(arm64|aarch64|ARM64)$")
+    target_sources(libclovervm_objects PRIVATE
+        jit/map_jit_code_memory.cpp
+        jit/map_jit_code_memory.h)
+endif()
 
 add_library(libclovervm SHARED)
 target_link_libraries(libclovervm PRIVATE libclovervm_objects)

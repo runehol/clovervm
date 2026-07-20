@@ -4,10 +4,10 @@
 |---|---|
 | Document type | Design |
 | Status | Accepted |
-| Implementation | Tier 1 complete; packed macOS `MAP_JIT` allocation is the next planned backend; `CodeObject`/GC integration and other platform backends are deferred |
+| Implementation | Standard `mmap` and packed macOS AArch64 `MAP_JIT` backends complete; `CodeObject`/GC integration and other platform backends are deferred |
 | Scope | Stable code and constant-pool allocation, PC-relative reachability, writable and executable views, publication, and initial code lifetime |
 | Owning layers | The code cache owns virtual-memory placement, page protection, writable and executable views, and storage lifetime; the machine-code emitter owns sizing and encoding against addresses supplied by the cache; `JitCodeObject` records the resulting code and `Value`-pool slices |
-| Validated against | Working tree on 2026-07-20; focused code-cache and executable AArch64 tests plus the full debug `all check` suite |
+| Validated against | Working tree on 2026-07-21; focused code-cache and executable AArch64 tests plus the full debug `all check` suite |
 | Supersedes | The contiguous code-plus-pool placement in `doc/jit-machine-code-emission.md` |
 
 This document defines how compiled code and its GC-visible `Value` constant
@@ -17,10 +17,10 @@ defines fragment layout and target encoding, and
 [JIT Compiler and IR](jit-compiler-and-ir.md), which defines the compiled-code
 and garbage-collection contracts.
 
-The initial implementation uses simple page-rounded code allocations. A later
-macOS implementation packs functions into `MAP_JIT` pages using thread-local
-JIT write protection. Both implementations expose the same code-cache API and
-preserve the same executable addresses.
+The portable implementation uses simple page-rounded code allocations. On
+macOS AArch64, the preferred backend packs functions into `MAP_JIT` pages using
+thread-local JIT write protection. Both implementations expose the same
+code-cache API and preserve the same executable addresses.
 
 ## Storage and ownership model
 
@@ -357,21 +357,33 @@ fails. This is distinct from near-placement rejection, which requests the
 single far-mode re-emission, and from malformed encoding or failed final
 revalidation, which remain compiler invariant failures.
 
-## Tier 3 on macOS: packed `MAP_JIT` code
+## macOS: packed `MAP_JIT` code
 
-The later macOS implementation allocates code pages with `MAP_JIT` and uses the
-platform's thread-local JIT write-protection mechanism. The compiling thread
-enters a scoped writable state owned by its unpublished `CodeAllocation` and
-restores executable state on publication or abandonment. Other threads may
-continue executing already published functions in the same packed pages.
+The macOS AArch64 implementation allocates an entire slab with `MAP_JIT` and
+uses the platform's thread-local JIT write-protection mechanism. The compiling
+thread enters a scoped writable state owned by its unpublished
+`CodeAllocation` and restores executable state on publication or abandonment.
+Other threads may continue executing already published functions in the same
+packed pages.
 
 This tier suballocates functions at 16-byte granularity within one code page.
 It must not use
 process-wide page-permission changes to reopen a page that another thread may
 be executing. Persistent `CodeSlice` metadata never exposes writable code.
 
-Pool pages remain ordinary writable, non-executable mappings. They do not use
-`MAP_JIT` and are not affected by thread-local code-write scopes.
+Each new slab initially consists entirely of `MAP_JIT` pages. When the pool
+frontier first enters a page, commit removes the unused `MAP_JIT` mapping for
+that page and installs an ordinary writable, non-executable mapping at the same
+virtual address. No contents need preservation because the page was not yet
+allocated. Converted pages remain pool pages permanently and are not affected
+by thread-local code-write scopes. If either unmapping or replacement fails,
+commit reports `AllocationFailure` and the corresponding code and pool ranges
+remain consumed; it does not attempt a fallible rollback.
+
+The platform backend is selected by `CodeCache`'s default constructor. It uses
+this `MAP_JIT` backend on macOS AArch64 when per-thread JIT write protection is
+supported, and otherwise uses the standard mapping backend. Tests may still
+inject a platform backend explicitly.
 
 The initial implementation deliberately skips a portable writable-alias tier.
 Other platforms may later supply alias mappings or their native JIT APIs behind
@@ -460,7 +472,7 @@ Code-cache tests should cover:
   the writable and executable mappings have different virtual addresses;
 - final instruction bytes verified through an independent disassembler;
 - simulated moving-GC rewrites changing pool slots without changing code bytes;
-- later macOS tests in which one thread writes an unpublished slice while
+- macOS tests in which one thread writes an unpublished slice while
   another executes published code in the same `MAP_JIT` page.
 
 ## Planned and deferred extensions
@@ -468,11 +480,6 @@ Code-cache tests should cover:
 The current immortal lifetime policy is complete for bring-up. Reclamation,
 retirement, dependency tracking, and slice reuse are not current concerns and
 do not block the code cache.
-
-The next planned extension is the packed macOS `MAP_JIT` backend, including its
-thread-local writable scope, entitlement handling, 16-byte allocation
-granularity, and tests that emit while another thread executes previously
-published code in the same page.
 
 Installation of cache-retained `JitCodeObject` pointers into `CodeObject`, GC
 tracing and rewriting of their pools, Linux dual RW/RX mappings, and policies

@@ -1,3 +1,5 @@
+#include "jit/code_cache.h"
+
 #include <gtest/gtest.h>
 
 #include <cstddef>
@@ -8,6 +10,38 @@
 
 namespace cl::jit
 {
+    TEST(MapJit, PreferredCachePacksPublishedCodeAtSixteenBytes)
+    {
+        if(!pthread_jit_write_protect_supported_np())
+        {
+            GTEST_SKIP() << "per-thread JIT write protection is unavailable";
+        }
+
+        CodeCache cache;
+        Result<CodeAllocationProposal, JitCodeError> first_proposal_result =
+            cache.propose(4, 0);
+        ASSERT_TRUE(first_proposal_result);
+        CodeAllocationProposal first_proposal =
+            std::move(first_proposal_result).value();
+        MachineAddress first_address = first_proposal.code_address();
+
+        Result<CodeAllocation, JitCodeError> first_allocation_result =
+            first_proposal.commit(4);
+        ASSERT_TRUE(first_allocation_result);
+        CodeAllocation first_allocation =
+            std::move(first_allocation_result).value();
+        *static_cast<uint32_t *>(first_allocation.write_pointer()) =
+            0xd65f03c0;  // ret
+        ASSERT_TRUE(cache.publish(std::move(first_allocation)));
+
+        Result<CodeAllocationProposal, JitCodeError> second_proposal_result =
+            cache.propose(4, 0);
+        ASSERT_TRUE(second_proposal_result);
+        CodeAllocationProposal second_proposal =
+            std::move(second_proposal_result).value();
+        EXPECT_EQ(first_address.offset_by(16), second_proposal.code_address());
+    }
+
     TEST(MapJit, ReplacesUnusedPageWithWritableDataAtSameAddress)
     {
         if(!pthread_jit_write_protect_supported_np())
