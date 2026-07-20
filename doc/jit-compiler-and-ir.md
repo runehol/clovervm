@@ -1085,25 +1085,21 @@ machine instructions, but every such pointer must also appear in the owning
 compiled code object's stable-metadata array so the GC can keep the pool entry
 alive and trace any managed references reachable through it.
 
-Inline `Value` constants that are not backed by managed memory may be embedded
-directly in machine instructions. This includes SMIs, booleans, and other
-self-contained immediate values; their encoded bits are the complete value and
-need neither tracing nor relocation when managed objects move.
-
-Heap-backed Python constants remain movable. A compiled code object stores them
-in a separate stable-addressed array of GC-rewritten `Value` slots. Machine code
-is forbidden to embed the current managed-object pointer from one of those
-slots; it must load the slot through a PC-relative reference. The slot address
-remains fixed with the compiled code while collection may rewrite its contents.
+Every Python `Value` constant, including SMIs, booleans, and other self-
+contained immediate values, resides in the compiled code unit's constant pool.
+The pool is a separate stable-addressed array of naturally aligned, GC-rewritten
+`Value` slots residing with the machine code. Machine code never embeds a
+`Value` directly; it loads the corresponding slot through a PC-relative
+reference. The slot address remains fixed relative to the code while collection
+may rewrite its contents.
 
 Code generation records both reference classes during emission. Verification
 rejects a directly embedded Shape or ValidityCell pointer missing from the
-stable-metadata array, a movable managed pointer embedded as an immediate, or a
-heap-backed constant use without a corresponding traced constant slot. Inline
-`Value` immediates are exempt because they contain no managed address. This
-keeps ordinary moving collection out of instruction rewriting; backend
-relocation metadata remains for code targets and native symbols rather than
-managed object movement.
+stable-metadata array, any `Value` embedded as an instruction immediate, or a
+constant use without a corresponding traced pool slot. This keeps ordinary
+moving collection out of instruction rewriting; backend relocation metadata
+remains for code targets and native symbols rather than managed object
+movement.
 
 ### Declarative safepoint and deoptimization state
 

@@ -458,14 +458,12 @@ Machine code may embed their addresses directly, and every embedded pointer is
 also recorded in the owning compiled code object's GC-visible stable-metadata
 array.
 
-Managed Python constants remain movable. Compiled code stores them in a
-separate array of stable-addressed, GC-rewritten `Value` slots. Machine code
-must access those slots through PC-relative loads and must never embed the
-current managed-object pointer as an immediate.
-
-Inline `Value` constants with no managed-memory identity, including SMIs and
-booleans, may be embedded directly in machine instructions. They require no GC
-metadata because relocation cannot change their representation.
+Every Python `Value` constant resides in a separate array of stable-addressed,
+GC-rewritten slots. Machine code must access those slots through PC-relative
+loads and must never embed any `Value` as an immediate. This includes SMIs,
+booleans, and other self-contained immediate `Value`s as well as references to
+movable managed objects. Keeping every `Value` in the precisely identified pool
+gives the moving collector one uniform tracing and rewriting contract.
 
 ### Context
 
@@ -500,10 +498,12 @@ whose stable identity materially simplifies both the JIT and collector.
   IC, compilation-session, and compiled-code references disappear;
 - compiled code owns a precise stable-metadata array and a distinct traced,
   rewritten managed-constant array;
+- every `Value` constant, including self-contained immediates, occupies a
+  naturally aligned slot in that array and is loaded PC-relatively;
 - the constant array's slots and their PC-relative relationship to machine code
   remain stable while the referenced objects may move;
-- backend verification rejects unlisted embedded metadata pointers and movable
-  managed pointers embedded as immediates;
+- backend verification rejects unlisted embedded metadata pointers and any
+  `Value` embedded as an instruction immediate;
 - compiled-code retirement and GC tracing jointly determine when metadata and
   constant references cease to be live.
 
@@ -518,6 +518,7 @@ whose stable identity materially simplifies both the JIT and collector.
 ### References
 
 - `doc/jit-compiler-and-ir.md`
+- `doc/jit-machine-code-emission.md`
 - `doc/generational-copying-gc.md`
 - `doc/generational-copying-gc-implementation-plan.md`
 
@@ -598,16 +599,68 @@ interpreted, compiled, native, and reentrant execution.
 ### Decision
 
 Target backends emit directly encodable instructions in program order into
-`CodeFragment`s. A distance-dependent direct branch may terminate a fragment
-and remains symbolic until final layout; a branch target begins a fragment.
-Fragments are machine-code layout units rather than compiler basic blocks, so
-side-exit guards may split one compiler block into several fragments.
+`CodeFragment`s. Any operation whose encoding depends on its final PC
+terminates a fragment for layout purposes and remains symbolic until final
+layout. This includes branches, jumps, calls, PC-relative loads, and address
+formation. `DeferredTransfer` is the linking or non-linking control-transfer
+kind of trailing deferred operation. Fragments are machine-code layout units
+rather than compiler basic blocks, so side-exit guards may split one compiler
+block into several fragments. A linking transfer returns to the beginning of
+the following fragment, while non-linking transfers include jumps and tail
+calls.
 
-Layout initially assigns every deferred branch its long size. The emitter
-selects short forms that fit those pessimistic offsets, computes final offsets
-once, and copies and encodes the finished stream. It does not iterate branch
-shortening. Each target exposes a direct assembler for exact instructions and
-a macro assembler for operations that may expand.
+Labels, code positions, fragments, and the three-pass finalizer are target-
+independent. The finalizer is a template over the target's deferred-operation
+type. That type supplies target-specific operation kinds, size and form
+selection, final encoding, scratch registers, PC-relative semantics, and the
+maximum pessimistic unit size. A label itself identifies only a fragment
+boundary and is not parameterized by the target or deferred-operation type.
+
+Every machine-code `Value` constant resides in a naturally aligned slot in a
+separately identified GC-visible pool, including SMIs and booleans. The pool is
+aligned to `sizeof(Value)` at a fixed offset after the pessimistic code
+capacity, so code shortening cannot move it. Constant loads are trailing
+deferred operations even when their minimum and maximum sizes are equal:
+AArch64 selects a literal `LDR` or `ADRP` plus `LDR`, while x86-64 rewrites one
+RIP-relative `MOV` after its final PC is known.
+
+Non-`Value` constants are excluded from the initial pool. Target macro
+assemblers materialize them directly in instructions; on AArch64 an arbitrary
+64-bit pattern requires at most one `MOVZ` or `MOVN` plus three `MOVK`
+instructions. This sequence is known and encoded during program-order emission.
+A separate non-GC literal pool is deferred until measurements justify its
+additional layout and identification machinery.
+
+Deferred operations use target-specific tagged kinds. Each stores its selected
+form after the second pass and encodes that form during the third pass. An
+operation that may expand receives one concrete scratch register from its
+caller, defaulting to AArch64 `x16`; the emitter does not own a configurable
+scratch pool. Initial macro operations may synthesize at most one address or
+immediate at once. Additional simultaneous temporaries must be explicit
+lowering constraints rather than hidden macro-assembler clobbers.
+
+Finalization uses three fragment walks. The first computes fragment minimum and
+maximum sizes and pessimistic start offsets, then rejects a pessimistic emission
+unit larger than the target deferred-operation type's limit. The AArch64 limit
+is 128 MiB. The emitter aligns the pool after that pessimistic code capacity and
+allocates both regions, fixing the code and pool base addresses. The second walk
+assigns actual fragment starts and selects forms in program order. Internal
+label targets use pessimistic source and target offsets, including unresolved
+forward targets; shortening between them can only reduce displacement
+magnitude. An outside-unit or constant-pool target uses its exact address and
+the actual source PC already assigned by the second-pass cursor. The third walk
+writes encoded bytes and selected trailing operations directly into the
+destination buffer without forward-reference backpatching, then populates the
+pool. Form selection is not iterated. Each target exposes a direct assembler for
+exact instructions and a macro assembler for operations that may expand.
+
+On AArch64, the macro assembler emits linking and non-linking absolute-target
+transfers. Reachable targets use `BL` and `B`, respectively. Far targets are
+materialized in the transfer's caller-supplied scratch register and use `BLR`
+or `BR`; macro-assembler entry points default the scratch to `IP0` (`x16`). The
+non-linking form supports tail calls. The 128 MiB pessimistic unit-size limit
+guarantees that the unconditional `B` in an expanded intra-unit conditional
+branch can reach its target.
 
 ### Context
 
@@ -628,28 +681,48 @@ would instead create an unnecessary mandatory Machine IR.
 
 ### Why Chosen
 
-Code fragments retain only the information whose size is unresolved while
-ordinary instructions are encoded once. Pessimistic selection is correct
-without iteration because later shortening only reduces branch distances. The
-same mechanism naturally supports x86-64 near-to-short jump selection, while
-accepting that a few additional branches could shorten only after iteration.
+Code fragments retain only the information whose encoding depends on final
+machine-code positions while ordinary instructions are encoded once.
+Pessimistic selection is correct without iteration because later shortening
+only reduces internal branch distances, while outside-unit targets are tested
+from source PCs already fixed by the second-pass cursor. The same mechanism
+naturally supports x86-64 near-to-short jump selection, while accepting that a
+few additional branches could shorten only after iteration.
 
 ### Consequences
 
-- labels and pre-finalization metadata positions are fragment-relative;
+- binding a label after emitted bytes begins a new fragment, and a label
+  resolves to its fragment's start boundary; empty fragments are valid and may
+  share an address with an adjacent boundary;
+- labels and pre-finalization metadata positions are fragment-relative, and the
+  continuation after any deferred operation is offset zero in the following
+  fragment;
 - the backend above the emitter owns block ordering, fall-through selection,
   block-condition inversion, edge moves, and removal of redundant
   unconditional branches;
 - one compiler block may produce many code fragments without changing SSA or
   CFG structure;
-- final encoding asserts that every selected short form still fits;
-- veneers, literal pools, executable-memory policy, and external relocations
-  remain target-emitter implementation work.
+- final encoding asserts that every selected short or direct form still fits;
+- deferred operations store a caller-supplied scratch register, with AArch64
+  `x16` as the macro-assembler default and a one-scratch maximum for implicit
+  expansion;
+- malformed label use and oversized units assert, while allocation or final-
+  encoding failure is a hard non-recoverable failure;
+- outside-unit transfers require resolved absolute addresses by construction;
+- the code unit exposes final code size, pessimistic code capacity, and the
+  separate constant-pool offset and slot count; the collector may rewrite pool
+  slots without decoding instruction bytes;
+- non-`Value` constants use target instruction materialization rather than a
+  second literal pool;
+- initial bring-up returns bytes in ordinary writable memory and does not enter
+  them; executable allocation, W^X transitions, instruction-cache
+  synchronization, and publication are later runtime work;
+- the capped initial design does not require intra-unit branch veneers.
 
 ### Revisit When
 
 - missed shortening opportunities become a measured code-size problem;
-- veneer or literal-pool placement requires more general fragment scheduling;
+- veneer placement requires more general fragment scheduling;
 - a target backend independently justifies a mandatory Machine IR;
 - direct final copying becomes a material compilation-latency cost.
 
