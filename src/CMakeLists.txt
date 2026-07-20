@@ -92,6 +92,9 @@ add_library(libclovervm_objects OBJECT
     jit/control_flow_graph.cpp
     jit/control_flow_graph.h
     jit/instruction.h
+    jit/code_cache_types.h
+    jit/machine_address.h
+    jit/machine_address_internal.h
     jit/object_pool.h
     jit/serial.h
     runtime/interpreter.cpp

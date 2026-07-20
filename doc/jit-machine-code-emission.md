@@ -100,8 +100,8 @@ interface is conceptually:
 MachineAddress::offset_by(size_t bytes) -> MachineAddress
 MachineAddress::displacement_to(MachineAddress target) -> int64_t
 MachineAddress::aligned_displacement_to(
-    MachineAddress target, size_t alignment) -> int64_t
-MachineAddress::offset_within(size_t alignment) -> size_t
+    MachineAddress target, uint8_t alignment_shift) -> int64_t
+MachineAddress::offset_within(uint8_t alignment_shift) -> size_t
 MachineAddress::bits_for_indirect_target() -> uintptr_t
 ```
 
@@ -110,7 +110,11 @@ MachineAddress::bits_for_indirect_target() -> uintptr_t
 on signed integer overflow or implementation-defined unsigned-to-signed
 conversion. The aligned variants expose exactly the page displacement and
 within-page offset needed by encodings such as AArch64 `ADRP` plus `LDR`, using
-the architecture's 4 KiB page granule rather than the host OS page size.
+the base-two alignment shift for the architecture's granule rather than the
+host OS page size. For example, an AArch64 4 KiB page uses a shift of 12.
+`aligned_displacement_to` shifts both addresses down, computes a checked signed
+difference, and returns that difference scaled back to bytes. Specifying a
+shift makes a non-power-of-two alignment unrepresentable.
 `bits_for_indirect_target` exists only so a target macro assembler can
 materialize an absolute address before an indirect jump or call. The type has
 no implicit pointer or integer conversion and no general arithmetic operators.

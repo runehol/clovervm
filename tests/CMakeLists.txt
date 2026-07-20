@@ -22,6 +22,7 @@ target_sources(test_clovervm PRIVATE
 	test_import_system.cpp
 	test_jit_arena.cpp
 	test_jit_cfg.cpp
+	test_machine_address.cpp
 	test_native_module_build.cpp
 	test_python_source_files.cpp
 	test_result.cpp
