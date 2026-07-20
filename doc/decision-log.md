@@ -769,12 +769,19 @@ attempt fixes its pool-load width before allocation; successful allocation
 fixes the addresses before address-dependent form selection and final
 PC-relative encoding.
 
-The first executable implementation gives each code unit a private page-rounded
-code mapping, emits while writable, transitions it once to read-only executable
-memory, and never reopens it. Pool pages are shared by many functions because
-their permissions remain RW/NX. The later macOS implementation packs functions
-within `MAP_JIT` pages and uses thread-local JIT write protection without
-changing emitter APIs or executable addresses.
+The cache normally uses one-MiB reachability slabs with code pages growing from
+the beginning and packed `Value` pool slots growing from the end. Code and pool
+always occupy separate physical pages whose roles never change. A request that
+cannot fit a one-MiB near slab is re-emitted in far mode and receives a dedicated
+page-rounded slab.
+
+A pluggable platform backend chooses the reusable code-allocation granularity
+and owns mapping, writable scopes, cache synchronization, and publication. The
+first standard-`mmap` backend uses the host page size and transitions each code
+unit's private page range once to read-only executable memory. The later macOS
+`MAP_JIT` backend uses 16-byte granularity and thread-local JIT write protection.
+Other initial backends conservatively use page granularity. All logical code
+unit sizes and starts therefore retain at least 16-byte alignment.
 
 The interface also supports the intended Linux implementation in which one
 physical code allocation has distinct RW and RX virtual aliases. Deferred
@@ -786,11 +793,19 @@ range. A far-pool path using `ADRP` plus `LDR` remains required for units that
 cannot use near placement. Fixed-size pool loads use per-fragment relocations;
 only operations whose size remains undecided terminate fragments.
 
-An AArch64 attempt first emits in near-literal mode. A typed near-placement
-rejection discards that machine-emission attempt and retries once in forced
-far-page-relative mode before final encoding or publication. Actual code or
-pool allocation failure abandons JIT compilation, publishes nothing, sets no
-Python exception, and continues execution in the interpreter.
+An AArch64 attempt first emits retained Core IR in near-literal mode. A typed
+near-placement rejection destroys that complete machine-emission attempt and
+re-emits the Core IR once in forced far-page-relative mode before final encoding
+or publication. Actual code or pool allocation failure abandons JIT
+compilation, publishes nothing, sets no Python exception, and continues
+execution in the interpreter.
+
+Code-cache operations use an exception-independent `Result<T, CodeCacheError>`
+with `NearPlacementUnavailable` and `AllocationFailure` errors. A move-only
+pending allocation cancels itself unless publication consumes it into a
+non-GC `JitCodeObject`. `CodeObject` may publish a nullable atomic pointer to
+that object; it owns both code and pool slices and exposes the exact pool slots
+to garbage collection.
 
 ### Context
 
@@ -802,7 +817,7 @@ permission while another thread is running code from that page.
 
 Separating page-protection domains while retaining bounded address placement
 lets the collector update packed pool slots safely. A stable writable view and
-executable address also permit a simple page-per-unit bring-up allocator to be
+executable address also permit a page-granular standard-mapping backend to be
 replaced later by macOS JIT mappings without changing encoding or branch
 calculation.
 
@@ -818,7 +833,7 @@ calculation.
 
 ### Why Chosen
 
-Private page-rounded Tier-1 code mappings provide the simplest safe one-way W^X
+Private page-rounded Tier-1 code ranges provide the simplest safe one-way W^X
 transition. Shared RW/NX pool pages avoid per-function data-page overhead.
 Reachability-aware placement preserves efficient target loads, while the
 writable-view/executable-address split contains platform publication policy
@@ -829,7 +844,10 @@ initial macOS target without exposing page mechanics to the compiler.
 
 - code and pool slices never move while compiled code may execute;
 - the moving collector rewrites pool slots without changing code permissions;
-- Tier-1 code capacity is rounded to private pages and may waste tail space;
+- one-MiB near slabs keep AArch64 pool slots within literal-load reach;
+- code and pool never share a physical page;
+- the standard backend recovers pessimistic slack only in whole pages, while
+  `MAP_JIT` recovers it at 16-byte granularity;
 - a process-wide transition never reopens a page containing published code;
 - direct outside-unit targets must remain stable for the source unit's lifetime;
 - the allocator, not the emitter, owns page size, virtual placement, writable
@@ -841,6 +859,7 @@ initial macOS target without exposing page mechanics to the compiler.
 - near-placement rejection causes one deterministic far-mode re-emission;
 - actual code-cache allocation failure is a recoverable compilation outcome,
   leaving the interpreter as the executable implementation;
+- unpublished reservations and temporary pool owners are released by RAII;
 - initial code is immortal until retirement, dependency tracking, and slice
   reuse are designed.
 

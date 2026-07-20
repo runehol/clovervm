@@ -46,6 +46,13 @@ required PC-relative reach. Neither slice may move while the compiled code can
 execute. The moving collector may rewrite pool-slot contents but does not move
 the pool slice itself.
 
+Code and pool storage always occupy different physical pages. A page acquires a
+permanent code or pool role before its first suballocation and never changes
+roles during the slab's lifetime. This remains true even on platforms whose
+code-write mechanism would technically permit mixed permissions through an
+alias. Unused space in a pool page may be shared only by other pool slices;
+unused space in a code page may never hold GC-rewritten values.
+
 The compiled code object exposes the pool base and exact slot count to garbage
 collection. Pool storage contains only `Value` slots and is aligned to
 `sizeof(Value)`. Multiple compiled functions may own packed slices within the
@@ -94,6 +101,22 @@ CodeCache::allocate(
         -> allocation result
 ```
 
+The concrete result is an exception-independent `Result<T, Error>` rather than
+Python-exception-bearing `Expected<T>`:
+
+```text
+enum CodeCacheError
+    NearPlacementUnavailable
+    AllocationFailure
+
+Result<PendingCodeAllocation, CodeCacheError>
+```
+
+`Result` follows the existing `Expected` value/error and propagation shape but
+carries its error explicitly and never reads or writes pending Python exception
+state. `CL_TRY` may be generalized through a `propagate_failure` operation so
+both result families retain the same concise call-site behavior.
+
 The result distinguishes successful slices, a near-placement rejection that
 requests a far-mode retry, and actual storage-allocation failure. Allocation
 failure abandons this JIT compilation and continues execution in the
@@ -105,20 +128,53 @@ requested code capacity or pool slot count. Publication records the final code
 size, performs required instruction-cache synchronization, and makes the
 executable view callable.
 
-The concrete C++ API may separate reservation, writable scope, publication,
-and ownership transfer, but it must preserve this ordering and address split.
+`PendingCodeAllocation` is move-only RAII. Its destructor cancels an unpublished
+reservation. Publication consumes it and transfers both slices into a
+`JitCodeObject`; no unpublished allocation or pool ownership survives a failed
+attempt. The concrete C++ API may separate reservation, writable scope,
+publication, and ownership transfer, but it must preserve this ordering and
+address split.
 
-## Reachability regions
+## Reachability slabs
 
-Code pages and pool pages are allocated within bounded reachability regions.
-A region is an address-placement unit, not a function-ownership or page-
-protection unit. Many code units and pool slices may belong to one region.
+The cache normally allocates one-MiB reachability slabs. Code pages grow upward
+from the beginning and packed pool slices grow downward from the end:
 
-The preferred AArch64 placement keeps a function's code and pool slice within
-the signed `LDR`-literal range, approximately 1 MiB. This permits one four-byte
-literal load for each `Value` constant. x86-64 RIP-relative loads have an
-approximately 2 GiB signed range and therefore fit comfortably in the same
-placement scheme.
+```text
+low address
+    code pages
+        code units grow upward
+    unallocated whole pages
+    pool pages
+        Value slots grow downward
+high address
+```
+
+A fit check accounts for page roles: the rounded code-page range may not touch
+the page containing the lowest pool slot. A pool page remains RW/NX and packs
+slots from multiple functions at `sizeof(Value)` alignment. A code page follows
+the platform backend's code-write and publication policy and never contains a
+pool slot.
+
+A one-MiB slab keeps every eight-byte pool slot within AArch64's signed
+`LDR`-literal range of every instruction in the slab: the greatest positive
+displacement to a slot start is at most one MiB minus eight bytes. x86-64 RIP-
+relative loads have an approximately two-GiB signed range and therefore fit
+comfortably in the same placement scheme.
+
+An allocation first tries existing slabs. If none fits, the cache allocates a
+new one-MiB slab. A request whose combined pessimistic code and pool storage
+cannot fit in such a slab receives `NearPlacementUnavailable`; the driver
+destroys that near emitter and re-emits in far mode. The far request receives a
+dedicated page-rounded slab sized for that unit, with code at the beginning and
+pool pages at the end. Its complete span must satisfy the target's far
+reachability contract.
+
+Each slab permits at most one uncommitted frontier reservation at a time. Once
+finalization reports the actual code size, commit returns any unused trailing
+allocation granules before a later reservation can advance that frontier.
+Cancellation returns the complete reservation. Pool addresses do not move when
+code slack is recovered.
 
 AArch64 also has the `ADRP` plus `LDR` form with approximately 4 GiB page-
 relative reach. The code cache and emitter retain a far-pool path for a code
@@ -130,14 +186,15 @@ NearLiteral       LDR literal placeholders, 4 bytes per load
 FarPageRelative   ADRP + LDR placeholders, 8 bytes per load
 ```
 
-The JIT driver first emits and sizes in `NearLiteral` mode, then requests an
+The JIT driver retains Core IR, first emits and sizes in `NearLiteral` mode,
+then requests an
 allocation with the near reachability requirement. If the cache cannot satisfy
 that placement, it returns a typed near-placement rejection without allocating
 or publishing partial code. The driver discards that emitter attempt and
-re-emits once in forced `FarPageRelative` mode. The far attempt is independently
-sizeable and testable from its first instruction; there is no partially patched
-near-to-far conversion. Failure to allocate the far request abandons this
-compilation and retains interpreted execution.
+re-emits from the retained Core IR once in forced `FarPageRelative` mode. The
+far attempt is independently sizeable and testable from its first instruction;
+there is no partially patched near-to-far conversion. Failure to allocate the
+far request abandons this compilation and retains interpreted execution.
 
 For each accepted allocation the cache returns a reachability guarantee. The
 target backend may then choose a fixed-size pool-load policy before ordinary
@@ -184,22 +241,48 @@ relocation arithmetic, deferred-operation selection, final encoding, and
 reachability checks all use the latter. This is required for Linux code caches
 that expose separate RW and RX virtual mappings of the same physical pages.
 
-## Tier 1: page-rounded private code
+## Platform memory backend
 
-The first executable implementation gives each compiled code unit a private,
-page-rounded code mapping:
+Slab placement is target-independent. A pluggable platform backend owns mapping
+creation, writable scopes, instruction-cache synchronization, publication, and
+the code-allocation granularity it can safely reuse:
 
-1. allocate the code pages writable and non-executable;
+```text
+PlatformCodeMemory
+    allocate_slab(size) -> Result<PlatformSlab, CodeCacheError>
+    enter_writable(slab) -> writable scope
+    publish(code range) -> Result<void, CodeCacheError>
+    code_allocation_granularity() -> size_t
+```
+
+The standard mapping backend reports the host page size. The macOS `MAP_JIT`
+backend reports 16 bytes. Other initial backends, including the planned Linux
+dual-mapping backend, conservatively report the host page size; a backend may
+adopt 16-byte packing later without changing the emitter or cache interface.
+Every code-unit start, pessimistic reservation, and committed final size is
+rounded up to the backend's reported granularity. Sixteen-byte machine-code
+entry alignment is therefore guaranteed under every backend.
+
+## Tier 1: standard `mmap`
+
+The first executable implementation obtains slabs through standard `mmap`.
+Each compiled code unit owns a page-rounded range of previously unpublished
+code pages within its slab:
+
+1. reserve the code pages writable and non-executable;
 2. emit and validate the complete code unit;
 3. synchronize the target instruction cache as required;
-4. change the entire private mapping to read-only and executable;
+4. change only that unit's page range to read-only and executable;
 5. publish the entry point;
-6. never reopen that mapping for writing.
+6. never reopen those pages for writing.
 
 One code unit may occupy several pages. A small unit may leave most of its last
 page unused. This is accepted for bring-up because it gives a simple one-way
 W^X transition and cannot revoke execute permission from code running on
-another thread.
+another thread. Finalization may recover pessimistic slack only in whole pages;
+the unused tail of a page containing published code cannot be reused. Pool
+pages and not-yet-allocated pages in the same slab are unaffected by the code-
+page permission transition.
 
 Pool pages are not part of this transition. They remain writable and non-
 executable throughout their lifetime and may contain packed slices belonging
@@ -221,7 +304,8 @@ enters a scoped writable state while emitting through the code slice's writable
 view and restores executable state before publication. Other threads may
 continue executing already published functions in the same packed pages.
 
-This tier may suballocate many functions within one code page. It must not use
+This tier suballocates functions at 16-byte granularity within one code page.
+It must not use
 process-wide page-permission changes to reopen a page that another thread may
 be executing. The `CodeSlice` interface remains unchanged; only the cache's
 writable-scope and page-allocation implementation changes.
@@ -232,6 +316,34 @@ Pool pages remain ordinary writable, non-executable mappings. They do not use
 The initial implementation deliberately skips a portable writable-alias tier.
 Other platforms may later supply alias mappings or their native JIT APIs behind
 the same cache interface.
+
+## `JitCodeObject` ownership
+
+A non-GC `JitCodeObject` owns the published code and pool slices as one lifetime
+unit:
+
+```text
+JitCodeObject
+    CodeAllocation
+    MachineAddress entry
+    final code size
+    writable Value-pool pointer
+    pool MachineAddress
+    pool slot count
+```
+
+`CodeObject` may embed a nullable atomic `JitCodeObject *`. Compilation fully
+constructs the object, initializes every pool slot and metadata record, and
+publishes the pointer with release ordering. Entrants load it with acquire
+ordering. Initial publication is one-time; generated code is not replaced or
+retired. `CodeObject::dealloc` deletes the installed object after the code
+object is unreachable.
+
+The `CodeObject` native-layout visitor loads the published pointer and traces
+and rewrites exactly the recorded pool slots. Until publication, temporary
+`Owned<Value>` instances in the emitter retain those values. Successful
+publication transfers their GC-visible ownership to the initialized pool;
+cancellation destroys the temporary owners and the pending allocation.
 
 ## Publication and concurrency invariants
 
@@ -257,6 +369,11 @@ Code-cache tests should cover:
 
 - page-size discovery rather than assuming 4 KiB or 16 KiB pages;
 - page-rounded Tier-1 capacity and one-way RW-to-RX publication;
+- one-MiB two-frontier slab placement and exact near-range boundaries;
+- permanent separation of code and pool page roles, including their frontier
+  collision boundary;
+- page-granular standard-backend slack recovery and 16-byte `MAP_JIT` slack
+  recovery after pessimistic sizing;
 - inability to modify published Tier-1 code through the cache API;
 - separate code and pool mappings with code non-writable after publication and
   pool storage writable and non-executable;
@@ -268,6 +385,8 @@ Code-cache tests should cover:
 - forced near-placement rejection followed by one far-mode emission attempt;
 - injected code and pool allocation failures leaving no published entry point,
   no leaked reservation or owned `Value`, and no Python pending exception;
+- `Result` propagation preserving `CodeCacheError` without touching pending
+  Python exception state;
 - x86-64 RIP-relative pool reachability;
 - relocation patching without fragment creation or size changes;
 - deferred-operation and relocation calculations using `execute_address` when
@@ -282,8 +401,6 @@ Code-cache tests should cover:
 
 The design does not yet choose:
 
-- the concrete virtual-address reservation and suballocation structures;
-- the exact near-region size and code-versus-pool capacity split;
 - reclamation and retry strategies for fragmentation and region exhaustion;
 - code retirement, dependency tracking, and slice reuse;
 - the concrete macOS writable-scope API wrapper and entitlement handling;

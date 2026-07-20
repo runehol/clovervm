@@ -1101,6 +1101,14 @@ moving collection out of instruction rewriting; backend relocation metadata
 remains for code targets and native symbols rather than managed object
 movement.
 
+A non-GC `JitCodeObject` owns the stable code-cache allocation, final entry
+address, and precisely sized `Value` pool. A `CodeObject` may publish a nullable
+atomic pointer to it after all code, pool slots, and metadata are initialized.
+The `CodeObject` native-layout visitor traces and rewrites the published pool
+slots; temporary emitter ownership covers the constants before publication.
+Initial generated code is installed once and remains alive until its owning
+`CodeObject` is deallocated.
+
 ### Declarative safepoint and deoptimization state
 
 After locations have been assigned, every compiled safepoint and deoptimization

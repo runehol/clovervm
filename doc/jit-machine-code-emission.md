@@ -133,6 +133,37 @@ during the third pass. Selection is not rerun while encoding. It also provides
 the target's maximum pessimistic emission-unit size; the generic emitter does
 not hardcode AArch64's 128 MiB limit.
 
+The conceptual target contract is:
+
+```text
+DeferredOperation
+    min_size() -> uint32_t
+    max_size() -> uint32_t
+    select(const DeferredSelectionContext &) -> void
+    selected_size() -> uint32_t
+    encode(const DeferredEncodingContext &) const -> void
+    static max_unit_size() -> size_t
+
+Relocation
+    span_size() -> uint32_t
+    apply(const RelocationContext &) const -> void
+```
+
+These are compact tagged value types with no virtual dispatch. Selection stores
+one small selected-form tag and occurs exactly once. Encoding and relocation
+application are const, return no recoverable status, and hard-assert their final
+range and template invariants. Recoverable resource failure belongs to the code
+cache rather than target encoding.
+
+`DeferredSelectionContext` supplies the executable instruction PC and computes
+a displacement to a target with a candidate form's PC bias. This lets AArch64
+use an instruction-address PC while x86-64 uses the candidate instruction end.
+For an internal label it applies the conservative pass-one layout; for an
+absolute target it uses the pass-two executable PC. `DeferredEncodingContext`
+supplies the `void *` write destination, executable PC, and now-final target.
+`RelocationContext` similarly supplies the writable instruction location,
+executable PC, and stable pool base.
+
 Deferred-operation selection receives a `MachineAddress` executable source PC,
 never a writable pointer. Final encoding receives both a `void *` writable
 destination at which to store the selected bytes and the corresponding
@@ -429,9 +460,10 @@ actual final PC and displacement.
 After the third pass, finalization resolves fragment-relative metadata and
 returns the completed code and pool slices to the code cache for publication.
 Initial bring-up may validate writable bytes without entering them. The first
-executable tier uses private page-rounded code mappings with a one-way RW-to-RX
-transition; the later macOS tier uses packed `MAP_JIT` pages. Both preserve the
-same emitter contract and stable executable addresses.
+executable tier uses page-rounded code ranges in standard `mmap` slabs with a
+one-way RW-to-RX transition; the later macOS tier uses 16-byte packed `MAP_JIT`
+code. Both keep pool storage on separate RW/NX pages and preserve the same
+emitter contract and stable executable addresses.
 
 ## AArch64 conditional branches
 
@@ -503,12 +535,15 @@ patches `imm19` for the near form or the `ADRP` page displacement and scaled
 After pessimistic sizing, a near-mode attempt requests placement satisfying the
 literal-load reachability contract. If the cache reports that near placement is
 unavailable, the JIT driver discards only that machine-emission attempt and
-re-emits deterministically in forced `FarPageRelative` mode. The far attempt
-uses the fixed eight-byte form from its first emitted pool load and requests the
-`ADRP` reachability contract. This typed retry occurs before final encoding or
-publication, and tests may force either mode or force near rejection. It is not
-an allocation failure: an actual inability to allocate the requested far
-storage abandons JIT compilation and leaves execution in the interpreter.
+re-emits deterministically from retained Core IR in forced `FarPageRelative`
+mode. The first emitter, including its fragments, relocations, and temporary
+pool ownership, is destroyed completely before the second is constructed. The
+far attempt uses the fixed eight-byte form from its first emitted pool load and
+requests the `ADRP` reachability contract. This typed retry occurs before final
+encoding or publication, and tests may force either mode or force near
+rejection. It is not an allocation failure: an actual inability to allocate
+the requested far storage abandons JIT compilation and leaves execution in the
+interpreter.
 
 ## AArch64 absolute jumps and calls
 
