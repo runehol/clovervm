@@ -34,7 +34,7 @@ namespace cl::jit
         }
 
         CodeAllocation
-        take_allocation(Result<CodeAllocation, MachineCodeEmissionError> result)
+        take_allocation(Result<CodeAllocation, JitCodeError> result)
         {
             EXPECT_TRUE(result);
             return std::move(result).value();

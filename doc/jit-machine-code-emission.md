@@ -187,7 +187,7 @@ emit_relocatable(const void *, size_t, Relocation) -> void
 emit_direct_branch(DirectBranch) -> void
 add_value_to_constant_pool(Value) -> ValuePoolEntry
 finalize(CodeCache &, maximum_pool_span)
-    -> Result<CodeAllocation, MachineCodeEmissionError>
+    -> Result<CodeAllocation, JitCodeError>
 ```
 
 Finalization is single-use. `PoolOutOfRange` asks the driver to discard this

@@ -23,11 +23,11 @@ namespace cl::jit
         virtual MachineAddress executable_address_at(size_t offset) const = 0;
         virtual MachineAddress data_address_at(size_t offset) const = 0;
 
-        [[nodiscard]] virtual Result<void, CodeCacheError>
+        [[nodiscard]] virtual Result<void, JitCodeError>
         commit(size_t code_offset, size_t code_size, size_t pool_offset,
                size_t pool_size) = 0;
 
-        [[nodiscard]] virtual Result<void, CodeCacheError>
+        [[nodiscard]] virtual Result<void, JitCodeError>
         publish(size_t offset, size_t encoded_size, size_t protected_size) = 0;
     };
 
@@ -40,7 +40,7 @@ namespace cl::jit
         virtual size_t code_allocation_granularity() const = 0;
 
         [[nodiscard]] virtual Result<std::unique_ptr<PlatformCodeSlab>,
-                                     CodeCacheError>
+                                     JitCodeError>
         allocate_slab(size_t size) = 0;
     };
 

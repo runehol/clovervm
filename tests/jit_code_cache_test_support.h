@@ -46,10 +46,9 @@ namespace cl::jit::test_support
                                                            offset);
         }
 
-        Result<void, CodeCacheError> commit(size_t code_offset,
-                                            size_t code_size,
-                                            size_t pool_offset,
-                                            size_t pool_size) override
+        Result<void, JitCodeError> commit(size_t code_offset, size_t code_size,
+                                          size_t pool_offset,
+                                          size_t pool_size) override
         {
             committed_code_offset = code_offset;
             committed_code_size = code_size;
@@ -57,23 +56,23 @@ namespace cl::jit::test_support
             committed_pool_size = pool_size;
             if(*fail_commit_)
             {
-                return Result<void, CodeCacheError>::error(
-                    CodeCacheError::AllocationFailure);
+                return Result<void, JitCodeError>::error(
+                    JitCodeError::AllocationFailure);
             }
-            return Result<void, CodeCacheError>::ok();
+            return Result<void, JitCodeError>::ok();
         }
 
-        Result<void, CodeCacheError> publish(size_t, size_t encoded_size,
-                                             size_t protected_size) override
+        Result<void, JitCodeError> publish(size_t, size_t encoded_size,
+                                           size_t protected_size) override
         {
             published_encoded_size = encoded_size;
             published_protected_size = protected_size;
             if(*fail_publication_)
             {
-                return Result<void, CodeCacheError>::error(
-                    CodeCacheError::PublicationFailure);
+                return Result<void, JitCodeError>::error(
+                    JitCodeError::PublicationFailure);
             }
-            return Result<void, CodeCacheError>::ok();
+            return Result<void, JitCodeError>::ok();
         }
 
         size_t published_encoded_size = 0;
@@ -105,22 +104,21 @@ namespace cl::jit::test_support
             return code_granularity_;
         }
 
-        Result<std::unique_ptr<PlatformCodeSlab>, CodeCacheError>
+        Result<std::unique_ptr<PlatformCodeSlab>, JitCodeError>
         allocate_slab(size_t size) override
         {
             requested_sizes.push_back(size);
             if(fail_allocation)
             {
-                return Result<
-                    std::unique_ptr<PlatformCodeSlab>,
-                    CodeCacheError>::error(CodeCacheError::AllocationFailure);
+                return Result<std::unique_ptr<PlatformCodeSlab>, JitCodeError>::
+                    error(JitCodeError::AllocationFailure);
             }
             auto slab = std::make_unique<FakePlatformCodeSlab>(
                 size, next_machine_base, &fail_commit, &fail_publication);
             last_slab = slab.get();
             next_machine_base += size + page_size_;
-            return Result<std::unique_ptr<PlatformCodeSlab>,
-                          CodeCacheError>::ok(std::move(slab));
+            return Result<std::unique_ptr<PlatformCodeSlab>, JitCodeError>::ok(
+                std::move(slab));
         }
 
         bool fail_allocation = false;

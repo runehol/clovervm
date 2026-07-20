@@ -86,10 +86,10 @@ namespace cl::jit
                 platform_slab_->data_address_at(offset), slot_count);
         }
 
-        Result<CodeAllocation, CodeCacheError> commit(size_t code_offset,
-                                                      size_t final_code_size,
-                                                      size_t pool_offset,
-                                                      size_t pool_slot_count)
+        Result<CodeAllocation, JitCodeError> commit(size_t code_offset,
+                                                    size_t final_code_size,
+                                                    size_t pool_offset,
+                                                    size_t pool_slot_count)
         {
             size_t committed_size =
                 align_up(final_code_size, code_granularity_);
@@ -102,20 +102,20 @@ namespace cl::jit
 
             CL_TRY(platform_slab_->commit(code_offset, committed_size,
                                           pool_offset, committed_pool_size));
-            return Result<CodeAllocation, CodeCacheError>::ok(
+            return Result<CodeAllocation, JitCodeError>::ok(
                 CodeAllocation(code_slice(code_offset, committed_size),
                                pool_slice(pool_offset, pool_slot_count), this,
                                code_offset, final_code_size));
         }
 
-        Result<JitCodeObject, CodeCacheError>
+        Result<JitCodeObject, JitCodeError>
         publish(const CodeAllocation &allocation)
         {
-            CL_TRY(platform_slab_->publish(
-                allocation.code_offset_, allocation.final_code_size_,
-                allocation.code.capacity()));
+            CL_TRY(platform_slab_->publish(allocation.code_offset_,
+                                           allocation.final_code_size_,
+                                           allocation.code.capacity()));
 
-            return Result<JitCodeObject, CodeCacheError>::ok(
+            return Result<JitCodeObject, JitCodeError>::ok(
                 JitCodeObject(allocation.code, allocation.value_pool,
                               allocation.final_code_size_));
         }
@@ -184,14 +184,14 @@ namespace cl::jit
         return slab_->pool_address(pool_offset_);
     }
 
-    Result<CodeAllocation, CodeCacheError>
+    Result<CodeAllocation, JitCodeError>
     CodeAllocationProposal::commit(size_t final_code_size)
     {
         assert(slab_ != nullptr);
         assert(final_code_size != 0);
         assert(final_code_size <= pessimistic_code_size_);
 
-        Result<CodeAllocation, CodeCacheError> result = slab_->commit(
+        Result<CodeAllocation, JitCodeError> result = slab_->commit(
             code_offset_, final_code_size, pool_offset_, pool_slot_count_);
         slab_ = nullptr;
         return result;
@@ -241,7 +241,7 @@ namespace cl::jit
         return pool_slot_count == 0 || minimum_size <= maximum_span;
     }
 
-    Result<CodeAllocationProposal, CodeCacheError>
+    Result<CodeAllocationProposal, JitCodeError>
     CodeCache::propose(size_t pessimistic_code_size, size_t pool_slot_count)
     {
         assert(pessimistic_code_size != 0);
@@ -281,22 +281,21 @@ namespace cl::jit
         size_t required_pool_size = pool_size(pool_slot_count);
         assert(required_pool_size <= slab->pool_frontier());
         size_t pool_offset = slab->pool_frontier() - required_pool_size;
-        return Result<CodeAllocationProposal, CodeCacheError>::ok(
+        return Result<CodeAllocationProposal, JitCodeError>::ok(
             CodeAllocationProposal(slab, code_offset, pessimistic_code_size,
                                    pool_offset, pool_slot_count));
     }
 
-    Result<JitCodeObject *, CodeCacheError>
+    Result<JitCodeObject *, JitCodeError>
     CodeCache::publish(const CodeAllocation &allocation)
     {
-        JitCodeObject object =
-            CL_TRY(allocation.slab_->publish(allocation));
+        JitCodeObject object = CL_TRY(allocation.slab_->publish(allocation));
         JitCodeObject *published =
             published_code_
                 .emplace_back(
                     std::make_unique<JitCodeObject>(std::move(object)))
                 .get();
-        return Result<JitCodeObject *, CodeCacheError>::ok(published);
+        return Result<JitCodeObject *, JitCodeError>::ok(published);
     }
 
 }  // namespace cl::jit

@@ -52,12 +52,6 @@ namespace cl::jit
     using CodeTarget = std::variant<Label, MachineAddress>;
     using RelocationTarget = ValuePoolEntry;
 
-    enum class MachineCodeEmissionError : uint8_t
-    {
-        PoolOutOfRange,
-        AllocationFailure,
-    };
-
     template <typename DirectBranch, typename Relocation>
     class MachineCodeEmitter
     {
@@ -130,7 +124,7 @@ namespace cl::jit
             return ValuePoolEntry(byte_offset);
         }
 
-        [[nodiscard]] Result<CodeAllocation, MachineCodeEmissionError>
+        [[nodiscard]] Result<CodeAllocation, JitCodeError>
         finalize(CodeCache &cache, size_t maximum_pool_span)
         {
             assert(!finalization_attempted_);
@@ -142,35 +136,17 @@ namespace cl::jit
             if(!cache.fits_within_span(pessimistic_size, values_.size(),
                                        maximum_pool_span))
             {
-                return Result<CodeAllocation, MachineCodeEmissionError>::error(
-                    MachineCodeEmissionError::PoolOutOfRange);
+                return Result<CodeAllocation, JitCodeError>::error(
+                    JitCodeError::PoolOutOfRange);
             }
 
-            Result<CodeAllocationProposal, CodeCacheError> proposal_result =
-                cache.propose(pessimistic_size, values_.size());
-            if(!proposal_result)
-            {
-                assert(proposal_result.error() ==
-                       CodeCacheError::AllocationFailure);
-                return Result<CodeAllocation, MachineCodeEmissionError>::error(
-                    MachineCodeEmissionError::AllocationFailure);
-            }
             CodeAllocationProposal proposal =
-                std::move(proposal_result).value();
+                CL_TRY(cache.propose(pessimistic_size, values_.size()));
 
             size_t final_size = select_direct_branches(proposal.code_address());
-            Result<CodeAllocation, CodeCacheError> allocation_result =
-                proposal.commit(final_size);
-            if(!allocation_result)
-            {
-                assert(allocation_result.error() ==
-                       CodeCacheError::AllocationFailure);
-                return Result<CodeAllocation, MachineCodeEmissionError>::error(
-                    MachineCodeEmissionError::AllocationFailure);
-            }
-            CodeAllocation allocation = std::move(allocation_result).value();
+            CodeAllocation allocation = CL_TRY(proposal.commit(final_size));
             encode(allocation);
-            return Result<CodeAllocation, MachineCodeEmissionError>::ok(
+            return Result<CodeAllocation, JitCodeError>::ok(
                 std::move(allocation));
         }
 

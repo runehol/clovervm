@@ -10,8 +10,9 @@
 
 namespace cl::jit
 {
-    enum class CodeCacheError : uint8_t
+    enum class JitCodeError : uint8_t
     {
+        PoolOutOfRange,
         AllocationFailure,
         PublicationFailure,
     };

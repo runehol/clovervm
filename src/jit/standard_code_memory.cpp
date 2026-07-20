@@ -58,15 +58,15 @@ namespace cl::jit
                                                                   offset);
             }
 
-            Result<void, CodeCacheError> commit(size_t, size_t, size_t,
-                                                size_t) override
+            Result<void, JitCodeError> commit(size_t, size_t, size_t,
+                                              size_t) override
             {
-                return Result<void, CodeCacheError>::ok();
+                return Result<void, JitCodeError>::ok();
             }
 
-            Result<void, CodeCacheError> publish(size_t offset,
-                                                 size_t encoded_size,
-                                                 size_t protected_size) override
+            Result<void, JitCodeError> publish(size_t offset,
+                                               size_t encoded_size,
+                                               size_t protected_size) override
             {
                 assert(offset % page_size_ == 0);
                 assert(protected_size != 0);
@@ -80,10 +80,10 @@ namespace cl::jit
                 if(mprotect(base_ + offset, protected_size,
                             PROT_READ | PROT_EXEC) != 0)
                 {
-                    return Result<void, CodeCacheError>::error(
-                        CodeCacheError::PublicationFailure);
+                    return Result<void, JitCodeError>::error(
+                        JitCodeError::PublicationFailure);
                 }
-                return Result<void, CodeCacheError>::ok();
+                return Result<void, JitCodeError>::ok();
             }
 
         private:
@@ -102,7 +102,7 @@ namespace cl::jit
         assert(page_size_ >= 16);
     }
 
-    Result<std::unique_ptr<PlatformCodeSlab>, CodeCacheError>
+    Result<std::unique_ptr<PlatformCodeSlab>, JitCodeError>
     StandardCodeMemory::allocate_slab(size_t size)
     {
         assert(size != 0);
@@ -111,10 +111,10 @@ namespace cl::jit
                           MAP_PRIVATE | MAP_ANON, -1, 0);
         if(base == MAP_FAILED)
         {
-            return Result<std::unique_ptr<PlatformCodeSlab>, CodeCacheError>::
-                error(CodeCacheError::AllocationFailure);
+            return Result<std::unique_ptr<PlatformCodeSlab>,
+                          JitCodeError>::error(JitCodeError::AllocationFailure);
         }
-        return Result<std::unique_ptr<PlatformCodeSlab>, CodeCacheError>::ok(
+        return Result<std::unique_ptr<PlatformCodeSlab>, JitCodeError>::ok(
             std::make_unique<StandardCodeSlab>(base, size, page_size_));
     }
 

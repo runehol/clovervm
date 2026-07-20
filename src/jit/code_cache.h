@@ -45,7 +45,7 @@ namespace cl::jit
         MachineAddress code_address() const;
         MachineAddress value_pool_address() const;
 
-        [[nodiscard]] Result<CodeAllocation, CodeCacheError>
+        [[nodiscard]] Result<CodeAllocation, JitCodeError>
         commit(size_t final_code_size);
 
     private:
@@ -98,10 +98,10 @@ namespace cl::jit
                               size_t pool_slot_count,
                               size_t maximum_span) const;
 
-        [[nodiscard]] Result<CodeAllocationProposal, CodeCacheError>
+        [[nodiscard]] Result<CodeAllocationProposal, JitCodeError>
         propose(size_t pessimistic_code_size, size_t pool_slot_count);
 
-        [[nodiscard]] Result<JitCodeObject *, CodeCacheError>
+        [[nodiscard]] Result<JitCodeObject *, JitCodeError>
         publish(const CodeAllocation &allocation);
 
     private:

@@ -115,12 +115,18 @@ The concrete result is an exception-independent `Result<T, Error>` rather than
 Python-exception-bearing `Expected<T>`:
 
 ```text
-enum CodeCacheError
+enum JitCodeError
+    PoolOutOfRange
     AllocationFailure
     PublicationFailure
 
-Result<CodeAllocationProposal, CodeCacheError>
+Result<CodeAllocationProposal, JitCodeError>
 ```
+
+The enum is shared with machine-code finalization so cache allocation failures
+propagate without being wrapped in an emitter-specific error. `PoolOutOfRange`
+is produced only by machine-code finalization; the cache produces allocation
+and publication failures.
 
 `Result` follows the existing `Expected` value/error and propagation shape but
 carries its error explicitly and never reads or writes pending Python exception
@@ -287,7 +293,7 @@ the code-allocation granularity it can safely reuse:
 
 ```text
 PlatformCodeMemory
-    allocate_slab(size) -> Result<PlatformCodeSlab, CodeCacheError>
+    allocate_slab(size) -> Result<PlatformCodeSlab, JitCodeError>
     page_size() -> size_t
     code_allocation_granularity() -> size_t
 
@@ -296,7 +302,7 @@ PlatformCodeSlab
     write_pointer_at(offset) -> void *
     executable_address_at(offset) -> MachineAddress
     data_address_at(offset) -> MachineAddress
-    publish(code range) -> Result<void, CodeCacheError>
+    publish(code range) -> Result<void, JitCodeError>
 ```
 
 The standard mapping backend reports the host page size. The macOS `MAP_JIT`
@@ -437,7 +443,7 @@ Code-cache tests should cover:
   or owned `Value`, and no Python pending exception;
 - injected publication failure consuming the committed storage while retaining
   interpreted execution without a Python pending exception;
-- `Result` propagation preserving `CodeCacheError` without touching pending
+- `Result` propagation preserving `JitCodeError` without touching pending
   Python exception state;
 - x86-64 RIP-relative pool reachability;
 - relocation patching without fragment creation or size changes;

@@ -19,7 +19,7 @@ namespace cl::jit
             return page_size_;
         }
 
-        [[nodiscard]] Result<std::unique_ptr<PlatformCodeSlab>, CodeCacheError>
+        [[nodiscard]] Result<std::unique_ptr<PlatformCodeSlab>, JitCodeError>
         allocate_slab(size_t size) override;
 
     private:

@@ -102,7 +102,7 @@ namespace cl::jit
         using test_support::CacheAndPlatform;
 
         CodeAllocation
-        take_allocation(Result<CodeAllocation, MachineCodeEmissionError> result)
+        take_allocation(Result<CodeAllocation, JitCodeError> result)
         {
             EXPECT_TRUE(result);
             return std::move(result).value();
@@ -203,11 +203,11 @@ namespace cl::jit
         uint8_t instruction = 0;
         emitter.emit_bytes(&instruction, sizeof(instruction));
 
-        Result<CodeAllocation, MachineCodeEmissionError> result =
+        Result<CodeAllocation, JitCodeError> result =
             emitter.finalize(*fixture.cache, 8191);
 
         ASSERT_FALSE(result);
-        EXPECT_EQ(MachineCodeEmissionError::PoolOutOfRange, result.error());
+        EXPECT_EQ(JitCodeError::PoolOutOfRange, result.error());
         EXPECT_TRUE(fixture.platform->requested_sizes.empty());
     }
 
@@ -219,11 +219,11 @@ namespace cl::jit
         uint8_t instruction = 0;
         emitter.emit_bytes(&instruction, sizeof(instruction));
 
-        Result<CodeAllocation, MachineCodeEmissionError> result =
+        Result<CodeAllocation, JitCodeError> result =
             emitter.finalize(*fixture.cache, 1);
 
         ASSERT_FALSE(result);
-        EXPECT_EQ(MachineCodeEmissionError::AllocationFailure, result.error());
+        EXPECT_EQ(JitCodeError::AllocationFailure, result.error());
     }
 
     TEST(MachineCodeEmitter, ReportsCommitFailure)
@@ -234,11 +234,11 @@ namespace cl::jit
         uint8_t instruction = 0;
         emitter.emit_bytes(&instruction, sizeof(instruction));
 
-        Result<CodeAllocation, MachineCodeEmissionError> result =
+        Result<CodeAllocation, JitCodeError> result =
             emitter.finalize(*fixture.cache, 1);
 
         ASSERT_FALSE(result);
-        EXPECT_EQ(MachineCodeEmissionError::AllocationFailure, result.error());
+        EXPECT_EQ(JitCodeError::AllocationFailure, result.error());
     }
 
 }  // namespace cl::jit

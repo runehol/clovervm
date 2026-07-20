@@ -19,12 +19,12 @@ namespace cl::jit
                                       XRegister(0), XRegister(1));
         assembler.emit_ret();
 
-        Result<CodeAllocation, MachineCodeEmissionError> finalization =
+        Result<CodeAllocation, JitCodeError> finalization =
             emitter.finalize(cache, 1);
         ASSERT_TRUE(finalization);
         CodeAllocation allocation = std::move(finalization).value();
 
-        Result<JitCodeObject *, CodeCacheError> publication =
+        Result<JitCodeObject *, JitCodeError> publication =
             cache.publish(allocation);
         ASSERT_TRUE(publication);
         JitCodeObject *code = std::move(publication).value();
@@ -54,12 +54,12 @@ namespace cl::jit
         emitter.resolve(done);
         assembler.emit_ret();
 
-        Result<CodeAllocation, MachineCodeEmissionError> finalization =
+        Result<CodeAllocation, JitCodeError> finalization =
             emitter.finalize(cache, 1);
         ASSERT_TRUE(finalization);
         CodeAllocation allocation = std::move(finalization).value();
 
-        Result<JitCodeObject *, CodeCacheError> publication =
+        Result<JitCodeObject *, JitCodeError> publication =
             cache.publish(allocation);
         ASSERT_TRUE(publication);
         JitCodeObject *code = std::move(publication).value();
