@@ -58,6 +58,7 @@ rationale that remains clear from those sources.
 | D-0006 | Use ordered list-based SSA rather than a sea of nodes | Accepted |
 | D-0007 | Separate stable embedded metadata from movable compiled constants | Accepted |
 | D-0008 | Preserve separate managed and host stacks during JIT bring-up | Accepted |
+| D-0009 | Emit machine code through conservatively shortened code fragments | Accepted |
 
 ## D-0001: Compile Whole Functions Rather Than Hot Traces
 
@@ -586,3 +587,74 @@ interpreted, compiled, native, and reentrant execution.
 - `doc/jit-compiler-and-ir.md`
 - `doc/function-calling-convention.md`
 - `doc/native-managed-boundaries.md`
+
+## D-0009: Emit Machine Code Through Conservatively Shortened Code Fragments
+
+**Date:** 2026-07-20
+**Status:** Accepted
+**Scope:** JIT target encoding and machine-code layout
+**Commitment:** Backend architecture
+
+### Decision
+
+Target backends emit directly encodable instructions in program order into
+`CodeFragment`s. A distance-dependent direct branch may terminate a fragment
+and remains symbolic until final layout; a branch target begins a fragment.
+Fragments are machine-code layout units rather than compiler basic blocks, so
+side-exit guards may split one compiler block into several fragments.
+
+Layout initially assigns every deferred branch its long size. The emitter
+selects short forms that fit those pessimistic offsets, computes final offsets
+once, and copies and encodes the finished stream. It does not iterate branch
+shortening. Each target exposes a direct assembler for exact instructions and
+a macro assembler for operations that may expand.
+
+### Context
+
+AArch64 `TBZ` and `TBNZ` are attractive single-instruction type guards but
+their limited range is not known for unresolved forward side exits. Reserving
+two instructions at every guard would penalize dense speculative code. Basic
+block fragments alone do not solve this because side exits are deliberately
+absent from the compiler CFG. Retaining all machine instructions until layout
+would instead create an unnecessary mandatory Machine IR.
+
+### Alternatives Considered
+
+- reserve the maximum instruction sequence at every conditional branch site;
+- create side-exit stub islands within every narrow branch's reach;
+- retain complete machine instructions or general assembler fragments;
+- iteratively relax branch sizes to a fixed point;
+- impose a compiled-region size below the narrowest target branch range.
+
+### Why Chosen
+
+Code fragments retain only the information whose size is unresolved while
+ordinary instructions are encoded once. Pessimistic selection is correct
+without iteration because later shortening only reduces branch distances. The
+same mechanism naturally supports x86-64 near-to-short jump selection, while
+accepting that a few additional branches could shorten only after iteration.
+
+### Consequences
+
+- labels and pre-finalization metadata positions are fragment-relative;
+- the backend above the emitter owns block ordering, fall-through selection,
+  block-condition inversion, edge moves, and removal of redundant
+  unconditional branches;
+- one compiler block may produce many code fragments without changing SSA or
+  CFG structure;
+- final encoding asserts that every selected short form still fits;
+- veneers, literal pools, executable-memory policy, and external relocations
+  remain target-emitter implementation work.
+
+### Revisit When
+
+- missed shortening opportunities become a measured code-size problem;
+- veneer or literal-pool placement requires more general fragment scheduling;
+- a target backend independently justifies a mandatory Machine IR;
+- direct final copying becomes a material compilation-latency cost.
+
+### References
+
+- `doc/jit-machine-code-emission.md`
+- `doc/jit-compiler-and-ir.md`
+- `doc/jit-control-flow-graph.md`

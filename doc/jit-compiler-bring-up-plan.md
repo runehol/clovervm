@@ -288,6 +288,7 @@ compiler.
 ## Related Documents
 
 - [JIT Compiler and IR](jit-compiler-and-ir.md)
+- [JIT Machine-Code Emission](jit-machine-code-emission.md)
 - [Semantic IR and Specialization](jit-semantic-ir-and-specialization.md)
 - [Function Calling Convention](function-calling-convention.md)
 - [Native/Managed Boundary Contracts](native-managed-boundaries.md)

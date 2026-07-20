@@ -16,7 +16,11 @@ agreed block-parameter extension, which is not implemented yet. It refines the
 ordered list-based SSA direction in
 [JIT Compiler and IR](jit-compiler-and-ir.md). The permanent instruction
 storage and typed-access direction is specified separately in
-[JIT Instruction Representation](jit-instruction-representation.md).
+[JIT Instruction Representation](jit-instruction-representation.md). The
+lower-level code fragments created by machine branches and branch targets are
+defined separately in
+[JIT Machine-Code Emission](jit-machine-code-emission.md); they are not CFG
+basic blocks.
 
 The central representation is:
 
@@ -294,6 +298,8 @@ Snapshot operands and other recovery data remain point uses for liveness even
 though their side exit is absent from the block CFG. A backend may lower a
 guard side exit and a conditional block branch with the same target branch
 primitive; that target-level commonality does not merge their IR semantics.
+It may also split one compiler basic block into several machine-code fragments
+at side-exit branches without introducing CFG blocks or edges.
 
 ## Verification
 

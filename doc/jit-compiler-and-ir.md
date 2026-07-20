@@ -21,7 +21,9 @@ higher-effort inference frontend belongs to
 [Semantic IR and Specialization](jit-semantic-ir-and-specialization.md). The
 fixed instruction storage, typed read-only views, and restricted analysis
 mutation API belong to
-[JIT Instruction Representation](jit-instruction-representation.md).
+[JIT Instruction Representation](jit-instruction-representation.md). Target
+instruction encoding, code fragments, label resolution, and branch sizing are
+defined by [JIT Machine-Code Emission](jit-machine-code-emission.md).
 
 The mandatory compiler pipeline has one principal compiler IR:
 
@@ -394,6 +396,11 @@ Backend-local machine copies, spills, and reloads change physical location, not
 Python value identity. If a Machine IR is used, it should remain primarily a
 lowering and allocation representation unless measurements justify broader
 machine-level optimization.
+
+Final program-order encoding does not itself require Machine IR. The target
+backend may encode ordinary instructions directly into `CodeFragment`s while
+retaining distance-dependent branches for final layout, as defined by
+[JIT Machine-Code Emission](jit-machine-code-emission.md).
 
 ## Shared IR Foundations
 
