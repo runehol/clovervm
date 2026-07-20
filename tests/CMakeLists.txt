@@ -103,6 +103,10 @@ if(CMAKE_SYSTEM_PROCESSOR MATCHES "^(arm64|aarch64|ARM64)$")
 	target_sources(test_clovervm PRIVATE test_aarch64_execution.cpp)
 endif()
 
+if(APPLE AND CMAKE_SYSTEM_PROCESSOR MATCHES "^(arm64|aarch64|ARM64)$")
+	target_sources(test_clovervm PRIVATE test_map_jit.cpp)
+endif()
+
 gtest_discover_tests(test_clovervm
 	WORKING_DIRECTORY "${PROJECT_SOURCE_DIR}"
 	DISCOVERY_MODE PRE_TEST)

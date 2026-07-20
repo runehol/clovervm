@@ -24,6 +24,13 @@ namespace cl::jit
             EXPECT_TRUE(result);
             return std::move(result).value();
         }
+
+        CodeAllocation
+        take_allocation(Result<CodeAllocation, CodeCacheError> result)
+        {
+            EXPECT_TRUE(result);
+            return std::move(result).value();
+        }
     }  // namespace
 
     TEST(CodeCache, ComputesRoundedSpanWithoutTargetSpecificPolicy)
@@ -46,9 +53,14 @@ namespace cl::jit
         EXPECT_EQ(0x1000fff0u,
                   proposal.value_pool_address().bits_for_indirect_target());
 
-        CodeAllocation allocation = proposal.commit(17);
+        CodeAllocation allocation = take_allocation(proposal.commit(17));
         EXPECT_EQ(32u, allocation.code.capacity());
         EXPECT_EQ(2u, allocation.value_pool.slot_count());
+        EXPECT_EQ(0u, fixture.platform->last_slab->committed_code_offset);
+        EXPECT_EQ(32u, fixture.platform->last_slab->committed_code_size);
+        EXPECT_EQ(0xfff0u, fixture.platform->last_slab->committed_pool_offset);
+        EXPECT_EQ(2 * sizeof(Value),
+                  fixture.platform->last_slab->committed_pool_size);
         EXPECT_EQ(allocation.code.write_pointer(),
                   fixture.platform->last_slab->write_pointer_at(0));
         EXPECT_NE(reinterpret_cast<uintptr_t>(allocation.code.write_pointer()),
@@ -84,7 +96,7 @@ namespace cl::jit
         CacheAndPlatform fixture(16);
         CodeAllocationProposal proposal =
             take_proposal(fixture.cache->propose(100, 1));
-        CodeAllocation allocation = proposal.commit(17);
+        CodeAllocation allocation = take_allocation(proposal.commit(17));
         EXPECT_EQ(32u, allocation.code.capacity());
         Result<JitCodeObject *, CodeCacheError> publication =
             fixture.cache->publish(allocation);
@@ -111,7 +123,7 @@ namespace cl::jit
             CodeAllocationProposal proposal =
                 take_proposal(fixture.cache->propose(64, 1));
             failed_address = proposal.code_address();
-            CodeAllocation allocation = proposal.commit(32);
+            CodeAllocation allocation = take_allocation(proposal.commit(32));
             Result<JitCodeObject *, CodeCacheError> publication =
                 fixture.cache->publish(allocation);
             ASSERT_FALSE(publication);
@@ -136,6 +148,29 @@ namespace cl::jit
         EXPECT_EQ(CodeCacheError::AllocationFailure, allocation.error());
     }
 
+    TEST(CodeCache, CommitFailureConsumesCodeAndPoolSpace)
+    {
+        CacheAndPlatform fixture(16);
+        CodeAllocationProposal proposal =
+            take_proposal(fixture.cache->propose(64, 1));
+        MachineAddress failed_code = proposal.code_address();
+        MachineAddress failed_pool = proposal.value_pool_address();
+        fixture.platform->fail_commit = true;
+
+        Result<CodeAllocation, CodeCacheError> allocation = proposal.commit(32);
+
+        ASSERT_FALSE(allocation);
+        EXPECT_EQ(CodeCacheError::AllocationFailure, allocation.error());
+
+        fixture.platform->fail_commit = false;
+        CodeAllocationProposal replacement =
+            take_proposal(fixture.cache->propose(16, 1));
+        EXPECT_EQ(failed_code.offset_by(32), replacement.code_address());
+        EXPECT_EQ(
+            -static_cast<int64_t>(sizeof(Value)),
+            failed_pool.displacement_to(replacement.value_pool_address()));
+    }
+
     TEST(CodeCache, UsesDedicatedSlabForAnOversizedUnit)
     {
         CacheAndPlatform fixture(16);
@@ -150,12 +185,12 @@ namespace cl::jit
         CacheAndPlatform fixture(16);
         CodeAllocationProposal first_proposal =
             take_proposal(fixture.cache->propose(16, 1));
-        CodeAllocation first = first_proposal.commit(16);
+        CodeAllocation first = take_allocation(first_proposal.commit(16));
         JitCodeObject *first_object =
             std::move(fixture.cache->publish(first)).value();
         CodeAllocationProposal second_proposal =
             take_proposal(fixture.cache->propose(16, 1));
-        CodeAllocation second = second_proposal.commit(16);
+        CodeAllocation second = take_allocation(second_proposal.commit(16));
         JitCodeObject *second_object =
             std::move(fixture.cache->publish(second)).value();
 
@@ -174,7 +209,8 @@ namespace cl::jit
         CacheAndPlatform fixture(16);
         CodeAllocationProposal first_proposal =
             take_proposal(fixture.cache->propose(15 * 4096, 1));
-        CodeAllocation first = first_proposal.commit(15 * 4096);
+        CodeAllocation first =
+            take_allocation(first_proposal.commit(15 * 4096));
         JitCodeObject *first_object =
             std::move(fixture.cache->publish(first)).value();
         CodeAllocationProposal second =
@@ -190,7 +226,7 @@ namespace cl::jit
         CodeAllocationProposal first_proposal =
             take_proposal(fixture.cache->propose(9000, 0));
         MachineAddress empty_pool_address = first_proposal.value_pool_address();
-        CodeAllocation first = first_proposal.commit(5000);
+        CodeAllocation first = take_allocation(first_proposal.commit(5000));
         EXPECT_EQ(0u, first.value_pool.slot_count());
         EXPECT_EQ(empty_pool_address, first.value_pool.address());
         JitCodeObject *object =
@@ -209,7 +245,7 @@ namespace cl::jit
         size_t page_size = platform->page_size();
         CodeCache cache(std::move(platform));
         CodeAllocationProposal proposal = take_proposal(cache.propose(4, 1));
-        CodeAllocation allocation = proposal.commit(4);
+        CodeAllocation allocation = take_allocation(proposal.commit(4));
         auto *code = static_cast<uint8_t *>(allocation.code.write_pointer());
         code[0] = 0;
         code[1] = 0;

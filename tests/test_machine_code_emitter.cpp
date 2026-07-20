@@ -226,4 +226,19 @@ namespace cl::jit
         EXPECT_EQ(MachineCodeEmissionError::AllocationFailure, result.error());
     }
 
+    TEST(MachineCodeEmitter, ReportsCommitFailure)
+    {
+        CacheAndPlatform fixture(16);
+        fixture.platform->fail_commit = true;
+        TestEmitter emitter;
+        uint8_t instruction = 0;
+        emitter.emit_bytes(&instruction, sizeof(instruction));
+
+        Result<CodeAllocation, MachineCodeEmissionError> result =
+            emitter.finalize(*fixture.cache, 1);
+
+        ASSERT_FALSE(result);
+        EXPECT_EQ(MachineCodeEmissionError::AllocationFailure, result.error());
+    }
+
 }  // namespace cl::jit

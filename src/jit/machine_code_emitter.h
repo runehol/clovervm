@@ -159,7 +159,16 @@ namespace cl::jit
                 std::move(proposal_result).value();
 
             size_t final_size = select_direct_branches(proposal.code_address());
-            CodeAllocation allocation = proposal.commit(final_size);
+            Result<CodeAllocation, CodeCacheError> allocation_result =
+                proposal.commit(final_size);
+            if(!allocation_result)
+            {
+                assert(allocation_result.error() ==
+                       CodeCacheError::AllocationFailure);
+                return Result<CodeAllocation, MachineCodeEmissionError>::error(
+                    MachineCodeEmissionError::AllocationFailure);
+            }
+            CodeAllocation allocation = std::move(allocation_result).value();
             encode(allocation);
             return Result<CodeAllocation, MachineCodeEmissionError>::ok(
                 std::move(allocation));

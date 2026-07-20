@@ -24,6 +24,10 @@ namespace cl::jit
         virtual MachineAddress data_address_at(size_t offset) const = 0;
 
         [[nodiscard]] virtual Result<void, CodeCacheError>
+        commit(size_t code_offset, size_t code_size, size_t pool_offset,
+               size_t pool_size) = 0;
+
+        [[nodiscard]] virtual Result<void, CodeCacheError>
         publish(size_t offset, size_t encoded_size, size_t protected_size) = 0;
     };
 

@@ -86,32 +86,34 @@ namespace cl::jit
                 platform_slab_->data_address_at(offset), slot_count);
         }
 
-        CodeAllocation commit(size_t code_offset, size_t final_code_size,
-                              size_t pool_offset, size_t pool_slot_count)
+        Result<CodeAllocation, CodeCacheError> commit(size_t code_offset,
+                                                      size_t final_code_size,
+                                                      size_t pool_offset,
+                                                      size_t pool_slot_count)
         {
             size_t committed_size =
                 align_up(final_code_size, code_granularity_);
+            size_t committed_pool_size = pool_size(pool_slot_count);
 
             assert(code_frontier_ == code_offset);
             assert(pool_offset <= pool_frontier_);
             code_frontier_ += committed_size;
             pool_frontier_ = pool_offset;
-            return CodeAllocation(code_slice(code_offset, committed_size),
-                                  pool_slice(pool_offset, pool_slot_count),
-                                  this, code_offset, final_code_size);
+
+            CL_TRY(platform_slab_->commit(code_offset, committed_size,
+                                          pool_offset, committed_pool_size));
+            return Result<CodeAllocation, CodeCacheError>::ok(
+                CodeAllocation(code_slice(code_offset, committed_size),
+                               pool_slice(pool_offset, pool_slot_count), this,
+                               code_offset, final_code_size));
         }
 
         Result<JitCodeObject, CodeCacheError>
         publish(const CodeAllocation &allocation)
         {
-            Result<void, CodeCacheError> publication = platform_slab_->publish(
+            CL_TRY(platform_slab_->publish(
                 allocation.code_offset_, allocation.final_code_size_,
-                allocation.code.capacity());
-            if(!publication)
-            {
-                return Result<JitCodeObject, CodeCacheError>::error(
-                    std::move(publication).error());
-            }
+                allocation.code.capacity()));
 
             return Result<JitCodeObject, CodeCacheError>::ok(
                 JitCodeObject(allocation.code, allocation.value_pool,
@@ -182,14 +184,15 @@ namespace cl::jit
         return slab_->pool_address(pool_offset_);
     }
 
-    CodeAllocation CodeAllocationProposal::commit(size_t final_code_size)
+    Result<CodeAllocation, CodeCacheError>
+    CodeAllocationProposal::commit(size_t final_code_size)
     {
         assert(slab_ != nullptr);
         assert(final_code_size != 0);
         assert(final_code_size <= pessimistic_code_size_);
 
-        CodeAllocation result = slab_->commit(code_offset_, final_code_size,
-                                              pool_offset_, pool_slot_count_);
+        Result<CodeAllocation, CodeCacheError> result = slab_->commit(
+            code_offset_, final_code_size, pool_offset_, pool_slot_count_);
         slab_ = nullptr;
         return result;
     }
@@ -286,17 +289,12 @@ namespace cl::jit
     Result<JitCodeObject *, CodeCacheError>
     CodeCache::publish(const CodeAllocation &allocation)
     {
-        Result<JitCodeObject, CodeCacheError> result =
-            allocation.slab_->publish(allocation);
-        if(!result)
-        {
-            return Result<JitCodeObject *, CodeCacheError>::error(
-                std::move(result).error());
-        }
+        JitCodeObject object =
+            CL_TRY(allocation.slab_->publish(allocation));
         JitCodeObject *published =
             published_code_
                 .emplace_back(
-                    std::make_unique<JitCodeObject>(std::move(result).value()))
+                    std::make_unique<JitCodeObject>(std::move(object)))
                 .get();
         return Result<JitCodeObject *, CodeCacheError>::ok(published);
     }

@@ -58,6 +58,12 @@ namespace cl::jit
                                                                   offset);
             }
 
+            Result<void, CodeCacheError> commit(size_t, size_t, size_t,
+                                                size_t) override
+            {
+                return Result<void, CodeCacheError>::ok();
+            }
+
             Result<void, CodeCacheError> publish(size_t offset,
                                                  size_t encoded_size,
                                                  size_t protected_size) override

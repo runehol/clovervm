@@ -17,9 +17,10 @@ namespace cl::jit::test_support
     {
     public:
         FakePlatformCodeSlab(size_t size, uintptr_t machine_base,
-                             bool *fail_publication)
+                             bool *fail_commit, bool *fail_publication)
             : storage_(std::make_unique<uint8_t[]>(size)), size_(size),
-              machine_base_(machine_base), fail_publication_(fail_publication)
+              machine_base_(machine_base), fail_commit_(fail_commit),
+              fail_publication_(fail_publication)
         {
         }
 
@@ -45,6 +46,23 @@ namespace cl::jit::test_support
                                                            offset);
         }
 
+        Result<void, CodeCacheError> commit(size_t code_offset,
+                                            size_t code_size,
+                                            size_t pool_offset,
+                                            size_t pool_size) override
+        {
+            committed_code_offset = code_offset;
+            committed_code_size = code_size;
+            committed_pool_offset = pool_offset;
+            committed_pool_size = pool_size;
+            if(*fail_commit_)
+            {
+                return Result<void, CodeCacheError>::error(
+                    CodeCacheError::AllocationFailure);
+            }
+            return Result<void, CodeCacheError>::ok();
+        }
+
         Result<void, CodeCacheError> publish(size_t, size_t encoded_size,
                                              size_t protected_size) override
         {
@@ -60,11 +78,16 @@ namespace cl::jit::test_support
 
         size_t published_encoded_size = 0;
         size_t published_protected_size = 0;
+        size_t committed_code_offset = 0;
+        size_t committed_code_size = 0;
+        size_t committed_pool_offset = 0;
+        size_t committed_pool_size = 0;
 
     private:
         std::unique_ptr<uint8_t[]> storage_;
         size_t size_;
         uintptr_t machine_base_;
+        bool *fail_commit_;
         bool *fail_publication_;
     };
 
@@ -93,7 +116,7 @@ namespace cl::jit::test_support
                     CodeCacheError>::error(CodeCacheError::AllocationFailure);
             }
             auto slab = std::make_unique<FakePlatformCodeSlab>(
-                size, next_machine_base, &fail_publication);
+                size, next_machine_base, &fail_commit, &fail_publication);
             last_slab = slab.get();
             next_machine_base += size + page_size_;
             return Result<std::unique_ptr<PlatformCodeSlab>,
@@ -101,6 +124,7 @@ namespace cl::jit::test_support
         }
 
         bool fail_allocation = false;
+        bool fail_commit = false;
         bool fail_publication = false;
         std::vector<size_t> requested_sizes;
         FakePlatformCodeSlab *last_slab = nullptr;

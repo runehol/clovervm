@@ -45,7 +45,8 @@ namespace cl::jit
         MachineAddress code_address() const;
         MachineAddress value_pool_address() const;
 
-        CodeAllocation commit(size_t final_code_size);
+        [[nodiscard]] Result<CodeAllocation, CodeCacheError>
+        commit(size_t final_code_size);
 
     private:
         friend class CodeCache;
