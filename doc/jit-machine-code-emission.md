@@ -17,6 +17,9 @@ mandatory Machine IR. Ordinary instructions are encoded immediately. The
 emitter retains only the structure required to resolve labels and choose among
 encodings that depend on final machine-code positions.
 
+[JIT Code Cache and Publication](jit-code-cache.md) owns the stable code and
+constant-pool addresses into which finalization writes.
+
 The first target is AArch64. The same retained layout structure supports a
 later x86-64 backend, including its short and near conditional jumps.
 
@@ -62,19 +65,21 @@ layout purposes and remains symbolic until final layout:
 
 ```text
 CodeFragment
-    directly encoded instruction bytes
-    optional deferred PC-dependent operation
+    directly encoded instruction bytes, including fixed-size placeholders
+    zero or more inline deferred operations at fragment-relative offsets
+    optional trailing size-varying deferred operation
 ```
 
-A deferred PC-dependent operation is stored at the end of the fragment rather
-than as a separate fragment. `DeferredTransfer` is the branch, jump, and call
-kind; it records its target, whether it links, and the target-specific forms
-needed by final layout. Other kinds include PC-relative loads and address
-formation. Every kind records its minimum and maximum sizes and enough symbolic
-information to select and encode one of its forms after layout. A fragment need
-not end in a deferred operation. A branch target begins a fragment, and
-emitting any deferred operation starts a new fragment for the following
-instruction stream.
+A fixed-size PC-dependent operation reserves placeholder bytes inside the
+fragment and records an inline deferred operation at that byte offset. It does
+not end the fragment. A variable-size deferred operation is stored at the end
+of the fragment and starts a new fragment for the following instruction stream.
+`DeferredTransfer` is the branch, jump, and call kind; other kinds include
+PC-relative loads and address formation. Every kind records its minimum and
+maximum sizes and enough symbolic information to select and encode one form
+after layout. The generic emitter asserts that an inline operation has equal
+minimum and maximum sizes and that only the optional trailing operation may
+change fragment size.
 
 The fragment container and three-pass finalizer are target-independent and are
 implemented as a template over the target's deferred-operation type:
@@ -134,8 +139,8 @@ registers, and final encoding remain contained in those operation types.
 Terminating a fragment is a layout property, not necessarily a control-flow
 property. A linking transfer returns to the beginning of the following
 fragment. A non-linking transfer has no runtime fall-through; it is used for
-ordinary jumps and tail calls. A deferred PC-relative non-transfer operation
-continues at the beginning of the following fragment.
+ordinary jumps and tail calls. A trailing variable-size PC-relative non-
+transfer operation continues at the beginning of the following fragment.
 
 `CodeFragment` is intentionally not called a basic block. The JIT CFG excludes
 non-returning side exits from its block edges, while the emitter must retain
@@ -185,11 +190,11 @@ final absolute offset.
 No instruction or metadata consumer may retain an initial absolute offset
 across final layout.
 
-## Builder invariants and hard failures
+## Builder invariants and compilation failure
 
-Emitter construction and finalization do not expose a recoverable compilation-
-failure path for malformed labels, oversized units, allocation failure, or an
-invalid final encoding. They do not set Python pending-exception state.
+Malformed emitter state and impossible final encodings are compiler invariant
+failures. Code-cache allocation failure is instead a recoverable compilation
+outcome. Neither kind of failure sets Python pending-exception state.
 
 Labels follow the existing `CodeObjectBuilder` jump-target pattern. Binding a
 label more than once is a hard assertion. A referenced label that remains
@@ -202,10 +207,12 @@ Empty target fragments are not errors. Consecutive or otherwise empty
 fragments may share one final code address.
 
 The target deferred-operation policy's pessimistic unit-size limit is a hard
-assertion; it is 128 MiB for AArch64. Failure to allocate the pessimistic
-destination buffer is a hard failure. Failure of final encoding or revalidation
-after form selection is also a hard failure; it indicates a violated emitter
-invariant rather than a reason to fall back to interpreted execution.
+assertion; it is 128 MiB for AArch64. Failure to allocate code-cache storage
+abandons the compilation attempt, releases its fragments and owned pool
+values, installs no compiled entry point, and continues execution in the
+interpreter. Failure of final encoding or revalidation after form selection is
+a hard failure; it indicates a violated emitter invariant rather than a reason
+to fall back to interpreted execution.
 
 An outside-unit transfer is constructed with an already resolved absolute
 target address. It cannot contain an unresolved external symbol or use an
@@ -236,30 +243,37 @@ its fragments. Target deferred operations refer to slots through generic
 constant-pool offsets; only the instruction used to load a slot is target-
 specific.
 
-The pool has a fixed address after the pessimistic code capacity:
+The code cache allocates the finalized code and pool as separate stable slices
+within the required target reach:
 
 ```text
-allocation
-    [0, final_code_size)              final machine code
-    [final_code_size, max_code_size)  unused pessimistic code tail
-    [pool_start, allocation_size)     GC-visible Value constant pool
+CodeSlice
+    writable view
+    executable address
+    pessimistic capacity
 
-pool_start = align_up(max_code_size, sizeof(Value))
-allocation_size = pool_start + constant_pool_size
+ValuePoolSlice
+    writable, non-executable Value slots
+    pool address
+    slot count
 ```
 
-Placing the pool after the final shortened code would make its address depend
-on form selection and create a layout cycle. Placing it after the pessimistic
-capacity fixes every slot address as soon as the allocation base is known. The
-code unit records final code size, pessimistic code capacity, pool offset, and
-pool slot count so code and constants remain easy to identify separately.
+The slices share the compiled code object's lifetime but may occupy different
+mappings. The pool-load width is fixed by the attempt's near or far mode before
+allocation; allocation then fixes both addresses before address-dependent form
+selection and final PC-relative encoding. The emitter uses the executable code
+address for all PC calculations and writes through the code slice's writable
+view. The code cache guarantees that neither slice moves and that the pool is
+aligned to `sizeof(Value)`, separately identifiable, and writable by the moving
+collector. Detailed placement and publication policy are defined by
+[JIT Code Cache and Publication](jit-code-cache.md).
 
 A constant-pool load is a deferred PC-dependent operation even when its size is
 fixed. It stores a target register and pool offset. During the second pass its
 slot address is
 
 ```text
-allocation_base + pool_start + constant_pool_offset
+value_pool_address + constant_pool_offset
 ```
 
 and its target-specific form is selected from that fixed address and the actual
@@ -295,9 +309,11 @@ Every deferred PC-dependent operation has a pessimistic maximum-size form and,
 where the target ISA provides one, a shorter form. Initial layout assigns every
 deferred operation its maximum size. The pessimistic encoded size of one
 emission unit must not exceed the limit provided by the target deferred-
-operation type; the AArch64 limit is 128 MiB. The emitter allocates the
-pessimistic code capacity plus alignment and constant-pool storage before
-choosing forms, giving the unit and pool a stable base address.
+operation type; the AArch64 limit is 128 MiB. The emitter requests the
+pessimistic code capacity and constant-pool slots from the code cache before
+choosing forms, giving the unit and pool stable final addresses. Allocation
+failure returns a recoverable compilation-abandoned result to the JIT driver
+rather than entering the remaining passes.
 
 Finalization uses three fragment walks, with allocation between the first and
 second walks.
@@ -313,9 +329,10 @@ fragment[i].max_start = sum(fragment[j].max_size for j < i)
 
 For a fragment without a deferred operation, its deferred minimum and maximum
 sizes are zero. The final prefix end is the pessimistic code size; the sum of
-minimum sizes is a lower bound on the final code size. The emitter rejects an
-oversized unit, computes the aligned constant-pool start, and allocates both
-regions, fixing their base addresses.
+minimum sizes is a lower bound on the final code size. The emitter asserts on
+an oversized unit and requests stable code and pool slices from the code cache,
+fixing both addresses. A failed storage request ends the compilation attempt
+without publishing code.
 
 The second pass walks fragments in program order, assigns each fragment its
 actual start address from a running cursor, and selects its trailing deferred
@@ -334,12 +351,12 @@ cursor has already assigned. The selected size advances the cursor to the next
 fragment's actual start address.
 
 The third pass walks the now-final fragments and writes directly into the
-allocated destination buffer. It copies each fragment's already encoded bytes
-and encodes its selected trailing operation from the actual source and target
-addresses, then copies the owned `Value`s into the fixed pool slots. There is
-no intermediate final-layout buffer and no backpatching of forward references.
-The final code size may be smaller than its pessimistic capacity; the pool
-address does not change.
+allocated destination buffer. It copies each fragment's already encoded bytes,
+encodes its inline deferred operations at their recorded offsets, and encodes
+its selected trailing operation from the actual source and target addresses.
+It then copies the owned `Value`s into the stable pool slice. There is no
+intermediate final-layout buffer. The final code size may be smaller than its
+pessimistic capacity; the pool address does not change.
 
 Form selection is not iterated. The design deliberately accepts conservative
 long forms for internal targets in exchange for simple and deterministic
@@ -349,14 +366,11 @@ Final encoding must assert that every selected PC-dependent form still fits its
 actual final PC and displacement.
 
 After the third pass, finalization resolves fragment-relative metadata and
-returns the completed code buffer.
-
-Initial bring-up allocates ordinary writable memory and validates the resulting
-bytes without entering them. Executable-memory allocation, W^X transitions,
-instruction-cache synchronization, and executable publication are a later
-runtime milestone. That later allocator must preserve the three-pass contract:
-it supplies the stable final base address before form selection, and the buffer
-must not move after the second pass.
+returns the completed code and pool slices to the code cache for publication.
+Initial bring-up may validate writable bytes without entering them. The first
+executable tier uses private page-rounded code mappings with a one-way RW-to-RX
+transition; the later macOS tier uses packed `MAP_JIT` pages. Both preserve the
+same emitter contract and stable executable addresses.
 
 ## AArch64 conditional branches
 
@@ -393,8 +407,9 @@ is reachable from every other instruction address.
 
 ## AArch64 constant-pool loads
 
-An AArch64 `Value` constant-pool load is a trailing deferred operation with a
-four-byte minimum and eight-byte maximum. The short form is a literal load:
+The target backend begins an attempt in `NearLiteral` pool mode. It emits each
+near AArch64 `Value` constant-pool load as a fixed-size inline deferred
+operation using a literal load:
 
 ```asm
     ldr  destination, pool_slot
@@ -402,7 +417,8 @@ four-byte minimum and eight-byte maximum. The short form is a literal load:
 
 Its signed `imm19 << 2` displacement ranges from -1 MiB through +1 MiB - 4
 bytes relative to the instruction address. When that form does not fit, the
-long form uses the destination register itself to form the address:
+far-pool policy uses a fixed eight-byte inline operation and the destination
+register itself to form the address:
 
 ```asm
     adrp destination, pool_slot@PAGE
@@ -416,6 +432,20 @@ replaces the temporary address in `destination` with the loaded `Value`.
 eight-byte slot always has a valid scaled `LDR` offset within its page. Final
 layout asserts that the complete code-to-pool span satisfies the `ADRP` range;
 the 128 MiB code cap leaves ample room for the pool.
+
+Both policies fix instruction size before the load is appended to its fragment.
+The instruction bytes remain deferred only because their final PC-relative
+fields must be written in the third pass.
+
+After pessimistic sizing, a near-mode attempt requests placement satisfying the
+literal-load reachability contract. If the cache reports that near placement is
+unavailable, the JIT driver discards only that machine-emission attempt and
+re-emits deterministically in forced `FarPageRelative` mode. The far attempt
+uses the fixed eight-byte form from its first emitted pool load and requests the
+`ADRP` reachability contract. This typed retry occurs before final encoding or
+publication, and tests may force either mode or force near rejection. It is not
+an allocation failure: an actual inability to allocate the requested far
+storage abandons JIT compilation and leaves execution in the interpreter.
 
 ## AArch64 absolute jumps and calls
 
@@ -450,7 +480,7 @@ the backend has not already removed it as a fall-through transfer. Calls and
 jumps to absolute targets use the same pass-two exact-PC rule when choosing a
 PC-relative form over a target-specific indirect form.
 
-A `Value` constant-pool load is also deferred even though it has only one
+A `Value` constant-pool load is an inline deferred operation with one
 instruction size. It uses a 64-bit RIP-relative memory operand:
 
 ```asm
@@ -460,8 +490,8 @@ instruction size. It uses a 64-bit RIP-relative memory operand:
 The signed `disp32` is relative to the end of the instruction and reaches from
 -2 GiB through +2 GiB - 1 byte. The deferred operation therefore has equal
 minimum and maximum sizes but still waits until the third pass for its final
-PC-relative encoding. Final layout asserts that the complete code-to-pool span
-fits `disp32`.
+PC-relative encoding. It does not end its fragment. Final layout asserts that
+the complete code-to-pool span fits `disp32`.
 
 As on AArch64, selection is non-iterative. Some x86 branches that would fit
 only after other branches shrink remain in their near form. This is an
@@ -492,16 +522,22 @@ Emitter tests should cover:
 - actual fragment starts assigned while selecting forms in the second pass;
 - direct final-buffer encoding without forward-reference backpatching in the
   third pass;
-- a `sizeof(Value)`-aligned constant-pool base after pessimistic code capacity
-  and naturally aligned `Value` slots with stable recorded offsets;
+- separately allocated stable code and pool slices, with a
+  `sizeof(Value)`-aligned pool and naturally aligned slots at recorded offsets;
+- inline fixed-size PC-dependent operations encoded at fragment-relative
+  offsets without creating fragment boundaries;
 - all `Value` constants, including SMIs and booleans, loaded from pool slots
   rather than embedded in instruction bytes;
 - exclusion of non-`Value` literals from the pool and immediate AArch64
   materialization using no more than four move-wide instructions;
 - AArch64 literal loads at both signed displacement limits, `ADRP` plus `LDR`
-  selection outside them, and final code-to-pool page-range validation;
+  far-pool policy, and final code-to-pool page-range validation;
+- forced AArch64 near-pool emission, forced far-pool emission, and near
+  placement rejection followed by deterministic far re-emission;
 - x86-64 RIP-relative pool loads at both `disp32` limits, including deferred
   rewriting when minimum and maximum operation sizes are equal;
+- code-cache allocation failure abandoning compilation without publication,
+  leaking owned pool values, or setting Python pending-exception state;
 - simulated GC rewriting of pool slots without changing instruction bytes;
 - labels bound after encoded bytes, after a deferred operation, and
   consecutively, each resolving to the target fragment's start boundary;
@@ -531,3 +567,11 @@ The design does not yet choose:
 Those choices belong to target-emitter implementation work and must preserve
 the direct-assembler/macro-assembler split and the code-fragment layout
 invariants above.
+
+## Related documents
+
+- [JIT Code Cache and Publication](jit-code-cache.md)
+- [JIT Compiler and IR](jit-compiler-and-ir.md)
+- [JIT Control-Flow Graph](jit-control-flow-graph.md)
+- [JIT Compiler Bring-up Plan](jit-compiler-bring-up-plan.md)
+- [Decision Log](decision-log.md)

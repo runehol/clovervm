@@ -1478,6 +1478,8 @@ every recovery policy must reconstruct the same canonical interpreter state.
 ## Related Documents
 
 - [JIT Control-Flow Graph](jit-control-flow-graph.md)
+- [JIT Machine-Code Emission](jit-machine-code-emission.md)
+- [JIT Code Cache and Publication](jit-code-cache.md)
 - [JIT Compiler Bring-up Plan](jit-compiler-bring-up-plan.md)
 - [Semantic IR and Specialization](jit-semantic-ir-and-specialization.md)
 - [Function Calling Convention](function-calling-convention.md)

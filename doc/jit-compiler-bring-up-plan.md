@@ -274,13 +274,15 @@ compiler.
 
 ## Bring-up Decisions Still Required
 
-- executable-code allocation, W^X transitions, and instruction-cache
-  synchronization;
+- concrete implementation of the accepted code-cache allocation, Tier-1 W^X
+  transition, and instruction-cache synchronization design;
 - concrete managed/host transition-record layout and unwind behavior;
 - initial register allocation strategy and reserved registers;
 - the first supported opcode set and the order in which control flow, ICs, and
   calls enter the compiler;
-- code lookup, invalidation, compilation triggers, and failure policy;
+- code lookup, invalidation, compilation triggers, and failure policy beyond
+  the accepted rule that code-cache allocation failure publishes nothing and
+  continues in the interpreter;
 - validation hooks for forced exits, safepoints, and nested transitions;
 - criteria for replacing immortal generated code;
 - measurements that justify precise stack maps or the optional Semantic IR.
@@ -289,6 +291,7 @@ compiler.
 
 - [JIT Compiler and IR](jit-compiler-and-ir.md)
 - [JIT Machine-Code Emission](jit-machine-code-emission.md)
+- [JIT Code Cache and Publication](jit-code-cache.md)
 - [Semantic IR and Specialization](jit-semantic-ir-and-specialization.md)
 - [Function Calling Convention](function-calling-convention.md)
 - [Native/Managed Boundary Contracts](native-managed-boundaries.md)

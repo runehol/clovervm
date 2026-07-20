@@ -59,6 +59,7 @@ rationale that remains clear from those sources.
 | D-0007 | Separate stable embedded metadata from movable compiled constants | Accepted |
 | D-0008 | Preserve separate managed and host stacks during JIT bring-up | Accepted |
 | D-0009 | Emit machine code through conservatively shortened code fragments | Accepted |
+| D-0010 | Allocate code and GC-visible pools through a reachability-aware code cache | Accepted |
 
 ## D-0001: Compile Whole Functions Rather Than Hot Traces
 
@@ -618,11 +619,11 @@ boundary and is not parameterized by the target or deferred-operation type.
 
 Every machine-code `Value` constant resides in a naturally aligned slot in a
 separately identified GC-visible pool, including SMIs and booleans. The pool is
-aligned to `sizeof(Value)` at a fixed offset after the pessimistic code
-capacity, so code shortening cannot move it. Constant loads are trailing
-deferred operations even when their minimum and maximum sizes are equal:
-AArch64 selects a literal `LDR` or `ADRP` plus `LDR`, while x86-64 rewrites one
-RIP-relative `MOV` after its final PC is known.
+aligned to `sizeof(Value)` in a stable code-cache slice within target reach.
+Fixed-size constant loads are inline deferred operations rather than fragment
+terminators: AArch64 uses a literal `LDR` or fixed far-pool `ADRP` plus `LDR`
+policy, while x86-64 rewrites one RIP-relative `MOV` after its final PC is
+known.
 
 Non-`Value` constants are excluded from the initial pool. Target macro
 assemblers materialize them directly in instructions; on AArch64 an arbitrary
@@ -642,17 +643,16 @@ lowering constraints rather than hidden macro-assembler clobbers.
 Finalization uses three fragment walks. The first computes fragment minimum and
 maximum sizes and pessimistic start offsets, then rejects a pessimistic emission
 unit larger than the target deferred-operation type's limit. The AArch64 limit
-is 128 MiB. The emitter aligns the pool after that pessimistic code capacity and
-allocates both regions, fixing the code and pool base addresses. The second walk
-assigns actual fragment starts and selects forms in program order. Internal
-label targets use pessimistic source and target offsets, including unresolved
-forward targets; shortening between them can only reduce displacement
-magnitude. An outside-unit or constant-pool target uses its exact address and
-the actual source PC already assigned by the second-pass cursor. The third walk
-writes encoded bytes and selected trailing operations directly into the
-destination buffer without forward-reference backpatching, then populates the
-pool. Form selection is not iterated. Each target exposes a direct assembler for
-exact instructions and a macro assembler for operations that may expand.
+is 128 MiB. The emitter requests stable code and pool slices from the code cache.
+The second walk assigns actual fragment starts and selects forms in program
+order. Internal label targets use pessimistic source and target offsets,
+including unresolved forward targets; shortening between them can only reduce
+displacement magnitude. An outside-unit or constant-pool target uses its exact
+address and the actual source PC already assigned by the second-pass cursor.
+The third walk writes encoded bytes, inline fixups, and selected trailing
+operations directly into the destination buffer, then populates the pool. Form
+selection is not iterated. Each target exposes a direct assembler for exact
+instructions and a macro assembler for operations that may expand.
 
 On AArch64, the macro assembler emits linking and non-linking absolute-target
 transfers. Reachable targets use `BL` and `B`, respectively. Far targets are
@@ -702,21 +702,22 @@ few additional branches could shorten only after iteration.
   unconditional branches;
 - one compiler block may produce many code fragments without changing SSA or
   CFG structure;
+- fixed-size PC-dependent operations may use fragment-relative inline fixups;
+  only variable-size operations must terminate fragments;
 - final encoding asserts that every selected short or direct form still fits;
 - deferred operations store a caller-supplied scratch register, with AArch64
   `x16` as the macro-assembler default and a one-scratch maximum for implicit
   expansion;
-- malformed label use and oversized units assert, while allocation or final-
-  encoding failure is a hard non-recoverable failure;
+- malformed label use and oversized units assert; allocation failure abandons
+  compilation and retains interpreted execution, while final-encoding failure
+  remains a hard compiler-invariant failure;
 - outside-unit transfers require resolved absolute addresses by construction;
-- the code unit exposes final code size, pessimistic code capacity, and the
-  separate constant-pool offset and slot count; the collector may rewrite pool
-  slots without decoding instruction bytes;
+- the code unit exposes stable code and pool slices with final code size,
+  pessimistic capacity, pool base, and slot count; the collector may rewrite
+  pool slots without decoding instruction bytes;
 - non-`Value` constants use target instruction materialization rather than a
   second literal pool;
-- initial bring-up returns bytes in ordinary writable memory and does not enter
-  them; executable allocation, W^X transitions, instruction-cache
-  synchronization, and publication are later runtime work;
+- code allocation, W^X, reachability, and publication follow D-0010;
 - the capped initial design does not require intra-unit branch veneers.
 
 ### Revisit When
@@ -729,5 +730,108 @@ few additional branches could shorten only after iteration.
 ### References
 
 - `doc/jit-machine-code-emission.md`
+- `doc/jit-code-cache.md`
 - `doc/jit-compiler-and-ir.md`
 - `doc/jit-control-flow-graph.md`
+
+## D-0010: Allocate Code and GC-Visible Pools Through a Reachability-Aware Code Cache
+
+**Date:** 2026-07-20
+**Status:** Accepted
+**Scope:** JIT storage, target reachability, garbage collection, W^X, and code
+publication
+**Commitment:** Cross-subsystem runtime contract
+
+### Decision
+
+Compiled code and its GC-visible `Value` pool occupy distinct non-moving slices
+owned by one compiled code object. Code slices expose separate writable and
+executable addresses; pool slices remain writable and non-executable. The code
+cache places both slices within target PC-relative reach. A machine-emission
+attempt fixes its pool-load width before allocation; successful allocation
+fixes the addresses before address-dependent form selection and final
+PC-relative encoding.
+
+The first executable implementation gives each code unit a private page-rounded
+code mapping, emits while writable, transitions it once to read-only executable
+memory, and never reopens it. Pool pages are shared by many functions because
+their permissions remain RW/NX. The later macOS implementation packs functions
+within `MAP_JIT` pages and uses thread-local JIT write protection without
+changing emitter APIs or executable addresses.
+
+The cache prefers placement within AArch64's approximately 1 MiB literal-load
+range. A far-pool path using `ADRP` plus `LDR` remains required for units that
+cannot use near placement. Fixed-size pool loads are inline fragment fixups;
+only operations whose size remains undecided terminate fragments.
+
+An AArch64 attempt first emits in near-literal mode. A typed near-placement
+rejection discards that machine-emission attempt and retries once in forced
+far-page-relative mode before final encoding or publication. Actual code or
+pool allocation failure abandons JIT compilation, publishes nothing, sets no
+Python exception, and continues execution in the interpreter.
+
+### Context
+
+Placing a moving-GC-rewritten pool in the same page as executable code would
+require making code pages writable during collection. Giving every function a
+dedicated pool page would instead waste substantial memory. Reopening a shared
+published code page with process-wide permission changes can also remove execute
+permission while another thread is running code from that page.
+
+Separating page-protection domains while retaining bounded address placement
+lets the collector update packed pool slots safely. A stable writable view and
+executable address also permit a simple page-per-unit bring-up allocator to be
+replaced later by macOS JIT mappings without changing encoding or branch
+calculation.
+
+### Alternatives Considered
+
+- place code and pool in one contiguous mapping and transition permissions
+  during garbage collection;
+- allocate dedicated code and pool pages for every function;
+- pack functions into ordinary code pages and reopen published pages with
+  process-wide permission changes;
+- require a writable alias implementation before executable bring-up;
+- permanently decline JIT compilation for every unit outside near-pool reach.
+
+### Why Chosen
+
+Private page-rounded Tier-1 code mappings provide the simplest safe one-way W^X
+transition. Shared RW/NX pool pages avoid per-function data-page overhead.
+Reachability-aware placement preserves efficient target loads, while the
+writable-view/executable-address split contains platform publication policy
+inside the code cache. `MAP_JIT` later recovers dense code-page packing on the
+initial macOS target without exposing page mechanics to the compiler.
+
+### Consequences
+
+- code and pool slices never move while compiled code may execute;
+- the moving collector rewrites pool slots without changing code permissions;
+- Tier-1 code capacity is rounded to private pages and may waste tail space;
+- a process-wide transition never reopens a page containing published code;
+- direct outside-unit targets must remain stable for the source unit's lifetime;
+- the allocator, not the emitter, owns page size, virtual placement, writable
+  scopes, instruction-cache synchronization, and publication;
+- unusually large units need a far-pool allocation/emission path rather than an
+  unconditional permanent refusal to compile;
+- near-placement rejection causes one deterministic far-mode re-emission;
+- actual code-cache allocation failure is a recoverable compilation outcome,
+  leaving the interpreter as the executable implementation;
+- initial code is immortal until retirement, dependency tracking, and slice
+  reuse are designed.
+
+### Revisit When
+
+- measurements show Tier-1 page rounding materially limits bring-up workloads;
+- the macOS `MAP_JIT` tier is implemented and validated under concurrency;
+- another platform requires writable aliases or a different JIT publication
+  mechanism;
+- code-cache fragmentation or region exhaustion requires compaction or
+  reclamation.
+
+### References
+
+- `doc/jit-code-cache.md`
+- `doc/jit-machine-code-emission.md`
+- `doc/jit-compiler-and-ir.md`
+- `doc/jit-compiler-bring-up-plan.md`
