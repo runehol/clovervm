@@ -712,7 +712,7 @@ emission metadata in side tables. Optimizations within one IR may use an
 in-place CFG editor.
 
 Deoptimization exits must remain visible to correctness and frame-state
-analysis, but need not be ordinary successors in the normal CFG used for loops
+analysis, but need not be block successors in the CFG used for loops
 and dominance. An ordered guard may own an explicit non-returning side exit and
 Snapshot operand while successful execution falls through.
 
@@ -752,7 +752,7 @@ Verification at pass boundaries should require:
   and produce the interpreter representation required by its destination;
 - every sunk boxing action to have no remaining normal use, and every logical
   alias of its result within one Snapshot to share one recovery-local box;
-- every normal edge to supply exactly one argument of the required kind and
+- every block edge to supply exactly one argument of the required kind and
   representation for each destination block parameter;
 - every edge argument definition to dominate that edge;
 - every block parameter to be owned by exactly one reachable block;
@@ -1463,6 +1463,7 @@ every recovery policy must reconstruct the same canonical interpreter state.
 
 ## Related Documents
 
+- [JIT Control-Flow Graph](jit-control-flow-graph.md)
 - [JIT Compiler Bring-up Plan](jit-compiler-bring-up-plan.md)
 - [Semantic IR and Specialization](jit-semantic-ir-and-specialization.md)
 - [Function Calling Convention](function-calling-convention.md)

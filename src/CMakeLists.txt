@@ -84,8 +84,12 @@ add_library(libclovervm_objects OBJECT
     builtin_types/intern_store.h
     import_system/import_system.cpp
     import_system/import_system.h
+    jit/cfg_verifier.cpp
+    jit/cfg_verifier.h
     jit/compilation_arena.h
-    jit/core_ir.h
+    jit/control_flow_graph.cpp
+    jit/control_flow_graph.h
+    jit/instruction.h
     jit/object_pool.h
     jit/serial.h
     runtime/interpreter.cpp

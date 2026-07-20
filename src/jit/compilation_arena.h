@@ -1,7 +1,8 @@
 #ifndef CL_JIT_COMPILATION_ARENA_H
 #define CL_JIT_COMPILATION_ARENA_H
 
-#include "jit/core_ir.h"
+#include "jit/control_flow_graph.h"
+#include "jit/instruction.h"
 #include "jit/object_pool.h"
 
 #include <type_traits>
@@ -19,22 +20,28 @@ namespace cl::jit
         CompilationArena(CompilationArena &&) = delete;
         CompilationArena &operator=(CompilationArena &&) = delete;
 
-        template <typename... Args> CoreBlock *make_core_block(Args &&...args)
+        template <typename... Args> Block *make_block(Args &&...args)
         {
-            return core_blocks_.make(std::forward<Args>(args)...);
+            return blocks_.make(std::forward<Args>(args)...);
         }
 
-        template <typename Instruction, typename... Args>
-        Instruction *make_core_instruction(Args &&...args)
+        template <typename... Args> BlockEdge *make_block_edge(Args &&...args)
         {
-            static_assert(std::is_base_of_v<CoreInstruction, Instruction>);
-            return core_instructions_.make<Instruction>(
+            return block_edges_.make(std::forward<Args>(args)...);
+        }
+
+        template <typename InstructionType, typename... Args>
+        InstructionType *make_instruction(Args &&...args)
+        {
+            static_assert(std::is_base_of_v<Instruction, InstructionType>);
+            return instructions_.make<InstructionType>(
                 std::forward<Args>(args)...);
         }
 
     private:
-        ObjectPool<CoreBlock> core_blocks_;
-        PolymorphicObjectPool<CoreInstruction> core_instructions_;
+        ObjectPool<Block> blocks_;
+        ObjectPool<BlockEdge> block_edges_;
+        PolymorphicObjectPool<Instruction> instructions_;
     };
 
 }  // namespace cl::jit

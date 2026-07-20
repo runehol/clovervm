@@ -27,11 +27,11 @@ namespace cl::jit
             int value_;
         };
 
-        class TestInstruction final : public CoreInstruction
+        class TestInstruction final : public Instruction
         {
         public:
             TestInstruction(Serial serial, int value, bool *destroyed)
-                : CoreInstruction(serial), value_(value), destroyed_(destroyed)
+                : Instruction(serial), value_(value), destroyed_(destroyed)
             {
             }
 
@@ -44,11 +44,10 @@ namespace cl::jit
             bool *destroyed_;
         };
 
-        class OtherTestInstruction final : public CoreInstruction
+        class OtherTestInstruction final : public Instruction
         {
         public:
-            explicit OtherTestInstruction(Serial serial)
-                : CoreInstruction(serial)
+            explicit OtherTestInstruction(Serial serial) : Instruction(serial)
             {
             }
         };
@@ -75,12 +74,12 @@ namespace cl::jit
     {
         bool destroyed = false;
         CompilationArena arena;
-        CoreBlock *first_block = arena.make_core_block();
-        CoreBlock *second_block = arena.make_core_block();
+        Block *first_block = arena.make_block();
+        Block *second_block = arena.make_block();
         TestInstruction *first_instruction =
-            arena.make_core_instruction<TestInstruction>(42, &destroyed);
+            arena.make_instruction<TestInstruction>(42, &destroyed);
         OtherTestInstruction *second_instruction =
-            arena.make_core_instruction<OtherTestInstruction>();
+            arena.make_instruction<OtherTestInstruction>();
 
         EXPECT_EQ(0u, first_block->serial().value());
         EXPECT_EQ(1u, second_block->serial().value());
@@ -95,7 +94,7 @@ namespace cl::jit
         bool destroyed = false;
         {
             CompilationArena arena;
-            arena.make_core_instruction<TestInstruction>(7, &destroyed);
+            arena.make_instruction<TestInstruction>(7, &destroyed);
             EXPECT_FALSE(destroyed);
         }
         EXPECT_TRUE(destroyed);
