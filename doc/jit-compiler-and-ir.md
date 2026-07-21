@@ -389,6 +389,26 @@ a general call, a callee-safe call, a native leaf call, or a call only on a
 slow path. It is backend analysis data rather than part of the immutable common
 IR operation.
 
+Core may carry constant-capable `ProgramValue` operands where an embedded
+constant has the same semantics as a separately materialized value. This is not
+a promise that every target can encode that constant at that instruction. Each
+backend runs a target-specific constant operand legalization pass after
+instruction selection has enough context and before register allocation. The
+pass decides per instruction kind, operand position, representation, constant
+value, and GC class whether the constant has the shape required by the selected
+encoding. For example, a target may accept one set of immediates for integer
+addition and a different set for logical OR, while a tagged `Value` whose bits
+identify a managed pointer must be loaded from a traced constant-pool slot
+rather than embedded as a raw immediate. Unsupported constants are materialized
+by inserting a program-value-producing instruction such as `Mov` with an
+embedded constant operand, using the target's chosen constant materialization
+sequence, and the consuming operand is rewritten to that value. Core has no
+constant-producing `ResultClass`: a constant exists only as embedded operand
+payload until an instruction produces a normal `ProgramValue` from it. This
+keeps immediate shape rules, thresholds, GC relocation requirements, and
+operand-encoding quirks out of Core IR while giving backends a uniform way to
+select immediate forms when they are legal.
+
 The Core `ValueRepresentation` of a `ProgramValueRef` determines the compatible
 target register and spill classes. The backend maps target-independent
 representations to its own classes, for example:
@@ -415,16 +435,17 @@ cross-instruction machine optimization that these tables become an implicit
 instruction graph, that is evidence for introducing an explicit Machine IR at
 the required scope.
 
-The register allocator and location tables accept only `ProgramValueRef`s.
-Instructions with `ResultClass::None` and compiler-only `SnapshotRef`s receive
-no location, although the program-value operands named by a Snapshot remain
-point uses for liveness and recovery. Every live `ProgramValueRef` has one
-authoritative allocated location at a particular machine-code position. Live
-range splitting may move it between locations over time; synchronized canonical
-homes and temporary machine copies do not become additional allocator-owned
-locations for the same SSA value. A move over a split live range remains within
-the representation's compatible register or spill class; changing class
-requires an explicit representation-conversion instruction.
+After constant operand legalization, the register allocator and location tables
+accept only `ProgramValueRef`s or constants proven encodable in that exact
+lowering. Instructions with `ResultClass::None` and compiler-only `SnapshotRef`s
+receive no location, although the program-value operands named by a Snapshot
+remain point uses for liveness and recovery. Every live `ProgramValueRef` has
+one authoritative allocated location at a particular machine-code position.
+Live range splitting may move it between locations over time; synchronized
+canonical homes and temporary machine copies do not become additional
+allocator-owned locations for the same SSA value. A move over a split live range
+remains within the representation's compatible register or spill class;
+changing class requires an explicit representation-conversion instruction.
 
 This choice belongs to each target backend; the common compiler does not
 require all targets to pay for another graph construction and traversal.
@@ -666,12 +687,17 @@ ResultClass::Snapshot
 Operand slots use a separate `OperandClass` enum. `OperandClass::ProgramValue`
 and `OperandClass::Snapshot` intentionally have the same numeric values as their
 matching `ResultClass` cases, so validation can compare result-consuming
-operands without a mapping switch. Non-dataflow payload such as `BlockEdge`,
-`Shape`, `ShapeKey`, `ValidityCell`, `ConstantValue`, immediates, bytecode
-origins, and interpreter return PCs are instruction attributes rather than
-operands. The instruction schema records the result class, the class and layout
-of every fixed or variable operand, and the class and layout of every attribute
-as defined in [JIT Instruction Representation](jit-instruction-representation.md).
+operands without a mapping switch. A Core `ProgramValue` operand may be
+declared constant-capable, allowing the slot to contain either a
+`ProgramValueRef` or an embedded constant payload accepted by the same
+representation constraint. The initial embedded constant payload is
+`ConstantValue` for tagged VM values. Non-dataflow payload such as `BlockEdge`,
+`Shape`, `ShapeKey`, `ValidityCell`, immediates, bytecode origins, and
+interpreter return PCs are instruction attributes rather than operands. The
+instruction schema records the result class, the class and layout of every fixed
+or variable operand, which program-value operands allow constants, and the class
+and layout of every attribute as defined in
+[JIT Instruction Representation](jit-instruction-representation.md).
 
 The instruction pointer also names its result when it has one. Typed result
 references may be zero-overhead pointer views:
@@ -749,11 +775,11 @@ may use deferred publication recipes or a safepoint-safe allocation boundary,
 but every created object must enter the compilation pin set before IR can
 reference it, and any semantic validity dependencies must be recorded.
 
-Successful code publication copies required values into the `JitCodeObject`'s
-traced constant pool before releasing compilation pins. Failed compilation
-releases the scoped pins with the rest of the compilation session. The pin set
-also leaves open a future phase-boundary safepoint scheme in which verification
-first proves that every direct managed reference is pinned.
+Successful code publication copies required managed pointer constants into the
+`JitCodeObject`'s traced constant pool before releasing compilation pins. Failed
+compilation releases the scoped pins with the rest of the compilation session.
+The pin set also leaves open a future phase-boundary safepoint scheme in which
+verification first proves that every direct managed reference is pinned.
 
 ### Mostly immutable instructions, mutable graphs, and analysis state
 
@@ -762,10 +788,10 @@ guard obligations, partition IDs, payload shape, and attributes are fixed when
 the instruction is constructed. A transformation changes any of these semantic
 properties by constructing a replacement instruction with a new serial.
 Program-value and Snapshot operand slots are mutable only through the structural
-IR editor, so ordinary result-use rewriting does not require cascading
-replacement of every transitive user. Block edges, runtime metadata, constants,
-immediates, and return PCs embedded in an instruction remain immutable
-attributes; changing them requires instruction replacement.
+IR editor, so ordinary result-use rewriting and constant-operand materialization
+do not require cascading replacement of every transitive user. Block edges,
+runtime metadata, immediates, and return PCs embedded in an instruction remain
+immutable attributes; changing them requires instruction replacement.
 
 Graph structure remains mutable. Block parameter and instruction lists,
 predecessor and successor sets, edge argument lists, placement, definition
@@ -882,8 +908,10 @@ Passes must not mutate instructions or graph structures directly.
 Verification at pass boundaries should require:
 
 - every fixed and variable operand slot to match the `OperandClass` and layout
-  declared for its instruction kind, and every attribute slot to match its
-  declared `AttributeClass` and layout;
+  declared for its instruction kind, every embedded constant to appear only in a
+  constant-capable `ProgramValue` operand with the declared representation
+  constraint, and every attribute slot to match its declared `AttributeClass`
+  and layout;
 - every result reference to match its producer's intrinsic `ResultClass`, and no
   result reference to be formed from a value-less
   instruction;
@@ -1246,23 +1274,25 @@ machine instructions, but every such pointer must also appear in the owning
 compiled code object's stable-metadata array so the GC can keep the pool entry
 alive and trace any managed references reachable through it.
 
-Every Python `Value` constant, including SMIs, booleans, and other self-
-contained immediate values, resides in the compiled code unit's constant pool.
-The pool is a separate stable-addressed array of naturally aligned, GC-rewritten
-`Value` slots residing with the machine code. Machine code never embeds a
-`Value` directly; it loads the corresponding slot through a PC-relative
-reference. The slot address remains fixed relative to the code while collection
-may rewrite its contents. This backend representation does not require Core IR
-to use pool handles: IR embeds the `Value` directly while its heap referent is
-covered by the compilation pin set, and emission assigns the final pool index.
+Every Python `Value` constant whose bits identify a managed pointer resides in
+the compiled code unit's constant pool. The pool is a separate stable-addressed
+array of naturally aligned, GC-rewritten `Value` slots residing with the machine
+code. Machine code never embeds a pointer-valued `Value` directly; it loads the
+corresponding slot through a PC-relative reference. The slot address remains
+fixed relative to the code while collection may rewrite its contents. Immediate
+non-pointer `Value` bit patterns, such as SMIs and singleton immediates, may be
+embedded directly only when the target instruction accepts that immediate shape.
+This backend representation does not require Core IR to use pool handles: IR
+embeds the `Value` directly while its heap referent is covered by the
+compilation pin set, and emission assigns any required final pool index.
 
 Code generation records both reference classes during emission. Verification
 rejects a directly embedded Shape or ValidityCell pointer missing from the
-stable-metadata array, any `Value` embedded as an instruction immediate, or a
-constant use without a corresponding traced pool slot. This keeps ordinary
-moving collection out of instruction rewriting; backend relocation metadata
-remains for code targets and native symbols rather than managed object
-movement.
+stable-metadata array, any pointer-valued `Value` embedded as an instruction
+immediate, or any pointer-valued constant use without a corresponding traced
+pool slot. This keeps ordinary moving collection out of instruction rewriting;
+backend relocation metadata remains for code targets and native symbols rather
+than managed object movement.
 
 A non-GC `JitCodeObject` owns the stable code-cache allocation, final entry
 address, and precisely sized `Value` pool. A `CodeObject` may publish a nullable
