@@ -433,6 +433,11 @@ dependencies, while effect annotations constrain movement. List order does not
 create false dependencies between independent pure operations; it records their
 chosen placement until a pass deliberately moves them.
 
+Frame publication for deoptimization is not a Core IR side effect. Core IR
+records the Snapshot and the point that may exit; target-specific side-exit code
+materializes the interpreter frame state later from the Snapshot, allocated
+locations, and canonical-home state.
+
 This representation fits clovervm because:
 
 - guards have bytecode locations and explicit Snapshot bailout operands;
@@ -584,6 +589,11 @@ the same logical state. A pre-effect and post-commit continuation require
 different Snapshots. Snapshots are anchored to their exits rather than freely
 scheduled: moving a check is legal only when every operand remains available
 and replay from the retained state remains correct.
+
+Core motion is constrained by Snapshot availability, effect ordering, and replay
+semantics, not by a synthetic frame-publication instruction. The backend owns the
+register shuffling, scratch use, and canonical-frame writes required by the taken
+side exit.
 
 A Snapshot may capture a recovery-only action such as boxing an unboxed float.
 The action produces a recovery-local value that several logical homes may share,
@@ -1285,7 +1295,11 @@ code policy is specified by the bring-up plan.
 Each Core IR failure retains an explicit non-returning exit consuming a
 `SnapshotRef` until the backend has determined the location of every value
 needed for recovery. A backend may carry the exit through Machine IR or consume
-it directly from Core IR. Post-allocation exit expansion combines three
+it directly from Core IR. Side-exit frame publication is target-specific backend
+work, not an effectful Core instruction. The emitter may generate the main path
+first, attach labels and Snapshot state for side exits, and emit the recovery
+tails at the end of the code unit using architecture-specific register juggling
+and scratch-state conventions. Post-allocation exit expansion combines three
 inputs:
 
 ```text
