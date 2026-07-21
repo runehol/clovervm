@@ -534,15 +534,17 @@ ConditionalBranch
     false_edge: BlockEdge
 ```
 
-`AnyRepresentation` is an input constraint in the schema, not a member of
+`AnyRepresentation` is a narrow input constraint in the schema, not a member of
 `ValueRepresentation` and never an instruction result. Snapshot's
-`captured_values` array is the only slot allowed to use it. The generated
-Snapshot accessor returns erased `ProgramValueRef`s, and side-exit frame-sync
-generation inspects each producer's concrete representation: tagged values are
-stored directly, while a captured `F64` is boxed before being written to
-the interpreter frame. Adding another representation therefore requires an
-exhaustive frame-materialization case. No arithmetic, call, forwarding,
-parameter, or other Core instruction may accept an erased representation.
+`captured_values` array is the only slot allowed to use it because a Snapshot
+records logical recovery operands, not normal Core dataflow for one machine
+representation. The generated Snapshot accessor returns erased
+`ProgramValueRef`s, and side-exit frame-sync generation inspects each producer's
+concrete representation: tagged values are stored directly, while a captured
+`F64` is boxed before being written to the interpreter frame. Adding another
+representation therefore requires an exhaustive frame-materialization case. No
+arithmetic, call, forwarding, parameter, or other Core instruction may accept an
+erased representation.
 
 Generated factory methods and typed accessors expose fixed constraints in their
 C++ signatures:
@@ -834,17 +836,20 @@ another allowed IR level, stores the effects it has proven absent from operand
 facts, resolved targets, and other evidence:
 
 ```text
+MustEffects(kind) subset-of MayEffects(kind)
 ProvenAbsentEffects(instruction) subset-of MayEffects(kind)
 ProvenAbsentEffects(instruction) intersection MustEffects(kind) == empty
 EffectiveEffects(instruction) =
     MayEffects(kind) - ProvenAbsentEffects(instruction)
 ```
 
-Any effect analysis that exists must assert those constraints. Proving absent
-an effect outside `MayEffects` means the analysis is recording irrelevant or
-misclassified information; proving absent a `MustEffects` bit means the
-instruction kind metadata or analysis is wrong. Neither case is a recoverable
-compilation failure.
+The schema must assert the bound relationship for every instruction kind. Any
+effect analysis that exists must assert the `ProvenAbsentEffects` constraints.
+A `MustEffects` bit outside `MayEffects` makes the kind metadata contradictory.
+Proving absent an effect outside `MayEffects` means the analysis is recording
+irrelevant or misclassified information; proving absent a `MustEffects` bit
+means the instruction kind metadata or analysis is wrong. None of these cases is
+a recoverable compilation failure.
 
 A pass with a current, generation-checked effect-analysis view receives the
 per-instruction `ProvenAbsentEffects` and derives `EffectiveEffects` with the
