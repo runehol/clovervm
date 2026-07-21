@@ -12,7 +12,7 @@ namespace cl::jit
 {
     namespace
     {
-        thread_local bool jit_write_active = false;
+        thread_local size_t jit_write_depth = 0;
 
         constexpr size_t align_down(size_t value, size_t alignment)
         {
@@ -24,7 +24,8 @@ namespace cl::jit
         public:
             MapJitCodeSlab(void *base, size_t size, size_t page_size)
                 : base_(static_cast<uint8_t *>(base)), size_(size),
-                  page_size_(page_size), pool_page_frontier_(size)
+                  page_size_(page_size), jit_page_frontier_(size),
+                  pool_page_frontier_(size)
             {
                 assert(base != nullptr);
                 assert(size != 0);
@@ -75,25 +76,30 @@ namespace cl::jit
                     align_down(pool_offset, page_size_);
                 assert(code_offset + code_size <= new_pool_page_frontier);
                 assert(pool_offset + pool_size <= size_);
-                assert(new_pool_page_frontier <= pool_page_frontier_);
+                assert(new_pool_page_frontier <= jit_page_frontier_);
 
-                if(new_pool_page_frontier == pool_page_frontier_)
+                if(new_pool_page_frontier < jit_page_frontier_)
+                {
+                    uint8_t *begin = base_ + new_pool_page_frontier;
+                    size_t size = jit_page_frontier_ - new_pool_page_frontier;
+                    if(munmap(begin, size) != 0)
+                    {
+                        return Result<void, JitCodeError>::error(
+                            JitCodeError::AllocationFailure);
+                    }
+
+                    // These MAP_JIT pages no longer exist, regardless of
+                    // whether installing their RW replacements succeeds.
+                    jit_page_frontier_ = new_pool_page_frontier;
+                }
+
+                if(jit_page_frontier_ == pool_page_frontier_)
                 {
                     return Result<void, JitCodeError>::ok();
                 }
 
-                uint8_t *begin = base_ + new_pool_page_frontier;
-                size_t size = pool_page_frontier_ - new_pool_page_frontier;
-                if(munmap(begin, size) != 0)
-                {
-                    return Result<void, JitCodeError>::error(
-                        JitCodeError::AllocationFailure);
-                }
-
-                // These MAP_JIT pages no longer exist. Never try to reuse them,
-                // even if installing the replacement mapping fails.
-                pool_page_frontier_ = new_pool_page_frontier;
-
+                uint8_t *begin = base_ + jit_page_frontier_;
+                size_t size = pool_page_frontier_ - jit_page_frontier_;
                 void *mapping = mmap(begin, size, PROT_READ | PROT_WRITE,
                                      MAP_PRIVATE | MAP_ANON | MAP_FIXED, -1, 0);
                 if(mapping == MAP_FAILED)
@@ -102,29 +108,34 @@ namespace cl::jit
                         JitCodeError::AllocationFailure);
                 }
                 assert(mapping == begin);
+                pool_page_frontier_ = jit_page_frontier_;
                 return Result<void, JitCodeError>::ok();
             }
 
             void begin_code_write() override
             {
-                assert(!jit_write_active);
-                pthread_jit_write_protect_np(false);
-                jit_write_active = true;
+                if(jit_write_depth == 0)
+                {
+                    pthread_jit_write_protect_np(false);
+                }
+                ++jit_write_depth;
             }
 
             void end_code_write() override
             {
-                assert(jit_write_active);
-                jit_write_active = false;
-                pthread_jit_write_protect_np(true);
+                assert(jit_write_depth != 0);
+                --jit_write_depth;
+                if(jit_write_depth == 0)
+                {
+                    pthread_jit_write_protect_np(true);
+                }
             }
 
             Result<void, JitCodeError> publish(size_t offset,
                                                size_t encoded_size,
                                                size_t protected_size) override
             {
-                assert(!jit_write_active);
-                assert(offset + protected_size <= pool_page_frontier_);
+                assert(offset + protected_size <= jit_page_frontier_);
                 char *begin = reinterpret_cast<char *>(base_ + offset);
                 __builtin___clear_cache(begin, begin + encoded_size);
                 return Result<void, JitCodeError>::ok();
@@ -134,6 +145,7 @@ namespace cl::jit
             uint8_t *base_;
             size_t size_;
             size_t page_size_;
+            size_t jit_page_frontier_;
             size_t pool_page_frontier_;
         };
     }  // namespace

@@ -84,4 +84,40 @@ namespace cl::jit
         EXPECT_EQ(0, munmap(mapping, page_size));
         EXPECT_EQ(0, munmap(pool, page_size));
     }
+
+    TEST(MapJit, KeepsWritesEnabledUntilAllAllocationsEnd)
+    {
+        if(!pthread_jit_write_protect_supported_np())
+        {
+            GTEST_SKIP() << "per-thread JIT write protection is unavailable";
+        }
+
+        CodeCache cache;
+        Result<CodeAllocationProposal, JitCodeError> first_proposal_result =
+            cache.propose(4, 0);
+        ASSERT_TRUE(first_proposal_result);
+        CodeAllocationProposal first_proposal =
+            std::move(first_proposal_result).value();
+        Result<CodeAllocation, JitCodeError> first_result =
+            first_proposal.commit(4);
+        ASSERT_TRUE(first_result);
+        CodeAllocation first = std::move(first_result).value();
+
+        Result<CodeAllocationProposal, JitCodeError> second_proposal_result =
+            cache.propose(4, 0);
+        ASSERT_TRUE(second_proposal_result);
+        CodeAllocationProposal second_proposal =
+            std::move(second_proposal_result).value();
+        Result<CodeAllocation, JitCodeError> second_result =
+            second_proposal.commit(4);
+        ASSERT_TRUE(second_result);
+        CodeAllocation second = std::move(second_result).value();
+
+        *static_cast<uint32_t *>(first.write_pointer()) = 0xd65f03c0;
+        *static_cast<uint32_t *>(second.write_pointer()) = 0xd65f03c0;
+        ASSERT_TRUE(cache.publish(std::move(first)));
+
+        *static_cast<uint32_t *>(second.write_pointer()) = 0xd65f03c0;
+        ASSERT_TRUE(cache.publish(std::move(second)));
+    }
 }  // namespace cl::jit

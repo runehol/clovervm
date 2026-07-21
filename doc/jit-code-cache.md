@@ -368,6 +368,12 @@ thread enters a scoped writable state owned by its unpublished
 Other threads may continue executing already published functions in the same
 packed pages.
 
+Writable scopes are counted per thread because the platform switch covers all
+`MAP_JIT` mappings at once. The first live allocation disables write
+protection, and the last publication or abandonment restores it. Ending one
+allocation cannot revoke writes from another allocation still live on the same
+thread.
+
 This tier suballocates functions at 16-byte granularity within one code page.
 It must not use
 process-wide page-permission changes to reopen a page that another thread may
@@ -377,10 +383,13 @@ Each new slab initially consists entirely of `MAP_JIT` pages. When the pool
 frontier first enters a page, commit removes the unused `MAP_JIT` mapping for
 that page and installs an ordinary writable, non-executable mapping at the same
 virtual address. No contents need preservation because the page was not yet
-allocated. Converted pages remain pool pages permanently and are not affected
-by thread-local code-write scopes. If either unmapping or replacement fails,
-commit reports `AllocationFailure` and the corresponding code and pool ranges
-remain consumed; it does not attempt a fallible rollback.
+allocated. The backend separately tracks the lower edge of the remaining
+`MAP_JIT` pages and the lower edge of successfully mapped RW pool pages. If RW
+replacement fails, the interval between them records the unmapped hole and a
+later pool commit retries mapping the complete hole before returning a writable
+pool slice. Converted pages remain pool pages permanently and are not affected
+by thread-local code-write scopes. A failed commit still consumes its requested
+code and pool ranges; it does not attempt a fallible rollback.
 
 The platform backend is selected by `CodeCache`'s default constructor. It uses
 this `MAP_JIT` backend on macOS AArch64 when per-thread JIT write protection is
