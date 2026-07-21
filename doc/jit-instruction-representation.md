@@ -387,30 +387,45 @@ rewrites and to validate their completed structure, not to roll back allocation
 failure. On the successful path, an edit must leave the published graph valid.
 On resource failure, the enclosing compilation is discarded.
 
-### Managed Constant Pins
+### Managed Constant Slots and Pins
 
 Instructions and arena-owned side data embed `InlineValueConstant` payload
-directly as `Value`; they do not indirect through compilation constant-pool
-handles. An `InlineValueConstant` may contain only a bit pattern that is not a
-managed pointer. Managed pointer constants are represented by pool-load
-materialization, not inline constant operands. The instruction factory
-therefore needs access to the compilation session for managed pointer constants
-only when constructing the traced-pool materialization path.
+directly as `Value`. An `InlineValueConstant` may contain only a bit pattern
+that is not a managed pointer. Managed pointer constants are interned in a
+compilation-session constant table and represented in IR only by a typed
+`ConstantPoolSlot`; no instruction or Snapshot payload contains the raw managed
+`Value`.
+
+Interning assigns a stable dense slot in deterministic insertion order and
+deduplicates identical managed values by object identity, never by invoking
+Python equality. The slot remains valid for the compilation lifetime and
+becomes the same indexed slot in the published `JitCodeObject` pool.
+`LoadConstantPoolValue` uses the slot as an attribute when ordinary Core
+dataflow needs the constant as a `ProgramValue`. Snapshot recovery may consume
+the slot directly without first manufacturing an SSA result.
 
 A compilation pin is a strong root as well as a relocation prohibition. It
 keeps the object alive and prevents its address from changing; a mere
 `do-not-move` bit that still permits reclamation would be insufficient.
-`InlineValueConstant`s require no pin. Pins are normally destroyed session
-state, not fields in arena objects, and are released together when the
-compilation session ends. Detaching an instruction need not remove its
-individual pin; retaining a deduplicated pin until the short compilation
-finishes keeps editor cleanup simple.
+`InlineValueConstant`s require no pin. Each occupied `ConstantPoolSlot` owns or
+names one deduplicated session pin. Pins are normally destroyed session state,
+not fields in arena objects, and are released together when the compilation
+session ends. Detaching an instruction need not remove its individual slot or
+pin; retaining both until the short compilation finishes keeps editor cleanup
+simple and preserves slot identities.
 
-On successful publication, every managed constant needed by generated code is
-copied into the `JitCodeObject`'s traced constant pool before compilation pins
-are released. Machine code refers to that pool rather than embedding a managed
-`Value`. On failure, the compilation session releases its pins and arena while
-the interpreter continues.
+On successful publication, the frozen session constant table is copied into the
+same-indexed `JitCodeObject` traced pool before compilation pins are released.
+Machine code and recovery metadata refer to those slots rather than embedding a
+managed `Value`. On failure, the compilation session releases its pins and
+arena while the interpreter continues.
+
+This mandatory table does not prohibit a backend from placing an
+`InlineValueConstant` in the final `Value` pool when a pool load is more
+profitable than synthesizing its bits. Such an entry is optional backend data,
+requires no compilation pin, and is not exposed to Core as a
+`ConstantPoolSlot`. Backend preparation appends any such entries after the
+stable managed-constant slots and freezes the complete layout before emission.
 
 The initial no-safepoint policy, prohibition on managed allocation during
 compilation, deferred managed-object constant folding, and possible future
@@ -568,8 +583,9 @@ ParameterF64
 
 Snapshot
     result: Snapshot
-    captured_values[]: ProgramValue(AnyRepresentation)
-                     or const InlineValueConstant(TaggedValue)
+    captured_values[]: snapshot operand ProgramValue(AnyRepresentation)
+                     or snapshot const InlineValueConstant(TaggedValue)
+                     or snapshot attr ConstantPoolSlot
 
 ConditionalBranch
     result: None
@@ -578,18 +594,25 @@ ConditionalBranch
     false_edge: attr BlockEdge
 ```
 
-`AnyRepresentation` is a narrow operand constraint in the schema, not a member of
-`ValueRepresentation` and never an instruction result. Snapshot's
+`AnyRepresentation` is a narrow operand constraint in the schema, not a member
+of `ValueRepresentation` and never an instruction result. Snapshot's
 `captured_values` array is the only slot allowed to use it because a Snapshot
-records logical recovery operands rather than normal Core dataflow for one
-machine representation. The generated Snapshot accessor returns erased
-`ProgramValueRef`s plus any captured `InlineValueConstant`s. Side-exit
-frame-sync generation inspects each captured item: tagged program values are
-stored directly, captured inline constants are materialized on the side-exit
-path, and captured `F64` values are boxed before being written to the
-interpreter frame. Adding another representation therefore requires an
-exhaustive frame-materialization case. No arithmetic, call, forwarding,
-parameter, or other Core instruction may accept an erased representation.
+records logical recovery values rather than normal Core dataflow for one
+machine representation. Its schema describes a discriminated `SnapshotValue`
+whose alternatives are a program-value operand, a non-pointer inline constant,
+or a traced constant-pool-slot attribute. This is a Snapshot-specific payload
+shape, not another general operand or attribute class.
+
+Generated generic traversal reports a `ProgramValueRef` alternative as an
+operand use, reports a `ConstantPoolSlot` alternative to attribute traversal,
+and reports an `InlineValueConstant` as a producer-less constant alternative.
+The generated Snapshot accessor preserves the same distinction. Side-exit
+frame-sync generation stores tagged program values directly, emits inline
+constants directly, loads managed constants from their traced pool slots, and
+boxes captured `F64` values before writing them to the interpreter frame.
+Adding another alternative or representation therefore requires an exhaustive
+frame-materialization case. No arithmetic, call, forwarding, parameter, or
+other Core instruction may accept an erased representation.
 
 Constant-capable `ProgramValue` operands are still semantically Core operands,
 not backend-selected machine immediates. The schema permits them only where an
@@ -602,13 +625,15 @@ and constant-legalization phase. If the selected lowering cannot encode it for
 that instruction kind, operand position, representation, and constant shape,
 backend preparation materializes the constant and rewrites the consumer to use
 the new `ProgramValueRef`. Inline materialization uses `SynthesizeImmediate`,
-whose lowering may emit one or more target move-immediate instructions. Managed
-pointer materialization uses `LoadConstantPoolValue`, whose lowering loads from
-a traced pool slot so collection can rewrite the reference. The phase also
-selects lowerings and `LocationSummary` records for inserted materializers and
-rewritten consumers before liveness and register allocation run. Immediate
-shape rules, such as target-specific arithmetic and logical-immediate
-encodings, remain backend policy rather than Core IR legality.
+whose lowering may emit one or more target move-immediate instructions or load
+an optional backend-created non-pointer `Value` pool entry. Managed pointer
+materialization uses `LoadConstantPoolValue`, whose lowering must load from its
+traced `ConstantPoolSlot` so collection can rewrite the reference. The phase
+also selects lowerings and `LocationSummary` records for inserted materializers
+and rewritten consumers before liveness and register allocation run. Immediate
+shape and profitability rules, such as target-specific arithmetic and
+logical-immediate encodings or the cost of a pool load, remain backend policy
+rather than Core IR legality.
 
 Generated factory methods and typed accessors expose fixed constraints in their
 C++ signatures:
@@ -702,10 +727,12 @@ representation-changing edge to be an explicit conversion instruction. An
 embedded inline constant is legal only in a `ProgramValue` operand slot whose
 schema permits constants. Verification rejects `AnyRepresentation` on every
 result and on every operand other than `Snapshot.captured_values`. Snapshot
-capture may contain heterogeneous program values and `InlineValueConstant`s,
-but recovery planning must interpret each captured item using its producer's
-concrete representation or inline-constant payload and provide an exhaustive
-frame-materialization operation for that case.
+capture may contain heterogeneous program values, `InlineValueConstant`s, and
+`ConstantPoolSlot`s. Every pool slot must belong to the compilation session's
+frozen constant table. Recovery planning must interpret each captured item
+using its producer's concrete representation, inline-constant payload, or
+traced pool entry and provide an exhaustive frame-materialization operation for
+that case.
 
 Each concrete instruction form is a small read-only view holding a
 `const Instruction *`. It is not derived from `Instruction`, is not separately
@@ -784,12 +811,13 @@ removed the instruction's own operand occurrences from any active
 mutation-aware `UseIndex`, invalidated or removed active metadata entries, and
 unlinked the instruction from its block. The edit plan must establish the
 absence of incoming uses through a current `UseIndex` or a complete generic
-operand scan. The editor then neutralizes managed constant slots by replacing them
-with a safe immediate value; the compilation pin set may retain their former
-referents until the session ends. It may debug-poison the remaining payload
-storage and publish the detached tag last. An editor transaction is not
-observable by ordinary passes in an intermediate state. Poisoned storage is
-never republished or returned to a live kind.
+operand scan. Instruction storage contains no raw managed constant that needs
+individual neutralization; a detached `ConstantPoolSlot` is only an inert index,
+and the compilation session may retain its table entry and pin until the
+session ends. The editor may debug-poison the remaining payload storage and
+publish the detached tag last. An editor transaction is not observable by
+ordinary passes in an intermediate state. Poisoned storage is never republished
+or returned to a live kind.
 
 The serial is deliberately preserved for diagnostics. Any detached instruction
 encountered by verification, generic traversal, typed conversion, a result

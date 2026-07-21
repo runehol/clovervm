@@ -352,8 +352,9 @@ to many code units.
 
 Code or pool allocation failure is a recoverable JIT outcome even during
 bring-up. A failed proposal has not advanced either slab frontier; the compiler
-releases its temporary emitter state and owned pool values, no entry point is
-installed, and the triggering execution continues in the interpreter. Once a
+releases its temporary emitter state and compilation-session constant pins, no
+entry point is installed, and the triggering execution continues in the
+interpreter. Once a
 proposal is committed its space remains consumed even if publication later
 fails. This is distinct from near-placement rejection, which requests the
 single far-mode re-emission, and from malformed encoding or failed final
@@ -427,10 +428,13 @@ delete the installed object.
 GC integration is not implemented yet. It must trace and rewrite every cache-
 retained object's recorded pool slots, including code whose original
 `CodeObject` has become unreachable but which remains callable through a direct
-cross-unit transfer. Until publication, temporary `Owned<Value>` instances in
-the emitter retain those values. Successful publication will transfer their
-GC-visible ownership to the initialized pool; abandoning compilation destroys
-the temporary owners.
+cross-unit transfer. Until publication, the compilation session's frozen
+constant table owns the mandatory managed values and their associated pins.
+Backend preparation may append optional non-pointer `Value` entries when a pool
+load is more profitable than immediate materialization; these require no pins.
+Successful publication transfers the complete frozen layout to the initialized
+pool while preserving the managed table's indices; abandoning compilation
+destroys the temporary pool state, owners, and pins.
 
 ## Publication and concurrency invariants
 

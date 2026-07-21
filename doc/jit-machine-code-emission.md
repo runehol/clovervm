@@ -38,9 +38,11 @@ logical, move-wide, load/store-offset, and PC-relative immediates.
 The macro assembler represents convenient target operations that may select or
 emit several real instructions. For example, loading an arbitrary non-`Value`
 AArch64 integer may select a logical immediate or `MOVZ`/`MOVN` plus `MOVK`
-instructions. Python `Value` constants instead use the GC-visible constant pool
-defined below. Macro operations must make any scratch-register requirements and
-possible expansion visible to their callers.
+instructions. A Python `Value` constant may likewise use an immediate sequence
+or, when selected during backend preparation, the GC-visible constant pool
+defined below. Managed-pointer `Value`s must use that pool. Macro operations
+must make any scratch-register requirements and possible expansion visible to
+their callers.
 
 The macro assembler also owns linking and non-linking direct branches to known
 label or absolute targets. The emitter retains these branches when their form
@@ -187,7 +189,7 @@ resolve(Label) -> void
 emit_bytes(const void *, size_t) -> void
 emit_relocatable(const void *, size_t, Relocation) -> void
 emit_direct_branch(DirectBranch) -> void
-add_value_to_constant_pool(Value) -> ValuePoolEntry
+constant_pool_entry(ConstantPoolSlot) -> ValuePoolEntry
 finalize(CodeCache &)
     -> Result<CodeAllocation, JitCodeError>
 ```
@@ -398,27 +400,38 @@ making an unresolved external target unrepresentable by construction.
 
 ## GC-visible `Value` constant pool
 
-Every machine-code `Value` constant resides in a constant-pool slot, including
-SMIs, booleans, and other values whose bits could otherwise be embedded as an
-instruction immediate. The finalized code unit exposes the pool base and slot
-count separately to the moving garbage collector. The collector may trace and
-rewrite every slot without decoding or modifying instruction bytes.
+Every machine-code constant whose `Value` bits identify a managed pointer
+resides in a traced constant-pool slot. Non-pointer tagged constants such as
+SMIs and singletons may use an instruction immediate or a synthesized immediate
+sequence, but a backend may instead place one in the pool when a load is more
+profitable. They are not required to consume pool slots. The finalized code
+unit exposes the pool base and slot count separately to the moving garbage
+collector. The collector may trace and rewrite every slot without decoding or
+modifying instruction bytes; scanning a non-pointer tagged value is harmless.
 
-The initial pool contains only `Value` slots. Pool construction follows program
-emission order. Appending a constant naturally aligns the next slot, records
-its byte offset from the beginning of the pool, and retains ownership of the
-`Value` until the finalized code unit assumes the GC-visible reference. The
-pool base is aligned to `sizeof(Value)`, typically eight bytes on a 64-bit
-target, so every slot is naturally aligned. Any
-non-`Value` literal data is excluded from the initial pool and may not be
-interleaved with the precisely scanned `Value` slots. A future non-GC literal
-pool requires a separate design and must justify its additional layout,
+Before backend preparation, the compilation session owns a deterministic dense
+table containing every mandatory managed `Value` constant. Each Core
+`ConstantPoolSlot` names the same-indexed entry in this stable prefix.
+Compilation pins retain those managed values until the finalized code unit
+assumes the GC-visible references. Backend preparation may deterministically
+append optional non-pointer `Value` entries after that prefix and may deduplicate
+them by bit pattern. These entries require no pin and are identified only by
+backend `ValuePoolEntry`s, not by Core `ConstantPoolSlot`s. It then freezes the
+complete pool layout before code sizing and emission.
+
+The pool base is aligned to `sizeof(Value)`, typically eight bytes on a 64-bit
+target, so every slot is naturally aligned. Non-`Value` literal data may not be
+interleaved with the precisely scanned slots. A future non-GC literal pool
+requires a separate design and must justify its additional layout,
 identification, and memory-policy complexity.
 
-The target-independent `MachineCodeEmitter` owns this pool builder alongside
-its fragments. Adding a value returns an opaque `ValuePoolEntry` containing its
-byte offset. Target relocations retain that handle but cannot inspect or perform
-arithmetic on it; only the generic emitter resolves it to a final slot address.
+The target-independent `MachineCodeEmitter` receives the complete frozen pool
+layout alongside its fragments. Looking up a managed `ConstantPoolSlot` returns
+an opaque `ValuePoolEntry` containing that same slot's byte offset; selected
+lowerings already contain `ValuePoolEntry`s for optional non-pointer entries.
+Emission cannot append, deduplicate, or renumber either class of entry. Target
+relocations retain the opaque entry but cannot inspect or perform arithmetic on
+it; only the generic emitter resolves it to a final slot address.
 
 The code cache first proposes stable code and pool addresses within the required
 target reach, then commits the final size as an unpublished allocation:
@@ -461,17 +474,19 @@ value_pool_address + constant_pool_offset
 
 During the third pass the relocation computes the exact fields from that fixed
 address and the instruction's actual executable PC, patches the copied template,
-and revalidates its reach. The owned pool values are then copied into their
-final slots. Neither code nor pool may move relative to the other afterward.
+and revalidates its reach. The frozen managed prefix and optional backend suffix
+are then copied into the final slots while the managed entries' pins remain
+held. Neither code nor pool may move relative to the other afterward.
 
-## Non-`Value` immediate materialization
+## Immediate materialization
 
-The initial emitter does not place raw integers, addresses, floating-point bit
-patterns, or other non-`Value` data in a literal pool. A target macro assembler
-materializes such constants with instructions. Because the constant bits and
-the resulting sequence size are known during program-order emission, these
-instructions are encoded immediately into the current fragment and do not
-create a direct branch.
+The backend is not forced to place a non-pointer tagged `Value` in the pool. It
+may instead have the target macro assembler materialize the bits with
+instructions. Backend preparation chooses between these forms using the target's
+size and cost model, so both the resulting sequence size and any pool entry are
+known before emission. Raw integers, addresses, floating-point bit patterns,
+and other non-`Value` data remain instruction-materialized rather than entering
+the GC-scanned `Value` pool.
 
 On AArch64 an arbitrary 64-bit bit pattern requires at most one `MOVZ` or
 `MOVN` followed by three `MOVK` instructions. The current macro assembler uses
@@ -737,8 +752,10 @@ bullets apply when that target or instruction family is added:
   applied at fragment-relative offsets without creating fragment boundaries;
 - relocations and trailing direct branches using distinct writable and
   executable addresses, with all PC-relative calculations based on the latter;
-- all `Value` constants, including SMIs and booleans, loaded from pool slots
-  rather than embedded in instruction bytes;
+- every managed pointer `Value` loaded from its traced pool slot and never
+  embedded in instruction bytes;
+- non-pointer tagged constants encoded directly, synthesized by immediate
+  instructions, or loaded from an optional backend-selected `Value` pool entry;
 - exclusion of non-`Value` literals from the pool and immediate AArch64
   materialization using no more than four move-wide instructions;
 - AArch64 literal loads at both signed displacement limits, `ADRP` plus `LDR`
@@ -748,7 +765,8 @@ bullets apply when that target or instruction family is added:
 - x86-64 RIP-relative pool loads at both `disp32` limits, including final
   relocation rewriting;
 - code-cache allocation failure abandoning compilation without publication,
-  leaking owned pool values, or setting Python pending-exception state;
+  leaking frozen-table values or pins, or setting Python pending-exception
+  state;
 - simulated GC rewriting of pool slots without changing instruction bytes;
 - labels resolved after encoded bytes, after a direct branch, and
   consecutively, each resolving to the target fragment's start boundary;
