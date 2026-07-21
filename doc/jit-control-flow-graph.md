@@ -416,7 +416,7 @@ choice, not a change to the accepted block-argument design above.
 
 - whether editing pressure justifies replacing the initial vectors for block
   order, instruction order, or incoming edges;
-- the graph mutation/editor API and final visibility of raw arena allocation;
+- the concrete graph-builder and mutation-editor API shapes;
 - the physical representation of block parameters within the instruction
   identity scheme;
 - how unreachable but still live blocks participate in verification and

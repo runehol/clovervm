@@ -681,11 +681,23 @@ transitive user.
 
 Graph structure remains mutable. Block parameter and instruction lists,
 predecessor and successor sets, edge argument lists, placement, definition
-indexes, and use indexes are maintained by the IR editor. Replacing an
-instruction rewrites its uses and updates these structures transactionally; it
+indexes, and use indexes are maintained by the IR editor after publication. A
+replacement rewrites uses and updates these structures transactionally; it
 does not mutate the old instruction in place. Logical interpreter homes are
 tracked by FrameStates and Snapshots rather than by preserving an SSA result
 identity across rewrites.
+
+Initial translation and major representation boundaries use a bulk graph
+builder rather than paying incremental-editor costs for every appended
+instruction. Schema-generated, IR-level-specific factories allocate
+intrinsically valid, unplaced instructions from the compilation arena. Builder
+append is amortized constant time and deliberately defers dominance, global
+structural checks, and optionally index construction. Finalization constructs
+the deferred indexes and validates the complete destination graph once in
+linear time before publishing it to passes. This keeps type-safe construction
+from making an otherwise linear JIT translation quadratic. The incremental
+editor remains the mutation authority for an already published graph; large
+edit transactions may likewise defer global verification until commit.
 
 Inferred types, analyzed effects, and other derived knowledge are not fields on
 the physical instruction. Concrete phase-owned metadata objects index

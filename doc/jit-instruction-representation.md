@@ -6,18 +6,19 @@
 | Status | Accepted |
 | Implementation | Not started; the current virtual instruction hierarchy is temporary CFG scaffolding |
 | Scope | Physical instruction storage, typed instruction access, IR-level legality, phase metadata, effects, matching, and arena lifetime for Core and Semantic IR |
-| Owning layers | The JIT instruction representation owns storage and typed access; instruction kinds own semantic payloads, allowed IR levels, and unavoidable effects; concrete analyses own attached inferred facts and analyzed effects; the CFG editor owns structural replacement |
+| Owning layers | The JIT instruction representation owns storage, schema-generated construction, and typed access; the bulk graph builder owns deferred-validation construction; concrete analyses own attached inferred facts and analyzed effects; the CFG editor owns incremental structural mutation |
 | Validated against | N/A |
 | Supersedes | The open instruction-representation alternatives in [JIT Control-Flow Graph](jit-control-flow-graph.md) and the integer-only instruction reference direction in [JIT Compiler and IR](jit-compiler-and-ir.md) |
 
 Core IR and the optional Semantic IR use a fixed-size, type-erased
-`Instruction` allocated with compilation lifetime. Instruction operands and
-other semantic references are pointers, while each allocation also carries a
-typed serial for deterministic identity, diagnostics, and ordering. Read-only
-typed instruction views provide kind-specific access without an instruction
-class hierarchy, virtual dispatch, or C++ RTTI.
+`Instruction` allocated with compilation lifetime. Instruction-result operands
+are pointers, while other semantic inputs use their schema-declared
+pointer-sized encodings. Each allocation also carries a typed serial for
+deterministic identity, diagnostics, and ordering. Read-only typed instruction
+views provide kind-specific access without an instruction class hierarchy,
+virtual dispatch, or C++ RTTI.
 
-The representation has four deliberately different roles:
+The representation has deliberately different roles:
 
 ```text
 Instruction
@@ -33,8 +34,14 @@ SemanticValueAnalysis, CoreEffectAnalysis, ...
     concrete phase-owned metadata indexed by instruction
     attached, frozen, incrementally updated, and discarded as required
 
+IR-level instruction factory
+    schema-safe allocation of intrinsically valid, unplaced instructions
+
+bulk graph builder
+    cheap append during translation and one-shot publication validation
+
 CFG editor
-    structural insertion, removal, and instruction replacement
+    checked incremental insertion, removal, and instruction replacement
 ```
 
 ## Storage and Lifetime
@@ -142,7 +149,7 @@ struct InstructionSlots
 };
 ```
 
-Construction may use a mutable buffer before publishing the instruction, but
+Construction may use a mutable buffer before completing the instruction, but
 stored and typed access decodes the declared slot class and exposes immutable
 typed values, for example `absl::Span<ProgramValueRef>`. Clients cannot replace
 an input by assigning through the span.
@@ -178,6 +185,73 @@ ownership does not imply that every object occupies the destructor-free
 allocation domain. The current `PolymorphicObjectPool<Instruction>` and virtual
 destructor belong to the temporary CFG scaffolding and will be replaced when
 this representation is implemented.
+
+### Construction, Placement, and Publication
+
+Allocation and graph placement are separate operations. An IR-level-specific
+instruction factory allocates from the compilation arena and returns an
+intrinsically valid, unplaced instruction. It does not need a CFG editor or
+insertion position:
+
+```cpp
+CoreInstructionFactory factory(arena);
+ProgramValueRef add = factory.make_add(lhs, rhs);
+```
+
+The factory surface is generated or validated from `instruction.def`.
+`SlotTraits<SlotClass>` selects the C++ parameter type and encoding for each
+declared input, while output traits select the typed result returned by the
+constructor. Consequently, ordinary callers cannot choose an inconsistent
+kind, output class, input class, arity, or payload layout. IR-level-specific
+factory surfaces expose only instruction kinds permitted at that level. The
+exact macro spelling and whether generated functions delegate to shared
+templates are implementation details.
+
+This compile-time construction safety does not attempt to prove contextual
+graph properties such as dominance or block-edge ownership. There are two
+placement paths with deliberately different validation costs.
+
+A translator or major lowering uses a bulk `GraphBuilder`. Its common
+`append()` operation attaches an unplaced instruction in amortized constant
+time and performs only work naturally local to that append, such as extending
+the block's instruction sequence. It does not rescan dominance, repeatedly
+verify the partially built graph, or otherwise turn a linear translation into
+a quadratic algorithm. The builder may defer use indexes, CFG indexes, and
+other derivable structures when building them once is cheaper than maintaining
+them incrementally.
+
+The builder's `finalize()` operation constructs deferred indexes and validates
+the completed graph in one `O(instructions + edges + inputs)` pass. It checks
+IR-level legality, graph membership, result and input classes, live producers,
+block-edge ownership, terminator placement, dominance, and other structural
+invariants. A graph under bulk construction is not published to ordinary
+passes; failed finalization returns diagnostics rather than exposing a
+partially valid graph. Region construction may similarly attach a batch of
+mutually referring unplaced instructions before validating the batch in its
+completed context.
+
+Once a graph is published, local transformations use the CFG editor. The
+editor attaches factory-created instructions, rewrites inputs, updates active
+indexes and mutation generations, and detaches replaced instructions. It may
+check contextual invariants eagerly when those checks are constant-time or
+already maintained incrementally. A transformation that performs many related
+edits may use an editor transaction that defers global verification until
+commit; ordinary passes cannot observe the intermediate graph. The editor is
+therefore the authority for mutating a published graph, not a mandatory route
+through which every instruction must be allocated.
+
+Placement is graph-owned state rather than another physical instruction tag.
+The lifetime progression is:
+
+```text
+allocated and unplaced -> placed in one graph -> Detached
+```
+
+An unplaced instruction has a live instruction kind and a schema-valid payload,
+but is not yet a member of any graph. It may be attached at most once. The
+reserved physical `Detached` tag remains the permanent state for an instruction
+removed from a published graph; detachment is not an allocation-reuse
+mechanism.
 
 ### Managed Constant Roots
 
@@ -246,9 +320,10 @@ instruction cannot be referenced as an input, a Snapshot cannot be used as a
 program value, and a program value cannot be used where recovery state is
 required. The same `SlotClass` vocabulary describes non-instruction inputs such
 as block edges and stable runtime metadata without translating between separate
-input and output enums. Instruction construction and structural input
-replacement perform this validation, and the verifier checks the same
-invariant over the encoded payload. Raw `Instruction *` remains the identity
+input and output enums. Generated construction signatures make mismatched
+classes unrepresentable to ordinary callers, structural input replacement
+checks the declared class, and the verifier independently checks the encoded
+payload. Raw `Instruction *` remains the identity
 used for instruction-list placement, diagnostics, and other non-result
 structural operations. A result wrapper still contains a pointer; it does not
 turn the IR back into a container-relative integer-ID representation.
@@ -344,9 +419,11 @@ Every graph has one immutable IR level, initially `Semantic` or `Core`; a
 future Machine IR may use the same mechanism if it adopts this representation.
 An instruction definition may name one level or an explicit set when the same
 semantic kind is valid in more than one IR. Allowed levels are kind metadata
-and consume no space in an instruction. The graph construction API and CFG
-editor reject insertion or replacement with a kind not allowed at the graph's
-level, and the verifier independently checks every placed instruction. It also
+and consume no space in an instruction. IR-level-specific factories omit
+disallowed constructors, the bulk builder checks the completed graph at
+finalization, and the CFG editor rejects incremental insertion or replacement
+with a kind not allowed at the graph's level. The verifier independently checks
+every placed instruction. It also
 rejects references that cross graphs or IR levels. Concrete analysis types
 accept only the graph level they own, such as `SemanticValueAnalysis` for a
 Semantic graph and `CoreEffectAnalysis` for a Core graph.
@@ -412,8 +489,9 @@ actual grouped operation family justifies them.
 
 An instruction's kind, output class, constants, bytecode origin, payload shape,
 and non-input semantic parameters are immutable after construction. A pass that
-changes one of these properties constructs a replacement instruction through
-the structural IR editor and rewrites the graph explicitly.
+changes one of these properties constructs an unplaced replacement through the
+appropriate instruction factory, then asks the structural IR editor to attach
+it and rewrite the published graph explicitly.
 
 Detachment is the sole exception to the stored kind remaining live for the
 allocation lifetime. It is a one-way lifetime transition, not semantic
