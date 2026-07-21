@@ -92,6 +92,13 @@ its own serial sequence. Multiple temporary instruction subclasses share the
 one `Instruction` pool and serial sequence until the fixed-size representation
 replaces them.
 
+A compilation session owns at most one `ControlFlowGraph` for its arena-backed
+instruction allocation domain. The CFG allocator must assert or fail if asked to
+allocate a second graph in the same session. That session-level invariant makes
+placing one `Instruction *` in two graphs unrepresentable in current
+compilation, so the per-graph verifier does not need to discover cross-graph
+instruction placement.
+
 ## Blocks and Terminators
 
 The block terminator is the final ordinary instruction in the block's ordered
@@ -340,9 +347,9 @@ The verifier inspects the raw instruction list rather than calling the checked
 `Block::terminator()` accessor, allowing it to diagnose an empty block or a
 malformed final instruction directly.
 
-The verifier is scoped to one `ControlFlowGraph`. It does not yet detect the
-same instruction pointer being placed in two different graphs backed by one
-arena.
+The verifier is scoped to one `ControlFlowGraph`. Cross-graph instruction
+placement is excluded by the compilation-session rule that one arena-backed
+instruction allocation domain owns at most one CFG.
 
 The block-argument extension and later SSA verification will add these checks:
 
