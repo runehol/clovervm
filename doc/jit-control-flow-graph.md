@@ -78,22 +78,19 @@ The initial implementation uses a vector for graph block order. A linked or
 chunked representation must be justified by measured editing costs before
 replacing it.
 
-The initial implementation uses pointers for semantic references and gives the
-pointed-to objects typed, stable arena serials. Compilation output must not
-depend on pointer values or unordered container iteration. A later instruction
-representation may introduce a typed reference view without changing the graph
-contract.
+The accepted instruction representation uses stable pointers for semantic
+references and zero-overhead typed pointer views for instruction results. The
+pointed-to objects also carry typed, stable arena serials. Compilation output
+must not depend on pointer values or unordered container iteration; serials
+provide diagnostics and deterministic tie-breaking rather than another
+reference mechanism.
 
 `ControlFlowGraph` borrows its `CompilationArena`; the arena must outlive the
 graph and every use of its blocks, edges, and instructions. Blocks, block edges,
 and instructions are allocated in separate arena pools, so each object kind has
-its own serial sequence. Multiple instruction subclasses share the one
-`Instruction` pool and serial sequence.
-
-The broader JIT design currently specifies typed integer instruction, block,
-and edge identities. The current CFG distinguishes identity from reference:
-objects carry typed deterministic serials, while graph relationships use
-pointers. Whether later phases also need typed integer references remains open.
+its own serial sequence. Multiple temporary instruction subclasses share the
+one `Instruction` pool and serial sequence until the fixed-size representation
+replaces them.
 
 ## Blocks and Terminators
 
@@ -326,6 +323,12 @@ structure, or other cached analyses. It checks:
 - every predecessor edge is referenced exactly once by its source terminator;
 - the true and false arms of a conditional branch use distinct edge objects.
 
+The result type preserves a useful diagnostic boundary; it does not make an
+invalid graph a recoverable compilation outcome. Builder finalization and
+pass-boundary verification diagnose and hard-assert on failure because a
+malformed graph is a compiler logic error. Allocation and other resource
+failures follow the separate whole-compilation fallback path.
+
 The verifier inspects the raw instruction list rather than calling the checked
 `Block::terminator()` accessor, allowing it to diagnose an empty block or a
 malformed final instruction directly.
@@ -340,7 +343,8 @@ The block-argument extension and later SSA verification will add these checks:
   IR level according to `src/jit/instruction.def`;
 - every instruction and result reference stays within one graph and IR level;
 - every edge argument list matches the target parameter list in arity and
-  value kind or type;
+  required `SlotClass`, plus any representation or type contract active for
+  that phase;
 - every ordinary operand definition dominates its use;
 - every edge argument definition dominates its source edge;
 - every block parameter dominates ordinary uses in its block and dominated

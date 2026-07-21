@@ -6,7 +6,7 @@
 | Status | Accepted |
 | Implementation | Not started; the current virtual instruction hierarchy is temporary CFG scaffolding |
 | Scope | Physical instruction storage, typed instruction access, IR-level legality, phase metadata, effects, matching, and arena lifetime for Core and Semantic IR |
-| Owning layers | The JIT instruction representation owns storage, schema-generated construction, and typed access; the bulk graph builder owns deferred-validation construction; concrete analyses own attached inferred facts and analyzed effects; the CFG editor owns incremental structural mutation |
+| Owning layers | The JIT instruction representation owns storage, schema-generated construction, and typed access; the bulk graph builder owns deferred-validation construction; concrete analyses own attached inferred facts and possible effects; the CFG editor owns incremental structural mutation |
 | Validated against | N/A |
 | Supersedes | The open instruction-representation alternatives in [JIT Control-Flow Graph](jit-control-flow-graph.md) and the integer-only instruction reference direction in [JIT Compiler and IR](jit-compiler-and-ir.md) |
 
@@ -194,7 +194,7 @@ intrinsically valid, unplaced instruction. It does not need a CFG editor or
 insertion position:
 
 ```cpp
-CoreInstructionFactory factory(arena);
+CoreInstructionFactory factory(compilation_session);
 ProgramValueRef add = factory.make_add(lhs, rhs);
 ```
 
@@ -260,6 +260,10 @@ mechanism.
 
 ### Compilation Failure and Runtime Publication
 
+Graph publication above means making a finalized IR visible to compiler passes.
+Runtime publication here means installing completed machine code and persistent
+dependencies. The latter occurs only after all compiler phases succeed.
+
 The JIT distinguishes compiler logic errors from resource failure. Violating an
 instruction-schema, graph, editor, or pass invariant is a compiler bug. Such a
 violation hard-asserts, with the verifier and stable-serial diagnostics used to
@@ -285,12 +289,11 @@ alongside the arena.
 
 This failure model does not permit leaked external state. The compilation
 session owns temporary pins and similar runtime-visible resources, and releases
-them when an unsuccessful session is destroyed.
-Compiled code, validity-cell dependencies, assumptions, cache entries, and
-other persistent runtime state are installed only after all fallible compilation
-work and final verification have succeeded. Publication is the final commit;
-failure before it leaves previously executing interpreter and compiled state
-unchanged.
+them when an unsuccessful session is destroyed. Compiled code, validity-cell
+dependencies, assumptions, cache entries, and other persistent runtime state
+are installed only after all fallible compilation work and final verification
+have succeeded. Publication is the final commit; failure before it leaves
+previously executing interpreter and compiled state unchanged.
 
 Editor transactions therefore exist to hide deliberately incomplete multi-step
 rewrites and to validate their completed structure, not to roll back allocation
@@ -305,7 +308,9 @@ embedded heap reference is also registered in a compilation-scoped,
 deduplicated pin set. The runtime pinning primitive is the same underlying
 mechanism required when a managed object is exposed at a stable address to a
 CPython extension, although the compilation session owns its own scoped set of
-pins.
+pins. Schema-generated construction registers heap-backed `ConstantValue`
+inputs with that set, which is why the instruction factory requires access to
+the compilation session rather than only its arena.
 
 A compilation pin is a strong root as well as a relocation prohibition. It
 keeps the object alive and prevents its address from changing; a mere
@@ -316,32 +321,17 @@ session ends. Detaching an instruction need not remove its individual pin;
 retaining a deduplicated pin until the short compilation finishes keeps editor
 cleanup simple.
 
-Initial compilation executes without compiler safepoints. A runtime safepoint
-request waits for the active JIT compilation to finish, so instruction slots do
-not need to be mutable GC root locations and collection never rewrites IR
-storage. Compiler storage uses the native compilation arena, and compiler code
-must not call a managed allocator or runtime operation that can request a
-safepoint while this policy is active.
-
 On successful publication, every managed constant needed by generated code is
 copied into the `JitCodeObject`'s traced constant pool before compilation pins
 are released. Machine code refers to that pool rather than embedding a managed
 `Value`. On failure, the compilation session releases its pins and arena while
 the interpreter continues.
 
-The pin set leaves a future phase-boundary safepoint design possible without
-adding indirection to instruction operands: before yielding, verification can
-require every direct managed reference to have a corresponding pin. Arbitrary
-mid-edit safepoints remain unsupported, and compilation latency should be
-measured before adding any yield mechanism.
-
-Managed-object-producing constant folding is deferred. The initial optimizer
-may fold to immediates or reuse existing pinned values, but it does not allocate
-a tuple or other new managed object during compilation. If such folding is
-later justified, the design must choose a safepoint-safe allocation path or
-deferred publication recipe and must add every resulting object to the pin set
-before exposing it to IR. That later feature must also record any semantic
-dependencies needed to keep the folded result valid.
+The initial no-safepoint policy, prohibition on managed allocation during
+compilation, deferred managed-object constant folding, and possible future
+phase-boundary yielding are pipeline contracts specified in
+[JIT Compiler and IR](jit-compiler-and-ir.md). The pin representation supports
+that future extension without adding indirection to instruction operands.
 
 ## Pointers, Serials, and Determinism
 
@@ -407,7 +397,9 @@ handwritten. It does not generate pass implementations or visitor-method
 dispatch; passes remain ordinary C++ so they can organize related cases
 locally.
 
-Conceptually, representative definitions describe:
+Conceptually, representative definitions describe the following payloads. The
+examples elide the required IR-level and effect-bound fields to emphasize
+payload shape and slot classes:
 
 ```text
 Add
@@ -514,7 +506,7 @@ private:
 ```
 
 The view exposes only immutable fields meaningful for its instruction kind.
-Inferred types, analyzed effects, locations, and other phase knowledge are read
+Inferred types, possible effects, locations, and other phase knowledge are read
 through the concrete metadata object that owns them, not through a typed
 instruction view. Copying a view copies a non-owning read capability; it never
 grants mutation authority. Views are intended to be short-lived pass locals
@@ -581,14 +573,16 @@ the poisoned payload. Generic traversal likewise checks `is_detached()` before
 dispatching on a kind and never visits detached side data. Short-lived typed
 views must not be retained across structural edits.
 
-Input slots are controlled mutable structure. The structural editor may replace
-a slot only with an entity of the same declared `SlotClass`, while maintaining
-CFG indexes, metadata lifetime, analysis invalidation, and graph mutation
-generation. If the pass has retained a mutation-aware `UseIndex`, the editor
-also updates it; otherwise the generation change makes the old index stale.
-Changing a slot's class, count, or layout requires instruction replacement.
-Typed views expose inputs read-only and never provide setters or writable
-arrays.
+Instruction-result input slots are controlled mutable structure. The structural
+editor may replace a `ProgramValue` or `Snapshot` slot only with a result of the
+same declared `SlotClass`, while maintaining metadata lifetime, analysis
+invalidation, and graph mutation generation. If the pass has retained a
+mutation-aware `UseIndex`, the editor also updates it; otherwise the generation
+change makes the old index stale. `BlockEdge`, `Shape`, `ShapeKey`,
+`ValidityCell`, and `ConstantValue` slots are immutable semantic payload;
+changing one requires instruction replacement. Changing any slot's class,
+count, or layout likewise requires replacement. Typed views expose every input
+read-only and never provide setters or writable arrays.
 
 The schema-generated generic input walker is the common primitive for use
 discovery and bulk rewriting. It walks fixed and variable inputs in declared
@@ -636,14 +630,14 @@ typed views.
 
 ## Phase-Owned Attached Metadata
 
-Inferred types, analyzed effects, dependencies, representations, locations, and
+Inferred types, possible effects, dependencies, representations, locations, and
 similar derived facts are not part of the physical instruction representation.
 They live in explicit metadata objects owned by the phase and IR level that
 defines them, for example:
 
 ```text
 SemanticValueAnalysis   Semantic ProgramValueRef -> ValueFacts
-CoreEffectAnalysis      Core Instruction*        -> analyzed EffectFlags
+CoreEffectAnalysis      Core Instruction*        -> PossibleEffects
 LocationAssignments     Core Instruction*        -> backend locations
 UseIndex                Instruction*             -> temporary UseRecords
 ```
@@ -673,7 +667,7 @@ entries from every active attachment before the editor publishes the detached
 storage tag. Major representation boundaries may build a fresh graph while
 using the same instruction, CFG, serial, and arena machinery.
 
-## Kind Effect Bounds and Analyzed Effects
+## Kind Effect Bounds and Possible Effects
 
 Each instruction kind declares two immutable effect bounds in
 `src/jit/instruction.def`:
@@ -688,7 +682,7 @@ performing an inherently visible write. A generic call's may-effects include
 raising and its other conservative call implications even when target analysis
 can prove some of them absent for a particular call.
 
-Analyzed effects are conservative phase-owned metadata for one particular live
+Possible effects are conservative phase-owned metadata for one particular live
 instruction. `CoreEffectAnalysis`, or the corresponding concrete analysis for
 another allowed IR level, initializes `PossibleEffects` conservatively and may
 refine that set as operand facts, resolved targets, and other evidence become
@@ -793,6 +787,23 @@ fallthrough.
 A deliberately partial classifier should normally use `is<T>()` or ordinary
 conditionals. Any local suppression of exhaustive-switch checking must be
 explicit and exceptional.
+
+## Implementation Validation
+
+The remaining physical-sizing decision requires an implementation experiment,
+not another representation mechanism. The first slice should define constants,
+binary arithmetic, shape and shape-key guards, conditional branches, calls with
+variable arguments, Snapshots with variable captured state, and one
+metadata-heavy semantic instruction in `instruction.def`.
+
+That slice should compare plausible fixed record sizes, measure total graph and
+side-data use, and exercise generated construction, typed access, generic input
+walking, verification, and destruction-free arena cleanup. Success does not
+require every payload to fit inline. It requires every representative layout to
+use the same declarative schema and uniform arena-owned side data without a
+handwritten storage or traversal escape hatch. The measurements select the
+payload word count and side-data thresholds; discovery of a required escape
+hatch reopens the representation design.
 
 ## Rejected Directions
 

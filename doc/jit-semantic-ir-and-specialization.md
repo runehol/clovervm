@@ -88,6 +88,11 @@ Caller and callee evidence have different roles. Caller evidence describes one
 inline context and may replace aggregate callee entry predictions. The IC at an
 operation still owns the actions observed or resolved for that operation.
 
+Under the initial no-safepoint compilation policy, “fresh trusted resolution”
+means a certified read-only, non-allocating resolver that cannot request a
+safepoint or execute Python. If no such resolver applies, compilation retains a
+generic operation or falls back rather than entering an arbitrary runtime path.
+
 ### Provisional feedback stability
 
 The runtime need not begin with polymorphic case arrays. A one-case IC can carry
@@ -133,8 +138,9 @@ describes interpreter meaning, not machine locations or synchronization.
 
 Semantic IR does not need Snapshot instructions. Core lowering creates a
 Snapshot only for a recovery state actually consumed by an emitted exit. The
-Snapshot then becomes an explicit SSA consumer of every program value required
-to reconstruct that state.
+Snapshot captures every program value required to reconstruct that state; each
+guard or side exit consuming its `SnapshotRef` makes those captured values
+transitive point uses at the consuming position.
 
 ## Value Facts
 

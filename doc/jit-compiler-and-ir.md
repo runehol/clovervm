@@ -621,7 +621,7 @@ SlotClass::Snapshot
 
 The same enum also classifies input-only CFG and metadata slots; those classes
 cannot be selected as an instruction output. The instruction schema records the
-class and role of every fixed or variable input as defined in
+class and layout of every fixed or variable input as defined in
 [JIT Instruction Representation](jit-instruction-representation.md).
 
 The instruction pointer also names its result when it has one. Typed result
@@ -632,15 +632,15 @@ ProgramValueRef = ResultRef<SlotClass::ProgramValue, Instruction *>
 SnapshotRef     = ResultRef<SlotClass::Snapshot, Instruction *>
 ```
 
-The reference type can also be parameterized by IR level, so Semantic and Core
-program-value references cannot be mixed. Constructing a result reference
-requires the producer's intrinsic output class to match. A value-less
-instruction retains its pointer and serial for traversal, diagnostics, effects,
-and rewriting, but cannot be used as a result operand. A Snapshot can be used
-only through `SnapshotRef`, never as a program value. This gives C++ analyses
-and backends useful static distinctions without container-relative instruction
-IDs. Here, a program value is a value in the compiled program's SSA semantics;
-it does not prescribe the concrete `cl::Value` representation.
+Constructing a result reference requires the producer's intrinsic output class
+to match. Graph ownership and IR-level verification prevent Semantic and Core
+references from being mixed. A value-less instruction retains its pointer and
+serial for traversal, diagnostics, effects, and rewriting, but cannot be used
+as a result operand. A Snapshot can be used only through `SnapshotRef`, never as
+a program value. This gives C++ analyses and backends useful static distinctions
+without container-relative instruction IDs. Here, a program value is a value in
+the compiled program's SSA semantics; it does not prescribe the concrete
+`cl::Value` representation.
 
 The initial IRs permit at most one result per instruction. Block parameters
 are output-producing `Parameter` pseudo-instructions referenced by
@@ -678,12 +678,10 @@ explicit yield points between completed phases may be added later if
 measurements require them. Arbitrary safepoints in the middle of an editor
 transaction are not supported.
 
-IR instructions may embed managed `Value` constants directly. The compilation
-session records every heap referent in a deduplicated strong pin set using the
-same runtime pinning primitive needed to expose stable object addresses to
-CPython extensions. A pin both keeps its object alive and prohibits relocation.
-Immediate values need no pin. This avoids per-operand constant-pool indirection
-and avoids mutable root slots in instruction storage.
+Direct managed references follow the compilation pin-set invariant specified in
+[JIT Instruction Representation](jit-instruction-representation.md). This keeps
+IR `Value` operands direct while avoiding both constant-pool handles and mutable
+root slots in instruction storage.
 
 Compiler allocation uses native compilation arenas and buffers. While the
 no-safepoint policy is active, compilation must not invoke managed allocation or
@@ -703,12 +701,14 @@ first proves that every direct managed reference is pinned.
 ### Mostly immutable instructions, mutable graphs, and analysis state
 
 An instruction's operation kind, results, bytecode origin, semantic descriptor,
-guard obligations, partition IDs, and any FrameState or Snapshot references are
+guard obligations, partition IDs, payload shape, and non-input parameters are
 fixed when the instruction is constructed. A transformation changes any of
 these semantic properties by constructing a replacement instruction with a new
-serial. Operand slots are mutable only through the structural IR editor so
-ordinary SSA use rewriting does not require cascading replacement of every
-transitive user.
+serial. Program-value and Snapshot input slots are mutable only through the
+structural IR editor, so ordinary result-use rewriting does not require
+cascading replacement of every transitive user. Block edges, runtime metadata,
+and constants embedded in an instruction remain immutable; changing them
+requires instruction replacement.
 
 Graph structure remains mutable. Block parameter and instruction lists,
 predecessor and successor sets, edge argument lists, placement, definition
@@ -740,27 +740,22 @@ semantics. Both mechanisms are on demand; passes that need neither use records
 nor replacement scanning pay no permanent use-index memory or maintenance
 cost.
 
-Structural invariant failures are compiler bugs, not speculative compilation
-failures. Builders, editors, and verifiers report a useful diagnostic and
-hard-assert when a pass constructs an invalid graph. Allocation exhaustion and
-other resource failures instead propagate an explicit compilation failure to
-the JIT entry point; the compilation session and any partially mutated graph
-are discarded, and execution remains in the interpreter. This path does not
-require editor rollback. Bulk compiler state is arena allocated specifically so
-aborting compilation releases instructions, blocks, edges, and side data by
-letting one compilation-scoped arena go out of scope. Normally destroyed tables,
-temporary pins, and other external registrations are owned by the enclosing
-compilation session and unwind with it. Generated code, validity dependencies,
-assumptions, and cache entries become persistent only in the final successful
-publication step.
+Compilation failure follows the detailed contract in
+[JIT Instruction Representation](jit-instruction-representation.md): structural
+invariant violations diagnose and hard-assert, while allocation or resource
+failure abandons the arena-backed compilation and continues in the interpreter.
+The enclosing session unwinds pins and normally destroyed state; generated code,
+dependencies, assumptions, and cache entries become persistent only at final
+successful publication. Editor rollback is not required after an aborted
+compilation.
 
-Inferred types, analyzed effects, and other derived knowledge are not fields on
+Inferred types, possible effects, and other derived knowledge are not fields on
 the physical instruction. Concrete phase-owned metadata objects index
 instructions or typed results, for example:
 
 ```text
 Semantic ProgramValueRef -> ValueFacts
-Core Instruction*        -> analyzed EffectFlags
+Core Instruction*        -> PossibleEffects
 PartitionId     -> ConditionalFacts
 ProgramValueRef -> CorrelatedEvidence
 ```
@@ -821,8 +816,9 @@ generation and makes prior frozen views stale. An analysis may invalidate and
 recompute broadly or consume the editor's mutation description to preserve and
 cheaply update facts whose validity is locally provable. It publishes a new
 frozen view only after its state is valid for the new graph generation.
-Requesting stale analysis triggers that update or recomputation. Passes must not
-mutate instructions or graph structures directly.
+Querying a stale frozen view asserts. The owning analysis must explicitly update
+or recompute and publish a current view before a pass resumes querying it.
+Passes must not mutate instructions or graph structures directly.
 
 Verification at pass boundaries should require:
 
@@ -832,7 +828,8 @@ Verification at pass boundaries should require:
   `SlotClass`, and no result reference to be formed from a value-less
   instruction;
 - exactly one live definition for every reachable SSA value;
-- exactly one guaranteed static type for each SSA value, compatible with its
+- for every phase carrying semantic type analysis, exactly one guaranteed
+  static fact for each SSA value in that analysis's domain, compatible with its
   producing instruction;
 - exactly one machine representation for each Core `ProgramValueRef`, with all
   representation changes expressed by explicit conversion instructions;
@@ -1073,24 +1070,14 @@ Operation definitions provide precise defaults where possible.
 shape. Recognized operations inherit effects from semantic descriptors. Python
 calls and unknown operations begin maximally conservative.
 
-Every immutable instruction kind declares two effect bounds. `MustEffects`
-contains effects present for every instance; `MayEffects` conservatively
-contains every effect any instance of the kind may perform. A concrete
-phase-owned effect analysis stores a per-instruction `PossibleEffects` set,
-initialized conservatively and exposed through a generation-checked frozen
-view. It must satisfy:
-
-```text
-MustEffects(kind) subset-of PossibleEffects(instruction)
-PossibleEffects(instruction) subset-of MayEffects(kind)
-```
-
-The verifier asserts both relations. Passes without a current effect-analysis
-view use `MayEffects`; they must never infer purity from the absence of a
-`MustEffects` bit. A stale view asserts rather than falling back. When
-specialization selects a different semantic operation, the pass constructs a
-replacement instruction of that operation kind and therefore adopts its new
-effect bounds.
+The authoritative instruction schema declares each kind's `MustEffects` and
+`MayEffects` bounds. A concrete phase-owned analysis supplies a current
+per-instruction `PossibleEffects` set within those bounds; without that analysis
+passes use the conservative `MayEffects` envelope. The bound checks, stale-view
+behavior, and prohibition on inferring purity from `MustEffects` alone are
+specified in [JIT Instruction Representation](jit-instruction-representation.md).
+Specialization that selects a different semantic operation constructs a
+replacement instruction and therefore adopts the new kind's bounds.
 
 Effect implications are centralized. `MayCallPython`, for example, implies
 broad heap access, possible shape mutation, validity invalidation, raising, and
@@ -1543,7 +1530,10 @@ The corresponding higher-effort polymorphic example is in
 
 ### Core IR and optimization
 
-- concrete storage layouts and editing APIs for instructions, blocks, and edges;
+- completion of the fixed-record and side-data experiment specified in
+  [JIT Instruction Representation](jit-instruction-representation.md);
+- concrete implementations of the accepted graph-builder and mutation-editor
+  contracts;
 - optimizer and register allocator organization;
 - whether a narrow pass benefits from a temporary graph representation;
 - when direct backend side tables have become an implicit Machine IR and should
