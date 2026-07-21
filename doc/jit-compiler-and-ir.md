@@ -699,6 +699,20 @@ from making an otherwise linear JIT translation quadratic. The incremental
 editor remains the mutation authority for an already published graph; large
 edit transactions may likewise defer global verification until commit.
 
+Structural invariant failures are compiler bugs, not speculative compilation
+failures. Builders, editors, and verifiers report a useful diagnostic and
+hard-assert when a pass constructs an invalid graph. Allocation exhaustion and
+other resource failures instead propagate an explicit compilation failure to
+the JIT entry point; the compilation session and any partially mutated graph
+are discarded, and execution remains in the interpreter. This path does not
+require editor rollback. Bulk compiler state is arena allocated specifically so
+aborting compilation releases instructions, blocks, edges, and side data by
+letting one compilation-scoped arena go out of scope. Normally destroyed tables,
+temporary roots, and other external registrations are owned by the enclosing
+compilation session and unwind with it. Generated code, validity dependencies,
+assumptions, and cache entries become persistent only in the final successful
+publication step.
+
 Inferred types, analyzed effects, and other derived knowledge are not fields on
 the physical instruction. Concrete phase-owned metadata objects index
 instructions or typed results, for example:

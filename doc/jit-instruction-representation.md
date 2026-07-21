@@ -225,10 +225,11 @@ the completed graph in one `O(instructions + edges + inputs)` pass. It checks
 IR-level legality, graph membership, result and input classes, live producers,
 block-edge ownership, terminator placement, dominance, and other structural
 invariants. A graph under bulk construction is not published to ordinary
-passes; failed finalization returns diagnostics rather than exposing a
-partially valid graph. Region construction may similarly attach a batch of
-mutually referring unplaced instructions before validating the batch in its
-completed context.
+passes. If final verification finds an invalid graph, that is a compiler logic
+error: it reports the structural diagnostic and hard-asserts rather than
+turning the bug into an interpreter fallback. Region construction may similarly
+attach a batch of mutually referring unplaced instructions before validating
+the batch in its completed context.
 
 Once a graph is published, local transformations use the CFG editor. The
 editor attaches factory-created instructions, rewrites inputs, updates active
@@ -252,6 +253,45 @@ but is not yet a member of any graph. It may be attached at most once. The
 reserved physical `Detached` tag remains the permanent state for an instruction
 removed from a published graph; detachment is not an allocation-reuse
 mechanism.
+
+### Compilation Failure and Runtime Publication
+
+The JIT distinguishes compiler logic errors from resource failure. Violating an
+instruction-schema, graph, editor, or pass invariant is a compiler bug. Such a
+violation hard-asserts, with the verifier and stable-serial diagnostics used to
+identify the responsible pass. It is not reported as an ordinary inability to
+compile and must not silently fall back to the interpreter.
+
+Allocation exhaustion and comparable resource failures are expected compilation
+failures. Fallible arena, side-data, index, and code-buffer allocation propagates
+an explicit compilation failure such as `CompileFailure::AllocationFailure` to
+the JIT entry point. The entire compilation session, including any partially
+built or partially edited graph, is then abandoned, and execution continues in
+the interpreter. The editor does not need to roll a graph back into a usable
+state after such a failure because no later pass may observe that compilation.
+
+This cheap whole-compilation abort is a primary reason for arena ownership.
+Instructions, blocks, edges, side data, and other bulk compiler storage are
+allocated from the compilation arena; when compilation fails, allowing that
+arena to leave scope releases the entire allocation domain at once. The
+compiler does not need to discover and individually undo partially constructed
+IR objects. Normally destroyed compilation tables and scoped external
+registrations remain owned by the enclosing compilation session and unwind
+alongside the arena.
+
+This failure model does not permit leaked external state. The compilation
+session owns temporary root registrations and similar runtime-visible
+resources, and releases them when an unsuccessful session is destroyed.
+Compiled code, validity-cell dependencies, assumptions, cache entries, and
+other persistent runtime state are installed only after all fallible compilation
+work and final verification have succeeded. Publication is the final commit;
+failure before it leaves previously executing interpreter and compiled state
+unchanged.
+
+Editor transactions therefore exist to hide deliberately incomplete multi-step
+rewrites and to validate their completed structure, not to roll back allocation
+failure. On the successful path, an edit must leave the published graph valid.
+On resource failure, the enclosing compilation is discarded.
 
 ### Managed Constant Roots
 
