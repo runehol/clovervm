@@ -298,6 +298,16 @@ IR-level-specific factory surfaces expose only instruction kinds permitted at
 that level. The exact macro spelling and whether generated functions delegate
 to shared templates are implementation details.
 
+The factory also owns managed-constant retention. Before returning an
+unpublished instruction or arena side-data object containing a pointer-valued
+`ValueConstant`, it calls the compilation session's pinning API for that
+`Value`. This applies equally to fixed attributes and Snapshot arrays. Cloning
+into another compilation session invokes the destination factory and therefore
+repins each managed value there. Pinning is complete before the allocation is
+observable; it is not deferred until graph attachment and is not a CFG-editor
+responsibility. Failure to retain a value is a resource failure that aborts the
+compilation.
+
 This compile-time construction safety does not attempt to prove contextual
 graph properties such as dominance or block-edge ownership. There are two
 placement paths with deliberately different validation costs.
@@ -405,12 +415,21 @@ pool index or otherwise model the eventual machine-code constant pool.
 A compilation pin is a strong root as well as a relocation prohibition. It
 keeps the object alive and prevents its address from changing; a mere
 `do-not-move` bit that still permits reclamation would be insufficient.
-`InlineValueConstant`s require no pin. Attaching a pointer-valued
+`InlineValueConstant`s require no pin. Constructing a pointer-valued
 `ValueConstant` requires the compilation session to retain a deduplicated pin
 for that object. Pins are session state rather than fields in arena objects and
 are released together when the compilation session ends. Detaching an
 instruction need not remove its pin; retaining pins until the short compilation
 finishes keeps editor cleanup simple.
+
+The pinning API already expresses this construction contract even while its
+current implementation is a no-op because CloverVM has no moving collector.
+Factories must still call it unconditionally. That keeps the representation and
+all construction paths ready for a moving collector without later discovering
+which instruction kinds can hide managed references. The verifier independently
+walks every `ValueConstant` attribute and asserts that each pointer-valued entry
+is covered by the session's pin set; an implementation whose pins are currently
+implicit may report that coverage trivially.
 
 When a surviving constant is emitted, the backend passes its `Value` to
 `MachineCodeEmitter::add_value_to_constant_pool()`. The emitter owns the

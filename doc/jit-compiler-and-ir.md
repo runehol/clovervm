@@ -814,15 +814,23 @@ managed object; Core neither constructs nor stores machine-code pool indices.
 Other compiler observations may likewise retain direct pinned references in
 session-owned analysis state.
 
+The IR-level factory invokes the pinning API before returning any unpublished
+instruction or side-data object containing a managed `Value`; graph attachment
+does not acquire ownership. Cloning into another session repins through that
+session's factory, while detachment leaves the original pin in place until
+session teardown. The current pinning implementation is a no-op because the
+collector does not yet move objects, but these calls and the verifier's pin
+coverage check are part of the durable construction contract.
+
 Compiler allocation uses native compilation arenas and buffers. While the
 no-safepoint policy is active, compilation must not invoke managed allocation or
 another runtime path that may itself request a safepoint. Initial constant
 folding is consequently limited to immediates and existing values that can be
-pinned in the session; constructing new managed
-constants such as tuples is deferred. A later design may use deferred
+pinned in the session; constructing new managed constants such as tuples is
+deferred. A later design may use deferred
 publication recipes or a safepoint-safe allocation boundary, but every created
-object must be pinned before IR can reference it, and any
-semantic validity dependencies must be recorded.
+object must be pinned before IR can reference it, and any semantic validity
+dependencies must be recorded.
 
 Emission submits only surviving constants to `MachineCodeEmitter`, which owns
 them while assigning and deduplicating final pool entries. Successful code
