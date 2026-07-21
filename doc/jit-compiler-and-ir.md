@@ -1231,6 +1231,8 @@ SafepointState {
     safepoint ID and compiled PC
     frame scanning mode
     managed root -> register | spill | canonical slot
+                 | ThreadState accumulator publication
+                 | explicit out-of-frame root publication
 }
 
 DeoptState {
@@ -1246,6 +1248,14 @@ and `DeoptState` into generated cold recovery plans. Another may serialize the
 first for a compiled-frame walker and the second for a generic deoptimizer.
 Location assignment, logical frame construction, and Core IR do not change
 merely because the consumer changes.
+
+`SafepointState` covers every managed root that must survive the safepoint. A
+live accumulator value is represented either as an ordinary managed root in a
+register or spill for precise maps, or as a publication action to the existing
+`ThreadState` accumulator root under canonical publication. Managed values that
+are live outside canonical frame slots use explicit root-publication entries.
+Unboxed non-roots such as `F64` values are excluded from safepoint root maps
+unless a recovery action materializes a managed object before the safepoint.
 
 `DeoptState` is the post-allocation physical projection of a Core IR Snapshot.
 The Snapshot remains semantic and names `ProgramValueRef`s; `DeoptState`
