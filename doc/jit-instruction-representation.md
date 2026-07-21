@@ -4,10 +4,10 @@
 |---|---|
 | Document type | Design |
 | Status | Accepted |
-| Implementation | Not started; the current virtual instruction hierarchy is temporary CFG scaffolding |
+| Implementation | Partial; the 48-byte record, tagged-address instruction arena, schema-generated kind metadata, typed CFG terminators, homogeneous PythonCall side data, and basic operand traversal are implemented; annotated Snapshot captures, full generated factories/views, detachment, and editor integration remain |
 | Scope | Physical instruction storage, typed instruction access, Core value representations, IR-level legality, phase metadata, effects, matching, and arena lifetime for Core and Semantic IR |
 | Owning layers | The JIT instruction representation owns storage, schema-generated construction, and typed access; the bulk graph builder owns deferred-validation construction; concrete analyses own attached inferred facts and proven-absent effects; the CFG editor owns incremental structural mutation |
-| Validated against | N/A |
+| Validated against | Working tree implementation and full debug test suite (2026-07-21) |
 | Supersedes | The open instruction-representation alternatives in [JIT Control-Flow Graph](jit-control-flow-graph.md) and the integer-only instruction reference direction in [JIT Compiler and IR](jit-compiler-and-ir.md) |
 
 Core IR and the optional Semantic IR use a fixed-size, type-erased
@@ -48,9 +48,10 @@ CFG editor
 ## Storage and Lifetime
 
 The physical `Instruction` is a 48-byte fixed-size record: an 8-byte header and
-five pointer-sized payload slots. The exact division of the header among kind,
-serial, operand count, and flags remains an implementation detail. Conceptually
-it contains:
+five pointer-sized payload slots. The header contains a 32-bit serial, a 16-bit
+kind, and a 16-bit operand-storage word. The high bit of the operand-storage
+word says whether operands are indirect; the low 15 bits hold the total operand
+count. Conceptually it contains:
 
 ```cpp
 class Instruction
@@ -70,22 +71,26 @@ public:
     ResultClass result_class() const;
     // Requires a Core ProgramValue result.
     ValueRepresentation value_representation() const;
+    uint16_t operand_count() const;
+    bool operands_are_indirect() const;
 
     template<typename TypedInstruction>
     TypedInstruction as() const;
 
 private:
-    InstructionHeader header_;
+    uint32_t serial_;
+    uint16_t kind_;
+    uint16_t operand_storage_;
     InstructionSlot payload_[5];
 };
 ```
 
 The instruction arena places every record at an address congruent to `0x08`
 modulo 16 and advances by the 48-byte record size. Every real `Instruction *`
-therefore has at least one of `value_ptr_mask`'s bits set while remaining an
+therefore has `value_interned_ptr_tag` (`0x08`) set while remaining an
 ordinary aligned, directly dereferenceable pointer. Successive addresses may
 contain either `0x08` or `0x18` in those bits; instruction references use only
-the nonzero pointer predicate and are never interpreted through
+the `0x08` predicate and are never interpreted through
 `Value::storage_class()`.
 
 The physical storage tag normally represents one live `InstructionKind`. The
@@ -160,9 +165,10 @@ first-class edge. Operand classes control structural compatibility, physical
 decoding, and generic use handling. Core program-value operands apply the
 additional `ValueRepresentation` constraint described below.
 
-`Instruction::result_class()` is derived from instruction-kind metadata; it is
-not another field in the record. `ProgramValue` says that the instruction
-defines an SSA program value, not that analysis knows its precise Python type.
+`Instruction::result_class()` is decoded directly from the upper bits of
+`InstructionKind`; it is not another field in the record or an entry duplicated
+in the metadata table. `ProgramValue` says that the instruction defines an SSA
+program value, not that analysis knows its precise Python type.
 Such inferred facts belong to a concrete phase-owned metadata object such as
 `SemanticValueAnalysis`. Changing an instruction's result class requires
 replacing the instruction with a different kind. An instruction cannot produce a
@@ -249,35 +255,69 @@ pointer tagging or a separate slot tag:
 ```cpp
 bool is_instruction_reference(uintptr_t word)
 {
-    return (word & value_ptr_mask) != 0;
+    return (word & value_interned_ptr_tag) != 0;
 }
 ```
 
 A reference word is already the directly dereferenceable `Instruction *`. An
-inline constant has both pointer bits clear by construction. The schema remains
-necessary to distinguish ProgramValue and Snapshot operand positions and to
-describe fixed and variable ranges, but not to distinguish a ProgramValue
-reference from its inline-constant alternative.
+inline constant has both pointer bits clear by construction and necessarily has
+the `TaggedValue` representation. Dereferencing a reference and decoding its
+producer kind identifies whether it is a `ProgramValue` or `Snapshot`; a
+`ProgramValue` producer kind also directly identifies its representation. The
+schema declares what each operand position is permitted to contain and describes
+fixed and variable ranges, while the stored word and producer kind identify what
+it actually contains.
 
 The implementation enforces that every encoded class fits the slot size and
-alignment. Payloads requiring at most five words remain entirely inline.
-Variable-length operands and payloads requiring more than five words use at
-least one inline slot to reference counted compilation-arena side data:
+alignment. Every fixed-arity instruction places all operands first and all
+attributes immediately after them in the five inline slots. The schema-derived
+layout must fit completely; schema generation rejects a fixed kind requiring
+more than five combined operand and attribute words.
+
+Every variable-operand instruction instead places a pointer to its entire
+operand array in slot zero. Its fixed attributes begin in slot one and continue
+inline. The operand-storage high bit is set, and its low bits hold the total
+number of operands in the indirect array, including the kind's fixed operands.
+This avoids a split operand representation for kinds such as `PythonCall`, and
+lets generic traversal select one contiguous operand source.
+
+This layout deliberately does not inline a small variable operand array even
+when it would fit in the remaining payload slots. Attribute positions must be
+compile-time constants determined solely by the instruction kind. For a
+fixed-arity kind, attribute `i` occupies slot `fixed_operand_count + i`; for a
+variable-operand kind, it occupies slot `1 + i`. Typed attribute accessors can
+therefore use constant offsets without inspecting the runtime operand count or
+branching on whether a particular instance happened to fit inline.
+
+A variable operand range is always the final operand declaration. All fixed
+operands therefore occupy kind-constant leading indices in the indirect array,
+followed by the variable tail. For example, `PythonCall` stores its callable at
+operand zero, its Snapshot at operand one, and arguments beginning at operand
+two. Typed access to the fixed operands needs no runtime argument count.
+
+The indirect array uses compilation-arena side data; its count is not repeated
+beside the pointer because it already lives in the instruction header:
 
 ```cpp
 using InstructionSlot = uintptr_t;
 
-struct InstructionSlots
-{
-    const InstructionSlot *data;
-    uint32_t size;
-};
+const InstructionSlot *indirect_operands = ...;
 ```
+
+The 15-bit count is an explicit representation limit. Exceeding it aborts that
+compilation and falls back to the interpreter; it is not a partially valid
+instruction state.
 
 Construction may use a mutable buffer before completing the instruction, but
 stored and typed access decodes the declared operand or attribute class and
 exposes immutable typed values, for example `absl::Span<ProgramValueRef>`.
 Clients cannot replace an operand by assigning through the span.
+
+For an indirect operand sequence, the side-data pool allocates the final
+arena-owned range first and returns a mutable span to the factory. The factory
+constructs operand words directly in that range; it does not build a temporary
+`std::vector` and then ask the pool to copy it. Publication retains only a const
+view of the completed range.
 
 Side-data types obey the same no-destruction contract. Instruction and
 side-data allocation should enforce at least:
@@ -307,9 +347,7 @@ The compilation arena releases instruction and trivial side-data storage in
 bulk. It does not walk those objects to invoke destructors. The same common
 arena may also own normally destroyed tables and pools; common compilation
 ownership does not imply that every object occupies the destructor-free
-allocation domain. The current `PolymorphicObjectPool<Instruction>` and virtual
-destructor belong to the temporary CFG scaffolding and will be replaced when
-this representation is implemented.
+allocation domain.
 
 ### Construction, Placement, and Publication
 
@@ -561,12 +599,36 @@ additional schema flag. Every attribute declared for a kind is present; the
 schema has no optional-attribute mechanism. Core program-value results and
 operands additionally declare fixed representation constraints. The sole
 exception is Snapshot's representation-erased captured-value operand described
-below. Repeated inclusion of that schema
-generates or validates the `InstructionKind` enum, invariant kind metadata,
-representation-safe construction and access, generic operand traversal,
-result/operand class legality, attribute decoding, effect bounds, and the size
-and alignment constraints for encoded payloads. The `Detached` storage tag is
-not listed as a semantic instruction definition.
+below. Repeated inclusion of that schema generates a dense
+`InstructionOrdinal`, the encoded `InstructionKind` enum, invariant kind
+metadata, representation-safe construction and access, generic operand
+traversal, result/operand class legality, attribute decoding, effect bounds, and
+the size and alignment constraints for encoded payloads. The `Detached` storage
+tag is not listed as a semantic instruction definition.
+
+The upper four bits of the 16-bit `InstructionKind` encode its intrinsic result
+class and representation as two numerically aligned two-bit fields. The lower
+12 bits contain its dense generated ordinal:
+
+```text
+15        14 13        12 11                       0
++-----------+------------+--------------------------+
+|ResultClass| ValueRep   | instruction ordinal      |
++-----------+------------+--------------------------+
+```
+
+The encoded bits remain part of the kind for equality and exhaustive switches;
+they are not independently mutable properties. Masks decode `ResultClass` and
+`ValueRepresentation` without a kind switch or metadata lookup. Schema
+generation rejects `None` or `Snapshot` results with a non-`None`
+representation and rejects `ProgramValue` results without a concrete
+representation.
+
+Because full kind values are consequently sparse, they do not directly index
+metadata. The same schema pass generates a dense `InstructionOrdinal`, and the
+low 12 bits index the compact metadata table. Thus metadata lookup pays one mask
+without introducing holes or duplicating result information in the table. The
+12-bit ordinal permits up to 4,096 instruction kinds.
 
 The schema owns facts that must remain synchronized for every instruction
 kind. It may generate storage decoding and straightforward typed-accessor
@@ -836,8 +898,9 @@ instruction view. Copying a view copies a non-owning read capability; it never
 grants mutation authority. Views are intended to be short-lived pass locals
 rather than objects stored in the IR.
 
-There is one ordinary `InstructionKind` enum generated from
-`src/jit/instruction.def`. Each typed view declares its own
+There is one semantic `InstructionKind` enum generated from
+`src/jit/instruction.def`; the generated `InstructionOrdinal` exists only for
+compact table indexing. Each typed view declares its own
 `static constexpr Kind`, and schema-generated validation requires it to match
 the view mapping in the definition. Checked conversion uses the type itself as
 the source of the expected kind:
@@ -1181,20 +1244,24 @@ explicit and exceptional.
 
 ## Implementation Validation
 
-The 48-byte, five-slot layout still requires an implementation experiment. The
-first slice should define constants, binary arithmetic, shape and shape-key
-guards, conditional branches, calls with variable arguments, Snapshots with
-variable captured state, and metadata-heavy Core instructions in
-`instruction.def`.
+The first implementation slice validates the 48-byte, five-slot record,
+`0x08 mod 16` arena placement across slab boundaries, schema-generated kind
+metadata, typed CFG terminators, inline constants, fixed operand walking, and a
+PythonCall homogeneous variadic range. Fixed kinds store operands before
+attributes; variable kinds store their entire operand array behind slot zero and
+their attributes in the remaining inline slots. It also defines representative
+constants, binary arithmetic, shape and shape-key guards, conditional branches,
+calls, Snapshots, and metadata-heavy Core instructions in `instruction.def`.
 
-That slice should measure total graph and side-data use and exercise generated
-construction, concrete representation typing, typed access, generic operand
-walking, verification, Snapshot-only erased operands, address-tag invariants,
-and destruction-free arena cleanup. Success does not require every payload to
-fit inline. It requires every representative layout to use the same declarative
-schema and uniform arena-owned side data without a handwritten storage or
-traversal escape hatch. Evidence that the five-slot record causes excessive
-side data or cache cost reopens the sizing decision.
+The next slice must define and implement the annotated heterogeneous Snapshot
+entry format, generate the remaining representation-safe factories and typed
+views, and make generic traversal exhaustive for nonempty Snapshots. It should
+then measure total graph and side-data use with realistic translated functions.
+Success does not require every payload to fit inline. It requires every
+representative layout to use the same declarative schema and uniform arena-owned
+side data without a handwritten storage or traversal escape hatch. Evidence
+that the five-slot record causes excessive side data or cache cost reopens the
+sizing decision.
 
 ## Rejected Directions
 

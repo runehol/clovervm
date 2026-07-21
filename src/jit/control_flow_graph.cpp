@@ -7,13 +7,13 @@
 
 namespace cl::jit
 {
-    TerminatorInstruction *Block::terminator() const
+    TerminatorInstruction Block::terminator() const
     {
         assert(!instructions_.empty());
         Instruction *instruction = instructions_.back();
         assert(instruction != nullptr);
         assert(instruction->is_block_terminator());
-        return static_cast<TerminatorInstruction *>(instruction);
+        return TerminatorInstruction(instruction);
     }
 
     Block *ControlFlowGraph::add_block()

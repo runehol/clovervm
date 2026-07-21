@@ -3,10 +3,12 @@
 
 #include "jit/control_flow_graph.h"
 #include "jit/instruction.h"
+#include "jit/instruction_pool.h"
 #include "jit/object_pool.h"
 
-#include <type_traits>
-#include <utility>
+#include <absl/types/span.h>
+
+#include <cstdint>
 
 namespace cl::jit
 {
@@ -30,18 +32,37 @@ namespace cl::jit
             return block_edges_.make(std::forward<Args>(args)...);
         }
 
-        template <typename InstructionType, typename... Args>
-        InstructionType *make_instruction(Args &&...args)
-        {
-            static_assert(std::is_base_of_v<Instruction, InstructionType>);
-            return instructions_.make<InstructionType>(
-                std::forward<Args>(args)...);
-        }
+        ProgramValueRef make_parameter();
+        ProgramValueRef make_synthesize_immediate(InlineValueConstant value);
+        SnapshotRef make_snapshot(uint32_t resume_pc);
+        ProgramValueRef make_add_smi(ProgramValueOperand lhs,
+                                     ProgramValueOperand rhs,
+                                     SnapshotRef snapshot);
+        ProgramValueRef
+        make_python_call(ProgramValueOperand callable,
+                         absl::Span<const ProgramValueOperand> arguments,
+                         SnapshotRef snapshot, uint32_t interpreter_return_pc);
+
+        Instruction *make_conditional_branch(ProgramValueOperand condition,
+                                             BlockEdge *true_edge,
+                                             BlockEdge *false_edge);
+        Instruction *make_unconditional_branch(BlockEdge *edge);
+        Instruction *make_return(ProgramValueOperand value);
 
     private:
+        Instruction *
+        make_instruction(InstructionKind kind, uint16_t operand_count,
+                         bool indirect_operands,
+                         absl::Span<const Instruction::Slot> inline_slots)
+        {
+            return instructions_.make(kind, operand_count, indirect_operands,
+                                      inline_slots);
+        }
+
         ObjectPool<Block> blocks_;
         ObjectPool<BlockEdge> block_edges_;
-        PolymorphicObjectPool<Instruction> instructions_;
+        InstructionPool instructions_;
+        InstructionSideDataPool instruction_side_data_;
     };
 
 }  // namespace cl::jit

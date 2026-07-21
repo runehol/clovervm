@@ -90,12 +90,16 @@ add_library(libclovervm_objects OBJECT
     jit/aarch64_assembler.h
     jit/cfg_verifier.cpp
     jit/cfg_verifier.h
+    jit/compilation_arena.cpp
     jit/compilation_arena.h
     jit/control_flow_graph.cpp
     jit/control_flow_graph.h
     jit/code_cache.cpp
     jit/code_cache.h
+    jit/instruction.cpp
     jit/instruction.h
+    jit/instruction_pool.cpp
+    jit/instruction_pool.h
     jit/code_cache_types.h
     jit/machine_address.h
     jit/machine_address_internal.h

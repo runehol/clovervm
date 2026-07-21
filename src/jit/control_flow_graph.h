@@ -36,12 +36,11 @@ namespace cl::jit
             instructions_.push_back(instruction);
         }
 
-        TerminatorInstruction *terminator() const;
+        TerminatorInstruction terminator() const;
 
-        const TerminatorInstruction::BlockSuccessorEdges &
-        block_successor_edges() const
+        TerminatorInstruction::BlockSuccessorEdges block_successor_edges() const
         {
-            return terminator()->block_successor_edges();
+            return terminator().block_successor_edges();
         }
 
     private:

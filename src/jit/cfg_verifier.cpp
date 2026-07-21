@@ -38,16 +38,18 @@ namespace cl::jit
             return "block edge e" + std::to_string(edge->serial().value());
         }
 
-        size_t expected_successor_count(TerminatorKind kind)
+        size_t expected_successor_count(InstructionKind kind)
         {
             switch(kind)
             {
-                case TerminatorKind::ConditionalBranch:
+                case InstructionKind::ConditionalBranch:
                     return 2;
-                case TerminatorKind::UnconditionalBranch:
+                case InstructionKind::UnconditionalBranch:
                     return 1;
-                case TerminatorKind::Return:
+                case InstructionKind::Return:
                     return 0;
+                default:
+                    break;
             }
             assert(false);
             return 0;
@@ -132,20 +134,17 @@ namespace cl::jit
                 }
             }
 
-            const TerminatorInstruction *terminator =
-                static_cast<const TerminatorInstruction *>(instructions.back());
-            const TerminatorInstruction::BlockSuccessorEdges &successors =
-                terminator->block_successor_edges();
-            size_t expected =
-                expected_successor_count(terminator->terminator_kind());
+            TerminatorInstruction terminator(instructions.back());
+            TerminatorInstruction::BlockSuccessorEdges successors =
+                terminator.block_successor_edges();
+            size_t expected = expected_successor_count(terminator.kind());
             if(successors.size() != expected)
             {
                 return invalid(block_name(block) +
                                " terminator has the wrong number of block "
                                "successor edges");
             }
-            if(terminator->terminator_kind() ==
-                   TerminatorKind::ConditionalBranch &&
+            if(terminator.kind() == InstructionKind::ConditionalBranch &&
                successors[0] == successors[1])
             {
                 return invalid(block_name(block) +

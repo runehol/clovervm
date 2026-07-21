@@ -13,11 +13,19 @@
 //   operand class        ProgramValue or Snapshot
 //   representation      TaggedValue or F64 for ProgramValue; None for Snapshot
 //
+// Result class and representation are encoded in the upper bits of the
+// generated InstructionKind. A separately generated dense ordinal indexes
+// compact metadata tables.
+//
 // Every ProgramValue operand may hold either a result reference or an inline
 // constant with the matching representation. Backend legalization decides
 // whether a selected lowering may retain that constant at that use. Other
 // operand classes contain result references. CL_JIT_VARIADIC_OPERAND has the
-// same three arguments. Its elements use arena-owned counted storage.
+// same three arguments. A kind with any variadic operand stores its entire
+// operand sequence in arena-owned storage behind inline slot zero; attributes
+// retain kind-constant inline offsets beginning at slot one. The variadic range
+// is always declared after every fixed operand, so fixed operands retain
+// kind-constant indices within the indirect sequence.
 // SnapshotValues is the one annotated heterogeneous variable payload described
 // by the instruction representation.
 //
@@ -146,8 +154,8 @@ CL_JIT_INSTRUCTION(
     CL_JIT_EFFECT_BOUNDS(CallPython, ConservativeCall),
     CL_JIT_OPERANDS(
         CL_JIT_OPERAND(callable, ProgramValue, TaggedValue),
-        CL_JIT_VARIADIC_OPERAND(arguments, ProgramValue, TaggedValue),
-        CL_JIT_OPERAND(snapshot, Snapshot, None)),
+        CL_JIT_OPERAND(snapshot, Snapshot, None),
+        CL_JIT_VARIADIC_OPERAND(arguments, ProgramValue, TaggedValue)),
     CL_JIT_ATTRIBUTES(
         CL_JIT_ATTRIBUTE(interpreter_return_pc, BytecodePC)))
 

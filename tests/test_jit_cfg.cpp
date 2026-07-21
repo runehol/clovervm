@@ -11,14 +11,10 @@ namespace cl::jit
 {
     namespace
     {
-        class NonTerminatorInstruction final : public Instruction
+        ProgramValueOperand none_value()
         {
-        public:
-            explicit NonTerminatorInstruction(Serial serial)
-                : Instruction(serial)
-            {
-            }
-        };
+            return ProgramValueOperand(InlineValueConstant(Value::None()));
+        }
 
         void expect_valid(const ControlFlowGraph &graph)
         {
@@ -44,24 +40,25 @@ namespace cl::jit
         Block *join = graph.add_block();
         BlockEdge *true_edge = graph.make_block_edge(entry, join);
         BlockEdge *false_edge = graph.make_block_edge(entry, join);
-        ConditionalBranchInstruction *branch =
-            arena.make_instruction<ConditionalBranchInstruction>(true_edge,
-                                                                 false_edge);
-        entry->append_instruction(branch);
-        join->append_instruction(arena.make_instruction<ReturnInstruction>());
+        Instruction *branch_instruction = arena.make_conditional_branch(
+            ProgramValueOperand(InlineValueConstant(Value::True())), true_edge,
+            false_edge);
+        ConditionalBranchInstruction branch(branch_instruction);
+        entry->append_instruction(branch_instruction);
+        join->append_instruction(arena.make_return(none_value()));
 
         EXPECT_EQ(entry, graph.entry_block());
         ASSERT_EQ(2u, graph.blocks().size());
         EXPECT_EQ(entry, graph.blocks()[0]);
         EXPECT_EQ(join, graph.blocks()[1]);
 
-        EXPECT_EQ(true_edge, branch->true_edge());
-        EXPECT_EQ(false_edge, branch->false_edge());
-        ASSERT_EQ(2u, branch->block_successor_edges().size());
-        EXPECT_EQ(true_edge, branch->block_successor_edges()[0]);
-        EXPECT_EQ(false_edge, branch->block_successor_edges()[1]);
-        EXPECT_EQ(&branch->block_successor_edges(),
-                  &entry->block_successor_edges());
+        EXPECT_EQ(true_edge, branch.true_edge());
+        EXPECT_EQ(false_edge, branch.false_edge());
+        TerminatorInstruction::BlockSuccessorEdges successors =
+            entry->block_successor_edges();
+        ASSERT_EQ(2u, successors.size());
+        EXPECT_EQ(true_edge, successors[0]);
+        EXPECT_EQ(false_edge, successors[1]);
 
         ASSERT_EQ(2u, join->predecessor_edges().size());
         EXPECT_EQ(true_edge, join->predecessor_edges()[0]);
@@ -76,19 +73,19 @@ namespace cl::jit
         Block *entry = graph.add_block();
         Block *exit = graph.add_block();
         BlockEdge *edge = graph.make_block_edge(entry, exit);
-        UnconditionalBranchInstruction *branch =
-            arena.make_instruction<UnconditionalBranchInstruction>(edge);
-        ReturnInstruction *return_instruction =
-            arena.make_instruction<ReturnInstruction>();
-        entry->append_instruction(branch);
+        Instruction *branch_instruction = arena.make_unconditional_branch(edge);
+        UnconditionalBranchInstruction branch(branch_instruction);
+        Instruction *return_instruction = arena.make_return(none_value());
+        entry->append_instruction(branch_instruction);
         exit->append_instruction(return_instruction);
 
-        EXPECT_EQ(edge, branch->edge());
-        ASSERT_EQ(1u, entry->block_successor_edges().size());
-        EXPECT_EQ(edge, entry->block_successor_edges()[0]);
+        EXPECT_EQ(edge, branch.edge());
+        TerminatorInstruction::BlockSuccessorEdges successors =
+            entry->block_successor_edges();
+        ASSERT_EQ(1u, successors.size());
+        EXPECT_EQ(edge, successors[0]);
         EXPECT_TRUE(exit->block_successor_edges().empty());
-        EXPECT_EQ(TerminatorKind::Return,
-                  return_instruction->terminator_kind());
+        EXPECT_EQ(InstructionKind::Return, return_instruction->kind());
         expect_valid(graph);
     }
 
@@ -106,8 +103,7 @@ namespace cl::jit
         CompilationArena arena;
         ControlFlowGraph graph(arena);
         Block *entry = graph.add_block();
-        entry->append_instruction(
-            arena.make_instruction<NonTerminatorInstruction>());
+        entry->append_instruction(arena.make_parameter().instruction());
 
         expect_invalid_with(graph, "does not end in a block terminator");
     }
@@ -117,8 +113,8 @@ namespace cl::jit
         CompilationArena arena;
         ControlFlowGraph graph(arena);
         Block *entry = graph.add_block();
-        entry->append_instruction(arena.make_instruction<ReturnInstruction>());
-        entry->append_instruction(arena.make_instruction<ReturnInstruction>());
+        entry->append_instruction(arena.make_return(none_value()));
+        entry->append_instruction(arena.make_return(none_value()));
 
         expect_invalid_with(graph,
                             "block terminator before its final instruction");
@@ -131,9 +127,10 @@ namespace cl::jit
         Block *entry = graph.add_block();
         Block *exit = graph.add_block();
         BlockEdge *edge = graph.make_block_edge(entry, exit);
-        entry->append_instruction(
-            arena.make_instruction<ConditionalBranchInstruction>(edge, edge));
-        exit->append_instruction(arena.make_instruction<ReturnInstruction>());
+        entry->append_instruction(arena.make_conditional_branch(
+            ProgramValueOperand(InlineValueConstant(Value::True())), edge,
+            edge));
+        exit->append_instruction(arena.make_return(none_value()));
 
         expect_invalid_with(graph, "reuses one block edge");
     }
@@ -146,11 +143,10 @@ namespace cl::jit
         Block *actual_source = graph.add_block();
         Block *target = graph.add_block();
         BlockEdge *edge = graph.make_block_edge(declared_source, target);
-        declared_source->append_instruction(
-            arena.make_instruction<ReturnInstruction>());
+        declared_source->append_instruction(arena.make_return(none_value()));
         actual_source->append_instruction(
-            arena.make_instruction<UnconditionalBranchInstruction>(edge));
-        target->append_instruction(arena.make_instruction<ReturnInstruction>());
+            arena.make_unconditional_branch(edge));
+        target->append_instruction(arena.make_return(none_value()));
 
         expect_invalid_with(graph, "as its source but is referenced by");
     }
@@ -162,9 +158,8 @@ namespace cl::jit
         Block *entry = graph.add_block();
         Block *exit = graph.add_block();
         BlockEdge *edge = arena.make_block_edge(entry, exit);
-        entry->append_instruction(
-            arena.make_instruction<UnconditionalBranchInstruction>(edge));
-        exit->append_instruction(arena.make_instruction<ReturnInstruction>());
+        entry->append_instruction(arena.make_unconditional_branch(edge));
+        exit->append_instruction(arena.make_return(none_value()));
 
         expect_invalid_with(graph, "times in its target predecessor index");
     }
@@ -176,8 +171,8 @@ namespace cl::jit
         Block *entry = graph.add_block();
         Block *exit = graph.add_block();
         graph.make_block_edge(entry, exit);
-        entry->append_instruction(arena.make_instruction<ReturnInstruction>());
-        exit->append_instruction(arena.make_instruction<ReturnInstruction>());
+        entry->append_instruction(arena.make_return(none_value()));
+        exit->append_instruction(arena.make_return(none_value()));
 
         expect_invalid_with(graph, "is not referenced once");
     }
