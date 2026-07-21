@@ -80,13 +80,14 @@ private:
 };
 ```
 
-The physical storage tag represents either one live `InstructionKind` or the
-reserved `Detached` state. The exact encoding may reserve one tag value rather
-than adding another per-instruction field. `InstructionKind` remains the closed
-semantic enum generated from `src/jit/instruction.def`; `Detached` is a storage
-lifetime state, not an instruction kind. `kind()`, `result_class()`, typed
-conversion, and payload traversal all require a live tag. Only `serial()` and
-`is_detached()` remain meaningful after detachment.
+The physical storage tag normally represents one live `InstructionKind`. The
+exact encoding may also reserve a poison tag used only after the CFG editor has
+removed an instruction from a published graph. `InstructionKind` remains the
+closed semantic enum generated from `src/jit/instruction.def`; the poison tag is
+not an instruction kind and is not a state ordinary passes handle. `kind()`,
+`result_class()`, typed conversion, and payload traversal all assert that the
+tag is live. Only `serial()` and `is_detached()` remain meaningful on poisoned
+storage, for diagnostics.
 
 Instruction results and instruction inputs use distinct enum types. The cases
 that represent instruction-result references intentionally have the same numeric
@@ -304,18 +305,18 @@ verification until commit; ordinary passes cannot observe the intermediate
 graph. The editor is therefore the authority for mutating a published graph,
 not a mandatory route through which every instruction must be allocated.
 
-Placement is graph-owned state rather than another physical instruction tag.
-The lifetime progression is:
+Placement and liveness are graph-owned state rather than another physical
+instruction tag. The normal lifetime progression is:
 
 ```text
-allocated and unplaced -> placed in one graph -> Detached
+allocated and unplaced -> placed in one graph -> removed from graph
 ```
 
 An unplaced instruction has a live instruction kind and a schema-valid payload,
-but is not yet a member of any graph. It may be attached at most once. The
-reserved physical `Detached` tag remains the permanent state for an instruction
-removed from a published graph; detachment is not an allocation-reuse
-mechanism.
+but is not yet a member of any graph. It may be attached at most once. After
+removal, the editor may poison the abandoned storage with the reserved detached
+tag to catch stale references. Poisoning is not an allocation-reuse mechanism,
+not graph membership, and not a semantic IR state.
 
 ### Compilation Failure and Runtime Publication
 
@@ -681,32 +682,30 @@ after construction. A pass that changes one of these properties constructs an
 unplaced replacement through the appropriate instruction factory, then asks the
 structural IR editor to attach it and rewrite the published graph explicitly.
 
-Detachment is the sole exception to the stored kind remaining live for the
-allocation lifetime. It is a one-way lifetime transition, not semantic
-mutation:
+Removal from a graph is not instruction mutation. The editor may poison the
+abandoned allocation as the final step of removal:
 
 ```text
-Live(fixed InstructionKind) -> Detached
+Live(fixed InstructionKind) -> removed from graph -> poisoned storage
 ```
 
-The CFG editor performs this transition only after it has rewritten or removed
-every use, removed the instruction's own operand occurrences from any active
-mutation-aware `UseIndex`, and unlinked the instruction from its block. The edit
-plan must establish the absence of incoming uses through a current `UseIndex`
-or a complete generic input scan. The editor then neutralizes managed constant
-slots by replacing them with a safe immediate value; the compilation pin set
-may retain their former referents until the session ends. It clears or
-debug-poisons the remaining payload storage, notifies active metadata owners,
-and publishes the `Detached` tag last. An editor transaction is not observable
-by ordinary passes in an intermediate state. A detached allocation is never
-republished or returned to a live kind.
+The CFG editor poisons storage only after it has rewritten or removed every use,
+removed the instruction's own operand occurrences from any active
+mutation-aware `UseIndex`, invalidated or removed active metadata entries, and
+unlinked the instruction from its block. The edit plan must establish the
+absence of incoming uses through a current `UseIndex` or a complete generic
+input scan. The editor then neutralizes managed constant slots by replacing them
+with a safe immediate value; the compilation pin set may retain their former
+referents until the session ends. It may debug-poison the remaining payload
+storage and publish the detached tag last. An editor transaction is not
+observable by ordinary passes in an intermediate state. Poisoned storage is
+never republished or returned to a live kind.
 
-The serial is deliberately preserved for diagnostics. Verification rejects a
-detached instruction in a block list, any operand or Snapshot reference whose
-producer is detached, and any record involving a detached instruction in a
-current `UseIndex`. It reports the preserved serial rather than interpreting
-the poisoned payload. Generic traversal likewise checks `is_detached()` before
-dispatching on a kind and never visits detached side data. Short-lived typed
+The serial is deliberately preserved for diagnostics. Any detached instruction
+encountered by verification, generic traversal, typed conversion, a result
+reference, or a current `UseIndex` is a hard compiler bug. The diagnostic reports
+the preserved serial and does not interpret the poisoned payload. Ordinary pass
+code does not branch on detachedness as a supported case; short-lived typed
 views must not be retained across structural edits.
 
 Instruction-result input slots are controlled mutable structure. The structural
@@ -765,7 +764,7 @@ encodings. The batch advances graph and attachment generations once.
 
 The same walker independently reconstructs uses for verification and also
 supports cloning and printing. The verifier compares any current `UseIndex`
-against reconstructed records and rejects references to detached producers.
+against reconstructed records and hard-fails on references to poisoned storage.
 Kind-specific named accessors such as branch edges remain available through
 typed views.
 
@@ -807,10 +806,10 @@ publishing the next generation.
 Attachments exist only while a later phase consumes them. Semantic value facts
 may be discarded after Semantic-to-Core lowering; Core effect information may
 be discarded after effect-dependent optimization; backend location data has
-its own later lifetime. Detaching an instruction invalidates or removes its
-entries from every active attachment before the editor publishes the detached
-storage tag. Major representation boundaries may build a fresh graph while
-using the same instruction, CFG, serial, and arena machinery.
+its own later lifetime. Removing an instruction invalidates or removes its
+entries from every active attachment before the editor may poison the abandoned
+storage. Major representation boundaries may build a fresh graph while using
+the same instruction, CFG, serial, and arena machinery.
 
 ## Kind Effect Bounds and Possible Effects
 
