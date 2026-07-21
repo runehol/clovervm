@@ -192,6 +192,43 @@ namespace cl::jit
         EXPECT_EQ(Value::True(), allocation.value_pool.write_pointer()[1]);
     }
 
+    TEST(MachineCodeEmitter, DeduplicatesValuePoolEntriesByRawValue)
+    {
+        CacheAndPlatform fixture(16);
+        TestEmitter emitter(64 * 1024);
+        RelocationObservation first_observation;
+        RelocationObservation distinct_observation;
+        RelocationObservation duplicate_observation;
+        ValuePoolEntry first =
+            emitter.add_value_to_constant_pool(Value::True());
+        ValuePoolEntry distinct =
+            emitter.add_value_to_constant_pool(Value::from_smi(1));
+        ValuePoolEntry duplicate =
+            emitter.add_value_to_constant_pool(Value::True());
+        uint8_t instructions[] = {0, 0, 0};
+
+        emitter.emit_relocatable(&instructions[0], sizeof(instructions[0]),
+                                 TestRelocation(first, &first_observation));
+        emitter.emit_relocatable(
+            &instructions[1], sizeof(instructions[1]),
+            TestRelocation(distinct, &distinct_observation));
+        emitter.emit_relocatable(
+            &instructions[2], sizeof(instructions[2]),
+            TestRelocation(duplicate, &duplicate_observation));
+
+        CodeAllocation allocation =
+            take_allocation(emitter.finalize(*fixture.cache));
+        uintptr_t pool_address =
+            allocation.value_pool.address().bits_for_indirect_target();
+
+        EXPECT_EQ(2u, allocation.value_pool.slot_count());
+        EXPECT_EQ(pool_address, first_observation.target);
+        EXPECT_EQ(pool_address + sizeof(Value), distinct_observation.target);
+        EXPECT_EQ(first_observation.target, duplicate_observation.target);
+        EXPECT_EQ(Value::True(), allocation.value_pool.write_pointer()[0]);
+        EXPECT_EQ(Value::from_smi(1), allocation.value_pool.write_pointer()[1]);
+    }
+
     TEST(MachineCodeEmitter, RejectsPoolOutsideRelocationSpanBeforeAllocation)
     {
         CacheAndPlatform fixture(16);

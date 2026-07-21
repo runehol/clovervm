@@ -10,6 +10,7 @@
 #include <cstring>
 #include <limits>
 #include <optional>
+#include <unordered_map>
 #include <utility>
 #include <variant>
 #include <vector>
@@ -123,11 +124,19 @@ namespace cl::jit
         ValuePoolEntry add_value_to_constant_pool(Value value)
         {
             assert(!finalization_attempted_);
+            uint64_t raw_value = uint64_t(value.as.integer);
+            auto existing = value_indices_by_raw_value_.find(raw_value);
+            if(existing != value_indices_by_raw_value_.end())
+            {
+                return ValuePoolEntry(existing->second * sizeof(Value));
+            }
+
             assert(values_.size() <=
                    std::numeric_limits<size_t>::max() / sizeof(Value));
-            size_t byte_offset = values_.size() * sizeof(Value);
+            size_t index = values_.size();
             values_.emplace_back(value);
-            return ValuePoolEntry(byte_offset);
+            value_indices_by_raw_value_.emplace(raw_value, index);
+            return ValuePoolEntry(index * sizeof(Value));
         }
 
         [[nodiscard]] Result<CodeAllocation, JitCodeError>
@@ -337,6 +346,7 @@ namespace cl::jit
         std::vector<Fragment> fragments_;
         std::vector<std::optional<size_t>> label_bindings_;
         std::vector<Owned<Value>> values_;
+        std::unordered_map<uint64_t, size_t> value_indices_by_raw_value_;
         size_t maximum_pool_span_;
         bool finalization_attempted_ = false;
     };
