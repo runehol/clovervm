@@ -681,11 +681,12 @@ transitive user.
 
 Graph structure remains mutable. Block parameter and instruction lists,
 predecessor and successor sets, edge argument lists, placement, definition
-indexes, and use indexes are maintained by the IR editor after publication. A
-replacement rewrites uses and updates these structures transactionally; it
-does not mutate the old instruction in place. Logical interpreter homes are
-tracked by FrameStates and Snapshots rather than by preserving an SSA result
-identity across rewrites.
+indexes, and other graph-owned indexes are maintained by the IR editor after
+publication. Use records are derived metadata rather than a permanently
+maintained graph index. A replacement rewrites uses and updates graph-owned
+structures transactionally; it does not mutate the old instruction in place.
+Logical interpreter homes are tracked by FrameStates and Snapshots rather than
+by preserving an SSA result identity across rewrites.
 
 Initial translation and major representation boundaries use a bulk graph
 builder rather than paying incremental-editor costs for every appended
@@ -698,6 +699,15 @@ linear time before publishing it to passes. This keeps type-safe construction
 from making an otherwise linear JIT translation quadratic. The incremental
 editor remains the mutation authority for an already published graph; large
 edit transactions may likewise defer global verification until commit.
+
+The instruction schema generates the generic input walk from which a pass can
+build temporary `UseRecord`s and a generation-checked `UseIndex`. Passes needing
+repeated sparse use queries may maintain that index privately during an editing
+batch or discard and rebuild it. Bulk lowering may instead apply a typed
+replacement map by scanning all inputs once, with simultaneous replacement
+semantics. Both mechanisms are on demand; passes that need neither use records
+nor replacement scanning pay no permanent use-index memory or maintenance
+cost.
 
 Structural invariant failures are compiler bugs, not speculative compilation
 failures. Builders, editors, and verifiers report a useful diagnostic and
@@ -731,9 +741,10 @@ graph. Structural mutation makes the old view stale, but a mutation-aware
 analysis may preserve unaffected entries, derive local facts for transparent
 instructions, and incrementally recompute affected dependents before publishing
 the next generation. Metadata is discarded when no later phase consumes it.
-Unavoidable instruction-kind effects remain immutable. Selecting a genuinely
-different semantic operation, such as replacing a generic call with recognized
-float addition, creates a replacement instruction with the corresponding kind
+Immutable instruction-kind metadata supplies both a `MustEffects` lower bound
+and a conservative `MayEffects` upper bound. Selecting a genuinely different
+semantic operation, such as replacing a generic call with recognized float
+addition, creates a replacement instruction with the corresponding kind
 contract.
 
 ### Mutable CFG and control-flow-producing lowering
@@ -1031,14 +1042,24 @@ Operation definitions provide precise defaults where possible.
 shape. Recognized operations inherit effects from semantic descriptors. Python
 calls and unknown operations begin maximally conservative.
 
-Unavoidable effects are properties of the immutable instruction kind. A
-concrete phase-owned effect analysis stores analyzed effects separately,
+Every immutable instruction kind declares two effect bounds. `MustEffects`
+contains effects present for every instance; `MayEffects` conservatively
+contains every effect any instance of the kind may perform. A concrete
+phase-owned effect analysis stores a per-instruction `PossibleEffects` set,
 initialized conservatively and exposed through a generation-checked frozen
-view. Effective effects are the union of unavoidable kind effects and that
-analysis entry. An effect that analysis may prove absent therefore belongs in
-the initial analyzed summary rather than the unavoidable kind summary. When
+view. It must satisfy:
+
+```text
+MustEffects(kind) subset-of PossibleEffects(instruction)
+PossibleEffects(instruction) subset-of MayEffects(kind)
+```
+
+The verifier asserts both relations. Passes without a current effect-analysis
+view use `MayEffects`; they must never infer purity from the absence of a
+`MustEffects` bit. A stale view asserts rather than falling back. When
 specialization selects a different semantic operation, the pass constructs a
-replacement instruction of that operation kind.
+replacement instruction of that operation kind and therefore adopts its new
+effect bounds.
 
 Effect implications are centralized. `MayCallPython`, for example, implies
 broad heap access, possible shape mutation, validity invalidation, raising, and

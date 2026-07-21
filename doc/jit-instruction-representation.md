@@ -216,30 +216,34 @@ A translator or major lowering uses a bulk `GraphBuilder`. Its common
 time and performs only work naturally local to that append, such as extending
 the block's instruction sequence. It does not rescan dominance, repeatedly
 verify the partially built graph, or otherwise turn a linear translation into
-a quadratic algorithm. The builder may defer use indexes, CFG indexes, and
-other derivable structures when building them once is cheaper than maintaining
-them incrementally.
+a quadratic algorithm. The builder may defer required CFG indexes and other
+derivable graph structures when building them once is cheaper than maintaining
+them incrementally. Optional use records are not a permanently maintained part
+of the graph and are built only when a consuming pass requests them.
 
-The builder's `finalize()` operation constructs deferred indexes and validates
-the completed graph in one `O(instructions + edges + inputs)` pass. It checks
-IR-level legality, graph membership, result and input classes, live producers,
-block-edge ownership, terminator placement, dominance, and other structural
-invariants. A graph under bulk construction is not published to ordinary
-passes. If final verification finds an invalid graph, that is a compiler logic
-error: it reports the structural diagnostic and hard-asserts rather than
-turning the bug into an interpreter fallback. Region construction may similarly
-attach a batch of mutually referring unplaced instructions before validating
-the batch in its completed context.
+The builder's `finalize()` operation constructs deferred graph-owned indexes
+and validates the completed graph in one `O(instructions + edges + inputs)`
+pass. It checks IR-level legality, graph membership, result and input classes,
+live producers, block-edge ownership, terminator placement, dominance, and
+other structural invariants. It does not build an optional `UseIndex` merely to
+perform this validation. A graph under bulk construction is not published to
+ordinary passes. If final verification finds an invalid graph, that is a
+compiler logic error: it reports the structural diagnostic and hard-asserts
+rather than turning the bug into an interpreter fallback. Region construction
+may similarly attach a batch of mutually referring unplaced instructions before
+validating the batch in its completed context.
 
 Once a graph is published, local transformations use the CFG editor. The
 editor attaches factory-created instructions, rewrites inputs, updates active
-indexes and mutation generations, and detaches replaced instructions. It may
-check contextual invariants eagerly when those checks are constant-time or
-already maintained incrementally. A transformation that performs many related
-edits may use an editor transaction that defers global verification until
-commit; ordinary passes cannot observe the intermediate graph. The editor is
-therefore the authority for mutating a published graph, not a mandatory route
-through which every instruction must be allocated.
+graph-owned indexes and mutation generations, and detaches replaced
+instructions. An on-demand `UseIndex` is updated only when the editing pass
+explicitly retains it as mutation-aware working state; otherwise mutation makes
+it stale. The editor may check contextual invariants eagerly when those checks
+are constant-time or already maintained incrementally. A transformation that
+performs many related edits may use an editor transaction that defers global
+verification until commit; ordinary passes cannot observe the intermediate
+graph. The editor is therefore the authority for mutating a published graph,
+not a mandatory route through which every instruction must be allocated.
 
 Placement is graph-owned state rather than another physical instruction tag.
 The lifetime progression is:
@@ -373,12 +377,13 @@ turn the IR back into a container-relative integer-ID representation.
 `src/jit/instruction.def` is the authoritative schema for the closed set of
 live instruction kinds. Each definition names the instruction kind and typed
 view, the IR level or levels in which it is legal, its intrinsic output
-`SlotClass`, its unavoidable kind effects, its payload shape, and every fixed
-or variable input slot with its `SlotClass`. Repeated inclusion of that schema
-generates or validates the `InstructionKind` enum, invariant kind metadata,
-typed accessors, generic input traversal, output/input class legality, and the
-size and alignment constraints for encoded payloads. The `Detached` storage tag
-is not listed as a semantic instruction definition.
+`SlotClass`, its `MustEffects` lower bound and `MayEffects` upper bound, its
+payload shape, and every fixed or variable input slot with its `SlotClass`.
+Repeated inclusion of that schema generates or validates the `InstructionKind`
+enum, invariant kind metadata, typed accessors, generic input traversal,
+output/input class legality, effect bounds, and the size and alignment
+constraints for encoded payloads. The `Detached` storage tag is not listed as a
+semantic instruction definition.
 
 The schema owns facts that must remain synchronized for every instruction
 kind. It may generate storage decoding and straightforward typed-accessor
@@ -542,38 +547,77 @@ Live(fixed InstructionKind) -> Detached
 ```
 
 The CFG editor performs this transition only after it has rewritten or removed
-every use, removed the instruction's own operand occurrences from use indexes,
-and unlinked the instruction from its block. It then neutralizes managed
-constant slots through the compilation-root mechanism and leaves any still
-registered root slot holding a safe immediate value. It clears or debug-poisons
-the remaining payload storage, notifies active metadata owners, and publishes
-the `Detached` tag last. An editor transaction is not observable by ordinary
-passes in an intermediate state. A detached allocation is never republished or
+every use, removed the instruction's own operand occurrences from any active
+mutation-aware `UseIndex`, and unlinked the instruction from its block. The edit
+plan must establish the absence of incoming uses through a current `UseIndex`
+or a complete generic input scan. The editor then neutralizes managed constant
+slots through the compilation-root mechanism and leaves any still registered
+root slot holding a safe immediate value. It clears or debug-poisons the
+remaining payload storage, notifies active metadata owners, and publishes the
+`Detached` tag last. An editor transaction is not observable by ordinary passes
+in an intermediate state. A detached allocation is never republished or
 returned to a live kind.
 
 The serial is deliberately preserved for diagnostics. Verification rejects a
 detached instruction in a block list, any operand or Snapshot reference whose
-producer is detached, and any remaining use-index entry involving a detached
-instruction. It reports the preserved serial rather than interpreting the
-poisoned payload. Generic traversal likewise checks `is_detached()` before
+producer is detached, and any record involving a detached instruction in a
+current `UseIndex`. It reports the preserved serial rather than interpreting
+the poisoned payload. Generic traversal likewise checks `is_detached()` before
 dispatching on a kind and never visits detached side data. Short-lived typed
 views must not be retained across structural edits.
 
 Input slots are controlled mutable structure. The structural editor may replace
 a slot only with an entity of the same declared `SlotClass`, while maintaining
-the corresponding SSA use index, Snapshot dependency, CFG index, metadata
-lifetime, analysis invalidation, and graph mutation generation. Changing a
-slot's class, count, or layout requires instruction replacement. Typed views
-expose inputs read-only and never provide setters or writable arrays.
+CFG indexes, metadata lifetime, analysis invalidation, and graph mutation
+generation. If the pass has retained a mutation-aware `UseIndex`, the editor
+also updates it; otherwise the generation change makes the old index stale.
+Changing a slot's class, count, or layout requires instruction replacement.
+Typed views expose inputs read-only and never provide setters or writable
+arrays.
 
-Frequent `replace_all_uses_with` operations use indexed `InputSlotHandle`s that
-identify the affected mutable slots directly rather than scanning the graph.
-The schema-generated generic input walker constructs and verifies those
-indexes, rebuilds them when required, and supports cloning, printing, and other
-whole-instruction operations. It walks fixed and variable inputs in declared
+The schema-generated generic input walker is the common primitive for use
+discovery and bulk rewriting. It walks fixed and variable inputs in declared
 order and never compares instruction pointers against words declared as
-`BlockEdge`, metadata, or inline constants. Kind-specific named accessors such
-as branch edges remain available through typed views.
+`BlockEdge`, metadata, or inline constants. For every `ProgramValue` or
+`Snapshot` input it can emit a temporary `UseRecord` containing the producer
+and an `InputSlotHandle` that identifies the user and the schema-declared slot:
+
+```cpp
+struct UseRecord
+{
+    const Instruction *producer;
+    InputSlotHandle input;
+};
+```
+
+Input layout and variable-input counts are immutable, so such a handle remains
+physically resolvable while its user remains live. The editor still validates
+that the user is live and that the slot contains the expected producer before
+rewriting it.
+
+An on-demand, generation-checked `UseIndex` groups these records by producer.
+It is useful for repeated sparse queries such as no-use and single-use tests,
+dead-code elimination, dependent worklists, and replacing the uses of a small
+number of values. Building it costs one whole-graph input walk. It may be
+discarded after one mutation plan, maintained privately by a pass across an
+editing batch, or rebuilt; the graph and ordinary editor do not pay to keep it
+permanently current.
+
+Bulk transformations may instead record a typed replacement map and call a
+generic `rewrite_inputs()` operation. It walks all inputs once and rewrites
+matching instruction references without first materializing use records. This
+costs `O(all inputs + replacements)` and is preferable when translation or
+lowering has accumulated many substitutions. Replacements have simultaneous
+semantics: given `A -> B` and `B -> C`, an original use of `A` becomes `B`
+unless the map was explicitly transitively normalized before the scan. The
+operation validates that every replacement preserves the slot's declared
+`SlotClass` and advances graph and attachment generations once for the batch.
+
+The same walker independently reconstructs uses for verification and also
+supports cloning and printing. The verifier compares any current `UseIndex`
+against reconstructed records and rejects references to detached producers.
+Kind-specific named accessors such as branch edges remain available through
+typed views.
 
 ## Phase-Owned Attached Metadata
 
@@ -586,6 +630,7 @@ defines them, for example:
 SemanticValueAnalysis   Semantic ProgramValueRef -> ValueFacts
 CoreEffectAnalysis      Core Instruction*        -> analyzed EffectFlags
 LocationAssignments     Core Instruction*        -> backend locations
+UseIndex                Instruction*             -> temporary UseRecords
 ```
 
 This is not a generic per-instruction property bag. Each attachment is a
@@ -613,37 +658,43 @@ entries from every active attachment before the editor publishes the detached
 storage tag. Major representation boundaries may build a fresh graph while
 using the same instruction, CFG, serial, and arena machinery.
 
-## Kind Effects and Analyzed Effects
+## Kind Effect Bounds and Analyzed Effects
 
-Instruction-kind effects and analyzed effects have different meanings.
+Each instruction kind declares two immutable effect bounds in
+`src/jit/instruction.def`:
 
-Kind effects are unavoidable semantic properties of the operation. They are
-declared for each `InstructionKind` in `src/jit/instruction.def`, exposed
-through schema-generated invariant metadata, and cannot be removed by analysis.
-Examples include a return terminating its block or an operation performing an
-inherently visible write.
+- `MustEffects` is the lower bound: effects necessarily performed by every
+  instance of that kind and therefore never removable by analysis.
+- `MayEffects` is the upper bound: every effect that any instance of that kind
+  may perform without changing instruction kind.
 
-Analyzed effects are conservative phase-owned metadata for a particular live
+Examples of must-effects include a return terminating its block or an operation
+performing an inherently visible write. A generic call's may-effects include
+raising and its other conservative call implications even when target analysis
+can prove some of them absent for a particular call.
+
+Analyzed effects are conservative phase-owned metadata for one particular live
 instruction. `CoreEffectAnalysis`, or the corresponding concrete analysis for
-another allowed IR level, initializes them conservatively and may refine them
-as operand facts, resolved targets, and other evidence become known.
+another allowed IR level, initializes `PossibleEffects` conservatively and may
+refine that set as operand facts, resolved targets, and other evidence become
+known. Every current entry obeys:
 
-The effective summary is:
-
-```cpp
-EffectFlags CoreEffectAnalysis::effects(const Instruction *instruction) const
-{
-    validate_current_entry(instruction);
-    return instruction_kind_effects(instruction->kind()) |
-           analyzed_effects(instruction);
-}
+```text
+MustEffects(kind) subset-of PossibleEffects(instruction)
+PossibleEffects(instruction) subset-of MayEffects(kind)
 ```
 
-Consequently, an effect that analysis may prove absent must not be classified
-as an unavoidable kind effect. A generic call, for example, may begin with
-`MayRaise` in its analyzed effects; target analysis can remove it when
-justified. An effect inherent in every execution of a kind remains in the kind
-table.
+The effect analysis and verifier assert both bounds. Producing an effect outside
+`MayEffects` means the kind schema is incomplete or the analysis has
+misclassified the instruction; omitting a `MustEffects` bit means the analysis
+is wrong. Neither case is a recoverable compilation failure.
+
+A pass with a current, generation-checked effect-analysis view receives the
+per-instruction `PossibleEffects`. A pass without such a view receives
+`MayEffects`, the conservative kind envelope. Supplying a stale view asserts;
+it never silently falls back. In particular, the physical instruction and its
+typed view do not expose `is_pure()` based on `MustEffects`: absence from the
+lower bound says nothing about what the instruction may do.
 
 Selecting a genuinely different semantic operation still requires instruction
 replacement. An analysis attachment refines facts about the existing operation;
