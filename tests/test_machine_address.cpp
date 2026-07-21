@@ -34,8 +34,10 @@ namespace cl::jit
         EXPECT_EQ(reinterpret_cast<uintptr_t>(storage),
                   detail::MachineAddressAccess::from_pointer(storage)
                       .bits_for_indirect_target());
+#ifndef NDEBUG
         EXPECT_DEATH(detail::MachineAddressAccess::from_pointer(nullptr),
                      "pointer != nullptr");
+#endif
     }
 
     TEST(MachineAddress, AdvancesAndComputesSignedDisplacements)
@@ -66,6 +68,7 @@ namespace cl::jit
 
     TEST(MachineAddress, RejectsInvalidOrOverflowingOperations)
     {
+#ifndef NDEBUG
         constexpr uint8_t address_bits = std::numeric_limits<uintptr_t>::digits;
 
         EXPECT_DEATH(address(0), "bits != 0");
@@ -84,6 +87,7 @@ namespace cl::jit
                              address(std::numeric_limits<uintptr_t>::max())),
                          "magnitude <=");
         }
+#endif
     }
 
     TEST(CodeCacheTypes, DescribesExecutableCode)
