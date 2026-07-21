@@ -428,13 +428,12 @@ delete the installed object.
 GC integration is not implemented yet. It must trace and rewrite every cache-
 retained object's recorded pool slots, including code whose original
 `CodeObject` has become unreachable but which remains callable through a direct
-cross-unit transfer. Until publication, the compilation session's frozen
-constant table owns the mandatory managed values and their associated pins.
-Backend preparation may append optional non-pointer `Value` entries when a pool
-load is more profitable than immediate materialization; these require no pins.
-Successful publication transfers the complete frozen layout to the initialized
-pool while preserving the managed table's indices; abandoning compilation
-destroys the temporary pool state, owners, and pins.
+cross-unit transfer. Until publication, the compilation session's pins keep
+direct managed constants alive and immobile in Core, while the
+`MachineCodeEmitter` owns every surviving `Value` submitted during emission and
+deduplicates final pool entries by raw bit pattern. Successful publication
+copies those emitter-owned values into the initialized pool before releasing
+the pins; abandoning compilation destroys the temporary pool owners and pins.
 
 ## Publication and concurrency invariants
 

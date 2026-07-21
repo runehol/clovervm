@@ -189,7 +189,7 @@ resolve(Label) -> void
 emit_bytes(const void *, size_t) -> void
 emit_relocatable(const void *, size_t, Relocation) -> void
 emit_direct_branch(DirectBranch) -> void
-constant_pool_entry(ConstantPoolSlot) -> ValuePoolEntry
+add_value_to_constant_pool(Value) -> ValuePoolEntry
 finalize(CodeCache &)
     -> Result<CodeAllocation, JitCodeError>
 ```
@@ -409,15 +409,14 @@ unit exposes the pool base and slot count separately to the moving garbage
 collector. The collector may trace and rewrite every slot without decoding or
 modifying instruction bytes; scanning a non-pointer tagged value is harmless.
 
-Before backend preparation, the compilation session owns a deterministic dense
-table containing every mandatory managed `Value` constant. Each Core
-`ConstantPoolSlot` names the same-indexed entry in this stable prefix.
-Compilation pins retain those managed values until the finalized code unit
-assumes the GC-visible references. Backend preparation may deterministically
-append optional non-pointer `Value` entries after that prefix and may deduplicate
-them by bit pattern. These entries require no pin and are identified only by
-backend `ValuePoolEntry`s, not by Core `ConstantPoolSlot`s. It then freezes the
-complete pool layout before code sizing and emission.
+Core retains constants as `Value`s rather than assigning pool indices. During
+program-order emission, the backend submits each surviving pooled constant to
+`MachineCodeEmitter::add_value_to_constant_pool()`. The emitter deduplicates
+identical raw `Value` bit patterns and returns an opaque `ValuePoolEntry` for
+the final dense slot; first submission determines the deterministic slot order.
+Its `Owned<Value>` entries keep the submitted values alive until the finalized
+code unit assumes the GC-visible references. Compilation pins additionally keep
+pointer-valued constants immobile while they remain direct references in Core.
 
 The pool base is aligned to `sizeof(Value)`, typically eight bytes on a 64-bit
 target, so every slot is naturally aligned. Non-`Value` literal data may not be
@@ -425,13 +424,13 @@ interleaved with the precisely scanned slots. A future non-GC literal pool
 requires a separate design and must justify its additional layout,
 identification, and memory-policy complexity.
 
-The target-independent `MachineCodeEmitter` receives the complete frozen pool
-layout alongside its fragments. Looking up a managed `ConstantPoolSlot` returns
-an opaque `ValuePoolEntry` containing that same slot's byte offset; selected
-lowerings already contain `ValuePoolEntry`s for optional non-pointer entries.
-Emission cannot append, deduplicate, or renumber either class of entry. Target
-relocations retain the opaque entry but cannot inspect or perform arithmetic on
-it; only the generic emitter resolves it to a final slot address.
+The target-independent `MachineCodeEmitter` owns the pool builder alongside its
+fragments. Adding a value returns a `ValuePoolEntry` containing its byte offset,
+reusing the existing entry when the raw bits are already present. Managed and
+non-pointer values may therefore be interleaved; every slot has `Value` layout
+and is scanned uniformly. Target relocations retain the opaque entry but cannot
+inspect or perform arithmetic on it; only the generic emitter resolves it to a
+final slot address.
 
 The code cache first proposes stable code and pool addresses within the required
 target reach, then commits the final size as an unpublished allocation:
@@ -474,17 +473,18 @@ value_pool_address + constant_pool_offset
 
 During the third pass the relocation computes the exact fields from that fixed
 address and the instruction's actual executable PC, patches the copied template,
-and revalidates its reach. The frozen managed prefix and optional backend suffix
-are then copied into the final slots while the managed entries' pins remain
-held. Neither code nor pool may move relative to the other afterward.
+and revalidates its reach. The emitter-owned values are then copied into their
+final slots while compilation pins remain held. Neither code nor pool may move
+relative to the other afterward.
 
 ## Immediate materialization
 
 The backend is not forced to place a non-pointer tagged `Value` in the pool. It
 may instead have the target macro assembler materialize the bits with
 instructions. Backend preparation chooses between these forms using the target's
-size and cost model, so both the resulting sequence size and any pool entry are
-known before emission. Raw integers, addresses, floating-point bit patterns,
+size and cost model. The selected lowering fixes the instruction sequence size;
+if it chooses a pool load, program-order emission obtains the deduplicated
+`ValuePoolEntry`. Raw integers, addresses, floating-point bit patterns,
 and other non-`Value` data remain instruction-materialized rather than entering
 the GC-scanned `Value` pool.
 
@@ -765,8 +765,8 @@ bullets apply when that target or instruction family is added:
 - x86-64 RIP-relative pool loads at both `disp32` limits, including final
   relocation rewriting;
 - code-cache allocation failure abandoning compilation without publication,
-  leaking frozen-table values or pins, or setting Python pending-exception
-  state;
+  leaking emitter-owned pool values or compilation pins, or setting Python
+  pending-exception state;
 - simulated GC rewriting of pool slots without changing instruction bytes;
 - labels resolved after encoded bytes, after a direct branch, and
   consecutively, each resolving to the target fragment's start boundary;

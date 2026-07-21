@@ -125,7 +125,7 @@ enum class AttributeClass : uint8_t
     ValidityCell = 6,
     BytecodePC = 7,
     Immediate = 8,
-    ConstantPoolSlot = 9,
+    ValueConstant = 9,
 };
 
 static_assert(static_cast<uint8_t>(OperandClass::ProgramValue) ==
@@ -216,8 +216,12 @@ ShapeKey       -> inline ShapeKey value
 ValidityCell   -> ValidityCell*
 BytecodePC     -> compact bytecode offset or pointer representation
 Immediate      -> inline integer or enum value
-ConstantPoolSlot -> index into the traced JitCodeObject Value pool
+ValueConstant  -> directly embedded Value retained by the compilation session
 ```
+
+`ValueConstant` is the schema classification of that attribute, not a pool
+handle or a second runtime wrapper; its typed accessor and constructor use
+`Value` directly.
 
 The implementation enforces that every encoded class fits the slot size and
 alignment. Variable-length homogeneous operands or attributes and unusually
@@ -387,45 +391,35 @@ rewrites and to validate their completed structure, not to roll back allocation
 failure. On the successful path, an edit must leave the published graph valid.
 On resource failure, the enclosing compilation is discarded.
 
-### Managed Constant Slots and Pins
+### Managed Value Constants and Pins
 
 Instructions and arena-owned side data embed `InlineValueConstant` payload
 directly as `Value`. An `InlineValueConstant` may contain only a bit pattern
-that is not a managed pointer. Managed pointer constants are interned in a
-compilation-session constant table and represented in IR only by a typed
-`ConstantPoolSlot`; no instruction or Snapshot payload contains the raw managed
-`Value`.
-
-Interning assigns a stable dense slot in deterministic insertion order and
-deduplicates identical managed values by object identity, never by invoking
-Python equality. The slot remains valid for the compilation lifetime and
-becomes the same indexed slot in the published `JitCodeObject` pool.
-`LoadConstantPoolValue` uses the slot as an attribute when ordinary Core
-dataflow needs the constant as a `ProgramValue`. Snapshot recovery may consume
-the slot directly without first manufacturing an SSA result.
+that is not a managed pointer. A Core instruction that requires a managed
+constant instead carries the `Value` directly in a `ValueConstant` attribute.
+`LoadConstantPoolValue` uses that attribute when ordinary Core dataflow needs
+the constant as a `ProgramValue`. Snapshot recovery may consume the same
+attribute without first manufacturing an SSA result. Core does not assign a
+pool index or otherwise model the eventual machine-code constant pool.
 
 A compilation pin is a strong root as well as a relocation prohibition. It
 keeps the object alive and prevents its address from changing; a mere
 `do-not-move` bit that still permits reclamation would be insufficient.
-`InlineValueConstant`s require no pin. Each occupied `ConstantPoolSlot` owns or
-names one deduplicated session pin. Pins are normally destroyed session state,
-not fields in arena objects, and are released together when the compilation
-session ends. Detaching an instruction need not remove its individual slot or
-pin; retaining both until the short compilation finishes keeps editor cleanup
-simple and preserves slot identities.
+`InlineValueConstant`s require no pin. Attaching a pointer-valued
+`ValueConstant` requires the compilation session to retain a deduplicated pin
+for that object. Pins are session state rather than fields in arena objects and
+are released together when the compilation session ends. Detaching an
+instruction need not remove its pin; retaining pins until the short compilation
+finishes keeps editor cleanup simple.
 
-On successful publication, the frozen session constant table is copied into the
-same-indexed `JitCodeObject` traced pool before compilation pins are released.
-Machine code and recovery metadata refer to those slots rather than embedding a
-managed `Value`. On failure, the compilation session releases its pins and
-arena while the interpreter continues.
-
-This mandatory table does not prohibit a backend from placing an
-`InlineValueConstant` in the final `Value` pool when a pool load is more
-profitable than synthesizing its bits. Such an entry is optional backend data,
-requires no compilation pin, and is not exposed to Core as a
-`ConstantPoolSlot`. Backend preparation appends any such entries after the
-stable managed-constant slots and freezes the complete layout before emission.
+When a surviving constant is emitted, the backend passes its `Value` to
+`MachineCodeEmitter::add_value_to_constant_pool()`. The emitter owns the
+temporary pool values, assigns and deduplicates final `ValuePoolEntry` offsets,
+and may also pool an `InlineValueConstant` when a load is more profitable than
+synthesizing its bits. None of those decisions changes Core IR. Successful
+publication initializes the `JitCodeObject` pool before session pins are
+released. On failure, the emitter owners, compilation pins, and arena are
+discarded while the interpreter continues.
 
 The initial no-safepoint policy, prohibition on managed allocation during
 compilation, deferred managed-object constant folding, and possible future
@@ -569,7 +563,7 @@ SynthesizeImmediate
 
 LoadConstantPoolValue
     result: ProgramValue(TaggedValue)
-    pool_slot: attr ConstantPoolSlot
+    value: attr ValueConstant
 
 MovF64
     result: ProgramValue(F64)
@@ -585,7 +579,7 @@ Snapshot
     result: Snapshot
     captured_values[]: snapshot operand ProgramValue(AnyRepresentation)
                      or snapshot const InlineValueConstant(TaggedValue)
-                     or snapshot attr ConstantPoolSlot
+                     or snapshot attr ValueConstant
 
 ConditionalBranch
     result: None
@@ -600,16 +594,17 @@ of `ValueRepresentation` and never an instruction result. Snapshot's
 records logical recovery values rather than normal Core dataflow for one
 machine representation. Its schema describes a discriminated `SnapshotValue`
 whose alternatives are a program-value operand, a non-pointer inline constant,
-or a traced constant-pool-slot attribute. This is a Snapshot-specific payload
-shape, not another general operand or attribute class.
+or a directly retained `ValueConstant` attribute. This is a Snapshot-specific
+payload shape, not another general operand or attribute class.
 
 Generated generic traversal reports a `ProgramValueRef` alternative as an
-operand use, reports a `ConstantPoolSlot` alternative to attribute traversal,
+operand use, reports a `ValueConstant` alternative to attribute traversal,
 and reports an `InlineValueConstant` as a producer-less constant alternative.
 The generated Snapshot accessor preserves the same distinction. Side-exit
 frame-sync generation stores tagged program values directly, emits inline
-constants directly, loads managed constants from their traced pool slots, and
-boxes captured `F64` values before writing them to the interpreter frame.
+constants directly, emits retained managed constants through the machine-code
+pool, and boxes captured `F64` values before writing them to the interpreter
+frame.
 Adding another alternative or representation therefore requires an exhaustive
 frame-materialization case. No arithmetic, call, forwarding, parameter, or
 other Core instruction may accept an erased representation.
@@ -618,17 +613,18 @@ Constant-capable `ProgramValue` operands are still semantically Core operands,
 not backend-selected machine immediates. The schema permits them only where an
 embedded constant has the same Python-visible meaning as using a separately
 materialized constant value. `InlineValueConstant` excludes tagged bit patterns
-that identify managed pointers; those constants must be represented by a traced
-constant-pool slot. Whether a particular target instruction can encode an inline
+that identify managed pointers; those constants require an explicit
+`LoadConstantPoolValue` carrying the `Value`. Whether a particular target
+instruction can encode an inline
 constant is decided later by the target backend's combined lowering-selection
 and constant-legalization phase. If the selected lowering cannot encode it for
 that instruction kind, operand position, representation, and constant shape,
 backend preparation materializes the constant and rewrites the consumer to use
 the new `ProgramValueRef`. Inline materialization uses `SynthesizeImmediate`,
 whose lowering may emit one or more target move-immediate instructions or load
-an optional backend-created non-pointer `Value` pool entry. Managed pointer
-materialization uses `LoadConstantPoolValue`, whose lowering must load from its
-traced `ConstantPoolSlot` so collection can rewrite the reference. The phase
+the `Value` from the emitter-owned pool. Managed pointer materialization uses
+`LoadConstantPoolValue`, which carries the managed `Value` directly until its
+lowering asks the emitter for a traced pool entry. The phase
 also selects lowerings and `LocationSummary` records for inserted materializers
 and rewritten consumers before liveness and register allocation run. Immediate
 shape and profitability rules, such as target-specific arithmetic and
@@ -646,7 +642,7 @@ F64Ref make_unbox_f64(
     SnapshotRef snapshot);
 TaggedValueRef make_mov(TaggedValueRef value);
 TaggedValueRef make_synthesize_immediate(InlineValueConstant value);
-TaggedValueRef make_load_constant_pool_value(ConstantPoolSlot slot);
+TaggedValueRef make_load_constant_pool_value(Value value);
 F64Ref make_mov_f64(F64Ref value);
 ```
 
@@ -691,8 +687,8 @@ contain result references. A constant-capable `ProgramValue` operand that
 currently contains an `InlineValueConstant` has no producer and contributes no
 `UseRecord`; it is still visited as an operand so legalization, cloning,
 printing, and pin validation can see it. Attribute slots such as `BlockEdge`,
-`Shape`, `ShapeKey`, `ValidityCell`, bytecode PCs, immediates, and constant
-pool slots are immutable semantic payload; they are skipped by generic use
+`Shape`, `ShapeKey`, `ValidityCell`, bytecode PCs, immediates, and value
+constants are immutable semantic payload; they are skipped by generic use
 discovery and result replacement. CFG maintenance, verification, printing, and
 cloning may inspect attributes through their own visitor or typed accessors.
 
@@ -728,10 +724,10 @@ embedded inline constant is legal only in a `ProgramValue` operand slot whose
 schema permits constants. Verification rejects `AnyRepresentation` on every
 result and on every operand other than `Snapshot.captured_values`. Snapshot
 capture may contain heterogeneous program values, `InlineValueConstant`s, and
-`ConstantPoolSlot`s. Every pool slot must belong to the compilation session's
-frozen constant table. Recovery planning must interpret each captured item
-using its producer's concrete representation, inline-constant payload, or
-traced pool entry and provide an exhaustive frame-materialization operation for
+`ValueConstant`s. Every pointer-valued constant must be covered by the
+compilation session's pin set. Recovery planning must interpret each captured
+item using its producer's concrete representation, inline-constant payload, or
+retained `Value` and provide an exhaustive frame-materialization operation for
 that case.
 
 Each concrete instruction form is a small read-only view holding a
@@ -811,13 +807,12 @@ removed the instruction's own operand occurrences from any active
 mutation-aware `UseIndex`, invalidated or removed active metadata entries, and
 unlinked the instruction from its block. The edit plan must establish the
 absence of incoming uses through a current `UseIndex` or a complete generic
-operand scan. Instruction storage contains no raw managed constant that needs
-individual neutralization; a detached `ConstantPoolSlot` is only an inert index,
-and the compilation session may retain its table entry and pin until the
-session ends. The editor may debug-poison the remaining payload storage and
-publish the detached tag last. An editor transaction is not observable by
-ordinary passes in an intermediate state. Poisoned storage is never republished
-or returned to a live kind.
+operand scan. A detached instruction's pointer-valued `ValueConstant` is no
+longer semantically visible, and the compilation session may retain its pin
+until the session ends. The editor may debug-poison the remaining payload
+storage and publish the detached tag last. An editor transaction is not
+observable by ordinary passes in an intermediate state. Poisoned storage is
+never republished or returned to a live kind.
 
 The serial is deliberately preserved for diagnostics. Any detached instruction
 encountered by verification, generic traversal, typed conversion, a result
@@ -872,7 +867,7 @@ InlineValueConstant  -> InlineValueConstant   no UseRecord
 Otherwise the generation change makes the old index stale. Constants never
 become producers or keys in the use index. Attribute slots such as
 `BlockEdge`, `Shape`, `ShapeKey`, `ValidityCell`, bytecode PCs, immediates, and
-constant pool slots are immutable semantic payload; changing one requires
+value constants are immutable semantic payload; changing one requires
 instruction replacement. Changing any slot's class, representation constraint,
 count, or layout likewise requires replacement. Typed views expose every
 operand and attribute read-only and never provide setters or writable arrays.

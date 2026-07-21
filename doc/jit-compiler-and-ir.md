@@ -382,7 +382,6 @@ A direct backend may maintain tables such as:
 ```text
 ProgramValueRef -> register | spill | canonical slot
                | encodable InlineValueConstant
-               | traced constant-pool slot
 BlockEdge *      -> parallel move bundle
 Instruction *    -> LocationSummary and lowering choice
 ```
@@ -397,7 +396,8 @@ IR operation.
 Core may carry constant-capable `ProgramValue` operands where an embedded inline
 constant has the same semantics as a separately materialized value.
 `InlineValueConstant` excludes tagged bit patterns that identify managed
-pointers. Managed pointer constants use traced constant-pool slots instead.
+pointers. Managed pointer constants use explicit `ValueConstant` attributes on
+`LoadConstantPoolValue` and Snapshot entries instead.
 This is not a promise that every target can encode an inline constant at that
 instruction. Each backend performs lowering selection and constant operand
 legalization as one backend-preparation phase before liveness and register
@@ -409,18 +409,18 @@ logical OR.
 
 Unsupported inline constants are materialized by inserting
 `SynthesizeImmediate`, whose selected lowering may emit one or more target
-move-immediate instructions or load an optional backend-created non-pointer
-`Value` pool entry, and rewriting the consumer to that `ProgramValueRef`.
-Backend preparation may choose the pool form when it is more profitable; Core
-does not require it. Managed pointer constants are materialized by
-`LoadConstantPoolValue`, which produces a normal `ProgramValue` by loading from
-a traced pool slot. The same phase assigns the fixed lowering and
+move-immediate instructions or ask the emitter to pool and load the `Value`,
+and rewriting the consumer to that `ProgramValueRef`. Backend preparation may
+choose the pool form when it is more profitable; Core does not require it.
+Managed pointer constants are materialized by `LoadConstantPoolValue`, which
+retains the `Value` directly and produces a normal `ProgramValue` by asking the
+emitter for a traced pool entry. The same phase assigns the fixed lowering and
 `LocationSummary` for every inserted materializer and the final lowering and
-summary for every rewritten consumer. It also freezes any optional non-pointer
-pool entries before code sizing. Its output therefore has no unexamined constant
-operand: every remaining inline constant is certified for its exact selected
-lowering, and every executable instruction has one lowering choice and
-`LocationSummary`.
+summary for every rewritten consumer. Its output therefore has no unexamined
+constant operand: every remaining inline constant is certified for its exact
+selected lowering, and every executable instruction has one lowering choice
+and `LocationSummary`. Pool entries do not form part of this phase product; the
+selected lowering retains the `Value` until program-order emission.
 
 Backend preparation is atomic as a phase contract even if implemented by local
 selection and rewrite steps. Liveness, Snapshot point-use expansion, and
@@ -432,8 +432,8 @@ generation-checked `BackendPreparation` object, and the allocator accepts that
 object rather than independent tables. This is a concrete phase product, not a
 generic instruction property bag.
 
-Core has no constant-producing `ResultClass`: a constant exists only as
-embedded operand payload or as a constant-pool slot until an instruction
+Core has no constant-producing `ResultClass`: a constant exists only as an
+embedded operand payload or a `ValueConstant` attribute until an instruction
 produces a normal `ProgramValue` from it. This keeps immediate shape rules,
 thresholds, GC relocation requirements, and operand-encoding quirks out of
 Core IR while giving backends a uniform way to select immediate forms when they
@@ -737,7 +737,7 @@ editing supports reference-to-reference, reference-to-constant,
 constant-to-reference, and constant-to-constant replacement while updating an
 active `UseIndex` only for the alternatives that have producers. Non-dataflow
 payload such as `BlockEdge`, `Shape`, `ShapeKey`, `ValidityCell`, immediates,
-bytecode origins, interpreter return PCs, and constant-pool slots are instruction
+bytecode origins, interpreter return PCs, and value constants are instruction
 attributes rather than operands. The
 instruction schema records the result class, the class and layout of every fixed
 or variable operand, which program-value operands allow constants, and the class
@@ -808,27 +808,29 @@ transaction are not supported.
 
 Compilation-time managed references follow the pin-set invariant specified in
 [JIT Instruction Representation](jit-instruction-representation.md). Managed
-constants are interned in the compilation session's constant table, and Core
-stores only typed `ConstantPoolSlot` indices. Other compiler observations may
-retain direct pinned references in session-owned analysis state, but no
-instruction, Snapshot, or arena side-data payload stores a raw managed `Value`.
+constants remain direct `ValueConstant` attributes in Core instructions,
+Snapshots, and arena side data. The compilation session pins every referenced
+managed object; Core neither constructs nor stores machine-code pool indices.
+Other compiler observations may likewise retain direct pinned references in
+session-owned analysis state.
 
 Compiler allocation uses native compilation arenas and buffers. While the
 no-safepoint policy is active, compilation must not invoke managed allocation or
 another runtime path that may itself request a safepoint. Initial constant
 folding is consequently limited to immediates and existing values that can be
-pinned and interned in the session constant table; constructing new managed
+pinned in the session; constructing new managed
 constants such as tuples is deferred. A later design may use deferred
 publication recipes or a safepoint-safe allocation boundary, but every created
-object must be pinned and interned before IR can reference its slot, and any
+object must be pinned before IR can reference it, and any
 semantic validity dependencies must be recorded.
 
-Successful code publication copies the frozen session constant table into the
-same-indexed `JitCodeObject` traced pool before releasing compilation pins.
-Failed compilation releases the scoped pins with the rest of the compilation
-session. The pin set also leaves open a future phase-boundary safepoint scheme
-in which verification first proves that every session-owned direct managed
-reference and every occupied constant-pool slot is pinned.
+Emission submits only surviving constants to `MachineCodeEmitter`, which owns
+them while assigning and deduplicating final pool entries. Successful code
+publication initializes the `JitCodeObject` pool before releasing compilation
+pins. Failed compilation releases the emitter-owned values and scoped pins with
+the rest of the compilation session. The pin set also leaves open a future
+phase-boundary safepoint scheme in which verification first proves that every
+session-owned direct managed reference is pinned.
 
 ### Mostly immutable instructions, mutable graphs, and analysis state
 
@@ -961,9 +963,8 @@ Verification at pass boundaries should require:
   appear only in a constant-capable `ProgramValue` operand with the declared
   representation constraint, and every attribute slot to match its declared
   `AttributeClass` and layout;
-- every `ConstantPoolSlot` to index the current compilation session's pinned
-  constant table, every Snapshot managed constant to use such a slot, and no
-  instruction or side-data payload to contain a raw pointer-valued `Value`;
+- every pointer-valued `ValueConstant` in an instruction, Snapshot, or side-data
+  payload to be covered by the current compilation session's pin set;
 - every result reference to match its producer's intrinsic `ResultClass`, and no
   result reference to be formed from a value-less
   instruction;
@@ -1386,21 +1387,21 @@ corresponding slot through a PC-relative reference. The slot address remains
 fixed relative to the code while collection may rewrite its contents. Immediate
 non-pointer `Value` bit patterns, such as SMIs and singleton immediates, may be
 embedded directly when the target instruction accepts that immediate shape, or
-placed in an optional backend-created pool entry when a load is more profitable.
+submitted to the emitter's pool when a load is more profitable.
 They are never forced into the pool merely because they are `Value`s.
-Core IR never embeds a pointer-valued `Value`. The compilation session interns
-it, owns the corresponding pin, and exposes a stable `ConstantPoolSlot` whose
-index is preserved in the final pool. A `LoadConstantPoolValue` instruction or
-a Snapshot recovery entry refers to that slot directly; emission does not
-discover or renumber managed constants. Optional non-pointer entries require no
-pin, are backend artifacts rather than Core `ConstantPoolSlot`s, and are chosen
-and frozen during backend preparation rather than discovered during emission.
+Core IR retains a pointer-valued constant directly as a `ValueConstant`
+attribute and the compilation session pins the referenced object. A
+`LoadConstantPoolValue` instruction or Snapshot recovery entry carries that
+`Value` until emission. Only constants that survive to emission are submitted
+to `MachineCodeEmitter::add_value_to_constant_pool()`, which deduplicates their
+raw `Value` bit patterns and returns final `ValuePoolEntry` handles. Core never
+observes those handles or pool indices.
 
 Code generation records both reference classes during emission. Verification
 rejects a directly embedded Shape or ValidityCell pointer missing from the
 stable-metadata array, any pointer-valued `Value` embedded as an instruction
-immediate, or any pointer-valued constant use without a corresponding traced
-pool slot. This keeps ordinary moving collection out of instruction rewriting;
+immediate, or any pointer-valued `ValueConstant` not covered by the compilation
+pin set. This keeps ordinary moving collection out of instruction rewriting;
 backend relocation metadata remains for code targets and native symbols rather
 than managed object movement.
 
@@ -1416,11 +1417,11 @@ Initial generated code is installed once and remains alive until its owning
 
 A Core `Snapshot` is the authoritative logical description of
 interpreter-visible state. It already names the resume state, active logical
-frame chain, program values, non-pointer inline constants, traced constant-pool
-slots, and boxing or reification actions needed to leave compiled execution.
-The backend consumes it directly when generating recovery. A Snapshot never
-embeds a raw managed `Value`; a managed constant is named only by its stable
-`ConstantPoolSlot`.
+frame chain, program values, non-pointer inline constants, retained value
+constants, and boxing or reification actions needed to leave compiled
+execution. The backend consumes it directly when generating recovery. A
+Snapshot carries a managed constant as a pinned `ValueConstant`; emission
+submits it to the same emitter-owned pool as other surviving constants.
 
 After allocation, recovery planning combines the Snapshot with two physical
 inputs:
@@ -1470,18 +1471,17 @@ logical Snapshot and FrameState:
     active frame chain
     (frame instance, canonical slot) -> Direct(ProgramValueRef)
                                       | InlineValueConstant
-                                      | ConstantPoolSlot
+                                      | ValueConstant
                                       | RecoveryAction(ProgramValueRef, ...)
     innermost accumulator            -> Direct(ProgramValueRef)
                                       | InlineValueConstant
-                                      | ConstantPoolSlot
+                                      | ValueConstant
                                       | RecoveryAction(ProgramValueRef, ...)
                                       | Dead
 
 machine location state at the exit:
     ProgramValueRef -> register | spill | canonical slot
                    | inline constant
-                   | traced constant-pool slot
 
 canonical HomeState:
     (frame instance, canonical slot) -> ProgramValueRef currently stored there
