@@ -969,15 +969,17 @@ trusted handler pointer + arity
     -> Core lowering
 ```
 
-The owning runtime type declares the handler's operand convention, coercion
-case, result kind, and conservative effects. Core maps selected descriptors to
-specialized operations. Unknown handlers remain generic trusted calls, and a
-recognized handler retains every shape and validity predicate required by its
-IC. A descriptor whose handler can return `Value::exception_marker()` must expose
-that raising behavior in its effects and must use the pending-exception handoff
-path described by the commit-boundary rules. A descriptor may be marked
-non-raising only when the trusted handler cannot install pending exception state
-for the resolved operand shapes and arity.
+The owning runtime type declares the handler's operand convention, coercion case,
+and result kind. Core maps selected descriptors to specialized operations.
+Unknown handlers remain generic trusted calls, and a recognized handler retains
+every shape and validity predicate required by its IC. During the main-codegen
+bring-up, every trusted native handler uses the full trusted-handler
+`MayEffects` envelope and empty `MustEffects`; this deliberately avoids relying
+on per-handler precision before instruction selection, lowering, and side exits
+are landed. A handler that returns `Value::exception_marker()` uses the
+pending-exception handoff path described by the commit-boundary rules. Later
+effect analysis may prove individual effects absent for resolved handlers when
+optimization needs reordering precision.
 
 ### Expanding attribute mutations
 
@@ -1111,8 +1113,10 @@ Relevant properties include whether an operation:
 
 Operation definitions provide precise defaults where possible.
 `ShapeKeyCheck`, for example, has a standard dependency and deoptimization
-shape. Recognized operations inherit effects from semantic descriptors. Python
-calls and unknown operations begin maximally conservative.
+shape. Python calls, unknown operations, and recognized trusted native handlers
+begin maximally conservative. Trusted-handler descriptors may name the selected
+operation and result shape without weakening effects; later analysis records
+effects proven absent when optimization needs that precision.
 
 The authoritative instruction schema declares each kind's `MustEffects` and
 `MayEffects` bounds. New instructions default to the conservative `MayEffects`
