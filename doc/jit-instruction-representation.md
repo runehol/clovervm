@@ -127,7 +127,7 @@ Core program values have one additional intrinsic refinement:
 enum class ValueRepresentation
 {
     TaggedValue,
-    Float64,
+    F64,
 };
 ```
 
@@ -139,13 +139,22 @@ demonstrably need to live across Core instructions as SSA program values.
 
 Every Core instruction producing a `ProgramValue` has exactly one immutable
 representation. For most kinds it is fixed by `instruction.def` and occupies no
-instruction space. Representation-polymorphic structural kinds, such as block
-parameters, declare a representation parameter stored immutably in the
-instruction payload. Semantic IR uses representation-erased `ProgramValueRef`s;
-Semantic-to-Core lowering creates a fresh graph whose program values all have
-representations. Generic Core construction starts with `TaggedValue` and
-introduces another representation only through explicit conversion or
-specialized instructions, so Core never contains an unknown representation.
+instruction space. Instruction kinds are not representation-parametric: when
+the same operation is required for more than one representation, the schema
+defines one kind for each representation. In particular, Core has one `Mov`
+kind and one block-parameter kind per `ValueRepresentation`, initially
+`Mov`, `MovF64`, `Parameter`, and `ParameterF64`. The unsuffixed kinds
+have the common `TaggedValue` representation. Semantic IR does not assign
+representations to its `ProgramValueRef`s; Semantic-to-Core lowering creates a
+fresh graph whose program values all have concrete representations. Generic
+Core construction starts with `TaggedValue` and introduces another
+representation only through explicit conversion or specialized instructions,
+so Core never contains an unknown representation.
+
+Every `ValueRepresentation` must have exactly one corresponding `Mov` kind.
+The schema generates the representation-to-`Mov` mapping and rejects a missing
+or duplicate entry. The tagged kind retains the unsuffixed `Mov` name; other
+representations use `Mov` followed by their representation suffix.
 
 The record may contain raw pointers, serials, enums, flags, scalar immediates,
 and other trivially destructible values. It must not directly contain an
@@ -418,8 +427,8 @@ class RepresentedValueRef;
 
 using TaggedValueRef =
     RepresentedValueRef<ValueRepresentation::TaggedValue>;
-using Float64Ref =
-    RepresentedValueRef<ValueRepresentation::Float64>;
+using F64Ref =
+    RepresentedValueRef<ValueRepresentation::F64>;
 ```
 
 Erasing a `RepresentedValueRef` to `ProgramValueRef` is implicit and free.
@@ -435,8 +444,9 @@ live instruction kinds. Each definition names the instruction kind and typed
 view, the IR level or levels in which it is legal, its intrinsic output
 `SlotClass`, its `MustEffects` lower bound and `MayEffects` upper bound, its
 payload shape, and every fixed or variable input slot with its `SlotClass`.
-Core program-value outputs and inputs additionally declare fixed, parametric,
-or representation-erased constraints. Repeated inclusion of that schema
+Core program-value outputs and inputs additionally declare fixed representation
+constraints. The sole exception is Snapshot's representation-erased
+captured-value input described below. Repeated inclusion of that schema
 generates or validates the `InstructionKind` enum, invariant kind metadata,
 representation-safe construction and access, generic input traversal,
 output/input class legality, effect bounds, and the size and alignment
@@ -454,17 +464,17 @@ Conceptually, representative definitions describe the following payloads. The
 examples elide the required IR-level and effect-bound fields:
 
 ```text
-Float64Add
-    output: ProgramValue(Float64)
-    lhs: ProgramValue(Float64)
-    rhs: ProgramValue(Float64)
+AddF64
+    output: ProgramValue(F64)
+    lhs: ProgramValue(F64)
+    rhs: ProgramValue(F64)
 
-BoxFloat64
+BoxF64
     output: ProgramValue(TaggedValue)
-    value: ProgramValue(Float64)
+    value: ProgramValue(F64)
 
-UnboxFloat64
-    output: ProgramValue(Float64)
+UnboxF64
+    output: ProgramValue(F64)
     value: ProgramValue(TaggedValue)
     snapshot: Snapshot
 
@@ -475,9 +485,19 @@ ShapeGuard
     validity: ValidityCell
     snapshot: Snapshot
 
-Parameter<R>
-    representation_parameter: R
-    output: ProgramValue(R)
+Mov
+    output: ProgramValue(TaggedValue)
+    value: ProgramValue(TaggedValue)
+
+MovF64
+    output: ProgramValue(F64)
+    value: ProgramValue(F64)
+
+Parameter
+    output: ProgramValue(TaggedValue)
+
+ParameterF64
+    output: ProgramValue(F64)
 
 Snapshot
     output: Snapshot
@@ -494,26 +514,33 @@ ConditionalBranch
     false_edge: BlockEdge
 ```
 
-`AnyRepresentation` is reserved for genuinely representation-inspecting or
-representation-agnostic structural consumers such as Snapshot capture. It does
-not let arithmetic or calls silently accept incompatible encodings. Schema
-representation variables such as `R` express equality between selected inputs
-and outputs without adding per-slot runtime tags.
+`AnyRepresentation` is an input constraint in the schema, not a member of
+`ValueRepresentation` and never an instruction output. Snapshot's
+`captured_values` array is the only slot allowed to use it. The generated
+Snapshot accessor returns erased `ProgramValueRef`s, and side-exit frame-sync
+generation inspects each producer's concrete representation: tagged values are
+stored directly, while a captured `F64` is boxed before being written to
+the interpreter frame. Adding another representation therefore requires an
+exhaustive frame-materialization case. No arithmetic, call, forwarding,
+parameter, or other Core instruction may accept an erased representation.
 
 Generated factory methods and typed accessors expose fixed constraints in their
 C++ signatures:
 
 ```cpp
-Float64Ref make_float64_add(Float64Ref lhs, Float64Ref rhs);
-TaggedValueRef make_box_float64(Float64Ref value);
-Float64Ref make_unbox_float64(
+F64Ref make_add_f64(F64Ref lhs, F64Ref rhs);
+TaggedValueRef make_box_f64(F64Ref value);
+F64Ref make_unbox_f64(
     TaggedValueRef value,
     SnapshotRef snapshot);
+TaggedValueRef make_mov(TaggedValueRef value);
+F64Ref make_mov_f64(F64Ref value);
 ```
 
-Representation-parametric kinds use a generated template or equivalent typed
-factory entry and store the selected representation immutably. Exact macro
-spelling remains an implementation detail.
+Defining separate kinds keeps their generated construction and access APIs
+concrete and prevents a representation-polymorphic instruction from becoming
+an unchecked escape hatch. Exact macro spelling remains an implementation
+detail.
 
 No `SlotClass` or `ValueRepresentation` tag is stored beside each payload word.
 Generic code reads the instruction kind once and selects schema-generated
@@ -563,29 +590,30 @@ Semantic graph and `CoreEffectAnalysis` for a Core graph.
 
 For Core graphs, verification additionally requires every `ProgramValue`
 producer to have one legal representation, every fixed input constraint to
-match its producer, and every schema representation variable to unify across
-the slots that name it. Representation-parametric instructions must carry a
-legal immutable argument. Snapshot capture may accept heterogeneous erased
-program values, but recovery planning still interprets each captured value
-using its producer's representation.
+match its producer, and every representation-changing edge to be an explicit
+conversion instruction. It rejects `AnyRepresentation` on every output and on
+every input other than `Snapshot.captured_values`. Snapshot capture may contain
+heterogeneous program values, but recovery planning must interpret each one
+using its producer's concrete representation and provide an exhaustive
+frame-materialization operation for that representation.
 
 Each concrete instruction form is a small read-only view holding a
 `const Instruction *`. It is not derived from `Instruction`, is not separately
 allocated, and does not own storage:
 
 ```cpp
-class Float64AddInstruction
+class AddF64Instruction
 {
 public:
-    static constexpr InstructionKind Kind = InstructionKind::Float64Add;
+    static constexpr InstructionKind Kind = InstructionKind::AddF64;
 
-    Float64Ref lhs() const;
-    Float64Ref rhs() const;
+    F64Ref lhs() const;
+    F64Ref rhs() const;
 
 private:
     friend class Instruction;
 
-    explicit Float64AddInstruction(const Instruction *instruction)
+    explicit AddF64Instruction(const Instruction *instruction)
         : instruction_(instruction)
     {
     }
@@ -895,14 +923,14 @@ variable arguments, Snapshots with variable captured state, and one
 metadata-heavy semantic instruction in `instruction.def`.
 
 That slice should compare plausible fixed record sizes, measure total graph and
-side-data use, and exercise generated construction, fixed and parametric
-representation typing, typed access, generic input walking, verification, and
-destruction-free arena cleanup. Success does not require every payload to fit
-inline. It requires every representative layout to use the same declarative
-schema and uniform arena-owned side data without a handwritten storage or
-traversal escape hatch. The measurements select the payload word count and
-side-data thresholds; discovery of a required escape hatch reopens the
-representation design.
+side-data use, and exercise generated construction, concrete representation
+typing, typed access, generic input walking, verification, Snapshot-only erased
+inputs, and destruction-free arena cleanup. Success does not require every
+payload to fit inline. It requires every representative layout to use the same
+declarative schema and uniform arena-owned side data without a handwritten
+storage or traversal escape hatch. The measurements select the payload word
+count and side-data thresholds; discovery of a required escape hatch reopens
+the representation design.
 
 ## Rejected Directions
 

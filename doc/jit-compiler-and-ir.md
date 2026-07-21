@@ -365,7 +365,7 @@ representations to its own classes, for example:
 
 ```text
 TaggedValue -> general-purpose register class
-Float64     -> floating-point/SIMD register class
+F64         -> floating-point/SIMD register class
 ```
 
 Addresses used only while selecting or emitting one instruction are backend
@@ -375,8 +375,8 @@ to live across Core instructions as SSA program values.
 
 `LocationSummary` may narrow that default to a fixed register or another
 operation-specific constraint, but it may not assign an incompatible class.
-`UnboxFloat` therefore crosses from a general-purpose input to a floating-point
-output, while `BoxFloat` crosses in the opposite direction.
+`UnboxF64` therefore crosses from a general-purpose input to a floating-point
+output, while `BoxF64` crosses in the opposite direction.
 
 These are backend results, not mutations of Core instructions. Internal
 temporaries belong to the selected lowering and may use reserved scratch
@@ -648,17 +648,17 @@ the compiled program's SSA semantics; it does not prescribe the concrete
 
 Core refines `ProgramValueRef` with the producer's immutable
 `ValueRepresentation`. Fixed-representation instruction APIs use zero-overhead
-wrappers such as `TaggedValueRef` and `Float64Ref`, while generic graph
-infrastructure and Semantic IR retain erased `ProgramValueRef`. The schema,
-typed-wrapper, and checked-erasure rules are defined in
-[JIT Instruction Representation](jit-instruction-representation.md).
+wrappers such as `TaggedValueRef` and `F64Ref`, while generic graph
+infrastructure uses erased `ProgramValueRef` and Semantic IR remains
+representation-free. The schema, typed-wrapper, and checked-erasure rules are
+defined in [JIT Instruction Representation](jit-instruction-representation.md).
 
-The initial IRs permit at most one result per instruction. Block parameters
-are representation-parametric output-producing `Parameter<R>`
-pseudo-instructions referenced generically by `ProgramValueRef`; the block
-stores their references in its ordered parameter vector. A genuine need for
-multi-result instructions would justify revisiting this rule, but none is
-currently required.
+The initial IRs permit at most one result per instruction. Core block parameters
+are output-producing pseudo-instructions with one kind per representation,
+initially the tagged `Parameter` and `ParameterF64`, and are referenced
+generically by `ProgramValueRef`; the block stores their references in its
+ordered parameter vector. A genuine need for multi-result instructions would
+justify revisiting this rule, but none is currently required.
 
 A block owns one ordered parameter vector, and every incoming edge supplies an
 equally sized argument vector. The entire edge transfer has parallel-copy
@@ -884,7 +884,7 @@ If higher-effort inference is implemented, Semantic-to-Core lowering consumes
 a second Python type system. Core realizes only the distinctions demanded by
 executable lowering; it does not retain the whole Semantic value-analysis
 attachment unless a concrete later Core pass requires an explicitly designed
-Core attachment. Semantic program-value references remain representation-erased;
+Core attachment. Semantic program-value references remain representation-free;
 Semantic-to-Core lowering creates fresh Core producers with intrinsic
 `ValueRepresentation`s. Backend register classes and assigned locations remain
 separate from those target-independent Core representations.
@@ -1378,26 +1378,26 @@ unboxing to execute ordinary compiled code.
 ### One representation and location per Core SSA value
 
 Every Core `ProgramValueRef` has exactly one immutable
-`ValueRepresentation`. The first schema supports `TaggedValue` and `Float64`,
+`ValueRepresentation`. The first schema supports `TaggedValue` and `F64`,
 although bring-up produces only tagged values until unboxing is implemented.
 Representation is an intrinsic producer and input contract declared by
 `instruction.def`, not an analysis or register-allocation attachment. Semantic
-IR, when present, keeps representation-erased references; its lowering creates
+IR, when present, keeps representation-free references; its lowering creates
 the represented Core values. Boxing, unboxing, and any other representation
 changes are explicit Core SSA instructions that produce new values:
 
 ```text
 %boxed: Tagged<Float>
-%raw:   Float64       = UnboxFloat %boxed
-%sum:   Float64       = FloatAdd %raw, %other_raw
-%result: Tagged<Float> = BoxFloat %sum
+%raw:    F64           = UnboxF64 %boxed
+%sum:    F64           = AddF64 %raw, %other_raw
+%result: Tagged<Float> = BoxF64 %sum
 ```
 
 Representation also determines the value's default backend register class and
 spill layout. On AArch64 a tagged `Value` normally occupies an `X` register and
-an unboxed `Float64` a scalar lane of a NEON/FP register; x86-64 uses its
+an unboxed `F64` a scalar lane of a NEON/FP register; x86-64 uses its
 corresponding general-purpose and XMM classes. These target classes belong to
-the backend, while `TaggedValue` and `Float64` remain common Core
+the backend, while `TaggedValue` and `F64` remain common Core
 representations.
 
 Several representations of one logical Python value may therefore coexist, but
@@ -1405,14 +1405,13 @@ they are separate SSA values connected by visible conversion operations. This
 lets ordinary use lists, dominance, CSE, and liveness describe exactly which
 form each consumer requires. Optimizations may eliminate inverse boxing and
 unboxing pairs only in the identity-safe direction: an
-`UnboxFloat(BoxFloat(%raw))` may simplify to `%raw` when the intermediate box
+`UnboxF64(BoxF64(%raw))` may simplify to `%raw` when the intermediate box
 has no other use and removing its allocation has no observable effect. The
 optimizer may thereby connect arithmetic directly in unboxed form.
 
 Core block parameters also have one representation. Every incoming edge must
-supply that representation to the representation-parametric `Parameter<R>`,
-inserting an explicit conversion in the predecessor or edge block when
-necessary.
+supply the representation fixed by the concrete parameter kind, inserting an
+explicit conversion in the predecessor or edge block when necessary.
 
 At each machine-code position, a live SSA value has one authoritative allocated
 location. Live-range splitting may move that value between a register, spill,
@@ -1428,19 +1427,19 @@ as its authoritative location until a guard or use makes loading it profitable.
 ### Future unboxed floats and reification
 
 Unboxed floats are an advanced optimization, not an initial requirement. An
-`UnboxFloat` of an existing tagged float produces a separate `Float64` SSA value
+`UnboxF64` of an existing tagged float produces a separate `F64` SSA value
 while the original tagged value preserves the existing object identity. If
 interpreter state still denotes that object, its Snapshot entry uses the
 original tagged `ProgramValueRef`; the compiler must not discard it and later
 manufacture a replacement box from the unboxed value.
 
-`BoxFloat(UnboxFloat(%boxed))` must not simplify to `%boxed`: the explicit
+`BoxF64(UnboxF64(%boxed))` must not simplify to `%boxed`: the explicit
 boxing operation creates a new Python object, and reusing the input box would
-change observable identity. Only `UnboxFloat(BoxFloat(%raw))` cancels, and only
+change observable identity. Only `UnboxF64(BoxF64(%raw))` cancels, and only
 when the newly allocated box has no other consumer or observable effect.
 
 A new unboxed arithmetic result has no box until compiled execution or recovery
-needs one. A normal-path `BoxFloat` explicitly produces the tagged SSA value
+needs one. A normal-path `BoxF64` explicitly produces the tagged SSA value
 used by later compiled operations. It may be sunk into Snapshots only when it
 has no normal consumers, deferring its allocation has no observable effect, and
 every affected Snapshot preserves one shared recovery result for all logical

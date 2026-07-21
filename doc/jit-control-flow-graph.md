@@ -266,10 +266,11 @@ definition must be available at the source terminator and therefore dominate
 the edge. The target parameter is a new SSA definition available in the target
 block.
 
-In Core IR each parameter is a representation-parametric `Parameter<R>` and
-every corresponding edge argument must have the same intrinsic
-`ValueRepresentation`. Semantic IR uses representation-erased parameters. A
-Core representation mismatch is repaired by an explicit conversion in the
+Core IR defines a distinct block-parameter instruction kind for each
+`ValueRepresentation`, initially the tagged `Parameter` and
+`ParameterF64`. Every corresponding edge argument must have the same
+intrinsic representation. Semantic IR parameters have no Core representation.
+A Core representation mismatch is repaired by an explicit conversion in the
 predecessor or an edge block, never by register-allocation coercion.
 
 The complete edge transfer has parallel-copy semantics. Argument zero is not
