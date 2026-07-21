@@ -669,6 +669,37 @@ remain valid for that lifetime. The fixed, trivially destructible instruction
 storage and bulk arena lifetime are specified in
 [JIT Instruction Representation](jit-instruction-representation.md).
 
+### Compilation safepoints and managed pins
+
+Initial JIT compilation runs without compiler safepoints. If the runtime
+requests a safepoint, it waits for the current compilation to finish. This
+depends on compilation remaining short and is monitored as part of JIT latency;
+explicit yield points between completed phases may be added later if
+measurements require them. Arbitrary safepoints in the middle of an editor
+transaction are not supported.
+
+IR instructions may embed managed `Value` constants directly. The compilation
+session records every heap referent in a deduplicated strong pin set using the
+same runtime pinning primitive needed to expose stable object addresses to
+CPython extensions. A pin both keeps its object alive and prohibits relocation.
+Immediate values need no pin. This avoids per-operand constant-pool indirection
+and avoids mutable root slots in instruction storage.
+
+Compiler allocation uses native compilation arenas and buffers. While the
+no-safepoint policy is active, compilation must not invoke managed allocation or
+another runtime path that may itself request a safepoint. Initial constant
+folding is consequently limited to immediates and existing pinned values;
+constructing new managed constants such as tuples is deferred. A later design
+may use deferred publication recipes or a safepoint-safe allocation boundary,
+but every created object must enter the compilation pin set before IR can
+reference it, and any semantic validity dependencies must be recorded.
+
+Successful code publication copies required values into the `JitCodeObject`'s
+traced constant pool before releasing compilation pins. Failed compilation
+releases the scoped pins with the rest of the compilation session. The pin set
+also leaves open a future phase-boundary safepoint scheme in which verification
+first proves that every direct managed reference is pinned.
+
 ### Mostly immutable instructions, mutable graphs, and analysis state
 
 An instruction's operation kind, results, bytecode origin, semantic descriptor,
@@ -718,7 +749,7 @@ are discarded, and execution remains in the interpreter. This path does not
 require editor rollback. Bulk compiler state is arena allocated specifically so
 aborting compilation releases instructions, blocks, edges, and side data by
 letting one compilation-scoped arena go out of scope. Normally destroyed tables,
-temporary roots, and other external registrations are owned by the enclosing
+temporary pins, and other external registrations are owned by the enclosing
 compilation session and unwind with it. Generated code, validity dependencies,
 assumptions, and cache entries become persistent only in the final successful
 publication step.
@@ -1155,7 +1186,9 @@ The pool is a separate stable-addressed array of naturally aligned, GC-rewritten
 `Value` slots residing with the machine code. Machine code never embeds a
 `Value` directly; it loads the corresponding slot through a PC-relative
 reference. The slot address remains fixed relative to the code while collection
-may rewrite its contents.
+may rewrite its contents. This backend representation does not require Core IR
+to use pool handles: IR embeds the `Value` directly while its heap referent is
+covered by the compilation pin set, and emission assigns the final pool index.
 
 Code generation records both reference classes during emission. Verification
 rejects a directly embedded Shape or ValidityCell pointer missing from the

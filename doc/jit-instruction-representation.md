@@ -284,8 +284,8 @@ registrations remain owned by the enclosing compilation session and unwind
 alongside the arena.
 
 This failure model does not permit leaked external state. The compilation
-session owns temporary root registrations and similar runtime-visible
-resources, and releases them when an unsuccessful session is destroyed.
+session owns temporary pins and similar runtime-visible resources, and releases
+them when an unsuccessful session is destroyed.
 Compiled code, validity-cell dependencies, assumptions, cache entries, and
 other persistent runtime state are installed only after all fallible compilation
 work and final verification have succeeded. Publication is the final commit;
@@ -297,36 +297,51 @@ rewrites and to validate their completed structure, not to roll back allocation
 failure. On the successful path, an edit must leave the published graph valid.
 On resource failure, the enclosing compilation is discarded.
 
-### Managed Constant Roots
+### Managed Constant Pins
 
-Heap-backed `Value` constants used during compilation are published through a
-separate compilation root table. The table contains `Value *` entries pointing
-to the stable, mutable `Value` slots embedded in instructions or arena-owned
-side data:
+Instructions and arena-owned side data embed `ConstantValue` inputs directly as
+`Value`; they do not indirect through compilation constant-pool handles. Every
+embedded heap reference is also registered in a compilation-scoped,
+deduplicated pin set. The runtime pinning primitive is the same underlying
+mechanism required when a managed object is exposed at a stable address to a
+CPython extension, although the compilation session owns its own scoped set of
+pins.
 
-```cpp
-class CompilationArena
-{
-public:
-    void add_root(Value *slot);
+A compilation pin is a strong root as well as a relocation prohibition. It
+keeps the object alive and prevents its address from changing; a mere
+`do-not-move` bit that still permits reclamation would be insufficient.
+Immediate `Value`s require no pin. Pins are normally destroyed session state,
+not fields in arena objects, and are released together when the compilation
+session ends. Detaching an instruction need not remove its individual pin;
+retaining a deduplicated pin until the short compilation finishes keeps editor
+cleanup simple.
 
-private:
-    std::vector<Value *> root_slots_;
-};
-```
+Initial compilation executes without compiler safepoints. A runtime safepoint
+request waits for the active JIT compilation to finish, so instruction slots do
+not need to be mutable GC root locations and collection never rewrites IR
+storage. Compiler storage uses the native compilation arena, and compiler code
+must not call a managed allocator or runtime operation that can request a
+safepoint while this policy is active.
 
-This lets reclamation and a future moving collector find and, when necessary,
-rewrite the actual instruction or side-data entries. An instruction does not
-contain `Owned<Value>`, and the root table is not a parallel table of owned
-values. Immediate values that contain no managed reference need no root-table
-entry. Schema-generated `ConstantValue` slot enumeration identifies the
-candidate locations whose concrete values determine whether registration is
-needed.
+On successful publication, every managed constant needed by generated code is
+copied into the `JitCodeObject`'s traced constant pool before compilation pins
+are released. Machine code refers to that pool rather than embedding a managed
+`Value`. On failure, the compilation session releases its pins and arena while
+the interpreter continues.
 
-The root table is a normally destroyed compilation object and remains
-registered with the runtime root mechanism for the compilation lifetime. Its
-slots remain valid until that registration ends. Root-table teardown occurs
-before the destructor-free instruction storage is released.
+The pin set leaves a future phase-boundary safepoint design possible without
+adding indirection to instruction operands: before yielding, verification can
+require every direct managed reference to have a corresponding pin. Arbitrary
+mid-edit safepoints remain unsupported, and compilation latency should be
+measured before adding any yield mechanism.
+
+Managed-object-producing constant folding is deferred. The initial optimizer
+may fold to immediates or reuse existing pinned values, but it does not allocate
+a tuple or other new managed object during compilation. If such folding is
+later justified, the design must choose a safepoint-safe allocation path or
+deferred publication recipe and must add every resulting object to the pin set
+before exposing it to IR. That later feature must also record any semantic
+dependencies needed to keep the folded result valid.
 
 ## Pointers, Serials, and Determinism
 
@@ -551,12 +566,12 @@ every use, removed the instruction's own operand occurrences from any active
 mutation-aware `UseIndex`, and unlinked the instruction from its block. The edit
 plan must establish the absence of incoming uses through a current `UseIndex`
 or a complete generic input scan. The editor then neutralizes managed constant
-slots through the compilation-root mechanism and leaves any still registered
-root slot holding a safe immediate value. It clears or debug-poisons the
-remaining payload storage, notifies active metadata owners, and publishes the
-`Detached` tag last. An editor transaction is not observable by ordinary passes
-in an intermediate state. A detached allocation is never republished or
-returned to a live kind.
+slots by replacing them with a safe immediate value; the compilation pin set
+may retain their former referents until the session ends. It clears or
+debug-poisons the remaining payload storage, notifies active metadata owners,
+and publishes the `Detached` tag last. An editor transaction is not observable
+by ordinary passes in an intermediate state. A detached allocation is never
+republished or returned to a live kind.
 
 The serial is deliberately preserved for diagnostics. Verification rejects a
 detached instruction in a block list, any operand or Snapshot reference whose
