@@ -1,0 +1,201 @@
+// Representative authoritative schema for Core JIT instruction kinds.
+//
+// This file deliberately describes semantic payload rather than physical slot
+// placement. Repeated includers define the CL_JIT_* macros to generate or
+// validate kinds, typed views, factories, effect bounds, operand traversal,
+// attributes, and candidate physical layouts.
+//
+// CL_JIT_INSTRUCTION arguments:
+//   name, IR levels, result, effect bounds, operands, attributes
+//
+// CL_JIT_OPERAND arguments:
+//   name                 typed-accessor and diagnostic name
+//   operand class        ProgramValue or Snapshot
+//   representation      TaggedValue or F64 for ProgramValue; None for Snapshot
+//
+// Every ProgramValue operand may hold either a result reference or an inline
+// constant with the matching representation. Backend legalization decides
+// whether a selected lowering may retain that constant at that use. Other
+// operand classes contain result references. CL_JIT_VARIADIC_OPERAND has the
+// same three arguments. Its elements use arena-owned counted storage.
+// SnapshotValues is the one annotated heterogeneous variable payload described
+// by the instruction representation.
+//
+// CL_JIT_ATTRIBUTE arguments:
+//   name, attribute class
+
+CL_JIT_INSTRUCTION(
+    Parameter,
+    CL_JIT_IR_LEVELS(Core),
+    CL_JIT_RESULT(ProgramValue, TaggedValue),
+    CL_JIT_EFFECT_BOUNDS(None, None),
+    CL_JIT_OPERANDS(),
+    CL_JIT_ATTRIBUTES())
+
+CL_JIT_INSTRUCTION(
+    ParameterF64,
+    CL_JIT_IR_LEVELS(Core),
+    CL_JIT_RESULT(ProgramValue, F64),
+    CL_JIT_EFFECT_BOUNDS(None, None),
+    CL_JIT_OPERANDS(),
+    CL_JIT_ATTRIBUTES())
+
+CL_JIT_INSTRUCTION(
+    Mov,
+    CL_JIT_IR_LEVELS(Core),
+    CL_JIT_RESULT(ProgramValue, TaggedValue),
+    CL_JIT_EFFECT_BOUNDS(None, None),
+    CL_JIT_OPERANDS(
+        CL_JIT_OPERAND(value, ProgramValue, TaggedValue)),
+    CL_JIT_ATTRIBUTES())
+
+CL_JIT_INSTRUCTION(
+    MovF64,
+    CL_JIT_IR_LEVELS(Core),
+    CL_JIT_RESULT(ProgramValue, F64),
+    CL_JIT_EFFECT_BOUNDS(None, None),
+    CL_JIT_OPERANDS(
+        CL_JIT_OPERAND(value, ProgramValue, F64)),
+    CL_JIT_ATTRIBUTES())
+
+CL_JIT_INSTRUCTION(
+    AddSMI,
+    CL_JIT_IR_LEVELS(Core),
+    CL_JIT_RESULT(ProgramValue, TaggedValue),
+    CL_JIT_EFFECT_BOUNDS(None, Deoptimize),
+    CL_JIT_OPERANDS(
+        CL_JIT_OPERAND(lhs, ProgramValue, TaggedValue),
+        CL_JIT_OPERAND(rhs, ProgramValue, TaggedValue),
+        CL_JIT_OPERAND(snapshot, Snapshot, None)),
+    CL_JIT_ATTRIBUTES())
+
+CL_JIT_INSTRUCTION(
+    AddF64,
+    CL_JIT_IR_LEVELS(Core),
+    CL_JIT_RESULT(ProgramValue, F64),
+    CL_JIT_EFFECT_BOUNDS(None, None),
+    CL_JIT_OPERANDS(
+        CL_JIT_OPERAND(lhs, ProgramValue, F64),
+        CL_JIT_OPERAND(rhs, ProgramValue, F64)),
+    CL_JIT_ATTRIBUTES())
+
+CL_JIT_INSTRUCTION(
+    BoxF64,
+    CL_JIT_IR_LEVELS(Core),
+    CL_JIT_RESULT(ProgramValue, TaggedValue),
+    CL_JIT_EFFECT_BOUNDS(Allocate, AllocateOrRaise),
+    CL_JIT_OPERANDS(
+        CL_JIT_OPERAND(value, ProgramValue, F64)),
+    CL_JIT_ATTRIBUTES())
+
+CL_JIT_INSTRUCTION(
+    UnboxF64,
+    CL_JIT_IR_LEVELS(Core),
+    CL_JIT_RESULT(ProgramValue, F64),
+    CL_JIT_EFFECT_BOUNDS(None, Deoptimize),
+    CL_JIT_OPERANDS(
+        CL_JIT_OPERAND(value, ProgramValue, TaggedValue),
+        CL_JIT_OPERAND(snapshot, Snapshot, None)),
+    CL_JIT_ATTRIBUTES())
+
+CL_JIT_INSTRUCTION(
+    ShapeGuard,
+    CL_JIT_IR_LEVELS(Core),
+    CL_JIT_RESULT(ProgramValue, TaggedValue),
+    CL_JIT_EFFECT_BOUNDS(None, Deoptimize),
+    CL_JIT_OPERANDS(
+        CL_JIT_OPERAND(value, ProgramValue, TaggedValue),
+        CL_JIT_OPERAND(snapshot, Snapshot, None)),
+    CL_JIT_ATTRIBUTES(
+        CL_JIT_ATTRIBUTE(expected_shape, Shape),
+        CL_JIT_ATTRIBUTE(validity, ValidityCell)))
+
+CL_JIT_INSTRUCTION(
+    ShapeKeyGuard,
+    CL_JIT_IR_LEVELS(Core),
+    CL_JIT_RESULT(ProgramValue, TaggedValue),
+    CL_JIT_EFFECT_BOUNDS(None, Deoptimize),
+    CL_JIT_OPERANDS(
+        CL_JIT_OPERAND(value, ProgramValue, TaggedValue),
+        CL_JIT_OPERAND(snapshot, Snapshot, None)),
+    CL_JIT_ATTRIBUTES(
+        CL_JIT_ATTRIBUTE(expected_shape_key, ShapeKey)))
+
+CL_JIT_INSTRUCTION(
+    SynthesizeImmediate,
+    CL_JIT_IR_LEVELS(Core),
+    CL_JIT_RESULT(ProgramValue, TaggedValue),
+    CL_JIT_EFFECT_BOUNDS(None, None),
+    CL_JIT_OPERANDS(),
+    CL_JIT_ATTRIBUTES(
+        CL_JIT_ATTRIBUTE(value, InlineValueConstant)))
+
+CL_JIT_INSTRUCTION(
+    LoadConstantPoolValue,
+    CL_JIT_IR_LEVELS(Core),
+    CL_JIT_RESULT(ProgramValue, TaggedValue),
+    CL_JIT_EFFECT_BOUNDS(None, None),
+    CL_JIT_OPERANDS(),
+    CL_JIT_ATTRIBUTES(
+        CL_JIT_ATTRIBUTE(value, ValueConstant)))
+
+CL_JIT_INSTRUCTION(
+    PythonCall,
+    CL_JIT_IR_LEVELS(Core),
+    CL_JIT_RESULT(ProgramValue, TaggedValue),
+    CL_JIT_EFFECT_BOUNDS(CallPython, ConservativeCall),
+    CL_JIT_OPERANDS(
+        CL_JIT_OPERAND(callable, ProgramValue, TaggedValue),
+        CL_JIT_VARIADIC_OPERAND(arguments, ProgramValue, TaggedValue),
+        CL_JIT_OPERAND(snapshot, Snapshot, None)),
+    CL_JIT_ATTRIBUTES(
+        CL_JIT_ATTRIBUTE(interpreter_return_pc, BytecodePC)))
+
+CL_JIT_INSTRUCTION(
+    CheckNotImplemented,
+    CL_JIT_IR_LEVELS(Core),
+    CL_JIT_RESULT(ProgramValue, TaggedValue),
+    CL_JIT_EFFECT_BOUNDS(None, ExitJIT),
+    CL_JIT_OPERANDS(
+        CL_JIT_OPERAND(value, ProgramValue, TaggedValue),
+        CL_JIT_OPERAND(snapshot, Snapshot, None)),
+    CL_JIT_ATTRIBUTES())
+
+CL_JIT_INSTRUCTION(
+    Snapshot,
+    CL_JIT_IR_LEVELS(Core),
+    CL_JIT_RESULT(Snapshot, None),
+    CL_JIT_EFFECT_BOUNDS(None, None),
+    CL_JIT_OPERANDS(
+        CL_JIT_SNAPSHOT_VALUES(captured_values)),
+    CL_JIT_ATTRIBUTES(
+        CL_JIT_ATTRIBUTE(resume_pc, BytecodePC)))
+
+CL_JIT_INSTRUCTION(
+    ConditionalBranch,
+    CL_JIT_IR_LEVELS(Core),
+    CL_JIT_RESULT(None, None),
+    CL_JIT_EFFECT_BOUNDS(TerminateBlock, TerminateBlock),
+    CL_JIT_OPERANDS(
+        CL_JIT_OPERAND(condition, ProgramValue, TaggedValue)),
+    CL_JIT_ATTRIBUTES(
+        CL_JIT_ATTRIBUTE(true_edge, BlockEdge),
+        CL_JIT_ATTRIBUTE(false_edge, BlockEdge)))
+
+CL_JIT_INSTRUCTION(
+    UnconditionalBranch,
+    CL_JIT_IR_LEVELS(Core),
+    CL_JIT_RESULT(None, None),
+    CL_JIT_EFFECT_BOUNDS(TerminateBlock, TerminateBlock),
+    CL_JIT_OPERANDS(),
+    CL_JIT_ATTRIBUTES(
+        CL_JIT_ATTRIBUTE(edge, BlockEdge)))
+
+CL_JIT_INSTRUCTION(
+    Return,
+    CL_JIT_IR_LEVELS(Core),
+    CL_JIT_RESULT(None, None),
+    CL_JIT_EFFECT_BOUNDS(TerminateBlock, TerminateBlock),
+    CL_JIT_OPERANDS(
+        CL_JIT_OPERAND(value, ProgramValue, TaggedValue)),
+    CL_JIT_ATTRIBUTES())

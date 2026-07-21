@@ -47,9 +47,10 @@ CFG editor
 
 ## Storage and Lifetime
 
-The physical `Instruction` has one fixed size. The exact number and widths of
-its payload words will be selected while implementing representative
-instructions; this design does not yet fix them. Conceptually it contains:
+The physical `Instruction` is a 48-byte fixed-size record: an 8-byte header and
+five pointer-sized payload slots. The exact division of the header among kind,
+serial, operand count, and flags remains an implementation detail. Conceptually
+it contains:
 
 ```cpp
 class Instruction
@@ -74,11 +75,18 @@ public:
     TypedInstruction as() const;
 
 private:
-    Serial serial_;
-    InstructionStorageTag tag_;
-    InstructionPayload payload_;
+    InstructionHeader header_;
+    InstructionSlot payload_[5];
 };
 ```
+
+The instruction arena places every record at an address congruent to `0x08`
+modulo 16 and advances by the 48-byte record size. Every real `Instruction *`
+therefore has at least one of `value_ptr_mask`'s bits set while remaining an
+ordinary aligned, directly dereferenceable pointer. Successive addresses may
+contain either `0x08` or `0x18` in those bits; instruction references use only
+the nonzero pointer predicate and are never interpreted through
+`Value::storage_class()`.
 
 The physical storage tag normally represents one live `InstructionKind`. The
 exact encoding may also reserve a poison tag used only after the CFG editor has
@@ -92,9 +100,9 @@ storage, for diagnostics.
 Instruction results, instruction operands, and instruction attributes use
 distinct enum types. Operands are instruction-result references that participate
 in SSA use lists, dominance, liveness, and bulk replacement when they contain a
-result reference. A Core `ProgramValue` operand slot may also be declared
-constant-capable; in that case the slot contains either a `ProgramValueRef` or
-an embedded constant payload accepted by the same representation constraint.
+result reference. Every Core `ProgramValue` operand slot may instead contain an
+embedded constant payload accepted by the same representation constraint. This
+is intrinsic to `ProgramValue` operands rather than a per-slot schema policy.
 The initial embedded constant payload is `InlineValueConstant` for tagged VM
 values whose bits do not identify managed pointers.
 Attributes are semantic or structural payload such as block edges, shapes,
@@ -126,6 +134,7 @@ enum class AttributeClass : uint8_t
     BytecodePC = 7,
     Immediate = 8,
     ValueConstant = 9,
+    InlineValueConstant = 10,
 };
 
 static_assert(static_cast<uint8_t>(OperandClass::ProgramValue) ==
@@ -157,11 +166,13 @@ defines an SSA program value, not that analysis knows its precise Python type.
 Such inferred facts belong to a concrete phase-owned metadata object such as
 `SemanticValueAnalysis`. Changing an instruction's result class requires
 replacing the instruction with a different kind. An instruction cannot produce a
-constant as its result. A constant exists only as embedded payload in a
-constant-capable `ProgramValue` operand. Producing a runtime value from a
-non-pointer inline constant uses a program-value-producing instruction such as
-`SynthesizeImmediate`; producing a runtime value from a managed pointer constant
-uses a traced constant-pool load.
+constant as its result. A constant exists as embedded payload in a
+`ProgramValue` operand or as an immutable attribute of an instruction that
+materializes or records it. Producing a runtime value from a non-pointer inline
+constant initially uses the program-value-producing `SynthesizeImmediate`;
+backend legalization may replace it with `LoadConstantPoolValue` when loading
+from the eventual pool is cheaper. A managed pointer constant always uses the
+pool-load form.
 
 Core program values have one additional intrinsic refinement:
 
@@ -208,7 +219,7 @@ stored beside each word, determines their C++ interpretation:
 
 ```text
 ProgramValue   -> Instruction* wrapped as ProgramValueRef
-InlineValueConstant -> inline non-pointer Value in a constant-capable ProgramValue operand
+InlineValueConstant operand alternative -> inline non-pointer Value in a ProgramValue operand
 Snapshot       -> Instruction* wrapped as SnapshotRef
 BlockEdge      -> BlockEdge*
 Shape          -> Shape*
@@ -217,6 +228,7 @@ ValidityCell   -> ValidityCell*
 BytecodePC     -> compact bytecode offset or pointer representation
 Immediate      -> inline integer or enum value
 ValueConstant  -> directly embedded Value retained by the compilation session
+InlineValueConstant attribute -> inline non-pointer Value
 ```
 
 `ValueConstant` is the schema classification of that attribute, not a pool
@@ -226,14 +238,31 @@ handle or a second runtime wrapper; its typed accessor and constructor use
 `InlineValueConstant` is an opaque wrapper whose construction asserts that the
 supplied `Value` bits do not identify a managed pointer. It has no fallible
 construction path: attempting to classify a managed value as inline is a
-compiler logic error. Generated constant-capable operand APIs accept the wrapper
-rather than raw `Value`, while `ValueConstant` attributes continue to expose
-raw `Value` through the session-owned factory.
+compiler logic error. Generated `ProgramValue` operand APIs and
+`InlineValueConstant` attribute APIs accept the wrapper rather than raw `Value`,
+while `ValueConstant` attributes continue to expose raw `Value` through the
+session-owned factory.
+
+This makes a `ProgramValue` operand word self-discriminating without encoded
+pointer tagging or a separate slot tag:
+
+```cpp
+bool is_instruction_reference(uintptr_t word)
+{
+    return (word & value_ptr_mask) != 0;
+}
+```
+
+A reference word is already the directly dereferenceable `Instruction *`. An
+inline constant has both pointer bits clear by construction. The schema remains
+necessary to distinguish ProgramValue and Snapshot operand positions and to
+describe fixed and variable ranges, but not to distinguish a ProgramValue
+reference from its inline-constant alternative.
 
 The implementation enforces that every encoded class fits the slot size and
-alignment. Variable-length homogeneous operands or attributes and unusually
-large instruction data use pointer/count references to compilation-arena
-allocations:
+alignment. Payloads requiring at most five words remain entirely inline.
+Variable-length operands and payloads requiring more than five words use at
+least one inline slot to reference counted compilation-arena side data:
 
 ```cpp
 using InstructionSlot = uintptr_t;
@@ -291,7 +320,7 @@ insertion position:
 
 ```cpp
 CoreInstructionFactory factory(compilation_session);
-ProgramValueRef add = factory.make_add(lhs, rhs);
+ProgramValueRef sum = factory.make_add_smi(lhs, rhs, snapshot);
 ```
 
 The factory surface is generated or validated from `instruction.def`.
@@ -412,10 +441,10 @@ On resource failure, the enclosing compilation is discarded.
 
 Instructions and arena-owned side data embed `InlineValueConstant` payload
 directly as `Value`. An `InlineValueConstant` may contain only a bit pattern
-that is not a managed pointer. A Core instruction that requires a managed
-constant instead carries the `Value` directly in a `ValueConstant` attribute.
-`LoadConstantPoolValue` uses that attribute when ordinary Core dataflow needs
-the constant as a `ProgramValue`. Snapshot recovery may consume the same
+that is not a managed pointer. `LoadConstantPoolValue` carries any `Value`
+selected for pool materialization directly in a `ValueConstant` attribute; this
+form is mandatory for managed constants and may be selected by backend
+legalization for non-pointer constants. Snapshot recovery may consume the same
 attribute without first manufacturing an SSA result. Core does not assign a
 pool index or otherwise model the eventual machine-code constant pool.
 
@@ -441,10 +470,12 @@ implicit may report that coverage trivially.
 When a surviving constant is emitted, the backend passes its `Value` to
 `MachineCodeEmitter::add_value_to_constant_pool()`. The emitter owns the
 temporary pool values, assigns and deduplicates final `ValuePoolEntry` offsets,
-and may also pool an `InlineValueConstant` when a load is more profitable than
-synthesizing its bits. None of those decisions changes Core IR. Successful
-publication initializes the `JitCodeObject` pool before session pins are
-released. On failure, the emitter owners, compilation pins, and arena are
+and emits the load for each surviving `LoadConstantPoolValue`. The backend
+legalizer represents a profitability decision to pool an
+`InlineValueConstant` by replacing its `SynthesizeImmediate` with
+`LoadConstantPoolValue`; the emitter does not make that Core IR decision.
+Successful publication initializes the `JitCodeObject` pool before session pins
+are released. On failure, the emitter owners, compilation pins, and arena are
 discarded while the interpreter continues.
 
 The initial no-safepoint policy, prohibition on managed allocation during
@@ -524,11 +555,13 @@ live instruction kinds. Each definition names the instruction kind and typed
 view, the IR level or levels in which it is legal, its intrinsic
 `ResultClass`, its `MustEffects` lower bound and `MayEffects` upper bound, its
 payload shape, every fixed or variable operand slot with its `OperandClass`,
-whether a `ProgramValue` operand may contain an embedded constant, and every
-immutable payload attribute with its `AttributeClass`. Core program-value
-results and operands additionally declare fixed representation constraints. The
-sole exception is Snapshot's representation-erased captured-value operand
-described below. Repeated inclusion of that schema
+and every immutable payload attribute with its `AttributeClass`. Every
+`ProgramValue` operand may contain a matching embedded constant without an
+additional schema flag. Every attribute declared for a kind is present; the
+schema has no optional-attribute mechanism. Core program-value results and
+operands additionally declare fixed representation constraints. The sole
+exception is Snapshot's representation-erased captured-value operand described
+below. Repeated inclusion of that schema
 generates or validates the `InstructionKind` enum, invariant kind metadata,
 representation-safe construction and access, generic operand traversal,
 result/operand class legality, attribute decoding, effect bounds, and the size
@@ -551,10 +584,11 @@ AddF64
     lhs: ProgramValue(F64)
     rhs: ProgramValue(F64)
 
-Add
+AddSMI
     result: ProgramValue(TaggedValue)
     lhs: ProgramValue(TaggedValue)
-    rhs: ProgramValue(TaggedValue) or const ProgramValue(TaggedValue)
+    rhs: ProgramValue(TaggedValue)
+    snapshot: Snapshot
 
 BoxF64
     result: ProgramValue(TaggedValue)
@@ -576,8 +610,13 @@ PythonCall
     result: ProgramValue(TaggedValue)
     callable: ProgramValue(TaggedValue)
     arguments[]: ProgramValue(TaggedValue)
+    snapshot: Snapshot
     interpreter_return_pc: attr BytecodePC
-    not_implemented_continuation_pc: optional attr BytecodePC
+
+CheckNotImplemented
+    result: ProgramValue(TaggedValue)
+    value: ProgramValue(TaggedValue)
+    snapshot: Snapshot
 
 Mov
     result: ProgramValue(TaggedValue)
@@ -585,7 +624,7 @@ Mov
 
 SynthesizeImmediate
     result: ProgramValue(TaggedValue)
-    value: const InlineValueConstant(TaggedValue)
+    value: attr InlineValueConstant
 
 LoadConstantPoolValue
     result: ProgramValue(TaggedValue)
@@ -606,6 +645,7 @@ Snapshot
     captured_values[]: snapshot operand ProgramValue(AnyRepresentation)
                      or snapshot const InlineValueConstant(TaggedValue)
                      or snapshot attr ValueConstant
+    resume_pc: attr BytecodePC
 
 ConditionalBranch
     result: None
@@ -635,22 +675,23 @@ Adding another alternative or representation therefore requires an exhaustive
 frame-materialization case. No arithmetic, call, forwarding, parameter, or
 other Core instruction may accept an erased representation.
 
-Constant-capable `ProgramValue` operands are still semantically Core operands,
-not backend-selected machine immediates. The schema permits them only where an
-embedded constant has the same Python-visible meaning as using a separately
-materialized constant value. `InlineValueConstant` excludes tagged bit patterns
-that identify managed pointers; those constants require an explicit
-`LoadConstantPoolValue` carrying the `Value`. Whether a particular target
-instruction can encode an inline
-constant is decided later by the target backend's combined lowering-selection
-and constant-legalization phase. If the selected lowering cannot encode it for
+Inline constants in `ProgramValue` operands are still semantically Core
+operands, not backend-selected machine immediates. At the Core level, every
+matching inline constant has the same meaning as using a separately materialized
+constant value. `InlineValueConstant` excludes tagged bit patterns that identify
+managed pointers; those constants require an explicit `LoadConstantPoolValue`
+carrying the `Value`. Whether a particular target instruction can encode an
+inline constant is decided later by the target backend's combined
+lowering-selection and constant-legalization phase. If the selected lowering
+cannot encode it for
 that instruction kind, operand position, representation, and constant shape,
 backend preparation materializes the constant and rewrites the consumer to use
-the new `ProgramValueRef`. Inline materialization uses `SynthesizeImmediate`,
-whose lowering may emit one or more target move-immediate instructions or load
-the `Value` from the emitter-owned pool. Managed pointer materialization uses
-`LoadConstantPoolValue`, which carries the managed `Value` directly until its
-lowering asks the emitter for a traced pool entry. The phase
+the new `ProgramValueRef`. Inline materialization initially uses
+`SynthesizeImmediate`. The same legalization phase estimates its target
+instruction sequence and may replace it with `LoadConstantPoolValue` when a
+pool load is cheaper. `LoadConstantPoolValue` carries the `Value` directly until
+its lowering asks the emitter for a pool entry; it is mandatory for managed
+pointer constants. The phase
 also selects lowerings and `LocationSummary` records for inserted materializers
 and rewritten consumers before liveness and register allocation run. Immediate
 shape and profitability rules, such as target-specific arithmetic and
@@ -658,18 +699,27 @@ logical-immediate encodings or the cost of a pool load, remain backend policy
 rather than Core IR legality.
 
 Generated factory methods and typed accessors expose fixed constraints in their
-C++ signatures:
+C++ signatures. `RepresentedProgramOperand<R>` is the logical operand type for
+representation `R`; it accepts a matching result reference and every inline
+constant form defined for that representation. Initially the tagged form also
+accepts `InlineValueConstant`, while the F64 form accepts only `F64Ref` because
+Core has not yet defined an inline F64 constant payload:
 
 ```cpp
-F64Ref make_add_f64(F64Ref lhs, F64Ref rhs);
-TaggedValueRef make_box_f64(F64Ref value);
+F64Ref make_add_f64(
+    RepresentedProgramOperand<ValueRepresentation::F64> lhs,
+    RepresentedProgramOperand<ValueRepresentation::F64> rhs);
+TaggedValueRef make_box_f64(
+    RepresentedProgramOperand<ValueRepresentation::F64> value);
 F64Ref make_unbox_f64(
-    TaggedValueRef value,
+    RepresentedProgramOperand<ValueRepresentation::TaggedValue> value,
     SnapshotRef snapshot);
-TaggedValueRef make_mov(TaggedValueRef value);
+TaggedValueRef make_mov(
+    RepresentedProgramOperand<ValueRepresentation::TaggedValue> value);
 TaggedValueRef make_synthesize_immediate(InlineValueConstant value);
 TaggedValueRef make_load_constant_pool_value(Value value);
-F64Ref make_mov_f64(F64Ref value);
+F64Ref make_mov_f64(
+    RepresentedProgramOperand<ValueRepresentation::F64> value);
 ```
 
 Defining separate kinds keeps their generated construction and access APIs
@@ -680,17 +730,15 @@ detail.
 No `OperandClass`, `AttributeClass`, or `ValueRepresentation` tag is stored
 beside each payload word. Generic code reads the instruction kind once and
 selects schema-generated layout metadata or a schema-generated per-kind
-enumerator. A constant-capable `ProgramValue` operand additionally stores the
-minimal discriminator needed to distinguish an embedded constant from a result
-reference; that discriminator belongs to the slot's declared encoding, not to
-the generic class system. Conceptually:
+enumerator. A `ProgramValue` operand distinguishes an embedded constant from a
+result reference using the pointer bits already inherent in the two permitted
+word forms. Conceptually:
 
 ```cpp
 struct OperandSlotDescriptor
 {
     OperandClass operand_class;
     ProgramValueConstraint representation_constraint;
-    bool permits_constant_value;
     SlotLayout layout;  // Fixed or variable-length.
     uint16_t offset;
 };
@@ -709,14 +757,14 @@ void visit_attributes(Instruction &instruction, AttributeVisitor visitor);
 The generated dispatch interprets each payload word only according to the
 schema for that instruction kind. `ProgramValue` and `Snapshot` operands are
 ordinary result-reference uses for SSA, liveness, and rewriting when they
-contain result references. A constant-capable `ProgramValue` operand that
-currently contains an `InlineValueConstant` has no producer and contributes no
-`UseRecord`; it is still visited as an operand so legalization, cloning,
-printing, and pin validation can see it. Attribute slots such as `BlockEdge`,
-`Shape`, `ShapeKey`, `ValidityCell`, bytecode PCs, immediates, and value
-constants are immutable semantic payload; they are skipped by generic use
-discovery and result replacement. CFG maintenance, verification, printing, and
-cloning may inspect attributes through their own visitor or typed accessors.
+contain result references. A `ProgramValue` operand that currently contains an
+`InlineValueConstant` has no producer and contributes no `UseRecord`; it is
+still visited as an operand so legalization, cloning, printing, and pin
+validation can see it. Attribute slots such as `BlockEdge`,
+`Shape`, `ShapeKey`, `ValidityCell`, bytecode PCs, immediates, inline constants,
+and value constants are immutable semantic payload; they are skipped by generic
+use discovery and result replacement. CFG maintenance, verification, printing,
+and cloning may inspect attributes through their own visitor or typed accessors.
 
 `Snapshot` is the one explicit exception to ordinary local-use behavior. It is
 a zero-code aggregate result whose captured `ProgramValue` operands become point
@@ -746,8 +794,8 @@ For Core graphs, verification additionally requires every `ProgramValue`
 producer to have one legal representation, every fixed operand constraint to
 match either its producer or its embedded inline constant value, and every
 representation-changing edge to be an explicit conversion instruction. An
-embedded inline constant is legal only in a `ProgramValue` operand slot whose
-schema permits constants. Verification rejects `AnyRepresentation` on every
+embedded inline constant is legal only in a `ProgramValue` operand slot with a
+matching representation. Verification rejects `AnyRepresentation` on every
 result and on every operand other than `Snapshot.captured_values`. Snapshot
 capture may contain heterogeneous program values, `InlineValueConstant`s, and
 `ValueConstant`s. Every pointer-valued constant must be covered by the
@@ -850,9 +898,8 @@ views must not be retained across structural edits.
 Operand slots are controlled mutable structure. The structural editor may
 replace a `Snapshot` operand only with a result of the matching declared
 `OperandClass`. A `ProgramValue` replacement must satisfy the slot's
-representation constraint and normally contains a `ProgramValueRef`; a
-constant-capable slot may instead contain an inline constant. Such a slot
-exposes one logical typed operand value:
+representation constraint and may contain either a `ProgramValueRef` or a
+matching inline constant. Such a slot exposes one logical typed operand value:
 
 ```text
 ProgramValueOperand = ProgramValueRef | InlineValueConstant
@@ -874,8 +921,9 @@ void replace_program_operand(
 
 It verifies that the user is live, the expected value still occupies the slot,
 the slot has `OperandClass::ProgramValue`, the replacement satisfies its
-representation constraint, and an inline replacement is permitted by the
-schema. A referenced producer must be live and belong to the same graph. The
+representation constraint, and an inline replacement is a valid constant form
+for that representation. A referenced producer must be live and belong to the
+same graph. The
 primitive supports both materialization and constant folding; neither
 direction requires instruction replacement.
 
@@ -892,11 +940,12 @@ InlineValueConstant  -> InlineValueConstant   no UseRecord
 
 Otherwise the generation change makes the old index stale. Constants never
 become producers or keys in the use index. Attribute slots such as
-`BlockEdge`, `Shape`, `ShapeKey`, `ValidityCell`, bytecode PCs, immediates, and
-value constants are immutable semantic payload; changing one requires
-instruction replacement. Changing any slot's class, representation constraint,
-count, or layout likewise requires replacement. Typed views expose every
-operand and attribute read-only and never provide setters or writable arrays.
+`BlockEdge`, `Shape`, `ShapeKey`, `ValidityCell`, bytecode PCs, immediates,
+inline constants, and value constants are immutable semantic payload; changing
+one requires instruction replacement. Changing any slot's class, representation
+constraint, count, or layout likewise requires replacement. Typed views expose
+every operand and attribute read-only and never provide setters or writable
+arrays.
 
 The schema-generated generic operand walker is the common primitive for use
 discovery and bulk rewriting. It walks fixed and variable operands in declared
@@ -937,12 +986,10 @@ Replacements have simultaneous semantics: given `A -> B` and `B -> C`, an
 original use of `A` becomes `B` unless the map was explicitly transitively
 normalized before the scan. Before mutating, the bulk operation validates every
 affected slot. Replacing a result with an inline constant is valid only when
-every affected use is constant-capable and has the matching representation. A
-mixed set of constant-capable and reference-only uses requires an explicit
-per-use plan: the pass may inline the constant where legal and place a
-`SynthesizeImmediate` for the remaining uses. Generic rewriting never silently
-inserts that materializer because its placement and dominance are pass
-decisions.
+the constant has the matching representation. Backend preparation later decides
+independently for each selected lowering whether to retain the constant in that
+use or insert `SynthesizeImmediate` and rewrite the use to its
+`ProgramValueRef`. Generic rewriting does not make that target-specific choice.
 
 A representation-changing rewrite likewise inserts an explicit conversion or
 replaces the consumer; it cannot use generic result replacement to connect
@@ -1134,21 +1181,20 @@ explicit and exceptional.
 
 ## Implementation Validation
 
-The remaining physical-sizing decision requires an implementation experiment,
-not another representation mechanism. The first slice should define constants,
-binary arithmetic, shape and shape-key guards, conditional branches, calls with
-variable arguments, Snapshots with variable captured state, and one
-metadata-heavy semantic instruction in `instruction.def`.
+The 48-byte, five-slot layout still requires an implementation experiment. The
+first slice should define constants, binary arithmetic, shape and shape-key
+guards, conditional branches, calls with variable arguments, Snapshots with
+variable captured state, and metadata-heavy Core instructions in
+`instruction.def`.
 
-That slice should compare plausible fixed record sizes, measure total graph and
-side-data use, and exercise generated construction, concrete representation
-typing, typed access, generic operand walking, verification, Snapshot-only
-erased operands, and destruction-free arena cleanup. Success does not require every
-payload to fit inline. It requires every representative layout to use the same
-declarative schema and uniform arena-owned side data without a handwritten
-storage or traversal escape hatch. The measurements select the payload word
-count and side-data thresholds; discovery of a required escape hatch reopens
-the representation design.
+That slice should measure total graph and side-data use and exercise generated
+construction, concrete representation typing, typed access, generic operand
+walking, verification, Snapshot-only erased operands, address-tag invariants,
+and destruction-free arena cleanup. Success does not require every payload to
+fit inline. It requires every representative layout to use the same declarative
+schema and uniform arena-owned side data without a handwritten storage or
+traversal escape hatch. Evidence that the five-slot record causes excessive
+side data or cache cost reopens the sizing decision.
 
 ## Rejected Directions
 

@@ -242,17 +242,22 @@ Core IR uses one Python-call operation. The call records the interpreter return
 pc as an instruction attribute, not as a dataflow operand. That pc is used if
 the callee safepoints, crosses a native boundary, deoptimizes, or otherwise
 returns to interpreter-visible caller state. For ordinary calls and single-step
-protocols, it is the next bytecode pc after the logical call. For multi-step
-operator protocols, the call may instead carry an optional
-`not_implemented_continuation_pc` attribute, pointing at the paired continuation
-bytecode such as `CheckOperatorNotImplemented`; when present, that pc is also
-the call's interpreter return pc.
+protocols, it is the next bytecode pc after the logical call. For a step in a
+multi-step operator protocol, it is the pc of the paired continuation bytecode,
+such as `CheckOperatorNotImplemented`. `PythonCall` has no optional
+NotImplemented-specific attribute or variant.
 
-Only calls with `not_implemented_continuation_pc` are followed by an explicit
-Core check instruction, for example `CheckNotImplemented`. The check tests the
-returned accumulator value before the logical operator is completed. If the
-result is the `NotImplemented` singleton, compiled code exits to the paired
-continuation bytecode with the continuation state expected by the interpreter.
+Such a call is followed by an explicit `CheckNotImplemented` Core instruction.
+The check consumes the call result and forwards the same tagged value on the
+successful path. If the result is the `NotImplemented` singleton, compiled code
+exits through its own Snapshot to the paired continuation bytecode. That
+Snapshot's `resume_pc` is the check's continuation pc, and its accumulator action
+records the call result required by the interpreter continuation. The check
+therefore does not rely on the preceding call's installed return pc or on the
+call having left every interpreter-visible value in canonical storage. This is
+intentionally redundant with the initial fully canonical call-boundary policy:
+it keeps all exit-capable Core instructions on the same recovery path and
+continues to work if calls later use precise safepoint metadata instead.
 Single-step protocols such as unary operators, membership, subscription, and
 ordinary calls do not add that check. The `NotImplemented` check must not be
 hidden inside the generic call node, because the continuation byte is a semantic
@@ -393,8 +398,9 @@ a general call, a callee-safe call, a native leaf call, or a call only on a
 slow path. It is backend analysis data rather than part of the immutable common
 IR operation.
 
-Core may carry constant-capable `ProgramValue` operands where an embedded inline
-constant has the same semantics as a separately materialized value.
+Every Core `ProgramValue` operand may carry an embedded inline constant with the
+same representation and semantics as a separately materialized value. Constant
+capability is not declared separately for each operand.
 `InlineValueConstant` excludes tagged bit patterns that identify managed
 pointers. Managed pointer constants use explicit `ValueConstant` attributes on
 `LoadConstantPoolValue` and Snapshot entries instead.
@@ -408,13 +414,13 @@ accept one set of immediates for integer addition and a different set for
 logical OR.
 
 Unsupported inline constants are materialized by inserting
-`SynthesizeImmediate`, whose selected lowering may emit one or more target
-move-immediate instructions or ask the emitter to pool and load the `Value`,
-and rewriting the consumer to that `ProgramValueRef`. Backend preparation may
-choose the pool form when it is more profitable; Core does not require it.
-Managed pointer constants are materialized by `LoadConstantPoolValue`, which
-retains the `Value` directly and produces a normal `ProgramValue` by asking the
-emitter for a traced pool entry. The same phase assigns the fixed lowering and
+`SynthesizeImmediate` and rewriting the consumer to that `ProgramValueRef`.
+Backend preparation estimates the required target synthesis sequence and may
+replace `SynthesizeImmediate` with `LoadConstantPoolValue` when a pool load is
+more profitable. Managed pointer constants always use
+`LoadConstantPoolValue`. It retains the `Value` directly and produces a normal
+`ProgramValue`; only its eventual lowering asks the emitter for a pool entry.
+The same phase assigns the fixed lowering and
 `LocationSummary` for every inserted materializer and the final lowering and
 summary for every rewritten consumer. Its output therefore has no unexamined
 constant operand: every remaining inline constant is certified for its exact
@@ -565,7 +571,7 @@ returns a new SSA value rather than changing the facts attached to its input:
 ```text
 %value: Value
 %smi: Smi = ShapeKeyCheck %value, Smi
-%result: Smi = SmiAdd %smi, %other_smi
+%result: Smi = AddSMI %smi, %other_smi
 ```
 
 `%value` and `%smi` contain the same runtime bits, but they are distinct SSA
@@ -655,7 +661,7 @@ action consumes it as the failure continuation:
 %lhs_smi: Smi = ShapeKeyCheck %lhs, Smi
     deopt %snapshot
 
-%result: Smi = SmiAdd %lhs_smi, %rhs_smi
+%result: Smi = AddSMI %lhs_smi, %rhs_smi
     overflow %snapshot
 ```
 
@@ -728,8 +734,7 @@ Operand slots use a separate `OperandClass` enum. `OperandClass::ProgramValue`
 and `OperandClass::Snapshot` intentionally have the same numeric values as their
 matching `ResultClass` cases, so validation can compare result-consuming
 operands without a mapping switch. A Core `ProgramValue` operand may be
-declared constant-capable, allowing the slot to contain either a
-`ProgramValueRef` or an embedded constant payload accepted by the same
+either a `ProgramValueRef` or an embedded constant payload accepted by the same
 representation constraint. The initial embedded constant payload is
 `InlineValueConstant` for non-pointer tagged VM values. This logical slot value
 is called `ProgramValueOperand`; it is not another `OperandClass`. Structural
@@ -737,11 +742,10 @@ editing supports reference-to-reference, reference-to-constant,
 constant-to-reference, and constant-to-constant replacement while updating an
 active `UseIndex` only for the alternatives that have producers. Non-dataflow
 payload such as `BlockEdge`, `Shape`, `ShapeKey`, `ValidityCell`, immediates,
-bytecode origins, interpreter return PCs, and value constants are instruction
-attributes rather than operands. The
-instruction schema records the result class, the class and layout of every fixed
-or variable operand, which program-value operands allow constants, and the class
-and layout of every attribute as defined in
+bytecode origins, interpreter return PCs, inline constants, and value constants
+are instruction attributes rather than operands. The instruction schema records
+the result class, the class and layout of every fixed or variable operand, and
+the class and layout of every attribute as defined in
 [JIT Instruction Representation](jit-instruction-representation.md).
 
 The instruction pointer also names its result when it has one. Typed result
@@ -968,8 +972,8 @@ Verification at pass boundaries should require:
 
 - every fixed and variable operand slot to match the `OperandClass` and layout
   declared for its instruction kind, every embedded `InlineValueConstant` to
-  appear only in a constant-capable `ProgramValue` operand with the declared
-  representation constraint, and every attribute slot to match its declared
+  appear only in a `ProgramValue` operand with the declared representation
+  constraint, and every attribute slot to match its declared
   `AttributeClass` and layout;
 - every pointer-valued `ValueConstant` in an instruction, Snapshot, or side-data
   payload to be covered by the current compilation session's pin set;
@@ -1043,7 +1047,7 @@ Add
     -> ShapeKeyCheck
     -> ShapeKeyCheck
     -> ValidityCellCheck          # when required
-    -> SmiAdd | recognized operation | TrustedFunctionCall | PythonFunctionCall
+    -> AddSMI | recognized operation | TrustedFunctionCall | PythonFunctionCall
 ```
 
 Pre-operation checks have no Python-visible side effects. Only the selected
@@ -1063,7 +1067,7 @@ dependency:
 ```text
 %lhs_smi: Smi = ShapeKeyCheck %lhs, Smi
 %rhs_smi: Smi = ShapeKeyCheck %rhs, Smi
-%result: Smi = SmiAdd %lhs_smi, %rhs_smi
+%result: Smi = AddSMI %lhs_smi, %rhs_smi
 ```
 
 The checks retain their original bytecode PCs and bailout states. A check can
@@ -1803,7 +1807,7 @@ The corresponding higher-effort polymorphic example is in
 
 ### Core IR and optimization
 
-- completion of the fixed-record and side-data experiment specified in
+- validation of the 48-byte fixed-record and side-data experiment specified in
   [JIT Instruction Representation](jit-instruction-representation.md);
 - concrete implementations of the accepted graph-builder and mutation-editor
   contracts;
