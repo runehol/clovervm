@@ -765,24 +765,24 @@ dependencies, assumptions, and cache entries become persistent only at final
 successful publication. Editor rollback is not required after an aborted
 compilation.
 
-Inferred types, possible effects, and other derived knowledge are not fields on
+Inferred types, proven-absent effects, and other derived knowledge are not fields on
 the physical instruction. Concrete phase-owned metadata objects index
 instructions or typed results, for example:
 
 ```text
 Semantic ProgramValueRef -> ValueFacts
-Core Instruction*        -> PossibleEffects
+Core Instruction*        -> ProvenAbsentEffects
 PartitionId     -> ConditionalFacts
 ProgramValueRef -> CorrelatedEvidence
 ```
 
 Each metadata object has its own graph-level and generation contract. Mutable
-analysis updates its private serial-indexed storage and publishes a frozen view;
+analysis updates its private storage and publishes a frozen view;
 transformations consume only a view whose source generation still matches the
-graph. Structural mutation makes the old view stale, but a mutation-aware
-analysis may preserve unaffected entries, derive local facts for transparent
-instructions, and incrementally recompute affected dependents before publishing
-the next generation. Metadata is discarded when no later phase consumes it.
+graph. Structural mutation makes old views stale. The baseline is to invalidate
+and recompute any analysis a later pass still needs; mutation-aware preservation
+and incremental recomputation can be added later when broad invalidation is
+measurably too expensive. Metadata is discarded when no later phase consumes it.
 Immutable instruction-kind metadata supplies both a `MustEffects` lower bound
 and a conservative `MayEffects` upper bound. Selecting a genuinely different
 semantic operation, such as replacing a generic call with recognized float
@@ -828,10 +828,12 @@ A CFG has an IR mutation generation, and cached analyses record their source
 generation. Inserting, removing, or replacing an instruction; changing a
 definition or operand; associating a new partition anchor through instruction
 replacement; or structurally editing the CFG advances the applicable
-generation and makes prior frozen views stale. An analysis may invalidate and
-recompute broadly or consume the editor's mutation description to preserve and
-cheaply update facts whose validity is locally provable. It publishes a new
-frozen view only after its state is valid for the new graph generation.
+generation and makes prior frozen views stale. The baseline is broad
+invalidation and recomputation before the next consuming pass. A later analysis
+may consume editor mutation descriptions to preserve and cheaply update facts
+whose validity is locally provable, but this is optional optimization
+machinery. It publishes a new frozen view only after its state is valid for the
+new graph generation.
 Querying a stale frozen view asserts. The owning analysis must explicitly update
 or recompute and publish a current view before a pass resumes querying it.
 Passes must not mutate instructions or graph structures directly.
@@ -1090,11 +1092,13 @@ shape. Recognized operations inherit effects from semantic descriptors. Python
 calls and unknown operations begin maximally conservative.
 
 The authoritative instruction schema declares each kind's `MustEffects` and
-`MayEffects` bounds. A concrete phase-owned analysis supplies a current
-per-instruction `PossibleEffects` set within those bounds; without that analysis
-passes use the conservative `MayEffects` envelope. The bound checks, stale-view
-behavior, and prohibition on inferring purity from `MustEffects` alone are
-specified in [JIT Instruction Representation](jit-instruction-representation.md).
+`MayEffects` bounds. New instructions default to the conservative `MayEffects`
+envelope, and passes may use that envelope directly. When an optimization needs
+more precision, a concrete phase-owned analysis can prove and publish a current
+per-instruction `ProvenAbsentEffects` set; consumers derive effective effects as
+`MayEffects - ProvenAbsentEffects`. The bound checks, stale-view behavior, and
+prohibition on inferring purity from `MustEffects` alone are specified in
+[JIT Instruction Representation](jit-instruction-representation.md).
 Specialization that selects a different semantic operation constructs a
 replacement instruction and therefore adopts the new kind's bounds.
 

@@ -6,7 +6,7 @@
 | Status | Accepted |
 | Implementation | Not started; the current virtual instruction hierarchy is temporary CFG scaffolding |
 | Scope | Physical instruction storage, typed instruction access, Core value representations, IR-level legality, phase metadata, effects, matching, and arena lifetime for Core and Semantic IR |
-| Owning layers | The JIT instruction representation owns storage, schema-generated construction, and typed access; the bulk graph builder owns deferred-validation construction; concrete analyses own attached inferred facts and possible effects; the CFG editor owns incremental structural mutation |
+| Owning layers | The JIT instruction representation owns storage, schema-generated construction, and typed access; the bulk graph builder owns deferred-validation construction; concrete analyses own attached inferred facts and proven-absent effects; the CFG editor owns incremental structural mutation |
 | Validated against | N/A |
 | Supersedes | The open instruction-representation alternatives in [JIT Control-Flow Graph](jit-control-flow-graph.md) and the integer-only instruction reference direction in [JIT Compiler and IR](jit-compiler-and-ir.md) |
 
@@ -33,7 +33,7 @@ AddInstruction, CallInstruction, ...
 
 SemanticValueAnalysis, CoreEffectAnalysis, ...
     concrete phase-owned metadata indexed by instruction
-    attached, frozen, incrementally updated, and discarded as required
+    attached, frozen, invalidated, recomputed, and discarded as required
 
 IR-level instruction factory
     schema-safe allocation of intrinsically valid, unplaced instructions
@@ -643,7 +643,7 @@ private:
 ```
 
 The view exposes only immutable fields meaningful for its instruction kind.
-Inferred types, possible effects, locations, and other phase knowledge are read
+Inferred types, proven-absent effects, locations, and other phase knowledge are read
 through the concrete metadata object that owns them, not through a typed
 instruction view. Copying a view copies a non-owning read capability; it never
 grants mutation authority. Views are intended to be short-lived pass locals
@@ -770,14 +770,14 @@ typed views.
 
 ## Phase-Owned Attached Metadata
 
-Inferred types, possible effects, dependencies, locations, and similar derived
+Inferred types, proven-absent effects, dependencies, locations, and similar derived
 facts are not part of the physical instruction representation. They live in
 explicit metadata objects owned by the phase and IR level that defines them,
 for example:
 
 ```text
 SemanticValueAnalysis   Semantic ProgramValueRef -> ValueFacts
-CoreEffectAnalysis      Core Instruction*        -> PossibleEffects
+CoreEffectAnalysis      Core Instruction*        -> ProvenAbsentEffects
 LocationAssignments     Core Instruction*        -> backend locations
 UseIndex                Instruction*             -> temporary UseRecords
 ```
@@ -797,11 +797,11 @@ Mutable analysis builds or updates its private table and publishes a frozen
 view tagged with the source graph and mutation generation. Every query validates
 that the graph still has that generation, that the instruction is live and
 belongs to the graph, and that the entry's pointer matches. Structural mutation
-makes an old frozen view stale, but it does not require discarding all stored
-facts. The editor supplies a mutation description so the owning analysis can
-preserve unaffected entries, cheaply derive facts for locally transparent
-instructions, and incrementally recompute only affected dependents before
-publishing the next generation.
+makes old frozen views stale. The baseline response is broad invalidation and
+recomputation of any analysis a later pass still needs. A future analysis may
+consume editor mutation descriptions to preserve unaffected entries or
+recompute only affected dependents, but that is an optimization justified by
+measured cost, not a requirement of the instruction representation.
 
 Attachments exist only while a later phase consumes them. Semantic value facts
 may be discarded after Semantic-to-Core lowering; Core effect information may
@@ -811,7 +811,7 @@ entries from every active attachment before the editor may poison the abandoned
 storage. Major representation boundaries may build a fresh graph while using
 the same instruction, CFG, serial, and arena machinery.
 
-## Kind Effect Bounds and Possible Effects
+## Kind Effect Bounds and Proven Absence
 
 Each instruction kind declares two immutable effect bounds in
 `src/jit/instruction.def`:
@@ -826,28 +826,35 @@ performing an inherently visible write. A generic call's may-effects include
 raising and its other conservative call implications even when target analysis
 can prove some of them absent for a particular call.
 
-Possible effects are conservative phase-owned metadata for one particular live
-instruction. `CoreEffectAnalysis`, or the corresponding concrete analysis for
-another allowed IR level, initializes `PossibleEffects` conservatively and may
-refine that set as operand facts, resolved targets, and other evidence become
-known. Every current entry obeys:
+When a pass needs refined effect information, a concrete phase-owned analysis
+may provide proof metadata for one particular live instruction.
+Newly constructed instructions default to the kind's full `MayEffects`
+envelope. `CoreEffectAnalysis`, or the corresponding concrete analysis for
+another allowed IR level, stores the effects it has proven absent from operand
+facts, resolved targets, and other evidence:
 
 ```text
-MustEffects(kind) subset-of PossibleEffects(instruction)
-PossibleEffects(instruction) subset-of MayEffects(kind)
+ProvenAbsentEffects(instruction) subset-of MayEffects(kind)
+ProvenAbsentEffects(instruction) intersection MustEffects(kind) == empty
+EffectiveEffects(instruction) =
+    MayEffects(kind) - ProvenAbsentEffects(instruction)
 ```
 
-The effect analysis and verifier assert both bounds. Producing an effect outside
-`MayEffects` means the kind schema is incomplete or the analysis has
-misclassified the instruction; omitting a `MustEffects` bit means the analysis
-is wrong. Neither case is a recoverable compilation failure.
+Any effect analysis that exists must assert those constraints. Proving absent
+an effect outside `MayEffects` means the analysis is recording irrelevant or
+misclassified information; proving absent a `MustEffects` bit means the
+instruction kind metadata or analysis is wrong. Neither case is a recoverable
+compilation failure.
 
 A pass with a current, generation-checked effect-analysis view receives the
-per-instruction `PossibleEffects`. A pass without such a view receives
-`MayEffects`, the conservative kind envelope. Supplying a stale view asserts;
-it never silently falls back. In particular, the physical instruction and its
-typed view do not expose `is_pure()` based on `MustEffects`: absence from the
-lower bound says nothing about what the instruction may do.
+per-instruction `ProvenAbsentEffects` and derives `EffectiveEffects` with the
+formula above. A pass without such a view receives `MayEffects`, the
+conservative kind envelope. Supplying a stale view asserts; it never silently
+falls back. The first Core slice may rely entirely on `MayEffects` until a real
+optimization needs a refined attachment. In particular, the physical
+instruction and its typed view do not expose `is_pure()` based on
+`MustEffects`: absence from the lower bound says nothing about what the
+instruction may do.
 
 Selecting a genuinely different semantic operation still requires instruction
 replacement. An analysis attachment refines facts about the existing operation;

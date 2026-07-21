@@ -158,13 +158,14 @@ position.
 
 Semantic value facts live in a concrete `SemanticValueAnalysis` attachment
 indexed by typed Semantic `ProgramValueRef`s; they are not fields on the
-physical instruction. Mutable inference updates private serial-indexed storage
-and publishes a generation-checked frozen view. A structural edit makes the old
-view stale, but inference may preserve unaffected entries, apply local transfer
-functions to transparent edits, and incrementally revisit only affected
-dependents before publishing the next generation. Conditional facts and
-partition state remain in their own concrete Semantic analysis attachments. An
-operation supplies a transfer function:
+physical instruction. Mutable inference updates private storage and publishes a
+generation-checked frozen view. A structural edit makes old views stale; broad
+recomputation is the baseline before a later pass consumes facts again.
+Inference may later preserve unaffected entries, apply local transfer functions
+to transparent edits, or revisit only affected dependents when measurements
+justify that complexity. Conditional facts and partition state remain in their
+own concrete Semantic analysis attachments. An operation supplies a transfer
+function:
 
 ```text
 infer_result(operation, operand facts) -> ValueFacts
