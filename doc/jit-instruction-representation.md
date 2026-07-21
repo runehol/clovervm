@@ -799,14 +799,50 @@ code does not branch on detachedness as a supported case; short-lived typed
 views must not be retained across structural edits.
 
 Operand slots are controlled mutable structure. The structural editor may
-replace a `ProgramValue` or `Snapshot` operand only with a result of the
-matching declared `OperandClass`; Core program-value replacement must also
-preserve `ValueRepresentation`. For a constant-capable `ProgramValue` operand,
-the editor may also replace an embedded `InlineValueConstant` with a
-materialized `ProgramValueRef` of the same representation. The editor maintains metadata
-lifetime, analysis invalidation, and graph mutation generation. If the pass has
-retained a mutation-aware `UseIndex`, the editor also updates it; otherwise the
-generation change makes the old index stale. Attribute slots such as
+replace a `Snapshot` operand only with a result of the matching declared
+`OperandClass`. A `ProgramValue` replacement must satisfy the slot's
+representation constraint and normally contains a `ProgramValueRef`; a
+constant-capable slot may instead contain an inline constant. Such a slot
+exposes one logical typed operand value:
+
+```text
+ProgramValueOperand = ProgramValueRef | InlineValueConstant
+```
+
+This name describes the typed slot value, not another operand class or a
+required `std::variant` storage layout. The slot's schema still provides the
+class and representation, and its existing discriminator identifies which
+alternative is present.
+
+The editor provides one symmetric primitive for changing such a slot:
+
+```cpp
+void replace_program_operand(
+    OperandSlotHandle slot,
+    ProgramValueOperand expected,
+    ProgramValueOperand replacement);
+```
+
+It verifies that the user is live, the expected value still occupies the slot,
+the slot has `OperandClass::ProgramValue`, the replacement satisfies its
+representation constraint, and an inline replacement is permitted by the
+schema. A referenced producer must be live and belong to the same graph. The
+primitive supports both materialization and constant folding; neither
+direction requires instruction replacement.
+
+The editor maintains metadata lifetime, analysis invalidation, and graph
+mutation generation. If the pass has retained a mutation-aware `UseIndex`, the
+editor updates it according to the operand transition:
+
+```text
+ProgramValueRef      -> ProgramValueRef       move the UseRecord
+ProgramValueRef      -> InlineValueConstant   remove the UseRecord
+InlineValueConstant  -> ProgramValueRef       add a UseRecord
+InlineValueConstant  -> InlineValueConstant   no UseRecord
+```
+
+Otherwise the generation change makes the old index stale. Constants never
+become producers or keys in the use index. Attribute slots such as
 `BlockEdge`, `Shape`, `ShapeKey`, `ValidityCell`, bytecode PCs, immediates, and
 constant pool slots are immutable semantic payload; changing one requires
 instruction replacement. Changing any slot's class, representation constraint,
@@ -841,17 +877,29 @@ editing batch, or rebuilt; the graph and ordinary editor do not pay to keep it
 permanently current.
 
 Bulk transformations may instead record a typed replacement map and call a
-generic `rewrite_operands()` operation. It walks all operands once and rewrites
-matching instruction references without first materializing use records. This
+generic `rewrite_operands()` operation. A program-value replacement maps a
+`ProgramValueRef` to a `ProgramValueOperand`, while Snapshot replacements remain
+result-reference replacements. The operation walks all operands once and
+rewrites matching references without first materializing use records. This
 costs `O(all operands + replacements)` and is preferable when translation or
-lowering has accumulated many substitutions. Replacements have simultaneous
-semantics: given `A -> B` and `B -> C`, an original use of `A` becomes `B`
-unless the map was explicitly transitively normalized before the scan. The
-operation validates that every replacement preserves the slot's declared
-`OperandClass` and, in Core, the producer's `ValueRepresentation`. A
-representation-changing rewrite inserts an explicit conversion or replaces the
-consumer; it cannot use generic result replacement to connect incompatible
-encodings. The batch advances graph and attachment generations once.
+lowering has accumulated many substitutions.
+
+Replacements have simultaneous semantics: given `A -> B` and `B -> C`, an
+original use of `A` becomes `B` unless the map was explicitly transitively
+normalized before the scan. Before mutating, the bulk operation validates every
+affected slot. Replacing a result with an inline constant is valid only when
+every affected use is constant-capable and has the matching representation. A
+mixed set of constant-capable and reference-only uses requires an explicit
+per-use plan: the pass may inline the constant where legal and place a
+`SynthesizeImmediate` for the remaining uses. Generic rewriting never silently
+inserts that materializer because its placement and dominance are pass
+decisions.
+
+A representation-changing rewrite likewise inserts an explicit conversion or
+replaces the consumer; it cannot use generic result replacement to connect
+incompatible encodings. After successful preflight, the batch applies the same
+four use-index transitions as the single-slot editor and advances graph and
+attachment generations once.
 
 The same walker independently reconstructs uses for verification and also
 supports cloning and printing of operand relationships. Attribute visitors or

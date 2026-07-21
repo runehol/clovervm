@@ -728,9 +728,13 @@ operands without a mapping switch. A Core `ProgramValue` operand may be
 declared constant-capable, allowing the slot to contain either a
 `ProgramValueRef` or an embedded constant payload accepted by the same
 representation constraint. The initial embedded constant payload is
-`InlineValueConstant` for non-pointer tagged VM values. Non-dataflow payload
-such as `BlockEdge`, `Shape`, `ShapeKey`, `ValidityCell`, immediates, bytecode
-origins, interpreter return PCs, and constant-pool slots are instruction
+`InlineValueConstant` for non-pointer tagged VM values. This logical slot value
+is called `ProgramValueOperand`; it is not another `OperandClass`. Structural
+editing supports reference-to-reference, reference-to-constant,
+constant-to-reference, and constant-to-constant replacement while updating an
+active `UseIndex` only for the alternatives that have producers. Non-dataflow
+payload such as `BlockEdge`, `Shape`, `ShapeKey`, `ValidityCell`, immediates,
+bytecode origins, interpreter return PCs, and constant-pool slots are instruction
 attributes rather than operands. The
 instruction schema records the result class, the class and layout of every fixed
 or variable operand, which program-value operands allow constants, and the class
