@@ -2,6 +2,7 @@
 #define CL_JIT_INSTRUCTION_H
 
 #include "jit/serial.h"
+#include "object_model/shape_key.h"
 #include "object_model/value.h"
 
 #include <absl/container/inlined_vector.h>
@@ -10,8 +11,15 @@
 #include <cassert>
 #include <cstddef>
 #include <cstdint>
+#include <cstring>
 #include <type_traits>
 #include <utility>
+
+namespace cl
+{
+    class Shape;
+    class ValidityCell;
+}  // namespace cl
 
 namespace cl::jit
 {
@@ -50,6 +58,32 @@ namespace cl::jit
         ConservativeCall,
         ExitJIT,
         TerminateBlock,
+    };
+
+    enum class IRLevelMask : uint8_t
+    {
+        None = 0,
+        Semantic = 1 << 0,
+        Core = 1 << 1,
+        Machine = 1 << 2,
+    };
+
+    constexpr IRLevelMask operator|(IRLevelMask lhs, IRLevelMask rhs)
+    {
+        return static_cast<IRLevelMask>(static_cast<uint8_t>(lhs) |
+                                        static_cast<uint8_t>(rhs));
+    }
+
+    struct InstructionResultInfo
+    {
+        ResultClass result_class;
+        ValueRepresentation representation;
+    };
+
+    struct InstructionEffectBounds
+    {
+        EffectProfile must_effects;
+        EffectProfile may_effects;
     };
 
     enum class InstructionOrdinal : uint16_t
@@ -164,7 +198,7 @@ namespace cl::jit
     const InstructionKindMetadata &
     instruction_kind_metadata(InstructionKind kind);
 
-    class Instruction final
+    class Instruction
     {
     public:
         using Serial = TypedSerial<Instruction>;
@@ -189,6 +223,19 @@ namespace cl::jit
             InstructionKind result = static_cast<InstructionKind>(kind_);
             assert(is_valid_instruction_kind(result));
             return result;
+        }
+
+        template <typename ConcreteInstruction> ConcreteInstruction *as()
+        {
+            assert(kind() == ConcreteInstruction::Kind);
+            return static_cast<ConcreteInstruction *>(this);
+        }
+
+        template <typename ConcreteInstruction>
+        const ConcreteInstruction *as() const
+        {
+            assert(kind() == ConcreteInstruction::Kind);
+            return static_cast<const ConcreteInstruction *>(this);
         }
 
         ResultClass result_class() const
@@ -224,7 +271,7 @@ namespace cl::jit
             return slots_[index];
         }
 
-    private:
+    protected:
         friend class InstructionPool;
 
         Instruction(uint32_t serial, InstructionKind kind,
@@ -247,6 +294,34 @@ namespace cl::jit
             }
         }
 
+        template <bool Indirect> Slot operand_word_at(size_t index) const
+        {
+            assert(index < operand_count());
+            if constexpr(Indirect)
+            {
+                const Slot *operands =
+                    reinterpret_cast<const Slot *>(slots_[0]);
+                assert(operands != nullptr);
+                return operands[index];
+            }
+            return slots_[index];
+        }
+
+        const Slot *indirect_operand_words() const
+        {
+            assert(operands_are_indirect());
+            const Slot *operands = reinterpret_cast<const Slot *>(slots_[0]);
+            assert(operands != nullptr || operand_count() == 0);
+            return operands;
+        }
+
+        template <size_t Index> Slot inline_word_at() const
+        {
+            static_assert(Index < InlineSlotCount);
+            return slots_[Index];
+        }
+
+    private:
         uint32_t serial_;
         uint16_t kind_;
         uint16_t operand_storage_;
@@ -371,70 +446,324 @@ namespace cl::jit
         return word;
     }
 
-    class ConditionalBranchInstruction
+    template <ValueRepresentation Representation> class RepresentedValueRef
     {
     public:
-        explicit ConditionalBranchInstruction(const Instruction *instruction)
-            : instruction_(instruction)
+        explicit RepresentedValueRef(Instruction *instruction)
+            : reference_(instruction)
         {
-            assert(instruction_->kind() == InstructionKind::ConditionalBranch);
+            assert(instruction->value_representation() == Representation);
         }
 
-        ProgramValueOperand condition() const
+        Instruction *instruction() const { return reference_.instruction(); }
+        operator ProgramValueRef() const { return reference_; }
+
+    private:
+        ProgramValueRef reference_;
+    };
+
+    using TaggedValueRef =
+        RepresentedValueRef<ValueRepresentation::TaggedValue>;
+    using F64Ref = RepresentedValueRef<ValueRepresentation::F64>;
+
+    template <ValueRepresentation Representation>
+    class RepresentedProgramOperand;
+
+    template <>
+    class RepresentedProgramOperand<ValueRepresentation::TaggedValue>
+    {
+    public:
+        RepresentedProgramOperand(TaggedValueRef reference)
+            : operand_(ProgramValueRef(reference))
         {
-            return program_value_operand_from_raw(instruction_->slot(0));
         }
 
-        BlockEdge *true_edge() const
+        RepresentedProgramOperand(InlineValueConstant constant)
+            : operand_(constant)
         {
-            return reinterpret_cast<BlockEdge *>(instruction_->slot(1));
         }
 
-        BlockEdge *false_edge() const
+        explicit RepresentedProgramOperand(ProgramValueOperand operand)
+            : operand_(operand)
         {
-            return reinterpret_cast<BlockEdge *>(instruction_->slot(2));
+            if(operand_.is_reference())
+            {
+                assert(operand_.reference()
+                           .instruction()
+                           ->value_representation() ==
+                       ValueRepresentation::TaggedValue);
+            }
+        }
+
+        bool is_reference() const { return operand_.is_reference(); }
+        TaggedValueRef reference() const
+        {
+            return TaggedValueRef(operand_.reference().instruction());
+        }
+        InlineValueConstant inline_constant() const
+        {
+            return operand_.inline_constant();
+        }
+        ProgramValueOperand erased() const { return operand_; }
+
+    private:
+        ProgramValueOperand operand_;
+    };
+
+    template <> class RepresentedProgramOperand<ValueRepresentation::F64>
+    {
+    public:
+        RepresentedProgramOperand(F64Ref reference) : reference_(reference) {}
+
+        F64Ref reference() const { return reference_; }
+
+    private:
+        F64Ref reference_;
+    };
+
+    template <OperandClass Class, ValueRepresentation Representation>
+    auto decode_instruction_operand(uintptr_t word)
+    {
+        if constexpr(Class == OperandClass::Snapshot)
+        {
+            static_assert(Representation == ValueRepresentation::None);
+            return SnapshotRef(reinterpret_cast<Instruction *>(word));
+        }
+        else if constexpr(Representation == ValueRepresentation::TaggedValue)
+        {
+            return RepresentedProgramOperand<ValueRepresentation::TaggedValue>(
+                program_value_operand_from_raw(word));
+        }
+        else
+        {
+            static_assert(Representation == ValueRepresentation::F64);
+            return RepresentedProgramOperand<ValueRepresentation::F64>(
+                F64Ref(reinterpret_cast<Instruction *>(word)));
+        }
+    }
+
+    template <ValueRepresentation Representation> class ProgramValueOperandRange
+    {
+    public:
+        ProgramValueOperandRange(const uintptr_t *words, size_t size)
+            : words_(words), size_(size)
+        {
+            assert(words != nullptr || size == 0);
+        }
+
+        size_t size() const { return size_; }
+        bool empty() const { return size_ == 0; }
+
+        RepresentedProgramOperand<Representation> operator[](size_t index) const
+        {
+            assert(index < size_);
+            return decode_instruction_operand<OperandClass::ProgramValue,
+                                              Representation>(words_[index]);
         }
 
     private:
-        const Instruction *instruction_;
+        const uintptr_t *words_;
+        size_t size_;
     };
 
-    class UnconditionalBranchInstruction
+    class SnapshotValuesView
     {
     public:
-        explicit UnconditionalBranchInstruction(const Instruction *instruction)
-            : instruction_(instruction)
-        {
-            assert(instruction_->kind() ==
-                   InstructionKind::UnconditionalBranch);
-        }
-
-        BlockEdge *edge() const
-        {
-            return reinterpret_cast<BlockEdge *>(instruction_->slot(0));
-        }
+        size_t size() const { return size_; }
+        bool empty() const { return words_ == nullptr; }
 
     private:
-        const Instruction *instruction_;
+        SnapshotValuesView(const uintptr_t *words, size_t size)
+            : words_(words), size_(size)
+        {
+            assert(words != nullptr || size == 0);
+        }
+
+        const uintptr_t *words_;
+        size_t size_;
+
+        friend class SnapshotInstruction;
     };
 
-    class ReturnInstruction
+    using BytecodePC = uint32_t;
+
+    inline Shape *decode_instruction_attribute_Shape(uintptr_t word)
     {
-    public:
-        explicit ReturnInstruction(const Instruction *instruction)
-            : instruction_(instruction)
-        {
-            assert(instruction_->kind() == InstructionKind::Return);
-        }
+        return reinterpret_cast<Shape *>(word);
+    }
 
-        ProgramValueOperand value() const
-        {
-            return program_value_operand_from_raw(instruction_->slot(0));
-        }
+    inline ValidityCell *
+    decode_instruction_attribute_ValidityCell(uintptr_t word)
+    {
+        return reinterpret_cast<ValidityCell *>(word);
+    }
 
-    private:
-        const Instruction *instruction_;
-    };
+    inline ShapeKey decode_instruction_attribute_ShapeKey(uintptr_t word)
+    {
+        static_assert(sizeof(ShapeKey) == sizeof(word));
+        static_assert(std::is_trivially_copyable_v<ShapeKey>);
+        ShapeKey result;
+        std::memcpy(&result, &word, sizeof(result));
+        return result;
+    }
+
+    inline InlineValueConstant
+    decode_instruction_attribute_InlineValueConstant(uintptr_t word)
+    {
+        Value value;
+        value.as.integer = static_cast<long long>(word);
+        return InlineValueConstant(value);
+    }
+
+    inline Value decode_instruction_attribute_ValueConstant(uintptr_t word)
+    {
+        Value value;
+        value.as.integer = static_cast<long long>(word);
+        return value;
+    }
+
+    inline BytecodePC decode_instruction_attribute_BytecodePC(uintptr_t word)
+    {
+        return static_cast<BytecodePC>(word);
+    }
+
+    inline BlockEdge *decode_instruction_attribute_BlockEdge(uintptr_t word)
+    {
+        return reinterpret_cast<BlockEdge *>(word);
+    }
+
+#define CL_JIT_DECLARE_OPERAND_INDEX(name, operand_class, representation) name,
+#define CL_JIT_DECLARE_VARIADIC_INDEX(name, operand_class, representation) name,
+#define CL_JIT_DECLARE_SNAPSHOT_VALUES_INDEX(name) name,
+#define CL_JIT_IR_LEVELS_ONE(first) IRLevelMask::first
+#define CL_JIT_IR_LEVELS_TWO(first, second)                                    \
+    (IRLevelMask::first | IRLevelMask::second)
+#define CL_JIT_IR_LEVELS_THREE(first, second, third)                           \
+    (IRLevelMask::first | IRLevelMask::second | IRLevelMask::third)
+#define CL_JIT_SELECT_IR_LEVELS(_1, _2, _3, selected, ...) selected
+#define CL_JIT_IR_LEVELS(...)                                                  \
+    CL_JIT_SELECT_IR_LEVELS(__VA_ARGS__, CL_JIT_IR_LEVELS_THREE,               \
+                            CL_JIT_IR_LEVELS_TWO,                              \
+                            CL_JIT_IR_LEVELS_ONE)(__VA_ARGS__)
+#define CL_JIT_RESULT(result_class, representation)                            \
+    InstructionResultInfo                                                      \
+    {                                                                          \
+        ResultClass::result_class, ValueRepresentation::representation         \
+    }
+#define CL_JIT_EFFECT_BOUNDS(must_effects, may_effects)                        \
+    InstructionEffectBounds                                                    \
+    {                                                                          \
+        EffectProfile::must_effects, EffectProfile::may_effects                \
+    }
+#define CL_JIT_COUNT_FIXED_OPERAND(...) +1
+#define CL_JIT_COUNT_NO_OPERAND(...) +0
+#define CL_JIT_HAS_NO_VARIADIC(...) || false
+#define CL_JIT_HAS_VARIADIC(...) || true
+#define CL_JIT_DECLARE_ATTRIBUTE_INDEX(name, attribute_class) name,
+#define CL_JIT_DECLARE_FIXED_ACCESSOR(name, operand_class, representation)     \
+    auto name() const                                                          \
+    {                                                                          \
+        constexpr size_t index = static_cast<size_t>(OperandIndex::name);      \
+        return decode_instruction_operand<                                     \
+            OperandClass::operand_class, ValueRepresentation::representation>( \
+            operand_word_at<HasVariadicOperands>(index));                      \
+    }
+#define CL_JIT_DECLARE_VARIADIC_ACCESSOR(name, operand_class, representation)  \
+    auto name() const                                                          \
+    {                                                                          \
+        static_assert(OperandClass::operand_class ==                           \
+                      OperandClass::ProgramValue);                             \
+        constexpr size_t index = static_cast<size_t>(OperandIndex::name);      \
+        return ProgramValueOperandRange<ValueRepresentation::representation>(  \
+            indirect_operand_words() + index, operand_count() - index);        \
+    }
+#define CL_JIT_DECLARE_SNAPSHOT_VALUES_ACCESSOR(name)                          \
+    SnapshotValuesView name() const                                            \
+    {                                                                          \
+        constexpr size_t index = static_cast<size_t>(OperandIndex::name);      \
+        return SnapshotValuesView(indirect_operand_words() + index,            \
+                                  operand_count() - index);                    \
+    }
+#define CL_JIT_DECLARE_ATTRIBUTE_ACCESSOR(name, attribute_class)               \
+    auto name() const                                                          \
+    {                                                                          \
+        constexpr size_t index =                                               \
+            AttributeBase + static_cast<size_t>(AttributeIndex::name);         \
+        return decode_instruction_attribute_##attribute_class(                 \
+            inline_word_at<index>());                                          \
+    }
+#define CL_JIT_INSTRUCTION(name, ir_levels, result, effects, operands,         \
+                           attributes)                                         \
+    class name##Instruction final : public Instruction                         \
+    {                                                                          \
+    public:                                                                    \
+        static constexpr InstructionKind Kind = InstructionKind::name;         \
+        static constexpr ResultClass Result = (result).result_class;           \
+        static constexpr ValueRepresentation Representation =                  \
+            (result).representation;                                           \
+        static constexpr EffectProfile MustEffects = (effects).must_effects;   \
+        static constexpr EffectProfile MayEffects = (effects).may_effects;     \
+        static constexpr IRLevelMask AllowedIRLevels = ir_levels;              \
+    operands(CL_JIT_DECLARE_FIXED_ACCESSOR, CL_JIT_DECLARE_VARIADIC_ACCESSOR,  \
+             CL_JIT_DECLARE_SNAPSHOT_VALUES_ACCESSOR)                          \
+        attributes(CL_JIT_DECLARE_ATTRIBUTE_ACCESSOR)                          \
+                                                                               \
+            private : enum class OperandIndex : size_t {                       \
+                operands(CL_JIT_DECLARE_OPERAND_INDEX,                         \
+                         CL_JIT_DECLARE_VARIADIC_INDEX,                        \
+                         CL_JIT_DECLARE_SNAPSHOT_VALUES_INDEX) Count,          \
+            };                                                                 \
+        enum class AttributeIndex : size_t                                     \
+        {                                                                      \
+            attributes(CL_JIT_DECLARE_ATTRIBUTE_INDEX) Count,                  \
+        };                                                                     \
+        static constexpr size_t FixedOperandCount =                            \
+            0 operands(CL_JIT_COUNT_FIXED_OPERAND, CL_JIT_COUNT_NO_OPERAND,    \
+                       CL_JIT_COUNT_NO_OPERAND);                               \
+        static constexpr bool HasVariadicOperands = false operands(            \
+            CL_JIT_HAS_NO_VARIADIC, CL_JIT_HAS_VARIADIC, CL_JIT_HAS_VARIADIC); \
+        static constexpr size_t AttributeBase =                                \
+            HasVariadicOperands ? 1 : FixedOperandCount;                       \
+                                                                               \
+        friend class InstructionPool;                                          \
+        name##Instruction(uint32_t serial, uint16_t operand_count,             \
+                          bool indirect_operands,                              \
+                          absl::Span<const Slot> inline_slots)                 \
+            : Instruction(serial, Kind, operand_count, indirect_operands,      \
+                          inline_slots)                                        \
+        {                                                                      \
+            assert(indirect_operands == HasVariadicOperands);                  \
+        }                                                                      \
+    };                                                                         \
+    static_assert(sizeof(name##Instruction) == sizeof(Instruction));           \
+    static_assert(std::is_base_of_v<Instruction, name##Instruction>);          \
+    static_assert(std::is_trivially_destructible_v<name##Instruction>);        \
+    static_assert(name##Instruction::Result ==                                 \
+                  instruction_result_class(name##Instruction::Kind));          \
+    static_assert(name##Instruction::Representation ==                         \
+                  instruction_value_representation(name##Instruction::Kind));  \
+    static_assert(name##Instruction::AllowedIRLevels != IRLevelMask::None);
+#include "jit/instruction.def"
+#undef CL_JIT_INSTRUCTION
+#undef CL_JIT_EFFECT_BOUNDS
+#undef CL_JIT_RESULT
+#undef CL_JIT_IR_LEVELS
+#undef CL_JIT_SELECT_IR_LEVELS
+#undef CL_JIT_IR_LEVELS_THREE
+#undef CL_JIT_IR_LEVELS_TWO
+#undef CL_JIT_IR_LEVELS_ONE
+#undef CL_JIT_DECLARE_ATTRIBUTE_ACCESSOR
+#undef CL_JIT_DECLARE_SNAPSHOT_VALUES_ACCESSOR
+#undef CL_JIT_DECLARE_VARIADIC_ACCESSOR
+#undef CL_JIT_DECLARE_FIXED_ACCESSOR
+#undef CL_JIT_DECLARE_ATTRIBUTE_INDEX
+#undef CL_JIT_HAS_VARIADIC
+#undef CL_JIT_HAS_NO_VARIADIC
+#undef CL_JIT_COUNT_NO_OPERAND
+#undef CL_JIT_COUNT_FIXED_OPERAND
+#undef CL_JIT_DECLARE_SNAPSHOT_VALUES_INDEX
+#undef CL_JIT_DECLARE_VARIADIC_INDEX
+#undef CL_JIT_DECLARE_OPERAND_INDEX
 
     class TerminatorInstruction
     {
@@ -507,10 +836,7 @@ namespace cl::jit
 #define CL_JIT_IR_LEVELS(...)
 #define CL_JIT_RESULT(...)
 #define CL_JIT_EFFECT_BOUNDS(...)
-#define CL_JIT_ATTRIBUTES(...)
-#define CL_JIT_ATTRIBUTE(...)
-#define CL_JIT_OPERANDS(...) __VA_ARGS__;
-#define CL_JIT_OPERAND(name, operand_class, representation)                    \
+#define CL_JIT_VISIT_FIXED_OPERAND(name, operand_class, representation)        \
     ([&] {                                                                     \
         uintptr_t word = next_operand_word();                                  \
         if constexpr(OperandClass::operand_class ==                            \
@@ -522,8 +848,8 @@ namespace cl::jit
         {                                                                      \
             visit_snapshot(word);                                              \
         }                                                                      \
-    }())
-#define CL_JIT_VARIADIC_OPERAND(name, operand_class, representation)           \
+    }());
+#define CL_JIT_VISIT_VARIADIC_OPERAND(name, operand_class, representation)     \
     ([&] {                                                                     \
         for(uint16_t index = 0; index < variable_count; ++index)               \
         {                                                                      \
@@ -538,25 +864,24 @@ namespace cl::jit
                 visit_snapshot(word);                                          \
             }                                                                  \
         }                                                                      \
-    }())
-#define CL_JIT_SNAPSHOT_VALUES(name)                                           \
+    }());
+#define CL_JIT_VISIT_SNAPSHOT_VALUES(name)                                     \
     ([&] {                                                                     \
         assert(variable_count == 0 &&                                          \
                "annotated Snapshot traversal is not implemented yet");         \
-    }())
+    }());
 #define CL_JIT_INSTRUCTION(name, ir_levels, result, effects, operands,         \
                            attributes)                                         \
     case InstructionKind::name:                                                \
-        operands assert(operand_index == instruction.operand_count());         \
+        operands(CL_JIT_VISIT_FIXED_OPERAND, CL_JIT_VISIT_VARIADIC_OPERAND,    \
+                 CL_JIT_VISIT_SNAPSHOT_VALUES)                                 \
+            assert(operand_index == instruction.operand_count());              \
         return;
 #include "jit/instruction.def"
 #undef CL_JIT_INSTRUCTION
-#undef CL_JIT_SNAPSHOT_VALUES
-#undef CL_JIT_VARIADIC_OPERAND
-#undef CL_JIT_OPERAND
-#undef CL_JIT_OPERANDS
-#undef CL_JIT_ATTRIBUTE
-#undef CL_JIT_ATTRIBUTES
+#undef CL_JIT_VISIT_SNAPSHOT_VALUES
+#undef CL_JIT_VISIT_VARIADIC_OPERAND
+#undef CL_JIT_VISIT_FIXED_OPERAND
 #undef CL_JIT_EFFECT_BOUNDS
 #undef CL_JIT_RESULT
 #undef CL_JIT_IR_LEVELS

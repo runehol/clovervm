@@ -131,6 +131,56 @@ namespace cl::jit
                   &instruction_kind_metadata(InstructionKind::ParameterF64));
     }
 
+    TEST(JitInstructionSchema, GeneratesConcreteTypedInstructionClasses)
+    {
+        static_assert(std::is_base_of_v<Instruction, AddSMIInstruction>);
+        static_assert(sizeof(AddSMIInstruction) == sizeof(Instruction));
+        static_assert(
+            std::is_same_v<
+                decltype(std::declval<const AddSMIInstruction &>().lhs()),
+                RepresentedProgramOperand<ValueRepresentation::TaggedValue>>);
+        static_assert(
+            std::is_same_v<
+                decltype(std::declval<const AddSMIInstruction &>().snapshot()),
+                SnapshotRef>);
+        static_assert(std::is_same_v<
+                      decltype(std::declval<const AddF64Instruction &>().lhs()),
+                      RepresentedProgramOperand<ValueRepresentation::F64>>);
+        static_assert(std::is_same_v<
+                      decltype(std::declval<const ShapeGuardInstruction &>()
+                                   .expected_shape()),
+                      Shape *>);
+        static_assert(
+            std::is_same_v<
+                decltype(std::declval<const PythonCallInstruction &>()
+                             .arguments()),
+                ProgramValueOperandRange<ValueRepresentation::TaggedValue>>);
+        static_assert(
+            std::is_same_v<decltype(std::declval<const SnapshotInstruction &>()
+                                        .captured_values()),
+                           SnapshotValuesView>);
+        static_assert(
+            std::is_same_v<
+                decltype(std::declval<const ConditionalBranchInstruction &>()
+                             .true_edge()),
+                BlockEdge *>);
+
+        EXPECT_EQ(InstructionKind::AddSMI, AddSMIInstruction::Kind);
+        EXPECT_EQ(InstructionKind::Snapshot, SnapshotInstruction::Kind);
+        EXPECT_EQ(ResultClass::ProgramValue, AddSMIInstruction::Result);
+        EXPECT_EQ(ValueRepresentation::TaggedValue,
+                  AddSMIInstruction::Representation);
+        EXPECT_EQ(EffectProfile::None, AddSMIInstruction::MustEffects);
+        EXPECT_EQ(EffectProfile::Deoptimize, AddSMIInstruction::MayEffects);
+        EXPECT_EQ(IRLevelMask::Core, AddSMIInstruction::AllowedIRLevels);
+        EXPECT_EQ(ResultClass::Snapshot, SnapshotInstruction::Result);
+        EXPECT_EQ(ValueRepresentation::None,
+                  SnapshotInstruction::Representation);
+        EXPECT_EQ(EffectProfile::TerminateBlock,
+                  ReturnInstruction::MustEffects);
+        EXPECT_EQ(EffectProfile::TerminateBlock, ReturnInstruction::MayEffects);
+    }
+
     TEST(JitInstructionTraversal, DistinguishesReferencesConstantsAndSnapshots)
     {
         CompilationArena arena;

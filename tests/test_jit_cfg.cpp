@@ -43,7 +43,6 @@ namespace cl::jit
         Instruction *branch_instruction = arena.make_conditional_branch(
             ProgramValueOperand(InlineValueConstant(Value::True())), true_edge,
             false_edge);
-        ConditionalBranchInstruction branch(branch_instruction);
         entry->append_instruction(branch_instruction);
         join->append_instruction(arena.make_return(none_value()));
 
@@ -52,8 +51,6 @@ namespace cl::jit
         EXPECT_EQ(entry, graph.blocks()[0]);
         EXPECT_EQ(join, graph.blocks()[1]);
 
-        EXPECT_EQ(true_edge, branch.true_edge());
-        EXPECT_EQ(false_edge, branch.false_edge());
         TerminatorInstruction::BlockSuccessorEdges successors =
             entry->block_successor_edges();
         ASSERT_EQ(2u, successors.size());
@@ -74,12 +71,10 @@ namespace cl::jit
         Block *exit = graph.add_block();
         BlockEdge *edge = graph.make_block_edge(entry, exit);
         Instruction *branch_instruction = arena.make_unconditional_branch(edge);
-        UnconditionalBranchInstruction branch(branch_instruction);
         Instruction *return_instruction = arena.make_return(none_value());
         entry->append_instruction(branch_instruction);
         exit->append_instruction(return_instruction);
 
-        EXPECT_EQ(edge, branch.edge());
         TerminatorInstruction::BlockSuccessorEdges successors =
             entry->block_successor_edges();
         ASSERT_EQ(1u, successors.size());

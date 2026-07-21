@@ -4,7 +4,7 @@
 |---|---|
 | Document type | Design |
 | Status | Accepted |
-| Implementation | Partial; the 48-byte record, tagged-address instruction arena, schema-generated kind metadata, typed CFG terminators, homogeneous PythonCall side data, and basic operand traversal are implemented; annotated Snapshot captures, full generated factories/views, detachment, and editor integration remain |
+| Implementation | Partial; the 48-byte record, tagged-address instruction arena, schema-generated kind metadata and concrete subclass definitions, typed CFG terminators, homogeneous PythonCall side data, and basic operand traversal are implemented; arena construction of concrete subclasses, annotated Snapshot captures, generated factories, detachment, and editor integration remain |
 | Scope | Physical instruction storage, typed instruction access, Core value representations, IR-level legality, phase metadata, effects, matching, and arena lifetime for Core and Semantic IR |
 | Owning layers | The JIT instruction representation owns storage, schema-generated construction, and typed access; the bulk graph builder owns deferred-validation construction; concrete analyses own attached inferred facts and proven-absent effects; the CFG editor owns incremental structural mutation |
 | Validated against | Working tree implementation and full debug test suite (2026-07-21) |
@@ -14,9 +14,9 @@ Core IR and the optional Semantic IR use a fixed-size, type-erased
 `Instruction` allocated with compilation lifetime. Instruction-result operands
 are pointers, while non-dataflow attributes use their schema-declared
 pointer-sized encodings. Each allocation also carries a typed serial for
-deterministic identity, diagnostics, and ordering. Read-only typed instruction
-views provide kind-specific access without an instruction class hierarchy,
-virtual dispatch, or C++ RTTI.
+deterministic identity, diagnostics, and ordering. Fieldless concrete
+instruction subclasses provide kind-specific read-only access without virtual
+dispatch or C++ RTTI.
 
 The representation has deliberately different roles:
 
@@ -29,7 +29,7 @@ Instruction
     encoded kind-specific payload
 
 AddInstruction, CallInstruction, ...
-    short-lived read-only typed views over Instruction
+    fieldless concrete subclasses with typed read-only accessors
 
 SemanticValueAnalysis, CoreEffectAnalysis, ...
     concrete phase-owned metadata indexed by instruction
@@ -75,7 +75,7 @@ public:
     bool operands_are_indirect() const;
 
     template<typename TypedInstruction>
-    TypedInstruction as() const;
+    const TypedInstruction *as() const;
 
 private:
     uint32_t serial_;
@@ -338,7 +338,7 @@ from objects whose lifetimes cover the compilation. A trivially destructible
 raw pointer must not hide ownership of an external allocation or resource.
 
 The fixed payload is implemented as named, aligned pointer/integer/value slots,
-or by copying trivially copyable payload values with `memcpy`. Typed views must
+or by copying trivially copyable payload values with `memcpy`. Typed accessors must
 not reinterpret generic byte storage as an object whose lifetime has not begun,
 read inactive union members, or assume alignment that the payload does not
 provide. Side-data allocation checks alignment and allocation-size overflow.
@@ -586,7 +586,7 @@ representation. Fixed-representation generated constructors and accessors use
 the refined wrapper, making common mismatches C++ type errors; generic
 infrastructure deliberately retains the erased form.
 
-## Typed Read-Only Views
+## Concrete Typed Instructions
 
 `src/jit/instruction.def` is the authoritative schema for the closed set of
 live instruction kinds. Each definition names the instruction kind and typed
@@ -866,57 +866,71 @@ item using its producer's concrete representation, inline-constant payload, or
 retained `Value` and provide an exhaustive frame-materialization operation for
 that case.
 
-Each concrete instruction form is a small read-only view holding a
-`const Instruction *`. It is not derived from `Instruction`, is not separately
-allocated, and does not own storage:
+Each concrete instruction form is a final, fieldless subclass of `Instruction`.
+The instruction arena placement-constructs the subclass selected by the schema;
+it must never construct a base `Instruction` and reinterpret it as a concrete
+kind. Because subclasses add neither fields nor virtual dispatch, every concrete
+kind has the same 48-byte representation as `Instruction` while providing
+kind-specific read-only accessors:
 
 ```cpp
-class AddF64Instruction
+class AddF64Instruction final : public Instruction
 {
 public:
     static constexpr InstructionKind Kind = InstructionKind::AddF64;
+    static constexpr ResultClass Result = ResultClass::ProgramValue;
+    static constexpr ValueRepresentation Representation =
+        ValueRepresentation::F64;
+    static constexpr EffectProfile MustEffects = EffectProfile::None;
+    static constexpr EffectProfile MayEffects = EffectProfile::None;
+    static constexpr IRLevelMask AllowedIRLevels = IRLevelMask::Core;
 
-    F64Ref lhs() const;
-    F64Ref rhs() const;
+    RepresentedProgramOperand<ValueRepresentation::F64> lhs() const;
+    RepresentedProgramOperand<ValueRepresentation::F64> rhs() const;
 
 private:
-    friend class Instruction;
-
-    explicit AddF64Instruction(const Instruction *instruction)
-        : instruction_(instruction)
-    {
-    }
-
-    const Instruction *instruction_;
+    friend class InstructionPool;
+    AddF64Instruction(uint32_t serial, uint16_t operand_count,
+                      bool indirect_operands,
+                      absl::Span<const InstructionSlot> inline_slots);
 };
+
+static_assert(sizeof(AddF64Instruction) == sizeof(Instruction));
 ```
 
-The view exposes only immutable fields meaningful for its instruction kind.
-Inferred types, proven-absent effects, locations, and other phase knowledge are read
-through the concrete metadata object that owns them, not through a typed
-instruction view. Copying a view copies a non-owning read capability; it never
-grants mutation authority. Views are intended to be short-lived pass locals
-rather than objects stored in the IR.
+These public constants expose only intrinsic semantic facts from the schema.
+Template code that already knows the concrete subclass can therefore fold kind,
+result, representation, effect-bound, and IR-level queries without consulting
+dynamic kind metadata. Physical layout constants such as operand counts,
+attribute bases, inline-slot counts, and indirection remain private to generated
+construction and accessors.
+
+The subclass exposes only immutable fields meaningful for its instruction kind.
+Inferred types, proven-absent effects, locations, and other phase knowledge are
+read through the concrete metadata object that owns them, not through the
+instruction object. Ordinary code holds `Instruction *` for heterogeneous IR
+structure and performs a kind-checked downcast when it needs concrete access.
 
 There is one semantic `InstructionKind` enum generated from
 `src/jit/instruction.def`; the generated `InstructionOrdinal` exists only for
-compact table indexing. Each typed view declares its own
+compact table indexing. Each concrete subclass declares its own
 `static constexpr Kind`, and schema-generated validation requires it to match
 the view mapping in the definition. Checked conversion uses the type itself as
 the source of the expected kind:
 
 ```cpp
 template<typename TypedInstruction>
-TypedInstruction Instruction::as() const
+const TypedInstruction *Instruction::as() const
 {
     assert(kind() == TypedInstruction::Kind);
-    return TypedInstruction(this);
+    return static_cast<const TypedInstruction *>(this);
 }
 ```
 
 `is<T>()` and `try_as<T>()`, if useful, follow the same mapping. They use an
-enum comparison followed by ordinary construction of the view. The design does
-not use `dynamic_cast`, `typeid`, or virtual instruction methods.
+enum comparison followed by a static downcast; the arena has already begun the
+lifetime of the matching concrete subclass. The design does not use
+`dynamic_cast`, `typeid`, or virtual instruction methods.
 
 Category views may later represent a deliberately defined set of kinds with a
 common payload shape. Such a view has no single `Kind`, so it is obtained
@@ -955,8 +969,9 @@ The serial is deliberately preserved for diagnostics. Any detached instruction
 encountered by verification, generic traversal, typed conversion, a result
 reference, or a current `UseIndex` is a hard compiler bug. The diagnostic reports
 the preserved serial and does not interpret the poisoned payload. Ordinary pass
-code does not branch on detachedness as a supported case; short-lived typed
-views must not be retained across structural edits.
+code does not branch on detachedness as a supported case; concrete instruction
+pointers must not be retained across structural edits without proving that the
+instruction remains attached.
 
 Operand slots are controlled mutable structure. The structural editor may
 replace a `Snapshot` operand only with a result of the matching declared
@@ -1006,7 +1021,7 @@ become producers or keys in the use index. Attribute slots such as
 `BlockEdge`, `Shape`, `ShapeKey`, `ValidityCell`, bytecode PCs, immediates,
 inline constants, and value constants are immutable semantic payload; changing
 one requires instruction replacement. Changing any slot's class, representation
-constraint, count, or layout likewise requires replacement. Typed views expose
+constraint, count, or layout likewise requires replacement. Concrete subclasses expose
 every operand and attribute read-only and never provide setters or writable
 arrays.
 
@@ -1066,7 +1081,7 @@ typed accessors handle cloning, printing, CFG edge maintenance, constant pin
 validation, and bytecode-PC diagnostics for non-dataflow payload. The verifier
 compares any current `UseIndex` against reconstructed operand records and
 hard-fails on references to poisoned storage. Kind-specific named accessors such
-as branch edges remain available through typed views.
+as branch edges remain available through concrete accessors.
 
 ## Phase-Owned Attached Metadata
 
@@ -1155,7 +1170,7 @@ formula above. A pass without such a view receives `MayEffects`, the
 conservative kind envelope. Supplying a stale view asserts; it never silently
 falls back. The first Core slice may rely entirely on `MayEffects` until a real
 optimization needs a refined attachment. In particular, the physical
-instruction and its typed view do not expose `is_pure()` based on
+instruction and its concrete subclass do not expose `is_pure()` based on
 `MustEffects`: absence from the lower bound says nothing about what the
 instruction may do.
 
@@ -1233,7 +1248,7 @@ the schema keeps invariant kind metadata and traversal synchronized, while the
 warnings identify handwritten pass logic that must consider a new kind.
 
 Each typed case must terminate with `break`, `return`, or another explicit
-control transfer. Falling through into a case for a different typed view would
+control transfer. Falling through into a case for a different concrete kind would
 attempt to interpret the original instruction as the wrong kind. Shared bodies
 must use an explicitly checked category representation rather than typed-case
 fallthrough.
@@ -1253,10 +1268,12 @@ their attributes in the remaining inline slots. It also defines representative
 constants, binary arithmetic, shape and shape-key guards, conditional branches,
 calls, Snapshots, and metadata-heavy Core instructions in `instruction.def`.
 
-The next slice must define and implement the annotated heterogeneous Snapshot
-entry format, generate the remaining representation-safe factories and typed
-views, and make generic traversal exhaustive for nonempty Snapshots. It should
-then measure total graph and side-data use with realistic translated functions.
+The next slice must make the instruction arena placement-construct the concrete
+subclass selected by each kind, then define and implement the annotated
+heterogeneous Snapshot entry format, generate the remaining
+representation-safe factories, and make generic traversal exhaustive for
+nonempty Snapshots. It should then measure total graph and side-data use with
+realistic translated functions.
 Success does not require every payload to fit inline. It requires every
 representative layout to use the same declarative schema and uniform arena-owned
 side data without a handwritten storage or traversal escape hatch. Evidence
@@ -1265,14 +1282,15 @@ sizing decision.
 
 ## Rejected Directions
 
-A virtual instruction hierarchy would couple storage ownership to polymorphic
+A virtual, behavior-bearing instruction hierarchy would couple storage ownership to polymorphic
 deletion and encourage semantic behavior to spread across virtual methods. It
 would also retain the `std::deque<std::unique_ptr<Instruction>>` allocation
 shape that this representation makes unnecessary.
 
 C++ RTTI and `dynamic_cast` add no useful checking beyond the explicit closed
-`InstructionKind` enum. A checked kind comparison followed by typed view
-construction is simpler and makes exhaustive matching possible.
+`InstructionKind` enum. A checked kind comparison followed by a static downcast
+to the arena-constructed fieldless subclass is simpler and makes exhaustive
+matching possible.
 
 A visitor-based exhaustive dispatcher would scatter a pass across overloads
 and obscure the grouping and ordering of related instructions. Direct typed
