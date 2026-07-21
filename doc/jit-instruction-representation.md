@@ -24,7 +24,7 @@ The representation has deliberately different roles:
 Instruction
     fixed-size stored object
     stable address and serial
-    instruction kind and intrinsic output class
+    instruction kind and intrinsic result class
     Core value representation when applicable
     encoded kind-specific payload
 
@@ -66,7 +66,7 @@ public:
     bool is_detached() const;
     // Requires !is_detached().
     InstructionKind kind() const;
-    SlotClass output_class() const;
+    ResultClass result_class() const;
     // Requires a Core ProgramValue result.
     ValueRepresentation value_representation() const;
 
@@ -84,41 +84,60 @@ The physical storage tag represents either one live `InstructionKind` or the
 reserved `Detached` state. The exact encoding may reserve one tag value rather
 than adding another per-instruction field. `InstructionKind` remains the closed
 semantic enum generated from `src/jit/instruction.def`; `Detached` is a storage
-lifetime state, not an instruction kind. `kind()`, `output_class()`, typed
+lifetime state, not an instruction kind. `kind()`, `result_class()`, typed
 conversion, and payload traversal all require a live tag. Only `serial()` and
 `is_detached()` remain meaningful after detachment.
 
-One shared classification describes both what an instruction may produce and
-what semantic entity an input slot may contain:
+Instruction results and instruction inputs use distinct enum types. The cases
+that represent instruction-result references intentionally have the same numeric
+values in both enums, so validation can compare them cheaply without a mapping
+switch:
 
 ```cpp
-enum class SlotClass
+enum class ResultClass : uint8_t
 {
-    None,
-    ProgramValue,
-    Snapshot,
-    BlockEdge,
-    Shape,
-    ShapeKey,
-    ValidityCell,
-    ConstantValue,
+    None = 0,
+    ProgramValue = 1,
+    Snapshot = 2,
 };
+
+enum class InputClass : uint8_t
+{
+    ProgramValue = 1,
+    Snapshot = 2,
+    BlockEdge = 3,
+    Shape = 4,
+    ShapeKey = 5,
+    ValidityCell = 6,
+    ConstantValue = 7,
+};
+
+static_assert(static_cast<uint8_t>(InputClass::ProgramValue) ==
+              static_cast<uint8_t>(ResultClass::ProgramValue));
+static_assert(static_cast<uint8_t>(InputClass::Snapshot) ==
+              static_cast<uint8_t>(ResultClass::Snapshot));
+
+constexpr bool input_accepts_result(InputClass input, ResultClass result)
+{
+    return static_cast<uint8_t>(input) == static_cast<uint8_t>(result);
+}
 ```
 
-`None`, `ProgramValue`, and `Snapshot` are legal instruction output classes.
-`ProgramValue`, `Snapshot`, `BlockEdge`, `Shape`, `ShapeKey`, `ValidityCell`,
-and `ConstantValue` are legal input-slot classes; `None` can never describe an
-input. `BlockEdge` is used instead of a direct block reference because the CFG
-represents every control-transfer occurrence with a first-class edge.
-`SlotClass` controls structural compatibility, physical decoding, and the
-default generic handling of the slot. Core program-value slots apply the
-additional `ValueRepresentation` constraint described below.
+`ResultClass` describes what an instruction may produce. `InputClass` describes
+what semantic entity an input slot may contain. Keeping them separate makes
+invalid states such as a `BlockEdge` instruction result unrepresentable in the
+API, while the aligned `ProgramValue` and `Snapshot` values keep result-input
+compatibility checks simple. `BlockEdge` is used instead of a direct block
+reference because the CFG represents every control-transfer occurrence with a
+first-class edge. `InputClass` controls structural compatibility, physical
+decoding, and the default generic handling of the slot. Core program-value
+slots apply the additional `ValueRepresentation` constraint described below.
 
-`Instruction::output_class()` is derived from instruction-kind metadata; it is
+`Instruction::result_class()` is derived from instruction-kind metadata; it is
 not another field in the record. `ProgramValue` says that the instruction
 defines an SSA program value, not that analysis knows its precise Python type.
 Such inferred facts belong to a concrete phase-owned metadata object such as
-`SemanticValueAnalysis`. Changing an instruction's output class requires
+`SemanticValueAnalysis`. Changing an instruction's result class requires
 replacing the instruction with a different kind.
 
 Core program values have one additional intrinsic refinement:
@@ -132,8 +151,8 @@ enum class ValueRepresentation
 ```
 
 `ValueRepresentation` describes the target-independent encoding of a Core SSA
-value. It is not a `SlotClass`, Python type fact, register class, or assigned
-location. `Int64` or another representation is added only when an implemented
+value. It is not an input or result class, Python type fact, register class, or
+assigned location. `Int64` or another representation is added only when an implemented
 Core instruction requires it. `Address` remains backend-local unless addresses
 demonstrably need to live across Core instructions as SSA program values.
 
@@ -189,7 +208,7 @@ struct InstructionSlots
 ```
 
 Construction may use a mutable buffer before completing the instruction, but
-stored and typed access decodes the declared slot class and exposes immutable
+stored and typed access decodes the declared input class and exposes immutable
 typed values, for example `absl::Span<ProgramValueRef>`. Clients cannot replace
 an input by assigning through the span.
 
@@ -238,10 +257,10 @@ ProgramValueRef add = factory.make_add(lhs, rhs);
 ```
 
 The factory surface is generated or validated from `instruction.def`.
-`SlotTraits<SlotClass>` selects the C++ parameter type and encoding for each
+`InputTraits<InputClass>` selects the C++ parameter type and encoding for each
 declared input, representation traits refine Core program-value parameters, and
-output traits select the typed result returned by the constructor.
-Consequently, ordinary callers cannot choose an inconsistent kind, output
+result traits select the typed result returned by the constructor.
+Consequently, ordinary callers cannot choose an inconsistent kind, result
 class, input class, Core representation, arity, or payload layout.
 IR-level-specific factory surfaces expose only instruction kinds permitted at
 that level. The exact macro spelling and whether generated functions delegate
@@ -399,19 +418,19 @@ stable tie-breaking, and deterministic ordering.
 The result-reference wrappers are mandatory for every result-consuming field:
 
 ```cpp
-using ProgramValueRef = ResultRef<SlotClass::ProgramValue, Instruction *>;
-using SnapshotRef = ResultRef<SlotClass::Snapshot, Instruction *>;
+using ProgramValueRef = ResultRef<ResultClass::ProgramValue, Instruction *>;
+using SnapshotRef = ResultRef<ResultClass::Snapshot, Instruction *>;
 ```
 
-Constructing a result reference validates that the producer's intrinsic output
-class matches the slot class required by the wrapper. A `SlotClass::None`
-instruction cannot be referenced as an input, a Snapshot cannot be used as a
-program value, and a program value cannot be used where recovery state is
-required. The same `SlotClass` vocabulary describes non-instruction inputs such
-as block edges and stable runtime metadata without translating between separate
-input and output enums. Generated construction signatures make mismatched
-classes unrepresentable to ordinary callers, structural input replacement
-checks the declared class, and the verifier independently checks the encoded
+Constructing a result reference validates that the producer's intrinsic
+`ResultClass` matches the class required by the wrapper. A
+`ResultClass::None` instruction cannot be referenced as an input, a Snapshot
+cannot be used as a program value, and a program value cannot be used where
+recovery state is required. When validating an encoded input slot that consumes
+an instruction result, the verifier uses `input_accepts_result()` rather than a
+mapping switch. Generated construction signatures make mismatched classes
+unrepresentable to ordinary callers, structural input replacement checks the
+declared input class, and the verifier independently checks the encoded
 payload. Raw `Instruction *` remains the identity used for instruction-list
 placement, diagnostics, and other non-result structural operations. A result
 wrapper still contains a pointer; it does not turn the IR back into a
@@ -441,15 +460,15 @@ infrastructure deliberately retains the erased form.
 
 `src/jit/instruction.def` is the authoritative schema for the closed set of
 live instruction kinds. Each definition names the instruction kind and typed
-view, the IR level or levels in which it is legal, its intrinsic output
-`SlotClass`, its `MustEffects` lower bound and `MayEffects` upper bound, its
-payload shape, and every fixed or variable input slot with its `SlotClass`.
-Core program-value outputs and inputs additionally declare fixed representation
+view, the IR level or levels in which it is legal, its intrinsic
+`ResultClass`, its `MustEffects` lower bound and `MayEffects` upper bound, its
+payload shape, and every fixed or variable input slot with its `InputClass`.
+Core program-value results and inputs additionally declare fixed representation
 constraints. The sole exception is Snapshot's representation-erased
 captured-value input described below. Repeated inclusion of that schema
 generates or validates the `InstructionKind` enum, invariant kind metadata,
 representation-safe construction and access, generic input traversal,
-output/input class legality, effect bounds, and the size and alignment
+result/input class legality, effect bounds, and the size and alignment
 constraints for encoded payloads. The `Detached` storage tag is not listed as a
 semantic instruction definition.
 
@@ -465,57 +484,57 @@ examples elide the required IR-level and effect-bound fields:
 
 ```text
 AddF64
-    output: ProgramValue(F64)
+    result: ProgramValue(F64)
     lhs: ProgramValue(F64)
     rhs: ProgramValue(F64)
 
 BoxF64
-    output: ProgramValue(TaggedValue)
+    result: ProgramValue(TaggedValue)
     value: ProgramValue(F64)
 
 UnboxF64
-    output: ProgramValue(F64)
+    result: ProgramValue(F64)
     value: ProgramValue(TaggedValue)
     snapshot: Snapshot
 
 ShapeGuard
-    output: ProgramValue(TaggedValue)
+    result: ProgramValue(TaggedValue)
     value: ProgramValue(TaggedValue)
     expected_shape: Shape
     validity: ValidityCell
     snapshot: Snapshot
 
 Mov
-    output: ProgramValue(TaggedValue)
+    result: ProgramValue(TaggedValue)
     value: ProgramValue(TaggedValue)
 
 MovF64
-    output: ProgramValue(F64)
+    result: ProgramValue(F64)
     value: ProgramValue(F64)
 
 Parameter
-    output: ProgramValue(TaggedValue)
+    result: ProgramValue(TaggedValue)
 
 ParameterF64
-    output: ProgramValue(F64)
+    result: ProgramValue(F64)
 
 Snapshot
-    output: Snapshot
+    result: Snapshot
     captured_values[]: ProgramValue(AnyRepresentation)
 
 Constant
-    output: ProgramValue(TaggedValue)
+    result: ProgramValue(TaggedValue)
     value: ConstantValue
 
 ConditionalBranch
-    output: None
+    result: None
     condition: ProgramValue(TaggedValue)
     true_edge: BlockEdge
     false_edge: BlockEdge
 ```
 
 `AnyRepresentation` is an input constraint in the schema, not a member of
-`ValueRepresentation` and never an instruction output. Snapshot's
+`ValueRepresentation` and never an instruction result. Snapshot's
 `captured_values` array is the only slot allowed to use it. The generated
 Snapshot accessor returns erased `ProgramValueRef`s, and side-exit frame-sync
 generation inspects each producer's concrete representation: tagged values are
@@ -542,14 +561,14 @@ concrete and prevents a representation-polymorphic instruction from becoming
 an unchecked escape hatch. Exact macro spelling remains an implementation
 detail.
 
-No `SlotClass` or `ValueRepresentation` tag is stored beside each payload word.
+No `InputClass` or `ValueRepresentation` tag is stored beside each payload word.
 Generic code reads the instruction kind once and selects schema-generated
 layout metadata or a schema-generated per-kind enumerator. Conceptually:
 
 ```cpp
 struct InputSlotDescriptor
 {
-    SlotClass slot_class;
+    InputClass input_class;
     ProgramValueConstraint representation_constraint;
     SlotLayout layout;  // Fixed or variable-length.
     uint16_t offset;
@@ -591,7 +610,7 @@ Semantic graph and `CoreEffectAnalysis` for a Core graph.
 For Core graphs, verification additionally requires every `ProgramValue`
 producer to have one legal representation, every fixed input constraint to
 match its producer, and every representation-changing edge to be an explicit
-conversion instruction. It rejects `AnyRepresentation` on every output and on
+conversion instruction. It rejects `AnyRepresentation` on every result and on
 every input other than `Snapshot.captured_values`. Snapshot capture may contain
 heterogeneous program values, but recovery planning must interpret each one
 using its producer's concrete representation and provide an exhaustive
@@ -656,7 +675,7 @@ actual grouped operation family justifies them.
 
 ## Mostly Immutable Instructions
 
-An instruction's kind, output class, Core value representation, constants,
+An instruction's kind, result class, Core value representation, constants,
 bytecode origin, payload shape, and non-input semantic parameters are immutable
 after construction. A pass that changes one of these properties constructs an
 unplaced replacement through the appropriate instruction factory, then asks the
@@ -692,7 +711,7 @@ views must not be retained across structural edits.
 
 Instruction-result input slots are controlled mutable structure. The structural
 editor may replace a `ProgramValue` or `Snapshot` slot only with a result of the
-same declared `SlotClass`; Core program-value replacement must also preserve
+matching declared `InputClass`; Core program-value replacement must also preserve
 `ValueRepresentation`. The editor maintains metadata lifetime, analysis
 invalidation, and graph mutation generation. If the pass has retained a
 mutation-aware `UseIndex`, the editor also updates it; otherwise the generation
@@ -739,7 +758,7 @@ lowering has accumulated many substitutions. Replacements have simultaneous
 semantics: given `A -> B` and `B -> C`, an original use of `A` becomes `B`
 unless the map was explicitly transitively normalized before the scan. The
 operation validates that every replacement preserves the slot's declared
-`SlotClass` and, in Core, the producer's `ValueRepresentation`. A
+`InputClass` and, in Core, the producer's `ValueRepresentation`. A
 representation-changing rewrite inserts an explicit conversion or replaces the
 consumer; it cannot use generic result replacement to connect incompatible
 encodings. The batch advances graph and attachment generations once.

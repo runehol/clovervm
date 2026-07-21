@@ -386,7 +386,7 @@ instruction graph, that is evidence for introducing an explicit Machine IR at
 the required scope.
 
 The register allocator and location tables accept only `ProgramValueRef`s.
-Instructions with `SlotClass::None` and compiler-only `SnapshotRef`s receive
+Instructions with `ResultClass::None` and compiler-only `SnapshotRef`s receive
 no location, although the program-value operands named by a Snapshot remain
 point uses for liveness and recovery. Every live `ProgramValueRef` has one
 authoritative allocated location at a particular machine-code position. Live
@@ -553,7 +553,7 @@ Core IR captures a recoverable state with a zero-code `Snapshot` instruction:
     parent frame = ...)
 ```
 
-`Snapshot` has `SlotClass::Snapshot`. Its typed `SnapshotRef` receives no
+`Snapshot` has `ResultClass::Snapshot`. Its typed `SnapshotRef` receives no
 machine location and carries no Python type evidence. A speculative check or
 action consumes it as the failure continuation:
 
@@ -615,16 +615,20 @@ to machine-code positions and exits rather than given independent identities.
 `ResumeStateId` and `RecoveryPlanId` exist only where the backend interns the
 two independently shareable parts of generated side-exit code.
 
-Every instruction has a typed serial and an intrinsic output `SlotClass`:
+Every instruction has a typed serial and an intrinsic `ResultClass`:
 
 ```text
-SlotClass::None
-SlotClass::ProgramValue
-SlotClass::Snapshot
+ResultClass::None
+ResultClass::ProgramValue
+ResultClass::Snapshot
 ```
 
-The same enum also classifies input-only CFG and metadata slots; those classes
-cannot be selected as an instruction output. The instruction schema records the
+Input slots use a separate `InputClass` enum. `InputClass::ProgramValue` and
+`InputClass::Snapshot` intentionally have the same numeric values as their
+matching `ResultClass` cases, so validation can compare result-consuming input
+slots without a mapping switch. Input-only classes such as `BlockEdge`, `Shape`,
+`ShapeKey`, `ValidityCell`, and `ConstantValue` cannot be selected as
+instruction results. The instruction schema records the result class plus the
 class and layout of every fixed or variable input as defined in
 [JIT Instruction Representation](jit-instruction-representation.md).
 
@@ -632,11 +636,11 @@ The instruction pointer also names its result when it has one. Typed result
 references may be zero-overhead pointer views:
 
 ```text
-ProgramValueRef = ResultRef<SlotClass::ProgramValue, Instruction *>
-SnapshotRef     = ResultRef<SlotClass::Snapshot, Instruction *>
+ProgramValueRef = ResultRef<ResultClass::ProgramValue, Instruction *>
+SnapshotRef     = ResultRef<ResultClass::Snapshot, Instruction *>
 ```
 
-Constructing a result reference requires the producer's intrinsic output class
+Constructing a result reference requires the producer's intrinsic `ResultClass`
 to match. Graph ownership and IR-level verification prevent Semantic and Core
 references from being mixed. A value-less instruction retains its pointer and
 serial for traversal, diagnostics, effects, and rewriting, but cannot be used
@@ -834,10 +838,10 @@ Passes must not mutate instructions or graph structures directly.
 
 Verification at pass boundaries should require:
 
-- every fixed and variable input slot to match the `SlotClass` and layout
+- every fixed and variable input slot to match the `InputClass` and layout
   declared for its instruction kind;
-- every result reference to match its producer's intrinsic output
-  `SlotClass`, and no result reference to be formed from a value-less
+- every result reference to match its producer's intrinsic `ResultClass`, and no
+  result reference to be formed from a value-less
   instruction;
 - exactly one live definition for every reachable SSA value;
 - for every phase carrying semantic type analysis, exactly one guaranteed
