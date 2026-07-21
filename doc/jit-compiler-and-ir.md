@@ -1246,6 +1246,58 @@ continuing canonical publication initially, or a precise compiled safepoint map
 later. An omitted effect is a correctness bug, not merely a missed
 optimization.
 
+Core defines motion in terms of one directional adjacent-swap predicate. Given
+two consecutive instructions `A` then `B`, `can_swap(A, B)` asks whether their
+order may become `B` then `A`:
+
+```text
+can_swap(A, B) =
+    structurally_movable(A, B)
+    and preserves_ssa(A, B)
+    and effects_commute(A, B)
+    and preserves_recovery(A, B)
+    and preserves_safepoint_roots(A, B)
+
+effects_commute(A, B) =
+    not conflicts(EffectiveEffects(A), Dependencies(B))
+    and not conflicts(EffectiveEffects(B), Dependencies(A))
+    and not noncommuting(EffectiveEffects(A), EffectiveEffects(B))
+```
+
+`conflicts` and `noncommuting` are centralized relations over the effect and
+dependency taxonomy after effect implications have been expanded. They are not
+raw bit-set intersection. An aliasing heap write conflicts with a heap read or
+write; shape mutation conflicts with shape dependencies; validity invalidation
+conflicts with validity-cell dependencies; and raising, deoptimizing, or
+leaving JIT conflicts with visible writes and with other observable exits whose
+order it could change. Coarse or unknown aliases conflict conservatively.
+
+The other clauses have equally concrete meanings:
+
+- `structurally_movable` requires both instructions to be in the same block and
+  excludes block parameters, terminators, Snapshot definitions, and any other
+  position-pinned instruction.
+- `preserves_ssa` rejects moving a use before its definition. Snapshot-expanded
+  operands count as transitive uses at each Snapshot consumer.
+- `preserves_recovery` requires every guard or exit to remain in the same
+  replay-valid region, every captured value to dominate its consumer, and no
+  committed Python-visible effect to cross the exit.
+- `preserves_safepoint_roots` rejects a swap that makes a tagged managed value
+  live across a safepoint unless the active root-publication policy can
+  represent that value there.
+
+Two guards or other side exits are noncommuting by default, even if their only
+effective operation is deoptimization: reversing them may change which
+Snapshot and bytecode continuation wins. A future optimization may commute
+them only with an explicit proof that their exits are equivalent.
+
+Longer-range motion is legal only when the same instruction can be swapped
+across every intervening instruction in order. Hoisting, sinking, CSE, and guard
+elimination therefore share this predicate rather than maintaining independent
+notions of safe motion. A pass may use conservative kind `MayEffects` or a
+current generation-checked effect analysis; it may never use stale refinement
+metadata.
+
 As a possible future optimization for generational GC, Core IR may distinguish
 establishing remembered-set coverage for an object from renewing that coverage
 after a possible collection. `EnsureRememberedIfOld` is idempotent within one
