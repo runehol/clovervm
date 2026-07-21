@@ -326,7 +326,7 @@ forms rather than three mandatory representations:
 
 ```text
 constructed Core IR  -> explicit checks, effects, Snapshots, tagged values
-represented Core IR  -> selected operations and one representation per value
+represented Core IR  -> selected operations and explicit representation conversions
 allocated Core IR    -> LocationSummary, location, spill, and edge-move tables
 ```
 
@@ -359,15 +359,19 @@ a general call, a callee-safe call, a native leaf call, or a call only on a
 slow path. It is backend analysis data rather than part of the immutable common
 IR operation.
 
-The Core representation of a `ProgramValueRef` determines the compatible
+The Core `ValueRepresentation` of a `ProgramValueRef` determines the compatible
 target register and spill classes. The backend maps target-independent
 representations to its own classes, for example:
 
 ```text
 TaggedValue -> general-purpose register class
 Float64     -> floating-point/SIMD register class
-Address     -> general-purpose register class
 ```
+
+Addresses used only while selecting or emitting one instruction are backend
+temporaries, not a common Core representation. `Address` should become a
+`ValueRepresentation` only if implementation demonstrates a need for addresses
+to live across Core instructions as SSA program values.
 
 `LocationSummary` may narrow that default to a fixed register or another
 operation-specific constraint, but it may not assign an incompatible class.
@@ -642,11 +646,19 @@ without container-relative instruction IDs. Here, a program value is a value in
 the compiled program's SSA semantics; it does not prescribe the concrete
 `cl::Value` representation.
 
+Core refines `ProgramValueRef` with the producer's immutable
+`ValueRepresentation`. Fixed-representation instruction APIs use zero-overhead
+wrappers such as `TaggedValueRef` and `Float64Ref`, while generic graph
+infrastructure and Semantic IR retain erased `ProgramValueRef`. The schema,
+typed-wrapper, and checked-erasure rules are defined in
+[JIT Instruction Representation](jit-instruction-representation.md).
+
 The initial IRs permit at most one result per instruction. Block parameters
-are output-producing `Parameter` pseudo-instructions referenced by
-`ProgramValueRef`; the block stores their references in its ordered parameter
-vector. A genuine need for multi-result instructions would justify revisiting
-this rule, but none is currently required.
+are representation-parametric output-producing `Parameter<R>`
+pseudo-instructions referenced generically by `ProgramValueRef`; the block
+stores their references in its ordered parameter vector. A genuine need for
+multi-result instructions would justify revisiting this rule, but none is
+currently required.
 
 A block owns one ordered parameter vector, and every incoming edge supplies an
 equally sized argument vector. The entire edge transfer has parallel-copy
@@ -831,8 +843,9 @@ Verification at pass boundaries should require:
 - for every phase carrying semantic type analysis, exactly one guaranteed
   static fact for each SSA value in that analysis's domain, compatible with its
   producing instruction;
-- exactly one machine representation for each Core `ProgramValueRef`, with all
-  representation changes expressed by explicit conversion instructions;
+- exactly one intrinsic `ValueRepresentation` for each Core `ProgramValueRef`,
+  with all representation changes expressed by explicit conversion
+  instructions;
 - every allocated register or spill location to belong to a class compatible
   with that representation and the instruction's `LocationSummary`;
 - every specialized use of a guard result to be dominated by that result's
@@ -871,8 +884,10 @@ If higher-effort inference is implemented, Semantic-to-Core lowering consumes
 a second Python type system. Core realizes only the distinctions demanded by
 executable lowering; it does not retain the whole Semantic value-analysis
 attachment unless a concrete later Core pass requires an explicitly designed
-Core attachment. Physical representations such as `TaggedValue`, `Float64`,
-and `Address` remain a separate backend concern.
+Core attachment. Semantic program-value references remain representation-erased;
+Semantic-to-Core lowering creates fresh Core producers with intrinsic
+`ValueRepresentation`s. Backend register classes and assigned locations remain
+separate from those target-independent Core representations.
 
 The complete optional design is in
 [Semantic IR and Specialization](jit-semantic-ir-and-specialization.md).
@@ -1362,11 +1377,14 @@ unboxing to execute ordinary compiled code.
 
 ### One representation and location per Core SSA value
 
-Every Core `ProgramValueRef` has exactly one machine representation, such as
-tagged `Value` or `Float64`. Semantic IR, when present, may defer this choice;
-its lowering creates the represented Core values. Boxing, unboxing, and any
-other representation changes are explicit Core SSA instructions that produce
-new values:
+Every Core `ProgramValueRef` has exactly one immutable
+`ValueRepresentation`. The first schema supports `TaggedValue` and `Float64`,
+although bring-up produces only tagged values until unboxing is implemented.
+Representation is an intrinsic producer and input contract declared by
+`instruction.def`, not an analysis or register-allocation attachment. Semantic
+IR, when present, keeps representation-erased references; its lowering creates
+the represented Core values. Boxing, unboxing, and any other representation
+changes are explicit Core SSA instructions that produce new values:
 
 ```text
 %boxed: Tagged<Float>
@@ -1392,8 +1410,9 @@ has no other use and removing its allocation has no observable effect. The
 optimizer may thereby connect arithmetic directly in unboxed form.
 
 Core block parameters also have one representation. Every incoming edge must
-supply that representation, inserting an explicit conversion in the
-predecessor or edge block when necessary.
+supply that representation to the representation-parametric `Parameter<R>`,
+inserting an explicit conversion in the predecessor or edge block when
+necessary.
 
 At each machine-code position, a live SSA value has one authoritative allocated
 location. Live-range splitting may move that value between a register, spill,

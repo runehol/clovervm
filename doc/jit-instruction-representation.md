@@ -5,7 +5,7 @@
 | Document type | Design |
 | Status | Accepted |
 | Implementation | Not started; the current virtual instruction hierarchy is temporary CFG scaffolding |
-| Scope | Physical instruction storage, typed instruction access, IR-level legality, phase metadata, effects, matching, and arena lifetime for Core and Semantic IR |
+| Scope | Physical instruction storage, typed instruction access, Core value representations, IR-level legality, phase metadata, effects, matching, and arena lifetime for Core and Semantic IR |
 | Owning layers | The JIT instruction representation owns storage, schema-generated construction, and typed access; the bulk graph builder owns deferred-validation construction; concrete analyses own attached inferred facts and possible effects; the CFG editor owns incremental structural mutation |
 | Validated against | N/A |
 | Supersedes | The open instruction-representation alternatives in [JIT Control-Flow Graph](jit-control-flow-graph.md) and the integer-only instruction reference direction in [JIT Compiler and IR](jit-compiler-and-ir.md) |
@@ -25,6 +25,7 @@ Instruction
     fixed-size stored object
     stable address and serial
     instruction kind and intrinsic output class
+    Core value representation when applicable
     encoded kind-specific payload
 
 AddInstruction, CallInstruction, ...
@@ -66,6 +67,8 @@ public:
     // Requires !is_detached().
     InstructionKind kind() const;
     SlotClass output_class() const;
+    // Requires a Core ProgramValue result.
+    ValueRepresentation value_representation() const;
 
     template<typename TypedInstruction>
     TypedInstruction as() const;
@@ -107,15 +110,42 @@ enum class SlotClass
 and `ConstantValue` are legal input-slot classes; `None` can never describe an
 input. `BlockEdge` is used instead of a direct block reference because the CFG
 represents every control-transfer occurrence with a first-class edge.
-`SlotClass` controls compatibility, physical decoding, and the default generic
-handling of the slot.
+`SlotClass` controls structural compatibility, physical decoding, and the
+default generic handling of the slot. Core program-value slots apply the
+additional `ValueRepresentation` constraint described below.
 
 `Instruction::output_class()` is derived from instruction-kind metadata; it is
 not another field in the record. `ProgramValue` says that the instruction
-defines an SSA program value, not that analysis knows its precise Python or
-representation type. Such inferred facts belong to a concrete phase-owned
-metadata object such as `SemanticValueAnalysis`. Changing an instruction's
-output class requires replacing the instruction with a different kind.
+defines an SSA program value, not that analysis knows its precise Python type.
+Such inferred facts belong to a concrete phase-owned metadata object such as
+`SemanticValueAnalysis`. Changing an instruction's output class requires
+replacing the instruction with a different kind.
+
+Core program values have one additional intrinsic refinement:
+
+```cpp
+enum class ValueRepresentation
+{
+    TaggedValue,
+    Float64,
+};
+```
+
+`ValueRepresentation` describes the target-independent encoding of a Core SSA
+value. It is not a `SlotClass`, Python type fact, register class, or assigned
+location. `Int64` or another representation is added only when an implemented
+Core instruction requires it. `Address` remains backend-local unless addresses
+demonstrably need to live across Core instructions as SSA program values.
+
+Every Core instruction producing a `ProgramValue` has exactly one immutable
+representation. For most kinds it is fixed by `instruction.def` and occupies no
+instruction space. Representation-polymorphic structural kinds, such as block
+parameters, declare a representation parameter stored immutably in the
+instruction payload. Semantic IR uses representation-erased `ProgramValueRef`s;
+Semantic-to-Core lowering creates a fresh graph whose program values all have
+representations. Generic Core construction starts with `TaggedValue` and
+introduces another representation only through explicit conversion or
+specialized instructions, so Core never contains an unknown representation.
 
 The record may contain raw pointers, serials, enums, flags, scalar immediates,
 and other trivially destructible values. It must not directly contain an
@@ -200,12 +230,13 @@ ProgramValueRef add = factory.make_add(lhs, rhs);
 
 The factory surface is generated or validated from `instruction.def`.
 `SlotTraits<SlotClass>` selects the C++ parameter type and encoding for each
-declared input, while output traits select the typed result returned by the
-constructor. Consequently, ordinary callers cannot choose an inconsistent
-kind, output class, input class, arity, or payload layout. IR-level-specific
-factory surfaces expose only instruction kinds permitted at that level. The
-exact macro spelling and whether generated functions delegate to shared
-templates are implementation details.
+declared input, representation traits refine Core program-value parameters, and
+output traits select the typed result returned by the constructor.
+Consequently, ordinary callers cannot choose an inconsistent kind, output
+class, input class, Core representation, arity, or payload layout.
+IR-level-specific factory surfaces expose only instruction kinds permitted at
+that level. The exact macro spelling and whether generated functions delegate
+to shared templates are implementation details.
 
 This compile-time construction safety does not attempt to prove contextual
 graph properties such as dominance or block-edge ownership. There are two
@@ -372,10 +403,30 @@ as block edges and stable runtime metadata without translating between separate
 input and output enums. Generated construction signatures make mismatched
 classes unrepresentable to ordinary callers, structural input replacement
 checks the declared class, and the verifier independently checks the encoded
-payload. Raw `Instruction *` remains the identity
-used for instruction-list placement, diagnostics, and other non-result
-structural operations. A result wrapper still contains a pointer; it does not
-turn the IR back into a container-relative integer-ID representation.
+payload. Raw `Instruction *` remains the identity used for instruction-list
+placement, diagnostics, and other non-result structural operations. A result
+wrapper still contains a pointer; it does not turn the IR back into a
+container-relative integer-ID representation.
+
+Generic traversal, dominance, use discovery, and Semantic IR use the erased
+`ProgramValueRef`. Core typed APIs refine it without changing its pointer-sized
+representation:
+
+```cpp
+template<ValueRepresentation Representation>
+class RepresentedValueRef;
+
+using TaggedValueRef =
+    RepresentedValueRef<ValueRepresentation::TaggedValue>;
+using Float64Ref =
+    RepresentedValueRef<ValueRepresentation::Float64>;
+```
+
+Erasing a `RepresentedValueRef` to `ProgramValueRef` is implicit and free.
+Refining an erased Core reference validates the producer's intrinsic
+representation. Fixed-representation generated constructors and accessors use
+the refined wrapper, making common mismatches C++ type errors; generic
+infrastructure deliberately retains the erased form.
 
 ## Typed Read-Only Views
 
@@ -384,8 +435,10 @@ live instruction kinds. Each definition names the instruction kind and typed
 view, the IR level or levels in which it is legal, its intrinsic output
 `SlotClass`, its `MustEffects` lower bound and `MayEffects` upper bound, its
 payload shape, and every fixed or variable input slot with its `SlotClass`.
-Repeated inclusion of that schema generates or validates the `InstructionKind`
-enum, invariant kind metadata, typed accessors, generic input traversal,
+Core program-value outputs and inputs additionally declare fixed, parametric,
+or representation-erased constraints. Repeated inclusion of that schema
+generates or validates the `InstructionKind` enum, invariant kind metadata,
+representation-safe construction and access, generic input traversal,
 output/input class legality, effect bounds, and the size and alignment
 constraints for encoded payloads. The `Detached` storage tag is not listed as a
 semantic instruction definition.
@@ -398,51 +451,79 @@ dispatch; passes remain ordinary C++ so they can organize related cases
 locally.
 
 Conceptually, representative definitions describe the following payloads. The
-examples elide the required IR-level and effect-bound fields to emphasize
-payload shape and slot classes:
+examples elide the required IR-level and effect-bound fields:
 
 ```text
-Add
-    output: ProgramValue
-    lhs: ProgramValue
-    rhs: ProgramValue
+Float64Add
+    output: ProgramValue(Float64)
+    lhs: ProgramValue(Float64)
+    rhs: ProgramValue(Float64)
+
+BoxFloat64
+    output: ProgramValue(TaggedValue)
+    value: ProgramValue(Float64)
+
+UnboxFloat64
+    output: ProgramValue(Float64)
+    value: ProgramValue(TaggedValue)
+    snapshot: Snapshot
 
 ShapeGuard
-    output: ProgramValue
-    value: ProgramValue
+    output: ProgramValue(TaggedValue)
+    value: ProgramValue(TaggedValue)
     expected_shape: Shape
     validity: ValidityCell
     snapshot: Snapshot
 
-ShapeKeyGuard
-    output: ProgramValue
-    value: ProgramValue
-    expected_key: ShapeKey
-    snapshot: Snapshot
+Parameter<R>
+    representation_parameter: R
+    output: ProgramValue(R)
 
 Snapshot
     output: Snapshot
-    captured_values[]: ProgramValue
+    captured_values[]: ProgramValue(AnyRepresentation)
 
 Constant
-    output: ProgramValue
+    output: ProgramValue(TaggedValue)
     value: ConstantValue
 
 ConditionalBranch
     output: None
-    condition: ProgramValue
+    condition: ProgramValue(TaggedValue)
     true_edge: BlockEdge
     false_edge: BlockEdge
 ```
 
-No class tag is stored beside each payload word. Generic code reads the
-instruction kind once and selects schema-generated layout metadata or a
-schema-generated per-kind enumerator. Conceptually:
+`AnyRepresentation` is reserved for genuinely representation-inspecting or
+representation-agnostic structural consumers such as Snapshot capture. It does
+not let arithmetic or calls silently accept incompatible encodings. Schema
+representation variables such as `R` express equality between selected inputs
+and outputs without adding per-slot runtime tags.
+
+Generated factory methods and typed accessors expose fixed constraints in their
+C++ signatures:
+
+```cpp
+Float64Ref make_float64_add(Float64Ref lhs, Float64Ref rhs);
+TaggedValueRef make_box_float64(Float64Ref value);
+Float64Ref make_unbox_float64(
+    TaggedValueRef value,
+    SnapshotRef snapshot);
+```
+
+Representation-parametric kinds use a generated template or equivalent typed
+factory entry and store the selected representation immutably. Exact macro
+spelling remains an implementation detail.
+
+No `SlotClass` or `ValueRepresentation` tag is stored beside each payload word.
+Generic code reads the instruction kind once and selects schema-generated
+layout metadata or a schema-generated per-kind enumerator. Conceptually:
 
 ```cpp
 struct InputSlotDescriptor
 {
     SlotClass slot_class;
+    ProgramValueConstraint representation_constraint;
     SlotLayout layout;  // Fixed or variable-length.
     uint16_t offset;
 };
@@ -480,23 +561,31 @@ rejects references that cross graphs or IR levels. Concrete analysis types
 accept only the graph level they own, such as `SemanticValueAnalysis` for a
 Semantic graph and `CoreEffectAnalysis` for a Core graph.
 
+For Core graphs, verification additionally requires every `ProgramValue`
+producer to have one legal representation, every fixed input constraint to
+match its producer, and every schema representation variable to unify across
+the slots that name it. Representation-parametric instructions must carry a
+legal immutable argument. Snapshot capture may accept heterogeneous erased
+program values, but recovery planning still interprets each captured value
+using its producer's representation.
+
 Each concrete instruction form is a small read-only view holding a
 `const Instruction *`. It is not derived from `Instruction`, is not separately
 allocated, and does not own storage:
 
 ```cpp
-class AddInstruction
+class Float64AddInstruction
 {
 public:
-    static constexpr InstructionKind Kind = InstructionKind::Add;
+    static constexpr InstructionKind Kind = InstructionKind::Float64Add;
 
-    ProgramValueRef lhs() const;
-    ProgramValueRef rhs() const;
+    Float64Ref lhs() const;
+    Float64Ref rhs() const;
 
 private:
     friend class Instruction;
 
-    explicit AddInstruction(const Instruction *instruction)
+    explicit Float64AddInstruction(const Instruction *instruction)
         : instruction_(instruction)
     {
     }
@@ -539,11 +628,11 @@ actual grouped operation family justifies them.
 
 ## Mostly Immutable Instructions
 
-An instruction's kind, output class, constants, bytecode origin, payload shape,
-and non-input semantic parameters are immutable after construction. A pass that
-changes one of these properties constructs an unplaced replacement through the
-appropriate instruction factory, then asks the structural IR editor to attach
-it and rewrite the published graph explicitly.
+An instruction's kind, output class, Core value representation, constants,
+bytecode origin, payload shape, and non-input semantic parameters are immutable
+after construction. A pass that changes one of these properties constructs an
+unplaced replacement through the appropriate instruction factory, then asks the
+structural IR editor to attach it and rewrite the published graph explicitly.
 
 Detachment is the sole exception to the stored kind remaining live for the
 allocation lifetime. It is a one-way lifetime transition, not semantic
@@ -575,14 +664,16 @@ views must not be retained across structural edits.
 
 Instruction-result input slots are controlled mutable structure. The structural
 editor may replace a `ProgramValue` or `Snapshot` slot only with a result of the
-same declared `SlotClass`, while maintaining metadata lifetime, analysis
+same declared `SlotClass`; Core program-value replacement must also preserve
+`ValueRepresentation`. The editor maintains metadata lifetime, analysis
 invalidation, and graph mutation generation. If the pass has retained a
 mutation-aware `UseIndex`, the editor also updates it; otherwise the generation
 change makes the old index stale. `BlockEdge`, `Shape`, `ShapeKey`,
 `ValidityCell`, and `ConstantValue` slots are immutable semantic payload;
 changing one requires instruction replacement. Changing any slot's class,
-count, or layout likewise requires replacement. Typed views expose every input
-read-only and never provide setters or writable arrays.
+representation constraint, count, or layout likewise requires replacement.
+Typed views expose every input read-only and never provide setters or writable
+arrays.
 
 The schema-generated generic input walker is the common primitive for use
 discovery and bulk rewriting. It walks fixed and variable inputs in declared
@@ -620,7 +711,10 @@ lowering has accumulated many substitutions. Replacements have simultaneous
 semantics: given `A -> B` and `B -> C`, an original use of `A` becomes `B`
 unless the map was explicitly transitively normalized before the scan. The
 operation validates that every replacement preserves the slot's declared
-`SlotClass` and advances graph and attachment generations once for the batch.
+`SlotClass` and, in Core, the producer's `ValueRepresentation`. A
+representation-changing rewrite inserts an explicit conversion or replaces the
+consumer; it cannot use generic result replacement to connect incompatible
+encodings. The batch advances graph and attachment generations once.
 
 The same walker independently reconstructs uses for verification and also
 supports cloning and printing. The verifier compares any current `UseIndex`
@@ -630,10 +724,10 @@ typed views.
 
 ## Phase-Owned Attached Metadata
 
-Inferred types, possible effects, dependencies, representations, locations, and
-similar derived facts are not part of the physical instruction representation.
-They live in explicit metadata objects owned by the phase and IR level that
-defines them, for example:
+Inferred types, possible effects, dependencies, locations, and similar derived
+facts are not part of the physical instruction representation. They live in
+explicit metadata objects owned by the phase and IR level that defines them,
+for example:
 
 ```text
 SemanticValueAnalysis   Semantic ProgramValueRef -> ValueFacts
@@ -641,6 +735,10 @@ CoreEffectAnalysis      Core Instruction*        -> PossibleEffects
 LocationAssignments     Core Instruction*        -> backend locations
 UseIndex                Instruction*             -> temporary UseRecords
 ```
+
+Core `ValueRepresentation` is deliberately not an attachment. It is an
+immutable producer and input contract used to type the SSA graph itself.
+Register, spill, and constant locations remain backend-owned attached metadata.
 
 This is not a generic per-instruction property bag. Each attachment is a
 concrete type with its own invariants, key domain, mutation rules, and permitted
@@ -797,13 +895,14 @@ variable arguments, Snapshots with variable captured state, and one
 metadata-heavy semantic instruction in `instruction.def`.
 
 That slice should compare plausible fixed record sizes, measure total graph and
-side-data use, and exercise generated construction, typed access, generic input
-walking, verification, and destruction-free arena cleanup. Success does not
-require every payload to fit inline. It requires every representative layout to
-use the same declarative schema and uniform arena-owned side data without a
-handwritten storage or traversal escape hatch. The measurements select the
-payload word count and side-data thresholds; discovery of a required escape
-hatch reopens the representation design.
+side-data use, and exercise generated construction, fixed and parametric
+representation typing, typed access, generic input walking, verification, and
+destruction-free arena cleanup. Success does not require every payload to fit
+inline. It requires every representative layout to use the same declarative
+schema and uniform arena-owned side data without a handwritten storage or
+traversal escape hatch. The measurements select the payload word count and
+side-data thresholds; discovery of a required escape hatch reopens the
+representation design.
 
 ## Rejected Directions
 

@@ -266,6 +266,12 @@ definition must be available at the source terminator and therefore dominate
 the edge. The target parameter is a new SSA definition available in the target
 block.
 
+In Core IR each parameter is a representation-parametric `Parameter<R>` and
+every corresponding edge argument must have the same intrinsic
+`ValueRepresentation`. Semantic IR uses representation-erased parameters. A
+Core representation mismatch is repaired by an explicit conversion in the
+predecessor or an edge block, never by register-allocation coercion.
+
 The complete edge transfer has parallel-copy semantics. Argument zero is not
 assigned before argument one, and one transfer may safely encode swaps or
 cycles. The backend resolves those copies only after locations are assigned.
@@ -343,8 +349,8 @@ The block-argument extension and later SSA verification will add these checks:
   IR level according to `src/jit/instruction.def`;
 - every instruction and result reference stays within one graph and IR level;
 - every edge argument list matches the target parameter list in arity and
-  required `SlotClass`, plus any representation or type contract active for
-  that phase;
+  required `SlotClass`; Core arguments additionally match the parameter's
+  `ValueRepresentation`, plus any later phase-specific contract;
 - every ordinary operand definition dominates its use;
 - every edge argument definition dominates its source edge;
 - every block parameter dominates ordinary uses in its block and dominated

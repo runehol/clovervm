@@ -131,6 +131,12 @@ location with different incoming values receives a block parameter, and each
 predecessor supplies its argument with parallel-copy semantics. Pruned
 construction avoids parameters for dead interpreter locations.
 
+Semantic `ProgramValueRef`s are representation-erased. They describe Python
+program values and participate in the same generic SSA machinery without
+choosing a Core encoding. Semantic-to-Core lowering builds fresh producers with
+intrinsic `ValueRepresentation`s and representation-parametric block
+parameters.
+
 Semantic operations and recoverable bytecode boundaries retain structurally
 shared logical `FrameStateId`s. The mutable construction environment also
 tracks the current global accumulator and active inline frame chain. This state
