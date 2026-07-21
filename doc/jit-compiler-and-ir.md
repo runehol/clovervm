@@ -192,9 +192,13 @@ the bytecode may duplicate Python-visible behavior.
 Exit state must therefore distinguish:
 
 - pre-effect exits that resume at the current bytecode;
-- exits after a committed result that resume at a later bytecode state;
-- exceptional exits that preserve pending exception state without repeating an
-  already-performed effect.
+- exits after a committed result that resume at a later bytecode state.
+
+The current JIT does not model pending exception transport through deoptimization.
+An operation that would raise exits before taking the exception and retries the
+same bytecode in the interpreter. Exceptional exits that preserve pending
+exception state, unwind compiled frames, or resume after a handler-visible
+exception are future compiled-exception-handling work.
 
 Every deoptimizing check retains a bytecode origin and consumes a Snapshot of
 its logical resume state. Moving or commoning checks must preserve a legal
