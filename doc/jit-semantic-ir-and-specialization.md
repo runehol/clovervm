@@ -144,14 +144,15 @@ control flow or a guard creates a new block parameter or refinement result; an
 existing value does not acquire a different guaranteed type at another program
 position.
 
-The current inferred type and analyzed effects are the narrowly mutable
-analysis fields on an instruction and are updated only through the
-`InstructionAnalysisEditor` described in
-[JIT Instruction Representation](jit-instruction-representation.md). Updates
-occur within an analysis mutation phase; transformations consume only the
-validated state frozen when that phase commits. Richer evidence, conditional
-facts, and partition state remain in analysis side tables keyed by typed
-program-value references. An operation supplies a transfer function:
+Semantic value facts live in a concrete `SemanticValueAnalysis` attachment
+indexed by typed Semantic `ProgramValueRef`s; they are not fields on the
+physical instruction. Mutable inference updates private serial-indexed storage
+and publishes a generation-checked frozen view. A structural edit makes the old
+view stale, but inference may preserve unaffected entries, apply local transfer
+functions to transparent edits, and incrementally revisit only affected
+dependents before publishing the next generation. Conditional facts and
+partition state remain in their own concrete Semantic analysis attachments. An
+operation supplies a transfer function:
 
 ```text
 infer_result(operation, operand facts) -> ValueFacts

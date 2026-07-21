@@ -5,8 +5,8 @@
 | Document type | Design |
 | Status | Accepted |
 | Implementation | Not started; the current virtual instruction hierarchy is temporary CFG scaffolding |
-| Scope | Physical instruction storage, typed instruction access, analysis mutation, effects, matching, and arena lifetime for Core and Semantic IR |
-| Owning layers | The JIT instruction representation owns storage and typed access; instruction kinds own semantic payloads and unavoidable effects; analysis passes own inferred types and analyzed effects; the CFG editor owns structural replacement |
+| Scope | Physical instruction storage, typed instruction access, IR-level legality, phase metadata, effects, matching, and arena lifetime for Core and Semantic IR |
+| Owning layers | The JIT instruction representation owns storage and typed access; instruction kinds own semantic payloads, allowed IR levels, and unavoidable effects; concrete analyses own attached inferred facts and analyzed effects; the CFG editor owns structural replacement |
 | Validated against | N/A |
 | Supersedes | The open instruction-representation alternatives in [JIT Control-Flow Graph](jit-control-flow-graph.md) and the integer-only instruction reference direction in [JIT Compiler and IR](jit-compiler-and-ir.md) |
 
@@ -23,15 +23,15 @@ The representation has four deliberately different roles:
 Instruction
     fixed-size stored object
     stable address and serial
-    instruction kind and intrinsic result class
-    current program-value type and analyzed effects
+    instruction kind and intrinsic output class
     encoded kind-specific payload
 
 AddInstruction, CallInstruction, ...
     short-lived read-only typed views over Instruction
 
-InstructionAnalysisEditor
-    narrow capability for updating type and analyzed effects
+SemanticValueAnalysis, CoreEffectAnalysis, ...
+    concrete phase-owned metadata indexed by instruction
+    attached, frozen, incrementally updated, and discarded as required
 
 CFG editor
     structural insertion, removal, and instruction replacement
@@ -58,22 +58,14 @@ public:
     bool is_detached() const;
     // Requires !is_detached().
     InstructionKind kind() const;
-    ResultClass result_class() const;
-    // Requires result_class() == ResultClass::ProgramValue.
-    Type *type() const;
-    EffectFlags analyzed_effects() const;
-    EffectFlags effects() const;
+    SlotClass output_class() const;
 
     template<typename TypedInstruction>
     TypedInstruction as() const;
 
 private:
-    friend class InstructionAnalysisEditor;
-
     Serial serial_;
     InstructionStorageTag tag_;
-    Type *type_;
-    EffectFlags analyzed_effects_;
     InstructionPayload payload_;
 };
 ```
@@ -82,53 +74,78 @@ The physical storage tag represents either one live `InstructionKind` or the
 reserved `Detached` state. The exact encoding may reserve one tag value rather
 than adding another per-instruction field. `InstructionKind` remains the closed
 semantic enum generated from `src/jit/instruction.def`; `Detached` is a storage
-lifetime state, not an instruction kind. `kind()`, `result_class()`, type and
-effect access, typed conversion, and payload traversal all require a live tag.
-Only `serial()` and `is_detached()` remain meaningful after detachment.
+lifetime state, not an instruction kind. `kind()`, `output_class()`, typed
+conversion, and payload traversal all require a live tag. Only `serial()` and
+`is_detached()` remain meaningful after detachment.
 
-Every instruction kind has one immutable intrinsic result class declared by
-`src/jit/instruction.def`:
+One shared classification describes both what an instruction may produce and
+what semantic entity an input slot may contain:
 
 ```cpp
-enum class ResultClass
+enum class SlotClass
 {
     None,
     ProgramValue,
     Snapshot,
+    BlockEdge,
+    Shape,
+    ShapeKey,
+    ValidityCell,
+    ConstantValue,
 };
 ```
 
-`Instruction::result_class()` is derived from the instruction-kind metadata;
-it is not another mutable field in the record. `ProgramValue` says that the
-instruction defines an SSA program value, not that analysis already knows its
-precise Python or representation type. Its current `Type *` may therefore be
-conservative or distinguish facts such as SMI, BigInt, or Float only when the
-available analysis supports that distinction. `None` and `Snapshot`
-instructions do not have a program-value type, and type access or mutation for
-them is invalid. Changing an instruction's result class requires replacing the
-instruction with a different kind.
+`None`, `ProgramValue`, and `Snapshot` are legal instruction output classes.
+`ProgramValue`, `Snapshot`, `BlockEdge`, `Shape`, `ShapeKey`, `ValidityCell`,
+and `ConstantValue` are legal input-slot classes; `None` can never describe an
+input. `BlockEdge` is used instead of a direct block reference because the CFG
+represents every control-transfer occurrence with a first-class edge.
+`SlotClass` controls compatibility, physical decoding, and the default generic
+handling of the slot.
+
+`Instruction::output_class()` is derived from instruction-kind metadata; it is
+not another field in the record. `ProgramValue` says that the instruction
+defines an SSA program value, not that analysis knows its precise Python or
+representation type. Such inferred facts belong to a concrete phase-owned
+metadata object such as `SemanticValueAnalysis`. Changing an instruction's
+output class requires replacing the instruction with a different kind.
 
 The record may contain raw pointers, serials, enums, flags, scalar immediates,
 and other trivially destructible values. It must not directly contain an
 owning `std::vector`, `std::string`, `std::unique_ptr`, reference-counted
 handle, or any value whose destructor releases resources.
 
-Variable-length operands and unusually large instruction data use pointer/count
-references to compilation-arena allocations:
+Payload input slots are pointer-sized words. The schema, rather than a runtime
+tag stored beside each word, determines their C++ interpretation:
+
+```text
+ProgramValue   -> Instruction* wrapped as ProgramValueRef
+Snapshot       -> Instruction* wrapped as SnapshotRef
+BlockEdge      -> BlockEdge*
+Shape          -> Shape*
+ShapeKey       -> inline ShapeKey value
+ValidityCell   -> ValidityCell*
+ConstantValue  -> inline Value
+```
+
+The implementation enforces that every encoded class fits the slot size and
+alignment. Variable-length homogeneous inputs and unusually large instruction
+data use pointer/count references to compilation-arena allocations:
 
 ```cpp
-struct InstructionOperands
+using InstructionSlot = uintptr_t;
+
+struct InstructionSlots
 {
-    Instruction *const *data;
+    const InstructionSlot *data;
     uint32_t size;
 };
 ```
 
 Construction may use a mutable buffer before publishing the instruction, but
-stored and typed access exposes immutable operand slots, for example as
-`absl::Span<Instruction *const>`. The pointed-to instructions remain ordinary
-IR references; clients cannot replace an operand by assigning through the
-span.
+stored and typed access decodes the declared slot class and exposes immutable
+typed values, for example `absl::Span<ProgramValueRef>`. Clients cannot replace
+an input by assigning through the span.
 
 Side-data types obey the same no-destruction contract. Instruction and
 side-data allocation should enforce at least:
@@ -184,7 +201,9 @@ This lets reclamation and a future moving collector find and, when necessary,
 rewrite the actual instruction or side-data entries. An instruction does not
 contain `Owned<Value>`, and the root table is not a parallel table of owned
 values. Immediate values that contain no managed reference need no root-table
-entry.
+entry. Schema-generated `ConstantValue` slot enumeration identifies the
+candidate locations whose concrete values determine whether registration is
+needed.
 
 The root table is a normally destroyed compilation object and remains
 registered with the runtime root mechanism for the compilation lifetime. Its
@@ -217,37 +236,120 @@ stable tie-breaking, and deterministic ordering.
 The result-reference wrappers are mandatory for every result-consuming field:
 
 ```cpp
-using ProgramValueRef = ResultRef<ResultClass::ProgramValue, Instruction *>;
-using SnapshotRef = ResultRef<ResultClass::Snapshot, Instruction *>;
+using ProgramValueRef = ResultRef<SlotClass::ProgramValue, Instruction *>;
+using SnapshotRef = ResultRef<SlotClass::Snapshot, Instruction *>;
 ```
 
-Constructing a result reference validates that the producer's intrinsic result
-class matches the wrapper. A `ResultClass::None` instruction cannot be used as
-an SSA operand, a Snapshot cannot be used as a program value, and a program
-value cannot be used where recovery state is required. Instruction construction
-and structural operand replacement perform this validation, and the verifier
-checks the same invariant over the encoded payload. Raw `Instruction *` remains
-the identity used for instruction-list placement, diagnostics, and other
-non-result structural operations. A result wrapper still contains a pointer;
-it does not turn the IR back into a container-relative integer-ID
-representation.
+Constructing a result reference validates that the producer's intrinsic output
+class matches the slot class required by the wrapper. A `SlotClass::None`
+instruction cannot be referenced as an input, a Snapshot cannot be used as a
+program value, and a program value cannot be used where recovery state is
+required. The same `SlotClass` vocabulary describes non-instruction inputs such
+as block edges and stable runtime metadata without translating between separate
+input and output enums. Instruction construction and structural input
+replacement perform this validation, and the verifier checks the same
+invariant over the encoded payload. Raw `Instruction *` remains the identity
+used for instruction-list placement, diagnostics, and other non-result
+structural operations. A result wrapper still contains a pointer; it does not
+turn the IR back into a container-relative integer-ID representation.
 
 ## Typed Read-Only Views
 
 `src/jit/instruction.def` is the authoritative schema for the closed set of
 live instruction kinds. Each definition names the instruction kind and typed
-view, its intrinsic `ResultClass`, its unavoidable kind effects, its payload
-shape, and the semantic roles of its operand and reference slots. Repeated
-inclusion of that schema generates or validates the `InstructionKind` enum,
-invariant kind metadata, generic operand/reference traversal, and the size and
-alignment constraints for encoded payloads. The `Detached` storage tag is not
-listed as a semantic instruction definition.
+view, the IR level or levels in which it is legal, its intrinsic output
+`SlotClass`, its unavoidable kind effects, its payload shape, and every fixed
+or variable input slot with its `SlotClass`. Repeated inclusion of that schema
+generates or validates the `InstructionKind` enum, invariant kind metadata,
+typed accessors, generic input traversal, output/input class legality, and the
+size and alignment constraints for encoded payloads. The `Detached` storage tag
+is not listed as a semantic instruction definition.
 
 The schema owns facts that must remain synchronized for every instruction
-kind. It does not generate pass implementations, visitor methods, or
-kind-specific semantic accessors. Those remain ordinary handwritten C++ so a
-pass can organize related cases locally and each typed view can expose names
-appropriate to its instruction.
+kind. It may generate storage decoding and straightforward typed-accessor
+boilerplate, while instruction-specific convenience accessors may remain
+handwritten. It does not generate pass implementations or visitor-method
+dispatch; passes remain ordinary C++ so they can organize related cases
+locally.
+
+Conceptually, representative definitions describe:
+
+```text
+Add
+    output: ProgramValue
+    lhs: ProgramValue
+    rhs: ProgramValue
+
+ShapeGuard
+    output: ProgramValue
+    value: ProgramValue
+    expected_shape: Shape
+    validity: ValidityCell
+    snapshot: Snapshot
+
+ShapeKeyGuard
+    output: ProgramValue
+    value: ProgramValue
+    expected_key: ShapeKey
+    snapshot: Snapshot
+
+Snapshot
+    output: Snapshot
+    captured_values[]: ProgramValue
+
+Constant
+    output: ProgramValue
+    value: ConstantValue
+
+ConditionalBranch
+    output: None
+    condition: ProgramValue
+    true_edge: BlockEdge
+    false_edge: BlockEdge
+```
+
+No class tag is stored beside each payload word. Generic code reads the
+instruction kind once and selects schema-generated layout metadata or a
+schema-generated per-kind enumerator. Conceptually:
+
+```cpp
+struct InputSlotDescriptor
+{
+    SlotClass slot_class;
+    SlotLayout layout;  // Fixed or variable-length.
+    uint16_t offset;
+};
+
+void visit_inputs(Instruction &instruction, InputVisitor visitor);
+```
+
+The generated dispatch interprets each payload word only according to the
+schema for that instruction kind. `ProgramValue` slots are ordinary uses at the
+containing instruction, `BlockEdge` slots participate in CFG maintenance, and
+metadata and constant classes use their class-specific lifetime and validation
+rules.
+
+`Snapshot` is the one explicit exception to ordinary local-use behavior. It is
+a zero-code aggregate result whose captured `ProgramValue` inputs become point
+uses at every guard or side exit that consumes the `SnapshotRef`. Liveness
+expands a Snapshot input transitively at that consuming position, so several
+nearby guards may safely share one Snapshot without treating its captured
+values as dead after the Snapshot instruction itself. Verification keeps the
+Snapshot anchored near its consumers and on the correct side of effect
+boundaries. This special case is preferred over a general per-slot role axis;
+the design should revisit that choice if another same-class relationship needs
+different generic behavior.
+
+Every graph has one immutable IR level, initially `Semantic` or `Core`; a
+future Machine IR may use the same mechanism if it adopts this representation.
+An instruction definition may name one level or an explicit set when the same
+semantic kind is valid in more than one IR. Allowed levels are kind metadata
+and consume no space in an instruction. The graph construction API and CFG
+editor reject insertion or replacement with a kind not allowed at the graph's
+level, and the verifier independently checks every placed instruction. It also
+rejects references that cross graphs or IR levels. Concrete analysis types
+accept only the graph level they own, such as `SemanticValueAnalysis` for a
+Semantic graph and `CoreEffectAnalysis` for a Core graph.
 
 Each concrete instruction form is a small read-only view holding a
 `const Instruction *`. It is not derived from `Instruction`, is not separately
@@ -262,9 +364,6 @@ public:
     ProgramValueRef lhs() const;
     ProgramValueRef rhs() const;
 
-    Type *type() const { return instruction_->type(); }
-    EffectFlags effects() const { return instruction_->effects(); }
-
 private:
     friend class Instruction;
 
@@ -277,12 +376,12 @@ private:
 };
 ```
 
-The view exposes only fields meaningful for its instruction kind. A
-program-value-producing view may read the instruction's current type; `None`
-and `Snapshot` views do not expose a program-value type. Every view may read its
-effects, but it exposes no setters. Copying a view copies a non-owning read
-capability; it never grants mutation authority. Views are intended to be
-short-lived pass locals rather than objects stored in the IR.
+The view exposes only immutable fields meaningful for its instruction kind.
+Inferred types, analyzed effects, locations, and other phase knowledge are read
+through the concrete metadata object that owns them, not through a typed
+instruction view. Copying a view copies a non-owning read capability; it never
+grants mutation authority. Views are intended to be short-lived pass locals
+rather than objects stored in the IR.
 
 There is one ordinary `InstructionKind` enum generated from
 `src/jit/instruction.def`. Each typed view declares its own
@@ -311,10 +410,10 @@ actual grouped operation family justifies them.
 
 ## Mostly Immutable Instructions
 
-An instruction's kind, constants, bytecode origin, Snapshot references, and
-other opcode-specific semantic parameters are immutable after construction. A
-pass that changes one of these properties constructs a replacement instruction
-through the structural IR editor and rewrites the graph explicitly.
+An instruction's kind, output class, constants, bytecode origin, payload shape,
+and non-input semantic parameters are immutable after construction. A pass that
+changes one of these properties constructs a replacement instruction through
+the structural IR editor and rewrites the graph explicitly.
 
 Detachment is the sole exception to the stored kind remaining live for the
 allocation lifetime. It is a one-way lifetime transition, not semantic
@@ -329,10 +428,10 @@ every use, removed the instruction's own operand occurrences from use indexes,
 and unlinked the instruction from its block. It then neutralizes managed
 constant slots through the compilation-root mechanism and leaves any still
 registered root slot holding a safe immediate value. It clears or debug-poisons
-the remaining type, effects, and payload storage, and publishes the `Detached`
-tag last. An editor transaction is not observable by ordinary passes in an
-intermediate state. A detached allocation is never republished or returned to
-a live kind.
+the remaining payload storage, notifies active metadata owners, and publishes
+the `Detached` tag last. An editor transaction is not observable by ordinary
+passes in an intermediate state. A detached allocation is never republished or
+returned to a live kind.
 
 The serial is deliberately preserved for diagnostics. Verification rejects a
 detached instruction in a block list, any operand or Snapshot reference whose
@@ -342,84 +441,59 @@ poisoned payload. Generic traversal likewise checks `is_detached()` before
 dispatching on a kind and never visits detached side data. Short-lived typed
 views must not be retained across structural edits.
 
-Operand slots are controlled mutable structure. The structural editor may
-replace operands while maintaining use indexes, invalidating affected analysis,
-and advancing the graph mutation generation. Typed instruction views expose
-operands read-only and never provide setters or writable operand arrays. This
-controls mutation without forcing replacement of every transitive user during
-ordinary SSA `replace_all_uses_with` operations.
+Input slots are controlled mutable structure. The structural editor may replace
+a slot only with an entity of the same declared `SlotClass`, while maintaining
+the corresponding SSA use index, Snapshot dependency, CFG index, metadata
+lifetime, analysis invalidation, and graph mutation generation. Changing a
+slot's class, count, or layout requires instruction replacement. Typed views
+expose inputs read-only and never provide setters or writable arrays.
 
-Every instruction kind provides a generic ordered operand/reference interface
-in addition to its semantic typed accessors. The instruction schema records the
-role and required `ResultClass` of each fixed or variable reference field, and
-generates or validates the generic traversal needed for that payload shape. The
-structural editor and verifier use this interface to find ordinary operands,
-variable operand arrays, Snapshots, and other references that participate in
-rewriting or use indexes. A generic rewrite must preserve the required result
-class of every rewritten slot. Kind-specific named references such as branch
-edges remain available through typed views.
+Frequent `replace_all_uses_with` operations use indexed `InputSlotHandle`s that
+identify the affected mutable slots directly rather than scanning the graph.
+The schema-generated generic input walker constructs and verifies those
+indexes, rebuilds them when required, and supports cloning, printing, and other
+whole-instruction operations. It walks fixed and variable inputs in declared
+order and never compares instruction pointers against words declared as
+`BlockEdge`, metadata, or inline constants. Kind-specific named accessors such
+as branch edges remain available through typed views.
 
-Two analysis-owned fields may change in place:
+## Phase-Owned Attached Metadata
 
-- a program-value instruction's current inferred type;
-- its analyzed effect flags.
+Inferred types, analyzed effects, dependencies, representations, locations, and
+similar derived facts are not part of the physical instruction representation.
+They live in explicit metadata objects owned by the phase and IR level that
+defines them, for example:
 
-Typed instruction views can read effects, and program-value-producing views can
-also read the current type, but they cannot update either field. Mutation
-requires an `InstructionAnalysisEditor`, which acts as a capability supplied
-only to the small set of passes authorized to refine analysis state:
-
-```cpp
-class InstructionAnalysisEditor
-{
-public:
-    void set_type(ProgramValueRef result, Type *type);
-    void set_analyzed_effects(
-        Instruction *instruction, EffectFlags effects);
-
-private:
-    friend class PassManager;
-
-    explicit InstructionAnalysisEditor(AnalysisMutationPhase &phase);
-
-    AnalysisMutationPhase *phase_;
-};
+```text
+SemanticValueAnalysis   Semantic ProgramValueRef -> ValueFacts
+CoreEffectAnalysis      Core Instruction*        -> analyzed EffectFlags
+LocationAssignments     Core Instruction*        -> backend locations
 ```
 
-The exact component that constructs the editor will follow the pass-pipeline
-API when that API exists. Its constructor must not be public. Accepting a
-`ProgramValueRef` makes type mutation unavailable for `None` and `Snapshot`
-instructions. The editor is the single enforcement point for valid type/effect
-combinations, analysis invalidation, and any debug verification required around
-mutation. This design does not add an owning-graph pointer or live-placement
-state to every instruction. Graph membership and structural validity remain
-responsibilities of the construction pipeline, structural editor, and
-verifier.
+This is not a generic per-instruction property bag. Each attachment is a
+concrete type with its own invariants, key domain, mutation rules, and permitted
+graph level. Clients query it with an instruction pointer or typed result
+reference. A dense implementation may use the instruction serial as an internal
+vector index and retain the pointer in each populated entry for defensive
+identity validation; serial lookup is not exposed as the pass API.
 
-Ordinary passes receive `const Instruction *` or mutable graph access without
-an analysis editor. Possessing a typed view never implies permission to mutate
-the referenced instruction.
+Mutable analysis builds or updates its private table and publishes a frozen
+view tagged with the source graph and mutation generation. Every query validates
+that the graph still has that generation, that the instruction is live and
+belongs to the graph, and that the entry's pointer matches. Structural mutation
+makes an old frozen view stale, but it does not require discarding all stored
+facts. The editor supplies a mutation description so the owning analysis can
+preserve unaffected entries, cheaply derive facts for locally transparent
+instructions, and incrementally recompute only affected dependents before
+publishing the next generation.
 
-### Analysis Mutation Phases
-
-Type and effect mutation is phase-scoped:
-
-1. Instruction construction initializes program-value types and analyzed
-   effects conservatively.
-2. A structurally fixed graph enters an analysis mutation phase. Only passes
-   holding its `InstructionAnalysisEditor` may update those fields.
-3. Fixed-point analysis may narrow or widen its provisional state until it
-   converges. Transformations must not rely on provisional facts.
-4. Closing the phase validates and freezes the resulting analysis state.
-   Effect- or type-dependent transformations consume only frozen state.
-5. A later structural edit invalidates the affected frozen state and restores
-   the affected fields to conservative values before another dependent
-   transformation. A new analysis mutation phase recomputes and freezes them.
-
-The phase may batch updates and advance the applicable analysis generation once
-at commit rather than once per fixed-point cell update. Intermediate
-type/effect combinations need be valid only according to the mutation-phase
-contract; pass-boundary verification observes committed state.
+Attachments exist only while a later phase consumes them. Semantic value facts
+may be discarded after Semantic-to-Core lowering; Core effect information may
+be discarded after effect-dependent optimization; backend location data has
+its own later lifetime. Detaching an instruction invalidates or removes its
+entries from every active attachment before the editor publishes the detached
+storage tag. Major representation boundaries may build a fresh graph while
+using the same instruction, CFG, serial, and arena machinery.
 
 ## Kind Effects and Analyzed Effects
 
@@ -431,28 +505,31 @@ through schema-generated invariant metadata, and cannot be removed by analysis.
 Examples include a return terminating its block or an operation performing an
 inherently visible write.
 
-Analyzed effects are the current conservative effect state for this particular
-instruction. Construction initializes them conservatively. Authorized analysis
-may refine them as operand types, resolved targets, and other facts become
-known.
+Analyzed effects are conservative phase-owned metadata for a particular live
+instruction. `CoreEffectAnalysis`, or the corresponding concrete analysis for
+another allowed IR level, initializes them conservatively and may refine them
+as operand facts, resolved targets, and other evidence become known.
 
 The effective summary is:
 
 ```cpp
-EffectFlags Instruction::effects() const
+EffectFlags CoreEffectAnalysis::effects(const Instruction *instruction) const
 {
-    return instruction_kind_effects(kind()) | analyzed_effects_;
+    validate_current_entry(instruction);
+    return instruction_kind_effects(instruction->kind()) |
+           analyzed_effects(instruction);
 }
 ```
 
 Consequently, an effect that analysis may prove absent must not be classified
 as an unavoidable kind effect. A generic call, for example, may begin with
-`MayRaise` in its analyzed effects; target analysis can remove it when justified.
-An effect inherent in every execution of a kind remains in the kind table.
+`MayRaise` in its analyzed effects; target analysis can remove it when
+justified. An effect inherent in every execution of a kind remains in the kind
+table.
 
 Selecting a genuinely different semantic operation still requires instruction
-replacement. The editor refines facts about the existing operation; it does
-not change its kind or semantic payload.
+replacement. An analysis attachment refines facts about the existing operation;
+it does not change its kind or semantic payload.
 
 ## Typed Switch Matching
 

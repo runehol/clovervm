@@ -314,9 +314,11 @@ It owns:
   conversions;
 - ordered calls, operations, and commit points.
 
-When Semantic IR is present, Core IR carries forward its semantic facts and
-partition identities rather than translating them into a second type system.
-Neither those facts nor a general semantic type system are required by the
+When Semantic IR is present, lowering consumes its frozen facts and partition
+identities to choose explicit Core checks, control flow, and operations. Core
+carries only distinctions materialized in that structure and any concrete
+Core attachment required by a later Core pass; the Semantic analysis attachment
+may then be discarded. A general semantic type system is not required by the
 direct compilation path.
 
 Core IR is the stable SSA CFG carried through progressively stronger verified
@@ -380,7 +382,7 @@ instruction graph, that is evidence for introducing an explicit Machine IR at
 the required scope.
 
 The register allocator and location tables accept only `ProgramValueRef`s.
-Instructions with `ResultClass::None` and compiler-only `SnapshotRef`s receive
+Instructions with `SlotClass::None` and compiler-only `SnapshotRef`s receive
 no location, although the program-value operands named by a Snapshot remain
 point uses for liveness and recovery. Every live `ProgramValueRef` has one
 authoritative allocated location at a particular machine-code position. Live
@@ -547,7 +549,7 @@ Core IR captures a recoverable state with a zero-code `Snapshot` instruction:
     parent frame = ...)
 ```
 
-`Snapshot` has `ResultClass::Snapshot`. Its typed `SnapshotRef` receives no
+`Snapshot` has `SlotClass::Snapshot`. Its typed `SnapshotRef` receives no
 machine location and carries no Python type evidence. A speculative check or
 action consumes it as the failure continuation:
 
@@ -609,29 +611,34 @@ to machine-code positions and exits rather than given independent identities.
 `ResumeStateId` and `RecoveryPlanId` exist only where the backend interns the
 two independently shareable parts of generated side-exit code.
 
-Every instruction has a typed serial and an intrinsic result class:
+Every instruction has a typed serial and an intrinsic output `SlotClass`:
 
 ```text
-ResultClass::None
-ResultClass::ProgramValue
-ResultClass::Snapshot
+SlotClass::None
+SlotClass::ProgramValue
+SlotClass::Snapshot
 ```
+
+The same enum also classifies input-only CFG and metadata slots; those classes
+cannot be selected as an instruction output. The instruction schema records the
+class and role of every fixed or variable input as defined in
+[JIT Instruction Representation](jit-instruction-representation.md).
 
 The instruction pointer also names its result when it has one. Typed result
 references may be zero-overhead pointer views:
 
 ```text
-ProgramValueRef = ResultRef<ResultClass::ProgramValue, Instruction *>
-SnapshotRef     = ResultRef<ResultClass::Snapshot, Instruction *>
+ProgramValueRef = ResultRef<SlotClass::ProgramValue, Instruction *>
+SnapshotRef     = ResultRef<SlotClass::Snapshot, Instruction *>
 ```
 
 The reference type can also be parameterized by IR level, so Semantic and Core
 program-value references cannot be mixed. Constructing a result reference
-requires the producer's intrinsic class to match. A value-less instruction
-retains its pointer and serial for traversal, diagnostics, effects, and
-rewriting, but cannot be used as a result operand. A Snapshot can be used only
-through `SnapshotRef`, never as a program value. This gives C++ analyses and
-backends useful static distinctions without container-relative instruction
+requires the producer's intrinsic output class to match. A value-less
+instruction retains its pointer and serial for traversal, diagnostics, effects,
+and rewriting, but cannot be used as a result operand. A Snapshot can be used
+only through `SnapshotRef`, never as a program value. This gives C++ analyses
+and backends useful static distinctions without container-relative instruction
 IDs. Here, a program value is a value in the compiled program's SSA semantics;
 it does not prescribe the concrete `cl::Value` representation.
 
@@ -680,21 +687,25 @@ does not mutate the old instruction in place. Logical interpreter homes are
 tracked by FrameStates and Snapshots rather than by preserving an SSA result
 identity across rewrites.
 
-The current inferred type and analyzed effects are the two narrowly mutable
-instruction fields. Only an `InstructionAnalysisEditor` can update them. More
-complex derived knowledge remains in generation-scoped side tables such as:
+Inferred types, analyzed effects, and other derived knowledge are not fields on
+the physical instruction. Concrete phase-owned metadata objects index
+instructions or typed results, for example:
 
 ```text
+Semantic ProgramValueRef -> ValueFacts
+Core Instruction*        -> analyzed EffectFlags
 PartitionId     -> ConditionalFacts
 ProgramValueRef -> CorrelatedEvidence
 ```
 
-Fixed-point inference may update instruction analysis fields and these tables
-repeatedly within an analysis mutation phase. Transformations consume only the
-validated state frozen when that phase commits. Structural mutation invalidates
-affected frozen state and resets it conservatively before another dependent
-transformation. Unavoidable instruction-kind effects remain immutable;
-analyzed effects may be refined through the editor. Selecting a genuinely
+Each metadata object has its own graph-level and generation contract. Mutable
+analysis updates its private serial-indexed storage and publishes a frozen view;
+transformations consume only a view whose source generation still matches the
+graph. Structural mutation makes the old view stale, but a mutation-aware
+analysis may preserve unaffected entries, derive local facts for transparent
+instructions, and incrementally recompute affected dependents before publishing
+the next generation. Metadata is discarded when no later phase consumes it.
+Unavoidable instruction-kind effects remain immutable. Selecting a genuinely
 different semantic operation, such as replacing a generic call with recognized
 float addition, creates a replacement instruction with the corresponding kind
 contract.
@@ -731,23 +742,27 @@ Snapshot operand while successful execution falls through.
 ### Analysis invalidation
 
 Dominance, loop structure, reverse postorder, propagated facts, refined effects,
-and partition state are derived from the current IR. The initial implementation
-invalidates them broadly and recomputes lazily.
+and partition state are derived from the current IR. Each concrete analysis
+records the graph generation from which it was derived.
 
 A CFG has an IR mutation generation, and cached analyses record their source
 generation. Inserting, removing, or replacing an instruction; changing a
 definition or operand; associating a new partition anchor through instruction
 replacement; or structurally editing the CFG advances the applicable
-generation and conservatively invalidates affected mutable analysis state. An
-analysis mutation phase may batch type and effect updates and advances its
-generation when validated state is committed. Requesting stale analysis
-recomputes it. Passes must not mutate instructions or graph structures
-directly.
+generation and makes prior frozen views stale. An analysis may invalidate and
+recompute broadly or consume the editor's mutation description to preserve and
+cheaply update facts whose validity is locally provable. It publishes a new
+frozen view only after its state is valid for the new graph generation.
+Requesting stale analysis triggers that update or recomputation. Passes must not
+mutate instructions or graph structures directly.
 
 Verification at pass boundaries should require:
 
-- every result reference to match its producer's intrinsic `ResultClass`, and
-  no result reference to be formed from a value-less instruction;
+- every fixed and variable input slot to match the `SlotClass` and layout
+  declared for its instruction kind;
+- every result reference to match its producer's intrinsic output
+  `SlotClass`, and no result reference to be formed from a value-less
+  instruction;
 - exactly one live definition for every reachable SSA value;
 - exactly one guaranteed static type for each SSA value, compatible with its
   producing instruction;
@@ -786,11 +801,13 @@ Value-refining guards create SSA results with narrowed guaranteed types, and
 ordinary dominance controls their availability. Non-value guards constrain
 control and effects without manufacturing a Python value.
 
-If higher-effort inference is implemented, Semantic and Core IR share the same
-`ValueFacts`, evidence, and partition identities rather than translating
-between separate Python type systems. Core realizes only the distinctions
-demanded by executable lowering. Physical representations such as
-`TaggedValue`, `Float64`, and `Address` remain a separate backend concern.
+If higher-effort inference is implemented, Semantic-to-Core lowering consumes
+`ValueFacts`, evidence, and partition identities without translating them into
+a second Python type system. Core realizes only the distinctions demanded by
+executable lowering; it does not retain the whole Semantic value-analysis
+attachment unless a concrete later Core pass requires an explicitly designed
+Core attachment. Physical representations such as `TaggedValue`, `Float64`,
+and `Address` remain a separate backend concern.
 
 The complete optional design is in
 [Semantic IR and Specialization](jit-semantic-ir-and-specialization.md).
@@ -988,14 +1005,14 @@ Operation definitions provide precise defaults where possible.
 shape. Recognized operations inherit effects from semantic descriptors. Python
 calls and unknown operations begin maximally conservative.
 
-Unavoidable effects are properties of the immutable instruction kind. Each
-instruction also carries analyzed effects, initialized conservatively and
-updated only through the `InstructionAnalysisEditor`. Effective effects are the
-union of unavoidable kind effects and the current analyzed effects. An effect
-that analysis may prove absent therefore belongs in the initial analyzed
-summary rather than the unavoidable kind summary. When specialization selects
-a different semantic operation, the pass constructs a replacement instruction
-of that operation kind.
+Unavoidable effects are properties of the immutable instruction kind. A
+concrete phase-owned effect analysis stores analyzed effects separately,
+initialized conservatively and exposed through a generation-checked frozen
+view. Effective effects are the union of unavoidable kind effects and that
+analysis entry. An effect that analysis may prove absent therefore belongs in
+the initial analyzed summary rather than the unavoidable kind summary. When
+specialization selects a different semantic operation, the pass constructs a
+replacement instruction of that operation kind.
 
 Effect implications are centralized. `MayCallPython`, for example, implies
 broad heap access, possible shape mutation, validity invalidation, raising, and

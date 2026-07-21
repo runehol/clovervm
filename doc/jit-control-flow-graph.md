@@ -50,9 +50,11 @@ both eventually lower to machine branches.
 function. Inlining may put instructions originating from several `CodeObject`s
 in the same graph while the graph retains one entry block. Logical inline
 frames and interpreter recovery state are separate metadata and are not modeled
-as nested CFG `Function` objects. The unprefixed CFG types live in `cl::jit`;
-Core and Semantic IR are not prematurely encoded as template parameters or
-class-name prefixes.
+as nested CFG `Function` objects. Every graph records one immutable IR level so
+construction, editing, verification, and concrete analysis attachments can
+enforce the instruction kinds legal at that level. The unprefixed CFG storage
+types remain shared in `cl::jit`; the level does not require duplicating the
+physical CFG classes.
 
 ## Block Identity, Order, and Numbering
 
@@ -334,6 +336,9 @@ arena.
 
 The block-argument extension and later SSA verification will add these checks:
 
+- every placed instruction is live and its kind permits the graph's immutable
+  IR level according to `src/jit/instruction.def`;
+- every instruction and result reference stays within one graph and IR level;
 - every edge argument list matches the target parameter list in arity and
   value kind or type;
 - every ordinary operand definition dominates its use;
