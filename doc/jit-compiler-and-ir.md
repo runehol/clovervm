@@ -237,6 +237,21 @@ not a non-returning speculative exit. A trusted handler certified
 preservation; an unknown or safepoint-capable call uses the active root-discovery
 policy.
 
+Core IR uses one Python-call operation. Multi-step operator protocols that use
+`NotImplemented` continuation add a following explicit Core check instruction,
+for example `CheckNotImplemented`, while single-step protocols such as unary
+operators, membership, subscription, and ordinary calls do not add that check.
+The check tests the returned accumulator value before the logical operator is
+completed. If the result is the `NotImplemented` singleton, compiled code exits
+to the paired continuation bytecode, such as `CheckOperatorNotImplemented`, with
+the continuation state expected by the interpreter. The call must carry the
+safepoint continuation pc for that paired bytecode when followed by this check,
+because a safepoint or native boundary during the call must resume at the same
+protocol continuation pc the interpreter would use. The `NotImplemented` check
+must not be hidden inside the generic call node, because the continuation byte is
+a semantic resume target distinct from ordinary deoptimization retry and from
+successful operator completion.
+
 The cost of publishing dirty canonical homes at small non-inlined calls is a
 runtime-policy question rather than an IR ambiguity. Core IR and its backend
 metadata must support both generated publication and future precise stack maps.
@@ -980,6 +995,12 @@ are landed. A handler that returns `Value::exception_marker()` uses the
 pending-exception handoff path described by the commit-boundary rules. Later
 effect analysis may prove individual effects absent for resolved handlers when
 optimization needs reordering precision.
+
+Descriptor-sensitive operator paths are deferred with the current interpreter
+surface. A candidate requiring descriptor dispatch, unusual callable adaptation,
+or another not-yet-cacheable call shape remains a generic interpreter path until
+that descriptor behavior exists in the interpreter and has an explicit JIT
+lowering contract.
 
 ### Expanding attribute mutations
 
