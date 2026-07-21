@@ -35,7 +35,7 @@ SemanticValueAnalysis, CoreEffectAnalysis, ...
     concrete phase-owned metadata indexed by instruction
     attached, frozen, invalidated, recomputed, and discarded as required
 
-IR-level instruction factory
+typed compilation-arena construction
     schema-safe allocation of intrinsically valid, unplaced instructions
 
 bulk graph builder
@@ -274,12 +274,12 @@ attributes immediately after them in the five inline slots. The schema-derived
 layout must fit completely; schema generation rejects a fixed kind requiring
 more than five combined operand and attribute words.
 
-Every variable-operand instruction instead places a pointer to its entire
-operand array in slot zero. Its fixed attributes begin in slot one and continue
-inline. The operand-storage high bit is set, and its low bits hold the total
-number of operands in the indirect array, including the kind's fixed operands.
-This avoids a split operand representation for kinds such as `PythonCall`, and
-lets generic traversal select one contiguous operand source.
+Every variable-operand instruction instead places a pointer to indirect storage
+in slot zero. Its fixed attributes begin in slot one and continue inline. The
+operand-storage high bit is set, and its low bits hold the total logical operand
+count, including the kind's fixed operands. This avoids a split operand
+representation for kinds such as `PythonCall`, and lets generic traversal select
+one contiguous operand source.
 
 This layout deliberately does not inline a small variable operand array even
 when it would fit in the remaining payload slots. Attribute positions must be
@@ -295,14 +295,35 @@ followed by the variable tail. For example, `PythonCall` stores its callable at
 operand zero, its Snapshot at operand one, and arguments beginning at operand
 two. Typed access to the fixed operands needs no runtime argument count.
 
-The indirect array uses compilation-arena side data; its count is not repeated
-beside the pointer because it already lives in the instruction header:
+The indirect array uses compilation-arena side data. For ordinary homogeneous
+variadic kinds such as `PythonCall`, every indirect slot is an operand and the
+physical slot count equals the header's logical operand count:
 
 ```cpp
 using InstructionSlot = uintptr_t;
 
 const InstructionSlot *indirect_operands = ...;
 ```
+
+Snapshot is the annotated heterogeneous exception. It stores all capture
+payloads first, followed by one parallel descriptor word per capture:
+
+```text
+payload[0..N)
+descriptor[0..N)
+```
+
+The header stores logical operand count `N`; Snapshot allocates `2 * N`
+physical indirect slots. Payload-first layout preserves the invariant that the
+indirect pointer addresses operand zero. Generic traversal uses descriptor `i`
+to distinguish a `ProgramValueRef`, `InlineValueConstant`, or `ValueConstant`
+before interpreting payload `i`.
+
+Each generated variadic class exposes hidden construction machinery
+`n_indirect_slots_for(constructor arguments...)`. The compilation arena uses it
+to allocate the physical side-data span before placement construction. It is
+deliberately separate from `operand_count()`: the former sizes storage, while
+the latter counts logical operands.
 
 The 15-bit count is an explicit representation limit. Exceeding it aborts that
 compilation and falls back to the interpreter; it is not a partially valid
@@ -351,26 +372,25 @@ allocation domain.
 
 ### Construction, Placement, and Publication
 
-Allocation and graph placement are separate operations. An IR-level-specific
-instruction factory allocates from the compilation arena and returns an
-intrinsically valid, unplaced instruction. It does not need a CFG editor or
-insertion position:
+Allocation and graph placement are separate operations. The typed compilation
+arena API allocates an intrinsically valid, unplaced concrete instruction. It
+does not need a CFG editor or insertion position:
 
 ```cpp
-CoreInstructionFactory factory(compilation_session);
-ProgramValueRef sum = factory.make_add_smi(lhs, rhs, snapshot);
+AddSMIInstruction *sum =
+    arena.make_instruction<AddSMIInstruction>(lhs, rhs, snapshot);
 ```
 
-The factory surface is generated or validated from `instruction.def`.
+The constructor surface is generated from `instruction.def`.
 `OperandTraits<OperandClass>` and `AttributeTraits<AttributeClass>` select the
 C++ parameter type and encoding for each declared slot, representation traits
-refine Core program-value operands, and result traits select the typed result
-returned by the constructor. Consequently, ordinary callers cannot choose an
+refine Core program-value operands, and the template returns the requested
+concrete subclass. Consequently, ordinary callers cannot choose an
 inconsistent kind, result class, operand class, attribute class, Core
 representation, arity, or payload layout.
-IR-level-specific factory surfaces expose only instruction kinds permitted at
-that level. The exact macro spelling and whether generated functions delegate
-to shared templates are implementation details.
+Future IR-level-specific wrappers may expose only instruction kinds permitted at
+that level. The arena constructor itself still records each kind's allowed
+levels for placement and verification.
 
 The factory also owns managed-constant retention. Before returning an
 unpublished instruction or arena side-data object containing a pointer-valued
@@ -884,15 +904,14 @@ public:
     static constexpr EffectProfile MustEffects = EffectProfile::None;
     static constexpr EffectProfile MayEffects = EffectProfile::None;
     static constexpr IRLevelMask AllowedIRLevels = IRLevelMask::Core;
+    static constexpr bool IsVariadic = false;
 
     RepresentedProgramOperand<ValueRepresentation::F64> lhs() const;
     RepresentedProgramOperand<ValueRepresentation::F64> rhs() const;
 
 private:
     friend class InstructionPool;
-    AddF64Instruction(uint32_t serial, uint16_t operand_count,
-                      bool indirect_operands,
-                      absl::Span<const InstructionSlot> inline_slots);
+    AddF64Instruction(uint32_t serial, F64Operand lhs, F64Operand rhs);
 };
 
 static_assert(sizeof(AddF64Instruction) == sizeof(Instruction));
@@ -1259,21 +1278,23 @@ explicit and exceptional.
 
 ## Implementation Validation
 
-The first implementation slice validates the 48-byte, five-slot record,
+The implementation validates the 48-byte, five-slot record,
 `0x08 mod 16` arena placement across slab boundaries, schema-generated kind
 metadata, typed CFG terminators, inline constants, fixed operand walking, and a
 PythonCall homogeneous variadic range. Fixed kinds store operands before
 attributes; variable kinds store their entire operand array behind slot zero and
-their attributes in the remaining inline slots. It also defines representative
+their attributes in the remaining inline slots. Snapshot uses a payload-first
+parallel descriptor array, and generic traversal visits its result references
+without confusing its inline or managed constants for producers. It also defines representative
 constants, binary arithmetic, shape and shape-key guards, conditional branches,
 calls, Snapshots, and metadata-heavy Core instructions in `instruction.def`.
 
-The next slice must make the instruction arena placement-construct the concrete
-subclass selected by each kind, then define and implement the annotated
-heterogeneous Snapshot entry format, generate the remaining
-representation-safe factories, and make generic traversal exhaustive for
-nonempty Snapshots. It should then measure total graph and side-data use with
-realistic translated functions.
+The instruction arena placement-constructs the concrete subclass selected by
+the template. Generated constructors list operands and then attributes, while
+the pool privately prefixes the serial. Variadic construction asks the concrete
+class for `n_indirect_slots_for(...)`, allocates that side storage, and passes it
+to the in-place constructor. A later implementation slice should measure total
+graph and side-data use with realistic translated functions.
 Success does not require every payload to fit inline. It requires every
 representative layout to use the same declarative schema and uniform arena-owned
 side data without a handwritten storage or traversal escape hatch. Evidence

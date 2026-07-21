@@ -94,10 +94,14 @@ namespace cl::jit
         switch(instruction_->kind())
         {
             case InstructionKind::ConditionalBranch:
-                return {reinterpret_cast<BlockEdge *>(instruction_->slot(1)),
-                        reinterpret_cast<BlockEdge *>(instruction_->slot(2))};
+                {
+                    const auto *branch =
+                        instruction_->as<ConditionalBranchInstruction>();
+                    return {branch->true_edge(), branch->false_edge()};
+                }
             case InstructionKind::UnconditionalBranch:
-                return {reinterpret_cast<BlockEdge *>(instruction_->slot(0))};
+                return {
+                    instruction_->as<UnconditionalBranchInstruction>()->edge()};
             case InstructionKind::Return:
                 return {};
             default:

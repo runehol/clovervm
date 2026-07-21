@@ -9,6 +9,8 @@
 #include <absl/types/span.h>
 
 #include <cstdint>
+#include <type_traits>
+#include <utility>
 
 namespace cl::jit
 {
@@ -32,33 +34,25 @@ namespace cl::jit
             return block_edges_.make(std::forward<Args>(args)...);
         }
 
-        ProgramValueRef make_parameter();
-        ProgramValueRef make_synthesize_immediate(InlineValueConstant value);
-        SnapshotRef make_snapshot(uint32_t resume_pc);
-        ProgramValueRef make_add_smi(ProgramValueOperand lhs,
-                                     ProgramValueOperand rhs,
-                                     SnapshotRef snapshot);
-        ProgramValueRef
-        make_python_call(ProgramValueOperand callable,
-                         absl::Span<const ProgramValueOperand> arguments,
-                         SnapshotRef snapshot, uint32_t interpreter_return_pc);
-
-        Instruction *make_conditional_branch(ProgramValueOperand condition,
-                                             BlockEdge *true_edge,
-                                             BlockEdge *false_edge);
-        Instruction *make_unconditional_branch(BlockEdge *edge);
-        Instruction *make_return(ProgramValueOperand value);
-
-    private:
-        Instruction *
-        make_instruction(InstructionKind kind, uint16_t operand_count,
-                         bool indirect_operands,
-                         absl::Span<const Instruction::Slot> inline_slots)
+        template <typename T, typename... Args>
+        T *make_instruction(Args &&...args)
         {
-            return instructions_.make(kind, operand_count, indirect_operands,
-                                      inline_slots);
+            static_assert(std::is_base_of_v<Instruction, T>);
+            if constexpr(T::IsVariadic)
+            {
+                size_t n_indirect_slots = T::n_indirect_slots_for(args...);
+                absl::Span<Instruction::Slot> indirect_slots =
+                    instruction_side_data_.allocate_words(n_indirect_slots);
+                return instructions_.make<T>(indirect_slots,
+                                             std::forward<Args>(args)...);
+            }
+            else
+            {
+                return instructions_.make<T>(std::forward<Args>(args)...);
+            }
         }
 
+    private:
         ObjectPool<Block> blocks_;
         ObjectPool<BlockEdge> block_edges_;
         InstructionPool instructions_;

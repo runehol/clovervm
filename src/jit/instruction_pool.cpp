@@ -4,7 +4,6 @@
 
 #include <algorithm>
 #include <cassert>
-#include <limits>
 #include <new>
 
 namespace cl::jit
@@ -26,25 +25,8 @@ namespace cl::jit
         slabs_.push_back(std::move(slab));
     }
 
-    Instruction *
-    InstructionPool::make(InstructionKind kind, uint16_t operand_count,
-                          bool indirect_operands,
-                          absl::Span<const Instruction::Slot> inline_slots)
+    void *InstructionPool::allocate_record()
     {
-        assert(next_serial_ != std::numeric_limits<uint32_t>::max());
-        const InstructionKindMetadata &metadata =
-            instruction_kind_metadata(kind);
-        assert(inline_slots.size() == metadata.inline_slot_count);
-        assert(indirect_operands == metadata.has_variadic_operands);
-        assert(operand_count <= Instruction::OperandCountMask);
-        if(indirect_operands)
-        {
-            assert(operand_count >= metadata.fixed_operand_count);
-        }
-        else
-        {
-            assert(operand_count == metadata.fixed_operand_count);
-        }
         if(slabs_.empty() || slabs_.back().remaining == 0)
         {
             add_slab();
@@ -59,8 +41,7 @@ namespace cl::jit
         assert((address & value_interned_ptr_tag) != 0);
         assert((address & (alignof(Instruction) - 1)) == 0);
 
-        return new(storage) Instruction(next_serial_++, kind, operand_count,
-                                        indirect_operands, inline_slots);
+        return storage;
     }
 
     absl::Span<uintptr_t> InstructionSideDataPool::allocate_words(size_t count)

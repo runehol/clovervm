@@ -4,7 +4,7 @@
 // homogeneous variadic range, and Snapshot's heterogeneous capture range. Each
 // attribute-list macro accepts one attribute callback. Keeping the lists as
 // reusable callbacks lets repeated includers derive indices, accessors,
-// traversal, factories, and metadata from declaration order.
+// traversal, constructors, and metadata from declaration order.
 //
 // CL_JIT_INSTRUCTION arguments:
 //   name, IR levels, result, effect bounds, operand-list, attribute-list
@@ -24,11 +24,12 @@
 // whether a selected lowering may retain that constant at that use. Other
 // operand classes contain result references.
 //
-// A kind with any variadic operand stores its entire operand sequence in
-// arena-owned storage behind inline slot zero; attributes retain kind-constant
-// inline offsets beginning at slot one. The variadic range is always declared
-// after every fixed operand, so fixed operands retain kind-constant indices
-// within the indirect sequence.
+// A kind with any variadic operand stores its operand payloads in arena-owned
+// storage behind inline slot zero; attributes retain kind-constant inline
+// offsets beginning at slot one. The variadic range is always declared after
+// every fixed operand, so fixed operands retain kind-constant indices within
+// the indirect sequence. Snapshot appends one descriptor word per captured
+// payload after the complete payload array.
 
 #define CL_JIT_Parameter_OPERANDS(fixed, variadic, snapshot_values)
 #define CL_JIT_Parameter_ATTRIBUTES(attribute)

@@ -7,7 +7,11 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <limits>
 #include <memory>
+#include <new>
+#include <type_traits>
+#include <utility>
 #include <vector>
 
 namespace cl::jit
@@ -22,9 +26,17 @@ namespace cl::jit
         InstructionPool(InstructionPool &&) = delete;
         InstructionPool &operator=(InstructionPool &&) = delete;
 
-        Instruction *make(InstructionKind kind, uint16_t operand_count,
-                          bool indirect_operands,
-                          absl::Span<const Instruction::Slot> inline_slots);
+        template <typename T, typename... Args> T *make(Args &&...args)
+        {
+            static_assert(std::is_base_of_v<Instruction, T>);
+            static_assert(sizeof(T) == sizeof(Instruction));
+            static_assert(alignof(T) == alignof(Instruction));
+            static_assert(std::is_trivially_destructible_v<T>);
+            assert(next_serial_ != std::numeric_limits<uint32_t>::max());
+
+            void *storage = allocate_record();
+            return new(storage) T(next_serial_++, std::forward<Args>(args)...);
+        }
 
     private:
         static constexpr size_t RecordsPerSlab = 64;
@@ -39,6 +51,7 @@ namespace cl::jit
         };
 
         void add_slab();
+        void *allocate_record();
 
         uint32_t next_serial_ = 0;
         std::vector<Slab> slabs_;
