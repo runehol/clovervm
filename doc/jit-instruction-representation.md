@@ -223,6 +223,13 @@ ValueConstant  -> directly embedded Value retained by the compilation session
 handle or a second runtime wrapper; its typed accessor and constructor use
 `Value` directly.
 
+`InlineValueConstant` is an opaque wrapper whose construction asserts that the
+supplied `Value` bits do not identify a managed pointer. It has no fallible
+construction path: attempting to classify a managed value as inline is a
+compiler logic error. Generated constant-capable operand APIs accept the wrapper
+rather than raw `Value`, while `ValueConstant` attributes continue to expose
+raw `Value` through the session-owned factory.
+
 The implementation enforces that every encoded class fits the slot size and
 alignment. Variable-length homogeneous operands or attributes and unusually
 large instruction data use pointer/count references to compilation-arena
