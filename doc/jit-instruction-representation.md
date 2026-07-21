@@ -12,7 +12,7 @@
 
 Core IR and the optional Semantic IR use a fixed-size, type-erased
 `Instruction` allocated with compilation lifetime. Instruction-result operands
-are pointers, while other semantic inputs use their schema-declared
+are pointers, while non-dataflow attributes use their schema-declared
 pointer-sized encodings. Each allocation also carries a typed serial for
 deterministic identity, diagnostics, and ordering. Read-only typed instruction
 views provide kind-specific access without an instruction class hierarchy,
@@ -89,10 +89,14 @@ not an instruction kind and is not a state ordinary passes handle. `kind()`,
 tag is live. Only `serial()` and `is_detached()` remain meaningful on poisoned
 storage, for diagnostics.
 
-Instruction results and instruction inputs use distinct enum types. The cases
-that represent instruction-result references intentionally have the same numeric
-values in both enums, so validation can compare them cheaply without a mapping
-switch:
+Instruction results, instruction operands, and instruction attributes use
+distinct enum types. Operands are instruction-result references that participate
+in SSA use lists, dominance, liveness, and bulk replacement. Attributes are
+semantic or structural payload such as block edges, shapes, constants,
+immediates, bytecode origins, and return PCs; they affect instruction semantics
+but are not dataflow uses. The operand cases intentionally have the same numeric
+values as the matching result classes, so validation can compare them cheaply
+without a mapping switch:
 
 ```cpp
 enum class ResultClass : uint8_t
@@ -102,37 +106,45 @@ enum class ResultClass : uint8_t
     Snapshot = 2,
 };
 
-enum class InputClass : uint8_t
+enum class OperandClass : uint8_t
 {
     ProgramValue = 1,
     Snapshot = 2,
+};
+
+enum class AttributeClass : uint8_t
+{
     BlockEdge = 3,
     Shape = 4,
     ShapeKey = 5,
     ValidityCell = 6,
     ConstantValue = 7,
+    BytecodePC = 8,
+    Immediate = 9,
 };
 
-static_assert(static_cast<uint8_t>(InputClass::ProgramValue) ==
+static_assert(static_cast<uint8_t>(OperandClass::ProgramValue) ==
               static_cast<uint8_t>(ResultClass::ProgramValue));
-static_assert(static_cast<uint8_t>(InputClass::Snapshot) ==
+static_assert(static_cast<uint8_t>(OperandClass::Snapshot) ==
               static_cast<uint8_t>(ResultClass::Snapshot));
 
-constexpr bool input_accepts_result(InputClass input, ResultClass result)
+constexpr bool operand_accepts_result(OperandClass operand, ResultClass result)
 {
-    return static_cast<uint8_t>(input) == static_cast<uint8_t>(result);
+    return static_cast<uint8_t>(operand) == static_cast<uint8_t>(result);
 }
 ```
 
-`ResultClass` describes what an instruction may produce. `InputClass` describes
-what semantic entity an input slot may contain. Keeping them separate makes
-invalid states such as a `BlockEdge` instruction result unrepresentable in the
-API, while the aligned `ProgramValue` and `Snapshot` values keep result-input
-compatibility checks simple. `BlockEdge` is used instead of a direct block
-reference because the CFG represents every control-transfer occurrence with a
-first-class edge. `InputClass` controls structural compatibility, physical
-decoding, and the default generic handling of the slot. Core program-value
-slots apply the additional `ValueRepresentation` constraint described below.
+`ResultClass` describes what an instruction may produce. `OperandClass`
+describes which result class an SSA operand slot may consume. Keeping them
+separate makes invalid states such as a `BlockEdge` instruction result
+unrepresentable in the API, while the aligned `ProgramValue` and `Snapshot`
+values keep result-operand compatibility checks simple. `AttributeClass`
+describes non-dataflow payload. `BlockEdge` is an attribute instead of an operand
+because CFG edge maintenance is not SSA use tracking; the CFG still represents
+every control-transfer occurrence with a first-class edge. Operand classes
+control structural compatibility, physical decoding, and generic use handling.
+Core program-value operands apply the additional `ValueRepresentation`
+constraint described below.
 
 `Instruction::result_class()` is derived from instruction-kind metadata; it is
 not another field in the record. `ProgramValue` says that the instruction
@@ -152,9 +164,9 @@ enum class ValueRepresentation
 ```
 
 `ValueRepresentation` describes the target-independent encoding of a Core SSA
-value. It is not an input or result class, Python type fact, register class, or
-assigned location. `Int64` or another representation is added only when an implemented
-Core instruction requires it. `Address` remains backend-local unless addresses
+value. It is not an operand or result class, Python type fact, register class,
+or assigned location. `Int64` or another representation is added only when an
+implemented Core instruction requires it. `Address` remains backend-local unless addresses
 demonstrably need to live across Core instructions as SSA program values.
 
 Every Core instruction producing a `ProgramValue` has exactly one immutable
@@ -181,8 +193,8 @@ and other trivially destructible values. It must not directly contain an
 owning `std::vector`, `std::string`, `std::unique_ptr`, reference-counted
 handle, or any value whose destructor releases resources.
 
-Payload input slots are pointer-sized words. The schema, rather than a runtime
-tag stored beside each word, determines their C++ interpretation:
+Payload slots are pointer-sized words. The schema, rather than a runtime tag
+stored beside each word, determines their C++ interpretation:
 
 ```text
 ProgramValue   -> Instruction* wrapped as ProgramValueRef
@@ -192,11 +204,14 @@ Shape          -> Shape*
 ShapeKey       -> inline ShapeKey value
 ValidityCell   -> ValidityCell*
 ConstantValue  -> inline Value
+BytecodePC     -> compact bytecode offset or pointer representation
+Immediate      -> inline integer or enum value
 ```
 
 The implementation enforces that every encoded class fits the slot size and
-alignment. Variable-length homogeneous inputs and unusually large instruction
-data use pointer/count references to compilation-arena allocations:
+alignment. Variable-length homogeneous operands or attributes and unusually
+large instruction data use pointer/count references to compilation-arena
+allocations:
 
 ```cpp
 using InstructionSlot = uintptr_t;
@@ -209,9 +224,9 @@ struct InstructionSlots
 ```
 
 Construction may use a mutable buffer before completing the instruction, but
-stored and typed access decodes the declared input class and exposes immutable
-typed values, for example `absl::Span<ProgramValueRef>`. Clients cannot replace
-an input by assigning through the span.
+stored and typed access decodes the declared operand or attribute class and
+exposes immutable typed values, for example `absl::Span<ProgramValueRef>`.
+Clients cannot replace an operand by assigning through the span.
 
 Side-data types obey the same no-destruction contract. Instruction and
 side-data allocation should enforce at least:
@@ -258,11 +273,12 @@ ProgramValueRef add = factory.make_add(lhs, rhs);
 ```
 
 The factory surface is generated or validated from `instruction.def`.
-`InputTraits<InputClass>` selects the C++ parameter type and encoding for each
-declared input, representation traits refine Core program-value parameters, and
-result traits select the typed result returned by the constructor.
-Consequently, ordinary callers cannot choose an inconsistent kind, result
-class, input class, Core representation, arity, or payload layout.
+`OperandTraits<OperandClass>` and `AttributeTraits<AttributeClass>` select the
+C++ parameter type and encoding for each declared slot, representation traits
+refine Core program-value operands, and result traits select the typed result
+returned by the constructor. Consequently, ordinary callers cannot choose an
+inconsistent kind, result class, operand class, attribute class, Core
+representation, arity, or payload layout.
 IR-level-specific factory surfaces expose only instruction kinds permitted at
 that level. The exact macro spelling and whether generated functions delegate
 to shared templates are implementation details.
@@ -282,8 +298,8 @@ them incrementally. Optional use records are not a permanently maintained part
 of the graph and are built only when a consuming pass requests them.
 
 The builder's `finalize()` operation constructs deferred graph-owned indexes
-and validates the completed graph in one `O(instructions + edges + inputs)`
-pass. It checks IR-level legality, graph membership, result and input classes,
+and validates the completed graph in one `O(instructions + edges + payload slots)`
+pass. It checks IR-level legality, graph membership, result and operand classes,
 live producers, block-edge ownership, terminator placement, dominance, and
 other structural invariants. It does not build an optional `UseIndex` merely to
 perform this validation. A graph under bulk construction is not published to
@@ -294,7 +310,7 @@ may similarly attach a batch of mutually referring unplaced instructions before
 validating the batch in its completed context.
 
 Once a graph is published, local transformations use the CFG editor. The
-editor attaches factory-created instructions, rewrites inputs, updates active
+editor attaches factory-created instructions, rewrites operands, updates active
 graph-owned indexes and mutation generations, and detaches replaced
 instructions. An on-demand `UseIndex` is updated only when the editing pass
 explicitly retains it as mutation-aware working state; otherwise mutation makes
@@ -362,15 +378,15 @@ On resource failure, the enclosing compilation is discarded.
 
 ### Managed Constant Pins
 
-Instructions and arena-owned side data embed `ConstantValue` inputs directly as
+Instructions and arena-owned side data embed `ConstantValue` attributes directly as
 `Value`; they do not indirect through compilation constant-pool handles. Every
 embedded heap reference is also registered in a compilation-scoped,
 deduplicated pin set. The runtime pinning primitive is the same underlying
 mechanism required when a managed object is exposed at a stable address to a
 CPython extension, although the compilation session owns its own scoped set of
 pins. Schema-generated construction registers heap-backed `ConstantValue`
-inputs with that set, which is why the instruction factory requires access to
-the compilation session rather than only its arena.
+attributes with that set, which is why the instruction factory requires access
+to the compilation session rather than only its arena.
 
 A compilation pin is a strong root as well as a relocation prohibition. It
 keeps the object alive and prevents its address from changing; a mere
@@ -425,13 +441,13 @@ using SnapshotRef = ResultRef<ResultClass::Snapshot, Instruction *>;
 
 Constructing a result reference validates that the producer's intrinsic
 `ResultClass` matches the class required by the wrapper. A
-`ResultClass::None` instruction cannot be referenced as an input, a Snapshot
+`ResultClass::None` instruction cannot be referenced as an operand, a Snapshot
 cannot be used as a program value, and a program value cannot be used where
-recovery state is required. When validating an encoded input slot that consumes
-an instruction result, the verifier uses `input_accepts_result()` rather than a
+recovery state is required. When validating an encoded operand slot that consumes
+an instruction result, the verifier uses `operand_accepts_result()` rather than a
 mapping switch. Generated construction signatures make mismatched classes
-unrepresentable to ordinary callers, structural input replacement checks the
-declared input class, and the verifier independently checks the encoded
+unrepresentable to ordinary callers, structural operand replacement checks the
+declared operand class, and the verifier independently checks the encoded
 payload. Raw `Instruction *` remains the identity used for instruction-list
 placement, diagnostics, and other non-result structural operations. A result
 wrapper still contains a pointer; it does not turn the IR back into a
@@ -463,15 +479,16 @@ infrastructure deliberately retains the erased form.
 live instruction kinds. Each definition names the instruction kind and typed
 view, the IR level or levels in which it is legal, its intrinsic
 `ResultClass`, its `MustEffects` lower bound and `MayEffects` upper bound, its
-payload shape, and every fixed or variable input slot with its `InputClass`.
-Core program-value results and inputs additionally declare fixed representation
-constraints. The sole exception is Snapshot's representation-erased
-captured-value input described below. Repeated inclusion of that schema
+payload shape, every fixed or variable operand slot with its `OperandClass`, and
+every immutable payload attribute with its `AttributeClass`. Core program-value
+results and operands additionally declare fixed representation constraints. The
+sole exception is Snapshot's representation-erased captured-value operand
+described below. Repeated inclusion of that schema
 generates or validates the `InstructionKind` enum, invariant kind metadata,
-representation-safe construction and access, generic input traversal,
-result/input class legality, effect bounds, and the size and alignment
-constraints for encoded payloads. The `Detached` storage tag is not listed as a
-semantic instruction definition.
+representation-safe construction and access, generic operand traversal,
+result/operand class legality, attribute decoding, effect bounds, and the size
+and alignment constraints for encoded payloads. The `Detached` storage tag is
+not listed as a semantic instruction definition.
 
 The schema owns facts that must remain synchronized for every instruction
 kind. It may generate storage decoding and straightforward typed-accessor
@@ -501,9 +518,16 @@ UnboxF64
 ShapeGuard
     result: ProgramValue(TaggedValue)
     value: ProgramValue(TaggedValue)
-    expected_shape: Shape
-    validity: ValidityCell
+    expected_shape: attr Shape
+    validity: attr ValidityCell
     snapshot: Snapshot
+
+PythonCall
+    result: ProgramValue(TaggedValue)
+    callable: ProgramValue(TaggedValue)
+    arguments[]: ProgramValue(TaggedValue)
+    interpreter_return_pc: attr BytecodePC
+    not_implemented_continuation_pc: optional attr BytecodePC
 
 Mov
     result: ProgramValue(TaggedValue)
@@ -525,20 +549,20 @@ Snapshot
 
 Constant
     result: ProgramValue(TaggedValue)
-    value: ConstantValue
+    value: attr ConstantValue
 
 ConditionalBranch
     result: None
     condition: ProgramValue(TaggedValue)
-    true_edge: BlockEdge
-    false_edge: BlockEdge
+    true_edge: attr BlockEdge
+    false_edge: attr BlockEdge
 ```
 
-`AnyRepresentation` is a narrow input constraint in the schema, not a member of
+`AnyRepresentation` is a narrow operand constraint in the schema, not a member of
 `ValueRepresentation` and never an instruction result. Snapshot's
 `captured_values` array is the only slot allowed to use it because a Snapshot
-records logical recovery operands, not normal Core dataflow for one machine
-representation. The generated Snapshot accessor returns erased
+records logical recovery operands rather than normal Core dataflow for one
+machine representation. The generated Snapshot accessor returns erased
 `ProgramValueRef`s, and side-exit frame-sync generation inspects each producer's
 concrete representation: tagged values are stored directly, while a captured
 `F64` is boxed before being written to the interpreter frame. Adding another
@@ -564,32 +588,44 @@ concrete and prevents a representation-polymorphic instruction from becoming
 an unchecked escape hatch. Exact macro spelling remains an implementation
 detail.
 
-No `InputClass` or `ValueRepresentation` tag is stored beside each payload word.
-Generic code reads the instruction kind once and selects schema-generated
-layout metadata or a schema-generated per-kind enumerator. Conceptually:
+No `OperandClass`, `AttributeClass`, or `ValueRepresentation` tag is stored
+beside each payload word. Generic code reads the instruction kind once and
+selects schema-generated layout metadata or a schema-generated per-kind
+enumerator. Conceptually:
 
 ```cpp
-struct InputSlotDescriptor
+struct OperandSlotDescriptor
 {
-    InputClass input_class;
+    OperandClass operand_class;
     ProgramValueConstraint representation_constraint;
     SlotLayout layout;  // Fixed or variable-length.
     uint16_t offset;
 };
 
-void visit_inputs(Instruction &instruction, InputVisitor visitor);
+struct AttributeSlotDescriptor
+{
+    AttributeClass attribute_class;
+    SlotLayout layout;  // Fixed or variable-length.
+    uint16_t offset;
+};
+
+void visit_operands(Instruction &instruction, OperandVisitor visitor);
+void visit_attributes(Instruction &instruction, AttributeVisitor visitor);
 ```
 
 The generated dispatch interprets each payload word only according to the
-schema for that instruction kind. `ProgramValue` slots are ordinary uses at the
-containing instruction, `BlockEdge` slots participate in CFG maintenance, and
-metadata and constant classes use their class-specific lifetime and validation
-rules.
+schema for that instruction kind. `ProgramValue` and `Snapshot` operands are
+ordinary result-reference uses for SSA, liveness, and rewriting. Attribute slots
+such as `BlockEdge`, `Shape`, `ShapeKey`, `ValidityCell`, `ConstantValue`,
+bytecode PCs, and immediates are immutable semantic payload; they are skipped by
+generic use discovery and replacement. CFG maintenance, pinning, verification,
+printing, and cloning may inspect attributes through their own visitor or typed
+accessors.
 
 `Snapshot` is the one explicit exception to ordinary local-use behavior. It is
-a zero-code aggregate result whose captured `ProgramValue` inputs become point
+a zero-code aggregate result whose captured `ProgramValue` operands become point
 uses at every guard or side exit that consumes the `SnapshotRef`. Liveness
-expands a Snapshot input transitively at that consuming position, so several
+expands a Snapshot operand transitively at that consuming position, so several
 nearby guards may safely share one Snapshot without treating its captured
 values as dead after the Snapshot instruction itself. Verification keeps the
 Snapshot anchored near its consumers and on the correct side of effect
@@ -611,10 +647,10 @@ accept only the graph level they own, such as `SemanticValueAnalysis` for a
 Semantic graph and `CoreEffectAnalysis` for a Core graph.
 
 For Core graphs, verification additionally requires every `ProgramValue`
-producer to have one legal representation, every fixed input constraint to
+producer to have one legal representation, every fixed operand constraint to
 match its producer, and every representation-changing edge to be an explicit
 conversion instruction. It rejects `AnyRepresentation` on every result and on
-every input other than `Snapshot.captured_values`. Snapshot capture may contain
+every operand other than `Snapshot.captured_values`. Snapshot capture may contain
 heterogeneous program values, but recovery planning must interpret each one
 using its producer's concrete representation and provide an exhaustive
 frame-materialization operation for that representation.
@@ -679,7 +715,7 @@ actual grouped operation family justifies them.
 ## Mostly Immutable Instructions
 
 An instruction's kind, result class, Core value representation, constants,
-bytecode origin, payload shape, and non-input semantic parameters are immutable
+bytecode origin, payload shape, and attributes are immutable
 after construction. A pass that changes one of these properties constructs an
 unplaced replacement through the appropriate instruction factory, then asks the
 structural IR editor to attach it and rewrite the published graph explicitly.
@@ -696,7 +732,7 @@ removed the instruction's own operand occurrences from any active
 mutation-aware `UseIndex`, invalidated or removed active metadata entries, and
 unlinked the instruction from its block. The edit plan must establish the
 absence of incoming uses through a current `UseIndex` or a complete generic
-input scan. The editor then neutralizes managed constant slots by replacing them
+operand scan. The editor then neutralizes managed constant slots by replacing them
 with a safe immediate value; the compilation pin set may retain their former
 referents until the session ends. It may debug-poison the remaining payload
 storage and publish the detached tag last. An editor transaction is not
@@ -710,35 +746,34 @@ the preserved serial and does not interpret the poisoned payload. Ordinary pass
 code does not branch on detachedness as a supported case; short-lived typed
 views must not be retained across structural edits.
 
-Instruction-result input slots are controlled mutable structure. The structural
-editor may replace a `ProgramValue` or `Snapshot` slot only with a result of the
-matching declared `InputClass`; Core program-value replacement must also preserve
-`ValueRepresentation`. The editor maintains metadata lifetime, analysis
-invalidation, and graph mutation generation. If the pass has retained a
-mutation-aware `UseIndex`, the editor also updates it; otherwise the generation
-change makes the old index stale. `BlockEdge`, `Shape`, `ShapeKey`,
-`ValidityCell`, and `ConstantValue` slots are immutable semantic payload;
-changing one requires instruction replacement. Changing any slot's class,
-representation constraint, count, or layout likewise requires replacement.
-Typed views expose every input read-only and never provide setters or writable
-arrays.
+Instruction-result operand slots are controlled mutable structure. The
+structural editor may replace a `ProgramValue` or `Snapshot` operand only with a
+result of the matching declared `OperandClass`; Core program-value replacement
+must also preserve `ValueRepresentation`. The editor maintains metadata
+lifetime, analysis invalidation, and graph mutation generation. If the pass has
+retained a mutation-aware `UseIndex`, the editor also updates it; otherwise the
+generation change makes the old index stale. Attribute slots such as `BlockEdge`,
+`Shape`, `ShapeKey`, `ValidityCell`, `ConstantValue`, bytecode PCs, and
+immediates are immutable semantic payload; changing one requires instruction
+replacement. Changing any slot's class, representation constraint, count, or
+layout likewise requires replacement. Typed views expose every operand and
+attribute read-only and never provide setters or writable arrays.
 
-The schema-generated generic input walker is the common primitive for use
-discovery and bulk rewriting. It walks fixed and variable inputs in declared
-order and never compares instruction pointers against words declared as
-`BlockEdge`, metadata, or inline constants. For every `ProgramValue` or
-`Snapshot` input it can emit a temporary `UseRecord` containing the producer
-and an `InputSlotHandle` that identifies the user and the schema-declared slot:
+The schema-generated generic operand walker is the common primitive for use
+discovery and bulk rewriting. It walks fixed and variable operands in declared
+order and never visits attributes. For every `ProgramValue` or `Snapshot`
+operand it can emit a temporary `UseRecord` containing the producer and an
+`OperandSlotHandle` that identifies the user and the schema-declared slot:
 
 ```cpp
 struct UseRecord
 {
     const Instruction *producer;
-    InputSlotHandle input;
+    OperandSlotHandle operand;
 };
 ```
 
-Input layout and variable-input counts are immutable, so such a handle remains
+Operand layout and variable-operand counts are immutable, so such a handle remains
 physically resolvable while its user remains live. The editor still validates
 that the user is live and that the slot contains the expected producer before
 rewriting it.
@@ -746,29 +781,31 @@ rewriting it.
 An on-demand, generation-checked `UseIndex` groups these records by producer.
 It is useful for repeated sparse queries such as no-use and single-use tests,
 dead-code elimination, dependent worklists, and replacing the uses of a small
-number of values. Building it costs one whole-graph input walk. It may be
+number of values. Building it costs one whole-graph operand walk. It may be
 discarded after one mutation plan, maintained privately by a pass across an
 editing batch, or rebuilt; the graph and ordinary editor do not pay to keep it
 permanently current.
 
 Bulk transformations may instead record a typed replacement map and call a
-generic `rewrite_inputs()` operation. It walks all inputs once and rewrites
+generic `rewrite_operands()` operation. It walks all operands once and rewrites
 matching instruction references without first materializing use records. This
-costs `O(all inputs + replacements)` and is preferable when translation or
+costs `O(all operands + replacements)` and is preferable when translation or
 lowering has accumulated many substitutions. Replacements have simultaneous
 semantics: given `A -> B` and `B -> C`, an original use of `A` becomes `B`
 unless the map was explicitly transitively normalized before the scan. The
 operation validates that every replacement preserves the slot's declared
-`InputClass` and, in Core, the producer's `ValueRepresentation`. A
+`OperandClass` and, in Core, the producer's `ValueRepresentation`. A
 representation-changing rewrite inserts an explicit conversion or replaces the
 consumer; it cannot use generic result replacement to connect incompatible
 encodings. The batch advances graph and attachment generations once.
 
 The same walker independently reconstructs uses for verification and also
-supports cloning and printing. The verifier compares any current `UseIndex`
-against reconstructed records and hard-fails on references to poisoned storage.
-Kind-specific named accessors such as branch edges remain available through
-typed views.
+supports cloning and printing of operand relationships. Attribute visitors or
+typed accessors handle cloning, printing, CFG edge maintenance, constant pin
+validation, and bytecode-PC diagnostics for non-dataflow payload. The verifier
+compares any current `UseIndex` against reconstructed operand records and
+hard-fails on references to poisoned storage. Kind-specific named accessors such
+as branch edges remain available through typed views.
 
 ## Phase-Owned Attached Metadata
 
@@ -785,7 +822,7 @@ UseIndex                Instruction*             -> temporary UseRecords
 ```
 
 Core `ValueRepresentation` is deliberately not an attachment. It is an
-immutable producer and input contract used to type the SSA graph itself.
+immutable producer and operand contract used to type the SSA graph itself.
 Register, spill, and constant locations remain backend-owned attached metadata.
 
 This is not a generic per-instruction property bag. Each attachment is a
@@ -954,8 +991,8 @@ metadata-heavy semantic instruction in `instruction.def`.
 
 That slice should compare plausible fixed record sizes, measure total graph and
 side-data use, and exercise generated construction, concrete representation
-typing, typed access, generic input walking, verification, Snapshot-only erased
-inputs, and destruction-free arena cleanup. Success does not require every
+typing, typed access, generic operand walking, verification, Snapshot-only
+erased operands, and destruction-free arena cleanup. Success does not require every
 payload to fit inline. It requires every representative layout to use the same
 declarative schema and uniform arena-owned side data without a handwritten
 storage or traversal escape hatch. The measurements select the payload word

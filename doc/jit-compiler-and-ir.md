@@ -237,20 +237,26 @@ not a non-returning speculative exit. A trusted handler certified
 preservation; an unknown or safepoint-capable call uses the active root-discovery
 policy.
 
-Core IR uses one Python-call operation. Multi-step operator protocols that use
-`NotImplemented` continuation add a following explicit Core check instruction,
-for example `CheckNotImplemented`, while single-step protocols such as unary
-operators, membership, subscription, and ordinary calls do not add that check.
-The check tests the returned accumulator value before the logical operator is
-completed. If the result is the `NotImplemented` singleton, compiled code exits
-to the paired continuation bytecode, such as `CheckOperatorNotImplemented`, with
-the continuation state expected by the interpreter. The call must carry the
-safepoint continuation pc for that paired bytecode when followed by this check,
-because a safepoint or native boundary during the call must resume at the same
-protocol continuation pc the interpreter would use. The `NotImplemented` check
-must not be hidden inside the generic call node, because the continuation byte is
-a semantic resume target distinct from ordinary deoptimization retry and from
-successful operator completion.
+Core IR uses one Python-call operation. The call records the interpreter return
+pc as an instruction attribute, not as a dataflow operand. That pc is used if
+the callee safepoints, crosses a native boundary, deoptimizes, or otherwise
+returns to interpreter-visible caller state. For ordinary calls and single-step
+protocols, it is the next bytecode pc after the logical call. For multi-step
+operator protocols, the call may instead carry an optional
+`not_implemented_continuation_pc` attribute, pointing at the paired continuation
+bytecode such as `CheckOperatorNotImplemented`; when present, that pc is also
+the call's interpreter return pc.
+
+Only calls with `not_implemented_continuation_pc` are followed by an explicit
+Core check instruction, for example `CheckNotImplemented`. The check tests the
+returned accumulator value before the logical operator is completed. If the
+result is the `NotImplemented` singleton, compiled code exits to the paired
+continuation bytecode with the continuation state expected by the interpreter.
+Single-step protocols such as unary operators, membership, subscription, and
+ordinary calls do not add that check. The `NotImplemented` check must not be
+hidden inside the generic call node, because the continuation byte is a semantic
+resume target distinct from ordinary deoptimization retry and from successful
+operator completion.
 
 The cost of publishing dirty canonical homes at small non-inlined calls is a
 runtime-policy question rather than an IR ambiguity. Core IR and its backend
@@ -657,14 +663,15 @@ ResultClass::ProgramValue
 ResultClass::Snapshot
 ```
 
-Input slots use a separate `InputClass` enum. `InputClass::ProgramValue` and
-`InputClass::Snapshot` intentionally have the same numeric values as their
-matching `ResultClass` cases, so validation can compare result-consuming input
-slots without a mapping switch. Input-only classes such as `BlockEdge`, `Shape`,
-`ShapeKey`, `ValidityCell`, and `ConstantValue` cannot be selected as
-instruction results. The instruction schema records the result class plus the
-class and layout of every fixed or variable input as defined in
-[JIT Instruction Representation](jit-instruction-representation.md).
+Operand slots use a separate `OperandClass` enum. `OperandClass::ProgramValue`
+and `OperandClass::Snapshot` intentionally have the same numeric values as their
+matching `ResultClass` cases, so validation can compare result-consuming
+operands without a mapping switch. Non-dataflow payload such as `BlockEdge`,
+`Shape`, `ShapeKey`, `ValidityCell`, `ConstantValue`, immediates, bytecode
+origins, and interpreter return PCs are instruction attributes rather than
+operands. The instruction schema records the result class, the class and layout
+of every fixed or variable operand, and the class and layout of every attribute
+as defined in [JIT Instruction Representation](jit-instruction-representation.md).
 
 The instruction pointer also names its result when it has one. Typed result
 references may be zero-overhead pointer views:
@@ -751,14 +758,14 @@ first proves that every direct managed reference is pinned.
 ### Mostly immutable instructions, mutable graphs, and analysis state
 
 An instruction's operation kind, results, bytecode origin, semantic descriptor,
-guard obligations, partition IDs, payload shape, and non-input parameters are
-fixed when the instruction is constructed. A transformation changes any of
-these semantic properties by constructing a replacement instruction with a new
-serial. Program-value and Snapshot input slots are mutable only through the
-structural IR editor, so ordinary result-use rewriting does not require
-cascading replacement of every transitive user. Block edges, runtime metadata,
-and constants embedded in an instruction remain immutable; changing them
-requires instruction replacement.
+guard obligations, partition IDs, payload shape, and attributes are fixed when
+the instruction is constructed. A transformation changes any of these semantic
+properties by constructing a replacement instruction with a new serial.
+Program-value and Snapshot operand slots are mutable only through the structural
+IR editor, so ordinary result-use rewriting does not require cascading
+replacement of every transitive user. Block edges, runtime metadata, constants,
+immediates, and return PCs embedded in an instruction remain immutable
+attributes; changing them requires instruction replacement.
 
 Graph structure remains mutable. Block parameter and instruction lists,
 predecessor and successor sets, edge argument lists, placement, definition
@@ -781,11 +788,11 @@ from making an otherwise linear JIT translation quadratic. The incremental
 editor remains the mutation authority for an already published graph; large
 edit transactions may likewise defer global verification until commit.
 
-The instruction schema generates the generic input walk from which a pass can
+The instruction schema generates the generic operand walk from which a pass can
 build temporary `UseRecord`s and a generation-checked `UseIndex`. Passes needing
 repeated sparse use queries may maintain that index privately during an editing
 batch or discard and rebuild it. Bulk lowering may instead apply a typed
-replacement map by scanning all inputs once, with simultaneous replacement
+replacement map by scanning all operands once, with simultaneous replacement
 semantics. Both mechanisms are on demand; passes that need neither use records
 nor replacement scanning pay no permanent use-index memory or maintenance
 cost.
@@ -874,8 +881,9 @@ Passes must not mutate instructions or graph structures directly.
 
 Verification at pass boundaries should require:
 
-- every fixed and variable input slot to match the `InputClass` and layout
-  declared for its instruction kind;
+- every fixed and variable operand slot to match the `OperandClass` and layout
+  declared for its instruction kind, and every attribute slot to match its
+  declared `AttributeClass` and layout;
 - every result reference to match its producer's intrinsic `ResultClass`, and no
   result reference to be formed from a value-less
   instruction;
@@ -1450,7 +1458,7 @@ unboxing to execute ordinary compiled code.
 Every Core `ProgramValueRef` has exactly one immutable
 `ValueRepresentation`. The first schema supports `TaggedValue` and `F64`,
 although bring-up produces only tagged values until unboxing is implemented.
-Representation is an intrinsic producer and input contract declared by
+Representation is an intrinsic producer and operand contract declared by
 `instruction.def`, not an analysis or register-allocation attachment. Semantic
 IR, when present, keeps representation-free references; its lowering creates
 the represented Core values. Boxing, unboxing, and any other representation

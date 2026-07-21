@@ -357,7 +357,7 @@ The block-argument extension and later SSA verification will add these checks:
   IR level according to `src/jit/instruction.def`;
 - every instruction and result reference stays within one graph and IR level;
 - every edge argument list matches the target parameter list in arity and
-  required `InputClass`; Core arguments additionally match the parameter's
+  required `OperandClass`; Core arguments additionally match the parameter's
   `ValueRepresentation`, plus any later phase-specific contract;
 - every ordinary operand definition dominates its use;
 - every edge argument definition dominates its source edge;
