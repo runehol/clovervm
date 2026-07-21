@@ -674,16 +674,16 @@ AddSMI
 
 BoxF64
     result: ProgramValue(TaggedValue)
-    value: ProgramValue(F64)
+    source: ProgramValue(F64)
 
 UnboxF64
     result: ProgramValue(F64)
-    value: ProgramValue(TaggedValue)
+    source: ProgramValue(TaggedValue)
     snapshot: Snapshot
 
 ShapeGuard
     result: ProgramValue(TaggedValue)
-    value: ProgramValue(TaggedValue)
+    object: ProgramValue(TaggedValue)
     expected_shape: attr Shape
     validity: attr ValidityCell
     snapshot: Snapshot
@@ -697,24 +697,24 @@ PythonCall
 
 CheckNotImplemented
     result: ProgramValue(TaggedValue)
-    value: ProgramValue(TaggedValue)
+    call_result: ProgramValue(TaggedValue)
     snapshot: Snapshot
 
 Mov
     result: ProgramValue(TaggedValue)
-    value: ProgramValue(TaggedValue)
+    source: ProgramValue(TaggedValue)
 
 SynthesizeImmediate
     result: ProgramValue(TaggedValue)
-    value: attr InlineValueConstant
+    immediate: attr InlineValueConstant
 
 LoadConstantPoolValue
     result: ProgramValue(TaggedValue)
-    value: attr ValueConstant
+    constant: attr ValueConstant
 
 MovF64
     result: ProgramValue(F64)
-    value: ProgramValue(F64)
+    source: ProgramValue(F64)
 
 Parameter
     result: ProgramValue(TaggedValue)
@@ -792,16 +792,16 @@ F64Ref make_add_f64(
     RepresentedProgramOperand<ValueRepresentation::F64> lhs,
     RepresentedProgramOperand<ValueRepresentation::F64> rhs);
 TaggedValueRef make_box_f64(
-    RepresentedProgramOperand<ValueRepresentation::F64> value);
+    RepresentedProgramOperand<ValueRepresentation::F64> source);
 F64Ref make_unbox_f64(
-    RepresentedProgramOperand<ValueRepresentation::TaggedValue> value,
+    RepresentedProgramOperand<ValueRepresentation::TaggedValue> source,
     SnapshotRef snapshot);
 TaggedValueRef make_mov(
-    RepresentedProgramOperand<ValueRepresentation::TaggedValue> value);
-TaggedValueRef make_synthesize_immediate(InlineValueConstant value);
-TaggedValueRef make_load_constant_pool_value(Value value);
+    RepresentedProgramOperand<ValueRepresentation::TaggedValue> source);
+TaggedValueRef make_synthesize_immediate(InlineValueConstant immediate);
+TaggedValueRef make_load_constant_pool_value(Value constant);
 F64Ref make_mov_f64(
-    RepresentedProgramOperand<ValueRepresentation::F64> value);
+    RepresentedProgramOperand<ValueRepresentation::F64> source);
 ```
 
 Defining separate kinds keeps their generated construction and access APIs
@@ -1250,7 +1250,7 @@ CL_JIT_INSTRUCTION_SWITCH(*instruction)
 
     case CL_JIT_INSTRUCTION_CASE(ReturnInstruction, return_instruction)
     {
-        emit_return(return_instruction.value());
+        emit_return(return_instruction.return_value());
         break;
     }
 }

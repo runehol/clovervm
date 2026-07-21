@@ -199,7 +199,7 @@ namespace cl::jit
             arena.make_instruction<SynthesizeImmediateInstruction>(constant);
 
         EXPECT_EQ(InstructionKind::SynthesizeImmediate, instruction->kind());
-        EXPECT_EQ(Value::False(), instruction->value().value());
+        EXPECT_EQ(Value::False(), instruction->immediate().value());
         EXPECT_EQ(0u, instruction->operand_count());
         EXPECT_FALSE(instruction->operands_are_indirect());
         EXPECT_EQ(instruction,

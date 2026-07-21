@@ -820,14 +820,14 @@ namespace cl::jit
     //     static constexpr IRLevelMask AllowedIRLevels = IRLevelMask::Core;
     //     static constexpr bool IsVariadic = false;
     //
-    //     TaggedValueOperand value() const;
+    //     TaggedValueOperand object() const;
     //     SnapshotRef snapshot() const;
     //     Shape *expected_shape() const;
     //     ValidityCell *validity() const;
     //
     // private:
     //     friend class InstructionPool;
-    //     ShapeGuardInstruction(uint32_t serial, TaggedValueOperand value,
+    //     ShapeGuardInstruction(uint32_t serial, TaggedValueOperand object,
     //                           SnapshotRef snapshot, Shape *expected_shape,
     //                           ValidityCell *validity);
     // };

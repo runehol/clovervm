@@ -51,7 +51,7 @@ CL_JIT_INSTRUCTION(ParameterF64, CL_JIT_IR_LEVELS(Core),
 #undef CL_JIT_ParameterF64_OPERANDS
 
 #define CL_JIT_Mov_OPERANDS(fixed, variadic, snapshot_values)                 \
-    fixed(value, ProgramValue, TaggedValue)
+    fixed(source, ProgramValue, TaggedValue)
 #define CL_JIT_Mov_ATTRIBUTES(attribute)
 CL_JIT_INSTRUCTION(Mov, CL_JIT_IR_LEVELS(Core),
                    CL_JIT_RESULT(ProgramValue, TaggedValue),
@@ -61,7 +61,7 @@ CL_JIT_INSTRUCTION(Mov, CL_JIT_IR_LEVELS(Core),
 #undef CL_JIT_Mov_OPERANDS
 
 #define CL_JIT_MovF64_OPERANDS(fixed, variadic, snapshot_values)              \
-    fixed(value, ProgramValue, F64)
+    fixed(source, ProgramValue, F64)
 #define CL_JIT_MovF64_ATTRIBUTES(attribute)
 CL_JIT_INSTRUCTION(MovF64, CL_JIT_IR_LEVELS(Core),
                    CL_JIT_RESULT(ProgramValue, F64),
@@ -94,7 +94,7 @@ CL_JIT_INSTRUCTION(AddF64, CL_JIT_IR_LEVELS(Core),
 #undef CL_JIT_AddF64_OPERANDS
 
 #define CL_JIT_BoxF64_OPERANDS(fixed, variadic, snapshot_values)              \
-    fixed(value, ProgramValue, F64)
+    fixed(source, ProgramValue, F64)
 #define CL_JIT_BoxF64_ATTRIBUTES(attribute)
 CL_JIT_INSTRUCTION(BoxF64, CL_JIT_IR_LEVELS(Core),
                    CL_JIT_RESULT(ProgramValue, TaggedValue),
@@ -104,7 +104,7 @@ CL_JIT_INSTRUCTION(BoxF64, CL_JIT_IR_LEVELS(Core),
 #undef CL_JIT_BoxF64_OPERANDS
 
 #define CL_JIT_UnboxF64_OPERANDS(fixed, variadic, snapshot_values)            \
-    fixed(value, ProgramValue, TaggedValue)                                    \
+    fixed(source, ProgramValue, TaggedValue)                                   \
     fixed(snapshot, Snapshot, None)
 #define CL_JIT_UnboxF64_ATTRIBUTES(attribute)
 CL_JIT_INSTRUCTION(UnboxF64, CL_JIT_IR_LEVELS(Core),
@@ -115,7 +115,7 @@ CL_JIT_INSTRUCTION(UnboxF64, CL_JIT_IR_LEVELS(Core),
 #undef CL_JIT_UnboxF64_OPERANDS
 
 #define CL_JIT_ShapeGuard_OPERANDS(fixed, variadic, snapshot_values)          \
-    fixed(value, ProgramValue, TaggedValue)                                    \
+    fixed(object, ProgramValue, TaggedValue)                                   \
     fixed(snapshot, Snapshot, None)
 #define CL_JIT_ShapeGuard_ATTRIBUTES(attribute)                               \
     attribute(expected_shape, Shape)                                           \
@@ -129,7 +129,7 @@ CL_JIT_INSTRUCTION(ShapeGuard, CL_JIT_IR_LEVELS(Core),
 #undef CL_JIT_ShapeGuard_OPERANDS
 
 #define CL_JIT_ShapeKeyGuard_OPERANDS(fixed, variadic, snapshot_values)       \
-    fixed(value, ProgramValue, TaggedValue)                                    \
+    fixed(object, ProgramValue, TaggedValue)                                   \
     fixed(snapshot, Snapshot, None)
 #define CL_JIT_ShapeKeyGuard_ATTRIBUTES(attribute)                            \
     attribute(expected_shape_key, ShapeKey)
@@ -143,7 +143,7 @@ CL_JIT_INSTRUCTION(ShapeKeyGuard, CL_JIT_IR_LEVELS(Core),
 
 #define CL_JIT_SynthesizeImmediate_OPERANDS(fixed, variadic, snapshot_values)
 #define CL_JIT_SynthesizeImmediate_ATTRIBUTES(attribute)                     \
-    attribute(value, InlineValueConstant)
+    attribute(immediate, InlineValueConstant)
 CL_JIT_INSTRUCTION(SynthesizeImmediate, CL_JIT_IR_LEVELS(Core),
                    CL_JIT_RESULT(ProgramValue, TaggedValue),
                    CL_JIT_EFFECT_BOUNDS(None, None),
@@ -154,7 +154,7 @@ CL_JIT_INSTRUCTION(SynthesizeImmediate, CL_JIT_IR_LEVELS(Core),
 
 #define CL_JIT_LoadConstantPoolValue_OPERANDS(fixed, variadic, snapshot_values)
 #define CL_JIT_LoadConstantPoolValue_ATTRIBUTES(attribute)                    \
-    attribute(value, ValueConstant)
+    attribute(constant, ValueConstant)
 CL_JIT_INSTRUCTION(LoadConstantPoolValue, CL_JIT_IR_LEVELS(Core),
                    CL_JIT_RESULT(ProgramValue, TaggedValue),
                    CL_JIT_EFFECT_BOUNDS(None, None),
@@ -178,7 +178,7 @@ CL_JIT_INSTRUCTION(PythonCall, CL_JIT_IR_LEVELS(Core),
 #undef CL_JIT_PythonCall_OPERANDS
 
 #define CL_JIT_CheckNotImplemented_OPERANDS(fixed, variadic, snapshot_values) \
-    fixed(value, ProgramValue, TaggedValue)                                    \
+    fixed(call_result, ProgramValue, TaggedValue)                              \
     fixed(snapshot, Snapshot, None)
 #define CL_JIT_CheckNotImplemented_ATTRIBUTES(attribute)
 CL_JIT_INSTRUCTION(CheckNotImplemented, CL_JIT_IR_LEVELS(Core),
@@ -224,7 +224,7 @@ CL_JIT_INSTRUCTION(UnconditionalBranch, CL_JIT_IR_LEVELS(Core),
 #undef CL_JIT_UnconditionalBranch_OPERANDS
 
 #define CL_JIT_Return_OPERANDS(fixed, variadic, snapshot_values)              \
-    fixed(value, ProgramValue, TaggedValue)
+    fixed(return_value, ProgramValue, TaggedValue)
 #define CL_JIT_Return_ATTRIBUTES(attribute)
 CL_JIT_INSTRUCTION(Return, CL_JIT_IR_LEVELS(Core),
                    CL_JIT_RESULT(None, None),
