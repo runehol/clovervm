@@ -28,11 +28,23 @@ invariants.
 
 ### Canonical frame publication
 
-The interpreter, reclaimer, and initial deoptimization runtime consume only
-canonical interpreter frame state. Compiled code may cache newer values in
-machine registers, but before an operation that may reclaim memory it
-synchronizes every dirty canonical home in the complete active logical frame
-chain and publishes the accumulator through `ThreadState`.
+The interpreter, reclaimer, and initial recovery runtime consume canonical
+frame storage. Compiled code may cache newer values in machine registers.
+Before an operation that may reclaim memory, it publishes every live managed
+root in the complete active logical frame chain and clears stale canonical
+slots that could otherwise be mistaken for roots. Before a call that may throw
+or otherwise leave JIT without returning through a generated recovery
+continuation, it conservatively materializes complete canonical frame state
+instead. A call consumes its input accumulator, so that dead value is not
+published and its root slot is cleared; a normal result or exception
+continuation supplies the next accumulator state.
+
+The intended later call convention returns every outcome through generated JIT
+code. Its continuation resumes normally, enters a compiled exception handler
+when one covers the call, or performs exact Snapshot recovery only when the
+exception or another outcome must leave JIT. Reaching that convention removes
+eager full-frame materialization from normally returning calls without forcing
+exceptions that can be handled in JIT back through the interpreter.
 
 Before returning to the interpreter, generated exit code also installs the
 required bytecode PCs and structural frame metadata. Consequently, the initial
@@ -43,8 +55,10 @@ This implies:
 - an untripped safepoint poll need not publish if reclamation cannot begin
   asynchronously;
 - a tripped poll synchronizes and leaves compiled execution before reclamation;
-- a safepoint-capable call publishes all dirty active frames before entry;
-- a value live across reclamation has a canonical managed home;
+- a safepoint-capable call publishes all live managed roots before entry;
+- an initially exit-capable or throwing call also materializes inline values
+  and boxes interpreter-visible F64 values before entry;
+- a managed value live across reclamation has a canonical managed home;
 - non-bytecode temporaries do not remain live across reclamation solely through
   compiler metadata.
 
@@ -253,21 +267,25 @@ per opcode spelling.
 
 ## Later Runtime Migrations
 
-The initial compiler still constructs declarative post-allocation safepoint and
-deoptimization state. That permits a measured migration without making the
-collector depend on new metadata during bring-up:
+The initial compiler materializes generated recovery sequences directly from
+Core Snapshots, post-allocation locations, and canonical `HomeState`; identical
+sequences may be interned as `RecoveryPlan`s. Canonical publication remains
+authoritative for GC root discovery, so the initial compiler emits no general
+root-map artifact. Later root-map work can proceed as a measured migration:
 
 1. serialize shadow safepoint maps while canonical publication remains
    authoritative;
 2. compare mapped roots against canonical scanning in debug builds;
-3. introduce a generic entry that saves registers and interprets recovery
-   translations;
-4. allow selected compiled frames to use precise maps instead of continuing
+3. allow selected compiled frames to use precise maps instead of continuing
    publication;
-5. reconsider permanent canonical backing for inlined frames only after mapped
+4. reconsider permanent canonical backing for inlined frames only after mapped
    frames work;
-6. move to a mixed platform stack only after generated interpreter handlers and
+5. move to a mixed platform stack only after generated interpreter handlers and
    an exact mixed-stack walker exist.
+
+A generic entry that saves registers and interprets recovery translations is an
+independent possible replacement for generated recovery code, not an
+intermediate required by precise root maps.
 
 These are migration directions, not milestones required for a useful first
 compiler.

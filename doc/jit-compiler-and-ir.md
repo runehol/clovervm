@@ -154,8 +154,9 @@ thunks. These are staging policies rather than permanent runtime invariants.
 Their implementation order, consequences, and migration toward precise stack
 maps and a future mixed platform stack are owned by the
 [JIT Compiler Bring-up Plan](jit-compiler-bring-up-plan.md). The durable IR
-contract is that post-allocation metadata can describe both roots and complete
-interpreter state independently of which runtime policy currently consumes it.
+contract is that Snapshots, managed-value liveness, and post-allocation
+locations contain enough information to generate both exact recovery and,
+later, precise root maps independently of which runtime policy consumes them.
 
 ### Interpreter-visible state
 
@@ -352,12 +353,14 @@ may then be discarded. A general semantic type system is not required by the
 direct compilation path.
 
 Core IR is the stable SSA CFG carried through progressively stronger verified
-forms rather than three mandatory representations:
+forms rather than mandatory replacement representations:
 
 ```text
-constructed Core IR  -> explicit checks, effects, Snapshots, tagged values
-represented Core IR  -> selected operations and explicit representation conversions
-allocated Core IR    -> LocationSummary, location, spill, and edge-move tables
+constructed Core IR       -> explicit checks, effects, Snapshots, tagged values
+represented Core IR       -> selected operations and explicit representation conversions
+backend-prepared Core IR  -> lowering choices, legalized constants, LocationSummary
+allocated backend plan    -> locations, spills, and edge-move tables
+recovery plans            -> Snapshots resolved through locations and HomeState
 ```
 
 Phase verification prevents arbitrary mixtures of these forms. Common
@@ -396,22 +399,42 @@ constant has the same semantics as a separately materialized value.
 `InlineValueConstant` excludes tagged bit patterns that identify managed
 pointers. Managed pointer constants use traced constant-pool slots instead.
 This is not a promise that every target can encode an inline constant at that
-instruction. Each backend runs a target-specific constant operand legalization
-pass after instruction selection has enough context and before register
-allocation. The pass decides per instruction kind, operand position,
-representation, and constant shape whether an `InlineValueConstant` matches the
-selected encoding. For example, a target may accept one set of immediates for
-integer addition and a different set for logical OR. Unsupported inline
-constants are materialized by inserting `SynthesizeImmediate`, whose lowering
-may emit one or more target move-immediate instructions, and rewriting the
-consumer to that `ProgramValueRef`. Managed pointer constants are materialized
-by `LoadConstantPoolValue`, which produces a normal `ProgramValue` by loading
-from a traced pool slot. Core has no constant-producing `ResultClass`: a
-constant exists only as embedded operand payload or as a constant-pool slot until
-an instruction produces a normal `ProgramValue` from it. This keeps immediate
-shape rules, thresholds, GC relocation requirements, and operand-encoding
-quirks out of Core IR while giving backends a uniform way to select immediate
-forms when they are legal.
+instruction. Each backend performs lowering selection and constant operand
+legalization as one backend-preparation phase before liveness and register
+allocation. For each instruction, it selects a lowering candidate and decides
+per operand position, representation, and constant shape whether an
+`InlineValueConstant` matches that exact lowering. For example, a target may
+accept one set of immediates for integer addition and a different set for
+logical OR.
+
+Unsupported inline constants are materialized by inserting
+`SynthesizeImmediate`, whose selected lowering may emit one or more target
+move-immediate instructions, and rewriting the consumer to that
+`ProgramValueRef`. Managed pointer constants are materialized by
+`LoadConstantPoolValue`, which produces a normal `ProgramValue` by loading from
+a traced pool slot. The same phase assigns the fixed lowering and
+`LocationSummary` for every inserted materializer and the final lowering and
+summary for every rewritten consumer. Its output therefore has no unexamined
+constant operand: every remaining inline constant is certified for its exact
+selected lowering, and every executable instruction has one lowering choice
+and `LocationSummary`.
+
+Backend preparation is atomic as a phase contract even if implemented by local
+selection and rewrite steps. Liveness, Snapshot point-use expansion, and
+register allocation run only after its completed graph is verified. Any later
+Core mutation invalidates the complete lowering-choice, legalization, and
+`LocationSummary` attachment together; the compiler never pairs a rewritten
+graph with stale backend preparation. The phase returns a frozen,
+generation-checked `BackendPreparation` object, and the allocator accepts that
+object rather than independent tables. This is a concrete phase product, not a
+generic instruction property bag.
+
+Core has no constant-producing `ResultClass`: a constant exists only as
+embedded operand payload or as a constant-pool slot until an instruction
+produces a normal `ProgramValue` from it. This keeps immediate shape rules,
+thresholds, GC relocation requirements, and operand-encoding quirks out of
+Core IR while giving backends a uniform way to select immediate forms when they
+are legal.
 
 The Core `ValueRepresentation` of a `ProgramValueRef` determines the compatible
 target register and spill classes. The backend maps target-independent
@@ -439,7 +462,7 @@ cross-instruction machine optimization that these tables become an implicit
 instruction graph, that is evidence for introducing an explicit Machine IR at
 the required scope.
 
-After constant operand legalization, the register allocator and location tables
+After backend preparation, the register allocator and location tables
 accept only `ProgramValueRef`s or `InlineValueConstant`s proven encodable in
 that exact lowering. Instructions with `ResultClass::None` and compiler-only
 `SnapshotRef`s receive no location, although the program-value operands named by
@@ -614,6 +637,13 @@ Core IR captures a recoverable state with a zero-code `Snapshot` instruction:
     parent frame = ...)
 ```
 
+A Snapshot records an accumulator action rather than requiring an accumulator
+value unconditionally. Ordinary guards capture the live accumulator. At a call
+boundary the input accumulator is dead because the call consumes it and either
+produces a replacement result or transfers through an exception/exit
+continuation; that Snapshot carries no accumulator operand, point use, or
+register-allocation requirement for the dead value.
+
 `Snapshot` has `ResultClass::Snapshot`. Its typed `SnapshotRef` receives no
 machine location and carries no Python type evidence. A speculative check or
 action consumes it as the failure continuation:
@@ -676,10 +706,12 @@ construction order and are not reused during a compilation.
 Snapshots do not have a separate ID namespace: a `SnapshotRef` is the typed
 result of a Core instruction. A `FrameStateId` identifies the structurally
 shared logical frame chain named by that Snapshot, including any inlined
-frames. Post-allocation `SafepointState` and `DeoptState` records are attached
-to machine-code positions and exits rather than given independent identities.
-`ResumeStateId` and `RecoveryPlanId` exist only where the backend interns the
-two independently shareable parts of generated side-exit code.
+frames. The initial backend builds recovery plans directly from Snapshots,
+post-allocation locations, and `HomeState`; it does not introduce another
+deoptimization-state identity. `ResumeStateId` and `RecoveryPlanId` exist only
+where the backend interns the two independently shareable parts of generated
+side-exit code. Future precise root maps are attached to machine-code positions
+rather than given IR result identities.
 
 Every instruction has a typed serial and an intrinsic `ResultClass`:
 
@@ -1308,52 +1340,37 @@ slots; temporary emitter ownership covers the constants before publication.
 Initial generated code is installed once and remains alive until its owning
 `CodeObject` is deallocated.
 
-### Declarative safepoint and deoptimization state
+### Snapshots, recovery, and future root maps
 
-After locations have been assigned, every compiled safepoint and deoptimization
-exit has an immutable declarative description independent of how the runtime
-consumes it:
+A Core `Snapshot` is the authoritative logical description of
+interpreter-visible state. It already names the resume state, active logical
+frame chain, values, inline constants, and boxing or reification actions needed
+to leave compiled execution. The backend consumes it directly when generating
+recovery.
+
+After allocation, recovery planning combines the Snapshot with two physical
+inputs:
 
 ```text
-SafepointState {
-    safepoint ID and compiled PC
-    frame scanning mode
-    managed root -> register | spill | canonical slot
-                 | ThreadState accumulator publication
-                 | explicit out-of-frame root publication
-}
-
-DeoptState {
-    resume state
-    active logical frame chain
-    interpreter-visible value -> register | spill | canonical slot
-                                 | inline constant
-                                 | traced constant-pool slot
-                                 | boxing/reification recipe
-}
+Snapshot + LocationAssignments + HomeState -> RecoveryPlan
 ```
 
-One backend policy may lower `SafepointState` into continuing publication code
-and `DeoptState` into generated cold recovery plans. Another may serialize the
-first for a compiled-frame walker and the second for a generic deoptimizer.
-Location assignment, logical frame construction, and Core IR do not change
-merely because the consumer changes.
+Location assignments resolve each captured `ProgramValueRef` to its register,
+spill, or canonical slot at the exit. `HomeState` identifies canonical frame
+homes that already contain the required value. The resulting `RecoveryPlan`
+contains the parallel assignments, inline-constant materialization, traced-pool
+loads, F64 boxing, and reification operations needed before interpreter handoff.
+This adds physical execution choices but no second semantic description of the
+Snapshot.
 
-`SafepointState` covers every managed root that must survive the safepoint. A
-live accumulator value is represented either as an ordinary managed root in a
-register or spill for precise maps, or as a publication action to the existing
-`ThreadState` accumulator root under canonical publication. Managed values that
-are live outside canonical frame slots use explicit root-publication entries.
-Unboxed non-roots such as `F64` values are excluded from safepoint root maps
-unless a recovery action materializes a managed object before the safepoint.
-
-`DeoptState` is the post-allocation physical projection of a Core IR Snapshot.
-The Snapshot remains semantic and names `ProgramValueRef`s; `DeoptState`
-records where those values can be obtained at that particular machine-code
-point. Each source location is interpreted using its value's representation and
-therefore its register or spill class. An unboxed float needed by recovery may
-be live in an FP/SIMD register even though it is not a managed root and does not
-appear in the safepoint root map.
+Precise GC root maps are a separate future backend projection. They select all
+managed values live at a continuing safepoint, including any compiler-only
+temporaries, and resolve them through the same post-allocation location
+vocabulary. They omit non-root F64 values, inline immediates, boxing, and
+interpreter resume state. The initial compiler instead uses canonical frame
+publication and emits no general root-map artifact. Its only post-allocation
+recovery work is direct expansion of Snapshots into generated recovery
+sequences, with identical sequences optionally interned as `RecoveryPlan`s.
 
 Compiled code and its metadata remain alive as one code object. Safepoint lookup
 from a compiled PC is deterministic, and a call safepoint can be identified
@@ -1468,16 +1485,49 @@ complexity in cold exits on a register-rich target.
 ### Continuing call state
 
 Calls use the same logical-versus-synchronized frame analysis as exits but not
-the same non-returning code shape. A safepoint-capable call needs declarative
-root state for every active logical frame. Under canonical publication this
-becomes continuing synchronization at the call site; under precise maps it
-becomes metadata consumed by the stack walker.
+the same non-returning code shape. The selected lowering determines the
+required boundary strength:
+
+```text
+cannot safepoint and must return to JIT
+    no publication
+
+may safepoint but must return to JIT
+    publish canonical managed roots
+
+may throw or otherwise leave JIT without a generated recovery continuation
+    materialize complete canonical frame state before entry
+```
+
+Root publication stores every live tagged managed value in the canonical slots
+seen by the initial stack scanner. It clears a canonical slot to a non-pointer
+sentinel when stale contents could otherwise be mistaken for a root, and clears
+the dead input accumulator's published slot rather than preserving its value.
+It does not box F64 values or turn non-pointer inline constants into SSA values.
+Full eager materialization additionally stores inline values and boxes any F64
+value needed by interpreter-visible frame state. It covers the complete
+outer-to-inner active frame chain, but the call-boundary Snapshot marks the
+input accumulator dead.
+
+Initially, calls that may throw or leave JIT use full eager materialization.
+This is deliberately conservative while those outcomes can bypass a generated
+continuation. The intended call convention eventually returns every outcome to
+a generated JIT continuation. That continuation dispatches a normal result back
+to compiled code, enters a compiled exception handler when the active exception
+table has one, or expands the same Snapshot into exact recovery only when the
+exception or other exit must return to the interpreter. Once that convention is
+available, the normal pre-call path needs only root publication.
 
 The planner may share location, frame-difference, and parallel-copy machinery
 with exit recovery. Publication instructions themselves remain on the normal
 path because execution returns to compiled code. They cannot be delegated to a
-deduplicated cold recovery tail. When a call occurs inside an inline instance,
-the state covers the complete outer-to-inner active frame chain.
+deduplicated cold recovery tail. Full eager materialization also remains on the
+normal path until the return-through-JIT convention is available.
+
+Eager F64 boxing may allocate. Unboxed values must not be enabled across such a
+boundary until the boxing path can publish its pre-existing roots and handle
+allocation failure without losing the Snapshot state. This does not block the
+initial tagged-only compiler.
 
 ### Tagged `Value` baseline
 

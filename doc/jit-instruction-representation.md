@@ -597,16 +597,18 @@ embedded constant has the same Python-visible meaning as using a separately
 materialized constant value. `InlineValueConstant` excludes tagged bit patterns
 that identify managed pointers; those constants must be represented by a traced
 constant-pool slot. Whether a particular target instruction can encode an inline
-constant is decided later by the backend-specific constant operand legalization
-pass. If the target cannot encode it for that instruction kind, operand
-position, representation, and constant shape, that pass materializes the
-constant before register allocation and rewrites the consumer to use the new
-`ProgramValueRef`. Inline materialization uses `SynthesizeImmediate`, whose
-lowering may emit one or more target move-immediate instructions. Managed
+constant is decided later by the target backend's combined lowering-selection
+and constant-legalization phase. If the selected lowering cannot encode it for
+that instruction kind, operand position, representation, and constant shape,
+backend preparation materializes the constant and rewrites the consumer to use
+the new `ProgramValueRef`. Inline materialization uses `SynthesizeImmediate`,
+whose lowering may emit one or more target move-immediate instructions. Managed
 pointer materialization uses `LoadConstantPoolValue`, whose lowering loads from
-a traced pool slot so collection can rewrite the reference. Immediate shape
-rules, such as target-specific arithmetic and logical-immediate encodings,
-remain backend policy rather than Core IR legality.
+a traced pool slot so collection can rewrite the reference. The phase also
+selects lowerings and `LocationSummary` records for inserted materializers and
+rewritten consumers before liveness and register allocation run. Immediate
+shape rules, such as target-specific arithmetic and logical-immediate
+encodings, remain backend policy rather than Core IR legality.
 
 Generated factory methods and typed accessors expose fixed constraints in their
 C++ signatures:
