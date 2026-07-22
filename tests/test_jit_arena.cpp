@@ -69,7 +69,7 @@ namespace cl::jit
         EXPECT_EQ(1u, second_instruction->serial().value());
     }
 
-    TEST(JitInstructionStorage, HasFiveSlotsAndTaggedStableAddresses)
+    TEST(JitInstructionStorage, HasFiveSlotsAndAlignedStableAddresses)
     {
         static_assert(sizeof(Instruction) == 48);
         static_assert(std::is_trivially_destructible_v<Instruction>);
@@ -87,8 +87,8 @@ namespace cl::jit
         {
             Instruction *instruction = instructions[index];
             EXPECT_EQ(index, instruction->serial().value());
-            EXPECT_NE(0u, reinterpret_cast<uintptr_t>(instruction) &
-                              value_ptr_mask);
+            EXPECT_EQ(0u, reinterpret_cast<uintptr_t>(instruction) %
+                              alignof(Instruction));
             EXPECT_EQ(InstructionKind::Parameter, instruction->kind());
         }
     }
@@ -145,26 +145,24 @@ namespace cl::jit
                       decltype(std::declval<GraphBuilder &>()
                                    .make_instruction<ParameterInstruction>()),
                       ParameterInstruction *>);
-        static_assert(
-            std::is_same_v<
-                decltype(std::declval<const AddSMIInstruction &>().lhs()),
-                RepresentedProgramOperand<ValueRepresentation::TaggedValue>>);
+        static_assert(std::is_same_v<
+                      decltype(std::declval<const AddSMIInstruction &>().lhs()),
+                      TaggedValueRef>);
         static_assert(
             std::is_same_v<
                 decltype(std::declval<const AddSMIInstruction &>().snapshot()),
                 SnapshotRef>);
         static_assert(std::is_same_v<
                       decltype(std::declval<const AddF64Instruction &>().lhs()),
-                      RepresentedProgramOperand<ValueRepresentation::F64>>);
+                      F64Ref>);
         static_assert(std::is_same_v<
                       decltype(std::declval<const ShapeGuardInstruction &>()
                                    .expected_shape()),
                       Shape *>);
-        static_assert(
-            std::is_same_v<
-                decltype(std::declval<const PythonCallInstruction &>()
-                             .arguments()),
-                ProgramValueOperandRange<ValueRepresentation::TaggedValue>>);
+        static_assert(std::is_same_v<
+                      decltype(std::declval<const PythonCallInstruction &>()
+                                   .arguments()),
+                      ProgramValueRefRange<ValueRepresentation::TaggedValue>>);
         static_assert(
             std::is_same_v<decltype(std::declval<const SnapshotInstruction &>()
                                         .captured_values()),
@@ -196,37 +194,44 @@ namespace cl::jit
 
     TEST(JitInstructionConstruction, EncodesFixedAttributes)
     {
+        static_assert(
+            !std::is_constructible_v<TaggedValueRef, InlineValueConstant>);
+
         CompilationArena arena;
         GraphBuilder builder(arena);
         InlineValueConstant constant(Value::False());
-        SynthesizeImmediateInstruction *instruction =
-            builder.make_instruction<SynthesizeImmediateInstruction>(constant);
+        ConstInstruction *instruction =
+            builder.make_instruction<ConstInstruction>(constant);
 
-        EXPECT_EQ(InstructionKind::SynthesizeImmediate, instruction->kind());
-        EXPECT_EQ(Value::False(), instruction->immediate().value());
+        EXPECT_EQ(InstructionKind::Const, instruction->kind());
+        EXPECT_EQ(Value::False(), instruction->constant().value());
         EXPECT_EQ(0u, instruction->operand_count());
         EXPECT_FALSE(instruction->operands_are_indirect());
-        EXPECT_EQ(instruction,
-                  instruction->as<SynthesizeImmediateInstruction>());
+        EXPECT_EQ(instruction, instruction->as<ConstInstruction>());
+
+        LoadConstInstruction *load =
+            builder.make_instruction<LoadConstInstruction>(Value::None());
+        EXPECT_EQ(InstructionKind::LoadConst, load->kind());
+        EXPECT_EQ(Value::None(), load->constant());
+        EXPECT_EQ(0u, load->operand_count());
     }
 
-    TEST(JitInstructionTraversal, DistinguishesReferencesConstantsAndSnapshots)
+    TEST(JitInstructionTraversal, WalksProgramValueAndSnapshotReferences)
     {
         CompilationArena arena;
         GraphBuilder builder(arena);
         TaggedValueRef lhs(builder.make_instruction<ParameterInstruction>());
+        TaggedValueRef rhs(builder.make_instruction<ConstInstruction>(
+            InlineValueConstant(Value::from_smi(3))));
         SnapshotRef snapshot(builder.make_instruction<SnapshotInstruction>(
             std::span<const SnapshotValue>{}, BytecodePC{17}));
-        AddSMIInstruction *add = builder.make_instruction<AddSMIInstruction>(
-            TaggedValueOperand(lhs),
-            TaggedValueOperand(InlineValueConstant(Value::from_smi(3))),
-            snapshot);
+        AddSMIInstruction *add =
+            builder.make_instruction<AddSMIInstruction>(lhs, rhs, snapshot);
 
         EXPECT_EQ(3u, add->operand_count());
         EXPECT_FALSE(add->operands_are_indirect());
-        EXPECT_EQ(lhs.instruction(), add->lhs().reference().instruction());
-        EXPECT_FALSE(add->rhs().is_reference());
-        EXPECT_EQ(Value::from_smi(3), add->rhs().inline_constant().value());
+        EXPECT_EQ(lhs.instruction(), add->lhs().instruction());
+        EXPECT_EQ(rhs.instruction(), add->rhs().instruction());
         EXPECT_EQ(snapshot.instruction(), add->snapshot().instruction());
 
         std::vector<std::pair<OperandClass, Instruction *>> references;
@@ -240,11 +245,12 @@ namespace cl::jit
             references.emplace_back(operand_class, producer);
         });
 
-        ASSERT_EQ(2u, references.size());
+        ASSERT_EQ(3u, references.size());
         EXPECT_EQ(OperandClass::ProgramValue, references[0].first);
         EXPECT_EQ(lhs.instruction(), references[0].second);
-        EXPECT_EQ(OperandClass::Snapshot, references[1].first);
-        EXPECT_EQ(snapshot.instruction(), references[1].second);
+        EXPECT_EQ(rhs.instruction(), references[1].second);
+        EXPECT_EQ(OperandClass::Snapshot, references[2].first);
+        EXPECT_EQ(snapshot.instruction(), references[2].second);
     }
 
     TEST(JitInstructionTraversal, WalksVariadicPythonCallArguments)
@@ -255,20 +261,19 @@ namespace cl::jit
             builder.make_instruction<ParameterInstruction>());
         TaggedValueRef first(builder.make_instruction<ParameterInstruction>());
         TaggedValueRef second(builder.make_instruction<ParameterInstruction>());
+        TaggedValueRef none(builder.make_instruction<ConstInstruction>(
+            InlineValueConstant(Value::None())));
         SnapshotRef snapshot(builder.make_instruction<SnapshotInstruction>(
             std::span<const SnapshotValue>{}, BytecodePC{23}));
-        std::array<TaggedValueOperand, 3> arguments = {
-            TaggedValueOperand(first),
-            TaggedValueOperand(InlineValueConstant(Value::None())),
-            TaggedValueOperand(second)};
+        std::array<TaggedValueRef, 3> arguments = {first, none, second};
         PythonCallInstruction *call =
             builder.make_instruction<PythonCallInstruction>(
-                TaggedValueOperand(callable), snapshot,
-                std::span<const TaggedValueOperand>(arguments), BytecodePC{23});
+                callable, snapshot, std::span<const TaggedValueRef>(arguments),
+                BytecodePC{23});
         PythonCallInstruction *call_without_arguments =
             builder.make_instruction<PythonCallInstruction>(
-                TaggedValueOperand(callable), snapshot,
-                std::span<const TaggedValueOperand>{}, BytecodePC{41});
+                callable, snapshot, std::span<const TaggedValueRef>{},
+                BytecodePC{41});
 
         EXPECT_EQ(5u, call->operand_count());
         EXPECT_TRUE(call->operands_are_indirect());
@@ -283,11 +288,9 @@ namespace cl::jit
         EXPECT_TRUE(call_without_arguments->operands_are_indirect());
         EXPECT_EQ(41u, call_without_arguments->slot(1));
         EXPECT_EQ(3u, call->arguments().size());
-        EXPECT_EQ(first.instruction(),
-                  call->arguments()[0].reference().instruction());
-        EXPECT_FALSE(call->arguments()[1].is_reference());
-        EXPECT_EQ(second.instruction(),
-                  call->arguments()[2].reference().instruction());
+        EXPECT_EQ(first.instruction(), call->arguments()[0].instruction());
+        EXPECT_EQ(none.instruction(), call->arguments()[1].instruction());
+        EXPECT_EQ(second.instruction(), call->arguments()[2].instruction());
         EXPECT_EQ(23u, call->interpreter_return_pc());
         EXPECT_EQ(0u, snapshot.instruction()->operand_count());
         EXPECT_TRUE(snapshot.instruction()->operands_are_indirect());
@@ -305,12 +308,13 @@ namespace cl::jit
             references.emplace_back(operand_class, producer);
         });
 
-        ASSERT_EQ(4u, references.size());
+        ASSERT_EQ(5u, references.size());
         EXPECT_EQ(callable.instruction(), references[0].second);
         EXPECT_EQ(OperandClass::Snapshot, references[1].first);
         EXPECT_EQ(snapshot.instruction(), references[1].second);
         EXPECT_EQ(first.instruction(), references[2].second);
-        EXPECT_EQ(second.instruction(), references[3].second);
+        EXPECT_EQ(none.instruction(), references[3].second);
+        EXPECT_EQ(second.instruction(), references[4].second);
     }
 
     TEST(JitInstructionTraversal,

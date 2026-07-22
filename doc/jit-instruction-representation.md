@@ -4,7 +4,7 @@
 |---|---|
 | Document type | Design |
 | Status | Accepted |
-| Implementation | Partial; the 48-byte record, tagged-address instruction arena, schema-generated kind metadata and concrete subclass definitions, typed CFG terminators, homogeneous PythonCall side data, and basic operand traversal are implemented; arena construction of concrete subclasses, annotated Snapshot captures, generated factories, detachment, and editor integration remain |
+| Implementation | Partial; the naturally aligned 48-byte record and instruction arena, schema-generated kind metadata and concrete subclass definitions, generated construction, typed CFG terminators, homogeneous PythonCall side data, annotated Snapshot captures, and basic operand traversal are implemented; detachment and editor integration remain |
 | Scope | Physical instruction storage, typed instruction access, Core value representations, IR-level legality, phase metadata, effects, matching, and arena lifetime for Core and Semantic IR |
 | Owning layers | The JIT instruction representation owns storage, schema-generated construction, and typed access; the bulk graph builder owns deferred-validation construction; concrete analyses own attached inferred facts and proven-absent effects; the CFG editor owns incremental structural mutation |
 | Validated against | Working tree implementation and full debug test suite (2026-07-21) |
@@ -85,13 +85,9 @@ private:
 };
 ```
 
-The instruction arena places every record at an address congruent to `0x08`
-modulo 16 and advances by the 48-byte record size. Every real `Instruction *`
-therefore has `value_interned_ptr_tag` (`0x08`) set while remaining an
-ordinary aligned, directly dereferenceable pointer. Successive addresses may
-contain either `0x08` or `0x18` in those bits; instruction references use only
-the `0x08` predicate and are never interpreted through
-`Value::storage_class()`.
+The instruction arena uses the natural alignment of `Instruction` and advances
+by the 48-byte record size. An instruction reference is an ordinary, directly
+dereferenceable `Instruction *`; its address carries no operand discriminator.
 
 The physical storage tag normally represents one live `InstructionKind`. The
 exact encoding may also reserve a poison tag used only after the CFG editor has
@@ -103,13 +99,11 @@ tag is live. Only `serial()` and `is_detached()` remain meaningful on poisoned
 storage, for diagnostics.
 
 Instruction results, instruction operands, and instruction attributes use
-distinct enum types. Operands are instruction-result references that participate
-in SSA use lists, dominance, liveness, and bulk replacement when they contain a
-result reference. Every Core `ProgramValue` operand slot may instead contain an
-embedded constant payload accepted by the same representation constraint. This
-is intrinsic to `ProgramValue` operands rather than a per-slot schema policy.
-The initial embedded constant payload is `InlineValueConstant` for tagged VM
-values whose bits do not identify managed pointers.
+distinct enum types. Ordinary operands are always instruction-result references
+that participate in SSA use lists, dominance, liveness, and bulk replacement.
+Constants become ordinary program values through explicit `Const` or
+`LoadConst` instructions. Snapshot's annotated recovery payload is the sole
+heterogeneous exception and may capture constants directly.
 Attributes are semantic or structural payload such as block edges, shapes,
 immediates, bytecode origins, and return PCs; they affect instruction semantics
 but are not dataflow uses. The operand cases intentionally have the same numeric
@@ -154,8 +148,8 @@ constexpr bool operand_accepts_result(OperandClass operand, ResultClass result)
 ```
 
 `ResultClass` describes what an instruction may produce. `OperandClass`
-describes which result class an SSA operand slot may consume when it contains a
-result reference. Keeping them separate makes invalid states such as a
+describes which result class an SSA operand slot may consume. Keeping them
+separate makes invalid states such as a
 `BlockEdge` instruction result unrepresentable in the API, while the aligned
 `ProgramValue` and `Snapshot` values keep result-operand compatibility checks
 simple. `AttributeClass` describes non-dataflow payload. `BlockEdge` is an
@@ -172,13 +166,12 @@ program value, not that analysis knows its precise Python type.
 Such inferred facts belong to a concrete phase-owned metadata object such as
 `SemanticValueAnalysis`. Changing an instruction's result class requires
 replacing the instruction with a different kind. An instruction cannot produce a
-constant as its result. A constant exists as embedded payload in a
-`ProgramValue` operand or as an immutable attribute of an instruction that
-materializes or records it. Producing a runtime value from a non-pointer inline
-constant initially uses the program-value-producing `SynthesizeImmediate`;
-backend legalization may replace it with `LoadConstantPoolValue` when loading
-from the eventual pool is cheaper. A managed pointer constant always uses the
-pool-load form.
+constant as its result. A constant is an immutable attribute of an instruction
+that materializes it, or a Snapshot-specific recovery payload. Producing a
+runtime value from a non-pointer inline constant initially uses the
+program-value-producing `Const`; backend legalization may replace it with
+`LoadConst` when loading from the eventual pool is cheaper. A managed pointer
+constant always uses `LoadConst`.
 
 Core program values have one additional intrinsic refinement:
 
@@ -225,7 +218,6 @@ stored beside each word, determines their C++ interpretation:
 
 ```text
 ProgramValue   -> Instruction* wrapped as ProgramValueRef
-InlineValueConstant operand alternative -> inline non-pointer Value in a ProgramValue operand
 Snapshot       -> Instruction* wrapped as SnapshotRef
 BlockEdge      -> BlockEdge*
 Shape          -> Shape*
@@ -244,29 +236,16 @@ handle or a second runtime wrapper; its typed accessor and constructor use
 `InlineValueConstant` is an opaque wrapper whose construction asserts that the
 supplied `Value` bits do not identify a managed pointer. It has no fallible
 construction path: attempting to classify a managed value as inline is a
-compiler logic error. Generated `ProgramValue` operand APIs and
-`InlineValueConstant` attribute APIs accept the wrapper rather than raw `Value`,
-while `ValueConstant` attributes continue to expose raw `Value` through the
-session-owned factory.
+compiler logic error. `InlineValueConstant` attribute APIs accept the wrapper
+rather than raw `Value`, while `ValueConstant` attributes continue to expose raw
+`Value` through the session-owned factory.
 
-This makes a `ProgramValue` operand word self-discriminating without encoded
-pointer tagging or a separate slot tag:
-
-```cpp
-bool is_instruction_reference(uintptr_t word)
-{
-    return (word & value_interned_ptr_tag) != 0;
-}
-```
-
-A reference word is already the directly dereferenceable `Instruction *`. An
-inline constant has both pointer bits clear by construction and necessarily has
-the `TaggedValue` representation. Dereferencing a reference and decoding its
-producer kind identifies whether it is a `ProgramValue` or `Snapshot`; a
-`ProgramValue` producer kind also directly identifies its representation. The
-schema declares what each operand position is permitted to contain and describes
-fixed and variable ranges, while the stored word and producer kind identify what
-it actually contains.
+Ordinary operand words are uniformly direct instruction pointers. Dereferencing
+one and decoding its producer kind identifies whether it is a `ProgramValue` or
+`Snapshot`; a `ProgramValue` producer kind also directly identifies its
+representation. The schema declares what each operand position is permitted to
+reference and describes fixed and variable ranges. Only Snapshot's annotated
+payload needs a per-entry descriptor because it additionally admits constants.
 
 The implementation enforces that every encoded class fits the slot size and
 alignment. Every fixed-arity instruction places all operands first and all
@@ -498,7 +477,7 @@ On resource failure, the enclosing compilation is discarded.
 
 Instructions and arena-owned side data embed `InlineValueConstant` payload
 directly as `Value`. An `InlineValueConstant` may contain only a bit pattern
-that is not a managed pointer. `LoadConstantPoolValue` carries any `Value`
+that is not a managed pointer. `LoadConst` carries any `Value`
 selected for pool materialization directly in a `ValueConstant` attribute; this
 form is mandatory for managed constants and may be selected by backend
 legalization for non-pointer constants. Snapshot recovery may consume the same
@@ -527,10 +506,10 @@ implicit may report that coverage trivially.
 When a surviving constant is emitted, the backend passes its `Value` to
 `MachineCodeEmitter::add_value_to_constant_pool()`. The emitter owns the
 temporary pool values, assigns and deduplicates final `ValuePoolEntry` offsets,
-and emits the load for each surviving `LoadConstantPoolValue`. The backend
+and emits the load for each surviving `LoadConst`. The backend
 legalizer represents a profitability decision to pool an
-`InlineValueConstant` by replacing its `SynthesizeImmediate` with
-`LoadConstantPoolValue`; the emitter does not make that Core IR decision.
+`InlineValueConstant` by replacing its `Const` with `LoadConst`; the emitter
+does not make that Core IR decision.
 Successful publication initializes the `JitCodeObject` pool before session pins
 are released. On failure, the emitter owners, compilation pins, and arena are
 discarded while the interpreter continues.
@@ -612,11 +591,11 @@ live instruction kinds. Each definition names the instruction kind and typed
 view, the IR level or levels in which it is legal, its intrinsic
 `ResultClass`, its `MustEffects` lower bound and `MayEffects` upper bound, its
 payload shape, every fixed or variable operand slot with its `OperandClass`,
-and every immutable payload attribute with its `AttributeClass`. Every
-`ProgramValue` operand may contain a matching embedded constant without an
-additional schema flag. Every attribute declared for a kind is present; the
-schema has no optional-attribute mechanism. Core program-value results and
-operands additionally declare fixed representation constraints. The sole
+and every immutable payload attribute with its `AttributeClass`. Every ordinary
+operand is a typed instruction-result reference. Every attribute declared for a
+kind is present; the schema has no optional-attribute mechanism. Core
+program-value results and operands additionally declare fixed representation
+constraints. The sole
 exception is Snapshot's representation-erased captured-value operand described
 below. Repeated inclusion of that schema generates a dense
 `InstructionOrdinal`, the encoded `InstructionKind` enum, invariant kind
@@ -703,11 +682,11 @@ Mov
     result: ProgramValue(TaggedValue)
     source: ProgramValue(TaggedValue)
 
-SynthesizeImmediate
+Const
     result: ProgramValue(TaggedValue)
-    immediate: attr InlineValueConstant
+    constant: attr InlineValueConstant
 
-LoadConstantPoolValue
+LoadConst
     result: ProgramValue(TaggedValue)
     constant: attr ValueConstant
 
@@ -744,9 +723,10 @@ whose alternatives are a program-value operand, a non-pointer inline constant,
 or a directly retained `ValueConstant` attribute. This is a Snapshot-specific
 payload shape, not another general operand or attribute class.
 
-Generated generic traversal reports a `ProgramValueRef` alternative as an
-operand use, reports a `ValueConstant` alternative to attribute traversal,
-and reports an `InlineValueConstant` as a producer-less constant alternative.
+Generated generic Snapshot traversal reports a `ProgramValueRef` alternative
+as an operand use, reports a `ValueConstant` alternative to attribute
+traversal, and reports an `InlineValueConstant` as a producer-less recovery
+constant.
 The generated Snapshot accessor preserves the same distinction. Side-exit
 frame-sync generation stores tagged program values directly, emits inline
 constants directly, emits retained managed constants through the machine-code
@@ -756,51 +736,31 @@ Adding another alternative or representation therefore requires an exhaustive
 frame-materialization case. No arithmetic, call, forwarding, parameter, or
 other Core instruction may accept an erased representation.
 
-Inline constants in `ProgramValue` operands are still semantically Core
-operands, not backend-selected machine immediates. At the Core level, every
-matching inline constant has the same meaning as using a separately materialized
-constant value. `InlineValueConstant` excludes tagged bit patterns that identify
-managed pointers; those constants require an explicit `LoadConstantPoolValue`
-carrying the `Value`. Whether a particular target instruction can encode an
-inline constant is decided later by the target backend's combined
-lowering-selection and constant-legalization phase. If the selected lowering
-cannot encode it for
-that instruction kind, operand position, representation, and constant shape,
-backend preparation materializes the constant and rewrites the consumer to use
-the new `ProgramValueRef`. Inline materialization initially uses
-`SynthesizeImmediate`. The same legalization phase estimates its target
-instruction sequence and may replace it with `LoadConstantPoolValue` when a
-pool load is cheaper. `LoadConstantPoolValue` carries the `Value` directly until
-its lowering asks the emitter for a pool entry; it is mandatory for managed
-pointer constants. The phase
-also selects lowerings and `LocationSummary` records for inserted materializers
-and rewritten consumers before liveness and register allocation run. Immediate
-shape and profitability rules, such as target-specific arithmetic and
-logical-immediate encodings or the cost of a pool load, remain backend policy
-rather than Core IR legality.
+Core represents every ordinary use of a constant through a normal
+`ProgramValueRef` produced by `Const` or `LoadConst`; constants are not embedded
+in consumer operands. `InlineValueConstant` excludes tagged bit patterns that
+identify managed pointers, so those constants require `LoadConst` carrying the
+`Value`. Backend preparation estimates the target sequence for each `Const` and
+may replace it with `LoadConst` when a pool load is cheaper. `LoadConst` carries
+the `Value` directly until its lowering asks the emitter for a pool entry; it is
+mandatory for managed pointer constants. The phase also selects lowerings and
+`LocationSummary` records before liveness and register allocation run. Immediate
+shape and profitability rules, including any future target-specific
+single-consumer immediate nodes, remain backend policy rather than Core IR
+legality.
 
 Generated factory methods and typed accessors expose fixed constraints in their
-C++ signatures. `RepresentedProgramOperand<R>` is the logical operand type for
-representation `R`; it accepts a matching result reference and every inline
-constant form defined for that representation. Initially the tagged form also
-accepts `InlineValueConstant`, while the F64 form accepts only `F64Ref` because
-Core has not yet defined an inline F64 constant payload:
+C++ signatures. Each program-value operand takes the concrete typed reference
+for its declared representation:
 
 ```cpp
-F64Ref make_add_f64(
-    RepresentedProgramOperand<ValueRepresentation::F64> lhs,
-    RepresentedProgramOperand<ValueRepresentation::F64> rhs);
-TaggedValueRef make_box_f64(
-    RepresentedProgramOperand<ValueRepresentation::F64> source);
-F64Ref make_unbox_f64(
-    RepresentedProgramOperand<ValueRepresentation::TaggedValue> source,
-    SnapshotRef snapshot);
-TaggedValueRef make_mov(
-    RepresentedProgramOperand<ValueRepresentation::TaggedValue> source);
-TaggedValueRef make_synthesize_immediate(InlineValueConstant immediate);
-TaggedValueRef make_load_constant_pool_value(Value constant);
-F64Ref make_mov_f64(
-    RepresentedProgramOperand<ValueRepresentation::F64> source);
+F64Ref make_add_f64(F64Ref lhs, F64Ref rhs);
+TaggedValueRef make_box_f64(F64Ref source);
+F64Ref make_unbox_f64(TaggedValueRef source, SnapshotRef snapshot);
+TaggedValueRef make_mov(TaggedValueRef source);
+TaggedValueRef make_const(InlineValueConstant constant);
+TaggedValueRef make_load_const(Value constant);
+F64Ref make_mov_f64(F64Ref source);
 ```
 
 Defining separate kinds keeps their generated construction and access APIs
@@ -809,11 +769,9 @@ an unchecked escape hatch. Exact macro spelling remains an implementation
 detail.
 
 No `OperandClass`, `AttributeClass`, or `ValueRepresentation` tag is stored
-beside each payload word. Generic code reads the instruction kind once and
-selects schema-generated layout metadata or a schema-generated per-kind
-enumerator. A `ProgramValue` operand distinguishes an embedded constant from a
-result reference using the pointer bits already inherent in the two permitted
-word forms. Conceptually:
+beside each ordinary payload word. Generic code reads the instruction kind once
+and selects schema-generated layout metadata or a schema-generated per-kind
+enumerator. Conceptually:
 
 ```cpp
 struct OperandSlotDescriptor
@@ -837,11 +795,8 @@ void visit_attributes(Instruction &instruction, AttributeVisitor visitor);
 
 The generated dispatch interprets each payload word only according to the
 schema for that instruction kind. `ProgramValue` and `Snapshot` operands are
-ordinary result-reference uses for SSA, liveness, and rewriting when they
-contain result references. A `ProgramValue` operand that currently contains an
-`InlineValueConstant` has no producer and contributes no `UseRecord`; it is
-still visited as an operand so legalization, cloning, printing, and pin
-validation can see it. Attribute slots such as `BlockEdge`,
+ordinary result-reference uses for SSA, liveness, and rewriting. Attribute
+slots such as `BlockEdge`,
 `Shape`, `ShapeKey`, `ValidityCell`, bytecode PCs, immediates, inline constants,
 and value constants are immutable semantic payload; they are skipped by generic
 use discovery and result replacement. CFG maintenance, verification, printing,
@@ -873,10 +828,8 @@ Semantic graph and `CoreEffectAnalysis` for a Core graph.
 
 For Core graphs, verification additionally requires every `ProgramValue`
 producer to have one legal representation, every fixed operand constraint to
-match either its producer or its embedded inline constant value, and every
-representation-changing edge to be an explicit conversion instruction. An
-embedded inline constant is legal only in a `ProgramValue` operand slot with a
-matching representation. Verification rejects `AnyRepresentation` on every
+match its producer, and every representation-changing edge to be an explicit
+conversion instruction. Verification rejects `AnyRepresentation` on every
 result and on every operand other than `Snapshot.captured_values`. Snapshot
 capture may contain heterogeneous program values, `InlineValueConstant`s, and
 `ValueConstant`s. Every pointer-valued constant must be covered by the
@@ -905,12 +858,12 @@ public:
     static constexpr IRLevelMask AllowedIRLevels = IRLevelMask::Core;
     static constexpr bool IsVariadic = false;
 
-    RepresentedProgramOperand<ValueRepresentation::F64> lhs() const;
-    RepresentedProgramOperand<ValueRepresentation::F64> rhs() const;
+    F64Ref lhs() const;
+    F64Ref rhs() const;
 
 private:
     friend class InstructionPool;
-    AddF64Instruction(uint32_t serial, F64Operand lhs, F64Operand rhs);
+    AddF64Instruction(uint32_t serial, F64Ref lhs, F64Ref rhs);
 };
 
 static_assert(sizeof(AddF64Instruction) == sizeof(Instruction));
@@ -993,49 +946,27 @@ instruction remains attached.
 
 Operand slots are controlled mutable structure. The structural editor may
 replace a `Snapshot` operand only with a result of the matching declared
-`OperandClass`. A `ProgramValue` replacement must satisfy the slot's
-representation constraint and may contain either a `ProgramValueRef` or a
-matching inline constant. Such a slot exposes one logical typed operand value:
-
-```text
-ProgramValueOperand = ProgramValueRef | InlineValueConstant
-```
-
-This name describes the typed slot value, not another operand class or a
-required `std::variant` storage layout. The slot's schema still provides the
-class and representation, and its existing discriminator identifies which
-alternative is present.
+`OperandClass`. A `ProgramValue` replacement must be a `ProgramValueRef` whose
+producer satisfies the slot's representation constraint.
 
 The editor provides one symmetric primitive for changing such a slot:
 
 ```cpp
 void replace_program_operand(
     OperandSlotHandle slot,
-    ProgramValueOperand expected,
-    ProgramValueOperand replacement);
+    ProgramValueRef expected,
+    ProgramValueRef replacement);
 ```
 
 It verifies that the user is live, the expected value still occupies the slot,
-the slot has `OperandClass::ProgramValue`, the replacement satisfies its
-representation constraint, and an inline replacement is a valid constant form
-for that representation. A referenced producer must be live and belong to the
-same graph. The
-primitive supports both materialization and constant folding; neither
-direction requires instruction replacement.
+the slot has `OperandClass::ProgramValue`, and the replacement satisfies its
+representation constraint. The referenced producer must be live and belong to
+the same graph.
 
 The editor maintains metadata lifetime, analysis invalidation, and graph
 mutation generation. If the pass has retained a mutation-aware `UseIndex`, the
-editor updates it according to the operand transition:
-
-```text
-ProgramValueRef      -> ProgramValueRef       move the UseRecord
-ProgramValueRef      -> InlineValueConstant   remove the UseRecord
-InlineValueConstant  -> ProgramValueRef       add a UseRecord
-InlineValueConstant  -> InlineValueConstant   no UseRecord
-```
-
-Otherwise the generation change makes the old index stale. Constants never
-become producers or keys in the use index. Attribute slots such as
+editor moves the affected `UseRecord` to the replacement producer. Otherwise
+the generation change makes the old index stale. Attribute slots such as
 `BlockEdge`, `Shape`, `ShapeKey`, `ValidityCell`, bytecode PCs, immediates,
 inline constants, and value constants are immutable semantic payload; changing
 one requires instruction replacement. Changing any slot's class, representation
@@ -1070,28 +1001,23 @@ discarded after one mutation plan, maintained privately by a pass across an
 editing batch, or rebuilt; the graph and ordinary editor do not pay to keep it
 permanently current.
 
-Bulk transformations may instead record a typed replacement map and call a
-generic `rewrite_operands()` operation. A program-value replacement maps a
-`ProgramValueRef` to a `ProgramValueOperand`, while Snapshot replacements remain
-result-reference replacements. The operation walks all operands once and
-rewrites matching references without first materializing use records. This
-costs `O(all operands + replacements)` and is preferable when translation or
-lowering has accumulated many substitutions.
+Bulk transformations may instead record a typed result-reference replacement
+map and call a generic `rewrite_operands()` operation. The operation walks all
+operands once and rewrites matching references without first materializing use
+records. This costs `O(all operands + replacements)` and is preferable when
+translation or lowering has accumulated many substitutions.
 
 Replacements have simultaneous semantics: given `A -> B` and `B -> C`, an
 original use of `A` becomes `B` unless the map was explicitly transitively
 normalized before the scan. Before mutating, the bulk operation validates every
-affected slot. Replacing a result with an inline constant is valid only when
-the constant has the matching representation. Backend preparation later decides
-independently for each selected lowering whether to retain the constant in that
-use or insert `SynthesizeImmediate` and rewrite the use to its
-`ProgramValueRef`. Generic rewriting does not make that target-specific choice.
+affected slot. Constant folding creates or reuses a `Const` or `LoadConst`
+producer and rewrites uses to that instruction's `ProgramValueRef`.
 
 A representation-changing rewrite likewise inserts an explicit conversion or
 replaces the consumer; it cannot use generic result replacement to connect
-incompatible encodings. After successful preflight, the batch applies the same
-four use-index transitions as the single-slot editor and advances graph and
-attachment generations once.
+incompatible encodings. After successful preflight, the batch applies the
+corresponding use-index moves and advances graph and attachment generations
+once.
 
 The same walker independently reconstructs uses for verification and also
 supports cloning and printing of operand relationships. Attribute visitors or
@@ -1277,9 +1203,9 @@ explicit and exceptional.
 
 ## Implementation Validation
 
-The implementation validates the 48-byte, five-slot record,
-`0x08 mod 16` arena placement across slab boundaries, schema-generated kind
-metadata, typed CFG terminators, inline constants, fixed operand walking, and a
+The implementation validates the naturally aligned 48-byte, five-slot record,
+schema-generated kind metadata, typed CFG terminators, explicit constant
+producers, fixed operand walking, and a
 PythonCall homogeneous variadic range. Fixed kinds store operands before
 attributes; variable kinds store their entire operand array behind slot zero and
 their attributes in the remaining inline slots. Snapshot uses a payload-first

@@ -148,9 +148,10 @@ The first implementation slice is already in the tree. It established:
   relocations, value-pool entries, and final layout;
 - executable AArch64 assembler and macro-assembler support, including direct
   branches, value-pool loads, and immediate synthesis helpers;
-- the 48-byte instruction record, tagged-address instruction arena,
+- the naturally aligned 48-byte instruction record and instruction arena,
   schema-generated metadata, concrete typed instruction classes, typed
-  terminator access, operand/reference traversal, inline constants,
+  terminator access, uniform operand/reference traversal, explicit constant
+  producers,
   `ValueConstant`s, and heterogeneous Snapshot payloads;
 - preliminary CFG blocks, block edges, and structural verification.
 
@@ -176,10 +177,9 @@ The initial graph-construction slice provides:
   legality, terminator placement, same-block definition-before-use, result
   classes, and value representations before publication.
 
-The remaining work in this milestone is to place
-`SynthesizeImmediate` and `LoadConstantPoolValue` in representative graphs and
-implement compilation-session retention and verification for pointer-valued
-`ValueConstant`s.
+The remaining work in this milestone is to place `Const` and `LoadConst` in
+representative graphs and implement compilation-session retention and
+verification for pointer-valued `ValueConstant`s.
 
 Detached-storage poisoning, editor replacement, mutation-aware `UseIndex`,
 Snapshot-expanded liveness, non-entry block parameters and their edge argument
@@ -200,11 +200,11 @@ entry:
     Return %arg0
 
 entry:
-    %constant = SynthesizeImmediate InlineValueConstant
+    %constant = Const InlineValueConstant
     Return %constant
 
 entry:
-    %constant = LoadConstantPoolValue ValueConstant
+    %constant = LoadConst ValueConstant
     Return %constant
 ```
 
@@ -218,7 +218,7 @@ the JIT-to-interpreter thunk.
 Scope:
 
 - select lowering recipes and real `LocationSummary` constraints for
-  `Parameter`, `SynthesizeImmediate`, `LoadConstantPoolValue`, and `Return`;
+  `Parameter`, `Const`, `LoadConst`, and `Return`;
 - use a deliberately fixed argument/result register convention;
 - produce separate trivial `LocationAssignments` satisfying those constraints,
   without implementing a general allocator;
@@ -247,9 +247,9 @@ Scope:
 - lower function arguments as entry definitions;
 - lower accumulator/register movement to symbolic bindings and `Mov` only when
   a real Core value is needed;
-- lower constants to `InlineValueConstant`,
-  `ValueConstant`, `SynthesizeImmediate`, or `LoadConstantPoolValue` according
-  to the constant's GC class;
+- lower non-pointer constants to `Const`, managed pointer constants to
+  `LoadConst`, and Snapshot recovery constants to the corresponding
+  `InlineValueConstant` or `ValueConstant` payload according to GC class;
 - build Snapshot instructions from the symbolic state at entry, return, and
   unsupported-bytecode boundaries;
 - verify the produced Core graph against expected structure.
@@ -414,7 +414,7 @@ Initial optimization candidates are local and easy to invalidate:
 - redundant dominating guards with identical Snapshots and replay states;
 - trivial `Mov` forwarding where representation and Snapshot availability
   remain valid;
-- local constant folding into `InlineValueConstant` operands;
+- local constant folding into explicit `Const` or `LoadConst` producers;
 - dead code with no effects and no Snapshot-expanded point uses.
 
 Mutable-shape motion, validity-check hoisting, and movement across calls wait

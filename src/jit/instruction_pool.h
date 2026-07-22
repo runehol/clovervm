@@ -41,7 +41,7 @@ namespace cl::jit
     private:
         static constexpr size_t RecordsPerSlab = 64;
         static constexpr size_t SlabBytes =
-            RecordsPerSlab * sizeof(Instruction) + 16;
+            RecordsPerSlab * sizeof(Instruction) + alignof(Instruction) - 1;
 
         struct Slab
         {

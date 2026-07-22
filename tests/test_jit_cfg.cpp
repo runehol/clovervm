@@ -12,9 +12,11 @@ namespace cl::jit
 {
     namespace
     {
-        TaggedValueOperand none_value()
+        TaggedValueRef emplace_constant(GraphBuilder &builder, Block *block,
+                                        Value value)
         {
-            return TaggedValueOperand(InlineValueConstant(Value::None()));
+            return TaggedValueRef(builder.emplace_instruction<ConstInstruction>(
+                block, InlineValueConstant(value)));
         }
 
         void expect_invalid_with(GraphBuilder &builder, const std::string &text)
@@ -35,10 +37,11 @@ namespace cl::jit
         BlockEdge *false_edge = builder.make_block_edge(entry, join);
         Instruction *branch_instruction =
             builder.make_instruction<ConditionalBranchInstruction>(
-                TaggedValueOperand(InlineValueConstant(Value::True())),
-                true_edge, false_edge);
+                emplace_constant(builder, entry, Value::True()), true_edge,
+                false_edge);
         builder.append_instruction(entry, branch_instruction);
-        builder.emplace_instruction<ReturnInstruction>(join, none_value());
+        builder.emplace_instruction<ReturnInstruction>(
+            join, emplace_constant(builder, join, Value::None()));
 
         TerminatorInstruction::BlockSuccessorEdges successors =
             entry->block_successor_edges();
@@ -67,7 +70,8 @@ namespace cl::jit
         Instruction *branch_instruction =
             builder.make_instruction<UnconditionalBranchInstruction>(edge);
         Instruction *return_instruction =
-            builder.make_instruction<ReturnInstruction>(none_value());
+            builder.make_instruction<ReturnInstruction>(
+                emplace_constant(builder, exit, Value::None()));
         builder.append_instruction(entry, branch_instruction);
         builder.append_instruction(exit, return_instruction);
 
@@ -93,7 +97,7 @@ namespace cl::jit
             builder.emplace_parameter<ParameterF64Instruction>(entry);
         ReturnInstruction *return_instruction =
             builder.make_instruction<ReturnInstruction>(
-                TaggedValueOperand(TaggedValueRef(tagged_parameter)));
+                TaggedValueRef(tagged_parameter));
 
         builder.append_instruction(entry, return_instruction);
         ControlFlowGraph *graph = builder.finalize();
@@ -120,9 +124,9 @@ namespace cl::jit
         CompilationArena arena;
         GraphBuilder builder(arena);
         Block *entry = builder.emplace_block();
-        builder.append_instruction(
-            entry, builder.make_instruction<SynthesizeImmediateInstruction>(
-                       InlineValueConstant(Value::None())));
+        builder.append_instruction(entry,
+                                   builder.make_instruction<ConstInstruction>(
+                                       InlineValueConstant(Value::None())));
 
         expect_invalid_with(builder, "does not end in a block terminator");
     }
@@ -132,10 +136,11 @@ namespace cl::jit
         CompilationArena arena;
         GraphBuilder builder(arena);
         Block *entry = builder.emplace_block();
+        TaggedValueRef none = emplace_constant(builder, entry, Value::None());
         builder.append_instruction(
-            entry, builder.make_instruction<ReturnInstruction>(none_value()));
+            entry, builder.make_instruction<ReturnInstruction>(none));
         builder.append_instruction(
-            entry, builder.make_instruction<ReturnInstruction>(none_value()));
+            entry, builder.make_instruction<ReturnInstruction>(none));
 
         expect_invalid_with(builder,
                             "block terminator before its final instruction");
@@ -149,11 +154,12 @@ namespace cl::jit
         Block *exit = builder.emplace_block();
         BlockEdge *edge = builder.make_block_edge(entry, exit);
         builder.append_instruction(
-            entry, builder.make_instruction<ConditionalBranchInstruction>(
-                       TaggedValueOperand(InlineValueConstant(Value::True())),
-                       edge, edge));
+            entry,
+            builder.make_instruction<ConditionalBranchInstruction>(
+                emplace_constant(builder, entry, Value::True()), edge, edge));
         builder.append_instruction(
-            exit, builder.make_instruction<ReturnInstruction>(none_value()));
+            exit, builder.make_instruction<ReturnInstruction>(
+                      emplace_constant(builder, exit, Value::None())));
 
         expect_invalid_with(builder, "reuses one block edge");
     }
@@ -168,12 +174,14 @@ namespace cl::jit
         BlockEdge *edge = builder.make_block_edge(declared_source, target);
         builder.append_instruction(
             declared_source,
-            builder.make_instruction<ReturnInstruction>(none_value()));
+            builder.make_instruction<ReturnInstruction>(
+                emplace_constant(builder, declared_source, Value::None())));
         builder.append_instruction(
             actual_source,
             builder.make_instruction<UnconditionalBranchInstruction>(edge));
         builder.append_instruction(
-            target, builder.make_instruction<ReturnInstruction>(none_value()));
+            target, builder.make_instruction<ReturnInstruction>(
+                        emplace_constant(builder, target, Value::None())));
 
         expect_invalid_with(builder, "as its source but is referenced by");
     }
@@ -185,9 +193,9 @@ namespace cl::jit
         Block *entry = builder.emplace_block();
         ParameterInstruction *unplaced =
             builder.make_instruction<ParameterInstruction>();
-        builder.append_instruction(
-            entry, builder.make_instruction<ReturnInstruction>(
-                       TaggedValueOperand(TaggedValueRef(unplaced))));
+        builder.append_instruction(entry,
+                                   builder.make_instruction<ReturnInstruction>(
+                                       TaggedValueRef(unplaced)));
 
         expect_invalid_with(builder,
                             "outside its block or before its definition");
@@ -206,9 +214,9 @@ namespace cl::jit
         builder.append_instruction(
             entry,
             builder.make_instruction<UnconditionalBranchInstruction>(edge));
-        builder.append_instruction(
-            exit, builder.make_instruction<ReturnInstruction>(
-                      TaggedValueOperand(TaggedValueRef(parameter))));
+        builder.append_instruction(exit,
+                                   builder.make_instruction<ReturnInstruction>(
+                                       TaggedValueRef(parameter)));
 
         expect_invalid_with(builder,
                             "outside its block or before its definition");
@@ -221,14 +229,16 @@ namespace cl::jit
         Block *first_entry = first_builder.emplace_block();
         first_builder.append_instruction(
             first_entry,
-            first_builder.make_instruction<ReturnInstruction>(none_value()));
+            first_builder.make_instruction<ReturnInstruction>(
+                emplace_constant(first_builder, first_entry, Value::None())));
         ControlFlowGraph *first_graph = first_builder.finalize();
 
         GraphBuilder second_builder(arena);
         Block *second_entry = second_builder.emplace_block();
         second_builder.append_instruction(
             second_entry,
-            second_builder.make_instruction<ReturnInstruction>(none_value()));
+            second_builder.make_instruction<ReturnInstruction>(
+                emplace_constant(second_builder, second_entry, Value::None())));
         ControlFlowGraph *second_graph = second_builder.finalize();
 
         EXPECT_NE(first_graph, second_graph);

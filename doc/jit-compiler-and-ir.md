@@ -386,7 +386,6 @@ A direct backend may maintain tables such as:
 
 ```text
 ProgramValueRef -> register | spill | canonical slot
-               | encodable InlineValueConstant
 BlockEdge *      -> parallel move bundle
 Instruction *    -> LocationSummary and lowering choice
 ```
@@ -398,35 +397,21 @@ a general call, a callee-safe call, a native leaf call, or a call only on a
 slow path. It is backend analysis data rather than part of the immutable common
 IR operation.
 
-Every Core `ProgramValue` operand may carry an embedded inline constant with the
-same representation and semantics as a separately materialized value. Constant
-capability is not declared separately for each operand.
-`InlineValueConstant` excludes tagged bit patterns that identify managed
-pointers. Managed pointer constants use explicit `ValueConstant` attributes on
-`LoadConstantPoolValue` and Snapshot entries instead.
-This is not a promise that every target can encode an inline constant at that
-instruction. Each backend performs lowering selection and constant operand
-legalization as one backend-preparation phase before liveness and register
-allocation. For each instruction, it selects a lowering candidate and decides
-per operand position, representation, and constant shape whether an
-`InlineValueConstant` matches that exact lowering. For example, a target may
-accept one set of immediates for integer addition and a different set for
-logical OR.
+Core ordinary operands are uniformly instruction-result references. A
+non-pointer constant becomes a normal `ProgramValue` through `Const`, whose
+attribute is an `InlineValueConstant`; a managed pointer constant uses
+`LoadConst`, whose `ValueConstant` attribute is pinned by the compilation
+session. Snapshot entries may retain either constant form directly for
+recovery.
 
-Unsupported inline constants are materialized by inserting
-`SynthesizeImmediate` and rewriting the consumer to that `ProgramValueRef`.
-Backend preparation estimates the required target synthesis sequence and may
-replace `SynthesizeImmediate` with `LoadConstantPoolValue` when a pool load is
-more profitable. Managed pointer constants always use
-`LoadConstantPoolValue`. It retains the `Value` directly and produces a normal
-`ProgramValue`; only its eventual lowering asks the emitter for a pool entry.
-The same phase assigns the fixed lowering and
-`LocationSummary` for every inserted materializer and the final lowering and
-summary for every rewritten consumer. Its output therefore has no unexamined
-constant operand: every remaining inline constant is certified for its exact
-selected lowering, and every executable instruction has one lowering choice
-and `LocationSummary`. Pool entries do not form part of this phase product; the
-selected lowering retains the `Value` until program-order emission.
+Backend preparation estimates the required synthesis sequence for each `Const`
+and may replace it with `LoadConst` when a pool load is more profitable.
+Managed pointer constants always use `LoadConst`. It retains the `Value`
+directly and produces a normal `ProgramValue`; only its eventual lowering asks
+the emitter for a pool entry. The same phase assigns the final lowering and
+`LocationSummary` for every executable instruction. Pool entries do not form
+part of this phase product; the selected lowering retains the `Value` until
+program-order emission.
 
 Backend preparation is atomic as a phase contract even if implemented by local
 selection and rewrite steps. Liveness, Snapshot point-use expansion, and
@@ -438,12 +423,18 @@ generation-checked `BackendPreparation` object, and the allocator accepts that
 object rather than independent tables. This is a concrete phase product, not a
 generic instruction property bag.
 
-Core has no constant-producing `ResultClass`: a constant exists only as an
-embedded operand payload or a `ValueConstant` attribute until an instruction
-produces a normal `ProgramValue` from it. This keeps immediate shape rules,
-thresholds, GC relocation requirements, and operand-encoding quirks out of
-Core IR while giving backends a uniform way to select immediate forms when they
-are legal.
+Core has no constant-producing `ResultClass`: `Const` and `LoadConst` produce
+ordinary `ProgramValue`s from constant attributes. This keeps immediate shape
+rules, thresholds, GC relocation requirements, and operand-encoding quirks out
+of Core IR.
+
+A backend may later introduce a target-specific immediate pseudo-instruction,
+for example `ArmImm12`, after it has selected a foldable use. Such a node must
+have exactly one operand use, and that use must be a compatible consumer into
+which it will be folded. It has no independent liveness or location, cannot
+appear in Snapshots or cross blocks, and must be consumed before final emission.
+This restores target immediate selection without complicating common Core
+operands.
 
 The Core `ValueRepresentation` of a `ProgramValueRef` determines the compatible
 target register and spill classes. The backend maps target-independent
@@ -471,9 +462,8 @@ cross-instruction machine optimization that these tables become an implicit
 instruction graph, that is evidence for introducing an explicit Machine IR at
 the required scope.
 
-After backend preparation, the register allocator and location tables
-accept only `ProgramValueRef`s or `InlineValueConstant`s proven encodable in
-that exact lowering. Instructions with `ResultClass::None` and compiler-only
+After backend preparation, the register allocator and location tables accept
+only `ProgramValueRef`s. Instructions with `ResultClass::None` and compiler-only
 `SnapshotRef`s receive no location, although the program-value operands named by
 a Snapshot remain point uses for liveness and recovery. Every live
 `ProgramValueRef` has one authoritative allocated location at a particular
@@ -733,14 +723,11 @@ ResultClass::Snapshot
 Operand slots use a separate `OperandClass` enum. `OperandClass::ProgramValue`
 and `OperandClass::Snapshot` intentionally have the same numeric values as their
 matching `ResultClass` cases, so validation can compare result-consuming
-operands without a mapping switch. A Core `ProgramValue` operand may be
-either a `ProgramValueRef` or an embedded constant payload accepted by the same
-representation constraint. The initial embedded constant payload is
-`InlineValueConstant` for non-pointer tagged VM values. This logical slot value
-is called `ProgramValueOperand`; it is not another `OperandClass`. Structural
-editing supports reference-to-reference, reference-to-constant,
-constant-to-reference, and constant-to-constant replacement while updating an
-active `UseIndex` only for the alternatives that have producers. Non-dataflow
+operands without a mapping switch. Every ordinary Core operand is an
+instruction-result reference. Constants become ordinary values through `Const`
+or `LoadConst`; only Snapshot's annotated recovery payload may retain constants
+directly. Structural editing therefore updates uniform producer uses.
+Non-dataflow
 payload such as `BlockEdge`, `Shape`, `ShapeKey`, `ValidityCell`, immediates,
 bytecode origins, interpreter return PCs, inline constants, and value constants
 are instruction attributes rather than operands. The instruction schema records
@@ -865,8 +852,8 @@ guard obligations, partition IDs, payload shape, and attributes are fixed when
 the instruction is constructed. A transformation changes any of these semantic
 properties by constructing a replacement instruction with a new serial.
 Program-value and Snapshot operand slots are mutable only through the structural
-IR editor, so ordinary result-use rewriting and constant-operand materialization
-do not require cascading replacement of every transitive user. Block edges,
+IR editor, so ordinary result-use rewriting does not require cascading
+replacement of every transitive user. Block edges,
 runtime metadata, immediates, and return PCs embedded in an instruction remain
 immutable attributes; changing them requires instruction replacement.
 
@@ -998,10 +985,9 @@ Passes must not mutate instructions or graph structures directly.
 
 Verification at pass boundaries should require:
 
-- every fixed and variable operand slot to match the `OperandClass` and layout
-  declared for its instruction kind, every embedded `InlineValueConstant` to
-  appear only in a `ProgramValue` operand with the declared representation
-  constraint, and every attribute slot to match its declared
+- every fixed and variable operand slot to match the `OperandClass`, producer
+  representation, and layout declared for its instruction kind, and every
+  attribute slot to match its declared
   `AttributeClass` and layout;
 - every pointer-valued `ValueConstant` in an instruction, Snapshot, or side-data
   payload to be covered by the current compilation session's pin set;
@@ -1430,8 +1416,8 @@ embedded directly when the target instruction accepts that immediate shape, or
 submitted to the emitter's pool when a load is more profitable.
 They are never forced into the pool merely because they are `Value`s.
 Core IR retains a pointer-valued constant directly as a `ValueConstant`
-attribute and the compilation session pins the referenced object. A
-`LoadConstantPoolValue` instruction or Snapshot recovery entry carries that
+attribute on `LoadConst`, and the compilation session pins the referenced
+object. A `LoadConst` instruction or Snapshot recovery entry carries that
 `Value` until emission. Only constants that survive to emission are submitted
 to `MachineCodeEmitter::add_value_to_constant_pool()`, which deduplicates their
 raw `Value` bit patterns and returns final `ValuePoolEntry` handles. Core never

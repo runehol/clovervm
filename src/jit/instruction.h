@@ -399,62 +399,10 @@ namespace cl::jit
         Instruction *instruction_;
     };
 
-    class ProgramValueOperand
-    {
-    public:
-        ProgramValueOperand(ProgramValueRef reference)
-            : word_(reinterpret_cast<uintptr_t>(reference.instruction()))
-        {
-            assert(is_reference());
-        }
-
-        ProgramValueOperand(InlineValueConstant constant)
-            : word_(static_cast<uintptr_t>(constant.value().as.integer))
-        {
-            assert(!is_reference());
-        }
-
-        bool is_reference() const
-        {
-            return (word_ & value_interned_ptr_tag) != 0;
-        }
-
-        ProgramValueRef reference() const
-        {
-            assert(is_reference());
-            return ProgramValueRef(reinterpret_cast<Instruction *>(word_));
-        }
-
-        InlineValueConstant inline_constant() const
-        {
-            assert(!is_reference());
-            Value value;
-            value.as.integer = static_cast<long long>(word_);
-            return InlineValueConstant(value);
-        }
-
-        uintptr_t raw_word() const { return word_; }
-
-    private:
-        explicit ProgramValueOperand(uintptr_t word) : word_(word) {}
-
-        friend ProgramValueOperand
-        program_value_operand_from_raw(uintptr_t word);
-
-        uintptr_t word_;
-    };
-
-    inline ProgramValueOperand program_value_operand_from_raw(uintptr_t word)
-    {
-        return ProgramValueOperand(word);
-    }
-
     inline uintptr_t instruction_reference_word(Instruction *instruction)
     {
         assert(instruction != nullptr);
-        uintptr_t word = reinterpret_cast<uintptr_t>(instruction);
-        assert((word & value_interned_ptr_tag) != 0);
-        return word;
+        return reinterpret_cast<uintptr_t>(instruction);
     }
 
     template <ValueRepresentation Representation> class RepresentedValueRef
@@ -476,65 +424,6 @@ namespace cl::jit
     using TaggedValueRef =
         RepresentedValueRef<ValueRepresentation::TaggedValue>;
     using F64Ref = RepresentedValueRef<ValueRepresentation::F64>;
-
-    template <ValueRepresentation Representation>
-    class RepresentedProgramOperand;
-
-    template <>
-    class RepresentedProgramOperand<ValueRepresentation::TaggedValue>
-    {
-    public:
-        RepresentedProgramOperand(TaggedValueRef reference)
-            : operand_(ProgramValueRef(reference))
-        {
-        }
-
-        RepresentedProgramOperand(InlineValueConstant constant)
-            : operand_(constant)
-        {
-        }
-
-        explicit RepresentedProgramOperand(ProgramValueOperand operand)
-            : operand_(operand)
-        {
-            if(operand_.is_reference())
-            {
-                assert(operand_.reference()
-                           .instruction()
-                           ->value_representation() ==
-                       ValueRepresentation::TaggedValue);
-            }
-        }
-
-        bool is_reference() const { return operand_.is_reference(); }
-        TaggedValueRef reference() const
-        {
-            return TaggedValueRef(operand_.reference().instruction());
-        }
-        InlineValueConstant inline_constant() const
-        {
-            return operand_.inline_constant();
-        }
-        ProgramValueOperand erased() const { return operand_; }
-
-    private:
-        ProgramValueOperand operand_;
-    };
-
-    template <> class RepresentedProgramOperand<ValueRepresentation::F64>
-    {
-    public:
-        RepresentedProgramOperand(F64Ref reference) : reference_(reference) {}
-
-        F64Ref reference() const { return reference_; }
-
-    private:
-        F64Ref reference_;
-    };
-
-    using TaggedValueOperand =
-        RepresentedProgramOperand<ValueRepresentation::TaggedValue>;
-    using F64Operand = RepresentedProgramOperand<ValueRepresentation::F64>;
 
     enum class SnapshotValueKind : uintptr_t
     {
@@ -634,21 +523,19 @@ namespace cl::jit
         }
         else if constexpr(Representation == ValueRepresentation::TaggedValue)
         {
-            return RepresentedProgramOperand<ValueRepresentation::TaggedValue>(
-                program_value_operand_from_raw(word));
+            return TaggedValueRef(reinterpret_cast<Instruction *>(word));
         }
         else
         {
             static_assert(Representation == ValueRepresentation::F64);
-            return RepresentedProgramOperand<ValueRepresentation::F64>(
-                F64Ref(reinterpret_cast<Instruction *>(word)));
+            return F64Ref(reinterpret_cast<Instruction *>(word));
         }
     }
 
-    template <ValueRepresentation Representation> class ProgramValueOperandRange
+    template <ValueRepresentation Representation> class ProgramValueRefRange
     {
     public:
-        ProgramValueOperandRange(const uintptr_t *words, size_t size)
+        ProgramValueRefRange(const uintptr_t *words, size_t size)
             : words_(words), size_(size)
         {
             assert(words != nullptr || size == 0);
@@ -657,7 +544,7 @@ namespace cl::jit
         size_t size() const { return size_; }
         bool empty() const { return size_ == 0; }
 
-        RepresentedProgramOperand<Representation> operator[](size_t index) const
+        RepresentedValueRef<Representation> operator[](size_t index) const
         {
             assert(index < size_);
             return decode_instruction_operand<OperandClass::ProgramValue,
@@ -740,14 +627,14 @@ namespace cl::jit
         return reinterpret_cast<BlockEdge *>(word);
     }
 
-    inline uintptr_t encode_instruction_operand(TaggedValueOperand operand)
+    inline uintptr_t encode_instruction_operand(TaggedValueRef reference)
     {
-        return operand.erased().raw_word();
+        return instruction_reference_word(reference.instruction());
     }
 
-    inline uintptr_t encode_instruction_operand(F64Operand operand)
+    inline uintptr_t encode_instruction_operand(F64Ref reference)
     {
-        return instruction_reference_word(operand.reference().instruction());
+        return instruction_reference_word(reference.instruction());
     }
 
     inline uintptr_t encode_instruction_operand(SnapshotRef reference)
@@ -817,14 +704,14 @@ namespace cl::jit
     //     static constexpr IRLevelMask AllowedIRLevels = IRLevelMask::Core;
     //     static constexpr bool IsVariadic = false;
     //
-    //     TaggedValueOperand object() const;
+    //     TaggedValueRef object() const;
     //     SnapshotRef snapshot() const;
     //     Shape *expected_shape() const;
     //     ValidityCell *validity() const;
     //
     // private:
     //     friend class InstructionPool;
-    //     ShapeGuardInstruction(uint32_t serial, TaggedValueOperand object,
+    //     ShapeGuardInstruction(uint32_t serial, TaggedValueRef object,
     //                           SnapshotRef snapshot, Shape *expected_shape,
     //                           ValidityCell *validity);
     // };
@@ -837,8 +724,8 @@ namespace cl::jit
     // clang-format off
 #define CL_JIT_JOIN_INNER(first, second) first##second
 #define CL_JIT_JOIN(first, second) CL_JIT_JOIN_INNER(first, second)
-#define CL_JIT_OPERAND_TYPE_ProgramValue_TaggedValue TaggedValueOperand
-#define CL_JIT_OPERAND_TYPE_ProgramValue_F64 F64Operand
+#define CL_JIT_OPERAND_TYPE_ProgramValue_TaggedValue TaggedValueRef
+#define CL_JIT_OPERAND_TYPE_ProgramValue_F64 F64Ref
 #define CL_JIT_OPERAND_TYPE_Snapshot_None SnapshotRef
 #define CL_JIT_OPERAND_TYPE_INNER(operand_class, representation)               \
     CL_JIT_OPERAND_TYPE_##operand_class##_##representation
@@ -936,7 +823,7 @@ namespace cl::jit
         constexpr size_t index = static_cast<size_t>(OperandIndex::name);      \
         const Slot *words = indirect_operand_words();                          \
         const Slot *first = words == nullptr ? nullptr : words + index;        \
-        return ProgramValueOperandRange<ValueRepresentation::representation>(  \
+        return ProgramValueRefRange<ValueRepresentation::representation>(      \
             first, operand_count() - index);                                   \
     }
 #define CL_JIT_DECLARE_SNAPSHOT_VALUES_ACCESSOR(name)                          \
@@ -1245,12 +1132,10 @@ namespace cl::jit
 
         auto visit_program_value = [&](uintptr_t word,
                                        ValueRepresentation representation) {
-            ProgramValueOperand operand = program_value_operand_from_raw(word);
-            if(operand.is_reference())
-            {
-                visitor(OperandClass::ProgramValue, representation,
-                        operand.reference().instruction());
-            }
+            Instruction *producer = reinterpret_cast<Instruction *>(word);
+            assert(producer != nullptr);
+            assert(producer->result_class() == ResultClass::ProgramValue);
+            visitor(OperandClass::ProgramValue, representation, producer);
         };
         auto visit_snapshot = [&](uintptr_t word) {
             Instruction *producer = reinterpret_cast<Instruction *>(word);
