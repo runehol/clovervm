@@ -4,6 +4,7 @@
 #include "object_model/value.h"
 #include "util/result.h"
 #include <cassert>
+#include <memory>
 #include <new>
 #include <type_traits>
 #include <utility>
@@ -348,14 +349,14 @@ namespace cl
 
         explicit Expected(T value) : has_value_(true)
         {
-            new(&storage_) T(std::move(value));
+            std::construct_at(value_ptr(), std::move(value));
         }
 
         Expected(const Expected &other) : has_value_(other.has_value_)
         {
             if(has_value_)
             {
-                new(&storage_) T(other.value_ref());
+                std::construct_at(value_ptr(), other.value_ref());
             }
         }
 
@@ -365,7 +366,7 @@ namespace cl
         {
             if(has_value_)
             {
-                new(&storage_) T(std::move(other.value_ref()));
+                std::construct_at(value_ptr(), std::move(other.value_ref()));
             }
         }
 
@@ -386,7 +387,7 @@ namespace cl
             }
             else if(other.has_value_)
             {
-                new(&storage_) T(other.value_ref());
+                std::construct_at(value_ptr(), other.value_ref());
                 has_value_ = true;
             }
             return *this;
@@ -411,7 +412,7 @@ namespace cl
             }
             else if(other.has_value_)
             {
-                new(&storage_) T(std::move(other.value_ref()));
+                std::construct_at(value_ptr(), std::move(other.value_ref()));
                 has_value_ = true;
             }
             return *this;
@@ -470,14 +471,21 @@ namespace cl
             assert(value.is_exception_marker());
         }
 
-        T &value_ref() { return *reinterpret_cast<T *>(&storage_); }
-
-        const T &value_ref() const
+        T *value_ptr()
         {
-            return *reinterpret_cast<const T *>(&storage_);
+            return std::launder(reinterpret_cast<T *>(&storage_));
         }
 
-        void destroy_value() { value_ref().~T(); }
+        const T *value_ptr() const
+        {
+            return std::launder(reinterpret_cast<const T *>(&storage_));
+        }
+
+        T &value_ref() { return *value_ptr(); }
+
+        const T &value_ref() const { return *value_ptr(); }
+
+        void destroy_value() { std::destroy_at(value_ptr()); }
 
         bool has_value_;
         std::aligned_storage_t<sizeof(T), alignof(T)> storage_;
