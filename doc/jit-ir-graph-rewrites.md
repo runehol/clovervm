@@ -5,8 +5,8 @@
 | Document type | Design |
 | Status | Proposed |
 | Implementation | Not started |
-| Scope | Forward instruction rewriting within published JIT IR basic blocks |
-| Owning layers | The graph rewriter owns traversal, operand substitution, instruction placement, and commit; the instruction schema owns reconstruction; individual passes own matching and semantic legality; CFG editing owns successor and predecessor changes |
+| Scope | Read-only instruction traversal, on-demand use records, and forward instruction rewriting within published JIT IR basic blocks |
+| Owning layers | The traversal contract owns observable walk order; the read-only walker owns inspection; the use-index builder owns use records; the graph rewriter owns operand substitution, instruction placement, and commit; the instruction schema owns reconstruction; individual passes own matching and semantic legality; CFG editing owns successor and predecessor changes |
 | Validated against | N/A |
 | Supersedes | If accepted, the incremental mutable-operand rewrite direction in [JIT Instruction Representation](jit-instruction-representation.md) and [JIT Compiler and IR](jit-compiler-and-ir.md) |
 
@@ -19,6 +19,112 @@ canonical operands before presenting it to the pass.
 This design covers local instruction rewrites, lowering one instruction to an
 instruction sequence, erasure, and passes such as dead-code elimination. It
 does not cover changes to the CFG topology.
+
+Read-only traversal, use indexing, and structural rewriting are separate
+components. They share a traversal contract where appropriate, but the graph
+rewriter does not own, build, retain, or implicitly update a use index.
+
+## Shared Traversal Contract
+
+Read-only walks and graph rewrites accept the same traversal value:
+
+```cpp
+enum class BlockWalkOrder : uint8_t
+{
+    ProgramOrder,
+};
+
+enum class InstructionWalkFlags : uint8_t
+{
+    None = 0,
+    IncludeParameters = 1 << 0,
+};
+
+class InstructionTraversal
+{
+public:
+    constexpr InstructionTraversal() = default;
+
+    [[nodiscard]] constexpr InstructionTraversal
+    with_block_order(BlockWalkOrder order) const;
+
+    [[nodiscard]] constexpr InstructionTraversal
+    with_walk_flags(InstructionWalkFlags flags) const;
+
+    constexpr BlockWalkOrder block_order() const;
+    constexpr InstructionWalkFlags walk_flags() const;
+
+private:
+    BlockWalkOrder block_order_ = BlockWalkOrder::ProgramOrder;
+    InstructionWalkFlags walk_flags_ = InstructionWalkFlags::None;
+};
+```
+
+The `with_...` methods return an altered copy and leave the original traversal
+unchanged. This allows a pass to derive a local traversal policy from a shared
+default without mutable configuration:
+
+```cpp
+InstructionTraversal traversal =
+    InstructionTraversal()
+        .with_block_order(BlockWalkOrder::ProgramOrder)
+        .with_walk_flags(InstructionWalkFlags::IncludeParameters);
+```
+
+Only program block order exists initially. Dominator order is added with the
+dominator-tree analysis it requires; the enum does not advertise an order whose
+required input is undefined. Instructions within each block are visited
+forward, with parameters before body instructions when `IncludeParameters` is
+set. The body includes its terminator.
+
+The read-only API is:
+
+```cpp
+walk_instructions(
+    graph, traversal,
+    [&](const Block &block, const Instruction &instruction) {
+        // Read-only inspection.
+    });
+```
+
+The callback receives no durable placement record. Parameter instructions
+identify themselves by kind, and the block supplies all necessary traversal
+context. Early-exit control and reverse instruction order are deferred until a
+real analysis requires them.
+
+## Independent Use Index
+
+Use records are an explicitly requested, on-demand analysis:
+
+```cpp
+struct UseRecord
+{
+    const Instruction *user;
+    uint16_t operand_index;
+    OperandClass operand_class;
+    ValueRepresentation representation;
+};
+
+class UseIndex
+{
+public:
+    std::span<const UseRecord> uses_of(const Instruction &) const;
+    size_t use_count(const Instruction &) const;
+};
+
+UseIndex build_use_index(const ControlFlowGraph &graph);
+```
+
+The builder may be implemented using the read-only walker, but it remains a
+separate public analysis and is independent of the graph rewriter. A use record
+identifies the immutable user instruction and its semantic operand ordinal, not
+the address of a mutable payload slot. Rewriting reconstructs instructions, so
+a stored slot address would immediately become stale.
+
+The index records the graph and mutation generation from which it was built.
+Every query asserts that the generation is still current. A structural rewrite
+invalidates an existing index; callers explicitly build another if they need
+post-rewrite uses. The graph does not maintain permanent use lists.
 
 ## Core Model
 
@@ -50,35 +156,45 @@ already been replaced earlier in the block.
 
 This model relies on the current Core IR rule that an instruction result is
 used only later in the same block. Block parameters are definitions available
-before the instruction stream and are initially not rewritten by this API.
-Cross-block SSA values would require a graph-level renaming design.
+before the instruction stream. The initial API may visit them under
+`IncludeParameters`, but only `keep()` is legal. Cross-block SSA values and
+parameter replacement would require a graph-level renaming design.
 
-## Callback API
+## Rewrite API
 
-The primary API is callback-based:
-
-```cpp
-RewriteSummary rewrite_block_forward(
-    Block &block,
-    InstructionRewriteCallback callback);
-```
-
-The callback receives the normalized instruction and a factory for constructing
-unplaced instructions:
+The graph rewriter accepts the same `InstructionTraversal` and presents the
+same block and instruction arguments as the read-only walker:
 
 ```cpp
-RewriteResult rewrite_instruction(
-    const Instruction &instruction,
-    InstructionRewriter &rewriter);
+GraphRewriter rewriter(arena, graph);
+
+RewriteSummary summary = rewriter.rewrite_instructions(
+    traversal,
+    [&](const Block &block,
+        const Instruction &instruction) -> RewriteResult {
+        // instruction has canonical, already-substituted operands
+    });
 ```
 
-`InstructionRewriter::make_instruction<T>(...)` follows the existing
+`GraphRewriter::make_instruction<T>(...)` follows the existing
 construction vocabulary: it allocates an instruction without placing it.
 Instruction-result arguments are resolved through replacements already
-established by the walk.
+established by the walk. The callback captures the rewriter when it needs this
+factory, so its traversal arguments remain identical to the read-only callback.
 
 The callback does not mutate the block, attach instructions, or modify operand
 slots. It returns the complete output for the current position.
+
+The read-only walker and graph rewriter conform to the same observable
+traversal contract but do not share an engine. The rewriter must walk original
+vectors while constructing staged vectors and a replacement map; implementing
+it by invoking the read-only walker would obscure those ownership rules.
+
+When `IncludeParameters` is set, the initial rewriter presents entry parameters
+before the body just as the read-only walker does. Until parameter replacement
+and incoming block-edge arguments are designed, a parameter callback may return
+only `keep()`. Any other result hard-asserts. Excluding parameters remains the
+default.
 
 ## Rewrite Results
 
@@ -170,7 +286,7 @@ The instruction schema generates a generic reconstruction operation:
 Instruction *rebuild_with_operands(
     const Instruction &instruction,
     OperandResolver resolver,
-    InstructionRewriter &rewriter);
+    GraphRewriter &rewriter);
 ```
 
 It reconstructs the same concrete instruction kind with resolved typed operands
@@ -191,9 +307,8 @@ A backward mutating walk cannot provide that guarantee: it visits a use before
 the callback has decided how to rewrite its producer. Supporting it would
 require stale callback inputs or a separate decision and reconstruction phase.
 
-Blocks may expose ordinary read-only forward and reverse traversal for analyses.
-A backward rewrite driver is deferred until a concrete pass establishes its
-required semantics.
+Read-only reverse instruction traversal and a backward rewrite driver are
+deferred until a concrete pass establishes their required semantics.
 
 ## Staging and Commit
 
@@ -229,15 +344,15 @@ Initially:
 Changing successors, redirecting edges, splitting blocks, and replacing one
 operation with a multi-block region require a CFG editor that updates target
 predecessor indexes and invalidates CFG analyses. They are not implicit side
-effects of `rewrite_block_forward()`.
+effects of `rewrite_instructions()`.
 
 ## Analysis Interaction
 
-The graph does not maintain permanent use lists merely to support rewriting.
-Passes request a `UseIndex` when their decisions require use counts or user
-enumeration. A completed structural rewrite invalidates attachments by default;
-an analysis may later consume the rewrite summary to update itself when that is
-worth the complexity.
+The graph rewriter never builds a `UseIndex` implicitly. A pass requests one
+before rewriting only when its semantic decisions require use counts or user
+enumeration. A completed structural rewrite invalidates that index and other
+attachments by default; an analysis may later consume the rewrite summary to
+update itself when that is worth the complexity.
 
 The rewrite summary records at least whether instructions changed and whether
 the terminator changed. Since this API preserves successor edges, ordinary
