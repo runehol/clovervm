@@ -19,15 +19,11 @@ namespace
 
     Value raw_value_from_value(Value value) { return value.raw_value(); }
 
-    template <typename T, typename = void>
-    struct HasReleaseRef : std::false_type
-    {
-    };
+    template <typename T>
+    concept HasReleaseRefConcept = requires(T &value) { value.release_ref(); };
 
     template <typename T>
-    struct HasReleaseRef<
-        T, std::void_t<decltype(std::declval<T &>().release_ref())>>
-        : std::true_type
+    struct HasReleaseRef : std::bool_constant<HasReleaseRefConcept<T>>
     {
     };
 }  // namespace

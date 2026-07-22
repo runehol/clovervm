@@ -16,25 +16,22 @@ namespace cl
         SlabAllocator *slab;
     };
 
-    template <typename T, typename = void>
-    struct HasHeapNativeLayoutId : std::false_type
+    template <typename T>
+    concept HasHeapNativeLayoutIdConcept = requires { T::native_layout; };
+
+    template <typename T>
+    struct HasHeapNativeLayoutId
+        : std::bool_constant<HasHeapNativeLayoutIdConcept<T>>
     {
     };
 
     template <typename T>
-    struct HasHeapNativeLayoutId<T, std::void_t<decltype(T::native_layout)>>
-        : std::true_type
-    {
-    };
-
-    template <typename T, typename = void>
-    struct HasNativeObjectSize : std::false_type
-    {
-    };
+    concept HasNativeObjectSizeConcept =
+        requires { T::native_object_size_kind; };
 
     template <typename T>
-    struct HasNativeObjectSize<
-        T, std::void_t<decltype(T::native_object_size_kind)>> : std::true_type
+    struct HasNativeObjectSize
+        : std::bool_constant<HasNativeObjectSizeConcept<T>>
     {
     };
 

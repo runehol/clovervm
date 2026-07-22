@@ -190,14 +190,11 @@ namespace cl
         return as_slot_object()->SlotObject::ensure_overflow_slot(physical_idx);
     }
 
-    template <typename T, typename = void>
-    struct HasNativeLayoutId : std::false_type
-    {
-    };
+    template <typename T>
+    concept HasNativeLayoutIdConcept = requires { T::native_layout; };
 
     template <typename T>
-    struct HasNativeLayoutId<T, std::void_t<decltype(T::native_layout)>>
-        : std::true_type
+    struct HasNativeLayoutId : std::bool_constant<HasNativeLayoutIdConcept<T>>
     {
     };
 

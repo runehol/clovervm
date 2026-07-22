@@ -24,25 +24,21 @@ namespace cl
                                                      const wchar_t *message);
     [[nodiscard]] Value propagate_exception_for_expected();
 
-    template <typename T, typename = void> struct HasRawValue : std::false_type
+    template <typename T>
+    concept HasRawValueConcept =
+        requires(const T &value) { value.raw_value(); };
+
+    template <typename T>
+    struct HasRawValue : std::bool_constant<HasRawValueConcept<T>>
     {
     };
 
     template <typename T>
-    struct HasRawValue<
-        T, std::void_t<decltype(std::declval<const T &>().raw_value())>>
-        : std::true_type
-    {
-    };
-
-    template <typename T, typename = void> struct IsValueLike : std::false_type
-    {
-    };
+    concept IsValueLikeConcept =
+        requires(Value value) { std::decay_t<T>::from_value_unchecked(value); };
 
     template <typename T>
-    struct IsValueLike<
-        T, std::void_t<decltype(std::decay_t<T>::from_value_unchecked(
-               std::declval<Value>()))>> : std::true_type
+    struct IsValueLike : std::bool_constant<IsValueLikeConcept<T>>
     {
     };
 
@@ -52,27 +48,23 @@ namespace cl
     template <typename T, bool = IsValueLike<T>::value>
     class [[nodiscard]] Expected;
 
-    template <typename T, typename = void>
-    struct HasSemanticType : std::false_type
-    {
-    };
+    template <typename T>
+    concept HasSemanticTypeConcept =
+        requires { typename std::decay_t<T>::semantic_type; };
 
     template <typename T>
-    struct HasSemanticType<T,
-                           std::void_t<typename std::decay_t<T>::semantic_type>>
-        : std::true_type
+    struct HasSemanticType : std::bool_constant<HasSemanticTypeConcept<T>>
     {
     };
 
-    template <typename A, typename B, typename = void>
+    template <typename A, typename B>
     struct HasSameSemanticType : std::false_type
     {
     };
 
     template <typename A, typename B>
-    struct HasSameSemanticType<A, B,
-                               std::enable_if_t<HasSemanticType<A>::value &&
-                                                HasSemanticType<B>::value>>
+    requires(HasSemanticType<A>::value && HasSemanticType<B>::value)
+    struct HasSameSemanticType<A, B>
         : std::bool_constant<
               std::is_same_v<typename std::decay_t<A>::semantic_type,
                              typename std::decay_t<B>::semantic_type>>
@@ -99,10 +91,11 @@ namespace cl
         return left.raw_value() != right.raw_value();
     }
 
-    template <typename T, typename Enable = void> struct TValueTraits;
+    template <typename T> struct TValueTraits;
 
     template <typename T>
-    struct TValueTraits<T, std::enable_if_t<HasNativeLayoutId<T>::value>>
+    requires(HasNativeLayoutId<T>::value)
+    struct TValueTraits<T>
     {
         using extract_type = T *;
 
