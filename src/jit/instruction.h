@@ -6,7 +6,7 @@
 #include "object_model/value.h"
 
 #include <absl/container/inlined_vector.h>
-#include <absl/types/span.h>
+#include <span>
 
 #include <array>
 #include <bit>
@@ -277,7 +277,7 @@ namespace cl::jit
 
         Instruction(uint32_t serial, InstructionKind kind,
                     uint16_t operand_count, bool indirect_operands,
-                    absl::Span<const Slot> inline_slots)
+                    std::span<const Slot> inline_slots)
             : serial_(serial), kind_(static_cast<uint16_t>(kind)),
               operand_storage_(operand_count |
                                (indirect_operands ? IndirectOperandsBit : 0))
@@ -300,7 +300,7 @@ namespace cl::jit
                     uint16_t operand_count, bool indirect_operands,
                     const std::array<Slot, N> &inline_slots)
             : Instruction(serial, kind, operand_count, indirect_operands,
-                          absl::Span<const Slot>(inline_slots))
+                          std::span<const Slot>(inline_slots))
         {
         }
 
@@ -882,9 +882,9 @@ namespace cl::jit
 #define CL_JIT_DECLARE_FIXED_PARAMETER(name, operand_class, representation)    \
     CL_JIT_OPERAND_TYPE(operand_class, representation) name,
 #define CL_JIT_DECLARE_VARIADIC_PARAMETER(name, operand_class, representation) \
-    absl::Span<const CL_JIT_OPERAND_TYPE(operand_class, representation)> name,
+    std::span<const CL_JIT_OPERAND_TYPE(operand_class, representation)> name,
 #define CL_JIT_DECLARE_SNAPSHOT_VALUES_PARAMETER(name)                         \
-    absl::Span<const SnapshotValue> name,
+    std::span<const SnapshotValue> name,
 #define CL_JIT_DECLARE_ATTRIBUTE_PARAMETER(name, attribute_class)              \
     CL_JIT_ATTRIBUTE_TYPE(attribute_class) name,
 #define CL_JIT_PASS_ARGUMENT(name, ...) name,
@@ -1050,7 +1050,7 @@ namespace cl::jit
         }                                                                      \
                                                                                \
         static Slot *initialize_indirect_slots(                                \
-            absl::Span<Slot> indirect_slots,                                   \
+            std::span<Slot> indirect_slots,                                   \
             operands(CL_JIT_DECLARE_FIXED_PARAMETER,                           \
                      CL_JIT_DECLARE_VARIADIC_PARAMETER,                        \
                      CL_JIT_DECLARE_SNAPSHOT_VALUES_PARAMETER)                 \
@@ -1068,7 +1068,7 @@ namespace cl::jit
         }                                                                      \
                                                                                \
         static std::array<Slot, 1 + AttributeCount> indirect_inline_slots(     \
-            absl::Span<Slot> indirect_slots,                                   \
+            std::span<Slot> indirect_slots,                                   \
             operands(CL_JIT_DECLARE_FIXED_PARAMETER,                           \
                      CL_JIT_DECLARE_VARIADIC_PARAMETER,                        \
                      CL_JIT_DECLARE_SNAPSHOT_VALUES_PARAMETER)                 \
@@ -1105,7 +1105,7 @@ namespace cl::jit
                                                                                \
         template <bool Variadic = IsVariadic,                                  \
                   std::enable_if_t<Variadic, int> = 0>                         \
-        name##Instruction(uint32_t serial, absl::Span<Slot> indirect_slots,    \
+        name##Instruction(uint32_t serial, std::span<Slot> indirect_slots,    \
                           operands(CL_JIT_DECLARE_FIXED_PARAMETER,             \
                                    CL_JIT_DECLARE_VARIADIC_PARAMETER,          \
                                    CL_JIT_DECLARE_SNAPSHOT_VALUES_PARAMETER)   \

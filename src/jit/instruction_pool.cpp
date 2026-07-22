@@ -45,7 +45,7 @@ namespace cl::jit
         return storage;
     }
 
-    absl::Span<uintptr_t> InstructionSideDataPool::allocate_words(size_t count)
+    std::span<uintptr_t> InstructionSideDataPool::allocate_words(size_t count)
     {
         if(count == 0)
         {

@@ -6,7 +6,7 @@
 #include "jit/instruction_pool.h"
 #include "jit/object_pool.h"
 
-#include <absl/types/span.h>
+#include <span>
 
 #include <cstdint>
 #include <type_traits>
@@ -41,7 +41,7 @@ namespace cl::jit
             if constexpr(T::IsVariadic)
             {
                 size_t n_indirect_slots = T::n_indirect_slots_for(args...);
-                absl::Span<Instruction::Slot> indirect_slots =
+                std::span<Instruction::Slot> indirect_slots =
                     instruction_side_data_.allocate_words(n_indirect_slots);
                 return instructions_.make<T>(indirect_slots,
                                              std::forward<Args>(args)...);

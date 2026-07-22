@@ -3,7 +3,7 @@
 
 #include "jit/instruction.h"
 
-#include <absl/types/span.h>
+#include <span>
 
 #include <cstddef>
 #include <cstdint>
@@ -68,7 +68,7 @@ namespace cl::jit
         InstructionSideDataPool(InstructionSideDataPool &&) = delete;
         InstructionSideDataPool &operator=(InstructionSideDataPool &&) = delete;
 
-        absl::Span<uintptr_t> allocate_words(size_t count);
+        std::span<uintptr_t> allocate_words(size_t count);
 
     private:
         static constexpr size_t WordsPerSlab = 256;

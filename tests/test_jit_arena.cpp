@@ -211,7 +211,7 @@ namespace cl::jit
         CompilationArena arena;
         TaggedValueRef lhs(arena.make_instruction<ParameterInstruction>());
         SnapshotRef snapshot(arena.make_instruction<SnapshotInstruction>(
-            absl::Span<const SnapshotValue>{}, BytecodePC{17}));
+            std::span<const SnapshotValue>{}, BytecodePC{17}));
         AddSMIInstruction *add = arena.make_instruction<AddSMIInstruction>(
             TaggedValueOperand(lhs),
             TaggedValueOperand(InlineValueConstant(Value::from_smi(3))),
@@ -244,7 +244,7 @@ namespace cl::jit
         TaggedValueRef first(arena.make_instruction<ParameterInstruction>());
         TaggedValueRef second(arena.make_instruction<ParameterInstruction>());
         SnapshotRef snapshot(arena.make_instruction<SnapshotInstruction>(
-            absl::Span<const SnapshotValue>{}, BytecodePC{23}));
+            std::span<const SnapshotValue>{}, BytecodePC{23}));
         std::array<TaggedValueOperand, 3> arguments = {
             TaggedValueOperand(first),
             TaggedValueOperand(InlineValueConstant(Value::None())),
@@ -252,12 +252,11 @@ namespace cl::jit
         PythonCallInstruction *call =
             arena.make_instruction<PythonCallInstruction>(
                 TaggedValueOperand(callable), snapshot,
-                absl::Span<const TaggedValueOperand>(arguments),
-                BytecodePC{23});
+                std::span<const TaggedValueOperand>(arguments), BytecodePC{23});
         PythonCallInstruction *call_without_arguments =
             arena.make_instruction<PythonCallInstruction>(
                 TaggedValueOperand(callable), snapshot,
-                absl::Span<const TaggedValueOperand>{}, BytecodePC{41});
+                std::span<const TaggedValueOperand>{}, BytecodePC{41});
 
         EXPECT_EQ(5u, call->operand_count());
         EXPECT_TRUE(call->operands_are_indirect());
@@ -309,12 +308,12 @@ namespace cl::jit
             SnapshotValue::value_constant(Value::None())};
 
         EXPECT_EQ(8u, SnapshotInstruction::n_indirect_slots_for(
-                          absl::Span<const SnapshotValue>(captured_values),
+                          std::span<const SnapshotValue>(captured_values),
                           BytecodePC{91}));
 
         SnapshotInstruction *snapshot =
             arena.make_instruction<SnapshotInstruction>(
-                absl::Span<const SnapshotValue>(captured_values),
+                std::span<const SnapshotValue>(captured_values),
                 BytecodePC{91});
 
         ASSERT_EQ(4u, snapshot->operand_count());
