@@ -400,8 +400,7 @@ IR operation.
 Core ordinary operands are uniformly instruction-result references. Every
 tagged constant becomes a normal `ProgramValue` through `Const`, whose
 `ValueConstant` attribute may contain either a non-pointer value or a pinned
-managed pointer. Snapshot entries may retain the same `ValueConstant` directly
-for recovery.
+managed pointer. Snapshots capture the resulting `ProgramValueRef`.
 
 Backend preparation or Machine IR classifies each surviving constant as an
 immediate synthesis or traced-pool load. Pointer-valued constants must use the
@@ -623,16 +622,48 @@ BuilderContext:
 Updating this mapping changes the logical value of an accumulator or bytecode
 register without writing its canonical home.
 
+Frame-state and block-transfer arrays use one positional logical-register
+coordinate. Position zero is the function-arity-derived offset from `fp`;
+increasing position means increasing logical register index and descending
+physical stack address. Values appear in this order:
+
+```text
+parameters
+frame-header holes
+locals
+temporaries
+next inlined frame's parameters / caller's outgoing arguments
+next frame-header holes
+next frame's locals and temporaries
+...
+```
+
+Outgoing arguments and the next inlined frame's parameters are the same slots.
+They occur once. Each frame header contributes reserved positions for
+interpreted PC, compiled PC, FP, and code object wherever that inlined frame
+begins. These positions are structural and cannot mean a dead or unknown
+`Value`. They are not represented by nullable program-value references; their
+entry encoding is deferred to the same recovery mechanism that will represent
+an ordinary destination whose desired value is already in its canonical slot.
+
+The header fields are reconstructed from frame metadata rather than passed as
+SSA values. In particular, the two PCs and FP are not `Value`-encoded fields;
+recovery writes their native representations. This permits compiled execution
+to omit inlined frame-header stores and sink them into side exits.
+
 Core IR captures a recoverable state with a zero-code `Snapshot` instruction:
 
 ```text
 %snapshot: Snapshot = Snapshot(
     resume = Add@17,
     accumulator = %acc,
-    frame A register 0 = %lhs,
-    frame A register 1 = %rhs,
-    parent frame = ...)
+    logical_slots = [%arg0, %arg1, <header>, <header>, <header>, <header>,
+                     %local0, %temporary0, ...])
 ```
+
+The four header entries above are structural recovery positions, not missing or
+nullable program values. Generic use and liveness traversal skips them;
+verification matches them against the logical frame boundaries.
 
 A Snapshot records an accumulator action rather than requiring an accumulator
 value unconditionally. Ordinary guards capture the live accumulator. At a call
@@ -722,9 +753,9 @@ Operand slots use a separate `OperandClass` enum. `OperandClass::ProgramValue`
 and `OperandClass::Snapshot` intentionally have the same numeric values as their
 matching `ResultClass` cases, so validation can compare result-consuming
 operands without a mapping switch. Every ordinary Core operand is an
-instruction-result reference. Constants become ordinary values through `Const`;
-only Snapshot's annotated recovery payload may retain constants directly.
-Structural editing therefore updates uniform producer uses. Non-dataflow
+instruction-result reference. Constants become ordinary values through `Const`,
+including when captured by Snapshot. Structural editing therefore updates
+uniform producer uses. Non-dataflow
 payload such as `BlockEdge`, `Shape`, `ShapeKey`, `ValidityCell`, immediates,
 bytecode origins, interpreter return PCs, and value constants
 are instruction attributes rather than operands. The instruction schema records
@@ -766,9 +797,11 @@ justify revisiting this rule, but none is currently required.
 
 A block stores parameter instructions separately from its ordinary instruction
 sequence. Both are ordinary reclaimable vectors of arena-owned `Instruction *`
-pointers. Parameter-vector position defines the block parameter number;
-parameters conceptually precede every body instruction but are not schedulable
-members of the body vector. Blocks are relatively few and are destroyed
+pointers. Parameter-vector position is the logical register index; frame-header
+positions use the future non-value recovery entry rather than parameter
+instructions or null pointers. Value parameters conceptually precede every body
+instruction but are not schedulable members of the body vector. Blocks are
+relatively few and are destroyed
 normally so vector storage can be reclaimed during repeated graph rebuilding,
 while the much more numerous fixed-size instructions remain trivially
 destructible arena records.
@@ -810,9 +843,9 @@ transaction are not supported.
 
 Compilation-time managed references follow the pin-set invariant specified in
 [JIT Instruction Representation](jit-instruction-representation.md). Managed
-constants remain direct `ValueConstant` attributes in Core instructions,
-Snapshots, and arena side data. The compilation session pins every referenced
-managed object; Core neither constructs nor stores machine-code pool indices.
+constants remain direct `ValueConstant` attributes on Core `Const`
+instructions. The compilation session pins every referenced managed object;
+Core neither constructs nor stores machine-code pool indices.
 Other compiler observations may likewise retain direct pinned references in
 session-owned analysis state.
 
@@ -986,8 +1019,8 @@ Verification at pass boundaries should require:
   representation, and layout declared for its instruction kind, and every
   attribute slot to match its declared
   `AttributeClass` and layout;
-- every pointer-valued `ValueConstant` in an instruction, Snapshot, or side-data
-  payload to be covered by the current compilation session's pin set;
+- every pointer-valued `ValueConstant` attribute to be covered by the current
+  compilation session's pin set;
 - every result reference to match its producer's intrinsic `ResultClass`, and no
   result reference to be formed from a value-less
   instruction;
@@ -1439,11 +1472,10 @@ Initial generated code is installed once and remains alive until its owning
 
 A Core `Snapshot` is the authoritative logical description of
 interpreter-visible state. It already names the resume state, active logical
-frame chain, program values, constants, and boxing or reification actions needed
-to leave compiled
-execution. The backend consumes it directly when generating recovery. A
-Snapshot carries a managed constant as a pinned `ValueConstant`; emission
-submits it to the same emitter-owned pool as other surviving constants.
+frame chain, program values, and boxing or reification actions needed to leave
+compiled execution. Constants appear through ordinary `Const` producers. The
+backend consumes the Snapshot directly when generating recovery and may
+rematerialize those producers; managed values then use the emitter-owned pool.
 
 After allocation, recovery planning combines the Snapshot with two physical
 inputs:
@@ -1492,10 +1524,8 @@ logical Snapshot and FrameState:
     resume state
     active frame chain
     (frame instance, canonical slot) -> Direct(ProgramValueRef)
-                                      | ValueConstant
                                       | RecoveryAction(ProgramValueRef, ...)
     innermost accumulator            -> Direct(ProgramValueRef)
-                                      | ValueConstant
                                       | RecoveryAction(ProgramValueRef, ...)
                                       | Dead
 

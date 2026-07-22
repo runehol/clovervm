@@ -151,8 +151,7 @@ The first implementation slice is already in the tree. It established:
 - the naturally aligned 48-byte instruction record and instruction arena,
   schema-generated metadata, concrete typed instruction classes, typed
   terminator access, uniform operand/reference traversal, explicit constant
-  producers,
-  `ValueConstant`s, and heterogeneous Snapshot payloads;
+  producers, `ValueConstant`s, and positional Snapshot slots;
 - preliminary CFG blocks, block edges, and structural verification.
 
 The remaining milestones should build on this substrate rather than route
@@ -247,8 +246,8 @@ Scope:
 - lower function arguments as entry definitions;
 - lower accumulator/register movement to symbolic bindings and `Mov` only when
   a real Core value is needed;
-- lower tagged constants uniformly to `Const`, or retain them directly as
-  `ValueConstant` Snapshot recovery payloads;
+- lower tagged constants uniformly to `Const` and capture their
+  `ProgramValueRef`s in Snapshots;
 - build Snapshot instructions from the symbolic state at entry, return, and
   unsupported-bytecode boundaries;
 - verify the produced Core graph against expected structure.
@@ -308,14 +307,14 @@ Scope:
 - consume the Snapshots built by the bytecode walker;
 - implement Snapshot-expanded point-use/liveness checks for the values needed
   by the taken exit;
-- materialize `ProgramValueRef` and `ValueConstant` Snapshot entries into
-  canonical frame homes and accumulator state;
+- materialize Snapshot `ProgramValueRef`s into canonical frame homes and
+  accumulator state, including rematerializable `Const` producers;
 - install the resume bytecode PC and structural frame metadata expected by the
   interpreter;
 - preserve the managed/host transition record on every exit path.
 
-Validation must force recovery of `ProgramValueRef` and `ValueConstant`
-Snapshot entries and show that reclamation can inspect the
+Validation must force recovery of ordinary and `Const`-produced Snapshot
+references and show that reclamation can inspect the
 suspended managed chain through the transition.
 
 ### Milestone 6: straight-line tagged bytecode state

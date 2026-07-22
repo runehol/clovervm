@@ -411,78 +411,6 @@ namespace cl::jit
         RepresentedValueRef<ValueRepresentation::TaggedValue>;
     using F64Ref = RepresentedValueRef<ValueRepresentation::F64>;
 
-    enum class SnapshotValueKind : uintptr_t
-    {
-        ProgramValue,
-        ValueConstant,
-    };
-
-    class SnapshotValue
-    {
-    public:
-        SnapshotValue(ProgramValueRef reference)
-            : descriptor_(SnapshotValueKind::ProgramValue),
-              payload_(instruction_reference_word(reference.instruction()))
-        {
-        }
-
-        SnapshotValue(TaggedValueRef reference)
-            : SnapshotValue(ProgramValueRef(reference))
-        {
-        }
-
-        SnapshotValue(F64Ref reference)
-            : SnapshotValue(ProgramValueRef(reference))
-        {
-        }
-
-        explicit SnapshotValue(Value constant)
-            : descriptor_(SnapshotValueKind::ValueConstant),
-              payload_(static_cast<uintptr_t>(constant.as.integer))
-        {
-        }
-
-        SnapshotValueKind kind() const { return descriptor_; }
-        uintptr_t descriptor_word() const
-        {
-            return static_cast<uintptr_t>(descriptor_);
-        }
-        uintptr_t payload_word() const { return payload_; }
-
-        ProgramValueRef program_value() const
-        {
-            assert(kind() == SnapshotValueKind::ProgramValue);
-            return ProgramValueRef(reinterpret_cast<Instruction *>(payload_));
-        }
-
-        Value constant() const
-        {
-            assert(kind() == SnapshotValueKind::ValueConstant);
-            Value value;
-            value.as.integer = static_cast<long long>(payload_);
-            return value;
-        }
-
-    private:
-        SnapshotValue(SnapshotValueKind descriptor, uintptr_t payload)
-            : descriptor_(descriptor), payload_(payload)
-        {
-            assert(descriptor == SnapshotValueKind::ProgramValue ||
-                   descriptor == SnapshotValueKind::ValueConstant);
-        }
-
-        static SnapshotValue from_raw(uintptr_t descriptor, uintptr_t payload)
-        {
-            return SnapshotValue(static_cast<SnapshotValueKind>(descriptor),
-                                 payload);
-        }
-
-        SnapshotValueKind descriptor_;
-        uintptr_t payload_;
-
-        friend class SnapshotValuesView;
-    };
-
     template <OperandClass Class, ValueRepresentation Representation>
     auto decode_instruction_operand(uintptr_t word)
     {
@@ -526,30 +454,28 @@ namespace cl::jit
         size_t size_;
     };
 
-    class SnapshotValuesView
+    class SnapshotValueRefRange
     {
     public:
-        size_t size() const { return size_; }
-        bool empty() const { return size_ == 0; }
-
-        SnapshotValue operator[](size_t index) const
-        {
-            assert(index < size_);
-            return SnapshotValue::from_raw(words_[size_ + index],
-                                           words_[index]);
-        }
-
-    private:
-        SnapshotValuesView(const uintptr_t *words, size_t size)
+        SnapshotValueRefRange(const uintptr_t *words, size_t size)
             : words_(words), size_(size)
         {
             assert(words != nullptr || size == 0);
         }
 
+        size_t size() const { return size_; }
+        bool empty() const { return size_ == 0; }
+
+        ProgramValueRef operator[](size_t index) const
+        {
+            assert(index < size_);
+            return ProgramValueRef(
+                reinterpret_cast<Instruction *>(words_[index]));
+        }
+
+    private:
         const uintptr_t *words_;
         size_t size_;
-
-        friend class SnapshotInstruction;
     };
 
     using BytecodePC = uint32_t;
@@ -590,6 +516,11 @@ namespace cl::jit
     }
 
     inline uintptr_t encode_instruction_operand(TaggedValueRef reference)
+    {
+        return instruction_reference_word(reference.instruction());
+    }
+
+    inline uintptr_t encode_instruction_operand(ProgramValueRef reference)
     {
         return instruction_reference_word(reference.instruction());
     }
@@ -727,16 +658,14 @@ namespace cl::jit
 #define CL_JIT_DECLARE_VARIADIC_PARAMETER(name, operand_class, representation) \
     std::span<const CL_JIT_OPERAND_TYPE(operand_class, representation)> name,
 #define CL_JIT_DECLARE_SNAPSHOT_VALUES_PARAMETER(name)                         \
-    std::span<const SnapshotValue> name,
+    std::span<const ProgramValueRef> name,
 #define CL_JIT_DECLARE_ATTRIBUTE_PARAMETER(name, attribute_class)              \
     CL_JIT_ATTRIBUTE_TYPE(attribute_class) name,
 #define CL_JIT_PASS_ARGUMENT(name, ...) name,
 #define CL_JIT_IGNORE_ARGUMENT(name, ...) (void)name;
 #define CL_JIT_COUNT_INDIRECT_FIXED(name, ...) (void)name;
 #define CL_JIT_COUNT_INDIRECT_VARIADIC(name, ...) n_slots += name.size();
-#define CL_JIT_COUNT_INDIRECT_SNAPSHOT_VALUES(name)                            \
-    assert(name.size() <= SIZE_MAX / 2);                                       \
-    n_slots += name.size() * 2;
+#define CL_JIT_COUNT_INDIRECT_SNAPSHOT_VALUES(name) n_slots += name.size();
 #define CL_JIT_COUNT_LOGICAL_FIXED(name, ...) (void)name;
 #define CL_JIT_COUNT_LOGICAL_VARIADIC(name, ...) n_operands += name.size();
 #define CL_JIT_COUNT_LOGICAL_SNAPSHOT_VALUES(name) n_operands += name.size();
@@ -752,13 +681,9 @@ namespace cl::jit
         indirect_slots[index++] = encode_instruction_operand(operand);         \
     }
 #define CL_JIT_WRITE_INDIRECT_SNAPSHOT_VALUES(name)                            \
-    for(const SnapshotValue &value: name)                                      \
+    for(ProgramValueRef value: name)                                           \
     {                                                                          \
-        indirect_slots[index++] = value.payload_word();                        \
-    }                                                                          \
-    for(const SnapshotValue &value: name)                                      \
-    {                                                                          \
-        indirect_slots[index++] = value.descriptor_word();                     \
+        indirect_slots[index++] = encode_instruction_operand(value);           \
     }
 #define CL_JIT_DECLARE_ATTRIBUTE_INDEX(name, attribute_class) name,
 #define CL_JIT_PRIVATE private:
@@ -782,12 +707,12 @@ namespace cl::jit
             first, operand_count() - index);                                   \
     }
 #define CL_JIT_DECLARE_SNAPSHOT_VALUES_ACCESSOR(name)                          \
-    SnapshotValuesView name() const                                            \
+    SnapshotValueRefRange name() const                                         \
     {                                                                          \
         constexpr size_t index = static_cast<size_t>(OperandIndex::name);      \
         const Slot *words = indirect_operand_words();                          \
         const Slot *first = words == nullptr ? nullptr : words + index;        \
-        return SnapshotValuesView(first, operand_count() - index);             \
+        return SnapshotValueRefRange(first, operand_count() - index);          \
     }
 #define CL_JIT_DECLARE_ATTRIBUTE_ACCESSOR(name, attribute_class)               \
     auto name() const                                                          \
@@ -1136,24 +1061,11 @@ namespace cl::jit
     }());
 #define CL_JIT_VISIT_SNAPSHOT_VALUES(name)                                     \
     ([&] {                                                                     \
-        SnapshotValuesView values =                                            \
-            instruction.as<SnapshotInstruction>()->name();                     \
-        assert(values.size() == variable_count);                               \
-        for(size_t index = 0; index < values.size(); ++index)                  \
+        for(uint16_t index = 0; index < variable_count; ++index)               \
         {                                                                      \
-            SnapshotValue value = values[index];                               \
-            switch(value.kind())                                               \
-            {                                                                  \
-                case SnapshotValueKind::ProgramValue:                          \
-                    visitor(OperandClass::ProgramValue,                        \
-                            ValueRepresentation::None,                         \
-                            value.program_value().instruction());              \
-                    break;                                                     \
-                case SnapshotValueKind::ValueConstant:                         \
-                    break;                                                     \
-            }                                                                  \
+            visit_program_value(next_operand_word(),                           \
+                                ValueRepresentation::None);                    \
         }                                                                      \
-        operand_index += variable_count;                                       \
     }());
 #define CL_JIT_INSTRUCTION(name, ir_levels, result, effects, operands,         \
                            attributes)                                         \

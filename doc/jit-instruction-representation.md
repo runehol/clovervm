@@ -102,8 +102,8 @@ Instruction results, instruction operands, and instruction attributes use
 distinct enum types. Ordinary operands are always instruction-result references
 that participate in SSA use lists, dominance, liveness, and bulk replacement.
 Constants become ordinary program values through explicit `Const`
-instructions. Snapshot's annotated recovery payload is the sole
-heterogeneous exception and may capture constants directly.
+instructions. Snapshot captures those program-value results like any other
+value.
 Attributes are semantic or structural payload such as block edges, shapes,
 immediates, bytecode origins, and return PCs; they affect instruction semantics
 but are not dataflow uses. The operand cases intentionally have the same numeric
@@ -166,8 +166,8 @@ Such inferred facts belong to a concrete phase-owned metadata object such as
 `SemanticValueAnalysis`. Changing an instruction's result class requires
 replacing the instruction with a different kind. There is no constant
 `ResultClass`: `Const` produces an ordinary `ProgramValue` from its immutable
-`ValueConstant` attribute. Snapshot may instead retain a constant directly as
-recovery payload. Core does not decide how either form will be materialized.
+`ValueConstant` attribute. Core does not decide how that value will be
+materialized.
 
 Core program values have one additional intrinsic refinement:
 
@@ -235,8 +235,7 @@ Ordinary operand words are uniformly direct instruction pointers. Dereferencing
 one and decoding its producer kind identifies whether it is a `ProgramValue` or
 `Snapshot`; a `ProgramValue` producer kind also directly identifies its
 representation. The schema declares what each operand position is permitted to
-reference and describes fixed and variable ranges. Only Snapshot's annotated
-payload needs a per-entry descriptor because it additionally admits constants.
+reference and describes fixed and variable ranges.
 
 The implementation enforces that every encoded class fits the slot size and
 alignment. Every fixed-arity instruction places all operands first and all
@@ -275,19 +274,13 @@ using InstructionSlot = uintptr_t;
 const InstructionSlot *indirect_operands = ...;
 ```
 
-Snapshot is the annotated heterogeneous exception. It stores all capture
-payloads first, followed by one parallel descriptor word per capture:
-
-```text
-payload[0..N)
-descriptor[0..N)
-```
-
-The header stores logical operand count `N`; Snapshot allocates `2 * N`
-physical indirect slots. Payload-first layout preserves the invariant that the
-indirect pointer addresses operand zero. Generic traversal uses descriptor `i`
-to distinguish a `ProgramValueRef` from a `ValueConstant` before interpreting
-payload `i`.
+Snapshot is a representation-erased positional variadic range. A value-bearing
+position stores one `ProgramValueRef` word, and the referenced producer kind
+supplies its concrete representation. Frame-header positions remain reserved in
+the same logical coordinate so later positions keep their direct indices. They
+are not nullable program-value references. Their concrete non-value entry
+encoding is deferred to the recovery-state mechanism that will also represent
+an ordinary destination whose desired value is already in its canonical slot.
 
 Each generated variadic class exposes hidden construction machinery
 `n_indirect_slots_for(constructor arguments...)`. The compilation arena uses it
@@ -466,8 +459,8 @@ On resource failure, the enclosing compilation is discarded.
 
 ### Managed Value Constants and Pins
 
-`Const` instructions and Snapshot side data embed constants directly as
-`ValueConstant`s. Core does not distinguish values that will become machine
+`Const` instructions embed constants directly as `ValueConstant`s. Core does
+not distinguish values that will become machine
 immediates from values that will require the traced constant pool, and does not
 assign a pool index or otherwise model that eventual pool.
 
@@ -685,7 +678,6 @@ ParameterF64
 Snapshot
     result: Snapshot
     captured_values[]: snapshot operand ProgramValue(AnyRepresentation)
-                     or snapshot attr ValueConstant
     resume_pc: attr BytecodePC
 
 ConditionalBranch
@@ -699,17 +691,30 @@ ConditionalBranch
 of `ValueRepresentation` and never an instruction result. Snapshot's
 `captured_values` array is the only slot allowed to use it because a Snapshot
 records logical recovery values rather than normal Core dataflow for one
-machine representation. Its schema describes a discriminated `SnapshotValue`
-whose alternatives are a program-value operand or a directly retained
-`ValueConstant` attribute. This is a Snapshot-specific payload shape, not
-another general operand or attribute class.
+machine representation. Its typed accessor returns erased `ProgramValueRef`s;
+the producer kind recovers each concrete representation.
 
-Generated generic Snapshot traversal reports a `ProgramValueRef` alternative
-as an operand use and a `ValueConstant` alternative to attribute traversal. The
-generated Snapshot accessor preserves the same distinction. Side-exit
-frame-sync generation stores tagged program values directly, materializes
-constants according to their value and target lowering, and boxes captured
-`F64` values before writing them to the interpreter frame.
+Snapshot position is a logical stack-register coordinate. Logical position zero
+starts at the function-arity-derived offset from `fp`; increasing logical
+positions proceed in logically ascending order and physically descending stack
+addresses. The sequence is parameters, the fixed frame-header holes, locals,
+temporaries, and then the next inlined frame's parameters, which are the
+caller's outgoing arguments. Its header holes follow those parameters, and the
+pattern repeats for further inlined frames. Outgoing arguments and callee
+parameters are one physical and logical slot sequence, never duplicated.
+
+Header positions are reserved for the interpreted PC, compiled PC, frame
+pointer, and code-object field. They are not `Value`s or `ProgramValueRef`s.
+Recovery writes each field using its own representation: in particular, the two
+PCs and frame pointer use their native header encodings rather than `Value`
+encoding. Frame metadata supplies the field contents and frame boundaries, so
+normal compiled execution need not materialize inlined frame headers.
+
+Generated generic Snapshot traversal reports every program-value capture as an
+operand use; structural recovery entries are not uses.
+Side-exit frame-sync generation stores tagged program values directly, may
+rematerialize captured `Const` producers, and boxes captured `F64` values before
+writing them to the interpreter frame.
 Adding another alternative or representation therefore requires an exhaustive
 frame-materialization case. No arithmetic, call, forwarding, parameter, or
 other Core instruction may accept an erased representation.
@@ -804,11 +809,13 @@ For Core graphs, verification additionally requires every `ProgramValue`
 producer to have one legal representation, every fixed operand constraint to
 match its producer, and every representation-changing edge to be an explicit
 conversion instruction. Verification rejects `AnyRepresentation` on every
-result and on every operand other than `Snapshot.captured_values`. Snapshot
-capture may contain heterogeneous program values and `ValueConstant`s. Every
-pointer-valued constant must be covered by the compilation session's pin set.
-Recovery planning must interpret each captured item using its producer's
-concrete representation or retained `Value` and provide an exhaustive
+result and on every operand other than `Snapshot.captured_values`. Every
+value-bearing Snapshot position must reference a live `ProgramValue` producer;
+every structural position must correspond to a valid frame-header field or
+another recovery destination already known to contain its desired value.
+Every pointer-valued constant on a `Const` producer must be covered by the
+compilation session's pin set. Recovery planning must interpret each capture
+using its producer's concrete representation and provide an exhaustive
 frame-materialization operation for that case.
 
 Each concrete instruction form is a final, fieldless subclass of `Instruction`.
@@ -1179,13 +1186,13 @@ explicit and exceptional.
 The implementation validates the naturally aligned 48-byte, five-slot record,
 schema-generated kind metadata, typed CFG terminators, explicit constant
 producers, fixed operand walking, and a
-PythonCall homogeneous variadic range. Fixed kinds store operands before
+PythonCall and Snapshot variadic ranges. Fixed kinds store operands before
 attributes; variable kinds store their entire operand array behind slot zero and
-their attributes in the remaining inline slots. Snapshot uses a payload-first
-parallel descriptor array, and generic traversal visits its result references
-without confusing its inline or managed constants for producers. It also defines representative
-constants, binary arithmetic, shape and shape-key guards, conditional branches,
-calls, Snapshots, and metadata-heavy Core instructions in `instruction.def`.
+their attributes in the remaining inline slots. The current generic traversal
+visits every stored Snapshot capture as a result reference. The schema also
+defines representative constants, binary arithmetic, shape and shape-key
+guards, conditional branches, calls, Snapshots, and metadata-heavy Core
+instructions in `instruction.def`.
 
 The instruction arena placement-constructs the concrete subclass selected by
 the template. Generated constructors list operands and then attributes, while
@@ -1193,6 +1200,10 @@ the pool privately prefixes the serial. Variadic construction asks the concrete
 class for `n_indirect_slots_for(...)`, allocates that side storage, and passes it
 to the in-place constructor. A later implementation slice should measure total
 graph and side-data use with realistic translated functions.
+The current Snapshot constructor accepts only `ProgramValueRef`s. The explicit
+non-value encoding for frame-header positions and already-canonical destinations,
+plus verification against logical frame boundaries, remains part of the
+block-argument and Snapshot integration slice.
 Success does not require every payload to fit inline. It requires every
 representative layout to use the same declarative schema and uniform arena-owned
 side data without a handwritten storage or traversal escape hatch. Evidence

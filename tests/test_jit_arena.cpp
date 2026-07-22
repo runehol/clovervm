@@ -166,7 +166,7 @@ namespace cl::jit
         static_assert(
             std::is_same_v<decltype(std::declval<const SnapshotInstruction &>()
                                         .captured_values()),
-                           SnapshotValuesView>);
+                           SnapshotValueRefRange>);
         static_assert(
             std::is_same_v<
                 decltype(std::declval<const ConditionalBranchInstruction &>()
@@ -214,7 +214,7 @@ namespace cl::jit
         TaggedValueRef rhs(
             builder.make_instruction<ConstInstruction>(Value::from_smi(3)));
         SnapshotRef snapshot(builder.make_instruction<SnapshotInstruction>(
-            std::span<const SnapshotValue>{}, BytecodePC{17}));
+            std::span<const ProgramValueRef>{}, BytecodePC{17}));
         AddSMIInstruction *add =
             builder.make_instruction<AddSMIInstruction>(lhs, rhs, snapshot);
 
@@ -254,7 +254,7 @@ namespace cl::jit
         TaggedValueRef none(
             builder.make_instruction<ConstInstruction>(Value::None()));
         SnapshotRef snapshot(builder.make_instruction<SnapshotInstruction>(
-            std::span<const SnapshotValue>{}, BytecodePC{23}));
+            std::span<const ProgramValueRef>{}, BytecodePC{23}));
         std::array<TaggedValueRef, 3> arguments = {first, none, second};
         PythonCallInstruction *call =
             builder.make_instruction<PythonCallInstruction>(
@@ -307,24 +307,26 @@ namespace cl::jit
         EXPECT_EQ(second.instruction(), references[4].second);
     }
 
-    TEST(JitInstructionTraversal,
-         SnapshotStoresPayloadsBeforeParallelDescriptors)
+    TEST(JitInstructionTraversal, SnapshotStoresProgramValueReferences)
     {
         CompilationArena arena;
         GraphBuilder builder(arena);
         TaggedValueRef tagged(builder.make_instruction<ParameterInstruction>());
         F64Ref f64(builder.make_instruction<ParameterF64Instruction>());
-        std::array<SnapshotValue, 4> captured_values = {
-            SnapshotValue(tagged), SnapshotValue(f64),
-            SnapshotValue(Value::True()), SnapshotValue(Value::None())};
+        TaggedValueRef truth(
+            builder.make_instruction<ConstInstruction>(Value::True()));
+        TaggedValueRef none(
+            builder.make_instruction<ConstInstruction>(Value::None()));
+        std::array<ProgramValueRef, 4> captured_values = {tagged, f64, truth,
+                                                          none};
 
-        EXPECT_EQ(8u, SnapshotInstruction::n_indirect_slots_for(
-                          std::span<const SnapshotValue>(captured_values),
+        EXPECT_EQ(4u, SnapshotInstruction::n_indirect_slots_for(
+                          std::span<const ProgramValueRef>(captured_values),
                           BytecodePC{91}));
 
         SnapshotInstruction *snapshot =
             builder.make_instruction<SnapshotInstruction>(
-                std::span<const SnapshotValue>(captured_values),
+                std::span<const ProgramValueRef>(captured_values),
                 BytecodePC{91});
 
         ASSERT_EQ(4u, snapshot->operand_count());
@@ -336,23 +338,17 @@ namespace cl::jit
                   reinterpret_cast<Instruction *>(storage[0]));
         EXPECT_EQ(f64.instruction(),
                   reinterpret_cast<Instruction *>(storage[1]));
-        EXPECT_EQ(static_cast<uintptr_t>(SnapshotValueKind::ProgramValue),
-                  storage[4]);
-        EXPECT_EQ(static_cast<uintptr_t>(SnapshotValueKind::ProgramValue),
-                  storage[5]);
-        EXPECT_EQ(static_cast<uintptr_t>(SnapshotValueKind::ValueConstant),
-                  storage[6]);
-        EXPECT_EQ(static_cast<uintptr_t>(SnapshotValueKind::ValueConstant),
-                  storage[7]);
+        EXPECT_EQ(truth.instruction(),
+                  reinterpret_cast<Instruction *>(storage[2]));
+        EXPECT_EQ(none.instruction(),
+                  reinterpret_cast<Instruction *>(storage[3]));
 
-        SnapshotValuesView values = snapshot->captured_values();
+        SnapshotValueRefRange values = snapshot->captured_values();
         ASSERT_EQ(4u, values.size());
-        EXPECT_EQ(SnapshotValueKind::ProgramValue, values[0].kind());
-        EXPECT_EQ(tagged.instruction(),
-                  values[0].program_value().instruction());
-        EXPECT_EQ(f64.instruction(), values[1].program_value().instruction());
-        EXPECT_EQ(Value::True(), values[2].constant());
-        EXPECT_EQ(Value::None(), values[3].constant());
+        EXPECT_EQ(tagged.instruction(), values[0].instruction());
+        EXPECT_EQ(f64.instruction(), values[1].instruction());
+        EXPECT_EQ(truth.instruction(), values[2].instruction());
+        EXPECT_EQ(none.instruction(), values[3].instruction());
         EXPECT_EQ(91u, snapshot->resume_pc());
 
         std::vector<Instruction *> references;
@@ -364,9 +360,11 @@ namespace cl::jit
                 EXPECT_EQ(ValueRepresentation::None, representation);
                 references.push_back(producer);
             });
-        ASSERT_EQ(2u, references.size());
+        ASSERT_EQ(4u, references.size());
         EXPECT_EQ(tagged.instruction(), references[0]);
         EXPECT_EQ(f64.instruction(), references[1]);
+        EXPECT_EQ(truth.instruction(), references[2]);
+        EXPECT_EQ(none.instruction(), references[3]);
     }
 
 }  // namespace cl::jit

@@ -274,6 +274,24 @@ edge0.argument[0] = %v0  ->  B.parameter[0] = %p0
 edge0.argument[1] = %v1  ->  B.parameter[1] = %p1
 ```
 
+For frame-state-carrying blocks, vector position is the logical stack-register
+index shared with Snapshots. Position zero is the function-arity-derived offset
+from `fp`; increasing positions are logically ascending and physically descend
+the stack. Parameters precede the fixed frame-header holes, followed by locals,
+temporaries, and the next inlined frame's parameters. Those parameters are the
+caller's outgoing-argument slots and are not represented twice. Each inlined
+frame boundary inserts holes for interpreted PC, compiled PC, FP, and code
+object at that boundary's actual position.
+
+Header positions appear at the same indices in the target parameter and every
+incoming edge-argument vector. They carry no SSA definition or use and are
+skipped by generic use traversal. They are not null references. Their eventual
+entry representation is shared with the recovery case in which an ordinary
+destination already contains its desired value; a dead, unknown, or
+sentinel-valued logical register must not reuse it. Recovery reconstructs header
+fields from frame metadata using their native encodings rather than treating
+the two PCs or FP as `Value`s.
+
 An edge argument need not be defined in the immediate source block. Its
 definition must be available at the source terminator and therefore dominate
 the edge. The target parameter is a new SSA definition available in the target
