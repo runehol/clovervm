@@ -56,9 +56,11 @@ def glob1(dirname, pattern):
 
 
 def _glob(pathname, recursive, include_hidden):
-    dirname, basename = os.path.split(pathname)
+    split_path = os.path.split(pathname)
+    dirname = split_path[0]
+    basename = split_path[1]
     if not has_magic(pathname):
-        if basename:
+        if len(basename) != 0:
             if os.path.exists(pathname):
                 return [pathname]
         elif os.path.isdir(dirname):
@@ -66,7 +68,7 @@ def _glob(pathname, recursive, include_hidden):
         return []
 
     if recursive and basename == "**":
-        return _recursive_dirs(dirname, include_hidden)
+        return _recursive_paths(dirname, include_hidden)
 
     if dirname != "" and has_magic(dirname):
         dirs = _glob(dirname, recursive, include_hidden)
@@ -88,7 +90,7 @@ def _glob(pathname, recursive, include_hidden):
 
 def _glob0(dirname, basename):
     pathname = _join(dirname, basename)
-    if basename:
+    if len(basename) != 0:
         if os.path.exists(pathname):
             return [basename]
     elif os.path.isdir(dirname):
@@ -119,6 +121,22 @@ def _recursive_dirs(dirname, include_hidden):
             path = _join(dirname, name)
             if os.path.isdir(path):
                 children = _recursive_dirs(path, include_hidden)
+                for child in children:
+                    result.append(child)
+    return result
+
+
+def _recursive_paths(dirname, include_hidden):
+    result = []
+    if dirname != "":
+        result.append(os.path.join(dirname, ""))
+    names = _listdir(dirname)
+    for name in names:
+        if include_hidden or not _ishidden(name):
+            path = _join(dirname, name)
+            result.append(path)
+            if os.path.isdir(path):
+                children = _recursive_paths(path, include_hidden)
                 for child in children:
                     result.append(child)
     return result

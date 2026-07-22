@@ -49,6 +49,12 @@ recursive = glob.glob("stdlib/**/*.py", recursive=True)
 assert contains(recursive, "stdlib/glob.py")
 assert contains(recursive, "stdlib/fnmatch.py")
 
+recursive_all = glob.glob("stdlib/**", recursive=True)
+assert contains(recursive_all, "stdlib/fnmatch.py")
+assert contains(recursive_all, "stdlib/native_modules")
+assert contains(recursive_all, "stdlib/")
+assert not contains(recursive_all, "stdlib")
+
 assert glob.glob1("stdlib", "g*.py")[0] == "glob.py"
 assert glob.glob0("stdlib", "glob.py")[0] == "glob.py"
 assert len(glob.glob0("stdlib", "not-present.py")) == 0
