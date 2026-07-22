@@ -4,10 +4,10 @@
 |---|---|
 | Document type | Implementation plan |
 | Status | Proposed |
-| Implementation | Supporting CFG, code-cache, generic emitter, and initial executable AArch64 assembler infrastructure implemented; Milestone 0 compiler/runtime entry is not started |
+| Implementation | Core instruction storage, typed instruction construction, preliminary CFG, code-cache allocation/publication, generic machine-code emitter, AArch64 assembler, value-pool loads, and executable AArch64 tests are implemented; Core graph publication, backend preparation, and compiler/runtime entry remain |
 | Scope | Initial JIT staging, vertical slices, temporary runtime policies, and validation |
 | Owning layers | The JIT owns compilation and generated transitions; the interpreter, managed calling convention, native boundaries, and reclaimer retain their existing contracts |
-| Validated against | Supporting infrastructure and executable AArch64 tests in the working tree on 2026-07-20 |
+| Validated against | Supporting infrastructure, instruction-representation tests, CFG tests, code-cache tests, and executable AArch64 tests in the working tree on 2026-07-22 |
 | Supersedes | Bring-up material formerly embedded in [JIT Compiler and IR](jit-compiler-and-ir.md) |
 
 This plan brings up compiled execution through small, executable vertical
@@ -132,11 +132,138 @@ are later lifecycle work.
 
 Each milestone should land as a coherent, reviewable change with its own tests.
 Later milestones may refine this ordering when implementation evidence exposes
-a dependency, but they must preserve an executable fallback throughout.
+a dependency, but they must preserve an executable fallback throughout. The
+order below reflects the foundation already landed: instruction storage, CFG
+scaffolding, AArch64 emission, value-pool loading, executable memory, and
+code-cache publication were intentionally implemented before compiler entry
+because they are targetable, independently testable infrastructure.
 
-### Milestone 0: enter generated code and immediately leave
+### Landed foundation: storage, emission, and code ownership
 
-The first compiler supports no bytecodes:
+The first implementation slice is already in the tree. It established:
+
+- VM-owned code-cache allocation and publication, including pessimistic sizing,
+  pool slices, W^X transition, commit-failure policy, and per-thread access;
+- a target-independent `MachineCodeEmitter` with code fragments, labels,
+  relocations, value-pool entries, and final layout;
+- executable AArch64 assembler and macro-assembler support, including direct
+  branches, value-pool loads, and immediate synthesis helpers;
+- the 48-byte instruction record, tagged-address instruction arena,
+  schema-generated metadata, concrete typed instruction classes, typed
+  terminator access, operand/reference traversal, inline constants,
+  `ValueConstant`s, and heterogeneous Snapshot payloads;
+- preliminary CFG blocks, block edges, and structural verification.
+
+The remaining milestones should build on this substrate rather than route
+around it with throwaway entry or emission paths.
+
+### Milestone 1: publishable Core graph substrate
+
+Finish the Core graph substrate before runtime entry. This milestone makes it
+possible to construct, publish, verify, and locally mutate a Core graph without
+generating code.
+
+Scope:
+
+- complete the bulk `GraphBuilder` and finalize path for one arena-backed CFG;
+- enforce one CFG per arena-backed instruction allocation domain;
+- complete placement checks for instruction kind, block ownership, terminator
+  placement, block-edge ownership, and cross-graph references;
+- finish managed-constant retention for `ValueConstant` attributes and Snapshot
+  arrays;
+- finish detached-storage poisoning and editor-owned replacement semantics;
+- build the on-demand use traversal/index contract for `ProgramValueRef`,
+  `InlineValueConstant`, and Snapshot-expanded point uses;
+- verify `AnyRepresentation` remains Snapshot-only and every
+  `ValueRepresentation` has its required `Mov` kind.
+
+Validation should cover schema metadata, typed accessors, variadic and Snapshot
+payload storage, graph verification failures, managed constant pinning, and
+editor replacement of reference and inline-constant operands.
+
+### Milestone 2A: executable AArch64 from minimal Core blocks
+
+Once instructions are placed in verified CFG blocks, the next backend milestone
+is not a general backend framework; it is one tiny Core program lowered all the
+way to executable AArch64 code. This track does not require decoded bytecode
+coverage or interpreter entry. It consumes a hand-constructed, verified Core CFG
+and proves that backend preparation, emission, code-cache publication, and
+execution agree.
+
+The first programs should be deliberately small and must not require Snapshots,
+side exits, overflow checks, or recovery:
+
+```text
+entry:
+    %arg0 = Parameter
+    Return %arg0
+
+entry:
+    %constant = SynthesizeImmediate InlineValueConstant
+    Return %constant
+
+entry:
+    %constant = LoadConstantPoolValue ValueConstant
+    Return %constant
+```
+
+If the function-call ABI is not ready, the test may use a narrower executable
+test harness that calls a generated leaf with machine-level tagged `Value`
+arguments and reads the returned tagged `Value`. The important point is that
+the input is a real Core CFG and the output is executable machine code, not a
+standalone assembler test.
+
+Scope:
+
+- define only the target-specific backend-preparation pieces needed for this
+  tiny program, following the full phase contract in
+  [JIT Compiler and IR](jit-compiler-and-ir.md);
+- select the lowering family for `Parameter`, `SynthesizeImmediate`,
+  `LoadConstantPoolValue`, and `Return`;
+- assign initial argument and result locations by a deliberately fixed
+  convention rather than a real allocator;
+- legalize embedded `InlineValueConstant`s for the selected lowering forms;
+- emit immediate synthesis and traced value-pool loads through the Core
+  materialization instructions;
+- assign each selected lowering a `LocationSummary`, including fixed registers,
+  scratch requirements, call behavior, and encodable remaining constants;
+- emit the prepared Core block through the existing AArch64 emitter and code
+  cache;
+- execute the generated code from a focused test and verify the returned tagged
+  value.
+
+These programs prove argument/result convention, immediate synthesis, traced
+pool loads, Core-to-emitter lowering, executable publication, and execution.
+Real liveness, register allocation, branches, calls, Snapshots, side exits, and
+recovery are deliberately out of scope for this milestone.
+
+### Milestone 2B: bytecode and Core-construction path
+
+The other natural expansion path is toward decoded bytecode. This track does
+not require executable entry; it can produce verified Core graphs and compare
+their structure against bytecode semantics.
+
+Scope:
+
+- add a reusable decoded-bytecode frontend and `BuilderContext`;
+- lower function arguments as entry definitions;
+- lower accumulator/register loads and stores to `Mov` and logical bindings;
+- lower bytecode constants to `InlineValueConstant`, `ValueConstant`,
+  `SynthesizeImmediate`, or `LoadConstantPoolValue` according to their GC
+  class;
+- preserve universal unsupported-bytecode exits at the entry state for every
+  unimplemented operation;
+- build exact Snapshots for entry, unsupported exits, and simple bytecode
+  transitions.
+
+This track establishes logical slot bindings distinct from synchronized
+canonical homes, Snapshot liveness as values move among accumulator and
+register bindings, and `InlineValueConstant`/`ValueConstant` recovery from
+Snapshots.
+
+### Milestone 3: enter generated code and immediately leave
+
+The first executable compiler supports no bytecodes:
 
 ```text
 install JIT entry
@@ -148,14 +275,14 @@ install JIT entry
     -> resume the interpreter at the first bytecode
 ```
 
-This punches through code ownership, executable-memory entry, managed frame
+This milestone joins the backend/emitter and bytecode/Core-construction tracks.
+It punches through code ownership, executable-memory entry, managed frame
 setup, Snapshot plumbing, recovery, accumulator publication, stack switching,
 and interpreter handoff before opcode semantics or register allocation obscure
-boundary errors. It includes the smallest real Core IR needed for one entry
-block, one Snapshot, and one unconditional exit rather than a separate
-throwaway code-generation path. The selector, recovery operations, and resume
-operations may initially be emitted as one sequence; interning them is not part
-of this milestone.
+boundary errors. It must use the real decoded Core graph, backend-preparation
+artifact, emitter, value-pool, code-cache, and recovery path rather than a
+throwaway generation path. Recovery code may initially be emitted as one
+sequence; interning recovery plans is not part of this milestone.
 
 Validation must show:
 
@@ -166,53 +293,44 @@ Validation must show:
 - reclamation can inspect the suspended managed chain through the transition;
 - repeated and reentrant entries restore both stacks exactly.
 
-### Milestone 1: decoded frontend and general Core construction
+### Milestone 4: execute straight-line tagged bytecodes
 
-Generalize the milestone-zero block into the decoded-bytecode frontend, block
-and edge model, `BuilderContext`, typed instruction and result identities, and
-reusable Core construction. The compiler may still exit at the first bytecode,
-but it can now describe the complete decoded block scaffold and construct exact
-logical entry state without a function-specific emission path.
-
-The backend may initially use deliberately poor fixed locations. Correct
-Snapshot liveness, block arguments, edge transfers, and recovery state matter
-before register-allocation quality. Machine IR is not required.
-
-### Milestone 2: straight-line tagged state
-
-Add constants and bytecode register/accumulator movement without gratuitous SSA
-identities. Values remain in tagged `Value` representation, and unsupported
-successors retain the universal side exit.
+Enable execution for the simple straight-line bytecodes whose Core construction
+and backend lowering were already validated by Milestones 2A and 2B. Unsupported
+successors still exit before execution.
 
 This milestone establishes:
 
-- function arguments as entry definitions;
-- logical slot bindings distinct from synchronized canonical homes;
-- Snapshot liveness as values move among accumulator and register bindings;
-- canonical-home tracking and non-trivial recovery assignments.
+- real compiled execution for load/store/move/constant bytecodes;
+- canonical-home tracking and non-trivial recovery assignments;
+- accumulator publication and clearing on exits;
+- interpreter equivalence for straight-line success paths;
+- forced unsupported-successor exits after partially compiled straight-line
+  prefixes.
 
 Each added opcode needs an interpreter-equivalence test for success and every
 side-exit condition.
 
-### Milestone 3: guards and inline-cache specializations
+### Milestone 5: guards, side exits, and first IC specializations
 
 Snapshot IC contents into the compilation and lower selected monomorphic cases
 to explicit checks and terminal actions. Add narrowed shape-check results, SMI
-arithmetic with overflow exits, validity checks, attribute operations
-distinguished by their IC semantics, and shape-changing receiver results.
+arithmetic with overflow exits, validity checks, and attribute operations
+distinguished by their IC semantics.
 
 Optimization remains conservative. Redundant-check elimination is enabled only
 where dominance, receiver versioning, effects, and exit replay state make the
-proof direct.
+proof direct. Side exits remain explicit consumers of Snapshots, while
+target-specific side-exit frame publication remains backend-owned.
 
-### Milestone 4: control flow and block parameters
+### Milestone 6: control flow and block parameters
 
 Compile branches and joins using block parameters with parallel-copy edge
 semantics. Validate loops, backedges, dominance, Snapshot availability, and
 edge-move cycles. This milestone also establishes the CFG machinery needed by
-later lowerings that introduce new branches.
+later lowerings that introduce new branches or join points.
 
-### Milestone 5: native and mixed-mode calls
+### Milestone 7: native and mixed-mode calls
 
 Implement reentrant stack-transition thunks and calls selected through the
 existing managed calling convention. Distinguish:
@@ -221,29 +339,52 @@ existing managed calling convention. Distinguish:
   ABI preservation but no root publication;
 - arbitrary native calls, which switch to the host stack and satisfy the
   boundary rooting contract;
-- Python calls, which dynamically choose a generated or interpreted callee.
+- Python calls, which dynamically choose a generated or interpreted callee and
+  publish the interpreter return PC as an instruction attribute;
+- Python calls followed by `CheckNotImplemented`, which exit through the
+  continuation Snapshot only when the result is `NotImplemented`;
+- trusted native handlers that return `exception_marker()`, which hand off the
+  already pending exception through recovery rather than replaying the call.
 
 Publication on a successful call path is continuing fast-path code, not a
 deduplicated non-returning side exit. Calls from inlined logical frames are
 deferred until multi-frame activation and synchronization are implemented.
 
-### Milestone 6: allocation and conservative local optimization
+### Milestone 8: register allocation and physical recovery plans
 
-Add target location summaries, register classes, block-edge moves, spills, and
-fixed-register constraints. Intern recovery plans only after allocation makes
-their physical operations known. Keep resume-state selection separate so exits
-with different bytecode PCs can share identical recovery code.
+Add real target register classes, liveness, register allocation, block-edge
+moves, spills, and fixed-register constraints. Allocation consumes only
+backend-prepared Core. Intern recovery plans only after allocation makes their
+physical operations known. Keep resume-state selection separate so exits with
+different bytecode PCs can share identical recovery code.
+
+Validation must force recovery from registers, spills, canonical slots,
+encodable inline constants, traced pool values, boxed F64 recovery actions, and
+reified values.
+
+### Milestone 9: conservative local optimization
 
 Enable optimizations in small groups, accompanied by IR verification and
 interpreter differential tests. The effect model, not pass order or intuition,
 must authorize movement.
 
-### Milestone 7: profiling-guided expansion
+Initial candidates are local and easy to invalidate:
+
+- redundant dominating guards with identical Snapshots and replay states;
+- trivial `Mov` forwarding where representation and Snapshot availability
+  remain valid;
+- local constant folding into `InlineValueConstant` operands;
+- dead code with no effects and no Snapshot-expanded point uses.
+
+Mutable-shape motion, validity-check hoisting, and movement across calls wait
+for concrete effect and alias analyses with generation-checked views.
+
+### Milestone 10: profiling-guided expansion
 
 Measure compilation latency, generated code size, side-exit rates, publication
-traffic, native transition cost, and register pressure. Those measurements
-decide whether to add broader polymorphic Core lowering, a Semantic IR
-optimization frontend, precise stack maps, generic deoptimization
+traffic, native transition cost, register pressure, and recovery-code size.
+Those measurements decide whether to add broader polymorphic Core lowering, a
+Semantic IR optimization frontend, precise stack maps, generic deoptimization
 translations, or backend-local Machine IR.
 
 ## Validation Strategy
@@ -292,12 +433,14 @@ compiler.
 
 ## Bring-up Decisions Still Required
 
-- concrete implementation of the accepted code-cache allocation, Tier-1 W^X
-  transition, and instruction-cache synchronization design;
+- exact Core graph publication API, editor transaction surface, and use-index
+  lifetime rules for the first mutating passes;
+- concrete backend-preparation artifact shape: lowering choices, legalized
+  constant decisions, `LocationSummary` records, and invalidation generation;
 - concrete managed/host transition-record layout and unwind behavior;
 - initial register allocation strategy and reserved registers;
-- the first supported opcode set and the order in which control flow, ICs, and
-  calls enter the compiler;
+- the exact straight-line opcode set for Milestone 4 and the first IC
+  specializations for Milestone 5;
 - code lookup, invalidation, compilation triggers, and failure policy beyond
   the accepted rule that code-cache allocation failure publishes nothing and
   continues in the interpreter;
