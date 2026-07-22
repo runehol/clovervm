@@ -17,6 +17,15 @@ namespace cl::jit
             return XRegister(0);
         }
 
+        void emit_smi_logical(AArch64MacroAssembler &assembler,
+                              LogicalOp operation, ProgramValueRef result,
+                              ProgramValueRef lhs, ProgramValueRef rhs)
+        {
+            assembler.emit_logical_reg(operation, assigned_register(result),
+                                       assigned_register(lhs),
+                                       assigned_register(rhs));
+        }
+
         Result<CodeAllocation, JitCodeError>
         generate_allocation(const ControlFlowGraph &graph, CodeCache &cache,
                             AArch64ValuePoolMode pool_mode)
@@ -65,6 +74,36 @@ namespace cl::jit
                     {
                         assembler.ldr(destination, constant);
                     }
+                    break;
+                }
+
+                case CL_JIT_INSTRUCTION_CASE(AndSMIInstruction,
+                                             and_instruction)
+                {
+                    emit_smi_logical(
+                        assembler, LogicalOp::And,
+                        ProgramValueRef(instruction), and_instruction.lhs(),
+                        and_instruction.rhs());
+                    break;
+                }
+
+                case CL_JIT_INSTRUCTION_CASE(OrrSMIInstruction,
+                                             orr_instruction)
+                {
+                    emit_smi_logical(
+                        assembler, LogicalOp::Orr,
+                        ProgramValueRef(instruction), orr_instruction.lhs(),
+                        orr_instruction.rhs());
+                    break;
+                }
+
+                case CL_JIT_INSTRUCTION_CASE(EorSMIInstruction,
+                                             eor_instruction)
+                {
+                    emit_smi_logical(
+                        assembler, LogicalOp::Eor,
+                        ProgramValueRef(instruction), eor_instruction.lhs(),
+                        eor_instruction.rhs());
                     break;
                 }
 

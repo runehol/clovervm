@@ -10,6 +10,41 @@
 
 namespace cl::jit
 {
+    namespace
+    {
+        template <typename LogicalInstruction>
+        uint64_t execute_smi_logical_with_identical_operands(Value input)
+        {
+            CompilationArena arena;
+            GraphBuilder builder(arena);
+            Block *entry = builder.emplace_block();
+            ParameterInstruction *parameter =
+                builder.emplace_parameter<ParameterInstruction>(entry);
+            TaggedValueRef operand(parameter);
+            LogicalInstruction *result =
+                builder.emplace_instruction<LogicalInstruction>(entry, operand,
+                                                                operand);
+            builder.emplace_instruction<ReturnInstruction>(
+                entry, TaggedValueRef(result));
+            ControlFlowGraph *graph = builder.finalize();
+
+            CodeCache cache;
+            Result<JitCodeObject *, JitCodeError> emission =
+                emit_aarch64_from_cfg(*graph, cache);
+            EXPECT_TRUE(emission);
+            if(!emission)
+            {
+                return 0;
+            }
+            JitCodeObject *code = std::move(emission).value();
+
+            using Function = uint64_t (*)(uint64_t);
+            Function function = reinterpret_cast<Function>(
+                code->entry().bits_for_indirect_target());
+            return function(static_cast<uint64_t>(input.as.integer));
+        }
+    }  // namespace
+
     TEST(AArch64Execution, EmitsIdentityFunctionFromCfg)
     {
         CompilationArena arena;
@@ -63,6 +98,33 @@ namespace cl::jit
         Function function = reinterpret_cast<Function>(
             code->entry().bits_for_indirect_target());
         EXPECT_EQ(static_cast<uint64_t>(expected.as.integer), function());
+    }
+
+    TEST(AArch64Execution, EmitsAndSmiFromCfg)
+    {
+        Value input = Value::from_smi(-0x123456789abcd);
+        EXPECT_EQ(
+            static_cast<uint64_t>(input.as.integer),
+            execute_smi_logical_with_identical_operands<AndSMIInstruction>(
+                input));
+    }
+
+    TEST(AArch64Execution, EmitsOrrSmiFromCfg)
+    {
+        Value input = Value::from_smi(-0x123456789abcd);
+        EXPECT_EQ(
+            static_cast<uint64_t>(input.as.integer),
+            execute_smi_logical_with_identical_operands<OrrSMIInstruction>(
+                input));
+    }
+
+    TEST(AArch64Execution, EmitsEorSmiFromCfg)
+    {
+        Value input = Value::from_smi(-0x123456789abcd);
+        EXPECT_EQ(
+            static_cast<uint64_t>(Value::from_smi(0).as.integer),
+            execute_smi_logical_with_identical_operands<EorSMIInstruction>(
+                input));
     }
 
     TEST(AArch64Execution, CallsGeneratedLeafFunction)

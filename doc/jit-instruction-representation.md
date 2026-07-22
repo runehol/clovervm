@@ -629,6 +629,12 @@ AddSMI
     rhs: ProgramValue(TaggedValue)
     snapshot: Snapshot
 
+AndSMI, OrrSMI, EorSMI
+    result: ProgramValue(TaggedValue)
+    lhs: ProgramValue(TaggedValue)
+    rhs: ProgramValue(TaggedValue)
+    effects: none; binary SMI bitwise operations cannot overflow
+
 BoxF64
     result: ProgramValue(TaggedValue)
     source: ProgramValue(F64)

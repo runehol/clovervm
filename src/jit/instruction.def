@@ -82,6 +82,39 @@ CL_JIT_INSTRUCTION(AddSMI, CL_JIT_IR_LEVELS(Core),
 #undef CL_JIT_AddSMI_ATTRIBUTES
 #undef CL_JIT_AddSMI_OPERANDS
 
+#define CL_JIT_AndSMI_OPERANDS(fixed, variadic, snapshot_values)              \
+    fixed(lhs, ProgramValue, TaggedValue)                                      \
+    fixed(rhs, ProgramValue, TaggedValue)
+#define CL_JIT_AndSMI_ATTRIBUTES(attribute)
+CL_JIT_INSTRUCTION(AndSMI, CL_JIT_IR_LEVELS(Core),
+                   CL_JIT_RESULT(ProgramValue, TaggedValue),
+                   CL_JIT_EFFECT_BOUNDS(None, None),
+                   CL_JIT_AndSMI_OPERANDS, CL_JIT_AndSMI_ATTRIBUTES)
+#undef CL_JIT_AndSMI_ATTRIBUTES
+#undef CL_JIT_AndSMI_OPERANDS
+
+#define CL_JIT_OrrSMI_OPERANDS(fixed, variadic, snapshot_values)              \
+    fixed(lhs, ProgramValue, TaggedValue)                                      \
+    fixed(rhs, ProgramValue, TaggedValue)
+#define CL_JIT_OrrSMI_ATTRIBUTES(attribute)
+CL_JIT_INSTRUCTION(OrrSMI, CL_JIT_IR_LEVELS(Core),
+                   CL_JIT_RESULT(ProgramValue, TaggedValue),
+                   CL_JIT_EFFECT_BOUNDS(None, None),
+                   CL_JIT_OrrSMI_OPERANDS, CL_JIT_OrrSMI_ATTRIBUTES)
+#undef CL_JIT_OrrSMI_ATTRIBUTES
+#undef CL_JIT_OrrSMI_OPERANDS
+
+#define CL_JIT_EorSMI_OPERANDS(fixed, variadic, snapshot_values)              \
+    fixed(lhs, ProgramValue, TaggedValue)                                      \
+    fixed(rhs, ProgramValue, TaggedValue)
+#define CL_JIT_EorSMI_ATTRIBUTES(attribute)
+CL_JIT_INSTRUCTION(EorSMI, CL_JIT_IR_LEVELS(Core),
+                   CL_JIT_RESULT(ProgramValue, TaggedValue),
+                   CL_JIT_EFFECT_BOUNDS(None, None),
+                   CL_JIT_EorSMI_OPERANDS, CL_JIT_EorSMI_ATTRIBUTES)
+#undef CL_JIT_EorSMI_ATTRIBUTES
+#undef CL_JIT_EorSMI_OPERANDS
+
 #define CL_JIT_AddF64_OPERANDS(fixed, variadic, snapshot_values)              \
     fixed(lhs, ProgramValue, F64)                                              \
     fixed(rhs, ProgramValue, F64)
