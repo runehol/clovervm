@@ -4,7 +4,7 @@
 #include "memory/native_layout_declarations.h"
 #include "memory/slab_allocator.h"
 #include "object_model/value.h"
-#include <new>
+#include <memory>
 #include <type_traits>
 #include <utility>
 
@@ -58,7 +58,8 @@ namespace cl
         size_t object_size_in_bytes =
             allocation_size_for<T>(std::forward<Args>(args)...);
         HeapAllocation allocation = heap->allocate(object_size_in_bytes);
-        T *obj = new(allocation.memory) T(std::forward<Args>(args)...);
+        T *obj = std::construct_at(reinterpret_cast<T *>(allocation.memory),
+                                   std::forward<Args>(args)...);
         assert(obj->HeapObject::native_layout_id() == T::native_layout);
         allocation.slab->mark_valid_object(obj);
         return obj;
