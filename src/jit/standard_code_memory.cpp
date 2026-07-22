@@ -16,8 +16,11 @@ namespace cl::jit
         {
         public:
             StandardCodeSlab(void *base, size_t size, size_t page_size)
-                : base_(static_cast<uint8_t *>(base)), size_(size),
+                : base_(static_cast<uint8_t *>(base)), size_(size)
+#ifndef NDEBUG
+                  ,
                   page_size_(page_size)
+#endif
             {
                 assert(base != nullptr);
                 assert(reinterpret_cast<uintptr_t>(base) % page_size == 0);
@@ -88,7 +91,9 @@ namespace cl::jit
         private:
             uint8_t *base_;
             size_t size_;
+#ifndef NDEBUG
             size_t page_size_;
+#endif
         };
     }  // namespace
 

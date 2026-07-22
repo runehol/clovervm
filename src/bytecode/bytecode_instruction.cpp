@@ -760,16 +760,14 @@ namespace cl
         if(info.compound_role == BytecodeCompoundRole::BinaryOperator ||
            info.compound_role == BytecodeCompoundRole::TernaryOperator)
         {
-            Bytecode expected_continuation =
-                info.compound_role == BytecodeCompoundRole::BinaryOperator
-                    ? Bytecode::CheckOperatorNotImplemented
-                    : Bytecode::CheckTernaryOperatorNotImplemented;
             instruction.continuation_pc_offset_ =
                 instruction.next_pc_offset_ - 1;
             assert(
                 Bytecode(
                     code_object.code[*instruction.continuation_pc_offset_]) ==
-                expected_continuation);
+                (info.compound_role == BytecodeCompoundRole::BinaryOperator
+                     ? Bytecode::CheckOperatorNotImplemented
+                     : Bytecode::CheckTernaryOperatorNotImplemented));
         }
 
         BytecodeInstruction::decode_value_effects(code_object, instruction);
