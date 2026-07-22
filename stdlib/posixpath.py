@@ -1,5 +1,6 @@
 import os
 import _os
+import stat
 
 
 curdir = "."
@@ -53,7 +54,7 @@ def isdir(path):
         mode = os.stat(path)[0]
     except ValueError:
         return False
-    return mode // 4096 == 4
+    return stat.S_ISDIR(mode)
 
 
 def isfile(path):
@@ -61,7 +62,7 @@ def isfile(path):
         mode = os.stat(path)[0]
     except ValueError:
         return False
-    return mode // 4096 == 8
+    return stat.S_ISREG(mode)
 
 
 def abspath(path):

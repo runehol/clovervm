@@ -28,7 +28,7 @@ edge cases, platform behavior, or APIs are still missing.
 | [ ] | `abc` | Abstract base classes and metaclass behavior. | Depends on metaclass and descriptor semantics. |
 | [ ] | `functools` | Decorators, wrappers, caching, partial application. | Not started / not assessed. |
 | [ ] | `itertools` | Common efficient iteration building blocks. | Depends on iterator protocol completeness and native helpers for performance. |
-| [ ] | `contextlib` | Context-manager helpers used pervasively in tests and libraries. | Depends on `with` semantics if not already complete. |
+| [~] | `contextlib` | Context-manager helpers used pervasively in tests and libraries. | Pure-Python module now covers `AbstractContextManager`, `closing`, `nullcontext`, and `suppress` on top of current `with` semantics. Missing generator/decorator-heavy APIs (`contextmanager`, `asynccontextmanager`, `ContextDecorator`, `ExitStack`, async helpers, redirection/chdir helpers) pending generators, async, file/stream support, and richer decorator/protocol behavior. |
 
 ## Tier 1: Import and Package Ecosystem
 
@@ -42,7 +42,7 @@ edge cases, platform behavior, or APIs are still missing.
 | [~] | `os` | Environment, paths, file operations, process integration. | POSIX-only `_os` native backend plus public `os.py` now covers core constants, `getcwd`, `chdir`, `listdir` (tuple, not list), process/user/group IDs, environment get/set/unset, `strerror`, `system`, `umask`, `stat`/`lstat` as plain tuples, `access`, `chmod`, `mkdir`/`makedirs`, `rmdir`, `unlink`/`remove`, `rename`/`replace`, and a small `os.path`/`posixpath` subset (`join`, `split`, `dirname`, `basename`, `exists`, `isdir`, `isfile`, `isabs`, `abspath`). Some implementation shape is cleanup debt caused by current string limitations: Python code has explicit `__add__` calls where normal string `+` is not available, cannot iterate or slice strings, and therefore pushes simple path string operations such as split into unnecessary native C. Missing broad CPython surface: bytes/path-like/fd support, `environ` mapping, `OSError` subclasses/errno attributes, named stat result objects, file descriptor I/O, process spawning/exec/wait, symlinks, scandir/walk, full `posixpath`, extended platform constants, and keyword-only dir-fd/follow-symlink behavior. |
 | [~] | `posix` / platform backend | Low-level OS primitives backing `os`. | Private `_os` native module backs the first POSIX syscall slice for `os`; no public `posix` module yet. |
 | [x] | `errno` | Stable OS error constants. | Complete for supported host platforms. |
-| [ ] | `stat` | File mode constants and helpers. | Not started / not assessed. |
+| [~] | `stat` | File mode constants and helpers. | Pure-Python module now covers POSIX `os.stat` tuple indexes, mode constants, `S_IMODE`, `S_IFMT`, `S_IS*` predicates, and `filemode`; `os.path.isdir`/`isfile` now use these helpers. Missing platform-specific file flag constants, named stat result integration, and broader `os`/filesystem semantics. |
 | [ ] | `pathlib` | Modern path abstraction used by tooling and tests. | Not started / not assessed. |
 
 ## Tier 2: Data Formats and Text Handling
@@ -50,7 +50,7 @@ edge cases, platform behavior, or APIs are still missing.
 | Status | Module | Why it matters | Not handled / notes |
 | --- | --- | --- | --- |
 | [ ] | `re` | Regular expressions; required by many parsers and validators. | Not started / not assessed. |
-| [ ] | `string` | Constants and formatter helpers. | Not started / not assessed. |
+| [~] | `string` | Constants and formatter helpers. | Pure-Python module now exposes common constants (`ascii_*`, digits, hexdigits, octdigits, punctuation, whitespace, printable). Missing `capwords`, `Template`, and `Formatter`, which need richer string splitting/capitalization, formatting, regex, mapping, and protocol support. |
 | [ ] | `enum` | Enum classes used by stdlib and application APIs. | Depends on class/metaclass behavior. |
 | [ ] | `dataclasses` | Common declarative class helper. | Depends on annotations, descriptors, introspection, and class mutation semantics. |
 | [ ] | `typing` | Type hint objects imported by modern Python code. | Runtime behavior can start small, but broad compatibility is large. |
@@ -134,11 +134,11 @@ source:
 | [ ] | `abc` | Needed before `collections.abc` and many framework patterns. |
 | [ ] | `functools` | `wraps`, `partial`, and cache helpers have high ecosystem payoff. |
 | [ ] | `itertools` | Start with common primitives once iterator protocol is settled. |
-| [ ] | `contextlib` | Useful after context-manager semantics are solid. |
-| [ ] | `os` | Start with path/environment basics before process-heavy APIs. |
+| [~] | `contextlib` | First context-manager helper slice exists; generator/decorator/async/stack helpers remain. |
+| [~] | `os` | Path/environment/filesystem basics exist; process-heavy, fd, symlink, stat-result, and full path APIs remain. |
 | [ ] | `io` | Foundational for files, codecs, archives, and testing tools. |
 | [x] | `errno` | Complete for supported host platforms. |
-| [ ] | `stat` | Small constants/helpers module with broad utility. |
+| [~] | `stat` | POSIX mode constants/helpers and `filemode` exist; platform flags and named stat integration remain. |
 | [ ] | `pathlib` | Depends on enough `os`/`stat` support to be meaningful. |
 | [ ] | `re` | Large but unlocks a lot of parsers and stdlib modules. |
 | [ ] | `enum` | Useful for modern Python APIs; depends on class semantics. |

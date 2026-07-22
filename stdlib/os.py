@@ -1,5 +1,6 @@
 import _os
 import posixpath as path
+import stat as _stat
 import sys
 
 
@@ -85,7 +86,7 @@ def _isdir(path):
         mode = stat(path)[0]
     except ValueError:
         return False
-    return mode // 4096 == 4
+    return _stat.S_ISDIR(mode)
 
 
 def _dirname(name):
