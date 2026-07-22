@@ -41,10 +41,10 @@ namespace cl
     public:
         using semantic_type = typename T::semantic_type;
 
-        template <typename U = T, typename = std::enable_if_t<
-                                      std::is_default_constructible_v<U> &&
-                                      !std::is_same_v<U, Value>>>
-        Owned() : value_()
+        Owned()
+        requires(std::is_default_constructible_v<T> &&
+                 !std::is_same_v<T, Value>)
+            : value_()
         {
             incref_handle(value_);
         }
@@ -87,9 +87,8 @@ namespace cl
         operator T() const { return value(); }
         Value raw_value() const { return value_.raw_value(); }
 
-        template <typename U = T,
-                  typename ExtractType = decltype(std::declval<U>().extract())>
-        ExtractType extract() const
+        decltype(auto) extract() const
+        requires requires(const T &value) { value.extract(); }
         {
             return value_.extract();
         }
@@ -110,10 +109,10 @@ namespace cl
     public:
         using semantic_type = typename T::semantic_type;
 
-        template <typename U = T, typename = std::enable_if_t<
-                                      std::is_default_constructible_v<U> &&
-                                      !std::is_same_v<U, Value>>>
-        Member() : value_()
+        Member()
+        requires(std::is_default_constructible_v<T> &&
+                 !std::is_same_v<T, Value>)
+            : value_()
         {
             incref_handle(value_);
         }
@@ -154,9 +153,8 @@ namespace cl
         operator T() const { return value(); }
         Value raw_value() const { return value_.raw_value(); }
 
-        template <typename U = T,
-                  typename ExtractType = decltype(std::declval<U>().extract())>
-        ExtractType extract() const
+        decltype(auto) extract() const
+        requires requires(const T &value) { value.extract(); }
         {
             return value_.extract();
         }

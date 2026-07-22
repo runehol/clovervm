@@ -78,23 +78,21 @@ namespace cl
     {
     };
 
-    template <typename A, typename B,
-              std::enable_if_t<HasRawValue<A>::value && HasRawValue<B>::value &&
-                                   HasSameSemanticType<A, B>::value &&
-                                   !(std::is_same_v<std::decay_t<A>, Value> &&
-                                     std::is_same_v<std::decay_t<B>, Value>),
-                               int> = 0>
+    template <typename A, typename B>
+    requires(HasRawValue<A>::value && HasRawValue<B>::value &&
+             HasSameSemanticType<A, B>::value &&
+             !(std::is_same_v<std::decay_t<A>, Value> &&
+               std::is_same_v<std::decay_t<B>, Value>))
     bool operator==(const A &left, const B &right)
     {
         return left.raw_value() == right.raw_value();
     }
 
-    template <typename A, typename B,
-              std::enable_if_t<HasRawValue<A>::value && HasRawValue<B>::value &&
-                                   HasSameSemanticType<A, B>::value &&
-                                   !(std::is_same_v<std::decay_t<A>, Value> &&
-                                     std::is_same_v<std::decay_t<B>, Value>),
-                               int> = 0>
+    template <typename A, typename B>
+    requires(HasRawValue<A>::value && HasRawValue<B>::value &&
+             HasSameSemanticType<A, B>::value &&
+             !(std::is_same_v<std::decay_t<A>, Value> &&
+               std::is_same_v<std::decay_t<B>, Value>))
     bool operator!=(const A &left, const B &right)
     {
         return left.raw_value() != right.raw_value();
@@ -183,45 +181,39 @@ namespace cl
             return TValue(value);
         }
 
-        template <typename U = T,
-                  typename = std::enable_if_t<std::is_same_v<U, SMI> ||
-                                              std::is_same_v<U, CLInt>>>
         static TValue from_smi(int64_t value)
+        requires(std::is_same_v<T, SMI> || std::is_same_v<T, CLInt>)
         {
             return from_value_unchecked(Value::from_smi(value));
         }
 
-        template <typename U = T,
-                  typename = std::enable_if_t<std::is_same_v<U, None>>>
         static TValue None()
+        requires(std::is_same_v<T, None>)
         {
             return from_value_unchecked(Value::None());
         }
 
-        template <typename U = T,
-                  typename = std::enable_if_t<std::is_same_v<U, Bool>>>
         static TValue from_bool(bool value)
+        requires(std::is_same_v<T, Bool>)
         {
             return from_value_unchecked(value ? Value::True() : Value::False());
         }
 
-        template <typename U = T,
-                  typename = std::enable_if_t<std::is_same_v<U, Bool>>>
         static TValue True()
+        requires(std::is_same_v<T, Bool>)
         {
             return from_value_unchecked(Value::True());
         }
 
-        template <typename U = T,
-                  typename = std::enable_if_t<std::is_same_v<U, Bool>>>
         static TValue False()
+        requires(std::is_same_v<T, Bool>)
         {
             return from_value_unchecked(Value::False());
         }
 
         template <typename U = T,
-                  typename ExtractType = typename TValueTraits<U>::extract_type,
-                  typename = std::enable_if_t<std::is_pointer_v<ExtractType>>>
+                  typename ExtractType = typename TValueTraits<U>::extract_type>
+        requires(std::is_pointer_v<ExtractType>)
         static TValue from_oop(std::remove_pointer_t<ExtractType> *ptr)
         {
             return from_value_unchecked(Value::from_oop(ptr));
