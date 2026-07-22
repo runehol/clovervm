@@ -986,8 +986,8 @@ namespace cl::jit
         static constexpr bool IsVariadic = false operands(                     \
             CL_JIT_HAS_NO_VARIADIC, CL_JIT_HAS_VARIADIC, CL_JIT_HAS_VARIADIC); \
                                                                                \
-        template <bool Variadic = IsVariadic,                                  \
-                  std::enable_if_t<Variadic, int> = 0>                         \
+        template <bool Variadic = IsVariadic>                                  \
+        requires(Variadic)                                                     \
         static size_t n_indirect_slots_for(                                    \
             operands(CL_JIT_DECLARE_FIXED_PARAMETER,                           \
                      CL_JIT_DECLARE_VARIADIC_PARAMETER,                        \
@@ -1085,8 +1085,8 @@ namespace cl::jit
         }                                                                      \
                                                                                \
         friend class InstructionPool;                                          \
-        template <bool Variadic = IsVariadic,                                  \
-                  std::enable_if_t<!Variadic, int> = 0>                        \
+        template <bool Variadic = IsVariadic>                                  \
+        requires(!Variadic)                                                    \
         name##Instruction(uint32_t serial,                                     \
                           operands(CL_JIT_DECLARE_FIXED_PARAMETER,             \
                                    CL_JIT_DECLARE_VARIADIC_PARAMETER,          \
@@ -1103,8 +1103,8 @@ namespace cl::jit
         {                                                                      \
         }                                                                      \
                                                                                \
-        template <bool Variadic = IsVariadic,                                  \
-                  std::enable_if_t<Variadic, int> = 0>                         \
+        template <bool Variadic = IsVariadic>                                  \
+        requires(Variadic)                                                     \
         name##Instruction(uint32_t serial, std::span<Slot> indirect_slots,    \
                           operands(CL_JIT_DECLARE_FIXED_PARAMETER,             \
                                    CL_JIT_DECLARE_VARIADIC_PARAMETER,          \
