@@ -72,6 +72,11 @@ def _glob(pathname, recursive, include_hidden):
 
     if dirname != "" and has_magic(dirname):
         dirs = _glob(dirname, recursive, include_hidden)
+        if recursive and dirname == "**":
+            directories = [""]
+            for directory in dirs:
+                directories.append(directory)
+            dirs = directories
     else:
         dirs = [dirname]
 

@@ -4,6 +4,7 @@
 # probes. This file does not copy CPython test code.
 
 import glob
+import os
 
 
 def contains(items, needle):
@@ -48,6 +49,15 @@ assert next(iterator) == "stdlib/glob.py"
 recursive = glob.glob("stdlib/**/*.py", recursive=True)
 assert contains(recursive, "stdlib/glob.py")
 assert contains(recursive, "stdlib/fnmatch.py")
+
+original_directory = os.getcwd()
+os.chdir("stdlib")
+leading_recursive = glob.glob("**/*.py", recursive=True)
+standalone_recursive = glob.glob("**", recursive=True)
+os.chdir(original_directory)
+assert contains(leading_recursive, "glob.py")
+assert contains(leading_recursive, "fnmatch.py")
+assert not contains(standalone_recursive, "")
 
 recursive_all = glob.glob("stdlib/**", recursive=True)
 assert contains(recursive_all, "stdlib/fnmatch.py")
