@@ -343,14 +343,14 @@ namespace cl
 
         explicit Expected(T value) : has_value_(true)
         {
-            std::construct_at(value_ptr(), std::move(value));
+            std::construct_at(storage_ptr(), std::move(value));
         }
 
         Expected(const Expected &other) : has_value_(other.has_value_)
         {
             if(has_value_)
             {
-                std::construct_at(value_ptr(), other.value_ref());
+                std::construct_at(storage_ptr(), other.value_ref());
             }
         }
 
@@ -360,7 +360,7 @@ namespace cl
         {
             if(has_value_)
             {
-                std::construct_at(value_ptr(), std::move(other.value_ref()));
+                std::construct_at(storage_ptr(), std::move(other.value_ref()));
             }
         }
 
@@ -381,7 +381,7 @@ namespace cl
             }
             else if(other.has_value_)
             {
-                std::construct_at(value_ptr(), other.value_ref());
+                std::construct_at(storage_ptr(), other.value_ref());
                 has_value_ = true;
             }
             return *this;
@@ -406,7 +406,7 @@ namespace cl
             }
             else if(other.has_value_)
             {
-                std::construct_at(value_ptr(), std::move(other.value_ref()));
+                std::construct_at(storage_ptr(), std::move(other.value_ref()));
                 has_value_ = true;
             }
             return *this;
@@ -465,15 +465,16 @@ namespace cl
             assert(value.is_exception_marker());
         }
 
-        T *value_ptr()
+        T *storage_ptr() { return reinterpret_cast<T *>(&storage_); }
+
+        T *value_ptr() { return std::launder(storage_ptr()); }
+
+        const T *storage_ptr() const
         {
-            return std::launder(reinterpret_cast<T *>(&storage_));
+            return reinterpret_cast<const T *>(&storage_);
         }
 
-        const T *value_ptr() const
-        {
-            return std::launder(reinterpret_cast<const T *>(&storage_));
-        }
+        const T *value_ptr() const { return std::launder(storage_ptr()); }
 
         T &value_ref() { return *value_ptr(); }
 
