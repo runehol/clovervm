@@ -8,8 +8,8 @@
 
 namespace cl::jit
 {
-    class CompilationArena;
     class ControlFlowGraph;
+    class GraphBuilder;
     class BlockEdge;
 
     class Block
@@ -17,7 +17,10 @@ namespace cl::jit
     public:
         using Serial = TypedSerial<Block>;
 
-        explicit Block(Serial serial) : serial_(serial) {}
+        explicit Block(Serial serial, ControlFlowGraph *graph = nullptr)
+            : serial_(serial), graph_(graph)
+        {
+        }
 
         Serial serial() const { return serial_; }
 
@@ -26,14 +29,14 @@ namespace cl::jit
             return instructions_;
         }
 
+        const std::vector<Instruction *> &parameters() const
+        {
+            return parameters_;
+        }
+
         const std::vector<BlockEdge *> &predecessor_edges() const
         {
             return predecessor_edges_;
-        }
-
-        void append_instruction(Instruction *instruction)
-        {
-            instructions_.push_back(instruction);
         }
 
         TerminatorInstruction terminator() const;
@@ -45,13 +48,26 @@ namespace cl::jit
 
     private:
         friend class ControlFlowGraph;
+        friend class GraphBuilder;
 
-        void add_predecessor_edge(BlockEdge *edge)
+        void append_parameter(Instruction *parameter)
+        {
+            parameters_.push_back(parameter);
+        }
+
+        void append_instruction(Instruction *instruction)
+        {
+            instructions_.push_back(instruction);
+        }
+
+        void append_predecessor_edge(BlockEdge *edge)
         {
             predecessor_edges_.push_back(edge);
         }
 
         Serial serial_;
+        ControlFlowGraph *graph_;
+        std::vector<Instruction *> parameters_;
         std::vector<Instruction *> instructions_;
         std::vector<BlockEdge *> predecessor_edges_;
     };
@@ -79,25 +95,29 @@ namespace cl::jit
     class ControlFlowGraph
     {
     public:
-        explicit ControlFlowGraph(CompilationArena &arena) : arena_(&arena) {}
+        using Serial = TypedSerial<ControlFlowGraph>;
+
+        explicit ControlFlowGraph(Serial serial) : serial_(serial) {}
 
         ControlFlowGraph(const ControlFlowGraph &) = delete;
         ControlFlowGraph &operator=(const ControlFlowGraph &) = delete;
         ControlFlowGraph(ControlFlowGraph &&) = delete;
         ControlFlowGraph &operator=(ControlFlowGraph &&) = delete;
 
-        Block *add_block();
-        BlockEdge *make_block_edge(Block *source, Block *target);
-
+        Serial serial() const { return serial_; }
         Block *entry_block() const { return entry_block_; }
         const std::vector<Block *> &blocks() const { return blocks_; }
+        bool is_published() const { return published_; }
 
         bool owns_block(const Block *block) const;
 
     private:
-        CompilationArena *arena_;
+        friend class GraphBuilder;
+
+        Serial serial_;
         Block *entry_block_ = nullptr;
         std::vector<Block *> blocks_;
+        bool published_ = false;
     };
 
 }  // namespace cl::jit

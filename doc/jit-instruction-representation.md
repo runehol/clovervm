@@ -35,11 +35,11 @@ SemanticValueAnalysis, CoreEffectAnalysis, ...
     concrete phase-owned metadata indexed by instruction
     attached, frozen, invalidated, recomputed, and discarded as required
 
-typed compilation-arena construction
+typed graph-builder construction
     schema-safe allocation of intrinsically valid, unplaced instructions
 
 bulk graph builder
-    cheap append during translation and one-shot publication validation
+    cheap append/emplace during translation and one-shot publication validation
 
 CFG editor
     checked incremental insertion, removal, and instruction replacement
@@ -372,13 +372,13 @@ allocation domain.
 
 ### Construction, Placement, and Publication
 
-Allocation and graph placement are separate operations. The typed compilation
-arena API allocates an intrinsically valid, unplaced concrete instruction. It
-does not need a CFG editor or insertion position:
+Allocation and graph placement are separate operations. The typed builder API
+forwards allocation to the compilation arena and returns an intrinsically valid,
+unplaced concrete instruction. It does not need an insertion position:
 
 ```cpp
 AddSMIInstruction *sum =
-    arena.make_instruction<AddSMIInstruction>(lhs, rhs, snapshot);
+    builder.make_instruction<AddSMIInstruction>(lhs, rhs, snapshot);
 ```
 
 The constructor surface is generated from `instruction.def`.
@@ -406,27 +406,26 @@ This compile-time construction safety does not attempt to prove contextual
 graph properties such as dominance or block-edge ownership. There are two
 placement paths with deliberately different validation costs.
 
-A translator or major lowering uses a bulk `GraphBuilder`. Its common
-`append()` operation attaches an unplaced instruction in amortized constant
-time and performs only work naturally local to that append, such as extending
-the block's instruction sequence. It does not rescan dominance, repeatedly
-verify the partially built graph, or otherwise turn a linear translation into
-a quadratic algorithm. The builder may defer required CFG indexes and other
-derivable graph structures when building them once is cheaper than maintaining
-them incrementally. Optional use records are not a permanently maintained part
-of the graph and are built only when a consuming pass requests them.
+A translator or major lowering uses a bulk `GraphBuilder`. Construction and
+rewriting APIs use `make` for arena allocation without attachment, `append` for
+attaching an existing object at the end of a specified container, and `emplace`
+for allocating and attaching at the end in one operation. The common append and
+emplace operations perform only work naturally
+local to that attachment, such as extending the block's instruction sequence.
+They do not rescan dominance, repeatedly verify the partially built graph, or
+otherwise turn a linear translation into a quadratic algorithm. Optional use
+records are not a permanently maintained part of the graph and are built only
+when a consuming pass requests them.
 
-The builder's `finalize()` operation constructs deferred graph-owned indexes
-and validates the completed graph in one `O(instructions + edges + payload slots)`
-pass. It checks IR-level legality, graph membership, result and operand classes,
-live producers, block-edge ownership, terminator placement, dominance, and
-other structural invariants. It does not build an optional `UseIndex` merely to
+The builder's `finalize()` operation validates the completed graph in one
+`O(instructions + edges + payload slots)` pass. It checks IR-level legality,
+graph membership, result and operand classes, live producers, block-edge
+ownership, terminator placement, local definition-before-use, and other
+structural invariants. It does not build an optional `UseIndex` merely to
 perform this validation. A graph under bulk construction is not published to
 ordinary passes. If final verification finds an invalid graph, that is a
 compiler logic error: it reports the structural diagnostic and hard-asserts
-rather than turning the bug into an interpreter fallback. Region construction
-may similarly attach a batch of mutually referring unplaced instructions before
-validating the batch in its completed context.
+rather than turning the bug into an interpreter fallback.
 
 Once a graph is published, local transformations use the CFG editor. The
 editor attaches factory-created instructions, rewrites operands, updates active

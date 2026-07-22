@@ -85,19 +85,20 @@ must not depend on pointer values or unordered container iteration; serials
 provide diagnostics and deterministic tie-breaking rather than another
 reference mechanism.
 
-`ControlFlowGraph` borrows its `CompilationArena`; the arena must outlive the
-graph and every use of its blocks, edges, and instructions. Blocks, block edges,
-and instructions are allocated in separate arena pools, so each object kind has
-its own serial sequence. Multiple temporary instruction subclasses share the
-one `Instruction` pool and serial sequence until the fixed-size representation
-replaces them.
+`ControlFlowGraph`, blocks, block edges, and instructions are all allocated from
+separate pools in the `CompilationArena`, so each object kind has its own serial
+sequence and the arena necessarily outlives every graph object. A graph does not
+store or use an arena pointer after construction. Multiple temporary instruction
+subclasses share the one `Instruction` pool and serial sequence until the
+fixed-size representation replaces them.
 
-A compilation session owns at most one `ControlFlowGraph` for its arena-backed
-instruction allocation domain. The CFG allocator must assert or fail if asked to
-allocate a second graph in the same session. That session-level invariant makes
-placing one `Instruction *` in two graphs unrepresentable in current
-compilation, so the per-graph verifier does not need to discover cross-graph
-instruction placement.
+A `GraphBuilder` takes the arena, allocates one unpublished graph from it, and
+owns all initial mutation of that graph. `finalize()` verifies and publishes the
+graph, returns its stable arena-owned pointer, and makes that builder unusable.
+Destroying a builder without finalizing is valid; arena teardown reclaims the
+abandoned graph. One arena may own multiple graphs. Instructions are not shared
+between them; this is currently a construction invariant rather than an
+arena-wide placement index.
 
 ## Blocks and Terminators
 
@@ -238,11 +239,16 @@ semantic role in the source terminator. Replacing a terminator may introduce or
 remove outgoing edges. Neither mutation is implemented yet: `BlockEdge` source
 and target are currently immutable, and there is no CFG editor.
 
-`ControlFlowGraph::make_block_edge()` is the supported construction path. It
-checks graph membership in debug builds, allocates the edge, and adds it to the
-target's predecessor index. `CompilationArena::make_block_edge()` performs raw
-allocation only and does not maintain graph indexes; its current public
-visibility is under review before production builders are added.
+`GraphBuilder::make_block_edge()` checks graph membership in debug builds and
+allocates a source-owned edge without attaching it to the target. This matches
+translation order: `emplace_n_blocks()` first creates the complete program-order
+block vector, `block_at()` retrieves each block by that dense order while the
+translator builds instructions and outgoing edges, and then incoming edges are
+derived. During
+`finalize()`, the builder walks source blocks again in program order and appends
+each terminator edge to its target's predecessor vector before verification.
+Predecessor order is therefore deterministic construction order but has no
+semantic significance; the edge itself is the durable identity.
 
 ## Planned Block Parameters and Edge Arguments
 
@@ -330,6 +336,8 @@ structure, or other cached analyses. It checks:
 - the entry block exists and is the first block in graph order;
 - every block is nonempty and has exactly one final block terminator;
 - instructions are non-null and occur in only one position within the graph;
+- every operand definition is a parameter of the same block or an earlier
+  instruction in that block;
 - every terminator has the required semantic block edges for its kind;
 - every outgoing edge names the containing block as its source;
 - every edge target belongs to the same graph;
@@ -347,15 +355,14 @@ The verifier inspects the raw instruction list rather than calling the checked
 `Block::terminator()` accessor, allowing it to diagnose an empty block or a
 malformed final instruction directly.
 
-The verifier is scoped to one `ControlFlowGraph`. Cross-graph instruction
-placement is excluded by the compilation-session rule that one arena-backed
-instruction allocation domain owns at most one CFG.
+The verifier is scoped to one `ControlFlowGraph`; it does not maintain an
+arena-wide index merely to diagnose an instruction placed in two graphs.
 
 The block-argument extension and later SSA verification will add these checks:
 
 - every placed instruction is live and its kind permits the graph's immutable
   IR level according to `src/jit/instruction.def`;
-- every instruction and result reference stays within one graph and IR level;
+- every instruction kind permits the graph's IR level;
 - every edge argument list matches the target parameter list in arity and
   required `OperandClass`; Core arguments additionally match the parameter's
   `ValueRepresentation`, plus any later phase-specific contract;

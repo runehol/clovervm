@@ -4,7 +4,7 @@
 |---|---|
 | Document type | Implementation plan |
 | Status | Proposed |
-| Implementation | Core instruction storage, typed instruction construction, preliminary CFG, code-cache allocation/publication, generic machine-code emitter, AArch64 assembler, value-pool loads, and executable AArch64 tests are implemented; Core graph publication, backend preparation, and compiler/runtime entry remain |
+| Implementation | Core instruction storage, typed instruction construction, initial Core graph construction/publication, code-cache allocation/publication, generic machine-code emitter, AArch64 assembler, value-pool loads, and executable AArch64 tests are implemented; managed-constant retention, backend preparation, and compiler/runtime entry remain |
 | Scope | Initial JIT staging, vertical slices, temporary runtime policies, and validation |
 | Owning layers | The JIT owns compilation and generated transitions; the interpreter, managed calling convention, native boundaries, and reclaimer retain their existing contracts |
 | Validated against | Supporting infrastructure, instruction-representation tests, CFG tests, code-cache tests, and executable AArch64 tests in the working tree on 2026-07-22 |
@@ -163,21 +163,28 @@ Connect typed instructions to blocks and make a hand-built Core CFG verifiable.
 This is the smallest useful graph substrate for both the backend and bytecode
 paths.
 
-Scope:
+The initial graph-construction slice provides:
 
-- complete enough `GraphBuilder` or arena-owned construction to create one
-  `ControlFlowGraph` with an entry block;
-- place `Parameter`, `SynthesizeImmediate`, `LoadConstantPoolValue`, and
-  `Return` instructions in blocks;
-- enforce one CFG per arena-backed instruction allocation domain;
-- verify block ownership, instruction placement, terminator placement, and
-  cross-graph references;
-- verify `ValueConstant` retention and `InlineValueConstant` invariants for the
-  minimal instruction set.
+- arena-owned `ControlFlowGraph` objects that do not retain an allocator pointer;
+- a privileged `GraphBuilder` that allocates one unpublished graph, makes or
+  emplaces blocks, instructions, and parameters, makes source-owned block
+  edges, derives successor predecessor lists during finalization, and returns
+  the published arena-owned graph;
+- separate ordinary vectors for a block's ordered parameter definitions and
+  body instructions;
+- final verification of block ownership, instruction placement, Core-kind
+  legality, terminator placement, same-block definition-before-use, result
+  classes, and value representations before publication.
+
+The remaining work in this milestone is to place
+`SynthesizeImmediate` and `LoadConstantPoolValue` in representative graphs and
+implement compilation-session retention and verification for pointer-valued
+`ValueConstant`s.
 
 Detached-storage poisoning, editor replacement, mutation-aware `UseIndex`,
-Snapshot-expanded liveness, block parameters, and general CFG mutation are not
-part of this milestone.
+Snapshot-expanded liveness, non-entry block parameters and their edge argument
+lists, and general published-CFG mutation are not part of this milestone. Entry
+block parameters already represent function arguments.
 
 ### Milestone 2: executable AArch64 from minimal Core
 
@@ -210,18 +217,20 @@ the JIT-to-interpreter thunk.
 
 Scope:
 
-- select fixed lowering recipes for `Parameter`, `SynthesizeImmediate`,
-  `LoadConstantPoolValue`, and `Return`;
+- select lowering recipes and real `LocationSummary` constraints for
+  `Parameter`, `SynthesizeImmediate`, `LoadConstantPoolValue`, and `Return`;
 - use a deliberately fixed argument/result register convention;
+- produce separate trivial `LocationAssignments` satisfying those constraints,
+  without implementing a general allocator;
 - emit immediate synthesis and traced value-pool loads through the Core
   materialization instructions;
 - publish through the existing code cache;
 - execute the generated code from focused tests.
 
-The output of this milestone is executable code, not the durable
-`BackendPreparation` phase product. Formal `LocationSummary`, liveness, real
-register allocation, branches, calls, Snapshots, side exits, and recovery are
-deliberately out of scope.
+The output includes the minimal durable `BackendPreparation` and
+`LocationAssignments` phase products. General liveness and register allocation,
+branches, calls, Snapshots, side exits, and recovery are deliberately out of
+scope.
 
 ### Milestone 3: bytecode walking and symbolic interpreter state
 
@@ -477,7 +486,8 @@ compiler.
   argument/result registers, managed frame setup, generated return target, and
   the JIT-to-interpreter thunk;
 - concrete managed/host transition-record layout and unwind behavior;
-- initial register allocation strategy and reserved registers;
+- initial register allocation strategy beyond the accepted global reservation
+  of AArch64 `x16` as the backend's `IP0` scratch register;
 - the exact straight-line opcode set for Milestone 6 and the first guard family
   for Milestone 7;
 - code lookup, invalidation, compilation triggers, and failure policy beyond

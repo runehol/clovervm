@@ -780,12 +780,26 @@ generically by `ProgramValueRef`; the block stores their references in its
 ordered parameter vector. A genuine need for multi-result instructions would
 justify revisiting this rule, but none is currently required.
 
+A block stores parameter instructions separately from its ordinary instruction
+sequence. Both are ordinary reclaimable vectors of arena-owned `Instruction *`
+pointers. Parameter-vector position defines the block parameter number;
+parameters conceptually precede every body instruction but are not schedulable
+members of the body vector. Blocks are relatively few and are destroyed
+normally so vector storage can be reclaimed during repeated graph rebuilding,
+while the much more numerous fixed-size instructions remain trivially
+destructible arena records.
+
 A block owns one ordered parameter vector, and every incoming edge supplies an
 equally sized argument vector. The entire edge transfer has parallel-copy
 semantics. It is never interpreted as a sequence of assignments in which an
 earlier destination can overwrite a source still needed by a later one. The
 backend resolves the parallel copy after locations have been assigned, using an
 edge block or scratch location to break cycles when necessary.
+
+An instruction operand may reference only a parameter of its own block or an
+earlier instruction in that block. Values cross block boundaries exclusively as
+edge arguments received by successor block parameters. This makes local order
+the body vector's order and avoids a graph-wide instruction-placement index.
 
 Compilation behavior must not depend on pointer addresses or hash-table
 iteration order. Passes traverse blocks, instructions, edges, and worklists in
@@ -865,14 +879,28 @@ structures transactionally; it does not mutate the old instruction in place.
 Logical interpreter homes are tracked by FrameStates and Snapshots rather than
 by preserving an SSA result identity across rewrites.
 
+Initial construction uses a privileged `GraphBuilder` that takes the compilation
+arena and allocates its unpublished graph from that arena; blocks expose their
+vectors read-only to ordinary clients. Builder finalization verifies and
+publishes the graph, returns its stable arena-owned pointer, and invalidates the
+builder. It is valid to abandon an unfinalized graph when the enclosing
+compilation fails. Builder and rewriter APIs consistently use `make` for
+allocation without attachment, `append` for attachment at the end of a specified
+container, and `emplace` for allocation and attachment at the end.
+
+Published block-body mutation uses a proposed `BlockRewrite`: the editor builds
+a replacement ordinary vector from existing and new instruction pointers and
+commits it by swapping the vector. This keeps partial rebuilds invisible and
+makes traversal contiguous. Multi-block movement commits the affected rewrites
+together before deciding which omitted instructions are actually detached.
+
 Initial translation and major representation boundaries use a bulk graph
 builder rather than paying incremental-editor costs for every appended
 instruction. Schema-generated, IR-level-specific factories allocate
 intrinsically valid, unplaced instructions from the compilation arena. Builder
-append is amortized constant time and deliberately defers dominance, global
-structural checks, and optionally index construction. Finalization constructs
-the deferred indexes and validates the complete destination graph once in
-linear time before publishing it to passes. This keeps type-safe construction
+append and emplace are amortized constant time and deliberately defer global
+structural checks. Finalization validates the complete destination graph once
+in linear time before publishing it to passes. This keeps type-safe construction
 from making an otherwise linear JIT translation quadratic. The incremental
 editor remains the mutation authority for an already published graph; large
 edit transactions may likewise defer global verification until commit.

@@ -38,6 +38,29 @@ namespace cl::jit
             return "block edge e" + std::to_string(edge->serial().value());
         }
 
+        std::string instruction_name(const Instruction *instruction)
+        {
+            if(instruction == nullptr)
+            {
+                return "null instruction";
+            }
+            return "instruction i" +
+                   std::to_string(instruction->serial().value());
+        }
+
+        bool is_parameter_kind(InstructionKind kind)
+        {
+            return kind == InstructionKind::Parameter ||
+                   kind == InstructionKind::ParameterF64;
+        }
+
+        bool is_core_instruction(InstructionKind kind)
+        {
+            uint8_t levels = static_cast<uint8_t>(
+                instruction_kind_metadata(kind).allowed_ir_levels);
+            return (levels & static_cast<uint8_t>(IRLevelMask::Core)) != 0;
+        }
+
         size_t expected_successor_count(InstructionKind kind)
         {
             switch(kind)
@@ -97,6 +120,44 @@ namespace cl::jit
 
         for(const Block *block: blocks)
         {
+            const std::vector<Instruction *> &parameters = block->parameters();
+            if(block != graph.entry_block() && !parameters.empty())
+            {
+                return invalid(block_name(block) +
+                               " has parameters before block-edge arguments "
+                               "are supported");
+            }
+            for(const Instruction *parameter: parameters)
+            {
+                if(parameter == nullptr)
+                {
+                    return invalid(block_name(block) +
+                                   " contains a null block parameter");
+                }
+                if(parameter->is_detached())
+                {
+                    return invalid(block_name(block) + " contains detached " +
+                                   instruction_name(parameter));
+                }
+                if(!is_parameter_kind(parameter->kind()))
+                {
+                    return invalid(instruction_name(parameter) + " in " +
+                                   block_name(block) +
+                                   " is not a block-parameter instruction");
+                }
+                if(!is_core_instruction(parameter->kind()))
+                {
+                    return invalid(instruction_name(parameter) +
+                                   " is not legal in Core IR");
+                }
+                if(!instruction_set.insert(parameter).second)
+                {
+                    return invalid(instruction_name(parameter) +
+                                   " belongs to more than one instruction "
+                                   "position");
+                }
+            }
+
             const std::vector<Instruction *> &instructions =
                 block->instructions();
             if(instructions.empty())
@@ -112,12 +173,28 @@ namespace cl::jit
                     return invalid(block_name(block) +
                                    " contains a null instruction");
                 }
+                if(instruction->is_detached())
+                {
+                    return invalid(block_name(block) + " contains detached " +
+                                   instruction_name(instruction));
+                }
+                if(is_parameter_kind(instruction->kind()))
+                {
+                    return invalid(instruction_name(instruction) + " in " +
+                                   block_name(block) +
+                                   " is a block parameter in the instruction "
+                                   "list");
+                }
+                if(!is_core_instruction(instruction->kind()))
+                {
+                    return invalid(instruction_name(instruction) +
+                                   " is not legal in Core IR");
+                }
                 if(!instruction_set.insert(instruction).second)
                 {
-                    return invalid(
-                        "instruction i" +
-                        std::to_string(instruction->serial().value()) +
-                        " belongs to more than one instruction position");
+                    return invalid(instruction_name(instruction) +
+                                   " belongs to more than one instruction "
+                                   "position");
                 }
 
                 bool is_last = index + 1 == instructions.size();
@@ -234,6 +311,66 @@ namespace cl::jit
                                    " predecessor index is not referenced once "
                                    "by its source terminator");
                 }
+            }
+        }
+
+        for(const Block *block: blocks)
+        {
+            absl::flat_hash_set<const Instruction *> available_definitions;
+            for(const Instruction *parameter: block->parameters())
+            {
+                available_definitions.insert(parameter);
+            }
+
+            for(const Instruction *instruction: block->instructions())
+            {
+                std::string reference_error;
+                visit_operand_references(
+                    *instruction,
+                    [&](OperandClass operand_class,
+                        ValueRepresentation required_representation,
+                        Instruction *producer) {
+                        if(!reference_error.empty())
+                        {
+                            return;
+                        }
+                        if(available_definitions.find(producer) ==
+                           available_definitions.end())
+                        {
+                            reference_error = instruction_name(instruction) +
+                                              " in " + block_name(block) +
+                                              " references " +
+                                              instruction_name(producer) +
+                                              " outside its block or before "
+                                              "its definition";
+                            return;
+                        }
+                        if(static_cast<uint8_t>(operand_class) !=
+                           static_cast<uint8_t>(producer->result_class()))
+                        {
+                            reference_error =
+                                instruction_name(instruction) +
+                                " has an operand with an incompatible result "
+                                "class";
+                            return;
+                        }
+                        if(operand_class == OperandClass::ProgramValue &&
+                           required_representation !=
+                               ValueRepresentation::None &&
+                           producer->value_representation() !=
+                               required_representation)
+                        {
+                            reference_error =
+                                instruction_name(instruction) +
+                                " has a program-value operand with an "
+                                "incompatible representation";
+                        }
+                    });
+                if(!reference_error.empty())
+                {
+                    return invalid(std::move(reference_error));
+                }
+                available_definitions.insert(instruction);
             }
         }
 

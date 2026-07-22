@@ -8,20 +8,31 @@ namespace cl::jit
     namespace
     {
         InstructionKindMetadata make_instruction_kind_metadata(
-            EffectProfile must_effects, EffectProfile may_effects,
-            uint8_t fixed_operand_count, uint8_t attribute_count,
-            uint8_t inline_slot_count, bool has_variadic_operands)
+            IRLevelMask allowed_ir_levels, EffectProfile must_effects,
+            EffectProfile may_effects, uint8_t fixed_operand_count,
+            uint8_t attribute_count, uint8_t inline_slot_count,
+            bool has_variadic_operands)
         {
             assert(inline_slot_count <= Instruction::InlineSlotCount);
-            return {must_effects,    may_effects,       fixed_operand_count,
-                    attribute_count, inline_slot_count, has_variadic_operands};
+            return {allowed_ir_levels,    must_effects,    may_effects,
+                    fixed_operand_count,  attribute_count, inline_slot_count,
+                    has_variadic_operands};
         }
 
         InstructionKindMetadata metadata_for(InstructionKind kind)
         {
             switch(kind)
             {
-#define CL_JIT_IR_LEVELS(...)
+#define CL_JIT_IR_LEVELS_ONE(first) IRLevelMask::first
+#define CL_JIT_IR_LEVELS_TWO(first, second)                                    \
+    (IRLevelMask::first | IRLevelMask::second)
+#define CL_JIT_IR_LEVELS_THREE(first, second, third)                           \
+    (IRLevelMask::first | IRLevelMask::second | IRLevelMask::third)
+#define CL_JIT_SELECT_IR_LEVELS(_1, _2, _3, selected, ...) selected
+#define CL_JIT_IR_LEVELS(...)                                                  \
+    CL_JIT_SELECT_IR_LEVELS(__VA_ARGS__, CL_JIT_IR_LEVELS_THREE,               \
+                            CL_JIT_IR_LEVELS_TWO,                              \
+                            CL_JIT_IR_LEVELS_ONE)(__VA_ARGS__)
 #define CL_JIT_RESULT(...)
 #define CL_JIT_EFFECT_BOUNDS(must_effects, may_effects)                        \
     EffectProfile::must_effects, EffectProfile::may_effects
@@ -51,7 +62,7 @@ namespace cl::jit
                     (has_variadic_operands ? 1 : fixed_operand_count) +        \
                     attribute_count;                                           \
             return make_instruction_kind_metadata(                             \
-                effects, fixed_operand_count, attribute_count,                 \
+                ir_levels, effects, fixed_operand_count, attribute_count,      \
                 inline_slot_count, has_variadic_operands);                     \
         }
 #include "jit/instruction.def"
@@ -63,6 +74,10 @@ namespace cl::jit
 #undef CL_JIT_EFFECT_BOUNDS
 #undef CL_JIT_RESULT
 #undef CL_JIT_IR_LEVELS
+#undef CL_JIT_SELECT_IR_LEVELS
+#undef CL_JIT_IR_LEVELS_THREE
+#undef CL_JIT_IR_LEVELS_TWO
+#undef CL_JIT_IR_LEVELS_ONE
             }
             assert(false);
             return {};

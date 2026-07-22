@@ -24,6 +24,9 @@ namespace cl::jit
         CompilationArena(CompilationArena &&) = delete;
         CompilationArena &operator=(CompilationArena &&) = delete;
 
+    private:
+        friend class GraphBuilder;
+
         template <typename... Args> Block *make_block(Args &&...args)
         {
             return blocks_.make(std::forward<Args>(args)...);
@@ -52,7 +55,9 @@ namespace cl::jit
             }
         }
 
-    private:
+        ControlFlowGraph *make_graph() { return graphs_.make(); }
+
+        ObjectPool<ControlFlowGraph> graphs_;
         ObjectPool<Block> blocks_;
         ObjectPool<BlockEdge> block_edges_;
         InstructionPool instructions_;

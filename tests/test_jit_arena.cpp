@@ -1,4 +1,5 @@
 #include "jit/compilation_arena.h"
+#include "jit/graph_builder.h"
 #include "jit/instruction.h"
 #include "jit/object_pool.h"
 #include "object_model/value.h"
@@ -54,12 +55,13 @@ namespace cl::jit
     TEST(JitCompilationArena, UsesOneSerialSequencePerPool)
     {
         CompilationArena arena;
-        Block *first_block = arena.make_block();
-        Block *second_block = arena.make_block();
+        GraphBuilder builder(arena);
+        Block *first_block = builder.make_block();
+        Block *second_block = builder.make_block();
         ParameterInstruction *first_instruction =
-            arena.make_instruction<ParameterInstruction>();
+            builder.make_instruction<ParameterInstruction>();
         ParameterInstruction *second_instruction =
-            arena.make_instruction<ParameterInstruction>();
+            builder.make_instruction<ParameterInstruction>();
 
         EXPECT_EQ(0u, first_block->serial().value());
         EXPECT_EQ(1u, second_block->serial().value());
@@ -73,11 +75,12 @@ namespace cl::jit
         static_assert(std::is_trivially_destructible_v<Instruction>);
 
         CompilationArena arena;
+        GraphBuilder builder(arena);
         std::vector<Instruction *> instructions;
         for(size_t index = 0; index < 256; ++index)
         {
             instructions.push_back(
-                arena.make_instruction<ParameterInstruction>());
+                builder.make_instruction<ParameterInstruction>());
         }
 
         for(size_t index = 0; index < instructions.size(); ++index)
@@ -139,7 +142,7 @@ namespace cl::jit
         static_assert(std::is_base_of_v<Instruction, AddSMIInstruction>);
         static_assert(sizeof(AddSMIInstruction) == sizeof(Instruction));
         static_assert(std::is_same_v<
-                      decltype(std::declval<CompilationArena &>()
+                      decltype(std::declval<GraphBuilder &>()
                                    .make_instruction<ParameterInstruction>()),
                       ParameterInstruction *>);
         static_assert(
@@ -194,9 +197,10 @@ namespace cl::jit
     TEST(JitInstructionConstruction, EncodesFixedAttributes)
     {
         CompilationArena arena;
+        GraphBuilder builder(arena);
         InlineValueConstant constant(Value::False());
         SynthesizeImmediateInstruction *instruction =
-            arena.make_instruction<SynthesizeImmediateInstruction>(constant);
+            builder.make_instruction<SynthesizeImmediateInstruction>(constant);
 
         EXPECT_EQ(InstructionKind::SynthesizeImmediate, instruction->kind());
         EXPECT_EQ(Value::False(), instruction->immediate().value());
@@ -209,10 +213,11 @@ namespace cl::jit
     TEST(JitInstructionTraversal, DistinguishesReferencesConstantsAndSnapshots)
     {
         CompilationArena arena;
-        TaggedValueRef lhs(arena.make_instruction<ParameterInstruction>());
-        SnapshotRef snapshot(arena.make_instruction<SnapshotInstruction>(
+        GraphBuilder builder(arena);
+        TaggedValueRef lhs(builder.make_instruction<ParameterInstruction>());
+        SnapshotRef snapshot(builder.make_instruction<SnapshotInstruction>(
             std::span<const SnapshotValue>{}, BytecodePC{17}));
-        AddSMIInstruction *add = arena.make_instruction<AddSMIInstruction>(
+        AddSMIInstruction *add = builder.make_instruction<AddSMIInstruction>(
             TaggedValueOperand(lhs),
             TaggedValueOperand(InlineValueConstant(Value::from_smi(3))),
             snapshot);
@@ -225,10 +230,15 @@ namespace cl::jit
         EXPECT_EQ(snapshot.instruction(), add->snapshot().instruction());
 
         std::vector<std::pair<OperandClass, Instruction *>> references;
-        visit_operand_references(
-            *add, [&](OperandClass operand_class, Instruction *producer) {
-                references.emplace_back(operand_class, producer);
-            });
+        visit_operand_references(*add, [&](OperandClass operand_class,
+                                           ValueRepresentation representation,
+                                           Instruction *producer) {
+            EXPECT_EQ(operand_class == OperandClass::ProgramValue
+                          ? ValueRepresentation::TaggedValue
+                          : ValueRepresentation::None,
+                      representation);
+            references.emplace_back(operand_class, producer);
+        });
 
         ASSERT_EQ(2u, references.size());
         EXPECT_EQ(OperandClass::ProgramValue, references[0].first);
@@ -240,21 +250,23 @@ namespace cl::jit
     TEST(JitInstructionTraversal, WalksVariadicPythonCallArguments)
     {
         CompilationArena arena;
-        TaggedValueRef callable(arena.make_instruction<ParameterInstruction>());
-        TaggedValueRef first(arena.make_instruction<ParameterInstruction>());
-        TaggedValueRef second(arena.make_instruction<ParameterInstruction>());
-        SnapshotRef snapshot(arena.make_instruction<SnapshotInstruction>(
+        GraphBuilder builder(arena);
+        TaggedValueRef callable(
+            builder.make_instruction<ParameterInstruction>());
+        TaggedValueRef first(builder.make_instruction<ParameterInstruction>());
+        TaggedValueRef second(builder.make_instruction<ParameterInstruction>());
+        SnapshotRef snapshot(builder.make_instruction<SnapshotInstruction>(
             std::span<const SnapshotValue>{}, BytecodePC{23}));
         std::array<TaggedValueOperand, 3> arguments = {
             TaggedValueOperand(first),
             TaggedValueOperand(InlineValueConstant(Value::None())),
             TaggedValueOperand(second)};
         PythonCallInstruction *call =
-            arena.make_instruction<PythonCallInstruction>(
+            builder.make_instruction<PythonCallInstruction>(
                 TaggedValueOperand(callable), snapshot,
                 std::span<const TaggedValueOperand>(arguments), BytecodePC{23});
         PythonCallInstruction *call_without_arguments =
-            arena.make_instruction<PythonCallInstruction>(
+            builder.make_instruction<PythonCallInstruction>(
                 TaggedValueOperand(callable), snapshot,
                 std::span<const TaggedValueOperand>{}, BytecodePC{41});
 
@@ -283,10 +295,15 @@ namespace cl::jit
         EXPECT_EQ(23u, snapshot.instruction()->slot(1));
 
         std::vector<std::pair<OperandClass, Instruction *>> references;
-        visit_operand_references(
-            *call, [&](OperandClass operand_class, Instruction *producer) {
-                references.emplace_back(operand_class, producer);
-            });
+        visit_operand_references(*call, [&](OperandClass operand_class,
+                                            ValueRepresentation representation,
+                                            Instruction *producer) {
+            EXPECT_EQ(operand_class == OperandClass::ProgramValue
+                          ? ValueRepresentation::TaggedValue
+                          : ValueRepresentation::None,
+                      representation);
+            references.emplace_back(operand_class, producer);
+        });
 
         ASSERT_EQ(4u, references.size());
         EXPECT_EQ(callable.instruction(), references[0].second);
@@ -300,8 +317,9 @@ namespace cl::jit
          SnapshotStoresPayloadsBeforeParallelDescriptors)
     {
         CompilationArena arena;
-        TaggedValueRef tagged(arena.make_instruction<ParameterInstruction>());
-        F64Ref f64(arena.make_instruction<ParameterF64Instruction>());
+        GraphBuilder builder(arena);
+        TaggedValueRef tagged(builder.make_instruction<ParameterInstruction>());
+        F64Ref f64(builder.make_instruction<ParameterF64Instruction>());
         std::array<SnapshotValue, 4> captured_values = {
             SnapshotValue(tagged), SnapshotValue(f64),
             SnapshotValue(InlineValueConstant(Value::True())),
@@ -312,7 +330,7 @@ namespace cl::jit
                           BytecodePC{91}));
 
         SnapshotInstruction *snapshot =
-            arena.make_instruction<SnapshotInstruction>(
+            builder.make_instruction<SnapshotInstruction>(
                 std::span<const SnapshotValue>(captured_values),
                 BytecodePC{91});
 
@@ -347,8 +365,11 @@ namespace cl::jit
 
         std::vector<Instruction *> references;
         visit_operand_references(
-            *snapshot, [&](OperandClass operand_class, Instruction *producer) {
+            *snapshot,
+            [&](OperandClass operand_class, ValueRepresentation representation,
+                Instruction *producer) {
                 EXPECT_EQ(OperandClass::ProgramValue, operand_class);
+                EXPECT_EQ(ValueRepresentation::None, representation);
                 references.push_back(producer);
             });
         ASSERT_EQ(2u, references.size());

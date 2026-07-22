@@ -188,6 +188,7 @@ namespace cl::jit
 
     struct InstructionKindMetadata
     {
+        IRLevelMask allowed_ir_levels;
         EffectProfile must_effects;
         EffectProfile may_effects;
         uint8_t fixed_operand_count;
@@ -1242,11 +1243,12 @@ namespace cl::jit
             return instruction.slot(slot_index++);
         };
 
-        auto visit_program_value = [&](uintptr_t word) {
+        auto visit_program_value = [&](uintptr_t word,
+                                       ValueRepresentation representation) {
             ProgramValueOperand operand = program_value_operand_from_raw(word);
             if(operand.is_reference())
             {
-                visitor(OperandClass::ProgramValue,
+                visitor(OperandClass::ProgramValue, representation,
                         operand.reference().instruction());
             }
         };
@@ -1254,7 +1256,8 @@ namespace cl::jit
             Instruction *producer = reinterpret_cast<Instruction *>(word);
             assert(producer != nullptr);
             assert(producer->result_class() == ResultClass::Snapshot);
-            visitor(OperandClass::Snapshot, producer);
+            visitor(OperandClass::Snapshot, ValueRepresentation::None,
+                    producer);
         };
 
         switch(instruction.kind())
@@ -1268,7 +1271,7 @@ namespace cl::jit
         if constexpr(OperandClass::operand_class ==                            \
                      OperandClass::ProgramValue)                               \
         {                                                                      \
-            visit_program_value(word);                                         \
+            visit_program_value(word, ValueRepresentation::representation);    \
         }                                                                      \
         else                                                                   \
         {                                                                      \
@@ -1283,7 +1286,8 @@ namespace cl::jit
             if constexpr(OperandClass::operand_class ==                        \
                          OperandClass::ProgramValue)                           \
             {                                                                  \
-                visit_program_value(word);                                     \
+                visit_program_value(word,                                      \
+                                    ValueRepresentation::representation);      \
             }                                                                  \
             else                                                               \
             {                                                                  \
@@ -1303,6 +1307,7 @@ namespace cl::jit
             {                                                                  \
                 case SnapshotValueKind::ProgramValue:                          \
                     visitor(OperandClass::ProgramValue,                        \
+                            ValueRepresentation::None,                         \
                             value.program_value().instruction());              \
                     break;                                                     \
                 case SnapshotValueKind::InlineValueConstant:                   \
