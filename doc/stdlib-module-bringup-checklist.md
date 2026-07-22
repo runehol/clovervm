@@ -68,7 +68,7 @@ edge cases, platform behavior, or APIs are still missing.
 | [ ] | `io` | Text/binary streams, file objects, buffering. | Not started / not assessed. |
 | [ ] | `tempfile` | Temporary files/directories used by tests and tools. | Depends on `os`, randomness, and file I/O. |
 | [ ] | `shutil` | File copying, recursive removal, terminal helpers. | Depends on `os`, `stat`, and file I/O. |
-| [ ] | `glob` | Filesystem pattern expansion. | Depends on `os`, `fnmatch`, and path handling. |
+| [~] | `glob` | Filesystem pattern expansion. | Pure-Python module now covers common POSIX string-path `glob`, list-backed `iglob`, `escape`, `has_magic`, deprecated-compatible `glob0`/`glob1` without warnings, hidden-file filtering, and a small recursive `**` directory expansion. Missing bytes/path-like support, `root_dir`, `dir_fd`, exact generator behavior, symlink-specific recursion behavior, sorted/stable ordering guarantees, and full CPython `translate` semantics. |
 | [~] | `fnmatch` | Shell-style filename matching. | Pure-Python module now covers `fnmatch`, `fnmatchcase`, `filter`, Python 3.14 `filterfalse`, and representative `translate` output for literal, `*`, `?`, bracket, negated bracket, and simple range patterns. Matching uses a direct shell-pattern engine because `re` is not available. Missing bytes support, CPython's regex translation details for complex bracket escaping/set operations, and LRU caching. |
 | [ ] | `subprocess` | Running external commands. | Platform-sensitive; requires process and file descriptor support. |
 | [ ] | `argparse` | Command-line parsing for tools. | Not started / not assessed. |
