@@ -16,6 +16,8 @@ namespace cl::jit
         {
         public:
             static constexpr size_t MaximumUnitSize = 64 * 1024;
+            static constexpr uint32_t MinimumSize = 1;
+            static constexpr uint32_t MaximumSize = 4;
 
             TestDirectBranch(Label target, int64_t short_range)
                 : target_(target), short_range_(short_range)
@@ -28,11 +30,12 @@ namespace cl::jit
             }
 
             const CodeTarget &target() const { return target_; }
-            uint32_t min_size() const { return 1; }
-            uint32_t max_size() const { return 4; }
+            uint32_t min_size() const { return MinimumSize; }
+            uint32_t max_size() const { return MaximumSize; }
 
             uint32_t select(MachineAddress source, MachineAddress target)
             {
+                static_assert(MaximumSize <= MaximumUnitSize);
                 int64_t displacement = source.displacement_to(target);
                 short_selected_ = displacement >= -short_range_ &&
                                   displacement <= short_range_;

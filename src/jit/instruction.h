@@ -1066,6 +1066,7 @@ namespace cl::jit
                      CL_JIT_WRITE_INDIRECT_VARIADIC,                           \
                      CL_JIT_WRITE_INDIRECT_SNAPSHOT_VALUES)                    \
             attributes(CL_JIT_IGNORE_ARGUMENT)                                \
+            (void)index;                                                       \
             assert(index == indirect_slots.size());                            \
             return indirect_slots.data();                                      \
         }                                                                      \

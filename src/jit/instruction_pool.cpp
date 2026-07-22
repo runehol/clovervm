@@ -38,6 +38,7 @@ namespace cl::jit
         --slab.remaining;
 
         uintptr_t address = reinterpret_cast<uintptr_t>(storage);
+        (void)address;
         assert((address & value_interned_ptr_tag) != 0);
         assert((address & (alignof(Instruction) - 1)) == 0);
 

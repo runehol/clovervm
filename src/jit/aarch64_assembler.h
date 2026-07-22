@@ -352,6 +352,7 @@ namespace cl::jit
             {
                 bool sets_flags =
                     (static_cast<uint32_t>(operation) & (1u << 29)) != 0;
+                (void)sets_flags;
                 assert(destination.is_zero() == sets_flags);
             }
             emit_arithmetic_imm12(GPRWidth::X, operation,
@@ -370,6 +371,7 @@ namespace cl::jit
             {
                 bool sets_flags =
                     (static_cast<uint32_t>(operation) & (1u << 29)) != 0;
+                (void)sets_flags;
                 assert(destination.is_zero() == sets_flags);
             }
             emit_arithmetic_imm12(GPRWidth::W, operation,

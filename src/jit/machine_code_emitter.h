@@ -198,6 +198,7 @@ namespace cl::jit
         {
             for(const std::optional<size_t> &binding: label_bindings_)
             {
+                (void)binding;
                 assert(binding.has_value());
             }
 
@@ -208,9 +209,8 @@ namespace cl::jit
                 cursor = add_sizes(cursor, fragment.bytes.size());
                 if(fragment.direct_branch)
                 {
-                    uint32_t minimum = fragment.direct_branch->min_size();
                     uint32_t maximum = fragment.direct_branch->max_size();
-                    assert(minimum <= maximum);
+                    assert(fragment.direct_branch->min_size() <= maximum);
                     cursor = add_sizes(cursor, maximum);
                 }
             }
