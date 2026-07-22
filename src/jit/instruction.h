@@ -9,10 +9,10 @@
 #include <absl/types/span.h>
 
 #include <array>
+#include <bit>
 #include <cassert>
 #include <cstddef>
 #include <cstdint>
-#include <cstring>
 #include <type_traits>
 #include <utility>
 
@@ -711,9 +711,7 @@ namespace cl::jit
     {
         static_assert(sizeof(ShapeKey) == sizeof(word));
         static_assert(std::is_trivially_copyable_v<ShapeKey>);
-        ShapeKey result;
-        std::memcpy(&result, &word, sizeof(result));
-        return result;
+        return std::bit_cast<ShapeKey>(word);
     }
 
     inline InlineValueConstant
@@ -773,9 +771,7 @@ namespace cl::jit
     {
         static_assert(sizeof(ShapeKey) == sizeof(uintptr_t));
         static_assert(std::is_trivially_copyable_v<ShapeKey>);
-        uintptr_t result;
-        std::memcpy(&result, &shape_key, sizeof(result));
-        return result;
+        return std::bit_cast<uintptr_t>(shape_key);
     }
 
     inline uintptr_t

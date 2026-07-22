@@ -4,10 +4,10 @@
 #include "object_model/refcount.h"
 #include "object_model/value.h"
 
+#include <bit>
 #include <clovervm/native_module.h>
 #include <cstddef>
 #include <cstdint>
-#include <cstring>
 
 namespace cl
 {
@@ -59,16 +59,15 @@ namespace cl
         ALWAYSINLINE clover_handle direct_handle_from_value(Value value)
         {
             static_assert(sizeof(clover_handle) == sizeof(value.as.integer));
-            clover_handle result;
-            std::memcpy(&result, &value.as.integer, sizeof(result));
-            return result;
+            return std::bit_cast<clover_handle>(value.as.integer);
         }
 
         ALWAYSINLINE Value direct_value_from_handle(clover_handle handle)
         {
             Value result;
             static_assert(sizeof(handle) == sizeof(result.as.integer));
-            std::memcpy(&result.as.integer, &handle, sizeof(handle));
+            result.as.integer =
+                std::bit_cast<decltype(result.as.integer)>(handle);
             return result;
         }
     }  // namespace native_handle_detail
