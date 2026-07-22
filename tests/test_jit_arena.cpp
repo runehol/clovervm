@@ -194,26 +194,16 @@ namespace cl::jit
 
     TEST(JitInstructionConstruction, EncodesFixedAttributes)
     {
-        static_assert(
-            !std::is_constructible_v<TaggedValueRef, InlineValueConstant>);
-
         CompilationArena arena;
         GraphBuilder builder(arena);
-        InlineValueConstant constant(Value::False());
         ConstInstruction *instruction =
-            builder.make_instruction<ConstInstruction>(constant);
+            builder.make_instruction<ConstInstruction>(Value::False());
 
         EXPECT_EQ(InstructionKind::Const, instruction->kind());
-        EXPECT_EQ(Value::False(), instruction->constant().value());
+        EXPECT_EQ(Value::False(), instruction->constant());
         EXPECT_EQ(0u, instruction->operand_count());
         EXPECT_FALSE(instruction->operands_are_indirect());
         EXPECT_EQ(instruction, instruction->as<ConstInstruction>());
-
-        LoadConstInstruction *load =
-            builder.make_instruction<LoadConstInstruction>(Value::None());
-        EXPECT_EQ(InstructionKind::LoadConst, load->kind());
-        EXPECT_EQ(Value::None(), load->constant());
-        EXPECT_EQ(0u, load->operand_count());
     }
 
     TEST(JitInstructionTraversal, WalksProgramValueAndSnapshotReferences)
@@ -221,8 +211,8 @@ namespace cl::jit
         CompilationArena arena;
         GraphBuilder builder(arena);
         TaggedValueRef lhs(builder.make_instruction<ParameterInstruction>());
-        TaggedValueRef rhs(builder.make_instruction<ConstInstruction>(
-            InlineValueConstant(Value::from_smi(3))));
+        TaggedValueRef rhs(
+            builder.make_instruction<ConstInstruction>(Value::from_smi(3)));
         SnapshotRef snapshot(builder.make_instruction<SnapshotInstruction>(
             std::span<const SnapshotValue>{}, BytecodePC{17}));
         AddSMIInstruction *add =
@@ -261,8 +251,8 @@ namespace cl::jit
             builder.make_instruction<ParameterInstruction>());
         TaggedValueRef first(builder.make_instruction<ParameterInstruction>());
         TaggedValueRef second(builder.make_instruction<ParameterInstruction>());
-        TaggedValueRef none(builder.make_instruction<ConstInstruction>(
-            InlineValueConstant(Value::None())));
+        TaggedValueRef none(
+            builder.make_instruction<ConstInstruction>(Value::None()));
         SnapshotRef snapshot(builder.make_instruction<SnapshotInstruction>(
             std::span<const SnapshotValue>{}, BytecodePC{23}));
         std::array<TaggedValueRef, 3> arguments = {first, none, second};
@@ -326,8 +316,7 @@ namespace cl::jit
         F64Ref f64(builder.make_instruction<ParameterF64Instruction>());
         std::array<SnapshotValue, 4> captured_values = {
             SnapshotValue(tagged), SnapshotValue(f64),
-            SnapshotValue(InlineValueConstant(Value::True())),
-            SnapshotValue::value_constant(Value::None())};
+            SnapshotValue(Value::True()), SnapshotValue(Value::None())};
 
         EXPECT_EQ(8u, SnapshotInstruction::n_indirect_slots_for(
                           std::span<const SnapshotValue>(captured_values),
@@ -351,9 +340,8 @@ namespace cl::jit
                   storage[4]);
         EXPECT_EQ(static_cast<uintptr_t>(SnapshotValueKind::ProgramValue),
                   storage[5]);
-        EXPECT_EQ(
-            static_cast<uintptr_t>(SnapshotValueKind::InlineValueConstant),
-            storage[6]);
+        EXPECT_EQ(static_cast<uintptr_t>(SnapshotValueKind::ValueConstant),
+                  storage[6]);
         EXPECT_EQ(static_cast<uintptr_t>(SnapshotValueKind::ValueConstant),
                   storage[7]);
 
@@ -363,8 +351,8 @@ namespace cl::jit
         EXPECT_EQ(tagged.instruction(),
                   values[0].program_value().instruction());
         EXPECT_EQ(f64.instruction(), values[1].program_value().instruction());
-        EXPECT_EQ(Value::True(), values[2].inline_constant().value());
-        EXPECT_EQ(Value::None(), values[3].value_constant());
+        EXPECT_EQ(Value::True(), values[2].constant());
+        EXPECT_EQ(Value::None(), values[3].constant());
         EXPECT_EQ(91u, snapshot->resume_pc());
 
         std::vector<Instruction *> references;

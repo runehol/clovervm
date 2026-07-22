@@ -56,7 +56,7 @@ This implies:
   asynchronously;
 - a tripped poll synchronizes and leaves compiled execution before reclamation;
 - a safepoint-capable call publishes all live managed roots before entry;
-- an initially exit-capable or throwing call also materializes inline values
+- an initially exit-capable or throwing call also materializes constants
   and boxes interpreter-visible F64 values before entry;
 - a managed value live across reclamation has a canonical managed home;
 - non-bytecode temporaries do not remain live across reclamation solely through
@@ -177,9 +177,9 @@ The initial graph-construction slice provides:
   legality, terminator placement, same-block definition-before-use, result
   classes, and value representations before publication.
 
-The remaining work in this milestone is to place `Const` and `LoadConst` in
-representative graphs and implement compilation-session retention and
-verification for pointer-valued `ValueConstant`s.
+The remaining work in this milestone is to place `Const` in representative
+graphs and implement compilation-session retention and verification for
+pointer-valued `ValueConstant`s.
 
 Detached-storage poisoning, editor replacement, mutation-aware `UseIndex`,
 Snapshot-expanded liveness, non-entry block parameters and their edge argument
@@ -200,11 +200,11 @@ entry:
     Return %arg0
 
 entry:
-    %constant = Const InlineValueConstant
+    %constant = Const ValueConstant(non-pointer)
     Return %constant
 
 entry:
-    %constant = LoadConst ValueConstant
+    %constant = Const ValueConstant(managed pointer)
     Return %constant
 ```
 
@@ -218,12 +218,12 @@ the JIT-to-interpreter thunk.
 Scope:
 
 - select lowering recipes and real `LocationSummary` constraints for
-  `Parameter`, `Const`, `LoadConst`, and `Return`;
+  `Parameter`, `Const`, and `Return`;
 - use a deliberately fixed argument/result register convention;
 - produce separate trivial `LocationAssignments` satisfying those constraints,
   without implementing a general allocator;
-- emit immediate synthesis and traced value-pool loads through the Core
-  materialization instructions;
+- classify constants during backend preparation and emit immediate synthesis or
+  traced value-pool loads as appropriate;
 - publish through the existing code cache;
 - execute the generated code from focused tests.
 
@@ -247,9 +247,8 @@ Scope:
 - lower function arguments as entry definitions;
 - lower accumulator/register movement to symbolic bindings and `Mov` only when
   a real Core value is needed;
-- lower non-pointer constants to `Const`, managed pointer constants to
-  `LoadConst`, and Snapshot recovery constants to the corresponding
-  `InlineValueConstant` or `ValueConstant` payload according to GC class;
+- lower tagged constants uniformly to `Const`, or retain them directly as
+  `ValueConstant` Snapshot recovery payloads;
 - build Snapshot instructions from the symbolic state at entry, return, and
   unsupported-bytecode boundaries;
 - verify the produced Core graph against expected structure.
@@ -309,14 +308,14 @@ Scope:
 - consume the Snapshots built by the bytecode walker;
 - implement Snapshot-expanded point-use/liveness checks for the values needed
   by the taken exit;
-- materialize `ProgramValueRef`, `InlineValueConstant`, and `ValueConstant`
-  Snapshot entries into canonical frame homes and accumulator state;
+- materialize `ProgramValueRef` and `ValueConstant` Snapshot entries into
+  canonical frame homes and accumulator state;
 - install the resume bytecode PC and structural frame metadata expected by the
   interpreter;
 - preserve the managed/host transition record on every exit path.
 
-Validation must force recovery of `ProgramValueRef`, `InlineValueConstant`, and
-`ValueConstant` Snapshot entries and show that reclamation can inspect the
+Validation must force recovery of `ProgramValueRef` and `ValueConstant`
+Snapshot entries and show that reclamation can inspect the
 suspended managed chain through the transition.
 
 ### Milestone 6: straight-line tagged bytecode state
@@ -414,7 +413,7 @@ Initial optimization candidates are local and easy to invalidate:
 - redundant dominating guards with identical Snapshots and replay states;
 - trivial `Mov` forwarding where representation and Snapshot availability
   remain valid;
-- local constant folding into explicit `Const` or `LoadConst` producers;
+- local constant folding into explicit `Const` producers;
 - dead code with no effects and no Snapshot-expanded point uses.
 
 Mutable-shape motion, validity-check hoisting, and movement across calls wait

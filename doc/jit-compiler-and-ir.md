@@ -397,18 +397,16 @@ a general call, a callee-safe call, a native leaf call, or a call only on a
 slow path. It is backend analysis data rather than part of the immutable common
 IR operation.
 
-Core ordinary operands are uniformly instruction-result references. A
-non-pointer constant becomes a normal `ProgramValue` through `Const`, whose
-attribute is an `InlineValueConstant`; a managed pointer constant uses
-`LoadConst`, whose `ValueConstant` attribute is pinned by the compilation
-session. Snapshot entries may retain either constant form directly for
-recovery.
+Core ordinary operands are uniformly instruction-result references. Every
+tagged constant becomes a normal `ProgramValue` through `Const`, whose
+`ValueConstant` attribute may contain either a non-pointer value or a pinned
+managed pointer. Snapshot entries may retain the same `ValueConstant` directly
+for recovery.
 
-Backend preparation estimates the required synthesis sequence for each `Const`
-and may replace it with `LoadConst` when a pool load is more profitable.
-Managed pointer constants always use `LoadConst`. It retains the `Value`
-directly and produces a normal `ProgramValue`; only its eventual lowering asks
-the emitter for a pool entry. The same phase assigns the final lowering and
+Backend preparation or Machine IR classifies each surviving constant as an
+immediate synthesis or traced-pool load. Pointer-valued constants must use the
+pool; non-pointer constants may use either form according to target
+encodability and profitability. The same phase assigns the final lowering and
 `LocationSummary` for every executable instruction. Pool entries do not form
 part of this phase product; the selected lowering retains the `Value` until
 program-order emission.
@@ -423,8 +421,8 @@ generation-checked `BackendPreparation` object, and the allocator accepts that
 object rather than independent tables. This is a concrete phase product, not a
 generic instruction property bag.
 
-Core has no constant-producing `ResultClass`: `Const` and `LoadConst` produce
-ordinary `ProgramValue`s from constant attributes. This keeps immediate shape
+Core has no constant-producing `ResultClass`: `Const` produces an ordinary
+`ProgramValue` from a constant attribute. This keeps immediate shape
 rules, thresholds, GC relocation requirements, and operand-encoding quirks out
 of Core IR.
 
@@ -724,12 +722,11 @@ Operand slots use a separate `OperandClass` enum. `OperandClass::ProgramValue`
 and `OperandClass::Snapshot` intentionally have the same numeric values as their
 matching `ResultClass` cases, so validation can compare result-consuming
 operands without a mapping switch. Every ordinary Core operand is an
-instruction-result reference. Constants become ordinary values through `Const`
-or `LoadConst`; only Snapshot's annotated recovery payload may retain constants
-directly. Structural editing therefore updates uniform producer uses.
-Non-dataflow
+instruction-result reference. Constants become ordinary values through `Const`;
+only Snapshot's annotated recovery payload may retain constants directly.
+Structural editing therefore updates uniform producer uses. Non-dataflow
 payload such as `BlockEdge`, `Shape`, `ShapeKey`, `ValidityCell`, immediates,
-bytecode origins, interpreter return PCs, inline constants, and value constants
+bytecode origins, interpreter return PCs, and value constants
 are instruction attributes rather than operands. The instruction schema records
 the result class, the class and layout of every fixed or variable operand, and
 the class and layout of every attribute as defined in
@@ -1192,7 +1189,7 @@ ends the region in which that refined receiver may be used for shape-sensitive
 operations, and construction rebinds subsequent interpreter locations to the
 weakened successor. Bindings containing the same exact `ProgramValueRef` share
 that successor. A general Python call conservatively weakens every live
-mutable-shape-refined value that remains live afterward; inline values and
+mutable-shape-refined value that remains live afterward; constant values and
 lifetime-stable shapes survive unchanged.
 
 `WeakenShape` does not claim that the shape changed. A direct compiler may
@@ -1416,9 +1413,8 @@ embedded directly when the target instruction accepts that immediate shape, or
 submitted to the emitter's pool when a load is more profitable.
 They are never forced into the pool merely because they are `Value`s.
 Core IR retains a pointer-valued constant directly as a `ValueConstant`
-attribute on `LoadConst`, and the compilation session pins the referenced
-object. A `LoadConst` instruction or Snapshot recovery entry carries that
-`Value` until emission. Only constants that survive to emission are submitted
+attribute on `Const` or in Snapshot recovery, and the compilation session pins
+the referenced object. Only constants that survive to emission are submitted
 to `MachineCodeEmitter::add_value_to_constant_pool()`, which deduplicates their
 raw `Value` bit patterns and returns final `ValuePoolEntry` handles. Core never
 observes those handles or pool indices.
@@ -1443,8 +1439,8 @@ Initial generated code is installed once and remains alive until its owning
 
 A Core `Snapshot` is the authoritative logical description of
 interpreter-visible state. It already names the resume state, active logical
-frame chain, program values, non-pointer inline constants, retained value
-constants, and boxing or reification actions needed to leave compiled
+frame chain, program values, constants, and boxing or reification actions needed
+to leave compiled
 execution. The backend consumes it directly when generating recovery. A
 Snapshot carries a managed constant as a pinned `ValueConstant`; emission
 submits it to the same emitter-owned pool as other surviving constants.
@@ -1496,11 +1492,9 @@ logical Snapshot and FrameState:
     resume state
     active frame chain
     (frame instance, canonical slot) -> Direct(ProgramValueRef)
-                                      | InlineValueConstant
                                       | ValueConstant
                                       | RecoveryAction(ProgramValueRef, ...)
     innermost accumulator            -> Direct(ProgramValueRef)
-                                      | InlineValueConstant
                                       | ValueConstant
                                       | RecoveryAction(ProgramValueRef, ...)
                                       | Dead
@@ -1608,8 +1602,8 @@ Root publication stores every live tagged managed value in the canonical slots
 seen by the initial stack scanner. It clears a canonical slot to a non-pointer
 sentinel when stale contents could otherwise be mistaken for a root, and clears
 the dead input accumulator's published slot rather than preserving its value.
-It does not box F64 values or turn non-pointer inline constants into SSA values.
-Full eager materialization additionally stores inline values and boxes any F64
+It does not box F64 values or materialize constants. Full eager materialization
+additionally stores constants and boxes any F64
 value needed by interpreter-visible frame state. It covers the complete
 outer-to-inner active frame chain, but the call-boundary Snapshot marks the
 input accumulator dead.

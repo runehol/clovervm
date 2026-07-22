@@ -21,8 +21,8 @@
 //
 // Every ordinary operand is a reference to an instruction result. ProgramValue
 // operands additionally require the declared representation. Constants enter
-// ordinary dataflow through Const or LoadConst; Snapshot's heterogeneous
-// capture payload may still embed constants directly.
+// ordinary dataflow through Const; Snapshot's heterogeneous capture payload may
+// still embed constants directly.
 //
 // A kind with any variadic operand stores its operand payloads in arena-owned
 // storage behind inline slot zero; attributes retain kind-constant inline
@@ -143,24 +143,13 @@ CL_JIT_INSTRUCTION(ShapeKeyGuard, CL_JIT_IR_LEVELS(Core),
 
 #define CL_JIT_Const_OPERANDS(fixed, variadic, snapshot_values)
 #define CL_JIT_Const_ATTRIBUTES(attribute)                                    \
-    attribute(constant, InlineValueConstant)
+    attribute(constant, ValueConstant)
 CL_JIT_INSTRUCTION(Const, CL_JIT_IR_LEVELS(Core),
                    CL_JIT_RESULT(ProgramValue, TaggedValue),
                    CL_JIT_EFFECT_BOUNDS(None, None),
                    CL_JIT_Const_OPERANDS, CL_JIT_Const_ATTRIBUTES)
 #undef CL_JIT_Const_ATTRIBUTES
 #undef CL_JIT_Const_OPERANDS
-
-#define CL_JIT_LoadConst_OPERANDS(fixed, variadic, snapshot_values)
-#define CL_JIT_LoadConst_ATTRIBUTES(attribute)                                \
-    attribute(constant, ValueConstant)
-CL_JIT_INSTRUCTION(LoadConst, CL_JIT_IR_LEVELS(Core),
-                   CL_JIT_RESULT(ProgramValue, TaggedValue),
-                   CL_JIT_EFFECT_BOUNDS(None, None),
-                   CL_JIT_LoadConst_OPERANDS,
-                   CL_JIT_LoadConst_ATTRIBUTES)
-#undef CL_JIT_LoadConst_ATTRIBUTES
-#undef CL_JIT_LoadConst_OPERANDS
 
 #define CL_JIT_PythonCall_OPERANDS(fixed, variadic, snapshot_values)          \
     fixed(callable, ProgramValue, TaggedValue)                                 \

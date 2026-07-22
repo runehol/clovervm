@@ -15,8 +15,8 @@ namespace cl::jit
         TaggedValueRef emplace_constant(GraphBuilder &builder, Block *block,
                                         Value value)
         {
-            return TaggedValueRef(builder.emplace_instruction<ConstInstruction>(
-                block, InlineValueConstant(value)));
+            return TaggedValueRef(
+                builder.emplace_instruction<ConstInstruction>(block, value));
         }
 
         void expect_invalid_with(GraphBuilder &builder, const std::string &text)
@@ -124,9 +124,8 @@ namespace cl::jit
         CompilationArena arena;
         GraphBuilder builder(arena);
         Block *entry = builder.emplace_block();
-        builder.append_instruction(entry,
-                                   builder.make_instruction<ConstInstruction>(
-                                       InlineValueConstant(Value::None())));
+        builder.append_instruction(
+            entry, builder.make_instruction<ConstInstruction>(Value::None()));
 
         expect_invalid_with(builder, "does not end in a block terminator");
     }

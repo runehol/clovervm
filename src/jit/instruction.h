@@ -353,20 +353,6 @@ namespace cl::jit
     static_assert(!is_valid_instruction_kind(
         static_cast<InstructionKind>(Instruction::DetachedStorageTag)));
 
-    class InlineValueConstant
-    {
-    public:
-        explicit InlineValueConstant(Value value) : value_(value)
-        {
-            assert(!value.is_ptr());
-        }
-
-        Value value() const { return value_; }
-
-    private:
-        Value value_;
-    };
-
     class ProgramValueRef
     {
     public:
@@ -428,7 +414,6 @@ namespace cl::jit
     enum class SnapshotValueKind : uintptr_t
     {
         ProgramValue,
-        InlineValueConstant,
         ValueConstant,
     };
 
@@ -451,16 +436,10 @@ namespace cl::jit
         {
         }
 
-        SnapshotValue(InlineValueConstant constant)
-            : descriptor_(SnapshotValueKind::InlineValueConstant),
-              payload_(static_cast<uintptr_t>(constant.value().as.integer))
+        explicit SnapshotValue(Value constant)
+            : descriptor_(SnapshotValueKind::ValueConstant),
+              payload_(static_cast<uintptr_t>(constant.as.integer))
         {
-        }
-
-        static SnapshotValue value_constant(Value value)
-        {
-            return SnapshotValue(SnapshotValueKind::ValueConstant,
-                                 static_cast<uintptr_t>(value.as.integer));
         }
 
         SnapshotValueKind kind() const { return descriptor_; }
@@ -476,15 +455,7 @@ namespace cl::jit
             return ProgramValueRef(reinterpret_cast<Instruction *>(payload_));
         }
 
-        InlineValueConstant inline_constant() const
-        {
-            assert(kind() == SnapshotValueKind::InlineValueConstant);
-            Value value;
-            value.as.integer = static_cast<long long>(payload_);
-            return InlineValueConstant(value);
-        }
-
-        Value value_constant() const
+        Value constant() const
         {
             assert(kind() == SnapshotValueKind::ValueConstant);
             Value value;
@@ -497,7 +468,6 @@ namespace cl::jit
             : descriptor_(descriptor), payload_(payload)
         {
             assert(descriptor == SnapshotValueKind::ProgramValue ||
-                   descriptor == SnapshotValueKind::InlineValueConstant ||
                    descriptor == SnapshotValueKind::ValueConstant);
         }
 
@@ -602,14 +572,6 @@ namespace cl::jit
         return std::bit_cast<ShapeKey>(word);
     }
 
-    inline InlineValueConstant
-    decode_instruction_attribute_InlineValueConstant(uintptr_t word)
-    {
-        Value value;
-        value.as.integer = static_cast<long long>(word);
-        return InlineValueConstant(value);
-    }
-
     inline Value decode_instruction_attribute_ValueConstant(uintptr_t word)
     {
         Value value;
@@ -660,12 +622,6 @@ namespace cl::jit
         static_assert(sizeof(ShapeKey) == sizeof(uintptr_t));
         static_assert(std::is_trivially_copyable_v<ShapeKey>);
         return std::bit_cast<uintptr_t>(shape_key);
-    }
-
-    inline uintptr_t
-    encode_instruction_attribute_InlineValueConstant(InlineValueConstant value)
-    {
-        return static_cast<uintptr_t>(value.value().as.integer);
     }
 
     inline uintptr_t encode_instruction_attribute_ValueConstant(Value value)
@@ -734,7 +690,6 @@ namespace cl::jit
 #define CL_JIT_ATTRIBUTE_TYPE_Shape Shape *
 #define CL_JIT_ATTRIBUTE_TYPE_ValidityCell ValidityCell *
 #define CL_JIT_ATTRIBUTE_TYPE_ShapeKey ShapeKey
-#define CL_JIT_ATTRIBUTE_TYPE_InlineValueConstant InlineValueConstant
 #define CL_JIT_ATTRIBUTE_TYPE_ValueConstant Value
 #define CL_JIT_ATTRIBUTE_TYPE_BytecodePC BytecodePC
 #define CL_JIT_ATTRIBUTE_TYPE_BlockEdge BlockEdge *
@@ -1066,7 +1021,6 @@ namespace cl::jit
 #undef CL_JIT_ATTRIBUTE_TYPE_BlockEdge
 #undef CL_JIT_ATTRIBUTE_TYPE_BytecodePC
 #undef CL_JIT_ATTRIBUTE_TYPE_ValueConstant
-#undef CL_JIT_ATTRIBUTE_TYPE_InlineValueConstant
 #undef CL_JIT_ATTRIBUTE_TYPE_ShapeKey
 #undef CL_JIT_ATTRIBUTE_TYPE_ValidityCell
 #undef CL_JIT_ATTRIBUTE_TYPE_Shape
@@ -1195,7 +1149,6 @@ namespace cl::jit
                             ValueRepresentation::None,                         \
                             value.program_value().instruction());              \
                     break;                                                     \
-                case SnapshotValueKind::InlineValueConstant:                   \
                 case SnapshotValueKind::ValueConstant:                         \
                     break;                                                     \
             }                                                                  \
