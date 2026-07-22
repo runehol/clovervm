@@ -958,6 +958,23 @@ namespace cl::jit
 #undef CL_JIT_JOIN_INNER
     // clang-format on
 
+// Preserve a compiler-visible switch while binding each case to the checked,
+// read-only concrete instruction type named by that case.
+// clang-format off
+#define CL_JIT_INSTRUCTION_SWITCH(instruction)                                 \
+    switch(const auto &cl_jit_instruction_switch_value = (instruction);        \
+           cl_jit_instruction_switch_value.kind())
+
+#define CL_JIT_INSTRUCTION_CASE(Type, variable)                                \
+    Type::Kind:                                                                \
+    if(const Type &variable =                                                  \
+           *cl_jit_instruction_switch_value.as<Type>();                        \
+       false)                                                                  \
+    {                                                                          \
+    }                                                                          \
+    else
+    // clang-format on
+
     class TerminatorInstruction
     {
     public:

@@ -45,12 +45,26 @@ namespace cl::jit
         assert(entry->parameters()[0]->kind() == InstructionKind::Parameter);
         assert(entry->instructions().size() == 1);
 
-        const ReturnInstruction *return_instruction =
-            entry->instructions()[0]->as<ReturnInstruction>();
-        XRegister return_register =
-            assigned_register(graph, return_instruction->return_value());
-        assert(return_register.encoding() == 0);
-        assembler.emit_ret();
+        for(const Instruction *instruction: entry->instructions())
+        {
+            // clang-format off
+            CL_JIT_INSTRUCTION_SWITCH(*instruction)
+            {
+                case CL_JIT_INSTRUCTION_CASE(ReturnInstruction,
+                                             return_instruction)
+                {
+                    XRegister return_register = assigned_register(
+                        graph, return_instruction.return_value());
+                    assert(return_register.encoding() == 0);
+                    assembler.emit_ret();
+                    break;
+                }
+
+                default:
+                    assert(false);
+            }
+            // clang-format on
+        }
     }
 
     Result<JitCodeObject *, JitCodeError>

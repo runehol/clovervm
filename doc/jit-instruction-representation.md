@@ -1119,8 +1119,8 @@ read-only view in each case:
 
 #define CL_JIT_INSTRUCTION_CASE(Type, variable)                        \
     Type::Kind:                                                        \
-    if (Type variable =                                               \
-            cl_jit_instruction_switch_value.as<Type>();               \
+    if (const Type &variable =                                        \
+            *cl_jit_instruction_switch_value.as<Type>();              \
         false)                                                        \
     {                                                                 \
     }                                                                 \
