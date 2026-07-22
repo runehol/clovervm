@@ -1,5 +1,6 @@
 #include "compiler/parser.h"
 
+#include "builtin_types/bytes.h"
 #include "builtin_types/float.h"
 #include "builtin_types/int.h"
 #include "compiler/ast.h"
@@ -14,10 +15,12 @@
 #include <iomanip>
 #include <limits>
 #include <locale>
+#include <span>
 #include <sstream>
 #include <string>
 #include <system_error>
 #include <unordered_set>
+#include <vector>
 
 namespace cl
 {
@@ -151,39 +154,54 @@ namespace cl
         return 10 + (c - L'A');
     }
 
-    static Expected<std::wstring>
-    decode_python_string_literal(std::wstring_view token)
+    struct LiteralPrefix
     {
-        size_t prefix_len = 0;
+        size_t length = 0;
         bool is_raw = false;
-        while(prefix_len < token.size())
+        bool is_bytes = false;
+    };
+
+    static LiteralPrefix parse_literal_prefix(std::wstring_view token)
+    {
+        LiteralPrefix prefix;
+        while(prefix.length < token.size())
         {
-            wchar_t c = token[prefix_len];
+            wchar_t c = token[prefix.length];
             if(c == L'r' || c == L'R')
             {
-                is_raw = true;
-                ++prefix_len;
+                prefix.is_raw = true;
+                ++prefix.length;
             }
             else if(c == L'u' || c == L'U')
             {
-                ++prefix_len;
+                ++prefix.length;
+            }
+            else if(c == L'b' || c == L'B')
+            {
+                prefix.is_bytes = true;
+                ++prefix.length;
             }
             else
             {
                 break;
             }
         }
+        return prefix;
+    }
 
+    static Expected<std::wstring_view>
+    string_literal_body(std::wstring_view token, size_t prefix_len)
+    {
         if(prefix_len >= token.size())
         {
-            return Expected<std::wstring>::raise_exception(
+            return Expected<std::wstring_view>::raise_exception(
                 L"SyntaxError", L"Invalid string literal");
         }
 
         wchar_t quote = token[prefix_len];
         if(quote != L'\'' && quote != L'"')
         {
-            return Expected<std::wstring>::raise_exception(
+            return Expected<std::wstring_view>::raise_exception(
                 L"SyntaxError", L"Invalid string literal");
         }
         size_t quote_len = 1;
@@ -194,21 +212,29 @@ namespace cl
         }
         if(token.size() < prefix_len + quote_len * 2)
         {
-            return Expected<std::wstring>::raise_exception(
+            return Expected<std::wstring_view>::raise_exception(
                 L"SyntaxError", L"Invalid string literal");
         }
         for(size_t i = 0; i < quote_len; ++i)
         {
             if(token[token.size() - quote_len + i] != quote)
             {
-                return Expected<std::wstring>::raise_exception(
+                return Expected<std::wstring_view>::raise_exception(
                     L"SyntaxError", L"Invalid string literal");
             }
         }
-
-        std::wstring body = std::wstring(token.substr(
+        return Expected<std::wstring_view>::ok(token.substr(
             prefix_len + quote_len, token.size() - prefix_len - quote_len * 2));
-        if(is_raw)
+    }
+
+    static Expected<std::wstring>
+    decode_python_string_literal(std::wstring_view token)
+    {
+        LiteralPrefix prefix = parse_literal_prefix(token);
+        std::wstring_view body_view =
+            CL_TRY(string_literal_body(token, prefix.length));
+        std::wstring body = std::wstring(body_view);
+        if(prefix.is_raw)
         {
             return Expected<std::wstring>::ok(std::move(body));
         }
@@ -329,6 +355,141 @@ namespace cl
             }
         }
         return Expected<std::wstring>::ok(std::move(out));
+    }
+
+    static Expected<std::vector<uint8_t>>
+    decode_python_bytes_literal(std::wstring_view token)
+    {
+        LiteralPrefix prefix = parse_literal_prefix(token);
+        std::wstring_view body =
+            CL_TRY(string_literal_body(token, prefix.length));
+        std::vector<uint8_t> out;
+        out.reserve(body.size());
+        for(size_t i = 0; i < body.size(); ++i)
+        {
+            wchar_t c = body[i];
+            if(c != L'\\' || prefix.is_raw)
+            {
+                if(c > 0x7f)
+                {
+                    return Expected<std::vector<uint8_t>>::raise_exception(
+                        L"SyntaxError",
+                        L"bytes can only contain ASCII literal characters");
+                }
+                out.push_back(static_cast<uint8_t>(c));
+                continue;
+            }
+
+            if(i + 1 >= body.size())
+            {
+                return Expected<std::vector<uint8_t>>::raise_exception(
+                    L"SyntaxError", L"Invalid escape in bytes literal");
+            }
+
+            wchar_t esc = body[++i];
+            switch(esc)
+            {
+                case L'\n':
+                    break;
+                case L'\\':
+                    out.push_back('\\');
+                    break;
+                case L'\'':
+                    out.push_back('\'');
+                    break;
+                case L'"':
+                    out.push_back('"');
+                    break;
+                case L'a':
+                    out.push_back('\a');
+                    break;
+                case L'b':
+                    out.push_back('\b');
+                    break;
+                case L'f':
+                    out.push_back('\f');
+                    break;
+                case L'n':
+                    out.push_back('\n');
+                    break;
+                case L'r':
+                    out.push_back('\r');
+                    break;
+                case L't':
+                    out.push_back('\t');
+                    break;
+                case L'v':
+                    out.push_back('\v');
+                    break;
+                case L'x':
+                    {
+                        if(i + 2 >= body.size() || !is_hex_digit(body[i + 1]) ||
+                           !is_hex_digit(body[i + 2]))
+                        {
+                            return Expected<std::vector<uint8_t>>::
+                                raise_exception(
+                                    L"SyntaxError",
+                                    L"Invalid \\x escape in bytes literal");
+                        }
+                        int value = (hex_value(body[i + 1]) << 4) +
+                                    hex_value(body[i + 2]);
+                        out.push_back(static_cast<uint8_t>(value));
+                        i += 2;
+                        break;
+                    }
+                default:
+                    if(esc >= L'0' && esc <= L'7')
+                    {
+                        int value = esc - L'0';
+                        size_t consumed = 0;
+                        while(consumed < 2 && i + 1 < body.size() &&
+                              body[i + 1] >= L'0' && body[i + 1] <= L'7')
+                        {
+                            value = value * 8 + (body[i + 1] - L'0');
+                            ++i;
+                            ++consumed;
+                        }
+                        out.push_back(static_cast<uint8_t>(value & 0xFF));
+                    }
+                    else
+                    {
+                        if(esc > 0x7f)
+                        {
+                            return Expected<std::vector<uint8_t>>::
+                                raise_exception(
+                                    L"SyntaxError",
+                                    L"bytes can only contain ASCII literal "
+                                    L"characters");
+                        }
+                        out.push_back('\\');
+                        out.push_back(static_cast<uint8_t>(esc));
+                    }
+                    break;
+            }
+        }
+        return Expected<std::vector<uint8_t>>::ok(std::move(out));
+    }
+
+    static bool is_bytes_literal(std::wstring_view token)
+    {
+        size_t prefix_len = 0;
+        while(prefix_len < token.size())
+        {
+            wchar_t c = token[prefix_len];
+            if(c == L'b' || c == L'B')
+            {
+                return true;
+            }
+            if(c == L'r' || c == L'R' || c == L'u' || c == L'U')
+            {
+                ++prefix_len;
+            }
+            else
+            {
+                break;
+            }
+        }
+        return false;
     }
 
     class Parser
@@ -1236,6 +1397,17 @@ namespace cl
                     {
                         std::wstring_view token = string_for_string_token(
                             *ast.compilation_unit, source_pos_for_token());
+                        if(is_bytes_literal(token))
+                        {
+                            std::vector<uint8_t> value =
+                                CL_TRY(decode_python_bytes_literal(token));
+                            TValue<Bytes> v = make_object_value<Bytes>(
+                                std::span<const uint8_t>(value));
+                            return Expected<int32_t>::ok(ast.emplace_back(
+                                AstKind(AstNodeKind::EXPRESSION_LITERAL,
+                                        AstOperatorKind::BYTES),
+                                source_pos_and_advance(), v));
+                        }
                         std::wstring value =
                             CL_TRY(decode_python_string_literal(token));
                         TValue<String> v =

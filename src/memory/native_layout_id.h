@@ -11,6 +11,7 @@ namespace cl
 
         BigInt,
         String,
+        Bytes,
         List,
         Tuple,
         Dict,

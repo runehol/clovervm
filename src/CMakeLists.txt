@@ -49,6 +49,8 @@ add_library(libclovervm_objects OBJECT
     compiler/compilation_unit.h
     builtin_types/bigint.cpp
     builtin_types/bigint.h
+    builtin_types/bytes.cpp
+    builtin_types/bytes.h
     builtin_types/dict.cpp
     builtin_types/dict.h
     builtin_types/dict_view.cpp

@@ -2800,6 +2800,7 @@ namespace cl
                                 }
 
                             case AstOperatorKind::STRING:
+                            case AstOperatorKind::BYTES:
                                 {
                                     uint32_t constant_idx =
                                         CL_TRY(code_obj->allocate_constant(

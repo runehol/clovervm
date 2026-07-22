@@ -1,3 +1,4 @@
+#include "builtin_types/bytes.h"
 #include "builtin_types/float.h"
 #include "builtin_types/module_object.h"
 #include "builtin_types/str.h"
@@ -1137,6 +1138,28 @@ TEST(Codegen, string_literal_constant_value)
                            "    0 LdaConstant c[0]\n"
                            "    2 Return\n"
                            "Constant 0: \"abc\"\n";
+    EXPECT_EQ(expected, fmt::to_string(*code_obj));
+}
+
+TEST(Codegen, bytes_literal_constant_value)
+{
+    test::VmTestContext test_context;
+    CodeObject *code_obj = test_context.compile_file(L"b\"abc\"\n");
+
+    ASSERT_EQ(size_t(1), code_obj->constant_table.size());
+    Value constant = code_obj->constant_table[0].value();
+    ASSERT_TRUE(can_convert_to<Bytes>(constant));
+    std::span<const uint8_t> view =
+        bytes_view(TValue<Bytes>::from_value_assumed(constant));
+    ASSERT_EQ(size_t(3), view.size());
+    EXPECT_EQ(uint8_t('a'), view[0]);
+    EXPECT_EQ(uint8_t('b'), view[1]);
+    EXPECT_EQ(uint8_t('c'), view[2]);
+
+    std::string expected = "Code object:\n"
+                           "    0 LdaConstant c[0]\n"
+                           "    2 Return\n"
+                           "Constant 0: b'abc'\n";
     EXPECT_EQ(expected, fmt::to_string(*code_obj));
 }
 

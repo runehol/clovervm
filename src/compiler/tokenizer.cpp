@@ -34,7 +34,7 @@ namespace cl
     static constexpr auto float_number_re = ctre::re<float_number_pattern>();
 
     static constexpr auto string_prefix_pattern =
-        ctll::fixed_string{"^[rRuU]{0,2}"};
+        ctll::fixed_string{"^[rRuUbB]{0,2}"};
     static constexpr auto string_prefix_re = ctre::re<string_prefix_pattern>();
 
     static bool is_string_prefix(std::wstring_view prefix)
@@ -50,6 +50,7 @@ namespace cl
 
         bool seen_r = false;
         bool seen_u = false;
+        bool seen_b = false;
         for(wchar_t c: prefix)
         {
             if(c == L'r' || c == L'R')
@@ -62,11 +63,19 @@ namespace cl
             }
             else if(c == L'u' || c == L'U')
             {
-                if(seen_u)
+                if(seen_u || seen_b)
                 {
                     return false;
                 }
                 seen_u = true;
+            }
+            else if(c == L'b' || c == L'B')
+            {
+                if(seen_b || seen_u)
+                {
+                    return false;
+                }
+                seen_b = true;
             }
             else
             {

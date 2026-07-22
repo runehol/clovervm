@@ -137,6 +137,10 @@ namespace cl
         {
             return class_for_native_layout(NativeLayoutId::String);
         }
+        ClassObject *bytes_class() const
+        {
+            return class_for_native_layout(NativeLayoutId::Bytes);
+        }
         Shape *str_instance_root_shape() const
         {
             return str_instance_root_shape_;

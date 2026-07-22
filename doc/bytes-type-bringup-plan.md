@@ -76,8 +76,9 @@ bool bytes_eq(TValue<Bytes> left, TValue<Bytes> right);
 int bytes_compare(TValue<Bytes> left, TValue<Bytes> right);
 ```
 
-If `std::span` is avoided for a narrow API surface, use `std::string_view` over `char` or a
-small local view struct with `const uint8_t *data` and `size_t size`.
+Use `std::span<const uint8_t>` for byte-view helper APIs and constructor inputs.
+`Bytes` objects copy into owned inline storage; spans are non-owning,
+call-scoped views.
 
 ## Builtin Class Wiring
 
@@ -145,7 +146,7 @@ Recommended first-slice behavior:
 - `bytes(existing_bytes)` returns the same immutable object.
 - `bytes(list_or_tuple)` iterates elements and accepts exact integer values in
   `[0, 255]`.
-- If an element is not an exact integer, raise `TypeError`.
+- If an element is not an exact integer, including `bool`, raise `TypeError`.
 - If an integer is outside `[0, 255]`, raise `ValueError`.
 
 Defer `bytes(n)` producing `n` zero bytes. It is useful, but it overlaps with
@@ -204,6 +205,8 @@ as constants.
 
 Once the first slice lands, revisit:
 
+- General iterable constructor support and `bytes(n)`.
+- Shared `__index__` support for constructor elements.
 - `fnmatch` bytes names and patterns.
 - `glob` bytes paths.
 - `os` bytes path conversion.

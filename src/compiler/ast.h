@@ -174,6 +174,7 @@ namespace cl
         // literal expressions
         NUMBER,
         STRING,
+        BYTES,
         NONE,
         TRUE,
         FALSE,
@@ -322,6 +323,7 @@ namespace cl
 
             case AstOperatorKind::NUMBER:
             case AstOperatorKind::STRING:
+            case AstOperatorKind::BYTES:
             case AstOperatorKind::NONE:
             case AstOperatorKind::TRUE:
             case AstOperatorKind::FALSE:

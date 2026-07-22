@@ -3,6 +3,7 @@
 
 #include "api/extension_handle.h"
 #include "builtin_types/bigint.h"
+#include "builtin_types/bytes.h"
 #include "builtin_types/dict.h"
 #include "builtin_types/dict_view.h"
 #include "builtin_types/float.h"
@@ -30,6 +31,7 @@
 
 #define CL_NATIVE_LAYOUT_REGISTRY(V)                                           \
     V(BigInt);                                                                 \
+    V(Bytes);                                                                  \
     V(List);                                                                   \
     V(Tuple);                                                                  \
     V(RangeIterator);                                                          \

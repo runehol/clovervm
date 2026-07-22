@@ -4,6 +4,7 @@
 #include "bootstrap/builtins.h"
 #include "build_config.h"
 #include "builtin_types/bool.h"
+#include "builtin_types/bytes.h"
 #include "builtin_types/dict.h"
 #include "builtin_types/dict_view.h"
 #include "builtin_types/ellipsis_type.h"
@@ -1034,6 +1035,7 @@ namespace cl
                                  DescriptorSpecialKind::ShapeClass),
             0, 0, fixed_attribute_shape_flags());
         register_builtin_class(make_list_class(this));
+        register_builtin_class(make_bytes_class(this));
         register_builtin_class(make_dict_class(this));
         register_builtin_class(make_slotdict_class(this));
         register_builtin_class(make_slice_class(this));
@@ -1108,6 +1110,7 @@ namespace cl
 
         install_object_class_methods(this);
         install_str_class_methods(this);
+        install_bytes_class_methods(this);
         install_int_class_methods(this);
         install_bool_class_methods(this);
         install_none_type_class_methods(this);

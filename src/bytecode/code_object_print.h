@@ -1,6 +1,7 @@
 #ifndef CL_CODE_OBJECT_PRINT_H
 #define CL_CODE_OBJECT_PRINT_H
 
+#include "builtin_types/bytes.h"
 #include "builtin_types/str.h"
 #include "builtin_types/tuple.h"
 #include "bytecode/bytecode_instruction.h"
@@ -55,6 +56,44 @@ namespace cl
         out = fmt::format_to(out, "\"");
         out = format_string_contents(out, str);
         return fmt::format_to(out, "\"");
+    }
+
+    template <typename Out> Out format_bytes_constant(Out out, Bytes *bytes)
+    {
+        out = fmt::format_to(out, "b'");
+        for(uint8_t byte: bytes_view(TValue<Bytes>::from_oop(bytes)))
+        {
+            switch(byte)
+            {
+                case '\\':
+                    out = fmt::format_to(out, "\\\\");
+                    break;
+                case '\'':
+                    out = fmt::format_to(out, "\\'");
+                    break;
+                case '\t':
+                    out = fmt::format_to(out, "\\t");
+                    break;
+                case '\n':
+                    out = fmt::format_to(out, "\\n");
+                    break;
+                case '\r':
+                    out = fmt::format_to(out, "\\r");
+                    break;
+                default:
+                    if(byte >= 0x20 && byte <= 0x7e)
+                    {
+                        out =
+                            fmt::format_to(out, "{}", static_cast<char>(byte));
+                    }
+                    else
+                    {
+                        out = fmt::format_to(out, "\\x{:02x}", byte);
+                    }
+                    break;
+            }
+        }
+        return fmt::format_to(out, "'");
     }
 
     template <typename Out> Out format_tuple_constant(Out out, Tuple *tuple)
@@ -913,6 +952,11 @@ template <> struct fmt::formatter<cl::CodeObject>
                                       cl::NativeLayoutId::String)
             {
                 out = cl::format_string_constant(out, c.get_ptr<cl::String>());
+            }
+            else if(c.is_ptr() && c.get_ptr<cl::Object>()->native_layout_id() ==
+                                      cl::NativeLayoutId::Bytes)
+            {
+                out = cl::format_bytes_constant(out, c.get_ptr<cl::Bytes>());
             }
             else if(c.is_ptr() && c.get_ptr<cl::Object>()->native_layout_id() ==
                                       cl::NativeLayoutId::Tuple)

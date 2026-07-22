@@ -1,3 +1,4 @@
+#include "builtin_types/bytes.h"
 #include "builtin_types/float.h"
 #include "builtin_types/str.h"
 #include "builtin_types/unicode.h"
@@ -547,6 +548,26 @@ TEST(Parser, string_literal_decodes_escapes_and_prefixes)
     int32_t unicode_literal = raw.ast.children[unicode_stmt][0];
     EXPECT_STREQ(L"☺", string_as_wchar_t(TValue<String>::from_value_assumed(
                            raw.ast.constants[unicode_literal])));
+}
+
+TEST(Parser, bytes_literal_stores_constant_value)
+{
+    test::ParsedFile parsed(L"b\"a\\x00\\xff\"\n");
+
+    int32_t stmt_idx = parsed.ast.children[parsed.ast.root_node][0];
+    int32_t literal_idx = parsed.ast.children[stmt_idx][0];
+    EXPECT_TRUE(parsed.ast.kinds[literal_idx].node_kind ==
+                AstNodeKind::EXPRESSION_LITERAL);
+    EXPECT_TRUE(parsed.ast.kinds[literal_idx].operator_kind ==
+                AstOperatorKind::BYTES);
+
+    TValue<Bytes> bytes =
+        TValue<Bytes>::from_value_assumed(parsed.ast.constants[literal_idx]);
+    std::span<const uint8_t> view = bytes_view(bytes);
+    ASSERT_EQ(size_t(3), view.size());
+    EXPECT_EQ(uint8_t('a'), view[0]);
+    EXPECT_EQ(uint8_t(0), view[1]);
+    EXPECT_EQ(uint8_t(255), view[2]);
 }
 
 TEST(Parser, triple_quoted_string_literals_decode_multiline_body)

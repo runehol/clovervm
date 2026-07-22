@@ -212,16 +212,18 @@ TEST(Tokenizer, simple_strings)
 
 TEST(Tokenizer, strings_support_prefixes_single_quotes_and_escapes)
 {
-    CompilationUnit input(L"'a\\'b' \"line\\n\" r\"raw\\\\n\" u'uni\\u263A'\n");
-    std::vector<Token> expected_tokens = {Token::STRING,  Token::STRING,
-                                          Token::STRING,  Token::STRING,
-                                          Token::NEWLINE, Token::ENDMARKER};
+    CompilationUnit input(
+        L"'a\\'b' \"line\\n\" r\"raw\\\\n\" u'uni\\u263A' b'bytes' br'raw'\n");
+    std::vector<Token> expected_tokens = {
+        Token::STRING, Token::STRING, Token::STRING,  Token::STRING,
+        Token::STRING, Token::STRING, Token::NEWLINE, Token::ENDMARKER};
 
     TokenVector tv = tokenize(input).value();
     EXPECT_EQ(tv.tokens, expected_tokens);
 
     std::vector<std::wstring> expected_spellings = {
-        L"'a\\'b'", L"\"line\\n\"", L"r\"raw\\\\n\"", L"u'uni\\u263A'"};
+        L"'a\\'b'",       L"\"line\\n\"", L"r\"raw\\\\n\"",
+        L"u'uni\\u263A'", L"b'bytes'",    L"br'raw'"};
     std::vector<std::wstring> actual_spellings;
     for(size_t i = 0; i < tv.tokens.size(); ++i)
     {

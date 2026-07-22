@@ -114,6 +114,7 @@ template <> struct fmt::formatter<cl::AstOperatorKind>
 
             case cl::AstOperatorKind::NUMBER:
             case cl::AstOperatorKind::STRING:
+            case cl::AstOperatorKind::BYTES:
                 return out;
         }
         return fmt::format_to(out, "<unknown>");
