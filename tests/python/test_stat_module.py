@@ -52,4 +52,4 @@ assert not os.path.isfile(".")
 
 assert stat.__all__[0] == "ST_MODE"
 assert stat.__all__[10] == "S_IMODE"
-assert stat.__all__[49] == "filemode"
+assert stat.__all__[51] == "filemode"

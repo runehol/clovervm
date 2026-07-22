@@ -16,8 +16,8 @@ assert string.whitespace == " \t\n\r\x0b\x0c"
 assert string.punctuation == "!\"#$%&'()*+,-./:;<=>?@[\\]^_`{|}~"
 assert string.printable == (
     "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
-    "!"
-    "\"#$%&'()*+,-./:;<=>?@[\\]^_`{|}~ \t\n\r\x0b\x0c"
+    .__add__("!")
+    .__add__("\"#$%&'()*+,-./:;<=>?@[\\]^_`{|}~ \t\n\r\x0b\x0c")
 )
 
 assert "a" in string.ascii_lowercase

@@ -17,36 +17,36 @@ ST_ATIME = 7
 ST_MTIME = 8
 ST_CTIME = 9
 
-S_IFMT_MASK = 0xF000
-S_IMODE_MASK = 0x0FFF
+S_IFMT_MASK = 61440
+S_IMODE_MASK = 4095
 
-S_IFDIR = 0x4000
-S_IFCHR = 0x2000
-S_IFBLK = 0x6000
-S_IFREG = 0x8000
-S_IFIFO = 0x1000
-S_IFLNK = 0xA000
-S_IFSOCK = 0xC000
+S_IFDIR = 16384
+S_IFCHR = 8192
+S_IFBLK = 24576
+S_IFREG = 32768
+S_IFIFO = 4096
+S_IFLNK = 40960
+S_IFSOCK = 49152
 S_IFDOOR = 0
 S_IFPORT = 0
-S_IFWHT = 0xE000
+S_IFWHT = 57344
 
-S_ISUID = 0x0800
-S_ISGID = 0x0400
-S_ISVTX = 0x0200
+S_ISUID = 2048
+S_ISGID = 1024
+S_ISVTX = 512
 
-S_IRWXU = 0x01C0
-S_IRUSR = 0x0100
-S_IWUSR = 0x0080
-S_IXUSR = 0x0040
-S_IRWXG = 0x0038
-S_IRGRP = 0x0020
-S_IWGRP = 0x0010
-S_IXGRP = 0x0008
-S_IRWXO = 0x0007
-S_IROTH = 0x0004
-S_IWOTH = 0x0002
-S_IXOTH = 0x0001
+S_IRWXU = 448
+S_IRUSR = 256
+S_IWUSR = 128
+S_IXUSR = 64
+S_IRWXG = 56
+S_IRGRP = 32
+S_IWGRP = 16
+S_IXGRP = 8
+S_IRWXO = 7
+S_IROTH = 4
+S_IWOTH = 2
+S_IXOTH = 1
 
 S_IREAD = S_IRUSR
 S_IWRITE = S_IWUSR
@@ -124,14 +124,14 @@ def _file_type_char(mode):
 
 
 def _rwx_char(mode, bit, ch):
-    if mode & bit:
+    if (mode & bit) != 0:
         return ch
     return "-"
 
 
 def _exec_char(mode, exec_bit, special_bit, exec_ch, no_exec_ch):
-    if mode & special_bit:
-        if mode & exec_bit:
+    if (mode & special_bit) != 0:
+        if (mode & exec_bit) != 0:
             return exec_ch
         return no_exec_ch
     return _rwx_char(mode, exec_bit, "x")
