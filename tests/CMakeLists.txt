@@ -5,7 +5,7 @@ include(GoogleTest)
 add_executable(test_clovervm)
 
 set_target_properties(test_clovervm PROPERTIES
-  CXX_STANDARD 17
+  CXX_STANDARD 20
   CXX_STANDARD_REQUIRED YES
   CXX_EXTENSIONS NO
 )

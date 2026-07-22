@@ -76,7 +76,7 @@ bool bytes_eq(TValue<Bytes> left, TValue<Bytes> right);
 int bytes_compare(TValue<Bytes> left, TValue<Bytes> right);
 ```
 
-If `std::span` is avoided for C++17, use `std::string_view` over `char` or a
+If `std::span` is avoided for a narrow API surface, use `std::string_view` over `char` or a
 small local view struct with `const uint8_t *data` and `size_t size`.
 
 ## Builtin Class Wiring

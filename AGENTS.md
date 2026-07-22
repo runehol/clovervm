@@ -42,7 +42,7 @@ This repository contains clovervm, a Python VM.
 - When designing AST shapes for Python syntax, consult CPython's `Parser/Python.asdl` and borrow its structure where it fits clovervm before inventing a different local representation.
 
 # Code style
-- This is a C++17 code base.
+- This is a C++20 code base.
 - Prefer include guards over `#pragma once` in headers.
 - Name include guards consistently. Follow the existing repository convention, e.g. `CL_SLAB_ALLOCATOR_H`.
 - For fixed-width integer and size types, include `<cstdint>` or `<cstdlib>`/`<cstddef>` as needed and use unqualified names like `int64_t` and `size_t`.

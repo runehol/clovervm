@@ -34,89 +34,89 @@ template <> struct fmt::formatter<cl::AstOperatorKind>
         switch(ok)
         {
             case cl::AstOperatorKind::NOP:
-                return format_to(out, "");
+                return fmt::format_to(out, "");
             case cl::AstOperatorKind::DOT:
-                return format_to(out, ".");
+                return fmt::format_to(out, ".");
             case cl::AstOperatorKind::SUBSCRIPT:
-                return format_to(out, "[");
+                return fmt::format_to(out, "[");
 
             case cl::AstOperatorKind::ADD:
-                return format_to(out, "+");
+                return fmt::format_to(out, "+");
             case cl::AstOperatorKind::SUBTRACT:
-                return format_to(out, "-");
+                return fmt::format_to(out, "-");
             case cl::AstOperatorKind::MULTIPLY:
-                return format_to(out, "*");
+                return fmt::format_to(out, "*");
             case cl::AstOperatorKind::DIVIDE:
-                return format_to(out, "/");
+                return fmt::format_to(out, "/");
             case cl::AstOperatorKind::INT_DIVIDE:
-                return format_to(out, "//");
+                return fmt::format_to(out, "//");
             case cl::AstOperatorKind::MATMULT:
-                return format_to(out, "@");
+                return fmt::format_to(out, "@");
             case cl::AstOperatorKind::POWER:
-                return format_to(out, "**");
+                return fmt::format_to(out, "**");
             case cl::AstOperatorKind::LEFTSHIFT:
-                return format_to(out, "<<");
+                return fmt::format_to(out, "<<");
             case cl::AstOperatorKind::RIGHTSHIFT:
-                return format_to(out, ">>");
+                return fmt::format_to(out, ">>");
             case cl::AstOperatorKind::MODULO:
-                return format_to(out, "%");
+                return fmt::format_to(out, "%");
             case cl::AstOperatorKind::BITWISE_OR:
-                return format_to(out, "|");
+                return fmt::format_to(out, "|");
             case cl::AstOperatorKind::BITWISE_AND:
-                return format_to(out, "&");
+                return fmt::format_to(out, "&");
             case cl::AstOperatorKind::BITWISE_XOR:
-                return format_to(out, "^");
+                return fmt::format_to(out, "^");
 
             case cl::AstOperatorKind::EQUAL:
-                return format_to(out, "==");
+                return fmt::format_to(out, "==");
             case cl::AstOperatorKind::NOT_EQUAL:
-                return format_to(out, "!=");
+                return fmt::format_to(out, "!=");
             case cl::AstOperatorKind::LESS:
-                return format_to(out, "<");
+                return fmt::format_to(out, "<");
             case cl::AstOperatorKind::LESS_EQUAL:
-                return format_to(out, "<=");
+                return fmt::format_to(out, "<=");
             case cl::AstOperatorKind::GREATER:
-                return format_to(out, ">");
+                return fmt::format_to(out, ">");
             case cl::AstOperatorKind::GREATER_EQUAL:
-                return format_to(out, ">=");
+                return fmt::format_to(out, ">=");
             case cl::AstOperatorKind::IS:
-                return format_to(out, "is");
+                return fmt::format_to(out, "is");
             case cl::AstOperatorKind::IS_NOT:
-                return format_to(out, "is not");
+                return fmt::format_to(out, "is not");
             case cl::AstOperatorKind::IN:
-                return format_to(out, "in");
+                return fmt::format_to(out, "in");
             case cl::AstOperatorKind::NOT_IN:
-                return format_to(out, "not in");
+                return fmt::format_to(out, "not in");
 
             case cl::AstOperatorKind::SHORTCUTTING_AND:
-                return format_to(out, "and");
+                return fmt::format_to(out, "and");
 
             case cl::AstOperatorKind::SHORTCUTTING_OR:
-                return format_to(out, "or");
+                return fmt::format_to(out, "or");
 
             case cl::AstOperatorKind::NOT:
-                return format_to(out, "not");
+                return fmt::format_to(out, "not");
             case cl::AstOperatorKind::NEGATE:
-                return format_to(out, "-");
+                return fmt::format_to(out, "-");
             case cl::AstOperatorKind::PLUS:
-                return format_to(out, "+");
+                return fmt::format_to(out, "+");
             case cl::AstOperatorKind::BITWISE_NOT:
-                return format_to(out, "^");
+                return fmt::format_to(out, "^");
 
             case cl::AstOperatorKind::NONE:
-                return format_to(out, "None");
+                return fmt::format_to(out, "None");
             case cl::AstOperatorKind::TRUE:
-                return format_to(out, "True");
+                return fmt::format_to(out, "True");
             case cl::AstOperatorKind::FALSE:
-                return format_to(out, "False");
+                return fmt::format_to(out, "False");
             case cl::AstOperatorKind::ELLIPSIS:
-                return format_to(out, "...");
+                return fmt::format_to(out, "...");
 
             case cl::AstOperatorKind::NUMBER:
             case cl::AstOperatorKind::STRING:
                 return out;
         }
-        return format_to(out, "<unknown>");
+        return fmt::format_to(out, "<unknown>");
     }
 };
 
@@ -128,7 +128,7 @@ template <> struct fmt::formatter<cl::AstVector>
     {
         for(uint32_t i = 0; i < indent; ++i)
         {
-            format_to(out, "    ");
+            fmt::format_to(out, "    ");
         }
     }
 
@@ -142,7 +142,7 @@ template <> struct fmt::formatter<cl::AstVector>
         cl::ExpressionPrecedence self_precedence = precedence_for_kind(kind);
         if(is_expression(kind.node_kind) && self_precedence <= outer_precedence)
         {
-            format_to(out, "(");
+            fmt::format_to(out, "(");
         }
 
         cl::AstChildren children = av.children[node_idx];
@@ -151,26 +151,26 @@ template <> struct fmt::formatter<cl::AstVector>
             case cl::AstNodeKind::STATEMENT_ASSIGN:
                 emit_indent(out, indent);
                 render_node(av, out, children[0], indent, self_precedence);
-                format_to(out, " {}= ", kind.operator_kind);
+                fmt::format_to(out, " {}= ", kind.operator_kind);
                 render_node(av, out, children[1], indent, self_precedence);
-                format_to(out, "\n");
+                fmt::format_to(out, "\n");
                 break;
             case cl::AstNodeKind::STATEMENT_ANN_ASSIGN:
                 emit_indent(out, indent);
                 render_node(av, out, children[0], indent, self_precedence);
-                format_to(out, ": ");
+                fmt::format_to(out, ": ");
                 render_node(av, out, children[1], indent, self_precedence);
                 if(children.size() == 3)
                 {
-                    format_to(out, " = ");
+                    fmt::format_to(out, " = ");
                     render_node(av, out, children[2], indent, self_precedence);
                 }
-                format_to(out, "\n");
+                fmt::format_to(out, "\n");
                 break;
             case cl::AstNodeKind::EXPRESSION_ASSIGN:
                 render_node(av, out, children[0], indent, self_precedence);
                 assert(kind.operator_kind == cl::AstOperatorKind::NOP);
-                format_to(out, " := ", kind.operator_kind);
+                fmt::format_to(out, " := ", kind.operator_kind);
                 render_node(av, out, children[1], indent, self_precedence);
                 break;
 
@@ -179,51 +179,53 @@ template <> struct fmt::formatter<cl::AstVector>
                 if(kind.operator_kind == cl::AstOperatorKind::SUBSCRIPT)
                 {
                     render_node(av, out, children[0], indent, self_precedence);
-                    format_to(out, "[");
+                    fmt::format_to(out, "[");
                     render_node(av, out, children[1], indent,
                                 cl::ExpressionPrecedence::Lowest);
-                    format_to(out, "]");
+                    fmt::format_to(out, "]");
                     break;
                 }
                 render_node(av, out, children[0], indent, self_precedence);
-                format_to(out, " {} ", kind.operator_kind);
+                fmt::format_to(out, " {} ", kind.operator_kind);
                 render_node(av, out, children[1], indent, self_precedence);
                 break;
             case cl::AstNodeKind::EXPRESSION_UNARY:
-                format_to(out, "{} ", kind.operator_kind);
+                fmt::format_to(out, "{} ", kind.operator_kind);
                 render_node(av, out, children[0], indent, self_precedence);
                 break;
             case cl::AstNodeKind::EXPRESSION_LITERAL:
                 if(kind.operator_kind == cl::AstOperatorKind::NUMBER)
                 {
-                    format_to(out, "{}",
-                              narrow_wstring_view_ast(string_for_number_token(
-                                  *av.compilation_unit,
-                                  av.source_offsets[node_idx])));
+                    fmt::format_to(
+                        out, "{}",
+                        narrow_wstring_view_ast(string_for_number_token(
+                            *av.compilation_unit,
+                            av.source_offsets[node_idx])));
                 }
                 else if(kind.operator_kind == cl::AstOperatorKind::STRING)
                 {
-                    format_to(out, " {}",
-                              narrow_wstring_view_ast(string_for_string_token(
-                                  *av.compilation_unit,
-                                  av.source_offsets[node_idx])));
+                    fmt::format_to(
+                        out, " {}",
+                        narrow_wstring_view_ast(string_for_string_token(
+                            *av.compilation_unit,
+                            av.source_offsets[node_idx])));
                 }
                 else if(kind.operator_kind == cl::AstOperatorKind::ELLIPSIS)
                 {
-                    format_to(out, "...");
+                    fmt::format_to(out, "...");
                 }
                 break;
             case cl::AstNodeKind::EXPRESSION_VARIABLE_REFERENCE:
-                format_to(out, "{}",
-                          narrow_wstring_view_ast(string_as_wchar_t(
-                              ast_print_string_constant(av, node_idx))));
+                fmt::format_to(out, "{}",
+                               narrow_wstring_view_ast(string_as_wchar_t(
+                                   ast_print_string_constant(av, node_idx))));
                 break;
 
             case cl::AstNodeKind::EXPRESSION_ATTRIBUTE:
                 render_node(av, out, children[0], indent, self_precedence);
-                format_to(out, ".{}",
-                          narrow_wstring_view_ast(string_as_wchar_t(
-                              ast_print_string_constant(av, node_idx))));
+                fmt::format_to(out, ".{}",
+                               narrow_wstring_view_ast(string_as_wchar_t(
+                                   ast_print_string_constant(av, node_idx))));
                 break;
 
             case cl::AstNodeKind::EXPRESSION_SLICE:
@@ -232,7 +234,7 @@ template <> struct fmt::formatter<cl::AstVector>
                     render_node(av, out, children[0], indent,
                                 cl::ExpressionPrecedence::Lowest);
                 }
-                format_to(out, ":");
+                fmt::format_to(out, ":");
                 if(children[1] >= 0)
                 {
                     render_node(av, out, children[1], indent,
@@ -240,7 +242,7 @@ template <> struct fmt::formatter<cl::AstVector>
                 }
                 if(children[2] >= 0)
                 {
-                    format_to(out, ":");
+                    fmt::format_to(out, ":");
                     render_node(av, out, children[2], indent,
                                 cl::ExpressionPrecedence::Lowest);
                 }
@@ -257,58 +259,58 @@ template <> struct fmt::formatter<cl::AstVector>
                     uint32_t ch = children[i];
                     cl::AstKind ch_kind = av.kinds[ch];
                     uint32_t ch_child = av.children[ch][0];
-                    format_to(out, " {} ", ch_kind.operator_kind);
+                    fmt::format_to(out, " {} ", ch_kind.operator_kind);
                     render_node(av, out, ch_child, indent, self_precedence);
                 }
                 break;
 
             case cl::AstNodeKind::EXPRESSION_LIST:
-                format_to(out, "[");
+                fmt::format_to(out, "[");
                 for(size_t i = 0; i < children.size(); ++i)
                 {
                     if(i != 0)
                     {
-                        format_to(out, ", ");
+                        fmt::format_to(out, ", ");
                     }
                     render_node(av, out, children[i], indent,
                                 cl::ExpressionPrecedence::Lowest);
                 }
-                format_to(out, "]");
+                fmt::format_to(out, "]");
                 break;
 
             case cl::AstNodeKind::EXPRESSION_DICT:
-                format_to(out, "{{");
+                fmt::format_to(out, "{{");
                 for(size_t i = 0; i < children.size(); i += 2)
                 {
                     if(i != 0)
                     {
-                        format_to(out, ", ");
+                        fmt::format_to(out, ", ");
                     }
                     render_node(av, out, children[i], indent,
                                 cl::ExpressionPrecedence::Lowest);
-                    format_to(out, ": ");
+                    fmt::format_to(out, ": ");
                     render_node(av, out, children[i + 1], indent,
                                 cl::ExpressionPrecedence::Lowest);
                 }
-                format_to(out, "}}");
+                fmt::format_to(out, "}}");
                 break;
 
             case cl::AstNodeKind::EXPRESSION_TUPLE:
-                format_to(out, "(");
+                fmt::format_to(out, "(");
                 for(size_t i = 0; i < children.size(); ++i)
                 {
                     if(i != 0)
                     {
-                        format_to(out, ", ");
+                        fmt::format_to(out, ", ");
                     }
                     render_node(av, out, children[i], indent,
                                 cl::ExpressionPrecedence::Lowest);
                 }
                 if(children.size() == 1)
                 {
-                    format_to(out, ",");
+                    fmt::format_to(out, ",");
                 }
-                format_to(out, ")");
+                fmt::format_to(out, ")");
                 break;
 
             case cl::AstNodeKind::EXPRESSION_CALL:
@@ -322,16 +324,16 @@ template <> struct fmt::formatter<cl::AstVector>
                 break;
 
             case cl::AstNodeKind::CALL_ARGUMENT_KEYWORD:
-                format_to(out, "{}=",
-                          narrow_wstring_view_ast(string_as_wchar_t(
-                              ast_print_string_constant(av, node_idx))));
+                fmt::format_to(out, "{}=",
+                               narrow_wstring_view_ast(string_as_wchar_t(
+                                   ast_print_string_constant(av, node_idx))));
                 render_node(av, out, children[0], indent,
                             cl::ExpressionPrecedence::Lowest);
                 break;
 
             case cl::AstNodeKind::PARAMETER_SIGNATURE:
                 {
-                    format_to(out, "(");
+                    fmt::format_to(out, "(");
                     bool needs_separator = false;
                     auto render_parameter_list = [&](int32_t sequence_idx) {
                         cl::AstChildren sequence_children =
@@ -340,7 +342,7 @@ template <> struct fmt::formatter<cl::AstVector>
                         {
                             if(needs_separator)
                             {
-                                format_to(out, ", ");
+                                fmt::format_to(out, ", ");
                             }
                             render_node(av, out, sequence_children[i], indent,
                                         cl::ExpressionPrecedence::Lowest);
@@ -353,9 +355,9 @@ template <> struct fmt::formatter<cl::AstVector>
                     {
                         if(needs_separator)
                         {
-                            format_to(out, ", ");
+                            fmt::format_to(out, ", ");
                         }
-                        format_to(out, "/");
+                        fmt::format_to(out, "/");
                         needs_separator = true;
                     }
                     render_parameter_list(children[1]);
@@ -365,7 +367,7 @@ template <> struct fmt::formatter<cl::AstVector>
                     {
                         if(needs_separator)
                         {
-                            format_to(out, ", ");
+                            fmt::format_to(out, ", ");
                         }
                         render_node(av, out, vararg_children[0], indent,
                                     cl::ExpressionPrecedence::Lowest);
@@ -375,9 +377,9 @@ template <> struct fmt::formatter<cl::AstVector>
                     {
                         if(needs_separator)
                         {
-                            format_to(out, ", ");
+                            fmt::format_to(out, ", ");
                         }
-                        format_to(out, "*");
+                        fmt::format_to(out, "*");
                         needs_separator = true;
                     }
                     render_parameter_list(children[3]);
@@ -386,76 +388,76 @@ template <> struct fmt::formatter<cl::AstVector>
                     {
                         if(needs_separator)
                         {
-                            format_to(out, ", ");
+                            fmt::format_to(out, ", ");
                         }
                         render_node(av, out, kwarg_children[0], indent,
                                     cl::ExpressionPrecedence::Lowest);
                     }
-                    format_to(out, ")");
+                    fmt::format_to(out, ")");
                     break;
                 }
 
             case cl::AstNodeKind::PARAMETER_SEQUENCE:
-                format_to(out, "(");
+                fmt::format_to(out, "(");
                 for(size_t i = 0; i < children.size(); ++i)
                 {
                     if(i != 0)
                     {
-                        format_to(out, ", ");
+                        fmt::format_to(out, ", ");
                     }
                     render_node(av, out, children[i], indent,
                                 cl::ExpressionPrecedence::Lowest);
                 }
-                format_to(out, ")");
+                fmt::format_to(out, ")");
                 break;
 
             case cl::AstNodeKind::PARAMETER:
-                format_to(out, "{}",
-                          narrow_wstring_view_ast(string_as_wchar_t(
-                              ast_print_string_constant(av, node_idx))));
+                fmt::format_to(out, "{}",
+                               narrow_wstring_view_ast(string_as_wchar_t(
+                                   ast_print_string_constant(av, node_idx))));
                 if(!children.empty())
                 {
-                    format_to(out, "=");
+                    fmt::format_to(out, "=");
                     render_node(av, out, children[0], indent,
                                 cl::ExpressionPrecedence::Lowest);
                 }
                 break;
 
             case cl::AstNodeKind::PARAMETER_VARARGS:
-                format_to(out, "*{}",
-                          narrow_wstring_view_ast(string_as_wchar_t(
-                              ast_print_string_constant(av, node_idx))));
+                fmt::format_to(out, "*{}",
+                               narrow_wstring_view_ast(string_as_wchar_t(
+                                   ast_print_string_constant(av, node_idx))));
                 break;
 
             case cl::AstNodeKind::PARAMETER_KWARGS:
-                format_to(out, "**{}",
-                          narrow_wstring_view_ast(string_as_wchar_t(
-                              ast_print_string_constant(av, node_idx))));
+                fmt::format_to(out, "**{}",
+                               narrow_wstring_view_ast(string_as_wchar_t(
+                                   ast_print_string_constant(av, node_idx))));
                 break;
 
             case cl::AstNodeKind::STATEMENT_FUNCTION_DEF:
                 emit_indent(out, indent);
-                format_to(out, "def {}",
-                          narrow_wstring_view_ast(string_as_wchar_t(
-                              ast_print_string_constant(av, node_idx))));
+                fmt::format_to(out, "def {}",
+                               narrow_wstring_view_ast(string_as_wchar_t(
+                                   ast_print_string_constant(av, node_idx))));
 
                 render_node(av, out, children[0], indent,
                             cl::ExpressionPrecedence::Lowest);
-                format_to(out, ":\n");
+                fmt::format_to(out, ":\n");
                 render_node(av, out, children[1], indent + 1,
                             cl::ExpressionPrecedence::Lowest);
                 break;
             case cl::AstNodeKind::STATEMENT_CLASS_DEF:
                 emit_indent(out, indent);
-                format_to(out, "class {}",
-                          narrow_wstring_view_ast(string_as_wchar_t(
-                              ast_print_string_constant(av, node_idx))));
+                fmt::format_to(out, "class {}",
+                               narrow_wstring_view_ast(string_as_wchar_t(
+                                   ast_print_string_constant(av, node_idx))));
                 if(!av.children[children[0]].empty())
                 {
                     render_node(av, out, children[0], indent,
                                 cl::ExpressionPrecedence::Lowest);
                 }
-                format_to(out, ":\n");
+                fmt::format_to(out, ":\n");
                 render_node(av, out, children[1], indent + 1,
                             cl::ExpressionPrecedence::Lowest);
                 break;
@@ -464,31 +466,31 @@ template <> struct fmt::formatter<cl::AstVector>
                 emit_indent(out, indent);
                 render_node(av, out, children[0], indent,
                             cl::ExpressionPrecedence::Lowest);
-                format_to(out, "\n");
+                fmt::format_to(out, "\n");
                 break;
             case cl::AstNodeKind::STATEMENT_IF:
                 emit_indent(out, indent);
-                format_to(out, "if ");
+                fmt::format_to(out, "if ");
                 render_node(av, out, children[0], indent,
                             cl::ExpressionPrecedence::Lowest);
-                format_to(out, ":\n");
+                fmt::format_to(out, ":\n");
                 render_node(av, out, children[1], indent + 1,
                             cl::ExpressionPrecedence::Lowest);
 
                 for(size_t child_offset = 2; child_offset < children.size() - 1;
                     child_offset += 2)
                 {
-                    format_to(out, "elif ");
+                    fmt::format_to(out, "elif ");
                     render_node(av, out, children[child_offset + 0], indent,
                                 cl::ExpressionPrecedence::Lowest);
-                    format_to(out, ":\n");
+                    fmt::format_to(out, ":\n");
                     render_node(av, out, children[child_offset + 1], indent + 1,
                                 cl::ExpressionPrecedence::Lowest);
                 }
                 if(children.size() & 1)  // if odd, we have an else block
                 {
                     emit_indent(out, indent);
-                    format_to(out, "else:\n");
+                    fmt::format_to(out, "else:\n");
                     render_node(av, out, children.back(), indent + 1,
                                 cl::ExpressionPrecedence::Lowest);
                 }
@@ -496,16 +498,16 @@ template <> struct fmt::formatter<cl::AstVector>
 
             case cl::AstNodeKind::STATEMENT_WHILE:
                 emit_indent(out, indent);
-                format_to(out, "while ");
+                fmt::format_to(out, "while ");
                 render_node(av, out, children[0], indent,
                             cl::ExpressionPrecedence::Lowest);
-                format_to(out, ":\n");
+                fmt::format_to(out, ":\n");
                 render_node(av, out, children[1], indent + 1,
                             cl::ExpressionPrecedence::Lowest);
                 if(children.size() == 3)
                 {
                     emit_indent(out, indent);
-                    format_to(out, "else:\n");
+                    fmt::format_to(out, "else:\n");
                     render_node(av, out, children[2], indent + 1,
                                 cl::ExpressionPrecedence::Lowest);
                 }
@@ -513,19 +515,19 @@ template <> struct fmt::formatter<cl::AstVector>
 
             case cl::AstNodeKind::STATEMENT_FOR:
                 emit_indent(out, indent);
-                format_to(out, "for ");
+                fmt::format_to(out, "for ");
                 render_node(av, out, children[0], indent,
                             cl::ExpressionPrecedence::Lowest);
-                format_to(out, " in ");
+                fmt::format_to(out, " in ");
                 render_node(av, out, children[1], indent,
                             cl::ExpressionPrecedence::Lowest);
-                format_to(out, ":\n");
+                fmt::format_to(out, ":\n");
                 render_node(av, out, children[2], indent + 1,
                             cl::ExpressionPrecedence::Lowest);
                 if(children.size() == 4)
                 {
                     emit_indent(out, indent);
-                    format_to(out, "else:\n");
+                    fmt::format_to(out, "else:\n");
                     render_node(av, out, children[3], indent + 1,
                                 cl::ExpressionPrecedence::Lowest);
                 }
@@ -533,17 +535,17 @@ template <> struct fmt::formatter<cl::AstVector>
 
             case cl::AstNodeKind::STATEMENT_WITH:
                 emit_indent(out, indent);
-                format_to(out, "with ");
+                fmt::format_to(out, "with ");
                 for(size_t idx = 0; idx + 1 < children.size(); ++idx)
                 {
                     if(idx != 0)
                     {
-                        format_to(out, ", ");
+                        fmt::format_to(out, ", ");
                     }
                     render_node(av, out, children[idx], indent,
                                 cl::ExpressionPrecedence::Lowest);
                 }
-                format_to(out, ":\n");
+                fmt::format_to(out, ":\n");
                 render_node(av, out, children.back(), indent + 1,
                             cl::ExpressionPrecedence::Lowest);
                 break;
@@ -553,7 +555,7 @@ template <> struct fmt::formatter<cl::AstVector>
                             cl::ExpressionPrecedence::Lowest);
                 if(children.size() == 2)
                 {
-                    format_to(out, " as ");
+                    fmt::format_to(out, " as ");
                     render_node(av, out, children[1], indent,
                                 cl::ExpressionPrecedence::Lowest);
                 }
@@ -561,7 +563,7 @@ template <> struct fmt::formatter<cl::AstVector>
 
             case cl::AstNodeKind::STATEMENT_TRY:
                 emit_indent(out, indent);
-                format_to(out, "try:\n");
+                fmt::format_to(out, "try:\n");
                 render_node(av, out, children[0], indent + 1,
                             cl::ExpressionPrecedence::Lowest);
                 for(size_t child_offset = 1; child_offset < children.size();
@@ -574,101 +576,102 @@ template <> struct fmt::formatter<cl::AstVector>
 
             case cl::AstNodeKind::STATEMENT_EXCEPT_HANDLER:
                 emit_indent(out, indent);
-                format_to(out, "except");
+                fmt::format_to(out, "except");
                 if(children.size() >= 2)
                 {
-                    format_to(out, " ");
+                    fmt::format_to(out, " ");
                     render_node(av, out, children[0], indent,
                                 cl::ExpressionPrecedence::Lowest);
                     if(children.size() == 3)
                     {
-                        format_to(out, " as ");
+                        fmt::format_to(out, " as ");
                         render_node(av, out, children[1], indent,
                                     cl::ExpressionPrecedence::Lowest);
                     }
                 }
-                format_to(out, ":\n");
+                fmt::format_to(out, ":\n");
                 render_node(av, out, children.back(), indent + 1,
                             cl::ExpressionPrecedence::Lowest);
                 break;
 
             case cl::AstNodeKind::STATEMENT_ELSE_HANDLER:
                 emit_indent(out, indent);
-                format_to(out, "else:\n");
+                fmt::format_to(out, "else:\n");
                 render_node(av, out, children[0], indent + 1,
                             cl::ExpressionPrecedence::Lowest);
                 break;
 
             case cl::AstNodeKind::STATEMENT_FINALLY_HANDLER:
                 emit_indent(out, indent);
-                format_to(out, "finally:\n");
+                fmt::format_to(out, "finally:\n");
                 render_node(av, out, children[0], indent + 1,
                             cl::ExpressionPrecedence::Lowest);
                 break;
 
             case cl::AstNodeKind::STATEMENT_RETURN:
                 emit_indent(out, indent);
-                format_to(out, "return");
+                fmt::format_to(out, "return");
                 if(children.size() > 0)
                 {
-                    format_to(out, " ");
+                    fmt::format_to(out, " ");
                     render_node(av, out, children[0], indent,
                                 cl::ExpressionPrecedence::Lowest);
                 }
-                format_to(out, "\n");
+                fmt::format_to(out, "\n");
                 break;
 
             case cl::AstNodeKind::STATEMENT_RAISE:
                 emit_indent(out, indent);
-                format_to(out, "raise");
+                fmt::format_to(out, "raise");
                 if(children.size() > 0)
                 {
-                    format_to(out, " ");
+                    fmt::format_to(out, " ");
                     render_node(av, out, children[0], indent,
                                 cl::ExpressionPrecedence::Lowest);
                 }
-                format_to(out, "\n");
+                fmt::format_to(out, "\n");
                 break;
 
             case cl::AstNodeKind::STATEMENT_IMPORT:
                 emit_indent(out, indent);
-                format_to(out, "import ");
+                fmt::format_to(out, "import ");
                 for(size_t child_offset = 0; child_offset < children.size();
                     ++child_offset)
                 {
                     if(child_offset > 0)
                     {
-                        format_to(out, ", ");
+                        fmt::format_to(out, ", ");
                     }
                     render_node(av, out, children[child_offset], indent,
                                 cl::ExpressionPrecedence::Lowest);
                 }
-                format_to(out, "\n");
+                fmt::format_to(out, "\n");
                 break;
 
             case cl::AstNodeKind::STATEMENT_IMPORT_FROM:
                 {
                     emit_indent(out, indent);
-                    format_to(out, "from ");
+                    fmt::format_to(out, "from ");
                     int64_t level = av.constants[children[0]].value().get_smi();
                     for(int64_t dot_idx = 0; dot_idx < level; ++dot_idx)
                     {
-                        format_to(out, ".");
+                        fmt::format_to(out, ".");
                     }
-                    format_to(out, "{} import ",
-                              narrow_wstring_view_ast(string_as_wchar_t(
-                                  ast_print_string_constant(av, node_idx))));
+                    fmt::format_to(
+                        out, "{} import ",
+                        narrow_wstring_view_ast(string_as_wchar_t(
+                            ast_print_string_constant(av, node_idx))));
                     for(size_t child_offset = 1; child_offset < children.size();
                         ++child_offset)
                     {
                         if(child_offset > 1)
                         {
-                            format_to(out, ", ");
+                            fmt::format_to(out, ", ");
                         }
                         render_node(av, out, children[child_offset], indent,
                                     cl::ExpressionPrecedence::Lowest);
                     }
-                    format_to(out, "\n");
+                    fmt::format_to(out, "\n");
                     break;
                 }
 
@@ -680,56 +683,56 @@ template <> struct fmt::formatter<cl::AstVector>
                     std::string store_name =
                         narrow_wstring_view_ast(string_as_wchar_t(
                             ast_print_string_constant(av, children[0])));
-                    format_to(out, "{}", import_name);
+                    fmt::format_to(out, "{}", import_name);
                     if(children.size() > 1)
                     {
-                        format_to(out, " as {}", store_name);
+                        fmt::format_to(out, " as {}", store_name);
                     }
                     break;
                 }
 
             case cl::AstNodeKind::IMPORT_STAR:
-                format_to(out, "*");
+                fmt::format_to(out, "*");
                 break;
 
             case cl::AstNodeKind::STATEMENT_PASS:
                 emit_indent(out, indent);
-                format_to(out, "pass\n");
+                fmt::format_to(out, "pass\n");
                 break;
             case cl::AstNodeKind::STATEMENT_DEL:
                 emit_indent(out, indent);
-                format_to(out, "del ");
+                fmt::format_to(out, "del ");
                 for(size_t i = 0; i < children.size(); ++i)
                 {
                     if(i != 0)
                     {
-                        format_to(out, ", ");
+                        fmt::format_to(out, ", ");
                     }
                     render_node(av, out, children[i], indent,
                                 cl::ExpressionPrecedence::Lowest);
                 }
-                format_to(out, "\n");
+                fmt::format_to(out, "\n");
                 break;
             case cl::AstNodeKind::STATEMENT_ASSERT:
                 emit_indent(out, indent);
-                format_to(out, "assert ");
+                fmt::format_to(out, "assert ");
                 render_node(av, out, children[0], indent,
                             cl::ExpressionPrecedence::Lowest);
                 if(children.size() == 2)
                 {
-                    format_to(out, ", ");
+                    fmt::format_to(out, ", ");
                     render_node(av, out, children[1], indent,
                                 cl::ExpressionPrecedence::Lowest);
                 }
-                format_to(out, "\n");
+                fmt::format_to(out, "\n");
                 break;
             case cl::AstNodeKind::STATEMENT_BREAK:
                 emit_indent(out, indent);
-                format_to(out, "break\n");
+                fmt::format_to(out, "break\n");
                 break;
             case cl::AstNodeKind::STATEMENT_CONTINUE:
                 emit_indent(out, indent);
-                format_to(out, "continue\n");
+                fmt::format_to(out, "continue\n");
                 break;
 
             case cl::AstNodeKind::STATEMENT_NONLOCAL:
@@ -737,22 +740,22 @@ template <> struct fmt::formatter<cl::AstVector>
                 emit_indent(out, indent);
                 if(kind.node_kind == cl::AstNodeKind::STATEMENT_NONLOCAL)
                 {
-                    format_to(out, "nonlocal ");
+                    fmt::format_to(out, "nonlocal ");
                 }
                 else
                 {
-                    format_to(out, "global ");
+                    fmt::format_to(out, "global ");
                 }
                 for(size_t i = 0; i < children.size(); ++i)
                 {
                     if(i != 0)
                     {
-                        format_to(out, ", ");
+                        fmt::format_to(out, ", ");
                     }
                     render_node(av, out, children[i], indent,
                                 cl::ExpressionPrecedence::Lowest);
                 }
-                format_to(out, "\n");
+                fmt::format_to(out, "\n");
                 break;
 
             case cl::AstNodeKind::STATEMENT_SEQUENCE:
@@ -766,7 +769,7 @@ template <> struct fmt::formatter<cl::AstVector>
 
         if(is_expression(kind.node_kind) && self_precedence <= outer_precedence)
         {
-            format_to(out, ")");
+            fmt::format_to(out, ")");
         }
     }
 

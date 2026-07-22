@@ -58,7 +58,7 @@ function(clovervm_add_native_module module_name)
         C_STANDARD 11
         C_STANDARD_REQUIRED YES
         C_EXTENSIONS NO
-        CXX_STANDARD 17
+        CXX_STANDARD 20
         CXX_STANDARD_REQUIRED YES
         CXX_EXTENSIONS NO
     )

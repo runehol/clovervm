@@ -8,7 +8,7 @@ set(CLOVERVM_SYS_VERSION "${CLOVERVM_VERSION} (clovervm)")
 
 # Project wide setup
 
-set (CMAKE_CXX_STANDARD 17)
+set (CMAKE_CXX_STANDARD 20)
 set (CMAKE_CXX_STANDARD_REQUIRED ON)
 set (CMAKE_CXX_EXTENSIONS OFF)
 
@@ -16,7 +16,7 @@ include(cmake/StandardProjectSettings.cmake)
 
 # Link this 'library' to set the c++ standard / compile-time options requested
 add_library(project_options INTERFACE)
-target_compile_features(project_options INTERFACE c_std_11 cxx_std_17)
+target_compile_features(project_options INTERFACE c_std_11 cxx_std_20)
 
 # Link this 'library' to use the warnings specified in CompilerWarnings.cmake
 add_library(project_warnings INTERFACE)
