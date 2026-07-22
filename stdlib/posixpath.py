@@ -21,6 +21,10 @@ def isabs(path):
     return path.startswith(sep)
 
 
+def normcase(path):
+    return path
+
+
 def join(path, *paths):
     result = path
     for item in paths:
