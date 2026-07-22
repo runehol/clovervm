@@ -2,6 +2,7 @@
 
 #include "jit/machine_address_internal.h"
 
+#include <bit>
 #include <cassert>
 #include <cstdint>
 #include <sys/mman.h>
@@ -11,11 +12,6 @@ namespace cl::jit
 {
     namespace
     {
-        bool is_power_of_two(size_t value)
-        {
-            return value != 0 && (value & (value - 1)) == 0;
-        }
-
         class StandardCodeSlab final : public PlatformCodeSlab
         {
         public:
@@ -101,7 +97,7 @@ namespace cl::jit
         long result = sysconf(_SC_PAGESIZE);
         assert(result > 0);
         page_size_ = static_cast<size_t>(result);
-        assert(is_power_of_two(page_size_));
+        assert(std::has_single_bit(page_size_));
         assert(page_size_ >= 16);
     }
 

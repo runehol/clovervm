@@ -29,6 +29,7 @@
 #include "runtime/runtime_helpers.h"
 #include "runtime/thread_state.h"
 #include "runtime/virtual_machine.h"
+#include <bit>
 #include <cmath>
 #include <cstdint>
 #include <cstdio>
@@ -43,6 +44,13 @@
 namespace cl
 {
     static constexpr int8_t KeywordDestKwargsDict = 0;
+
+    static int64_t count_redundant_sign_bits(int64_t value)
+    {
+        uint64_t magnitude_bits = value < 0 ? ~static_cast<uint64_t>(value)
+                                            : static_cast<uint64_t>(value);
+        return static_cast<int64_t>(std::countl_zero(magnitude_bits) - 1);
+    }
 
 #define PARAMS                                                                 \
     Value accumulator, Value *fp, const uint8_t *pc, void *dispatch,           \
@@ -3523,7 +3531,7 @@ namespace cl
         if(unlikely(shift_count < 0))
             MUSTTAIL return raise_value_error_negative_shift_count(ARGS);
         int64_t value = a.get_smi();
-        int64_t sign_bits = __builtin_clrsbll(value);
+        int64_t sign_bits = count_redundant_sign_bits(value);
         if(unlikely(uint64_t(shift_count) >= 64 ||
                     (value != 0 &&
                      shift_count + int64_t(value_tag_bits) > sign_bits)))
@@ -3549,7 +3557,7 @@ namespace cl
         // Bytecode invariant: codegen only emits LShiftSmi for shifts 0..63.
         assert(shift_count >= 0 && shift_count < 64);
         int64_t value = a.get_smi();
-        int64_t sign_bits = __builtin_clrsbll(value);
+        int64_t sign_bits = count_redundant_sign_bits(value);
         if(unlikely(value != 0 &&
                     shift_count + int64_t(value_tag_bits) > sign_bits))
         {

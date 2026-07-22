@@ -4,6 +4,7 @@
 #include "memory/heap_constants.h"
 #include "object_model/value.h"
 #include <array>
+#include <bit>
 #include <cassert>
 #include <cstdint>
 #include <cstdlib>
@@ -78,7 +79,7 @@ namespace cl
             uint64_t count = 0;
             for(uint64_t word: valid_object_bitmap)
             {
-                count += __builtin_popcountll(word);
+                count += std::popcount(word);
             }
             return count;
         }
@@ -103,7 +104,8 @@ namespace cl
                 uint64_t word = valid_object_bitmap[word_idx];
                 while(word != 0)
                 {
-                    unsigned bit_in_word = __builtin_ctzll(word);
+                    unsigned bit_in_word =
+                        static_cast<unsigned>(std::countr_zero(word));
                     size_t bit_idx = word_idx * 64 + bit_in_word;
                     assert(bit_idx < ValidObjectBitmapBits);
                     char *header = first_object_header +

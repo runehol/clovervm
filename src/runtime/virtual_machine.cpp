@@ -40,6 +40,7 @@
 #include "runtime/fatal.h"
 #include "runtime/protocol_helper_functions.h"
 #include "runtime/thread_state.h"
+#include <bit>
 #include <cassert>
 #include <cstdint>
 #include <cwchar>
@@ -176,9 +177,11 @@ namespace cl
 
     static const wchar_t *sys_byteorder_name()
     {
-        uint16_t value = 1;
-        return *reinterpret_cast<unsigned char *>(&value) == 1 ? L"little"
-                                                               : L"big";
+        if constexpr(std::endian::native == std::endian::little)
+        {
+            return L"little";
+        }
+        return L"big";
     }
 
     static void install_sys_static_attributes(VirtualMachine *vm,

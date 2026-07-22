@@ -1,5 +1,6 @@
 #include "jit/code_cache.h"
 
+#include <bit>
 #include <cassert>
 #include <cstdint>
 #include <limits>
@@ -9,14 +10,9 @@ namespace cl::jit
 {
     namespace
     {
-        constexpr bool is_power_of_two(size_t value)
-        {
-            return value != 0 && (value & (value - 1)) == 0;
-        }
-
         size_t align_up(size_t value, size_t alignment)
         {
-            assert(is_power_of_two(alignment));
+            assert(std::has_single_bit(alignment));
             size_t mask = alignment - 1;
             assert(value <= std::numeric_limits<size_t>::max() - mask);
             return (value + mask) & ~mask;
@@ -24,7 +20,7 @@ namespace cl::jit
 
         constexpr size_t align_down(size_t value, size_t alignment)
         {
-            assert(is_power_of_two(alignment));
+            assert(std::has_single_bit(alignment));
             return value & ~(alignment - 1);
         }
 
@@ -256,8 +252,8 @@ namespace cl::jit
           standard_slab_size_(standard_slab_size)
     {
         assert(platform_memory_ != nullptr);
-        assert(is_power_of_two(page_size()));
-        assert(is_power_of_two(code_allocation_granularity()));
+        assert(std::has_single_bit(page_size()));
+        assert(std::has_single_bit(code_allocation_granularity()));
         assert(code_allocation_granularity() >= 16);
         assert(page_size() % code_allocation_granularity() == 0);
         assert(standard_slab_size_ != 0);

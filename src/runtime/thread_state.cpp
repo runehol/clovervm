@@ -16,6 +16,7 @@
 #include "runtime/runtime_helpers.h"
 #include "runtime/virtual_machine.h"
 #include <algorithm>
+#include <bit>
 #include <cstdint>
 #include <iterator>
 #include <string>
@@ -28,7 +29,7 @@ namespace cl
     static_assert((FrameHeaderSizeAboveFp * sizeof(Value)) %
                       FrameAlignmentBytes ==
                   0);
-    static_assert((FrameAlignmentBytes & (FrameAlignmentBytes - 1)) == 0);
+    static_assert(std::has_single_bit(FrameAlignmentBytes));
 
     thread_local ThreadState *ThreadState::current_thread = nullptr;
 

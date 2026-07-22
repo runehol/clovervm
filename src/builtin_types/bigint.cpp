@@ -4,6 +4,7 @@
 #include "runtime/thread_state.h"
 
 #include <algorithm>
+#include <bit>
 #include <cassert>
 #include <cfloat>
 #include <cmath>
@@ -196,7 +197,7 @@ namespace cl
     static uint32_t countl_zero(digit_t value)
     {
         assert(value != 0);
-        return static_cast<uint32_t>(__builtin_clz(value));
+        return static_cast<uint32_t>(std::countl_zero(value));
     }
 
     static double_digit_t
