@@ -20,11 +20,16 @@
 
 namespace cl
 {
-    static int64_t count_redundant_sign_bits(int64_t value)
+    static constexpr int64_t int64_value_bits =
+        std::numeric_limits<int64_t>::digits;
+    static constexpr int64_t int64_storage_bits =
+        std::numeric_limits<uint64_t>::digits;
+
+    static int64_t count_left_shift_headroom_bits(int64_t value)
     {
-        uint64_t magnitude_bits = value < 0 ? ~static_cast<uint64_t>(value)
-                                            : static_cast<uint64_t>(value);
-        return static_cast<int64_t>(std::countl_zero(magnitude_bits) - 1);
+        uint64_t signless_bits = value < 0 ? ~static_cast<uint64_t>(value)
+                                           : static_cast<uint64_t>(value);
+        return static_cast<int64_t>(std::countl_zero(signless_bits) - 1);
     }
 
     static bool is_smi_or_bool_value(Value value)
@@ -908,10 +913,10 @@ namespace cl
             {
                 return int_negative_shift_count_error(thread);
             }
-            int64_t sign_bits = count_redundant_sign_bits(left);
-            if(unlikely(
-                   uint64_t(right) >= 64 ||
-                   (left != 0 && right + int64_t(value_tag_bits) > sign_bits)))
+            int64_t headroom_bits = count_left_shift_headroom_bits(left);
+            if(unlikely(uint64_t(right) >= uint64_t(int64_storage_bits) ||
+                        (left != 0 &&
+                         right + int64_t(value_tag_bits) > headroom_bits)))
             {
                 return int_overflow_error(thread);
             }
@@ -980,9 +985,9 @@ namespace cl
             {
                 return int_negative_shift_count_error(thread);
             }
-            if(unlikely(right >= 64))
+            if(unlikely(right >= int64_storage_bits))
             {
-                return Value::from_smi(left < 0 ? -1 : 0);
+                return Value::from_smi(left >> int64_value_bits);
             }
             return Value::from_smi(left >> right);
         }
