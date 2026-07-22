@@ -207,6 +207,20 @@ entry:
     Return %constant
 ```
 
+The initial identity sub-slice exposes two layers. `generate_aarch64_assembly`
+deterministically lowers a published CFG into a caller-selected
+`AArch64MacroAssembler`. `emit_aarch64_from_cfg` owns finalization and code-cache
+publication: it first generates in `NearLiteral` mode and, only when finalization
+returns `PoolOutOfRange`, discards that emission and regenerates from the CFG in
+`FarPageRelative` mode. Allocation and publication failures remain typed
+compilation failures and do not trigger the range retry.
+
+For the single-parameter identity graph, the backend maps the tagged parameter
+directly to the AArch64 argument/result register `x0`. This deliberately avoids
+introducing a pretend allocation table before any instruction presents a
+placement choice. `Const` is the first lowering that requires durable backend
+preparation and location-assignment products.
+
 If the full function-call ABI is not ready, the test may use a narrow generated
 leaf harness that passes machine-level tagged `Value` arguments and reads the
 returned tagged `Value`. The important point is that the input is a real Core

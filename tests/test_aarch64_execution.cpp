@@ -1,4 +1,7 @@
 #include "jit/aarch64_assembler.h"
+#include "jit/aarch64_cfg_emitter.h"
+#include "jit/compilation_arena.h"
+#include "jit/graph_builder.h"
 
 #include <gtest/gtest.h>
 
@@ -7,6 +10,37 @@
 
 namespace cl::jit
 {
+    TEST(AArch64Execution, EmitsIdentityFunctionFromCfg)
+    {
+        CompilationArena arena;
+        GraphBuilder builder(arena);
+        Block *entry = builder.emplace_block();
+        ParameterInstruction *parameter =
+            builder.emplace_parameter<ParameterInstruction>(entry);
+        builder.emplace_instruction<ReturnInstruction>(
+            entry, TaggedValueRef(parameter));
+        ControlFlowGraph *graph = builder.finalize();
+
+        CodeCache cache;
+        Result<JitCodeObject *, JitCodeError> emission =
+            emit_aarch64_from_cfg(*graph, cache);
+        ASSERT_TRUE(emission);
+        JitCodeObject *code = std::move(emission).value();
+
+        using Function = uint64_t (*)(uint64_t);
+        Function function = reinterpret_cast<Function>(
+            code->entry().bits_for_indirect_target());
+        const uint64_t inputs[] = {
+            static_cast<uint64_t>(Value::None().as.integer),
+            static_cast<uint64_t>(Value::True().as.integer),
+            static_cast<uint64_t>(Value::from_smi(42).as.integer),
+        };
+        for(uint64_t input: inputs)
+        {
+            EXPECT_EQ(input, function(input));
+        }
+    }
+
     TEST(AArch64Execution, CallsGeneratedLeafFunction)
     {
         CodeCache cache;

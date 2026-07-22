@@ -90,6 +90,8 @@ add_library(libclovervm_objects OBJECT
     import_system/import_system.h
     jit/aarch64_assembler.cpp
     jit/aarch64_assembler.h
+    jit/aarch64_cfg_emitter.cpp
+    jit/aarch64_cfg_emitter.h
     jit/cfg_verifier.cpp
     jit/cfg_verifier.h
     jit/compilation_arena.cpp
