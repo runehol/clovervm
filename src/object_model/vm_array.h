@@ -13,7 +13,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
-#include <new>
+#include <memory>
 #include <type_traits>
 #include <utility>
 
@@ -201,7 +201,7 @@ namespace cl
             size_t current_size = size();
             for(size_t idx = 0; idx < current_size; ++idx)
             {
-                new(new_data + idx) T((*this)[idx]);
+                std::construct_at(new_data + idx, (*this)[idx]);
             }
 
             backing = new_backing;
@@ -223,7 +223,7 @@ namespace cl
             reserve(requested_size);
             while(current_size < requested_size)
             {
-                new(non_empty_data() + current_size) T(value);
+                std::construct_at(non_empty_data() + current_size, value);
                 ++current_size;
             }
             set_size(current_size);
@@ -235,7 +235,7 @@ namespace cl
             reserve(requested_size);
             for(size_t idx = 0; idx < requested_size; ++idx)
             {
-                new(non_empty_data() + idx) T(value);
+                std::construct_at(non_empty_data() + idx, value);
             }
             set_size(requested_size);
         }
@@ -263,7 +263,8 @@ namespace cl
                 reserve(detail::grown_capacity(capacity(), current_size + 1));
             }
 
-            new(data() + current_size) T(std::forward<Args>(args)...);
+            std::construct_at(data() + current_size,
+                              std::forward<Args>(args)...);
             set_size(current_size + 1);
             return back();
         }
@@ -437,7 +438,7 @@ namespace cl
             size_t current_size = size();
             for(size_t idx = 0; idx < current_size; ++idx)
             {
-                new(new_data + idx) T((*this)[idx]);
+                std::construct_at(new_data + idx, (*this)[idx]);
             }
 
             if(backing != nullptr)
@@ -470,7 +471,7 @@ namespace cl
             while(current_size < requested_size)
             {
                 T *slot = mutable_non_empty_data() + current_size;
-                new(slot) T(value);
+                std::construct_at(slot, value);
                 incref_element(slot);
                 ++current_size;
             }
@@ -482,7 +483,7 @@ namespace cl
             assert(idx < size());
             T *slot = mutable_non_empty_data() + idx;
             clear_element(slot);
-            new(slot) T(value);
+            std::construct_at(slot, value);
             incref_element(slot);
         }
 
@@ -524,7 +525,7 @@ namespace cl
             }
 
             T *slot = mutable_non_empty_data() + current_size;
-            new(slot) T(std::forward<Args>(args)...);
+            std::construct_at(slot, std::forward<Args>(args)...);
             incref_element(slot);
             set_size(current_size + 1);
             return *slot;
