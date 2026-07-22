@@ -4,6 +4,7 @@
 #include "object_model/value.h"
 #include "util/result.h"
 #include <cassert>
+#include <cstddef>
 #include <memory>
 #include <new>
 #include <type_traits>
@@ -481,7 +482,7 @@ namespace cl
         void destroy_value() { std::destroy_at(value_ptr()); }
 
         bool has_value_;
-        std::aligned_storage_t<sizeof(T), alignof(T)> storage_;
+        alignas(T) std::byte storage_[sizeof(T)];
     };
 
     template <> class [[nodiscard]] Expected<void, false>
