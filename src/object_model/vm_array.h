@@ -14,6 +14,7 @@
 #include <cstdint>
 #include <cstring>
 #include <memory>
+#include <new>
 #include <type_traits>
 #include <utility>
 
@@ -129,16 +130,22 @@ namespace cl
 
         T *data()
         {
-            return backing == nullptr
-                       ? nullptr
-                       : reinterpret_cast<T *>(backing_ptr()->bytes);
+            if(backing == nullptr)
+            {
+                return nullptr;
+            }
+            T *storage = storage_data();
+            return empty() ? storage : std::launder(storage);
         }
 
         const T *data() const
         {
-            return backing == nullptr
-                       ? nullptr
-                       : reinterpret_cast<const T *>(backing_ptr()->bytes);
+            if(backing == nullptr)
+            {
+                return nullptr;
+            }
+            const T *storage = storage_data();
+            return empty() ? storage : std::launder(storage);
         }
 
         iterator begin() { return data(); }
@@ -197,7 +204,7 @@ namespace cl
 
             Backing *new_backing = make_internal_raw<Backing>(
                 storage_size_for_capacity(requested_capacity));
-            T *new_data = reinterpret_cast<T *>(new_backing->bytes);
+            T *new_data = storage_data(new_backing);
             size_t current_size = size();
             for(size_t idx = 0; idx < current_size; ++idx)
             {
@@ -221,9 +228,10 @@ namespace cl
             }
 
             reserve(requested_size);
+            T *storage = storage_data();
             while(current_size < requested_size)
             {
-                std::construct_at(non_empty_data() + current_size, value);
+                std::construct_at(storage + current_size, value);
                 ++current_size;
             }
             set_size(current_size);
@@ -233,9 +241,10 @@ namespace cl
         {
             size_t requested_size = detail::checked_array_size(count);
             reserve(requested_size);
+            T *storage = storage_data();
             for(size_t idx = 0; idx < requested_size; ++idx)
             {
-                std::construct_at(non_empty_data() + idx, value);
+                std::construct_at(storage + idx, value);
             }
             set_size(requested_size);
         }
@@ -263,7 +272,7 @@ namespace cl
                 reserve(detail::grown_capacity(capacity(), current_size + 1));
             }
 
-            std::construct_at(data() + current_size,
+            std::construct_at(storage_data() + current_size,
                               std::forward<Args>(args)...);
             set_size(current_size + 1);
             return back();
@@ -285,6 +294,26 @@ namespace cl
 
         Backing *backing_ptr() { return backing.extract(); }
         const Backing *backing_ptr() const { return backing.extract(); }
+
+        static T *storage_data(Backing *array_backing)
+        {
+            return reinterpret_cast<T *>(array_backing->bytes);
+        }
+
+        static const T *storage_data(const Backing *array_backing)
+        {
+            return reinterpret_cast<const T *>(array_backing->bytes);
+        }
+
+        T *storage_data()
+        {
+            return backing == nullptr ? nullptr : storage_data(backing_ptr());
+        }
+
+        const T *storage_data() const
+        {
+            return backing == nullptr ? nullptr : storage_data(backing_ptr());
+        }
 
         T *non_empty_data() { return detail::assume_not_null(data()); }
 
@@ -385,9 +414,12 @@ namespace cl
 
         const T *data() const
         {
-            return backing == nullptr
-                       ? nullptr
-                       : reinterpret_cast<const T *>(backing_ptr()->elements);
+            if(backing == nullptr)
+            {
+                return nullptr;
+            }
+            const T *storage = storage_data();
+            return empty() ? storage : std::launder(storage);
         }
 
         const_iterator begin() const { return data(); }
@@ -434,7 +466,7 @@ namespace cl
                         sizeof(Value) *
                             value_cell_count_for_capacity(requested_capacity));
 
-            T *new_data = reinterpret_cast<T *>(new_backing->elements);
+            T *new_data = storage_data(new_backing);
             size_t current_size = size();
             for(size_t idx = 0; idx < current_size; ++idx)
             {
@@ -470,8 +502,8 @@ namespace cl
             reserve(requested_size);
             while(current_size < requested_size)
             {
-                T *slot = mutable_non_empty_data() + current_size;
-                std::construct_at(slot, value);
+                T *slot =
+                    std::construct_at(storage_data() + current_size, value);
                 incref_element(slot);
                 ++current_size;
             }
@@ -483,7 +515,7 @@ namespace cl
             assert(idx < size());
             T *slot = mutable_non_empty_data() + idx;
             clear_element(slot);
-            std::construct_at(slot, value);
+            slot = std::construct_at(storage_data() + idx, value);
             incref_element(slot);
         }
 
@@ -524,8 +556,8 @@ namespace cl
                 reserve(detail::grown_capacity(capacity(), current_size + 1));
             }
 
-            T *slot = mutable_non_empty_data() + current_size;
-            std::construct_at(slot, std::forward<Args>(args)...);
+            T *slot = std::construct_at(storage_data() + current_size,
+                                        std::forward<Args>(args)...);
             incref_element(slot);
             set_size(current_size + 1);
             return *slot;
@@ -546,9 +578,12 @@ namespace cl
 
         T *mutable_data()
         {
-            return backing == nullptr
-                       ? nullptr
-                       : reinterpret_cast<T *>(backing_ptr()->elements);
+            if(backing == nullptr)
+            {
+                return nullptr;
+            }
+            T *storage = storage_data();
+            return empty() ? storage : std::launder(storage);
         }
 
         static void incref_element(T *element)
@@ -596,6 +631,26 @@ namespace cl
 
         Backing *backing_ptr() { return backing.extract(); }
         const Backing *backing_ptr() const { return backing.extract(); }
+
+        static T *storage_data(Backing *array_backing)
+        {
+            return reinterpret_cast<T *>(array_backing->elements);
+        }
+
+        static const T *storage_data(const Backing *array_backing)
+        {
+            return reinterpret_cast<const T *>(array_backing->elements);
+        }
+
+        T *storage_data()
+        {
+            return backing == nullptr ? nullptr : storage_data(backing_ptr());
+        }
+
+        const T *storage_data() const
+        {
+            return backing == nullptr ? nullptr : storage_data(backing_ptr());
+        }
 
         const T *non_empty_data() const
         {
