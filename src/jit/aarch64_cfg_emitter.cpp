@@ -11,13 +11,9 @@ namespace cl::jit
 {
     namespace
     {
-        XRegister assigned_register(const ControlFlowGraph &graph,
-                                    ProgramValueRef value)
+        XRegister assigned_register(ProgramValueRef value)
         {
-            const std::vector<Instruction *> &parameters =
-                graph.entry_block()->parameters();
-            assert(parameters.size() == 1);
-            assert(value.instruction() == parameters[0]);
+            (void)value;
             return XRegister(0);
         }
 
@@ -41,21 +37,42 @@ namespace cl::jit
         assert(entry != nullptr);
         assert(graph.blocks()[0] == entry);
         assert(entry->predecessor_edges().empty());
-        assert(entry->parameters().size() == 1);
-        assert(entry->parameters()[0]->kind() == InstructionKind::Parameter);
-        assert(entry->instructions().size() == 1);
+        assert(entry->parameters().size() <= 1);
+        if(!entry->parameters().empty())
+        {
+            assert(entry->parameters()[0]->kind() ==
+                   InstructionKind::Parameter);
+        }
 
-        for(const Instruction *instruction: entry->instructions())
+        for(Instruction *instruction: entry->instructions())
         {
             // clang-format off
             CL_JIT_INSTRUCTION_SWITCH(*instruction)
             {
+                case CL_JIT_INSTRUCTION_CASE(ConstInstruction,
+                                             constant_instruction)
+                {
+                    Value constant = constant_instruction.constant();
+                    XRegister destination =
+                        assigned_register(ProgramValueRef(instruction));
+                    if(constant.is_inline())
+                    {
+                        assembler.mov(
+                            destination,
+                            static_cast<uint64_t>(constant.as.integer));
+                    }
+                    else
+                    {
+                        assembler.ldr(destination, constant);
+                    }
+                    break;
+                }
+
                 case CL_JIT_INSTRUCTION_CASE(ReturnInstruction,
                                              return_instruction)
                 {
-                    XRegister return_register = assigned_register(
-                        graph, return_instruction.return_value());
-                    assert(return_register.encoding() == 0);
+                    (void)assigned_register(
+                        return_instruction.return_value());
                     assembler.emit_ret();
                     break;
                 }

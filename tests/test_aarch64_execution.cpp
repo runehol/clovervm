@@ -41,6 +41,30 @@ namespace cl::jit
         }
     }
 
+    TEST(AArch64Execution, EmitsInlineConstantFunctionFromCfg)
+    {
+        CompilationArena arena;
+        GraphBuilder builder(arena);
+        Block *entry = builder.emplace_block();
+        Value expected = Value::from_smi(0x123456789abcd);
+        ConstInstruction *constant =
+            builder.emplace_instruction<ConstInstruction>(entry, expected);
+        builder.emplace_instruction<ReturnInstruction>(
+            entry, TaggedValueRef(constant));
+        ControlFlowGraph *graph = builder.finalize();
+
+        CodeCache cache;
+        Result<JitCodeObject *, JitCodeError> emission =
+            emit_aarch64_from_cfg(*graph, cache);
+        ASSERT_TRUE(emission);
+        JitCodeObject *code = std::move(emission).value();
+
+        using Function = uint64_t (*)();
+        Function function = reinterpret_cast<Function>(
+            code->entry().bits_for_indirect_target());
+        EXPECT_EQ(static_cast<uint64_t>(expected.as.integer), function());
+    }
+
     TEST(AArch64Execution, CallsGeneratedLeafFunction)
     {
         CodeCache cache;

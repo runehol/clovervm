@@ -218,8 +218,13 @@ compilation failures and do not trigger the range retry.
 For the single-parameter identity graph, the backend maps the tagged parameter
 directly to the AArch64 argument/result register `x0`. This deliberately avoids
 introducing a pretend allocation table before any instruction presents a
-placement choice. `Const` is the first lowering that requires durable backend
-preparation and location-assignment products.
+placement choice. The first non-pointer `Const` slice temporarily assigns every
+program value to `x0` and materializes the constant with the macro assembler's
+immediate `mov` operation. A pointer-valued constant instead uses the macro
+assembler's traced value-pool load; compilation-session retention remains a
+separate graph-lifetime requirement. Multiple simultaneously live values are
+the first case that requires durable backend preparation and
+location-assignment products.
 
 If the full function-call ABI is not ready, the test may use a narrow generated
 leaf harness that passes machine-level tagged `Value` arguments and reads the
