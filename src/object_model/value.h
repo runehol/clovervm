@@ -269,8 +269,8 @@ namespace cl
             return v >= -128 && v <= 127;
         }
 
-        template <typename T = Object,
-                  typename = std::enable_if_t<std::is_base_of_v<Object, T>>>
+        template <typename T = Object>
+        requires(std::is_base_of_v<Object, T>)
         T *get_ptr() const
         {
             assert(is_ptr());
