@@ -25,6 +25,7 @@ namespace cl
 namespace cl::jit
 {
     class BlockEdge;
+    class GraphRewriter;
     class InstructionPool;
 
     enum class ResultClass : uint8_t
@@ -274,6 +275,7 @@ namespace cl::jit
         }
 
     protected:
+        friend class GraphRewriter;
         friend class InstructionPool;
 
         Instruction(uint32_t serial, InstructionKind kind,
@@ -333,6 +335,17 @@ namespace cl::jit
         }
 
     private:
+        void detach_and_poison()
+        {
+            assert(!is_detached());
+            kind_ = DetachedStorageTag;
+            operand_storage_ = DetachedStorageTag;
+            for(Slot &slot: slots_)
+            {
+                slot = UINTPTR_MAX;
+            }
+        }
+
         uint32_t serial_;
         uint16_t kind_;
         uint16_t operand_storage_;

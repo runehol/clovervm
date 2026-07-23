@@ -14,6 +14,8 @@
 
 namespace cl::jit
 {
+    class RewriteContext;
+
     class CompilationArena
     {
     public:
@@ -26,6 +28,7 @@ namespace cl::jit
 
     private:
         friend class GraphBuilder;
+        friend class RewriteContext;
 
         template <typename... Args> Block *make_block(Args &&...args)
         {

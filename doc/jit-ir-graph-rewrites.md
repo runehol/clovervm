@@ -4,7 +4,7 @@
 |---|---|
 | Document type | Design |
 | Status | Proposed |
-| Implementation | Read-only traversal and instruction use lists implemented; block arguments and graph rewriting not started |
+| Implementation | Read-only traversal, instruction use lists, and body-instruction graph rewriting implemented; block arguments and CFG-topology rewriting not started |
 | Scope | Read-only instruction traversal, on-demand use lists, and forward instruction rewriting within published JIT IR basic blocks |
 | Owning layers | The CFG owns mutation generation and cached analysis storage; the traversal contract declares observable walk order and required queries; `GraphQueries` owns generation-checked callback access; the use-list builder owns use occurrences; the graph rewriter owns operand substitution, instruction placement, and commit; the instruction schema owns reconstruction; individual passes own matching and semantic legality; CFG editing owns successor and predecessor changes |
 | Validated against | `tests/test_jit_graph_rewrites.cpp` |
@@ -453,16 +453,19 @@ folding or lowering pass.
 The instruction schema generates a generic reconstruction operation:
 
 ```cpp
-Instruction *rebuild_with_operands(
-    const Instruction &instruction,
-    OperandResolver resolver,
-    GraphRewriter &rewriter);
+Instruction *rebuild_instruction_with_operands(
+    Instruction &instruction,
+    DefResolver resolver,
+    InstructionFactory &factory);
 ```
 
 It reconstructs the same concrete instruction kind with resolved typed operands
 and unchanged attributes. It returns the original instruction when no operand
-changed. Reconstruction is generated from `src/jit/instruction.def`; it does
-not mutate raw slots or introduce handwritten cloning switches.
+changed. The graph rewriter supplies only its old-def-to-new-def resolution;
+typed operand adaptation, variadic reconstruction, attribute copying, and the
+generated kind switch belong to the instruction layer. Reconstruction is
+generated from `src/jit/instruction.def`; it does not mutate raw slots or
+introduce handwritten cloning switches.
 
 When reconstruction creates a new instruction, keeping it is still a structural
 replacement. The rewriter records the original definition as mapping to the

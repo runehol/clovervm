@@ -1,5 +1,6 @@
 #include "jit/compilation_arena.h"
 #include "jit/graph_builder.h"
+#include "jit/graph_rewriter.h"
 #include "jit/instruction_traversal.h"
 #include "jit/use_lists.h"
 #include "object_model/value.h"
@@ -153,6 +154,221 @@ namespace cl::jit
 
         GraphQueries no_queries = graph->prepare_queries(GraphQuery::None);
         EXPECT_DEATH((void)no_queries.uses_of(*constant), "");
+    }
+
+    TEST(JitGraphRewriter, KeepsAnUnchangedGraphWithoutAdvancingGeneration)
+    {
+        CompilationArena arena;
+        GraphBuilder builder(arena);
+        Block *entry = builder.emplace_block();
+        ConstInstruction *constant =
+            builder.emplace_instruction<ConstInstruction>(entry, Value::None());
+        ReturnInstruction *return_instruction =
+            builder.emplace_instruction<ReturnInstruction>(
+                entry, TaggedValueRef(constant));
+        ControlFlowGraph *graph = builder.finalize();
+
+        GraphRewriter rewriter(arena, *graph);
+        RewriteSummary summary = rewriter.rewrite_instructions(
+            InstructionTraversal(),
+            [](RewriteContext &, const GraphQueries &, const Block &,
+               const Instruction &) { return RewriteResult::keep(); });
+
+        EXPECT_FALSE(summary.instructions_changed);
+        EXPECT_FALSE(summary.terminators_changed);
+        EXPECT_EQ(0u, graph->mutation_generation());
+        ASSERT_EQ(2u, entry->instructions().size());
+        EXPECT_EQ(constant, entry->instructions()[0]);
+        EXPECT_EQ(return_instruction, entry->instructions()[1]);
+    }
+
+    TEST(JitGraphRewriter, ReplacesAnIdentityWithItsExistingDefinition)
+    {
+        CompilationArena arena;
+        GraphBuilder builder(arena);
+        Block *entry = builder.emplace_block();
+        ParameterInstruction *parameter =
+            builder.emplace_parameter<ParameterInstruction>(entry);
+        MovInstruction *move = builder.emplace_instruction<MovInstruction>(
+            entry, TaggedValueRef(parameter));
+        ReturnInstruction *old_return =
+            builder.emplace_instruction<ReturnInstruction>(
+                entry, TaggedValueRef(move));
+        ControlFlowGraph *graph = builder.finalize();
+
+        GraphRewriter rewriter(arena, *graph);
+        RewriteSummary summary = rewriter.rewrite_instructions(
+            InstructionTraversal().with_queries(GraphQuery::Uses),
+            [&](RewriteContext &, const GraphQueries &queries, const Block &,
+                const Instruction &instruction) {
+                if(instruction.kind() == InstructionKind::Mov)
+                {
+                    EXPECT_EQ(1u, queries.uses_of(instruction).n_uses());
+                    return RewriteResult::replace_with_def(
+                        instruction.as<MovInstruction>()->source());
+                }
+                return RewriteResult::keep();
+            });
+
+        EXPECT_TRUE(summary.instructions_changed);
+        EXPECT_TRUE(summary.terminators_changed);
+        EXPECT_EQ(1u, graph->mutation_generation());
+        EXPECT_TRUE(move->is_detached());
+        EXPECT_TRUE(old_return->is_detached());
+        ASSERT_EQ(1u, entry->instructions().size());
+        const ReturnInstruction *new_return =
+            entry->instructions()[0]->as<ReturnInstruction>();
+        EXPECT_EQ(parameter, new_return->return_value().instruction());
+
+        GraphQueries rebuilt_queries = graph->prepare_queries(GraphQuery::Uses);
+        EXPECT_EQ(1u, rebuilt_queries.uses_of(*parameter).n_uses());
+    }
+
+    TEST(JitGraphRewriter, ReconstructsVariadicInstructionsFromTheSchema)
+    {
+        CompilationArena arena;
+        GraphBuilder builder(arena);
+        Block *entry = builder.emplace_block();
+        ParameterInstruction *parameter =
+            builder.emplace_parameter<ParameterInstruction>(entry);
+        ConstInstruction *callable =
+            builder.emplace_instruction<ConstInstruction>(entry, Value::None());
+        std::array<ProgramValueRef, 1> captured = {ProgramValueRef(callable)};
+        SnapshotInstruction *snapshot =
+            builder.emplace_instruction<SnapshotInstruction>(
+                entry, std::span<const ProgramValueRef>(captured),
+                BytecodePC{31});
+        std::array<TaggedValueRef, 2> arguments = {TaggedValueRef(parameter),
+                                                   TaggedValueRef(callable)};
+        PythonCallInstruction *call =
+            builder.emplace_instruction<PythonCallInstruction>(
+                entry, TaggedValueRef(callable), SnapshotRef(snapshot),
+                std::span<const TaggedValueRef>(arguments), BytecodePC{47});
+        builder.emplace_instruction<ReturnInstruction>(entry,
+                                                       TaggedValueRef(call));
+        ControlFlowGraph *graph = builder.finalize();
+
+        GraphRewriter rewriter(arena, *graph);
+        RewriteSummary summary = rewriter.rewrite_instructions(
+            InstructionTraversal(),
+            [&](RewriteContext &context, const GraphQueries &, const Block &,
+                const Instruction &instruction) {
+                if(&instruction == callable)
+                {
+                    return RewriteResult::replace(
+                        context.make_instruction<ConstInstruction>(
+                            Value::True()));
+                }
+                return RewriteResult::keep();
+            });
+
+        EXPECT_TRUE(summary.instructions_changed);
+        EXPECT_TRUE(callable->is_detached());
+        EXPECT_TRUE(snapshot->is_detached());
+        EXPECT_TRUE(call->is_detached());
+        ASSERT_EQ(4u, entry->instructions().size());
+        const auto *new_callable =
+            entry->instructions()[0]->as<ConstInstruction>();
+        const auto *new_snapshot =
+            entry->instructions()[1]->as<SnapshotInstruction>();
+        const auto *new_call =
+            entry->instructions()[2]->as<PythonCallInstruction>();
+        EXPECT_EQ(Value::True(), new_callable->constant());
+        EXPECT_EQ(new_callable,
+                  new_snapshot->captured_values()[0].instruction());
+        EXPECT_EQ(new_callable, new_call->callable().instruction());
+        ASSERT_EQ(2u, new_call->arguments().size());
+        EXPECT_EQ(parameter, new_call->arguments()[0].instruction());
+        EXPECT_EQ(new_callable, new_call->arguments()[1].instruction());
+        EXPECT_EQ(new_snapshot, new_call->snapshot().instruction());
+        EXPECT_EQ(BytecodePC{47}, new_call->interpreter_return_pc());
+    }
+
+    TEST(JitGraphRewriter, StagesSequencesAcrossTheWholeGraphBeforeCommit)
+    {
+        CompilationArena arena;
+        GraphBuilder builder(arena);
+        Block *entry = builder.emplace_block();
+        Block *exit = builder.emplace_block();
+        ParameterInstruction *parameter =
+            builder.emplace_parameter<ParameterInstruction>(entry);
+        MovInstruction *move = builder.emplace_instruction<MovInstruction>(
+            entry, TaggedValueRef(parameter));
+        BlockEdge *edge = builder.make_block_edge(entry, exit);
+        UnconditionalBranchInstruction *branch =
+            builder.emplace_instruction<UnconditionalBranchInstruction>(entry,
+                                                                        edge);
+        ConstInstruction *constant =
+            builder.emplace_instruction<ConstInstruction>(exit, Value::None());
+        builder.emplace_instruction<ReturnInstruction>(
+            exit, TaggedValueRef(constant));
+        ControlFlowGraph *graph = builder.finalize();
+
+        GraphRewriter rewriter(arena, *graph);
+        RewriteSummary summary = rewriter.rewrite_instructions(
+            InstructionTraversal(),
+            [&](RewriteContext &context, const GraphQueries &,
+                const Block &block, const Instruction &instruction) {
+                if(&instruction == move)
+                {
+                    MovInstruction *first =
+                        context.make_instruction<MovInstruction>(
+                            TaggedValueRef(parameter));
+                    MovInstruction *second =
+                        context.make_instruction<MovInstruction>(
+                            TaggedValueRef(first));
+                    return RewriteResult::replace({first, second},
+                                                  TaggedValueRef(second));
+                }
+                if(block.serial() == exit->serial() &&
+                   instruction.kind() == InstructionKind::Const)
+                {
+                    EXPECT_EQ(2u, entry->instructions().size());
+                    EXPECT_EQ(move, entry->instructions()[0]);
+                    EXPECT_EQ(branch, entry->instructions()[1]);
+                    EXPECT_FALSE(move->is_detached());
+                }
+                return RewriteResult::keep();
+            });
+
+        EXPECT_TRUE(summary.instructions_changed);
+        EXPECT_FALSE(summary.terminators_changed);
+        EXPECT_TRUE(move->is_detached());
+        ASSERT_EQ(3u, entry->instructions().size());
+        const auto *first = entry->instructions()[0]->as<MovInstruction>();
+        const auto *second = entry->instructions()[1]->as<MovInstruction>();
+        EXPECT_EQ(parameter, first->source().instruction());
+        EXPECT_EQ(first, second->source().instruction());
+        EXPECT_EQ(branch, entry->instructions()[2]);
+    }
+
+    TEST(JitGraphRewriter, RejectsAUseOfAnErasedDefinition)
+    {
+        EXPECT_DEATH(
+            {
+                CompilationArena arena;
+                GraphBuilder builder(arena);
+                Block *entry = builder.emplace_block();
+                ConstInstruction *constant =
+                    builder.emplace_instruction<ConstInstruction>(
+                        entry, Value::None());
+                builder.emplace_instruction<ReturnInstruction>(
+                    entry, TaggedValueRef(constant));
+                ControlFlowGraph *graph = builder.finalize();
+
+                GraphRewriter rewriter(arena, *graph);
+                rewriter.rewrite_instructions(
+                    InstructionTraversal(),
+                    [&](RewriteContext &, const GraphQueries &, const Block &,
+                        const Instruction &instruction) {
+                        if(&instruction == constant)
+                        {
+                            return RewriteResult::erase();
+                        }
+                        return RewriteResult::keep();
+                    });
+            },
+            "erased definition");
     }
 
 }  // namespace cl::jit

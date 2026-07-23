@@ -102,10 +102,13 @@ add_library(libclovervm_objects OBJECT
     jit/graph_builder.h
     jit/graph_queries.cpp
     jit/graph_queries.h
+    jit/graph_rewriter.cpp
+    jit/graph_rewriter.h
     jit/code_cache.cpp
     jit/code_cache.h
     jit/instruction.cpp
     jit/instruction.h
+    jit/instruction_reconstruction.h
     jit/instruction_traversal.h
     jit/instruction_pool.cpp
     jit/instruction_pool.h

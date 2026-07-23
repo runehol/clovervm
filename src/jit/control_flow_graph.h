@@ -13,6 +13,7 @@ namespace cl::jit
     class ControlFlowGraph;
     class GraphQueries;
     class GraphBuilder;
+    class GraphRewriter;
     class BlockEdge;
     class UseLists;
     enum class GraphQuery : uint8_t;
@@ -54,6 +55,7 @@ namespace cl::jit
     private:
         friend class ControlFlowGraph;
         friend class GraphBuilder;
+        friend class GraphRewriter;
 
         void append_parameter(Instruction *parameter)
         {
@@ -121,6 +123,7 @@ namespace cl::jit
 
     private:
         friend class GraphBuilder;
+        friend class GraphRewriter;
 
         Serial serial_;
         Block *entry_block_ = nullptr;
