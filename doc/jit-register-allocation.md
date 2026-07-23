@@ -67,6 +67,7 @@ enum class RegisterClass : uint8_t
 {
     GPR,
     SIMD,
+    Count,
 };
 
 class PhysicalRegister
@@ -92,6 +93,19 @@ private:
     uint8_t number_;
 };
 
+class RegisterSet
+{
+public:
+    static constexpr size_t MaxRegistersPerClass = 64;
+
+    bool contains(PhysicalRegister reg) const;
+    void insert(PhysicalRegister reg);
+    void erase(PhysicalRegister reg);
+
+private:
+    std::array<uint64_t, static_cast<size_t>(RegisterClass::Count)> members_{};
+};
+
 struct RegisterClassDefinition
 {
     RegisterClass register_class;
@@ -101,8 +115,9 @@ struct RegisterClassDefinition
 ```
 
 `RegisterClass` identifies the architectural storage class. `GPR` and `SIMD`
-are initially sufficient; another target need not provide definitions for
-classes it does not use, and future storage classes may extend the enum.
+are initially sufficient; `Count` is an implementation sentinel rather than a
+class. Another target need not provide definitions for classes it does not use,
+and future storage classes may extend the enum.
 
 `PhysicalRegister` identifies one indivisible allocation unit by class and
 target-local number. Architectural width views are not separate physical
@@ -129,7 +144,9 @@ class, excluding stack pointers, reserved registers, and other unavailable
 locations. `allocation_order` contains every member exactly once and no
 non-member; it is the target's default priority order when several registers
 are equally legal. Fixed constraints, bundle affinities, and later cost
-heuristics may override that preference.
+heuristics may override that preference. A `RegisterSet` may contain registers
+from several classes, which keeps large call-clobber masks compact. The initial
+contract permits at most 64 physical registers in each class.
 
 ## Allocation Constraints
 
@@ -183,37 +200,100 @@ actions. Likewise, an output written before every input has been consumed is an
 early def. `Use` therefore never implies `Early`, and `Def` never implies
 `Late`.
 
-The constraint attached to an occurrence may require:
+The structural constraint representation is:
 
-- any legal location;
-- a register from a target register class;
-- a specific physical register;
-- a stack or spill location;
-- a target-supported immediate or constant-pool form;
-- output reuse of a specific input location;
-- a temporary register from a class;
-- avoidance of a clobbered physical-register set.
+```cpp
+enum class AccessTiming : uint8_t
+{
+    Early,
+    Late,
+};
 
-The exact C++ spelling is deferred, but the conceptual constraint kinds are:
+class RegisterRequirement
+{
+public:
+    enum class Kind : uint8_t
+    {
+        Any,
+        Fixed,
+        SameAsInput,
+    };
 
-```text
-Any
-Register(class)
-FixedRegister(register)
-Stack
-Immediate
-ConstantPool
-SameAsInput(input_index)
-Temporary(class)
-Clobber(register_set)
+    static RegisterRequirement any(RegisterClass register_class);
+    static RegisterRequirement fixed(PhysicalRegister reg);
+    static RegisterRequirement same_as_input(uint16_t operand_index);
+
+    Kind kind() const;
+    RegisterClass register_class() const;
+    PhysicalRegister fixed_register() const;
+    uint16_t input_index() const;
+
+private:
+    RegisterRequirement(Kind kind, uint16_t payload);
+
+    Kind kind_;
+    uint16_t payload_;
+};
+
+struct ProgramValueUseConstraint
+{
+    ProgramValueUseConstraint(uint16_t operand_index, AccessTiming timing,
+                              RegisterRequirement requirement);
+
+    uint16_t operand_index;
+    AccessTiming timing;
+    RegisterRequirement requirement;
+};
+
+struct SnapshotUse
+{
+    uint16_t operand_index;
+    AccessTiming timing;
+};
+
+struct ResultConstraint
+{
+    AccessTiming timing;
+    RegisterRequirement requirement;
+};
+
+struct TemporaryConstraint
+{
+    explicit TemporaryConstraint(RegisterRequirement requirement);
+
+    RegisterRequirement requirement;
+};
+
+struct InstructionAllocationConstraints
+{
+    const Instruction *instruction;
+    std::vector<ProgramValueUseConstraint> inputs;
+    std::vector<SnapshotUse> snapshots;
+    std::optional<ResultConstraint> result;
+    std::vector<TemporaryConstraint> temporaries;
+    RegisterSet clobbers;
+};
 ```
 
-`Temporary(class)` asks the allocator to provide a register that the lowering
-may overwrite. `Clobber(register_set)` instead describes registers destroyed
-implicitly by the operation. Structural preparation retains the compact
-register set. Allocator preparation expands each member into a late def of a
-fresh throwaway value, with no uses and a fixed constraint naming that physical
-register.
+`RegisterRequirement::Any` names a register class;
+`RegisterRequirement::Fixed` names one physical register; and
+`RegisterRequirement::SameAsInput` names the ProgramValue input whose assigned
+register the result must reuse. Contextual constructors reject
+`SameAsInput` for inputs and temporaries, so it remains a result-only
+requirement without a second variant-based representation. The compact
+allocator representation may encode these alternatives differently.
+
+A `SnapshotUse` does not allocate the `SnapshotRef`. At each instruction that
+consumes one, allocator preparation expands the captured `ProgramValueRef`s
+into unconstrained point uses at the declared timing. Repeated consumers of one
+virtual Snapshot expand independently.
+
+A temporary takes either an `Any` or `Fixed` register requirement and reserves
+the chosen register across the selected target sequence. `clobbers` instead
+describes registers destroyed implicitly by the operation. Structural
+preparation retains the compact register set. Allocator preparation expands
+each member into a late def of a fresh throwaway value, with no uses and a fixed
+constraint naming that physical register.
 
 Every physical register written by an instruction must be represented either
 by an explicit def, including an allocated temporary, or by a clobber, but not
@@ -225,10 +305,29 @@ A potentially long branch therefore requests a GPR temporary; it does not
 needlessly clobber a predetermined register. The emitter may ignore the
 assigned temporary when the short branch form fits.
 
-`Register(class)` and spill compatibility must agree with the Core
+Register requirements and spill compatibility must agree with the Core
 `ValueRepresentation` of the value. A constraint may narrow that representation
 to a target class or fixed register, but it must not change representation
 semantics. Representation changes remain explicit Core instructions.
+
+Construction and verification enforce:
+
+- each allocatable ProgramValue operand has exactly one input constraint;
+- each consumed Snapshot operand has exactly one `SnapshotUse`;
+- a ProgramValue-producing instruction has exactly one result constraint, while
+  `None` and Snapshot-producing instructions have none;
+- `SameAsInput` names a valid ProgramValue input and occurs only on a result;
+- fixed registers and `Any` classes are compatible with the occurrence's
+  `ValueRepresentation`;
+- every `RegisterClassDefinition::allocation_order` is a permutation of its
+  members;
+- clobbers do not collide with explicit fixed defs, fixed late uses, or fixed
+  temporaries, including the fixed register obtained after resolving
+  `SameAsInput`.
+
+Parameter instructions use the same result constraint. Their placement in a
+block's parameter list anchors the def at block entry rather than at an
+executable instruction phase.
 
 ## Durable Anchors and Ephemeral Positions
 
