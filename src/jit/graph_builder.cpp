@@ -17,7 +17,8 @@ namespace cl::jit
     }  // namespace
 
     GraphBuilder::GraphBuilder(CompilationSession &session)
-        : arena_(&session.arena()), graph_(arena_->make_graph())
+        : session_(&session), arena_(&session.arena()),
+          graph_(arena_->make_graph())
     {
     }
 

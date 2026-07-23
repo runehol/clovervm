@@ -42,6 +42,11 @@ namespace cl::jit
         Block *block_at(size_t index) const;
         size_t block_count() const;
 
+        template <typename T> T retain_and_pin_value(T value)
+        {
+            return session_->retain_and_pin_value(value);
+        }
+
         template <typename T, typename... Args>
         T *make_instruction(Args &&...args)
         {
@@ -85,6 +90,7 @@ namespace cl::jit
         void assert_can_build() const;
         void assert_can_mutate(const Block *block) const;
 
+        CompilationSession *session_;
         CompilationArena *arena_;
         ControlFlowGraph *graph_;
     };

@@ -35,16 +35,23 @@ namespace cl::jit
             return instruction;
         }
 
+        template <typename T> T retain_and_pin_value(T value)
+        {
+            return session_->retain_and_pin_value(value);
+        }
+
     private:
         friend class GraphRewriter;
 
         RewriteContext(
-            CompilationArena *arena,
+            CompilationSession *session, CompilationArena *arena,
             absl::flat_hash_set<const Instruction *> *allocated_instructions)
-            : arena_(arena), allocated_instructions_(allocated_instructions)
+            : session_(session), arena_(arena),
+              allocated_instructions_(allocated_instructions)
         {
         }
 
+        CompilationSession *session_;
         CompilationArena *arena_;
         absl::flat_hash_set<const Instruction *> *allocated_instructions_;
     };
@@ -141,7 +148,7 @@ namespace cl::jit
     {
     public:
         GraphRewriter(CompilationSession &session, ControlFlowGraph &graph)
-            : arena_(&session.arena()), graph_(&graph)
+            : session_(&session), arena_(&session.arena()), graph_(&graph)
         {
         }
 
@@ -184,6 +191,7 @@ namespace cl::jit
                                     RewriteInput input, void *callback,
                                     ErasedCallback invoke_callback);
 
+        CompilationSession *session_;
         CompilationArena *arena_;
         ControlFlowGraph *graph_;
     };

@@ -352,8 +352,8 @@ to many code units.
 
 Code or pool allocation failure is a recoverable JIT outcome even during
 bring-up. A failed proposal has not advanced either slab frontier; the compiler
-releases its temporary emitter state and compilation-session constant pins, no
-entry point is installed, and the triggering execution continues in the
+releases its temporary emitter state and compilation-session retained values,
+no entry point is installed, and the triggering execution continues in the
 interpreter. Once a
 proposal is committed its space remains consumed even if publication later
 fails. This is distinct from near-placement rejection, which requests the
@@ -403,8 +403,8 @@ the same cache interface.
 
 ## `JitCodeObject` ownership
 
-A non-GC `JitCodeObject` records the published code and pool slices as one
-metadata unit:
+The intended `JitCodeObject` is a heap object with its own native layout. It
+records the published code and pool slices as one metadata unit:
 
 ```text
 JitCodeObject
@@ -414,26 +414,29 @@ JitCodeObject
     MachineAddress entry derived from CodeSlice
 ```
 
-The publishing per-thread cache retains the `JitCodeObject` and its physical
-storage until VM destruction. Publication returns a non-owning pointer for
-installation into the corresponding `CodeObject`.
+Its native-layout scanner exposes the external pool as mutable `Value` slots.
+The collector can therefore trace and rewrite managed pointers in the pool
+without decoding instruction bytes. `JitCodeObject` does not keep a parallel
+`Owned<Value>` vector; the scanned pool slots are the durable managed
+references.
 
-The planned `CodeObject` integration may embed a nullable atomic
-`JitCodeObject *`. Compilation will fully construct the object, initialize every
-pool slot and metadata record, and publish the pointer with release ordering.
+The planned `CodeObject` integration may embed a nullable atomic reference to
+the heap `JitCodeObject`. Compilation will fully construct the object,
+initialize every pool slot and metadata record, make those slots visible to the
+native-layout scanner, and publish the reference with release ordering.
 Entrants will load it with acquire ordering. Initial publication is one-time;
-generated code is not replaced or retired. `CodeObject::dealloc` will not
-delete the installed object.
+generated code is not replaced or retired during bring-up.
 
-GC integration is not implemented yet. It must trace and rewrite every cache-
-retained object's recorded pool slots, including code whose original
-`CodeObject` has become unreachable but which remains callable through a direct
-cross-unit transfer. Until publication, the compilation session's pins keep
-direct managed constants alive and immobile in Core, while the
-`MachineCodeEmitter` owns every surviving `Value` submitted during emission and
-deduplicates final pool entries by raw bit pattern. Successful publication
-copies those emitter-owned values into the initialized pool before releasing
-the pins; abandoning compilation destroys the temporary pool owners and pins.
+The compilation session's monotonic `Owned<Value>` vector keeps direct managed
+constants alive and pinned while they remain in non-scannable compiler data.
+The session must outlive creation of the heap `JitCodeObject`. Successful
+publication initializes the pool and establishes its scannable references
+before session teardown; abandoning compilation destroys the temporary session
+and emitter ownership domains without publishing anything.
+
+The current cache-retained non-GC C++ `JitCodeObject` is bring-up scaffolding.
+Replacing it with the heap object, adding its native layout and external-pool
+scanner, and integrating its reachability with `CodeObject` are still required.
 
 ## Publication and concurrency invariants
 
@@ -495,9 +498,9 @@ The current immortal lifetime policy is complete for bring-up. Reclamation,
 retirement, dependency tracking, and slice reuse are not current concerns and
 do not block the code cache.
 
-Installation of cache-retained `JitCodeObject` pointers into `CodeObject`, GC
-tracing and rewriting of their pools, Linux dual RW/RX mappings, and policies
-for other platforms are explicitly deferred.
+Heap `JitCodeObject` construction and installation into `CodeObject`, GC tracing
+and rewriting of its pool, Linux dual RW/RX mappings, and policies for other
+platforms are explicitly deferred.
 
 Future choices must not leak virtual-memory or platform publication mechanics
 into the target assembler or fragment-layout algorithm.

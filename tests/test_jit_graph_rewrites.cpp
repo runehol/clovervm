@@ -1,9 +1,12 @@
+#include "builtin_types/str.h"
 #include "jit/compilation_session.h"
 #include "jit/graph_builder.h"
 #include "jit/graph_rewriter.h"
 #include "jit/instruction_traversal.h"
 #include "jit/use_lists.h"
 #include "object_model/value.h"
+#include "runtime/thread_state.h"
+#include "test_helpers.h"
 
 #include <gtest/gtest.h>
 
@@ -181,6 +184,53 @@ namespace cl::jit
         ASSERT_EQ(2u, entry->instructions().size());
         EXPECT_EQ(constant, entry->instructions()[0]);
         EXPECT_EQ(return_instruction, entry->instructions()[1]);
+    }
+
+    TEST(JitGraphRewriter, RewriteContextRetainsNewManagedValues)
+    {
+        test::VmTestContext context;
+        ThreadState::ActivationScope activation_scope(context.thread());
+        String *string =
+            context.thread()->make_internal_raw<String>(L"folded constant");
+        TValue<String> value = TValue<String>::from_oop(string);
+
+        EXPECT_EQ(0, string->refcount);
+        {
+            CompilationSession session;
+            GraphBuilder builder(session);
+            Block *entry = builder.emplace_block();
+            ConstInstruction *constant =
+                builder.emplace_instruction<ConstInstruction>(entry,
+                                                              Value::None());
+            builder.emplace_instruction<ReturnInstruction>(
+                entry, TaggedValueRef(constant));
+            ControlFlowGraph *graph = builder.finalize();
+
+            GraphRewriter rewriter(session, *graph);
+            ConstInstruction *folded_constant = nullptr;
+            RewriteSummary summary = rewriter.rewrite_instructions(
+                InstructionTraversal(),
+                [&](RewriteContext &rewrite_context, const GraphQueries &,
+                    const Block &, const Instruction &instruction) {
+                    if(instruction.kind() == InstructionKind::Const)
+                    {
+                        TValue<String> retained =
+                            rewrite_context.retain_and_pin_value(value);
+                        folded_constant =
+                            rewrite_context.make_instruction<ConstInstruction>(
+                                retained.raw_value());
+                        return RewriteResult::replace(folded_constant);
+                    }
+                    return RewriteResult::keep();
+                });
+
+            EXPECT_TRUE(summary.instructions_changed);
+            ASSERT_NE(nullptr, folded_constant);
+            EXPECT_EQ(value.raw_value(), folded_constant->constant());
+            EXPECT_EQ(folded_constant, entry->instructions()[0]);
+            EXPECT_EQ(1, string->refcount);
+        }
+        EXPECT_EQ(0, string->refcount);
     }
 
     TEST(JitGraphRewriter,

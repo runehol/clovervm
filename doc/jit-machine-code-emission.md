@@ -415,8 +415,12 @@ program-order emission, the backend submits each surviving pooled constant to
 identical raw `Value` bit patterns and returns an opaque `ValuePoolEntry` for
 the final dense slot; first submission determines the deterministic slot order.
 Its `Owned<Value>` entries keep the submitted values alive until the finalized
-code unit assumes the GC-visible references. Compilation pins additionally keep
-pointer-valued constants immobile while they remain direct references in Core.
+code unit assumes the GC-visible references. Publication creates a heap
+`JitCodeObject` whose native-layout scanner exposes the initialized pool slots
+to the collector. The compilation session's own `Owned<Value>` vector keeps
+pointer-valued constants alive and pinned while they remain direct references
+in Core, and the session must remain alive until that `JitCodeObject` creation
+and pool-registration step is complete.
 
 The pool base is aligned to `sizeof(Value)`, typically eight bytes on a 64-bit
 target, so every slot is naturally aligned. Non-`Value` literal data may not be
@@ -474,8 +478,8 @@ value_pool_address + constant_pool_offset
 During the third pass the relocation computes the exact fields from that fixed
 address and the instruction's actual executable PC, patches the copied template,
 and revalidates its reach. The emitter-owned values are then copied into their
-final slots while compilation pins remain held. Neither code nor pool may move
-relative to the other afterward.
+final slots while the compilation session retains remain held. Neither code nor
+pool may move relative to the other afterward.
 
 ## Immediate materialization
 
@@ -765,8 +769,8 @@ bullets apply when that target or instruction family is added:
 - x86-64 RIP-relative pool loads at both `disp32` limits, including final
   relocation rewriting;
 - code-cache allocation failure abandoning compilation without publication,
-  leaking emitter-owned pool values or compilation pins, or setting Python
-  pending-exception state;
+  leaking emitter-owned pool values or session-retained constants, or setting
+  Python pending-exception state;
 - simulated GC rewriting of pool slots without changing instruction bytes;
 - labels resolved after encoded bytes, after a direct branch, and
   consecutively, each resolving to the target fragment's start boundary;

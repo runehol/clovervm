@@ -4,10 +4,10 @@
 |---|---|
 | Document type | Implementation plan |
 | Status | Proposed |
-| Implementation | Core instruction storage, typed instruction construction, initial Core graph construction/publication, code-cache allocation/publication, generic machine-code emitter, AArch64 assembler, value-pool loads, and executable AArch64 tests are implemented; managed-constant retention, backend preparation, and compiler/runtime entry remain |
+| Implementation | Core instruction storage, typed construction, graph publication and rewriting, compilation-session constant retention, code-cache publication, generic machine-code emission, AArch64 assembly, value-pool loads, and executable AArch64 tests are implemented; backend preparation and compiler/runtime entry remain |
 | Scope | Initial JIT staging, vertical slices, temporary runtime policies, and validation |
 | Owning layers | The JIT owns compilation and generated transitions; the interpreter, managed calling convention, native boundaries, and reclaimer retain their existing contracts |
-| Validated against | Supporting infrastructure, instruction-representation tests, CFG tests, code-cache tests, and executable AArch64 tests in the working tree on 2026-07-22 |
+| Validated against | Supporting infrastructure, instruction-representation tests, CFG and rewrite tests, code-cache tests, and executable AArch64 tests in the working tree on 2026-07-23 |
 | Supersedes | Bring-up material formerly embedded in [JIT Compiler and IR](jit-compiler-and-ir.md) |
 
 This plan brings up compiled execution through small, executable vertical
@@ -177,13 +177,20 @@ The initial graph-construction slice provides:
   legality, terminator placement, same-block definition-before-use, result
   classes, and value representations before publication.
 
-The remaining work in this milestone is to place `Const` in representative
-graphs and implement compilation-session retention and verification for
-pointer-valued `ValueConstant`s.
+This milestone is complete. `Const` appears in representative graphs, and the
+compilation session owns a monotonic `std::vector<Owned<Value>>`. Graph building
+calls `retain_and_pin_value()` for every pointer constant it encounters, while
+compiler-created managed values use the same operation immediately after
+allocation. The retain is also the compilation pin because Core instruction
+payloads are not GC-scannable relocation slots. The session remains alive until
+the heap `JitCodeObject` has been created and its initialized constant-pool
+slots are visible to its native-layout scanner; that publication boundary
+transfers responsibility from compilation retention to GC tracing.
 
-Detached-storage poisoning, editor replacement, mutation-aware `UseLists`,
-Snapshot-expanded liveness, non-entry block parameters and their edge argument
-lists, and general published-CFG mutation are not part of this milestone. Entry
+Detached-storage poisoning, generation-bound `UseLists`, read-only traversal,
+and staged published-graph rewriting also landed ahead of their original
+milestones. Snapshot-expanded liveness, non-entry block parameters and their
+edge argument lists, and general CFG-edge rewriting remain deferred. Entry
 block parameters already represent function arguments.
 
 ### Milestone 2: executable AArch64 from minimal Core

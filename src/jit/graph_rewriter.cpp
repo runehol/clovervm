@@ -153,7 +153,7 @@ namespace cl::jit
 
         GraphQueries queries = graph_->prepare_queries(traversal.queries());
         absl::flat_hash_set<const Instruction *> allocated_instructions;
-        RewriteContext context(arena_, &allocated_instructions);
+        RewriteContext context(session_, arena_, &allocated_instructions);
         absl::flat_hash_set<const Instruction *> staged_instruction_set;
         std::vector<StagedBlockRewrite> staged_blocks;
         staged_blocks.reserve(graph_->blocks_.size());

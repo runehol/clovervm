@@ -221,7 +221,7 @@ ShapeKey       -> inline ShapeKey value
 ValidityCell   -> ValidityCell*
 BytecodePC     -> compact bytecode offset or pointer representation
 Immediate      -> inline integer or enum value
-ValueConstant  -> directly embedded Value retained by the compilation session
+ValueConstant  -> directly embedded Value with compilation-long backing
 ```
 
 `ValueConstant` is the schema classification of that attribute, not a pool
@@ -229,7 +229,11 @@ handle or a second runtime wrapper; its typed accessor and constructor use
 `Value` directly.
 
 `ValueConstant` may contain either a non-pointer tagged value or a managed
-pointer. Construction paths pin the latter through the compilation session.
+pointer. Every managed constant placed in a graph is retained by the compilation
+session because instruction payloads are not GC-scannable relocation slots. An
+existing constant is registered with `retain_and_pin_value()` when graph
+construction encounters it. A compiler-created value is registered with the
+same operation immediately after creation.
 
 Ordinary operand words are uniformly direct instruction pointers. Dereferencing
 one and decoding its def kind identifies whether it is a `ProgramValue` or
@@ -329,8 +333,8 @@ provide. Side-data allocation checks alignment and allocation-size overflow.
 
 The compilation arena releases instruction and trivial side-data storage in
 bulk. It does not walk those objects to invoke destructors. The enclosing
-compilation session separately owns normally destroyed tables, pins, and other
-scoped resources; common session lifetime does not imply that every object
+compilation session separately owns normally destroyed tables, retained values,
+and other scoped resources; common session lifetime does not imply that every object
 occupies the destructor-free arena allocation domain.
 
 ### Construction, Placement, and Publication
@@ -355,16 +359,13 @@ Future IR-level-specific wrappers may expose only instruction kinds permitted at
 that level. The arena constructor itself still records each kind's allowed
 levels for placement and verification.
 
-The arena factory also owns managed-constant retention through the pin manager
-owned by its enclosing session. Before returning an
-unpublished instruction or arena side-data object containing a pointer-valued
-`ValueConstant`, it calls the compilation session's pinning API for that
-`Value`. This applies equally to fixed attributes and Snapshot arrays. Cloning
-into another compilation session invokes the destination factory and therefore
-repins each managed value there. Pinning is complete before the allocation is
-observable; it is not deferred until graph attachment and is not a CFG-editor
-responsibility. Failure to retain a value is a resource failure that aborts the
-compilation.
+Instruction construction does not generically scan instructions for managed
+constants. Graph-building code calls
+`GraphBuilder::retain_and_pin_value()` as it encounters each existing pointer
+constant before publishing that value through a `Const`. A pass that creates a
+new managed value uses `CompilationSession::retain_and_pin_value()` directly,
+or the same capability on its `RewriteContext`. Failure to retain a value is a
+resource failure that aborts the compilation.
 
 This compile-time construction safety does not attempt to prove contextual
 graph properties such as dominance or block-edge ownership. There are two
@@ -446,8 +447,9 @@ registrations remain owned by the enclosing compilation session and unwind
 alongside the arena.
 
 This failure model does not permit leaked external state. The compilation
-session owns temporary pins and similar runtime-visible resources, and releases
-them when an unsuccessful session is destroyed. Compiled code, validity-cell
+session retains managed constants and similar runtime-visible resources, and
+releases them when an unsuccessful session is destroyed. Compiled code,
+validity-cell
 dependencies, assumptions, cache entries, and other persistent runtime state
 are installed only after all fallible compilation work and final verification
 have succeeded. Publication is the final commit; failure before it leaves
@@ -458,31 +460,30 @@ rewrites and to validate their completed structure, not to roll back allocation
 failure. On the successful path, an edit must leave the published graph valid.
 On resource failure, the enclosing compilation is discarded.
 
-### Managed Value Constants and Pins
+### Managed Value Constants and Compilation Retention
 
 `Const` instructions embed constants directly as `ValueConstant`s. Core does
 not distinguish values that will become machine
 immediates from values that will require the traced constant pool, and does not
 assign a pool index or otherwise model that eventual pool.
 
-A compilation pin is a strong root as well as a relocation prohibition. It
-keeps the object alive and prevents its address from changing; a mere
-`do-not-move` bit that still permits reclamation would be insufficient.
-Constructing a pointer-valued `ValueConstant` requires the compilation session
-to retain a deduplicated pin
-for that object. Pins are session state rather than fields in arena objects and
-are released together when the compilation session ends. Detaching an
-instruction need not remove its pin; retaining pins until the short compilation
-finishes keeps editor cleanup simple.
+Every pointer-valued constant embedded in Core is retained in one monotonic
+session vector of `Owned<Value>`. For an existing compiler input,
+`retain_and_pin_value()` adds the retain required to keep its address usable
+from unscannable instruction storage. A newly created managed value, such as a
+tuple produced by constant folding, has no durable source owner; the same
+operation adds its ownership retain immediately and returns the same typed
+handle. `GraphBuilder` and `RewriteContext` both expose this capability.
 
-The pinning API already expresses this construction contract even while its
-current implementation is a no-op because CloverVM has no moving collector.
-Factories must still call it unconditionally. That keeps the representation and
-all construction paths ready for a moving collector without later discovering
-which instruction kinds can hide managed references. The verifier independently
-walks every `ValueConstant` attribute and asserts that each pointer-valued entry
-is covered by the session's pin set; an implementation whose pins are currently
-implicit may report that coverage trivially.
+Retained values are session state rather than fields in instructions or arena
+objects. Instruction construction does not infer ownership from a
+`ValueConstant`; the builder or transformation registers the value at the
+point where it encounters or creates it. In the current collector, the
+`Owned<Value>` is both the lifetime root and the compilation pin. A future
+moving collector must preserve the address of these retained values while the
+session is active because it cannot rewrite the copies embedded in instruction
+payloads. The initial vector permits duplicates and is released as a unit when
+the session ends.
 
 Backend or Machine-IR lowering classifies each surviving `Const`. It may encode
 or synthesize a suitable non-pointer value as an immediate, or pass any `Value`
@@ -490,15 +491,15 @@ to `MachineCodeEmitter::add_value_to_constant_pool()`. The emitter owns pool
 values and assigns and deduplicates final `ValuePoolEntry` offsets. Pointer-valued
 constants must take the traced-pool path; Core itself does not express this
 split.
-Successful publication initializes the `JitCodeObject` pool before session pins
-are released. On failure, the emitter owners, compilation pins, and arena are
-discarded while the interpreter continues.
+Successful publication initializes the `JitCodeObject` pool before
+session-retained constants are released. On failure, the emitter owners,
+retained values, and arena are discarded while the interpreter continues.
 
-The initial no-safepoint policy, prohibition on managed allocation during
-compilation, deferred managed-object constant folding, and possible future
-phase-boundary yielding are pipeline contracts specified in
-[JIT Compiler and IR](jit-compiler-and-ir.md). The pin representation supports
-that future extension without adding indirection to instruction operands.
+Allocation may request a future safepoint but does not synchronously enter one.
+Initial compilation does not acknowledge safepoints mid-compilation, so a pass
+may create a managed value and immediately retain it in the session before
+making it available to later compiler work. Possible future phase-boundary
+yielding is specified in [JIT Compiler and IR](jit-compiler-and-ir.md).
 
 ## Pointers, Serials, and Determinism
 
@@ -820,10 +821,9 @@ result and on every operand other than `Snapshot.captured_values`. Every
 value-bearing Snapshot position must reference a live `ProgramValue` def;
 every structural position must correspond to a valid frame-header field or
 another recovery destination already known to contain its desired value.
-Every pointer-valued constant on a `Const` def must be covered by the
-compilation session's pin set. Recovery planning must interpret each capture
-using its def's concrete representation and provide an exhaustive
-frame-materialization operation for that case.
+Recovery planning must interpret each capture using its def's concrete
+representation and provide an exhaustive frame-materialization operation for
+that case.
 
 Each concrete instruction form is a final, fieldless subclass of `Instruction`.
 The instruction arena placement-constructs the subclass selected by the schema;
@@ -917,11 +917,12 @@ mutation-aware `UseLists`, invalidated or removed active metadata entries, and
 unlinked the instruction from its block. The edit plan must establish the
 absence of incoming uses through current `UseLists` or a complete generic
 operand scan. A detached instruction's pointer-valued `ValueConstant` is no
-longer semantically visible, and the compilation session may retain its pin
-until the session ends. The editor may debug-poison the remaining payload
-storage and publish the detached tag last. An editor transaction is not
-observable by ordinary passes in an intermediate state. Poisoned storage is
-never republished or returned to a live kind.
+longer semantically visible. Every value registered with the session remains
+retained until session teardown; detachment does not prune that monotonic
+vector. The editor may debug-poison the remaining payload storage and
+publish the detached tag last. An editor transaction is not observable by
+ordinary passes in an intermediate state. Poisoned storage is never republished
+or returned to a live kind.
 
 The serial is deliberately preserved for diagnostics. Any detached instruction
 encountered by verification, generic traversal, typed conversion, a result
@@ -1008,11 +1009,11 @@ once.
 
 The same walker independently reconstructs uses for verification and also
 supports cloning and printing of operand relationships. Attribute visitors or
-typed accessors handle cloning, printing, CFG edge maintenance, constant pin
-validation, and bytecode-PC diagnostics for non-dataflow payload. The verifier
+typed accessors handle cloning, printing, CFG edge maintenance, constant
+diagnostics, and bytecode-PC diagnostics for non-dataflow payload. The verifier
 compares any current `UseLists` against reconstructed operand records and
-hard-fails on references to poisoned storage. Kind-specific named accessors such
-as branch edges remain available through concrete accessors.
+hard-fails on references to poisoned storage. Kind-specific named accessors
+such as branch edges remain available through concrete accessors.
 
 ## Phase-Owned Attached Metadata
 

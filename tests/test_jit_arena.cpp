@@ -1,8 +1,11 @@
+#include "builtin_types/str.h"
 #include "jit/compilation_session.h"
 #include "jit/graph_builder.h"
 #include "jit/instruction.h"
 #include "jit/object_pool.h"
 #include "object_model/value.h"
+#include "runtime/thread_state.h"
+#include "test_helpers.h"
 
 #include <gtest/gtest.h>
 
@@ -67,6 +70,46 @@ namespace cl::jit
         EXPECT_EQ(1u, second_block->serial().value());
         EXPECT_EQ(0u, first_instruction->serial().value());
         EXPECT_EQ(1u, second_instruction->serial().value());
+    }
+
+    TEST(JitCompilationSession,
+         RetainsNewValuesAndPinsGraphConstantsUntilDestruction)
+    {
+        test::VmTestContext context;
+        ThreadState::ActivationScope activation_scope(context.thread());
+        String *created =
+            context.thread()->make_internal_raw<String>(L"jit constant");
+        TValue<String> created_value = TValue<String>::from_oop(created);
+        String *existing =
+            context.thread()->make_internal_raw<String>(L"source constant");
+        Value existing_value = Value::from_oop(existing);
+
+        EXPECT_EQ(0, created->refcount);
+        EXPECT_EQ(0, existing->refcount);
+        {
+            CompilationSession session;
+            GraphBuilder builder(session);
+            Block *entry = builder.emplace_block();
+            TValue<String> retained_created =
+                session.retain_and_pin_value(created_value);
+            Value retained_existing =
+                builder.retain_and_pin_value(existing_value);
+            builder.emplace_instruction<ConstInstruction>(
+                entry, retained_created.raw_value());
+            ConstInstruction *constant =
+                builder.emplace_instruction<ConstInstruction>(
+                    entry, retained_existing);
+            builder.emplace_instruction<ReturnInstruction>(
+                entry, TaggedValueRef(constant));
+            builder.finalize();
+
+            EXPECT_EQ(created_value, retained_created);
+            EXPECT_EQ(existing_value, retained_existing);
+            EXPECT_EQ(1, created->refcount);
+            EXPECT_EQ(1, existing->refcount);
+        }
+        EXPECT_EQ(0, created->refcount);
+        EXPECT_EQ(0, existing->refcount);
     }
 
     TEST(JitInstructionStorage, HasFiveSlotsAndAlignedStableAddresses)

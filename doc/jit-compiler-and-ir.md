@@ -399,8 +399,9 @@ IR operation.
 
 Core ordinary operands are uniformly instruction-result references. Every
 tagged constant becomes a normal `ProgramValue` through `Const`, whose
-`ValueConstant` attribute may contain either a non-pointer value or a pinned
-managed pointer. Snapshots capture the resulting `ProgramValueRef`.
+`ValueConstant` attribute may contain either a non-pointer value or a managed
+pointer retained by the compilation session. Snapshots capture the resulting
+`ProgramValueRef`.
 
 Backend preparation or Machine IR classifies each surviving constant as an
 immediate synthesis or traced-pool load. Pointer-valued constants must use the
@@ -832,7 +833,7 @@ remain valid for that lifetime. The fixed, trivially destructible instruction
 storage and bulk arena lifetime are specified in
 [JIT Instruction Representation](jit-instruction-representation.md).
 
-### Compilation safepoints and managed pins
+### Compilation safepoints and retained constants
 
 Initial JIT compilation runs without compiler safepoints. If the runtime
 requests a safepoint, it waits for the current compilation to finish. This
@@ -841,39 +842,41 @@ explicit yield points between completed phases may be added later if
 measurements require them. Arbitrary safepoints in the middle of an editor
 transaction are not supported.
 
-Compilation-time managed references follow the pin-set invariant specified in
-[JIT Instruction Representation](jit-instruction-representation.md). Managed
-constants remain direct `ValueConstant` attributes on Core `Const`
-instructions. The compilation session pins every referenced managed object;
-Core neither constructs nor stores machine-code pool indices.
-Other compiler observations may likewise retain direct pinned references in
-session-owned analysis state.
+Managed constants remain direct `ValueConstant` attributes on Core `Const`
+instructions. Because instruction payloads are not GC-scannable relocation
+slots, the compilation session retains every pointer constant embedded in a
+graph. Graph construction calls `retain_and_pin_value()` when it encounters an
+existing constant. A transformation creating a managed constant calls the same
+operation immediately; the rewrite context exposes it directly. Each call
+appends an `Owned<Value>` entry to the monotonic session vector. Core neither
+constructs nor stores machine-code pool indices.
 
-The IR-level factory invokes the pinning API before returning any unpublished
-instruction or side-data object containing a managed `Value`; graph attachment
-does not acquire ownership. Cloning into another session repins through that
-session's factory, while detachment leaves the original pin in place until
-session teardown. The current pinning implementation is a no-op because the
-collector does not yet move objects, but these calls and the verifier's pin
-coverage check are part of the durable construction contract.
+Instruction allocation itself does not inspect attributes or acquire managed
+ownership. Cloning an existing pointer constant into another session registers
+it with that destination session before construction. Detachment leaves the
+retain in place until session teardown. In the current collector the ownership
+retain is also the compilation pin. A future moving collector must not relocate
+these entries while instruction payloads may contain their addresses.
 
-Compiler allocation uses native compilation arenas and buffers. While the
-no-safepoint policy is active, compilation must not invoke managed allocation or
-another runtime path that may itself request a safepoint. Initial constant
-folding is consequently limited to immediates and existing values that can be
-pinned in the session; constructing new managed constants such as tuples is
-deferred. A later design may use deferred
-publication recipes or a safepoint-safe allocation boundary, but every created
-object must be pinned before IR can reference it, and any semantic validity
-dependencies must be recorded.
+Compiler allocation uses native compilation arenas and buffers. Managed
+allocation may cross an allocation limit and request a future safepoint, but it
+does not synchronously stop the allocating thread or run reclamation.
+Compilation does not acknowledge safepoints mid-phase, so reclamation waits for
+the compilation to finish. A constant folder may therefore create a managed
+value and immediately retain it in the session before publishing it to later
+compiler work. Any semantic validity dependencies created by folding remain a
+separate obligation.
 
 Emission submits only surviving constants to `MachineCodeEmitter`, which owns
 them while assigning and deduplicating final pool entries. Successful code
-publication initializes the `JitCodeObject` pool before releasing compilation
-pins. Failed compilation releases the emitter-owned values and scoped pins with
-the rest of the compilation session. The pin set also leaves open a future
-phase-boundary safepoint scheme in which verification first proves that every
-session-owned direct managed reference is pinned.
+publication creates the heap `JitCodeObject`, initializes its pool, and makes
+those pool slots visible to its native-layout scanner before releasing
+session-retained constants. The compilation session must therefore remain alive
+until `JitCodeObject` creation is complete. Failed compilation releases the
+emitter-owned values and session retains with the rest of the compilation
+session. A future phase-boundary safepoint scheme must make every direct managed
+compiler reference relocatable or explicitly pinned before acknowledging the
+request.
 
 ### Mostly immutable instructions, mutable graphs, and analysis state
 
@@ -935,10 +938,10 @@ Compilation failure follows the detailed contract in
 [JIT Instruction Representation](jit-instruction-representation.md): structural
 invariant violations diagnose and hard-assert, while allocation or resource
 failure abandons the arena-backed compilation and continues in the interpreter.
-The enclosing session unwinds pins and normally destroyed state; generated code,
-dependencies, assumptions, and cache entries become persistent only at final
-successful publication. Editor rollback is not required after an aborted
-compilation.
+The enclosing session unwinds retained constants and normally destroyed state;
+generated code, dependencies, assumptions, and cache entries become persistent
+only at final successful publication. Editor rollback is not required after an
+aborted compilation.
 
 Inferred types, proven-absent effects, and other derived knowledge are not fields on
 the physical instruction. Concrete phase-owned metadata objects index
@@ -1019,8 +1022,6 @@ Verification at pass boundaries should require:
   representation, and layout declared for its instruction kind, and every
   attribute slot to match its declared
   `AttributeClass` and layout;
-- every pointer-valued `ValueConstant` attribute to be covered by the current
-  compilation session's pin set;
 - every result reference to match its def's intrinsic `ResultClass`, and no
   result reference to be formed from a value-less
   instruction;
@@ -1446,8 +1447,9 @@ embedded directly when the target instruction accepts that immediate shape, or
 submitted to the emitter's pool when a load is more profitable.
 They are never forced into the pool merely because they are `Value`s.
 Core IR retains a pointer-valued constant directly as a `ValueConstant`
-attribute on `Const` or in Snapshot recovery, and the compilation session pins
-the referenced object. Only constants that survive to emission are submitted
+attribute on `Const`, and the compilation session retains the referenced object
+while the graph exists. Snapshots refer to the resulting `Const` definition.
+Only constants that survive to emission are submitted
 to `MachineCodeEmitter::add_value_to_constant_pool()`, which deduplicates their
 raw `Value` bit patterns and returns final `ValuePoolEntry` handles. Core never
 observes those handles or pool indices.
@@ -1455,18 +1457,24 @@ observes those handles or pool indices.
 Code generation records both reference classes during emission. Verification
 rejects a directly embedded Shape or ValidityCell pointer missing from the
 stable-metadata array, any pointer-valued `Value` embedded as an instruction
-immediate, or any pointer-valued `ValueConstant` not covered by the compilation
-pin set. This keeps ordinary moving collection out of instruction rewriting;
-backend relocation metadata remains for code targets and native symbols rather
-than managed object movement.
+immediate, or any pool load that lacks an emitter-owned `Value`. The
+graph-building and rewrite APIs require pointer constants to be registered with
+the session before construction. Backend relocation metadata remains for code
+targets and native symbols rather than managed object movement.
 
-A non-GC `JitCodeObject` owns the stable code-cache allocation, final entry
-address, and precisely sized `Value` pool. A `CodeObject` may publish a nullable
-atomic pointer to it after all code, pool slots, and metadata are initialized.
-The `CodeObject` native-layout visitor traces and rewrites the published pool
-slots; compilation-session pins cover the constants before publication.
-Initial generated code is installed once and remains alive until its owning
-`CodeObject` is deallocated.
+A heap `JitCodeObject` owns the stable code-cache allocation, final entry
+address, and precisely sized `Value` pool. It has its own native layout and
+exposes the external pool as mutable `Value` slots to the collector, allowing a
+moving collection to trace and rewrite them without decoding machine code. A
+`CodeObject` may publish a nullable atomic reference to it after all code, pool
+slots, and metadata are initialized.
+
+The compilation session remains alive through that construction and
+publication step. Its retains protect every direct compiler reference until the
+`JitCodeObject` scanner is responsible for the initialized pool; only then may
+the session be destroyed. Initial generated code is installed once and remains
+alive until its owning heap objects and code-cache lifetime policy permit
+reclamation.
 
 ### Snapshots, recovery, and future root maps
 

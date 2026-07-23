@@ -19,10 +19,9 @@
 // generated InstructionKind. A separately generated dense ordinal indexes
 // compact metadata tables.
 //
-// Every ordinary operand is a reference to an instruction result. ProgramValue
-// operands additionally require the declared representation. Constants enter
-// ordinary dataflow through Const; Snapshot's heterogeneous capture payload may
-// still embed constants directly.
+// Every operand is a reference to an instruction result. ProgramValue operands
+// additionally require the declared representation. Constants enter ordinary
+// dataflow, including Snapshot capture, through Const definitions.
 //
 // A kind with any variadic operand stores its operand payloads in arena-owned
 // storage behind inline slot zero; attributes retain kind-constant inline

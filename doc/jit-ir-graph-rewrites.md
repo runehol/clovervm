@@ -298,6 +298,15 @@ RewriteSummary summary = rewriter.rewrite_instructions(
 
 The overload without a `RewriteInput` selects `Original`.
 
+`RewriteContext` also exposes
+`retain_and_pin_value()`. A transformation calls it immediately when creating a
+managed value, or before introducing an existing pointer constant that has not
+already been registered with this compilation session. The operation appends an
+`Owned<Value>` to the session's monotonic retained-value vector and returns the
+same typed handle. It is separate from instruction construction: the rewriter
+does not scan new instructions for constants, and unused retained values remain
+owned until session teardown.
+
 `Original` passes the instruction from the published graph to the callback.
 This is the appropriate view for DCE and other analysis-driven passes.
 `Normalized` first reconstructs the instruction using replacements established
