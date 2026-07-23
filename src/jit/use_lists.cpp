@@ -1,5 +1,7 @@
 #include "jit/use_lists.h"
 
+#include "runtime/fatal.h"
+
 #include <cassert>
 
 namespace cl::jit
@@ -32,18 +34,23 @@ namespace cl::jit
 
             // Phase three will record outgoing block-argument uses here once
             // BlockEdge carries arguments. Existing edges have none.
+#ifndef NDEBUG
             for(const BlockEdge *edge: block->block_successor_edges())
             {
                 assert(edge != nullptr);
                 assert(edge->source() == block);
             }
+#endif
         }
     }
 
     const Uses &UseLists::uses_of(const Instruction &def) const
     {
         auto found = index_by_def_.find(&def);
-        assert(found != index_by_def_.end());
+        if(found == index_by_def_.end())
+        {
+            fatal("JIT use lists were queried for a non-definition");
+        }
         return uses_[found->second];
     }
 

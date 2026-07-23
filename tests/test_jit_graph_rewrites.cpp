@@ -153,7 +153,8 @@ namespace cl::jit
         EXPECT_EQ(2u, visited);
 
         GraphQueries no_queries = graph->prepare_queries(GraphQuery::None);
-        EXPECT_DEATH((void)no_queries.uses_of(*constant), "");
+        EXPECT_DEATH((void)no_queries.uses_of(*constant),
+                     "without being requested");
     }
 
     TEST(JitGraphRewriter, KeepsAnUnchangedGraphWithoutAdvancingGeneration)
@@ -269,6 +270,7 @@ namespace cl::jit
         EXPECT_EQ(1u, graph->mutation_generation());
         EXPECT_TRUE(move->is_detached());
         EXPECT_TRUE(old_return->is_detached());
+        EXPECT_DEATH((void)old_return->kind(), "detached JIT instruction");
         ASSERT_EQ(1u, entry->instructions().size());
         const ReturnInstruction *new_return =
             entry->instructions()[0]->as<ReturnInstruction>();

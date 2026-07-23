@@ -222,7 +222,10 @@ namespace cl::jit
 
         InstructionKind kind() const
         {
-            assert(!is_detached());
+            if(is_detached())
+            {
+                fatal_detached_access();
+            }
             InstructionKind result = static_cast<InstructionKind>(kind_);
             assert(is_valid_instruction_kind(result));
             return result;
@@ -335,6 +338,8 @@ namespace cl::jit
         }
 
     private:
+        [[noreturn]] static void fatal_detached_access();
+
         void detach_and_poison()
         {
             assert(!is_detached());

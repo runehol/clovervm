@@ -1,10 +1,17 @@
 #include "jit/instruction.h"
 
+#include "runtime/fatal.h"
+
 #include <array>
 #include <cassert>
 
 namespace cl::jit
 {
+    [[noreturn]] void Instruction::fatal_detached_access()
+    {
+        fatal("attempted to access a detached JIT instruction");
+    }
+
     namespace
     {
         InstructionKindMetadata make_instruction_kind_metadata(

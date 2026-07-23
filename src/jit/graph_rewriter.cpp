@@ -15,6 +15,14 @@ namespace cl::jit
 {
     namespace
     {
+        void require_rewrite_invariant(bool condition, const char *message)
+        {
+            if(!condition)
+            {
+                fatal(message);
+            }
+        }
+
         struct DefReplacement
         {
             Instruction *def;
@@ -49,9 +57,12 @@ namespace cl::jit
                 {
                     return def;
                 }
-                assert(!replacement->second.erased &&
-                       "an instruction uses an erased definition");
-                assert(replacement->second.def != nullptr);
+                require_rewrite_invariant(
+                    !replacement->second.erased,
+                    "JIT rewrite uses an erased definition");
+                require_rewrite_invariant(
+                    replacement->second.def != nullptr,
+                    "JIT rewrite resolved a definition to null");
                 return replacement->second.def;
             }
 
@@ -93,11 +104,27 @@ namespace cl::jit
             const absl::flat_hash_set<const Instruction *> &available_defs)
         {
             visit_operand_references(
-                instruction,
-                [&](OperandClass, ValueRepresentation, Instruction *def) {
-                    assert(available_defs.contains(def) &&
-                           "rewritten instruction refers to a definition "
-                           "outside its block or before its definition");
+                instruction, [&](OperandClass operand_class,
+                                 ValueRepresentation required_representation,
+                                 Instruction *def) {
+                    require_rewrite_invariant(
+                        available_defs.contains(def),
+                        "rewritten instruction refers to a definition outside "
+                        "its block or before its definition");
+                    require_rewrite_invariant(
+                        static_cast<uint8_t>(operand_class) ==
+                            static_cast<uint8_t>(def->result_class()),
+                        "rewritten instruction has an operand with an "
+                        "incompatible result class");
+                    if(operand_class == OperandClass::ProgramValue &&
+                       required_representation != ValueRepresentation::None)
+                    {
+                        require_rewrite_invariant(
+                            def->value_representation() ==
+                                required_representation,
+                            "rewritten instruction has an operand with an "
+                            "incompatible value representation");
+                    }
                 });
         }
 
@@ -114,11 +141,13 @@ namespace cl::jit
         ErasedCallback invoke_callback)
     {
         assert(graph_ != nullptr);
-        assert(graph_->is_published());
+        require_rewrite_invariant(graph_->is_published(),
+                                  "cannot rewrite an unpublished JIT CFG");
         assert(traversal.block_order() == BlockWalkOrder::ProgramOrder);
-        assert((input != RewriteInput::Normalized ||
-                !has_graph_query(traversal.queries(), GraphQuery::Uses)) &&
-               "normalized rewrite input cannot be combined with use lists");
+        require_rewrite_invariant(
+            input != RewriteInput::Normalized ||
+                !has_graph_query(traversal.queries(), GraphQuery::Uses),
+            "normalized rewrite input cannot be combined with use lists");
         assert(callback != nullptr);
         assert(invoke_callback != nullptr);
 
@@ -202,11 +231,17 @@ namespace cl::jit
                         }
                         break;
                     case RewriteResult::Kind::ReplaceWithoutResult:
-                        assert(original->result_class() == ResultClass::None);
+                        require_rewrite_invariant(
+                            original->result_class() == ResultClass::None,
+                            "replace_without_result requires an instruction "
+                            "without a result");
                         proposed_instructions = std::move(result.instructions_);
                         break;
                     case RewriteResult::Kind::ReplaceWithDef:
-                        assert(original->result_class() != ResultClass::None);
+                        require_rewrite_invariant(
+                            original->result_class() != ResultClass::None,
+                            "replace_with_def requires a result-producing "
+                            "instruction");
                         assert(result.instructions_.empty());
                         proposed_replacement = result.replacement_def_;
                         replacement_is_existing_def = true;
@@ -220,28 +255,36 @@ namespace cl::jit
                     result.kind_ == RewriteResult::Kind::KeepWithSuffix;
                 for(Instruction *proposed: proposed_instructions)
                 {
-                    assert(proposed != nullptr);
+                    require_rewrite_invariant(
+                        proposed != nullptr,
+                        "JIT rewrite emitted a null instruction");
                     if(!keeps_callback_input || proposed != callback_input)
                     {
-                        assert(allocated_instructions.contains(proposed) &&
-                               "replacement instructions must be allocated "
-                               "through this rewrite's context");
+                        require_rewrite_invariant(
+                            allocated_instructions.contains(proposed),
+                            "replacement instructions must be allocated "
+                            "through this rewrite's context");
                     }
-                    assert(!sequence_replacements.contains(proposed) &&
-                           "a replacement sequence may not emit one "
-                           "instruction twice");
+                    require_rewrite_invariant(
+                        !sequence_replacements.contains(proposed),
+                        "a replacement sequence may not emit one instruction "
+                        "twice");
 
                     DefResolver resolver(def_replacements,
                                          sequence_replacements);
                     Instruction *normalized = rebuild_instruction_with_operands(
                         *proposed, resolver, context);
-                    assert(!normalized->is_detached());
-                    assert(!is_parameter_kind(normalized->kind()) &&
-                           "block-parameter instructions cannot be emitted "
-                           "into a block body");
-                    assert(staged_instruction_set.insert(normalized).second &&
-                           "an instruction cannot occupy more than one graph "
-                           "position");
+                    require_rewrite_invariant(
+                        !normalized->is_detached(),
+                        "a detached instruction cannot be emitted");
+                    require_rewrite_invariant(
+                        !is_parameter_kind(normalized->kind()),
+                        "block-parameter instructions cannot be emitted into a "
+                        "block body");
+                    require_rewrite_invariant(
+                        staged_instruction_set.insert(normalized).second,
+                        "an instruction cannot occupy more than one graph "
+                        "position");
                     sequence_replacements.emplace(proposed, normalized);
                     validate_available_operands(*normalized, available_defs);
                     staged.instructions.push_back(normalized);
@@ -260,8 +303,8 @@ namespace cl::jit
                     {
                         normalized_replacement =
                             resolver.resolve(proposed_replacement);
-                        assert(
-                            available_defs.contains(normalized_replacement) &&
+                        require_rewrite_invariant(
+                            available_defs.contains(normalized_replacement),
                             "replace_with_def requires a definition already "
                             "available in the staged block");
                     }
@@ -269,13 +312,16 @@ namespace cl::jit
                     {
                         auto replacement =
                             sequence_replacements.find(proposed_replacement);
-                        assert(replacement != sequence_replacements.end() &&
-                               "a replacement result must be emitted by its "
-                               "replacement sequence");
+                        require_rewrite_invariant(
+                            replacement != sequence_replacements.end(),
+                            "a replacement result must be emitted by its "
+                            "replacement sequence");
                         normalized_replacement = replacement->second;
                     }
-                    assert(
-                        compatible_results(*original, *normalized_replacement));
+                    require_rewrite_invariant(
+                        compatible_results(*original, *normalized_replacement),
+                        "a replacement definition has an incompatible result "
+                        "class or value representation");
                 }
 
                 if(original->result_class() != ResultClass::None)
@@ -287,9 +333,10 @@ namespace cl::jit
                     }
                     else
                     {
-                        assert(normalized_replacement != nullptr &&
-                               "a result-producing instruction requires a "
-                               "replacement definition");
+                        require_rewrite_invariant(
+                            normalized_replacement != nullptr,
+                            "a result-producing instruction requires a "
+                            "replacement definition");
                         def_replacements.emplace(
                             original,
                             DefReplacement{normalized_replacement, false});
@@ -297,7 +344,10 @@ namespace cl::jit
                 }
                 else
                 {
-                    assert(normalized_replacement == nullptr);
+                    require_rewrite_invariant(
+                        normalized_replacement == nullptr,
+                        "an instruction without a result cannot have a "
+                        "replacement definition");
                 }
 
                 size_t output_count = staged.instructions.size() - output_start;
@@ -329,31 +379,39 @@ namespace cl::jit
                         staged.instructions[index]->is_block_terminator();
                     if(original_is_terminator)
                     {
-                        assert((is_final_output || !emitted_terminator) &&
-                               "only the final replacement instruction may be "
-                               "a terminator");
+                        require_rewrite_invariant(
+                            is_final_output || !emitted_terminator,
+                            "only the final replacement instruction may be a "
+                            "terminator");
                     }
                     else
                     {
-                        assert(!emitted_terminator &&
-                               "a non-terminator cannot emit a terminator");
+                        require_rewrite_invariant(
+                            !emitted_terminator,
+                            "a non-terminator cannot emit a terminator");
                     }
                 }
                 if(original_is_terminator)
                 {
-                    assert(output_count != 0 &&
-                           "a terminator cannot be erased");
+                    require_rewrite_invariant(output_count != 0,
+                                              "a terminator cannot be erased");
                     Instruction *new_terminator = staged.instructions.back();
-                    assert(new_terminator->is_block_terminator());
-                    assert(same_successor_edges(*original, *new_terminator) &&
-                           "instruction rewriting cannot change CFG "
-                           "successor edges");
+                    require_rewrite_invariant(
+                        new_terminator->is_block_terminator(),
+                        "a terminator replacement must end in a terminator");
+                    require_rewrite_invariant(
+                        same_successor_edges(*original, *new_terminator),
+                        "instruction rewriting cannot change CFG successor "
+                        "edges");
                     summary.terminators_changed |= new_terminator != original;
                 }
             }
 
-            assert(!staged.instructions.empty());
-            assert(staged.instructions.back()->is_block_terminator());
+            require_rewrite_invariant(!staged.instructions.empty(),
+                                      "a rewritten block cannot be empty");
+            require_rewrite_invariant(
+                staged.instructions.back()->is_block_terminator(),
+                "a rewritten block must end in a terminator");
             staged_blocks.push_back(std::move(staged));
         }
 
@@ -375,12 +433,14 @@ namespace cl::jit
         }
         ++graph_->mutation_generation_;
 
+#ifndef NDEBUG
         CfgVerificationResult verification = verify_cfg(*graph_);
         if(!verification.valid)
         {
             fatal("graph rewriter produced an invalid JIT CFG: " +
                   verification.message);
         }
+#endif
         return summary;
     }
 

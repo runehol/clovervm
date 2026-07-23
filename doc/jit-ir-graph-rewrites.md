@@ -476,6 +476,19 @@ instructions are therefore rebuilt to use the reconstructed def.
 The pass owns semantic correctness. Structural acceptance of erasing an unused
 call, for example, does not prove that discarding its effects is valid.
 
+### Release-mode invariant checks
+
+Checks whose failure would otherwise propagate null definitions, dereference a
+failed lookup, publish malformed instruction placement, or corrupt result and
+terminator typing panic in every build. These checks are local to an operation
+the rewriter already performs: pointer validation, hash-table membership,
+result compatibility, and terminator inspection.
+
+Assertions that merely restate construction proofs or verified graph structure
+remain debug-only. The complete `verify_cfg()` pass also runs only in debug and
+test builds after commit; release builds do not pay for a second whole-graph
+scan after the rewriter's local checks have succeeded.
+
 ## Erasure
 
 Erasure is sequence replacement with an empty sequence. The replacement map
