@@ -58,6 +58,16 @@ namespace cl::jit
 
         static RewriteResult erase() { return RewriteResult(Kind::Erase); }
 
+        static RewriteResult keep_with_prefix(InstructionSequence instructions)
+        {
+            return RewriteResult(Kind::KeepWithPrefix, std::move(instructions));
+        }
+
+        static RewriteResult keep_with_suffix(InstructionSequence instructions)
+        {
+            return RewriteResult(Kind::KeepWithSuffix, std::move(instructions));
+        }
+
         static RewriteResult replace(Instruction *instruction)
         {
             assert(instruction != nullptr);
@@ -101,6 +111,8 @@ namespace cl::jit
         enum class Kind : uint8_t
         {
             Keep,
+            KeepWithPrefix,
+            KeepWithSuffix,
             Erase,
             Replace,
             ReplaceWithoutResult,

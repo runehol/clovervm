@@ -374,6 +374,8 @@ Convenience constructors express the common cases:
 
 ```cpp
 RewriteResult::keep();
+RewriteResult::keep_with_prefix(sequence);
+RewriteResult::keep_with_suffix(sequence);
 RewriteResult::erase();
 RewriteResult::replace(instruction);
 RewriteResult::replace(sequence, ProgramValueRef result);
@@ -388,11 +390,24 @@ Their meanings are:
 | Result | Emitted instructions | Remembered replacement |
 |---|---|---|
 | `keep()` | The normalized instruction | The normalized instruction, when it has a result |
+| `keep_with_prefix(sequence)` | The sequence, then the normalized instruction | The normalized instruction, when it has a result |
+| `keep_with_suffix(sequence)` | The normalized instruction, then the sequence | The normalized instruction, when it has a result |
 | `erase()` | None | Erased |
 | `replace(new)` | `new` | `new` when the original has a result; otherwise none |
 | `replace(sequence, result)` | The sequence in order | `result` |
 | `replace_without_result(sequence)` | The sequence in order | None |
 | `replace_with_def(def)` | None | `def` |
+
+The insertion helpers retain the current instruction without requiring the pass
+to clone it. Their supplied instructions are normalized in sequence order like
+ordinary replacement instructions. A suffix may consume the current result:
+the rewriter records the normalized current instruction before normalizing the
+suffix. In either form, uses of the old definition map to the normalized current
+instruction rather than to an inserted instruction.
+
+`keep_with_suffix()` is not valid for a terminator because it would place
+instructions after the end of the block. A prefix may precede a retained
+terminator normally.
 
 `replace_without_result()` is valid only when the original instruction has
 `ResultClass::None`. It never infers that the final emitted instruction should

@@ -182,6 +182,60 @@ namespace cl::jit
         EXPECT_EQ(return_instruction, entry->instructions()[1]);
     }
 
+    TEST(JitGraphRewriter,
+         InsertsPrefixesAndSuffixesAroundTheCurrentInstruction)
+    {
+        CompilationArena arena;
+        GraphBuilder builder(arena);
+        Block *entry = builder.emplace_block();
+        ParameterInstruction *parameter =
+            builder.emplace_parameter<ParameterInstruction>(entry);
+        MovInstruction *first = builder.emplace_instruction<MovInstruction>(
+            entry, TaggedValueRef(parameter));
+        MovInstruction *second = builder.emplace_instruction<MovInstruction>(
+            entry, TaggedValueRef(first));
+        ReturnInstruction *return_instruction =
+            builder.emplace_instruction<ReturnInstruction>(
+                entry, TaggedValueRef(second));
+        ControlFlowGraph *graph = builder.finalize();
+
+        MovInstruction *prefix = nullptr;
+        MovInstruction *suffix = nullptr;
+        GraphRewriter rewriter(arena, *graph);
+        RewriteSummary summary = rewriter.rewrite_instructions(
+            InstructionTraversal(),
+            [&](RewriteContext &context, const GraphQueries &, const Block &,
+                const Instruction &instruction) {
+                if(&instruction == first)
+                {
+                    prefix = context.make_instruction<MovInstruction>(
+                        TaggedValueRef(parameter));
+                    return RewriteResult::keep_with_prefix({prefix});
+                }
+                if(&instruction == second)
+                {
+                    suffix = context.make_instruction<MovInstruction>(
+                        TaggedValueRef(second));
+                    return RewriteResult::keep_with_suffix({suffix});
+                }
+                return RewriteResult::keep();
+            });
+
+        EXPECT_TRUE(summary.instructions_changed);
+        EXPECT_FALSE(summary.terminators_changed);
+        EXPECT_EQ(1u, graph->mutation_generation());
+        EXPECT_FALSE(first->is_detached());
+        EXPECT_FALSE(second->is_detached());
+        EXPECT_FALSE(return_instruction->is_detached());
+        ASSERT_EQ(5u, entry->instructions().size());
+        EXPECT_EQ(prefix, entry->instructions()[0]);
+        EXPECT_EQ(first, entry->instructions()[1]);
+        EXPECT_EQ(second, entry->instructions()[2]);
+        EXPECT_EQ(suffix, entry->instructions()[3]);
+        EXPECT_EQ(return_instruction, entry->instructions()[4]);
+        EXPECT_EQ(second, suffix->source().instruction());
+    }
+
     TEST(JitGraphRewriter, ReplacesAnIdentityWithItsExistingDefinition)
     {
         CompilationArena arena;
@@ -239,6 +293,7 @@ namespace cl::jit
         ControlFlowGraph *graph = builder.finalize();
 
         ConstInstruction *new_constant = nullptr;
+        MovInstruction *return_prefix = nullptr;
         GraphRewriter rewriter(arena, *graph);
         RewriteSummary summary = rewriter.rewrite_instructions(
             InstructionTraversal(), RewriteInput::Normalized,
@@ -265,7 +320,10 @@ namespace cl::jit
                                   instruction.as<ReturnInstruction>()
                                       ->return_value()
                                       .instruction());
-                        return RewriteResult::keep();
+                        return_prefix =
+                            context.make_instruction<MovInstruction>(
+                                TaggedValueRef(new_constant));
+                        return RewriteResult::keep_with_prefix({return_prefix});
                     default:
                         break;
                 }
@@ -278,9 +336,10 @@ namespace cl::jit
         EXPECT_TRUE(old_constant->is_detached());
         EXPECT_TRUE(old_move->is_detached());
         EXPECT_TRUE(old_return->is_detached());
-        ASSERT_EQ(2u, entry->instructions().size());
+        ASSERT_EQ(3u, entry->instructions().size());
         EXPECT_EQ(new_constant, entry->instructions()[0]);
-        EXPECT_EQ(new_constant, entry->instructions()[1]
+        EXPECT_EQ(return_prefix, entry->instructions()[1]);
+        EXPECT_EQ(new_constant, entry->instructions()[2]
                                     ->as<ReturnInstruction>()
                                     ->return_value()
                                     .instruction());

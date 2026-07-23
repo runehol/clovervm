@@ -171,6 +171,25 @@ namespace cl::jit
                                 ? nullptr
                                 : callback_input;
                         break;
+                    case RewriteResult::Kind::KeepWithPrefix:
+                        proposed_instructions = std::move(result.instructions_);
+                        proposed_instructions.push_back(callback_input);
+                        proposed_replacement =
+                            callback_input->result_class() == ResultClass::None
+                                ? nullptr
+                                : callback_input;
+                        break;
+                    case RewriteResult::Kind::KeepWithSuffix:
+                        proposed_instructions.push_back(callback_input);
+                        proposed_instructions.insert(
+                            proposed_instructions.end(),
+                            result.instructions_.begin(),
+                            result.instructions_.end());
+                        proposed_replacement =
+                            callback_input->result_class() == ResultClass::None
+                                ? nullptr
+                                : callback_input;
+                        break;
                     case RewriteResult::Kind::Erase:
                         explicitly_erased = true;
                         break;
@@ -195,10 +214,14 @@ namespace cl::jit
                 }
 
                 size_t output_start = staged.instructions.size();
+                bool keeps_callback_input =
+                    result.kind_ == RewriteResult::Kind::Keep ||
+                    result.kind_ == RewriteResult::Kind::KeepWithPrefix ||
+                    result.kind_ == RewriteResult::Kind::KeepWithSuffix;
                 for(Instruction *proposed: proposed_instructions)
                 {
                     assert(proposed != nullptr);
-                    if(result.kind_ != RewriteResult::Kind::Keep)
+                    if(!keeps_callback_input || proposed != callback_input)
                     {
                         assert(allocated_instructions.contains(proposed) &&
                                "replacement instructions must be allocated "
@@ -278,12 +301,21 @@ namespace cl::jit
                 }
 
                 size_t output_count = staged.instructions.size() - output_start;
-                bool original_retained =
+                bool position_unchanged =
                     output_count == 1 &&
                     staged.instructions[output_start] == original;
+                bool original_retained = false;
+                for(size_t index = output_start;
+                    index < staged.instructions.size(); ++index)
+                {
+                    original_retained |= staged.instructions[index] == original;
+                }
                 if(!original_retained)
                 {
                     staged.removed_originals.push_back(original);
+                }
+                if(!position_unchanged)
+                {
                     summary.instructions_changed = true;
                 }
 
