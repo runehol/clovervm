@@ -732,10 +732,10 @@ Core represents every ordinary use of a constant through a normal
 operands. Backend preparation or Machine IR chooses immediate synthesis or a
 constant-pool load. Pointer-valued constants must use the traced pool, while a
 non-pointer value may use either form according to target encodability and
-profitability. The phase also selects lowerings and `LocationSummary` records
-before liveness and register allocation run. Immediate shape rules, including
-any future target-specific single-use immediate nodes, remain backend
-policy rather than Core IR legality.
+profitability. The phase also selects lowerings and `AllocationConstraints`
+before register allocation runs. Immediate shape rules, including any future
+target-specific single-use immediate nodes, remain backend policy rather than
+Core IR legality.
 
 Generated factory methods and typed accessors expose fixed constraints in their
 C++ signatures. Each program-value operand takes the concrete typed reference
@@ -1251,5 +1251,6 @@ typed serials provide deterministic identity without that lookup indirection.
 
 - [JIT Compiler and IR](jit-compiler-and-ir.md)
 - [JIT Control-Flow Graph](jit-control-flow-graph.md)
+- [JIT Register Allocation](jit-register-allocation.md)
 - [Semantic IR and Specialization](jit-semantic-ir-and-specialization.md)
 - [JIT Compiler Bring-up Plan](jit-compiler-bring-up-plan.md)

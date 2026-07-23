@@ -363,7 +363,7 @@ forms rather than mandatory replacement representations:
 ```text
 constructed Core IR       -> explicit checks, effects, Snapshots, tagged values
 represented Core IR       -> selected operations and explicit representation conversions
-backend-prepared Core IR  -> lowering choices, legalized constants, LocationSummary
+backend-prepared Core IR  -> lowering choices, legalized constants, AllocationConstraints
 allocated backend plan    -> locations, spills, and edge-move tables
 recovery plans            -> Snapshots resolved through locations and HomeState
 ```
@@ -387,15 +387,16 @@ A direct backend may maintain tables such as:
 ```text
 ProgramValueRef -> register | spill | canonical slot
 BlockEdge *      -> parallel move bundle
-Instruction *    -> LocationSummary and lowering choice
+Instruction *    -> AllocationConstraints and lowering choice
 ```
 
-A target-specific `LocationSummary` describes the input, output, and temporary
-location constraints of one selected lowering, including fixed registers,
-register classes, same-as-input constraints, and whether the lowering contains
-a general call, a callee-safe call, a native leaf call, or a call only on a
-slow path. It is backend analysis data rather than part of the immutable common
-IR operation.
+A target-specific `AllocationConstraints` record describes the input, output,
+temporary, and clobber requirements of one selected lowering, including fixed
+registers, register classes, same-as-input constraints, and whether the
+lowering contains a general call, a callee-safe call, a native leaf call, or a
+call only on a slow path. It is backend analysis data rather than part of the
+immutable common IR operation. The durable allocation contract is defined in
+[JIT Register Allocation](jit-register-allocation.md).
 
 Core ordinary operands are uniformly instruction-result references. Every
 tagged constant becomes a normal `ProgramValue` through `Const`, whose
@@ -407,7 +408,7 @@ Backend preparation or Machine IR classifies each surviving constant as an
 immediate synthesis or traced-pool load. Pointer-valued constants must use the
 pool; non-pointer constants may use either form according to target
 encodability and profitability. The same phase assigns the final lowering and
-`LocationSummary` for every executable instruction. Pool entries do not form
+`AllocationConstraints` for every executable instruction. Pool entries do not form
 part of this phase product; the selected lowering retains the `Value` until
 program-order emission.
 
@@ -415,7 +416,7 @@ Backend preparation is atomic as a phase contract even if implemented by local
 selection and rewrite steps. Liveness, Snapshot point-use expansion, and
 register allocation run only after its completed graph is verified. Any later
 Core mutation invalidates the complete lowering-choice, legalization, and
-`LocationSummary` attachment together; the compiler never pairs a rewritten
+`AllocationConstraints` attachment together; the compiler never pairs a rewritten
 graph with stale backend preparation. The phase returns a frozen,
 generation-checked `BackendPreparation` object, and the allocator accepts that
 object rather than independent tables. This is a concrete phase product, not a
@@ -448,7 +449,7 @@ temporaries, not a common Core representation. `Address` should become a
 `ValueRepresentation` only if implementation demonstrates a need for addresses
 to live across Core instructions as SSA program values.
 
-`LocationSummary` may narrow that default to a fixed register or another
+`AllocationConstraints` may narrow that default to a fixed register or another
 operation-specific constraint, but it may not assign an incompatible class.
 `UnboxF64` therefore crosses from a general-purpose input to a floating-point
 output, while `BoxF64` crosses in the opposite direction.
@@ -1033,7 +1034,7 @@ Verification at pass boundaries should require:
   with all representation changes expressed by explicit conversion
   instructions;
 - every allocated register or spill location to belong to a class compatible
-  with that representation and the instruction's `LocationSummary`;
+  with that representation and the relevant `AllocationConstraints`;
 - every specialized use of a guard result to be dominated by that result's
   definition;
 - every mutable-shape-sensitive use to consume a current receiver version whose
@@ -1896,6 +1897,7 @@ every recovery policy must reconstruct the same canonical interpreter state.
 ## Related Documents
 
 - [JIT Control-Flow Graph](jit-control-flow-graph.md)
+- [JIT Register Allocation](jit-register-allocation.md)
 - [JIT Machine-Code Emission](jit-machine-code-emission.md)
 - [JIT Code Cache and Publication](jit-code-cache.md)
 - [JIT Compiler Bring-up Plan](jit-compiler-bring-up-plan.md)

@@ -229,6 +229,7 @@ pending-exception/sentinel protocol as interpreter native thunks.
 Detailed docs:
 
 - [JIT Compiler and IR](jit-compiler-and-ir.md)
+- [JIT Register Allocation](jit-register-allocation.md)
 - [JIT Compiler Bring-up Plan](jit-compiler-bring-up-plan.md)
 - [Semantic IR and Specialization](jit-semantic-ir-and-specialization.md)
 - [Optimization Ideas](optimization-ideas.md)

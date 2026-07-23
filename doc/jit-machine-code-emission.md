@@ -305,10 +305,10 @@ The initial direct-branch set requires at most one implicit scratch at a time.
 Macro operations accept register operands and may synthesize at most one
 otherwise unavailable address or immediate. A lowering that needs two
 simultaneously synthesized values must expose an additional temporary through
-its `LocationSummary` and emit multiple operations; it may not consume a second
-hidden scratch register. This permits a backend to reserve `x16` globally for
-bring-up while allowing a later allocator to provide an ordinary temporary
-without changing the emitter interface.
+its `AllocationConstraints` and emit multiple operations; it may not consume a
+second hidden scratch register. This permits a backend to reserve `x16`
+globally for bring-up while allowing a later allocator to provide an ordinary
+temporary without changing the emitter interface.
 
 The resulting intended reuse is:
 

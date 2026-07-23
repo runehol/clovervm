@@ -256,7 +256,7 @@ the JIT-to-interpreter thunk.
 
 Remaining scope:
 
-- define the first real `LocationSummary` constraints for the currently lowered
+- define the first real `AllocationConstraints` for the currently lowered
   instructions;
 - replace the universal `x0` mapping with location assignments that handle at
   least two simultaneously live tagged values;
@@ -551,7 +551,8 @@ compiler.
   pool, plus ownership of its code-cache allocation and its relationship to
   `CodeObject`;
 - concrete backend-preparation artifact shape: lowering choices, legalized
-  constant decisions, `LocationSummary` records, and invalidation generation;
+  constant decisions, `AllocationConstraints` records, and invalidation
+  generation;
 - first location-assignment strategy for a one-block graph and the exact point
   at which required `Mov` instructions are inserted;
 - decoded-bytecode input and `BuilderContext` shape for the first
@@ -574,6 +575,7 @@ compiler.
 ## Related Documents
 
 - [JIT Compiler and IR](jit-compiler-and-ir.md)
+- [JIT Register Allocation](jit-register-allocation.md)
 - [JIT Machine-Code Emission](jit-machine-code-emission.md)
 - [JIT Code Cache and Publication](jit-code-cache.md)
 - [Semantic IR and Specialization](jit-semantic-ir-and-specialization.md)
