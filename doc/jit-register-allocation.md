@@ -57,11 +57,85 @@ and coalescing state are scratch data. They do not survive the allocator pass
 and are not stored in Core IR, backend preparation, or machine-code emission
 metadata.
 
+## Target Register Vocabulary
+
+The target-independent allocator uses a small common vocabulary for register
+storage while leaving register availability and encoding policy to the target:
+
+```cpp
+enum class RegisterClass : uint8_t
+{
+    GPR,
+    SIMD,
+};
+
+class PhysicalRegister
+{
+public:
+    constexpr PhysicalRegister(RegisterClass register_class, uint8_t number)
+        : register_class_(register_class), number_(number)
+    {
+    }
+
+    constexpr RegisterClass register_class() const
+    {
+        return register_class_;
+    }
+
+    constexpr uint8_t number() const { return number_; }
+
+    friend constexpr bool
+    operator==(PhysicalRegister, PhysicalRegister) = default;
+
+private:
+    RegisterClass register_class_;
+    uint8_t number_;
+};
+
+struct RegisterClassDefinition
+{
+    RegisterClass register_class;
+    RegisterSet members;
+    std::span<const PhysicalRegister> allocation_order;
+};
+```
+
+`RegisterClass` identifies the architectural storage class. `GPR` and `SIMD`
+are initially sufficient; another target need not provide definitions for
+classes it does not use, and future storage classes may extend the enum.
+
+`PhysicalRegister` identifies one indivisible allocation unit by class and
+target-local number. Architectural width views are not separate physical
+registers:
+
+```text
+AArch64 X0 / W0       -> { GPR, 0 }
+AArch64 V0 / D0 / S0  -> { SIMD, 0 }
+x86-64 RAX/EAX/AX/AL  -> { GPR, 0 }
+x86-64 XMM0/YMM0/ZMM0 -> { SIMD, 0 }
+```
+
+The emitter converts a `PhysicalRegister` to the target instruction's required
+view. A partial-width x86 definition still occupies and conflicts on the whole
+GPR. If the preserved upper bits are semantically part of the result, the
+lowering exposes the old destination as a use and constrains the result to the
+same register. Otherwise the result owns the whole allocation unit and any
+unwritten upper bits are unspecified until an explicit extension. Legacy x86
+high-byte registers are not exposed to the allocator.
+
+One `RegisterClassDefinition` enables and defines a class for an allocation
+attempt. `members` contains exactly the allocatable physical registers in that
+class, excluding stack pointers, reserved registers, and other unavailable
+locations. `allocation_order` contains every member exactly once and no
+non-member; it is the target's default priority order when several registers
+are equally legal. Fixed constraints, bundle affinities, and later cost
+heuristics may override that preference.
+
 ## Allocation Constraints
 
 An allocation constraint is anchored to a structural occurrence in prepared
-Core, not to a numeric program position. The target backend may group
-constraints by instruction, block, and edge:
+Core, not to a numeric program position. Target-authored constraints are
+grouped by instruction:
 
 ```text
 InstructionAllocationConstraints
@@ -69,14 +143,12 @@ InstructionAllocationConstraints
     output constraints
     temporary constraints
     clobber masks
-
-BlockAllocationConstraints
-    entry parameter constraints
-    exit constraints when needed by the backend
-
-EdgeAllocationConstraints
-    edge-argument transfer constraints and affinities
 ```
+
+Parameters are instructions, so function-entry and block-parameter constraints
+remain instruction-anchored. Block-edge argument transfers and affinities are
+derived generically from first-class `BlockEdge` objects rather than supplied
+as target constraints.
 
 The anchor determines the SSA value and whether the occurrence is a use or a
 definition:
@@ -138,9 +210,20 @@ Clobber(register_set)
 
 `Temporary(class)` asks the allocator to provide a register that the lowering
 may overwrite. `Clobber(register_set)` instead describes registers destroyed
-implicitly by the operation. A potentially long branch therefore requests a
-GPR temporary; it does not needlessly clobber a predetermined register. The
-emitter may ignore the assigned temporary when the short branch form fits.
+implicitly by the operation. Structural preparation retains the compact
+register set. Allocator preparation expands each member into a late def of a
+fresh throwaway value, with no uses and a fixed constraint naming that physical
+register.
+
+Every physical register written by an instruction must be represented either
+by an explicit def, including an allocated temporary, or by a clobber, but not
+both. A clobber may coincide with a fixed early use, but it may not collide with
+a fixed def or fixed late use. This is the
+[`regalloc2` clobber contract](https://docs.rs/regalloc2/latest/aarch64-unknown-linux-gnu/regalloc2/trait.Function.html#tymethod.inst_clobbers).
+
+A potentially long branch therefore requests a GPR temporary; it does not
+needlessly clobber a predetermined register. The emitter may ignore the
+assigned temporary when the short branch form fits.
 
 `Register(class)` and spill compatibility must agree with the Core
 `ValueRepresentation` of the value. A constraint may narrow that representation
@@ -385,6 +468,21 @@ clobbers           -> caller-saved register masks
 A value live across a call must be assigned to a non-clobbered location or split
 around the call. The target describes clobbers; the allocator decides whether to
 keep the value in a callee-preserved register, spill it, or insert split moves.
+
+An explicit call result owns its fixed return register at the late point, so
+that register is omitted from the call's clobber set:
+
+```text
+argument 0  -> Use Early, Fixed x0
+argument 1  -> Use Early, Fixed x1
+result      -> Def Late, Fixed x0
+clobbers    -> caller-saved registers except x0
+```
+
+The late throwaway def for the `x1` clobber may follow the early argument use.
+The explicit late result def supplies the required interference for `x0`
+instead. A resultless call includes `x0` in its clobber set when the ABI permits
+the call to destroy it.
 
 Hidden scratch registers are not allowed. If a selected lowering needs a
 temporary, its `AllocationConstraints` must expose that temporary. A reserved
