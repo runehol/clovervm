@@ -92,6 +92,8 @@ add_library(libclovervm_objects OBJECT
     jit/aarch64_assembler.h
     jit/aarch64_cfg_emitter.cpp
     jit/aarch64_cfg_emitter.h
+    jit/allocation_constraints.cpp
+    jit/allocation_constraints.h
     jit/cfg_verifier.cpp
     jit/cfg_verifier.h
     jit/compilation_arena.cpp
@@ -120,6 +122,8 @@ add_library(libclovervm_objects OBJECT
     jit/machine_code_emitter.h
     jit/object_pool.h
     jit/platform_code_memory.h
+    jit/physical_register.cpp
+    jit/physical_register.h
     jit/preferred_code_memory.cpp
     jit/serial.h
     jit/standard_code_memory.cpp

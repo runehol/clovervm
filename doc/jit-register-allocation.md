@@ -4,10 +4,10 @@
 |---|---|
 | Document type | Design |
 | Status | Proposed |
-| Implementation | Not started |
+| Implementation | Target register vocabulary and structural constraint validation implemented |
 | Scope | Allocation constraints, allocator-local numbering, liveness, bundles, backtracking allocation, live-range splitting, block-argument moves, clobbers, spills, and post-allocation location assignments |
 | Owning layers | Target backends own allocation-constraint construction; the generic register allocator owns numbering, liveness, bundles, splitting, allocation, spill decisions, and allocator-induced move resolution; publication and recovery planners own canonical-state synchronization; machine-code emission consumes final assignments and resolved moves |
-| Validated against | N/A |
+| Validated against | `tests/test_jit_allocation_constraints.cpp` |
 | Supersedes | The open register-allocation direction in [JIT Compiler and IR](jit-compiler-and-ir.md) and [JIT Compiler Bring-up Plan](jit-compiler-bring-up-plan.md) |
 
 This document defines the register-allocation contract for the clovervm JIT. It
@@ -103,7 +103,9 @@ public:
     void erase(PhysicalRegister reg);
 
 private:
-    std::array<uint64_t, static_cast<size_t>(RegisterClass::Count)> members_{};
+    std::array<std::bitset<MaxRegistersPerClass>,
+               static_cast<size_t>(RegisterClass::Count)>
+        members_{};
 };
 
 struct RegisterClassDefinition
@@ -156,8 +158,8 @@ grouped by instruction:
 
 ```text
 InstructionAllocationConstraints
-    input constraints
-    output constraints
+    input overrides
+    result override
     temporary constraints
     clobber masks
 ```
@@ -199,6 +201,23 @@ late use when the sequence does not finish consuming it until after other early
 actions. Likewise, an output written before every input has been consumed is an
 early def. `Use` therefore never implies `Early`, and `Def` never implies
 `Late`.
+
+The common layer derives ordinary register requirements directly from Core
+`ValueRepresentation`:
+
+```text
+TaggedValue input  -> Use Early, Any(GPR)
+F64 input          -> Use Early, Any(SIMD)
+TaggedValue result -> Def Late, Any(GPR)
+F64 result         -> Def Late, Any(SIMD)
+Snapshot operand   -> captured values used Late
+```
+
+Target constraints are sparse overrides of these defaults. An instruction with
+ordinary inputs and an ordinary result needs no target-authored constraint
+object. Parameters, returns, calls, reused-input operations, multi-instruction
+lowerings, and instructions needing temporaries or clobbers provide only their
+exceptional requirements.
 
 The structural constraint representation is:
 
@@ -245,12 +264,6 @@ struct ProgramValueUseConstraint
     RegisterRequirement requirement;
 };
 
-struct SnapshotUse
-{
-    uint32_t operand_index;
-    AccessTiming timing;
-};
-
 struct ResultConstraint
 {
     AccessTiming timing;
@@ -264,16 +277,46 @@ struct TemporaryConstraint
     RegisterRequirement requirement;
 };
 
-struct InstructionAllocationConstraints
+class InstructionAllocationConstraints
 {
-    const Instruction *instruction;
-    std::vector<ProgramValueUseConstraint> inputs;
-    std::vector<SnapshotUse> snapshots;
-    std::optional<ResultConstraint> result;
-    std::vector<TemporaryConstraint> temporaries;
-    RegisterSet clobbers;
+public:
+    InstructionAllocationConstraints(
+        const Instruction *instruction,
+        std::vector<ProgramValueUseConstraint> input_overrides = {},
+        std::optional<ResultConstraint> result_override = std::nullopt,
+        std::vector<TemporaryConstraint> temporaries = {},
+        RegisterSet clobbers = {});
+
+    void validate() const;
+
+    const Instruction *instruction() const;
+    const std::vector<ProgramValueUseConstraint> &input_overrides() const;
+    const std::optional<ResultConstraint> &result_override() const;
+    const std::vector<TemporaryConstraint> &temporaries() const;
+    const RegisterSet &clobbers() const;
+
+private:
+    const Instruction *instruction_;
+    std::vector<ProgramValueUseConstraint> input_overrides_;
+    std::optional<ResultConstraint> result_override_;
+    std::vector<TemporaryConstraint> temporaries_;
+    RegisterSet clobbers_;
 };
+
+ProgramValueUseConstraint default_program_value_use_constraint(
+    uint32_t operand_index, ValueRepresentation representation);
+ResultConstraint
+default_result_constraint(ValueRepresentation representation);
+constexpr AccessTiming default_snapshot_use_timing();
 ```
+
+Backend preparation stores constraint objects only for instructions with at
+least one override, temporary, or clobber, so ordinary instructions allocate no
+collection storage and sparse objects do not pay for speculative inline
+capacity. Read-only accessors prevent later mutation from invalidating a
+completed check. Debug constructors call `validate()` automatically. Release
+constructors only store the sparse data; compiler stages may call `validate()`
+explicitly when they need an exhaustive check.
 
 `RegisterRequirement::Any` names a register class;
 `RegisterRequirement::Fixed` names one physical register; and
@@ -283,10 +326,15 @@ register the result must reuse. Contextual constructors reject
 requirement without a second variant-based representation. The compact
 allocator representation may encode these alternatives differently.
 
-A `SnapshotUse` does not allocate the `SnapshotRef`. At each instruction that
-consumes one, allocator preparation expands the captured `ProgramValueRef`s
-into unconstrained point uses at the declared timing. Repeated consumers of one
+The allocator does not allocate a `SnapshotRef`. At each executable instruction
+that consumes one, allocator preparation expands the captured
+`ProgramValueRef`s into unconstrained late point uses. Repeated consumers of one
 virtual Snapshot expand independently.
+
+The heterogeneous ProgramValue references stored by the virtual `Snapshot`
+instruction itself have no direct input constraints at the Snapshot's
+definition position. They become allocation uses only through this expansion at
+each Snapshot-consuming instruction.
 
 A temporary takes either an `Any` or `Fixed` register requirement and reserves
 the chosen register across the selected target sequence. `clobbers` instead
@@ -310,12 +358,11 @@ Register requirements and spill compatibility must agree with the Core
 to a target class or fixed register, but it must not change representation
 semantics. Representation changes remain explicit Core instructions.
 
-Construction and verification enforce:
+Constraint validation enforces:
 
-- each allocatable ProgramValue operand has exactly one input constraint;
-- each consumed Snapshot operand has exactly one `SnapshotUse`;
-- a ProgramValue-producing instruction has exactly one result constraint, while
-  `None` and Snapshot-producing instructions have none;
+- each input override names one allocatable ProgramValue operand, and no
+  occurrence has two overrides;
+- a result override occurs only on a ProgramValue-producing instruction;
 - `SameAsInput` names a valid ProgramValue input and occurs only on a result;
 - fixed registers and `Any` classes are compatible with the occurrence's
   `ValueRepresentation`;
@@ -325,9 +372,10 @@ Construction and verification enforce:
   temporaries, including the fixed register obtained after resolving
   `SameAsInput`.
 
-Parameter instructions use the same result constraint. Their placement in a
-block's parameter list anchors the def at block entry rather than at an
-executable instruction phase.
+Parameter instructions use the same default result constraint, with target
+overrides for ABI-fixed entry parameters. Their placement in a block's
+parameter list anchors the def at block entry rather than at an executable
+instruction phase.
 
 Instruction records may retain a narrower packed operand count, but traversal,
 constraint APIs, and operand-index arithmetic use `uint32_t`. Widening at the

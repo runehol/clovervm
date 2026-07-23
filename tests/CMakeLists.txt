@@ -22,6 +22,7 @@ target_sources(test_clovervm PRIVATE
 	test_import_system.cpp
 	test_aarch64_assembler.cpp
 	test_code_cache.cpp
+	test_jit_allocation_constraints.cpp
 	test_jit_arena.cpp
 	test_jit_cfg.cpp
 	test_jit_graph_rewrites.cpp
