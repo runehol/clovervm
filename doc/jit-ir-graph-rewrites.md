@@ -3,12 +3,12 @@
 | Field | Value |
 |---|---|
 | Document type | Design |
-| Status | Proposed |
+| Status | Accepted |
 | Implementation | Read-only traversal, instruction use lists, and body-instruction graph rewriting implemented; block arguments and CFG-topology rewriting not started |
 | Scope | Read-only instruction traversal, on-demand use lists, and forward instruction rewriting within published JIT IR basic blocks |
 | Owning layers | The CFG owns mutation generation and cached analysis storage; the traversal contract declares observable walk order and required queries; `GraphQueries` owns generation-checked callback access; the use-list builder owns use occurrences; the graph rewriter owns operand substitution, instruction placement, and commit; the instruction schema owns reconstruction; individual passes own matching and semantic legality; CFG editing owns successor and predecessor changes |
 | Validated against | `tests/test_jit_graph_rewrites.cpp` |
-| Supersedes | If accepted, the incremental mutable-operand rewrite direction in [JIT Instruction Representation](jit-instruction-representation.md) and [JIT Compiler and IR](jit-compiler-and-ir.md) |
+| Supersedes | The incremental mutable-operand rewrite direction in [JIT Instruction Representation](jit-instruction-representation.md) and [JIT Compiler and IR](jit-compiler-and-ir.md) |
 
 JIT IR instructions are immutable. A graph rewrite constructs a replacement
 instruction stream rather than editing instruction payloads or rewriting use
@@ -448,10 +448,10 @@ add emits both instructions but maps later uses of the old result to the add:
 return RewriteResult::replace({arm_imm12, add}, TaggedValueRef(add));
 ```
 
-A one-to-one rewrite such as a pointer-valued `Const` becoming `LoadConst` is:
+A one-to-one rewrite such as constant-folding an operation to a new `Const` is:
 
 ```cpp
-return RewriteResult::replace(load_const);
+return RewriteResult::replace(folded_const);
 ```
 
 The instructions emitted for one callback are not revisited during the same

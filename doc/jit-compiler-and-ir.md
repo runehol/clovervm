@@ -4,13 +4,13 @@
 |---|---|
 | Document type | Design |
 | Status | Proposed |
-| Implementation | Not started |
+| Implementation | Partial; instruction storage and schema, Core CFG construction and verification, graph queries and rewriting, compilation sessions, allocation constraints, code-cache publication, machine-code emission, and a direct AArch64 CFG path are implemented; bytecode translation, analyses, register allocation, recovery, and runtime entry remain |
 | Scope | JIT pipeline, Core IR, recovery state, effects, backend lowering, and compiled execution contracts |
 | Owning layers | The JIT owns IR and compiled execution; bytecode, runtime frames, object semantics, and reclamation remain authoritative contracts |
-| Validated against | N/A |
+| Validated against | The focused JIT instruction, CFG, rewrite, allocation-constraint, emitter, code-cache, and executable AArch64 tests |
 | Supersedes | N/A |
 
-This document defines the durable architecture and IR contracts for a future
+This document defines the durable architecture and IR contracts for the
 clovervm JIT compiler. Its purpose is to keep compiled execution compatible
 with the existing bytecode, object model, inline caches, calling convention,
 and reclamation machinery.
@@ -391,11 +391,12 @@ Instruction *    -> AllocationConstraints and lowering choice
 ```
 
 A target-specific `AllocationConstraints` record describes the input, output,
-temporary, and clobber requirements of one selected lowering, including fixed
-registers, register classes, same-as-input constraints, and whether the
-lowering contains a general call, a callee-safe call, a native leaf call, or a
-call only on a slow path. It is backend analysis data rather than part of the
-immutable common IR operation. The durable allocation contract is defined in
+temporary, and clobber requirements of selected lowerings, including fixed
+registers, register classes, and same-as-input constraints. Call semantics and
+effects remain properties of the instruction and selected lowering rather than
+another allocation-constraint category. This is backend analysis data rather
+than part of the immutable common IR operation. The durable allocation contract
+is defined in
 [JIT Register Allocation](jit-register-allocation.md).
 
 Core ordinary operands are uniformly instruction-result references. Every
@@ -407,20 +408,23 @@ pointer retained by the compilation session. Snapshots capture the resulting
 Backend preparation or Machine IR classifies each surviving constant as an
 immediate synthesis or traced-pool load. Pointer-valued constants must use the
 pool; non-pointer constants may use either form according to target
-encodability and profitability. The same phase assigns the final lowering and
-`AllocationConstraints` for every executable instruction. Pool entries do not form
+encodability and profitability. The same phase publishes target register-class
+definitions and sparse instruction overrides; ordinary operands and results use
+the representation-derived defaults from
+[JIT Register Allocation](jit-register-allocation.md). Pool entries do not form
 part of this phase product; the selected lowering retains the `Value` until
 program-order emission.
 
 Backend preparation is atomic as a phase contract even if implemented by local
 selection and rewrite steps. Liveness, Snapshot point-use expansion, and
-register allocation run only after its completed graph is verified. Any later
-Core mutation invalidates the complete lowering-choice, legalization, and
-`AllocationConstraints` attachment together; the compiler never pairs a rewritten
-graph with stale backend preparation. The phase returns a frozen,
-generation-checked `BackendPreparation` object, and the allocator accepts that
-object rather than independent tables. This is a concrete phase product, not a
-generic instruction property bag.
+register allocation run only after its completed graph is verified. The
+resulting `AllocationConstraints` apply to that exact published CFG generation,
+which remains frozen until allocation completes. Any later Core mutation
+invalidates lowering choices, legalization decisions, and constraints together
+and requires backend preparation to run again. The initial implementation
+enforces this as phase ordering rather than adding per-access generation checks.
+A later backend-preparation wrapper may bundle additional lowering products when
+their concrete shape exists; it is not a generic instruction property bag.
 
 Core has no constant-producing `ResultClass`: `Const` produces an ordinary
 `ProgramValue` from a constant attribute. This keeps immediate shape
@@ -454,9 +458,11 @@ operation-specific constraint, but it may not assign an incompatible class.
 `UnboxF64` therefore crosses from a general-purpose input to a floating-point
 output, while `BoxF64` crosses in the opposite direction.
 
-These are backend results, not mutations of Core instructions. Internal
-temporaries belong to the selected lowering and may use reserved scratch
-locations. If a backend needs enough independently allocated temporaries or
+These are backend results, not mutations of Core instructions. Every internal
+temporary required by a selected lowering is explicit in its
+`AllocationConstraints`. A target may also exclude a globally reserved
+register from its allocatable classes, but emission may not consume hidden
+scratch state. If a backend needs enough independently allocated temporaries or
 cross-instruction machine optimization that these tables become an implicit
 instruction graph, that is evidence for introducing an explicit Machine IR at
 the required scope.
@@ -840,8 +846,8 @@ Initial JIT compilation runs without compiler safepoints. If the runtime
 requests a safepoint, it waits for the current compilation to finish. This
 depends on compilation remaining short and is monitored as part of JIT latency;
 explicit yield points between completed phases may be added later if
-measurements require them. Arbitrary safepoints in the middle of an editor
-transaction are not supported.
+measurements require them. Arbitrary safepoints in the middle of an editor or
+rewrite transaction are not supported.
 
 Managed constants remain direct `ValueConstant` attributes on Core `Const`
 instructions. Because instruction payloads are not GC-scannable relocation
@@ -879,24 +885,25 @@ session. A future phase-boundary safepoint scheme must make every direct managed
 compiler reference relocatable or explicitly pinned before acknowledging the
 request.
 
-### Mostly immutable instructions, mutable graphs, and analysis state
+### Immutable instruction semantics, mutable graphs, and analysis state
 
 An instruction's operation kind, results, bytecode origin, semantic descriptor,
 guard obligations, partition IDs, payload shape, and attributes are fixed when
 the instruction is constructed. A transformation changes any of these semantic
 properties by constructing a replacement instruction with a new serial.
-Program-value and Snapshot operand slots are mutable only through the structural
-IR editor, so ordinary result-use rewriting does not require cascading
-replacement of every transitive user. Block edges,
-runtime metadata, immediates, and return PCs embedded in an instruction remain
-immutable attributes; changing them requires instruction replacement.
+Program-value and Snapshot operands are likewise exposed read-only. When a def
+changes, schema-generated reconstruction rebuilds each affected later
+instruction with resolved operands. Block edges, runtime metadata, immediates,
+and return PCs are immutable attributes and are copied unless the pass
+explicitly replaces that instruction.
 
-Graph structure remains mutable. Block parameter and instruction lists,
-predecessor and successor sets, edge argument lists, placement, definition
-indexes, and other graph-owned indexes are maintained by the IR editor after
-publication. Use records are derived metadata rather than a permanently
-maintained graph index. A replacement rewrites uses and updates graph-owned
-structures transactionally; it does not mutate the old instruction in place.
+Graph structure remains mutable. The implemented `GraphRewriter` handles
+published block-body replacement without changing topology. It stages one new
+instruction vector per block, normalizes operands as it walks, swaps all changed
+vectors at one commit, poisons removed originals, and advances the graph
+generation once. Block and edge topology editing remains a future, separate
+interface. Use records are derived metadata rather than a permanently
+maintained graph index.
 Logical interpreter homes are tracked by FrameStates and Snapshots rather than
 by preserving an SSA result identity across rewrites.
 
@@ -909,22 +916,16 @@ enclosing compilation fails. Builder and rewriter APIs consistently use `make`
 for allocation without attachment, `append` for attachment at the end of a
 specified container, and `emplace` for allocation and attachment at the end.
 
-Published block-body mutation uses a proposed `BlockRewrite`: the editor builds
-a replacement ordinary vector from existing and new instruction pointers and
-commits it by swapping the vector. This keeps partial rebuilds invisible and
-makes traversal contiguous. Multi-block movement commits the affected rewrites
-together before deciding which omitted instructions are actually detached.
-
 Initial translation and major representation boundaries use a bulk graph
-builder rather than paying incremental-editor costs for every appended
+builder rather than paying rewrite costs for every appended
 instruction. Schema-generated, IR-level-specific factories allocate
 intrinsically valid, unplaced instructions from the compilation arena. Builder
 append and emplace are amortized constant time and deliberately defer global
 structural checks. Finalization validates the complete destination graph once
 in linear time before publishing it to passes. This keeps type-safe construction
-from making an otherwise linear JIT translation quadratic. The incremental
-editor remains the mutation authority for an already published graph; large
-edit transactions may likewise defer global verification until commit.
+from making an otherwise linear JIT translation quadratic. The body rewriter
+remains the mutation authority for published instruction streams; future
+topology editing must preserve the same commit-boundary discipline.
 
 The instruction schema generates the generic operand walk used to build an
 on-demand `UseLists`. The CFG owns this generation-tagged cache, while a
@@ -941,7 +942,7 @@ invariant violations diagnose and hard-assert, while allocation or resource
 failure abandons the arena-backed compilation and continues in the interpreter.
 The enclosing session unwinds retained constants and normally destroyed state;
 generated code, dependencies, assumptions, and cache entries become persistent
-only at final successful publication. Editor rollback is not required after an
+only at final successful publication. Rewrite rollback is not required after an
 aborted compilation.
 
 Inferred types, proven-absent effects, and other derived knowledge are not fields on
@@ -990,7 +991,7 @@ Semantic-to-Core lowering leaves its source graph intact and naturally
 supports one-to-region translation. A backend that chooses Machine IR follows
 the same rule; a direct backend instead records locations, edge moves, and
 emission metadata in side tables. Optimizations within one IR may use an
-in-place CFG editor.
+instruction-stream rewriter and, when implemented, a topology editor.
 
 Deoptimization exits must remain visible to correctness and frame-state
 analysis, but need not be block successors in the CFG used for loops
@@ -1009,10 +1010,10 @@ definition or operand; associating a new partition anchor through instruction
 replacement; or structurally editing the CFG advances the applicable
 generation and makes prior frozen views stale. The baseline is broad
 invalidation and recomputation before the next consuming pass. A later analysis
-may consume editor mutation descriptions to preserve and cheaply update facts
-whose validity is locally provable, but this is optional optimization
-machinery. It publishes a new frozen view only after its state is valid for the
-new graph generation.
+may consume rewrite summaries or topology-edit descriptions to preserve and
+cheaply update facts whose validity is locally provable, but this is optional
+optimization machinery. It publishes a new frozen view only after its state is
+valid for the new graph generation.
 Querying a stale frozen view asserts. The owning analysis must explicitly update
 or recompute and publish a current view before a pass resumes querying it.
 Passes must not mutate instructions or graph structures directly.
@@ -1496,16 +1497,16 @@ Snapshot + LocationAssignments + HomeState -> RecoveryPlan
 Location assignments resolve each captured `ProgramValueRef` to its register,
 spill, or canonical slot at the exit. `HomeState` identifies canonical frame
 homes that already contain the required value. The resulting `RecoveryPlan`
-contains the parallel assignments, inline-constant materialization, traced-pool
-loads, F64 boxing, and reification operations needed before interpreter handoff.
+contains the parallel assignments, `Const` rematerialization, traced-pool loads,
+F64 boxing, and reification operations needed before interpreter handoff.
 This adds physical execution choices but no second semantic description of the
 Snapshot.
 
 Precise GC root maps are a separate future backend projection. They select all
 managed values live at a continuing safepoint, including any compiler-only
 temporaries, and resolve them through the same post-allocation location
-vocabulary. They omit non-root F64 values, inline immediates, boxing, and
-interpreter resume state. The initial compiler instead uses canonical frame
+vocabulary. They omit non-root F64 values, rematerializable non-pointer
+constants, boxing, and interpreter resume state. The initial compiler instead uses canonical frame
 publication and emits no general root-map artifact. Its only post-allocation
 recovery work is direct expansion of Snapshots into generated recovery
 sequences, with identical sequences optionally interned as `RecoveryPlan`s.
@@ -1540,7 +1541,7 @@ logical Snapshot and FrameState:
 
 machine location state at the exit:
     ProgramValueRef -> register | spill | canonical slot
-                   | inline constant
+                   | rematerializable Const
 
 canonical HomeState:
     (frame instance, canonical slot) -> ProgramValueRef currently stored there
@@ -1856,9 +1857,8 @@ The corresponding higher-effort polymorphic example is in
 
 - validation of the 48-byte fixed-record and side-data experiment specified in
   [JIT Instruction Representation](jit-instruction-representation.md);
-- concrete implementations of the accepted graph-builder and mutation-editor
-  contracts;
-- optimizer and register allocator organization;
+- the topology-editor contract beyond implemented body-instruction rewriting;
+- optimizer organization and pass scheduling;
 - whether a narrow pass benefits from a temporary graph representation;
 - when direct backend side tables have become an implicit Machine IR and should
   be replaced by an explicit backend-local representation;

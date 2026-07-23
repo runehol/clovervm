@@ -4,15 +4,15 @@
 |---|---|
 | Document type | Architecture contract |
 | Status | Accepted |
-| Implementation | Partial: the structural CFG and temporary terminators are implemented; block parameters and edge arguments are deferred |
-| Scope | Structural CFG shared by Core IR and an optional Semantic IR, plus the planned block-argument extension |
+| Implementation | Partial: graph construction and publication, fixed-representation terminators, block parameters, predecessor indexes, structural verification, queries, and body-instruction rewriting are implemented; edge arguments and CFG-topology editing are deferred |
+| Scope | Structural CFG shared by Core IR and an optional Semantic IR, including implemented block parameters and the planned edge-argument extension |
 | Owning layers | The JIT CFG owns block order, block edges, block parameters, instruction placement, and structural verification; individual IR levels own instruction semantics and side exits |
-| Validated against | Working tree on 2026-07-20; focused JIT tests and the full debug `all check` suite |
+| Validated against | `tests/test_jit_cfg.cpp` and `tests/test_jit_graph_rewrites.cpp` |
 | Supersedes | N/A |
 
 This document describes the implemented structural control-flow representation
 shared in shape by Core IR and the optional Semantic IR. It also specifies the
-agreed block-parameter extension, which is not implemented yet. It refines the
+remaining edge-argument extension. It refines the
 ordered list-based SSA direction in
 [JIT Compiler and IR](jit-compiler-and-ir.md). The permanent instruction
 storage and typed-access direction is specified separately in
@@ -32,7 +32,7 @@ ControlFlowGraph
 Block
     ordered instructions, ending in a block terminator
     incoming block edges
-    ordered parameters [planned]
+    ordered parameter instructions
 
 Block terminator instruction
     semantically named outgoing block edges
@@ -50,11 +50,11 @@ both eventually lower to machine branches.
 function. Inlining may put instructions originating from several `CodeObject`s
 in the same graph while the graph retains one entry block. Logical inline
 frames and interpreter recovery state are separate metadata and are not modeled
-as nested CFG `Function` objects. Every graph records one immutable IR level so
-construction, editing, verification, and concrete analysis attachments can
-enforce the instruction kinds legal at that level. The unprefixed CFG storage
-types remain shared in `cl::jit`; the level does not require duplicating the
-physical CFG classes.
+as nested CFG `Function` objects. The implemented graph is Core IR and
+verification rejects kinds not declared Core-legal by `instruction.def`. If the
+optional Semantic IR later shares these physical CFG classes, the graph will
+need an immutable IR-level discriminator so construction, editing, verification,
+and analysis attachments can enforce the appropriate instruction set.
 
 ## Block Identity, Order, and Numbering
 
@@ -89,9 +89,8 @@ reference mechanism.
 separate pools in the `CompilationArena`, so each object kind has its own serial
 sequence. The `CompilationSession` owns that arena and necessarily outlives
 every graph object. A graph does not store or use a session or arena pointer
-after construction. Multiple temporary instruction subclasses share the one
-`Instruction` pool and serial sequence until the fixed-size representation
-replaces them.
+after construction. All concrete instruction views share the fixed-size
+`Instruction` pool and serial sequence.
 
 A `GraphBuilder` takes the session, borrows its arena, allocates one unpublished
 graph from it, and owns all initial mutation of that graph. `finalize()` verifies
@@ -110,13 +109,13 @@ synchronized object.
 The implemented accessor is equivalent to:
 
 ```cpp
-TerminatorInstruction *Block::terminator() const
+TerminatorInstruction Block::terminator() const
 {
     assert(!instructions_.empty());
     Instruction *instruction = instructions_.back();
     assert(instruction != nullptr);
     assert(instruction->is_block_terminator());
-    return static_cast<TerminatorInstruction *>(instruction);
+    return TerminatorInstruction(instruction);
 }
 ```
 
@@ -142,32 +141,14 @@ have a non-returning deoptimization side exit while successful execution
 continues to the next instruction in the same block. Such a guard is not a
 block terminator.
 
-The bring-up implementation uses this temporary hierarchy:
-
-```text
-Instruction
-    TerminatorInstruction
-        ConditionalBranchInstruction
-        UnconditionalBranchInstruction
-        ReturnInstruction
-```
-
-`Instruction` has a virtual destructor because its arena pool owns subclasses
-through base pointers. A private construction tag records whether an instruction
-is a block terminator; only `TerminatorInstruction` can set it. The terminator
-also carries a `TerminatorKind` and its ordered block-successor edges. The
-concrete branch classes provide the semantic edge accessors.
-
-This hierarchy is scaffolding, not a commitment to permanent virtual
-instructions. The accepted fixed-size, type-erased instruction representation
-will replace it and must continue to provide both:
+The implemented fixed-size instruction representation provides both:
 
 - a generic ordered block-successor interface for CFG algorithms;
 - checked semantic accessors such as `edge()`, `true_edge()`, and
   `false_edge()` for clients that understand the terminator kind.
 
-The typed terminator views and their underlying fixed instruction payload will
-implement this contract without virtual dispatch or C++ RTTI. See
+Typed terminator views interpret the schema-defined fixed instruction payload
+without virtual dispatch or C++ RTTI. See
 [JIT Instruction Representation](jit-instruction-representation.md).
 
 ## First-Class Block Edges
@@ -218,10 +199,10 @@ edges. The source block does not maintain a second successor vector. Its generic
 CFG accessor delegates to the terminator:
 
 ```cpp
-const TerminatorInstruction::BlockSuccessorEdges &
+TerminatorInstruction::BlockSuccessorEdges
 Block::block_successor_edges() const
 {
-    return terminator()->block_successor_edges();
+    return terminator().block_successor_edges();
 }
 ```
 
@@ -251,10 +232,13 @@ each terminator edge to its target's predecessor vector before verification.
 Predecessor order is therefore deterministic construction order but has no
 semantic significance; the edge itself is the durable identity.
 
-## Planned Block Parameters and Edge Arguments
+## Block Parameters and Planned Edge Arguments
 
-Block parameters and edge arguments in this section are accepted design but
-are not part of the current C++ representation or structural verifier.
+Ordered block-parameter instructions are implemented as a separate vector from
+the block body. They are definitions available at block entry and use the same
+instruction identity and typed `ProgramValueRef` mechanism as ordinary defs.
+Ordered edge arguments remain accepted design but are not yet part of
+`BlockEdge` or the structural verifier.
 
 Block parameters are ordered SSA definitions owned by the target block. Edge
 arguments are ordered SSA uses at the source edge. For:
@@ -343,9 +327,9 @@ at side-exit branches without introducing CFG blocks or edges.
 
 CFG verification is a normal compiler operation, not only a debugging aid. It
 should run after initial construction and after every CFG-mutating pass in
-debug and test configurations. Focused editor tests should verify after each
-completed mutation. Verification before backend lowering protects later stages
-that assume a complete graph.
+debug and test configurations. Focused rewrite and editor tests should verify
+after each completed mutation. Verification before backend lowering protects
+later stages that assume a complete graph.
 
 The implemented structural verifier returns `CfgVerificationResult`, containing
 a `valid` flag and one diagnostic string. It does not depend on dominance, loop
@@ -377,11 +361,9 @@ malformed final instruction directly.
 The verifier is scoped to one `ControlFlowGraph`; it does not maintain an
 arena-wide index merely to diagnose an instruction placed in two graphs.
 
-The block-argument extension and later SSA verification will add these checks:
+The edge-argument extension and later cross-block SSA verification will add
+these checks:
 
-- every placed instruction is live and its kind permits the graph's immutable
-  IR level according to `src/jit/instruction.def`;
-- every instruction kind permits the graph's IR level;
 - every edge argument list matches the target parameter list in arity and
   required `OperandClass`; Core arguments additionally match the parameter's
   `ValueRepresentation`, plus any later phase-specific contract;
@@ -435,38 +417,38 @@ The final instruction is the sole authoritative terminator.
 
 ## Implemented Surface and Deferred Work
 
-The current implementation establishes the structural graph needed for CFG
-construction and verification:
+The current implementation establishes:
 
 - `ControlFlowGraph` owns explicit block order and treats the first added block
-  as its entry;
-- `Block` stores an ordered instruction list and an ordered predecessor-edge
-  index;
+  as its entry, publication state, mutation generation, and query caches;
+- `Block` stores ordered parameter definitions, an ordered body-instruction
+  list, and an ordered predecessor-edge index;
 - `BlockEdge` stores a typed serial, source block, and target block;
 - `CompilationSession` owns the `CompilationArena`, which allocates blocks,
   block edges, and instructions from their designated pools;
-- the temporary polymorphic instruction representation contains
-  `TerminatorInstruction`, `ConditionalBranchInstruction`,
-  `UnconditionalBranchInstruction`, and `ReturnInstruction`;
-- the structural verifier reports a small success/failure result with one
-  diagnostic string.
+- schema-generated concrete instruction views provide typed branch conditions,
+  return operands, block parameters, and terminator edges;
+- `GraphBuilder` supports make/append/emplace construction, derives predecessor
+  indexes, verifies, and publishes one graph;
+- the structural verifier checks Core-kind legality, unique placement,
+  same-block definition-before-use, result classes, value representations,
+  terminators, and edge/index consistency;
+- `GraphRewriter` stages body-instruction rewrites and commits one graph
+  generation at a time without changing CFG topology.
 
-Conditions, return operands, block parameters, edge arguments, side exits,
-graph editing, and SSA verification are intentionally absent from the current
-implementation. The absence of block arguments is an implementation staging
-choice, not a change to the accepted block-argument design above.
+Edge argument vectors, cross-block SSA dominance, side-exit verification, and
+CFG-topology editing remain deferred.
 
 ## Open Decisions After Initial Implementation
 
-- whether editing pressure justifies replacing the initial vectors for block
-  order, instruction order, or incoming edges;
-- the concrete graph-builder and mutation-editor API shapes;
-- the physical representation of block parameters within the instruction
-  identity scheme;
+- whether measured editing pressure justifies replacing the vectors for block
+  order, instruction order, parameters, or incoming edges;
+- the topology-editor API for redirecting edges and rebuilding predecessor
+  indexes;
+- the physical edge-argument representation, including structural frame holes;
 - how unreachable but still live blocks participate in verification and
   cleanup;
-- the boundary between structural CFG verification and broader SSA or
-  operation verification.
+- the dominance-analysis boundary for cross-block SSA verification.
 
 ## Related Documents
 

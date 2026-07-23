@@ -4,10 +4,10 @@
 |---|---|
 | Document type | Design |
 | Status | Accepted |
-| Implementation | Partial; the naturally aligned 48-byte record and instruction arena, schema-generated kind metadata and concrete subclass definitions, generated construction, typed CFG terminators, homogeneous PythonCall side data, annotated Snapshot captures, and basic operand traversal are implemented; detachment and editor integration remain |
+| Implementation | Partial; the naturally aligned 48-byte record and instruction arena, schema-generated kind metadata and concrete subclasses, generated construction and operand indices, typed CFG terminators, variadic operands, generic operand traversal and reconstruction, detachment poisoning, and graph-rewriter integration are implemented; representative layout measurement and complete Snapshot recovery encodings remain |
 | Scope | Physical instruction storage, typed instruction access, Core value representations, IR-level legality, phase metadata, effects, matching, and arena lifetime for Core and Semantic IR |
-| Owning layers | The JIT instruction representation owns storage, schema-generated construction, and typed access; the bulk graph builder owns deferred-validation construction; concrete analyses own attached inferred facts and proven-absent effects; the CFG editor owns incremental structural mutation |
-| Validated against | Working tree implementation and full debug test suite (2026-07-21) |
+| Owning layers | The JIT instruction representation owns storage, schema-generated construction, typed access, operand traversal, and reconstruction; the graph builder owns deferred-validation construction; concrete analyses own attached inferred facts and proven-absent effects; the graph rewriter owns staged body-instruction replacement and future CFG editing owns topology mutation |
+| Validated against | `tests/test_jit_arena.cpp`, `tests/test_jit_cfg.cpp`, and `tests/test_jit_graph_rewrites.cpp` |
 | Supersedes | The open instruction-representation alternatives in [JIT Control-Flow Graph](jit-control-flow-graph.md) and the integer-only instruction reference direction in [JIT Compiler and IR](jit-compiler-and-ir.md) |
 
 Core IR and the optional Semantic IR use a fixed-size, type-erased
@@ -41,8 +41,8 @@ typed graph-builder construction
 bulk graph builder
     cheap append/emplace during translation and one-shot publication validation
 
-CFG editor
-    checked incremental insertion, removal, and instruction replacement
+GraphRewriter
+    staged body-instruction replacement through immutable reconstruction
 ```
 
 ## Storage and Lifetime
@@ -90,7 +90,7 @@ by the 48-byte record size. An instruction reference is an ordinary, directly
 dereferenceable `Instruction *`; its address carries no operand discriminator.
 
 The physical storage tag normally represents one live `InstructionKind`. The
-exact encoding may also reserve a poison tag used only after the CFG editor has
+exact encoding may also reserve a poison tag used only after the graph rewriter has
 removed an instruction from a published graph. `InstructionKind` remains the
 closed semantic enum generated from `src/jit/instruction.def`; the poison tag is
 not an instruction kind and is not a state ordinary passes handle. `kind()`,
@@ -298,7 +298,7 @@ instruction state.
 
 Construction may use a mutable buffer before completing the instruction, but
 stored and typed access decodes the declared operand or attribute class and
-exposes immutable typed values, for example `absl::Span<ProgramValueRef>`.
+exposes immutable typed values, for example `std::span<const ProgramValueRef>`.
 Clients cannot replace an operand by assigning through the span.
 
 For an indirect operand sequence, the side-data pool allocates the final
@@ -392,17 +392,16 @@ ordinary passes. If final verification finds an invalid graph, that is a
 compiler logic error: it reports the structural diagnostic and hard-asserts
 rather than turning the bug into an interpreter fallback.
 
-Once a graph is published, local transformations use the CFG editor. The
-editor attaches factory-created instructions, rewrites operands, updates active
-graph-owned indexes and mutation generations, and detaches replaced
-instructions. On-demand `UseLists` are updated only when the editing pass
-explicitly retains it as mutation-aware working state; otherwise mutation makes
-it stale. The editor may check contextual invariants eagerly when those checks
-are constant-time or already maintained incrementally. A transformation that
-performs many related edits may use an editor transaction that defers global
-verification until commit; ordinary passes cannot observe the intermediate
-graph. The editor is therefore the authority for mutating a published graph,
-not a mandatory route through which every instruction must be allocated.
+Once a graph is published, body-instruction transformations use
+`GraphRewriter`. The callback allocates replacement instructions through a
+narrow `RewriteContext`; the rewriter reconstructs changed operands, builds one
+staged vector per block, verifies the proposed stream, swaps all changed block
+vectors at one graph-wide commit, poisons removed instructions, and increments
+the mutation generation once. Optional `UseLists` describe the original
+published generation and are invalidated rather than incrementally maintained.
+CFG-topology mutation remains a separate future editor responsibility. Neither
+path is a mandatory route through which an unplaced instruction must be
+allocated.
 
 Placement and liveness are graph-owned state rather than another physical
 instruction tag. The normal lifetime progression is:
@@ -413,7 +412,7 @@ allocated and unplaced -> placed in one graph -> removed from graph
 
 An unplaced instruction has a live instruction kind and a schema-valid payload,
 but is not yet a member of any graph. It may be attached at most once. After
-removal, the editor may poison the abandoned storage with the reserved detached
+removal, the rewriter may poison the abandoned storage with the reserved detached
 tag to catch stale references. Poisoning is not an allocation-reuse mechanism,
 not graph membership, and not a semantic IR state.
 
@@ -424,7 +423,7 @@ Runtime publication here means installing completed machine code and persistent
 dependencies. The latter occurs only after all compiler phases succeed.
 
 The JIT distinguishes compiler logic errors from resource failure. Violating an
-instruction-schema, graph, editor, or pass invariant is a compiler bug. Such a
+instruction-schema, graph, rewriter, or pass invariant is a compiler bug. Such a
 violation hard-asserts, with the verifier and stable-serial diagnostics used to
 identify the responsible pass. It is not reported as an ordinary inability to
 compile and must not silently fall back to the interpreter.
@@ -433,8 +432,8 @@ Allocation exhaustion and comparable resource failures are expected compilation
 failures. Fallible arena, side-data, index, and code-buffer allocation propagates
 an explicit compilation failure such as `CompileFailure::AllocationFailure` to
 the JIT entry point. The entire compilation session, including any partially
-built or partially edited graph, is then abandoned, and execution continues in
-the interpreter. The editor does not need to roll a graph back into a usable
+built or partially rewritten graph, is then abandoned, and execution continues
+in the interpreter. The rewriter does not need to roll a graph back into a usable
 state after such a failure because no later pass may observe that compilation.
 
 This cheap whole-compilation abort is a primary reason for arena ownership.
@@ -806,18 +805,13 @@ boundaries. This special case is preferred over a general per-slot role axis;
 the design should revisit that choice if another same-class relationship needs
 different generic behavior.
 
-Every graph has one immutable IR level, initially `Semantic` or `Core`; a
-future Machine IR may use the same mechanism if it adopts this representation.
-An instruction definition may name one level or an explicit set when the same
-semantic kind is valid in more than one IR. Allowed levels are kind metadata
-and consume no space in an instruction. IR-level-specific factories omit
-disallowed constructors, the bulk builder checks the completed graph at
-finalization, and the CFG editor rejects incremental insertion or replacement
-with a kind not allowed at the graph's level. The verifier independently checks
-every placed instruction. It also
-rejects references that cross graphs or IR levels. Concrete analysis types
-accept only the graph level they own, such as `SemanticValueAnalysis` for a
-Semantic graph and `CoreEffectAnalysis` for a Core graph.
+An instruction definition may name one IR level or an explicit set when the
+same semantic kind is valid in more than one IR. Allowed levels are kind
+metadata and consume no space in an instruction. The implemented CFG is Core
+and its builder, rewriter, and verifier reject kinds not declared Core-legal.
+If Semantic or Machine IR later reuse the same graph representation, the graph
+will gain one immutable level discriminator and level-specific construction and
+analysis façades.
 
 For Core graphs, verification additionally requires every `ProgramValue`
 def to have one legal representation, every fixed operand constraint to
@@ -902,33 +896,29 @@ through a separate membership-checked API such as `as_category<T>()`; it cannot
 be used with `CL_JIT_INSTRUCTION_CASE`. Category views are deferred until an
 actual grouped operation family justifies them.
 
-## Mostly Immutable Instructions
+## Immutable Instructions and Detachment
 
 An instruction's kind, result class, Core value representation, constants,
 bytecode origin, payload shape, and attributes are immutable
 after construction. A pass that changes one of these properties constructs an
 unplaced replacement through the appropriate instruction factory, then asks the
-structural IR editor to attach it and rewrite the published graph explicitly.
+graph rewriter to place it in the staged replacement stream.
 
-Removal from a graph is not instruction mutation. The editor may poison the
+Removal from a graph is not instruction mutation. The graph rewriter may poison the
 abandoned allocation as the final step of removal:
 
 ```text
 Live(fixed InstructionKind) -> removed from graph -> poisoned storage
 ```
 
-The CFG editor poisons storage only after it has rewritten or removed every use,
-removed the instruction's own operand occurrences from any active
-mutation-aware `UseLists`, invalidated or removed active metadata entries, and
-unlinked the instruction from its block. The edit plan must establish the
-absence of incoming uses through current `UseLists` or a complete generic
-operand scan. A detached instruction's pointer-valued `ValueConstant` is no
-longer semantically visible. Every value registered with the session remains
-retained until session teardown; detachment does not prune that monotonic
-vector. The editor may debug-poison the remaining payload storage and
-publish the detached tag last. An editor transaction is not observable by
-ordinary passes in an intermediate state. Poisoned storage is never republished
-or returned to a live kind.
+The graph rewriter poisons removed originals only after every block's staged
+instruction vector has committed. Result replacement and schema-generated
+reconstruction ensure no committed user retains a reference to an erased def;
+encountering such a use is a hard compiler fault. A detached instruction's
+pointer-valued `ValueConstant` is no longer semantically visible. Every value
+registered with the session remains retained until session teardown, so
+detachment does not prune that monotonic vector. Poisoned storage is never
+republished or returned to a live kind.
 
 The serial is deliberately preserved for diagnostics. Any detached instruction
 encountered by verification, generic traversal, typed conversion, a result
@@ -938,80 +928,24 @@ code does not branch on detachedness as a supported case; concrete instruction
 pointers must not be retained across structural edits without proving that the
 instruction remains attached.
 
-Operand slots are controlled mutable structure. The structural editor may
-replace a `Snapshot` operand only with a result of the matching declared
-`OperandClass`. A `ProgramValue` replacement must be a `ProgramValueRef` whose
-def satisfies the slot's representation constraint.
+Operand and attribute slots have no public mutable access. When an earlier def
+has been replaced, the schema-generated reconstruction API rebuilds each later
+instruction with the resolved operands and copies its immutable attributes.
+It enforces `OperandClass` and `ValueRepresentation` through the generated
+constructor types. A representation-changing rewrite must emit an explicit
+conversion rather than connecting incompatible refs.
 
-The editor provides one symmetric primitive for changing such a slot:
+The generic operand walker remains the common primitive for verification,
+reconstruction, and on-demand `UseLists`. A use occurrence is identified by
+its user instruction and `uint32_t` operand index; the instruction schema
+recovers the operand's class and representation. `UseLists` are immutable,
+generation-bound analysis of the original graph. Rewriting invalidates the
+cache instead of editing it occurrence by occurrence.
 
-```cpp
-void replace_program_operand(
-    OperandSlotHandle slot,
-    ProgramValueRef expected,
-    ProgramValueRef replacement);
-```
-
-It verifies that the user is live, the expected value still occupies the slot,
-the slot has `OperandClass::ProgramValue`, and the replacement satisfies its
-representation constraint. The referenced def must be live and belong to
-the same graph.
-
-The editor maintains metadata lifetime, analysis invalidation, and graph
-mutation generation. If the pass has retained mutation-aware `UseLists`, the
-editor moves the affected `UseRecord` to the replacement def. Otherwise
-the generation change makes the old index stale. Attribute slots such as
-`BlockEdge`, `Shape`, `ShapeKey`, `ValidityCell`, bytecode PCs, immediates, and
-value constants are immutable semantic payload; changing
-one requires instruction replacement. Changing any slot's class, representation
-constraint, count, or layout likewise requires replacement. Concrete subclasses expose
-every operand and attribute read-only and never provide setters or writable
-arrays.
-
-The schema-generated generic operand walker is the common primitive for use
-discovery and bulk rewriting. It walks fixed and variable operands in declared
-order and never visits attributes. For every `ProgramValue` or `Snapshot`
-operand it can emit a temporary `UseRecord` containing the def and an
-`OperandSlotHandle` that identifies the user and the schema-declared slot:
-
-```cpp
-struct UseRecord
-{
-    const Instruction *def;
-    OperandSlotHandle operand;
-};
-```
-
-Operand layout and variable-operand counts are immutable, so such a handle remains
-physically resolvable while its user remains live. The editor still validates
-that the user is live and that the slot contains the expected def before
-rewriting it.
-
-On-demand, generation-checked `UseLists` group these records by def.
-It is useful for repeated sparse queries such as no-use and single-use tests,
-dead-code elimination, dependent worklists, and replacing the uses of a small
-number of values. Building it costs one whole-graph operand walk. It may be
-discarded after one mutation plan, maintained privately by a pass across an
-editing batch, or rebuilt; the graph and ordinary editor do not pay to keep it
-permanently current.
-
-Bulk transformations may instead record a typed result-reference replacement
-map and call a generic `rewrite_operands()` operation. The operation walks all
-operands once and rewrites matching references without first materializing use
-records. This costs `O(all operands + replacements)` and is preferable when
-translation or lowering has accumulated many substitutions.
-
-Replacements have simultaneous semantics: given `A -> B` and `B -> C`, an
-original use of `A` becomes `B` unless the map was explicitly transitively
-normalized before the scan. Before mutating, the bulk operation validates every
-affected slot. Constant folding creates or reuses a `Const`
-def and rewrites uses to that instruction's `ProgramValueRef`.
-
-A representation-changing rewrite likewise inserts an explicit conversion or
-replaces the use; it cannot use generic result replacement to connect
-incompatible encodings. After successful preflight, the batch applies the
-corresponding use-list moves and advances graph and attachment generations
-once.
+The complete traversal, query, rewrite-result, normalization, staging, and
+commit contracts live in
+[JIT IR Graph Rewrites](jit-ir-graph-rewrites.md). They are not duplicated as
+an independent mutable-slot editor API here.
 
 The same walker independently reconstructs uses for verification and also
 supports cloning and printing of operand relationships. Attribute visitors or
@@ -1047,22 +981,22 @@ vector index and retain the pointer in each populated entry for defensive
 identity validation; serial lookup is not exposed as the pass API.
 
 Mutable analysis builds or updates its private table and publishes a frozen
-view tagged with the source graph and mutation generation. Every query validates
-that the graph still has that generation, that the instruction is live and
-belongs to the graph, and that the entry's pointer matches. Structural mutation
-makes old frozen views stale. The baseline response is broad invalidation and
+view tagged with the source graph and mutation generation. A phase-specific
+query façade validates the generation before exposing the table; individual
+hot accessors need not repeat the same check. Structural mutation makes old
+frozen views stale. The baseline response is broad invalidation and
 recomputation of any analysis a later pass still needs. A future analysis may
-consume editor mutation descriptions to preserve unaffected entries or
+consume rewriter mutation descriptions to preserve unaffected entries or
 recompute only affected dependents, but that is an optimization justified by
 measured cost, not a requirement of the instruction representation.
 
 Attachments exist only while a later phase consumes them. Semantic value facts
 may be discarded after Semantic-to-Core lowering; Core effect information may
 be discarded after effect-dependent optimization; backend location data has
-its own later lifetime. Removing an instruction invalidates or removes its
-entries from every active attachment before the editor may poison the abandoned
-storage. Major representation boundaries may build a fresh graph while using
-the same instruction, CFG, serial, and arena machinery.
+its own later lifetime. Committing a rewrite invalidates graph-generation-bound
+attachments before any later client may query their entries for removed
+instructions. Major representation boundaries may build a fresh graph while
+using the same instruction, CFG, serial, and arena machinery.
 
 ## Kind Effect Bounds and Proven Absence
 
@@ -1199,8 +1133,8 @@ explicit and exceptional.
 
 The implementation validates the naturally aligned 48-byte, five-slot record,
 schema-generated kind metadata, typed CFG terminators, explicit constant
-defs, fixed operand walking, and a
-PythonCall and Snapshot variadic ranges. Fixed kinds store operands before
+defs, fixed operand walking, and the PythonCall and Snapshot variadic ranges.
+Fixed kinds store operands before
 attributes; variable kinds store their entire operand array behind slot zero and
 their attributes in the remaining inline slots. The current generic traversal
 visits every stored Snapshot capture as a result reference. The schema also
@@ -1217,7 +1151,7 @@ graph and side-data use with realistic translated functions.
 The current Snapshot constructor accepts only `ProgramValueRef`s. The explicit
 non-value encoding for frame-header positions and already-canonical destinations,
 plus verification against logical frame boundaries, remains part of the
-block-argument and Snapshot integration slice.
+edge-argument and recovery integration slices.
 Success does not require every payload to fit inline. It requires every
 representative layout to use the same declarative schema and uniform arena-owned
 side data without a handwritten storage or traversal escape hatch. Evidence

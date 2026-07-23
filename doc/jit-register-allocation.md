@@ -3,7 +3,7 @@
 | Field | Value |
 |---|---|
 | Document type | Design |
-| Status | Proposed |
+| Status | Accepted |
 | Implementation | Target register vocabulary, structural constraint validation, and the initial AArch64 platform-ABI constraint producer implemented |
 | Scope | Allocation constraints, allocator-local numbering, liveness, bundles, backtracking allocation, live-range splitting, block-argument moves, clobbers, spills, and post-allocation location assignments |
 | Owning layers | Target backends own allocation-constraint construction; the generic register allocator owns numbering, liveness, bundles, splitting, allocation, spill decisions, and allocator-induced move resolution; publication and recovery planners own canonical-state synchronization; machine-code emission consumes final assignments and resolved moves |
@@ -41,8 +41,7 @@ LocationAssignments
     allocator-produced post-allocation locations and move bundles
 ```
 
-`AllocationConstraints` replace the earlier `LocationSummary` terminology. They
-describe requirements, not chosen locations.
+`AllocationConstraints` describe requirements, not chosen locations.
 
 `LocationAssignments` are the durable post-allocation result. They map program
 value occurrences to registers, spill slots, constants, or other
@@ -390,8 +389,8 @@ This is a bring-up choice, not the final CloverVM calling convention:
 - the enabled GPR class contains `x0` through `x15`, in that allocation order;
 - the enabled SIMD class contains caller-saved `v0` through `v7` followed by
   `v16` through `v31`;
-- `x16` and `x17` remain unavailable until all branch and call scratch
-  requirements are represented;
+- `x16` and `x17` remain unavailable until allocation assignments are consumed
+  by every branch and call lowering that may need scratch registers;
 - platform-reserved `x18` is unavailable;
 - callee-saved GPRs and `v8` through `v15` remain unavailable until prologue
   and epilogue generation preserves them;
@@ -854,23 +853,23 @@ hash-table iteration order, or unstable workqueue ties.
 
 ## Implementation Staging
 
-The initial executable tests may use fixed, trivial `LocationAssignments` for
-`Parameter`, `Const`, and `Return`. Those assignments should still be produced
-through the same `AllocationConstraints` vocabulary so the early backend does
-not introduce a second convention.
+The implemented substrate already provides target register classes, default and
+sparse instruction constraints, fixed and same-as-input requirements,
+temporaries, clobber masks, and initial AArch64 platform-ABI constraints. The
+hardcoded `x0` emitter path is test scaffolding, not a second allocation
+strategy.
 
-The first real allocator should support:
+The first allocator slice should implement the accepted algorithm directly,
+initially exercising it on the existing one-block graphs. It should then grow
+to support:
 
-- target register classes;
-- instruction input and output constraints;
-- fixed registers;
-- same-as-input reuse;
-- temporaries;
-- clobber masks;
+- ephemeral instruction and block-boundary positions;
+- default and sparse constrained occurrences;
+- precise SSA live ranges;
+- initial bundles and register assignment;
 - block parameters and edge arguments;
 - snapshot-derived canonical-home spilling;
-- precise SSA live ranges;
-- bundle formation across moves, reused inputs, and block arguments;
+- affinity merging across moves, reused inputs, and block arguments;
 - priority-queue assignment with eviction and live-range splitting;
 - split moves and edge parallel moves;
 - parallel-move resolution;

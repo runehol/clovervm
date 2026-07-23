@@ -4,7 +4,7 @@
 |---|---|
 | Document type | Implementation plan |
 | Status | Proposed |
-| Implementation | Core instruction storage, typed construction, graph publication, on-demand use lists, traversal and staged rewriting, compilation-session constant retention, code-cache publication, generic machine-code emission, AArch64 assembly, value-pool loads, and a direct single-register CFG-to-AArch64 path are implemented; heap `JitCodeObject` integration, backend assignment, bytecode translation, and compiler/runtime entry remain |
+| Implementation | Core instruction storage, typed construction, graph publication, on-demand use lists, traversal and staged rewriting, compilation-session constant retention, code-cache publication, generic machine-code emission, AArch64 assembly, value-pool loads, the initial AArch64 `AllocationConstraints`, and a direct single-register CFG-to-AArch64 path are implemented; register allocation, heap `JitCodeObject` integration, bytecode translation, and compiler/runtime entry remain |
 | Scope | Initial JIT staging, vertical slices, temporary runtime policies, and validation |
 | Owning layers | The JIT owns compilation and generated transitions; the interpreter, managed calling convention, native boundaries, and reclaimer retain their existing contracts |
 | Validated against | Supporting infrastructure, instruction-representation tests, CFG and rewrite tests, code-cache tests, and executable AArch64 tests in the working tree on 2026-07-23 |
@@ -163,7 +163,9 @@ The first implementation slice is already in the tree. It established:
   prefix and suffix insertion, def replacement, detachment poisoning, and
   post-rewrite verification;
 - `CompilationSession` ownership of the arena and a monotonic retained-value
-  vector exposed through `retain_and_pin_value()`.
+  vector exposed through `retain_and_pin_value()`;
+- the target-independent physical-register and allocation-constraint
+  vocabulary, plus initial AArch64 platform-ABI constraints.
 
 The current cache-retained C++ `JitCodeObject` remains bring-up scaffolding.
 Turning it into a heap object with a native-layout scanner is part of the
@@ -256,31 +258,29 @@ the JIT-to-interpreter thunk.
 
 Remaining scope:
 
-- define the first real `AllocationConstraints` for the currently lowered
-  instructions;
-- replace the universal `x0` mapping with location assignments that handle at
-  least two simultaneously live tagged values;
-- lower `Mov` through the existing graph rewriter where normalization or
-  assignment requires it;
+- replace the universal `x0` mapping with `LocationAssignments` from the
+  allocator defined by [JIT Register Allocation](jit-register-allocation.md);
 - classify constants during backend preparation and emit immediate synthesis or
   traced value-pool loads as appropriate;
 - preserve the already working near-pool retry, code-cache publication, and
   focused execution tests.
 
-The output should include the smallest durable backend-preparation and
-location-assignment products rather than another special-case mapping. A
-single-block linear assignment or deliberately tiny allocator is sufficient;
-general CFG liveness, branches, calls, Snapshots, side exits, and recovery
-remain out of scope.
+The first allocator tests may use these one-block graphs, but the implementation
+must be the initial slice of the accepted SSA bundle allocator rather than a
+separate linear or one-block allocator that will immediately be discarded.
+General CFG edges, calls, Snapshots, side exits, and recovery remain outside the
+first executable integration.
 
 ### Immediate implementation frontier
 
 Three coherent slices can proceed from the landed foundation:
 
-1. **Backend assignment.** Finish Milestone 2 by introducing real location
-   constraints and assignments for a one-block function. This is the shortest
-   route to executing expressions with multiple live values and exercises the
-   graph rewriter for `Mov` insertion.
+1. **Register allocator foundation.** Implement the ephemeral positions,
+   default and sparse constraint occurrences, liveness, live ranges, bundles,
+   and initial register assignment described in
+   [JIT Register Allocation](jit-register-allocation.md). Integrate its first
+   `LocationAssignments` with Milestone 2 one-block execution before adding
+   CFG-edge moves or spills.
 2. **Bytecode-to-Core construction.** Begin Milestone 3 as a structural path
    that produces and verifies Core plus Snapshots without executing it. This
    can advance independently of register allocation and establishes the actual
@@ -438,17 +438,19 @@ This gives the backend a call-shaped lowering without also taking on
 reentrant stack transitions, pending-exception handoff, or Python call
 continuations.
 
-### Milestone 10: register allocation and physical recovery plans
+### Milestone 10: complete allocator integration and physical recovery plans
 
-Add real target register classes, liveness, register allocation, block-edge
-moves, spills, and fixed-register constraints. Allocation consumes only
-backend-prepared Core. Intern recovery plans only after allocation makes their
-physical operations known. Keep resume-state selection separate so exits with
-different bytecode PCs can share identical recovery code.
+Extend the allocator foundation used by Milestone 2 across block-edge moves,
+spills, Snapshot-expanded point uses, and recovery. Target register classes,
+structural constraints, fixed-register requirements, temporaries, and clobber
+masks are already established. Allocation consumes only backend-prepared Core.
+Intern recovery plans only after allocation makes their physical operations
+known. Keep resume-state selection separate so exits with different bytecode
+PCs can share identical recovery code.
 
 Validation must force recovery from registers, spills, canonical slots,
-encodable inline constants, traced pool values, boxed F64 recovery actions, and
-reified values.
+rematerializable `Const` defs, traced-pool materialization, boxed F64 recovery
+actions, and reified values.
 
 ### Milestone 11: native, Python, and mixed-mode calls
 
@@ -550,19 +552,17 @@ compiler.
 - native-layout scanner API for the heap `JitCodeObject`'s external `Value`
   pool, plus ownership of its code-cache allocation and its relationship to
   `CodeObject`;
-- concrete backend-preparation artifact shape: lowering choices, legalized
-  constant decisions, `AllocationConstraints` records, and invalidation
-  generation;
-- first location-assignment strategy for a one-block graph and the exact point
-  at which required `Mov` instructions are inserted;
+- backend-preparation choices not yet represented by the implemented
+  `AllocationConstraints`, particularly legalized constant decisions and
+  selected lowering identities;
+- implementation staging for the accepted SSA bundle allocator and its first
+  `LocationAssignments`;
 - decoded-bytecode input and `BuilderContext` shape for the first
   bytecode-to-Core translator;
 - minimal generated-call ABI for Milestone 4 normal compiled returns, including
   argument/result registers, managed frame setup, generated return target, and
   the JIT-to-interpreter thunk;
 - concrete managed/host transition-record layout and unwind behavior;
-- initial register allocation strategy beyond the accepted global reservation
-  of AArch64 `x16` as the backend's `IP0` scratch register;
 - the exact straight-line opcode set for Milestone 6 and the first guard family
   for Milestone 7;
 - code lookup, invalidation, compilation triggers, and failure policy beyond

@@ -56,8 +56,9 @@ rationale that remains clear from those sources.
 | D-0004 | Start with canonical publication while preserving a path to precise maps | Accepted |
 | D-0005 | Use tagged `Value` as the initial JIT representation | Accepted |
 | D-0006 | Use ordered list-based SSA rather than a sea of nodes | Accepted |
-| D-0007 | Separate stable embedded metadata from movable compiled constants | Accepted |
+| D-0007 | Separate stable embedded metadata from movable compiled constants | Superseded |
 | D-0008 | Preserve separate managed and host stacks during JIT bring-up | Accepted |
+| D-0009 | Pool managed pointer constants and legalize non-pointer constants late | Accepted |
 
 ## D-0001: Compile Whole Functions Rather Than Hot Traces
 
@@ -240,9 +241,11 @@ initial implementation satisfies it through canonical frame publication and
 generated recovery code. It does not initially require the collector or stack
 walker to understand optimized register state.
 
-The compiler nevertheless constructs declarative post-allocation
-`SafepointState` and `DeoptState`, preserving a staged path to precise compiled
-stack maps and generic metadata-driven deoptimization.
+The compiler does not construct separate `SafepointState` or `DeoptState`
+products. A Core Snapshot is the authoritative logical recovery description.
+After allocation, recovery generation combines it with `LocationAssignments`
+and canonical `HomeState`. Future precise root maps may project the required
+subset from the same inputs when measurements justify that work.
 
 ### Context
 
@@ -262,21 +265,23 @@ relocation.
 
 - require precise safepoint and deoptimization maps in the first JIT;
 - make canonical publication a permanent runtime invariant;
-- keep only generated recovery state with no declarative map-shaped input;
+- introduce separate declarative `SafepointState` and `DeoptState` products;
 - update the collector and stack walker before beginning JIT implementation.
 
 ### Why Chosen
 
 The initial policy minimizes simultaneous subsystem changes while the permanent
-contract avoids an architectural dead end. Declarative location state lets
-publication code, recovery blocks, shadow maps, and future generic translation
-share allocation and logical-frame machinery.
+contract avoids an architectural dead end. Snapshots preserve logical frame
+state independently of physical allocation, while `LocationAssignments` and
+`HomeState` provide the physical information needed by publication, recovery,
+and any future shadow-map projection.
 
 ### Consequences
 
 - safepoint-capable calls initially publish dirty homes in all active logical
   frames;
-- initial side exits use generated, deduplicated recovery code;
+- initial side exits expand Snapshots into generated recovery code; identical
+  physical recovery plans may be interned later;
 - compiled frames and code objects must remain identifiable and walkable enough
   not to obstruct later maps;
 - future migration can validate shadow maps while publication remains
@@ -445,7 +450,7 @@ of the remaining dynamic scheduling.
 ## D-0007: Separate Stable Embedded Metadata From Movable Compiled Constants
 
 **Date:** 2026-07-19
-**Status:** Accepted
+**Status:** Superseded by D-0009
 **Scope:** JIT code generation, object-model metadata, garbage collection, and
 compiled-code lifetime
 **Commitment:** Cross-subsystem runtime contract
@@ -587,3 +592,80 @@ interpreted, compiled, native, and reentrant execution.
 - `doc/jit-compiler-and-ir.md`
 - `doc/function-calling-convention.md`
 - `doc/native-managed-boundaries.md`
+
+## D-0009: Pool Managed Pointer Constants and Legalize Non-Pointer Constants Late
+
+**Date:** 2026-07-23
+**Status:** Accepted
+**Scope:** Core constants, target legalization, garbage collection, and
+machine-code emission
+**Commitment:** Cross-layer compiler and runtime contract
+
+### Decision
+
+Core represents every Python constant with one ordinary `Const` instruction
+whose `ValueConstant` attribute contains the semantic `Value`. Core does not
+choose immediate encodings, create constant-pool entries, or expose pool
+indices.
+
+Backend preparation decides how each surviving constant is materialized.
+Managed pointer values must use GC-traced constant-pool slots. Non-pointer
+tagged values may be synthesized as immediates or placed in the pool according
+to target encodability and profitability. Final pool creation and deduplication
+remain emitter work.
+
+Stable object-model metadata such as shapes and validity cells retains the
+separate direct-embedding and GC-visible metadata contract from D-0007.
+
+### Context
+
+Forcing SMIs, booleans, `None`, and other non-pointer bit patterns into the pool
+adds loads and pool pressure even when a target can materialize them cheaply.
+Choosing pool entries during Core optimization is also premature: rewrites may
+remove, duplicate, or move constants, leaving pool identities to be repaired.
+Managed pointers are different because a moving collector must update a traced
+slot rather than target-specific instruction bytes.
+
+### Alternatives Considered
+
+- require every `Value` constant to use the traced pool, as D-0007 specified;
+- split Core into immediate and pool-load constant instructions;
+- assign pool slots during Core construction and preserve their identities
+  through optimization;
+- embed managed pointer values directly and relocate machine instructions.
+
+### Why Chosen
+
+One Core `Const` keeps constant folding and SSA rewriting independent of target
+encoding. Late legalization preserves immediate opportunities, and emitter-time
+pool construction sees only surviving constants. Pointer-only pooling retains
+the required moving-GC boundary without imposing it on self-contained values.
+
+### Consequences
+
+- Snapshots and ordinary operands refer uniformly to the `ProgramValueRef`
+  produced by `Const`;
+- Core constant folding never manages pool slots or indices;
+- target legalization may rematerialize a non-pointer constant or choose a pool
+  load;
+- every managed pointer constant remains session-retained during compilation
+  and becomes reachable through a traced code-object pool slot before session
+  teardown;
+- the emitter deduplicates final pool values without exposing that identity to
+  Core.
+
+### Revisit When
+
+- measured code size or instruction count favors a different target-specific
+  materialization policy;
+- a moving collector gains a safe and profitable way to patch embedded managed
+  pointers;
+- Machine IR needs explicit immediate pseudos for folding into single-use
+  consumers.
+
+### References
+
+- `doc/jit-compiler-and-ir.md`
+- `doc/jit-instruction-representation.md`
+- `doc/jit-machine-code-emission.md`
+- `src/jit/instruction.def`

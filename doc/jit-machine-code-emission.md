@@ -47,8 +47,11 @@ their callers.
 The macro assembler also owns linking and non-linking direct branches to known
 label or absolute targets. The emitter retains these branches when their form
 depends on the final source address. A far transfer receives a caller-supplied
-general-purpose scratch register, defaulting to AArch64 `IP0` (`x16`), that is
-unavailable to the register allocator across that branch.
+general-purpose scratch register. Low-level callers without allocation context
+may use the macro assembler's AArch64 `IP0` (`x16`) default. A CFG backend
+instead passes the temporary assigned from the branch's
+`AllocationConstraints`; that temporary is reserved across every retained form
+that may need it.
 
 The direct assembler never silently expands an exact instruction. The macro
 assembler owns such expansion and selection. This preserves a useful boundary
@@ -297,18 +300,18 @@ external symbol.
 Each direct branch that may need a general-purpose scratch register stores
 the concrete scratch selected by its caller. Macro-assembler entry points
 default that operand to AArch64 `x16`, but the emitter has no global scratch-
-register configuration. The backend must make the supplied register dead
-across every form the branch may select. A branch whose maximum form
-does not need scratch does not clobber it.
+register configuration. An allocated backend supplies the register assigned to
+the branch's declared temporary. A branch whose maximum form does not need
+scratch does not clobber it.
 
 The initial direct-branch set requires at most one implicit scratch at a time.
 Macro operations accept register operands and may synthesize at most one
 otherwise unavailable address or immediate. A lowering that needs two
 simultaneously synthesized values must expose an additional temporary through
 its `AllocationConstraints` and emit multiple operations; it may not consume a
-second hidden scratch register. This permits a backend to reserve `x16`
-globally for bring-up while allowing a later allocator to provide an ordinary
-temporary without changing the emitter interface.
+second hidden scratch register. The emitter interface therefore supports both
+the low-level `x16` convenience default and allocator-selected temporaries
+without imposing a global scratch register on the backend.
 
 The resulting intended reuse is:
 
