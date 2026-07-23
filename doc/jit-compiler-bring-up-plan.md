@@ -33,8 +33,8 @@ frame storage. Compiled code may cache newer values in machine registers.
 Before an operation that may reclaim memory, it publishes every live managed
 root in the complete active logical frame chain and clears stale canonical
 slots that could otherwise be mistaken for roots. Before a call that may throw
-or otherwise leave JIT without returning through a generated recovery
-continuation, it conservatively materializes complete canonical frame state
+or otherwise leave JIT without returning through a JIT continuation, it
+conservatively materializes complete canonical frame state
 instead. A call consumes its input accumulator, so that dead value is not
 published and its root slot is cleared; a normal result or exception
 continuation supplies the next accumulator state.
@@ -449,8 +449,8 @@ known. Keep resume-state selection separate so exits with different bytecode
 PCs can share identical recovery code.
 
 Validation must force recovery from registers, spills, canonical slots,
-rematerializable `Const` defs, traced-pool materialization, boxed F64 recovery
-actions, and reified values.
+rematerializable `Const` defs, traced-pool materialization, sunk `BoxF64` defs,
+and reified values.
 
 ### Milestone 11: native, Python, and mixed-mode calls
 
@@ -484,7 +484,10 @@ Initial optimization candidates are local and easy to invalidate:
 - trivial `Mov` forwarding where representation and Snapshot availability
   remain valid;
 - local constant folding into explicit `Const` defs;
-- dead code with no effects and no Snapshot-expanded point uses.
+- dead code with no effects and no Snapshot-expanded point uses;
+- recovery-only sinking after the final graph rewrite and immediately before
+  allocation. An instruction is marked globally sunk only when it has no
+  hot-path use and its complete sunk closure commutes to every consuming exit.
 
 Mutable-shape motion, validity-check hoisting, and movement across calls wait
 for concrete effect and alias analyses with generation-checked views.
@@ -495,7 +498,8 @@ Measure compilation latency, generated code size, side-exit rates, publication
 traffic, native transition cost, register pressure, and recovery-code size.
 Those measurements decide whether to add broader polymorphic Core lowering, a
 Semantic IR optimization frontend, precise stack maps, generic deoptimization
-translations, or backend-local Machine IR.
+translations, backend-local Machine IR, or compilation rooted at a hot side
+exit.
 
 ## Validation Strategy
 
@@ -525,10 +529,11 @@ per opcode spelling.
 ## Later Runtime Migrations
 
 The initial compiler materializes generated recovery sequences directly from
-Core Snapshots, post-allocation locations, and canonical `HomeState`; identical
-sequences may be interned as `RecoveryPlan`s. Canonical publication remains
-authoritative for GC root discovery, so the initial compiler emits no general
-root-map artifact. Later root-map work can proceed as a measured migration:
+Core Snapshots, the sinking attachment, post-allocation locations, and
+canonical `HomeState`; identical sequences may be interned as
+`RecoveryPlan`s. Canonical publication remains authoritative for GC root
+discovery, so the initial compiler emits no general root-map artifact. Later
+root-map work can proceed as a measured migration:
 
 1. serialize shadow safepoint maps while canonical publication remains
    authoritative;
@@ -540,9 +545,10 @@ root-map artifact. Later root-map work can proceed as a measured migration:
 5. move to a mixed platform stack only after generated interpreter handlers and
    an exact mixed-stack walker exist.
 
-A generic entry that saves registers and interprets recovery translations is an
-independent possible replacement for generated recovery code, not an
-intermediate required by precise root maps.
+A structural recovery IR interpreted by a common entry remains an attractive
+possible replacement for generated recovery code. Its representation and
+execution contract require exploration before adoption, and remain independent
+of precise root maps.
 
 These are migration directions, not milestones required for a useful first
 compiler.

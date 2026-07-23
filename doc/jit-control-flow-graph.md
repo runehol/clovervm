@@ -320,6 +320,9 @@ Snapshot operands and other recovery data remain point uses for liveness even
 though their side exit is absent from the block CFG. A backend may lower a
 guard side exit and a conditional block branch with the same target branch
 primitive; that target-level commonality does not merge their IR semantics.
+When a Snapshot captures a result marked sunk, allocation liveness reaches
+through its recovery-only dependency closure to the non-sunk physical frontier;
+the sunk instructions still do not become CFG blocks or edges.
 It may also split one compiler basic block into several machine-code fragments
 at side-exit branches without introducing CFG blocks or edges.
 

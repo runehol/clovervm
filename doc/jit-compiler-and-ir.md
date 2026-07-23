@@ -365,7 +365,7 @@ constructed Core IR       -> explicit checks, effects, Snapshots, tagged values
 represented Core IR       -> selected operations and explicit representation conversions
 backend-prepared Core IR  -> lowering choices, legalized constants, AllocationConstraints
 allocated backend plan    -> locations, spills, and edge-move tables
-recovery plans            -> Snapshots resolved through locations and HomeState
+recovery plans            -> Snapshots and sunk defs resolved through locations and HomeState
 ```
 
 Phase verification prevents arbitrary mixtures of these forms. Common
@@ -694,8 +694,10 @@ action consumes it as the failure continuation:
 
 Snapshot operands are point uses for recovery liveness at every consuming
 exit, even when that exit is not an ordinary CFG successor. The allocator must
-make their transitive values recoverable from a register, spill, synchronized
-home, or constant at that position.
+make an ordinary captured value recoverable from a register, spill,
+synchronized home, or constant at that position. For a def marked sunk,
+liveness instead reaches through its recovery closure to the non-sunk physical
+frontier.
 
 Several failures may share one Snapshot when they replay the same bytecode from
 the same logical state. A pre-effect and post-commit continuation require
@@ -708,11 +710,105 @@ semantics, not by a synthetic frame-publication instruction. The backend owns th
 register shuffling, scratch use, and canonical-frame writes required by the taken
 side exit.
 
-A Snapshot may capture a recovery-only action such as boxing an unboxed float.
-The action produces a recovery-local value that several logical homes may share,
-so one taken exit creates one box and preserves Python object identity. It does
-not change the normal-path representation of the unboxed SSA value or create an
-allocator-visible program value.
+A Snapshot may capture the result of an ordinary instruction such as
+`BoxF64`. If that instruction is later marked sunk, recovery evaluates it once
+and shares the recovery-local result between every logical home that captures
+the same def. No special Snapshot operand form is required.
+
+### Recovery-only instruction sinking
+
+Core may retain an instruction whose result has semantic existence but no
+normal-path physical existence. A late sinking analysis may mark an instruction
+`sunk` in an attached analysis result when every transitive use of its result
+either:
+
+- belongs to another sunk instruction; or
+- terminates in a Snapshot capture.
+
+This use condition is necessary but not sufficient. Sinking is code motion from
+the instruction's original position to a particular side exit. For every exit
+that transitively consumes the result, the analysis must prove that the
+instruction and its sunk dependency closure commute to that exit while
+preserving operand availability, effect ordering, failure behaviour, and
+observable identity. The initial policy is deliberately global and
+conservative: mark the instruction sunk only when it commutes to every
+consuming exit and has no ordinary hot-path use. If any exit fails that proof,
+leave the instruction physically materialized for all exits. Selective sinking
+would require a later graph transformation that splits or clones the
+computation.
+
+The sinking decision is derived metadata, not another `InstructionKind` or a
+mutable instruction flag. The instruction remains an ordinary immutable Core
+def. Generic use traversal, rewriting, constant folding, CSE, and dependency
+ordering continue to see it. Snapshot reachability keeps it alive, and a
+verifier rejects any ordinary executable use of a result marked sunk.
+
+The sinking analysis runs after the final graph-rewriting and legalization
+phase and immediately before liveness and register allocation. Graph mutation
+invalidates the attachment, but this late placement means ordinary optimization
+does not operate on a partially sunk graph.
+
+Allocation is not by itself a barrier to sinking. Clover allocation does not
+immediately enter a safepoint; crossing the allocation limit requests a later
+safepoint. An allocating instruction retains its declared effects when
+executed on the exit path. The question is whether it and its dependent
+initialization operations commute to every consuming exit and are supported by
+recovery.
+
+For example, an object-construction chain used only by Snapshots is an
+excellent candidate:
+
+```text
+object_s0 = NewObject(initial_shape=S0)
+object_s1 = AddOwnProperty(
+    object_s0, "a", value_a, location_a, next_shape=S1)
+object_s2 = AddOwnProperty(
+    object_s1, "b", value_b, location_b, next_shape=S2)
+Snapshot(..., object_s2)
+```
+
+Each `AddOwnProperty` consumes one receiver version and produces the next
+version of the same runtime object. The ordinary def-use chain therefore
+captures the observable property-addition order and shape transitions all the
+way to the Snapshot. If the complete chain commutes to every consuming exit,
+normal execution emits none of it. A taken exit allocates one object, adds the
+properties in order, and publishes that same recovery-local object to every
+logical Snapshot position that aliases `object_s2`.
+
+Resultless mutating instructions would not naturally join such a closure. Two
+possible future directions are to give them the same receiver-versioning form,
+or to let the sinking attachment retain an explicitly ordered recovery-only
+effect chain. Neither general representation is selected here.
+
+Sinking changes three backend consumers:
+
+- hot-path emission emits no machine operation for a sunk instruction;
+- liveness recursively expands a Snapshot through its sunk dependency closure
+  and makes only the first non-sunk operands point uses at each Snapshot
+  consumer;
+- allocation assigns no register, spill, or canonical home to a sunk result,
+  while the recovery program retains the sunk operation and evaluates it from
+  that physical frontier.
+
+Several Snapshots may share one sunk closure. A value ceases to be sinkable as
+soon as any ordinary compiled path needs its result or any consuming exit
+rejects the commutation proof. Each exit derives and evaluates its own recovery
+closure, memoizing shared defs within that recovery so aliases preserve
+identity. This is the same broad principle already established by the virtual
+Snapshot instruction: presence in Core does not by itself require a runtime
+machine value.
+
+LuaJIT is the closest external precedent. Its
+[sink pass](https://raw.githubusercontent.com/LuaJIT/LuaJIT/v2.1/src/lj_opt_sink.c)
+leaves recoverable allocations and stores in IR while marking them for omitted
+normal-path emission; its
+[snapshot-aware assembler](https://raw.githubusercontent.com/LuaJIT/LuaJIT/v2.1/src/lj_asm.c)
+allocates only their required frontier; and
+[snapshot replay and restoration](https://raw.githubusercontent.com/LuaJIT/LuaJIT/v2.1/src/lj_snap.c)
+reconstruct sunk operations for exits and side traces. LuaJIT keeps snapshots
+in position-anchored trace side tables. Clover instead retains a first-class
+Snapshot instruction because CFG rewriting needs explicit SSA dependencies
+rather than one linear trace position.
 
 ### Instruction results, pointer references, and deterministic traversal
 
@@ -743,11 +839,11 @@ Snapshots do not have a separate ID namespace: a `SnapshotRef` is the typed
 result of a Core instruction. A `FrameStateId` identifies the structurally
 shared logical frame chain named by that Snapshot, including any inlined
 frames. The initial backend builds recovery plans directly from Snapshots,
-post-allocation locations, and `HomeState`; it does not introduce another
-deoptimization-state identity. `ResumeStateId` and `RecoveryPlanId` exist only
-where the backend interns the two independently shareable parts of generated
-side-exit code. Future precise root maps are attached to machine-code positions
-rather than given IR result identities.
+the sunk-instruction attachment, post-allocation locations, and `HomeState`; it
+does not introduce another deoptimization-state identity. `ResumeStateId` and
+`RecoveryPlanId` exist only where the backend interns independently shareable
+resume and recovery records. Future precise root maps are attached
+to machine-code positions rather than given IR result identities.
 
 Every instruction has a typed serial and an intrinsic `ResultClass`:
 
@@ -1042,12 +1138,14 @@ Verification at pass boundaries should require:
   shape observation has not been superseded or invalidated through an alias;
 - every deoptimizing exit to consume one live Snapshot with a complete resume
   state for every active logical frame;
-- every SSA value transitively named by that Snapshot to be defined and
-  available at the consuming exit, even when it is dead on normal control flow;
-- every Snapshot recovery action to accept the representation of its operands
-  and produce the interpreter representation required by its destination;
-- every sunk boxing action to have no remaining normal use, and every logical
-  alias of its result within one Snapshot to share one recovery-local box;
+- every SSA value transitively named by that Snapshot to be defined at the
+  consuming exit, and every non-sunk physical frontier value to be available
+  there even when it is dead on normal control flow;
+- every operation in a sunk recovery closure to accept the representation of
+  its operands and produce the representation required by its consumers;
+- every sunk instruction to have no remaining normal use, commute to every
+  consuming exit, and preserve one recovery-local object for every logical
+  alias of a sunk boxing or allocation result within one Snapshot;
 - every block edge to supply exactly one argument of the required kind and
   representation for each destination block parameter;
 - every edge argument definition to dominate that edge;
@@ -1484,32 +1582,39 @@ A Core `Snapshot` is the authoritative logical description of
 interpreter-visible state. It already names the resume state, active logical
 frame chain, program values, and boxing or reification actions needed to leave
 compiled execution. Constants appear through ordinary `Const` defs. The
-backend consumes the Snapshot directly when generating recovery and may
+backend consumes the Snapshot directly when constructing recovery and may
 rematerialize those defs; managed values then use the emitter-owned pool.
 
-After allocation, recovery planning combines the Snapshot with two physical
-inputs:
+After sinking and allocation, recovery planning combines:
 
 ```text
-Snapshot + LocationAssignments + HomeState -> RecoveryPlan
+Snapshot
+    + sinking attachment
+    + LocationAssignments
+    + HomeState
+    -> RecoveryPlan
 ```
 
-Location assignments resolve each captured `ProgramValueRef` to its register,
-spill, or canonical slot at the exit. `HomeState` identifies canonical frame
-homes that already contain the required value. The resulting `RecoveryPlan`
-contains the parallel assignments, `Const` rematerialization, traced-pool loads,
-F64 boxing, and reification operations needed before interpreter handoff.
-This adds physical execution choices but no second semantic description of the
-Snapshot.
+Location assignments resolve each non-sunk captured `ProgramValueRef` or
+recovery-frontier input to its register, spill, or canonical slot at the exit.
+`HomeState` identifies canonical frame homes that already contain the required
+value. The sinking attachment identifies instructions that have no normal-path
+physical result and must instead be evaluated during recovery.
+
+The exact recovery representation remains unsettled. The existing generated
+recovery design remains a valid bring-up implementation, but a restricted IR
+interpreted by a common recovery mechanism is attractive because it retains
+the sunk computation structurally and could later seed compilation from a hot
+exit. That possibility needs exploration before becoming an architectural
+commitment. Any representation must remain a physical execution of the
+Snapshot rather than a second logical state model.
 
 Precise GC root maps are a separate future backend projection. They select all
 managed values live at a continuing safepoint, including any compiler-only
 temporaries, and resolve them through the same post-allocation location
 vocabulary. They omit non-root F64 values, rematerializable non-pointer
-constants, boxing, and interpreter resume state. The initial compiler instead uses canonical frame
-publication and emits no general root-map artifact. Its only post-allocation
-recovery work is direct expansion of Snapshots into generated recovery
-sequences, with identical sequences optionally interned as `RecoveryPlan`s.
+constants, boxing, and interpreter resume state. The initial compiler instead
+uses canonical frame publication and emits no general root-map artifact.
 
 Compiled code and its metadata remain alive as one code object. Safepoint lookup
 from a compiled PC is deterministic, and a call safepoint can be identified
@@ -1517,26 +1622,23 @@ from the compiled caller return PC while walking a suspended callee chain. Code
 retirement must preserve every active return continuation; the initial immortal
 code policy is specified by the bring-up plan.
 
-### Generated side exits and recovery plans
+### Side exits and recovery planning
 
 Each Core IR failure retains an explicit non-returning exit consuming a
 `SnapshotRef` until the backend has determined the location of every value
 needed for recovery. A backend may carry the exit through Machine IR or consume
-it directly from Core IR. Side-exit frame publication is target-specific backend
-work, not an effectful Core instruction. The emitter may generate the main path
-first, attach labels and Snapshot state for side exits, and emit the recovery
-tails at the end of the code unit using architecture-specific register juggling
-and scratch-state conventions. Post-allocation exit expansion combines three
-inputs:
+it directly from Core IR. Side-exit frame publication is runtime recovery work,
+not an effectful Core instruction and not an ordinary CFG successor.
+
+Recovery construction consumes:
 
 ```text
 logical Snapshot and FrameState:
     resume state
     active frame chain
-    (frame instance, canonical slot) -> Direct(ProgramValueRef)
-                                      | RecoveryAction(ProgramValueRef, ...)
-    innermost accumulator            -> Direct(ProgramValueRef)
-                                      | RecoveryAction(ProgramValueRef, ...)
+    (frame instance, canonical slot) -> ProgramValueRef
+                                      | structural recovery position
+    innermost accumulator            -> ProgramValueRef
                                       | Dead
 
 machine location state at the exit:
@@ -1545,17 +1647,21 @@ machine location state at the exit:
 
 canonical HomeState:
     (frame instance, canonical slot) -> ProgramValueRef currently stored there
+
+sinking attachment:
+    recovery-local def -> operation and recovery-local operands
 ```
 
-The resulting recovery plan is the parallel assignment needed to make logical
-and synchronized state agree. It includes dirty canonical-slot writes, the
-accumulator source, and any boxing or reification actions captured by the
-Snapshot. Resume-specific bytecode PCs, code objects, exit kinds, and return
-metadata belong to the resume-state stub instead. Active inline frames already
-have canonical backing regions and do not require allocation or layout
-reconstruction. Machine liveness at the exit includes the transitive closure of
-SSA operands named by the Snapshot, whether or not normal compiled control flow
-uses them afterward.
+The resulting recovery work makes logical and synchronized state agree. It
+includes dirty canonical-slot publications, the accumulator action,
+frame-header reconstruction, and any sunk computation, boxing, allocation, or
+reification supported by recovery. Active inline frames already have canonical
+backing regions and do not require allocation or layout reconstruction.
+
+Machine liveness at the exit does not blindly include every def transitively
+named by the Snapshot. It recursively traverses sunk instructions and includes
+only the non-sunk physical frontier. Recovery evaluates the sunk closure after
+obtaining those values.
 
 Location assignment and `HomeState` answer different questions. Location
 assignment says where a `ProgramValueRef` can be obtained at the exit.
@@ -1564,62 +1670,16 @@ each canonical home. Changing the builder's slot binding does not update
 `HomeState`; only an explicit publication store does. Exit planning skips a
 destination whose home already contains the Snapshot's desired value and
 otherwise obtains the source from its allocated location and evaluates any
-captured recovery action before publishing it.
-
-These tables may be compiler inputs to generated cold code or serialized
-metadata interpreted at runtime. Their declarative form deliberately supports
-both generated recovery and later deoptimization translations.
-
-Side-exit code is factored into independently shareable value-recovery and
-resume-state parts:
-
-```text
-guard or speculative failure
-    -> exit-selector stub
-    -> shared recovery-plan block
-    -> resume-state stub
-    -> common interpreter handoff
-```
-
-A resume state contains more than a numeric bytecode PC:
-
-```text
-ResumeState {
-    CodeObject
-    bytecode pc
-    inline instance
-    exit kind              # retry, unsupported bytecode, post-commit, ...
-}
-```
-
-The small selector for a `(ResumeStateId, RecoveryPlanId)` pair arranges the
-eventual resume target in the dedicated exit scratch state and jumps to the
-shared recovery block. After synchronizing values, that block transfers to the
-selected resume-state stub. All exits returning to the same logical bytecode
-state may share the resume stub, while exits with identical post-allocation
-value recovery may share the recovery block even when their bytecode PCs or
-exit kinds differ.
-
-A recovery plan is interned from a canonical, deterministic signature containing
-its destination homes, physical or rematerialized sources, representations,
-accumulator action, and reification requirements. Resume-specific frame
-metadata is deliberately excluded.
-Interning assigns a typed `RecoveryPlanId`; it never depends on pointer hashes
-or hash-table iteration order. Identical plans share one emitted block, and all
-resume-state stubs tail into a common interpreter-dispatch handoff after
-installing their code objects, bytecode PCs, return metadata, and exit kind.
+sunk definitions needed to produce it before publishing.
 
 Canonical-slot writes are parallel assignments. A source home may be overwritten
-before its old value has been copied elsewhere, so exit expansion uses ordinary
-parallel-copy scheduling.
+before its old value has been copied elsewhere, so recovery must schedule
+publications safely or stage their sources in recovery-local temporaries.
 
-Each backend provides one dedicated exit scratch general-purpose register. It is
-excluded from ordinary allocation, never appears as a live recovery source, and
-may be clobbered by resume stubs and recovery blocks. It is available for
-constructing bytecode PCs, breaking parallel-copy cycles, forming addresses and
-constants, and reaching the final dispatcher. The AArch64 backend may reserve
-this register globally; avoiding that reservation is unlikely to justify added
-complexity in cold exits on a register-rich target.
+If the recovery representation remains structural, a future compiler may be
+able to use it with the Snapshot to seed compilation from a hot side exit
+rather than first reconstructing the interpreter frame. Attaching and
+invalidating such compiled continuations is future design.
 
 ### Continuing call state
 
@@ -1634,7 +1694,7 @@ cannot safepoint and must return to JIT
 may safepoint but must return to JIT
     publish canonical managed roots
 
-may throw or otherwise leave JIT without a generated recovery continuation
+may throw or otherwise leave JIT without a JIT continuation
     materialize complete canonical frame state before entry
 ```
 
@@ -1752,14 +1812,15 @@ has no normal uses, deferring its allocation has no observable effect, and
 every affected Snapshot preserves one shared recovery result for all logical
 homes that require the object.
 
-After sinking, each Snapshot captures a boxing recovery action over the unboxed
-operand. The backend emits that action on the cold exit path and keeps the hot
-path unboxed. Separate exits may contain separate recipes because only one exit
-can be taken in an execution; within one exit, every alias of the virtual result
-must use the same recovery-local box.
+After sinking, each Snapshot continues to capture the `BoxF64` result. Recovery
+reaches through the sunk instruction and evaluates it only on a taken exit,
+keeping the hot path unboxed. Separate exits may evaluate it independently
+because only one exit can be taken in an execution; within one exit, every
+alias of the sunk result must use the same recovery-local box.
 
 If one unboxed result appears in multiple bytecode slots or inlined frames, its
-recovery actions must allocate one box and place that same `Value` everywhere.
+recovery evaluation must allocate one box and place that same `Value`
+everywhere.
 Boxing each occurrence independently would break `is`. Equivalent normal-path
 boxing operations may likewise be commoned only when doing so preserves the
 required Python object identity and effects.
@@ -1840,9 +1901,9 @@ The direct path requires neither Semantic IR nor type inference:
    present, use a distinct post-effect Snapshot.
 6. Core optimization may remove a redundant dominating check when effects,
    Snapshot availability, and replay semantics permit it.
-7. The target backend assigns locations, combines each Snapshot with physical
-   and canonical-home state, interns recovery plans, and encodes the function,
-   optionally through Machine IR.
+7. The target backend assigns locations, combines each Snapshot and any sunk
+   closure with physical and canonical-home state, constructs the required
+   recovery, and encodes the function, optionally through Machine IR.
 
 Unsupported or polymorphic cases may conservatively call Python or return to
 the interpreter. The direct compiler need not infer a type merely to reproduce
@@ -1877,9 +1938,14 @@ The corresponding higher-effort polymorphic example is in
 
 ### Recovery, maps, and backend lifecycle
 
-- concrete encodings for machine locations, recovery actions, safepoint maps,
-  and deoptimization translations;
-- recovery-plan interning and code-size policy beyond exact-plan deduplication;
+- the concrete RecoveryPlan representation and its boundary with restricted
+  Core, physical location reads, and canonical publication;
+- the first recovery-supported instruction set and the per-exit commutability
+  analysis required before instances may be sunk;
+- concrete encodings for machine locations, recovery operations, and future
+  safepoint maps;
+- recovery-plan interning, size limits, and execution policy;
+- whether structural recovery can seed compilation from a hot side exit;
 - mixed-frame stack-walker contracts for frame kinds, PC lookup, unwind state,
   and callee-saved registers;
 - whether certified no-safepoint entries remain useful alongside precise maps;

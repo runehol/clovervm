@@ -44,12 +44,18 @@ LocationAssignments
 `AllocationConstraints` describe requirements, not chosen locations.
 
 `LocationAssignments` are the durable post-allocation result. They map program
-value occurrences to registers, spill slots, constants, or other
+value occurrences that require physical existence to registers, spill slots,
+constants, or other
 backend-supported physical locations at the points where code emission or
 recovery needs them. They also contain allocator-induced split moves and
 block-edge parallel-move bundles. Canonical VM homes and whether they currently
 contain an up-to-date value remain separate state; they are not silently
 converted into allocator-owned spill slots.
+
+A Core def marked sunk has no `LocationAssignment`. Its recovery-only operation
+remains available to recovery planning, while allocation liveness reaches
+through it to the first non-sunk operands that must physically exist at an
+exit.
 
 Allocator-local position numbers, live intervals, split children, spill weights,
 and coalescing state are scratch data. They do not survive the allocator pass
@@ -563,8 +569,10 @@ to allocator-local live ranges.
 `Snapshot` instructions themselves produce no allocatable location, and their
 captured operands are not allocation uses at the Snapshot definition. Whenever
 an executable instruction consumes a `SnapshotRef`, liveness expands that
-reference into point uses of every captured `ProgramValueRef` at the consumer's
-declared timing. After this scan, Snapshot-derived uses require no special
+reference at the consumer's declared timing. An ordinary captured
+`ProgramValueRef` becomes a point use. A captured sunk def is recursively
+expanded through the sunk closure until only non-sunk physical inputs remain.
+After this scan, neither Snapshot nor sunk-instruction uses require special
 treatment by the bundle allocator.
 
 The allocator may internally build:
@@ -799,18 +807,24 @@ instructions that consume them for exits or safepoints.
 After allocation, recovery planning combines:
 
 ```text
-Snapshot + LocationAssignments + HomeState -> RecoveryPlan
+Snapshot
+    + sinking attachment
+    + LocationAssignments
+    + HomeState
+    -> RecoveryPlan
 ```
 
-`LocationAssignments` identify where each captured `ProgramValueRef` lives at
-the exit position. `HomeState` identifies canonical frame homes that already
-contain required values. Recovery planning may then emit register moves, spill
-loads, canonical-home stores, constant materialization, F64 boxing, and future
-reification work without adding a second semantic state model.
+`LocationAssignments` identify where each non-sunk physical frontier value
+lives at the exit position. `HomeState` identifies canonical frame homes that
+already contain required values. Recovery reads those locations, evaluates
+sunk instructions, performs constant materialization, F64 boxing, and future
+reification, and publishes canonical state without adding a second semantic
+state model. Whether this becomes generated code or an interpreted restricted
+IR remains open.
 
-Safepoint maps and deoptimization translations may share physical location
-encodings, but they remain separate consumers. Safepoint maps need only managed
-roots; deoptimization translations need complete interpreter-visible state.
+Safepoint maps and RecoveryPlans may share physical location encodings, but
+they remain separate consumers. Safepoint maps need only managed roots;
+RecoveryPlans need complete interpreter-visible state.
 
 ## Verification
 
@@ -823,6 +837,8 @@ The verifier should be able to check the allocation boundary at three levels:
 - every post-allocation assignment satisfies the relevant constraint at its
   occurrence position, including fixed registers, clobbers, reuse constraints,
   split moves, and block-edge parallel-copy bundles;
+- no sunk def receives a physical assignment, and every non-sunk input on the
+  recovery frontier is live and assigned at each consuming exit;
 - symbolic execution of the resolved moves and assigned instruction operands
   preserves the original SSA def/use connectivity on every CFG path.
 
@@ -869,6 +885,8 @@ to support:
 - initial bundles and register assignment;
 - block parameters and edge arguments;
 - snapshot-derived canonical-home spilling;
+- recovery-frontier expansion through sunk instructions after the first sinking
+  pass exists;
 - affinity merging across moves, reused inputs, and block arguments;
 - priority-queue assignment with eviction and live-range splitting;
 - split moves and edge parallel moves;

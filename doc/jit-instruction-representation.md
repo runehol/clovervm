@@ -684,7 +684,7 @@ ParameterF64
 
 Snapshot
     result: Snapshot
-    captured_values[]: snapshot operand ProgramValue(AnyRepresentation)
+    captured_values[]: snapshot operand ProgramValue(TaggedValue)
     resume_pc: attr BytecodePC
 
 ConditionalBranch
@@ -694,12 +694,11 @@ ConditionalBranch
     false_edge: attr BlockEdge
 ```
 
-`AnyRepresentation` is a narrow operand constraint in the schema, not a member
-of `ValueRepresentation` and never an instruction result. Snapshot's
-`captured_values` array is the only slot allowed to use it because a Snapshot
-records logical recovery values rather than normal Core dataflow for one
-machine representation. Its typed accessor returns erased `ProgramValueRef`s;
-the def kind recovers each concrete representation.
+Snapshot positions capture ordinary tagged `ProgramValueRef`s. A value in
+another representation first passes through an explicit conversion such as
+`BoxF64`; the conversion may later be marked sunk so it executes only during
+recovery. This keeps representation erasure and recovery actions out of the
+Snapshot operand format.
 
 Snapshot position is a logical stack-register coordinate. Logical position zero
 starts at the function-arity-derived offset from `fp`; increasing logical
@@ -814,16 +813,13 @@ will gain one immutable level discriminator and level-specific construction and
 analysis façades.
 
 For Core graphs, verification additionally requires every `ProgramValue`
-def to have one legal representation, every fixed operand constraint to
-match its def, and every representation-changing edge to be an explicit
-conversion instruction. Verification rejects `AnyRepresentation` on every
-result and on every operand other than `Snapshot.captured_values`. Every
-value-bearing Snapshot position must reference a live `ProgramValue` def;
-every structural position must correspond to a valid frame-header field or
-another recovery destination already known to contain its desired value.
-Recovery planning must interpret each capture using its def's concrete
-representation and provide an exhaustive frame-materialization operation for
-that case.
+def to have one legal representation, every operand constraint to match its
+def, and every representation-changing edge to be an explicit conversion
+instruction. Every value-bearing Snapshot position must reference a live tagged
+`ProgramValue` def; every structural position must correspond to a valid
+frame-header field or another recovery destination already known to contain
+its desired value. Recovery reaches through any sunk conversion rather than
+interpreting a type-erased Snapshot operand.
 
 Each concrete instruction form is a final, fieldless subclass of `Instruction`.
 The instruction arena placement-constructs the subclass selected by the schema;
@@ -972,6 +968,10 @@ UseLists                Instruction*             -> temporary UseRecords
 Core `ValueRepresentation` is deliberately not an attachment. It is an
 immutable def and operand contract used to type the SSA graph itself.
 Register, spill, and constant locations remain backend-owned attached metadata.
+A late sinking analysis may likewise attach its decisions to the graph without
+mutating instruction payloads. A sunk instruction keeps its ordinary kind,
+result class, representation, and operands; the attachment changes whether its
+result must physically exist on the normal path.
 
 This is not a generic per-instruction property bag. Each attachment is a
 concrete type with its own invariants, key domain, mutation rules, and permitted
