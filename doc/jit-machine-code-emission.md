@@ -367,7 +367,7 @@ The initial emitter has no general code-position or post-layout metadata API.
 A polling safepoint side-exits to the interpreter after restoring live values
 to their canonical managed-frame slots, so the collector does not stop inside
 generated code or require machine-register maps. Other position metadata will
-be added only with a concrete consumer.
+be added only when a concrete requirement appears.
 
 ## Builder invariants and compilation failure
 

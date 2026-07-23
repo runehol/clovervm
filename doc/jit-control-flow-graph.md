@@ -343,7 +343,7 @@ at side-exit branches without introducing CFG blocks or edges.
 CFG verification is a normal compiler operation, not only a debugging aid. It
 should run after initial construction and after every CFG-mutating pass in
 debug and test configurations. Focused editor tests should verify after each
-completed mutation. Verification before backend lowering protects consumers
+completed mutation. Verification before backend lowering protects later stages
 that assume a complete graph.
 
 The implemented structural verifier returns `CfgVerificationResult`, containing

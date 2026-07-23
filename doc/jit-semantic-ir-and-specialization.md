@@ -133,7 +133,7 @@ construction avoids parameters for dead interpreter locations.
 
 Semantic `ProgramValueRef`s are representation-free. They describe Python
 program values and participate in the same generic SSA machinery without
-choosing a Core encoding. Semantic-to-Core lowering builds fresh producers with
+choosing a Core encoding. Semantic-to-Core lowering builds fresh defs with
 intrinsic `ValueRepresentation`s and selects the corresponding concrete Core
 block-parameter kinds.
 
@@ -338,14 +338,14 @@ a general logical implication solver.
 ### Demand-driven realization
 
 A guaranteed union alone does not justify code duplication. A union-transparent
-consumer, such as storing a tagged value into a list, can consume it directly.
-Only a consumer requiring different machine operations for different cases
+use site, such as storing a tagged value into a list, can consume it directly.
+Only a use requiring different machine operations for different cases
 demands realization.
 
 That demand traces to the partition anchor. Core lowering either uses existing
 predecessor edges or introduces the discriminator at the logical definition.
 It may realize only part of a recursive tree: an outer case can become control
-flow while its child partition remains latent until a later consumer needs it.
+flow while its child partition remains latent until a later use needs it.
 
 For a speculative partition, joined result facts become guaranteed only after
 Core checks that one supported case applies; unmatched inputs exit. An
@@ -404,7 +404,7 @@ interpreter.
 
 A polymorphic operation may emit a discriminator and one Core region per
 selected case. Core block parameters join their results. Existing control-flow
-partitions may instead allow lowering to duplicate a consumer into predecessor
+partitions may instead allow lowering to duplicate a use into predecessor
 regions without adding a new runtime test.
 
 Trusted handler recognition is semantic rather than opcode-based:
@@ -454,7 +454,7 @@ requires:
 - child facts not to escape their inherited parent context without the required
   joins;
 - every referenced case and realized case edge to remain valid;
-- each SSA value to have one guaranteed fact compatible with its producer;
+- each SSA value to have one guaranteed fact compatible with its def;
 - every consumed inference result to match the current IR generation.
 
 ## Open Questions

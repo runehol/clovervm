@@ -151,7 +151,7 @@ The first implementation slice is already in the tree. It established:
 - the naturally aligned 48-byte instruction record and instruction arena,
   schema-generated metadata, concrete typed instruction classes, typed
   terminator access, uniform operand/reference traversal, explicit constant
-  producers, `ValueConstant`s, and positional Snapshot slots;
+  defs, `ValueConstant`s, and positional Snapshot slots;
 - preliminary CFG blocks, block edges, and structural verification.
 
 The remaining milestones should build on this substrate rather than route
@@ -327,7 +327,7 @@ Scope:
 - implement Snapshot-expanded point-use/liveness checks for the values needed
   by the taken exit;
 - materialize Snapshot `ProgramValueRef`s into canonical frame homes and
-  accumulator state, including rematerializable `Const` producers;
+  accumulator state, including rematerializable `Const` defs;
 - install the resume bytecode PC and structural frame metadata expected by the
   interpreter;
 - preserve the managed/host transition record on every exit path.
@@ -431,7 +431,7 @@ Initial optimization candidates are local and easy to invalidate:
 - redundant dominating guards with identical Snapshots and replay states;
 - trivial `Mov` forwarding where representation and Snapshot availability
   remain valid;
-- local constant folding into explicit `Const` producers;
+- local constant folding into explicit `Const` defs;
 - dead code with no effects and no Snapshot-expanded point uses.
 
 Mutable-shape motion, validity-check hoisting, and movement across calls wait

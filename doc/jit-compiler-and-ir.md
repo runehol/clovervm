@@ -1288,7 +1288,7 @@ The authoritative instruction schema declares each kind's `MustEffects` and
 `MayEffects` bounds. New instructions default to the conservative `MayEffects`
 envelope, and passes may use that envelope directly. When an optimization needs
 more precision, a concrete phase-owned analysis can prove and publish a current
-per-instruction `ProvenAbsentEffects` set; consumers derive effective effects as
+per-instruction `ProvenAbsentEffects` set; clients derive effective effects as
 `MayEffects - ProvenAbsentEffects`. The bound checks, stale-view behavior, and
 prohibition on inferring purity from `MustEffects` alone are specified in
 [JIT Instruction Representation](jit-instruction-representation.md).
@@ -1335,7 +1335,7 @@ The other clauses have equally concrete meanings:
   excludes block parameters, terminators, Snapshot definitions, and any other
   position-pinned instruction.
 - `preserves_ssa` rejects moving a use before its definition. Snapshot-expanded
-  operands count as transitive uses at each Snapshot consumer.
+  operands count as transitive uses at each Snapshot use.
 - `preserves_recovery` requires every guard or exit to remain in the same
   replay-valid region, every captured value to dominate its use, and no
   committed Python-visible effect to cross the exit.
