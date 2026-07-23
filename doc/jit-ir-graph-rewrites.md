@@ -272,28 +272,45 @@ replacement would require a graph-level renaming design.
 
 ## Rewrite API
 
-The graph rewriter accepts the same `InstructionTraversal` and presents the
-same query, block, and instruction callback arguments as the read-only walker:
+The graph rewriter accepts the same `InstructionTraversal`. Its callback
+receives the same query, block, and instruction traversal context as the
+read-only walker, preceded by a narrow rewrite-construction interface:
 
 ```cpp
 GraphRewriter rewriter(arena, graph);
 
 RewriteSummary summary = rewriter.rewrite_instructions(
     traversal,
-    [&](const GraphQueries &queries,
+    [&](RewriteContext &context,
+        const GraphQueries &queries,
         const Block &block,
         const Instruction &instruction) -> RewriteResult {
         // instruction belongs to the original published graph
     });
 ```
 
-`GraphRewriter::make_instruction<T>(...)` follows the existing
-construction vocabulary: it allocates an instruction without placing it.
-The callback may construct it using references from the original graph. After
-the callback returns, the rewriter resolves those operands through replacements
-already established by the walk. The callback captures the rewriter when it
-needs this factory, so its traversal arguments remain identical to the
-read-only callback.
+`RewriteContext` exposes only operations permitted while constructing a rewrite:
+
+```cpp
+class RewriteContext
+{
+public:
+    template <typename T, typename... Args>
+    T *make_instruction(Args &&...args);
+};
+```
+
+`make_instruction<T>(...)` follows the existing construction vocabulary: it
+allocates an instruction without placing it. The context does not expose staged
+vectors, replacement maps, attachment, commit, generation changes, or other
+graph mutation. It may later gain similarly bounded rewrite-construction
+helpers without exposing the complete `GraphRewriter`. The rewriter records
+which instructions were allocated through its context so it can reject
+arbitrary pointers allocated elsewhere.
+
+The callback may construct instructions using references from the original
+graph. After it returns, the rewriter resolves those operands through
+replacements already established by the walk.
 
 The callback does not mutate the block, attach instructions, or modify operand
 slots. It returns the complete output for the current position.
@@ -303,13 +320,26 @@ traversal contract but do not share an engine. The rewriter must walk original
 vectors while constructing staged vectors and a replacement map; implementing
 it by invoking the read-only walker would obscure those ownership rules.
 
+The initial summary is:
+
+```cpp
+struct RewriteSummary
+{
+    bool instructions_changed = false;
+    bool terminators_changed = false;
+};
+```
+
+These distinctions allow attached queries to adopt more selective invalidation
+later without making the initial rewriter maintain them incrementally.
+
 ## Rewrite Results
 
 A rewrite result contains:
 
 ```text
 instructions    zero or more instructions emitted at this position
-replacement     the canonical result replacing the original definition
+replacement     the canonical def replacing the original def
 ```
 
 Convenience constructors express the common cases:
@@ -318,8 +348,11 @@ Convenience constructors express the common cases:
 RewriteResult::keep();
 RewriteResult::erase();
 RewriteResult::replace(instruction);
-RewriteResult::replace(sequence, replacement);
-RewriteResult::replace_with_value(existing_definition);
+RewriteResult::replace(sequence, ProgramValueRef result);
+RewriteResult::replace(sequence, SnapshotRef result);
+RewriteResult::replace_without_result(sequence);
+RewriteResult::replace_with_def(ProgramValueRef existing_def);
+RewriteResult::replace_with_def(SnapshotRef existing_def);
 ```
 
 Their meanings are:
@@ -328,16 +361,37 @@ Their meanings are:
 |---|---|---|
 | `keep()` | The normalized instruction | The normalized instruction, when it has a result |
 | `erase()` | None | Erased |
-| `replace(new)` | `new` | `new` |
+| `replace(new)` | `new` | `new` when the original has a result; otherwise none |
 | `replace(sequence, result)` | The sequence in order | `result` |
-| `replace_with_value(value)` | None | `value` |
+| `replace_without_result(sequence)` | The sequence in order | None |
+| `replace_with_def(def)` | None | `def` |
+
+`replace_without_result()` is valid only when the original instruction has
+`ResultClass::None`. It never infers that the final emitted instruction should
+become a replacement def.
+
+`replace(new)` is the single-instruction convenience form. When the original
+has a result, `new` must produce a compatible replacement result. When the
+original has no result, the emitted instruction establishes no replacement def.
+`replace_with_def()` is equivalent to an empty emitted sequence plus an
+explicit existing replacement def.
+
+For example, eliminating an identity operation emits nothing and redirects its
+uses to the identity's source:
+
+```cpp
+return RewriteResult::replace_with_def(identity.source());
+```
+
+An existing graph instruction is never returned as an emitted replacement
+instruction merely to express this substitution.
 
 A replacement sequence separates execution from value identity. For example,
 lowering one operation to an AArch64 immediate materialization followed by an
 add emits both instructions but maps later uses of the old result to the add:
 
 ```cpp
-return RewriteResult::replace({arm_imm12, add}, add);
+return RewriteResult::replace({arm_imm12, add}, TaggedValueRef(add));
 ```
 
 A one-to-one rewrite such as a pointer-valued `Const` becoming `LoadConst` is:
@@ -353,8 +407,12 @@ walk. Fixed-point rewriting, if required, is a separate driver or another pass.
 
 The rewriter validates each result before commit:
 
-- proposed instructions are unplaced or are the original instruction requested
-  by `keep()` at the current position;
+- every proposed instruction was freshly allocated through this rewrite's
+  `RewriteContext`;
+- the only original instruction emitted at the current position is the current
+  instruction selected by `keep()`;
+- an existing graph def used as a replacement is named through
+  `replace_with_def()` rather than emitted;
 - sequence order satisfies definition-before-use;
 - every operand refers to a block parameter, an earlier staged result, or an
   earlier instruction in the same sequence;
@@ -364,6 +422,11 @@ The rewriter validates each result before commit:
 - a result-producing instruction has a compatible replacement unless it is
   explicitly erased;
 - no non-final sequence instruction is a block terminator.
+
+While normalizing one emitted sequence, the rewriter records each proposed def
+and its normalized def before processing later instructions in that sequence.
+If normalization reconstructs an earlier proposed instruction, later sequence
+instructions are therefore rebuilt to use the reconstructed def.
 
 The pass owns semantic correctness. Structural acceptance of erasing an unused
 call, for example, does not prove that discarding its effects is valid.
