@@ -5,8 +5,8 @@
 | Document type | Design |
 | Status | Proposed |
 | Implementation | Not started |
-| Scope | Allocation constraints, allocator-local numbering, liveness, live-range splitting, block-argument moves, clobbers, spills, and post-allocation location assignments |
-| Owning layers | Target backends own allocation-constraint construction; the generic register allocator owns numbering, liveness, intervals, splitting, coalescing, spill decisions, and move resolution; machine-code emission consumes final assignments |
+| Scope | Allocation constraints, allocator-local numbering, liveness, bundles, backtracking allocation, live-range splitting, block-argument moves, clobbers, spills, and post-allocation location assignments |
+| Owning layers | Target backends own allocation-constraint construction; the generic register allocator owns numbering, liveness, bundles, splitting, allocation, spill decisions, and allocator-induced move resolution; publication and recovery planners own canonical-state synchronization; machine-code emission consumes final assignments and resolved moves |
 | Validated against | N/A |
 | Supersedes | The open register-allocation direction in [JIT Compiler and IR](jit-compiler-and-ir.md) and [JIT Compiler Bring-up Plan](jit-compiler-bring-up-plan.md) |
 
@@ -19,9 +19,12 @@ generic allocator computes liveness, splits ranges, assigns locations, and
 produces `LocationAssignments`.
 
 The allocator is target-independent. It may know about register classes,
-physical registers, stack slots, clobber masks, and operand constraints, but it
-does not know the semantics of AArch64, x86-64, or any concrete Core
-instruction kind.
+physical registers, stack slots, clobber masks, operand access timing, and
+operand constraints, but it does not know the semantics of AArch64, x86-64, or
+any concrete Core instruction kind. Unlike a fully IR-independent allocator,
+it may consume clovervm's generic Core and CFG interfaces directly: blocks,
+SSA defs and uses, block parameters, edge arguments, Snapshots, and structural
+occurrence anchors are part of the common compiler contract.
 
 ## Phase Products
 
@@ -42,10 +45,12 @@ LocationAssignments
 describe requirements, not chosen locations.
 
 `LocationAssignments` are the durable post-allocation result. They map program
-value occurrences to registers, spill slots, canonical slots, constants, or
-other backend-supported physical locations at the points where code emission or
-recovery needs them. They also contain resolved split moves and block-edge
-parallel-move bundles.
+value occurrences to registers, spill slots, constants, or other
+backend-supported physical locations at the points where code emission or
+recovery needs them. They also contain allocator-induced split moves and
+block-edge parallel-move bundles. Canonical VM homes and whether they currently
+contain an up-to-date value remain separate state; they are not silently
+converted into allocator-owned spill slots.
 
 Allocator-local position numbers, live intervals, split children, spill weights,
 and coalescing state are scratch data. They do not survive the allocator pass
@@ -81,9 +86,30 @@ Instruction input      -> use of that input's ProgramValueRef
 Instruction result     -> definition of that result's ProgramValueRef
 Block edge argument    -> use at the source edge
 Block parameter        -> definition at target block entry
-Instruction temporary  -> non-SSA temporary
+Instruction temporary  -> non-SSA value occupying both timing phases
 Instruction clobber    -> physical register mask
 ```
+
+Access kind and access timing are independent:
+
+```text
+access kind     Use | Def
+access timing   Early | Late
+```
+
+Ordinary inputs are early uses and ordinary results are late defs. The
+separation permits a selected multi-instruction lowering to expose a late use,
+an early def, or a temporary spanning both phases without lowering completely
+to Machine IR. A deferred emitter choice is legal only when every possible
+encoding obeys the prepared timing, temporary, and clobber contract.
+
+A temporary spanning the selected sequence is conceptually an early def and a
+late use of the same allocator-local temporary, reserving its register across
+both phases. A multi-instruction lowering may instead give an ordinary input a
+late use when the sequence does not finish consuming it until after other early
+actions. Likewise, an output written before every input has been consumed is an
+early def. `Use` therefore never implies `Early`, and `Def` never implies
+`Late`.
 
 The constraint attached to an occurrence may require:
 
@@ -110,6 +136,12 @@ Temporary(class)
 Clobber(register_set)
 ```
 
+`Temporary(class)` asks the allocator to provide a register that the lowering
+may overwrite. `Clobber(register_set)` instead describes registers destroyed
+implicitly by the operation. A potentially long branch therefore requests a
+GPR temporary; it does not needlessly clobber a predetermined register. The
+emitter may ignore the assigned temporary when the short branch form fits.
+
 `Register(class)` and spill compatibility must agree with the Core
 `ValueRepresentation` of the value. A constraint may narrow that representation
 to a target class or fixed register, but it must not change representation
@@ -128,15 +160,16 @@ instruction and two positions for each relevant block boundary:
 ```text
 position = 2 * index + phase
 
-phase 0: use / incoming / before
-phase 1: def / outgoing / after
+phase 0: before
+phase 1: after
 ```
 
-Within an instruction, uses precede definitions. This lets a fixed-register call
-argument use and a fixed-register call result definition share the same physical
-register at different phases of the same instruction. It also makes
-same-as-input and destructive-operation lowering explicit without treating two
-SSA values as one value.
+Early operands occur at `before`; late operands occur at `after`. Access kind
+does not determine timing. This lets a fixed-register call argument use and a
+fixed-register call result definition share the same physical register at
+different phases of the same instruction. It also makes same-as-input and
+destructive-operation lowering explicit without treating two SSA values as one
+value.
 
 Block entry and block exit each provide use and definition phases. This gives
 block parameters, edge arguments, and edge moves stable allocation points
@@ -147,65 +180,120 @@ predecessor block exit use   -> edge arguments are live here
 successor block entry def    -> block parameters are defined here
 ```
 
-Any mutation of the prepared CFG invalidates allocator numbering, liveness,
-intervals, and assignments. It does not by itself invalidate structurally
-anchored constraints unless the mutation replaces the anchored instruction,
-block parameter, or edge.
+Allocator numbering, liveness, live ranges, bundles, and partial assignments are
+local scratch state. The allocator does not publish or incrementally maintain a
+position map.
+
+## Live Ranges and Bundles
+
+A live range records where one SSA value needs storage. One `ProgramValueRef`
+may have several discontiguous ranges in linear program order because of CFG
+structure. Block arguments end predecessor ranges at edge exits; successor
+block parameters begin new SSA ranges at block entry.
+
+A bundle is the allocator's unit of assignment: a set of non-overlapping live
+ranges that should receive one location. Bundles recover physical continuity
+between distinct SSA values without changing their semantic identities. The
+allocator initially attempts to merge ranges related by:
+
+- block-argument transfers;
+- explicit machine-value moves;
+- reused-input constraints;
+- other backend-declared allocation equalities.
+
+Bundle merging is set union subject to the invariant that two ranges in one
+bundle never overlap. Repeating an already completed merge is a no-op.
+Splitting a bundle creates smaller bundles but does not change the underlying
+SSA ranges.
+
+Allocation priority and eviction weight are distinct. Priority determines which
+bundle is processed next. Weight determines whether an unallocated bundle may
+evict conflicting allocated bundles. Both are recomputed for children created
+by splitting. Initial weights may consider use frequency, loop depth,
+fixed-register pressure, Snapshot/recovery uses, and rematerialization cost.
+
+## Constraint Normalization and Fixups
+
+The allocator normalizes awkward occurrence constraints into live ranges plus
+deferred fixup moves before its core assignment loop.
+
+If one SSA value is required in two fixed registers at the same instruction,
+one constrained occurrence remains on the range and the other becomes a fixup
+copy at that occurrence. A reused-input result is treated as a new range
+starting at the input phase, with a fixup copy from the input and a high-priority
+merge opportunity between the two ranges. If they can share a location the
+copy disappears; otherwise it remains part of the final move set.
+
+This normalization preserves the invariant that a live-range fragment occupies
+one location at a point. It keeps special instruction shapes at the boundary of
+the allocator rather than complicating every bundle-placement decision.
 
 ## Initial Algorithm
 
-The first general allocator is an SSA linear-scan allocator with live-range
-splitting and edge-aware coalescing. This is an implementation choice, not a
-public IR contract, but it is the expected bring-up path for real branches,
-loops, calls, and spills.
+The first general allocator is an SSA bundle-based backtracking allocator. It
+uses linear program positions to build liveness and ranges, but it does not
+allocate in ordinary linear-scan order.
 
 The allocator runs over prepared IR:
 
 ```text
 build ephemeral positions
-compute allocation liveness
-build parent intervals for ProgramValueRefs
-attach constrained use and definition positions
-attach edge-transfer affinities
-walk intervals in order
-assign registers or split/spill
-resolve split moves and block-edge moves
+compute precise allocation liveness
+build live ranges and attach constrained occurrences
+normalize constraints and record fixups
+merge related non-overlapping ranges into bundles
+enqueue bundles by allocation priority
+assign a fitting register, evict lower-weight bundles, or split
+spill when splitting or register allocation is no longer legal or worthwhile
+collect split, fixup, explicit, and block-edge moves
+resolve parallel moves
 produce LocationAssignments
 ```
 
-Fixed-register constraints and clobbers are modeled as ordinary allocation
-pressure at their anchored positions. A child interval covering a fixed-register
-use or definition must use that register. A value live across a clobber must be
-split, spilled, or assigned to a non-clobbered location.
+Assignment guarantees forward progress by evicting only lower-weight bundles
+and reducing weight when a bundle is split. A useful first split point is the
+first conflicting constrained use or the first point at which a candidate
+register ceases to fit. If no legal assignment remains for an unspillable
+single-use bundle, compilation fails rather than emitting incorrect code.
 
-The initial spill heuristic should be simple and observable: spill or split the
-candidate whose next required use is farthest away, adjusted for loop depth,
-fixed-register pressure, snapshot/recovery use, and whether the value is cheap
-to rematerialize. More advanced spill-cost tuning is later allocator work.
+Loop-aware split placement is later code-quality tuning. Once the basic
+allocator is producing inspectable code, measure whether connectors, canonical
+stores, or reloads are being placed inside hot loops. If that is material,
+prefer split points with cheaper connecting moves and hoist boundaries outside
+loops when legal. The initial allocator does not need this heuristic.
+
+Fixed-register constraints and clobbers are ordinary pressure at their anchored
+positions. A bundle covering a fixed-register occurrence must use that register.
+A value live across a clobber must be split, spilled, or assigned to a
+non-clobbered location.
 
 ## Liveness and Splitting
 
-The register allocator owns liveness for allocation. It walks generic Core
-def/use information, block parameters, edge arguments, and CFG edges. It also
-consumes target `AllocationConstraints` to attach constrained use and definition
-positions to allocator-local intervals.
+The register allocator owns precise liveness for allocation. It walks generic
+Core def/use information, block parameters, edge arguments, and CFG edges. It
+also consumes target `AllocationConstraints` to attach constrained occurrences
+to allocator-local live ranges.
+
+`Snapshot` instructions themselves produce no allocatable location, and their
+captured operands are not allocation uses at the Snapshot definition. Whenever
+an executable instruction consumes a `SnapshotRef`, liveness expands that
+reference into point uses of every captured `ProgramValueRef` at the consumer's
+declared timing. After this scan, Snapshot-derived uses require no special
+treatment by the bundle allocator.
 
 The allocator may internally build:
 
 ```text
-ProgramValueRef -> parent live range
-parent live range -> split child intervals
-child interval -> assigned register or spill slot
+ProgramValueRef -> live-range IDs
+live-range ID -> stable SSA range and constrained occurrences
+bundle -> set of non-overlapping live-range IDs
+bundle or split child -> assigned register or spill location
 ```
 
-Splitting refines allocation intervals; it does not mutate the Core SSA graph or
-require regenerating durable constraints. Constraints remain anchored to their
-original structural occurrences. After a split, the child interval covering a
-constrained position must satisfy that constraint.
-
-Linear scan splitting creates child intervals under a parent SSA value. A later
-allocator strategy may replace the internal interval machinery, but it must
-preserve the same `AllocationConstraints` and `LocationAssignments` boundary.
+Splitting refines bundles and range fragments; it does not mutate the Core SSA
+graph or require regenerating structural constraints. The child covering a
+constrained occurrence must satisfy that constraint. Moves reconnect adjacent
+children after assignment.
 
 ## Block Parameters and Edge Moves
 
@@ -226,16 +314,16 @@ join(p):
     use p
 ```
 
-`a`, `b`, and `p` are distinct SSA values. The edge transfers create copy
-affinities:
+`a`, `b`, and `p` are distinct SSA values. The edge transfers propose bundle
+merges:
 
 ```text
 then -> join: a -> p
 else -> join: b -> p
 ```
 
-The initial allocator must treat these transfers as high-priority coalescing
-opportunities. This is not just a code-size optimization: clovervm block
+The initial allocator must attempt these merges early. This is not just a
+code-size optimization: clovervm block
 arguments often carry broad logical frame state for safepoints and recovery, so
 missing obvious coalescing would create large move bundles at ordinary joins and
 loop backedges.
@@ -246,7 +334,18 @@ not interfere and their constraints permit a shared location. If the assigned
 locations differ, the allocator records a parallel move bundle on the
 corresponding `BlockEdge`.
 
-Edge-transfer affinities should be weighted. The first weights should account
+First-class `BlockEdge` objects make these transfers directly addressable.
+Each ordered edge argument already pairs with the block parameter at the same
+index, and distinct edges remain distinguishable even when they have the same
+source and target. Allocation may tag the two boundary occurrences with the
+edge and argument index, or expose their assigned entry and exit locations
+through structural occurrence IDs. Final move generation can then walk each
+edge once and fill its parallel-move bundle directly. It does not need
+regalloc2's collect-sort-join scheme for matching source and destination
+"half-moves", which compensates for edge arguments being embedded in branch
+instructions rather than represented by durable edge objects.
+
+Merge ordering and the weights of bundles created across edges should account
 for:
 
 - edge execution weight when available;
@@ -256,10 +355,17 @@ for:
 - whether either side has a fixed-register, clobber, or same-as-input pressure
   that makes coalescing unlikely.
 
-When assigning a location, the allocator should score candidate registers and
-spill slots partly by their affinity to predecessor edge arguments and successor
-block parameters. Fixed constraints, clobbers, and real interference override
-those preferences.
+Fixed constraints, clobbers, and real overlap override merging. A failed merge
+does not constrain later location assignment; it merely leaves an edge move if
+the separately allocated locations differ.
+
+Several canonical interpreter homes may name the same machine value. In that
+case the edge argument list references the same `ProgramValueRef` at each
+corresponding logical position, and the successor interpreter-location map
+associates those homes with one block parameter. The allocator therefore sees
+one predecessor range and one successor range, not overlapping duplicate SSA
+definitions. Repeating the same edge transfer or proposed bundle merge is
+idempotent.
 
 Critical-edge splitting is an implementation choice made when a move bundle has
 no legal insertion point on the original edge. The semantic CFG retains
@@ -270,8 +376,8 @@ first-class `BlockEdge` objects and ordered edge arguments.
 Calls are represented by ordinary allocation constraints:
 
 ```text
-argument uses      -> fixed ABI registers or stack slots
-result definitions -> fixed return registers
+argument uses      -> early or late uses in fixed ABI registers or stack slots
+result definitions -> early or late defs in fixed return registers
 temporaries        -> target register classes
 clobbers           -> caller-saved register masks
 ```
@@ -284,6 +390,104 @@ Hidden scratch registers are not allowed. If a selected lowering needs a
 temporary, its `AllocationConstraints` must expose that temporary. A reserved
 global scratch during bring-up is still modeled as unavailable or clobbered in
 the allocator problem rather than being consumed invisibly by emission.
+
+## Unified Parallel Moves
+
+After assigning locations, the allocator collects every physical transfer it
+introduced:
+
+- connectors between split bundle children;
+- normalized fixed-register and reused-input fixups;
+- explicit machine-value moves;
+- block-edge argument transfers;
+- spill loads and stores;
+- ABI argument shuffles.
+
+Transfers at one program point form one parallel move set. Resolving them
+together avoids move chains created when block arguments, spills, and
+instruction fixups are lowered independently. The resolver handles cycles with
+an available temporary register or stack location and handles memory-to-memory
+transfers through a legal target temporary.
+
+Canonical-state synchronization may contribute additional transfers at the same
+point, but the allocator does not decide which VM homes require publication.
+`HomeState`, safepoint planning, or recovery planning owns that semantic
+decision. A shared physical move resolver may combine its transfers with the
+allocator-produced set once both are known.
+
+The register allocator should expose reusable physical-move machinery rather
+than hide it inside allocation. Canonical synchronization may reuse the same
+location representation, parallel-move set, cycle detection, scratch
+selection, register-to-register moves, spill loads and stores, and
+memory-to-memory fallback. It supplies those mechanisms with transfers chosen
+by `HomeState` or recovery planning; it does not ask the allocator to infer
+which canonical homes are semantically current.
+
+Redundant Move Elimination is a possible later quality pass, not part of the
+initial allocator. It would symbolically track which value each physical
+location already contains and remove a move or canonical-home store whose
+destination is already current. The first implementation should emit the
+straightforward resolved move sequence, inspect generated-code quality, and add
+this analysis only if redundant transfers are material in practice.
+
+### Open Question: Guaranteed Move Scratch
+
+Parallel-move resolution must account for a cycle at a point where every
+suitable register is occupied. Memory-to-memory transfers introduce the same
+requirement even without a cycle. The initial design has no ordinary compiler
+spill area, so it cannot yet copy regalloc2's complete fallback of using a
+temporary stack slot and, when necessary, briefly spilling a victim register.
+
+The implementation must choose a complete policy for every register class
+before parallel moves are emitted. Plausible choices are to reserve a scratch
+register, introduce an allocator-visible emergency stack area, add ordinary
+spill slots, or make scratch exhaustion abort this compilation and return to
+the interpreter. Probing the allocation map for a free register should remain
+the cheap first choice, but it is not a correctness guarantee. This question is
+separate from instruction-declared temporaries: a parallel-move cycle is known
+only after allocation.
+
+## Interpreter Locations and Spillability
+
+Machine-value liveness, allocation continuity, and interpreter state are
+separate:
+
+```text
+live range                 where one SSA value needs physical storage
+bundle                     ranges that prefer one allocation
+interpreter-location map   canonical VM homes naming the value over time
+HomeState                  which homes currently contain an up-to-date copy
+```
+
+A bytecode-level move may change the interpreter-location map without creating
+a new SSA value or machine move. Several canonical homes may name the same
+`ProgramValueRef`, and the set of homes may change over its lifetime.
+
+The first allocator derives position-bounded canonical-home opportunities from
+Snapshot consumers instead of maintaining this map continuously through Core
+IR. Each instruction that consumes a `SnapshotRef` seeds the canonical slots
+required by that Snapshot at the consumer's position. A backward walk propagates
+those requirements through the value's live ranges. The nearest later consumer
+on each path wins; an earlier consumer replaces the future demand for the
+section preceding it. Repeated consumers of one virtual Snapshot seed the
+analysis independently.
+
+At CFG joins, a canonical-home opportunity propagates into a predecessor only
+when the nearest consumers on all applicable successor paths agree. Otherwise
+the allocator splits the range at the divergence or declines to use a canonical
+home there. Block parameters and edge arguments translate the demanded
+`ProgramValueRef` across the edge.
+
+A canonical home is not automatically the value's permanent spill slot.
+Synchronizing a value there is valid only over the derived range section, and
+the write must update `HomeState`. The initial implementation has no ordinary
+compiler spill area: it may rematerialize a value or place it in a derived
+canonical home, but otherwise the value is register-only. A later design may
+add ordinary spill slots without changing the snapshot-demand analysis.
+
+An unspillable bundle may evict spillable work, but if splitting and eviction
+cannot produce a legal register assignment, compilation fails and execution
+remains interpreted.
 
 ## Recovery and Safepoints
 
@@ -314,14 +518,37 @@ The verifier should be able to check the allocation boundary at three levels:
 - every prepared executable instruction has matching allocation constraints for
   its allocatable inputs, outputs, temporaries, and clobbers;
 - every constraint anchor resolves to a live prepared Core occurrence with a
-  compatible `ValueRepresentation`;
+  compatible `ValueRepresentation`, access kind, and early/late timing;
 - every post-allocation assignment satisfies the relevant constraint at its
   occurrence position, including fixed registers, clobbers, reuse constraints,
-  split moves, and block-edge parallel-copy bundles.
+  split moves, and block-edge parallel-copy bundles;
+- symbolic execution of the resolved moves and assigned instruction operands
+  preserves the original SSA def/use connectivity on every CFG path.
 
-Verification should reject stale numeric positions. Diagnostics should report
-the durable anchor: instruction serial and operand index, block parameter, block
-entry or exit, or block-edge argument.
+Diagnostics should report the durable anchor: instruction serial and operand
+index, block parameter, block entry or exit, or block-edge argument. Ephemeral
+numeric positions remain optional diagnostic detail.
+
+The allocator should be developed with a generated SSA-CFG test input and a
+symbolic allocation checker from its first non-trivial stages. The generator,
+SSA validator, liveness implementation, allocator, and checker should be
+cross-checked rather than relying only on hand-written examples. Fuzzing must
+cover duplicate uses, fixed-register conflicts, early and late accesses,
+reused inputs, loops, irreducible control flow, duplicate edge arguments,
+spills, clobbers, split connectors, and cyclic parallel moves.
+
+## Implementation Discipline
+
+Register allocation is compilation-time-sensitive. Allocator-local objects
+should use dense integer IDs and compact contiguous storage. Live ranges within
+bundles remain sorted so overlap checks and merges use linear scans rather than
+pointer-linked insertion and random lookup. Building precise liveness may cost
+more upfront but can reduce allocation work substantially by avoiding false
+interference and unnecessary splits.
+
+Heuristic state such as priority and eviction weight should be compact and
+observable in allocator dumps. Correctness must not depend on pointer order,
+hash-table iteration order, or unstable workqueue ties.
 
 ## Implementation Staging
 
@@ -339,20 +566,27 @@ The first real allocator should support:
 - temporaries;
 - clobber masks;
 - block parameters and edge arguments;
-- spill slots;
-- SSA linear scan with live-range splitting;
+- snapshot-derived canonical-home spilling;
+- precise SSA live ranges;
+- bundle formation across moves, reused inputs, and block arguments;
+- priority-queue assignment with eviction and live-range splitting;
 - split moves and edge parallel moves;
-- weighted edge-aware coalescing for block arguments.
+- parallel-move resolution;
+- a symbolic allocation checker and generated-input fuzz target.
 
-More advanced policies such as detailed spill-cost tuning, rematerialization,
-caller-context-sensitive register pressure, alternate allocation algorithms, and
-Machine IR scheduling are later backend and allocator work.
+More advanced policies such as detailed spill-cost tuning, profitable
+rematerialization, caller-context-sensitive register pressure, alternate
+allocation algorithms, and Machine IR scheduling are later backend and
+allocator work.
 
 ## External Model
 
-Cranelift and `regalloc2` are the closest external model. Cranelift IR uses
-block parameters instead of phi instructions. `regalloc2` consumes block
-parameters, branch arguments, operand constraints, register classes, clobbers,
+Cranelift and
+[`regalloc2`](https://cfallin.org/blog/2022/06/09/cranelift-regalloc2/) are the
+closest external model. Cranelift IR uses block parameters instead of phi
+instructions. `regalloc2` consumes block parameters, branch arguments, operand
+constraints, independent access kind and timing, register classes, clobbers,
 and CFG structure through a target-independent allocator interface. Clover
-keeps the same conceptual separation while using direct Core/CFG anchors instead
-of making opaque integer program points durable.
+keeps the same conceptual separation while using direct Core/CFG anchors
+instead of presenting a fully opaque IR adapter or making integer program
+points durable.
