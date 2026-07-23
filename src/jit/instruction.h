@@ -706,6 +706,8 @@ namespace cl::jit
 #define CL_JIT_DECLARE_ATTRIBUTE_INDEX(name, attribute_class) name,
 #define CL_JIT_PRIVATE private:
 #define CL_JIT_DECLARE_FIXED_ACCESSOR(name, operand_class, representation)     \
+    static constexpr uint32_t name##_operand_index =                           \
+        static_cast<uint32_t>(OperandIndex::name);                             \
     auto name() const                                                          \
     {                                                                          \
         constexpr size_t index = static_cast<size_t>(OperandIndex::name);      \
@@ -714,6 +716,8 @@ namespace cl::jit
             operand_word_at<IsVariadic>(index));                               \
     }
 #define CL_JIT_DECLARE_VARIADIC_ACCESSOR(name, operand_class, representation)  \
+    static constexpr uint32_t name##_operand_index =                           \
+        static_cast<uint32_t>(OperandIndex::name);                             \
     auto name() const                                                          \
     {                                                                          \
         static_assert(OperandClass::operand_class ==                           \
@@ -725,6 +729,8 @@ namespace cl::jit
             first, operand_count() - index);                                   \
     }
 #define CL_JIT_DECLARE_SNAPSHOT_VALUES_ACCESSOR(name)                          \
+    static constexpr uint32_t name##_operand_index =                           \
+        static_cast<uint32_t>(OperandIndex::name);                             \
     SnapshotValueRefRange name() const                                         \
     {                                                                          \
         constexpr size_t index = static_cast<size_t>(OperandIndex::name);      \

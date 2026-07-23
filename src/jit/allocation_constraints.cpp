@@ -2,6 +2,7 @@
 
 #include "runtime/fatal.h"
 
+#include <array>
 #include <bit>
 #include <cstddef>
 #include <utility>
@@ -153,6 +154,22 @@ namespace cl::jit
             AccessTiming::Late,
             RegisterRequirement::any(
                 register_class_for_representation(representation))};
+    }
+
+    AllocationConstraints::AllocationConstraints(
+        std::vector<RegisterClassDefinition> register_classes,
+        std::vector<InstructionAllocationConstraints> instruction_overrides)
+        : register_classes_(std::move(register_classes)),
+          instruction_overrides_(std::move(instruction_overrides))
+    {
+        std::array<bool, static_cast<size_t>(RegisterClass::Count)> seen{};
+        for(const RegisterClassDefinition &definition: register_classes_)
+        {
+            size_t index = static_cast<size_t>(definition.register_class());
+            require_constraint(!seen[index],
+                               "duplicate JIT register class definition");
+            seen[index] = true;
+        }
     }
 
     InstructionAllocationConstraints::InstructionAllocationConstraints(

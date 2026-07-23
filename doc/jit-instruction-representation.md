@@ -750,6 +750,12 @@ TaggedValueRef make_const(Value constant);
 F64Ref make_mov_f64(F64Ref source);
 ```
 
+Each concrete instruction class also exposes the schema position of every
+operand as static `constexpr` data, such as
+`ReturnInstruction::return_value_operand_index`. Target preparation can
+therefore anchor a sparse operand constraint without repeating a positional
+integer or switching on the instruction kind.
+
 Defining separate kinds keeps their generated construction and access APIs
 concrete and prevents a representation-polymorphic instruction from becoming
 an unchecked escape hatch. Exact macro spelling remains an implementation

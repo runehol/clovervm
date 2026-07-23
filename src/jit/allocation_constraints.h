@@ -5,6 +5,7 @@
 #include "jit/physical_register.h"
 
 #include <optional>
+#include <utility>
 #include <vector>
 
 namespace cl::jit
@@ -104,6 +105,30 @@ namespace cl::jit
         std::optional<ResultConstraint> result_override_;
         std::vector<TemporaryConstraint> temporaries_;
         RegisterSet clobbers_;
+    };
+
+    class AllocationConstraints
+    {
+    public:
+        AllocationConstraints(
+            std::vector<RegisterClassDefinition> register_classes,
+            std::vector<InstructionAllocationConstraints>
+                instruction_overrides);
+
+        const std::vector<RegisterClassDefinition> &register_classes() const
+        {
+            return register_classes_;
+        }
+
+        const std::vector<InstructionAllocationConstraints> &
+        instruction_overrides() const
+        {
+            return instruction_overrides_;
+        }
+
+    private:
+        std::vector<RegisterClassDefinition> register_classes_;
+        std::vector<InstructionAllocationConstraints> instruction_overrides_;
     };
 
     RegisterClass

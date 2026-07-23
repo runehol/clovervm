@@ -8,6 +8,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <span>
+#include <vector>
 
 namespace cl::jit
 {
@@ -96,15 +97,24 @@ namespace cl::jit
             members_{};
     };
 
-    struct RegisterClassDefinition
+    class RegisterClassDefinition
     {
+    public:
         RegisterClassDefinition(
-            RegisterClass register_class, RegisterSet members,
+            RegisterClass register_class,
             std::span<const PhysicalRegister> allocation_order);
 
-        RegisterClass register_class;
-        RegisterSet members;
-        std::span<const PhysicalRegister> allocation_order;
+        RegisterClass register_class() const { return register_class_; }
+        const RegisterSet &members() const { return members_; }
+        const std::vector<PhysicalRegister> &allocation_order() const
+        {
+            return allocation_order_;
+        }
+
+    private:
+        RegisterClass register_class_;
+        RegisterSet members_;
+        std::vector<PhysicalRegister> allocation_order_;
     };
 
 }  // namespace cl::jit

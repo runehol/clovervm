@@ -58,25 +58,31 @@ namespace cl::jit
         members.insert(x1);
         std::array order = {x1, x0};
 
-        RegisterClassDefinition definition(RegisterClass::GPR, members, order);
-        EXPECT_EQ(RegisterClass::GPR, definition.register_class);
-        EXPECT_EQ(members, definition.members);
-        EXPECT_EQ(x1, definition.allocation_order[0]);
-
-        std::array missing = {x0};
-        EXPECT_DEATH(
-            (void)RegisterClassDefinition(RegisterClass::GPR, members, missing),
-            "does not contain every register exactly once");
+        RegisterClassDefinition definition(RegisterClass::GPR, order);
+        EXPECT_EQ(RegisterClass::GPR, definition.register_class());
+        EXPECT_EQ(members, definition.members());
+        EXPECT_EQ(x1, definition.allocation_order()[0]);
 
         std::array duplicate = {x0, x0};
-        EXPECT_DEATH((void)RegisterClassDefinition(RegisterClass::GPR, members,
-                                                   duplicate),
-                     "contains a duplicate");
+        EXPECT_DEATH(
+            (void)RegisterClassDefinition(RegisterClass::GPR, duplicate),
+            "contains a duplicate");
 
         std::array wrong_class = {x0, d0};
-        EXPECT_DEATH((void)RegisterClassDefinition(RegisterClass::GPR, members,
-                                                   wrong_class),
-                     "wrong register class");
+        EXPECT_DEATH(
+            (void)RegisterClassDefinition(RegisterClass::GPR, wrong_class),
+            "wrong register class");
+    }
+
+    TEST(JitPhysicalRegister, RejectsDuplicateClassDefinitions)
+    {
+        std::array order = {x0, x1};
+        std::vector<RegisterClassDefinition> definitions;
+        definitions.emplace_back(RegisterClass::GPR, order);
+        definitions.emplace_back(RegisterClass::GPR, order);
+
+        EXPECT_DEATH((void)AllocationConstraints(std::move(definitions), {}),
+                     "duplicate JIT register class definition");
     }
 
     TEST(JitRegisterRequirement, RepresentsAnyFixedAndSameAsInput)

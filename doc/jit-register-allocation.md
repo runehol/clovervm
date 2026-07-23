@@ -4,10 +4,10 @@
 |---|---|
 | Document type | Design |
 | Status | Proposed |
-| Implementation | Target register vocabulary and structural constraint validation implemented |
+| Implementation | Target register vocabulary, structural constraint validation, and the initial AArch64 platform-ABI constraint producer implemented |
 | Scope | Allocation constraints, allocator-local numbering, liveness, bundles, backtracking allocation, live-range splitting, block-argument moves, clobbers, spills, and post-allocation location assignments |
 | Owning layers | Target backends own allocation-constraint construction; the generic register allocator owns numbering, liveness, bundles, splitting, allocation, spill decisions, and allocator-induced move resolution; publication and recovery planners own canonical-state synchronization; machine-code emission consumes final assignments and resolved moves |
-| Validated against | `tests/test_jit_allocation_constraints.cpp` |
+| Validated against | `tests/test_jit_allocation_constraints.cpp`, `tests/test_aarch64_allocation_constraints.cpp` |
 | Supersedes | The open register-allocation direction in [JIT Compiler and IR](jit-compiler-and-ir.md) and [JIT Compiler Bring-up Plan](jit-compiler-bring-up-plan.md) |
 
 This document defines the register-allocation contract for the clovervm JIT. It
@@ -108,11 +108,21 @@ private:
         members_{};
 };
 
-struct RegisterClassDefinition
+class RegisterClassDefinition
 {
-    RegisterClass register_class;
-    RegisterSet members;
-    std::span<const PhysicalRegister> allocation_order;
+public:
+    RegisterClassDefinition(
+        RegisterClass register_class,
+        std::span<const PhysicalRegister> allocation_order);
+
+    RegisterClass register_class() const;
+    const RegisterSet &members() const;
+    const std::vector<PhysicalRegister> &allocation_order() const;
+
+private:
+    RegisterClass register_class_;
+    RegisterSet members_;
+    std::vector<PhysicalRegister> allocation_order_;
 };
 ```
 
@@ -141,14 +151,16 @@ unwritten upper bits are unspecified until an explicit extension. Legacy x86
 high-byte registers are not exposed to the allocator.
 
 One `RegisterClassDefinition` enables and defines a class for an allocation
-attempt. `members` contains exactly the allocatable physical registers in that
-class, excluding stack pointers, reserved registers, and other unavailable
-locations. `allocation_order` contains every member exactly once and no
-non-member; it is the target's default priority order when several registers
-are equally legal. Fixed constraints, bundle affinities, and later cost
-heuristics may override that preference. A `RegisterSet` may contain registers
-from several classes, which keeps large call-clobber masks compact. The initial
-contract permits at most 64 physical registers in each class.
+attempt. Its constructor copies the target's allocation order into owned
+storage and derives `members` from it, making it impossible for the two views
+to disagree or for the order to outlive its backing storage. The
+order contains every allocatable physical register exactly once and excludes
+stack pointers, reserved registers, and other unavailable locations. It is the
+target's default priority order when several registers are equally legal.
+Fixed constraints, bundle affinities, and later cost heuristics may override
+that preference. A `RegisterSet` may contain registers from several classes,
+which keeps large call-clobber masks compact. The initial contract permits at
+most 64 physical registers in each class.
 
 ## Allocation Constraints
 
@@ -318,6 +330,18 @@ completed check. Debug constructors call `validate()` automatically. Release
 constructors only store the sparse data; compiler stages may call `validate()`
 explicitly when they need an exhaustive check.
 
+The backend publishes the enabled register-class definitions and sparse
+instruction overrides together as one read-only `AllocationConstraints`
+product. Overrides remain in CFG traversal order. The allocator combines this
+product with the common representation-derived defaults and generic block-edge
+and Snapshot rules.
+
+`AllocationConstraints` are valid for the exact published graph generation
+from which the backend produced them. The CFG must remain frozen until
+allocation finishes; rewriting the graph first invalidates the product and
+requires rebuilding it. This phase contract avoids permanent placement metadata
+or per-access generation checks in the allocator.
+
 `RegisterRequirement::Any` names a register class;
 `RegisterRequirement::Fixed` names one physical register; and
 `RegisterRequirement::SameAsInput` names the ProgramValue input whose assigned
@@ -357,6 +381,34 @@ Register requirements and spill compatibility must agree with the Core
 `ValueRepresentation` of the value. A constraint may narrow that representation
 to a target class or fixed register, but it must not change representation
 semantics. Representation changes remain explicit Core instructions.
+
+## Initial AArch64 Bring-up Contract
+
+The first AArch64 constraint producer temporarily follows the platform ABI.
+This is a bring-up choice, not the final CloverVM calling convention:
+
+- the enabled GPR class contains `x0` through `x15`, in that allocation order;
+- the enabled SIMD class contains caller-saved `v0` through `v7` followed by
+  `v16` through `v31`;
+- `x16` and `x17` remain unavailable until all branch and call scratch
+  requirements are represented;
+- platform-reserved `x18` is unavailable;
+- callee-saved GPRs and `v8` through `v15` remain unavailable until prologue
+  and epilogue generation preserves them;
+- tagged entry-block parameters zero through seven have fixed result
+  constraints `x0` through `x7`;
+- tagged internal block parameters use the ordinary `Any(GPR)` default;
+- F64 internal block parameters use the ordinary `Any(SIMD)` default;
+- a `Return` input has a fixed `x0` constraint;
+- conditional and unconditional branches request one `Any(GPR)` temporary for
+  a possible long form;
+- `Const`, SMI bitwise instructions, and the virtual `Snapshot` instruction
+  need no target override.
+
+Stack-passed entry parameters, F64 entry parameters, calls, and instruction
+kinds without a bring-up lowering hard-fail instead of silently receiving an
+incomplete contract. Later CloverVM ABI work replaces the entry and return
+overrides without changing the generic constraint representation.
 
 Constraint validation enforces:
 

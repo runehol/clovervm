@@ -90,6 +90,8 @@ add_library(libclovervm_objects OBJECT
     import_system/import_system.h
     jit/aarch64_assembler.cpp
     jit/aarch64_assembler.h
+    jit/aarch64_allocation_constraints.cpp
+    jit/aarch64_allocation_constraints.h
     jit/aarch64_cfg_emitter.cpp
     jit/aarch64_cfg_emitter.h
     jit/allocation_constraints.cpp
