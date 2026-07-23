@@ -9,6 +9,7 @@
 #include <absl/container/inlined_vector.h>
 
 #include <cassert>
+#include <cstdint>
 #include <functional>
 #include <memory>
 #include <type_traits>
@@ -16,6 +17,12 @@
 
 namespace cl::jit
 {
+    enum class RewriteInput : uint8_t
+    {
+        Original,
+        Normalized,
+    };
+
     class RewriteContext
     {
     public:
@@ -130,6 +137,15 @@ namespace cl::jit
         RewriteSummary rewrite_instructions(InstructionTraversal traversal,
                                             Callback &&callback)
         {
+            return rewrite_instructions(traversal, RewriteInput::Original,
+                                        std::forward<Callback>(callback));
+        }
+
+        template <typename Callback>
+        RewriteSummary rewrite_instructions(InstructionTraversal traversal,
+                                            RewriteInput input,
+                                            Callback &&callback)
+        {
             using CallbackType = std::remove_reference_t<Callback>;
             auto invoke_callback =
                 [](void *opaque, RewriteContext &context,
@@ -139,7 +155,7 @@ namespace cl::jit
                                    context, queries, block, instruction);
             };
             return rewrite_instructions_erased(
-                traversal,
+                traversal, input,
                 const_cast<void *>(
                     static_cast<const void *>(std::addressof(callback))),
                 invoke_callback);
@@ -153,7 +169,7 @@ namespace cl::jit
 
         RewriteSummary
         rewrite_instructions_erased(InstructionTraversal traversal,
-                                    void *callback,
+                                    RewriteInput input, void *callback,
                                     ErasedCallback invoke_callback);
 
         CompilationArena *arena_;

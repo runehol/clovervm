@@ -12,10 +12,11 @@
 
 JIT IR instructions are immutable. A graph rewrite constructs a replacement
 instruction stream rather than editing instruction payloads or rewriting use
-slots in place. The callback sees each instruction from the original published
-graph. After the callback returns, the rewriter resolves the proposed output
-through replacements for definitions already visited and appends the canonical
-form to a staged instruction stream.
+slots in place. By default, the callback sees each instruction from the
+original published graph. A rewrite may instead request an input normalized
+through replacements for definitions already visited. After the callback
+returns, the rewriter resolves the proposed output in either mode and appends
+the canonical form to a staged instruction stream.
 
 This design covers local instruction rewrites, lowering one instruction to an
 instruction sequence, erasure, and passes such as dead-code elimination. It
@@ -235,7 +236,7 @@ graph does not incrementally maintain permanent use lists.
 
 ## Core Model
 
-For each original instruction, the rewriter performs:
+In the default original-input mode, the rewriter performs:
 
 ```text
 original instruction
@@ -277,10 +278,16 @@ receives the same query, block, and instruction traversal context as the
 read-only walker, preceded by a narrow rewrite-construction interface:
 
 ```cpp
+enum class RewriteInput : uint8_t
+{
+    Original,
+    Normalized,
+};
+
 GraphRewriter rewriter(arena, graph);
 
 RewriteSummary summary = rewriter.rewrite_instructions(
-    traversal,
+    traversal, RewriteInput::Original,
     [&](RewriteContext &context,
         const GraphQueries &queries,
         const Block &block,
@@ -288,6 +295,27 @@ RewriteSummary summary = rewriter.rewrite_instructions(
         // instruction belongs to the original published graph
     });
 ```
+
+The overload without a `RewriteInput` selects `Original`.
+
+`Original` passes the instruction from the published graph to the callback.
+This is the appropriate view for DCE and other analysis-driven passes.
+`Normalized` first reconstructs the instruction using replacements established
+for earlier definitions, then passes that normalized instruction to the
+callback. This is the appropriate view for lowering and canonicalization.
+`keep()` retains the instruction actually passed to the callback, so normalized
+input does not revert to the original instruction.
+
+Result normalization still runs after the callback in both modes. This resolves
+operands on newly emitted instructions and keeps one output contract regardless
+of the selected input view.
+
+Initially, `Normalized` cannot be combined with `GraphQuery::Uses`. Use lists
+describe the original published graph, while a normalized callback may receive
+a newly allocated instruction that has no entry in them. If a concrete pass
+eventually needs normalized matching and original use information, it should
+introduce an explicit dual-view callback rather than making this relationship
+implicit.
 
 `RewriteContext` exposes only operations permitted while constructing a rewrite:
 
@@ -374,7 +402,9 @@ become a replacement def.
 has a result, `new` must produce a compatible replacement result. When the
 original has no result, the emitted instruction establishes no replacement def.
 `replace_with_def()` is equivalent to an empty emitted sequence plus an
-explicit existing replacement def.
+explicit replacement def already available in the staged block. In normalized
+mode that may be a reconstructed earlier def rather than an instruction from
+the published graph.
 
 For example, eliminating an identity operation emits nothing and redirects its
 uses to the identity's source:
@@ -383,8 +413,8 @@ uses to the identity's source:
 return RewriteResult::replace_with_def(identity.source());
 ```
 
-An existing graph instruction is never returned as an emitted replacement
-instruction merely to express this substitution.
+An available definition is never returned as an emitted replacement instruction
+merely to express this substitution.
 
 A replacement sequence separates execution from value identity. For example,
 lowering one operation to an AArch64 immediate materialization followed by an
@@ -411,7 +441,7 @@ The rewriter validates each result before commit:
   `RewriteContext`;
 - the only original instruction emitted at the current position is the current
   instruction selected by `keep()`;
-- an existing graph def used as a replacement is named through
+- a def already available in the staged block is named through
   `replace_with_def()` rather than emitted;
 - sequence order satisfies definition-before-use;
 - every operand refers to a block parameter, an earlier staged result, or an
@@ -512,17 +542,18 @@ After every block has been traversed:
    attached analyses;
 5. debug and test configurations verify the completed graph.
 
-This graph-wide commit keeps the original graph and prepared `GraphQueries`
-valid throughout all callbacks. No callback observes a graph in which only
-earlier blocks have committed.
+This graph-wide commit keeps the original graph and any permitted prepared
+`GraphQueries` valid throughout all callbacks. No callback observes a graph in
+which only earlier blocks have committed.
 
 Arena allocations created during the rewrite need no rollback. Allocation
 failure abandons the compilation session under the existing JIT failure model.
 Ordinary passes cannot observe the staged block.
 
-The callback-based API is the initial public surface. A cursor may later wrap
-the same staging engine if a pass needs manual traversal control, but it must
-preserve the same original-input, post-result-normalization, and commit rules.
+The callback-based API is the initial public surface. A cursor or callback class
+with hooks for additional rewrite events may later wrap the same staging engine
+if a pass needs more control, but it must preserve the selected input view,
+post-result normalization, and commit rules.
 
 ## Terminators and CFG Changes
 
@@ -544,11 +575,12 @@ effects of `rewrite_instructions()`.
 
 The graph rewriter prepares only the queries declared by its
 `InstructionTraversal`. A pass requests uses only when its semantic decisions
-require use counts or use enumeration. Because callbacks receive original
-instructions and commit occurs only after every callback, the prepared
-`GraphQueries` remains valid throughout the rewrite walk. The completed
-structural rewrite then advances the graph generation, making that façade and
-the cached index stale. A later traversal requesting uses rebuilds it.
+require use counts or use enumeration. Such analysis-driven passes select
+`RewriteInput::Original`; normalized input rejects use lists. Because commit
+occurs only after every callback, permitted prepared `GraphQueries` remain valid
+throughout the rewrite walk. The completed structural rewrite then advances the
+graph generation, making that façade and the cached index stale. A later
+traversal requesting uses rebuilds it.
 
 The rewrite summary records at least whether instructions changed and whether
 the terminator changed. Since this API preserves successor edges, ordinary

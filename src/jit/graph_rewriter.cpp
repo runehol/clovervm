@@ -109,14 +109,16 @@ namespace cl::jit
         };
     }  // namespace
 
-    RewriteSummary
-    GraphRewriter::rewrite_instructions_erased(InstructionTraversal traversal,
-                                               void *callback,
-                                               ErasedCallback invoke_callback)
+    RewriteSummary GraphRewriter::rewrite_instructions_erased(
+        InstructionTraversal traversal, RewriteInput input, void *callback,
+        ErasedCallback invoke_callback)
     {
         assert(graph_ != nullptr);
         assert(graph_->is_published());
         assert(traversal.block_order() == BlockWalkOrder::ProgramOrder);
+        assert((input != RewriteInput::Normalized ||
+                !has_graph_query(traversal.queries(), GraphQuery::Uses)) &&
+               "normalized rewrite input cannot be combined with use lists");
         assert(callback != nullptr);
         assert(invoke_callback != nullptr);
 
@@ -141,8 +143,19 @@ namespace cl::jit
             for(Instruction *original: block->instructions_)
             {
                 assert(original != nullptr);
+                Instruction *callback_input = original;
+                if(input == RewriteInput::Normalized)
+                {
+                    SequenceReplacements no_sequence_replacements;
+                    DefResolver resolver(def_replacements,
+                                         no_sequence_replacements);
+                    callback_input = rebuild_instruction_with_operands(
+                        *original, resolver, context);
+                    validate_available_operands(*callback_input,
+                                                available_defs);
+                }
                 RewriteResult result = invoke_callback(
-                    callback, context, queries, *block, *original);
+                    callback, context, queries, *block, *callback_input);
                 SequenceReplacements sequence_replacements;
                 RewriteResult::InstructionSequence proposed_instructions;
                 Instruction *proposed_replacement = nullptr;
@@ -152,11 +165,11 @@ namespace cl::jit
                 switch(result.kind_)
                 {
                     case RewriteResult::Kind::Keep:
-                        proposed_instructions.push_back(original);
+                        proposed_instructions.push_back(callback_input);
                         proposed_replacement =
-                            original->result_class() == ResultClass::None
+                            callback_input->result_class() == ResultClass::None
                                 ? nullptr
-                                : original;
+                                : callback_input;
                         break;
                     case RewriteResult::Kind::Erase:
                         explicitly_erased = true;
@@ -222,13 +235,12 @@ namespace cl::jit
                                          sequence_replacements);
                     if(replacement_is_existing_def)
                     {
-                        assert(!allocated_instructions.contains(
-                                   proposed_replacement) &&
-                               "replace_with_def requires an existing graph "
-                               "definition");
                         normalized_replacement =
                             resolver.resolve(proposed_replacement);
-                        assert(available_defs.contains(normalized_replacement));
+                        assert(
+                            available_defs.contains(normalized_replacement) &&
+                            "replace_with_def requires a definition already "
+                            "available in the staged block");
                     }
                     else
                     {

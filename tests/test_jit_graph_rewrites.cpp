@@ -224,6 +224,92 @@ namespace cl::jit
         EXPECT_EQ(1u, rebuilt_queries.uses_of(*parameter).n_uses());
     }
 
+    TEST(JitGraphRewriter, CanPassNormalizedInstructionsToTheCallback)
+    {
+        CompilationArena arena;
+        GraphBuilder builder(arena);
+        Block *entry = builder.emplace_block();
+        ConstInstruction *old_constant =
+            builder.emplace_instruction<ConstInstruction>(entry, Value::None());
+        MovInstruction *old_move = builder.emplace_instruction<MovInstruction>(
+            entry, TaggedValueRef(old_constant));
+        ReturnInstruction *old_return =
+            builder.emplace_instruction<ReturnInstruction>(
+                entry, TaggedValueRef(old_move));
+        ControlFlowGraph *graph = builder.finalize();
+
+        ConstInstruction *new_constant = nullptr;
+        GraphRewriter rewriter(arena, *graph);
+        RewriteSummary summary = rewriter.rewrite_instructions(
+            InstructionTraversal(), RewriteInput::Normalized,
+            [&](RewriteContext &context, const GraphQueries &, const Block &,
+                const Instruction &instruction) {
+                switch(instruction.kind())
+                {
+                    case InstructionKind::Const:
+                        new_constant =
+                            context.make_instruction<ConstInstruction>(
+                                Value::True());
+                        return RewriteResult::replace(new_constant);
+                    case InstructionKind::Mov:
+                        EXPECT_NE(old_move, &instruction);
+                        EXPECT_EQ(new_constant,
+                                  instruction.as<MovInstruction>()
+                                      ->source()
+                                      .instruction());
+                        return RewriteResult::replace_with_def(
+                            instruction.as<MovInstruction>()->source());
+                    case InstructionKind::Return:
+                        EXPECT_NE(old_return, &instruction);
+                        EXPECT_EQ(new_constant,
+                                  instruction.as<ReturnInstruction>()
+                                      ->return_value()
+                                      .instruction());
+                        return RewriteResult::keep();
+                    default:
+                        break;
+                }
+                ADD_FAILURE() << "unexpected instruction kind";
+                return RewriteResult::keep();
+            });
+
+        EXPECT_TRUE(summary.instructions_changed);
+        EXPECT_TRUE(summary.terminators_changed);
+        EXPECT_TRUE(old_constant->is_detached());
+        EXPECT_TRUE(old_move->is_detached());
+        EXPECT_TRUE(old_return->is_detached());
+        ASSERT_EQ(2u, entry->instructions().size());
+        EXPECT_EQ(new_constant, entry->instructions()[0]);
+        EXPECT_EQ(new_constant, entry->instructions()[1]
+                                    ->as<ReturnInstruction>()
+                                    ->return_value()
+                                    .instruction());
+    }
+
+    TEST(JitGraphRewriter, RejectsUseListsWithNormalizedInput)
+    {
+        EXPECT_DEATH(
+            {
+                CompilationArena arena;
+                GraphBuilder builder(arena);
+                Block *entry = builder.emplace_block();
+                ConstInstruction *constant =
+                    builder.emplace_instruction<ConstInstruction>(
+                        entry, Value::None());
+                builder.emplace_instruction<ReturnInstruction>(
+                    entry, TaggedValueRef(constant));
+                ControlFlowGraph *graph = builder.finalize();
+
+                GraphRewriter rewriter(arena, *graph);
+                rewriter.rewrite_instructions(
+                    InstructionTraversal().with_queries(GraphQuery::Uses),
+                    RewriteInput::Normalized,
+                    [](RewriteContext &, const GraphQueries &, const Block &,
+                       const Instruction &) { return RewriteResult::keep(); });
+            },
+            "normalized rewrite input");
+    }
+
     TEST(JitGraphRewriter, ReconstructsVariadicInstructionsFromTheSchema)
     {
         CompilationArena arena;
