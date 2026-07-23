@@ -70,19 +70,16 @@ namespace cl::jit
     void UseLists::add_instruction_uses(const Block &block,
                                         const Instruction &instruction)
     {
-        uint16_t operand_index = 0;
         visit_operand_references(
-            instruction,
-            [&](OperandClass, ValueRepresentation, Instruction *def) {
+            instruction, [&](uint32_t operand_index, OperandClass,
+                             ValueRepresentation, Instruction *def) {
                 auto found = index_by_def_.find(def);
                 assert(found != index_by_def_.end());
                 Uses &uses = uses_[found->second];
                 assert(uses.block_ == &block);
                 uses.instruction_uses_.push_back(
                     InstructionUse{&instruction, operand_index});
-                ++operand_index;
             });
-        assert(operand_index == instruction.operand_count());
     }
 
 }  // namespace cl::jit

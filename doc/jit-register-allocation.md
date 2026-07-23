@@ -221,33 +221,33 @@ public:
 
     static RegisterRequirement any(RegisterClass register_class);
     static RegisterRequirement fixed(PhysicalRegister reg);
-    static RegisterRequirement same_as_input(uint16_t operand_index);
+    static RegisterRequirement same_as_input(uint32_t operand_index);
 
     Kind kind() const;
     RegisterClass register_class() const;
     PhysicalRegister fixed_register() const;
-    uint16_t input_index() const;
+    uint32_t input_index() const;
 
 private:
-    RegisterRequirement(Kind kind, uint16_t payload);
+    RegisterRequirement(Kind kind, uint32_t payload);
 
     Kind kind_;
-    uint16_t payload_;
+    uint32_t payload_;
 };
 
 struct ProgramValueUseConstraint
 {
-    ProgramValueUseConstraint(uint16_t operand_index, AccessTiming timing,
+    ProgramValueUseConstraint(uint32_t operand_index, AccessTiming timing,
                               RegisterRequirement requirement);
 
-    uint16_t operand_index;
+    uint32_t operand_index;
     AccessTiming timing;
     RegisterRequirement requirement;
 };
 
 struct SnapshotUse
 {
-    uint16_t operand_index;
+    uint32_t operand_index;
     AccessTiming timing;
 };
 
@@ -328,6 +328,11 @@ Construction and verification enforce:
 Parameter instructions use the same result constraint. Their placement in a
 block's parameter list anchors the def at block entry rather than at an
 executable instruction phase.
+
+Instruction records may retain a narrower packed operand count, but traversal,
+constraint APIs, and operand-index arithmetic use `uint32_t`. Widening at the
+representation boundary avoids narrow-integer wrap semantics in ordinary
+compiler loops.
 
 ## Durable Anchors and Ephemeral Positions
 

@@ -121,12 +121,6 @@ namespace cl::jit
         for(const Block *block: blocks)
         {
             const std::vector<Instruction *> &parameters = block->parameters();
-            if(block != graph.entry_block() && !parameters.empty())
-            {
-                return invalid(block_name(block) +
-                               " has parameters before block-edge arguments "
-                               "are supported");
-            }
             for(const Instruction *parameter: parameters)
             {
                 if(parameter == nullptr)
@@ -327,7 +321,7 @@ namespace cl::jit
                 std::string reference_error;
                 visit_operand_references(
                     *instruction,
-                    [&](OperandClass operand_class,
+                    [&](uint32_t, OperandClass operand_class,
                         ValueRepresentation required_representation,
                         Instruction *def) {
                         if(!reference_error.empty())

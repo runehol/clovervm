@@ -110,6 +110,27 @@ namespace cl::jit
         EXPECT_EQ(return_instruction, entry->instructions()[0]);
     }
 
+    TEST(JitCfg, ParametersMayBelongToAnyBlock)
+    {
+        CompilationSession session;
+        GraphBuilder builder(session);
+        Block *entry = builder.emplace_block();
+        Block *exit = builder.emplace_block();
+        BlockEdge *edge = builder.make_block_edge(entry, exit);
+        builder.emplace_instruction<UnconditionalBranchInstruction>(entry,
+                                                                    edge);
+        ParameterInstruction *parameter =
+            builder.emplace_parameter<ParameterInstruction>(exit);
+        builder.emplace_instruction<ReturnInstruction>(
+            exit, emplace_constant(builder, exit, Value::None()));
+
+        ControlFlowGraph *graph = builder.finalize();
+
+        EXPECT_TRUE(graph->is_published());
+        ASSERT_EQ(1u, exit->parameters().size());
+        EXPECT_EQ(parameter, exit->parameters()[0]);
+    }
+
     TEST(JitCfgVerifier, RejectsEmptyBlock)
     {
         CompilationSession session;

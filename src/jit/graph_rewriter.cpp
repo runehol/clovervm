@@ -104,7 +104,7 @@ namespace cl::jit
             const absl::flat_hash_set<const Instruction *> &available_defs)
         {
             visit_operand_references(
-                instruction, [&](OperandClass operand_class,
+                instruction, [&](uint32_t, OperandClass operand_class,
                                  ValueRepresentation required_representation,
                                  Instruction *def) {
                     require_rewrite_invariant(

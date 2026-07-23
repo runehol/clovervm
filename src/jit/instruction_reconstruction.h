@@ -91,7 +91,7 @@ namespace cl::jit
         bool changed = false;
         visit_operand_references(
             instruction,
-            [&](OperandClass, ValueRepresentation, Instruction *def) {
+            [&](uint32_t, OperandClass, ValueRepresentation, Instruction *def) {
                 changed |= def_resolver.resolve(def) != def;
             });
         if(!changed)

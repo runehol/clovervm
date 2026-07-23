@@ -268,15 +268,16 @@ namespace cl::jit
         EXPECT_EQ(snapshot.instruction(), add->snapshot().instruction());
 
         std::vector<std::pair<OperandClass, Instruction *>> references;
-        visit_operand_references(*add, [&](OperandClass operand_class,
-                                           ValueRepresentation representation,
-                                           Instruction *def) {
-            EXPECT_EQ(operand_class == OperandClass::ProgramValue
-                          ? ValueRepresentation::TaggedValue
-                          : ValueRepresentation::None,
-                      representation);
-            references.emplace_back(operand_class, def);
-        });
+        visit_operand_references(
+            *add, [&](uint32_t operand_index, OperandClass operand_class,
+                      ValueRepresentation representation, Instruction *def) {
+                EXPECT_EQ(references.size(), operand_index);
+                EXPECT_EQ(operand_class == OperandClass::ProgramValue
+                              ? ValueRepresentation::TaggedValue
+                              : ValueRepresentation::None,
+                          representation);
+                references.emplace_back(operand_class, def);
+            });
 
         ASSERT_EQ(3u, references.size());
         EXPECT_EQ(OperandClass::ProgramValue, references[0].first);
@@ -331,15 +332,16 @@ namespace cl::jit
         EXPECT_EQ(23u, snapshot.instruction()->slot(1));
 
         std::vector<std::pair<OperandClass, Instruction *>> references;
-        visit_operand_references(*call, [&](OperandClass operand_class,
-                                            ValueRepresentation representation,
-                                            Instruction *def) {
-            EXPECT_EQ(operand_class == OperandClass::ProgramValue
-                          ? ValueRepresentation::TaggedValue
-                          : ValueRepresentation::None,
-                      representation);
-            references.emplace_back(operand_class, def);
-        });
+        visit_operand_references(
+            *call, [&](uint32_t operand_index, OperandClass operand_class,
+                       ValueRepresentation representation, Instruction *def) {
+                EXPECT_EQ(references.size(), operand_index);
+                EXPECT_EQ(operand_class == OperandClass::ProgramValue
+                              ? ValueRepresentation::TaggedValue
+                              : ValueRepresentation::None,
+                          representation);
+                references.emplace_back(operand_class, def);
+            });
 
         ASSERT_EQ(5u, references.size());
         EXPECT_EQ(callable.instruction(), references[0].second);
@@ -397,8 +399,9 @@ namespace cl::jit
         std::vector<Instruction *> references;
         visit_operand_references(
             *snapshot,
-            [&](OperandClass operand_class, ValueRepresentation representation,
-                Instruction *def) {
+            [&](uint32_t operand_index, OperandClass operand_class,
+                ValueRepresentation representation, Instruction *def) {
+                EXPECT_EQ(references.size(), operand_index);
                 EXPECT_EQ(OperandClass::ProgramValue, operand_class);
                 EXPECT_EQ(ValueRepresentation::None, representation);
                 references.push_back(def);

@@ -68,7 +68,6 @@ namespace cl::jit
         void append_parameter(Block *block, T *parameter)
         {
             assert_can_mutate(block);
-            assert(block == graph_->entry_block());
             assert(parameter != nullptr);
             block->append_parameter(parameter);
         }

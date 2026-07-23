@@ -14,7 +14,7 @@ namespace cl::jit
     struct InstructionUse
     {
         const Instruction *instruction;
-        uint16_t operand_index;
+        uint32_t operand_index;
     };
 
     struct BlockArgumentUse

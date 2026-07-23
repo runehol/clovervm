@@ -1030,9 +1030,9 @@ namespace cl::jit
                    instruction.operand_count() == 0);
         }
         assert(instruction.operand_count() >= metadata.fixed_operand_count);
-        uint16_t variable_count =
+        uint32_t variable_count =
             instruction.operand_count() - metadata.fixed_operand_count;
-        uint16_t operand_index = 0;
+        uint32_t operand_index = 0;
 
         auto next_operand_word = [&] {
             assert(operand_index < instruction.operand_count());
@@ -1044,18 +1044,19 @@ namespace cl::jit
             return instruction.slot(slot_index++);
         };
 
-        auto visit_program_value = [&](uintptr_t word,
+        auto visit_program_value = [&](uint32_t index, uintptr_t word,
                                        ValueRepresentation representation) {
             Instruction *def = reinterpret_cast<Instruction *>(word);
             assert(def != nullptr);
             assert(def->result_class() == ResultClass::ProgramValue);
-            visitor(OperandClass::ProgramValue, representation, def);
+            visitor(index, OperandClass::ProgramValue, representation, def);
         };
-        auto visit_snapshot = [&](uintptr_t word) {
+        auto visit_snapshot = [&](uint32_t index, uintptr_t word) {
             Instruction *def = reinterpret_cast<Instruction *>(word);
             assert(def != nullptr);
             assert(def->result_class() == ResultClass::Snapshot);
-            visitor(OperandClass::Snapshot, ValueRepresentation::None, def);
+            visitor(index, OperandClass::Snapshot, ValueRepresentation::None,
+                    def);
         };
 
         switch(instruction.kind())
@@ -1065,39 +1066,43 @@ namespace cl::jit
 #define CL_JIT_EFFECT_BOUNDS(...)
 #define CL_JIT_VISIT_FIXED_OPERAND(name, operand_class, representation)        \
     ([&] {                                                                     \
+        uint32_t current_operand_index = operand_index;                        \
         uintptr_t word = next_operand_word();                                  \
         if constexpr(OperandClass::operand_class ==                            \
                      OperandClass::ProgramValue)                               \
         {                                                                      \
-            visit_program_value(word, ValueRepresentation::representation);    \
+            visit_program_value(current_operand_index, word,                   \
+                                ValueRepresentation::representation);          \
         }                                                                      \
         else                                                                   \
         {                                                                      \
-            visit_snapshot(word);                                              \
+            visit_snapshot(current_operand_index, word);                       \
         }                                                                      \
     }());
 #define CL_JIT_VISIT_VARIADIC_OPERAND(name, operand_class, representation)     \
     ([&] {                                                                     \
-        for(uint16_t index = 0; index < variable_count; ++index)               \
+        for(uint32_t index = 0; index < variable_count; ++index)               \
         {                                                                      \
+            uint32_t current_operand_index = operand_index;                    \
             uintptr_t word = next_operand_word();                              \
             if constexpr(OperandClass::operand_class ==                        \
                          OperandClass::ProgramValue)                           \
             {                                                                  \
-                visit_program_value(word,                                      \
+                visit_program_value(current_operand_index, word,               \
                                     ValueRepresentation::representation);      \
             }                                                                  \
             else                                                               \
             {                                                                  \
-                visit_snapshot(word);                                          \
+                visit_snapshot(current_operand_index, word);                   \
             }                                                                  \
         }                                                                      \
     }());
 #define CL_JIT_VISIT_SNAPSHOT_VALUES(name)                                     \
     ([&] {                                                                     \
-        for(uint16_t index = 0; index < variable_count; ++index)               \
+        for(uint32_t index = 0; index < variable_count; ++index)               \
         {                                                                      \
-            visit_program_value(next_operand_word(),                           \
+            uint32_t current_operand_index = operand_index;                    \
+            visit_program_value(current_operand_index, next_operand_word(),    \
                                 ValueRepresentation::None);                    \
         }                                                                      \
     }());
