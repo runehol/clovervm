@@ -1,0 +1,158 @@
+#include "jit/compilation_arena.h"
+#include "jit/graph_builder.h"
+#include "jit/instruction_traversal.h"
+#include "jit/use_lists.h"
+#include "object_model/value.h"
+
+#include <gtest/gtest.h>
+
+#include <array>
+#include <span>
+#include <utility>
+#include <vector>
+
+namespace cl::jit
+{
+    TEST(JitInstructionTraversal, WalksBodyInstructionsInProgramOrder)
+    {
+        CompilationArena arena;
+        GraphBuilder builder(arena);
+        Block *entry = builder.emplace_block();
+        Block *exit = builder.emplace_block();
+        builder.emplace_parameter<ParameterInstruction>(entry);
+        ConstInstruction *condition =
+            builder.emplace_instruction<ConstInstruction>(entry, Value::True());
+        BlockEdge *edge = builder.make_block_edge(entry, exit);
+        UnconditionalBranchInstruction *branch =
+            builder.emplace_instruction<UnconditionalBranchInstruction>(entry,
+                                                                        edge);
+        ConstInstruction *result =
+            builder.emplace_instruction<ConstInstruction>(exit, Value::None());
+        ReturnInstruction *return_instruction =
+            builder.emplace_instruction<ReturnInstruction>(
+                exit, TaggedValueRef(result));
+        ControlFlowGraph *graph = builder.finalize();
+
+        std::vector<std::pair<const Block *, const Instruction *>> visited;
+        walk_instructions(*graph,
+                          InstructionTraversal().with_block_order(
+                              BlockWalkOrder::ProgramOrder),
+                          [&](const GraphQueries &queries, const Block &block,
+                              const Instruction &instruction) {
+                              EXPECT_EQ(graph, &queries.graph());
+                              visited.emplace_back(&block, &instruction);
+                          });
+
+        ASSERT_EQ(4u, visited.size());
+        EXPECT_EQ(std::make_pair(static_cast<const Block *>(entry),
+                                 static_cast<const Instruction *>(condition)),
+                  visited[0]);
+        EXPECT_EQ(std::make_pair(static_cast<const Block *>(entry),
+                                 static_cast<const Instruction *>(branch)),
+                  visited[1]);
+        EXPECT_EQ(std::make_pair(static_cast<const Block *>(exit),
+                                 static_cast<const Instruction *>(result)),
+                  visited[2]);
+        EXPECT_EQ(std::make_pair(
+                      static_cast<const Block *>(exit),
+                      static_cast<const Instruction *>(return_instruction)),
+                  visited[3]);
+    }
+
+    TEST(JitUseLists, RecordsUseOccurrencesAndZeroUseDefinitions)
+    {
+        CompilationArena arena;
+        GraphBuilder builder(arena);
+        Block *entry = builder.emplace_block();
+        ParameterInstruction *parameter =
+            builder.emplace_parameter<ParameterInstruction>(entry);
+        ParameterF64Instruction *unused_parameter =
+            builder.emplace_parameter<ParameterF64Instruction>(entry);
+
+        std::array<ProgramValueRef, 1> captured_values = {
+            ProgramValueRef(parameter)};
+        SnapshotInstruction *snapshot =
+            builder.emplace_instruction<SnapshotInstruction>(
+                entry, std::span<const ProgramValueRef>(captured_values),
+                BytecodePC{17});
+        AddSMIInstruction *add = builder.emplace_instruction<AddSMIInstruction>(
+            entry, TaggedValueRef(parameter), TaggedValueRef(parameter),
+            SnapshotRef(snapshot));
+        ReturnInstruction *return_instruction =
+            builder.emplace_instruction<ReturnInstruction>(entry,
+                                                           TaggedValueRef(add));
+        ControlFlowGraph *graph = builder.finalize();
+
+        GraphQueries queries = graph->prepare_queries(GraphQuery::Uses);
+
+        const Uses &parameter_uses = queries.uses_of(*parameter);
+        EXPECT_EQ(parameter, parameter_uses.def());
+        EXPECT_EQ(entry, parameter_uses.block());
+        EXPECT_EQ(ResultClass::ProgramValue, parameter_uses.result_class());
+        EXPECT_EQ(ValueRepresentation::TaggedValue,
+                  parameter_uses.value_representation());
+        EXPECT_EQ(3u, parameter_uses.n_uses());
+        EXPECT_EQ(3u, parameter_uses.n_instruction_uses());
+        EXPECT_EQ(0u, parameter_uses.n_block_argument_uses());
+        EXPECT_TRUE(parameter_uses.block_argument_uses().empty());
+
+        const std::vector<InstructionUse> &instruction_uses =
+            parameter_uses.instruction_uses();
+        ASSERT_EQ(3u, instruction_uses.size());
+        EXPECT_EQ(snapshot, instruction_uses[0].instruction);
+        EXPECT_EQ(0u, instruction_uses[0].operand_index);
+        EXPECT_EQ(add, instruction_uses[1].instruction);
+        EXPECT_EQ(0u, instruction_uses[1].operand_index);
+        EXPECT_EQ(add, instruction_uses[2].instruction);
+        EXPECT_EQ(1u, instruction_uses[2].operand_index);
+
+        const Uses &snapshot_uses = queries.uses_of(*snapshot);
+        EXPECT_EQ(ResultClass::Snapshot, snapshot_uses.result_class());
+        EXPECT_EQ(ValueRepresentation::None,
+                  snapshot_uses.value_representation());
+        ASSERT_EQ(1u, snapshot_uses.n_instruction_uses());
+        EXPECT_EQ(add, snapshot_uses.instruction_uses()[0].instruction);
+        EXPECT_EQ(2u, snapshot_uses.instruction_uses()[0].operand_index);
+
+        const Uses &add_uses = queries.uses_of(*add);
+        ASSERT_EQ(1u, add_uses.n_uses());
+        EXPECT_EQ(return_instruction,
+                  add_uses.instruction_uses()[0].instruction);
+        EXPECT_EQ(0u, add_uses.instruction_uses()[0].operand_index);
+
+        const Uses &unused_uses = queries.uses_of(*unused_parameter);
+        EXPECT_EQ(ValueRepresentation::F64, unused_uses.value_representation());
+        EXPECT_EQ(0u, unused_uses.n_uses());
+        EXPECT_TRUE(unused_uses.instruction_uses().empty());
+        EXPECT_TRUE(unused_uses.block_argument_uses().empty());
+
+        GraphQueries reused_queries = graph->prepare_queries(GraphQuery::Uses);
+        EXPECT_EQ(&parameter_uses, &reused_queries.uses_of(*parameter));
+    }
+
+    TEST(JitUseLists, TraversalPreparesOnlyRequestedQueries)
+    {
+        CompilationArena arena;
+        GraphBuilder builder(arena);
+        Block *entry = builder.emplace_block();
+        ConstInstruction *constant =
+            builder.emplace_instruction<ConstInstruction>(entry, Value::None());
+        builder.emplace_instruction<ReturnInstruction>(
+            entry, TaggedValueRef(constant));
+        ControlFlowGraph *graph = builder.finalize();
+
+        size_t visited = 0;
+        walk_instructions(
+            *graph, InstructionTraversal().with_queries(GraphQuery::Uses),
+            [&](const GraphQueries &queries, const Block &,
+                const Instruction &) {
+                EXPECT_EQ(1u, queries.uses_of(*constant).n_uses());
+                ++visited;
+            });
+        EXPECT_EQ(2u, visited);
+
+        GraphQueries no_queries = graph->prepare_queries(GraphQuery::None);
+        EXPECT_DEATH((void)no_queries.uses_of(*constant), "");
+    }
+
+}  // namespace cl::jit

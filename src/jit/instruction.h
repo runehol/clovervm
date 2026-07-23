@@ -1028,17 +1028,16 @@ namespace cl::jit
 
         auto visit_program_value = [&](uintptr_t word,
                                        ValueRepresentation representation) {
-            Instruction *producer = reinterpret_cast<Instruction *>(word);
-            assert(producer != nullptr);
-            assert(producer->result_class() == ResultClass::ProgramValue);
-            visitor(OperandClass::ProgramValue, representation, producer);
+            Instruction *def = reinterpret_cast<Instruction *>(word);
+            assert(def != nullptr);
+            assert(def->result_class() == ResultClass::ProgramValue);
+            visitor(OperandClass::ProgramValue, representation, def);
         };
         auto visit_snapshot = [&](uintptr_t word) {
-            Instruction *producer = reinterpret_cast<Instruction *>(word);
-            assert(producer != nullptr);
-            assert(producer->result_class() == ResultClass::Snapshot);
-            visitor(OperandClass::Snapshot, ValueRepresentation::None,
-                    producer);
+            Instruction *def = reinterpret_cast<Instruction *>(word);
+            assert(def != nullptr);
+            assert(def->result_class() == ResultClass::Snapshot);
+            visitor(OperandClass::Snapshot, ValueRepresentation::None, def);
         };
 
         switch(instruction.kind())

@@ -24,6 +24,7 @@ target_sources(test_clovervm PRIVATE
 	test_code_cache.cpp
 	test_jit_arena.cpp
 	test_jit_cfg.cpp
+	test_jit_graph_rewrites.cpp
 	test_machine_address.cpp
 	test_machine_code_emitter.cpp
 	test_native_module_build.cpp

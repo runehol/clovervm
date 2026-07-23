@@ -4,10 +4,10 @@
 |---|---|
 | Document type | Design |
 | Status | Proposed |
-| Implementation | Not started |
-| Scope | Read-only instruction traversal, on-demand use records, and forward instruction rewriting within published JIT IR basic blocks |
-| Owning layers | The traversal contract owns observable walk order; the read-only walker owns inspection; the use-index builder owns use records; the graph rewriter owns operand substitution, instruction placement, and commit; the instruction schema owns reconstruction; individual passes own matching and semantic legality; CFG editing owns successor and predecessor changes |
-| Validated against | N/A |
+| Implementation | Read-only traversal and instruction use lists implemented; block arguments and graph rewriting not started |
+| Scope | Read-only instruction traversal, on-demand use lists, and forward instruction rewriting within published JIT IR basic blocks |
+| Owning layers | The CFG owns mutation generation and cached analysis storage; the traversal contract declares observable walk order and required queries; `GraphQueries` owns generation-checked callback access; the use-list builder owns use occurrences; the graph rewriter owns operand substitution, instruction placement, and commit; the instruction schema owns reconstruction; individual passes own matching and semantic legality; CFG editing owns successor and predecessor changes |
+| Validated against | `tests/test_jit_graph_rewrites.cpp` |
 | Supersedes | If accepted, the incremental mutable-operand rewrite direction in [JIT Instruction Representation](jit-instruction-representation.md) and [JIT Compiler and IR](jit-compiler-and-ir.md) |
 
 JIT IR instructions are immutable. A graph rewrite constructs a replacement
@@ -21,9 +21,11 @@ This design covers local instruction rewrites, lowering one instruction to an
 instruction sequence, erasure, and passes such as dead-code elimination. It
 does not cover changes to the CFG topology.
 
-Read-only traversal, use indexing, and structural rewriting are separate
-components. They share a traversal contract where appropriate, but the graph
-rewriter does not own, build, retain, or implicitly update a use index.
+Read-only traversal, use-list construction, and structural rewriting remain separate
+algorithms. The CFG owns on-demand cached analysis storage because it also owns
+the mutation generation and the instructions indexed by those analyses.
+Walkers and rewriters prepare the queries declared by their common traversal
+configuration and pass a generation-checked query façade to callbacks.
 
 ## Shared Traversal Contract
 
@@ -35,6 +37,12 @@ enum class BlockWalkOrder : uint8_t
     ProgramOrder,
 };
 
+enum class GraphQuery : uint8_t
+{
+    None = 0,
+    Uses = 1 << 0,
+};
+
 class InstructionTraversal
 {
 public:
@@ -43,21 +51,27 @@ public:
     [[nodiscard]] constexpr InstructionTraversal
     with_block_order(BlockWalkOrder order) const;
 
+    [[nodiscard]] constexpr InstructionTraversal
+    with_queries(GraphQuery queries) const;
+
     constexpr BlockWalkOrder block_order() const;
+    constexpr GraphQuery queries() const;
 
 private:
     BlockWalkOrder block_order_ = BlockWalkOrder::ProgramOrder;
+    GraphQuery queries_ = GraphQuery::None;
 };
 ```
 
-`with_block_order()` returns an altered copy and leaves the original traversal
+The `with_*()` methods return altered copies and leave the original traversal
 unchanged. This allows a pass to derive a local traversal policy from a shared
 default without mutable configuration:
 
 ```cpp
 InstructionTraversal traversal =
     InstructionTraversal()
-        .with_block_order(BlockWalkOrder::ProgramOrder);
+        .with_block_order(BlockWalkOrder::ProgramOrder)
+        .with_queries(GraphQuery::Uses);
 ```
 
 Only program block order exists initially. Dominator order is added with the
@@ -65,56 +79,159 @@ dominator-tree analysis it requires; the enum does not advertise an order whose
 required input is undefined. Body instructions within each block are visited
 forward, including the terminator. Block parameters are not part of this
 traversal. Code that specifically needs them reads `Block::parameters()`
-directly; a common parameter-traversal option is added only when a real consumer
-justifies it.
+directly; a common parameter-traversal option is added only when a concrete
+requirement justifies it.
 
 The read-only API is:
 
 ```cpp
 walk_instructions(
     graph, traversal,
-    [&](const Block &block, const Instruction &instruction) {
+    [&](const GraphQueries &queries,
+        const Block &block,
+        const Instruction &instruction) {
         // Read-only inspection.
     });
 ```
 
-The callback receives no durable placement record. The block supplies all
-necessary traversal context. Early-exit control and reverse instruction order
-are deferred until a real analysis requires them.
+Before visiting the first instruction, the walker prepares every query declared
+by `traversal.queries()` for the graph's current generation. The same
+`GraphQueries` value is passed to every callback. The callback receives no
+durable placement record; the block supplies local traversal context.
+Early-exit control and reverse instruction order are deferred until a real
+analysis requires them.
 
-## Independent Use Index
+## Generation-Checked Graph Queries
 
-Use records are an explicitly requested, on-demand analysis:
+The CFG directly owns optional cached analyses. There is no separate public
+cache-manager object:
 
 ```cpp
-struct UseRecord
+class ControlFlowGraph
 {
-    const Instruction *user;
-    uint16_t operand_index;
-    OperandClass operand_class;
-    ValueRepresentation representation;
+    uint64_t mutation_generation_;
+    mutable std::unique_ptr<UseLists> use_lists_;
 };
-
-class UseIndex
-{
-public:
-    std::span<const UseRecord> uses_of(const Instruction &) const;
-    size_t use_count(const Instruction &) const;
-};
-
-UseIndex build_use_index(const ControlFlowGraph &graph);
 ```
 
-The builder may be implemented using the read-only walker, but it remains a
-separate public analysis and is independent of the graph rewriter. A use record
-identifies the immutable user instruction and its semantic operand ordinal, not
-the address of a mutable payload slot. Rewriting reconstructs instructions, so
-a stored slot address would immediately become stale.
+`GraphQueries` is a lightweight per-operation capability, not the cache owner:
 
-The index records the graph and mutation generation from which it was built.
-Every query asserts that the generation is still current. A structural rewrite
-invalidates an existing index; callers explicitly build another if they need
-post-rewrite uses. The graph does not maintain permanent use lists.
+```cpp
+class GraphQueries
+{
+public:
+    const ControlFlowGraph &graph() const;
+    const Uses &uses_of(const Instruction &) const;
+
+private:
+    const ControlFlowGraph *graph_;
+    GraphQuery requested_;
+    const UseLists *use_lists_;
+};
+```
+
+Preparing queries reuses a current cached analysis, builds a missing analysis,
+or replaces one tagged with an older mutation generation. Preparation is the
+generation-validation boundary. Accessors assert that their query was requested
+but do not repeatedly compare graph generations.
+
+A `GraphQueries` value and every reference obtained through it are valid only
+until the graph is structurally mutated. Walkers and rewriters uphold that
+contract by preparing queries before traversal and retaining the original graph
+generation until all callbacks finish.
+
+The standard walker and graph rewriter prepare this object from
+`InstructionTraversal::queries()`. A non-standard graph scan is not forced
+through those drivers; it may prepare the same query façade directly:
+
+```cpp
+GraphQueries queries = graph.prepare_queries(GraphQuery::Uses);
+```
+
+This keeps query dependencies explicit without putting `uses_of()`,
+`type_of()`, and every future analysis method directly on the structural CFG
+interface.
+
+## Use Lists
+
+Uses are the first cached graph query:
+
+```cpp
+struct InstructionUse
+{
+    const Instruction *instruction;
+    uint16_t operand_index;
+};
+
+struct BlockArgumentUse
+{
+    const BlockEdge *edge;
+    uint16_t argument_index;
+};
+
+class Uses
+{
+public:
+    const Instruction *def() const;
+    const Block *block() const;
+
+    ResultClass result_class() const;
+    ValueRepresentation value_representation() const;
+
+    size_t n_uses() const;
+    size_t n_instruction_uses() const;
+    size_t n_block_argument_uses() const;
+
+    const std::vector<InstructionUse> &instruction_uses() const;
+    const std::vector<BlockArgumentUse> &block_argument_uses() const;
+};
+
+class UseLists
+{
+    // Constructed and cached by ControlFlowGraph.
+};
+```
+
+Construction is a direct graph scan and remains independent of both the
+read-only instruction walker and the graph rewriter. It processes each block in
+three phases:
+
+1. establish `Uses` entries for the block parameters;
+2. walk body instructions in definition order, establishing result entries and
+   recording instruction operand uses;
+3. walk outgoing edges and record their block-argument uses.
+
+The third phase produces no entries until `BlockEdge` gains its argument
+payload. The index nevertheless exposes block-argument uses separately now so
+that adding edge arguments does not change the analysis interface.
+
+The index contains one stable `Uses` object for every result-producing
+instruction, including definitions with no uses. Its def and block identify the
+definition and the block containing all of its uses. The result class and value
+representation are derived from the def kind rather than
+copied into each use occurrence.
+
+An `InstructionUse` identifies an immutable consuming instruction and its
+semantic operand ordinal, not the address of a mutable payload slot. A
+`BlockArgumentUse` similarly identifies the outgoing edge and argument
+position. Rewriting reconstructs instructions and CFG editing may reconstruct
+edges, so stored payload-slot addresses would immediately become stale.
+
+Uses count occurrences, not distinct using instructions. For example, if
+`Multiply(value, value)` consumes the same definition in both operands, its
+`Uses` contains two `InstructionUse` entries with the same instruction and
+different operand indexes. `n_instruction_uses()` and
+`n_block_argument_uses()` report the sizes of the corresponding vectors, and
+`n_uses()` is their sum. Block-argument uses must participate in the total so a
+definition whose only purpose is to feed a successor parameter is not
+incorrectly considered dead.
+
+The cache records the graph mutation generation from which it was built.
+`Uses` is plain immutable data and its accessors perform no generation checks.
+Returned references and their vectors remain stable until graph mutation. A
+structural rewrite makes the cached use lists and every outstanding reference
+to them stale; the next preparation requesting uses replaces the cache. The
+graph does not incrementally maintain permanent use lists.
 
 ## Core Model
 
@@ -156,14 +273,15 @@ replacement would require a graph-level renaming design.
 ## Rewrite API
 
 The graph rewriter accepts the same `InstructionTraversal` and presents the
-same block and instruction arguments as the read-only walker:
+same query, block, and instruction callback arguments as the read-only walker:
 
 ```cpp
 GraphRewriter rewriter(arena, graph);
 
 RewriteSummary summary = rewriter.rewrite_instructions(
     traversal,
-    [&](const Block &block,
+    [&](const GraphQueries &queries,
+        const Block &block,
         const Instruction &instruction) -> RewriteResult {
         // instruction belongs to the original published graph
     });
@@ -256,13 +374,13 @@ Erasure is sequence replacement with an empty sequence. The replacement map
 retains an explicit erased state rather than silently dropping the original
 definition.
 
-Erasing a value or Snapshot producer is valid when it has no later uses. If a
+Erasing a value or Snapshot def is valid when it has no later uses. If a
 later instruction refers to an erased definition, operand normalization reports
-a compiler error identifying the erased producer and its user. Because the
+a compiler error identifying the erased def and its use. Because the
 rewrite is staged, this does not expose a partially rewritten block.
 
 The graph-rewrite mechanism does not itself decide whether an instruction is
-dead. A dead-code-elimination pass requests a use index, makes its own effect
+dead. A dead-code-elimination pass requests use lists, makes its own effect
 and liveness decisions, and returns `erase()` for removable instructions. A
 simple post-rewrite DCE pass can remove constants made dead by an earlier
 folding or lowering pass.
@@ -294,7 +412,7 @@ rewriter normalize each callback result using decisions already made for every
 definition that may legally appear in its operands.
 
 A backward mutating walk cannot provide that guarantee: it visits a use before
-the callback has decided how to rewrite its producer. Supporting it would
+the callback has decided how to rewrite its def. Supporting it would
 require stale callback inputs or a separate decision and reconstruction phase.
 
 Read-only reverse instruction traversal and a backward rewrite driver are
@@ -328,9 +446,9 @@ After every block has been traversed:
    attached analyses;
 5. debug and test configurations verify the completed graph.
 
-This graph-wide commit keeps the original graph and any generation-checked
-`UseIndex` valid throughout all callbacks. No callback observes a graph in
-which only earlier blocks have committed.
+This graph-wide commit keeps the original graph and prepared `GraphQueries`
+valid throughout all callbacks. No callback observes a graph in which only
+earlier blocks have committed.
 
 Arena allocations created during the rewrite need no rollback. Allocation
 failure abandons the compilation session under the existing JIT failure model.
@@ -358,13 +476,13 @@ effects of `rewrite_instructions()`.
 
 ## Analysis Interaction
 
-The graph rewriter never builds a `UseIndex` implicitly. A pass requests one
-before rewriting only when its semantic decisions require use counts or user
-enumeration. Because callbacks receive original instructions and commit occurs
-only after every callback, the pass may query that index throughout the rewrite
-walk. The completed structural rewrite then invalidates the index and other
-attachments by default; an analysis may later consume the rewrite summary to
-update itself when that is worth the complexity.
+The graph rewriter prepares only the queries declared by its
+`InstructionTraversal`. A pass requests uses only when its semantic decisions
+require use counts or use enumeration. Because callbacks receive original
+instructions and commit occurs only after every callback, the prepared
+`GraphQueries` remains valid throughout the rewrite walk. The completed
+structural rewrite then advances the graph generation, making that façade and
+the cached index stale. A later traversal requesting uses rebuilds it.
 
 The rewrite summary records at least whether instructions changed and whether
 the terminator changed. Since this API preserves successor edges, ordinary

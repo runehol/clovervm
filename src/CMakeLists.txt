@@ -100,10 +100,13 @@ add_library(libclovervm_objects OBJECT
     jit/control_flow_graph.h
     jit/graph_builder.cpp
     jit/graph_builder.h
+    jit/graph_queries.cpp
+    jit/graph_queries.h
     jit/code_cache.cpp
     jit/code_cache.h
     jit/instruction.cpp
     jit/instruction.h
+    jit/instruction_traversal.h
     jit/instruction_pool.cpp
     jit/instruction_pool.h
     jit/code_cache_types.h
@@ -116,6 +119,8 @@ add_library(libclovervm_objects OBJECT
     jit/serial.h
     jit/standard_code_memory.cpp
     jit/standard_code_memory.h
+    jit/use_lists.cpp
+    jit/use_lists.h
     runtime/interpreter.cpp
     runtime/interpreter.h
     builtin_types/bool.cpp

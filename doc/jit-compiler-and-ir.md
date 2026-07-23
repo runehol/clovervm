@@ -427,7 +427,7 @@ of Core IR.
 
 A backend may later introduce a target-specific immediate pseudo-instruction,
 for example `ArmImm12`, after it has selected a foldable use. Such a node must
-have exactly one operand use, and that use must be a compatible consumer into
+have exactly one operand use, and that use must be a compatible use site into
 which it will be folded. It has no independent liveness or location, cannot
 appear in Snapshots or cross blocks, and must be consumed before final emission.
 This restores target immediate selection without complicating common Core
@@ -536,7 +536,7 @@ SSA identities:
   identity for the same runtime `Value` bits;
 - boxing, unboxing, and other representation conversions produce explicit new
   SSA identities;
-- only genuine producers, refinements, shape-state successors, and non-trivial
+- only genuine defs, refinements, shape-state successors, and non-trivial
   block parameters introduce identities;
 - a block parameter whose incoming arguments are all the same value can be
   eliminated.
@@ -755,7 +755,7 @@ matching `ResultClass` cases, so validation can compare result-consuming
 operands without a mapping switch. Every ordinary Core operand is an
 instruction-result reference. Constants become ordinary values through `Const`,
 including when captured by Snapshot. Structural editing therefore updates
-uniform producer uses. Non-dataflow
+uniform def-use relationships. Non-dataflow
 payload such as `BlockEdge`, `Shape`, `ShapeKey`, `ValidityCell`, immediates,
 bytecode origins, interpreter return PCs, and value constants
 are instruction attributes rather than operands. The instruction schema records
@@ -771,7 +771,7 @@ ProgramValueRef = ResultRef<ResultClass::ProgramValue, Instruction *>
 SnapshotRef     = ResultRef<ResultClass::Snapshot, Instruction *>
 ```
 
-Constructing a result reference requires the producer's intrinsic `ResultClass`
+Constructing a result reference requires the def's intrinsic `ResultClass`
 to match. Graph ownership and IR-level verification prevent Semantic and Core
 references from being mixed. A value-less instruction retains its pointer and
 serial for traversal, diagnostics, effects, and rewriting, but cannot be used
@@ -781,7 +781,7 @@ without container-relative instruction IDs. Here, a program value is a value in
 the compiled program's SSA semantics; it does not prescribe the concrete
 `cl::Value` representation.
 
-Core refines `ProgramValueRef` with the producer's immutable
+Core refines `ProgramValueRef` with the def's immutable
 `ValueRepresentation`. Fixed-representation instruction APIs use zero-overhead
 wrappers such as `TaggedValueRef` and `F64Ref`, while generic graph
 infrastructure uses erased `ProgramValueRef` and Semantic IR remains
@@ -922,14 +922,14 @@ from making an otherwise linear JIT translation quadratic. The incremental
 editor remains the mutation authority for an already published graph; large
 edit transactions may likewise defer global verification until commit.
 
-The instruction schema generates the generic operand walk from which a pass can
-build temporary `UseRecord`s and a generation-checked `UseIndex`. Passes needing
-repeated sparse use queries may maintain that index privately during an editing
-batch or discard and rebuild it. Bulk lowering may instead apply a typed
-replacement map by scanning all operands once, with simultaneous replacement
-semantics. Both mechanisms are on demand; passes that need neither use records
-nor replacement scanning pay no permanent use-index memory or maintenance
-cost.
+The instruction schema generates the generic operand walk used to build an
+on-demand `UseLists`. The CFG owns this generation-tagged cache, while a
+prepared `GraphQueries` façade gives a traversal or rewrite callback explicit
+access to the queries it requested. The cache is reused while its graph
+generation remains current and rebuilt on demand after structural mutation; it
+is never incrementally maintained as permanent graph structure. The traversal
+and rewrite contract is specified in
+[JIT IR Graph Rewrites](jit-ir-graph-rewrites.md).
 
 Compilation failure follows the detailed contract in
 [JIT Instruction Representation](jit-instruction-representation.md): structural
@@ -1015,13 +1015,13 @@ Passes must not mutate instructions or graph structures directly.
 
 Verification at pass boundaries should require:
 
-- every fixed and variable operand slot to match the `OperandClass`, producer
+- every fixed and variable operand slot to match the `OperandClass`, def
   representation, and layout declared for its instruction kind, and every
   attribute slot to match its declared
   `AttributeClass` and layout;
 - every pointer-valued `ValueConstant` attribute to be covered by the current
   compilation session's pin set;
-- every result reference to match its producer's intrinsic `ResultClass`, and no
+- every result reference to match its def's intrinsic `ResultClass`, and no
   result reference to be formed from a value-less
   instruction;
 - exactly one live definition for every reachable SSA value;
@@ -1070,7 +1070,7 @@ a second Python type system. Core realizes only the distinctions demanded by
 executable lowering; it does not retain the whole Semantic value-analysis
 attachment unless a concrete later Core pass requires an explicitly designed
 Core attachment. Semantic program-value references remain representation-free;
-Semantic-to-Core lowering creates fresh Core producers with intrinsic
+Semantic-to-Core lowering creates fresh Core defs with intrinsic
 `ValueRepresentation`s. Backend register classes and assigned locations remain
 separate from those target-independent Core representations.
 
@@ -1226,10 +1226,10 @@ mutable-shape-refined value that remains live afterward; constant values and
 lifetime-stable shapes survive unchanged.
 
 `WeakenShape` does not claim that the shape changed. A direct compiler may
-discard the optional prediction and let the next consumer select its recorded
+discard the optional prediction and let the next use select its recorded
 IC case normally. With evidence analysis, likely `S1` is a cheap persistence
-prediction used only when the consumer's IC permits it. More applicable
-consumer or inline-context evidence may displace that prediction without
+prediction used only when the use site's IC permits it. More applicable
+use-site or inline-context evidence may displace that prediction without
 changing `%self_after`'s guaranteed `Object` type.
 
 A later optimization may recognize an uninterrupted canonical transition
@@ -1251,9 +1251,9 @@ must remain equivalent.
 ### Optional partition realization
 
 When optional Semantic inference retains a correlated union, Core lowering
-realizes it only when a type-sensitive consumer needs distinct executable
+realizes it only when a type-sensitive use needs distinct executable
 operations. Realization creates ordinary branches, narrowed SSA values, and
-block parameters; union-transparent consumers leave the partition latent.
+block parameters; union-transparent uses leave the partition latent.
 Existing predecessor edges may already provide the required split.
 
 Partition identity, recursion, profitability, and demand propagation are owned
@@ -1337,7 +1337,7 @@ The other clauses have equally concrete meanings:
 - `preserves_ssa` rejects moving a use before its definition. Snapshot-expanded
   operands count as transitive uses at each Snapshot consumer.
 - `preserves_recovery` requires every guard or exit to remain in the same
-  replay-valid region, every captured value to dominate its consumer, and no
+  replay-valid region, every captured value to dominate its use, and no
   committed Python-visible effect to cross the exit.
 - `preserves_safepoint_roots` rejects a swap that makes a tagged managed value
   live across a safepoint unless the active root-publication policy can
@@ -1473,9 +1473,9 @@ Initial generated code is installed once and remains alive until its owning
 A Core `Snapshot` is the authoritative logical description of
 interpreter-visible state. It already names the resume state, active logical
 frame chain, program values, and boxing or reification actions needed to leave
-compiled execution. Constants appear through ordinary `Const` producers. The
+compiled execution. Constants appear through ordinary `Const` defs. The
 backend consumes the Snapshot directly when generating recovery and may
-rematerialize those producers; managed values then use the emitter-owned pool.
+rematerialize those defs; managed values then use the emitter-owned pool.
 
 After allocation, recovery planning combines the Snapshot with two physical
 inputs:
@@ -1677,7 +1677,7 @@ unboxing to execute ordinary compiled code.
 Every Core `ProgramValueRef` has exactly one immutable
 `ValueRepresentation`. The first schema supports `TaggedValue` and `F64`,
 although bring-up produces only tagged values until unboxing is implemented.
-Representation is an intrinsic producer and operand contract declared by
+Representation is an intrinsic def and operand contract declared by
 `instruction.def`, not an analysis or register-allocation attachment. Semantic
 IR, when present, keeps representation-free references; its lowering creates
 the represented Core values. Boxing, unboxing, and any other representation
@@ -1700,7 +1700,7 @@ representations.
 Several representations of one logical Python value may therefore coexist, but
 they are separate SSA values connected by visible conversion operations. This
 lets ordinary use lists, dominance, CSE, and liveness describe exactly which
-form each consumer requires. Optimizations may eliminate inverse boxing and
+form each use requires. Optimizations may eliminate inverse boxing and
 unboxing pairs only in the identity-safe direction: an
 `UnboxF64(BoxF64(%raw))` may simplify to `%raw` when the intermediate box
 has no other use and removing its allocation has no observable effect. The
@@ -1733,12 +1733,12 @@ manufacture a replacement box from the unboxed value.
 `BoxF64(UnboxF64(%boxed))` must not simplify to `%boxed`: the explicit
 boxing operation creates a new Python object, and reusing the input box would
 change observable identity. Only `UnboxF64(BoxF64(%raw))` cancels, and only
-when the newly allocated box has no other consumer or observable effect.
+when the newly allocated box has no other use or observable effect.
 
 A new unboxed arithmetic result has no box until compiled execution or recovery
 needs one. A normal-path `BoxF64` explicitly produces the tagged SSA value
 used by later compiled operations. It may be sunk into Snapshots only when it
-has no normal consumers, deferring its allocation has no observable effect, and
+has no normal uses, deferring its allocation has no observable effect, and
 every affected Snapshot preserves one shared recovery result for all logical
 homes that require the object.
 

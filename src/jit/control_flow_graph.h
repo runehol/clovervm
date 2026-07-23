@@ -4,13 +4,18 @@
 #include "jit/instruction.h"
 #include "jit/serial.h"
 
+#include <cstdint>
+#include <memory>
 #include <vector>
 
 namespace cl::jit
 {
     class ControlFlowGraph;
+    class GraphQueries;
     class GraphBuilder;
     class BlockEdge;
+    class UseLists;
+    enum class GraphQuery : uint8_t;
 
     class Block
     {
@@ -97,7 +102,8 @@ namespace cl::jit
     public:
         using Serial = TypedSerial<ControlFlowGraph>;
 
-        explicit ControlFlowGraph(Serial serial) : serial_(serial) {}
+        explicit ControlFlowGraph(Serial serial);
+        ~ControlFlowGraph();
 
         ControlFlowGraph(const ControlFlowGraph &) = delete;
         ControlFlowGraph &operator=(const ControlFlowGraph &) = delete;
@@ -108,8 +114,10 @@ namespace cl::jit
         Block *entry_block() const { return entry_block_; }
         const std::vector<Block *> &blocks() const { return blocks_; }
         bool is_published() const { return published_; }
+        uint64_t mutation_generation() const { return mutation_generation_; }
 
         bool owns_block(const Block *block) const;
+        GraphQueries prepare_queries(GraphQuery queries) const;
 
     private:
         friend class GraphBuilder;
@@ -118,6 +126,8 @@ namespace cl::jit
         Block *entry_block_ = nullptr;
         std::vector<Block *> blocks_;
         bool published_ = false;
+        uint64_t mutation_generation_ = 0;
+        mutable std::unique_ptr<UseLists> use_lists_;
     };
 
 }  // namespace cl::jit

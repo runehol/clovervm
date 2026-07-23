@@ -227,12 +227,12 @@ namespace cl::jit
         std::vector<std::pair<OperandClass, Instruction *>> references;
         visit_operand_references(*add, [&](OperandClass operand_class,
                                            ValueRepresentation representation,
-                                           Instruction *producer) {
+                                           Instruction *def) {
             EXPECT_EQ(operand_class == OperandClass::ProgramValue
                           ? ValueRepresentation::TaggedValue
                           : ValueRepresentation::None,
                       representation);
-            references.emplace_back(operand_class, producer);
+            references.emplace_back(operand_class, def);
         });
 
         ASSERT_EQ(3u, references.size());
@@ -290,12 +290,12 @@ namespace cl::jit
         std::vector<std::pair<OperandClass, Instruction *>> references;
         visit_operand_references(*call, [&](OperandClass operand_class,
                                             ValueRepresentation representation,
-                                            Instruction *producer) {
+                                            Instruction *def) {
             EXPECT_EQ(operand_class == OperandClass::ProgramValue
                           ? ValueRepresentation::TaggedValue
                           : ValueRepresentation::None,
                       representation);
-            references.emplace_back(operand_class, producer);
+            references.emplace_back(operand_class, def);
         });
 
         ASSERT_EQ(5u, references.size());
@@ -355,10 +355,10 @@ namespace cl::jit
         visit_operand_references(
             *snapshot,
             [&](OperandClass operand_class, ValueRepresentation representation,
-                Instruction *producer) {
+                Instruction *def) {
                 EXPECT_EQ(OperandClass::ProgramValue, operand_class);
                 EXPECT_EQ(ValueRepresentation::None, representation);
-                references.push_back(producer);
+                references.push_back(def);
             });
         ASSERT_EQ(4u, references.size());
         EXPECT_EQ(tagged.instruction(), references[0]);

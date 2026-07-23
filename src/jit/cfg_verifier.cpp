@@ -329,24 +329,24 @@ namespace cl::jit
                     *instruction,
                     [&](OperandClass operand_class,
                         ValueRepresentation required_representation,
-                        Instruction *producer) {
+                        Instruction *def) {
                         if(!reference_error.empty())
                         {
                             return;
                         }
-                        if(available_definitions.find(producer) ==
+                        if(available_definitions.find(def) ==
                            available_definitions.end())
                         {
                             reference_error = instruction_name(instruction) +
                                               " in " + block_name(block) +
                                               " references " +
-                                              instruction_name(producer) +
+                                              instruction_name(def) +
                                               " outside its block or before "
                                               "its definition";
                             return;
                         }
                         if(static_cast<uint8_t>(operand_class) !=
-                           static_cast<uint8_t>(producer->result_class()))
+                           static_cast<uint8_t>(def->result_class()))
                         {
                             reference_error =
                                 instruction_name(instruction) +
@@ -357,7 +357,7 @@ namespace cl::jit
                         if(operand_class == OperandClass::ProgramValue &&
                            required_representation !=
                                ValueRepresentation::None &&
-                           producer->value_representation() !=
+                           def->value_representation() !=
                                required_representation)
                         {
                             reference_error =

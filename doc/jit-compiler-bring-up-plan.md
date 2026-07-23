@@ -180,7 +180,7 @@ The remaining work in this milestone is to place `Const` in representative
 graphs and implement compilation-session retention and verification for
 pointer-valued `ValueConstant`s.
 
-Detached-storage poisoning, editor replacement, mutation-aware `UseIndex`,
+Detached-storage poisoning, editor replacement, mutation-aware `UseLists`,
 Snapshot-expanded liveness, non-entry block parameters and their edge argument
 lists, and general published-CFG mutation are not part of this milestone. Entry
 block parameters already represent function arguments.
@@ -495,7 +495,7 @@ compiler.
 
 ## Bring-up Decisions Still Required
 
-- exact Core graph publication API, editor transaction surface, and use-index
+- exact Core graph publication API, editor transaction surface, and use-list
   lifetime rules for the first mutating passes;
 - concrete backend-preparation artifact shape: lowering choices, legalized
   constant decisions, `LocationSummary` records, and invalidation generation;

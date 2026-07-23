@@ -232,8 +232,8 @@ handle or a second runtime wrapper; its typed accessor and constructor use
 pointer. Construction paths pin the latter through the compilation session.
 
 Ordinary operand words are uniformly direct instruction pointers. Dereferencing
-one and decoding its producer kind identifies whether it is a `ProgramValue` or
-`Snapshot`; a `ProgramValue` producer kind also directly identifies its
+one and decoding its def kind identifies whether it is a `ProgramValue` or
+`Snapshot`; a `ProgramValue` def kind also directly identifies its
 representation. The schema declares what each operand position is permitted to
 reference and describes fixed and variable ranges.
 
@@ -275,7 +275,7 @@ const InstructionSlot *indirect_operands = ...;
 ```
 
 Snapshot is a representation-erased positional variadic range. A value-bearing
-position stores one `ProgramValueRef` word, and the referenced producer kind
+position stores one `ProgramValueRef` word, and the referenced def kind
 supplies its concrete representation. Frame-header positions remain reserved in
 the same logical coordinate so later positions keep their direct indices. They
 are not nullable program-value references. Their concrete non-value entry
@@ -382,9 +382,9 @@ when a consuming pass requests them.
 
 The builder's `finalize()` operation validates the completed graph in one
 `O(instructions + edges + payload slots)` pass. It checks IR-level legality,
-graph membership, result and operand classes, live producers, block-edge
+graph membership, result and operand classes, live defs, block-edge
 ownership, terminator placement, local definition-before-use, and other
-structural invariants. It does not build an optional `UseIndex` merely to
+structural invariants. It does not build optional `UseLists` merely to
 perform this validation. A graph under bulk construction is not published to
 ordinary passes. If final verification finds an invalid graph, that is a
 compiler logic error: it reports the structural diagnostic and hard-asserts
@@ -393,7 +393,7 @@ rather than turning the bug into an interpreter fallback.
 Once a graph is published, local transformations use the CFG editor. The
 editor attaches factory-created instructions, rewrites operands, updates active
 graph-owned indexes and mutation generations, and detaches replaced
-instructions. An on-demand `UseIndex` is updated only when the editing pass
+instructions. On-demand `UseLists` are updated only when the editing pass
 explicitly retains it as mutation-aware working state; otherwise mutation makes
 it stale. The editor may check contextual invariants eagerly when those checks
 are constant-time or already maintained incrementally. A transformation that
@@ -529,7 +529,7 @@ using ProgramValueRef = ResultRef<ResultClass::ProgramValue, Instruction *>;
 using SnapshotRef = ResultRef<ResultClass::Snapshot, Instruction *>;
 ```
 
-Constructing a result reference validates that the producer's intrinsic
+Constructing a result reference validates that the def's intrinsic
 `ResultClass` matches the class required by the wrapper. A
 `ResultClass::None` instruction cannot be referenced as an operand, a Snapshot
 cannot be used as a program value, and a program value cannot be used where
@@ -558,7 +558,7 @@ using F64Ref =
 ```
 
 Erasing a `RepresentedValueRef` to `ProgramValueRef` is implicit and free.
-Refining an erased Core reference validates the producer's intrinsic
+Refining an erased Core reference validates the def's intrinsic
 representation. Fixed-representation generated constructors and accessors use
 the refined wrapper, making common mismatches C++ type errors; generic
 infrastructure deliberately retains the erased form.
@@ -698,7 +698,7 @@ of `ValueRepresentation` and never an instruction result. Snapshot's
 `captured_values` array is the only slot allowed to use it because a Snapshot
 records logical recovery values rather than normal Core dataflow for one
 machine representation. Its typed accessor returns erased `ProgramValueRef`s;
-the producer kind recovers each concrete representation.
+the def kind recovers each concrete representation.
 
 Snapshot position is a logical stack-register coordinate. Logical position zero
 starts at the function-arity-derived offset from `fp`; increasing logical
@@ -719,20 +719,20 @@ normal compiled execution need not materialize inlined frame headers.
 Generated generic Snapshot traversal reports every program-value capture as an
 operand use; structural recovery entries are not uses.
 Side-exit frame-sync generation stores tagged program values directly, may
-rematerialize captured `Const` producers, and boxes captured `F64` values before
+rematerialize captured `Const` defs, and boxes captured `F64` values before
 writing them to the interpreter frame.
 Adding another alternative or representation therefore requires an exhaustive
 frame-materialization case. No arithmetic, call, forwarding, parameter, or
 other Core instruction may accept an erased representation.
 
 Core represents every ordinary use of a constant through a normal
-`ProgramValueRef` produced by `Const`; constants are not embedded in consumer
+`ProgramValueRef` produced by `Const`; constants are not embedded in use
 operands. Backend preparation or Machine IR chooses immediate synthesis or a
 constant-pool load. Pointer-valued constants must use the traced pool, while a
 non-pointer value may use either form according to target encodability and
 profitability. The phase also selects lowerings and `LocationSummary` records
 before liveness and register allocation run. Immediate shape rules, including
-any future target-specific single-consumer immediate nodes, remain backend
+any future target-specific single-use immediate nodes, remain backend
 policy rather than Core IR legality.
 
 Generated factory methods and typed accessors expose fixed constraints in their
@@ -793,7 +793,7 @@ uses at every guard or side exit that consumes the `SnapshotRef`. Liveness
 expands a Snapshot operand transitively at that consuming position, so several
 nearby guards may safely share one Snapshot without treating its captured
 values as dead after the Snapshot instruction itself. Verification keeps the
-Snapshot anchored near its consumers and on the correct side of effect
+Snapshot anchored near its uses and on the correct side of effect
 boundaries. This special case is preferred over a general per-slot role axis;
 the design should revisit that choice if another same-class relationship needs
 different generic behavior.
@@ -812,16 +812,16 @@ accept only the graph level they own, such as `SemanticValueAnalysis` for a
 Semantic graph and `CoreEffectAnalysis` for a Core graph.
 
 For Core graphs, verification additionally requires every `ProgramValue`
-producer to have one legal representation, every fixed operand constraint to
-match its producer, and every representation-changing edge to be an explicit
+def to have one legal representation, every fixed operand constraint to
+match its def, and every representation-changing edge to be an explicit
 conversion instruction. Verification rejects `AnyRepresentation` on every
 result and on every operand other than `Snapshot.captured_values`. Every
-value-bearing Snapshot position must reference a live `ProgramValue` producer;
+value-bearing Snapshot position must reference a live `ProgramValue` def;
 every structural position must correspond to a valid frame-header field or
 another recovery destination already known to contain its desired value.
-Every pointer-valued constant on a `Const` producer must be covered by the
+Every pointer-valued constant on a `Const` def must be covered by the
 compilation session's pin set. Recovery planning must interpret each capture
-using its producer's concrete representation and provide an exhaustive
+using its def's concrete representation and provide an exhaustive
 frame-materialization operation for that case.
 
 Each concrete instruction form is a final, fieldless subclass of `Instruction`.
@@ -912,9 +912,9 @@ Live(fixed InstructionKind) -> removed from graph -> poisoned storage
 
 The CFG editor poisons storage only after it has rewritten or removed every use,
 removed the instruction's own operand occurrences from any active
-mutation-aware `UseIndex`, invalidated or removed active metadata entries, and
+mutation-aware `UseLists`, invalidated or removed active metadata entries, and
 unlinked the instruction from its block. The edit plan must establish the
-absence of incoming uses through a current `UseIndex` or a complete generic
+absence of incoming uses through current `UseLists` or a complete generic
 operand scan. A detached instruction's pointer-valued `ValueConstant` is no
 longer semantically visible, and the compilation session may retain its pin
 until the session ends. The editor may debug-poison the remaining payload
@@ -924,7 +924,7 @@ never republished or returned to a live kind.
 
 The serial is deliberately preserved for diagnostics. Any detached instruction
 encountered by verification, generic traversal, typed conversion, a result
-reference, or a current `UseIndex` is a hard compiler bug. The diagnostic reports
+reference, or current `UseLists` are a hard compiler bug. The diagnostic reports
 the preserved serial and does not interpret the poisoned payload. Ordinary pass
 code does not branch on detachedness as a supported case; concrete instruction
 pointers must not be retained across structural edits without proving that the
@@ -933,7 +933,7 @@ instruction remains attached.
 Operand slots are controlled mutable structure. The structural editor may
 replace a `Snapshot` operand only with a result of the matching declared
 `OperandClass`. A `ProgramValue` replacement must be a `ProgramValueRef` whose
-producer satisfies the slot's representation constraint.
+def satisfies the slot's representation constraint.
 
 The editor provides one symmetric primitive for changing such a slot:
 
@@ -946,12 +946,12 @@ void replace_program_operand(
 
 It verifies that the user is live, the expected value still occupies the slot,
 the slot has `OperandClass::ProgramValue`, and the replacement satisfies its
-representation constraint. The referenced producer must be live and belong to
+representation constraint. The referenced def must be live and belong to
 the same graph.
 
 The editor maintains metadata lifetime, analysis invalidation, and graph
-mutation generation. If the pass has retained a mutation-aware `UseIndex`, the
-editor moves the affected `UseRecord` to the replacement producer. Otherwise
+mutation generation. If the pass has retained mutation-aware `UseLists`, the
+editor moves the affected `UseRecord` to the replacement def. Otherwise
 the generation change makes the old index stale. Attribute slots such as
 `BlockEdge`, `Shape`, `ShapeKey`, `ValidityCell`, bytecode PCs, immediates, and
 value constants are immutable semantic payload; changing
@@ -963,23 +963,23 @@ arrays.
 The schema-generated generic operand walker is the common primitive for use
 discovery and bulk rewriting. It walks fixed and variable operands in declared
 order and never visits attributes. For every `ProgramValue` or `Snapshot`
-operand it can emit a temporary `UseRecord` containing the producer and an
+operand it can emit a temporary `UseRecord` containing the def and an
 `OperandSlotHandle` that identifies the user and the schema-declared slot:
 
 ```cpp
 struct UseRecord
 {
-    const Instruction *producer;
+    const Instruction *def;
     OperandSlotHandle operand;
 };
 ```
 
 Operand layout and variable-operand counts are immutable, so such a handle remains
 physically resolvable while its user remains live. The editor still validates
-that the user is live and that the slot contains the expected producer before
+that the user is live and that the slot contains the expected def before
 rewriting it.
 
-An on-demand, generation-checked `UseIndex` groups these records by producer.
+On-demand, generation-checked `UseLists` group these records by def.
 It is useful for repeated sparse queries such as no-use and single-use tests,
 dead-code elimination, dependent worklists, and replacing the uses of a small
 number of values. Building it costs one whole-graph operand walk. It may be
@@ -997,19 +997,19 @@ Replacements have simultaneous semantics: given `A -> B` and `B -> C`, an
 original use of `A` becomes `B` unless the map was explicitly transitively
 normalized before the scan. Before mutating, the bulk operation validates every
 affected slot. Constant folding creates or reuses a `Const`
-producer and rewrites uses to that instruction's `ProgramValueRef`.
+def and rewrites uses to that instruction's `ProgramValueRef`.
 
 A representation-changing rewrite likewise inserts an explicit conversion or
-replaces the consumer; it cannot use generic result replacement to connect
+replaces the use; it cannot use generic result replacement to connect
 incompatible encodings. After successful preflight, the batch applies the
-corresponding use-index moves and advances graph and attachment generations
+corresponding use-list moves and advances graph and attachment generations
 once.
 
 The same walker independently reconstructs uses for verification and also
 supports cloning and printing of operand relationships. Attribute visitors or
 typed accessors handle cloning, printing, CFG edge maintenance, constant pin
 validation, and bytecode-PC diagnostics for non-dataflow payload. The verifier
-compares any current `UseIndex` against reconstructed operand records and
+compares any current `UseLists` against reconstructed operand records and
 hard-fails on references to poisoned storage. Kind-specific named accessors such
 as branch edges remain available through concrete accessors.
 
@@ -1024,11 +1024,11 @@ for example:
 SemanticValueAnalysis   Semantic ProgramValueRef -> ValueFacts
 CoreEffectAnalysis      Core Instruction*        -> ProvenAbsentEffects
 LocationAssignments     Core Instruction*        -> backend locations
-UseIndex                Instruction*             -> temporary UseRecords
+UseLists                Instruction*             -> temporary UseRecords
 ```
 
 Core `ValueRepresentation` is deliberately not an attachment. It is an
-immutable producer and operand contract used to type the SSA graph itself.
+immutable def and operand contract used to type the SSA graph itself.
 Register, spill, and constant locations remain backend-owned attached metadata.
 
 This is not a generic per-instruction property bag. Each attachment is a
@@ -1191,7 +1191,7 @@ explicit and exceptional.
 
 The implementation validates the naturally aligned 48-byte, five-slot record,
 schema-generated kind metadata, typed CFG terminators, explicit constant
-producers, fixed operand walking, and a
+defs, fixed operand walking, and a
 PythonCall and Snapshot variadic ranges. Fixed kinds store operands before
 attributes; variable kinds store their entire operand array behind slot zero and
 their attributes in the remaining inline slots. The current generic traversal
