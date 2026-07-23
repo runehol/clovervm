@@ -4,7 +4,7 @@
 |---|---|
 | Document type | Implementation plan |
 | Status | Proposed |
-| Implementation | Core instruction storage, typed construction, graph publication and rewriting, compilation-session constant retention, code-cache publication, generic machine-code emission, AArch64 assembly, value-pool loads, and executable AArch64 tests are implemented; backend preparation and compiler/runtime entry remain |
+| Implementation | Core instruction storage, typed construction, graph publication, on-demand use lists, traversal and staged rewriting, compilation-session constant retention, code-cache publication, generic machine-code emission, AArch64 assembly, value-pool loads, and a direct single-register CFG-to-AArch64 path are implemented; heap `JitCodeObject` integration, backend assignment, bytecode translation, and compiler/runtime entry remain |
 | Scope | Initial JIT staging, vertical slices, temporary runtime policies, and validation |
 | Owning layers | The JIT owns compilation and generated transitions; the interpreter, managed calling convention, native boundaries, and reclaimer retain their existing contracts |
 | Validated against | Supporting infrastructure, instruction-representation tests, CFG and rewrite tests, code-cache tests, and executable AArch64 tests in the working tree on 2026-07-23 |
@@ -134,11 +134,14 @@ Each milestone should land as a coherent, reviewable change with its own tests.
 Later milestones may refine this ordering when implementation evidence exposes
 a dependency, but they must preserve an executable fallback throughout. The
 order below reflects the foundation already landed: instruction storage, CFG
-scaffolding, AArch64 emission, value-pool loading, executable memory, and
-code-cache publication were intentionally implemented before compiler entry
-because they are targetable, independently testable infrastructure.
+construction and rewriting, AArch64 emission, value-pool loading, executable
+memory, and code-cache publication were intentionally implemented before
+compiler entry because they are targetable, independently testable
+infrastructure. The next three implementation fronts are partly independent;
+the plan records their gates rather than pretending that all work must proceed
+in one strict line.
 
-### Landed foundation: storage, emission, and code ownership
+### Landed foundation: storage, graph mechanics, and emission
 
 The first implementation slice is already in the tree. It established:
 
@@ -152,10 +155,20 @@ The first implementation slice is already in the tree. It established:
   schema-generated metadata, concrete typed instruction classes, typed
   terminator access, uniform operand/reference traversal, explicit constant
   defs, `ValueConstant`s, and positional Snapshot slots;
-- preliminary CFG blocks, block edges, and structural verification.
+- CFG blocks, source-owned block edges, block parameters, graph construction,
+  structural verification, generation-bound query caches, and on-demand
+  `UseLists`;
+- program-order read-only instruction traversal and graph-wide staged rewriting,
+  including original or normalized callback input, operand reconstruction,
+  prefix and suffix insertion, def replacement, detachment poisoning, and
+  post-rewrite verification;
+- `CompilationSession` ownership of the arena and a monotonic retained-value
+  vector exposed through `retain_and_pin_value()`.
 
-The remaining milestones should build on this substrate rather than route
-around it with throwaway entry or emission paths.
+The current cache-retained C++ `JitCodeObject` remains bring-up scaffolding.
+Turning it into a heap object with a native-layout scanner is part of the
+remaining runtime publication work, not a reason to route around the existing
+cache or emitter.
 
 ### Milestone 1: minimal Core instructions in CFG blocks
 
@@ -199,6 +212,12 @@ Lower a hand-constructed, verified Core CFG all the way to executable AArch64
 without decoded bytecode, interpreter entry, Snapshots, side exits, overflow
 checks, recovery, or register allocation.
 
+The first slice is complete. The emitter accepts one tagged entry `Parameter`
+and walks one published block containing non-pointer `Const`, `AndSMI`,
+`OrrSMI`, `EorSMI`, and `Return`. Focused tests execute the resulting AArch64.
+The backend intentionally maps every `ProgramValueRef` to `x0`; this proves the
+CFG-to-code path but cannot represent two simultaneously live values.
+
 The first programs are:
 
 ```text
@@ -208,10 +227,6 @@ entry:
 
 entry:
     %constant = Const ValueConstant(non-pointer)
-    Return %constant
-
-entry:
-    %constant = Const ValueConstant(managed pointer)
     Return %constant
 ```
 
@@ -226,13 +241,11 @@ compilation failures and do not trigger the range retry.
 For the single-parameter identity graph, the backend maps the tagged parameter
 directly to the AArch64 argument/result register `x0`. This deliberately avoids
 introducing a pretend allocation table before any instruction presents a
-placement choice. The first non-pointer `Const` slice temporarily assigns every
-program value to `x0` and materializes the constant with the macro assembler's
-immediate `mov` operation. A pointer-valued constant instead uses the macro
-assembler's traced value-pool load; compilation-session retention remains a
-separate graph-lifetime requirement. Multiple simultaneously live values are
-the first case that requires durable backend preparation and
-location-assignment products.
+placement choice. A non-pointer `Const` uses the macro assembler's immediate
+`mov` operation. The assembler and code cache can already emit and rewrite
+value-pool slots, but a managed-pointer `Const` is not a complete published-code
+feature until the heap `JitCodeObject` owns a native layout that scans those
+slots.
 
 If the full function-call ABI is not ready, the test may use a narrow generated
 leaf harness that passes machine-level tagged `Value` arguments and reads the
@@ -241,22 +254,47 @@ CFG and the output is executable machine code, not another standalone assembler
 test. This private harness is not the interpreter main harness and does not need
 the JIT-to-interpreter thunk.
 
-Scope:
+Remaining scope:
 
-- select lowering recipes and real `LocationSummary` constraints for
-  `Parameter`, `Const`, and `Return`;
-- use a deliberately fixed argument/result register convention;
-- produce separate trivial `LocationAssignments` satisfying those constraints,
-  without implementing a general allocator;
+- define the first real `LocationSummary` constraints for the currently lowered
+  instructions;
+- replace the universal `x0` mapping with location assignments that handle at
+  least two simultaneously live tagged values;
+- lower `Mov` through the existing graph rewriter where normalization or
+  assignment requires it;
 - classify constants during backend preparation and emit immediate synthesis or
   traced value-pool loads as appropriate;
-- publish through the existing code cache;
-- execute the generated code from focused tests.
+- preserve the already working near-pool retry, code-cache publication, and
+  focused execution tests.
 
-The output includes the minimal durable `BackendPreparation` and
-`LocationAssignments` phase products. General liveness and register allocation,
-branches, calls, Snapshots, side exits, and recovery are deliberately out of
-scope.
+The output should include the smallest durable backend-preparation and
+location-assignment products rather than another special-case mapping. A
+single-block linear assignment or deliberately tiny allocator is sufficient;
+general CFG liveness, branches, calls, Snapshots, side exits, and recovery
+remain out of scope.
+
+### Immediate implementation frontier
+
+Three coherent slices can proceed from the landed foundation:
+
+1. **Backend assignment.** Finish Milestone 2 by introducing real location
+   constraints and assignments for a one-block function. This is the shortest
+   route to executing expressions with multiple live values and exercises the
+   graph rewriter for `Mov` insertion.
+2. **Bytecode-to-Core construction.** Begin Milestone 3 as a structural path
+   that produces and verifies Core plus Snapshots without executing it. This
+   can advance independently of register allocation and establishes the actual
+   compiler input.
+3. **Heap `JitCodeObject` publication.** Replace the cache-retained C++ wrapper
+   with a heap object, give it a native layout and an external-pool scanning
+   hook, and keep the compilation session alive until those slots are
+   scannable. This closes managed-constant lifetime and is a gate for real
+   runtime installation, but it does not by itself make generated functions
+   more expressive.
+
+No option should introduce a second CFG, constant-pool, or emission path. The
+backend and translator consume the existing published graph; heap publication
+adapts the existing `CodeCache` result.
 
 ### Milestone 3: bytecode walking and symbolic interpreter state
 
@@ -292,6 +330,8 @@ compiled execution path from Python, but it still has no side exits.
 
 Scope:
 
+- require heap `JitCodeObject` publication and GC-scannable value-pool slots
+  before installing managed-pointer constants or persistent JIT entries;
 - install and select a JIT entry for one compiled `CodeObject`;
 - define the minimal generated-call ABI for arguments, return value, managed
   frame setup, and generated return target;
@@ -307,7 +347,9 @@ Validation must show:
 - an interpreted call can select a JIT entry;
 - the managed frame header and generated return target agree;
 - arguments, return value, code object, and caller state are preserved;
-- repeated entries restore the managed and host stacks exactly.
+- repeated entries restore the managed and host stacks exactly;
+- destroying the compilation session after publication leaves every managed
+  pool value alive through `JitCodeObject` tracing, with no ownership gap.
 
 ### Milestone 5: unsupported-bytecode side exit and Snapshot recovery
 
@@ -466,6 +508,8 @@ bytecodes as a valid continuation. Validation should combine:
   compiled-to-compiled, native re-entry, and nested re-entry;
 - machine-code checks for frame layout, return targets, reserved registers, and
   fixed-register operations;
+- publication-lifetime tests that destroy the compilation session immediately
+  after heap `JitCodeObject` creation and then trace or rewrite its pool;
 - deterministic compiler dumps across repeated compilations.
 
 Not every item applies to every milestone. A milestone tests only the
@@ -503,10 +547,15 @@ compiler.
 
 ## Bring-up Decisions Still Required
 
-- exact Core graph publication API, editor transaction surface, and use-list
-  lifetime rules for the first mutating passes;
+- native-layout scanner API for the heap `JitCodeObject`'s external `Value`
+  pool, plus ownership of its code-cache allocation and its relationship to
+  `CodeObject`;
 - concrete backend-preparation artifact shape: lowering choices, legalized
   constant decisions, `LocationSummary` records, and invalidation generation;
+- first location-assignment strategy for a one-block graph and the exact point
+  at which required `Mov` instructions are inserted;
+- decoded-bytecode input and `BuilderContext` shape for the first
+  bytecode-to-Core translator;
 - minimal generated-call ABI for Milestone 4 normal compiled returns, including
   argument/result registers, managed frame setup, generated return target, and
   the JIT-to-interpreter thunk;
