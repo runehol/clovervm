@@ -152,6 +152,37 @@ intervals, and assignments. It does not by itself invalidate structurally
 anchored constraints unless the mutation replaces the anchored instruction,
 block parameter, or edge.
 
+## Initial Algorithm
+
+The first general allocator is an SSA linear-scan allocator with live-range
+splitting and edge-aware coalescing. This is an implementation choice, not a
+public IR contract, but it is the expected bring-up path for real branches,
+loops, calls, and spills.
+
+The allocator runs over prepared IR:
+
+```text
+build ephemeral positions
+compute allocation liveness
+build parent intervals for ProgramValueRefs
+attach constrained use and definition positions
+attach edge-transfer affinities
+walk intervals in order
+assign registers or split/spill
+resolve split moves and block-edge moves
+produce LocationAssignments
+```
+
+Fixed-register constraints and clobbers are modeled as ordinary allocation
+pressure at their anchored positions. A child interval covering a fixed-register
+use or definition must use that register. A value live across a clobber must be
+split, spilled, or assigned to a non-clobbered location.
+
+The initial spill heuristic should be simple and observable: spill or split the
+candidate whose next required use is farthest away, adjusted for loop depth,
+fixed-register pressure, snapshot/recovery use, and whether the value is cheap
+to rematerialize. More advanced spill-cost tuning is later allocator work.
+
 ## Liveness and Splitting
 
 The register allocator owns liveness for allocation. It walks generic Core
@@ -172,9 +203,9 @@ require regenerating durable constraints. Constraints remain anchored to their
 original structural occurrences. After a split, the child interval covering a
 constrained position must satisfy that constraint.
 
-The allocator may use any suitable strategy, including linear scan with splitting
-or a later graph-coloring allocator. The public contract is independent of that
-choice.
+Linear scan splitting creates child intervals under a parent SSA value. A later
+allocator strategy may replace the internal interval machinery, but it must
+preserve the same `AllocationConstraints` and `LocationAssignments` boundary.
 
 ## Block Parameters and Edge Moves
 
@@ -203,10 +234,32 @@ then -> join: a -> p
 else -> join: b -> p
 ```
 
-Allocation may coalesce an edge argument and its target parameter when their
-live ranges do not interfere and their constraints permit a shared location. If
-the assigned locations differ, the allocator records a parallel move bundle on
-the corresponding `BlockEdge`.
+The initial allocator must treat these transfers as high-priority coalescing
+opportunities. This is not just a code-size optimization: clovervm block
+arguments often carry broad logical frame state for safepoints and recovery, so
+missing obvious coalescing would create large move bundles at ordinary joins and
+loop backedges.
+
+Edge coalescing is still a preference, not a correctness requirement. Allocation
+may coalesce an edge argument and its target parameter when their live ranges do
+not interfere and their constraints permit a shared location. If the assigned
+locations differ, the allocator records a parallel move bundle on the
+corresponding `BlockEdge`.
+
+Edge-transfer affinities should be weighted. The first weights should account
+for:
+
+- edge execution weight when available;
+- loop depth;
+- number of values transferred on the edge;
+- whether the value participates in Snapshot or recovery state;
+- whether either side has a fixed-register, clobber, or same-as-input pressure
+  that makes coalescing unlikely.
+
+When assigning a location, the allocator should score candidate registers and
+spill slots partly by their affinity to predecessor edge arguments and successor
+block parameters. Fixed constraints, clobbers, and real interference override
+those preferences.
 
 Critical-edge splitting is an implementation choice made when a move bundle has
 no legal insertion point on the original edge. The semantic CFG retains
@@ -287,11 +340,13 @@ The first real allocator should support:
 - clobber masks;
 - block parameters and edge arguments;
 - spill slots;
-- split moves and edge parallel moves.
+- SSA linear scan with live-range splitting;
+- split moves and edge parallel moves;
+- weighted edge-aware coalescing for block arguments.
 
-More advanced policies such as spill-cost tuning, rematerialization,
-caller-context-sensitive register pressure, and Machine IR scheduling are later
-backend and allocator work.
+More advanced policies such as detailed spill-cost tuning, rematerialization,
+caller-context-sensitive register pressure, alternate allocation algorithms, and
+Machine IR scheduling are later backend and allocator work.
 
 ## External Model
 
