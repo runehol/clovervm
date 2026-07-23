@@ -328,16 +328,16 @@ read inactive union members, or assume alignment that the payload does not
 provide. Side-data allocation checks alignment and allocation-size overflow.
 
 The compilation arena releases instruction and trivial side-data storage in
-bulk. It does not walk those objects to invoke destructors. The same common
-arena may also own normally destroyed tables and pools; common compilation
-ownership does not imply that every object occupies the destructor-free
-allocation domain.
+bulk. It does not walk those objects to invoke destructors. The enclosing
+compilation session separately owns normally destroyed tables, pins, and other
+scoped resources; common session lifetime does not imply that every object
+occupies the destructor-free arena allocation domain.
 
 ### Construction, Placement, and Publication
 
 Allocation and graph placement are separate operations. The typed builder API
-forwards allocation to the compilation arena and returns an intrinsically valid,
-unplaced concrete instruction. It does not need an insertion position:
+takes the compilation session, borrows its arena, and returns an intrinsically
+valid, unplaced concrete instruction. It does not need an insertion position:
 
 ```cpp
 AddSMIInstruction *sum =
@@ -355,7 +355,8 @@ Future IR-level-specific wrappers may expose only instruction kinds permitted at
 that level. The arena constructor itself still records each kind's allowed
 levels for placement and verification.
 
-The factory also owns managed-constant retention. Before returning an
+The arena factory also owns managed-constant retention through the pin manager
+owned by its enclosing session. Before returning an
 unpublished instruction or arena side-data object containing a pointer-valued
 `ValueConstant`, it calls the compilation session's pinning API for that
 `Value`. This applies equally to fixed attributes and Snapshot arrays. Cloning

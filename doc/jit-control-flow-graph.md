@@ -87,18 +87,19 @@ reference mechanism.
 
 `ControlFlowGraph`, blocks, block edges, and instructions are all allocated from
 separate pools in the `CompilationArena`, so each object kind has its own serial
-sequence and the arena necessarily outlives every graph object. A graph does not
-store or use an arena pointer after construction. Multiple temporary instruction
-subclasses share the one `Instruction` pool and serial sequence until the
-fixed-size representation replaces them.
+sequence. The `CompilationSession` owns that arena and necessarily outlives
+every graph object. A graph does not store or use a session or arena pointer
+after construction. Multiple temporary instruction subclasses share the one
+`Instruction` pool and serial sequence until the fixed-size representation
+replaces them.
 
-A `GraphBuilder` takes the arena, allocates one unpublished graph from it, and
-owns all initial mutation of that graph. `finalize()` verifies and publishes the
-graph, returns its stable arena-owned pointer, and makes that builder unusable.
-Destroying a builder without finalizing is valid; arena teardown reclaims the
-abandoned graph. One arena may own multiple graphs. Instructions are not shared
-between them; this is currently a construction invariant rather than an
-arena-wide placement index.
+A `GraphBuilder` takes the session, borrows its arena, allocates one unpublished
+graph from it, and owns all initial mutation of that graph. `finalize()` verifies
+and publishes the graph, returns its stable arena-owned pointer, and makes that
+builder unusable. Destroying a builder without finalizing is valid; session
+teardown destroys the arena and reclaims the abandoned graph. One session arena
+may own multiple graphs. Instructions are not shared between them; this is
+currently a construction invariant rather than an arena-wide placement index.
 
 ## Blocks and Terminators
 
@@ -442,8 +443,8 @@ construction and verification:
 - `Block` stores an ordered instruction list and an ordered predecessor-edge
   index;
 - `BlockEdge` stores a typed serial, source block, and target block;
-- `CompilationArena` allocates blocks, block edges, and instructions from
-  their designated pools;
+- `CompilationSession` owns the `CompilationArena`, which allocates blocks,
+  block edges, and instructions from their designated pools;
 - the temporary polymorphic instruction representation contains
   `TerminatorInstruction`, `ConditionalBranchInstruction`,
   `UnconditionalBranchInstruction`, and `ReturnInstruction`;

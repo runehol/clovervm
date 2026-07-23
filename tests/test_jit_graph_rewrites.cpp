@@ -1,4 +1,4 @@
-#include "jit/compilation_arena.h"
+#include "jit/compilation_session.h"
 #include "jit/graph_builder.h"
 #include "jit/graph_rewriter.h"
 #include "jit/instruction_traversal.h"
@@ -16,8 +16,8 @@ namespace cl::jit
 {
     TEST(JitInstructionTraversal, WalksBodyInstructionsInProgramOrder)
     {
-        CompilationArena arena;
-        GraphBuilder builder(arena);
+        CompilationSession session;
+        GraphBuilder builder(session);
         Block *entry = builder.emplace_block();
         Block *exit = builder.emplace_block();
         builder.emplace_parameter<ParameterInstruction>(entry);
@@ -62,8 +62,8 @@ namespace cl::jit
 
     TEST(JitUseLists, RecordsUseOccurrencesAndZeroUseDefinitions)
     {
-        CompilationArena arena;
-        GraphBuilder builder(arena);
+        CompilationSession session;
+        GraphBuilder builder(session);
         Block *entry = builder.emplace_block();
         ParameterInstruction *parameter =
             builder.emplace_parameter<ParameterInstruction>(entry);
@@ -133,8 +133,8 @@ namespace cl::jit
 
     TEST(JitUseLists, TraversalPreparesOnlyRequestedQueries)
     {
-        CompilationArena arena;
-        GraphBuilder builder(arena);
+        CompilationSession session;
+        GraphBuilder builder(session);
         Block *entry = builder.emplace_block();
         ConstInstruction *constant =
             builder.emplace_instruction<ConstInstruction>(entry, Value::None());
@@ -159,8 +159,8 @@ namespace cl::jit
 
     TEST(JitGraphRewriter, KeepsAnUnchangedGraphWithoutAdvancingGeneration)
     {
-        CompilationArena arena;
-        GraphBuilder builder(arena);
+        CompilationSession session;
+        GraphBuilder builder(session);
         Block *entry = builder.emplace_block();
         ConstInstruction *constant =
             builder.emplace_instruction<ConstInstruction>(entry, Value::None());
@@ -169,7 +169,7 @@ namespace cl::jit
                 entry, TaggedValueRef(constant));
         ControlFlowGraph *graph = builder.finalize();
 
-        GraphRewriter rewriter(arena, *graph);
+        GraphRewriter rewriter(session, *graph);
         RewriteSummary summary = rewriter.rewrite_instructions(
             InstructionTraversal(),
             [](RewriteContext &, const GraphQueries &, const Block &,
@@ -186,8 +186,8 @@ namespace cl::jit
     TEST(JitGraphRewriter,
          InsertsPrefixesAndSuffixesAroundTheCurrentInstruction)
     {
-        CompilationArena arena;
-        GraphBuilder builder(arena);
+        CompilationSession session;
+        GraphBuilder builder(session);
         Block *entry = builder.emplace_block();
         ParameterInstruction *parameter =
             builder.emplace_parameter<ParameterInstruction>(entry);
@@ -202,7 +202,7 @@ namespace cl::jit
 
         MovInstruction *prefix = nullptr;
         MovInstruction *suffix = nullptr;
-        GraphRewriter rewriter(arena, *graph);
+        GraphRewriter rewriter(session, *graph);
         RewriteSummary summary = rewriter.rewrite_instructions(
             InstructionTraversal(),
             [&](RewriteContext &context, const GraphQueries &, const Block &,
@@ -239,8 +239,8 @@ namespace cl::jit
 
     TEST(JitGraphRewriter, ReplacesAnIdentityWithItsExistingDefinition)
     {
-        CompilationArena arena;
-        GraphBuilder builder(arena);
+        CompilationSession session;
+        GraphBuilder builder(session);
         Block *entry = builder.emplace_block();
         ParameterInstruction *parameter =
             builder.emplace_parameter<ParameterInstruction>(entry);
@@ -251,7 +251,7 @@ namespace cl::jit
                 entry, TaggedValueRef(move));
         ControlFlowGraph *graph = builder.finalize();
 
-        GraphRewriter rewriter(arena, *graph);
+        GraphRewriter rewriter(session, *graph);
         RewriteSummary summary = rewriter.rewrite_instructions(
             InstructionTraversal().with_queries(GraphQuery::Uses),
             [&](RewriteContext &, const GraphQueries &queries, const Block &,
@@ -282,8 +282,8 @@ namespace cl::jit
 
     TEST(JitGraphRewriter, CanPassNormalizedInstructionsToTheCallback)
     {
-        CompilationArena arena;
-        GraphBuilder builder(arena);
+        CompilationSession session;
+        GraphBuilder builder(session);
         Block *entry = builder.emplace_block();
         ConstInstruction *old_constant =
             builder.emplace_instruction<ConstInstruction>(entry, Value::None());
@@ -296,7 +296,7 @@ namespace cl::jit
 
         ConstInstruction *new_constant = nullptr;
         MovInstruction *return_prefix = nullptr;
-        GraphRewriter rewriter(arena, *graph);
+        GraphRewriter rewriter(session, *graph);
         RewriteSummary summary = rewriter.rewrite_instructions(
             InstructionTraversal(), RewriteInput::Normalized,
             [&](RewriteContext &context, const GraphQueries &, const Block &,
@@ -351,8 +351,8 @@ namespace cl::jit
     {
         EXPECT_DEATH(
             {
-                CompilationArena arena;
-                GraphBuilder builder(arena);
+                CompilationSession session;
+                GraphBuilder builder(session);
                 Block *entry = builder.emplace_block();
                 ConstInstruction *constant =
                     builder.emplace_instruction<ConstInstruction>(
@@ -361,7 +361,7 @@ namespace cl::jit
                     entry, TaggedValueRef(constant));
                 ControlFlowGraph *graph = builder.finalize();
 
-                GraphRewriter rewriter(arena, *graph);
+                GraphRewriter rewriter(session, *graph);
                 rewriter.rewrite_instructions(
                     InstructionTraversal().with_queries(GraphQuery::Uses),
                     RewriteInput::Normalized,
@@ -373,8 +373,8 @@ namespace cl::jit
 
     TEST(JitGraphRewriter, ReconstructsVariadicInstructionsFromTheSchema)
     {
-        CompilationArena arena;
-        GraphBuilder builder(arena);
+        CompilationSession session;
+        GraphBuilder builder(session);
         Block *entry = builder.emplace_block();
         ParameterInstruction *parameter =
             builder.emplace_parameter<ParameterInstruction>(entry);
@@ -395,7 +395,7 @@ namespace cl::jit
                                                        TaggedValueRef(call));
         ControlFlowGraph *graph = builder.finalize();
 
-        GraphRewriter rewriter(arena, *graph);
+        GraphRewriter rewriter(session, *graph);
         RewriteSummary summary = rewriter.rewrite_instructions(
             InstructionTraversal(),
             [&](RewriteContext &context, const GraphQueries &, const Block &,
@@ -433,8 +433,8 @@ namespace cl::jit
 
     TEST(JitGraphRewriter, StagesSequencesAcrossTheWholeGraphBeforeCommit)
     {
-        CompilationArena arena;
-        GraphBuilder builder(arena);
+        CompilationSession session;
+        GraphBuilder builder(session);
         Block *entry = builder.emplace_block();
         Block *exit = builder.emplace_block();
         ParameterInstruction *parameter =
@@ -451,7 +451,7 @@ namespace cl::jit
             exit, TaggedValueRef(constant));
         ControlFlowGraph *graph = builder.finalize();
 
-        GraphRewriter rewriter(arena, *graph);
+        GraphRewriter rewriter(session, *graph);
         RewriteSummary summary = rewriter.rewrite_instructions(
             InstructionTraversal(),
             [&](RewriteContext &context, const GraphQueries &,
@@ -493,8 +493,8 @@ namespace cl::jit
     {
         EXPECT_DEATH(
             {
-                CompilationArena arena;
-                GraphBuilder builder(arena);
+                CompilationSession session;
+                GraphBuilder builder(session);
                 Block *entry = builder.emplace_block();
                 ConstInstruction *constant =
                     builder.emplace_instruction<ConstInstruction>(
@@ -503,7 +503,7 @@ namespace cl::jit
                     entry, TaggedValueRef(constant));
                 ControlFlowGraph *graph = builder.finalize();
 
-                GraphRewriter rewriter(arena, *graph);
+                GraphRewriter rewriter(session, *graph);
                 rewriter.rewrite_instructions(
                     InstructionTraversal(),
                     [&](RewriteContext &, const GraphQueries &, const Block &,

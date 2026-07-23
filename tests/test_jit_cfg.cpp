@@ -1,5 +1,5 @@
 #include "jit/cfg_verifier.h"
-#include "jit/compilation_arena.h"
+#include "jit/compilation_session.h"
 #include "jit/control_flow_graph.h"
 #include "jit/graph_builder.h"
 #include "jit/instruction.h"
@@ -27,8 +27,8 @@ namespace cl::jit
 
     TEST(JitCfg, ConditionalBranchExposesSemanticAndGenericEdges)
     {
-        CompilationArena arena;
-        GraphBuilder builder(arena);
+        CompilationSession session;
+        GraphBuilder builder(session);
         builder.emplace_n_blocks(2);
         ASSERT_EQ(2u, builder.block_count());
         Block *entry = builder.block_at(0);
@@ -62,8 +62,8 @@ namespace cl::jit
 
     TEST(JitCfg, ExplicitUnconditionalBranchAndReturnFormValidGraph)
     {
-        CompilationArena arena;
-        GraphBuilder builder(arena);
+        CompilationSession session;
+        GraphBuilder builder(session);
         Block *entry = builder.emplace_block();
         Block *exit = builder.emplace_block();
         BlockEdge *edge = builder.make_block_edge(entry, exit);
@@ -87,8 +87,8 @@ namespace cl::jit
 
     TEST(JitCfg, EntryParametersArePlacedSeparatelyFromInstructions)
     {
-        CompilationArena arena;
-        GraphBuilder builder(arena);
+        CompilationSession session;
+        GraphBuilder builder(session);
         Block *entry = builder.emplace_block();
         ParameterInstruction *tagged_parameter =
             builder.make_instruction<ParameterInstruction>();
@@ -112,8 +112,8 @@ namespace cl::jit
 
     TEST(JitCfgVerifier, RejectsEmptyBlock)
     {
-        CompilationArena arena;
-        GraphBuilder builder(arena);
+        CompilationSession session;
+        GraphBuilder builder(session);
         builder.emplace_block();
 
         expect_invalid_with(builder, "has no instructions");
@@ -121,8 +121,8 @@ namespace cl::jit
 
     TEST(JitCfgVerifier, RejectsNonTerminatorAsFinalInstruction)
     {
-        CompilationArena arena;
-        GraphBuilder builder(arena);
+        CompilationSession session;
+        GraphBuilder builder(session);
         Block *entry = builder.emplace_block();
         builder.append_instruction(
             entry, builder.make_instruction<ConstInstruction>(Value::None()));
@@ -132,8 +132,8 @@ namespace cl::jit
 
     TEST(JitCfgVerifier, RejectsTerminatorBeforeFinalInstruction)
     {
-        CompilationArena arena;
-        GraphBuilder builder(arena);
+        CompilationSession session;
+        GraphBuilder builder(session);
         Block *entry = builder.emplace_block();
         TaggedValueRef none = emplace_constant(builder, entry, Value::None());
         builder.append_instruction(
@@ -147,8 +147,8 @@ namespace cl::jit
 
     TEST(JitCfgVerifier, RejectsConditionalBranchThatReusesOneEdge)
     {
-        CompilationArena arena;
-        GraphBuilder builder(arena);
+        CompilationSession session;
+        GraphBuilder builder(session);
         Block *entry = builder.emplace_block();
         Block *exit = builder.emplace_block();
         BlockEdge *edge = builder.make_block_edge(entry, exit);
@@ -165,8 +165,8 @@ namespace cl::jit
 
     TEST(JitCfgVerifier, RejectsEdgeReferencedByTheWrongSource)
     {
-        CompilationArena arena;
-        GraphBuilder builder(arena);
+        CompilationSession session;
+        GraphBuilder builder(session);
         Block *declared_source = builder.emplace_block();
         Block *actual_source = builder.emplace_block();
         Block *target = builder.emplace_block();
@@ -187,8 +187,8 @@ namespace cl::jit
 
     TEST(JitCfgVerifier, RejectsReferenceToAnUnplacedInstruction)
     {
-        CompilationArena arena;
-        GraphBuilder builder(arena);
+        CompilationSession session;
+        GraphBuilder builder(session);
         Block *entry = builder.emplace_block();
         ParameterInstruction *unplaced =
             builder.make_instruction<ParameterInstruction>();
@@ -202,8 +202,8 @@ namespace cl::jit
 
     TEST(JitCfgVerifier, RejectsReferenceAcrossBlocks)
     {
-        CompilationArena arena;
-        GraphBuilder builder(arena);
+        CompilationSession session;
+        GraphBuilder builder(session);
         Block *entry = builder.emplace_block();
         Block *exit = builder.emplace_block();
         ParameterInstruction *parameter =
@@ -223,8 +223,8 @@ namespace cl::jit
 
     TEST(JitCfg, OneArenaCanOwnMultipleGraphs)
     {
-        CompilationArena arena;
-        GraphBuilder first_builder(arena);
+        CompilationSession session;
+        GraphBuilder first_builder(session);
         Block *first_entry = first_builder.emplace_block();
         first_builder.append_instruction(
             first_entry,
@@ -232,7 +232,7 @@ namespace cl::jit
                 emplace_constant(first_builder, first_entry, Value::None())));
         ControlFlowGraph *first_graph = first_builder.finalize();
 
-        GraphBuilder second_builder(arena);
+        GraphBuilder second_builder(session);
         Block *second_entry = second_builder.emplace_block();
         second_builder.append_instruction(
             second_entry,

@@ -897,13 +897,13 @@ Logical interpreter homes are tracked by FrameStates and Snapshots rather than
 by preserving an SSA result identity across rewrites.
 
 Initial construction uses a privileged `GraphBuilder` that takes the compilation
-arena and allocates its unpublished graph from that arena; blocks expose their
-vectors read-only to ordinary clients. Builder finalization verifies and
-publishes the graph, returns its stable arena-owned pointer, and invalidates the
-builder. It is valid to abandon an unfinalized graph when the enclosing
-compilation fails. Builder and rewriter APIs consistently use `make` for
-allocation without attachment, `append` for attachment at the end of a specified
-container, and `emplace` for allocation and attachment at the end.
+session and allocates its unpublished graph from the session-owned arena; blocks
+expose their vectors read-only to ordinary clients. Builder finalization
+verifies and publishes the graph, returns its stable arena-owned pointer, and
+invalidates the builder. It is valid to abandon an unfinalized graph when the
+enclosing compilation fails. Builder and rewriter APIs consistently use `make`
+for allocation without attachment, `append` for attachment at the end of a
+specified container, and `emplace` for allocation and attachment at the end.
 
 Published block-body mutation uses a proposed `BlockRewrite`: the editor builds
 a replacement ordinary vector from existing and new instruction pointers and

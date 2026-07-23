@@ -1,7 +1,7 @@
 #ifndef CL_JIT_GRAPH_BUILDER_H
 #define CL_JIT_GRAPH_BUILDER_H
 
-#include "jit/compilation_arena.h"
+#include "jit/compilation_session.h"
 #include "jit/instruction.h"
 
 #include <cassert>
@@ -27,7 +27,7 @@ namespace cl::jit
     class GraphBuilder
     {
     public:
-        explicit GraphBuilder(CompilationArena &arena);
+        explicit GraphBuilder(CompilationSession &session);
 
         GraphBuilder(const GraphBuilder &) = delete;
         GraphBuilder &operator=(const GraphBuilder &) = delete;

@@ -96,6 +96,8 @@ add_library(libclovervm_objects OBJECT
     jit/cfg_verifier.h
     jit/compilation_arena.cpp
     jit/compilation_arena.h
+    jit/compilation_session.cpp
+    jit/compilation_session.h
     jit/control_flow_graph.cpp
     jit/control_flow_graph.h
     jit/graph_builder.cpp

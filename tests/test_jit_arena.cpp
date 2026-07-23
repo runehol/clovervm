@@ -1,4 +1,4 @@
-#include "jit/compilation_arena.h"
+#include "jit/compilation_session.h"
 #include "jit/graph_builder.h"
 #include "jit/instruction.h"
 #include "jit/object_pool.h"
@@ -54,8 +54,8 @@ namespace cl::jit
 
     TEST(JitCompilationArena, UsesOneSerialSequencePerPool)
     {
-        CompilationArena arena;
-        GraphBuilder builder(arena);
+        CompilationSession session;
+        GraphBuilder builder(session);
         Block *first_block = builder.make_block();
         Block *second_block = builder.make_block();
         ParameterInstruction *first_instruction =
@@ -74,8 +74,8 @@ namespace cl::jit
         static_assert(sizeof(Instruction) == 48);
         static_assert(std::is_trivially_destructible_v<Instruction>);
 
-        CompilationArena arena;
-        GraphBuilder builder(arena);
+        CompilationSession session;
+        GraphBuilder builder(session);
         std::vector<Instruction *> instructions;
         for(size_t index = 0; index < 256; ++index)
         {
@@ -194,8 +194,8 @@ namespace cl::jit
 
     TEST(JitInstructionConstruction, EncodesFixedAttributes)
     {
-        CompilationArena arena;
-        GraphBuilder builder(arena);
+        CompilationSession session;
+        GraphBuilder builder(session);
         ConstInstruction *instruction =
             builder.make_instruction<ConstInstruction>(Value::False());
 
@@ -208,8 +208,8 @@ namespace cl::jit
 
     TEST(JitInstructionTraversal, WalksProgramValueAndSnapshotReferences)
     {
-        CompilationArena arena;
-        GraphBuilder builder(arena);
+        CompilationSession session;
+        GraphBuilder builder(session);
         TaggedValueRef lhs(builder.make_instruction<ParameterInstruction>());
         TaggedValueRef rhs(
             builder.make_instruction<ConstInstruction>(Value::from_smi(3)));
@@ -245,8 +245,8 @@ namespace cl::jit
 
     TEST(JitInstructionTraversal, WalksVariadicPythonCallArguments)
     {
-        CompilationArena arena;
-        GraphBuilder builder(arena);
+        CompilationSession session;
+        GraphBuilder builder(session);
         TaggedValueRef callable(
             builder.make_instruction<ParameterInstruction>());
         TaggedValueRef first(builder.make_instruction<ParameterInstruction>());
@@ -309,8 +309,8 @@ namespace cl::jit
 
     TEST(JitInstructionTraversal, SnapshotStoresProgramValueReferences)
     {
-        CompilationArena arena;
-        GraphBuilder builder(arena);
+        CompilationSession session;
+        GraphBuilder builder(session);
         TaggedValueRef tagged(builder.make_instruction<ParameterInstruction>());
         F64Ref f64(builder.make_instruction<ParameterF64Instruction>());
         TaggedValueRef truth(

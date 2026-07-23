@@ -1,6 +1,6 @@
 #include "jit/aarch64_assembler.h"
 #include "jit/aarch64_cfg_emitter.h"
-#include "jit/compilation_arena.h"
+#include "jit/compilation_session.h"
 #include "jit/graph_builder.h"
 
 #include <gtest/gtest.h>
@@ -15,8 +15,8 @@ namespace cl::jit
         template <typename LogicalInstruction>
         uint64_t execute_smi_logical_with_identical_operands(Value input)
         {
-            CompilationArena arena;
-            GraphBuilder builder(arena);
+            CompilationSession session;
+            GraphBuilder builder(session);
             Block *entry = builder.emplace_block();
             ParameterInstruction *parameter =
                 builder.emplace_parameter<ParameterInstruction>(entry);
@@ -47,8 +47,8 @@ namespace cl::jit
 
     TEST(AArch64Execution, EmitsIdentityFunctionFromCfg)
     {
-        CompilationArena arena;
-        GraphBuilder builder(arena);
+        CompilationSession session;
+        GraphBuilder builder(session);
         Block *entry = builder.emplace_block();
         ParameterInstruction *parameter =
             builder.emplace_parameter<ParameterInstruction>(entry);
@@ -78,8 +78,8 @@ namespace cl::jit
 
     TEST(AArch64Execution, EmitsInlineConstantFunctionFromCfg)
     {
-        CompilationArena arena;
-        GraphBuilder builder(arena);
+        CompilationSession session;
+        GraphBuilder builder(session);
         Block *entry = builder.emplace_block();
         Value expected = Value::from_smi(0x123456789abcd);
         ConstInstruction *constant =

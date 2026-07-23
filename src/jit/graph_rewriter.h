@@ -1,7 +1,7 @@
 #ifndef CL_JIT_GRAPH_REWRITER_H
 #define CL_JIT_GRAPH_REWRITER_H
 
-#include "jit/compilation_arena.h"
+#include "jit/compilation_session.h"
 #include "jit/graph_queries.h"
 #include "jit/instruction_traversal.h"
 
@@ -140,8 +140,8 @@ namespace cl::jit
     class GraphRewriter
     {
     public:
-        GraphRewriter(CompilationArena &arena, ControlFlowGraph &graph)
-            : arena_(&arena), graph_(&graph)
+        GraphRewriter(CompilationSession &session, ControlFlowGraph &graph)
+            : arena_(&session.arena()), graph_(&graph)
         {
         }
 

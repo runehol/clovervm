@@ -1,7 +1,6 @@
 #include "jit/graph_builder.h"
 
 #include "jit/cfg_verifier.h"
-#include "jit/compilation_arena.h"
 #include "runtime/fatal.h"
 
 #include <cassert>
@@ -17,8 +16,8 @@ namespace cl::jit
         }
     }  // namespace
 
-    GraphBuilder::GraphBuilder(CompilationArena &arena)
-        : arena_(&arena), graph_(arena.make_graph())
+    GraphBuilder::GraphBuilder(CompilationSession &session)
+        : arena_(&session.arena()), graph_(arena_->make_graph())
     {
     }
 

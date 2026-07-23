@@ -165,11 +165,12 @@ paths.
 
 The initial graph-construction slice provides:
 
-- arena-owned `ControlFlowGraph` objects that do not retain an allocator pointer;
-- a privileged `GraphBuilder` that allocates one unpublished graph, makes or
-  emplaces blocks, instructions, and parameters, makes source-owned block
-  edges, derives successor predecessor lists during finalization, and returns
-  the published arena-owned graph;
+- session-owned compilation arenas containing `ControlFlowGraph` objects that
+  do not retain a session or allocator pointer;
+- a privileged `GraphBuilder` that takes the session, allocates one unpublished
+  graph from its arena, makes or emplaces blocks, instructions, and parameters,
+  makes source-owned block edges, derives successor predecessor lists during
+  finalization, and returns the published arena-owned graph;
 - separate ordinary vectors for a block's ordered parameter definitions and
   body instructions;
 - final verification of block ownership, instruction placement, Core-kind

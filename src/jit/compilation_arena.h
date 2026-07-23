@@ -14,21 +14,23 @@
 
 namespace cl::jit
 {
+    class CompilationSession;
     class RewriteContext;
 
     class CompilationArena
     {
     public:
-        CompilationArena() = default;
-
         CompilationArena(const CompilationArena &) = delete;
         CompilationArena &operator=(const CompilationArena &) = delete;
         CompilationArena(CompilationArena &&) = delete;
         CompilationArena &operator=(CompilationArena &&) = delete;
 
     private:
+        friend class CompilationSession;
         friend class GraphBuilder;
         friend class RewriteContext;
+
+        CompilationArena() = default;
 
         template <typename... Args> Block *make_block(Args &&...args)
         {

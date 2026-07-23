@@ -284,7 +284,7 @@ enum class RewriteInput : uint8_t
     Normalized,
 };
 
-GraphRewriter rewriter(arena, graph);
+GraphRewriter rewriter(session, graph);
 
 RewriteSummary summary = rewriter.rewrite_instructions(
     traversal, RewriteInput::Original,
@@ -574,8 +574,9 @@ This graph-wide commit keeps the original graph and any permitted prepared
 `GraphQueries` valid throughout all callbacks. No callback observes a graph in
 which only earlier blocks have committed.
 
-Arena allocations created during the rewrite need no rollback. Allocation
-failure abandons the compilation session under the existing JIT failure model.
+Arena allocations created during the rewrite need no rollback. The rewriter
+borrows that arena from the compilation session passed to its constructor.
+Allocation failure abandons the session under the existing JIT failure model.
 Ordinary passes cannot observe the staged block.
 
 The callback-based API is the initial public surface. A cursor or callback class
