@@ -215,9 +215,20 @@ namespace cl::jit
                 decltype(std::declval<const ConditionalBranchInstruction &>()
                              .true_edge()),
                 BlockEdge *>);
+        static_assert(
+            std::is_same_v<
+                decltype(std::declval<const ResumeInInterpreterInstruction &>()
+                             .snapshot()),
+                SnapshotRef>);
 
         EXPECT_EQ(InstructionKind::AddSMI, AddSMIInstruction::Kind);
         EXPECT_EQ(InstructionKind::Snapshot, SnapshotInstruction::Kind);
+        EXPECT_EQ(InstructionKind::Uninitialized,
+                  UninitializedInstruction::Kind);
+        EXPECT_EQ(InstructionKind::ResumeInInterpreter,
+                  ResumeInInterpreterInstruction::Kind);
+        EXPECT_EQ(InstructionKind::ConditionalBranch,
+                  ConditionalBranchInstruction::Kind);
         EXPECT_EQ(ResultClass::ProgramValue, AddSMIInstruction::Result);
         EXPECT_EQ(ValueRepresentation::TaggedValue,
                   AddSMIInstruction::Representation);
@@ -230,6 +241,15 @@ namespace cl::jit
         EXPECT_EQ(ResultClass::Snapshot, SnapshotInstruction::Result);
         EXPECT_EQ(ValueRepresentation::None,
                   SnapshotInstruction::Representation);
+        EXPECT_EQ(ResultClass::ProgramValue, UninitializedInstruction::Result);
+        EXPECT_EQ(ValueRepresentation::TaggedValue,
+                  UninitializedInstruction::Representation);
+        EXPECT_EQ(EffectProfile::ExitJIT,
+                  ResumeInInterpreterInstruction::MustEffects);
+        EXPECT_EQ(EffectProfile::ExitJIT,
+                  ResumeInInterpreterInstruction::MayEffects);
+        EXPECT_NE(EffectProfile::TerminateBlock,
+                  ResumeInInterpreterInstruction::MustEffects);
         EXPECT_EQ(EffectProfile::TerminateBlock,
                   ReturnInstruction::MustEffects);
         EXPECT_EQ(EffectProfile::TerminateBlock, ReturnInstruction::MayEffects);
@@ -247,6 +267,12 @@ namespace cl::jit
         EXPECT_EQ(0u, instruction->operand_count());
         EXPECT_FALSE(instruction->operands_are_indirect());
         EXPECT_EQ(instruction, instruction->as<ConstInstruction>());
+
+        UninitializedInstruction *uninitialized =
+            builder.make_instruction<UninitializedInstruction>();
+        EXPECT_EQ(InstructionKind::Uninitialized, uninitialized->kind());
+        EXPECT_EQ(0u, uninitialized->operand_count());
+        EXPECT_FALSE(uninitialized->operands_are_indirect());
     }
 
     TEST(JitInstructionTraversal, WalksProgramValueAndSnapshotReferences)

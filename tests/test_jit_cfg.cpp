@@ -87,6 +87,26 @@ namespace cl::jit
         EXPECT_TRUE(graph->is_published());
     }
 
+    TEST(JitCfg, ResumeInInterpreterDoesNotTerminateItsBlock)
+    {
+        CompilationSession session;
+        GraphBuilder builder(session);
+        Block *entry = builder.emplace_block();
+        SnapshotRef snapshot(builder.emplace_instruction<SnapshotInstruction>(
+            entry, std::span<const ProgramValueRef>{}, BytecodePC{7}));
+        ResumeInInterpreterInstruction *resume =
+            builder.emplace_instruction<ResumeInInterpreterInstruction>(
+                entry, snapshot);
+        builder.emplace_instruction<UninitializedInstruction>(entry);
+        builder.emplace_instruction<ReturnInstruction>(
+            entry, emplace_constant(builder, entry, Value::None()));
+
+        EXPECT_FALSE(resume->is_block_terminator());
+        ControlFlowGraph *graph = builder.finalize();
+        EXPECT_TRUE(graph->is_published());
+        EXPECT_EQ(5u, entry->instructions().size());
+    }
+
     TEST(JitCfg, ParallelEdgesCarryIndependentOrderedArguments)
     {
         CompilationSession session;

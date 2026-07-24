@@ -114,10 +114,12 @@ namespace cl::jit
                 switch(instruction->kind())
                 {
                     case InstructionKind::Const:
+                    case InstructionKind::Uninitialized:
                     case InstructionKind::AndSMI:
                     case InstructionKind::OrrSMI:
                     case InstructionKind::EorSMI:
                     case InstructionKind::Snapshot:
+                    case InstructionKind::ResumeInInterpreter:
                         break;
 
                     case InstructionKind::Return:

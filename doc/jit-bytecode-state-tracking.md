@@ -4,10 +4,10 @@
 |---|---|
 | Document type | Design |
 | Status | Accepted |
-| Implementation | Partial: `BytecodeState` and the opcode-blind `BytecodeStateTracker` are implemented; Core and Semantic translation remain |
+| Implementation | Partial: `BytecodeState`, the opcode-blind `BytecodeStateTracker`, and the initial Core state/exit/branch primitives are implemented; Core and Semantic translation remain |
 | Scope | Shared symbolic bytecode state, target-driven bytecode-to-IR translation, block state transfer, multiple results, and Snapshot state queries |
 | Owning layers | The bytecode decoder owns decoded locations and structural blocks; the shared JIT state layer owns opcode-blind bytecode state tracking; each concrete translator owns traversal, IR construction, opcode semantics, and Snapshot layout |
-| Validated against | `tests/test_jit_bytecode_state.cpp` |
+| Validated against | `tests/test_jit_bytecode_state.cpp`, `tests/test_jit_cfg.cpp`, and `tests/test_jit_arena.cpp` |
 | Supersedes | The open decoded-bytecode input and `BuilderContext` shape in [JIT Compiler Bring-up Plan](jit-compiler-bring-up-plan.md) |
 
 This document defines the shared machinery used to translate decoded clovervm
@@ -126,11 +126,10 @@ and Snapshot operands to one flat position sequence.
 The function-entry state is initialized differently from an ordinary block:
 
 - parameters receive target-created entry `ProgramValueRef`s;
-- locals receive a target-created reference to Clover's uninitialized or
-  missing-value sentinel;
-- temporaries receive a harmless target-created sentinel reference;
-- the accumulator receives the same sentinel reference as an uninitialized
-  temporary.
+- locals receive a target-created `Uninitialized` reference;
+- temporaries receive a target-created `Uninitialized` reference;
+- the accumulator receives the same `Uninitialized` reference as an
+  uninitialized temporary.
 
 Every tracked location therefore contains a `ProgramValueRef`, including the
 initial accumulator and semantically uninitialized locals and temporaries.
@@ -291,6 +290,20 @@ for(const EdgeResult &result: edge_results)
 }
 ```
 
+Core represents ordinary conditional control flow with one
+`ConditionalBranch(condition, true_edge, false_edge)` terminator. Bytecode
+branch polarity only determines how decoded edge occurrences map onto those
+two attributes:
+
+```text
+JumpIfTrue:  true edge = jump,        false edge = fallthrough
+JumpIfFalse: true edge = fallthrough, false edge = jump
+```
+
+The two `BlockEdge`s carry their independently constructed state arguments.
+Core does not need separate branch instruction kinds for the two bytecode
+polarities.
+
 This facility is generic. Its soundness does not depend on the current exact
 shape of the older range-loop macro bytecodes. A future fast-iterator bytecode
 can use the same contract whenever its outgoing states differ.
@@ -299,7 +312,9 @@ There is no shared result protocol combining ordinary continuation,
 conditional edges, return, unsupported bytecode, and side exit. The concrete
 translator owns those control decisions. In particular, an unsupported
 fallthrough bytecode may emit a generic `Snapshot` plus
-`ExitToInterpreter` terminator and stop walking that decoded block.
+`ResumeInInterpreter`. `ResumeInInterpreter` has the exact `ExitJIT` effect but
+is not a CFG terminator: the translator continues generating the rest of the
+decoded block, which must still end in an ordinary CFG terminator.
 
 ## Complete State Capture and Snapshots
 
@@ -311,7 +326,9 @@ BytecodeState snapshot_state = state;
 
 Core uses that state to construct a zero-code `Snapshot` for a guard, call,
 unsupported bytecode, or other exit. Generic unsupported translation is a
-`Snapshot` followed by `ExitToInterpreter` or its eventual equivalent.
+`Snapshot` followed by `ResumeInInterpreter`. The Snapshot owns the resume PC
+and recovery state; `ResumeInInterpreter` therefore needs only the Snapshot
+operand.
 Semantic IR may instead associate the same logical state with an atomic
 semantic instruction.
 
@@ -372,6 +389,8 @@ Initial translation and CFG verification must establish:
 - bytecode definite-initialization invariants prevent normal operations from
   consuming the initial accumulator or temporary sentinel;
 - every completed target block has a valid terminator;
+- `ResumeInInterpreter` is an instruction-local `ExitJIT` operation rather than
+  a CFG terminator, so translation continues after emitting it;
 - instruction-local guards and side exits do not become CFG block successors.
 
 Focused tests should cover:

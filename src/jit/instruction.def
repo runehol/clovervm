@@ -183,6 +183,16 @@ CL_JIT_INSTRUCTION(Const, CL_JIT_IR_LEVELS(Core),
 #undef CL_JIT_Const_ATTRIBUTES
 #undef CL_JIT_Const_OPERANDS
 
+#define CL_JIT_Uninitialized_OPERANDS(fixed, variadic, snapshot_values)
+#define CL_JIT_Uninitialized_ATTRIBUTES(attribute)
+CL_JIT_INSTRUCTION(Uninitialized, CL_JIT_IR_LEVELS(Core),
+                   CL_JIT_RESULT(ProgramValue, TaggedValue),
+                   CL_JIT_EFFECT_BOUNDS(None, None),
+                   CL_JIT_Uninitialized_OPERANDS,
+                   CL_JIT_Uninitialized_ATTRIBUTES)
+#undef CL_JIT_Uninitialized_ATTRIBUTES
+#undef CL_JIT_Uninitialized_OPERANDS
+
 #define CL_JIT_PythonCall_OPERANDS(fixed, variadic, snapshot_values)          \
     fixed(callable, ProgramValue, TaggedValue)                                 \
     fixed(snapshot, Snapshot, None)                                            \
@@ -218,6 +228,17 @@ CL_JIT_INSTRUCTION(Snapshot, CL_JIT_IR_LEVELS(Core),
                    CL_JIT_Snapshot_ATTRIBUTES)
 #undef CL_JIT_Snapshot_ATTRIBUTES
 #undef CL_JIT_Snapshot_OPERANDS
+
+#define CL_JIT_ResumeInInterpreter_OPERANDS(fixed, variadic, snapshot_values) \
+    fixed(snapshot, Snapshot, None)
+#define CL_JIT_ResumeInInterpreter_ATTRIBUTES(attribute)
+CL_JIT_INSTRUCTION(ResumeInInterpreter, CL_JIT_IR_LEVELS(Core),
+                   CL_JIT_RESULT(None, None),
+                   CL_JIT_EFFECT_BOUNDS(ExitJIT, ExitJIT),
+                   CL_JIT_ResumeInInterpreter_OPERANDS,
+                   CL_JIT_ResumeInInterpreter_ATTRIBUTES)
+#undef CL_JIT_ResumeInInterpreter_ATTRIBUTES
+#undef CL_JIT_ResumeInInterpreter_OPERANDS
 
 #define CL_JIT_ConditionalBranch_OPERANDS(fixed, variadic, snapshot_values)   \
     fixed(condition, ProgramValue, TaggedValue)
