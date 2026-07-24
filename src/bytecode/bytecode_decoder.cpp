@@ -1,6 +1,5 @@
 #include "bytecode/bytecode_decoder.h"
 
-#include <algorithm>
 #include <cassert>
 #include <cstdint>
 #include <limits>
@@ -126,15 +125,6 @@ namespace cl
             }
         }
 
-        auto add_successor = [&](BytecodeBlock &block,
-                                 BytecodeBlockId successor) {
-            if(std::find(block.successors_.begin(), block.successors_.end(),
-                         successor) == block.successors_.end())
-            {
-                block.successors_.push_back(successor);
-            }
-        };
-
         for(BytecodeBlock &block: blocks_)
         {
             uint32_t last_pc_offset = block.start_pc_offset_;
@@ -158,7 +148,7 @@ namespace cl
                         block_at_offset[block.end_pc_offset_];
                     assert(successor !=
                            std::numeric_limits<BytecodeBlockId>::max());
-                    add_successor(block, successor);
+                    block.successors_.push_back(successor);
                 }
             }
             if(is_jump(info.control_flow))
@@ -168,7 +158,7 @@ namespace cl
                 BytecodeBlockId successor = block_at_offset[target];
                 assert(successor !=
                        std::numeric_limits<BytecodeBlockId>::max());
-                add_successor(block, successor);
+                block.successors_.push_back(successor);
             }
         }
 

@@ -2,6 +2,7 @@
 #include "bytecode/bytecode_decoder.h"
 #include "bytecode/bytecode_instruction.h"
 #include "bytecode/code_object.h"
+#include "bytecode/code_object_builder.h"
 #include "test_helpers.h"
 #include <algorithm>
 #include <gtest/gtest.h>
@@ -383,6 +384,38 @@ TEST(BytecodeDecoder, records_conditional_edges_and_loop_backedges)
 
     EXPECT_TRUE(found_conditional);
     EXPECT_TRUE(found_backedge);
+}
+
+TEST(BytecodeDecoder, preserves_conditional_edge_occurrences_to_same_block)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation_scope(context.thread());
+    TValue<String> name =
+        context.vm().get_or_create_interned_string_value(L"<same-target-edge>");
+    CodeObjectBuilder builder(
+        &context.vm(), nullptr,
+        TValue<ModuleObject>::from_oop(context.make_test_module_object(
+            name, context.vm().global_builtins_module().raw_value())),
+        nullptr, name);
+    JumpTarget target(&builder);
+
+    builder.emit_lda_true(0).value();
+    builder.emit_jump_if_true(0, target).value();
+    target.resolve().value();
+    builder.emit_lda_none(0).value();
+    builder.emit_return(0).value();
+
+    BytecodeDecoder decoder(*builder.finalize().value());
+    ASSERT_EQ(2, decoder.blocks().size());
+
+    const BytecodeBlock &source = decoder.blocks()[0];
+    const BytecodeBlock &destination = decoder.blocks()[1];
+    ASSERT_EQ(2, source.successors().size());
+    EXPECT_EQ(destination.id(), source.successors()[0]);
+    EXPECT_EQ(destination.id(), source.successors()[1]);
+    ASSERT_EQ(2, destination.predecessors().size());
+    EXPECT_EQ(source.id(), destination.predecessors()[0]);
+    EXPECT_EQ(source.id(), destination.predecessors()[1]);
 }
 
 TEST(BytecodeDecoder, block_iteration_yields_compound_operator_once)
