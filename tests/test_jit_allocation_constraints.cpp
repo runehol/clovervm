@@ -194,10 +194,14 @@ namespace cl::jit
         EXPECT_EQ(RegisterClass::SIMD,
                   f64_default.requirement.register_class());
 
-        EXPECT_DEATH((void)InstructionAllocationConstraints(
-                         add, {{0, AccessTiming::Early,
-                                RegisterRequirement::any(RegisterClass::GPR)}}),
-                     "input requirement has the wrong register class");
+        EXPECT_DEATH(
+            {
+                InstructionAllocationConstraints invalid(
+                    add, {{0, AccessTiming::Early,
+                           RegisterRequirement::any(RegisterClass::GPR)}});
+                invalid.validate();
+            },
+            "input requirement has the wrong register class");
     }
 
     TEST(JitAllocationConstraints, AcceptsDefaultsAndRejectsInvalidOverrides)
@@ -214,19 +218,27 @@ namespace cl::jit
         EXPECT_TRUE(defaults.input_overrides().empty());
         EXPECT_FALSE(defaults.result_override().has_value());
 
-        EXPECT_DEATH((void)InstructionAllocationConstraints(
-                         add,
-                         {{0, AccessTiming::Early,
-                           RegisterRequirement::any(RegisterClass::GPR)},
-                          {0, AccessTiming::Late,
-                           RegisterRequirement::any(RegisterClass::GPR)}},
-                         std::nullopt),
-                     "duplicate input overrides");
+        EXPECT_DEATH(
+            {
+                InstructionAllocationConstraints invalid(
+                    add,
+                    {{0, AccessTiming::Early,
+                      RegisterRequirement::any(RegisterClass::GPR)},
+                     {0, AccessTiming::Late,
+                      RegisterRequirement::any(RegisterClass::GPR)}},
+                    std::nullopt);
+                invalid.validate();
+            },
+            "duplicate input overrides");
 
-        EXPECT_DEATH((void)InstructionAllocationConstraints(
-                         add, {{2, AccessTiming::Early,
-                                RegisterRequirement::any(RegisterClass::GPR)}}),
-                     "does not name an allocatable ProgramValue operand");
+        EXPECT_DEATH(
+            {
+                InstructionAllocationConstraints invalid(
+                    add, {{2, AccessTiming::Early,
+                           RegisterRequirement::any(RegisterClass::GPR)}});
+                invalid.validate();
+            },
+            "does not name an allocatable ProgramValue operand");
     }
 
     TEST(JitAllocationConstraints, RestrictsSameAsInputToCompatibleResults)
@@ -246,12 +258,15 @@ namespace cl::jit
             builder.make_instruction<BoxF64Instruction>(source);
 
         EXPECT_DEATH(
-            (void)InstructionAllocationConstraints(
-                box,
-                {{0, AccessTiming::Early,
-                  RegisterRequirement::any(RegisterClass::SIMD)}},
-                ResultConstraint{AccessTiming::Late,
-                                 RegisterRequirement::same_as_input(0)}),
+            {
+                InstructionAllocationConstraints invalid(
+                    box,
+                    {{0, AccessTiming::Early,
+                      RegisterRequirement::any(RegisterClass::SIMD)}},
+                    ResultConstraint{AccessTiming::Late,
+                                     RegisterRequirement::same_as_input(0)});
+                invalid.validate();
+            },
             "different value representation");
     }
 
@@ -273,40 +288,56 @@ namespace cl::jit
         EXPECT_TRUE(allowed.clobbers().contains(x0));
 
         EXPECT_DEATH(
-            (void)InstructionAllocationConstraints(
-                move, {{0, AccessTiming::Late, RegisterRequirement::fixed(x0)}},
-                ResultConstraint{AccessTiming::Late,
-                                 RegisterRequirement::any(RegisterClass::GPR)},
-                {}, x0_clobber),
+            {
+                InstructionAllocationConstraints invalid(
+                    move,
+                    {{0, AccessTiming::Late, RegisterRequirement::fixed(x0)}},
+                    ResultConstraint{
+                        AccessTiming::Late,
+                        RegisterRequirement::any(RegisterClass::GPR)},
+                    {}, x0_clobber);
+                invalid.validate();
+            },
             "clobber collides with a fixed late input");
 
-        EXPECT_DEATH((void)InstructionAllocationConstraints(
-                         move,
-                         {{0, AccessTiming::Early,
-                           RegisterRequirement::any(RegisterClass::GPR)}},
-                         ResultConstraint{AccessTiming::Late,
-                                          RegisterRequirement::fixed(x0)},
-                         {}, x0_clobber),
-                     "clobber collides with a fixed result");
+        EXPECT_DEATH(
+            {
+                InstructionAllocationConstraints invalid(
+                    move,
+                    {{0, AccessTiming::Early,
+                      RegisterRequirement::any(RegisterClass::GPR)}},
+                    ResultConstraint{AccessTiming::Late,
+                                     RegisterRequirement::fixed(x0)},
+                    {}, x0_clobber);
+                invalid.validate();
+            },
+            "clobber collides with a fixed result");
 
         EXPECT_DEATH(
-            (void)InstructionAllocationConstraints(
-                move,
-                {{0, AccessTiming::Early,
-                  RegisterRequirement::any(RegisterClass::GPR)}},
-                ResultConstraint{AccessTiming::Late,
-                                 RegisterRequirement::any(RegisterClass::GPR)},
-                {TemporaryConstraint(RegisterRequirement::fixed(x0))},
-                x0_clobber),
+            {
+                InstructionAllocationConstraints invalid(
+                    move,
+                    {{0, AccessTiming::Early,
+                      RegisterRequirement::any(RegisterClass::GPR)}},
+                    ResultConstraint{
+                        AccessTiming::Late,
+                        RegisterRequirement::any(RegisterClass::GPR)},
+                    {TemporaryConstraint(RegisterRequirement::fixed(x0))},
+                    x0_clobber);
+                invalid.validate();
+            },
             "clobber collides with a fixed temporary");
 
         EXPECT_DEATH(
-            (void)InstructionAllocationConstraints(
-                move,
-                {{0, AccessTiming::Early, RegisterRequirement::fixed(x0)}},
-                ResultConstraint{AccessTiming::Late,
-                                 RegisterRequirement::same_as_input(0)},
-                {}, x0_clobber),
+            {
+                InstructionAllocationConstraints invalid(
+                    move,
+                    {{0, AccessTiming::Early, RegisterRequirement::fixed(x0)}},
+                    ResultConstraint{AccessTiming::Late,
+                                     RegisterRequirement::same_as_input(0)},
+                    {}, x0_clobber);
+                invalid.validate();
+            },
             "clobber collides with a fixed result");
     }
 
