@@ -4,10 +4,10 @@
 |---|---|
 | Document type | Design |
 | Status | Accepted |
-| Implementation | Not started |
+| Implementation | Partial: `BytecodeState` and the opcode-blind `BytecodeStateTracker` are implemented; Core and Semantic translation remain |
 | Scope | Shared symbolic bytecode state, target-driven bytecode-to-IR translation, block state transfer, multiple results, and Snapshot state queries |
 | Owning layers | The bytecode decoder owns decoded locations and structural blocks; the shared JIT state layer owns opcode-blind bytecode state tracking; each concrete translator owns traversal, IR construction, opcode semantics, and Snapshot layout |
-| Validated against | N/A |
+| Validated against | `tests/test_jit_bytecode_state.cpp` |
 | Supersedes | The open decoded-bytecode input and `BuilderContext` shape in [JIT Compiler Bring-up Plan](jit-compiler-bring-up-plan.md) |
 
 This document defines the shared machinery used to translate decoded clovervm
@@ -98,7 +98,7 @@ special state-forking subsystem.
 observable flat layout:
 
 ```text
-optional accumulator
+accumulator
 parameters, addressed by parameter/register index
 locals, addressed by local/register index
 temporaries, addressed by temporary/register index
@@ -129,18 +129,20 @@ The function-entry state is initialized differently from an ordinary block:
 - locals receive a target-created reference to Clover's uninitialized or
   missing-value sentinel;
 - temporaries receive a harmless target-created sentinel reference;
-- the accumulator is unavailable and has no `ProgramValueRef`.
+- the accumulator receives the same sentinel reference as an uninitialized
+  temporary.
 
-Every register slot therefore contains a `ProgramValueRef`, including
-semantically uninitialized locals and temporaries that bytecode must overwrite
-before use. Checked local loads preserve Python behavior by testing the
-sentinel. Temporary definite initialization remains a bytecode-generation
-invariant rather than another dataflow domain in the state tracker.
+Every tracked location therefore contains a `ProgramValueRef`, including the
+initial accumulator and semantically uninitialized locals and temporaries.
+Checked local loads preserve Python behavior by testing the local sentinel.
+Accumulator and temporary definite initialization remain bytecode-generation
+invariants rather than another dataflow domain in the state tracker.
 
-Reading the unavailable function-entry accumulator is an invariant failure.
-A bytecode instruction must define it before any normal read. A Snapshot taken
-before that definition records an unavailable accumulator action rather than a
-program-value operand.
+A bytecode instruction must define the accumulator before any operation whose
+semantics require a normal accumulator value. A Snapshot queries the sentinel
+reference through the same semantic-location interface as every other value;
+the recovery layer decides whether to encode that sentinel structurally or
+materialize it.
 
 An ordinary non-entry block begins with eager target block parameters in
 the tracker's block-transfer order. The register allocator may merge their live
@@ -367,21 +369,21 @@ Initial translation and CFG verification must establish:
   block-transfer order;
 - Snapshot construction queries state by semantic location rather than assuming
   the block-transfer order;
-- the unavailable entry accumulator is never read as a program value;
+- bytecode definite-initialization invariants prevent normal operations from
+  consuming the initial accumulator or temporary sentinel;
 - every completed target block has a valid terminator;
 - instruction-local guards and side exits do not become CFG block successors.
 
 Focused tests should cover:
 
 - entry initialization of parameters, sentinel-filled locals and temporaries,
-  and the unavailable accumulator;
+  and the accumulator sharing the temporary sentinel;
 - `Ldar`, `Star`, and `Mov` preserving `ProgramValueRef` identity;
 - one-result, zero-result, and multiple-result state updates;
 - simultaneous read-modify-write updates;
 - forward edges and loop backedges with eager block arguments;
 - conditional edges carrying different results for the same destinations;
 - complete Snapshot capture before and after a state update;
-- structural rejection of an unavailable entry-accumulator read;
 - deterministic graph and state dumps across repeated translations.
 
 ## Deferred Extensions

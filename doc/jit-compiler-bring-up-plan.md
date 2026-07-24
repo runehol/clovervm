@@ -4,7 +4,7 @@
 |---|---|
 | Document type | Implementation plan |
 | Status | Proposed |
-| Implementation | Core instruction storage, typed construction, graph publication, on-demand use lists, traversal and staged rewriting, compilation-session constant retention, code-cache publication, generic machine-code emission, AArch64 assembly, value-pool loads, the initial AArch64 `AllocationConstraints`, and a direct single-register CFG-to-AArch64 path are implemented; register allocation, heap `JitCodeObject` integration, bytecode translation, and compiler/runtime entry remain |
+| Implementation | Core instruction storage, typed construction, graph publication, block parameters and edge arguments, on-demand use lists, traversal and staged rewriting, opcode-blind bytecode state tracking, compilation-session constant retention, code-cache publication, generic machine-code emission, AArch64 assembly, value-pool loads, the initial AArch64 `AllocationConstraints`, and a direct single-register CFG-to-AArch64 path are implemented; register allocation, heap `JitCodeObject` integration, concrete bytecode translation, and compiler/runtime entry remain |
 | Scope | Initial JIT staging, vertical slices, temporary runtime policies, and validation |
 | Owning layers | The JIT owns compilation and generated transitions; the interpreter, managed calling convention, native boundaries, and reclaimer retain their existing contracts |
 | Validated against | Supporting infrastructure, instruction-representation tests, CFG and rewrite tests, code-cache tests, and executable AArch64 tests in the working tree on 2026-07-23 |
@@ -155,9 +155,9 @@ The first implementation slice is already in the tree. It established:
   schema-generated metadata, concrete typed instruction classes, typed
   terminator access, uniform operand/reference traversal, explicit constant
   defs, `ValueConstant`s, and positional Snapshot slots;
-- CFG blocks, source-owned block edges, block parameters, graph construction,
-  structural verification, generation-bound query caches, and on-demand
-  `UseLists`;
+- CFG blocks, source-owned block edges with ordered arguments, block parameters,
+  graph construction, structural verification, generation-bound query caches,
+  and on-demand `UseLists`;
 - program-order read-only instruction traversal and graph-wide staged rewriting,
   including original or normalized callback input, operand reconstruction,
   prefix and suffix insertion, def replacement, detachment poisoning, and
@@ -203,10 +203,10 @@ slots are visible to its native-layout scanner; that publication boundary
 transfers responsibility from compilation retention to GC tracing.
 
 Detached-storage poisoning, generation-bound `UseLists`, read-only traversal,
-and staged published-graph rewriting also landed ahead of their original
-milestones. Snapshot-expanded liveness, non-entry block parameters and their
-edge argument lists, and general CFG-edge rewriting remain deferred. Entry
-block parameters already represent function arguments.
+staged published-graph rewriting, non-entry block parameters, and immutable
+edge argument lists also landed ahead of their original milestones.
+Snapshot-expanded liveness and general CFG-topology rewriting remain deferred.
+Entry block parameters already represent function arguments.
 
 ### Milestone 2: executable AArch64 from minimal Core
 
@@ -318,6 +318,13 @@ Scope:
 - build Snapshot instructions from the symbolic state at entry, return, and
   unsupported-bytecode boundaries;
 - verify the produced Core graph against expected structure.
+
+The initial `BytecodeState` and opcode-blind `BytecodeStateTracker` slice is
+complete. It derives raw parameter, local, and temporary coordinates from the
+`CodeObject`, initializes every state location with a symbolic reference,
+supports multiple-result reads and writes, copies state for edge-specific
+translation, and round-trips the deterministic block-transfer order. The
+target-driven Core walk and Snapshot construction remain.
 
 Generated side-exit code and runtime recovery are deferred, but this milestone
 should already make Snapshot construction boring. That unlocks unsupported
