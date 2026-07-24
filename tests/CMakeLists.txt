@@ -31,6 +31,7 @@ target_sources(test_clovervm PRIVATE
 	test_jit_graph_rewrites.cpp
 	test_jit_code_object.cpp
 	test_jit_ir_print.cpp
+	test_jit_register_allocator.cpp
 	test_machine_address.cpp
 	test_machine_code_emitter.cpp
 	test_native_module_build.cpp

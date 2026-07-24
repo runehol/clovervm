@@ -98,6 +98,7 @@ add_library(libclovervm_objects OBJECT
     jit/allocation_constraints.h
     jit/allocation_problem.cpp
     jit/allocation_problem.h
+    jit/allocation_bundles.cpp
     jit/cfg_verifier.cpp
     jit/cfg_verifier.h
     jit/compilation_arena.cpp
@@ -137,6 +138,7 @@ add_library(libclovervm_objects OBJECT
     jit/physical_register.h
     jit/preferred_code_memory.cpp
     jit/register_allocator.h
+    jit/register_allocator.cpp
     jit/register_allocator_internal.h
     jit/serial.h
     jit/standard_code_memory.cpp
