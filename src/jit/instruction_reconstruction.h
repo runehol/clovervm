@@ -11,10 +11,10 @@ namespace cl::jit
 {
     namespace detail
     {
-        template <typename DefResolver> class TypedOperandResolver
+        template <typename DefResolver> class TypedReferenceResolver
         {
         public:
-            explicit TypedOperandResolver(const DefResolver &resolver)
+            explicit TypedReferenceResolver(const DefResolver &resolver)
                 : resolver_(&resolver)
             {
             }
@@ -37,6 +37,16 @@ namespace cl::jit
             SnapshotRef resolve(SnapshotRef def) const
             {
                 return SnapshotRef(resolve(def.instruction()));
+            }
+
+            template <typename T> T resolve_attribute(T attribute) const
+            {
+                return attribute;
+            }
+
+            BlockEdge *resolve_attribute(BlockEdge *edge) const
+            {
+                return resolver_->resolve(edge);
             }
 
             template <ValueRepresentation Representation>
@@ -70,9 +80,9 @@ namespace cl::jit
     }  // namespace detail
 
     // Reconstructs an instruction through its schema-generated typed
-    // constructor after resolving every operand definition. Attributes are
-    // copied unchanged. The original instruction is returned when no operand
-    // changes.
+    // constructor after resolving every operand definition and first-class
+    // BlockEdge attribute. Other attributes are copied unchanged. The original
+    // instruction is returned when no reference changes.
     //
     // DefResolver provides:
     //
@@ -84,9 +94,9 @@ namespace cl::jit
     //     T *make_instruction(Args &&...args);
     template <typename DefResolver, typename InstructionFactory>
     Instruction *
-    rebuild_instruction_with_operands(Instruction &instruction,
-                                      const DefResolver &def_resolver,
-                                      InstructionFactory &factory)
+    rebuild_instruction_with_references(Instruction &instruction,
+                                        const DefResolver &def_resolver,
+                                        InstructionFactory &factory)
     {
         bool changed = false;
         visit_operand_references(
@@ -94,12 +104,20 @@ namespace cl::jit
             [&](uint32_t, OperandClass, ValueRepresentation, Instruction *def) {
                 changed |= def_resolver.resolve(def) != def;
             });
+        if(instruction.is_block_terminator())
+        {
+            for(BlockEdge *edge:
+                TerminatorInstruction(&instruction).block_successor_edges())
+            {
+                changed |= def_resolver.resolve(edge) != edge;
+            }
+        }
         if(!changed)
         {
             return &instruction;
         }
 
-        detail::TypedOperandResolver resolver(def_resolver);
+        detail::TypedReferenceResolver resolver(def_resolver);
         switch(instruction.kind())
         {
 #define CL_JIT_IR_LEVELS(...)
@@ -108,7 +126,8 @@ namespace cl::jit
 #define CL_JIT_RESOLVE_FIXED(name, ...) resolver.resolve(typed.name()),
 #define CL_JIT_RESOLVE_VARIADIC(name, ...) resolver.resolve(typed.name()),
 #define CL_JIT_RESOLVE_SNAPSHOT_VALUES(name) resolver.resolve(typed.name()),
-#define CL_JIT_COPY_ATTRIBUTE(name, ...) typed.name(),
+#define CL_JIT_COPY_ATTRIBUTE(name, ...)                                       \
+    resolver.resolve_attribute(typed.name()),
 #define CL_JIT_INSTRUCTION(name, ir_levels, result, effects, operands,         \
                            attributes)                                         \
     case InstructionKind::name:                                                \

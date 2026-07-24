@@ -81,19 +81,21 @@ namespace cl::jit
         block->append_instruction(instruction);
     }
 
-    BlockEdge *GraphBuilder::make_block_edge(Block *source, Block *target)
+    BlockEdge *
+    GraphBuilder::make_block_edge(Block *source, Block *target,
+                                  std::span<const ProgramValueRef> arguments)
     {
         assert_can_mutate(source);
         assert(target != nullptr);
         assert(graph_->owns_block(target));
-        return arena_->make_block_edge(source, target);
+        return arena_->make_block_edge(source, target, arguments);
     }
 
     ControlFlowGraph *GraphBuilder::finalize()
     {
         assert(graph_ != nullptr);
         assert(!graph_->is_published());
-        build_predecessor_edges();
+        graph_->rebuild_predecessor_edge_index();
         CfgVerificationResult result = verify_cfg(*graph_);
         if(!result.valid)
         {
@@ -103,36 +105,6 @@ namespace cl::jit
         ControlFlowGraph *published_graph = graph_;
         graph_ = nullptr;
         return published_graph;
-    }
-
-    void GraphBuilder::build_predecessor_edges()
-    {
-        for(Block *block: graph_->blocks_)
-        {
-            assert(block->predecessor_edges_.empty());
-        }
-
-        for(Block *block: graph_->blocks_)
-        {
-            if(block->instructions_.empty())
-            {
-                continue;
-            }
-            Instruction *instruction = block->instructions_.back();
-            if(instruction == nullptr || !instruction->is_block_terminator())
-            {
-                continue;
-            }
-            for(BlockEdge *edge:
-                TerminatorInstruction(instruction).block_successor_edges())
-            {
-                if(edge != nullptr && edge->source() == block &&
-                   graph_->owns_block(edge->target()))
-                {
-                    edge->target()->append_predecessor_edge(edge);
-                }
-            }
-        }
     }
 
     void GraphBuilder::assert_can_mutate(const Block *block) const

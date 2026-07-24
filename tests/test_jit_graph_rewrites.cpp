@@ -134,6 +134,36 @@ namespace cl::jit
         EXPECT_EQ(&parameter_uses, &reused_queries.uses_of(*parameter));
     }
 
+    TEST(JitUseLists, RecordsBlockArgumentUseOccurrences)
+    {
+        CompilationSession session;
+        GraphBuilder builder(session);
+        Block *entry = builder.emplace_block();
+        Block *exit = builder.emplace_block();
+        ParameterInstruction *source_parameter =
+            builder.emplace_parameter<ParameterInstruction>(entry);
+        std::array<ProgramValueRef, 1> arguments = {
+            ProgramValueRef(source_parameter)};
+        BlockEdge *edge = builder.make_block_edge(
+            entry, exit, std::span<const ProgramValueRef>(arguments));
+        builder.emplace_instruction<UnconditionalBranchInstruction>(entry,
+                                                                    edge);
+        ParameterInstruction *target_parameter =
+            builder.emplace_parameter<ParameterInstruction>(exit);
+        builder.emplace_instruction<ReturnInstruction>(
+            exit, TaggedValueRef(target_parameter));
+        ControlFlowGraph *graph = builder.finalize();
+
+        const Uses &uses =
+            graph->prepare_queries(GraphQuery::Uses).uses_of(*source_parameter);
+
+        EXPECT_EQ(1u, uses.n_uses());
+        EXPECT_EQ(0u, uses.n_instruction_uses());
+        ASSERT_EQ(1u, uses.n_block_argument_uses());
+        EXPECT_EQ(edge, uses.block_argument_uses()[0].edge);
+        EXPECT_EQ(0u, uses.block_argument_uses()[0].argument_index);
+    }
+
     TEST(JitUseLists, TraversalPreparesOnlyRequestedQueries)
     {
         CompilationSession session;
@@ -419,6 +449,58 @@ namespace cl::jit
                        const Instruction &) { return RewriteResult::keep(); });
             },
             "normalized rewrite input");
+    }
+
+    TEST(JitGraphRewriter, ReconstructsTerminatorForNormalizedEdgeArguments)
+    {
+        CompilationSession session;
+        GraphBuilder builder(session);
+        Block *entry = builder.emplace_block();
+        Block *exit = builder.emplace_block();
+        ConstInstruction *original =
+            builder.emplace_instruction<ConstInstruction>(entry, Value::None());
+        std::array<ProgramValueRef, 1> arguments = {ProgramValueRef(original)};
+        BlockEdge *edge = builder.make_block_edge(
+            entry, exit, std::span<const ProgramValueRef>(arguments));
+        UnconditionalBranchInstruction *old_terminator =
+            builder.emplace_instruction<UnconditionalBranchInstruction>(entry,
+                                                                        edge);
+        ParameterInstruction *parameter =
+            builder.emplace_parameter<ParameterInstruction>(exit);
+        builder.emplace_instruction<ReturnInstruction>(
+            exit, TaggedValueRef(parameter));
+        ControlFlowGraph *graph = builder.finalize();
+
+        GraphRewriter rewriter(session, *graph);
+        RewriteSummary summary = rewriter.rewrite_instructions(
+            InstructionTraversal(),
+            [&](RewriteContext &context, const GraphQueries &, const Block &,
+                const Instruction &instruction) {
+                if(&instruction == original)
+                {
+                    return RewriteResult::replace(
+                        context.make_instruction<ConstInstruction>(
+                            Value::True()));
+                }
+                return RewriteResult::keep();
+            });
+
+        EXPECT_TRUE(summary.instructions_changed);
+        EXPECT_TRUE(summary.terminators_changed);
+        EXPECT_TRUE(original->is_detached());
+        EXPECT_TRUE(old_terminator->is_detached());
+        ASSERT_EQ(1u, edge->arguments().size());
+        EXPECT_EQ(original, edge->arguments()[0].instruction());
+
+        BlockEdge *new_edge = entry->terminator().block_successor_edges()[0];
+        EXPECT_NE(edge, new_edge);
+        EXPECT_EQ(entry, new_edge->source());
+        EXPECT_EQ(exit, new_edge->target());
+        ASSERT_EQ(1u, new_edge->arguments().size());
+        EXPECT_EQ(entry->instructions()[0],
+                  new_edge->arguments()[0].instruction());
+        ASSERT_EQ(1u, exit->predecessor_edges().size());
+        EXPECT_EQ(new_edge, exit->predecessor_edges()[0]);
     }
 
     TEST(JitGraphRewriter, ReconstructsVariadicInstructionsFromTheSchema)

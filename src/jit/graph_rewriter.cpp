@@ -33,14 +33,18 @@ namespace cl::jit
             absl::flat_hash_map<const Instruction *, DefReplacement>;
         using SequenceReplacements =
             absl::flat_hash_map<const Instruction *, Instruction *>;
+        using EdgeReplacements =
+            absl::flat_hash_map<const BlockEdge *, BlockEdge *>;
 
         class DefResolver
         {
         public:
             DefResolver(const DefReplacements &def_replacements,
-                        const SequenceReplacements &sequence_replacements)
+                        const SequenceReplacements &sequence_replacements,
+                        const EdgeReplacements &edge_replacements)
                 : def_replacements_(&def_replacements),
-                  sequence_replacements_(&sequence_replacements)
+                  sequence_replacements_(&sequence_replacements),
+                  edge_replacements_(&edge_replacements)
             {
             }
 
@@ -66,9 +70,20 @@ namespace cl::jit
                 return replacement->second.def;
             }
 
+            BlockEdge *resolve(BlockEdge *edge) const
+            {
+                auto replacement = edge_replacements_->find(edge);
+                if(replacement == edge_replacements_->end())
+                {
+                    return edge;
+                }
+                return replacement->second;
+            }
+
         private:
             const DefReplacements *def_replacements_;
             const SequenceReplacements *sequence_replacements_;
+            const EdgeReplacements *edge_replacements_;
         };
 
         bool compatible_results(const Instruction &original,
@@ -90,13 +105,29 @@ namespace cl::jit
         }
 
         bool same_successor_edges(const Instruction &original,
-                                  const Instruction &replacement)
+                                  const Instruction &replacement,
+                                  const EdgeReplacements &edge_replacements)
         {
             auto original_edges =
                 TerminatorInstruction(&original).block_successor_edges();
             auto replacement_edges =
                 TerminatorInstruction(&replacement).block_successor_edges();
-            return original_edges == replacement_edges;
+            if(original_edges.size() != replacement_edges.size())
+            {
+                return false;
+            }
+            for(size_t index = 0; index < original_edges.size(); ++index)
+            {
+                auto found = edge_replacements.find(original_edges[index]);
+                BlockEdge *expected = found == edge_replacements.end()
+                                          ? original_edges[index]
+                                          : found->second;
+                if(replacement_edges[index] != expected)
+                {
+                    return false;
+                }
+            }
+            return true;
         }
 
         void validate_available_operands(
@@ -158,6 +189,7 @@ namespace cl::jit
         std::vector<StagedBlockRewrite> staged_blocks;
         staged_blocks.reserve(graph_->blocks_.size());
         RewriteSummary summary;
+        bool edges_changed = false;
 
         for(Block *block: graph_->blocks_)
         {
@@ -165,6 +197,7 @@ namespace cl::jit
             StagedBlockRewrite staged{block, {}, {}};
             staged.instructions.reserve(block->instructions_.size());
             DefReplacements def_replacements;
+            EdgeReplacements edge_replacements;
             absl::flat_hash_set<const Instruction *> available_defs;
             available_defs.insert(block->parameters_.begin(),
                                   block->parameters_.end());
@@ -172,13 +205,48 @@ namespace cl::jit
             for(Instruction *original: block->instructions_)
             {
                 assert(original != nullptr);
+                if(original->is_block_terminator())
+                {
+                    SequenceReplacements no_sequence_replacements;
+                    DefResolver resolver(def_replacements,
+                                         no_sequence_replacements,
+                                         edge_replacements);
+                    for(BlockEdge *edge:
+                        TerminatorInstruction(original).block_successor_edges())
+                    {
+                        std::vector<ProgramValueRef> arguments;
+                        arguments.reserve(edge->arguments().size());
+                        bool changed = false;
+                        for(ProgramValueRef argument: edge->arguments())
+                        {
+                            Instruction *resolved =
+                                resolver.resolve(argument.instruction());
+                            require_rewrite_invariant(
+                                available_defs.contains(resolved),
+                                "rewritten block edge refers to a definition "
+                                "outside its source block or after the edge");
+                            changed |= resolved != argument.instruction();
+                            arguments.emplace_back(resolved);
+                        }
+                        BlockEdge *replacement = edge;
+                        if(changed)
+                        {
+                            replacement = arena_->make_block_edge(
+                                edge->source(), edge->target(), arguments);
+                            edges_changed = true;
+                        }
+                        edge_replacements.emplace(edge, replacement);
+                    }
+                }
+
                 Instruction *callback_input = original;
                 if(input == RewriteInput::Normalized)
                 {
                     SequenceReplacements no_sequence_replacements;
                     DefResolver resolver(def_replacements,
-                                         no_sequence_replacements);
-                    callback_input = rebuild_instruction_with_operands(
+                                         no_sequence_replacements,
+                                         edge_replacements);
+                    callback_input = rebuild_instruction_with_references(
                         *original, resolver, context);
                     validate_available_operands(*callback_input,
                                                 available_defs);
@@ -271,9 +339,11 @@ namespace cl::jit
                         "twice");
 
                     DefResolver resolver(def_replacements,
-                                         sequence_replacements);
-                    Instruction *normalized = rebuild_instruction_with_operands(
-                        *proposed, resolver, context);
+                                         sequence_replacements,
+                                         edge_replacements);
+                    Instruction *normalized =
+                        rebuild_instruction_with_references(*proposed, resolver,
+                                                            context);
                     require_rewrite_invariant(
                         !normalized->is_detached(),
                         "a detached instruction cannot be emitted");
@@ -298,7 +368,8 @@ namespace cl::jit
                 if(proposed_replacement != nullptr)
                 {
                     DefResolver resolver(def_replacements,
-                                         sequence_replacements);
+                                         sequence_replacements,
+                                         edge_replacements);
                     if(replacement_is_existing_def)
                     {
                         normalized_replacement =
@@ -400,7 +471,8 @@ namespace cl::jit
                         new_terminator->is_block_terminator(),
                         "a terminator replacement must end in a terminator");
                     require_rewrite_invariant(
-                        same_successor_edges(*original, *new_terminator),
+                        same_successor_edges(*original, *new_terminator,
+                                             edge_replacements),
                         "instruction rewriting cannot change CFG successor "
                         "edges");
                     summary.terminators_changed |= new_terminator != original;
@@ -412,6 +484,7 @@ namespace cl::jit
             require_rewrite_invariant(
                 staged.instructions.back()->is_block_terminator(),
                 "a rewritten block must end in a terminator");
+
             staged_blocks.push_back(std::move(staged));
         }
 
@@ -423,6 +496,10 @@ namespace cl::jit
         for(StagedBlockRewrite &staged: staged_blocks)
         {
             staged.block->instructions_.swap(staged.instructions);
+        }
+        if(edges_changed)
+        {
+            graph_->rebuild_predecessor_edge_index();
         }
         for(StagedBlockRewrite &staged: staged_blocks)
         {

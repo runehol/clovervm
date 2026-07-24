@@ -32,15 +32,14 @@ namespace cl::jit
                 add_instruction_uses(*block, *instruction);
             }
 
-            // Phase three will record outgoing block-argument uses here once
-            // BlockEdge carries arguments. Existing edges have none.
-#ifndef NDEBUG
+            // Phase three: record uses at each outgoing edge after every body
+            // definition is available.
             for(const BlockEdge *edge: block->block_successor_edges())
             {
                 assert(edge != nullptr);
                 assert(edge->source() == block);
+                add_block_argument_uses(*block, *edge);
             }
-#endif
         }
     }
 
@@ -80,6 +79,21 @@ namespace cl::jit
                 uses.instruction_uses_.push_back(
                     InstructionUse{&instruction, operand_index});
             });
+    }
+
+    void UseLists::add_block_argument_uses(const Block &block,
+                                           const BlockEdge &edge)
+    {
+        const std::vector<ProgramValueRef> &arguments = edge.arguments();
+        for(size_t index = 0; index < arguments.size(); ++index)
+        {
+            Instruction *def = arguments[index].instruction();
+            auto found = index_by_def_.find(def);
+            assert(found != index_by_def_.end());
+            Uses &uses = uses_[found->second];
+            assert(uses.block_ == &block);
+            uses.block_argument_uses_.push_back(BlockArgumentUse{&edge, index});
+        }
     }
 
 }  // namespace cl::jit

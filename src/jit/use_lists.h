@@ -20,7 +20,7 @@ namespace cl::jit
     struct BlockArgumentUse
     {
         const BlockEdge *edge;
-        uint16_t argument_index;
+        size_t argument_index;
     };
 
     class Uses
@@ -91,6 +91,7 @@ namespace cl::jit
         void add_def(const Block &block, const Instruction &def);
         void add_instruction_uses(const Block &block,
                                   const Instruction &instruction);
+        void add_block_argument_uses(const Block &block, const BlockEdge &edge);
 
         uint64_t graph_generation_;
         std::vector<Uses> uses_;

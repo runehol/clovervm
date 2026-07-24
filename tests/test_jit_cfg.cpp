@@ -6,6 +6,8 @@
 
 #include <gtest/gtest.h>
 
+#include <array>
+#include <span>
 #include <string>
 
 namespace cl::jit
@@ -85,6 +87,40 @@ namespace cl::jit
         EXPECT_TRUE(graph->is_published());
     }
 
+    TEST(JitCfg, ParallelEdgesCarryIndependentOrderedArguments)
+    {
+        CompilationSession session;
+        GraphBuilder builder(session);
+        Block *entry = builder.emplace_block();
+        Block *join = builder.emplace_block();
+        TaggedValueRef true_value =
+            emplace_constant(builder, entry, Value::True());
+        TaggedValueRef false_value =
+            emplace_constant(builder, entry, Value::False());
+        std::array<ProgramValueRef, 1> true_arguments = {true_value};
+        std::array<ProgramValueRef, 1> false_arguments = {false_value};
+        BlockEdge *true_edge = builder.make_block_edge(
+            entry, join, std::span<const ProgramValueRef>(true_arguments));
+        BlockEdge *false_edge = builder.make_block_edge(
+            entry, join, std::span<const ProgramValueRef>(false_arguments));
+        builder.emplace_instruction<ConditionalBranchInstruction>(
+            entry, true_value, true_edge, false_edge);
+        ParameterInstruction *parameter =
+            builder.emplace_parameter<ParameterInstruction>(join);
+        builder.emplace_instruction<ReturnInstruction>(
+            join, TaggedValueRef(parameter));
+
+        ControlFlowGraph *graph = builder.finalize();
+
+        EXPECT_TRUE(graph->is_published());
+        ASSERT_EQ(1u, true_edge->arguments().size());
+        EXPECT_EQ(true_value.instruction(),
+                  true_edge->arguments()[0].instruction());
+        ASSERT_EQ(1u, false_edge->arguments().size());
+        EXPECT_EQ(false_value.instruction(),
+                  false_edge->arguments()[0].instruction());
+    }
+
     TEST(JitCfg, EntryParametersArePlacedSeparatelyFromInstructions)
     {
         CompilationSession session;
@@ -116,7 +152,11 @@ namespace cl::jit
         GraphBuilder builder(session);
         Block *entry = builder.emplace_block();
         Block *exit = builder.emplace_block();
-        BlockEdge *edge = builder.make_block_edge(entry, exit);
+        TaggedValueRef argument =
+            emplace_constant(builder, entry, Value::None());
+        std::array<ProgramValueRef, 1> arguments = {argument};
+        BlockEdge *edge = builder.make_block_edge(
+            entry, exit, std::span<const ProgramValueRef>(arguments));
         builder.emplace_instruction<UnconditionalBranchInstruction>(entry,
                                                                     edge);
         ParameterInstruction *parameter =
@@ -129,6 +169,62 @@ namespace cl::jit
         EXPECT_TRUE(graph->is_published());
         ASSERT_EQ(1u, exit->parameters().size());
         EXPECT_EQ(parameter, exit->parameters()[0]);
+    }
+
+    TEST(JitCfgVerifier, RejectsWrongBlockArgumentArity)
+    {
+        CompilationSession session;
+        GraphBuilder builder(session);
+        Block *entry = builder.emplace_block();
+        Block *exit = builder.emplace_block();
+        BlockEdge *edge = builder.make_block_edge(entry, exit);
+        builder.emplace_instruction<UnconditionalBranchInstruction>(entry,
+                                                                    edge);
+        builder.emplace_parameter<ParameterInstruction>(exit);
+        builder.emplace_instruction<ReturnInstruction>(
+            exit, emplace_constant(builder, exit, Value::None()));
+
+        expect_invalid_with(builder, "supplies 0 arguments for 1 target");
+    }
+
+    TEST(JitCfgVerifier, RejectsIncompatibleBlockArgumentRepresentation)
+    {
+        CompilationSession session;
+        GraphBuilder builder(session);
+        Block *entry = builder.emplace_block();
+        Block *exit = builder.emplace_block();
+        ParameterF64Instruction *argument =
+            builder.emplace_parameter<ParameterF64Instruction>(entry);
+        std::array<ProgramValueRef, 1> arguments = {ProgramValueRef(argument)};
+        BlockEdge *edge = builder.make_block_edge(
+            entry, exit, std::span<const ProgramValueRef>(arguments));
+        builder.emplace_instruction<UnconditionalBranchInstruction>(entry,
+                                                                    edge);
+        builder.emplace_parameter<ParameterInstruction>(exit);
+        builder.emplace_instruction<ReturnInstruction>(
+            exit, emplace_constant(builder, exit, Value::None()));
+
+        expect_invalid_with(builder, "incompatible value representation");
+    }
+
+    TEST(JitCfgVerifier, RejectsUnavailableBlockArgument)
+    {
+        CompilationSession session;
+        GraphBuilder builder(session);
+        Block *entry = builder.emplace_block();
+        Block *exit = builder.emplace_block();
+        ParameterInstruction *unavailable =
+            builder.emplace_parameter<ParameterInstruction>(exit);
+        std::array<ProgramValueRef, 1> arguments = {
+            ProgramValueRef(unavailable)};
+        BlockEdge *edge = builder.make_block_edge(
+            entry, exit, std::span<const ProgramValueRef>(arguments));
+        builder.emplace_instruction<UnconditionalBranchInstruction>(entry,
+                                                                    edge);
+        builder.emplace_instruction<ReturnInstruction>(
+            exit, TaggedValueRef(unavailable));
+
+        expect_invalid_with(builder, "outside its source block or after");
     }
 
     TEST(JitCfgVerifier, RejectsEmptyBlock)

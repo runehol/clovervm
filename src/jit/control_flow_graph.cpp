@@ -25,6 +25,36 @@ namespace cl::jit
         return block != nullptr && block->graph_ == this;
     }
 
+    void ControlFlowGraph::rebuild_predecessor_edge_index()
+    {
+        for(Block *block: blocks_)
+        {
+            block->predecessor_edges_.clear();
+        }
+
+        for(Block *block: blocks_)
+        {
+            if(block->instructions_.empty())
+            {
+                continue;
+            }
+            Instruction *instruction = block->instructions_.back();
+            if(instruction == nullptr || !instruction->is_block_terminator())
+            {
+                continue;
+            }
+            for(BlockEdge *edge:
+                TerminatorInstruction(instruction).block_successor_edges())
+            {
+                if(edge != nullptr && edge->source() == block &&
+                   owns_block(edge->target()))
+                {
+                    edge->target()->append_predecessor_edge(edge);
+                }
+            }
+        }
+    }
+
     GraphQueries ControlFlowGraph::prepare_queries(GraphQuery queries) const
     {
         assert(is_published());

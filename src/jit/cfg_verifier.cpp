@@ -310,6 +310,37 @@ namespace cl::jit
 
         for(const Block *block: blocks)
         {
+            for(const BlockEdge *edge: block->block_successor_edges())
+            {
+                const std::vector<Instruction *> &parameters =
+                    edge->target()->parameters();
+                const std::vector<ProgramValueRef> &arguments =
+                    edge->arguments();
+                if(arguments.size() != parameters.size())
+                {
+                    return invalid(edge_name(edge) + " supplies " +
+                                   std::to_string(arguments.size()) +
+                                   " arguments for " +
+                                   std::to_string(parameters.size()) +
+                                   " target parameters");
+                }
+                for(size_t index = 0; index < arguments.size(); ++index)
+                {
+                    if(arguments[index].instruction()->value_representation() !=
+                       parameters[index]->value_representation())
+                    {
+                        return invalid(edge_name(edge) + " argument " +
+                                       std::to_string(index) +
+                                       " has an incompatible value "
+                                       "representation for its target "
+                                       "parameter");
+                    }
+                }
+            }
+        }
+
+        for(const Block *block: blocks)
+        {
             absl::flat_hash_set<const Instruction *> available_definitions;
             for(const Instruction *parameter: block->parameters())
             {
@@ -365,6 +396,24 @@ namespace cl::jit
                     return invalid(std::move(reference_error));
                 }
                 available_definitions.insert(instruction);
+            }
+
+            for(const BlockEdge *edge: block->block_successor_edges())
+            {
+                const std::vector<ProgramValueRef> &arguments =
+                    edge->arguments();
+                for(size_t index = 0; index < arguments.size(); ++index)
+                {
+                    const Instruction *def = arguments[index].instruction();
+                    if(!available_definitions.contains(def))
+                    {
+                        return invalid(edge_name(edge) + " argument " +
+                                       std::to_string(index) + " references " +
+                                       instruction_name(def) +
+                                       " outside its source block or after "
+                                       "the edge");
+                    }
+                }
             }
         }
 

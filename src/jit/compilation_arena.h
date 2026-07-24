@@ -28,6 +28,7 @@ namespace cl::jit
     private:
         friend class CompilationSession;
         friend class GraphBuilder;
+        friend class GraphRewriter;
         friend class RewriteContext;
 
         CompilationArena() = default;

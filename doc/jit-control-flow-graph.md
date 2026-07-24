@@ -4,7 +4,7 @@
 |---|---|
 | Document type | Architecture contract |
 | Status | Accepted |
-| Implementation | Partial: graph construction and publication, fixed-representation terminators, block parameters, predecessor indexes, structural verification, queries, and body-instruction rewriting are implemented; edge arguments and CFG-topology editing are deferred |
+| Implementation | Partial: graph construction and publication, fixed-representation terminators, block parameters and edge arguments, predecessor indexes, structural verification, queries, and body-instruction rewriting are implemented; cross-block dominance and CFG-topology editing are deferred |
 | Scope | Structural CFG shared by Core IR and an optional Semantic IR, including implemented block parameters and the planned edge-argument extension |
 | Owning layers | The JIT CFG owns block order, block edges, block parameters, instruction placement, and structural verification; individual IR levels own instruction semantics and side exits |
 | Validated against | `tests/test_jit_cfg.cpp` and `tests/test_jit_graph_rewrites.cpp` |
@@ -162,10 +162,8 @@ BlockEdge:
     serial
     source block
     target block
+    ordered ProgramValueRef arguments
 ```
-
-The block-argument extension will add an ordered argument list to this same
-edge object.
 
 First-class occurrences are required because two semantic arms may have the
 same source and target while carrying different arguments. Register allocation
@@ -211,15 +209,16 @@ predecessor traversal does not require a whole-graph scan:
 
 ```text
 source terminator -> outgoing block edge references
-block edge        -> source, target, and arguments [arguments planned]
+block edge        -> source, target, and arguments
 target block      -> incoming block edge references
 ```
 
-Graph mutation must keep these views consistent. Redirecting an edge updates
-its target and the old and new target predecessor indexes while preserving its
-semantic role in the source terminator. Replacing a terminator may introduce or
-remove outgoing edges. Neither mutation is implemented yet: `BlockEdge` source
-and target are currently immutable, and there is no CFG editor.
+Graph mutation must keep these views consistent. A terminator and the edge
+occurrences it names are immutable. Rewriting a definition used by an edge
+argument creates a replacement edge with normalized arguments and reconstructs
+the owning terminator; it does not mutate the old edge. The rewrite transaction
+then rebuilds predecessor indexes at commit. General redirection and adding or
+removing outgoing edges remain unimplemented because there is no CFG editor.
 
 `GraphBuilder::make_block_edge()` checks graph membership in debug builds and
 allocates a source-owned edge without attaching it to the target. This matches
@@ -232,13 +231,12 @@ each terminator edge to its target's predecessor vector before verification.
 Predecessor order is therefore deterministic construction order but has no
 semantic significance; the edge itself is the durable identity.
 
-## Block Parameters and Planned Edge Arguments
+## Block Parameters and Edge Arguments
 
-Ordered block-parameter instructions are implemented as a separate vector from
-the block body. They are definitions available at block entry and use the same
-instruction identity and typed `ProgramValueRef` mechanism as ordinary defs.
-Ordered edge arguments remain accepted design but are not yet part of
-`BlockEdge` or the structural verifier.
+Ordered block-parameter instructions are stored separately from the block body.
+They are definitions available at block entry and use the same instruction
+identity and typed `ProgramValueRef` mechanism as ordinary defs. Each immutable
+`BlockEdge` stores its corresponding ordered `ProgramValueRef` argument uses.
 
 Block parameters are ordered SSA definitions owned by the target block. Edge
 arguments are ordered SSA uses at the source edge. For:
@@ -259,23 +257,11 @@ edge0.argument[0] = %v0  ->  B.parameter[0] = %p0
 edge0.argument[1] = %v1  ->  B.parameter[1] = %p1
 ```
 
-For frame-state-carrying blocks, vector position is the logical stack-register
-index shared with Snapshots. Position zero is the function-arity-derived offset
-from `fp`; increasing positions are logically ascending and physically descend
-the stack. Parameters precede the fixed frame-header holes, followed by locals,
-temporaries, and the next inlined frame's parameters. Those parameters are the
-caller's outgoing-argument slots and are not represented twice. Each inlined
-frame boundary inserts holes for interpreted PC, compiled PC, FP, and code
-object at that boundary's actual position.
-
-Header positions appear at the same indices in the target parameter and every
-incoming edge-argument vector. They carry no SSA definition or use and are
-skipped by generic use traversal. They are not null references. Their eventual
-entry representation is shared with the recovery case in which an ordinary
-destination already contains its desired value; a dead, unknown, or
-sentinel-valued logical register must not reuse it. Recovery reconstructs header
-fields from frame metadata using their native encodings rather than treating
-the two PCs or FP as `Value`s.
+For frame-state-carrying bytecode blocks, the bytecode state tracker owns the
+positional contract shared by target block parameters and every incoming edge.
+That contract is internal to block transfer. Snapshot and recovery construction
+query the same semantic state but own their separate physical layout and
+structural descriptors; block-edge arguments do not contain frame-header holes.
 
 An edge argument need not be defined in the immediate source block. Its
 definition must be available at the source terminator and therefore dominate
@@ -350,6 +336,9 @@ structure, or other cached analyses. It checks:
 - every outgoing edge occurs exactly once in its target's predecessor index;
 - every predecessor edge is referenced exactly once by its source terminator;
 - the true and false arms of a conditional branch use distinct edge objects.
+- every edge argument list has the same arity as its target parameter list;
+- every edge argument has the target parameter's value representation;
+- every edge argument definition is available in its immediate source block.
 
 The result type preserves a useful diagnostic boundary; it does not make an
 invalid graph a recoverable compilation outcome. Builder finalization and
@@ -364,12 +353,9 @@ malformed final instruction directly.
 The verifier is scoped to one `ControlFlowGraph`; it does not maintain an
 arena-wide index merely to diagnose an instruction placed in two graphs.
 
-The edge-argument extension and later cross-block SSA verification will add
-these checks:
+Later cross-block SSA verification will replace the current immediate-source
+restriction with dominance and add these checks:
 
-- every edge argument list matches the target parameter list in arity and
-  required `OperandClass`; Core arguments additionally match the parameter's
-  `ValueRepresentation`, plus any later phase-specific contract;
 - every ordinary operand definition dominates its use;
 - every edge argument definition dominates its source edge;
 - every block parameter dominates ordinary uses in its block and dominated
@@ -426,7 +412,8 @@ The current implementation establishes:
   as its entry, publication state, mutation generation, and query caches;
 - `Block` stores ordered parameter definitions, an ordered body-instruction
   list, and an ordered predecessor-edge index;
-- `BlockEdge` stores a typed serial, source block, and target block;
+- `BlockEdge` stores a typed serial, source block, target block, and ordered
+  `ProgramValueRef` arguments;
 - `CompilationSession` owns the `CompilationArena`, which allocates blocks,
   block edges, and instructions from their designated pools;
 - schema-generated concrete instruction views provide typed branch conditions,
@@ -435,12 +422,15 @@ The current implementation establishes:
   indexes, verifies, and publishes one graph;
 - the structural verifier checks Core-kind legality, unique placement,
   same-block definition-before-use, result classes, value representations,
-  terminators, and edge/index consistency;
+  terminators, edge arguments, and edge/index consistency;
 - `GraphRewriter` stages body-instruction rewrites and commits one graph
-  generation at a time without changing CFG topology.
+  generation at a time without changing CFG topology, reconstructing immutable
+  edges and their owning terminators when argument definitions are normalized;
+- use lists record edge arguments as `BlockArgumentUse` occurrences separately
+  from ordinary instruction operand uses.
 
-Edge argument vectors, cross-block SSA dominance, side-exit verification, and
-CFG-topology editing remain deferred.
+Cross-block SSA dominance, side-exit verification, and CFG-topology editing
+remain deferred.
 
 ## Open Decisions After Initial Implementation
 
@@ -448,7 +438,6 @@ CFG-topology editing remain deferred.
   order, instruction order, parameters, or incoming edges;
 - the topology-editor API for redirecting edges and rebuilding predecessor
   indexes;
-- the physical edge-argument representation, including structural frame holes;
 - how unreachable but still live blocks participate in verification and
   cleanup;
 - the dominance-analysis boundary for cross-block SSA verification.

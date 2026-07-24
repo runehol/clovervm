@@ -7,6 +7,7 @@
 #include <cassert>
 #include <concepts>
 #include <cstddef>
+#include <span>
 #include <utility>
 
 namespace cl::jit
@@ -80,12 +81,13 @@ namespace cl::jit
             return parameter;
         }
 
-        BlockEdge *make_block_edge(Block *source, Block *target);
+        BlockEdge *
+        make_block_edge(Block *source, Block *target,
+                        std::span<const ProgramValueRef> arguments = {});
 
         ControlFlowGraph *finalize();
 
     private:
-        void build_predecessor_edges();
         void assert_can_build() const;
         void assert_can_mutate(const Block *block) const;
 

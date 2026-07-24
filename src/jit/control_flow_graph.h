@@ -6,6 +6,7 @@
 
 #include <cstdint>
 #include <memory>
+#include <span>
 #include <vector>
 
 namespace cl::jit
@@ -84,19 +85,31 @@ namespace cl::jit
     public:
         using Serial = TypedSerial<BlockEdge>;
 
-        BlockEdge(Serial serial, Block *source, Block *target)
-            : serial_(serial), source_(source), target_(target)
+        BlockEdge(Serial serial, Block *source, Block *target,
+                  std::span<const ProgramValueRef> arguments)
+            : serial_(serial), source_(source), target_(target),
+              arguments_(arguments.begin(), arguments.end())
         {
         }
+
+        BlockEdge(const BlockEdge &) = delete;
+        BlockEdge &operator=(const BlockEdge &) = delete;
+        BlockEdge(BlockEdge &&) = delete;
+        BlockEdge &operator=(BlockEdge &&) = delete;
 
         Serial serial() const { return serial_; }
         Block *source() const { return source_; }
         Block *target() const { return target_; }
+        const std::vector<ProgramValueRef> &arguments() const
+        {
+            return arguments_;
+        }
 
     private:
         Serial serial_;
         Block *source_;
         Block *target_;
+        std::vector<ProgramValueRef> arguments_;
     };
 
     class ControlFlowGraph
@@ -124,6 +137,8 @@ namespace cl::jit
     private:
         friend class GraphBuilder;
         friend class GraphRewriter;
+
+        void rebuild_predecessor_edge_index();
 
         Serial serial_;
         Block *entry_block_ = nullptr;

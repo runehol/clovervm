@@ -176,14 +176,16 @@ namespace cl::jit
         GraphBuilder builder(session);
         Block *entry = builder.emplace_block();
         Block *exit = builder.emplace_block();
-        BlockEdge *edge = builder.make_block_edge(entry, exit);
+        ParameterInstruction *argument =
+            builder.emplace_parameter<ParameterInstruction>(entry);
+        std::array<ProgramValueRef, 1> arguments = {ProgramValueRef(argument)};
+        BlockEdge *edge = builder.make_block_edge(
+            entry, exit, std::span<const ProgramValueRef>(arguments));
         UnconditionalBranchInstruction *branch =
             builder.emplace_instruction<UnconditionalBranchInstruction>(entry,
                                                                         edge);
         ParameterInstruction *parameter =
             builder.emplace_parameter<ParameterInstruction>(exit);
-        ParameterF64Instruction *f64_parameter =
-            builder.emplace_parameter<ParameterF64Instruction>(exit);
         ReturnInstruction *return_instruction =
             builder.emplace_instruction<ReturnInstruction>(
                 exit, TaggedValueRef(parameter));
@@ -193,7 +195,6 @@ namespace cl::jit
             make_aarch64_allocation_constraints(*graph);
 
         EXPECT_EQ(nullptr, find_override(constraints, parameter));
-        EXPECT_EQ(nullptr, find_override(constraints, f64_parameter));
         EXPECT_NE(nullptr, find_override(constraints, branch));
         EXPECT_NE(nullptr, find_override(constraints, return_instruction));
     }
