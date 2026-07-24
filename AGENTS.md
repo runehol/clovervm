@@ -34,6 +34,7 @@ This repository contains clovervm, a Python VM.
 - Use `build-debug/` for local builds. This project requires Clang for correct tail-call behavior in the interpreter (`MUSTTAIL`), so configure debug builds with `cmake -S . -B build-debug -G Ninja -DCMAKE_BUILD_TYPE=Debug -DCMAKE_C_COMPILER=clang -DCMAKE_CXX_COMPILER=clang++`. Use `cmake --fresh -G Ninja -S . -B build-debug -DCMAKE_BUILD_TYPE=Debug -DCMAKE_C_COMPILER=clang -DCMAKE_CXX_COMPILER=clang++` when a clean reconfigure is needed.
 - Use `build-release/` for benchmark runs. If it is missing, configured with the wrong generator, or appears stale after dependency changes, reconfigure it with `cmake -S . -B build-release -G Ninja -DCMAKE_BUILD_TYPE=Release`.
 - After making changes, run `ninja -C build-debug all check`.
+- Before pushing, run `ninja -C build-release all check` if your change adds or modifies a compiler property check, validation check, or death test.
 - Run benchmarks with `cmake --build build-release --target run_benchmark`.
 - `ccache` is picked up at CMake configure time. If a configure or build step hits sandbox restrictions because of `ccache`, ask for elevated permissions instead of disabling `ccache` or reconfiguring the build to avoid it.
 - Run git commands one at a time. Do not launch multiple git commands in parallel, because repository locking can make them fail.
