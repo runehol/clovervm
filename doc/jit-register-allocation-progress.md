@@ -21,6 +21,7 @@ document and deliberately do not have checkboxes.
   returns, and branch temporaries.
 - [x] Expose schema-generated operand indices and generic operand-reference
   traversal.
+- [x] Carry source loop depth as CFG block metadata for allocator heuristics.
 
 ## Stage 1: Prepared Allocation Problem
 

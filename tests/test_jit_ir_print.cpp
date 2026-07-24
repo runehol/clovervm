@@ -45,6 +45,7 @@ namespace cl::jit
         GraphBuilder builder(session);
         Block *entry = builder.emplace_block();
         Block *join = builder.emplace_block();
+        builder.set_loop_depth(join, 2);
 
         TaggedValueRef condition(builder.emplace_instruction<ConstInstruction>(
             entry, Value::True()));
@@ -75,7 +76,7 @@ namespace cl::jit
                   "  %2 = snapshot [%0, %1] {resume_pc = 7}\n"
                   "  cond_br %0 {true_edge = bb1(%1), false_edge = bb1(%0)}\n"
                   "\n"
-                  "bb1(%3):\n"
+                  "bb1(%3) {loop_depth = 2}:\n"
                   "  return %3\n"
                   "}\n",
                   format_ir(*graph));

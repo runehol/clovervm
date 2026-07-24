@@ -68,6 +68,9 @@ namespace cl::jit
         GraphBuilder builder(session);
         Block *entry = builder.emplace_block();
         Block *exit = builder.emplace_block();
+        EXPECT_EQ(0u, entry->loop_depth());
+        EXPECT_EQ(0u, exit->loop_depth());
+        builder.set_loop_depth(exit, 2);
         BlockEdge *edge = builder.make_block_edge(entry, exit);
         Instruction *branch_instruction =
             builder.make_instruction<UnconditionalBranchInstruction>(edge);
@@ -85,6 +88,8 @@ namespace cl::jit
         EXPECT_EQ(InstructionKind::Return, return_instruction->kind());
         ControlFlowGraph *graph = builder.finalize();
         EXPECT_TRUE(graph->is_published());
+        EXPECT_EQ(0u, graph->blocks()[0]->loop_depth());
+        EXPECT_EQ(2u, graph->blocks()[1]->loop_depth());
     }
 
     TEST(JitCfg, ResumeInInterpreterDoesNotTerminateItsBlock)

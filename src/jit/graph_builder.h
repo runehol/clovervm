@@ -7,6 +7,7 @@
 #include <cassert>
 #include <concepts>
 #include <cstddef>
+#include <cstdint>
 #include <span>
 #include <utility>
 
@@ -42,6 +43,7 @@ namespace cl::jit
 
         Block *block_at(size_t index) const;
         size_t block_count() const;
+        void set_loop_depth(Block *block, uint32_t loop_depth);
         void set_bytecode_state_order(const BytecodeStateOrder &order);
 
         template <typename T> T retain_and_pin_value(T value)

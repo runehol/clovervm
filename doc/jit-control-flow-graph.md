@@ -100,6 +100,13 @@ teardown destroys the arena and reclaims the abandoned graph. One session arena
 may own multiple graphs. Instructions are not shared between them; this is
 currently a construction invariant rather than an arena-wide placement index.
 
+Each block carries a nonnegative loop-depth annotation. It defaults to zero and
+may be set through `GraphBuilder::set_loop_depth()` while the graph is
+unpublished. Frontends copy the source CFG's loop nesting depth into this
+annotation; downstream heuristics such as register-allocation spill weighting
+consume it without rediscovering loops. Rewriting preserves the annotation
+because it preserves the block object.
+
 ## Blocks and Terminators
 
 The block terminator is the final ordinary instruction in the block's ordered

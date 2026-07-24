@@ -424,6 +424,11 @@ namespace cl::jit
                 }
                 fmt::format_to(std::back_inserter(out), ")");
             }
+            if(block.loop_depth() != 0)
+            {
+                fmt::format_to(std::back_inserter(out), " {{loop_depth = {}}}",
+                               block.loop_depth());
+            }
             fmt::format_to(std::back_inserter(out), ":\n");
 
             for(const Instruction *instruction: block.instructions())

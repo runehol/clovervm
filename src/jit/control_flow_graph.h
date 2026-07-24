@@ -32,6 +32,7 @@ namespace cl::jit
         }
 
         Serial serial() const { return serial_; }
+        uint32_t loop_depth() const { return loop_depth_; }
 
         const std::vector<Instruction *> &instructions() const
         {
@@ -77,6 +78,7 @@ namespace cl::jit
 
         Serial serial_;
         ControlFlowGraph *graph_;
+        uint32_t loop_depth_ = 0;
         std::vector<Instruction *> parameters_;
         std::vector<Instruction *> instructions_;
         std::vector<BlockEdge *> predecessor_edges_;

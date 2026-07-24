@@ -63,6 +63,12 @@ namespace cl::jit
         return graph_->blocks_.size();
     }
 
+    void GraphBuilder::set_loop_depth(Block *block, uint32_t loop_depth)
+    {
+        assert_can_mutate(block);
+        block->loop_depth_ = loop_depth;
+    }
+
     void GraphBuilder::set_bytecode_state_order(const BytecodeStateOrder &order)
     {
         assert_can_build();

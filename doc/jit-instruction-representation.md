@@ -1169,6 +1169,14 @@ omitted. Block-edge attributes print their target and argument vector.
 Pointer-valued metadata receives deterministic print-local symbolic identities
 rather than exposing native addresses.
 
+Nonzero block loop depth is printed as block metadata:
+
+```text
+bb1(%3) {loop_depth = 2}:
+```
+
+Depth zero is the default and is omitted.
+
 `format_ir()` prints a complete graph. `format_instruction()` uses the same
 graph-local numbering to print one instruction, and the `fmt` formatter for
 `ControlFlowGraph` delegates to the canonical graph printer. Adding a new
