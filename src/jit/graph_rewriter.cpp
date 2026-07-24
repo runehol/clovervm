@@ -98,12 +98,6 @@ namespace cl::jit
                        replacement.value_representation();
         }
 
-        bool is_parameter_kind(InstructionKind kind)
-        {
-            return kind == InstructionKind::Parameter ||
-                   kind == InstructionKind::ParameterF64;
-        }
-
         bool same_successor_edges(const Instruction &original,
                                   const Instruction &replacement,
                                   const EdgeReplacements &edge_replacements)
@@ -348,7 +342,7 @@ namespace cl::jit
                         !normalized->is_detached(),
                         "a detached instruction cannot be emitted");
                     require_rewrite_invariant(
-                        !is_parameter_kind(normalized->kind()),
+                        !is_block_parameter_kind(normalized->kind()),
                         "block-parameter instructions cannot be emitted into a "
                         "block body");
                     require_rewrite_invariant(

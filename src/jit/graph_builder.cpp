@@ -7,15 +7,6 @@
 
 namespace cl::jit
 {
-    namespace
-    {
-        bool is_parameter_kind(InstructionKind kind)
-        {
-            return kind == InstructionKind::Parameter ||
-                   kind == InstructionKind::ParameterF64;
-        }
-    }  // namespace
-
     GraphBuilder::GraphBuilder(CompilationSession &session)
         : session_(&session), arena_(&session.arena()),
           graph_(arena_->make_graph())
@@ -84,7 +75,7 @@ namespace cl::jit
     {
         assert_can_mutate(block);
         assert(instruction != nullptr);
-        assert(!is_parameter_kind(instruction->kind()));
+        assert(!is_block_parameter_kind(instruction->kind()));
         block->append_instruction(instruction);
     }
 

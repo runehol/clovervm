@@ -142,6 +142,12 @@ namespace cl::jit
                                                InstructionOrdinalMask);
     }
 
+    constexpr bool is_block_parameter_kind(InstructionKind kind)
+    {
+        return kind == InstructionKind::Parameter ||
+               kind == InstructionKind::ParameterF64;
+    }
+
     constexpr ResultClass instruction_result_class(InstructionKind kind)
     {
         return static_cast<ResultClass>(

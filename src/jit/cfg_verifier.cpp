@@ -48,12 +48,6 @@ namespace cl::jit
                    std::to_string(instruction->serial().value());
         }
 
-        bool is_parameter_kind(InstructionKind kind)
-        {
-            return kind == InstructionKind::Parameter ||
-                   kind == InstructionKind::ParameterF64;
-        }
-
         bool is_core_instruction(InstructionKind kind)
         {
             uint8_t levels = static_cast<uint8_t>(
@@ -133,7 +127,7 @@ namespace cl::jit
                     return invalid(block_name(block) + " contains detached " +
                                    instruction_name(parameter));
                 }
-                if(!is_parameter_kind(parameter->kind()))
+                if(!is_block_parameter_kind(parameter->kind()))
                 {
                     return invalid(instruction_name(parameter) + " in " +
                                    block_name(block) +
@@ -172,7 +166,7 @@ namespace cl::jit
                     return invalid(block_name(block) + " contains detached " +
                                    instruction_name(instruction));
                 }
-                if(is_parameter_kind(instruction->kind()))
+                if(is_block_parameter_kind(instruction->kind()))
                 {
                     return invalid(instruction_name(instruction) + " in " +
                                    block_name(block) +
