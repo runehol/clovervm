@@ -80,7 +80,7 @@ namespace cl
 
     enum class BytecodeControlFlow : uint8_t
     {
-        Fallthrough,
+        Sequential,
         UnconditionalJump,
         ConditionalJump,
         Terminator,

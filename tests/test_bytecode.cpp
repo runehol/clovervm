@@ -93,7 +93,7 @@ TEST(BytecodeFormat, control_flow_metadata_identifies_jump_operands)
     };
 
     constexpr TestCase test_cases[] = {
-        {Bytecode::LdaNone, BytecodeControlFlow::Fallthrough, -1},
+        {Bytecode::LdaNone, BytecodeControlFlow::Sequential, -1},
         {Bytecode::Jump, BytecodeControlFlow::UnconditionalJump, 1},
         {Bytecode::JumpIfTrue, BytecodeControlFlow::ConditionalJump, 1},
         {Bytecode::JumpIfEqualSmi, BytecodeControlFlow::ConditionalJump, 2},

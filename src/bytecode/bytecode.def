@@ -1,191 +1,191 @@
 // name, encoded operand format, control flow, compound semantic role
-CL_BYTECODE(LdaConstant, Constant, Fallthrough, None)
-CL_BYTECODE(LdaSmi, Smi8, Fallthrough, None)
-CL_BYTECODE(LdaTrue, NoOperands, Fallthrough, None)
-CL_BYTECODE(LdaFalse, NoOperands, Fallthrough, None)
-CL_BYTECODE(LdaNone, NoOperands, Fallthrough, None)
+CL_BYTECODE(LdaConstant, Constant, Sequential, None)
+CL_BYTECODE(LdaSmi, Smi8, Sequential, None)
+CL_BYTECODE(LdaTrue, NoOperands, Sequential, None)
+CL_BYTECODE(LdaFalse, NoOperands, Sequential, None)
+CL_BYTECODE(LdaNone, NoOperands, Sequential, None)
 
-CL_BYTECODE(Ldar, Register, Fallthrough, None)
-CL_BYTECODE(LoadLocalChecked, Register, Fallthrough, None)
-CL_BYTECODE(ClearLocal, Register, Fallthrough, None)
-CL_BYTECODE(Star, Register, Fallthrough, None)
-CL_BYTECODE(Mov, RegisterRegister, Fallthrough, None)
-CL_BYTECODE(Ldar0, NoOperands, Fallthrough, None)
-CL_BYTECODE(Ldar1, NoOperands, Fallthrough, None)
-CL_BYTECODE(Ldar2, NoOperands, Fallthrough, None)
-CL_BYTECODE(Ldar3, NoOperands, Fallthrough, None)
-CL_BYTECODE(Ldar4, NoOperands, Fallthrough, None)
-CL_BYTECODE(Ldar5, NoOperands, Fallthrough, None)
-CL_BYTECODE(Ldar6, NoOperands, Fallthrough, None)
-CL_BYTECODE(Ldar7, NoOperands, Fallthrough, None)
-CL_BYTECODE(Ldar8, NoOperands, Fallthrough, None)
-CL_BYTECODE(Ldar9, NoOperands, Fallthrough, None)
-CL_BYTECODE(Ldar10, NoOperands, Fallthrough, None)
-CL_BYTECODE(Ldar11, NoOperands, Fallthrough, None)
-CL_BYTECODE(Ldar12, NoOperands, Fallthrough, None)
-CL_BYTECODE(Ldar13, NoOperands, Fallthrough, None)
-CL_BYTECODE(Ldar14, NoOperands, Fallthrough, None)
-CL_BYTECODE(Ldar15, NoOperands, Fallthrough, None)
-CL_BYTECODE(Star0, NoOperands, Fallthrough, None)
-CL_BYTECODE(Star1, NoOperands, Fallthrough, None)
-CL_BYTECODE(Star2, NoOperands, Fallthrough, None)
-CL_BYTECODE(Star3, NoOperands, Fallthrough, None)
-CL_BYTECODE(Star4, NoOperands, Fallthrough, None)
-CL_BYTECODE(Star5, NoOperands, Fallthrough, None)
-CL_BYTECODE(Star6, NoOperands, Fallthrough, None)
-CL_BYTECODE(Star7, NoOperands, Fallthrough, None)
-CL_BYTECODE(Star8, NoOperands, Fallthrough, None)
-CL_BYTECODE(Star9, NoOperands, Fallthrough, None)
-CL_BYTECODE(Star10, NoOperands, Fallthrough, None)
-CL_BYTECODE(Star11, NoOperands, Fallthrough, None)
-CL_BYTECODE(Star12, NoOperands, Fallthrough, None)
-CL_BYTECODE(Star13, NoOperands, Fallthrough, None)
-CL_BYTECODE(Star14, NoOperands, Fallthrough, None)
-CL_BYTECODE(Star15, NoOperands, Fallthrough, None)
+CL_BYTECODE(Ldar, Register, Sequential, None)
+CL_BYTECODE(LoadLocalChecked, Register, Sequential, None)
+CL_BYTECODE(ClearLocal, Register, Sequential, None)
+CL_BYTECODE(Star, Register, Sequential, None)
+CL_BYTECODE(Mov, RegisterRegister, Sequential, None)
+CL_BYTECODE(Ldar0, NoOperands, Sequential, None)
+CL_BYTECODE(Ldar1, NoOperands, Sequential, None)
+CL_BYTECODE(Ldar2, NoOperands, Sequential, None)
+CL_BYTECODE(Ldar3, NoOperands, Sequential, None)
+CL_BYTECODE(Ldar4, NoOperands, Sequential, None)
+CL_BYTECODE(Ldar5, NoOperands, Sequential, None)
+CL_BYTECODE(Ldar6, NoOperands, Sequential, None)
+CL_BYTECODE(Ldar7, NoOperands, Sequential, None)
+CL_BYTECODE(Ldar8, NoOperands, Sequential, None)
+CL_BYTECODE(Ldar9, NoOperands, Sequential, None)
+CL_BYTECODE(Ldar10, NoOperands, Sequential, None)
+CL_BYTECODE(Ldar11, NoOperands, Sequential, None)
+CL_BYTECODE(Ldar12, NoOperands, Sequential, None)
+CL_BYTECODE(Ldar13, NoOperands, Sequential, None)
+CL_BYTECODE(Ldar14, NoOperands, Sequential, None)
+CL_BYTECODE(Ldar15, NoOperands, Sequential, None)
+CL_BYTECODE(Star0, NoOperands, Sequential, None)
+CL_BYTECODE(Star1, NoOperands, Sequential, None)
+CL_BYTECODE(Star2, NoOperands, Sequential, None)
+CL_BYTECODE(Star3, NoOperands, Sequential, None)
+CL_BYTECODE(Star4, NoOperands, Sequential, None)
+CL_BYTECODE(Star5, NoOperands, Sequential, None)
+CL_BYTECODE(Star6, NoOperands, Sequential, None)
+CL_BYTECODE(Star7, NoOperands, Sequential, None)
+CL_BYTECODE(Star8, NoOperands, Sequential, None)
+CL_BYTECODE(Star9, NoOperands, Sequential, None)
+CL_BYTECODE(Star10, NoOperands, Sequential, None)
+CL_BYTECODE(Star11, NoOperands, Sequential, None)
+CL_BYTECODE(Star12, NoOperands, Sequential, None)
+CL_BYTECODE(Star13, NoOperands, Sequential, None)
+CL_BYTECODE(Star14, NoOperands, Sequential, None)
+CL_BYTECODE(Star15, NoOperands, Sequential, None)
 
-CL_BYTECODE(LdaGlobal, ConstantModuleGlobalReadCache, Fallthrough, None)
-CL_BYTECODE(StaGlobal, ConstantModuleGlobalMutationCache, Fallthrough, None)
-CL_BYTECODE(DelGlobal, Constant, Fallthrough, None)
-CL_BYTECODE(DelLocal, Register, Fallthrough, None)
+CL_BYTECODE(LdaGlobal, ConstantModuleGlobalReadCache, Sequential, None)
+CL_BYTECODE(StaGlobal, ConstantModuleGlobalMutationCache, Sequential, None)
+CL_BYTECODE(DelGlobal, Constant, Sequential, None)
+CL_BYTECODE(DelLocal, Register, Sequential, None)
 
-CL_BYTECODE(LoadAttr, RegisterConstantAttributeReadCache, Fallthrough, None)
-CL_BYTECODE(StoreAttr, RegisterConstantAttributeMutationCache, Fallthrough,
+CL_BYTECODE(LoadAttr, RegisterConstantAttributeReadCache, Sequential, None)
+CL_BYTECODE(StoreAttr, RegisterConstantAttributeMutationCache, Sequential,
             None)
-CL_BYTECODE(DelAttr, RegisterConstantAttributeMutationCache, Fallthrough, None)
-CL_BYTECODE(GetItem, RegisterOperatorCache, Fallthrough, None)
-CL_BYTECODE(SetItem, RegisterRegisterOperatorCache, Fallthrough, None)
-CL_BYTECODE(DelItem, RegisterOperatorCache, Fallthrough, None)
+CL_BYTECODE(DelAttr, RegisterConstantAttributeMutationCache, Sequential, None)
+CL_BYTECODE(GetItem, RegisterOperatorCache, Sequential, None)
+CL_BYTECODE(SetItem, RegisterRegisterOperatorCache, Sequential, None)
+CL_BYTECODE(DelItem, RegisterOperatorCache, Sequential, None)
 CL_BYTECODE(CallMethodAttrPositional,
             RegisterConstantAttributeReadCacheFunctionCallCacheArgCount,
-            Fallthrough, None)
-CL_BYTECODE(CallMethodAttrKeyword, MethodKeywordCall, Fallthrough, None)
-CL_BYTECODE(CallSpecialMethod0, SpecialMethodCall, Fallthrough, None)
-CL_BYTECODE(CallSpecialMethod1, SpecialMethodCall, Fallthrough, None)
-CL_BYTECODE(CallSpecialMethod2, SpecialMethodCall, Fallthrough, None)
-CL_BYTECODE(CallSpecialMethod3, SpecialMethodCall, Fallthrough, None)
+            Sequential, None)
+CL_BYTECODE(CallMethodAttrKeyword, MethodKeywordCall, Sequential, None)
+CL_BYTECODE(CallSpecialMethod0, SpecialMethodCall, Sequential, None)
+CL_BYTECODE(CallSpecialMethod1, SpecialMethodCall, Sequential, None)
+CL_BYTECODE(CallSpecialMethod2, SpecialMethodCall, Sequential, None)
+CL_BYTECODE(CallSpecialMethod3, SpecialMethodCall, Sequential, None)
 
-CL_BYTECODE(Add, RegisterOperatorCacheWithContinuation, Fallthrough,
+CL_BYTECODE(Add, RegisterOperatorCacheWithContinuation, Sequential,
             BinaryOperator)
-CL_BYTECODE(Sub, RegisterOperatorCacheWithContinuation, Fallthrough,
+CL_BYTECODE(Sub, RegisterOperatorCacheWithContinuation, Sequential,
             BinaryOperator)
-CL_BYTECODE(Mul, RegisterOperatorCacheWithContinuation, Fallthrough,
+CL_BYTECODE(Mul, RegisterOperatorCacheWithContinuation, Sequential,
             BinaryOperator)
-CL_BYTECODE(MatMul, RegisterOperatorCacheWithContinuation, Fallthrough,
+CL_BYTECODE(MatMul, RegisterOperatorCacheWithContinuation, Sequential,
             BinaryOperator)
-CL_BYTECODE(TrueDiv, RegisterOperatorCacheWithContinuation, Fallthrough,
+CL_BYTECODE(TrueDiv, RegisterOperatorCacheWithContinuation, Sequential,
             BinaryOperator)
-CL_BYTECODE(FloorDiv, RegisterOperatorCacheWithContinuation, Fallthrough,
+CL_BYTECODE(FloorDiv, RegisterOperatorCacheWithContinuation, Sequential,
             BinaryOperator)
-CL_BYTECODE(BinaryPow, RegisterOperatorCacheWithContinuation, Fallthrough,
+CL_BYTECODE(BinaryPow, RegisterOperatorCacheWithContinuation, Sequential,
             BinaryOperator)
 CL_BYTECODE(TernaryPow, RegisterRegisterOperatorCacheWithContinuation,
-            Fallthrough,
+            Sequential,
             TernaryOperator)
-CL_BYTECODE(LShift, RegisterOperatorCacheWithContinuation, Fallthrough,
+CL_BYTECODE(LShift, RegisterOperatorCacheWithContinuation, Sequential,
             BinaryOperator)
-CL_BYTECODE(RShift, RegisterOperatorCacheWithContinuation, Fallthrough,
+CL_BYTECODE(RShift, RegisterOperatorCacheWithContinuation, Sequential,
             BinaryOperator)
-CL_BYTECODE(Mod, RegisterOperatorCacheWithContinuation, Fallthrough,
+CL_BYTECODE(Mod, RegisterOperatorCacheWithContinuation, Sequential,
             BinaryOperator)
-CL_BYTECODE(Or, RegisterOperatorCacheWithContinuation, Fallthrough,
+CL_BYTECODE(Or, RegisterOperatorCacheWithContinuation, Sequential,
             BinaryOperator)
-CL_BYTECODE(And, RegisterOperatorCacheWithContinuation, Fallthrough,
+CL_BYTECODE(And, RegisterOperatorCacheWithContinuation, Sequential,
             BinaryOperator)
-CL_BYTECODE(Xor, RegisterOperatorCacheWithContinuation, Fallthrough,
+CL_BYTECODE(Xor, RegisterOperatorCacheWithContinuation, Sequential,
             BinaryOperator)
 
-CL_BYTECODE(TestEqual, RegisterOperatorCacheWithContinuation, Fallthrough,
+CL_BYTECODE(TestEqual, RegisterOperatorCacheWithContinuation, Sequential,
             BinaryOperator)
-CL_BYTECODE(TestNotEqual, RegisterOperatorCacheWithContinuation, Fallthrough,
+CL_BYTECODE(TestNotEqual, RegisterOperatorCacheWithContinuation, Sequential,
             BinaryOperator)
-CL_BYTECODE(TestLess, RegisterOperatorCacheWithContinuation, Fallthrough,
+CL_BYTECODE(TestLess, RegisterOperatorCacheWithContinuation, Sequential,
             BinaryOperator)
-CL_BYTECODE(TestLessEqual, RegisterOperatorCacheWithContinuation, Fallthrough,
+CL_BYTECODE(TestLessEqual, RegisterOperatorCacheWithContinuation, Sequential,
             BinaryOperator)
-CL_BYTECODE(TestGreater, RegisterOperatorCacheWithContinuation, Fallthrough,
+CL_BYTECODE(TestGreater, RegisterOperatorCacheWithContinuation, Sequential,
             BinaryOperator)
 CL_BYTECODE(TestGreaterEqual, RegisterOperatorCacheWithContinuation,
-            Fallthrough,
+            Sequential,
             BinaryOperator)
-CL_BYTECODE(TestIs, Register, Fallthrough, None)
-CL_BYTECODE(TestIsNot, Register, Fallthrough, None)
-CL_BYTECODE(Contains, RegisterOperatorCache, Fallthrough, None)
-CL_BYTECODE(CheckOperatorNotImplemented, NoOperands, Fallthrough,
+CL_BYTECODE(TestIs, Register, Sequential, None)
+CL_BYTECODE(TestIsNot, Register, Sequential, None)
+CL_BYTECODE(Contains, RegisterOperatorCache, Sequential, None)
+CL_BYTECODE(CheckOperatorNotImplemented, NoOperands, Sequential,
             BinaryOperatorContinuation)
-CL_BYTECODE(CheckTernaryOperatorNotImplemented, NoOperands, Fallthrough,
+CL_BYTECODE(CheckTernaryOperatorNotImplemented, NoOperands, Sequential,
             TernaryOperatorContinuation)
 
-CL_BYTECODE(AddSmi, Smi8OperatorCacheWithContinuation, Fallthrough,
+CL_BYTECODE(AddSmi, Smi8OperatorCacheWithContinuation, Sequential,
             BinaryOperator)
-CL_BYTECODE(SubSmi, Smi8OperatorCacheWithContinuation, Fallthrough,
+CL_BYTECODE(SubSmi, Smi8OperatorCacheWithContinuation, Sequential,
             BinaryOperator)
-CL_BYTECODE(MulSmi, Smi8OperatorCacheWithContinuation, Fallthrough,
+CL_BYTECODE(MulSmi, Smi8OperatorCacheWithContinuation, Sequential,
             BinaryOperator)
-CL_BYTECODE(FloorDivSmi, Smi8OperatorCacheWithContinuation, Fallthrough,
+CL_BYTECODE(FloorDivSmi, Smi8OperatorCacheWithContinuation, Sequential,
             BinaryOperator)
-CL_BYTECODE(BinaryPowSmi, Smi8OperatorCacheWithContinuation, Fallthrough,
+CL_BYTECODE(BinaryPowSmi, Smi8OperatorCacheWithContinuation, Sequential,
             BinaryOperator)
-CL_BYTECODE(LShiftSmi, Smi8OperatorCacheWithContinuation, Fallthrough,
+CL_BYTECODE(LShiftSmi, Smi8OperatorCacheWithContinuation, Sequential,
             BinaryOperator)
-CL_BYTECODE(RShiftSmi, Smi8OperatorCacheWithContinuation, Fallthrough,
+CL_BYTECODE(RShiftSmi, Smi8OperatorCacheWithContinuation, Sequential,
             BinaryOperator)
-CL_BYTECODE(ModSmi, Smi8OperatorCacheWithContinuation, Fallthrough,
+CL_BYTECODE(ModSmi, Smi8OperatorCacheWithContinuation, Sequential,
             BinaryOperator)
-CL_BYTECODE(OrSmi, Smi8OperatorCacheWithContinuation, Fallthrough,
+CL_BYTECODE(OrSmi, Smi8OperatorCacheWithContinuation, Sequential,
             BinaryOperator)
-CL_BYTECODE(AndSmi, Smi8OperatorCacheWithContinuation, Fallthrough,
+CL_BYTECODE(AndSmi, Smi8OperatorCacheWithContinuation, Sequential,
             BinaryOperator)
-CL_BYTECODE(XorSmi, Smi8OperatorCacheWithContinuation, Fallthrough,
+CL_BYTECODE(XorSmi, Smi8OperatorCacheWithContinuation, Sequential,
             BinaryOperator)
 
-CL_BYTECODE(Not, NoOperands, Fallthrough, None)
-CL_BYTECODE(ToBool, NoOperands, Fallthrough, None)
-CL_BYTECODE(ToBoolNot, NoOperands, Fallthrough, None)
-CL_BYTECODE(Neg, OperatorCache, Fallthrough, None)
-CL_BYTECODE(Pos, OperatorCache, Fallthrough, None)
-CL_BYTECODE(Sqrt, NoOperands, Fallthrough, None)
-CL_BYTECODE(Invert, OperatorCache, Fallthrough, None)
-CL_BYTECODE(CanonicalizeHash, NoOperands, Fallthrough, None)
+CL_BYTECODE(Not, NoOperands, Sequential, None)
+CL_BYTECODE(ToBool, NoOperands, Sequential, None)
+CL_BYTECODE(ToBoolNot, NoOperands, Sequential, None)
+CL_BYTECODE(Neg, OperatorCache, Sequential, None)
+CL_BYTECODE(Pos, OperatorCache, Sequential, None)
+CL_BYTECODE(Sqrt, NoOperands, Sequential, None)
+CL_BYTECODE(Invert, OperatorCache, Sequential, None)
+CL_BYTECODE(CanonicalizeHash, NoOperands, Sequential, None)
 
-CL_BYTECODE(DictPromoteStringKeyed, Register, Fallthrough, None)
-CL_BYTECODE(DictTryStringKeyedSetDefault, FourRegisters, Fallthrough, None)
-CL_BYTECODE(DictTryStringKeyedPop, ThreeRegisters, Fallthrough, None)
-CL_BYTECODE(DictProbeStart, ThreeRegisters, Fallthrough, None)
-CL_BYTECODE(DictProbeForLookup, RegisterRegister, Fallthrough, None)
-CL_BYTECODE(DictProbeForInsert, RegisterRegister, Fallthrough, None)
-CL_BYTECODE(DictProbeAdvance, Register, Fallthrough, None)
-CL_BYTECODE(DictEntryKey, Register, Fallthrough, None)
-CL_BYTECODE(DictEntryValue, Register, Fallthrough, None)
-CL_BYTECODE(DictEntryStillMatches, FiveRegisters, Fallthrough, None)
-CL_BYTECODE(DictResizeForInsert, Register, Fallthrough, None)
-CL_BYTECODE(DictInsertNew, SixRegisters, Fallthrough, None)
-CL_BYTECODE(DictOverwriteEntry, ThreeRegisters, Fallthrough, None)
-CL_BYTECODE(DictDeleteEntry, RegisterRegister, Fallthrough, None)
+CL_BYTECODE(DictPromoteStringKeyed, Register, Sequential, None)
+CL_BYTECODE(DictTryStringKeyedSetDefault, FourRegisters, Sequential, None)
+CL_BYTECODE(DictTryStringKeyedPop, ThreeRegisters, Sequential, None)
+CL_BYTECODE(DictProbeStart, ThreeRegisters, Sequential, None)
+CL_BYTECODE(DictProbeForLookup, RegisterRegister, Sequential, None)
+CL_BYTECODE(DictProbeForInsert, RegisterRegister, Sequential, None)
+CL_BYTECODE(DictProbeAdvance, Register, Sequential, None)
+CL_BYTECODE(DictEntryKey, Register, Sequential, None)
+CL_BYTECODE(DictEntryValue, Register, Sequential, None)
+CL_BYTECODE(DictEntryStillMatches, FiveRegisters, Sequential, None)
+CL_BYTECODE(DictResizeForInsert, Register, Sequential, None)
+CL_BYTECODE(DictInsertNew, SixRegisters, Sequential, None)
+CL_BYTECODE(DictOverwriteEntry, ThreeRegisters, Sequential, None)
+CL_BYTECODE(DictDeleteEntry, RegisterRegister, Sequential, None)
 
-CL_BYTECODE(Nop, NoOperands, Fallthrough, None)
+CL_BYTECODE(Nop, NoOperands, Sequential, None)
 
-CL_BYTECODE(CallPositional, PositionalCall, Fallthrough, None)
-CL_BYTECODE(CallKeyword, KeywordCall, Fallthrough, None)
-CL_BYTECODE(CallIntrinsic0, NativeTarget, Fallthrough, None)
-CL_BYTECODE(CallIntrinsic1, NativeTarget, Fallthrough, None)
-CL_BYTECODE(CallIntrinsic2, NativeTarget, Fallthrough, None)
-CL_BYTECODE(CallIntrinsic3, NativeTarget, Fallthrough, None)
-CL_BYTECODE(CallIntrinsic4, NativeTarget, Fallthrough, None)
-CL_BYTECODE(CallIntrinsic5, NativeTarget, Fallthrough, None)
-CL_BYTECODE(CallIntrinsic6, NativeTarget, Fallthrough, None)
-CL_BYTECODE(CallIntrinsic7, NativeTarget, Fallthrough, None)
-CL_BYTECODE(CallExtension0, NativeTarget, Fallthrough, None)
-CL_BYTECODE(CallExtension1, NativeTarget, Fallthrough, None)
-CL_BYTECODE(CallExtension2, NativeTarget, Fallthrough, None)
-CL_BYTECODE(CallExtension3, NativeTarget, Fallthrough, None)
-CL_BYTECODE(CallExtension4, NativeTarget, Fallthrough, None)
-CL_BYTECODE(CallExtension5, NativeTarget, Fallthrough, None)
-CL_BYTECODE(CallExtension6, NativeTarget, Fallthrough, None)
-CL_BYTECODE(CallExtension7, NativeTarget, Fallthrough, None)
-CL_BYTECODE(CallRuntimeIntrinsic0, RuntimeIntrinsic, Fallthrough, None)
-CL_BYTECODE(CallCodeObject, CodeObjectCall, Fallthrough, None)
-CL_BYTECODE(ImportName, ImportName, Fallthrough, None)
-CL_BYTECODE(ImportFrom, Constant, Fallthrough, None)
+CL_BYTECODE(CallPositional, PositionalCall, Sequential, None)
+CL_BYTECODE(CallKeyword, KeywordCall, Sequential, None)
+CL_BYTECODE(CallIntrinsic0, NativeTarget, Sequential, None)
+CL_BYTECODE(CallIntrinsic1, NativeTarget, Sequential, None)
+CL_BYTECODE(CallIntrinsic2, NativeTarget, Sequential, None)
+CL_BYTECODE(CallIntrinsic3, NativeTarget, Sequential, None)
+CL_BYTECODE(CallIntrinsic4, NativeTarget, Sequential, None)
+CL_BYTECODE(CallIntrinsic5, NativeTarget, Sequential, None)
+CL_BYTECODE(CallIntrinsic6, NativeTarget, Sequential, None)
+CL_BYTECODE(CallIntrinsic7, NativeTarget, Sequential, None)
+CL_BYTECODE(CallExtension0, NativeTarget, Sequential, None)
+CL_BYTECODE(CallExtension1, NativeTarget, Sequential, None)
+CL_BYTECODE(CallExtension2, NativeTarget, Sequential, None)
+CL_BYTECODE(CallExtension3, NativeTarget, Sequential, None)
+CL_BYTECODE(CallExtension4, NativeTarget, Sequential, None)
+CL_BYTECODE(CallExtension5, NativeTarget, Sequential, None)
+CL_BYTECODE(CallExtension6, NativeTarget, Sequential, None)
+CL_BYTECODE(CallExtension7, NativeTarget, Sequential, None)
+CL_BYTECODE(CallRuntimeIntrinsic0, RuntimeIntrinsic, Sequential, None)
+CL_BYTECODE(CallCodeObject, CodeObjectCall, Sequential, None)
+CL_BYTECODE(ImportName, ImportName, Sequential, None)
+CL_BYTECODE(ImportFrom, Constant, Sequential, None)
 
 CL_BYTECODE(ForIter, RegisterRelativeJump, ConditionalJump, None)
 CL_BYTECODE(ForPrepRange1, RegisterRelativeJump, ConditionalJump, None)
@@ -194,19 +194,19 @@ CL_BYTECODE(ForPrepRange3, RegisterRelativeJump, ConditionalJump, None)
 CL_BYTECODE(ForIterRange1, RegisterRelativeJump, ConditionalJump, None)
 CL_BYTECODE(ForIterRangeStep, RegisterRelativeJump, ConditionalJump, None)
 
-CL_BYTECODE(CreateDict, RegisterCount, Fallthrough, None)
-CL_BYTECODE(CreateList, RegisterCount, Fallthrough, None)
-CL_BYTECODE(CreateTuple, RegisterCount, Fallthrough, None)
-CL_BYTECODE(CreateBinarySlice, Register, Fallthrough, None)
-CL_BYTECODE(CreateTernarySlice, RegisterRegister, Fallthrough, None)
-CL_BYTECODE(CreateFunction, Constant, Fallthrough, None)
-CL_BYTECODE(CreateFunctionWithDefaults, ConstantRegister, Fallthrough, None)
-CL_BYTECODE(CreateClass, ConstantRegister, Fallthrough, None)
-CL_BYTECODE(CreateInstanceKnownClass, Constant, Fallthrough, None)
-CL_BYTECODE(IsInstanceOfKnownClass, Constant, Fallthrough, None)
+CL_BYTECODE(CreateDict, RegisterCount, Sequential, None)
+CL_BYTECODE(CreateList, RegisterCount, Sequential, None)
+CL_BYTECODE(CreateTuple, RegisterCount, Sequential, None)
+CL_BYTECODE(CreateBinarySlice, Register, Sequential, None)
+CL_BYTECODE(CreateTernarySlice, RegisterRegister, Sequential, None)
+CL_BYTECODE(CreateFunction, Constant, Sequential, None)
+CL_BYTECODE(CreateFunctionWithDefaults, ConstantRegister, Sequential, None)
+CL_BYTECODE(CreateClass, ConstantRegister, Sequential, None)
+CL_BYTECODE(CreateInstanceKnownClass, Constant, Sequential, None)
+CL_BYTECODE(IsInstanceOfKnownClass, Constant, Sequential, None)
 CL_BYTECODE(BuildClass, NoOperands, Terminator, None)
-CL_BYTECODE(CheckInitReturnedNone, NoOperands, Fallthrough, None)
-CL_BYTECODE(WriteStdout, NoOperands, Fallthrough, None)
+CL_BYTECODE(CheckInitReturnedNone, NoOperands, Sequential, None)
+CL_BYTECODE(WriteStdout, NoOperands, Sequential, None)
 CL_BYTECODE(RaiseAssertionError, NoOperands, Terminator, None)
 CL_BYTECODE(RaiseAssertionErrorWithMessage, NoOperands, Terminator, None)
 CL_BYTECODE(RaiseUnwind, NoOperands, Terminator, None)
@@ -217,10 +217,10 @@ CL_BYTECODE(Return, NoOperands, Terminator, None)
 CL_BYTECODE(ReturnOrRaiseException, NoOperands, Terminator, None)
 CL_BYTECODE(ReturnToNative, NoOperands, Terminator, None)
 CL_BYTECODE(ReturnExceptionMarkerToNative, NoOperands, Terminator, None)
-CL_BYTECODE(LdaActiveException, NoOperands, Fallthrough, None)
-CL_BYTECODE(ActiveExceptionIsInstance, NoOperands, Fallthrough, None)
-CL_BYTECODE(DrainActiveExceptionInto, Register, Fallthrough, None)
-CL_BYTECODE(ClearActiveException, NoOperands, Fallthrough, None)
+CL_BYTECODE(LdaActiveException, NoOperands, Sequential, None)
+CL_BYTECODE(ActiveExceptionIsInstance, NoOperands, Sequential, None)
+CL_BYTECODE(DrainActiveExceptionInto, Register, Sequential, None)
+CL_BYTECODE(ClearActiveException, NoOperands, Sequential, None)
 CL_BYTECODE(ReraiseActiveException, NoOperands, Terminator, None)
 CL_BYTECODE(Jump, RelativeJump, UnconditionalJump, None)
 CL_BYTECODE(JumpIfTrue, RelativeJump, ConditionalJump, None)

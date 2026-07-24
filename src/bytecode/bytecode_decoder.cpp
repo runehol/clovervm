@@ -82,7 +82,7 @@ namespace cl
                 leaders[target] = true;
             }
 
-            if(info.control_flow != BytecodeControlFlow::Fallthrough &&
+            if(info.control_flow != BytecodeControlFlow::Sequential &&
                next_pc_offset < code_size)
             {
                 leaders[next_pc_offset] = true;
@@ -139,7 +139,7 @@ namespace cl
 
             Bytecode opcode = Bytecode(code_object_.code[last_pc_offset]);
             const BytecodeInfo &info = bytecode_info(opcode);
-            if(info.control_flow == BytecodeControlFlow::Fallthrough ||
+            if(info.control_flow == BytecodeControlFlow::Sequential ||
                info.control_flow == BytecodeControlFlow::ConditionalJump)
             {
                 if(block.end_pc_offset_ < code_size)
