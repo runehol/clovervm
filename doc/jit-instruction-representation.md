@@ -4,10 +4,10 @@
 |---|---|
 | Document type | Design |
 | Status | Accepted |
-| Implementation | Partial; the naturally aligned 48-byte record and instruction arena, schema-generated kind metadata and concrete subclasses, generated construction and operand indices, typed CFG terminators, variadic operands, generic operand traversal and reconstruction, detachment poisoning, and graph-rewriter integration are implemented; representative layout measurement and complete Snapshot recovery encodings remain |
+| Implementation | Partial; the naturally aligned 48-byte record and instruction arena, schema-generated kind metadata and concrete subclasses, generated construction and operand indices, typed CFG terminators, variadic operands, generic operand traversal and reconstruction, deterministic textual IR printing, detachment poisoning, and graph-rewriter integration are implemented; representative layout measurement and complete Snapshot recovery encodings remain |
 | Scope | Physical instruction storage, typed instruction access, Core value representations, IR-level legality, phase metadata, effects, matching, and arena lifetime for Core and Semantic IR |
 | Owning layers | The JIT instruction representation owns storage, schema-generated construction, typed access, operand traversal, and reconstruction; the graph builder owns deferred-validation construction; concrete analyses own attached inferred facts and proven-absent effects; the graph rewriter owns staged body-instruction replacement and future CFG editing owns topology mutation |
-| Validated against | `tests/test_jit_arena.cpp`, `tests/test_jit_cfg.cpp`, and `tests/test_jit_graph_rewrites.cpp` |
+| Validated against | `tests/test_jit_arena.cpp`, `tests/test_jit_cfg.cpp`, `tests/test_jit_graph_rewrites.cpp`, and `tests/test_jit_ir_print.cpp` |
 | Supersedes | The open instruction-representation alternatives in [JIT Control-Flow Graph](jit-control-flow-graph.md) and the integer-only instruction reference direction in [JIT Compiler and IR](jit-compiler-and-ir.md) |
 
 Core IR and the optional Semantic IR use a fixed-size, type-erased
@@ -281,9 +281,9 @@ const InstructionSlot *indirect_operands = ...;
 Snapshot is a representation-erased positional variadic range. A value-bearing
 position stores one `ProgramValueRef` word, and the referenced def kind
 supplies its concrete representation. This includes frame-header positions:
-raw PC and FP contents use a frame-payload program-value representation, while
-the return code object is tagged. No position uses a nullable or structural
-escape encoding.
+raw PC and FP contents require a non-tagged program-value representation, while
+the return code object is tagged. The exact non-tagged representation remains
+deferred. No position uses a nullable or structural escape encoding.
 
 Each generated variadic class exposes hidden construction machinery
 `n_indirect_slots_for(constructor arguments...)`. The compilation arena uses it
@@ -712,8 +712,9 @@ therefore identifies the captured extent.
 
 Header positions contain program values for the interpreted PC, compiled PC,
 frame pointer, and return code object. The two PCs and frame pointer use a raw
-frame-payload representation rather than tagged-value encoding; the code object
-uses `TaggedValue`. Pure definitions of these contents may be sunk into
+non-tagged representation rather than tagged-value encoding; the code object
+uses `TaggedValue`. The exact non-tagged representation is deferred. Pure
+definitions of these contents may be sunk into
 recovery, after which frame synchronization writes them to their canonical
 homes.
 
@@ -1131,6 +1132,49 @@ A deliberately partial classifier should normally use `is<T>()` or ordinary
 conditionals. Any local suppression of exhaustive-switch checking must be
 explicit and exceptional.
 
+## Textual IR
+
+The canonical textual form is a concise SSA printer intended for diagnostics
+and golden tests:
+
+```text
+graph {
+bb0(%0):
+  %1 = const {constant = 7}
+  %2 = snapshot [%0, %1] {resume_pc = 17}
+  cond_br %0 {true_edge = bb1(%1), false_edge = bb1(%0)}
+
+bb1(%3):
+  return %3
+}
+```
+
+The printer assigns dense block and result numbers in graph order. These names
+do not expose arena serials, allocation addresses, or rewrite history. Tagged
+block parameters omit their representation; a non-default representation is
+written after the parameter, such as `%2: f64`. Instruction result
+representations are inferred from the operation kind. Snapshot results use the
+same `%N` namespace and do not receive machine locations.
+
+Fixed operands are positional. A trailing variadic operand range is enclosed in
+brackets so fixed and variadic fields remain visually distinct:
+
+```text
+%4 = python_call %0, %2, [%1, %3] {interpreter_return_pc = 24}
+```
+
+Attributes follow the operands in a curly-brace dictionary. Attribute names and
+ordering come directly from `instruction.def`; operand names are intentionally
+omitted. Block-edge attributes print their target and argument vector.
+Pointer-valued metadata receives deterministic print-local symbolic identities
+rather than exposing native addresses.
+
+`format_ir()` prints a complete graph. `format_instruction()` uses the same
+graph-local numbering to print one instruction, and the `fmt` formatter for
+`ControlFlowGraph` delegates to the canonical graph printer. Adding a new
+instruction kind automatically covers its declared operands and attributes;
+adding a new attribute class requires one explicit formatting rule.
+
 ## Implementation Validation
 
 The implementation validates the naturally aligned 48-byte, five-slot record,
@@ -1151,9 +1195,9 @@ class for `n_indirect_slots_for(...)`, allocates that side storage, and passes i
 to the in-place constructor. A later implementation slice should measure total
 graph and side-data use with realistic translated functions.
 The current Snapshot constructor accepts `ProgramValueRef`s for every captured
-position. Adding the frame-payload representation and verifying each prefix
-against the CFG's canonical ordering description remain part of the
-edge-argument and recovery integration slices.
+position. Adding the eventual non-tagged header representation and verifying
+each prefix against the CFG's canonical ordering description remain part of
+the edge-argument and recovery integration slices.
 Success does not require every payload to fit inline. It requires every
 representative layout to use the same declarative schema and uniform arena-owned
 side data without a handwritten storage or traversal escape hatch. Evidence

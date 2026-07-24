@@ -662,11 +662,11 @@ Outgoing arguments and the next inlined frame's parameters are the same slots.
 They occur once. Each frame header contributes reserved positions for
 interpreted PC, compiled PC, FP, and code object wherever that inlined frame
 begins. Every position, including padding and frame-header positions, contains
-a `ProgramValueRef`. The two PCs and FP require a raw frame-payload
-representation; the return code object is tagged. Pure Core definitions can
-produce these contents without eagerly writing their canonical homes. Normal
-recovery-only sinking may then move those definitions into side exits before
-frame synchronization writes the complete prefix.
+a `ProgramValueRef`. The two PCs and FP require a non-tagged representation
+whose exact form remains deferred; the return code object is tagged. Pure Core
+definitions can produce these contents without eagerly writing their canonical
+homes. Normal recovery-only sinking may then move those definitions into side
+exits before frame synchronization writes the complete prefix.
 
 The canonical ordering description is attached to the CFG. For each non-entry
 block, block parameter `i`, incoming edge argument `i`, and Snapshot operand

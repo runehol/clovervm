@@ -118,6 +118,8 @@ add_library(libclovervm_objects OBJECT
     jit/instruction.h
     jit/instruction_reconstruction.h
     jit/instruction_traversal.h
+    jit/ir_print.cpp
+    jit/ir_print.h
     jit/instruction_pool.cpp
     jit/instruction_pool.h
     jit/jit_code_object.cpp
