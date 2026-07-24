@@ -498,11 +498,44 @@ bundle never overlap. Repeating an already completed merge is a no-op.
 Splitting a bundle creates smaller bundles but does not change the underlying
 SSA ranges.
 
-Allocation priority and eviction weight are distinct. Priority determines which
-bundle is processed next. Weight determines whether an unallocated bundle may
-evict conflicting allocated bundles. Both are recomputed for children created
-by splitting. Initial weights may consider use frequency, loop depth,
-fixed-register pressure, Snapshot/recovery uses, and rematerialization cost.
+Allocation priority and spill weight are distinct. Priority determines which
+bundle is processed next. Spill weight determines whether an unallocated bundle
+may evict conflicting allocated bundles. Both are recomputed for children
+created by splitting.
+
+Following `regalloc2`, a bundle's allocation priority is the sum of the lengths
+of its live ranges in allocator program-point space. The priority queue
+therefore considers bundles covering more code first, while the physical
+register maps are relatively empty. Fixed-register constraints do not receive a
+separate priority boost.
+
+Each constrained occurrence contributes an initial spill weight:
+
+```text
+hot contribution          = 1000 * 4^min(loop_depth, 10)
+definition contribution   = 2000 for a def, otherwise 0
+requirement contribution  = 1000 for Any, 2000 for Fixed
+```
+
+Constraints normalized into fixup moves are weighted at the resulting
+occurrences. A non-minimal bundle's spill weight is:
+
+```text
+sum(occurrence spill weights) / allocation priority
+```
+
+This makes spill weight a density rather than a total cost. Splitting a bundle
+usually raises the weight of the pieces containing important occurrences
+because the same use weight is divided by a shorter live range. Snapshot and
+recovery demand, rematerialization cost, and measured block frequency may
+eventually refine the occurrence weights, but they are not part of the initial
+formula.
+
+A minimal bundle contains one live range covering at most the irreducible range
+required by one occurrence. Minimal bundles use reserved spill-weight values
+above every non-minimal bundle: a minimal fixed-register bundle has the maximum
+weight, and an ordinary minimal bundle has the next lower tier. Clobber
+reservations are not bundles and cannot be evicted.
 
 ## Constraint Normalization and Fixups
 
@@ -542,11 +575,22 @@ resolve parallel moves
 produce LocationAssignments
 ```
 
-Assignment guarantees forward progress by evicting only lower-weight bundles
-and reducing weight when a bundle is split. A useful first split point is the
-first conflicting constrained use or the first point at which a candidate
-register ceases to fit. If no legal assignment remains for an unspillable
-single-use bundle, compilation fails rather than emitting incorrect code.
+Backtracking alone does not guarantee forward progress. The allocator relies on
+the following ordering rules:
+
+- a bundle may evict conflicts only when its spill weight is strictly greater
+  than the maximum spill weight among those conflicts;
+- equal-weight bundles split rather than repeatedly evicting each other;
+- every split makes the affected bundles smaller;
+- minimal bundles occupy reserved spill-weight tiers above non-minimal bundles,
+  with minimal fixed-register bundles at the maximum weight.
+
+These rules prevent two bundles from evicting each other indefinitely and
+ensure that repeated splitting eventually reaches irreducible allocation
+problems. A useful first split point is the first conflicting constrained use or
+the first point at which a candidate register ceases to fit. If no legal
+assignment remains for an unspillable minimal bundle, compilation fails rather
+than emitting incorrect code.
 
 Loop-aware split placement is later code-quality tuning. Once the basic
 allocator is producing inspectable code, measure whether connectors, canonical
@@ -863,7 +907,7 @@ pointer-linked insertion and random lookup. Building precise liveness may cost
 more upfront but can reduce allocation work substantially by avoiding false
 interference and unnecessary splits.
 
-Heuristic state such as priority and eviction weight should be compact and
+Heuristic state such as priority and spill weight should be compact and
 observable in allocator dumps. Correctness must not depend on pointer order,
 hash-table iteration order, or unstable workqueue ties.
 
@@ -909,3 +953,8 @@ and CFG structure through a target-independent allocator interface. Clover
 keeps the same conceptual separation while using direct Core/CFG anchors
 instead of presenting a fully opaque IR adapter or making integer program
 points durable.
+
+The allocation-priority, spill-weight, splitting, and progress rules above
+follow the
+[`regalloc2` Ion design](https://github.com/bytecodealliance/regalloc2/blob/main/doc/ION.md#bundle-processing)
+and should be changed only with an equivalent termination argument.
