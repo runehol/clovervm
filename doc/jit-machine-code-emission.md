@@ -418,12 +418,13 @@ program-order emission, the backend submits each surviving pooled constant to
 identical raw `Value` bit patterns and returns an opaque `ValuePoolEntry` for
 the final dense slot; first submission determines the deterministic slot order.
 Its `Owned<Value>` entries keep the submitted values alive until the finalized
-code unit assumes the GC-visible references. Publication creates a heap
-`JitCodeObject` whose native-layout scanner exposes the initialized pool slots
-to the collector. The compilation session's own `Owned<Value>` vector keeps
-pointer-valued constants alive and pinned while they remain direct references
-in Core, and the session must remain alive until that `JitCodeObject` creation
-and pool-registration step is complete.
+code unit assumes durable ownership. Publication creates a heap `JitCodeObject`
+that retains the initialized pool slots and releases them through its
+native-layout custom deallocator. The compilation session's own `Owned<Value>`
+vector keeps pointer-valued constants alive and pinned while they remain direct
+references in Core, and the session must remain alive until that
+`JitCodeObject` ownership step is complete. Its mutable slot span is the future
+moving-collector rewriting surface.
 
 The pool base is aligned to `sizeof(Value)`, typically eight bytes on a 64-bit
 target, so every slot is naturally aligned. Non-`Value` literal data may not be

@@ -19,6 +19,7 @@
 #include "builtin_types/tuple_iterator.h"
 #include "bytecode/code_object.h"
 #include "compiler/scope.h"
+#include "jit/jit_code_object.h"
 #include "object_model/class_object.h"
 #include "object_model/function.h"
 #include "object_model/instance.h"
@@ -56,6 +57,7 @@
     V(String);                                                                 \
     V(Instance);                                                               \
     V(CodeObject);                                                             \
+    V(jit::JitCodeObject);                                                     \
     V(ValidityCell);                                                           \
     V(Scope);                                                                  \
     V(Shape);                                                                  \

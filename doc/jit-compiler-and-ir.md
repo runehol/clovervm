@@ -986,14 +986,13 @@ separate obligation.
 
 Emission submits only surviving constants to `MachineCodeEmitter`, which owns
 them while assigning and deduplicating final pool entries. Successful code
-publication creates the heap `JitCodeObject`, initializes its pool, and makes
-those pool slots visible to its native-layout scanner before releasing
-session-retained constants. The compilation session must therefore remain alive
-until `JitCodeObject` creation is complete. Failed compilation releases the
-emitter-owned values and session retains with the rest of the compilation
-session. A future phase-boundary safepoint scheme must make every direct managed
-compiler reference relocatable or explicitly pinned before acknowledging the
-request.
+publication creates the heap `JitCodeObject`, initializes its pool, and retains
+those pool slots before releasing session-retained constants. The compilation
+session must therefore remain alive until `JitCodeObject` creation is complete.
+Failed compilation releases the emitter-owned values and session retains with
+the rest of the compilation session. A future phase-boundary safepoint scheme
+must make every direct managed compiler reference relocatable or explicitly
+pinned before acknowledging the request.
 
 ### Immutable instruction semantics, mutable graphs, and analysis state
 
@@ -1576,17 +1575,18 @@ graph-building and rewrite APIs require pointer constants to be registered with
 the session before construction. Backend relocation metadata remains for code
 targets and native symbols rather than managed object movement.
 
-A heap `JitCodeObject` owns the stable code-cache allocation, final entry
-address, and precisely sized `Value` pool. It has its own native layout and
-exposes the external pool as mutable `Value` slots to the collector, allowing a
-moving collection to trace and rewrite them without decoding machine code. A
-`CodeObject` may publish a nullable atomic reference to it after all code, pool
-slots, and metadata are initialized.
+A heap `JitCodeObject` describes the stable code-cache allocation, final entry
+address, and precisely sized `Value` pool. It has its own native layout, retains
+the external pool slots, and releases them through custom deallocation. Its
+mutable `Value` span is the future surface through which a moving collection
+can trace and rewrite the pool without decoding machine code. A `CodeObject`
+publishes a nullable member reference to it after all code, pool slots, and
+metadata are initialized. Initial installation is deliberately non-atomic.
 
 The compilation session remains alive through that construction and
 publication step. Its retains protect every direct compiler reference until the
-`JitCodeObject` scanner is responsible for the initialized pool; only then may
-the session be destroyed. Initial generated code is installed once and remains
+`JitCodeObject` owns the initialized pool; only then may the session be
+destroyed. Initial generated code is installed once and remains
 alive until its owning heap objects and code-cache lifetime policy permit
 reclamation.
 

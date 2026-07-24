@@ -32,6 +32,7 @@ namespace cl
         ModuleLoaderObject,
         ModuleSpecObject,
         CodeObject,
+        JitCodeObject,
         ClassObject,
         Exception,
         StopIteration,

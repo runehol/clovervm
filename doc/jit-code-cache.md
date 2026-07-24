@@ -4,7 +4,7 @@
 |---|---|
 | Document type | Design |
 | Status | Accepted |
-| Implementation | Standard `mmap` and packed macOS AArch64 `MAP_JIT` backends complete; `CodeObject`/GC integration and other platform backends are deferred |
+| Implementation | Standard `mmap` and packed macOS AArch64 `MAP_JIT` backends, heap `JitCodeObject` ownership, and one-time `CodeObject` installation are complete; moving-GC rewriting and other platform backends are deferred |
 | Scope | Stable code and constant-pool allocation, PC-relative reachability, writable and executable views, publication, and initial code lifetime |
 | Owning layers | The code cache owns virtual-memory placement, page protection, writable and executable views, and storage lifetime; the machine-code emitter owns sizing and encoding against addresses supplied by the cache; `JitCodeObject` records the resulting code and `Value`-pool slices |
 | Validated against | Working tree on 2026-07-21; focused code-cache and executable AArch64 tests plus the full debug `all check` suite |
@@ -64,10 +64,10 @@ pool page merely to preserve page-level protection.
 Initial generated code is immortal. Each thread has a non-thread-safe
 `CodeCache`, but the `VirtualMachine` owns every thread's cache and all of its
 slabs until VM destruction, including caches belonging to terminated threads.
-Each cache also retains every published `JitCodeObject` until VM destruction.
-Code-cache retirement, slice reuse, and dependency-aware reclamation are later
-policies. Direct outside-unit transfers and their target pool metadata are
-consequently stable until VM destruction.
+Heap `JitCodeObject` metadata may be reclaimed, but the cache retains its slabs
+until VM destruction. Code-cache retirement, slice reuse, and dependency-aware
+reclamation are later policies. Direct outside-unit transfers and their target
+pool metadata are consequently stable until VM destruction.
 
 ## Code-cache interface
 
@@ -179,8 +179,10 @@ Failure of the platform protection transition or another fallible publication
 step returns `PublicationFailure`. The committed space remains consumed and
 execution continues in the interpreter without setting Python pending-exception
 state. This is distinct from failed final instruction revalidation, which is a
-hard compiler-invariant failure. Successful publication transfers both slices
-into a cache-retained `JitCodeObject`.
+hard compiler-invariant failure. Successful publication returns a
+`PublishedCode` value describing both stable slices and their final encoded
+size. Constructing the managed `JitCodeObject` and installing it into a
+`CodeObject` are separate operations above the code cache.
 
 ## Reachability slabs
 
@@ -403,7 +405,7 @@ the same cache interface.
 
 ## `JitCodeObject` ownership
 
-The intended `JitCodeObject` is a heap object with its own native layout. It
+`JitCodeObject` is an internal `HeapObject` with its own native layout. It
 records the published code and pool slices as one metadata unit:
 
 ```text
@@ -414,29 +416,25 @@ JitCodeObject
     MachineAddress entry derived from CodeSlice
 ```
 
-Its native-layout scanner exposes the external pool as mutable `Value` slots.
-The collector can therefore trace and rewrite managed pointers in the pool
-without decoding instruction bytes. `JitCodeObject` does not keep a parallel
-`Owned<Value>` vector; the scanned pool slots are the durable managed
-references.
+Construction retains every pointer-valued entry in the external pool, and the
+native-layout custom deallocator releases those entries. `JitCodeObject` does
+not keep a parallel `Owned<Value>` vector; the pool slots themselves are the
+durable managed references. It exposes those slots as `std::span<Value>`, which
+is also the intended surface for a future moving collector to trace and rewrite
+them without decoding instruction bytes.
 
-The planned `CodeObject` integration may embed a nullable atomic reference to
-the heap `JitCodeObject`. Compilation will fully construct the object,
-initialize every pool slot and metadata record, make those slots visible to the
-native-layout scanner, and publish the reference with release ordering.
-Entrants will load it with acquire ordering. Initial publication is one-time;
-generated code is not replaced or retired during bring-up.
+`CodeObject` embeds a nullable `MemberHeapPtr<JitCodeObject>`. Compilation fully
+constructs the heap object after physical code-cache publication and then
+installs it with `publish_jit_code()`. Initial installation is one-time and
+currently non-atomic; generated code is not replaced or retired during
+bring-up.
 
 The compilation session's monotonic `Owned<Value>` vector keeps direct managed
 constants alive and pinned while they remain in non-scannable compiler data.
 The session must outlive creation of the heap `JitCodeObject`. Successful
-publication initializes the pool and establishes its scannable references
-before session teardown; abandoning compilation destroys the temporary session
-and emitter ownership domains without publishing anything.
-
-The current cache-retained non-GC C++ `JitCodeObject` is bring-up scaffolding.
-Replacing it with the heap object, adding its native layout and external-pool
-scanner, and integrating its reachability with `CodeObject` are still required.
+publication initializes the pool and establishes its retained references before
+session teardown; abandoning compilation destroys the temporary session and
+emitter ownership domains without installing anything.
 
 ## Publication and concurrency invariants
 
@@ -498,9 +496,9 @@ The current immortal lifetime policy is complete for bring-up. Reclamation,
 retirement, dependency tracking, and slice reuse are not current concerns and
 do not block the code cache.
 
-Heap `JitCodeObject` construction and installation into `CodeObject`, GC tracing
-and rewriting of its pool, Linux dual RW/RX mappings, and policies for other
-platforms are explicitly deferred.
+Moving-GC tracing and rewriting of the `JitCodeObject` pool, thread-safe
+installation, Linux dual RW/RX mappings, and policies for other platforms are
+explicitly deferred.
 
 Future choices must not leak virtual-memory or platform publication mechanics
 into the target assembler or fragment-layout algorithm.

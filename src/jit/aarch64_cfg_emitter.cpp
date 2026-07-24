@@ -123,7 +123,7 @@ namespace cl::jit
         }
     }
 
-    Result<JitCodeObject *, JitCodeError>
+    Result<PublishedCode, JitCodeError>
     emit_aarch64_from_cfg(const ControlFlowGraph &graph, CodeCache &cache)
     {
         Result<CodeAllocation, JitCodeError> near = generate_allocation(
@@ -134,14 +134,14 @@ namespace cl::jit
         }
         if(near.error() != JitCodeError::PoolOutOfRange)
         {
-            return Result<JitCodeObject *, JitCodeError>::error(near.error());
+            return Result<PublishedCode, JitCodeError>::error(near.error());
         }
 
         Result<CodeAllocation, JitCodeError> far = generate_allocation(
             graph, cache, AArch64ValuePoolMode::FarPageRelative);
         if(!far)
         {
-            return Result<JitCodeObject *, JitCodeError>::error(far.error());
+            return Result<PublishedCode, JitCodeError>::error(far.error());
         }
         return cache.publish(std::move(far).value());
     }

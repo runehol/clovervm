@@ -15,16 +15,14 @@ namespace cl::jit
     class CodeCacheSlab;
     class CodeAllocation;
 
-    class JitCodeObject
+    class PublishedCode
     {
     public:
-        JitCodeObject(CodeSlice code, ValuePoolSlice value_pool,
+        PublishedCode(CodeSlice code, ValuePoolSlice value_pool,
                       size_t encoded_size)
             : code_(code), value_pool_(value_pool), encoded_size_(encoded_size)
         {
         }
-
-        JitCodeObject(JitCodeObject &&) = default;
 
         const CodeSlice &code() const { return code_; }
         const ValuePoolSlice &value_pool() const { return value_pool_; }
@@ -109,7 +107,7 @@ namespace cl::jit
         [[nodiscard]] Result<CodeAllocationProposal, JitCodeError>
         propose(size_t pessimistic_code_size, size_t pool_slot_count);
 
-        [[nodiscard]] Result<JitCodeObject *, JitCodeError>
+        [[nodiscard]] Result<PublishedCode, JitCodeError>
         publish(CodeAllocation &&allocation);
 
     private:
@@ -124,7 +122,6 @@ namespace cl::jit
         std::unique_ptr<PlatformCodeMemory> platform_memory_;
         size_t standard_slab_size_;
         std::vector<std::unique_ptr<CodeCacheSlab>> slabs_;
-        std::vector<std::unique_ptr<JitCodeObject>> published_code_;
     };
 
 }  // namespace cl::jit

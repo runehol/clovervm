@@ -29,18 +29,18 @@ namespace cl::jit
             ControlFlowGraph *graph = builder.finalize();
 
             CodeCache cache;
-            Result<JitCodeObject *, JitCodeError> emission =
+            Result<PublishedCode, JitCodeError> emission =
                 emit_aarch64_from_cfg(*graph, cache);
             EXPECT_TRUE(emission);
             if(!emission)
             {
                 return 0;
             }
-            JitCodeObject *code = std::move(emission).value();
+            PublishedCode code = std::move(emission).value();
 
             using Function = uint64_t (*)(uint64_t);
             Function function = reinterpret_cast<Function>(
-                code->entry().bits_for_indirect_target());
+                code.entry().bits_for_indirect_target());
             return function(static_cast<uint64_t>(input.as.integer));
         }
     }  // namespace
@@ -57,14 +57,14 @@ namespace cl::jit
         ControlFlowGraph *graph = builder.finalize();
 
         CodeCache cache;
-        Result<JitCodeObject *, JitCodeError> emission =
+        Result<PublishedCode, JitCodeError> emission =
             emit_aarch64_from_cfg(*graph, cache);
         ASSERT_TRUE(emission);
-        JitCodeObject *code = std::move(emission).value();
+        PublishedCode code = std::move(emission).value();
 
         using Function = uint64_t (*)(uint64_t);
-        Function function = reinterpret_cast<Function>(
-            code->entry().bits_for_indirect_target());
+        Function function =
+            reinterpret_cast<Function>(code.entry().bits_for_indirect_target());
         const uint64_t inputs[] = {
             static_cast<uint64_t>(Value::None().as.integer),
             static_cast<uint64_t>(Value::True().as.integer),
@@ -89,14 +89,14 @@ namespace cl::jit
         ControlFlowGraph *graph = builder.finalize();
 
         CodeCache cache;
-        Result<JitCodeObject *, JitCodeError> emission =
+        Result<PublishedCode, JitCodeError> emission =
             emit_aarch64_from_cfg(*graph, cache);
         ASSERT_TRUE(emission);
-        JitCodeObject *code = std::move(emission).value();
+        PublishedCode code = std::move(emission).value();
 
         using Function = uint64_t (*)();
-        Function function = reinterpret_cast<Function>(
-            code->entry().bits_for_indirect_target());
+        Function function =
+            reinterpret_cast<Function>(code.entry().bits_for_indirect_target());
         EXPECT_EQ(static_cast<uint64_t>(expected.as.integer), function());
     }
 
@@ -142,14 +142,14 @@ namespace cl::jit
         ASSERT_TRUE(finalization);
         CodeAllocation allocation = std::move(finalization).value();
 
-        Result<JitCodeObject *, JitCodeError> publication =
+        Result<PublishedCode, JitCodeError> publication =
             cache.publish(std::move(allocation));
         ASSERT_TRUE(publication);
-        JitCodeObject *code = std::move(publication).value();
+        PublishedCode code = std::move(publication).value();
 
         using Function = int64_t (*)(int64_t, int64_t);
-        Function function = reinterpret_cast<Function>(
-            code->entry().bits_for_indirect_target());
+        Function function =
+            reinterpret_cast<Function>(code.entry().bits_for_indirect_target());
         EXPECT_EQ(42, function(19, 23));
     }
 
@@ -176,14 +176,14 @@ namespace cl::jit
         ASSERT_TRUE(finalization);
         CodeAllocation allocation = std::move(finalization).value();
 
-        Result<JitCodeObject *, JitCodeError> publication =
+        Result<PublishedCode, JitCodeError> publication =
             cache.publish(std::move(allocation));
         ASSERT_TRUE(publication);
-        JitCodeObject *code = std::move(publication).value();
+        PublishedCode code = std::move(publication).value();
 
         using Function = int64_t (*)(int64_t, int64_t);
-        Function function = reinterpret_cast<Function>(
-            code->entry().bits_for_indirect_target());
+        Function function =
+            reinterpret_cast<Function>(code.entry().bits_for_indirect_target());
         EXPECT_EQ(5, function(9, 4));
         EXPECT_EQ(5, function(4, 9));
         EXPECT_EQ(0, function(7, 7));
@@ -202,17 +202,17 @@ namespace cl::jit
         ASSERT_TRUE(finalization);
         CodeAllocation allocation = std::move(finalization).value();
 
-        Result<JitCodeObject *, JitCodeError> publication =
+        Result<PublishedCode, JitCodeError> publication =
             cache.publish(std::move(allocation));
         ASSERT_TRUE(publication);
-        JitCodeObject *code = std::move(publication).value();
+        PublishedCode code = std::move(publication).value();
 
         using Function = uint64_t (*)();
-        Function function = reinterpret_cast<Function>(
-            code->entry().bits_for_indirect_target());
+        Function function =
+            reinterpret_cast<Function>(code.entry().bits_for_indirect_target());
         EXPECT_EQ(static_cast<uint64_t>(Value::True().as.integer), function());
 
-        code->value_pool().write_pointer()[0] = Value::False();
+        code.value_pool().write_pointer()[0] = Value::False();
         EXPECT_EQ(static_cast<uint64_t>(Value::False().as.integer), function());
     }
 
@@ -236,17 +236,17 @@ namespace cl::jit
         ASSERT_TRUE(finalization);
         CodeAllocation allocation = std::move(finalization).value();
 
-        Result<JitCodeObject *, JitCodeError> publication =
+        Result<PublishedCode, JitCodeError> publication =
             cache.publish(std::move(allocation));
         ASSERT_TRUE(publication);
-        JitCodeObject *code = std::move(publication).value();
+        PublishedCode code = std::move(publication).value();
 
         using Function = uint64_t (*)();
-        Function function = reinterpret_cast<Function>(
-            code->entry().bits_for_indirect_target());
+        Function function =
+            reinterpret_cast<Function>(code.entry().bits_for_indirect_target());
         EXPECT_EQ(static_cast<uint64_t>(Value::True().as.integer), function());
 
-        code->value_pool().write_pointer()[0] = Value::False();
+        code.value_pool().write_pointer()[0] = Value::False();
         EXPECT_EQ(static_cast<uint64_t>(Value::False().as.integer), function());
     }
 }  // namespace cl::jit

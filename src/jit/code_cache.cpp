@@ -107,15 +107,15 @@ namespace cl::jit
 
         void end_code_write() { platform_slab_->end_code_write(); }
 
-        Result<JitCodeObject, JitCodeError>
+        Result<PublishedCode, JitCodeError>
         publish(const CodeAllocation &allocation)
         {
             CL_TRY(platform_slab_->publish(allocation.code_offset_,
                                            allocation.final_code_size_,
                                            allocation.code.capacity()));
 
-            return Result<JitCodeObject, JitCodeError>::ok(
-                JitCodeObject(allocation.code, allocation.value_pool,
+            return Result<PublishedCode, JitCodeError>::ok(
+                PublishedCode(allocation.code, allocation.value_pool,
                               allocation.final_code_size_));
         }
 
@@ -335,17 +335,11 @@ namespace cl::jit
                                    pool_offset, pool_slot_count));
     }
 
-    Result<JitCodeObject *, JitCodeError>
+    Result<PublishedCode, JitCodeError>
     CodeCache::publish(CodeAllocation &&allocation)
     {
         allocation.end_code_write();
-        JitCodeObject object = CL_TRY(allocation.slab_->publish(allocation));
-        JitCodeObject *published =
-            published_code_
-                .emplace_back(
-                    std::make_unique<JitCodeObject>(std::move(object)))
-                .get();
-        return Result<JitCodeObject *, JitCodeError>::ok(published);
+        return allocation.slab_->publish(allocation);
     }
 
 }  // namespace cl::jit

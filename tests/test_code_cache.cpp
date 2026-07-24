@@ -68,10 +68,10 @@ namespace cl::jit
         MachineAddress execute_address = allocation.code.execute_address();
         EXPECT_TRUE(fixture.platform->last_slab->code_write_active);
         EXPECT_EQ(1u, fixture.platform->last_slab->begin_code_write_count);
-        Result<JitCodeObject *, JitCodeError> publication =
+        Result<PublishedCode, JitCodeError> publication =
             fixture.cache->publish(std::move(allocation));
         ASSERT_TRUE(publication);
-        EXPECT_EQ(execute_address, std::move(publication).value()->entry());
+        EXPECT_EQ(execute_address, std::move(publication).value().entry());
         EXPECT_FALSE(fixture.platform->last_slab->code_write_active);
         EXPECT_EQ(1u, fixture.platform->last_slab->end_code_write_count);
     }
@@ -117,19 +117,19 @@ namespace cl::jit
             take_proposal(fixture.cache->propose(100, 1));
         CodeAllocation allocation = take_allocation(proposal.commit(17));
         EXPECT_EQ(32u, allocation.code.capacity());
-        Result<JitCodeObject *, JitCodeError> publication =
+        Result<PublishedCode, JitCodeError> publication =
             fixture.cache->publish(std::move(allocation));
         ASSERT_TRUE(publication);
-        JitCodeObject *object = std::move(publication).value();
+        PublishedCode object = std::move(publication).value();
 
-        EXPECT_EQ(17u, object->encoded_size());
-        EXPECT_EQ(32u, object->code().capacity());
+        EXPECT_EQ(17u, object.encoded_size());
+        EXPECT_EQ(32u, object.code().capacity());
         EXPECT_EQ(17u, fixture.platform->last_slab->published_encoded_size);
         EXPECT_EQ(32u, fixture.platform->last_slab->published_protected_size);
 
         CodeAllocationProposal next =
             take_proposal(fixture.cache->propose(16, 0));
-        EXPECT_EQ(object->entry().offset_by(32), next.code_address());
+        EXPECT_EQ(object.entry().offset_by(32), next.code_address());
     }
 
     TEST(CodeCache, PublicationFailureConsumesTheCommittedSpace)
@@ -143,7 +143,7 @@ namespace cl::jit
                 take_proposal(fixture.cache->propose(64, 1));
             failed_address = proposal.code_address();
             CodeAllocation allocation = take_allocation(proposal.commit(32));
-            Result<JitCodeObject *, JitCodeError> publication =
+            Result<PublishedCode, JitCodeError> publication =
                 fixture.cache->publish(std::move(allocation));
             ASSERT_FALSE(publication);
             EXPECT_EQ(JitCodeError::PublicationFailure, publication.error());
@@ -206,18 +206,18 @@ namespace cl::jit
         CodeAllocationProposal first_proposal =
             take_proposal(fixture.cache->propose(16, 1));
         CodeAllocation first = take_allocation(first_proposal.commit(16));
-        JitCodeObject *first_object =
+        PublishedCode first_object =
             std::move(fixture.cache->publish(std::move(first))).value();
         CodeAllocationProposal second_proposal =
             take_proposal(fixture.cache->propose(16, 1));
         CodeAllocation second = take_allocation(second_proposal.commit(16));
-        JitCodeObject *second_object =
+        PublishedCode second_object =
             std::move(fixture.cache->publish(std::move(second))).value();
 
         uintptr_t first_pool =
-            first_object->value_pool().address().bits_for_indirect_target();
+            first_object.value_pool().address().bits_for_indirect_target();
         uintptr_t second_pool =
-            second_object->value_pool().address().bits_for_indirect_target();
+            second_object.value_pool().address().bits_for_indirect_target();
         EXPECT_EQ(sizeof(Value), first_pool - second_pool);
         EXPECT_EQ(first_pool / CacheAndPlatform::PageSize,
                   second_pool / CacheAndPlatform::PageSize);
@@ -231,13 +231,13 @@ namespace cl::jit
             take_proposal(fixture.cache->propose(15 * 4096, 1));
         CodeAllocation first =
             take_allocation(first_proposal.commit(15 * 4096));
-        JitCodeObject *first_object =
+        PublishedCode first_object =
             std::move(fixture.cache->publish(std::move(first))).value();
         CodeAllocationProposal second =
             take_proposal(fixture.cache->propose(16, 0));
 
         EXPECT_EQ(2u, fixture.platform->requested_sizes.size());
-        EXPECT_NE(first_object->entry(), second.code_address());
+        EXPECT_NE(first_object.entry(), second.code_address());
     }
 
     TEST(CodeCache, PageGranularityRecoversOnlyWholePages)
@@ -249,13 +249,13 @@ namespace cl::jit
         CodeAllocation first = take_allocation(first_proposal.commit(5000));
         EXPECT_EQ(0u, first.value_pool.slot_count());
         EXPECT_EQ(empty_pool_address, first.value_pool.address());
-        JitCodeObject *object =
+        PublishedCode object =
             std::move(fixture.cache->publish(std::move(first))).value();
         CodeAllocationProposal second =
             take_proposal(fixture.cache->propose(1, 0));
 
-        EXPECT_EQ(2 * CacheAndPlatform::PageSize, object->code().capacity());
-        EXPECT_EQ(object->entry().offset_by(2 * CacheAndPlatform::PageSize),
+        EXPECT_EQ(2 * CacheAndPlatform::PageSize, object.code().capacity());
+        EXPECT_EQ(object.entry().offset_by(2 * CacheAndPlatform::PageSize),
                   second.code_address());
     }
 
@@ -273,14 +273,14 @@ namespace cl::jit
         code[3] = 0;
         allocation.value_pool.write_pointer()[0] = Value::None();
 
-        Result<JitCodeObject *, JitCodeError> publication =
+        Result<PublishedCode, JitCodeError> publication =
             cache.publish(std::move(allocation));
         ASSERT_TRUE(publication);
-        JitCodeObject *object = std::move(publication).value();
-        object->value_pool().write_pointer()[0] = Value::True();
+        PublishedCode object = std::move(publication).value();
+        object.value_pool().write_pointer()[0] = Value::True();
 
-        EXPECT_EQ(Value::True(), object->value_pool().write_pointer()[0]);
-        EXPECT_EQ(page_size, object->code().capacity());
+        EXPECT_EQ(Value::True(), object.value_pool().write_pointer()[0]);
+        EXPECT_EQ(page_size, object.code().capacity());
     }
 
     TEST(CodeCacheLifetime, GivesEachThreadAVmOwnedCache)

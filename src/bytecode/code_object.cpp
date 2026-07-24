@@ -1,4 +1,5 @@
 #include "bytecode/code_object.h"
+#include "jit/jit_code_object.h"
 #include "object_model/class_object.h"
 #include "object_model/refcount.h"
 #include "object_model/shape.h"
@@ -50,10 +51,18 @@ namespace cl
         code_object->name.release_ref();
         code_object->docstring.release_ref();
         code_object->function_keyword_remap.release_refs();
+        code_object->jit_code.release_ref();
 
         code_object->inline_caches.clear();
 
         code_object->~CodeObject();
+    }
+
+    void CodeObject::publish_jit_code(jit::JitCodeObject *object)
+    {
+        assert(object != nullptr);
+        assert(jit_code == nullptr);
+        jit_code = object;
     }
 
     BuiltinClassDefinition make_code_object_class(VirtualMachine *vm)

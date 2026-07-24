@@ -490,9 +490,10 @@ to `MachineCodeEmitter::add_value_to_constant_pool()`. The emitter owns pool
 values and assigns and deduplicates final `ValuePoolEntry` offsets. Pointer-valued
 constants must take the traced-pool path; Core itself does not express this
 split.
-Successful publication initializes the `JitCodeObject` pool before
-session-retained constants are released. On failure, the emitter owners,
-retained values, and arena are discarded while the interpreter continues.
+Successful publication initializes the `JitCodeObject` pool and establishes its
+ownership before session-retained constants are released. On failure, the
+emitter owners, retained values, and arena are discarded while the interpreter
+continues.
 
 Allocation may request a future safepoint but does not synchronously enter one.
 Initial compilation does not acknowledge safepoints mid-compilation, so a pass

@@ -120,6 +120,8 @@ add_library(libclovervm_objects OBJECT
     jit/instruction_traversal.h
     jit/instruction_pool.cpp
     jit/instruction_pool.h
+    jit/jit_code_object.cpp
+    jit/jit_code_object.h
     jit/code_cache_types.h
     jit/machine_address.h
     jit/machine_address_internal.h

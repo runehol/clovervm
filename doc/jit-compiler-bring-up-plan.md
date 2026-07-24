@@ -4,7 +4,7 @@
 |---|---|
 | Document type | Implementation plan |
 | Status | Proposed |
-| Implementation | Core instruction storage, graph publication and rewriting, opcode-blind bytecode state tracking, the initial structural `CoreBytecodeTranslator`, compilation-session constant retention, code-cache publication, generic machine-code emission, AArch64 assembly, the initial AArch64 `AllocationConstraints`, and a direct single-register CFG-to-AArch64 path are implemented; broader translation, register allocation, heap `JitCodeObject` integration, and compiler/runtime entry remain |
+| Implementation | Core instruction storage, graph publication and rewriting, opcode-blind bytecode state tracking, the initial structural `CoreBytecodeTranslator`, compilation-session constant retention, code-cache publication, heap `JitCodeObject` ownership, generic machine-code emission, AArch64 assembly, the initial AArch64 `AllocationConstraints`, and a direct single-register CFG-to-AArch64 path are implemented; broader translation, register allocation, and compiler/runtime entry remain |
 | Scope | Initial JIT staging, vertical slices, temporary runtime policies, and validation |
 | Owning layers | The JIT owns compilation and generated transitions; the interpreter, managed calling convention, native boundaries, and reclaimer retain their existing contracts |
 | Validated against | Supporting infrastructure, instruction-representation tests, CFG and rewrite tests, code-cache tests, and executable AArch64 tests in the working tree on 2026-07-23 |
@@ -167,10 +167,10 @@ The first implementation slice is already in the tree. It established:
 - the target-independent physical-register and allocation-constraint
   vocabulary, plus initial AArch64 platform-ABI constraints.
 
-The current cache-retained C++ `JitCodeObject` remains bring-up scaffolding.
-Turning it into a heap object with a native-layout scanner is part of the
-remaining runtime publication work, not a reason to route around the existing
-cache or emitter.
+Physical code-cache publication now returns `PublishedCode`. The internal heap
+`JitCodeObject` retains its external pool slots, releases them through its
+native-layout custom deallocator, and is installed once through a nullable
+`CodeObject` member. Moving-collector rewriting remains future work.
 
 ### Milestone 1: minimal Core instructions in CFG blocks
 
@@ -198,9 +198,9 @@ calls `retain_and_pin_value()` for every pointer constant it encounters, while
 compiler-created managed values use the same operation immediately after
 allocation. The retain is also the compilation pin because Core instruction
 payloads are not GC-scannable relocation slots. The session remains alive until
-the heap `JitCodeObject` has been created and its initialized constant-pool
-slots are visible to its native-layout scanner; that publication boundary
-transfers responsibility from compilation retention to GC tracing.
+the heap `JitCodeObject` has been created and has retained its initialized
+constant-pool slots; that publication boundary transfers responsibility from
+compilation retention to heap-object ownership.
 
 Detached-storage poisoning, generation-bound `UseLists`, read-only traversal,
 staged published-graph rewriting, non-entry block parameters, and immutable
@@ -285,12 +285,11 @@ Three coherent slices can proceed from the landed foundation:
    that produces and verifies Core plus Snapshots without executing it. This
    can advance independently of register allocation and establishes the actual
    compiler input.
-3. **Heap `JitCodeObject` publication.** Replace the cache-retained C++ wrapper
-   with a heap object, give it a native layout and an external-pool scanning
-   hook, and keep the compilation session alive until those slots are
-   scannable. This closes managed-constant lifetime and is a gate for real
-   runtime installation, but it does not by itself make generated functions
-   more expressive.
+3. **Heap `JitCodeObject` publication.** This slice is complete. Physical
+   publication returns `PublishedCode`; the heap object retains the initialized
+   external pool, releases it through custom deallocation, and installs once
+   into `CodeObject`. This closes managed-constant lifetime but does not by
+   itself make generated functions more expressive.
 
 No option should introduce a second CFG, constant-pool, or emission path. The
 backend and translator consume the existing published graph; heap publication
@@ -341,7 +340,7 @@ compiled execution path from Python, but it still has no side exits.
 
 Scope:
 
-- require heap `JitCodeObject` publication and GC-scannable value-pool slots
+- require heap `JitCodeObject` publication and managed value-pool ownership
   before installing managed-pointer constants or persistent JIT entries;
 - install and select a JIT entry for one compiled `CodeObject`;
 - define the minimal generated-call ABI for arguments, return value, managed
@@ -360,7 +359,7 @@ Validation must show:
 - arguments, return value, code object, and caller state are preserved;
 - repeated entries restore the managed and host stacks exactly;
 - destroying the compilation session after publication leaves every managed
-  pool value alive through `JitCodeObject` tracing, with no ownership gap.
+  pool value alive through `JitCodeObject` ownership, with no ownership gap.
 
 ### Milestone 5: unsupported-bytecode side exit and Snapshot recovery
 
@@ -525,8 +524,8 @@ bytecodes as a valid continuation. Validation should combine:
   compiled-to-compiled, native re-entry, and nested re-entry;
 - machine-code checks for frame layout, return targets, reserved registers, and
   fixed-register operations;
-- publication-lifetime tests that destroy the compilation session immediately
-  after heap `JitCodeObject` creation and then trace or rewrite its pool;
+- publication-lifetime tests that destroy temporary compilation ownership after
+  heap `JitCodeObject` creation and verify that it owns and releases its pool;
 - deterministic compiler dumps across repeated compilations.
 
 Not every item applies to every milestone. A milestone tests only the
@@ -566,9 +565,8 @@ compiler.
 
 ## Bring-up Decisions Still Required
 
-- native-layout scanner API for the heap `JitCodeObject`'s external `Value`
-  pool, plus ownership of its code-cache allocation and its relationship to
-  `CodeObject`;
+- moving-collector integration for rewriting the heap `JitCodeObject`'s
+  externally stored `Value` span;
 - backend-preparation choices not yet represented by the implemented
   `AllocationConstraints`, particularly legalized constant decisions and
   selected lowering identities;

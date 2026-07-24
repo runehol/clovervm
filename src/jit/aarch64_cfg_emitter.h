@@ -11,7 +11,7 @@ namespace cl::jit
     void generate_aarch64_assembly(const ControlFlowGraph &graph,
                                    AArch64MacroAssembler &assembler);
 
-    [[nodiscard]] Result<JitCodeObject *, JitCodeError>
+    [[nodiscard]] Result<PublishedCode, JitCodeError>
     emit_aarch64_from_cfg(const ControlFlowGraph &graph, CodeCache &cache);
 
 }  // namespace cl::jit

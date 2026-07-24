@@ -24,6 +24,10 @@ namespace cl
 {
     class ThreadState;
     class VirtualMachine;
+    namespace jit
+    {
+        class JitCodeObject;
+    }
 
     enum class FunctionParameterFlags : uint32_t
     {
@@ -590,6 +594,7 @@ namespace cl
         Member<TValue<String>> name;
         Member<Optional<TValue<String>>> docstring;
         const CompilationUnit *compilation_unit;
+        MemberHeapPtr<jit::JitCodeObject> jit_code;
 
         FunctionSignature function_signature;
         FunctionKeywordRemap function_keyword_remap;
@@ -635,6 +640,10 @@ namespace cl
         {
             return first_free_arg_encoded_reg;
         }
+
+        bool has_jit_code() const { return jit_code != nullptr; }
+        jit::JitCodeObject *get_jit_code() const { return jit_code.extract(); }
+        void publish_jit_code(jit::JitCodeObject *object);
 
         int8_t encode_reg(uint32_t reg) const
         {
