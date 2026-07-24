@@ -280,11 +280,10 @@ const InstructionSlot *indirect_operands = ...;
 
 Snapshot is a representation-erased positional variadic range. A value-bearing
 position stores one `ProgramValueRef` word, and the referenced def kind
-supplies its concrete representation. Frame-header positions remain reserved in
-the same logical coordinate so later positions keep their direct indices. They
-are not nullable program-value references. Their concrete non-value entry
-encoding is deferred to the recovery-state mechanism that will also represent
-an ordinary destination whose desired value is already in its canonical slot.
+supplies its concrete representation. This includes frame-header positions:
+raw PC and FP contents use a frame-payload program-value representation, while
+the return code object is tagged. No position uses a nullable or structural
+escape encoding.
 
 Each generated variadic class exposes hidden construction machinery
 `n_indirect_slots_for(constructor arguments...)`. The compilation arena uses it
@@ -695,30 +694,33 @@ ConditionalBranch
     false_edge: attr BlockEdge
 ```
 
-Snapshot positions capture ordinary tagged `ProgramValueRef`s. A value in
-another representation first passes through an explicit conversion such as
-`BoxF64`; the conversion may later be marked sunk so it executes only during
-recovery. This keeps representation erasure and recovery actions out of the
-Snapshot operand format.
+Snapshot positions capture ordinary `ProgramValueRef`s. Position zero denotes
+the accumulator. Position one denotes the highest canonical stack slot:
+parameter zero for a function with parameters, or the highest frame-header slot
+for a zero-parameter function. Later positions proceed through consecutive
+descending stack addresses. The sequence is therefore accumulator, parameters,
+parameter padding, fixed frame-header slots, locals, temporaries, and then the
+next inlined frame's parameters, which are the caller's outgoing arguments.
+Its header follows those parameters, and the pattern repeats for further
+inlined frames. Outgoing arguments and callee parameters are one physical and
+logical slot sequence, never duplicated.
 
-Snapshot position is a logical stack-register coordinate. Logical position zero
-starts at the function-arity-derived offset from `fp`; increasing logical
-positions proceed in logically ascending order and physically descending stack
-addresses. The sequence is parameters, the fixed frame-header holes, locals,
-temporaries, and then the next inlined frame's parameters, which are the
-caller's outgoing arguments. Its header holes follow those parameters, and the
-pattern repeats for further inlined frames. Outgoing arguments and callee
-parameters are one physical and logical slot sequence, never duplicated.
+A Snapshot may capture any prefix of the CFG's complete ordering, but cannot
+omit an interior position. An unavailable accumulator, dead temporary, or
+padding slot is represented by an `Uninitialized` definition. Operand count
+therefore identifies the captured extent.
 
-Header positions are reserved for the interpreted PC, compiled PC, frame
-pointer, and code-object field. They are not `Value`s or `ProgramValueRef`s.
-Recovery writes each field using its own representation: in particular, the two
-PCs and frame pointer use their native header encodings rather than `Value`
-encoding. Frame metadata supplies the field contents and frame boundaries, so
-normal compiled execution need not materialize inlined frame headers.
+Header positions contain program values for the interpreted PC, compiled PC,
+frame pointer, and return code object. The two PCs and frame pointer use a raw
+frame-payload representation rather than tagged-value encoding; the code object
+uses `TaggedValue`. Pure definitions of these contents may be sunk into
+recovery, after which frame synchronization writes them to their canonical
+homes.
 
-Generated generic Snapshot traversal reports every program-value capture as an
-operand use; structural recovery entries are not uses.
+Generated generic Snapshot traversal reports every captured program value as
+an operand use, including header values. A tagged frame value in another
+representation first passes through an explicit conversion such as `BoxF64`;
+the conversion may later be marked sunk so it executes only during recovery.
 Side-exit frame-sync generation stores tagged program values directly, may
 rematerialize captured `Const` defs, and boxes captured `F64` values before
 writing them to the interpreter frame.
@@ -813,13 +815,12 @@ If Semantic or Machine IR later reuse the same graph representation, the graph
 will gain one immutable level discriminator and level-specific construction and
 analysis façades.
 
-For Core graphs, verification additionally requires every `ProgramValue`
-def to have one legal representation, every operand constraint to match its
-def, and every representation-changing edge to be an explicit conversion
-instruction. Every value-bearing Snapshot position must reference a live tagged
-`ProgramValue` def; every structural position must correspond to a valid
-frame-header field or another recovery destination already known to contain
-its desired value. Recovery reaches through any sunk conversion rather than
+For Core graphs, verification additionally requires every `ProgramValue` def to
+have one legal representation, every operand constraint to match its def, and
+every representation-changing edge to be an explicit conversion instruction.
+Every Snapshot position must reference a live `ProgramValue` def whose
+representation is valid for the corresponding position in the CFG's canonical
+ordering description. Recovery reaches through any sunk conversion rather than
 interpreting a type-erased Snapshot operand.
 
 Each concrete instruction form is a final, fieldless subclass of `Instruction`.
@@ -1149,9 +1150,9 @@ the pool privately prefixes the serial. Variadic construction asks the concrete
 class for `n_indirect_slots_for(...)`, allocates that side storage, and passes it
 to the in-place constructor. A later implementation slice should measure total
 graph and side-data use with realistic translated functions.
-The current Snapshot constructor accepts only `ProgramValueRef`s. The explicit
-non-value encoding for frame-header positions and already-canonical destinations,
-plus verification against logical frame boundaries, remains part of the
+The current Snapshot constructor accepts `ProgramValueRef`s for every captured
+position. Adding the frame-payload representation and verifying each prefix
+against the CFG's canonical ordering description remain part of the
 edge-argument and recovery integration slices.
 Success does not require every payload to fit inline. It requires every
 representative layout to use the same declarative schema and uniform arena-owned

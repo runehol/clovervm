@@ -4,9 +4,9 @@
 |---|---|
 | Document type | Design |
 | Status | Accepted |
-| Implementation | Partial: shared state tracking and the initial `CoreBytecodeTranslator` structural slice are implemented; broader Core opcode coverage and Semantic translation remain |
+| Implementation | Partial: canonical outer-frame state ordering and CFG attachment, shared state tracking, and the initial `CoreBytecodeTranslator` structural slice are implemented; frame-header value definitions, broader Core opcode coverage, and Semantic translation remain |
 | Scope | Shared symbolic bytecode state, target-driven bytecode-to-IR translation, block state transfer, multiple results, and Snapshot state queries |
-| Owning layers | The bytecode decoder owns decoded locations and structural blocks; the shared JIT state layer owns opcode-blind bytecode state tracking; each concrete translator owns traversal, IR construction, opcode semantics, and Snapshot layout |
+| Owning layers | The bytecode decoder owns decoded locations and structural blocks; the shared JIT state layer owns opcode-blind bytecode state tracking and its canonical ordering description; each concrete translator owns traversal, IR construction, opcode semantics, and Snapshot extent |
 | Validated against | `tests/test_jit_bytecode_state.cpp`, `tests/test_jit_core_bytecode_translator.cpp`, `tests/test_jit_cfg.cpp`, and `tests/test_jit_arena.cpp` |
 | Supersedes | The open decoded-bytecode input and `BuilderContext` shape in [JIT Compiler Bring-up Plan](jit-compiler-bring-up-plan.md) |
 
@@ -40,6 +40,8 @@ The responsibilities are divided as follows.
 
 - initializes function-entry and ordinary-block states;
 - maps decoded bytecode locations to state entries;
+- owns the canonical state ordering used by non-entry block parameters, edge
+  arguments, and Snapshots;
 - resolves instruction source locations to `ProgramValueRef`s;
 - applies zero, one, or several result references to destination locations;
 - copies and exports complete states for edges;
@@ -94,32 +96,65 @@ special state-forking subsystem.
 
 ### State coordinates and ordering
 
-`BytecodeState` represents semantic locations rather than one externally
-observable flat layout:
+`BytecodeState` is stored in one canonical flat order:
 
 ```text
-accumulator
-parameters, addressed by parameter/register index
-locals, addressed by local/register index
-temporaries, addressed by temporary/register index
+position 0: accumulator
+position 1: highest canonical stack slot
+position 2: next descending canonical stack slot
+...
 ```
 
-ABI parameter padding and frame-header fields are not state entries in the
-initial non-inlined tracker. `BytecodeStateTracker` privately maps the raw
-register indices in `BytecodeValueLocation` onto the corresponding semantic
-entry.
+For an outer function with parameters, the highest stack slot is the first
+parameter's `CodeObject::encode_reg(0)` slot. For a zero-parameter function, it
+is `FrameHeaderReturnPcOffset`, the highest frame-header slot. The outer
+`CodeObject` supplies the arity and frame dimensions needed to calculate this
+starting point.
 
-Block parameters and edge arguments require a deterministic positional
-contract. The tracker owns that block-transfer order and uses the same order
-for every block signature and edge argument vector. This order is internal to
-block transfer rather than a universal serialized bytecode-state format.
+The sequence then descends without gaps through:
 
-Snapshot construction queries the same `BytecodeState` by semantic location,
-but the Snapshot and recovery layer owns its own physical ordering and
-structural descriptors. In particular, it may encode the accumulator action
-separately and may later insert inlined frame-header structure. Consistency
-comes from querying one authoritative state, not from coupling block arguments
-and Snapshot operands to one flat position sequence.
+```text
+actual parameters
+ABI parameter padding
+frame-header slots
+locals
+temporaries
+```
+
+Padding and frame-header slots are real state positions. In the completed Core
+model every position contains a `ProgramValueRef`; raw FP and PC header values
+will use an appropriate non-tagged representation, while the return
+`CodeObject` remains tagged. The exact header-producing instructions are a
+separate Core design decision.
+
+`BytecodeStateOrder` describes this mapping. `BytecodeStateTracker` uses it to
+translate decoded `BytecodeValueLocation`s into canonical positions. The same
+description is attached to a bytecode-derived CFG so later verification,
+register allocation, and recovery can interpret positions without consulting
+the mutable translation environment.
+
+A decoded `BytecodeValueLocation` is either the accumulator or one signed frame
+offset. The decoder converts a bytecode register operand directly with
+`CodeObject::encode_reg()`; it does not classify the location as a parameter,
+local, or temporary and then require the tracker to reverse that classification.
+The sign is semantically meaningful because locals and temporaries normally lie
+below `fp`. When inlining is added, the translation environment will compose
+this frame-relative coordinate with the active inline-frame prefix; the decoded
+instruction itself remains relative to its own `CodeObject`.
+
+For every non-entry block, one position has one meaning across all relevant
+interfaces:
+
+```text
+state position i
+    = block parameter i
+    = incoming edge argument i
+    = Snapshot operand i, when the Snapshot includes it
+```
+
+The position also identifies the parameter's canonical home. This is a
+preferred spill and frame-synchronization location rather than a claim that the
+home is continuously current.
 
 ### Initial values
 
@@ -130,6 +165,9 @@ The function-entry state is initialized differently from an ordinary block:
 - temporaries receive a target-created `Uninitialized` reference;
 - the accumulator receives the same `Uninitialized` reference as an
   uninitialized temporary.
+- ABI padding positions receive an unavailable reference;
+- frame-header positions will receive definitions of their actual entry
+  contents.
 
 Every tracked location therefore contains a `ProgramValueRef`, including the
 initial accumulator and semantically uninitialized locals and temporaries.
@@ -143,8 +181,14 @@ reference through the same semantic-location interface as every other value;
 the recovery layer decides whether to encode that sentinel structurally or
 materialize it.
 
+The current structural Core translator provisionally initializes outer
+frame-header positions with the unavailable entry reference. This permits the
+canonical state-order refactor to land independently; Snapshots are not
+executable recovery records until the header value representations and entry
+definitions replace those placeholders.
+
 An ordinary non-entry block begins with eager target block parameters in
-the tracker's block-transfer order. The register allocator may merge their live
+the tracker's canonical order. The register allocator may merge their live
 ranges and eliminate unnecessary edge moves. The translator does not need a
 separate trivial-parameter construction policy.
 
@@ -234,6 +278,11 @@ machinery:
 
 Block parameters and edge arguments are the IR's native SSA merge mechanism.
 The state tracker does not construct a parallel phi representation.
+
+Every ordinary block receives an eager parameter for every position in the
+complete canonical state order, including padding and frame-header positions.
+Every incoming edge supplies the complete corresponding argument vector.
+Redundant parameters and moves are register-allocation concerns.
 
 In the initial design, one decoded bytecode block maps to one target IR block.
 Expanding one bytecode operation may append several target instructions, but it
@@ -338,11 +387,19 @@ appropriate updated state and resumes at its later bytecode position. The
 concrete translator owns that semantic choice; the state tracker only supplies
 the requested state.
 
-Snapshot construction does not consume an edge's argument vector. It queries
-the accumulator and logical register groups from `BytecodeState`, then encodes
-them in the recovery layout owned by one private translator helper. The initial
-structural implementation uses accumulator, parameter, local, and temporary
-group order, but that private order is not yet a recovery ABI.
+Snapshot construction reads a prefix of the same canonical `BytecodeState`
+sequence used by block parameters and edge arguments. Position zero is always
+present and denotes the accumulator; an unavailable accumulator is represented
+by its `Uninitialized` reference rather than by changing the ordering. A
+Snapshot may omit an unused trailing suffix, but it cannot omit an interior
+position. Its operand count therefore describes its extent without an arbitrary
+position map.
+
+This prefix rule includes ABI padding and frame-header positions whenever the
+Snapshot extends through them. Inlining extends the same descending stack-slot
+sequence across outgoing arguments, nested frame headers, locals, and
+temporaries. Outgoing argument and callee parameter slots that occupy the same
+canonical home appear only once.
 
 Snapshots support interpreter handoff for exceptions without requiring compiled
 exceptional edges. Initial JIT code may recover through a Snapshot and let the
@@ -387,13 +444,12 @@ Initial translation and CFG verification must establish:
   instruction has destinations;
 - all state writes are based on sources resolved before the write;
 - each non-entry target block has eager state parameters in the tracker's
-  block-transfer order;
+  complete canonical order;
 - each incoming edge has one compatible argument for every corresponding block
   parameter;
-- every block signature and edge argument vector uses the tracker's
-  block-transfer order;
-- Snapshot construction queries state by semantic location rather than assuming
-  the block-transfer order;
+- every block signature, edge argument vector, and Snapshot prefix uses the
+  tracker's canonical order;
+- every Snapshot is a prefix of the complete state order;
 - bytecode definite-initialization invariants prevent normal operations from
   consuming the initial accumulator or temporary sentinel;
 - every completed target block has a valid terminator;
@@ -406,7 +462,10 @@ Initial translation and CFG verification must establish:
 Focused tests should cover:
 
 - entry initialization of parameters, sentinel-filled locals and temporaries,
-  and the accumulator sharing the temporary sentinel;
+  the accumulator sharing the temporary sentinel, and all intervening physical
+  state positions;
+- canonical position calculation for parameterized and zero-parameter
+  functions;
 - `Ldar`, `Star`, and `Mov` preserving `ProgramValueRef` identity;
 - one-result, zero-result, and multiple-result state updates;
 - simultaneous read-modify-write updates;
@@ -422,7 +481,7 @@ The following are deliberately outside the initial state-tracking design:
 - type, shape, range, truthiness, or effect inference;
 - a generic shared translation driver or callback protocol;
 - pruned block-parameter construction;
-- inlined logical-frame composition and frame-header descriptors;
+- inlined logical-frame composition;
 - compiled exceptional edges and handler-entry state;
 - target-internal CFG blocks introduced by instruction expansion;
 - general edge-specific source or destination location lists when both edges

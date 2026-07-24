@@ -72,6 +72,13 @@ namespace cl::jit
         return graph_->blocks_.size();
     }
 
+    void GraphBuilder::set_bytecode_state_order(const BytecodeStateOrder &order)
+    {
+        assert_can_build();
+        assert(!graph_->bytecode_state_order_.has_value());
+        graph_->bytecode_state_order_ = order;
+    }
+
     void GraphBuilder::append_instruction(Block *block,
                                           Instruction *instruction)
     {

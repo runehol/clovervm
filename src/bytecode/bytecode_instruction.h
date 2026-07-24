@@ -32,24 +32,32 @@ namespace cl
     enum class BytecodeValueLocationKind : uint8_t
     {
         Accumulator,
-        Parameter,
-        Local,
-        Temporary,
+        StackSlot,
     };
 
     struct BytecodeValueLocation
     {
         BytecodeValueLocationKind kind;
-        uint32_t register_index;
+        int32_t frame_offset;
 
         static BytecodeValueLocation accumulator()
         {
             return {BytecodeValueLocationKind::Accumulator, 0};
         }
 
+        static BytecodeValueLocation stack_slot(int32_t frame_offset)
+        {
+            return {BytecodeValueLocationKind::StackSlot, frame_offset};
+        }
+
         bool is_accumulator() const
         {
             return kind == BytecodeValueLocationKind::Accumulator;
+        }
+
+        bool is_stack_slot() const
+        {
+            return kind == BytecodeValueLocationKind::StackSlot;
         }
     };
 

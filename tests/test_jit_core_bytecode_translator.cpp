@@ -61,6 +61,12 @@ namespace cl::jit
             }
             return matches;
         }
+
+        size_t bytecode_state_size(const ControlFlowGraph &graph)
+        {
+            EXPECT_TRUE(graph.bytecode_state_order().has_value());
+            return graph.bytecode_state_order()->size();
+        }
     }  // namespace
 
     TEST(JitCoreBytecodeTranslator,
@@ -130,14 +136,15 @@ namespace cl::jit
 
         EXPECT_EQ(fallthrough, branch->true_edge()->target());
         EXPECT_EQ(jump, branch->false_edge()->target());
-        ASSERT_EQ(1u, branch->true_edge()->arguments().size());
-        ASSERT_EQ(1u, branch->false_edge()->arguments().size());
+        size_t state_size = bytecode_state_size(*graph);
+        ASSERT_EQ(state_size, branch->true_edge()->arguments().size());
+        ASSERT_EQ(state_size, branch->false_edge()->arguments().size());
         EXPECT_EQ(branch->condition().instruction(),
                   branch->true_edge()->arguments()[0].instruction());
         EXPECT_EQ(branch->condition().instruction(),
                   branch->false_edge()->arguments()[0].instruction());
-        EXPECT_EQ(1u, fallthrough->parameters().size());
-        EXPECT_EQ(1u, jump->parameters().size());
+        EXPECT_EQ(state_size, fallthrough->parameters().size());
+        EXPECT_EQ(state_size, jump->parameters().size());
     }
 
     TEST(JitCoreBytecodeTranslator,
@@ -185,15 +192,16 @@ namespace cl::jit
         UnconditionalBranchInstruction *entry_branch =
             entry->instructions().back()->as<UnconditionalBranchInstruction>();
         EXPECT_EQ(loop_block, entry_branch->edge()->target());
-        ASSERT_EQ(1u, entry_branch->edge()->arguments().size());
-        ASSERT_EQ(1u, loop_block->parameters().size());
+        size_t state_size = bytecode_state_size(*graph);
+        ASSERT_EQ(state_size, entry_branch->edge()->arguments().size());
+        ASSERT_EQ(state_size, loop_block->parameters().size());
 
         ConditionalBranchInstruction *loop_branch =
             loop_block->instructions()
                 .back()
                 ->as<ConditionalBranchInstruction>();
         EXPECT_EQ(loop_block, loop_branch->true_edge()->target());
-        ASSERT_EQ(1u, loop_branch->true_edge()->arguments().size());
+        ASSERT_EQ(state_size, loop_branch->true_edge()->arguments().size());
         ASSERT_EQ(2u, loop_block->predecessor_edges().size());
         EXPECT_EQ(entry_branch->edge(), loop_block->predecessor_edges()[0]);
         EXPECT_EQ(loop_branch->true_edge(), loop_block->predecessor_edges()[1]);
@@ -222,7 +230,8 @@ namespace cl::jit
         SnapshotInstruction *snapshot =
             snapshots.front()->as<SnapshotInstruction>();
         EXPECT_EQ(2u, snapshot->resume_pc());
-        ASSERT_EQ(1u, snapshot->captured_values().size());
+        ASSERT_EQ(bytecode_state_size(*graph),
+                  snapshot->captured_values().size());
         std::vector<Instruction *> constants =
             instructions_of_kind(entry, InstructionKind::Const);
         ASSERT_EQ(1u, constants.size());
@@ -258,7 +267,7 @@ namespace cl::jit
         ASSERT_EQ(1u, snapshots.size());
         SnapshotValueRefRange captured =
             snapshots.front()->as<SnapshotInstruction>()->captured_values();
-        ASSERT_EQ(2u, captured.size());
+        ASSERT_EQ(bytecode_state_size(*graph), captured.size());
         EXPECT_EQ(parameter, captured[0].instruction());
         EXPECT_EQ(parameter, captured[1].instruction());
     }
@@ -289,8 +298,9 @@ namespace cl::jit
         std::vector<Instruction *> constants =
             instructions_of_kind(entry, InstructionKind::Const);
         ASSERT_EQ(1u, constants.size());
-        ASSERT_EQ(1u, branch->true_edge()->arguments().size());
-        ASSERT_EQ(1u, branch->false_edge()->arguments().size());
+        size_t state_size = bytecode_state_size(*graph);
+        ASSERT_EQ(state_size, branch->true_edge()->arguments().size());
+        ASSERT_EQ(state_size, branch->false_edge()->arguments().size());
         EXPECT_EQ(constants.front(),
                   branch->true_edge()->arguments()[0].instruction());
         EXPECT_EQ(constants.front(),

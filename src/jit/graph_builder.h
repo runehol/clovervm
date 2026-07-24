@@ -42,6 +42,7 @@ namespace cl::jit
 
         Block *block_at(size_t index) const;
         size_t block_count() const;
+        void set_bytecode_state_order(const BytecodeStateOrder &order);
 
         template <typename T> T retain_and_pin_value(T value)
         {

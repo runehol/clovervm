@@ -29,27 +29,32 @@ namespace cl::jit
             CodeObject *code_object = nullptr;
         };
 
-        BytecodeValueLocation parameter(uint32_t index)
+        BytecodeValueLocation location(const CodeObject &code_object,
+                                       uint32_t register_index)
         {
-            return {BytecodeValueLocationKind::Parameter, index};
+            return BytecodeValueLocation::stack_slot(
+                code_object.encode_reg(register_index));
+        }
+
+        BytecodeValueLocation parameter(const CodeObject &code_object,
+                                        uint32_t index)
+        {
+            return location(code_object, index);
         }
 
         BytecodeValueLocation local(const CodeObject &code_object,
                                     uint32_t index)
         {
-            return {BytecodeValueLocationKind::Local,
-                    code_object.get_padded_n_parameters() + FrameHeaderSize +
-                        index};
+            return location(code_object, code_object.get_padded_n_parameters() +
+                                             FrameHeaderSize + index);
         }
 
         BytecodeValueLocation temporary(const CodeObject &code_object,
                                         uint32_t index)
         {
-            return {
-                BytecodeValueLocationKind::Temporary,
-                code_object.get_padded_n_parameters() + FrameHeaderSize +
-                    code_object.n_locals + index,
-            };
+            return location(code_object, code_object.get_padded_n_parameters() +
+                                             FrameHeaderSize +
+                                             code_object.n_locals + index);
         }
 
         BytecodeState<TestRef>
@@ -69,36 +74,61 @@ namespace cl::jit
 
         EXPECT_EQ(
             99u, tracker.value_at(state, BytecodeValueLocation::accumulator()));
-        EXPECT_EQ(10u, tracker.value_at(state, parameter(0)));
-        EXPECT_EQ(12u, tracker.value_at(state, parameter(2)));
+        EXPECT_EQ(10u,
+                  tracker.value_at(state, parameter(*fixture.code_object, 0)));
+        EXPECT_EQ(12u,
+                  tracker.value_at(state, parameter(*fixture.code_object, 2)));
         EXPECT_EQ(90u, tracker.value_at(state, local(*fixture.code_object, 0)));
         EXPECT_EQ(90u, tracker.value_at(state, local(*fixture.code_object, 1)));
         EXPECT_EQ(99u,
                   tracker.value_at(state, temporary(*fixture.code_object, 0)));
         EXPECT_EQ(99u,
                   tracker.value_at(state, temporary(*fixture.code_object, 2)));
+
+        std::span<const TestRef> values = tracker.values(state);
+        EXPECT_EQ(99u, values[4]);
+        EXPECT_EQ(99u, values[5]);
+        EXPECT_EQ(99u, values[8]);
     }
 
-    TEST(JitBytecodeState, UsesRawDecodedRegisterCoordinates)
+    TEST(JitBytecodeState, UsesCanonicalDescendingStackOrder)
     {
         StateFixture fixture;
         BytecodeStateTracker<TestRef> tracker(*fixture.code_object);
+        const BytecodeStateOrder &order = tracker.order();
 
-        std::span<const BytecodeValueLocation> locations =
-            tracker.block_transfer_locations();
-        ASSERT_EQ(9u, locations.size());
-        EXPECT_EQ(BytecodeValueLocationKind::Accumulator, locations[0].kind);
-        EXPECT_EQ(0u, locations[0].register_index);
-        EXPECT_EQ(BytecodeValueLocationKind::Parameter, locations[3].kind);
-        EXPECT_EQ(2u, locations[3].register_index);
-        EXPECT_EQ(BytecodeValueLocationKind::Local, locations[4].kind);
-        EXPECT_EQ(fixture.code_object->get_padded_n_parameters() +
-                      FrameHeaderSize,
-                  locations[4].register_index);
-        EXPECT_EQ(BytecodeValueLocationKind::Temporary, locations[6].kind);
-        EXPECT_EQ(fixture.code_object->get_padded_n_parameters() +
-                      FrameHeaderSize + fixture.code_object->n_locals,
-                  locations[6].register_index);
+        EXPECT_EQ(14u, order.size());
+        EXPECT_EQ(fixture.code_object->encode_reg(0),
+                  order.highest_frame_offset());
+        EXPECT_EQ(-5, order.lowest_frame_offset());
+        EXPECT_EQ(7, order.frame_offset_at(1));
+        EXPECT_EQ(6, order.frame_offset_at(2));
+        EXPECT_EQ(-5, order.frame_offset_at(13));
+
+        EXPECT_EQ(0u, order.position_for(BytecodeValueLocation::accumulator()));
+        EXPECT_EQ(1u, order.position_for(parameter(*fixture.code_object, 0)));
+        EXPECT_EQ(3u, order.position_for(parameter(*fixture.code_object, 2)));
+        EXPECT_EQ(4u, order.position_for_frame_offset(4));
+        EXPECT_EQ(5u,
+                  order.position_for_frame_offset(FrameHeaderReturnPcOffset));
+        EXPECT_EQ(8u,
+                  order.position_for_frame_offset(FrameHeaderPreviousFpOffset));
+        EXPECT_EQ(9u, order.position_for(local(*fixture.code_object, 0)));
+        EXPECT_EQ(11u, order.position_for(temporary(*fixture.code_object, 0)));
+    }
+
+    TEST(JitBytecodeState, ZeroParameterOrderStartsAtHighestFrameHeaderSlot)
+    {
+        StateFixture fixture;
+        fixture.code_object->function_signature.n_parameters = 0;
+        BytecodeStateTracker<TestRef> tracker(*fixture.code_object);
+        const BytecodeStateOrder &order = tracker.order();
+
+        EXPECT_EQ(FrameHeaderReturnPcOffset, order.highest_frame_offset());
+        EXPECT_EQ(10u, order.size());
+        EXPECT_EQ(FrameHeaderReturnPcOffset, order.frame_offset_at(1));
+        EXPECT_EQ(FrameHeaderPreviousFpOffset, order.frame_offset_at(4));
+        EXPECT_EQ(-1, order.frame_offset_at(5));
     }
 
     TEST(JitBytecodeState, ReadsSourcesBeforeApplyingMultipleResults)
@@ -108,21 +138,22 @@ namespace cl::jit
         BytecodeState<TestRef> state = make_entry_state(tracker);
 
         std::array<BytecodeValueLocation, 3> sources = {
-            BytecodeValueLocation::accumulator(), parameter(1),
-            local(*fixture.code_object, 0)};
+            BytecodeValueLocation::accumulator(),
+            parameter(*fixture.code_object, 1), local(*fixture.code_object, 0)};
         std::vector<TestRef> inputs = tracker.read(
             state, std::span<const BytecodeValueLocation>(sources));
         EXPECT_EQ((std::vector<TestRef>{99, 11, 90}), inputs);
 
         std::array<BytecodeValueLocation, 3> destinations = {
-            parameter(1), local(*fixture.code_object, 0),
+            parameter(*fixture.code_object, 1), local(*fixture.code_object, 0),
             BytecodeValueLocation::accumulator()};
         std::array<TestRef, 3> results = {101, 102, 103};
         tracker.write(state,
                       std::span<const BytecodeValueLocation>(destinations),
                       std::span<const TestRef>(results));
 
-        EXPECT_EQ(101u, tracker.value_at(state, parameter(1)));
+        EXPECT_EQ(101u,
+                  tracker.value_at(state, parameter(*fixture.code_object, 1)));
         EXPECT_EQ(102u,
                   tracker.value_at(state, local(*fixture.code_object, 0)));
         EXPECT_EQ(103u, tracker.value_at(state,
@@ -135,7 +166,8 @@ namespace cl::jit
         BytecodeStateTracker<TestRef> tracker(*fixture.code_object);
         BytecodeState<TestRef> state = make_entry_state(tracker);
 
-        std::array<BytecodeValueLocation, 1> source = {parameter(0)};
+        std::array<BytecodeValueLocation, 1> source = {
+            parameter(*fixture.code_object, 0)};
         std::vector<TestRef> result =
             tracker.read(state, std::span<const BytecodeValueLocation>(source));
         std::array<BytecodeValueLocation, 1> destination = {
@@ -171,20 +203,38 @@ namespace cl::jit
     {
         StateFixture fixture;
         BytecodeStateTracker<TestRef> tracker(*fixture.code_object);
-        std::array<TestRef, 9> parameters = {1, 2, 3, 4, 5, 6, 7, 8, 9};
+        std::array<TestRef, 14> parameters = {1, 2, 3,  4,  5,  6,  7,
+                                              8, 9, 10, 11, 12, 13, 14};
 
         BytecodeState<TestRef> state = tracker.make_state_from_block_parameters(
             std::span<const TestRef>(parameters));
-        std::vector<TestRef> arguments = tracker.block_arguments(state);
+        std::span<const TestRef> arguments = tracker.block_arguments(state);
 
         EXPECT_EQ((std::vector<TestRef>(parameters.begin(), parameters.end())),
-                  arguments);
+                  (std::vector<TestRef>(arguments.begin(), arguments.end())));
         EXPECT_EQ(
             1u, tracker.value_at(state, BytecodeValueLocation::accumulator()));
-        EXPECT_EQ(4u, tracker.value_at(state, parameter(2)));
-        EXPECT_EQ(6u, tracker.value_at(state, local(*fixture.code_object, 1)));
-        EXPECT_EQ(9u,
+        EXPECT_EQ(4u,
+                  tracker.value_at(state, parameter(*fixture.code_object, 2)));
+        EXPECT_EQ(11u, tracker.value_at(state, local(*fixture.code_object, 1)));
+        EXPECT_EQ(14u,
                   tracker.value_at(state, temporary(*fixture.code_object, 2)));
+    }
+
+    TEST(JitBytecodeState, ExportsOnlyCanonicalPrefixes)
+    {
+        StateFixture fixture;
+        BytecodeStateTracker<TestRef> tracker(*fixture.code_object);
+        std::array<TestRef, 14> parameters = {1, 2, 3,  4,  5,  6,  7,
+                                              8, 9, 10, 11, 12, 13, 14};
+        BytecodeState<TestRef> state = tracker.make_state_from_block_parameters(
+            std::span<const TestRef>(parameters));
+
+        std::span<const TestRef> prefix = tracker.prefix(state, 8);
+        EXPECT_EQ((std::vector<TestRef>{1, 2, 3, 4, 5, 6, 7, 8}),
+                  (std::vector<TestRef>(prefix.begin(), prefix.end())));
+
+        EXPECT_DEATH((void)tracker.prefix(state, 15), "prefix is too large");
     }
 
     TEST(JitBytecodeState, RejectsInvalidLocationsAndArities)
@@ -204,9 +254,10 @@ namespace cl::jit
                 StateFixture fixture;
                 BytecodeStateTracker<TestRef> tracker(*fixture.code_object);
                 BytecodeState<TestRef> state = make_entry_state(tracker);
-                (void)tracker.value_at(state, local(*fixture.code_object, 2));
+                (void)tracker.value_at(state,
+                                       BytecodeValueLocation::stack_slot(-6));
             }()),
-            "local location is out of range");
+            "frame offset is outside the state order");
 
         EXPECT_DEATH(
             ([] {
@@ -214,13 +265,23 @@ namespace cl::jit
                 BytecodeStateTracker<TestRef> tracker(*fixture.code_object);
                 BytecodeState<TestRef> state = make_entry_state(tracker);
                 std::array<BytecodeValueLocation, 1> destinations = {
-                    parameter(0)};
+                    parameter(*fixture.code_object, 0)};
                 std::span<const TestRef> no_results;
                 tracker.write(
                     state, std::span<const BytecodeValueLocation>(destinations),
                     no_results);
             }()),
             "mismatched destination and result counts");
+
+        EXPECT_DEATH(
+            ([] {
+                StateFixture fixture;
+                BytecodeStateTracker<TestRef> tracker(*fixture.code_object);
+                std::array<TestRef, 9> parameters = {1, 2, 3, 4, 5, 6, 7, 8, 9};
+                (void)tracker.make_state_from_block_parameters(
+                    std::span<const TestRef>(parameters));
+            }()),
+            "block state has the wrong parameter count");
     }
 
 }  // namespace cl::jit

@@ -88,21 +88,8 @@ namespace cl
     static BytecodeValueLocation
     register_location(const CodeObject &code_object, uint32_t register_index)
     {
-        uint32_t n_parameters = code_object.function_signature.n_parameters;
-        if(register_index < n_parameters)
-        {
-            return {BytecodeValueLocationKind::Parameter, register_index};
-        }
-
-        uint32_t first_local =
-            code_object.get_padded_n_parameters() + FrameHeaderSize;
-        uint32_t first_temporary = first_local + code_object.n_locals;
-        if(register_index < first_temporary)
-        {
-            assert(register_index >= first_local);
-            return {BytecodeValueLocationKind::Local, register_index};
-        }
-        return {BytecodeValueLocationKind::Temporary, register_index};
+        return BytecodeValueLocation::stack_slot(
+            code_object.encode_reg(register_index));
     }
 
     class BytecodeInstruction::EffectsBuilder

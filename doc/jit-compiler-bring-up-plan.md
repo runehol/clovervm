@@ -425,7 +425,7 @@ Scope:
 
 - lower the operation to explicit Core checks and terminal action;
 - force both success and failure paths;
-- verify Snapshot availability, replay PC, accumulator action, and recovery;
+- verify Snapshot availability, replay PC, accumulator position, and recovery;
 - keep optimization disabled except for trivial local cleanup.
 
 Shape guards, validity checks, attribute ICs, and redundant-check elimination

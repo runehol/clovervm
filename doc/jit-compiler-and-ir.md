@@ -251,8 +251,9 @@ Such a call is followed by an explicit `CheckNotImplemented` Core instruction.
 The check consumes the call result and forwards the same tagged value on the
 successful path. If the result is the `NotImplemented` singleton, compiled code
 exits through its own Snapshot to the paired continuation bytecode. That
-Snapshot's `resume_pc` is the check's continuation pc, and its accumulator action
-records the call result required by the interpreter continuation. The check
+Snapshot's `resume_pc` is the check's continuation pc, and Snapshot position
+zero records the call result required in the accumulator by the interpreter
+continuation. The check
 therefore does not rely on the preceding call's installed return pc or on the
 call having left every interpreter-visible value in canonical storage. This is
 intentionally redundant with the initial fully canonical call-boundary policy:
@@ -637,20 +638,17 @@ BuilderContext:
 Updating this mapping changes the logical value of an accumulator or bytecode
 register without writing its canonical home.
 
-Bytecode block transfer and recovery state query the same authoritative
-accumulator/register mapping but do not share one serialized positional format.
-The opcode-blind state and block-transfer contract is defined by
-[JIT Bytecode State Tracking and Translation](jit-bytecode-state-tracking.md).
-Its tracker owns the deterministic order used by block parameters and edge
-arguments.
-
-FrameState and Snapshot construction instead own the logical recovery layout.
-For inlined frames, position zero is the function-arity-derived offset from
-`fp`; increasing position means increasing logical register index and descending
-physical stack address. Recovery values appear in this order:
+Bytecode block transfer and recovery use the same canonical state order defined
+by [JIT Bytecode State Tracking and
+Translation](jit-bytecode-state-tracking.md). Position zero is the global
+accumulator. Position one is the outer function's first parameter slot, or its
+highest frame-header slot when it has no parameters. Later positions proceed
+through consecutive descending physical stack addresses:
 
 ```text
+accumulator
 parameters
+parameter padding
 frame-header holes
 locals
 temporaries
@@ -663,36 +661,39 @@ next frame's locals and temporaries
 Outgoing arguments and the next inlined frame's parameters are the same slots.
 They occur once. Each frame header contributes reserved positions for
 interpreted PC, compiled PC, FP, and code object wherever that inlined frame
-begins. These positions are structural and cannot mean a dead or unknown
-`Value`. They are not represented by nullable program-value references; their
-entry encoding is deferred to the same recovery mechanism that will represent
-an ordinary destination whose desired value is already in its canonical slot.
+begins. Every position, including padding and frame-header positions, contains
+a `ProgramValueRef`. The two PCs and FP require a raw frame-payload
+representation; the return code object is tagged. Pure Core definitions can
+produce these contents without eagerly writing their canonical homes. Normal
+recovery-only sinking may then move those definitions into side exits before
+frame synchronization writes the complete prefix.
 
-The header fields are reconstructed from frame metadata rather than passed as
-SSA values. In particular, the two PCs and FP are not `Value`-encoded fields;
-recovery writes their native representations. This permits compiled execution
-to omit inlined frame-header stores and sink them into side exits.
+The canonical ordering description is attached to the CFG. For each non-entry
+block, block parameter `i`, incoming edge argument `i`, and Snapshot operand
+`i` all denote state position `i`. The same position maps a block parameter to
+its canonical home for register allocation. A block interface has the complete
+state extent; a Snapshot may contain only a prefix.
 
 Core IR captures a recoverable state with a zero-code `Snapshot` instruction:
 
 ```text
 %snapshot: Snapshot = Snapshot(
     resume = Add@17,
-    accumulator = %acc,
-    logical_slots = [%arg0, %arg1, <header>, <header>, <header>, <header>,
-                     %local0, %temporary0, ...])
+    captured_values = [%acc, %arg0, %arg1, %padding,
+                       %return_pc, %return_code_object,
+                       %compiled_return_pc, %previous_fp,
+                       %local0, %temporary0, ...])
 ```
 
-The four header entries above are structural recovery positions, not missing or
-nullable program values. Generic use and liveness traversal skips them;
-verification matches them against the logical frame boundaries.
+Snapshot position zero always exists and denotes the accumulator. When the
+accumulator is unavailable, the position contains its `Uninitialized`
+definition rather than disappearing. Interior unavailable and padding
+positions likewise remain explicit. Only an unused trailing suffix may be
+omitted, so operand count alone determines the captured prefix.
 
-A Snapshot records an accumulator action rather than requiring an accumulator
-value unconditionally. Ordinary guards capture the live accumulator. At a call
-boundary the input accumulator is dead because the call consumes it and either
-produces a replacement result or transfers through an exception/exit
-continuation; that Snapshot carries no accumulator operand, point use, or
-register-allocation requirement for the dead value.
+Generic use and liveness traversal visits every captured position, including
+frame-header values. Verification uses the CFG ordering description to check
+the expected representation at each position.
 
 `Snapshot` has `ResultClass::Snapshot`. Its typed `SnapshotRef` receives no
 machine location and carries no Python type evidence. A speculative check or
@@ -915,11 +916,12 @@ justify revisiting this rule, but none is currently required.
 
 A block stores parameter instructions separately from its ordinary instruction
 sequence. Both are ordinary reclaimable vectors of arena-owned `Instruction *`
-pointers. Parameter-vector position is the logical register index; frame-header
-positions use the future non-value recovery entry rather than parameter
-instructions or null pointers. Value parameters conceptually precede every body
-instruction but are not schedulable members of the body vector. Blocks are
-relatively few and are destroyed
+pointers. For a bytecode-derived non-entry block, parameter-vector position is
+the canonical state position described by the CFG. Frame-header positions have
+ordinary parameter instructions with their required representations rather
+than non-value entries or null pointers. Value parameters conceptually precede
+every body instruction but are not schedulable members of the body vector.
+Blocks are relatively few and are destroyed
 normally so vector storage can be reclaimed during repeated graph rebuilding,
 while the much more numerous fixed-size instructions remain trivially
 destructible arena records.
@@ -1650,10 +1652,7 @@ Recovery construction consumes:
 logical Snapshot and FrameState:
     resume state
     active frame chain
-    (frame instance, canonical slot) -> ProgramValueRef
-                                      | structural recovery position
-    innermost accumulator            -> ProgramValueRef
-                                      | Dead
+    canonical state position -> ProgramValueRef
 
 machine location state at the exit:
     ProgramValueRef -> register | spill | canonical slot
@@ -1667,8 +1666,8 @@ sinking attachment:
 ```
 
 The resulting recovery work makes logical and synchronized state agree. It
-includes dirty canonical-slot publications, the accumulator action,
-frame-header reconstruction, and any sunk computation, boxing, allocation, or
+includes dirty canonical-slot publications, accumulator publication,
+frame-header synchronization, and any sunk computation, boxing, allocation, or
 reification supported by recovery. Active inline frames already have canonical
 backing regions and do not require allocation or layout reconstruction.
 

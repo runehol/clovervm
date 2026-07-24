@@ -2,7 +2,6 @@
 
 #include "runtime/fatal.h"
 
-#include <array>
 #include <cassert>
 #include <cstddef>
 #include <cstdint>
@@ -18,6 +17,7 @@ namespace cl::jit
         assert(
             bytecode_blocks[decoder_.entry_block_id()].predecessors().empty());
 
+        builder_.set_bytecode_state_order(state_tracker_.order());
         builder_.emplace_n_blocks(bytecode_blocks.size());
         for(const BytecodeBlock &bytecode_block: bytecode_blocks)
         {
@@ -275,28 +275,8 @@ namespace cl::jit
     std::vector<ProgramValueRef>
     CoreBytecodeTranslator::capture_snapshot_values(const State &state) const
     {
-        std::vector<ProgramValueRef> captured;
-        captured.reserve(state_tracker_.block_parameter_count());
-        constexpr std::array Kinds = {
-            BytecodeValueLocationKind::Accumulator,
-            BytecodeValueLocationKind::Parameter,
-            BytecodeValueLocationKind::Local,
-            BytecodeValueLocationKind::Temporary,
-        };
-        for(BytecodeValueLocationKind kind: Kinds)
-        {
-            for(BytecodeValueLocation location:
-                state_tracker_.block_transfer_locations())
-            {
-                if(location.kind == kind)
-                {
-                    captured.push_back(
-                        state_tracker_.value_at(state, location));
-                }
-            }
-        }
-        assert(captured.size() == state_tracker_.block_parameter_count());
-        return captured;
+        std::span<const ProgramValueRef> values = state_tracker_.values(state);
+        return {values.begin(), values.end()};
     }
 
     ProgramValueRef CoreBytecodeTranslator::emit_constant(Block *block,
@@ -317,11 +297,10 @@ namespace cl::jit
                                                        BytecodeBlockId target,
                                                        const State &state)
     {
-        std::vector<ProgramValueRef> arguments =
+        std::span<const ProgramValueRef> arguments =
             state_tracker_.block_arguments(state);
-        return builder_.make_block_edge(
-            source, builder_.block_at(target),
-            std::span<const ProgramValueRef>(arguments));
+        return builder_.make_block_edge(source, builder_.block_at(target),
+                                        arguments);
     }
 
 }  // namespace cl::jit

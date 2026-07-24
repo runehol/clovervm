@@ -1,11 +1,13 @@
 #ifndef CL_JIT_CONTROL_FLOW_GRAPH_H
 #define CL_JIT_CONTROL_FLOW_GRAPH_H
 
+#include "jit/bytecode_state.h"
 #include "jit/instruction.h"
 #include "jit/serial.h"
 
 #include <cstdint>
 #include <memory>
+#include <optional>
 #include <span>
 #include <vector>
 
@@ -130,6 +132,10 @@ namespace cl::jit
         const std::vector<Block *> &blocks() const { return blocks_; }
         bool is_published() const { return published_; }
         uint64_t mutation_generation() const { return mutation_generation_; }
+        const std::optional<BytecodeStateOrder> &bytecode_state_order() const
+        {
+            return bytecode_state_order_;
+        }
 
         bool owns_block(const Block *block) const;
         GraphQueries prepare_queries(GraphQuery queries) const;
@@ -143,6 +149,7 @@ namespace cl::jit
         Serial serial_;
         Block *entry_block_ = nullptr;
         std::vector<Block *> blocks_;
+        std::optional<BytecodeStateOrder> bytecode_state_order_;
         bool published_ = false;
         uint64_t mutation_generation_ = 0;
         mutable std::unique_ptr<UseLists> use_lists_;

@@ -152,8 +152,11 @@ TEST(BytecodeInstruction, compact_register_forms_are_normalized)
     EXPECT_EQ(BytecodeValueLocationKind::Accumulator,
               instruction.sources()[0].kind);
     ASSERT_EQ(1, instruction.destinations().size());
-    EXPECT_EQ(BytecodeValueLocationKind::Temporary,
+    EXPECT_EQ(BytecodeValueLocationKind::StackSlot,
               instruction.destinations()[0].kind);
+    EXPECT_EQ(code_object->encode_reg(instruction.operands()[0].value),
+              instruction.destinations()[0].frame_offset);
+    EXPECT_LT(instruction.destinations()[0].frame_offset, 0);
 }
 
 TEST(BytecodeInstruction, compound_operator_exposes_continuation)
@@ -211,7 +214,7 @@ TEST(BytecodeInstruction, two_cache_instruction_preserves_both_typed_operands)
     EXPECT_TRUE(has_attribute_read_cache);
     EXPECT_TRUE(has_function_call_cache);
     ASSERT_EQ(1, instruction.sources().size());
-    EXPECT_EQ(BytecodeValueLocationKind::Temporary,
+    EXPECT_EQ(BytecodeValueLocationKind::StackSlot,
               instruction.sources()[0].kind);
     ASSERT_EQ(1, instruction.destinations().size());
     EXPECT_EQ(BytecodeValueLocationKind::Accumulator,
@@ -251,16 +254,16 @@ TEST(BytecodeInstruction, range_loop_effects_are_uniform_and_rmw)
     EXPECT_EQ(21, *prep.jump_target_pc_offset());
     ASSERT_EQ(2, prep.sources().size());
     ASSERT_EQ(2, prep.destinations().size());
-    EXPECT_EQ(prep.sources()[0].register_index,
-              prep.destinations()[0].register_index);
-    EXPECT_EQ(prep.sources()[1].register_index,
-              prep.destinations()[1].register_index);
+    EXPECT_EQ(prep.sources()[0].frame_offset,
+              prep.destinations()[0].frame_offset);
+    EXPECT_EQ(prep.sources()[1].frame_offset,
+              prep.destinations()[1].frame_offset);
 
     BytecodeInstruction iter =
         find_instruction(*code_object, Bytecode::ForIterRange1);
     ASSERT_EQ(2, iter.sources().size());
     ASSERT_EQ(2, iter.destinations().size());
-    EXPECT_EQ(BytecodeValueLocationKind::Temporary,
+    EXPECT_EQ(BytecodeValueLocationKind::StackSlot,
               iter.destinations()[0].kind);
     EXPECT_EQ(BytecodeValueLocationKind::Accumulator,
               iter.destinations()[1].kind);
