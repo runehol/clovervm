@@ -277,10 +277,10 @@ Three coherent slices can proceed from the landed foundation:
 
 1. **Register allocator foundation.** Implement the ephemeral positions,
    default and sparse constraint occurrences, liveness, live ranges, bundles,
-   and initial register assignment described in
-   [JIT Register Allocation](jit-register-allocation.md). Integrate its first
-   `LocationAssignments` with Milestone 2 one-block execution before adding
-   CFG-edge moves or spills.
+   and initial register assignment tracked by the
+   [JIT Register Allocation progress plan](jit-register-allocation-progress.md).
+   Integrate its first `LocationAssignments` with Milestone 2 one-block
+   execution before adding CFG-edge moves or canonical-home spilling.
 2. **Bytecode-to-Core construction.** Begin Milestone 3 as a structural path
    that produces and verifies Core plus Snapshots without executing it. This
    can advance independently of register allocation and establishes the actual
@@ -561,8 +561,6 @@ compiler.
 - backend-preparation choices not yet represented by the implemented
   `AllocationConstraints`, particularly legalized constant decisions and
   selected lowering identities;
-- implementation staging for the accepted SSA bundle allocator and its first
-  `LocationAssignments`;
 - decoded-bytecode input and `BuilderContext` shape for the first
   bytecode-to-Core translator;
 - minimal generated-call ABI for Milestone 4 normal compiled returns, including
@@ -582,6 +580,7 @@ compiler.
 
 - [JIT Compiler and IR](jit-compiler-and-ir.md)
 - [JIT Register Allocation](jit-register-allocation.md)
+- [JIT Register Allocation Implementation Progress](jit-register-allocation-progress.md)
 - [JIT Machine-Code Emission](jit-machine-code-emission.md)
 - [JIT Code Cache and Publication](jit-code-cache.md)
 - [Semantic IR and Specialization](jit-semantic-ir-and-specialization.md)

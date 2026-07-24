@@ -18,6 +18,9 @@ backends describe physical requirements through `AllocationConstraints`; the
 generic allocator computes liveness, splits ranges, assigns locations, and
 produces `LocationAssignments`.
 
+Finite implementation work is tracked separately in
+[JIT Register Allocation Implementation Progress](jit-register-allocation-progress.md).
+
 The allocator is target-independent. It may know about register classes,
 physical registers, stack slots, clobber masks, operand access timing, and
 operand constraints, but it does not know the semantics of AArch64, x86-64, or
@@ -911,36 +914,24 @@ Heuristic state such as priority and spill weight should be compact and
 observable in allocator dumps. Correctness must not depend on pointer order,
 hash-table iteration order, or unstable workqueue ties.
 
-## Implementation Staging
+## Persistent Bring-up Constraints
 
-The implemented substrate already provides target register classes, default and
-sparse instruction constraints, fixed and same-as-input requirements,
-temporaries, clobber masks, and initial AArch64 platform-ABI constraints. The
-hardcoded `x0` emitter path is test scaffolding, not a second allocation
-strategy.
+The first allocator has no ordinary compiler spill area. It may use registers
+or a derived canonical home when one is proven legal; otherwise excessive
+pressure aborts compilation and execution remains interpreted.
 
-The first allocator slice should implement the accepted algorithm directly,
-initially exercising it on the existing one-block graphs. It should then grow
-to support:
+The hardcoded `x0` emitter path is test scaffolding, not a second allocation
+strategy. Bring-up work must not introduce a one-block allocator,
+target-specific allocator, or temporary fixed-first queue policy that will be
+discarded by the accepted allocator.
 
-- ephemeral instruction and block-boundary positions;
-- default and sparse constrained occurrences;
-- precise SSA live ranges;
-- initial bundles and register assignment;
-- block parameters and edge arguments;
-- snapshot-derived canonical-home spilling;
-- recovery-frontier expansion through sunk instructions after the first sinking
-  pass exists;
-- affinity merging across moves, reused inputs, and block arguments;
-- priority-queue assignment with eviction and live-range splitting;
-- split moves and edge parallel moves;
-- parallel-move resolution;
-- a symbolic allocation checker and generated-input fuzz target.
+Target code defines register vocabulary, availability, allocation order, and
+instruction constraints. The generic allocator owns liveness, bundle policy,
+priority, spill weight, probing, eviction, splitting, and assignment.
 
-More advanced policies such as detailed spill-cost tuning, profitable
-rematerialization, caller-context-sensitive register pressure, alternate
-allocation algorithms, and Machine IR scheduling are later backend and
-allocator work.
+Allocator-local positions, ranges, bundles, allocation maps, and heuristic
+state remain ephemeral. `LocationAssignments` and move bundles are the durable
+result consumed by emission and recovery planning.
 
 ## External Model
 
