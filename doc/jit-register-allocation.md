@@ -527,7 +527,7 @@ struct Occurrence
     LiveRangeId live_range;
     OccurrenceKind kind;
     OccurrenceAnchor anchor;
-    uint32_t spill_weight;
+    uint64_t spill_weight;
 };
 
 struct FixedRegisterConstraint
@@ -623,8 +623,8 @@ struct LiveBundle
     RegisterClass register_class;
     std::vector<BundleFragment> fragments;
     std::vector<FixedConstraintId> fixed_constraints;
-    uint32_t allocation_priority;
-    uint32_t spill_weight;
+    size_t allocation_priority;
+    uint64_t spill_weight;
 };
 ```
 
@@ -670,6 +670,10 @@ requirement contribution  = 1000 for Any, 2000 for Fixed
 The ordinary `Any` contribution is implied by an unconstrained occurrence; it
 does not require a stored allocator constraint. A sparse fixed constraint
 replaces that occurrence's requirement contribution.
+
+Spill weights use 64-bit unsigned arithmetic because one bundle may accumulate
+contributions from many occurrences. Saturating addition prevents heuristic
+overflow from changing allocation ordering.
 
 Constraints normalized into fixup moves are weighted at the resulting
 occurrences. A non-minimal bundle's spill weight is:

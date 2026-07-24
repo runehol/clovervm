@@ -25,29 +25,29 @@ document and deliberately do not have checkboxes.
 
 ## Stage 1: Prepared Allocation Problem
 
-- [ ] Define dense allocator-local IDs and storage for program points,
+- [x] Define dense allocator-local IDs and storage for program points,
   occurrences, immutable live ranges, bundle fragments, and singleton bundles.
-- [ ] Linearize every block's entry, instruction Early and Late points, and
+- [x] Linearize every block's entry, instruction Early and Late points, and
   exit without publishing positions into Core IR; represent all ranges as
   inclusive-start, exclusive-end `ProgramRange`s.
-- [ ] Expand Core operands and results into anchored use and def occurrences,
+- [x] Expand Core operands and results into anchored use and def occurrences,
   derive each range's one register class, retain sparse fixed constraints with
   their exact points, and reject incompatible class claims as compiler
   invariant failures.
-- [ ] Treat block parameters as entry definitions and edge arguments as
+- [x] Treat block parameters as entry definitions and edge arguments as
   predecessor-exit uses so precise allocation liveness and live ranges remain
   block-local while preparation covers the complete CFG.
-- [ ] Represent instruction temporaries as anonymous live ranges spanning
+- [x] Represent instruction temporaries as anonymous live ranges spanning
   Early through Late and retain Late clobbers as immovable physical-register
   reservations rather than bundles.
-- [ ] Give dead definitions minimal one-point ranges, including unused
+- [x] Give dead definitions minimal one-point ranges, including unused
   `Uninitialized` definitions.
-- [ ] Create one singleton bundle with one exact `{ProgramRange, LiveRangeId}`
+- [x] Create one singleton bundle with one exact `{ProgramRange, LiveRangeId}`
   fragment for every live range; keep chosen allocations in a later separate
   assignment table.
-- [ ] Compute bundle allocation priority and spill weight by visiting the
+- [x] Compute bundle allocation priority and spill weight by visiting the
   source occurrences covered by each fragment.
-- [ ] Add deterministic dumps and an internal verifier for positions,
+- [x] Add deterministic dumps and an internal verifier for positions,
   temporality, liveness, half-open range ordering, fragment containment,
   non-overlap, occurrence coverage, sparse fixed constraints, and singleton
   bundle ownership.
