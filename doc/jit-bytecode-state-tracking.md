@@ -4,10 +4,10 @@
 |---|---|
 | Document type | Design |
 | Status | Accepted |
-| Implementation | Partial: `BytecodeState`, the opcode-blind `BytecodeStateTracker`, and the initial Core state/exit/branch primitives are implemented; Core and Semantic translation remain |
+| Implementation | Partial: shared state tracking and the initial `CoreBytecodeTranslator` structural slice are implemented; broader Core opcode coverage and Semantic translation remain |
 | Scope | Shared symbolic bytecode state, target-driven bytecode-to-IR translation, block state transfer, multiple results, and Snapshot state queries |
 | Owning layers | The bytecode decoder owns decoded locations and structural blocks; the shared JIT state layer owns opcode-blind bytecode state tracking; each concrete translator owns traversal, IR construction, opcode semantics, and Snapshot layout |
-| Validated against | `tests/test_jit_bytecode_state.cpp`, `tests/test_jit_cfg.cpp`, and `tests/test_jit_arena.cpp` |
+| Validated against | `tests/test_jit_bytecode_state.cpp`, `tests/test_jit_core_bytecode_translator.cpp`, `tests/test_jit_cfg.cpp`, and `tests/test_jit_arena.cpp` |
 | Supersedes | The open decoded-bytecode input and `BuilderContext` shape in [JIT Compiler Bring-up Plan](jit-compiler-bring-up-plan.md) |
 
 This document defines the shared machinery used to translate decoded clovervm
@@ -338,10 +338,11 @@ appropriate updated state and resumes at its later bytecode position. The
 concrete translator owns that semantic choice; the state tracker only supplies
 the requested state.
 
-Snapshot construction does not consume a block-argument vector. It queries the
-accumulator and logical registers from `BytecodeState`, then encodes them in the
-recovery layout owned by Snapshot construction. This prevents block-transfer
-ordering from becoming an accidental recovery ABI.
+Snapshot construction does not consume an edge's argument vector. It queries
+the accumulator and logical register groups from `BytecodeState`, then encodes
+them in the recovery layout owned by one private translator helper. The initial
+structural implementation uses accumulator, parameter, local, and temporary
+group order, but that private order is not yet a recovery ABI.
 
 Snapshots support interpreter handoff for exceptions without requiring compiled
 exceptional edges. Initial JIT code may recover through a Snapshot and let the
@@ -351,17 +352,24 @@ definition of the handler's incoming state.
 
 ## Concrete Translators
 
-The initial Core entry point may have a direct shape such as:
+The initial Core entry point is a concrete target-driven translator:
 
 ```cpp
-ControlFlowGraph *translate_bytecode_to_core(
-    const BytecodeDecoder &decoder,
-    GraphBuilder &builder);
+CoreBytecodeTranslator translator(code_object, builder);
+ControlFlowGraph *graph = translator.translate();
 ```
 
 Its implementation owns the block walk, opcode dispatch, state queries,
 Snapshot placement, unsupported-operation exits, and graph finalization. The
 optional Semantic translator will own an analogous walk when it is implemented.
+
+The first Core slice lowers `LdaConstant`, `LdaSmi`, `LdaTrue`, `LdaFalse`,
+`LdaNone`, `Ldar`, `Star`, `Mov`, `Nop`, `Jump`, `JumpIfTrue`, `JumpIfFalse`,
+and `Return`. Unsupported bytecodes capture their pre-instruction state in a
+Snapshot and emit `ResumeInInterpreter`. Because that exit is not a CFG
+terminator, each unsupported destination is then bound to an `Uninitialized`
+poison value so structural translation can continue. No generated execution
+reaches those poisoned values.
 
 Both translators reuse `BytecodeState` and `BytecodeStateTracker`. They may also
 reuse small helpers for block signatures or edge argument construction. They do
@@ -391,6 +399,8 @@ Initial translation and CFG verification must establish:
 - every completed target block has a valid terminator;
 - `ResumeInInterpreter` is an instruction-local `ExitJIT` operation rather than
   a CFG terminator, so translation continues after emitting it;
+- every unsupported destination is assigned a structural `Uninitialized`
+  poison reference after `ResumeInInterpreter`;
 - instruction-local guards and side exits do not become CFG block successors.
 
 Focused tests should cover:
@@ -422,3 +432,7 @@ The following are deliberately outside the initial state-tracking design:
 These extensions must preserve the central boundary: decoded locations and
 target-produced `ProgramValueRef`s are connected by opcode-blind shared state
 tracking, while opcode semantics remain in the concrete translators.
+
+A bytecode entry block having a predecessor is illegal. The decoder asserts
+this invariant; Core translation does not introduce a synthetic entry block to
+support such bytecode.

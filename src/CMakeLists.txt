@@ -104,6 +104,8 @@ add_library(libclovervm_objects OBJECT
     jit/compilation_session.h
     jit/control_flow_graph.cpp
     jit/control_flow_graph.h
+    jit/core_bytecode_translator.cpp
+    jit/core_bytecode_translator.h
     jit/graph_builder.cpp
     jit/graph_builder.h
     jit/graph_queries.cpp

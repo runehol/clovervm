@@ -169,6 +169,7 @@ namespace cl
                 blocks_[successor].predecessors_.push_back(block.id_);
             }
         }
+        assert(blocks_.front().predecessors_.empty());
     }
 
     BytecodeInstruction

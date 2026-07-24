@@ -4,7 +4,7 @@
 |---|---|
 | Document type | Implementation plan |
 | Status | Proposed |
-| Implementation | Core instruction storage, typed construction, graph publication, block parameters and edge arguments, on-demand use lists, traversal and staged rewriting, opcode-blind bytecode state tracking, compilation-session constant retention, code-cache publication, generic machine-code emission, AArch64 assembly, value-pool loads, the initial AArch64 `AllocationConstraints`, and a direct single-register CFG-to-AArch64 path are implemented; register allocation, heap `JitCodeObject` integration, concrete bytecode translation, and compiler/runtime entry remain |
+| Implementation | Core instruction storage, graph publication and rewriting, opcode-blind bytecode state tracking, the initial structural `CoreBytecodeTranslator`, compilation-session constant retention, code-cache publication, generic machine-code emission, AArch64 assembly, the initial AArch64 `AllocationConstraints`, and a direct single-register CFG-to-AArch64 path are implemented; broader translation, register allocation, heap `JitCodeObject` integration, and compiler/runtime entry remain |
 | Scope | Initial JIT staging, vertical slices, temporary runtime policies, and validation |
 | Owning layers | The JIT owns compilation and generated transitions; the interpreter, managed calling convention, native boundaries, and reclaimer retain their existing contracts |
 | Validated against | Supporting infrastructure, instruction-representation tests, CFG and rewrite tests, code-cache tests, and executable AArch64 tests in the working tree on 2026-07-23 |
@@ -319,12 +319,14 @@ Scope:
   unsupported-bytecode boundaries;
 - verify the produced Core graph against expected structure.
 
-The initial `BytecodeState` and opcode-blind `BytecodeStateTracker` slice is
-complete. It derives raw parameter, local, and temporary coordinates from the
-`CodeObject`, initializes every state location with a symbolic reference,
-supports multiple-result reads and writes, copies state for edge-specific
-translation, and round-trips the deterministic block-transfer order. The
-target-driven Core walk and Snapshot construction remain.
+The initial `BytecodeState`, opcode-blind `BytecodeStateTracker`, and structural
+`CoreBytecodeTranslator` slices are complete. The translator creates eager
+block parameters and state-carrying edges, lowers constants, symbolic
+register transfers, basic branches, and return, and emits a pre-instruction
+Snapshot plus `ResumeInInterpreter` for every unsupported bytecode. It poisons
+the unreachable continuation state so the remainder of the Core graph can
+still be constructed and verified. Snapshot recovery layout, broader opcode
+coverage, and executable side exits remain.
 
 Generated side-exit code and runtime recovery are deferred, but this milestone
 should already make Snapshot construction boring. That unlocks unsupported

@@ -27,6 +27,7 @@ target_sources(test_clovervm PRIVATE
 	test_jit_arena.cpp
 	test_jit_bytecode_state.cpp
 	test_jit_cfg.cpp
+	test_jit_core_bytecode_translator.cpp
 	test_jit_graph_rewrites.cpp
 	test_machine_address.cpp
 	test_machine_code_emitter.cpp
