@@ -77,6 +77,39 @@ namespace cl::jit
         EXPECT_EQ(3500u, prepared.bundles()[0].spill_weight);
         EXPECT_EQ(3500u, prepared.bundles()[1].spill_weight);
         EXPECT_EQ(3500u, prepared.bundles()[2].spill_weight);
+
+        EXPECT_EQ("allocation {\n"
+                  "  bb0 [0, 8) {loop_depth = 0} {\n"
+                  "    occurrences {\n"
+                  "      1 o0 def l0 result(%0) {fixed = gpr0, weight = 5000}\n"
+                  "      1 o1 def l1 result(%1) {fixed = gpr1, weight = 5000}\n"
+                  "      2 o2 use l0 operand(%2, 0) {weight = 2000}\n"
+                  "      2 o3 use l1 operand(%2, 1) {weight = 2000}\n"
+                  "      3 o4 def l2 result(%2) {weight = 4000}\n"
+                  "      4 o5 use l2 operand(i3, 0) {fixed = gpr0, weight = "
+                  "3000}\n"
+                  "    }\n"
+                  "\n"
+                  "    ranges {\n"
+                  "      l0 gpr [1, 3) {origin = %0, occurrences = [o0, o2], "
+                  "fixed = [o0:gpr0]}\n"
+                  "      l1 gpr [1, 3) {origin = %1, occurrences = [o1, o3], "
+                  "fixed = [o1:gpr1]}\n"
+                  "      l2 gpr [3, 5) {origin = %2, occurrences = [o4, o5], "
+                  "fixed = [o5:gpr0]}\n"
+                  "    }\n"
+                  "  }\n"
+                  "\n"
+                  "  bundles {\n"
+                  "    b0 gpr [[1, 3):l0] {fixed = [o0:gpr0], priority = 2, "
+                  "spill_weight = 3500}\n"
+                  "    b1 gpr [[1, 3):l1] {fixed = [o1:gpr1], priority = 2, "
+                  "spill_weight = 3500}\n"
+                  "    b2 gpr [[3, 5):l2] {fixed = [o5:gpr0], priority = 2, "
+                  "spill_weight = 3500}\n"
+                  "  }\n"
+                  "}\n",
+                  format_prepared_allocation(prepared));
     }
 
     TEST(JitRegisterAllocator,

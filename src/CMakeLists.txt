@@ -99,6 +99,7 @@ add_library(libclovervm_objects OBJECT
     jit/allocation_problem.cpp
     jit/allocation_problem.h
     jit/allocation_bundles.cpp
+    jit/allocation_print.cpp
     jit/allocation_verifier.cpp
     jit/cfg_verifier.cpp
     jit/cfg_verifier.h
