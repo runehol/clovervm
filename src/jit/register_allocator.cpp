@@ -15,8 +15,11 @@ namespace cl::jit
         {
             return propagate_failure(std::move(scan));
         }
+        PreparedAllocationProblem problem =
+            build_initial_bundles(std::move(scan).value());
+        verify_prepared_allocation(problem);
         return Result<PreparedAllocationProblem, RegisterAllocationError>::ok(
-            build_initial_bundles(std::move(scan).value()));
+            std::move(problem));
     }
 
 }  // namespace cl::jit
