@@ -26,8 +26,9 @@ namespace cl::jit
                 proposal.commit(sizeof(uint32_t));
             EXPECT_TRUE(allocation_result);
             CodeAllocation allocation = std::move(allocation_result).value();
-            *static_cast<uint32_t *>(allocation.write_pointer()) = 0;
-            allocation.value_pool.write_pointer()[0] = pool_value;
+            *reinterpret_cast<uint32_t *>(allocation.writable_code().data()) =
+                0;
+            allocation.value_pool_values()[0] = pool_value;
 
             Result<PublishedCode, JitCodeError> publication =
                 cache.publish(std::move(allocation));
@@ -49,7 +50,8 @@ namespace cl::jit
         PublishedCode published =
             publish_test_code(thread->code_cache(), retained.value());
         JitCodeObject *jit_code = thread->make_internal_raw<JitCodeObject>(
-            published.code(), published.value_pool(), published.encoded_size());
+            published.code(), published.value_pool_values(),
+            published.encoded_code_size());
 
         EXPECT_EQ(2, string->refcount);
         ASSERT_EQ(1u, jit_code->value_pool_values().size());
@@ -60,7 +62,7 @@ namespace cl::jit
         context.vm().run_heap_reclamation();
 
         EXPECT_EQ(1, string->refcount);
-        EXPECT_TRUE(published.value_pool().write_pointer()[0].is_not_present());
+        EXPECT_TRUE(published.value_pool_values()[0].is_not_present());
     }
 
     TEST(JitCodeObject, IsPublishedIntoCodeObjectSeparately)
@@ -73,7 +75,8 @@ namespace cl::jit
         PublishedCode published =
             publish_test_code(thread->code_cache(), Value::None());
         JitCodeObject *jit_code = thread->make_internal_raw<JitCodeObject>(
-            published.code(), published.value_pool(), published.encoded_size());
+            published.code(), published.value_pool_values(),
+            published.encoded_code_size());
 
         EXPECT_FALSE(code_object->has_jit_code());
         EXPECT_EQ(0, jit_code->refcount);

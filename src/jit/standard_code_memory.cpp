@@ -67,18 +67,18 @@ namespace cl::jit
             void end_code_write() override {}
 
             Result<void, JitCodeError> publish(size_t offset,
-                                               size_t encoded_size,
+                                               size_t encoded_code_size,
                                                size_t protected_size) override
             {
                 assert(offset % page_size_ == 0);
                 assert(protected_size != 0);
                 assert(protected_size % page_size_ == 0);
-                assert(encoded_size <= protected_size);
+                assert(encoded_code_size <= protected_size);
                 assert(offset <= size_);
                 assert(protected_size <= size_ - offset);
 
                 char *begin = reinterpret_cast<char *>(base_ + offset);
-                __builtin___clear_cache(begin, begin + encoded_size);
+                __builtin___clear_cache(begin, begin + encoded_code_size);
                 if(mprotect(base_ + offset, protected_size,
                             PROT_READ | PROT_EXEC) != 0)
                 {

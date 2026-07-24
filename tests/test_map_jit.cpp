@@ -30,7 +30,7 @@ namespace cl::jit
         ASSERT_TRUE(first_allocation_result);
         CodeAllocation first_allocation =
             std::move(first_allocation_result).value();
-        *static_cast<uint32_t *>(first_allocation.write_pointer()) =
+        *reinterpret_cast<uint32_t *>(first_allocation.writable_code().data()) =
             0xd65f03c0;  // ret
         ASSERT_TRUE(cache.publish(std::move(first_allocation)));
 
@@ -113,11 +113,14 @@ namespace cl::jit
         ASSERT_TRUE(second_result);
         CodeAllocation second = std::move(second_result).value();
 
-        *static_cast<uint32_t *>(first.write_pointer()) = 0xd65f03c0;
-        *static_cast<uint32_t *>(second.write_pointer()) = 0xd65f03c0;
+        *reinterpret_cast<uint32_t *>(first.writable_code().data()) =
+            0xd65f03c0;
+        *reinterpret_cast<uint32_t *>(second.writable_code().data()) =
+            0xd65f03c0;
         ASSERT_TRUE(cache.publish(std::move(first)));
 
-        *static_cast<uint32_t *>(second.write_pointer()) = 0xd65f03c0;
+        *reinterpret_cast<uint32_t *>(second.writable_code().data()) =
+            0xd65f03c0;
         ASSERT_TRUE(cache.publish(std::move(second)));
     }
 }  // namespace cl::jit

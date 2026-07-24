@@ -4,6 +4,7 @@
 #include "jit/code_cache_types.h"
 #include "memory/native_layout_declarations.h"
 #include "object_model/heap_object.h"
+#include "object_model/value.h"
 
 #include <cstddef>
 #include <span>
@@ -16,21 +17,17 @@ namespace cl::jit
         static constexpr NativeLayoutId native_layout =
             NativeLayoutId::JitCodeObject;
 
-        JitCodeObject(CodeSlice code, ValuePoolSlice value_pool,
-                      size_t encoded_size);
+        JitCodeObject(CodeSlice code, std::span<Value> pool_values,
+                      size_t encoded_code_size);
 
         const CodeSlice &code() const { return code_; }
-        const ValuePoolSlice &value_pool() const { return value_pool_; }
         MachineAddress entry() const { return code_.execute_address(); }
-        size_t encoded_size() const { return encoded_size_; }
+        size_t encoded_code_size() const { return encoded_code_size_; }
 
-        std::span<Value> value_pool_values()
-        {
-            return {value_pool_.write_pointer(), value_pool_.slot_count()};
-        }
+        std::span<Value> value_pool_values() { return value_pool_values_; }
         std::span<const Value> value_pool_values() const
         {
-            return {value_pool_.write_pointer(), value_pool_.slot_count()};
+            return value_pool_values_;
         }
 
         static void dealloc(HeapObject *obj);
@@ -40,8 +37,8 @@ namespace cl::jit
 
     private:
         CodeSlice code_;
-        ValuePoolSlice value_pool_;
-        size_t encoded_size_;
+        std::span<Value> value_pool_values_;
+        size_t encoded_code_size_;
     };
 
 }  // namespace cl::jit

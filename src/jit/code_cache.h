@@ -3,10 +3,12 @@
 
 #include "jit/code_cache_types.h"
 #include "jit/platform_code_memory.h"
+#include "object_model/value.h"
 #include "util/result.h"
 
 #include <cstddef>
 #include <memory>
+#include <span>
 #include <vector>
 
 namespace cl::jit
@@ -18,21 +20,28 @@ namespace cl::jit
     class PublishedCode
     {
     public:
-        PublishedCode(CodeSlice code, ValuePoolSlice value_pool,
-                      size_t encoded_size)
-            : code_(code), value_pool_(value_pool), encoded_size_(encoded_size)
+        PublishedCode(CodeSlice code, std::span<Value> value_pool_values,
+                      size_t encoded_code_size)
+            : code_(code), value_pool_values_(value_pool_values),
+              encoded_code_size_(encoded_code_size)
         {
+            assert(encoded_code_size != 0);
+            assert(encoded_code_size <= code.capacity());
         }
 
         const CodeSlice &code() const { return code_; }
-        const ValuePoolSlice &value_pool() const { return value_pool_; }
+        std::span<Value> value_pool_values() { return value_pool_values_; }
+        std::span<const Value> value_pool_values() const
+        {
+            return value_pool_values_;
+        }
         MachineAddress entry() const { return code_.execute_address(); }
-        size_t encoded_size() const { return encoded_size_; }
+        size_t encoded_code_size() const { return encoded_code_size_; }
 
     private:
         CodeSlice code_;
-        ValuePoolSlice value_pool_;
-        size_t encoded_size_;
+        std::span<Value> value_pool_values_;
+        size_t encoded_code_size_;
     };
 
     class [[nodiscard]] CodeAllocationProposal
@@ -44,7 +53,7 @@ namespace cl::jit
         MachineAddress value_pool_address() const;
 
         [[nodiscard]] Result<CodeAllocation, JitCodeError>
-        commit(size_t final_code_size);
+        commit(size_t encoded_code_size);
 
     private:
         friend class CodeCache;
@@ -69,25 +78,32 @@ namespace cl::jit
         CodeAllocation &operator=(CodeAllocation &&) = delete;
         ~CodeAllocation();
 
-        void *write_pointer() const;
+        std::span<std::byte> writable_code();
+        std::span<Value> value_pool_values() { return value_pool_values_; }
+        MachineAddress value_pool_address() const
+        {
+            return value_pool_address_;
+        }
 
         CodeSlice code;
-        ValuePoolSlice value_pool;
 
     private:
         friend class CodeCache;
         friend class CodeCacheSlab;
 
-        CodeAllocation(void *write_pointer, CodeSlice code,
-                       ValuePoolSlice value_pool, CodeCacheSlab *slab,
-                       size_t code_offset, size_t final_code_size);
+        CodeAllocation(std::span<std::byte> writable_code, CodeSlice code,
+                       std::span<Value> value_pool_values,
+                       MachineAddress value_pool_address, CodeCacheSlab *slab,
+                       size_t code_offset, size_t encoded_code_size);
 
         void end_code_write();
 
-        void *write_pointer_;
+        std::span<std::byte> writable_code_;
+        std::span<Value> value_pool_values_;
+        MachineAddress value_pool_address_;
         CodeCacheSlab *slab_;
         size_t code_offset_;
-        size_t final_code_size_;
+        size_t encoded_code_size_;
     };
 
     class CodeCache

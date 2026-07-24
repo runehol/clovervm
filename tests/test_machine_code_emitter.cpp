@@ -128,7 +128,8 @@ namespace cl::jit
 
         CodeAllocation allocation =
             take_allocation(emitter.finalize(*fixture.cache));
-        auto *code = static_cast<uint8_t *>(allocation.write_pointer());
+        auto *code =
+            reinterpret_cast<uint8_t *>(allocation.writable_code().data());
         EXPECT_EQ(0x10, code[0]);
         EXPECT_EQ(0x51, code[1]);
         EXPECT_EQ(0x20, code[2]);
@@ -149,7 +150,8 @@ namespace cl::jit
 
         CodeAllocation allocation =
             take_allocation(emitter.finalize(*fixture.cache));
-        auto *code = static_cast<uint8_t *>(allocation.write_pointer());
+        auto *code =
+            reinterpret_cast<uint8_t *>(allocation.writable_code().data());
         EXPECT_EQ(0x54, code[0]);
         EXPECT_EQ(0x51, code[4]);
     }
@@ -164,7 +166,8 @@ namespace cl::jit
 
         CodeAllocation allocation =
             take_allocation(emitter.finalize(*fixture.cache));
-        EXPECT_EQ(0x51, *static_cast<uint8_t *>(allocation.write_pointer()));
+        EXPECT_EQ(0x51, *reinterpret_cast<uint8_t *>(
+                            allocation.writable_code().data()));
     }
 
     TEST(MachineCodeEmitter, RelocatesValuePoolLoadsUsingExecutableAddresses)
@@ -182,17 +185,18 @@ namespace cl::jit
         CodeAllocation allocation =
             take_allocation(emitter.finalize(*fixture.cache));
 
-        EXPECT_EQ(0xcc, *static_cast<uint8_t *>(allocation.write_pointer()));
+        EXPECT_EQ(0xcc, *reinterpret_cast<uint8_t *>(
+                            allocation.writable_code().data()));
         EXPECT_EQ(allocation.code.execute_address().bits_for_indirect_target(),
                   observation.instruction_pc);
         EXPECT_NE(reinterpret_cast<uintptr_t>(observation.write_pointer),
                   observation.instruction_pc);
-        EXPECT_EQ(allocation.value_pool.address()
+        EXPECT_EQ(allocation.value_pool_address()
                       .offset_by(sizeof(Value))
                       .bits_for_indirect_target(),
                   observation.target);
-        EXPECT_EQ(Value::None(), allocation.value_pool.write_pointer()[0]);
-        EXPECT_EQ(Value::True(), allocation.value_pool.write_pointer()[1]);
+        EXPECT_EQ(Value::None(), allocation.value_pool_values()[0]);
+        EXPECT_EQ(Value::True(), allocation.value_pool_values()[1]);
     }
 
     TEST(MachineCodeEmitter, DeduplicatesValuePoolEntriesByRawValue)
@@ -222,14 +226,14 @@ namespace cl::jit
         CodeAllocation allocation =
             take_allocation(emitter.finalize(*fixture.cache));
         uintptr_t pool_address =
-            allocation.value_pool.address().bits_for_indirect_target();
+            allocation.value_pool_address().bits_for_indirect_target();
 
-        EXPECT_EQ(2u, allocation.value_pool.slot_count());
+        EXPECT_EQ(2u, allocation.value_pool_values().size());
         EXPECT_EQ(pool_address, first_observation.target);
         EXPECT_EQ(pool_address + sizeof(Value), distinct_observation.target);
         EXPECT_EQ(first_observation.target, duplicate_observation.target);
-        EXPECT_EQ(Value::True(), allocation.value_pool.write_pointer()[0]);
-        EXPECT_EQ(Value::from_smi(1), allocation.value_pool.write_pointer()[1]);
+        EXPECT_EQ(Value::True(), allocation.value_pool_values()[0]);
+        EXPECT_EQ(Value::from_smi(1), allocation.value_pool_values()[1]);
     }
 
     TEST(MachineCodeEmitter, RejectsPoolOutsideRelocationSpanBeforeAllocation)

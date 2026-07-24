@@ -95,7 +95,7 @@ namespace cl::jit
 
         CodeAllocation allocation =
             take_allocation(emitter.finalize(*fixture.cache));
-        const void *code = allocation.write_pointer();
+        const void *code = allocation.writable_code().data();
         EXPECT_EQ(0xd28acf05, instruction_at(code, 0));
         EXPECT_EQ(0xf2c24685, instruction_at(code, 1));
     }
@@ -114,7 +114,7 @@ namespace cl::jit
 
         CodeAllocation allocation =
             take_allocation(emitter.finalize(*fixture.cache));
-        const void *code = allocation.write_pointer();
+        const void *code = allocation.writable_code().data();
         EXPECT_EQ(0xaa0603e5, instruction_at(code, 0));
         EXPECT_EQ(0xaa2603e5, instruction_at(code, 1));
         EXPECT_EQ(0xcb0603e5, instruction_at(code, 2));
@@ -134,12 +134,13 @@ namespace cl::jit
 
         int64_t displacement =
             allocation.code.execute_address().displacement_to(
-                allocation.value_pool.address());
+                allocation.value_pool_address());
         uint32_t expected =
             0x58000005 |
             ((static_cast<uint32_t>(displacement >> 2) & 0x7ffff) << 5);
-        EXPECT_EQ(expected, instruction_at(allocation.write_pointer(), 0));
-        EXPECT_EQ(Value::True(), allocation.value_pool.write_pointer()[0]);
+        EXPECT_EQ(expected,
+                  instruction_at(allocation.writable_code().data(), 0));
+        EXPECT_EQ(Value::True(), allocation.value_pool_values()[0]);
     }
 
     TEST(AArch64Assembler, RelocatesFarValuePoolLoad)
@@ -152,8 +153,10 @@ namespace cl::jit
         CodeAllocation allocation =
             take_allocation(emitter.finalize(*fixture.cache));
 
-        EXPECT_EQ(0xf0000065, instruction_at(allocation.write_pointer(), 0));
-        EXPECT_EQ(0xf947fca5, instruction_at(allocation.write_pointer(), 1));
+        EXPECT_EQ(0xf0000065,
+                  instruction_at(allocation.writable_code().data(), 0));
+        EXPECT_EQ(0xf947fca5,
+                  instruction_at(allocation.writable_code().data(), 1));
     }
 
     TEST(AArch64Assembler, SelectsDirectAndSynthesizedBranches)
@@ -167,7 +170,7 @@ namespace cl::jit
 
         CodeAllocation allocation =
             take_allocation(emitter.finalize(*fixture.cache));
-        const void *code = allocation.write_pointer();
+        const void *code = allocation.writable_code().data();
         EXPECT_EQ(0x14000004, instruction_at(code, 0));
         EXPECT_EQ(0xd28acf10, instruction_at(code, 1));
         EXPECT_EQ(0xf2a00010, instruction_at(code, 2));

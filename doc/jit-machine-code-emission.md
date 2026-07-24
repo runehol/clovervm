@@ -445,16 +445,13 @@ target reach, then commits the final size as an unpublished allocation:
 
 ```text
 CodeAllocation
-    writable code pointer
+    writable code span
+    writable Value-pool span
+    target-visible pool address
 
 CodeSlice
     executable address
     committed capacity
-
-ValuePoolSlice
-    writable, non-executable Value slots
-    pool address
-    slot count
 ```
 
 The slices share the compiled code object's lifetime but may occupy different

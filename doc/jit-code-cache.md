@@ -29,24 +29,21 @@ A finalized compiled code unit identifies two non-moving slices:
 ```text
 CompiledCodeStorage
     CodeSlice
-        writable view
         executable address
         committed capacity
 
-    ValuePoolSlice
-        writable, non-executable address
-        naturally aligned Value slots
-        slot count
+    std::span<Value>
+        writable, non-executable pool slots
 ```
 
 The two slices need not occupy one mapping or adjacent addresses. The code cache
 places them within the numeric span supplied by the target. Neither slice may
 move while the compiled code can execute. The moving collector may rewrite
-pool-slot contents but does not move the pool slice itself. A unit with no
-constants has a `ValuePoolSlice` at the current pool frontier with a slot count
-of zero. An existing `JitCodeObject` therefore always has both slices; absence
-of compiled code is represented by the containing `CodeObject`'s nullable
-`JitCodeObject` reference.
+pool-slot contents but does not move the pool storage itself. A unit with no
+constants has an empty pool span. An existing `JitCodeObject` therefore always
+has a code slice and a possibly empty pool span; absence of compiled code is
+represented by the containing `CodeObject`'s nullable `JitCodeObject`
+reference.
 
 Code and pool storage always occupy different physical pages. A page acquires a
 permanent code or pool role before its first suballocation and never changes
@@ -411,8 +408,8 @@ records the published code and pool slices as one metadata unit:
 ```text
 JitCodeObject
     CodeSlice
-    ValuePoolSlice
-    final code size
+    std::span<Value> value pool
+    encoded code size
     MachineAddress entry derived from CodeSlice
 ```
 

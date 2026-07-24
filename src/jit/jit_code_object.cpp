@@ -6,13 +6,13 @@
 
 namespace cl::jit
 {
-    JitCodeObject::JitCodeObject(CodeSlice code, ValuePoolSlice value_pool,
-                                 size_t encoded_size)
-        : HeapObject(native_layout), code_(code), value_pool_(value_pool),
-          encoded_size_(encoded_size)
+    JitCodeObject::JitCodeObject(CodeSlice code, std::span<Value> pool_values,
+                                 size_t encoded_code_size)
+        : HeapObject(native_layout), code_(code),
+          value_pool_values_(pool_values), encoded_code_size_(encoded_code_size)
     {
-        assert(encoded_size != 0);
-        assert(encoded_size <= code.capacity());
+        assert(encoded_code_size != 0);
+        assert(encoded_code_size <= code.capacity());
         for(Value value: value_pool_values())
         {
             incref(value);

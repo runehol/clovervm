@@ -212,7 +212,7 @@ namespace cl::jit
             reinterpret_cast<Function>(code.entry().bits_for_indirect_target());
         EXPECT_EQ(static_cast<uint64_t>(Value::True().as.integer), function());
 
-        code.value_pool().write_pointer()[0] = Value::False();
+        code.value_pool_values()[0] = Value::False();
         EXPECT_EQ(static_cast<uint64_t>(Value::False().as.integer), function());
     }
 
@@ -246,7 +246,7 @@ namespace cl::jit
             reinterpret_cast<Function>(code.entry().bits_for_indirect_target());
         EXPECT_EQ(static_cast<uint64_t>(Value::True().as.integer), function());
 
-        code.value_pool().write_pointer()[0] = Value::False();
+        code.value_pool_values()[0] = Value::False();
         EXPECT_EQ(static_cast<uint64_t>(Value::False().as.integer), function());
     }
 }  // namespace cl::jit

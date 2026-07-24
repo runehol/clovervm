@@ -132,12 +132,12 @@ namespace cl::jit
             }
 
             Result<void, JitCodeError> publish(size_t offset,
-                                               size_t encoded_size,
+                                               size_t encoded_code_size,
                                                size_t protected_size) override
             {
                 assert(offset + protected_size <= jit_page_frontier_);
                 char *begin = reinterpret_cast<char *>(base_ + offset);
-                __builtin___clear_cache(begin, begin + encoded_size);
+                __builtin___clear_cache(begin, begin + encoded_code_size);
                 return Result<void, JitCodeError>::ok();
             }
 

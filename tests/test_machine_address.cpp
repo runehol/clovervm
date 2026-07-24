@@ -98,15 +98,4 @@ namespace cl::jit
         EXPECT_EQ(32u, code.capacity());
     }
 
-    TEST(CodeCacheTypes, DescribesGcVisiblePoolSlots)
-    {
-        alignas(sizeof(Value)) uint8_t pool_storage[sizeof(Value) * 2] = {};
-        auto *pool_values = reinterpret_cast<Value *>(pool_storage);
-        ValuePoolSlice pool(pool_values, address(0x8000), 2);
-
-        EXPECT_EQ(pool_values, pool.write_pointer());
-        EXPECT_EQ(address(0x8000), pool.address());
-        EXPECT_EQ(2u, pool.slot_count());
-    }
-
 }  // namespace cl::jit

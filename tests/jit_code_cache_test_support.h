@@ -78,11 +78,11 @@ namespace cl::jit::test_support
             ++end_code_write_count;
         }
 
-        Result<void, JitCodeError> publish(size_t, size_t encoded_size,
+        Result<void, JitCodeError> publish(size_t, size_t encoded_code_size,
                                            size_t protected_size) override
         {
             assert(!code_write_active);
-            published_encoded_size = encoded_size;
+            published_encoded_code_size = encoded_code_size;
             published_protected_size = protected_size;
             if(*fail_publication_)
             {
@@ -92,7 +92,7 @@ namespace cl::jit::test_support
             return Result<void, JitCodeError>::ok();
         }
 
-        size_t published_encoded_size = 0;
+        size_t published_encoded_code_size = 0;
         size_t published_protected_size = 0;
         size_t committed_code_offset = 0;
         size_t committed_code_size = 0;

@@ -74,20 +74,20 @@ namespace cl::jit
                              capacity);
         }
 
-        ValuePoolSlice pool_slice(size_t offset, size_t slot_count) const
+        std::span<Value> pool_values(size_t offset, size_t slot_count) const
         {
-            return ValuePoolSlice(
+            return {
                 static_cast<Value *>(platform_slab_->write_pointer_at(offset)),
-                platform_slab_->data_address_at(offset), slot_count);
+                slot_count};
         }
 
         Result<CodeAllocation, JitCodeError> commit(size_t code_offset,
-                                                    size_t final_code_size,
+                                                    size_t encoded_code_size,
                                                     size_t pool_offset,
                                                     size_t pool_slot_count)
         {
             size_t committed_size =
-                align_up(final_code_size, code_granularity_);
+                align_up(encoded_code_size, code_granularity_);
             size_t committed_pool_size = pool_size(pool_slot_count);
 
             assert(code_frontier_ == code_offset);
@@ -98,25 +98,27 @@ namespace cl::jit
             CL_TRY(platform_slab_->commit(code_offset, committed_size,
                                           pool_offset, committed_pool_size));
             platform_slab_->begin_code_write();
-            return Result<CodeAllocation, JitCodeError>::ok(
-                CodeAllocation(platform_slab_->write_pointer_at(code_offset),
-                               code_slice(code_offset, committed_size),
-                               pool_slice(pool_offset, pool_slot_count), this,
-                               code_offset, final_code_size));
+            return Result<CodeAllocation, JitCodeError>::ok(CodeAllocation(
+                {static_cast<std::byte *>(
+                     platform_slab_->write_pointer_at(code_offset)),
+                 committed_size},
+                code_slice(code_offset, committed_size),
+                pool_values(pool_offset, pool_slot_count),
+                platform_slab_->data_address_at(pool_offset), this, code_offset,
+                encoded_code_size));
         }
 
         void end_code_write() { platform_slab_->end_code_write(); }
 
-        Result<PublishedCode, JitCodeError>
-        publish(const CodeAllocation &allocation)
+        Result<PublishedCode, JitCodeError> publish(CodeAllocation &allocation)
         {
             CL_TRY(platform_slab_->publish(allocation.code_offset_,
-                                           allocation.final_code_size_,
+                                           allocation.encoded_code_size_,
                                            allocation.code.capacity()));
 
             return Result<PublishedCode, JitCodeError>::ok(
-                PublishedCode(allocation.code, allocation.value_pool,
-                              allocation.final_code_size_));
+                PublishedCode(allocation.code, allocation.value_pool_values(),
+                              allocation.encoded_code_size_));
         }
 
     private:
@@ -149,49 +151,60 @@ namespace cl::jit
         size_t pool_frontier_;
     };
 
-    CodeAllocation::CodeAllocation(void *write_pointer, CodeSlice code,
-                                   ValuePoolSlice value_pool,
+    CodeAllocation::CodeAllocation(std::span<std::byte> writable_code,
+                                   CodeSlice code,
+                                   std::span<Value> value_pool_values,
+                                   MachineAddress value_pool_address,
                                    CodeCacheSlab *slab, size_t code_offset,
-                                   size_t final_code_size)
-        : code(code), value_pool(value_pool), write_pointer_(write_pointer),
-          slab_(slab), code_offset_(code_offset),
-          final_code_size_(final_code_size)
+                                   size_t encoded_code_size)
+        : code(code), writable_code_(writable_code),
+          value_pool_values_(value_pool_values),
+          value_pool_address_(value_pool_address), slab_(slab),
+          code_offset_(code_offset), encoded_code_size_(encoded_code_size)
     {
-        assert(write_pointer != nullptr);
-        assert(reinterpret_cast<uintptr_t>(write_pointer) % 16 == 0);
+        assert(!writable_code.empty());
+        assert(reinterpret_cast<uintptr_t>(writable_code.data()) % 16 == 0);
+        assert(reinterpret_cast<uintptr_t>(value_pool_values.data()) %
+                   alignof(Value) ==
+               0);
+        static_assert(std::has_single_bit(sizeof(Value)));
+        assert(value_pool_address.offset_within(
+                   std::countr_zero(sizeof(Value))) == 0);
         assert(slab != nullptr);
     }
 
     CodeAllocation::CodeAllocation(CodeAllocation &&other) noexcept
-        : code(other.code), value_pool(other.value_pool),
-          write_pointer_(other.write_pointer_), slab_(other.slab_),
+        : code(other.code), writable_code_(other.writable_code_),
+          value_pool_values_(other.value_pool_values_),
+          value_pool_address_(other.value_pool_address_), slab_(other.slab_),
           code_offset_(other.code_offset_),
-          final_code_size_(other.final_code_size_)
+          encoded_code_size_(other.encoded_code_size_)
     {
-        other.write_pointer_ = nullptr;
+        other.writable_code_ = {};
+        other.value_pool_values_ = {};
         other.slab_ = nullptr;
     }
 
     CodeAllocation::~CodeAllocation()
     {
-        if(write_pointer_ != nullptr)
+        if(!writable_code_.empty())
         {
             end_code_write();
         }
     }
 
-    void *CodeAllocation::write_pointer() const
+    std::span<std::byte> CodeAllocation::writable_code()
     {
-        assert(write_pointer_ != nullptr);
-        return write_pointer_;
+        assert(!writable_code_.empty());
+        return writable_code_;
     }
 
     void CodeAllocation::end_code_write()
     {
-        assert(write_pointer_ != nullptr);
+        assert(!writable_code_.empty());
         assert(slab_ != nullptr);
         slab_->end_code_write();
-        write_pointer_ = nullptr;
+        writable_code_ = {};
     }
 
     CodeAllocationProposal::CodeAllocationProposal(CodeCacheSlab *slab,
@@ -229,14 +242,14 @@ namespace cl::jit
     }
 
     Result<CodeAllocation, JitCodeError>
-    CodeAllocationProposal::commit(size_t final_code_size)
+    CodeAllocationProposal::commit(size_t encoded_code_size)
     {
         assert(slab_ != nullptr);
-        assert(final_code_size != 0);
-        assert(final_code_size <= pessimistic_code_size_);
+        assert(encoded_code_size != 0);
+        assert(encoded_code_size <= pessimistic_code_size_);
 
         Result<CodeAllocation, JitCodeError> result = slab_->commit(
-            code_offset_, final_code_size, pool_offset_, pool_slot_count_);
+            code_offset_, encoded_code_size, pool_offset_, pool_slot_count_);
         slab_ = nullptr;
         return result;
     }

@@ -295,12 +295,12 @@ namespace cl::jit
             return pool_address.offset_by(target.byte_offset_);
         }
 
-        void encode(const CodeAllocation &allocation) const
+        void encode(CodeAllocation &allocation) const
         {
             auto *write_base =
-                static_cast<uint8_t *>(allocation.write_pointer());
+                reinterpret_cast<uint8_t *>(allocation.writable_code().data());
             MachineAddress code_address = allocation.code.execute_address();
-            MachineAddress pool_address = allocation.value_pool.address();
+            MachineAddress pool_address = allocation.value_pool_address();
 
             for(const Fragment &fragment: fragments_)
             {
@@ -335,8 +335,8 @@ namespace cl::jit
                 }
             }
 
-            assert(allocation.value_pool.slot_count() == values_.size());
-            Value *pool = allocation.value_pool.write_pointer();
+            std::span<Value> pool = allocation.value_pool_values();
+            assert(pool.size() == values_.size());
             for(size_t index = 0; index < values_.size(); ++index)
             {
                 pool[index] = values_[index].value();
