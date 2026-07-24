@@ -126,6 +126,7 @@ add_library(libclovervm_objects OBJECT
     jit/instruction_pool.h
     jit/jit_code_object.cpp
     jit/jit_code_object.h
+    jit/live_range_scanner.cpp
     jit/code_cache_types.h
     jit/machine_address.h
     jit/machine_address_internal.h
@@ -135,6 +136,8 @@ add_library(libclovervm_objects OBJECT
     jit/physical_register.cpp
     jit/physical_register.h
     jit/preferred_code_memory.cpp
+    jit/register_allocator.h
+    jit/register_allocator_internal.h
     jit/serial.h
     jit/standard_code_memory.cpp
     jit/standard_code_memory.h
