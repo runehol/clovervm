@@ -1,0 +1,4 @@
+interface:
+  display_name: "Implementation Readiness Review"
+  short_description: "Align on a concrete design before coding"
+  default_prompt: "Use $implementation-readiness-review to confirm the concrete implementation direction before writing code."

@@ -13,6 +13,14 @@ This repository contains clovervm, a Python VM.
   object layout, ownership/lifetime, cross-layer coupling, or VM invariants. Do
   not quietly add compatibility machinery, metadata, special cases, fallback
   behavior, or inferred policy to keep moving.
+- Before implementing a nontrivial new design, present a compact implementation
+  sketch when an equivalent sketch has not already been agreed in the current
+  conversation. Use the `implementation-readiness-review` project skill. The
+  sketch exists to confirm shared understanding of the intended types,
+  responsibilities, ownership, and main call flow. It must make the complete
+  intended implementation shape visible without recapping the full design
+  history or ordinary method bodies. Once agreed, implement to that direction
+  and stop if implementation reveals a material deviation.
 
 # Architecture and layering
 
