@@ -372,14 +372,15 @@ A temporary takes either an `Any` or `Fixed` register requirement and reserves
 the chosen register across the selected target sequence. `clobbers` instead
 describes registers destroyed implicitly by the operation. Structural
 preparation retains the compact register set. Allocator preparation expands
-each member into a late def of a fresh throwaway value, with no uses and a fixed
-constraint naming that physical register.
+each member into an immovable half-open reservation covering the instruction's
+Late point in that physical register's allocation map. A clobber is not a
+bundle: it has no semantic value, allocation choice, spill weight, or legal
+eviction.
 
 Every physical register written by an instruction must be represented either
 by an explicit def, including an allocated temporary, or by a clobber, but not
 both. A clobber may coincide with a fixed early use, but it may not collide with
-a fixed def or fixed late use. This is the
-[`regalloc2` clobber contract](https://docs.rs/regalloc2/latest/aarch64-unknown-linux-gnu/regalloc2/trait.Function.html#tymethod.inst_clobbers).
+a fixed def or fixed late use. This is the allocator's clobber contract.
 
 A potentially long branch therefore requests a GPR temporary; it does not
 needlessly clobber a predetermined register. The emitter may ignore the
@@ -479,38 +480,184 @@ Allocator numbering, liveness, live ranges, bundles, and partial assignments are
 local scratch state. The allocator does not publish or incrementally maintain a
 position map.
 
+Allocator ranges use one uniform half-open representation:
+
+```cpp
+struct ProgramRange
+{
+    ProgramPoint start;  // inclusive
+    ProgramPoint end;    // exclusive
+};
+```
+
+Half-open ranges make adjacency and splitting exact. Splitting `[a, c)` at
+`b` produces `[a, b)` and `[b, c)` without overlap, a gap, or predecessor
+arithmetic. `ProgramRange` contains no block, definition, occurrence, or
+allocation metadata. It may represent the empty intermediate range `[p, p)`,
+but every live range and bundle fragment is nonempty. Whether a point is a
+legal split boundary is enforced by the allocator operation performing the
+split rather than by `ProgramRange`.
+
 ## Live Ranges and Bundles
 
-A live range records where one SSA value needs storage. One `ProgramValueRef`
-may have several discontiguous ranges in linear program order because of CFG
-structure. Block arguments end predecessor ranges at edge exits; successor
-block parameters begin new SSA ranges at block entry.
+A live range is an immutable allocator-local record of one contiguous region
+where a Core SSA value or anonymous target temporary needs storage. Ordinary
+SSA values do not flow directly between blocks. An edge argument is a use at
+the predecessor exit and its corresponding block parameter is a distinct
+definition at the successor entry. Consequently, each live range is local to
+one block even though preparation handles the complete multi-block CFG.
 
-A bundle is the allocator's unit of assignment: a set of non-overlapping live
-ranges that should receive one location. Bundles recover physical continuity
-between distinct SSA values without changing their semantic identities. The
-allocator initially attempts to merge ranges related by:
+A dead definition still receives the minimal half-open range from its
+definition point to the next program point. Preparation does not special-case
+dead `Uninitialized` or other definitions out of the allocation model.
+
+The live range retains its stable ID, original `ProgramRange`, origin, and
+ordered occurrence IDs. A ProgramValue origin records its `ProgramValueRef`; an
+anonymous temporary origin records its instruction and temporary index. Its
+register class is derived once from the ProgramValue representation or
+temporary declaration. Observing incompatible register classes for one live
+range is a compiler invariant failure.
+
+The initial allocator-local shape is conceptually:
+
+```cpp
+struct Occurrence
+{
+    ProgramPoint point;
+    LiveRangeId live_range;
+    OccurrenceKind kind;
+    OccurrenceAnchor anchor;
+    uint32_t spill_weight;
+};
+
+struct FixedRegisterConstraint
+{
+    ProgramPoint point;
+    PhysicalRegister reg;
+    LiveRangeId live_range;
+    OccurrenceId occurrence;
+};
+
+struct LiveRange
+{
+    ProgramRange range;
+    LiveRangeOrigin origin;
+    RegisterClass register_class;
+    std::vector<OccurrenceId> occurrences;
+    std::vector<FixedConstraintId> fixed_constraints;
+};
+```
+
+`OccurrenceAnchor` retains the instruction operand or result, block parameter,
+edge argument, or temporary identity needed by diagnostics and final lowering.
+It does not make ephemeral integer positions durable.
+
+A bundle is the allocator's unit of assignment: a set of non-overlapping
+fragments that should receive one location. A bundle does not merely contain
+live range IDs. It owns an ordered list of copied allocation fragments:
+
+```cpp
+struct BundleFragment
+{
+    ProgramRange range;
+    LiveRangeId source;
+};
+```
+
+The `range` is the fragment's current allocation geometry. `source` preserves
+the immutable live-range identity needed to recover the `ProgramValueRef`,
+temporary identity, occurrences, and original extent. Initial singleton
+construction copies the complete source range. Later splitting may place
+proper subsets of the same source range in different bundles:
+
+```text
+source L0: [10, 30)
+
+bundle B1: { [10, 18), L0 }
+bundle B2: { [18, 30), L0 }
+```
+
+The source live range remains `[10, 30)`. Bundle fragments, rather than source
+live ranges, are the mutable allocation geometry. Fragments within one bundle
+are sorted and non-overlapping. Every fragment is contained by its source
+range, and the active fragments derived from one source neither overlap nor
+silently lose occurrence-bearing portions of that source.
+
+Occurrences remain stored on the source live range. Bundle property
+calculation walks the ordered occurrences covered by each fragment. This
+indirection is the initial representation; a fragment may later cache a
+contiguous occurrence-index window if measurement shows repeated lookup to be
+material.
+
+Bundles recover physical continuity between distinct SSA values without
+changing their semantic identities. The allocator later attempts to merge
+bundles related by:
 
 - block-argument transfers;
 - explicit machine-value moves;
 - reused-input constraints;
 - other backend-declared allocation equalities.
 
-Bundle merging is set union subject to the invariant that two ranges in one
-bundle never overlap. Repeating an already completed merge is a no-op.
-Splitting a bundle creates smaller bundles but does not change the underlying
-SSA ranges.
+Bundle merging combines the sorted fragment lists subject to the invariant that
+two fragments in one bundle never overlap. Stable source live-range IDs support
+merge idempotency while the pre-splitting merge phase still has one bundle
+owner per live range. Affinity merging completes before allocation splitting
+begins. After splitting, one source ID may occur in several bundles and a
+singular `LiveRangeId -> BundleId` ownership map is no longer valid.
+
+The initial prepared problem creates one singleton bundle containing one exact
+fragment for every live range. Its representation is fully multi-block, but
+the first conflict-free assignment stage accepts executable graphs only when
+no cross-block bundle merging, edge moves, splitting, eviction, or spilling is
+required.
+
+The selected allocation is not stored in the prepared bundle. A separate
+bundle-assignment table records the physical register or later spill location
+chosen for each active bundle.
+
+The corresponding prepared bundle is conceptually:
+
+```cpp
+struct LiveBundle
+{
+    RegisterClass register_class;
+    std::vector<BundleFragment> fragments;
+    std::vector<FixedConstraintId> fixed_constraints;
+    uint32_t allocation_priority;
+    uint32_t spill_weight;
+};
+```
+
+The fixed-constraint list and heuristic fields are derived caches recomputed
+after bulk construction, merge, or split. They are not replacements for source
+occurrences. Chosen physical locations live in the separate assignment state.
 
 Allocation priority and spill weight are distinct. Priority determines which
 bundle is processed next. Spill weight determines whether an unallocated bundle
 may evict conflicting allocated bundles. Both are recomputed for children
 created by splitting.
 
-Following `regalloc2`, a bundle's allocation priority is the sum of the lengths
-of its live ranges in allocator program-point space. The priority queue
-therefore considers bundles covering more code first, while the physical
-register maps are relatively empty. Fixed-register constraints do not receive a
-separate priority boost.
+A bundle's allocation priority is the sum of the lengths of its fragments in
+allocator program-point space. The priority queue therefore considers bundles
+covering more code first, while the physical register maps are relatively
+empty. Fixed-register constraints do not receive a separate priority boost.
+
+Ordinary `Any(register_class)` requirements are implicit in each live range's
+register class and are not copied into allocator occurrences. The allocator
+retains every ordinary use and def occurrence for liveness, splitting, spill
+weight, diagnostics, and later rewriting, but only nondefault fixed-register
+constraints need sparse requirement records. A fixed constraint records its
+program point, physical register, source live range, and occurrence ID.
+Incompatible register classes or a fixed register from the wrong class are
+compiler invariant failures.
+
+Each bundle keeps the fixed-constraint IDs covered by its current fragments,
+ordered by program point. Merging combines those sparse lists; splitting
+partitions them by point. Several fixed constraints naming the same register
+restrict the whole unsplit bundle to that register. Different fixed registers
+at different positions are valid pressure requiring later splitting or fixups,
+not a compiler invariant failure. The first non-splitting allocator reports a
+recoverable unsupported-allocation result for such a bundle.
 
 Each constrained occurrence contributes an initial spill weight:
 
@@ -519,6 +666,10 @@ hot contribution          = 1000 * 4^min(loop_depth, 10)
 definition contribution   = 2000 for a def, otherwise 0
 requirement contribution  = 1000 for Any, 2000 for Fixed
 ```
+
+The ordinary `Any` contribution is implied by an unconstrained occurrence; it
+does not require a stored allocator constraint. A sparse fixed constraint
+replaces that occurrence's requirement contribution.
 
 Constraints normalized into fixup moves are weighted at the resulting
 occurrences. A non-minimal bundle's spill weight is:
@@ -534,7 +685,7 @@ recovery demand, rematerialization cost, and measured block frequency may
 eventually refine the occurrence weights, but they are not part of the initial
 formula.
 
-A minimal bundle contains one live range covering at most the irreducible range
+A minimal bundle contains one fragment covering at most the irreducible range
 required by one occurrence. Minimal bundles use reserved spill-weight values
 above every non-minimal bundle: a minimal fixed-register bundle has the maximum
 weight, and an ordinary minimal bundle has the next lower tier. Clobber
@@ -602,9 +753,10 @@ prefer split points with cheaper connecting moves and hoist boundaries outside
 loops when legal. The initial allocator does not need this heuristic.
 
 Fixed-register constraints and clobbers are ordinary pressure at their anchored
-positions. A bundle covering a fixed-register occurrence must use that register.
-A value live across a clobber must be split, spilled, or assigned to a
-non-clobbered location.
+positions. An unsplit bundle whose fixed occurrences all name one register must
+use that register. Fixed occurrences naming different registers require
+splitting or fixups. A value live across a clobber must be split, spilled, or
+assigned to a non-clobbered location.
 
 ## Liveness and Splitting
 
@@ -625,16 +777,19 @@ treatment by the bundle allocator.
 The allocator may internally build:
 
 ```text
-ProgramValueRef -> live-range IDs
-live-range ID -> stable SSA range and constrained occurrences
-bundle -> set of non-overlapping live-range IDs
+ProgramValueRef -> live-range ID
+live-range ID -> stable origin, original range, and ordered occurrences
+bundle -> sorted non-overlapping {range, source live-range ID} fragments
+bundle -> sparse fixed constraints covered by those fragments
 bundle or split child -> assigned register or spill location
 ```
 
-Splitting refines bundles and range fragments; it does not mutate the Core SSA
-graph or require regenerating structural constraints. The child covering a
-constrained occurrence must satisfy that constraint. Moves reconnect adjacent
-children after assignment.
+Splitting partitions bundle fragments; it does not mutate the original live
+range, the Core SSA graph, or durable structural constraints. The same source
+live-range ID may therefore appear in adjacent children. The child covering a
+fixed occurrence must satisfy that constraint. Moves reconnect adjacent
+children after assignment, and the shared source ID identifies the semantic
+value being transferred.
 
 ## Block Parameters and Edge Moves
 
@@ -681,10 +836,10 @@ index, and distinct edges remain distinguishable even when they have the same
 source and target. Allocation may tag the two boundary occurrences with the
 edge and argument index, or expose their assigned entry and exit locations
 through structural occurrence IDs. Final move generation can then walk each
-edge once and fill its parallel-move bundle directly. It does not need
-regalloc2's collect-sort-join scheme for matching source and destination
-"half-moves", which compensates for edge arguments being embedded in branch
-instructions rather than represented by durable edge objects.
+edge once and fill its parallel-move bundle directly. It does not need a
+collect-sort-join scheme for matching source and destination "half-moves",
+because Clover's edge arguments are represented by durable edge objects rather
+than embedded anonymously in branch instructions.
 
 Merge ordering and the weights of bundles created across edges should account
 for:
@@ -737,10 +892,10 @@ result      -> Def Late, Fixed x0
 clobbers    -> caller-saved registers except x0
 ```
 
-The late throwaway def for the `x1` clobber may follow the early argument use.
-The explicit late result def supplies the required interference for `x0`
-instead. A resultless call includes `x0` in its clobber set when the ABI permits
-the call to destroy it.
+The immovable Late reservation for the `x1` clobber may follow the early
+argument use. The explicit late result def supplies the required interference
+for `x0` instead. A resultless call includes `x0` in its clobber set when the
+ABI permits the call to destroy it.
 
 Hidden scratch registers are not allowed. If a selected lowering needs a
 temporary, its `AllocationConstraints` must expose that temporary. A reserved
@@ -791,8 +946,8 @@ this analysis only if redundant transfers are material in practice.
 Parallel-move resolution must account for a cycle at a point where every
 suitable register is occupied. Memory-to-memory transfers introduce the same
 requirement even without a cycle. The initial design has no ordinary compiler
-spill area, so it cannot yet copy regalloc2's complete fallback of using a
-temporary stack slot and, when necessary, briefly spilling a victim register.
+spill area, so it cannot yet use the complete fallback of a temporary stack
+slot and, when necessary, briefly spilling a victim register.
 
 The implementation must choose a complete policy for every register class
 before parallel moves are emitted. Plausible choices are to reserve a scratch
@@ -921,9 +1076,11 @@ or a derived canonical home when one is proven legal; otherwise excessive
 pressure aborts compilation and execution remains interpreted.
 
 The hardcoded `x0` emitter path is test scaffolding, not a second allocation
-strategy. Bring-up work must not introduce a one-block allocator,
-target-specific allocator, or temporary fixed-first queue policy that will be
-discarded by the accepted allocator.
+strategy. The first assignment stage may accept only one-block executable
+graphs, but preparation, live-range storage, bundle fragments, and assignment
+results must use the general allocator model. Bring-up work must not introduce
+a one-block data model, target-specific allocator, or temporary fixed-first
+queue policy that will be discarded by the accepted allocator.
 
 Target code defines register vocabulary, availability, allocation order, and
 instruction constraints. The generic allocator owns liveness, bundle policy,
@@ -935,17 +1092,13 @@ result consumed by emission and recovery planning.
 
 ## External Model
 
-Cranelift and
-[`regalloc2`](https://cfallin.org/blog/2022/06/09/cranelift-regalloc2/) are the
-closest external model. Cranelift IR uses block parameters instead of phi
-instructions. `regalloc2` consumes block parameters, branch arguments, operand
-constraints, independent access kind and timing, register classes, clobbers,
-and CFG structure through a target-independent allocator interface. Clover
-keeps the same conceptual separation while using direct Core/CFG anchors
-instead of presenting a fully opaque IR adapter or making integer program
-points durable.
+Cranelift is the closest external IR model because it uses block parameters
+instead of phi instructions. General SSA bundle allocators consume block
+parameters, branch arguments, operand constraints, independent access kind and
+timing, register classes, clobbers, and CFG structure through a
+target-independent interface. Clover keeps the same conceptual separation
+while using direct Core/CFG anchors instead of presenting a fully opaque IR
+adapter or making integer program points durable.
 
 The allocation-priority, spill-weight, splitting, and progress rules above
-follow the
-[`regalloc2` Ion design](https://github.com/bytecodealliance/regalloc2/blob/main/doc/ION.md#bundle-processing)
-and should be changed only with an equivalent termination argument.
+should be changed only with an equivalent termination argument.

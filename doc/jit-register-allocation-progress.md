@@ -25,22 +25,42 @@ document and deliberately do not have checkboxes.
 ## Stage 1: Prepared Allocation Problem
 
 - [ ] Define dense allocator-local IDs and storage for program points,
-  occurrences, live ranges, bundles, and per-register allocation maps.
-- [ ] Linearize block entry, instruction Early and Late points, and block exit
-  without publishing positions into Core IR.
-- [ ] Expand default and sparse instruction constraints into anchored use, def,
-  temporary, and clobber occurrences.
-- [ ] Compute precise same-block SSA liveness and live ranges from instruction
-  operands for the initial one-block prepared graphs.
-- [ ] Create singleton bundles and compute their requirements, allocation
-  priorities, and spill weights.
+  occurrences, immutable live ranges, bundle fragments, and singleton bundles.
+- [ ] Linearize every block's entry, instruction Early and Late points, and
+  exit without publishing positions into Core IR; represent all ranges as
+  inclusive-start, exclusive-end `ProgramRange`s.
+- [ ] Expand Core operands and results into anchored use and def occurrences,
+  derive each range's one register class, retain sparse fixed constraints with
+  their exact points, and reject incompatible class claims as compiler
+  invariant failures.
+- [ ] Treat block parameters as entry definitions and edge arguments as
+  predecessor-exit uses so precise allocation liveness and live ranges remain
+  block-local while preparation covers the complete CFG.
+- [ ] Represent instruction temporaries as anonymous live ranges spanning
+  Early through Late and retain Late clobbers as immovable physical-register
+  reservations rather than bundles.
+- [ ] Give dead definitions minimal one-point ranges, including unused
+  `Uninitialized` definitions.
+- [ ] Create one singleton bundle with one exact `{ProgramRange, LiveRangeId}`
+  fragment for every live range; keep chosen allocations in a later separate
+  assignment table.
+- [ ] Compute bundle allocation priority and spill weight by visiting the
+  source occurrences covered by each fragment.
 - [ ] Add deterministic dumps and an internal verifier for positions,
-  temporality, liveness, range ordering, non-overlap, and occurrence ownership.
+  temporality, liveness, half-open range ordering, fragment containment,
+  non-overlap, occurrence coverage, sparse fixed constraints, and singleton
+  bundle ownership.
 
 This stage ends at a read-only prepared allocation problem. It performs no
-physical assignment and cannot affect generated code. Cross-block liveness,
-block parameters, and edge arguments enter in Stage 4 without changing the
-allocator-local range representation.
+physical assignment and cannot affect generated code. The prepared
+representation is multi-block, but every bundle initially contains exactly one
+live range fragment. Ordinary `Any` requirements are implicit and are not
+stored per occurrence.
+
+`Snapshot` results remain non-allocatable, and their captured values are not
+uses at the Snapshot definition. Until consumer-position expansion lands in
+Stage 6, this initial preparation rejects executable Snapshot consumers rather
+than silently omitting recovery liveness.
 
 ## Stage 2: Conflict-Free Register Assignment
 
@@ -59,51 +79,60 @@ allocator-local range representation.
 This stage accepts only allocation problems that fit without eviction,
 splitting, fixups, or spills. A conflict that the later allocator could solve
 is a recoverable compilation failure, not permission to introduce a temporary
-allocation policy.
+allocation policy. Initial executable integration remains one-block even though
+the prepared-problem construction is not.
 
-## Stage 3: Backtracking, Eviction, and Splitting
+## Stage 3: Affinities and CFG Transfers
+
+- [ ] Merge non-overlapping bundles across block parameters and edge arguments.
+- [ ] Add affinity merging for explicit moves and reused inputs.
+- [ ] Preserve source `LiveRangeId`s in every merged fragment and make repeated
+  requests to merge already-coalesced ranges no-ops.
+- [ ] Record unresolved edge transfers when bundle constraints or overlap
+  prevent coalescing.
+- [ ] Extend the symbolic checker and generated tests across branches, joins,
+  loops, critical edges, and duplicate edge arguments.
+
+Block parameters and edge arguments retain their distinct SSA identities.
+Bundle merging provides physical continuity without changing Core def/use
+semantics. Affinity merging finishes before allocation splitting begins; after
+splitting, one source live-range ID may occur in several bundles.
+
+## Stage 4: Backtracking, Eviction, Splitting, and Fixups
 
 - [ ] Collect every conflicting bundle and the first conflict point while
   probing a candidate physical register.
 - [ ] Implement strictly-higher-spill-weight eviction and requeue evicted
   bundles at their unchanged allocation priority.
-- [ ] Split a non-minimal bundle at a useful first conflict and requeue both
-  children with recomputed requirements, priorities, and spill weights.
+- [ ] Split a non-minimal bundle by partitioning its copied fragments without
+  mutating the immutable source live ranges; partition sparse fixed constraints
+  by point and recompute child priority and spill weight from covered
+  occurrences.
+- [ ] Normalize incompatible fixed-register and same-as-input occurrences into
+  constrained fragments plus explicit fixups.
+- [ ] Record edge, split, and fixup moves in allocator move bundles.
+- [ ] Implement the unified parallel-move resolver, including cycles and the
+  agreed scratch-location policy.
 - [ ] Add reserved spill-weight tiers for ordinary minimal and fixed-register
   minimal bundles.
 - [ ] Detect irreducible excessive pressure and fail compilation cleanly.
+- [ ] Extend the symbolic checker for split connectors, fixed-register
+  pressure, and preserved source-value provenance.
 - [ ] Add a debug iteration bound and adversarial tests for equal-weight
   conflicts, repeated eviction, fixed-register pressure, and split progress.
 
 The progress proof in the initial algorithm is the exit criterion for this
 stage. Merely passing ordinary examples is not enough.
 
-## Stage 4: Affinities, CFG Transfers, and Moves
-
-- [ ] Extend precise liveness and range construction across CFG edges, block
-  parameters, and edge arguments.
-- [ ] Merge non-overlapping bundles across block parameters and edge arguments.
-- [ ] Add affinity merging for explicit moves and reused inputs.
-- [ ] Record edge, split, and fixup moves in allocator move bundles.
-- [ ] Normalize incompatible fixed-register and same-as-input occurrences into
-  constrained ranges plus explicit fixups.
-- [ ] Implement the unified parallel-move resolver, including cycles and the
-  agreed scratch-location policy.
-- [ ] Extend the symbolic checker and generated tests across branches, joins,
-  loops, critical edges, duplicate edge arguments, and cyclic moves.
-
-Block parameters and edge arguments retain their distinct SSA identities.
-Bundle merging provides physical continuity without changing Core def/use
-semantics.
-
 ## Stage 5: Temporaries, Clobbers, and Calls
 
-- [ ] Normalize every clobbered register into an immovable Late fixed
-  reservation in its physical-register allocation map.
-- [ ] Allocate anonymous temporary ranges with their declared timing and
-  register requirements.
-- [ ] Support fixed entry, call-argument, call-result, and return occurrences
-  without hardcoding ABI policy into the generic allocator.
+- [ ] Make general allocation enforce every prepared immovable Late clobber
+  reservation; earlier restricted assignment rejects graphs containing
+  clobbers it cannot honor.
+- [ ] Make instruction lowering consume the locations assigned to anonymous
+  temporary ranges.
+- [ ] Support fixed call-argument and call-result occurrences without
+  hardcoding ABI policy into the generic allocator.
 - [ ] Validate calls whose early arguments remain legal in registers clobbered
   at Late, and reject contradictory fixed defs and clobbers.
 
