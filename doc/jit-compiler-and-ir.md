@@ -298,6 +298,13 @@ the semantic content of relevant ICs. Core construction then creates SSA for
 the accumulator and bytecode registers while expanding each supported IC case
 into explicit checks, actions, and side exits.
 
+The shared opcode-blind mapping from decoded accumulator/register locations to
+target `ProgramValueRef`s, including block transfer and complete state capture,
+is defined by
+[JIT Bytecode State Tracking and Translation](jit-bytecode-state-tracking.md).
+Core translation remains responsible for producing those values and for
+expanding opcode semantics into checks, actions, and side exits.
+
 This path deliberately omits:
 
 - Python function inlining;
@@ -630,10 +637,17 @@ BuilderContext:
 Updating this mapping changes the logical value of an accumulator or bytecode
 register without writing its canonical home.
 
-Frame-state and block-transfer arrays use one positional logical-register
-coordinate. Position zero is the function-arity-derived offset from `fp`;
-increasing position means increasing logical register index and descending
-physical stack address. Values appear in this order:
+Bytecode block transfer and recovery state query the same authoritative
+accumulator/register mapping but do not share one serialized positional format.
+The opcode-blind state and block-transfer contract is defined by
+[JIT Bytecode State Tracking and Translation](jit-bytecode-state-tracking.md).
+Its tracker owns the deterministic order used by block parameters and edge
+arguments.
+
+FrameState and Snapshot construction instead own the logical recovery layout.
+For inlined frames, position zero is the function-arity-derived offset from
+`fp`; increasing position means increasing logical register index and descending
+physical stack address. Recovery values appear in this order:
 
 ```text
 parameters

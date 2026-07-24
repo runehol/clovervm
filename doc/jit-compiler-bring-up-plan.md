@@ -305,7 +305,9 @@ Snapshots. It still does not require runtime entry.
 
 Scope:
 
-- add a minimal decoded-bytecode walker and `BuilderContext`;
+- add the `BytecodeState`, `BytecodeStateTracker`, and target-driven Core
+  translator defined by
+  [JIT Bytecode State Tracking and Translation](jit-bytecode-state-tracking.md);
 - model the symbolic accumulator, bytecode registers, current bytecode PC, and
   logical frame identity;
 - lower function arguments as entry definitions;

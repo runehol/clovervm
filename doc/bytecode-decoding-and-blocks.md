@@ -4,7 +4,7 @@
 |---|---|
 | Status | Implemented |
 | Scope | Shared bytecode metadata, semantic decoding, lightweight blocks, and compilation-time inline-cache snapshots |
-| Ownership | The bytecode layer owns decoding and bytecode blocks; each JIT owns its IR CFG, state flow, SSA, and later analysis |
+| Ownership | The bytecode layer owns decoding and bytecode blocks; the shared JIT state layer owns opcode-blind symbolic state tracking; each concrete IR translator owns traversal, CFG construction, opcode semantics, SSA values, and later analysis |
 
 ## Purpose
 
@@ -108,15 +108,22 @@ not operands or compound continuations.
 
 ## JIT Ownership
 
-Bytecode blocks are a frontend convenience, not the JIT's final CFG. One
-bytecode block may expand into several IR blocks for guards, calls, operator
-continuations, side exits, or backend requirements.
+Bytecode blocks are a frontend convenience rather than a permanent restriction
+on the JIT CFG. The initial translator maps each bytecode block to one IR block;
+guards and side exits remain instruction-local exits and do not create CFG
+blocks. A later lowering may expand one bytecode block into several IR blocks
+only when an implemented operation demonstrates that the extra control flow is
+required.
 
-JITs visit bytecode blocks in PC order and pre-create their target IR entries.
-Complete architectural state crosses bytecode block boundaries; it is not
-pruned by an initial liveness pass. This makes lowering order independent of
-dominance and permits backedge arguments to be attached after their target
-parameters already exist.
+The concrete translators described by
+[JIT Bytecode State Tracking and Translation](jit-bytecode-state-tracking.md)
+visit bytecode blocks in PC order, pre-create their target IR blocks, and create
+each block's eager state parameters immediately before walking it. They share
+opcode-blind bytecode state tracking without being constrained by a common
+translation callback protocol. Complete architectural state crosses bytecode
+block boundaries; it is not pruned by an initial liveness pass. This makes
+lowering order independent of dominance and permits backedge arguments to be
+attached after their target parameters already exist.
 
 `ForIter` forms have the same accumulator destination on both outgoing edges.
 `ForPrepRange` forms expose their range registers as read-modify-write. The
