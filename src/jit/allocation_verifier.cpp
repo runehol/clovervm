@@ -19,7 +19,7 @@ namespace cl::jit
 
         bool occurrence_is_fixed(
             const LiveRange &live_range, OccurrenceId occurrence,
-            const std::vector<FixedRegisterConstraint> &fixed_constraints)
+            const std::vector<FixedLocationConstraint> &fixed_constraints)
         {
             for(FixedConstraintId fixed_id: live_range.fixed_constraints)
             {
@@ -263,7 +263,7 @@ namespace cl::jit
                 {
                     fatal("JIT allocator live range names no fixed constraint");
                 }
-                const FixedRegisterConstraint &fixed =
+                const FixedLocationConstraint &fixed =
                     problem.fixed_constraints()[fixed_id.value()];
                 if(fixed.live_range != live_range_id ||
                    (!first && fixed.point < previous_fixed))
@@ -307,7 +307,7 @@ namespace cl::jit
         for(size_t index = 0; index < problem.fixed_constraints().size();
             ++index)
         {
-            const FixedRegisterConstraint &fixed =
+            const FixedLocationConstraint &fixed =
                 problem.fixed_constraints()[index];
             if(fixed.live_range.value() >= problem.live_ranges().size() ||
                fixed.occurrence.value() >= problem.occurrences().size())
@@ -380,7 +380,9 @@ namespace cl::jit
 
             for(FixedConstraintId fixed_id: bundle.fixed_constraints)
             {
-                if(problem.fixed_constraints()[fixed_id.value()].reg != reg)
+                AllocationLocation fixed =
+                    problem.fixed_constraints()[fixed_id.value()].location;
+                if(fixed.is_stack() || fixed.reg() != reg)
                 {
                     fatal("JIT allocator assignment violates fixed constraint");
                 }

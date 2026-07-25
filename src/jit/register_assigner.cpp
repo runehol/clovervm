@@ -231,8 +231,16 @@ namespace cl::jit
                 std::optional<PhysicalRegister> result;
                 for(FixedConstraintId fixed_id: bundle.fixed_constraints)
                 {
-                    PhysicalRegister reg =
-                        problem_.fixed_constraints()[fixed_id.value()].reg;
+                    AllocationLocation location =
+                        problem_.fixed_constraints()[fixed_id.value()].location;
+                    if(location.is_stack())
+                    {
+                        return Result<std::optional<PhysicalRegister>,
+                                      RegisterAllocationError>::
+                            error(RegisterAllocationError::
+                                      RequiresConstraintFixup);
+                    }
+                    PhysicalRegister reg = location.reg();
                     if(result.has_value() && *result != reg)
                     {
                         return Result<std::optional<PhysicalRegister>,

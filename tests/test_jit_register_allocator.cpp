@@ -414,6 +414,61 @@ namespace cl::jit
                   assignment_result.error());
     }
 
+    TEST(JitRegisterAllocator,
+         PreservesFixedStackLocationsForConstraintSplitting)
+    {
+        CompilationSession session;
+        GraphBuilder builder(session);
+        Block *entry = builder.emplace_block();
+        ParameterInstruction *parameter =
+            builder.emplace_parameter<ParameterInstruction>(entry);
+        ReturnInstruction *return_instruction =
+            builder.emplace_instruction<ReturnInstruction>(
+                entry, TaggedValueRef(parameter));
+        ControlFlowGraph *graph = builder.finalize();
+
+        LocationRequirement incoming =
+            LocationRequirement::fixed(AllocationLocation::stack(
+                StackLocation(StackLocationKind::IncomingParameter, 4)));
+        std::vector<InstructionAllocationConstraints> overrides;
+        overrides.emplace_back(parameter,
+                               std::vector<ProgramValueUseConstraint>{},
+                               ResultConstraint{AccessTiming::Late, incoming});
+        overrides.emplace_back(
+            return_instruction,
+            std::vector<ProgramValueUseConstraint>{
+                {ReturnInstruction::return_value_operand_index,
+                 AccessTiming::Early, fixed(x0)}});
+        constexpr std::array registers = {x0, x1};
+        AllocationConstraints constraints =
+            gpr_constraints(registers, std::move(overrides));
+
+        auto prepared_result = prepare_register_allocation(*graph, constraints);
+        ASSERT_TRUE(prepared_result);
+        PreparedAllocationProblem prepared = std::move(prepared_result).value();
+
+        ASSERT_EQ(2u, prepared.fixed_constraints().size());
+        AllocationLocation entry_location =
+            prepared.fixed_constraints()[0].location;
+        ASSERT_TRUE(entry_location.is_stack());
+        EXPECT_EQ(StackLocationKind::IncomingParameter,
+                  entry_location.stack().kind());
+        EXPECT_EQ(4, entry_location.stack().frame_offset());
+        EXPECT_EQ(x0, prepared.fixed_constraints()[1].location.reg());
+
+        std::string dump = format_prepared_allocation(prepared);
+        EXPECT_NE(std::string::npos,
+                  dump.find("fixed = incoming_parameter(4)"));
+        EXPECT_NE(std::string::npos, dump.find("fixed = gpr0"));
+        EXPECT_NE(std::string::npos,
+                  dump.find("fixed = [o0:incoming_parameter(4), o1:gpr0]"));
+
+        auto assignment_result = assign_bundles(prepared, constraints);
+        ASSERT_TRUE(assignment_result.has_error());
+        EXPECT_EQ(RegisterAllocationError::RequiresConstraintFixup,
+                  assignment_result.error());
+    }
+
     TEST(JitRegisterAllocator, AvoidsClobberedRegisters)
     {
         CompilationSession session;
@@ -521,7 +576,7 @@ namespace cl::jit
         EXPECT_EQ(
             x1,
             prepared.fixed_constraints()[temporary.fixed_constraints[0].value()]
-                .reg);
+                .location.reg());
 
         ASSERT_EQ(1u, prepared.clobbers().size());
         EXPECT_EQ(3u, prepared.clobbers()[0].range.start.value());

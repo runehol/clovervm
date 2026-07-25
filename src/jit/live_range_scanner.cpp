@@ -30,8 +30,8 @@ namespace cl::jit
                             requirement.fixed_location();
                         if(location.is_stack())
                         {
-                            fatal("fixed stack locations are not yet supported "
-                                  "by JIT live-range scanning");
+                            fatal("JIT allocator temporary requires a register "
+                                  "location");
                         }
                         return location.reg().register_class();
                     }
@@ -60,12 +60,9 @@ namespace cl::jit
                                   LocationRequirement requirement,
                                   RegisterClass expected_class)
         {
-            RegisterClass actual_class =
-                requirement_register_class(requirement);
-            if(actual_class != expected_class)
+            if(requirement.kind() == LocationRequirement::Kind::SameAsInput)
             {
-                fatal("JIT allocator occurrence has incompatible register "
-                      "classes");
+                fatal("unresolved SameAsInput in JIT allocator preparation");
             }
 
             const RegisterClassDefinition *definition =
@@ -75,12 +72,24 @@ namespace cl::jit
                 fatal("JIT allocator has no definition for a required register "
                       "class");
             }
-            if(requirement.kind() == LocationRequirement::Kind::FixedLocation &&
-               !definition->members().contains(
-                   requirement.fixed_location().reg()))
+
+            if(requirement.kind() == LocationRequirement::Kind::AnyRegister)
             {
-                fatal("JIT allocator fixed register is not a member of its "
-                      "register class");
+                if(requirement.register_class() != expected_class)
+                {
+                    fatal("JIT allocator occurrence has incompatible register "
+                          "classes");
+                }
+                return;
+            }
+
+            AllocationLocation location = requirement.fixed_location();
+            if(location.is_register() &&
+               (location.reg().register_class() != expected_class ||
+                !definition->members().contains(location.reg())))
+            {
+                fatal("JIT allocator fixed register is incompatible with its "
+                      "value");
             }
         }
 
@@ -218,8 +227,8 @@ namespace cl::jit
                 {
                     FixedConstraintId fixed_id(fixed_constraints_.size());
                     fixed_constraints_.push_back(
-                        {point, requirement.fixed_location().reg(),
-                         live_range_id, occurrence_id});
+                        {point, requirement.fixed_location(), live_range_id,
+                         occurrence_id});
                     live_range.fixed_constraints.push_back(fixed_id);
                 }
                 return occurrence_id;
@@ -462,7 +471,7 @@ namespace cl::jit
             std::unordered_map<const Instruction *, LiveRangeId> value_ranges_;
             std::vector<BlockProgramRange> block_ranges_;
             std::vector<Occurrence> occurrences_;
-            std::vector<FixedRegisterConstraint> fixed_constraints_;
+            std::vector<FixedLocationConstraint> fixed_constraints_;
             std::vector<LiveRange> live_ranges_;
             std::vector<ClobberReservation> clobbers_;
         };

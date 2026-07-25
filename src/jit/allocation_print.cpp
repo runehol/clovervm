@@ -118,6 +118,36 @@ namespace cl::jit
             fatal("invalid register class in JIT allocator dump");
         }
 
+        const char *stack_location_kind_name(StackLocationKind kind)
+        {
+            switch(kind)
+            {
+                case StackLocationKind::IncomingParameter:
+                    return "incoming_parameter";
+                case StackLocationKind::LocalOrTemporary:
+                    return "local_or_temporary";
+                case StackLocationKind::OutgoingCallArgument:
+                    return "outgoing_call_argument";
+                case StackLocationKind::SpillSlot:
+                    return "spill_slot";
+            }
+            fatal("invalid stack location kind in JIT allocator dump");
+        }
+
+        std::string format_location(AllocationLocation location)
+        {
+            if(location.is_register())
+            {
+                PhysicalRegister reg = location.reg();
+                return fmt::format("{}{}",
+                                   register_class_name(reg.register_class()),
+                                   reg.number());
+            }
+            StackLocation stack = location.stack();
+            return fmt::format("{}({})", stack_location_kind_name(stack.kind()),
+                               stack.frame_offset());
+        }
+
         const char *occurrence_kind_name(OccurrenceKind kind)
         {
             switch(kind)
@@ -132,12 +162,12 @@ namespace cl::jit
             fatal("invalid occurrence kind in JIT allocator dump");
         }
 
-        const FixedRegisterConstraint *
+        const FixedLocationConstraint *
         fixed_for_occurrence(const PreparedAllocationProblem &problem,
                              OccurrenceId occurrence_id)
         {
-            const FixedRegisterConstraint *result = nullptr;
-            for(const FixedRegisterConstraint &fixed:
+            const FixedLocationConstraint *result = nullptr;
+            for(const FixedLocationConstraint &fixed:
                 problem.fixed_constraints())
             {
                 if(fixed.occurrence != occurrence_id)
@@ -166,12 +196,11 @@ namespace cl::jit
                 {
                     fmt::format_to(std::back_inserter(out), ", ");
                 }
-                const FixedRegisterConstraint &fixed =
+                const FixedLocationConstraint &fixed =
                     problem.fixed_constraints()[fixed_ids[index].value()];
-                fmt::format_to(std::back_inserter(out), "o{}:{}{}",
+                fmt::format_to(std::back_inserter(out), "o{}:{}",
                                fixed.occurrence.value(),
-                               register_class_name(fixed.reg.register_class()),
-                               fixed.reg.number());
+                               format_location(fixed.location));
             }
             fmt::format_to(std::back_inserter(out), "]");
         }
@@ -211,14 +240,12 @@ namespace cl::jit
                                occurrence_kind_name(occurrence.kind),
                                occurrence.live_range.value(),
                                format_anchor(occurrence.anchor, names));
-                const FixedRegisterConstraint *fixed =
+                const FixedLocationConstraint *fixed =
                     fixed_for_occurrence(problem, occurrence_id);
                 if(fixed != nullptr)
                 {
-                    fmt::format_to(
-                        std::back_inserter(out), "fixed = {}{}, ",
-                        register_class_name(fixed->reg.register_class()),
-                        fixed->reg.number());
+                    fmt::format_to(std::back_inserter(out), "fixed = {}, ",
+                                   format_location(fixed->location));
                 }
                 fmt::format_to(std::back_inserter(out), "weight = {}}}\n",
                                occurrence.spill_weight);

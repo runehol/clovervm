@@ -16,7 +16,7 @@ namespace cl::jit
 
         bool occurrence_is_fixed(
             const LiveRange &live_range, OccurrenceId occurrence,
-            const std::vector<FixedRegisterConstraint> &fixed_constraints)
+            const std::vector<FixedLocationConstraint> &fixed_constraints)
         {
             for(FixedConstraintId fixed_id: live_range.fixed_constraints)
             {

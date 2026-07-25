@@ -160,10 +160,10 @@ namespace cl::jit
         uint64_t spill_weight;
     };
 
-    struct FixedRegisterConstraint
+    struct FixedLocationConstraint
     {
         ProgramPoint point;
-        PhysicalRegister reg;
+        AllocationLocation location;
         LiveRangeId live_range;
         OccurrenceId occurrence;
     };
@@ -260,7 +260,7 @@ namespace cl::jit
         PreparedAllocationProblem(
             std::vector<BlockProgramRange> block_ranges,
             std::vector<Occurrence> occurrences,
-            std::vector<FixedRegisterConstraint> fixed_constraints,
+            std::vector<FixedLocationConstraint> fixed_constraints,
             std::vector<LiveRange> live_ranges, std::vector<LiveBundle> bundles,
             std::vector<ClobberReservation> clobbers);
 
@@ -272,7 +272,7 @@ namespace cl::jit
         {
             return occurrences_;
         }
-        const std::vector<FixedRegisterConstraint> &fixed_constraints() const
+        const std::vector<FixedLocationConstraint> &fixed_constraints() const
         {
             return fixed_constraints_;
         }
@@ -289,7 +289,7 @@ namespace cl::jit
     private:
         std::vector<BlockProgramRange> block_ranges_;
         std::vector<Occurrence> occurrences_;
-        std::vector<FixedRegisterConstraint> fixed_constraints_;
+        std::vector<FixedLocationConstraint> fixed_constraints_;
         std::vector<LiveRange> live_ranges_;
         std::vector<LiveBundle> bundles_;
         std::vector<ClobberReservation> clobbers_;

@@ -68,7 +68,7 @@ than silently omitting recovery liveness.
 - [x] Add the priority queue and process larger bundles first.
 - [x] Probe legal registers in `RegisterClassDefinition::allocation_order()`
   and record non-overlapping assignments in per-register maps.
-- [ ] Define `AllocationLocation` and replace register-only requirements and
+- [x] Define `AllocationLocation` and replace register-only requirements and
   fixed constraints with `AnyRegister`, `FixedLocation`, and `SameAsInput`.
 - [ ] Add constraint-driven splitting immediately before the first
   incompatible use, or after an incompatible def, and record connectors in a
