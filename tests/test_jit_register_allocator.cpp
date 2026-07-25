@@ -55,6 +55,31 @@ namespace cl::jit
         }
     }  // namespace
 
+    TEST(JitRegisterAllocator, ComputesMinimumInstructionLivenessCoverage)
+    {
+        LivenessPosition early(10);
+
+        LivenessRange early_use = minimum_liveness_coverage(
+            early, OccurrenceKind::Use, AccessTiming::Early);
+        EXPECT_EQ(10u, early_use.start.value());
+        EXPECT_EQ(11u, early_use.end.value());
+
+        LivenessRange late_use = minimum_liveness_coverage(
+            early, OccurrenceKind::Use, AccessTiming::Late);
+        EXPECT_EQ(10u, late_use.start.value());
+        EXPECT_EQ(12u, late_use.end.value());
+
+        LivenessRange early_def = minimum_liveness_coverage(
+            early, OccurrenceKind::Def, AccessTiming::Early);
+        EXPECT_EQ(10u, early_def.start.value());
+        EXPECT_EQ(12u, early_def.end.value());
+
+        LivenessRange late_def = minimum_liveness_coverage(
+            early, OccurrenceKind::Def, AccessTiming::Late);
+        EXPECT_EQ(11u, late_def.start.value());
+        EXPECT_EQ(12u, late_def.end.value());
+    }
+
     TEST(JitRegisterAllocator, PreparesRepresentativeOneBlockProblem)
     {
         CompilationSession session;
@@ -175,7 +200,8 @@ namespace cl::jit
 
         ASSERT_EQ(2u, prepared.live_ranges()[0].occurrences.size());
         OccurrenceId edge_use = prepared.live_ranges()[0].occurrences.back();
-        EXPECT_EQ(6u, prepared.occurrences()[edge_use.value()].point.value());
+        EXPECT_EQ(6u,
+                  prepared.occurrences()[edge_use.value()].position.value());
         EXPECT_EQ(OccurrenceAnchor::Kind::BlockEdgeArgument,
                   prepared.occurrences()[edge_use.value()].anchor.kind());
         EXPECT_GT(prepared.occurrences()[edge_use.value()].spill_weight,
@@ -221,25 +247,26 @@ namespace cl::jit
 
     TEST(JitRegisterAllocator, FindsOverlapBetweenSortedBundleFragments)
     {
-        LiveBundle lhs{RegisterClass::GPR,
-                       {{{ProgramPoint(0), ProgramPoint(2)}, LiveRangeId(0)},
-                        {{ProgramPoint(4), ProgramPoint(6)}, LiveRangeId(1)},
-                        {{ProgramPoint(10), ProgramPoint(12)}, LiveRangeId(2)}},
-                       {},
-                       0,
-                       0};
+        LiveBundle lhs{
+            RegisterClass::GPR,
+            {{{LivenessPosition(0), LivenessPosition(2)}, LiveRangeId(0)},
+             {{LivenessPosition(4), LivenessPosition(6)}, LiveRangeId(1)},
+             {{LivenessPosition(10), LivenessPosition(12)}, LiveRangeId(2)}},
+            {},
+            0,
+            0};
         LiveBundle abutting{
             RegisterClass::GPR,
-            {{{ProgramPoint(2), ProgramPoint(4)}, LiveRangeId(3)},
-             {{ProgramPoint(6), ProgramPoint(10)}, LiveRangeId(4)},
-             {{ProgramPoint(12), ProgramPoint(14)}, LiveRangeId(5)}},
+            {{{LivenessPosition(2), LivenessPosition(4)}, LiveRangeId(3)},
+             {{LivenessPosition(6), LivenessPosition(10)}, LiveRangeId(4)},
+             {{LivenessPosition(12), LivenessPosition(14)}, LiveRangeId(5)}},
             {},
             0,
             0};
         LiveBundle overlapping{
             RegisterClass::GPR,
-            {{{ProgramPoint(2), ProgramPoint(4)}, LiveRangeId(6)},
-             {{ProgramPoint(6), ProgramPoint(11)}, LiveRangeId(7)}},
+            {{{LivenessPosition(2), LivenessPosition(4)}, LiveRangeId(6)},
+             {{LivenessPosition(6), LivenessPosition(11)}, LiveRangeId(7)}},
             {},
             0,
             0};
@@ -608,6 +635,39 @@ namespace cl::jit
                   prepared.bundles()[0].spill_weight);
         EXPECT_EQ(std::numeric_limits<uint64_t>::max() - 1,
                   prepared.bundles()[1].spill_weight);
+    }
+
+    TEST(JitRegisterAllocator,
+         KeepsDeadEarlyDefinitionsLiveUntilNextInstruction)
+    {
+        CompilationSession session;
+        GraphBuilder builder(session);
+        Block *entry = builder.emplace_block();
+        Instruction *early_definition =
+            builder.emplace_instruction<UninitializedInstruction>(entry);
+        TaggedValueRef result = emplace_constant(builder, entry, Value::None());
+        builder.emplace_instruction<ReturnInstruction>(entry, result);
+        ControlFlowGraph *graph = builder.finalize();
+
+        std::vector<InstructionAllocationConstraints> overrides;
+        overrides.emplace_back(
+            early_definition, std::vector<ProgramValueUseConstraint>{},
+            ResultConstraint{
+                AccessTiming::Early,
+                LocationRequirement::any_register(RegisterClass::GPR)});
+        constexpr std::array registers = {x0, x1};
+        AllocationConstraints constraints =
+            gpr_constraints(registers, std::move(overrides));
+
+        auto prepared_result = prepare_register_allocation(*graph, constraints);
+        ASSERT_TRUE(prepared_result);
+        PreparedAllocationProblem prepared = std::move(prepared_result).value();
+
+        ASSERT_FALSE(prepared.live_ranges().empty());
+        const LiveRange &early_range = prepared.live_ranges().front();
+        EXPECT_EQ(early_definition, early_range.origin.instruction());
+        EXPECT_EQ(2u, early_range.range.start.value());
+        EXPECT_EQ(4u, early_range.range.end.value());
     }
 
     TEST(JitRegisterAllocator, GivesSparseLongRangesNonzeroSpillWeight)

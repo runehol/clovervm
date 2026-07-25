@@ -43,12 +43,12 @@ namespace cl::jit
 
         struct AssignedFragment
         {
-            ProgramPoint end;
+            LivenessPosition end;
             BundleId bundle;
         };
 
         using RegisterOccupancy =
-            absl::btree_map<ProgramPoint, AssignedFragment>;
+            absl::btree_map<LivenessPosition, AssignedFragment>;
 
         struct BundleWorkItem
         {
@@ -69,14 +69,14 @@ namespace cl::jit
             }
         };
 
-        void coalesce_ranges(std::vector<ProgramRange> &ranges)
+        void coalesce_ranges(std::vector<LivenessRange> &ranges)
         {
-            std::ranges::sort(ranges, [](ProgramRange lhs, ProgramRange rhs) {
+            std::ranges::sort(ranges, [](LivenessRange lhs, LivenessRange rhs) {
                 return lhs.start < rhs.start;
             });
 
             size_t output = 0;
-            for(ProgramRange range: ranges)
+            for(LivenessRange range: ranges)
             {
                 if(output != 0 && range.start <= ranges[output - 1].end)
                 {
@@ -92,12 +92,12 @@ namespace cl::jit
                          ranges.end());
         }
 
-        bool ranges_overlap(const std::vector<ProgramRange> &ranges,
-                            ProgramRange candidate)
+        bool ranges_overlap(const std::vector<LivenessRange> &ranges,
+                            LivenessRange candidate)
         {
             auto position = std::ranges::lower_bound(
                 ranges, candidate.start, {},
-                [](ProgramRange range) { return range.start; });
+                [](LivenessRange range) { return range.start; });
             if(position != ranges.begin() &&
                std::prev(position)->end > candidate.start)
             {
@@ -107,7 +107,7 @@ namespace cl::jit
         }
 
         bool ranges_overlap(const RegisterOccupancy &occupancy,
-                            ProgramRange candidate)
+                            LivenessRange candidate)
         {
             auto position = occupancy.lower_bound(candidate.start);
             if(position != occupancy.begin() &&
@@ -299,7 +299,7 @@ namespace cl::jit
                     if(!inserted)
                     {
                         fatal("JIT allocator assigned two fragments with the "
-                              "same start point to one register");
+                              "same start position to one register");
                     }
                 }
             }
@@ -308,7 +308,7 @@ namespace cl::jit
             const AllocationConstraints &constraints_;
             std::vector<std::optional<PhysicalRegister>> register_by_bundle_;
             PerPhysicalRegister<RegisterOccupancy> occupancy_;
-            PerPhysicalRegister<std::vector<ProgramRange>> clobber_ranges_;
+            PerPhysicalRegister<std::vector<LivenessRange>> clobber_ranges_;
             std::priority_queue<BundleWorkItem, std::vector<BundleWorkItem>,
                                 BundleWorkItemCompare>
                 worklist_;

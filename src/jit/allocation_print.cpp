@@ -74,7 +74,7 @@ namespace cl::jit
             std::unordered_map<const BlockEdge *, size_t> edges_;
         };
 
-        std::string format_range(ProgramRange range)
+        std::string format_range(LivenessRange range)
         {
             return fmt::format("[{}, {})", range.start.value(),
                                range.end.value());
@@ -216,7 +216,7 @@ namespace cl::jit
         };
 
         append("allocation {\n");
-        for(const BlockProgramRange &block_range: problem.block_ranges())
+        for(const BlockLivenessRange &block_range: problem.block_ranges())
         {
             fmt::format_to(
                 std::back_inserter(out), "  bb{} {} {{loop_depth = {}}} {{\n",
@@ -236,7 +236,7 @@ namespace cl::jit
                 }
                 fmt::format_to(std::back_inserter(out),
                                "      {} o{} {} l{} {} {{",
-                               occurrence.point.value(), index,
+                               occurrence.position.value(), index,
                                occurrence_kind_name(occurrence.kind),
                                occurrence.live_range.value(),
                                format_anchor(occurrence.anchor, names));

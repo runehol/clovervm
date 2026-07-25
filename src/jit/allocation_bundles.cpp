@@ -85,8 +85,8 @@ namespace cl::jit
         while(lhs_index < lhs.fragments.size() &&
               rhs_index < rhs.fragments.size())
         {
-            ProgramRange lhs_range = lhs.fragments[lhs_index].range;
-            ProgramRange rhs_range = rhs.fragments[rhs_index].range;
+            LivenessRange lhs_range = lhs.fragments[lhs_index].range;
+            LivenessRange rhs_range = rhs.fragments[rhs_index].range;
             if(lhs_range.end <= rhs_range.start)
             {
                 ++lhs_index;

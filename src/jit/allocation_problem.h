@@ -40,38 +40,39 @@ namespace cl::jit
     using FixedConstraintId =
         register_allocator_detail::DenseId<FixedConstraintIdTag>;
 
-    class ProgramPoint
+    class LivenessPosition
     {
     public:
-        explicit constexpr ProgramPoint(size_t value) : value_(value) {}
+        explicit constexpr LivenessPosition(size_t value) : value_(value) {}
 
         constexpr size_t value() const { return value_; }
-        ProgramPoint next() const { return ProgramPoint(value_ + 1); }
+        LivenessPosition next() const { return LivenessPosition(value_ + 1); }
 
-        friend constexpr auto operator<=>(ProgramPoint, ProgramPoint) = default;
+        friend constexpr auto operator<=>(LivenessPosition,
+                                          LivenessPosition) = default;
 
     private:
         size_t value_;
     };
 
-    struct ProgramRange
+    struct LivenessRange
     {
-        ProgramPoint start;
-        ProgramPoint end;
+        LivenessPosition start;
+        LivenessPosition end;
 
         size_t length() const
         {
             if(end < start)
             {
-                fatal("inverted JIT allocator program range");
+                fatal("inverted JIT allocator liveness range");
             }
             return end.value() - start.value();
         }
-        bool contains(ProgramPoint point) const
+        bool contains(LivenessPosition point) const
         {
             return start <= point && point < end;
         }
-        bool contains(ProgramRange range) const
+        bool contains(LivenessRange range) const
         {
             return start <= range.start && range.end <= end;
         }
@@ -84,6 +85,10 @@ namespace cl::jit
         Def,
         Temporary,
     };
+
+    LivenessRange minimum_liveness_coverage(LivenessPosition instruction_early,
+                                            OccurrenceKind kind,
+                                            AccessTiming timing);
 
     class OccurrenceAnchor
     {
@@ -153,7 +158,7 @@ namespace cl::jit
 
     struct Occurrence
     {
-        ProgramPoint point;
+        LivenessPosition position;
         LiveRangeId live_range;
         OccurrenceKind kind;
         OccurrenceAnchor anchor;
@@ -162,7 +167,7 @@ namespace cl::jit
 
     struct FixedLocationConstraint
     {
-        ProgramPoint point;
+        LivenessPosition position;
         AllocationLocation location;
         LiveRangeId live_range;
         OccurrenceId occurrence;
@@ -216,7 +221,7 @@ namespace cl::jit
 
     struct LiveRange
     {
-        ProgramRange range;
+        LivenessRange range;
         LiveRangeOrigin origin;
         const Block *block;
         RegisterClass register_class;
@@ -226,7 +231,7 @@ namespace cl::jit
 
     struct BundleFragment
     {
-        ProgramRange range;
+        LivenessRange range;
         LiveRangeId source;
     };
 
@@ -243,28 +248,28 @@ namespace cl::jit
 
     struct ClobberReservation
     {
-        ProgramRange range;
+        LivenessRange range;
         PhysicalRegister reg;
         const Instruction *instruction;
     };
 
-    struct BlockProgramRange
+    struct BlockLivenessRange
     {
         const Block *block;
-        ProgramRange range;
+        LivenessRange range;
     };
 
     class PreparedAllocationProblem
     {
     public:
         PreparedAllocationProblem(
-            std::vector<BlockProgramRange> block_ranges,
+            std::vector<BlockLivenessRange> block_ranges,
             std::vector<Occurrence> occurrences,
             std::vector<FixedLocationConstraint> fixed_constraints,
             std::vector<LiveRange> live_ranges, std::vector<LiveBundle> bundles,
             std::vector<ClobberReservation> clobbers);
 
-        const std::vector<BlockProgramRange> &block_ranges() const
+        const std::vector<BlockLivenessRange> &block_ranges() const
         {
             return block_ranges_;
         }
@@ -287,7 +292,7 @@ namespace cl::jit
         }
 
     private:
-        std::vector<BlockProgramRange> block_ranges_;
+        std::vector<BlockLivenessRange> block_ranges_;
         std::vector<Occurrence> occurrences_;
         std::vector<FixedLocationConstraint> fixed_constraints_;
         std::vector<LiveRange> live_ranges_;

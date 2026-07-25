@@ -9,7 +9,7 @@ namespace cl::jit
 {
     struct LiveRangeScan
     {
-        std::vector<BlockProgramRange> block_ranges;
+        std::vector<BlockLivenessRange> block_ranges;
         std::vector<Occurrence> occurrences;
         std::vector<FixedLocationConstraint> fixed_constraints;
         std::vector<LiveRange> live_ranges;

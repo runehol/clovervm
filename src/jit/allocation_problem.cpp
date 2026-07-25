@@ -4,8 +4,31 @@
 
 namespace cl::jit
 {
+    LivenessRange minimum_liveness_coverage(LivenessPosition instruction_early,
+                                            OccurrenceKind kind,
+                                            AccessTiming timing)
+    {
+        LivenessPosition instruction_late = instruction_early.next();
+        LivenessPosition next_instruction_early = instruction_late.next();
+
+        switch(kind)
+        {
+            case OccurrenceKind::Use:
+                return {instruction_early, timing == AccessTiming::Early
+                                               ? instruction_late
+                                               : next_instruction_early};
+            case OccurrenceKind::Def:
+                return {timing == AccessTiming::Early ? instruction_early
+                                                      : instruction_late,
+                        next_instruction_early};
+            case OccurrenceKind::Temporary:
+                break;
+        }
+        fatal("temporary occurrence has explicit liveness coverage");
+    }
+
     PreparedAllocationProblem::PreparedAllocationProblem(
-        std::vector<BlockProgramRange> block_ranges,
+        std::vector<BlockLivenessRange> block_ranges,
         std::vector<Occurrence> occurrences,
         std::vector<FixedLocationConstraint> fixed_constraints,
         std::vector<LiveRange> live_ranges, std::vector<LiveBundle> bundles,

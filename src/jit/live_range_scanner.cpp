@@ -12,9 +12,9 @@ namespace cl::jit
 {
     namespace
     {
-        ProgramPoint point_at(ProgramPoint start, size_t offset)
+        LivenessPosition position_at(LivenessPosition start, size_t offset)
         {
-            return ProgramPoint(start.value() + offset);
+            return LivenessPosition(start.value() + offset);
         }
 
         RegisterClass
@@ -163,9 +163,10 @@ namespace cl::jit
                 {
                     size_t block_size = (block->instructions().size() + 2) * 2;
                     size_t block_end = next_block_start + block_size;
-                    block_ranges_.push_back({block,
-                                             {ProgramPoint(next_block_start),
-                                              ProgramPoint(block_end)}});
+                    block_ranges_.push_back(
+                        {block,
+                         {LivenessPosition(next_block_start),
+                          LivenessPosition(block_end)}});
                     next_block_start = block_end;
                 }
             }
@@ -182,7 +183,7 @@ namespace cl::jit
                 return found->second;
             }
 
-            LiveRangeId add_live_range(ProgramRange range,
+            LiveRangeId add_live_range(LivenessRange range,
                                        LiveRangeOrigin origin,
                                        const Block &block,
                                        RegisterClass register_class)
@@ -205,21 +206,28 @@ namespace cl::jit
             }
 
             OccurrenceId add_occurrence(LiveRangeId live_range_id,
-                                        ProgramPoint point, OccurrenceKind kind,
+                                        LivenessPosition position,
+                                        LivenessRange coverage,
+                                        OccurrenceKind kind,
                                         OccurrenceAnchor anchor,
                                         LocationRequirement requirement)
             {
                 LiveRange &live_range = live_ranges_[live_range_id.value()];
                 validate_requirement(constraints_, requirement,
                                      live_range.register_class);
+                if(!coverage.contains(position))
+                {
+                    fatal("JIT allocator occurrence lies outside its minimum "
+                          "liveness coverage");
+                }
 
                 OccurrenceId occurrence_id(occurrences_.size());
                 occurrences_.push_back(
-                    {point, live_range_id, kind, std::move(anchor), 0});
+                    {position, live_range_id, kind, std::move(anchor), 0});
                 live_range.occurrences.push_back(occurrence_id);
-                if(point.next() > live_range.range.end)
+                if(coverage.end > live_range.range.end)
                 {
-                    live_range.range.end = point.next();
+                    live_range.range.end = coverage.end;
                 }
 
                 if(requirement.kind() ==
@@ -227,7 +235,7 @@ namespace cl::jit
                 {
                     FixedConstraintId fixed_id(fixed_constraints_.size());
                     fixed_constraints_.push_back(
-                        {point, requirement.fixed_location(), live_range_id,
+                        {position, requirement.fixed_location(), live_range_id,
                          occurrence_id});
                     live_range.fixed_constraints.push_back(fixed_id);
                 }
@@ -252,9 +260,9 @@ namespace cl::jit
             }
 
             Result<void, RegisterAllocationError>
-            scan_block(const Block &block, ProgramPoint block_start)
+            scan_block(const Block &block, LivenessPosition block_start)
             {
-                ProgramPoint entry_after = point_at(block_start, 1);
+                LivenessPosition entry_after = position_at(block_start, 1);
                 for(Instruction *parameter: block.parameters())
                 {
                     const InstructionAllocationConstraints *override =
@@ -287,7 +295,8 @@ namespace cl::jit
                         LiveRangeOrigin::program_value(parameter), block,
                         register_class);
                     add_occurrence(
-                        live_range, entry_after, OccurrenceKind::Def,
+                        live_range, entry_after,
+                        {entry_after, entry_after.next()}, OccurrenceKind::Def,
                         OccurrenceAnchor::instruction_result(parameter),
                         result_constraint.requirement);
                 }
@@ -298,9 +307,9 @@ namespace cl::jit
                 {
                     Instruction *instruction =
                         block.instructions()[instruction_index];
-                    ProgramPoint early =
-                        point_at(block_start, 2 + instruction_index * 2);
-                    ProgramPoint late = early.next();
+                    LivenessPosition early =
+                        position_at(block_start, 2 + instruction_index * 2);
+                    LivenessPosition late = early.next();
                     const InstructionAllocationConstraints *override =
                         override_for(instruction);
 
@@ -327,14 +336,18 @@ namespace cl::jit
                                         ? *input
                                         : default_program_value_use_constraint(
                                               operand_index, representation);
-                                ProgramPoint point =
+                                LivenessPosition position =
                                     constraint.timing == AccessTiming::Early
                                         ? early
                                         : late;
                                 LiveRangeId live_range =
                                     value_range(definition, block);
                                 add_occurrence(
-                                    live_range, point, OccurrenceKind::Use,
+                                    live_range, position,
+                                    minimum_liveness_coverage(
+                                        early, OccurrenceKind::Use,
+                                        constraint.timing),
+                                    OccurrenceKind::Use,
                                     OccurrenceAnchor::instruction_operand(
                                         instruction, operand_index),
                                     constraint.requirement);
@@ -362,19 +375,22 @@ namespace cl::jit
                                 RegisterAllocationError::
                                     UnsupportedSameAsInput);
                         }
-                        ProgramPoint point =
+                        LivenessPosition position =
                             result_constraint.timing == AccessTiming::Early
                                 ? early
                                 : late;
+                        LivenessRange coverage = minimum_liveness_coverage(
+                            early, OccurrenceKind::Def,
+                            result_constraint.timing);
                         RegisterClass register_class =
                             register_class_for_representation(
                                 instruction->value_representation());
                         LiveRangeId live_range = add_live_range(
-                            {point, point.next()},
+                            coverage,
                             LiveRangeOrigin::program_value(instruction), block,
                             register_class);
                         add_occurrence(
-                            live_range, point, OccurrenceKind::Def,
+                            live_range, position, coverage, OccurrenceKind::Def,
                             OccurrenceAnchor::instruction_result(instruction),
                             result_constraint.requirement);
                     }
@@ -396,7 +412,8 @@ namespace cl::jit
                                                            temporary_index),
                                 block, register_class);
                             add_occurrence(
-                                live_range, early, OccurrenceKind::Temporary,
+                                live_range, early, {early, late.next()},
+                                OccurrenceKind::Temporary,
                                 OccurrenceAnchor::instruction_temporary(
                                     instruction, temporary_index),
                                 requirement);
@@ -427,8 +444,8 @@ namespace cl::jit
                     }
                 }
 
-                ProgramPoint exit_before =
-                    point_at(block_start, 2 + block.instructions().size() * 2);
+                LivenessPosition exit_before = position_at(
+                    block_start, 2 + block.instructions().size() * 2);
                 for(const BlockEdge *edge: block.block_successor_edges())
                 {
                     const std::vector<ProgramValueRef> &arguments =
@@ -444,6 +461,7 @@ namespace cl::jit
                                 live_ranges_[live_range.value()]
                                     .register_class);
                         add_occurrence(live_range, exit_before,
+                                       {exit_before, exit_before.next()},
                                        OccurrenceKind::Use,
                                        OccurrenceAnchor::block_edge_argument(
                                            edge, argument_index),
@@ -469,7 +487,7 @@ namespace cl::jit
                 overrides_;
             std::unordered_set<const Instruction *> consumed_overrides_;
             std::unordered_map<const Instruction *, LiveRangeId> value_ranges_;
-            std::vector<BlockProgramRange> block_ranges_;
+            std::vector<BlockLivenessRange> block_ranges_;
             std::vector<Occurrence> occurrences_;
             std::vector<FixedLocationConstraint> fixed_constraints_;
             std::vector<LiveRange> live_ranges_;

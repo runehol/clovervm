@@ -13,8 +13,8 @@ namespace cl::jit
         struct InstructionPosition
         {
             const Block *block;
-            ProgramPoint early;
-            ProgramPoint late;
+            LivenessPosition early;
+            LivenessPosition late;
         };
 
         bool occurrence_is_fixed(
@@ -53,20 +53,20 @@ namespace cl::jit
 
     void verify_prepared_allocation(const PreparedAllocationProblem &problem)
     {
-        std::unordered_map<const Block *, ProgramRange> block_ranges;
-        std::unordered_map<const Instruction *, ProgramPoint>
+        std::unordered_map<const Block *, LivenessRange> block_ranges;
+        std::unordered_map<const Instruction *, LivenessPosition>
             parameter_positions;
         std::unordered_map<const Instruction *, InstructionPosition>
             instruction_positions;
 
-        ProgramPoint expected_block_start(0);
-        for(const BlockProgramRange &block_range: problem.block_ranges())
+        LivenessPosition expected_block_start(0);
+        for(const BlockLivenessRange &block_range: problem.block_ranges())
         {
             if(block_range.block == nullptr ||
                block_range.range.start != expected_block_start ||
                block_range.range.empty())
             {
-                fatal("invalid JIT allocator block program range");
+                fatal("invalid JIT allocator block liveness range");
             }
             size_t expected_size =
                 (block_range.block->instructions().size() + 2) * 2;
@@ -74,10 +74,10 @@ namespace cl::jit
                !block_ranges.emplace(block_range.block, block_range.range)
                     .second)
             {
-                fatal("incorrect JIT allocator block program range");
+                fatal("incorrect JIT allocator block liveness range");
             }
 
-            ProgramPoint entry_after = block_range.range.start.next();
+            LivenessPosition entry_after = block_range.range.start.next();
             for(const Instruction *parameter: block_range.block->parameters())
             {
                 if(!parameter_positions.emplace(parameter, entry_after).second)
@@ -88,8 +88,8 @@ namespace cl::jit
             for(size_t index = 0;
                 index < block_range.block->instructions().size(); ++index)
             {
-                ProgramPoint early(block_range.range.start.value() + 2 +
-                                   index * 2);
+                LivenessPosition early(block_range.range.start.value() + 2 +
+                                       index * 2);
                 const Instruction *instruction =
                     block_range.block->instructions()[index];
                 if(!instruction_positions
@@ -113,7 +113,7 @@ namespace cl::jit
             }
             const LiveRange &live_range =
                 problem.live_ranges()[occurrence.live_range.value()];
-            if(!live_range.range.contains(occurrence.point) ||
+            if(!live_range.range.contains(occurrence.position) ||
                occurrence.anchor.owner() == nullptr)
             {
                 fatal("invalid JIT allocator occurrence");
@@ -125,31 +125,48 @@ namespace cl::jit
                     {
                         const Instruction *instruction =
                             occurrence.anchor.instruction();
-                        ProgramPoint expected = ProgramPoint(0);
+                        LivenessPosition expected = LivenessPosition(0);
                         auto parameter = parameter_positions.find(instruction);
                         if(parameter != parameter_positions.end())
                         {
                             expected = parameter->second;
+                            if(!live_range.range.contains(
+                                   {expected, expected.next()}))
+                            {
+                                fatal("JIT allocator block parameter is not "
+                                      "live at block entry");
+                            }
                         }
                         else
                         {
                             auto position =
                                 instruction_positions.find(instruction);
-                            if(position == instruction_positions.end())
+                            if(position == instruction_positions.end() ||
+                               (occurrence.position != position->second.early &&
+                                occurrence.position != position->second.late))
                             {
                                 fatal("JIT allocator result anchor is outside "
                                       "the graph");
                             }
-                            expected =
-                                occurrence.point == position->second.early
-                                    ? position->second.early
-                                    : position->second.late;
+                            expected = occurrence.position;
+                            AccessTiming timing =
+                                expected == position->second.early
+                                    ? AccessTiming::Early
+                                    : AccessTiming::Late;
+                            if(!live_range.range.contains(
+                                   minimum_liveness_coverage(
+                                       position->second.early,
+                                       OccurrenceKind::Def, timing)))
+                            {
+                                fatal("JIT allocator result has insufficient "
+                                      "liveness coverage");
+                            }
                         }
                         if(occurrence.kind != OccurrenceKind::Def ||
                            live_range.origin.kind() !=
                                LiveRangeOrigin::Kind::ProgramValue ||
                            live_range.origin.instruction() != instruction ||
-                           occurrence.point != expected)
+                           occurrence.position != expected)
                         {
                             fatal("invalid JIT allocator result occurrence");
                         }
@@ -162,8 +179,8 @@ namespace cl::jit
                         auto position = instruction_positions.find(instruction);
                         if(position == instruction_positions.end() ||
                            position->second.block != live_range.block ||
-                           (occurrence.point != position->second.early &&
-                            occurrence.point != position->second.late) ||
+                           (occurrence.position != position->second.early &&
+                            occurrence.position != position->second.late) ||
                            occurrence.kind != OccurrenceKind::Use ||
                            live_range.origin.kind() !=
                                LiveRangeOrigin::Kind::ProgramValue ||
@@ -172,6 +189,17 @@ namespace cl::jit
                                live_range.origin.instruction()))
                         {
                             fatal("invalid JIT allocator operand occurrence");
+                        }
+                        AccessTiming timing =
+                            occurrence.position == position->second.early
+                                ? AccessTiming::Early
+                                : AccessTiming::Late;
+                        if(!live_range.range.contains(minimum_liveness_coverage(
+                               position->second.early, OccurrenceKind::Use,
+                               timing)))
+                        {
+                            fatal("JIT allocator operand has insufficient "
+                                  "liveness coverage");
                         }
                         break;
                     }
@@ -183,13 +211,16 @@ namespace cl::jit
                         if(edge->source() != live_range.block ||
                            argument_index >= edge->arguments().size() ||
                            range == block_ranges.end() ||
-                           occurrence.point.value() + 2 !=
+                           occurrence.position.value() + 2 !=
                                range->second.end.value() ||
                            occurrence.kind != OccurrenceKind::Use ||
                            live_range.origin.kind() !=
                                LiveRangeOrigin::Kind::ProgramValue ||
                            edge->arguments()[argument_index].instruction() !=
-                               live_range.origin.instruction())
+                               live_range.origin.instruction() ||
+                           !live_range.range.contains(
+                               {occurrence.position,
+                                occurrence.position.next()}))
                         {
                             fatal("invalid JIT allocator edge occurrence");
                         }
@@ -203,7 +234,7 @@ namespace cl::jit
                         if(position == instruction_positions.end() ||
                            position->second.block != live_range.block ||
                            occurrence.kind != OccurrenceKind::Temporary ||
-                           occurrence.point != position->second.early ||
+                           occurrence.position != position->second.early ||
                            live_range.origin.kind() !=
                                LiveRangeOrigin::Kind::Temporary ||
                            live_range.origin.instruction() != instruction ||
@@ -232,7 +263,7 @@ namespace cl::jit
                 fatal("invalid JIT allocator live range");
             }
 
-            ProgramPoint previous = live_range.range.start;
+            LivenessPosition previous = live_range.range.start;
             bool first = true;
             std::unordered_set<size_t> seen_occurrences;
             for(OccurrenceId occurrence_id: live_range.occurrences)
@@ -245,15 +276,15 @@ namespace cl::jit
                 const Occurrence &occurrence =
                     problem.occurrences()[occurrence_id.value()];
                 if(occurrence.live_range != live_range_id ||
-                   (!first && occurrence.point < previous))
+                   (!first && occurrence.position < previous))
                 {
                     fatal("JIT allocator live-range occurrences are malformed");
                 }
-                previous = occurrence.point;
+                previous = occurrence.position;
                 first = false;
             }
 
-            ProgramPoint previous_fixed = live_range.range.start;
+            LivenessPosition previous_fixed = live_range.range.start;
             first = true;
             std::unordered_set<size_t> seen_fixed;
             for(FixedConstraintId fixed_id: live_range.fixed_constraints)
@@ -266,11 +297,11 @@ namespace cl::jit
                 const FixedLocationConstraint &fixed =
                     problem.fixed_constraints()[fixed_id.value()];
                 if(fixed.live_range != live_range_id ||
-                   (!first && fixed.point < previous_fixed))
+                   (!first && fixed.position < previous_fixed))
                 {
                     fatal("JIT allocator fixed constraints are malformed");
                 }
-                previous_fixed = fixed.point;
+                previous_fixed = fixed.position;
                 first = false;
             }
         }
@@ -317,7 +348,7 @@ namespace cl::jit
             const Occurrence &occurrence =
                 problem.occurrences()[fixed.occurrence.value()];
             if(occurrence.live_range != fixed.live_range ||
-               occurrence.point != fixed.point ||
+               occurrence.position != fixed.position ||
                !occurrence_is_fixed(
                    problem.live_ranges()[fixed.live_range.value()],
                    fixed.occurrence, problem.fixed_constraints()))
@@ -360,7 +391,7 @@ namespace cl::jit
             }
             fatal("JIT allocator assignment has no register class definition");
         };
-        auto ranges_overlap = [](ProgramRange lhs, ProgramRange rhs) {
+        auto ranges_overlap = [](LivenessRange lhs, LivenessRange rhs) {
             return lhs.start < rhs.end && rhs.start < lhs.end;
         };
 
