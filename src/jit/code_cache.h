@@ -21,8 +21,10 @@ namespace cl::jit
     {
     public:
         PublishedCode(CodeSlice code, std::span<Value> value_pool_values,
+                      MachineAddress value_pool_address,
                       size_t encoded_code_size)
             : code_(code), value_pool_values_(value_pool_values),
+              value_pool_address_(value_pool_address),
               encoded_code_size_(encoded_code_size)
         {
             assert(encoded_code_size != 0);
@@ -36,11 +38,16 @@ namespace cl::jit
             return value_pool_values_;
         }
         MachineAddress entry() const { return code_.execute_address(); }
+        MachineAddress value_pool_address() const
+        {
+            return value_pool_address_;
+        }
         size_t encoded_code_size() const { return encoded_code_size_; }
 
     private:
         CodeSlice code_;
         std::span<Value> value_pool_values_;
+        MachineAddress value_pool_address_;
         size_t encoded_code_size_;
     };
 

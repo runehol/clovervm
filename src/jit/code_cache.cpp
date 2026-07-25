@@ -118,6 +118,7 @@ namespace cl::jit
 
             return Result<PublishedCode, JitCodeError>::ok(
                 PublishedCode(allocation.code, allocation.value_pool_values(),
+                              allocation.value_pool_address(),
                               allocation.encoded_code_size_));
         }
 

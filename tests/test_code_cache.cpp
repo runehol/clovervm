@@ -116,6 +116,7 @@ namespace cl::jit
         CacheAndPlatform fixture(16);
         CodeAllocationProposal proposal =
             take_proposal(fixture.cache->propose(100, 1));
+        MachineAddress expected_pool_address = proposal.value_pool_address();
         CodeAllocation allocation = take_allocation(proposal.commit(17));
         EXPECT_EQ(32u, allocation.code.capacity());
         Result<PublishedCode, JitCodeError> publication =
@@ -125,6 +126,7 @@ namespace cl::jit
 
         EXPECT_EQ(17u, object.encoded_code_size());
         EXPECT_EQ(32u, object.code().capacity());
+        EXPECT_EQ(expected_pool_address, object.value_pool_address());
         EXPECT_EQ(17u,
                   fixture.platform->last_slab->published_encoded_code_size);
         EXPECT_EQ(32u, fixture.platform->last_slab->published_protected_size);

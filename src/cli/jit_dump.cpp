@@ -247,8 +247,16 @@ namespace
     }
 
     bool print_disassembly(std::span<const uint32_t> words,
-                           const CommandLine &command_line)
+                           std::span<const cl::Value> pool_values,
+                           size_t pool_offset, const CommandLine &command_line)
     {
+        size_t code_size = words.size() * sizeof(uint32_t);
+        if(!pool_values.empty() && pool_offset < code_size)
+        {
+            fmt::print(stderr, "AArch64 constant pool overlaps code\n");
+            return false;
+        }
+
         std::optional<std::filesystem::path> temporary =
             make_temporary_directory();
         if(!temporary.has_value())
@@ -274,6 +282,20 @@ namespace
                 for(uint32_t word: words)
                 {
                     out << ".long 0x" << std::hex << word << "\n";
+                }
+                if(!pool_values.empty())
+                {
+                    out << ".space " << std::dec << pool_offset - code_size
+                        << "\n";
+                    for(size_t index = 0; index < pool_values.size(); ++index)
+                    {
+                        out << ".globl _constant_pool_" << std::dec << index
+                            << "\n_constant_pool_" << index << ":\n.quad 0x"
+                            << std::hex
+                            << static_cast<uint64_t>(
+                                   pool_values[index].as.integer)
+                            << "\n";
+                    }
                 }
                 out.close();
 
@@ -390,6 +412,27 @@ int main(int argc, const char *argv[])
     {
         fmt::print("  {:08x}\n", word);
     }
+
+    int64_t signed_pool_offset =
+        code.entry().displacement_to(code.value_pool_address());
+    if(signed_pool_offset < 0)
+    {
+        fmt::print(stderr, "AArch64 constant pool precedes generated code\n");
+        return 1;
+    }
+    size_t pool_offset = static_cast<size_t>(signed_pool_offset);
+    std::span<const cl::Value> pool_values = code.value_pool_values();
+    if(!pool_values.empty())
+    {
+        fmt::print("\nAArch64 constant pool:\n");
+        for(size_t index = 0; index < pool_values.size(); ++index)
+        {
+            fmt::print("  +0x{:x} <_constant_pool_{}>: 0x{:016x}\n",
+                       pool_offset + index * sizeof(cl::Value), index,
+                       static_cast<uint64_t>(pool_values[index].as.integer));
+        }
+    }
     fmt::print("\nAArch64 disassembly:\n");
-    return print_disassembly(words, command_line) ? 0 : 1;
+    return print_disassembly(words, pool_values, pool_offset, command_line) ? 0
+                                                                            : 1;
 }
