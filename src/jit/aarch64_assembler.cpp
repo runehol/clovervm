@@ -1,5 +1,7 @@
 #include "jit/aarch64_assembler.h"
 
+#include "runtime/fatal.h"
+
 #include <cassert>
 #include <limits>
 
@@ -68,6 +70,28 @@ namespace cl::jit
                 assembler.emit_move_wide_imm16(MoveWideOp::Movz, destination,
                                                high, MoveWideHalfword::Bits16);
             }
+        }
+
+        void emit_load_store(AArch64EmitterAssembler &assembler,
+                             LoadStoreOp operation, XRegister value,
+                             XRegisterOrSP base, int64_t byte_offset)
+        {
+            constexpr int64_t MaximumScaledByteOffset = 4095 * 8;
+            if(byte_offset >= 0 && byte_offset % 8 == 0 &&
+               byte_offset <= MaximumScaledByteOffset)
+            {
+                assembler.emit_load_store_unsigned_offset(
+                    operation, value, base, static_cast<uint16_t>(byte_offset));
+                return;
+            }
+            if(aarch64_detail::fits_signed_scaled_displacement(byte_offset, 9,
+                                                               0))
+            {
+                assembler.emit_load_store_unscaled(
+                    operation, value, base, static_cast<int16_t>(byte_offset));
+                return;
+            }
+            fatal("AArch64 load/store offset is not encodable");
         }
     }  // namespace
 
@@ -141,8 +165,8 @@ namespace cl::jit
         int64_t page_displacement =
             instruction_pc.aligned_displacement_to(target, 12);
         assembler.emit_adrp_page_immediate_21(destination_, page_displacement);
-        assembler.emit_ldr_unsigned_offset(
-            destination_, destination_,
+        assembler.emit_load_store_unsigned_offset(
+            LoadStoreOp::Load, destination_, destination_,
             static_cast<uint16_t>(target.offset_within(12)));
     }
 
@@ -216,6 +240,13 @@ namespace cl::jit
         emit_arithmetic_reg(ArithmeticOp::Adds, wzr, left, right);
     }
 
+    void AArch64MacroAssembler::ldr(XRegister destination, XRegisterOrSP base,
+                                    int64_t byte_offset)
+    {
+        emit_load_store(*this, LoadStoreOp::Load, destination, base,
+                        byte_offset);
+    }
+
     void AArch64MacroAssembler::ldr(XRegister destination, Value value)
     {
         ValuePoolEntry entry = emitter().add_value_to_constant_pool(value);
@@ -226,6 +257,12 @@ namespace cl::jit
         emitter().emit_relocatable(
             instructions, size,
             AArch64Relocation(entry, destination, pool_mode_));
+    }
+
+    void AArch64MacroAssembler::str(XRegister source, XRegisterOrSP base,
+                                    int64_t byte_offset)
+    {
+        emit_load_store(*this, LoadStoreOp::Store, source, base, byte_offset);
     }
 
     void AArch64MacroAssembler::b(CodeTarget target, XRegister scratch)

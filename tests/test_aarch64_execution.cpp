@@ -8,6 +8,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <cstring>
 #include <utility>
 
 namespace cl::jit
@@ -16,6 +17,16 @@ namespace cl::jit
     {
         constexpr PhysicalRegister x0(RegisterClass::GPR, 0);
         constexpr PhysicalRegister x1(RegisterClass::GPR, 1);
+
+        uint32_t instruction_at(const void *code, size_t index)
+        {
+            uint32_t result;
+            std::memcpy(&result,
+                        static_cast<const uint8_t *>(code) +
+                            index * sizeof(uint32_t),
+                        sizeof(result));
+            return result;
+        }
 
         LocationAssignments
         assign_program_values_to_x0(const ControlFlowGraph &graph)
@@ -168,7 +179,7 @@ namespace cl::jit
         EXPECT_EQ(input, function(input));
     }
 
-    TEST(AArch64Execution, RejectsStackTransferUntilAssemblerSupportsIt)
+    TEST(AArch64Execution, EmitsFPRelativeStackTransfers)
     {
         CompilationSession session;
         GraphBuilder builder(session);
@@ -178,21 +189,41 @@ namespace cl::jit
         LoadStackInstruction *load =
             builder.emplace_instruction<LoadStackInstruction>(
                 entry, TaggedValueRef(parameter));
+        StoreStackInstruction *store =
+            builder.emplace_instruction<StoreStackInstruction>(
+                entry, TaggedValueRef(load));
+        LoadStackInstruction *reload =
+            builder.emplace_instruction<LoadStackInstruction>(
+                entry, TaggedValueRef(store));
         builder.emplace_instruction<ReturnInstruction>(entry,
-                                                       TaggedValueRef(load));
+                                                       TaggedValueRef(reload));
         ControlFlowGraph *graph = builder.finalize();
 
         LocationAssignmentsBuilder location_builder;
         location_builder.assign(ProgramValueRef(parameter),
                                 PhysicalLocation::stack(StackLocation(
-                                    StackLocationKind::IncomingParameter, 8)));
+                                    StackLocationKind::IncomingParameter, 4)));
         location_builder.assign(ProgramValueRef(load),
+                                PhysicalLocation::reg(x1));
+        location_builder.assign(ProgramValueRef(store),
+                                PhysicalLocation::stack(StackLocation(
+                                    StackLocationKind::LocalOrTemporary, -1)));
+        location_builder.assign(ProgramValueRef(reload),
                                 PhysicalLocation::reg(x0));
         LocationAssignments locations = std::move(location_builder).finalize();
         AArch64MacroAssembler assembler(AArch64ValuePoolMode::NearLiteral);
 
-        EXPECT_DEATH(generate_aarch64_assembly(*graph, locations, assembler),
-                     "stack transfer emission is not implemented");
+        generate_aarch64_assembly(*graph, locations, assembler);
+        CodeCache cache;
+        Result<CodeAllocation, JitCodeError> finalization =
+            assembler.emitter().finalize(cache);
+        ASSERT_TRUE(finalization);
+        CodeAllocation allocation = std::move(finalization).value();
+        const void *code = allocation.writable_code().data();
+        EXPECT_EQ(0xf94013a1, instruction_at(code, 0));
+        EXPECT_EQ(0xf81f83a1, instruction_at(code, 1));
+        EXPECT_EQ(0xf85f83a0, instruction_at(code, 2));
+        EXPECT_EQ(0xd65f03c0, instruction_at(code, 3));
     }
 
     TEST(AArch64Execution, EmitsAndSmiFromCfg)

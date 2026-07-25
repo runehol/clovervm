@@ -7,6 +7,7 @@
 #include "runtime/fatal.h"
 
 #include <cassert>
+#include <cstdint>
 #include <utility>
 
 namespace cl::jit
@@ -27,6 +28,23 @@ namespace cl::jit
                 fatal("AArch64 emitter requires a GPR-mapped value");
             }
             return XRegister(reg.number());
+        }
+
+        StackLocation assigned_stack(const LocationAssignments &locations,
+                                     ProgramValueRef value)
+        {
+            PhysicalLocation location = locations.location_for(value);
+            if(!location.is_stack())
+            {
+                fatal("AArch64 emitter requires a stack-mapped value");
+            }
+            return location.stack();
+        }
+
+        int64_t stack_byte_offset(StackLocation stack)
+        {
+            static_assert(sizeof(Value) == 8);
+            return static_cast<int64_t>(stack.frame_offset()) * sizeof(Value);
         }
 
         void emit_smi_logical(AArch64MacroAssembler &assembler,
@@ -134,11 +152,36 @@ namespace cl::jit
                     break;
                 }
 
-                case InstructionKind::LoadStack:
+                case CL_JIT_INSTRUCTION_CASE(LoadStackInstruction,
+                                             load_instruction)
+                {
+                    constexpr XRegister FramePointer(29);
+                    assembler.ldr(
+                        assigned_register(locations,
+                                          ProgramValueRef(instruction)),
+                        FramePointer,
+                        stack_byte_offset(assigned_stack(
+                            locations, load_instruction.source())));
+                    break;
+                }
+
+                case CL_JIT_INSTRUCTION_CASE(StoreStackInstruction,
+                                             store_instruction)
+                {
+                    constexpr XRegister FramePointer(29);
+                    assembler.str(
+                        assigned_register(locations,
+                                          store_instruction.source()),
+                        FramePointer,
+                        stack_byte_offset(assigned_stack(
+                            locations, ProgramValueRef(instruction))));
+                    break;
+                }
+
                 case InstructionKind::LoadStackF64:
-                case InstructionKind::StoreStack:
                 case InstructionKind::StoreStackF64:
-                    fatal("AArch64 stack transfer emission is not implemented");
+                    fatal("AArch64 F64 stack transfer emission is not "
+                          "implemented");
 
                 case CL_JIT_INSTRUCTION_CASE(ReturnInstruction,
                                              return_instruction)

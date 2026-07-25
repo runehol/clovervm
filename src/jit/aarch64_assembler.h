@@ -132,6 +132,12 @@ namespace cl::jit
         Ands = 3u << 29,
     };
 
+    enum class LoadStoreOp : uint32_t
+    {
+        Store = 0,
+        Load = 1u << 22,
+    };
+
     enum class InvertMode : uint32_t
     {
         Normal = 0,
@@ -449,24 +455,50 @@ namespace cl::jit
                                  immediate, halfword);
         }
 
-        void emit_ldr_unsigned_offset(XRegisterOrZero destination,
-                                      XRegisterOrSP base, uint16_t byte_offset)
+        void emit_load_store_unsigned_offset(LoadStoreOp operation,
+                                             XRegisterOrZero value,
+                                             XRegisterOrSP base,
+                                             uint16_t byte_offset)
         {
             assert(byte_offset % 8 == 0);
             uint32_t scaled_offset = byte_offset / 8;
             assert(scaled_offset < (1 << 12));
-            emit_ldr_unsigned_offset(GPRWidth::X, destination.encoding(),
-                                     base.encoding(), scaled_offset);
+            emit_load_store_unsigned_offset(GPRWidth::X, operation,
+                                            value.encoding(), base.encoding(),
+                                            scaled_offset);
         }
 
-        void emit_ldr_unsigned_offset(WRegisterOrZero destination,
-                                      XRegisterOrSP base, uint16_t byte_offset)
+        void emit_load_store_unsigned_offset(LoadStoreOp operation,
+                                             WRegisterOrZero value,
+                                             XRegisterOrSP base,
+                                             uint16_t byte_offset)
         {
             assert(byte_offset % 4 == 0);
             uint32_t scaled_offset = byte_offset / 4;
             assert(scaled_offset < (1 << 12));
-            emit_ldr_unsigned_offset(GPRWidth::W, destination.encoding(),
-                                     base.encoding(), scaled_offset);
+            emit_load_store_unsigned_offset(GPRWidth::W, operation,
+                                            value.encoding(), base.encoding(),
+                                            scaled_offset);
+        }
+
+        void emit_load_store_unscaled(LoadStoreOp operation,
+                                      XRegisterOrZero value, XRegisterOrSP base,
+                                      int16_t byte_offset)
+        {
+            uint32_t immediate =
+                aarch64_detail::signed_immediate(byte_offset, 9, 0);
+            emit_load_store_unscaled(GPRWidth::X, operation, value.encoding(),
+                                     base.encoding(), immediate);
+        }
+
+        void emit_load_store_unscaled(LoadStoreOp operation,
+                                      WRegisterOrZero value, XRegisterOrSP base,
+                                      int16_t byte_offset)
+        {
+            uint32_t immediate =
+                aarch64_detail::signed_immediate(byte_offset, 9, 0);
+            emit_load_store_unscaled(GPRWidth::W, operation, value.encoding(),
+                                     base.encoding(), immediate);
         }
 
         void emit_b_conditional_immediate(AArch64Condition condition,
@@ -583,13 +615,26 @@ namespace cl::jit
                 (static_cast<uint32_t>(immediate) << 5) | destination);
         }
 
-        void emit_ldr_unsigned_offset(GPRWidth width, uint32_t destination,
-                                      uint32_t base, uint32_t scaled_offset)
+        void emit_load_store_unsigned_offset(GPRWidth width,
+                                             LoadStoreOp operation,
+                                             uint32_t value, uint32_t base,
+                                             uint32_t scaled_offset)
+        {
+            write_instruction(0xb9000000 |
+                              (aarch64_detail::encoding_bits(width) >> 1) |
+                              aarch64_detail::encoding_bits(operation) |
+                              (scaled_offset << 10) |
+                              aarch64_detail::register_field(base, 5) | value);
+        }
+
+        void emit_load_store_unscaled(GPRWidth width, LoadStoreOp operation,
+                                      uint32_t value, uint32_t base,
+                                      uint32_t immediate)
         {
             write_instruction(
-                0xb9400000 | (aarch64_detail::encoding_bits(width) >> 1) |
-                (scaled_offset << 10) |
-                aarch64_detail::register_field(base, 5) | destination);
+                0xb8000000 | (aarch64_detail::encoding_bits(width) >> 1) |
+                aarch64_detail::encoding_bits(operation) | (immediate << 12) |
+                aarch64_detail::register_field(base, 5) | value);
         }
 
         void write_instruction(uint32_t instruction)
@@ -624,7 +669,10 @@ namespace cl::jit
         void cmp(WRegisterOrZero left, WRegisterOrZero right);
         void cmn(XRegisterOrZero left, XRegisterOrZero right);
         void cmn(WRegisterOrZero left, WRegisterOrZero right);
+        void ldr(XRegister destination, XRegisterOrSP base,
+                 int64_t byte_offset);
         void ldr(XRegister destination, Value value);
+        void str(XRegister source, XRegisterOrSP base, int64_t byte_offset);
 
         void b(CodeTarget target, XRegister scratch = XRegister(16));
         void bl(CodeTarget target, XRegister scratch = XRegister(16));

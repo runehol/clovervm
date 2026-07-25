@@ -43,14 +43,19 @@ namespace cl::jit
 
     TEST(AArch64Assembler, EncodesRepresentativeExactInstructions)
     {
-        uint32_t instructions[13] = {};
+        uint32_t instructions[15] = {};
         AArch64BufferAssembler assembler(instructions);
 
         assembler.emit_arithmetic_imm12(ArithmeticOp::Add, XRegister(5),
                                         XRegister(6), 42);
         assembler.emit_arithmetic_imm12(ArithmeticOp::Add, xsp, xsp, 1,
                                         AddImmediateShift::Twelve);
-        assembler.emit_ldr_unsigned_offset(XRegister(5), xsp, 24);
+        assembler.emit_load_store_unsigned_offset(LoadStoreOp::Load,
+                                                  XRegister(5), xsp, 24);
+        assembler.emit_load_store_unsigned_offset(
+            LoadStoreOp::Store, XRegister(5), XRegister(6), 24);
+        assembler.emit_load_store_unscaled(LoadStoreOp::Load, XRegister(5),
+                                           XRegister(6), -8);
         assembler.emit_move_wide_imm16(MoveWideOp::Movz, XRegister(5), 0x1234,
                                        MoveWideHalfword::Bits16);
         assembler.emit_move_wide_imm16(MoveWideOp::Movk, XRegister(5), 0xabcd,
@@ -58,7 +63,8 @@ namespace cl::jit
         assembler.emit_b_conditional_immediate(AArch64Condition::Equal, 8);
         assembler.emit_arithmetic_imm12(ArithmeticOp::Add, WRegister(5),
                                         WRegister(6), 42);
-        assembler.emit_ldr_unsigned_offset(WRegister(5), XRegister(6), 12);
+        assembler.emit_load_store_unsigned_offset(
+            LoadStoreOp::Load, WRegister(5), XRegister(6), 12);
         assembler.emit_move_wide_imm16(MoveWideOp::Movz, WRegister(5), 0x1234,
                                        MoveWideHalfword::Bits16);
         assembler.emit_move_wide_imm16(MoveWideOp::Movk, WRegister(5), 0xabcd,
@@ -73,16 +79,18 @@ namespace cl::jit
         EXPECT_EQ(0x9100a8c5, instructions[0]);
         EXPECT_EQ(0x914007ff, instructions[1]);
         EXPECT_EQ(0xf9400fe5, instructions[2]);
-        EXPECT_EQ(0xd2a24685, instructions[3]);
-        EXPECT_EQ(0xf2f579a5, instructions[4]);
-        EXPECT_EQ(0x54000040, instructions[5]);
-        EXPECT_EQ(0x1100a8c5, instructions[6]);
-        EXPECT_EQ(0xb9400cc5, instructions[7]);
-        EXPECT_EQ(0x52a24685, instructions[8]);
-        EXPECT_EQ(0x72b579a5, instructions[9]);
-        EXPECT_EQ(0xf10004bf, instructions[10]);
-        EXPECT_EQ(0xaa0700c5, instructions[11]);
-        EXPECT_EQ(0x6a2700c5, instructions[12]);
+        EXPECT_EQ(0xf9000cc5, instructions[3]);
+        EXPECT_EQ(0xf85f80c5, instructions[4]);
+        EXPECT_EQ(0xd2a24685, instructions[5]);
+        EXPECT_EQ(0xf2f579a5, instructions[6]);
+        EXPECT_EQ(0x54000040, instructions[7]);
+        EXPECT_EQ(0x1100a8c5, instructions[8]);
+        EXPECT_EQ(0xb9400cc5, instructions[9]);
+        EXPECT_EQ(0x52a24685, instructions[10]);
+        EXPECT_EQ(0x72b579a5, instructions[11]);
+        EXPECT_EQ(0xf10004bf, instructions[12]);
+        EXPECT_EQ(0xaa0700c5, instructions[13]);
+        EXPECT_EQ(0x6a2700c5, instructions[14]);
     }
 
     TEST(AArch64Assembler, EmitsOrdinaryInstructionsIntoMachineCodeEmitter)
@@ -100,7 +108,7 @@ namespace cl::jit
         EXPECT_EQ(0xf2c24685, instruction_at(code, 1));
     }
 
-    TEST(AArch64Assembler, EmitsAliasesThroughEncodingFamilies)
+    TEST(AArch64Assembler, EmitsMacroInstructionsThroughEncodingFamilies)
     {
         CacheAndPlatform fixture(16);
         AArch64MacroAssembler assembler(AArch64ValuePoolMode::NearLiteral);
@@ -111,6 +119,8 @@ namespace cl::jit
         assembler.neg(XRegister(5), XRegister(6));
         assembler.cmp(XRegister(5), XRegister(6));
         assembler.cmn(XRegister(5), XRegister(6));
+        assembler.ldr(XRegister(5), XRegister(6), 24);
+        assembler.str(XRegister(5), XRegister(6), -8);
 
         CodeAllocation allocation =
             take_allocation(emitter.finalize(*fixture.cache));
@@ -120,6 +130,8 @@ namespace cl::jit
         EXPECT_EQ(0xcb0603e5, instruction_at(code, 2));
         EXPECT_EQ(0xeb0600bf, instruction_at(code, 3));
         EXPECT_EQ(0xab0600bf, instruction_at(code, 4));
+        EXPECT_EQ(0xf9400cc5, instruction_at(code, 5));
+        EXPECT_EQ(0xf81f80c5, instruction_at(code, 6));
     }
 
     TEST(AArch64Assembler, RelocatesNearValuePoolLoad)
