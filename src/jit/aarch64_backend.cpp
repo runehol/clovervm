@@ -2,7 +2,6 @@
 
 #include "jit/aarch64_allocation_constraints.h"
 #include "jit/aarch64_cfg_emitter.h"
-#include "jit/dead_code_elimination.h"
 
 #include <utility>
 
@@ -12,7 +11,6 @@ namespace cl::jit
     compile_to_aarch64(CompilationSession &session, ControlFlowGraph &graph,
                        CodeCache &cache)
     {
-        eliminate_dead_code(session, graph);
         AllocationConstraints constraints =
             make_aarch64_allocation_constraints(graph);
         auto locations_result = allocate_registers(session, graph, constraints);

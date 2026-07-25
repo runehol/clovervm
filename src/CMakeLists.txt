@@ -118,6 +118,8 @@ add_library(libclovervm_objects OBJECT
     jit/control_flow_graph.h
     jit/core_bytecode_translator.cpp
     jit/core_bytecode_translator.h
+    jit/core_ir_optimization.cpp
+    jit/core_ir_optimization.h
     jit/dead_code_elimination.cpp
     jit/dead_code_elimination.h
     jit/graph_builder.cpp

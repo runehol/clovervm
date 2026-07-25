@@ -6,8 +6,8 @@
 
 namespace cl::jit
 {
-    void eliminate_dead_code(CompilationSession &session,
-                             ControlFlowGraph &graph)
+    Result<bool, JitCompilationError>
+    eliminate_dead_code(CompilationSession &session, ControlFlowGraph &graph)
     {
         absl::flat_hash_set<const Instruction *> used;
         absl::flat_hash_set<const Instruction *> dead;
@@ -30,7 +30,8 @@ namespace cl::jit
                     instruction_kind_metadata(instruction->kind());
                 bool can_eliminate =
                     instruction->result_class() != ResultClass::None &&
-                    metadata.may_effects == EffectProfile::None;
+                    (metadata.may_effects == EffectProfile::None ||
+                     metadata.may_effects == EffectProfile::Deoptimize);
                 if(can_eliminate && !used.contains(instruction))
                 {
                     dead.insert(instruction);
@@ -46,17 +47,19 @@ namespace cl::jit
 
         if(dead.empty())
         {
-            return;
+            return Result<bool, JitCompilationError>::ok(false);
         }
 
         GraphRewriter rewriter(session, graph);
-        rewriter.rewrite_instructions(
+        RewriteSummary summary = rewriter.rewrite_instructions(
             InstructionTraversal(),
             [&](RewriteContext &, const GraphQueries &, const Block &,
                 const Instruction &instruction) {
                 return dead.contains(&instruction) ? RewriteResult::erase()
                                                    : RewriteResult::keep();
             });
+        return Result<bool, JitCompilationError>::ok(
+            summary.instructions_changed);
     }
 
 }  // namespace cl::jit

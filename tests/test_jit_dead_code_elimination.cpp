@@ -6,6 +6,7 @@
 #include <gtest/gtest.h>
 
 #include <array>
+#include <utility>
 
 namespace cl::jit
 {
@@ -25,8 +26,10 @@ namespace cl::jit
                                                        TaggedValueRef(result));
         ControlFlowGraph *graph = builder.finalize();
 
-        eliminate_dead_code(session, *graph);
+        auto elimination = eliminate_dead_code(session, *graph);
 
+        ASSERT_TRUE(elimination);
+        EXPECT_TRUE(std::move(elimination).value());
         ASSERT_EQ(2u, entry->instructions().size());
         EXPECT_EQ(result, entry->instructions()[0]);
         EXPECT_EQ(InstructionKind::Return, entry->instructions()[1]->kind());
@@ -52,14 +55,16 @@ namespace cl::jit
             exit, TaggedValueRef(parameter));
         ControlFlowGraph *graph = builder.finalize();
 
-        eliminate_dead_code(session, *graph);
+        auto elimination = eliminate_dead_code(session, *graph);
 
+        ASSERT_TRUE(elimination);
+        EXPECT_FALSE(std::move(elimination).value());
         EXPECT_FALSE(argument->is_detached());
         ASSERT_EQ(2u, entry->instructions().size());
         EXPECT_EQ(argument, entry->instructions()[0]);
     }
 
-    TEST(JitDeadCodeElimination, RetainsUnusedEffectfulInstructions)
+    TEST(JitDeadCodeElimination, EliminatesUnusedDeoptimizingInstructions)
     {
         CompilationSession session;
         GraphBuilder builder(session);
@@ -78,11 +83,38 @@ namespace cl::jit
             entry, TaggedValueRef(parameter));
         ControlFlowGraph *graph = builder.finalize();
 
-        eliminate_dead_code(session, *graph);
+        auto elimination = eliminate_dead_code(session, *graph);
 
-        EXPECT_FALSE(snapshot->is_detached());
-        EXPECT_FALSE(unused_add->is_detached());
-        ASSERT_EQ(3u, entry->instructions().size());
+        ASSERT_TRUE(elimination);
+        EXPECT_TRUE(std::move(elimination).value());
+        EXPECT_TRUE(snapshot->is_detached());
+        EXPECT_TRUE(unused_add->is_detached());
+        ASSERT_EQ(1u, entry->instructions().size());
+        EXPECT_EQ(InstructionKind::Return, entry->instructions()[0]->kind());
+    }
+
+    TEST(JitDeadCodeElimination, RetainsUnusedObservableInstructions)
+    {
+        CompilationSession session;
+        GraphBuilder builder(session);
+        Block *entry = builder.emplace_block();
+        ParameterInstruction *result =
+            builder.emplace_parameter<ParameterInstruction>(entry);
+        ParameterF64Instruction *value =
+            builder.emplace_parameter<ParameterF64Instruction>(entry);
+        BoxF64Instruction *unused_box =
+            builder.emplace_instruction<BoxF64Instruction>(entry,
+                                                           F64Ref(value));
+        builder.emplace_instruction<ReturnInstruction>(entry,
+                                                       TaggedValueRef(result));
+        ControlFlowGraph *graph = builder.finalize();
+
+        auto elimination = eliminate_dead_code(session, *graph);
+
+        ASSERT_TRUE(elimination);
+        EXPECT_FALSE(std::move(elimination).value());
+        EXPECT_FALSE(unused_box->is_detached());
+        ASSERT_EQ(2u, entry->instructions().size());
     }
 
 }  // namespace cl::jit
