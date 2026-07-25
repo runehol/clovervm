@@ -5,10 +5,12 @@
 #include "jit/graph_queries.h"
 #include "jit/instruction_traversal.h"
 
+#include <absl/container/flat_hash_map.h>
 #include <absl/container/flat_hash_set.h>
 #include <absl/container/inlined_vector.h>
 
 #include <cassert>
+#include <concepts>
 #include <cstdint>
 #include <functional>
 #include <memory>
@@ -54,6 +56,65 @@ namespace cl::jit
         CompilationSession *session_;
         CompilationArena *arena_;
         absl::flat_hash_set<const Instruction *> *allocated_instructions_;
+    };
+
+    class RewriteInsertion
+    {
+    public:
+        using InstructionSequence = absl::InlinedVector<Instruction *, 2>;
+
+        class TransferOutput
+        {
+        public:
+            TransferOutput(ProgramValueRef source, ProgramValueRef output)
+                : source_(source.instruction()), output_(output.instruction())
+            {
+            }
+
+            TransferOutput(SnapshotRef source, SnapshotRef output)
+                : source_(source.instruction()), output_(output.instruction())
+            {
+            }
+
+            Instruction *source() const { return source_; }
+            Instruction *output() const { return output_; }
+
+        private:
+            Instruction *source_;
+            Instruction *output_;
+        };
+
+        using TransferOutputs = absl::InlinedVector<TransferOutput, 2>;
+
+        static RewriteInsertion none() { return RewriteInsertion(); }
+
+        static RewriteInsertion insert(InstructionSequence instructions)
+        {
+            return RewriteInsertion(std::move(instructions), {});
+        }
+
+        static RewriteInsertion
+        insert_transfers(InstructionSequence instructions,
+                         TransferOutputs outputs)
+        {
+            return RewriteInsertion(std::move(instructions),
+                                    std::move(outputs));
+        }
+
+    private:
+        friend class GraphRewriter;
+
+        RewriteInsertion() = default;
+
+        RewriteInsertion(InstructionSequence instructions,
+                         TransferOutputs outputs)
+            : instructions_(std::move(instructions)),
+              transfer_outputs_(std::move(outputs))
+        {
+        }
+
+        InstructionSequence instructions_;
+        TransferOutputs transfer_outputs_;
     };
 
     class RewriteResult
@@ -138,10 +199,14 @@ namespace cl::jit
         Instruction *replacement_def_;
     };
 
+    using NormalizationRemapping =
+        absl::flat_hash_map<const Instruction *, Instruction *>;
+
     struct RewriteSummary
     {
         bool instructions_changed = false;
         bool terminators_changed = false;
+        NormalizationRemapping normalization_remapping;
     };
 
     class GraphRewriter
@@ -166,30 +231,126 @@ namespace cl::jit
                                             Callback &&callback)
         {
             using CallbackType = std::remove_reference_t<Callback>;
-            auto invoke_callback =
-                [](void *opaque, RewriteContext &context,
-                   const GraphQueries &queries, const Block &block,
-                   const Instruction &instruction) -> RewriteResult {
-                return std::invoke(*static_cast<CallbackType *>(opaque),
-                                   context, queries, block, instruction);
-            };
-            return rewrite_instructions_erased(
-                traversal, input,
-                const_cast<void *>(
-                    static_cast<const void *>(std::addressof(callback))),
-                invoke_callback);
+            constexpr bool IsInstructionCallback =
+                std::is_invocable_r_v<RewriteResult, CallbackType &,
+                                      RewriteContext &, const GraphQueries &,
+                                      const Block &, const Instruction &>;
+            constexpr bool HasBlockEntryCallback =
+                requires(CallbackType &candidate, RewriteContext &context,
+                         const GraphQueries &queries, const Block &block) {
+                    {
+                        candidate.at_block_entry(context, queries, block)
+                    } -> std::same_as<RewriteInsertion>;
+                };
+            constexpr bool HasBeforeInstructionCallback =
+                requires(CallbackType &candidate, RewriteContext &context,
+                         const GraphQueries &queries, const Block &block,
+                         const Instruction &instruction) {
+                    {
+                        candidate.before_instruction(context, queries, block,
+                                                     instruction)
+                    } -> std::same_as<RewriteInsertion>;
+                };
+            constexpr bool HasInstructionMethod =
+                requires(CallbackType &candidate, RewriteContext &context,
+                         const GraphQueries &queries, const Block &block,
+                         const Instruction &instruction) {
+                    {
+                        candidate.rewrite_instruction(context, queries, block,
+                                                      instruction)
+                    } -> std::same_as<RewriteResult>;
+                };
+
+            static_assert(
+                IsInstructionCallback || HasBlockEntryCallback ||
+                    HasBeforeInstructionCallback || HasInstructionMethod,
+                "a JIT rewrite callback has no supported callback operation");
+            static_assert(
+                !IsInstructionCallback ||
+                    (!HasBlockEntryCallback && !HasBeforeInstructionCallback &&
+                     !HasInstructionMethod),
+                "a JIT rewrite callback must be either a callable or a "
+                "callback object");
+
+            ErasedCallbacks callbacks;
+            if constexpr(IsInstructionCallback)
+            {
+                callbacks.rewrite_instruction =
+                    [](void *opaque, RewriteContext &context,
+                       const GraphQueries &queries, const Block &block,
+                       const Instruction &instruction) -> RewriteResult {
+                    return std::invoke(*static_cast<CallbackType *>(opaque),
+                                       context, queries, block, instruction);
+                };
+            }
+            else
+            {
+                if constexpr(HasBlockEntryCallback)
+                {
+                    callbacks.at_block_entry =
+                        [](void *opaque, RewriteContext &context,
+                           const GraphQueries &queries,
+                           const Block &block) -> RewriteInsertion {
+                        return static_cast<CallbackType *>(opaque)
+                            ->at_block_entry(context, queries, block);
+                    };
+                }
+                if constexpr(HasBeforeInstructionCallback)
+                {
+                    callbacks.before_instruction =
+                        [](void *opaque, RewriteContext &context,
+                           const GraphQueries &queries, const Block &block,
+                           const Instruction &instruction) -> RewriteInsertion {
+                        return static_cast<CallbackType *>(opaque)
+                            ->before_instruction(context, queries, block,
+                                                 instruction);
+                    };
+                }
+                if constexpr(HasInstructionMethod)
+                {
+                    callbacks.rewrite_instruction =
+                        [](void *opaque, RewriteContext &context,
+                           const GraphQueries &queries, const Block &block,
+                           const Instruction &instruction) -> RewriteResult {
+                        return static_cast<CallbackType *>(opaque)
+                            ->rewrite_instruction(context, queries, block,
+                                                  instruction);
+                    };
+                }
+            }
+
+            return this->template rewrite_instructions_erased <
+                       HasBlockEntryCallback,
+                   HasBeforeInstructionCallback,
+                   IsInstructionCallback ||
+                       HasInstructionMethod >
+                           (traversal, input,
+                            const_cast<void *>(static_cast<const void *>(
+                                std::addressof(callback))),
+                            callbacks);
         }
 
     private:
-        using ErasedCallback = RewriteResult (*)(void *, RewriteContext &,
+        struct ErasedCallbacks
+        {
+            RewriteInsertion (*at_block_entry)(void *, RewriteContext &,
+                                               const GraphQueries &,
+                                               const Block &) = nullptr;
+            RewriteInsertion (*before_instruction)(
+                void *, RewriteContext &, const GraphQueries &, const Block &,
+                const Instruction &) = nullptr;
+            RewriteResult (*rewrite_instruction)(void *, RewriteContext &,
                                                  const GraphQueries &,
                                                  const Block &,
-                                                 const Instruction &);
+                                                 const Instruction &) = nullptr;
+        };
 
+        template <bool HasBlockEntryCallback, bool HasBeforeInstructionCallback,
+                  bool HasInstructionCallback>
         RewriteSummary
         rewrite_instructions_erased(InstructionTraversal traversal,
                                     RewriteInput input, void *callback,
-                                    ErasedCallback invoke_callback);
+                                    const ErasedCallbacks &callbacks);
 
         CompilationSession *session_;
         CompilationArena *arena_;

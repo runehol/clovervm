@@ -161,9 +161,11 @@ namespace cl::jit
         };
     }  // namespace
 
+    template <bool HasBlockEntryCallback, bool HasBeforeInstructionCallback,
+              bool HasInstructionCallback>
     RewriteSummary GraphRewriter::rewrite_instructions_erased(
         InstructionTraversal traversal, RewriteInput input, void *callback,
-        ErasedCallback invoke_callback)
+        const ErasedCallbacks &callbacks)
     {
         assert(graph_ != nullptr);
         require_rewrite_invariant(graph_->is_published(),
@@ -174,7 +176,18 @@ namespace cl::jit
                 !has_graph_query(traversal.queries(), GraphQuery::Uses),
             "normalized rewrite input cannot be combined with use lists");
         assert(callback != nullptr);
-        assert(invoke_callback != nullptr);
+        if constexpr(HasBlockEntryCallback)
+        {
+            assert(callbacks.at_block_entry != nullptr);
+        }
+        if constexpr(HasBeforeInstructionCallback)
+        {
+            assert(callbacks.before_instruction != nullptr);
+        }
+        if constexpr(HasInstructionCallback)
+        {
+            assert(callbacks.rewrite_instruction != nullptr);
+        }
 
         GraphQueries queries = graph_->prepare_queries(traversal.queries());
         absl::flat_hash_set<const Instruction *> allocated_instructions;
@@ -184,6 +197,21 @@ namespace cl::jit
         staged_blocks.reserve(graph_->blocks_.size());
         RewriteSummary summary;
         bool edges_changed = false;
+        auto record_normalization = [&](const Instruction *before,
+                                        Instruction *after) {
+            assert(before != nullptr);
+            assert(after != nullptr);
+            if(before == after)
+            {
+                return;
+            }
+            auto [position, inserted] =
+                summary.normalization_remapping.emplace(before, after);
+            require_rewrite_invariant(
+                inserted || position->second == after,
+                "a JIT rewrite instruction has more than one normalized "
+                "identity");
+        };
 
         for(Block *block: graph_->blocks_)
         {
@@ -196,9 +224,115 @@ namespace cl::jit
             available_defs.insert(block->parameters_.begin(),
                                   block->parameters_.end());
 
+            auto process_insertion = [&](RewriteInsertion insertion) {
+                absl::flat_hash_set<const Instruction *> transfer_sources;
+                SequenceReplacements no_sequence_replacements;
+                DefResolver existing_resolver(def_replacements,
+                                              no_sequence_replacements,
+                                              edge_replacements);
+                for(const RewriteInsertion::TransferOutput &transfer:
+                    insertion.transfer_outputs_)
+                {
+                    require_rewrite_invariant(
+                        transfer.source() != nullptr &&
+                            transfer.output() != nullptr,
+                        "JIT rewrite insertion has a null transfer output");
+                    require_rewrite_invariant(
+                        transfer_sources.insert(transfer.source()).second,
+                        "JIT rewrite insertion transfers one source more than "
+                        "once");
+                    Instruction *active_source =
+                        existing_resolver.resolve(transfer.source());
+                    require_rewrite_invariant(
+                        available_defs.contains(active_source),
+                        "JIT rewrite insertion transfers a source not "
+                        "available at the insertion point");
+                }
+
+                SequenceReplacements sequence_replacements;
+                for(Instruction *proposed: insertion.instructions_)
+                {
+                    require_rewrite_invariant(
+                        proposed != nullptr,
+                        "JIT rewrite insertion emitted a null instruction");
+                    require_rewrite_invariant(
+                        allocated_instructions.contains(proposed),
+                        "inserted instructions must be allocated through this "
+                        "rewrite's context");
+                    require_rewrite_invariant(
+                        !sequence_replacements.contains(proposed),
+                        "a rewrite insertion may not emit one instruction "
+                        "twice");
+
+                    DefResolver resolver(def_replacements,
+                                         sequence_replacements,
+                                         edge_replacements);
+                    Instruction *normalized =
+                        rebuild_instruction_with_references(*proposed, resolver,
+                                                            context);
+                    require_rewrite_invariant(
+                        !normalized->is_detached(),
+                        "a detached instruction cannot be inserted");
+                    require_rewrite_invariant(
+                        !is_block_parameter_kind(normalized->kind()),
+                        "block-parameter instructions cannot be inserted into "
+                        "a block body");
+                    require_rewrite_invariant(
+                        !normalized->is_block_terminator(),
+                        "a block terminator cannot be structurally inserted");
+                    require_rewrite_invariant(
+                        staged_instruction_set.insert(normalized).second,
+                        "an instruction cannot occupy more than one graph "
+                        "position");
+                    sequence_replacements.emplace(proposed, normalized);
+                    record_normalization(proposed, normalized);
+                    validate_available_operands(*normalized, available_defs);
+                    staged.instructions.push_back(normalized);
+                    if(normalized->result_class() != ResultClass::None)
+                    {
+                        available_defs.insert(normalized);
+                    }
+                }
+
+                for(const RewriteInsertion::TransferOutput &transfer:
+                    insertion.transfer_outputs_)
+                {
+                    auto emitted =
+                        sequence_replacements.find(transfer.output());
+                    require_rewrite_invariant(
+                        emitted != sequence_replacements.end(),
+                        "a rewrite insertion transfer output must be emitted "
+                        "by that insertion");
+                    require_rewrite_invariant(
+                        compatible_results(*transfer.source(),
+                                           *emitted->second),
+                        "a rewrite insertion transfer has an incompatible "
+                        "result class or value representation");
+                    def_replacements.insert_or_assign(
+                        transfer.source(),
+                        DefReplacement{emitted->second, false});
+                }
+
+                if(!insertion.instructions_.empty())
+                {
+                    summary.instructions_changed = true;
+                }
+            };
+
+            if constexpr(HasBlockEntryCallback)
+            {
+                process_insertion(callbacks.at_block_entry(callback, context,
+                                                           queries, *block));
+            }
+
             for(Instruction *original: block->instructions_)
             {
                 assert(original != nullptr);
+                if constexpr(HasBeforeInstructionCallback)
+                {
+                    process_insertion(callbacks.before_instruction(
+                        callback, context, queries, *block, *original));
+                }
                 if(original->is_block_terminator())
                 {
                     SequenceReplacements no_sequence_replacements;
@@ -242,11 +376,16 @@ namespace cl::jit
                                          edge_replacements);
                     callback_input = rebuild_instruction_with_references(
                         *original, resolver, context);
+                    record_normalization(original, callback_input);
                     validate_available_operands(*callback_input,
                                                 available_defs);
                 }
-                RewriteResult result = invoke_callback(
-                    callback, context, queries, *block, *callback_input);
+                RewriteResult result = RewriteResult::keep();
+                if constexpr(HasInstructionCallback)
+                {
+                    result = callbacks.rewrite_instruction(
+                        callback, context, queries, *block, *callback_input);
+                }
                 SequenceReplacements sequence_replacements;
                 RewriteResult::InstructionSequence proposed_instructions;
                 Instruction *proposed_replacement = nullptr;
@@ -350,6 +489,7 @@ namespace cl::jit
                         "an instruction cannot occupy more than one graph "
                         "position");
                     sequence_replacements.emplace(proposed, normalized);
+                    record_normalization(proposed, normalized);
                     validate_available_operands(*normalized, available_defs);
                     staged.instructions.push_back(normalized);
                     if(normalized->result_class() != ResultClass::None)
@@ -514,5 +654,27 @@ namespace cl::jit
 #endif
         return summary;
     }
+
+    template RewriteSummary
+    GraphRewriter::rewrite_instructions_erased<false, false, true>(
+        InstructionTraversal, RewriteInput, void *, const ErasedCallbacks &);
+    template RewriteSummary
+    GraphRewriter::rewrite_instructions_erased<false, true, false>(
+        InstructionTraversal, RewriteInput, void *, const ErasedCallbacks &);
+    template RewriteSummary
+    GraphRewriter::rewrite_instructions_erased<false, true, true>(
+        InstructionTraversal, RewriteInput, void *, const ErasedCallbacks &);
+    template RewriteSummary
+    GraphRewriter::rewrite_instructions_erased<true, false, false>(
+        InstructionTraversal, RewriteInput, void *, const ErasedCallbacks &);
+    template RewriteSummary
+    GraphRewriter::rewrite_instructions_erased<true, false, true>(
+        InstructionTraversal, RewriteInput, void *, const ErasedCallbacks &);
+    template RewriteSummary
+    GraphRewriter::rewrite_instructions_erased<true, true, false>(
+        InstructionTraversal, RewriteInput, void *, const ErasedCallbacks &);
+    template RewriteSummary
+    GraphRewriter::rewrite_instructions_erased<true, true, true>(
+        InstructionTraversal, RewriteInput, void *, const ErasedCallbacks &);
 
 }  // namespace cl::jit

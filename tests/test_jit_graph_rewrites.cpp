@@ -210,10 +210,252 @@ namespace cl::jit
 
         EXPECT_FALSE(summary.instructions_changed);
         EXPECT_FALSE(summary.terminators_changed);
+        EXPECT_TRUE(summary.normalization_remapping.empty());
         EXPECT_EQ(0u, graph->mutation_generation());
         ASSERT_EQ(2u, entry->instructions().size());
         EXPECT_EQ(constant, entry->instructions()[0]);
         EXPECT_EQ(return_instruction, entry->instructions()[1]);
+    }
+
+    TEST(JitGraphRewriter,
+         StructuralTransfersRedirectDefinitionsFromTheirInsertionPoint)
+    {
+        CompilationSession session;
+        GraphBuilder builder(session);
+        Block *entry = builder.emplace_block();
+        ParameterInstruction *parameter =
+            builder.emplace_parameter<ParameterInstruction>(entry);
+        ReturnInstruction *old_return =
+            builder.emplace_instruction<ReturnInstruction>(
+                entry, TaggedValueRef(parameter));
+        ControlFlowGraph *graph = builder.finalize();
+
+        struct Callback
+        {
+            Block *entry;
+            ParameterInstruction *parameter;
+            ReturnInstruction *return_instruction;
+            MovInstruction *entry_move = nullptr;
+            MovInstruction *first_late_move = nullptr;
+            MovInstruction *second_late_move = nullptr;
+
+            RewriteInsertion at_block_entry(RewriteContext &context,
+                                            const GraphQueries &,
+                                            const Block &block)
+            {
+                if(&block != entry)
+                {
+                    return RewriteInsertion::none();
+                }
+                entry_move = context.make_instruction<MovInstruction>(
+                    TaggedValueRef(parameter));
+                return RewriteInsertion::insert_transfers(
+                    {entry_move}, {{ProgramValueRef(parameter),
+                                    ProgramValueRef(entry_move)}});
+            }
+
+            RewriteInsertion before_instruction(RewriteContext &context,
+                                                const GraphQueries &,
+                                                const Block &,
+                                                const Instruction &instruction)
+            {
+                if(&instruction != return_instruction)
+                {
+                    return RewriteInsertion::none();
+                }
+                first_late_move = context.make_instruction<MovInstruction>(
+                    TaggedValueRef(parameter));
+                second_late_move = context.make_instruction<MovInstruction>(
+                    TaggedValueRef(first_late_move));
+                return RewriteInsertion::insert_transfers(
+                    {first_late_move, second_late_move},
+                    {{ProgramValueRef(parameter),
+                      ProgramValueRef(second_late_move)}});
+            }
+        } callback{entry, parameter, old_return};
+
+        GraphRewriter rewriter(session, *graph);
+        RewriteSummary summary = rewriter.rewrite_instructions(
+            InstructionTraversal(), RewriteInput::Normalized, callback);
+
+        EXPECT_TRUE(summary.instructions_changed);
+        EXPECT_TRUE(summary.terminators_changed);
+        EXPECT_TRUE(old_return->is_detached());
+        ASSERT_EQ(4u, entry->instructions().size());
+        EXPECT_EQ(callback.entry_move, entry->instructions()[0]);
+        const MovInstruction *first_late_move =
+            entry->instructions()[1]->as<MovInstruction>();
+        const MovInstruction *second_late_move =
+            entry->instructions()[2]->as<MovInstruction>();
+        EXPECT_NE(callback.first_late_move, first_late_move);
+        EXPECT_NE(callback.second_late_move, second_late_move);
+        EXPECT_EQ(first_late_move,
+                  summary.normalization_remapping.at(callback.first_late_move));
+        EXPECT_EQ(second_late_move, summary.normalization_remapping.at(
+                                        callback.second_late_move));
+        EXPECT_EQ(entry->instructions()[3],
+                  summary.normalization_remapping.at(old_return));
+        EXPECT_FALSE(
+            summary.normalization_remapping.contains(callback.entry_move));
+        EXPECT_EQ(parameter, callback.entry_move->source().instruction());
+        EXPECT_EQ(callback.entry_move, first_late_move->source().instruction());
+        EXPECT_EQ(first_late_move, second_late_move->source().instruction());
+        EXPECT_EQ(second_late_move, entry->instructions()[3]
+                                        ->as<ReturnInstruction>()
+                                        ->return_value()
+                                        .instruction());
+    }
+
+    TEST(JitGraphRewriter,
+         StructuralTransfersApplySimultaneouslyBeforeEdgeArguments)
+    {
+        CompilationSession session;
+        GraphBuilder builder(session);
+        Block *entry = builder.emplace_block();
+        Block *exit = builder.emplace_block();
+        ParameterInstruction *first =
+            builder.emplace_parameter<ParameterInstruction>(entry);
+        ParameterInstruction *second =
+            builder.emplace_parameter<ParameterInstruction>(entry);
+        std::array<ProgramValueRef, 2> arguments = {ProgramValueRef(first),
+                                                    ProgramValueRef(second)};
+        BlockEdge *edge = builder.make_block_edge(entry, exit, arguments);
+        UnconditionalBranchInstruction *old_branch =
+            builder.emplace_instruction<UnconditionalBranchInstruction>(entry,
+                                                                        edge);
+        ParameterInstruction *exit_first =
+            builder.emplace_parameter<ParameterInstruction>(exit);
+        builder.emplace_parameter<ParameterInstruction>(exit);
+        builder.emplace_instruction<ReturnInstruction>(
+            exit, TaggedValueRef(exit_first));
+        ControlFlowGraph *graph = builder.finalize();
+
+        struct Callback
+        {
+            UnconditionalBranchInstruction *branch;
+            ParameterInstruction *first;
+            ParameterInstruction *second;
+            MovInstruction *first_move = nullptr;
+            MovInstruction *second_move = nullptr;
+
+            RewriteInsertion before_instruction(RewriteContext &context,
+                                                const GraphQueries &,
+                                                const Block &,
+                                                const Instruction &instruction)
+            {
+                if(&instruction != branch)
+                {
+                    return RewriteInsertion::none();
+                }
+                first_move = context.make_instruction<MovInstruction>(
+                    TaggedValueRef(second));
+                second_move = context.make_instruction<MovInstruction>(
+                    TaggedValueRef(first));
+                return RewriteInsertion::insert_transfers(
+                    {first_move, second_move},
+                    {{ProgramValueRef(first), ProgramValueRef(first_move)},
+                     {ProgramValueRef(second), ProgramValueRef(second_move)}});
+            }
+        } callback{old_branch, first, second};
+
+        GraphRewriter rewriter(session, *graph);
+        RewriteSummary summary =
+            rewriter.rewrite_instructions(InstructionTraversal(), callback);
+
+        EXPECT_TRUE(summary.instructions_changed);
+        EXPECT_TRUE(summary.terminators_changed);
+        EXPECT_TRUE(old_branch->is_detached());
+        ASSERT_EQ(3u, entry->instructions().size());
+        EXPECT_EQ(callback.first_move, entry->instructions()[0]);
+        EXPECT_EQ(callback.second_move, entry->instructions()[1]);
+        EXPECT_EQ(second, callback.first_move->source().instruction());
+        EXPECT_EQ(first, callback.second_move->source().instruction());
+
+        BlockEdge *new_edge = entry->terminator().block_successor_edges()[0];
+        EXPECT_NE(edge, new_edge);
+        ASSERT_EQ(2u, new_edge->arguments().size());
+        EXPECT_EQ(callback.first_move, new_edge->arguments()[0].instruction());
+        EXPECT_EQ(callback.second_move, new_edge->arguments()[1].instruction());
+        EXPECT_EQ(entry->instructions()[2],
+                  summary.normalization_remapping.at(old_branch));
+        EXPECT_FALSE(
+            summary.normalization_remapping.contains(callback.first_move));
+        EXPECT_FALSE(
+            summary.normalization_remapping.contains(callback.second_move));
+    }
+
+    TEST(JitGraphRewriter, RejectsStructuralTransferOfAnUnavailableDefinition)
+    {
+        EXPECT_DEATH(
+            {
+                CompilationSession session;
+                GraphBuilder builder(session);
+                Block *entry = builder.emplace_block();
+                ConstInstruction *constant =
+                    builder.emplace_instruction<ConstInstruction>(
+                        entry, Value::None());
+                builder.emplace_instruction<ReturnInstruction>(
+                    entry, TaggedValueRef(constant));
+                ControlFlowGraph *graph = builder.finalize();
+
+                struct Callback
+                {
+                    ConstInstruction *constant;
+
+                    RewriteInsertion at_block_entry(RewriteContext &context,
+                                                    const GraphQueries &,
+                                                    const Block &)
+                    {
+                        ConstInstruction *replacement =
+                            context.make_instruction<ConstInstruction>(
+                                Value::True());
+                        return RewriteInsertion::insert_transfers(
+                            {replacement}, {{ProgramValueRef(constant),
+                                             ProgramValueRef(replacement)}});
+                    }
+                } callback{constant};
+
+                GraphRewriter rewriter(session, *graph);
+                rewriter.rewrite_instructions(InstructionTraversal(), callback);
+            },
+            "not available at the insertion point");
+    }
+
+    TEST(JitGraphRewriter,
+         RejectsStructuralTransferOutputNotEmittedByTheInsertion)
+    {
+        EXPECT_DEATH(
+            {
+                CompilationSession session;
+                GraphBuilder builder(session);
+                Block *entry = builder.emplace_block();
+                ParameterInstruction *parameter =
+                    builder.emplace_parameter<ParameterInstruction>(entry);
+                builder.emplace_instruction<ReturnInstruction>(
+                    entry, TaggedValueRef(parameter));
+                ControlFlowGraph *graph = builder.finalize();
+
+                struct Callback
+                {
+                    ParameterInstruction *parameter;
+
+                    RewriteInsertion at_block_entry(RewriteContext &context,
+                                                    const GraphQueries &,
+                                                    const Block &)
+                    {
+                        MovInstruction *replacement =
+                            context.make_instruction<MovInstruction>(
+                                TaggedValueRef(parameter));
+                        return RewriteInsertion::insert_transfers(
+                            {}, {{ProgramValueRef(parameter),
+                                  ProgramValueRef(replacement)}});
+                    }
+                } callback{parameter};
+
+                GraphRewriter rewriter(session, *graph);
+                rewriter.rewrite_instructions(InstructionTraversal(), callback);
+            },
+            "must be emitted by that insertion");
     }
 
     TEST(JitGraphRewriter, RewriteContextRetainsNewManagedValues)
@@ -347,6 +589,7 @@ namespace cl::jit
 
         EXPECT_TRUE(summary.instructions_changed);
         EXPECT_TRUE(summary.terminators_changed);
+        EXPECT_FALSE(summary.normalization_remapping.contains(move));
         EXPECT_EQ(1u, graph->mutation_generation());
         EXPECT_TRUE(move->is_detached());
         EXPECT_TRUE(old_return->is_detached());
@@ -354,6 +597,7 @@ namespace cl::jit
         ASSERT_EQ(1u, entry->instructions().size());
         const ReturnInstruction *new_return =
             entry->instructions()[0]->as<ReturnInstruction>();
+        EXPECT_EQ(new_return, summary.normalization_remapping.at(old_return));
         EXPECT_EQ(parameter, new_return->return_value().instruction());
 
         GraphQueries rebuilt_queries = graph->prepare_queries(GraphQuery::Uses);
