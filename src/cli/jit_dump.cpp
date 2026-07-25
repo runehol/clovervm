@@ -1,0 +1,395 @@
+#include "builtin_types/str.h"
+#include "builtin_types/unicode.h"
+#include "bytecode/code_object.h"
+#include "bytecode/code_object_print.h"
+#include "compiler/parser.h"
+#include "compiler/source_text.h"
+#include "jit/aarch64_backend.h"
+#include "jit/compilation_session.h"
+#include "jit/core_bytecode_translator.h"
+#include "jit/graph_builder.h"
+#include "jit/ir_print.h"
+#include "object_model/object.h"
+#include "runtime/exception_object.h"
+#include "runtime/thread_state.h"
+#include "runtime/virtual_machine.h"
+
+#include <cxxopts.hpp>
+#include <fmt/core.h>
+
+#include <cerrno>
+#include <cstddef>
+#include <cstdint>
+#include <cstdio>
+#include <cstring>
+#include <filesystem>
+#include <fstream>
+#include <iomanip>
+#include <iostream>
+#include <optional>
+#include <span>
+#include <string>
+#include <sys/wait.h>
+#include <system_error>
+#include <utility>
+#include <vector>
+
+#include <spawn.h>
+#include <unistd.h>
+
+extern char **environ;
+
+namespace
+{
+    struct CommandLine
+    {
+        bool show_help = false;
+        bool has_command = false;
+        std::string command;
+        std::string source_file;
+        std::string clang = "clang";
+        std::string objdump = "objdump";
+    };
+
+    struct SourceInput
+    {
+        std::wstring source;
+        std::optional<std::wstring> filename;
+    };
+
+    CommandLine parse_command_line(int argc, const char *argv[],
+                                   cxxopts::Options &options)
+    {
+        options.add_options()("h,help", "Print help and exit")(
+            "c", "Python source passed as a string",
+            cxxopts::value<std::string>(), "COMMAND")(
+            "clang", "Clang executable used to wrap emitted code",
+            cxxopts::value<std::string>()->default_value("clang"),
+            "PATH")("objdump", "Objdump executable used for disassembly",
+                    cxxopts::value<std::string>()->default_value("objdump"),
+                    "PATH")("source_file", "Python source file",
+                            cxxopts::value<std::vector<std::string>>(), "FILE");
+        options.parse_positional({"source_file"});
+        options.positional_help("[FILE]");
+
+        cxxopts::ParseResult parsed = options.parse(argc, argv);
+        CommandLine result;
+        result.show_help = parsed.count("help") != 0;
+        result.clang = parsed["clang"].as<std::string>();
+        result.objdump = parsed["objdump"].as<std::string>();
+        if(parsed.count("c") != 0)
+        {
+            result.has_command = true;
+            result.command = parsed["c"].as<std::string>();
+        }
+        if(parsed.count("source_file") != 0)
+        {
+            std::vector<std::string> files =
+                parsed["source_file"].as<std::vector<std::string>>();
+            if(files.size() > 1)
+            {
+                throw cxxopts::exceptions::exception(
+                    "only one source file is supported");
+            }
+            result.source_file = std::move(files.front());
+        }
+        if(result.has_command && !result.source_file.empty())
+        {
+            throw cxxopts::exceptions::exception(
+                "cannot specify both -c and a source file");
+        }
+        if(!result.show_help && !result.has_command &&
+           result.source_file.empty())
+        {
+            throw cxxopts::exceptions::exception(
+                "a command or source file is required");
+        }
+        return result;
+    }
+
+    std::wstring cl_string_to_wstring(cl::TValue<cl::String> string)
+    {
+        cl::String *str = string.extract();
+        return std::wstring(str->data, size_t(str->count.extract()));
+    }
+
+    std::wstring format_pending_python_exception(cl::ThreadState *thread)
+    {
+        if(thread->pending_exception_kind() ==
+           cl::PendingExceptionKind::StopIteration)
+        {
+            return L"StopIteration";
+        }
+        if(thread->pending_exception_kind() != cl::PendingExceptionKind::Object)
+        {
+            return L"InternalError: exception marker without pending exception";
+        }
+
+        cl::TValue<cl::Exception> exception =
+            thread->pending_exception_object();
+        std::wstring result = cl_string_to_wstring(
+            exception.extract()->get_shape()->get_class()->get_name());
+        std::wstring message =
+            cl_string_to_wstring(exception.extract()->message.value());
+        if(!message.empty())
+        {
+            result += L": ";
+            result += message;
+        }
+        return result;
+    }
+
+    std::optional<SourceInput> read_source(const CommandLine &command_line)
+    {
+        if(command_line.has_command)
+        {
+            std::optional<std::wstring> source =
+                cl::decode_source_text(command_line.command);
+            if(!source.has_value())
+            {
+                return std::nullopt;
+            }
+            return SourceInput{std::move(*source), std::nullopt};
+        }
+        std::optional<std::wstring> filename =
+            cl::unicode::decode_utf8(command_line.source_file);
+        if(!filename.has_value())
+        {
+            return std::nullopt;
+        }
+        std::optional<std::wstring> source =
+            cl::read_source_text_file(*filename);
+        if(!source.has_value())
+        {
+            return std::nullopt;
+        }
+        return SourceInput{std::move(*source), std::move(filename)};
+    }
+
+    cl::CodeObject *single_function_code(cl::CodeObject &module)
+    {
+        cl::CodeObject *result = nullptr;
+        for(const auto &constant: module.constant_table)
+        {
+            cl::Value value = constant.value();
+            if(!value.is_ptr() ||
+               value.get_ptr<cl::Object>()->native_layout_id() !=
+                   cl::NativeLayoutId::CodeObject)
+            {
+                continue;
+            }
+            if(result != nullptr)
+            {
+                return nullptr;
+            }
+            result = value.get_ptr<cl::CodeObject>();
+        }
+        return result;
+    }
+
+    int run_process(const std::vector<std::string> &arguments)
+    {
+        std::vector<char *> argv;
+        argv.reserve(arguments.size() + 1);
+        for(const std::string &argument: arguments)
+        {
+            argv.push_back(const_cast<char *>(argument.c_str()));
+        }
+        argv.push_back(nullptr);
+
+        pid_t child;
+        int error = posix_spawnp(&child, argv[0], nullptr, nullptr, argv.data(),
+                                 environ);
+        if(error != 0)
+        {
+            fmt::print(stderr, "failed to run '{}': {}\n", arguments.front(),
+                       std::strerror(error));
+            return -1;
+        }
+
+        int status;
+        while(waitpid(child, &status, 0) < 0)
+        {
+            if(errno != EINTR)
+            {
+                fmt::print(stderr, "failed waiting for '{}': {}\n",
+                           arguments.front(), std::strerror(errno));
+                return -1;
+            }
+        }
+        return WIFEXITED(status) ? WEXITSTATUS(status) : -1;
+    }
+
+    std::optional<std::filesystem::path> make_temporary_directory()
+    {
+        std::string pattern = (std::filesystem::temp_directory_path() /
+                               "clovervm-jit-dump.XXXXXX")
+                                  .string();
+        if(mkdtemp(pattern.data()) == nullptr)
+        {
+            return std::nullopt;
+        }
+        return std::filesystem::path(std::move(pattern));
+    }
+
+    std::vector<uint32_t> machine_words(const cl::jit::PublishedCode &code)
+    {
+        if(code.encoded_code_size() % sizeof(uint32_t) != 0)
+        {
+            return {};
+        }
+        const void *bytes = reinterpret_cast<const void *>(
+            code.entry().bits_for_indirect_target());
+        std::vector<uint32_t> result(code.encoded_code_size() /
+                                     sizeof(uint32_t));
+        std::memcpy(result.data(), bytes, code.encoded_code_size());
+        return result;
+    }
+
+    bool print_disassembly(std::span<const uint32_t> words,
+                           const CommandLine &command_line)
+    {
+        std::optional<std::filesystem::path> temporary =
+            make_temporary_directory();
+        if(!temporary.has_value())
+        {
+            fmt::print(stderr, "failed to create a temporary directory: {}\n",
+                       std::strerror(errno));
+            return false;
+        }
+        std::filesystem::path assembly = *temporary / "jit-function.s";
+        std::filesystem::path object = *temporary / "jit-function.o";
+
+        bool success = false;
+        {
+            std::ofstream out(assembly);
+            if(!out)
+            {
+                fmt::print(stderr, "failed to create '{}'\n",
+                           assembly.string());
+            }
+            else
+            {
+                out << ".text\n.globl _jit_function\n_jit_function:\n";
+                for(uint32_t word: words)
+                {
+                    out << ".long 0x" << std::hex << word << "\n";
+                }
+                out.close();
+
+#if defined(__APPLE__)
+                const char *target = "arm64-apple-macos";
+#else
+                const char *target = "aarch64-unknown-linux-gnu";
+#endif
+                std::vector<std::string> clang_arguments = {command_line.clang,
+                                                            "-target",
+                                                            target,
+                                                            "-x",
+                                                            "assembler",
+                                                            "-c",
+                                                            assembly.string(),
+                                                            "-o",
+                                                            object.string()};
+                if(run_process(clang_arguments) == 0)
+                {
+                    std::fflush(stdout);
+                    std::vector<std::string> objdump_arguments = {
+                        command_line.objdump, "-d", "--no-show-raw-insn",
+                        "--disassemble-symbols=_jit_function", object.string()};
+                    success = run_process(objdump_arguments) == 0;
+                }
+            }
+        }
+
+        std::error_code ignored;
+        std::filesystem::remove_all(*temporary, ignored);
+        return success;
+    }
+}  // namespace
+
+int main(int argc, const char *argv[])
+{
+    cxxopts::Options options("clovervm-jit-dump",
+                             "Inspect CloverVM's AArch64 JIT pipeline");
+    CommandLine command_line;
+    try
+    {
+        command_line = parse_command_line(argc, argv, options);
+    }
+    catch(const cxxopts::exceptions::exception &error)
+    {
+        fmt::print(stderr,
+                   "clovervm-jit-dump: {}\n"
+                   "Try 'clovervm-jit-dump --help' for more information.\n",
+                   error.what());
+        return 1;
+    }
+    if(command_line.show_help)
+    {
+        fmt::print("{}\n", options.help());
+        return 0;
+    }
+
+    std::optional<SourceInput> input = read_source(command_line);
+    if(!input.has_value())
+    {
+        fmt::print(stderr, "failed to open or decode Python source\n");
+        return 1;
+    }
+
+    cl::VirtualMachine vm;
+    cl::ThreadState *thread = vm.get_default_thread();
+    cl::ThreadState::ActivationScope activation_scope(thread);
+    cl::Expected<cl::CodeObject *> compilation =
+        input->filename.has_value()
+            ? thread->compile(input->source.c_str(), cl::StartRule::File,
+                              input->filename->c_str())
+            : thread->compile(input->source.c_str(), cl::StartRule::File);
+    if(compilation.has_exception())
+    {
+        std::wcerr << format_pending_python_exception(thread) << L"\n";
+        return 1;
+    }
+
+    cl::CodeObject *function = single_function_code(*compilation.value());
+    if(function == nullptr)
+    {
+        fmt::print(
+            stderr,
+            "Python source must define exactly one top-level function\n");
+        return 1;
+    }
+
+    fmt::print("Python:\n{}\n\n", cl::unicode::encode_utf8(input->source));
+    fmt::print("Bytecode:\n{}\n", *function);
+
+    cl::jit::CompilationSession session;
+    cl::jit::GraphBuilder builder(session);
+    cl::jit::CoreBytecodeTranslator translator(*function, builder);
+    cl::jit::ControlFlowGraph *graph = translator.translate();
+    fmt::print("Core IR:\n{}\n", cl::jit::format_ir(*graph));
+
+    cl::jit::CodeCache cache;
+    auto code_result = cl::jit::compile_to_aarch64(session, *graph, cache);
+    if(!code_result)
+    {
+        fmt::print(stderr, "AArch64 compilation failed\n");
+        return 1;
+    }
+    cl::jit::PublishedCode code = std::move(code_result).value();
+    std::vector<uint32_t> words = machine_words(code);
+    if(words.empty())
+    {
+        fmt::print(stderr, "AArch64 backend emitted malformed machine code\n");
+        return 1;
+    }
+
+    fmt::print("AArch64 machine code:\n");
+    for(uint32_t word: words)
+    {
+        fmt::print("  {:08x}\n", word);
+    }
+    fmt::print("\nAArch64 disassembly:\n");
+    return print_disassembly(words, command_line) ? 0 : 1;
+}
