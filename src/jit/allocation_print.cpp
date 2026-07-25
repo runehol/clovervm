@@ -331,4 +331,20 @@ namespace cl::jit
         return {out.data(), out.size()};
     }
 
+    std::string
+    format_bundle_assignments(const BundleRegisterAssignments &assignments)
+    {
+        fmt::memory_buffer out;
+        fmt::format_to(std::back_inserter(out), "assignments {{\n");
+        for(size_t index = 0; index < assignments.size(); ++index)
+        {
+            PhysicalRegister reg = assignments.register_for(BundleId(index));
+            fmt::format_to(std::back_inserter(out), "  b{} = {}{}\n", index,
+                           register_class_name(reg.register_class()),
+                           reg.number());
+        }
+        fmt::format_to(std::back_inserter(out), "}}\n");
+        return {out.data(), out.size()};
+    }
+
 }  // namespace cl::jit

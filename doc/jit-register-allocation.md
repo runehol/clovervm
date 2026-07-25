@@ -615,6 +615,25 @@ The selected allocation is not stored in the prepared bundle. A separate
 bundle-assignment table records the physical register or later spill location
 chosen for each active bundle.
 
+The initial register-only assignment stage uses:
+
+```cpp
+class BundleRegisterAssignments
+{
+public:
+    PhysicalRegister register_for(BundleId bundle) const;
+
+private:
+    std::vector<PhysicalRegister> register_by_bundle_;
+};
+```
+
+This is the allocator-local forward result. The reverse
+`PhysicalRegister -> assigned fragments` index and the corresponding clobber
+range index are assignment scratch state and are discarded after placement.
+Later location materialization converts the bundle result into durable
+occurrence-oriented `LocationAssignments`.
+
 The corresponding prepared bundle is conceptually:
 
 ```cpp

@@ -65,8 +65,8 @@ than silently omitting recovery liveness.
 
 ## Stage 2: Conflict-Free Register Assignment
 
-- [ ] Add the priority queue and process larger bundles first.
-- [ ] Probe legal registers in `RegisterClassDefinition::allocation_order()`
+- [x] Add the priority queue and process larger bundles first.
+- [x] Probe legal registers in `RegisterClassDefinition::allocation_order()`
   and record non-overlapping assignments in per-register maps.
 - [ ] Produce the real `LocationAssignments` result and allocator move-bundle
   container, even though the initial move set is empty.
@@ -82,6 +82,12 @@ splitting, fixups, or spills. A conflict that the later allocator could solve
 is a recoverable compilation failure, not permission to introduce a temporary
 allocation policy. Initial executable integration remains one-block even though
 the prepared-problem construction is not.
+
+The initial assignment step produces a dense allocator-local
+`BundleRegisterAssignments` table. Per-register assigned fragments and clobber
+ranges remain scratch indexes used only while probing candidates. The durable
+occurrence-oriented `LocationAssignments` result and its empty initial move
+container remain the next boundary in this stage.
 
 ## Stage 3: Affinities and CFG Transfers
 

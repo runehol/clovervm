@@ -101,6 +101,7 @@ add_library(libclovervm_objects OBJECT
     jit/allocation_bundles.cpp
     jit/allocation_print.cpp
     jit/allocation_verifier.cpp
+    jit/bundle_register_assignments.h
     jit/cfg_verifier.cpp
     jit/cfg_verifier.h
     jit/compilation_arena.cpp
@@ -141,6 +142,7 @@ add_library(libclovervm_objects OBJECT
     jit/preferred_code_memory.cpp
     jit/register_allocator.h
     jit/register_allocator.cpp
+    jit/register_assigner.cpp
     jit/register_allocator_internal.h
     jit/serial.h
     jit/standard_code_memory.cpp

@@ -38,6 +38,16 @@ namespace cl::jit
             result.emplace_back(RegisterClass::GPR, registers);
             return result;
         }
+
+        AllocationConstraints gpr_constraints(
+            std::span<const PhysicalRegister> registers,
+            std::vector<InstructionAllocationConstraints> overrides = {})
+        {
+            std::vector<RegisterClassDefinition> definitions;
+            definitions.emplace_back(RegisterClass::GPR, registers);
+            return AllocationConstraints(std::move(definitions),
+                                         std::move(overrides));
+        }
     }  // namespace
 
     TEST(JitRegisterAllocator, PreparesRepresentativeOneBlockProblem)
@@ -165,6 +175,244 @@ namespace cl::jit
                   prepared.occurrences()[edge_use.value()].anchor.kind());
         EXPECT_GT(prepared.occurrences()[edge_use.value()].spill_weight,
                   10000u);
+    }
+
+    TEST(JitRegisterAllocator, AssignsRepresentativeBundles)
+    {
+        CompilationSession session;
+        GraphBuilder builder(session);
+        Block *entry = builder.emplace_block();
+        TaggedValueRef lhs(
+            builder.emplace_parameter<ParameterInstruction>(entry));
+        TaggedValueRef rhs(
+            builder.emplace_parameter<ParameterInstruction>(entry));
+        TaggedValueRef result(
+            builder.emplace_instruction<AndSMIInstruction>(entry, lhs, rhs));
+        builder.emplace_instruction<ReturnInstruction>(entry, result);
+        ControlFlowGraph *graph = builder.finalize();
+
+        AllocationConstraints constraints =
+            make_aarch64_allocation_constraints(*graph);
+        auto prepared_result = prepare_register_allocation(*graph, constraints);
+        ASSERT_TRUE(prepared_result);
+        PreparedAllocationProblem prepared = std::move(prepared_result).value();
+
+        auto assignment_result = assign_bundles(prepared, constraints);
+        ASSERT_TRUE(assignment_result);
+        BundleRegisterAssignments assignments =
+            std::move(assignment_result).value();
+
+        ASSERT_EQ(3u, assignments.size());
+        EXPECT_EQ(x0, assignments.register_for(BundleId(0)));
+        EXPECT_EQ(x1, assignments.register_for(BundleId(1)));
+        EXPECT_EQ(x0, assignments.register_for(BundleId(2)));
+        EXPECT_EQ("assignments {\n"
+                  "  b0 = gpr0\n"
+                  "  b1 = gpr1\n"
+                  "  b2 = gpr0\n"
+                  "}\n",
+                  format_bundle_assignments(assignments));
+    }
+
+    TEST(JitRegisterAllocator,
+         UsesAllocationOrderAndAllowsAbuttingRangesToShareARegister)
+    {
+        CompilationSession session;
+        GraphBuilder builder(session);
+        Block *entry = builder.emplace_block();
+        TaggedValueRef lhs(
+            builder.emplace_parameter<ParameterInstruction>(entry));
+        TaggedValueRef rhs(
+            builder.emplace_parameter<ParameterInstruction>(entry));
+        TaggedValueRef result(
+            builder.emplace_instruction<AndSMIInstruction>(entry, lhs, rhs));
+        builder.emplace_instruction<ReturnInstruction>(entry, result);
+        ControlFlowGraph *graph = builder.finalize();
+
+        constexpr std::array registers = {x0, x1};
+        AllocationConstraints constraints = gpr_constraints(registers);
+        auto prepared_result = prepare_register_allocation(*graph, constraints);
+        ASSERT_TRUE(prepared_result);
+        PreparedAllocationProblem prepared = std::move(prepared_result).value();
+
+        auto assignment_result = assign_bundles(prepared, constraints);
+        ASSERT_TRUE(assignment_result);
+        BundleRegisterAssignments assignments =
+            std::move(assignment_result).value();
+
+        EXPECT_EQ(x0, assignments.register_for(BundleId(0)));
+        EXPECT_EQ(x1, assignments.register_for(BundleId(1)));
+        EXPECT_EQ(x0, assignments.register_for(BundleId(2)));
+    }
+
+    TEST(JitRegisterAllocator, AssignsLargerBundlesFirst)
+    {
+        CompilationSession session;
+        GraphBuilder builder(session);
+        Block *entry = builder.emplace_block();
+        TaggedValueRef short_lived =
+            emplace_constant(builder, entry, Value::from_smi(1));
+        TaggedValueRef long_lived =
+            emplace_constant(builder, entry, Value::from_smi(2));
+        builder.emplace_instruction<AndSMIInstruction>(entry, short_lived,
+                                                       short_lived);
+        for(size_t index = 0; index < 4; ++index)
+        {
+            builder.emplace_instruction<UninitializedInstruction>(entry);
+        }
+        builder.emplace_instruction<ReturnInstruction>(entry, long_lived);
+        ControlFlowGraph *graph = builder.finalize();
+
+        constexpr std::array registers = {x0, x1};
+        AllocationConstraints constraints = gpr_constraints(registers);
+        auto prepared_result = prepare_register_allocation(*graph, constraints);
+        ASSERT_TRUE(prepared_result);
+        PreparedAllocationProblem prepared = std::move(prepared_result).value();
+
+        ASSERT_GT(prepared.bundles()[1].allocation_priority,
+                  prepared.bundles()[0].allocation_priority);
+        auto assignment_result = assign_bundles(prepared, constraints);
+        ASSERT_TRUE(assignment_result);
+        BundleRegisterAssignments assignments =
+            std::move(assignment_result).value();
+
+        EXPECT_EQ(x1, assignments.register_for(BundleId(0)));
+        EXPECT_EQ(x0, assignments.register_for(BundleId(1)));
+    }
+
+    TEST(JitRegisterAllocator, RejectsRegisterPressureWithoutSplitting)
+    {
+        CompilationSession session;
+        GraphBuilder builder(session);
+        Block *entry = builder.emplace_block();
+        TaggedValueRef lhs(
+            builder.emplace_parameter<ParameterInstruction>(entry));
+        TaggedValueRef rhs(
+            builder.emplace_parameter<ParameterInstruction>(entry));
+        TaggedValueRef result(
+            builder.emplace_instruction<AndSMIInstruction>(entry, lhs, rhs));
+        builder.emplace_instruction<ReturnInstruction>(entry, result);
+        ControlFlowGraph *graph = builder.finalize();
+
+        constexpr std::array registers = {x0};
+        AllocationConstraints constraints = gpr_constraints(registers);
+        auto prepared_result = prepare_register_allocation(*graph, constraints);
+        ASSERT_TRUE(prepared_result);
+        PreparedAllocationProblem prepared = std::move(prepared_result).value();
+
+        auto assignment_result = assign_bundles(prepared, constraints);
+
+        ASSERT_TRUE(assignment_result.has_error());
+        EXPECT_EQ(RegisterAllocationError::RequiresSplittingOrSpilling,
+                  assignment_result.error());
+    }
+
+    TEST(JitRegisterAllocator, RejectsConflictingFixedRegisters)
+    {
+        CompilationSession session;
+        GraphBuilder builder(session);
+        Block *entry = builder.emplace_block();
+        ParameterInstruction *parameter =
+            builder.emplace_parameter<ParameterInstruction>(entry);
+        ReturnInstruction *return_instruction =
+            builder.emplace_instruction<ReturnInstruction>(
+                entry, TaggedValueRef(parameter));
+        ControlFlowGraph *graph = builder.finalize();
+
+        std::vector<InstructionAllocationConstraints> overrides;
+        overrides.emplace_back(
+            parameter, std::vector<ProgramValueUseConstraint>{},
+            ResultConstraint{AccessTiming::Late,
+                             RegisterRequirement::fixed(x0)});
+        overrides.emplace_back(
+            return_instruction,
+            std::vector<ProgramValueUseConstraint>{
+                {ReturnInstruction::return_value_operand_index,
+                 AccessTiming::Early, RegisterRequirement::fixed(x1)}});
+        constexpr std::array registers = {x0, x1};
+        AllocationConstraints constraints =
+            gpr_constraints(registers, std::move(overrides));
+        auto prepared_result = prepare_register_allocation(*graph, constraints);
+        ASSERT_TRUE(prepared_result);
+        PreparedAllocationProblem prepared = std::move(prepared_result).value();
+
+        auto assignment_result = assign_bundles(prepared, constraints);
+
+        ASSERT_TRUE(assignment_result.has_error());
+        EXPECT_EQ(RegisterAllocationError::RequiresConstraintFixup,
+                  assignment_result.error());
+    }
+
+    TEST(JitRegisterAllocator, AvoidsClobberedRegisters)
+    {
+        CompilationSession session;
+        GraphBuilder builder(session);
+        Block *entry = builder.emplace_block();
+        TaggedValueRef parameter(
+            builder.emplace_parameter<ParameterInstruction>(entry));
+        std::span<const ProgramValueRef> captured;
+        SnapshotInstruction *snapshot =
+            builder.emplace_instruction<SnapshotInstruction>(entry, captured,
+                                                             BytecodePC{7});
+        builder.emplace_instruction<ReturnInstruction>(entry, parameter);
+        ControlFlowGraph *graph = builder.finalize();
+
+        RegisterSet clobbers;
+        clobbers.insert(x0);
+        std::vector<InstructionAllocationConstraints> overrides;
+        overrides.emplace_back(
+            snapshot, std::vector<ProgramValueUseConstraint>{}, std::nullopt,
+            std::vector<TemporaryConstraint>{}, clobbers);
+        constexpr std::array registers = {x0, x1};
+        AllocationConstraints constraints =
+            gpr_constraints(registers, std::move(overrides));
+        auto prepared_result = prepare_register_allocation(*graph, constraints);
+        ASSERT_TRUE(prepared_result);
+        PreparedAllocationProblem prepared = std::move(prepared_result).value();
+
+        auto assignment_result = assign_bundles(prepared, constraints);
+        ASSERT_TRUE(assignment_result);
+
+        EXPECT_EQ(x1, assignment_result.value().register_for(BundleId(0)));
+    }
+
+    TEST(JitRegisterAllocator, RejectsAClobberedFixedRegister)
+    {
+        CompilationSession session;
+        GraphBuilder builder(session);
+        Block *entry = builder.emplace_block();
+        ParameterInstruction *parameter =
+            builder.emplace_parameter<ParameterInstruction>(entry);
+        std::span<const ProgramValueRef> captured;
+        SnapshotInstruction *snapshot =
+            builder.emplace_instruction<SnapshotInstruction>(entry, captured,
+                                                             BytecodePC{7});
+        builder.emplace_instruction<ReturnInstruction>(
+            entry, TaggedValueRef(parameter));
+        ControlFlowGraph *graph = builder.finalize();
+
+        RegisterSet clobbers;
+        clobbers.insert(x0);
+        std::vector<InstructionAllocationConstraints> overrides;
+        overrides.emplace_back(
+            parameter, std::vector<ProgramValueUseConstraint>{},
+            ResultConstraint{AccessTiming::Late,
+                             RegisterRequirement::fixed(x0)});
+        overrides.emplace_back(
+            snapshot, std::vector<ProgramValueUseConstraint>{}, std::nullopt,
+            std::vector<TemporaryConstraint>{}, clobbers);
+        constexpr std::array registers = {x0, x1};
+        AllocationConstraints constraints =
+            gpr_constraints(registers, std::move(overrides));
+        auto prepared_result = prepare_register_allocation(*graph, constraints);
+        ASSERT_TRUE(prepared_result);
+        PreparedAllocationProblem prepared = std::move(prepared_result).value();
+
+        auto assignment_result = assign_bundles(prepared, constraints);
+
+        ASSERT_TRUE(assignment_result.has_error());
+        EXPECT_EQ(RegisterAllocationError::RequiresSplittingOrSpilling,
+                  assignment_result.error());
     }
 
     TEST(JitRegisterAllocator, PreparesTemporaryAndClobberReservations)
