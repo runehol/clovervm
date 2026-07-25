@@ -1,10 +1,11 @@
-#ifndef CL_JIT_ALLOCATION_LOCATION_H
-#define CL_JIT_ALLOCATION_LOCATION_H
+#ifndef CL_JIT_PHYSICAL_LOCATION_H
+#define CL_JIT_PHYSICAL_LOCATION_H
 
 #include "jit/physical_register.h"
 #include "runtime/fatal.h"
 
 #include <cstdint>
+#include <utility>
 #include <variant>
 
 namespace cl::jit
@@ -38,17 +39,17 @@ namespace cl::jit
         int32_t frame_offset_;
     };
 
-    class AllocationLocation
+    class PhysicalLocation
     {
     public:
-        static AllocationLocation reg(PhysicalRegister reg)
+        static PhysicalLocation reg(PhysicalRegister reg)
         {
-            return AllocationLocation(reg);
+            return PhysicalLocation(reg);
         }
 
-        static AllocationLocation stack(StackLocation stack)
+        static PhysicalLocation stack(StackLocation stack)
         {
-            return AllocationLocation(stack);
+            return PhysicalLocation(stack);
         }
 
         bool is_register() const
@@ -65,7 +66,7 @@ namespace cl::jit
         {
             if(!is_register())
             {
-                fatal("reg() requires a register allocation location");
+                fatal("reg() requires a register physical location");
             }
             return std::get<PhysicalRegister>(storage_);
         }
@@ -74,12 +75,12 @@ namespace cl::jit
         {
             if(!is_stack())
             {
-                fatal("stack() requires a stack allocation location");
+                fatal("stack() requires a stack physical location");
             }
             return std::get<StackLocation>(storage_);
         }
 
-        bool aliases(const AllocationLocation &other) const
+        bool aliases(const PhysicalLocation &other) const
         {
             if(is_register() && other.is_register())
             {
@@ -92,13 +93,32 @@ namespace cl::jit
             return false;
         }
 
+        friend bool operator==(const PhysicalLocation &lhs,
+                               const PhysicalLocation &rhs)
+        {
+            return lhs.aliases(rhs);
+        }
+
+        template <typename H>
+        friend H AbslHashValue(H hash, const PhysicalLocation &location)
+        {
+            if(location.is_register())
+            {
+                PhysicalRegister reg = location.reg();
+                return H::combine(std::move(hash), true, reg.register_class(),
+                                  reg.number());
+            }
+            return H::combine(std::move(hash), false,
+                              location.stack().frame_offset());
+        }
+
     private:
-        explicit AllocationLocation(PhysicalRegister reg) : storage_(reg) {}
-        explicit AllocationLocation(StackLocation stack) : storage_(stack) {}
+        explicit PhysicalLocation(PhysicalRegister reg) : storage_(reg) {}
+        explicit PhysicalLocation(StackLocation stack) : storage_(stack) {}
 
         std::variant<PhysicalRegister, StackLocation> storage_;
     };
 
 }  // namespace cl::jit
 
-#endif  // CL_JIT_ALLOCATION_LOCATION_H
+#endif  // CL_JIT_PHYSICAL_LOCATION_H

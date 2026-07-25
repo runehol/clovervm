@@ -1,8 +1,8 @@
 #ifndef CL_JIT_LOCATION_ASSIGNMENTS_H
 #define CL_JIT_LOCATION_ASSIGNMENTS_H
 
-#include "jit/allocation_location.h"
 #include "jit/graph_rewriter.h"
+#include "jit/physical_location.h"
 
 #include <absl/container/flat_hash_map.h>
 
@@ -27,13 +27,13 @@ namespace cl::jit
             return temporaries_.contains({instruction, temporary_index});
         }
 
-        AllocationLocation location_for(ProgramValueRef value) const
+        PhysicalLocation location_for(ProgramValueRef value) const
         {
             return program_values_.at(value.instruction());
         }
 
-        AllocationLocation location_for(const Instruction *instruction,
-                                        size_t temporary_index) const
+        PhysicalLocation location_for(const Instruction *instruction,
+                                      size_t temporary_index) const
         {
             return temporaries_.at({instruction, temporary_index});
         }
@@ -42,10 +42,10 @@ namespace cl::jit
         friend class LocationAssignmentsBuilder;
 
         using ProgramValueMap =
-            absl::flat_hash_map<const Instruction *, AllocationLocation>;
+            absl::flat_hash_map<const Instruction *, PhysicalLocation>;
         using TemporaryKey = std::pair<const Instruction *, size_t>;
         using TemporaryMap =
-            absl::flat_hash_map<TemporaryKey, AllocationLocation>;
+            absl::flat_hash_map<TemporaryKey, PhysicalLocation>;
 
         LocationAssignments(ProgramValueMap program_values,
                             TemporaryMap temporaries)
@@ -61,13 +61,13 @@ namespace cl::jit
     class LocationAssignmentsBuilder
     {
     public:
-        void assign(ProgramValueRef value, AllocationLocation location)
+        void assign(ProgramValueRef value, PhysicalLocation location)
         {
             program_values_.insert_or_assign(value.instruction(), location);
         }
 
         void assign(const Instruction *instruction, size_t temporary_index,
-                    AllocationLocation location)
+                    PhysicalLocation location)
         {
             temporaries_.insert_or_assign({instruction, temporary_index},
                                           location);

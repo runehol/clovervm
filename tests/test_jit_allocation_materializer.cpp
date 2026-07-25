@@ -17,7 +17,7 @@ namespace cl::jit
         constexpr PhysicalRegister x0(RegisterClass::GPR, 0);
         constexpr PhysicalRegister x1(RegisterClass::GPR, 1);
 
-        LocationRequirement fixed(AllocationLocation location)
+        LocationRequirement fixed(PhysicalLocation location)
         {
             return LocationRequirement::fixed(location);
         }
@@ -63,11 +63,11 @@ namespace cl::jit
         overrides.emplace_back(
             parameter, std::vector<ProgramValueUseConstraint>{},
             ResultConstraint{AccessTiming::Late,
-                             fixed(AllocationLocation::reg(x0))});
+                             fixed(PhysicalLocation::reg(x0))});
         overrides.emplace_back(
             return_instruction,
             std::vector<ProgramValueUseConstraint>{
-                {0, AccessTiming::Early, fixed(AllocationLocation::reg(x0))}});
+                {0, AccessTiming::Early, fixed(PhysicalLocation::reg(x0))}});
         AllocationConstraints constraints =
             constraints_with(std::move(overrides));
         PreparedAllocationProblem prepared({}, {}, {}, {}, {}, {});
@@ -104,15 +104,15 @@ namespace cl::jit
         overrides.emplace_back(
             parameter, std::vector<ProgramValueUseConstraint>{},
             ResultConstraint{AccessTiming::Late,
-                             fixed(AllocationLocation::reg(x0))});
+                             fixed(PhysicalLocation::reg(x0))});
         overrides.emplace_back(
             operation, std::vector<ProgramValueUseConstraint>{}, std::nullopt,
             std::vector<TemporaryConstraint>{TemporaryConstraint(
-                LocationRequirement::fixed(AllocationLocation::reg(x1)))});
+                LocationRequirement::fixed(PhysicalLocation::reg(x1)))});
         overrides.emplace_back(
             return_instruction,
             std::vector<ProgramValueUseConstraint>{
-                {0, AccessTiming::Early, fixed(AllocationLocation::reg(x0))}});
+                {0, AccessTiming::Early, fixed(PhysicalLocation::reg(x0))}});
         AllocationConstraints constraints =
             constraints_with(std::move(overrides));
         PreparedAllocationProblem prepared({}, {}, {}, {}, {}, {});
@@ -151,11 +151,11 @@ namespace cl::jit
         overrides.emplace_back(
             entry_parameter, std::vector<ProgramValueUseConstraint>{},
             ResultConstraint{AccessTiming::Late,
-                             fixed(AllocationLocation::reg(x0))});
+                             fixed(PhysicalLocation::reg(x0))});
         overrides.emplace_back(
             return_instruction,
             std::vector<ProgramValueUseConstraint>{
-                {0, AccessTiming::Early, fixed(AllocationLocation::reg(x0))}});
+                {0, AccessTiming::Early, fixed(PhysicalLocation::reg(x0))}});
         AllocationConstraints constraints =
             constraints_with(std::move(overrides));
         PreparedAllocationProblem prepared({}, {}, {}, {}, {}, {});
@@ -192,11 +192,11 @@ namespace cl::jit
         overrides.emplace_back(
             parameter, std::vector<ProgramValueUseConstraint>{},
             ResultConstraint{AccessTiming::Late,
-                             fixed(AllocationLocation::stack(incoming))});
+                             fixed(PhysicalLocation::stack(incoming))});
         overrides.emplace_back(
             old_return,
             std::vector<ProgramValueUseConstraint>{
-                {0, AccessTiming::Early, fixed(AllocationLocation::reg(x0))}});
+                {0, AccessTiming::Early, fixed(PhysicalLocation::reg(x0))}});
         AllocationConstraints constraints =
             constraints_with(std::move(overrides));
         PreparedAllocationProblem prepared({}, {}, {}, {}, {}, {});
@@ -243,12 +243,12 @@ namespace cl::jit
         overrides.emplace_back(
             lhs, std::vector<ProgramValueUseConstraint>{},
             ResultConstraint{AccessTiming::Late,
-                             fixed(AllocationLocation::stack(StackLocation(
+                             fixed(PhysicalLocation::stack(StackLocation(
                                  StackLocationKind::IncomingParameter, 4)))});
         overrides.emplace_back(
             rhs, std::vector<ProgramValueUseConstraint>{},
             ResultConstraint{AccessTiming::Late,
-                             fixed(AllocationLocation::stack(StackLocation(
+                             fixed(PhysicalLocation::stack(StackLocation(
                                  StackLocationKind::IncomingParameter, 3)))});
         AllocationConstraints constraints =
             constraints_with(std::move(overrides));

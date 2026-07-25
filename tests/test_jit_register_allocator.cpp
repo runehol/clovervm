@@ -26,7 +26,7 @@ namespace cl::jit
 
         LocationRequirement fixed(PhysicalRegister reg)
         {
-            return LocationRequirement::fixed(AllocationLocation::reg(reg));
+            return LocationRequirement::fixed(PhysicalLocation::reg(reg));
         }
 
         TaggedValueRef emplace_constant(GraphBuilder &builder, Block *block,
@@ -473,7 +473,7 @@ namespace cl::jit
         ControlFlowGraph *graph = builder.finalize();
 
         LocationRequirement incoming =
-            LocationRequirement::fixed(AllocationLocation::stack(
+            LocationRequirement::fixed(PhysicalLocation::stack(
                 StackLocation(StackLocationKind::IncomingParameter, 4)));
         std::vector<InstructionAllocationConstraints> overrides;
         overrides.emplace_back(parameter,
@@ -493,7 +493,7 @@ namespace cl::jit
         PreparedAllocationProblem prepared = std::move(prepared_result).value();
 
         ASSERT_EQ(2u, prepared.fixed_constraints().size());
-        AllocationLocation entry_location =
+        PhysicalLocation entry_location =
             prepared.fixed_constraints()[0].location;
         ASSERT_TRUE(entry_location.is_stack());
         EXPECT_EQ(StackLocationKind::IncomingParameter,
@@ -513,7 +513,7 @@ namespace cl::jit
         RegisterAllocationResult allocation =
             std::move(assignment_result).value();
         ASSERT_EQ(2u, allocation.bundles().size());
-        AllocationLocation stack =
+        PhysicalLocation stack =
             allocation.locations().location_for(BundleId(0));
         ASSERT_TRUE(stack.is_stack());
         EXPECT_EQ(StackLocationKind::IncomingParameter, stack.stack().kind());
@@ -541,10 +541,10 @@ namespace cl::jit
         ControlFlowGraph *graph = builder.finalize();
 
         LocationRequirement lhs_stack =
-            LocationRequirement::fixed(AllocationLocation::stack(
+            LocationRequirement::fixed(PhysicalLocation::stack(
                 StackLocation(StackLocationKind::IncomingParameter, 4)));
         LocationRequirement rhs_stack =
-            LocationRequirement::fixed(AllocationLocation::stack(
+            LocationRequirement::fixed(PhysicalLocation::stack(
                 StackLocation(StackLocationKind::IncomingParameter, 3)));
         std::vector<InstructionAllocationConstraints> overrides;
         overrides.emplace_back(lhs, std::vector<ProgramValueUseConstraint>{},

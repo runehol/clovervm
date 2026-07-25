@@ -14,21 +14,21 @@ namespace cl::jit
     {
     public:
         explicit BundleLocationAssignments(
-            std::vector<AllocationLocation> locations)
+            std::vector<PhysicalLocation> locations)
             : locations_(std::move(locations))
         {
         }
 
         size_t size() const { return locations_.size(); }
 
-        AllocationLocation location_for(BundleId bundle) const
+        PhysicalLocation location_for(BundleId bundle) const
         {
             assert(bundle.value() < locations_.size());
             return locations_[bundle.value()];
         }
 
     private:
-        std::vector<AllocationLocation> locations_;
+        std::vector<PhysicalLocation> locations_;
     };
 
 }  // namespace cl::jit

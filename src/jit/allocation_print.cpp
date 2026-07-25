@@ -134,7 +134,7 @@ namespace cl::jit
             fatal("invalid stack location kind in JIT allocator dump");
         }
 
-        std::string format_location(AllocationLocation location)
+        std::string format_location(PhysicalLocation location)
         {
             if(location.is_register())
             {

@@ -2,6 +2,7 @@
 #include "jit/compilation_session.h"
 #include "jit/graph_builder.h"
 
+#include <absl/container/flat_hash_map.h>
 #include <gtest/gtest.h>
 
 #include <array>
@@ -19,7 +20,7 @@ namespace cl::jit
 
         LocationRequirement fixed(PhysicalRegister reg)
         {
-            return LocationRequirement::fixed(AllocationLocation::reg(reg));
+            return LocationRequirement::fixed(PhysicalLocation::reg(reg));
         }
 
         SnapshotRef make_empty_snapshot(GraphBuilder &builder)
@@ -118,26 +119,35 @@ namespace cl::jit
         EXPECT_FALSE(incoming.aliases(local));
     }
 
-    TEST(JitAllocationLocation, RepresentsRegistersAndSemanticStackLocations)
+    TEST(JitPhysicalLocation, RepresentsRegistersAndSemanticStackLocations)
     {
-        AllocationLocation reg = AllocationLocation::reg(x0);
-        AllocationLocation same_reg = AllocationLocation::reg(x0);
-        AllocationLocation other_reg = AllocationLocation::reg(x1);
-        AllocationLocation incoming = AllocationLocation::stack(
+        PhysicalLocation reg = PhysicalLocation::reg(x0);
+        PhysicalLocation same_reg = PhysicalLocation::reg(x0);
+        PhysicalLocation other_reg = PhysicalLocation::reg(x1);
+        PhysicalLocation incoming = PhysicalLocation::stack(
             StackLocation(StackLocationKind::IncomingParameter, 5));
-        AllocationLocation outgoing = AllocationLocation::stack(
+        PhysicalLocation outgoing = PhysicalLocation::stack(
             StackLocation(StackLocationKind::OutgoingCallArgument, 5));
 
         EXPECT_TRUE(reg.is_register());
         EXPECT_FALSE(reg.is_stack());
         EXPECT_EQ(x0, reg.reg());
+        EXPECT_EQ(reg, same_reg);
+        EXPECT_NE(reg, other_reg);
         EXPECT_TRUE(reg.aliases(same_reg));
         EXPECT_FALSE(reg.aliases(other_reg));
         EXPECT_FALSE(reg.aliases(incoming));
         EXPECT_TRUE(incoming.is_stack());
         EXPECT_EQ(StackLocationKind::IncomingParameter,
                   incoming.stack().kind());
+        EXPECT_EQ(incoming, outgoing);
         EXPECT_TRUE(incoming.aliases(outgoing));
+
+        absl::flat_hash_map<PhysicalLocation, int> locations;
+        locations.emplace(reg, 1);
+        locations.emplace(incoming, 2);
+        EXPECT_EQ(1, locations.at(same_reg));
+        EXPECT_EQ(2, locations.at(outgoing));
     }
 
     TEST(JitLocationRequirement, RepresentsAnyFixedAndSameAsInput)
@@ -153,7 +163,7 @@ namespace cl::jit
         EXPECT_EQ(x63, fixed_register.fixed_location().reg());
 
         LocationRequirement fixed_stack =
-            LocationRequirement::fixed(AllocationLocation::stack(
+            LocationRequirement::fixed(PhysicalLocation::stack(
                 StackLocation(StackLocationKind::OutgoingCallArgument, -17)));
         EXPECT_EQ(LocationRequirement::Kind::FixedLocation, fixed_stack.kind());
         EXPECT_EQ(-17, fixed_stack.fixed_location().stack().frame_offset());
@@ -171,10 +181,10 @@ namespace cl::jit
         TaggedValueRef source(builder.make_instruction<ParameterInstruction>());
         MovInstruction *move = builder.make_instruction<MovInstruction>(source);
         LocationRequirement outgoing =
-            LocationRequirement::fixed(AllocationLocation::stack(
+            LocationRequirement::fixed(PhysicalLocation::stack(
                 StackLocation(StackLocationKind::OutgoingCallArgument, -8)));
         LocationRequirement local =
-            LocationRequirement::fixed(AllocationLocation::stack(
+            LocationRequirement::fixed(PhysicalLocation::stack(
                 StackLocation(StackLocationKind::LocalOrTemporary, -2)));
 
         InstructionAllocationConstraints constraints(

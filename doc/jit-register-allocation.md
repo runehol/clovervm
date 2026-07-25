@@ -307,11 +307,11 @@ public:
     bool aliases(const StackLocation &other) const;
 };
 
-class AllocationLocation
+class PhysicalLocation
 {
 public:
-    static AllocationLocation reg(PhysicalRegister reg);
-    static AllocationLocation stack(StackLocation stack);
+    static PhysicalLocation reg(PhysicalRegister reg);
+    static PhysicalLocation stack(StackLocation stack);
 
     bool is_register() const;
     bool is_stack() const;
@@ -461,12 +461,12 @@ public:
     };
 
     static LocationRequirement any_register(RegisterClass register_class);
-    static LocationRequirement fixed(AllocationLocation location);
+    static LocationRequirement fixed(PhysicalLocation location);
     static LocationRequirement same_as_input(uint32_t operand_index);
 
     Kind kind() const;
     RegisterClass register_class() const;
-    AllocationLocation fixed_location() const;
+    PhysicalLocation fixed_location() const;
     uint32_t input_index() const;
 
 private:
@@ -804,7 +804,7 @@ struct Occurrence
 struct FixedLocationConstraint
 {
     LivenessPosition position;
-    AllocationLocation location;
+    PhysicalLocation location;
     LiveRangeId live_range;
     OccurrenceId occurrence;
 };
@@ -896,10 +896,10 @@ The allocator-local forward assignment result uses:
 class BundleLocationAssignments
 {
 public:
-    AllocationLocation location_for(BundleId bundle) const;
+    PhysicalLocation location_for(BundleId bundle) const;
 
 private:
-    std::vector<AllocationLocation> location_by_bundle_;
+    std::vector<PhysicalLocation> location_by_bundle_;
 };
 ```
 
@@ -917,7 +917,7 @@ otherwise mutating its fragments.
 
 Location-constraint splitting produces the final bundle vector. The forward
 table is a `BundleLocationAssignments`, whose entries are
-`AllocationLocation`s. Fixed stack bundles are assigned directly; register
+`PhysicalLocation`s. Fixed stack bundles are assigned directly; register
 bundles continue to use the same register worklist and occupancy indexes.
 Stack occupancy is keyed by frame offset because that identifies the physical
 cell within one allocation problem. The exact `StackLocationKind` on each

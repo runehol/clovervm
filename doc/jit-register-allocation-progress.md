@@ -69,7 +69,7 @@ than silently omitting recovery liveness.
 - [x] Add the priority queue and process larger bundles first.
 - [x] Probe legal registers in `RegisterClassDefinition::allocation_order()`
   and record non-overlapping assignments in per-register maps.
-- [x] Define `AllocationLocation` and replace register-only requirements and
+- [x] Define `PhysicalLocation` and replace register-only requirements and
   fixed constraints with `AnyRegister`, `FixedLocation`, and `SameAsInput`.
 - [x] Define dense `LivenessPosition`/`LivenessRange` occupancy geometry and
   compute the minimum coverage of Early/Late uses and defs, including

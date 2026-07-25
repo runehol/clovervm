@@ -26,7 +26,7 @@ namespace cl::jit
                     return requirement.register_class();
                 case LocationRequirement::Kind::FixedLocation:
                     {
-                        AllocationLocation location =
+                        PhysicalLocation location =
                             requirement.fixed_location();
                         if(location.is_stack())
                         {
@@ -83,7 +83,7 @@ namespace cl::jit
                 return;
             }
 
-            AllocationLocation location = requirement.fixed_location();
+            PhysicalLocation location = requirement.fixed_location();
             if(location.is_register() &&
                (location.reg().register_class() != expected_class ||
                 !definition->members().contains(location.reg())))

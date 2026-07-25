@@ -33,9 +33,9 @@ namespace cl::jit
                 bool has_non_aliasing_transfer = false;
                 for(const BundleTransfer &transfer: set.transfers)
                 {
-                    AllocationLocation source =
+                    PhysicalLocation source =
                         allocation.locations().location_for(transfer.source);
-                    AllocationLocation destination =
+                    PhysicalLocation destination =
                         allocation.locations().location_for(
                             transfer.destination);
                     if(source.aliases(destination))
@@ -123,7 +123,7 @@ namespace cl::jit
                           "bundle");
                 }
                 BundleId bundle = found->second;
-                AllocationLocation location =
+                PhysicalLocation location =
                     allocation.locations().location_for(bundle);
                 switch(occurrence.anchor.kind())
                 {
@@ -240,9 +240,9 @@ namespace cl::jit
                 for(size_t index = 0; index < set.transfers.size(); ++index)
                 {
                     const BundleTransfer &transfer = set.transfers[index];
-                    AllocationLocation source =
+                    PhysicalLocation source =
                         allocation_->locations().location_for(transfer.source);
-                    AllocationLocation destination =
+                    PhysicalLocation destination =
                         allocation_->locations().location_for(
                             transfer.destination);
                     if(!source.aliases(destination))

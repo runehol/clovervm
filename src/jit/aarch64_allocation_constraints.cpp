@@ -62,7 +62,7 @@ namespace cl::jit
                 parameter, {},
                 ResultConstraint{
                     AccessTiming::Late,
-                    LocationRequirement::fixed(AllocationLocation::reg(
+                    LocationRequirement::fixed(PhysicalLocation::reg(
                         gpr(static_cast<uint8_t>(parameter_index))))});
         }
 
@@ -70,10 +70,10 @@ namespace cl::jit
         return_constraints(const ReturnInstruction *instruction)
         {
             return InstructionAllocationConstraints(
-                instruction, {{ReturnInstruction::return_value_operand_index,
-                               AccessTiming::Early,
-                               LocationRequirement::fixed(
-                                   AllocationLocation::reg(gpr(0)))}});
+                instruction,
+                {{ReturnInstruction::return_value_operand_index,
+                  AccessTiming::Early,
+                  LocationRequirement::fixed(PhysicalLocation::reg(gpr(0)))}});
         }
 
         InstructionAllocationConstraints

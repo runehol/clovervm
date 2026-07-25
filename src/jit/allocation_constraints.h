@@ -1,8 +1,8 @@
 #ifndef CL_JIT_ALLOCATION_CONSTRAINTS_H
 #define CL_JIT_ALLOCATION_CONSTRAINTS_H
 
-#include "jit/allocation_location.h"
 #include "jit/instruction.h"
+#include "jit/physical_location.h"
 #include "runtime/fatal.h"
 
 #include <optional>
@@ -32,7 +32,7 @@ namespace cl::jit
         {
             return LocationRequirement(register_class);
         }
-        static LocationRequirement fixed(AllocationLocation location)
+        static LocationRequirement fixed(PhysicalLocation location)
         {
             return LocationRequirement(location);
         }
@@ -62,13 +62,13 @@ namespace cl::jit
             }
             return std::get<RegisterClass>(payload_);
         }
-        AllocationLocation fixed_location() const
+        PhysicalLocation fixed_location() const
         {
             if(kind() != Kind::FixedLocation)
             {
                 fatal("fixed_location() requires a FixedLocation requirement");
             }
-            return std::get<AllocationLocation>(payload_);
+            return std::get<PhysicalLocation>(payload_);
         }
         uint32_t input_index() const
         {
@@ -89,7 +89,7 @@ namespace cl::jit
                 fatal("invalid register class requirement");
             }
         }
-        explicit LocationRequirement(AllocationLocation location)
+        explicit LocationRequirement(PhysicalLocation location)
             : payload_(location)
         {
         }
@@ -98,7 +98,7 @@ namespace cl::jit
         {
         }
 
-        std::variant<RegisterClass, AllocationLocation, uint32_t> payload_;
+        std::variant<RegisterClass, PhysicalLocation, uint32_t> payload_;
     };
 
     struct ProgramValueUseConstraint

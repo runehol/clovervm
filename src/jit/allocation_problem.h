@@ -173,7 +173,7 @@ namespace cl::jit
     struct FixedLocationConstraint
     {
         LivenessPosition position;
-        AllocationLocation location;
+        PhysicalLocation location;
         LiveRangeId live_range;
         OccurrenceId occurrence;
     };

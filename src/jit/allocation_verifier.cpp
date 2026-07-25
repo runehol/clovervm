@@ -407,7 +407,7 @@ namespace cl::jit
         {
             BundleId bundle_id(bundle_index);
             const LiveBundle &bundle = bundles[bundle_index];
-            AllocationLocation location = assignments.location_for(bundle_id);
+            PhysicalLocation location = assignments.location_for(bundle_id);
             if(location.is_register())
             {
                 PhysicalRegister reg = location.reg();
@@ -423,7 +423,7 @@ namespace cl::jit
 
             for(FixedConstraintId fixed_id: bundle.fixed_constraints)
             {
-                AllocationLocation fixed =
+                PhysicalLocation fixed =
                     problem.fixed_constraints()[fixed_id.value()].location;
                 if(!fixed.aliases(location))
                 {

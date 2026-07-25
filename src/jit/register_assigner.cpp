@@ -159,8 +159,8 @@ namespace cl::jit
                     worklist_.pop();
                     const LiveBundle &bundle = bundles_[bundle_id.value()];
 
-                    std::optional<AllocationLocation> selected;
-                    std::optional<AllocationLocation> required =
+                    std::optional<PhysicalLocation> selected;
+                    std::optional<PhysicalLocation> required =
                         required_location(bundle);
                     if(required.has_value() && required->is_stack())
                     {
@@ -184,7 +184,7 @@ namespace cl::jit
                         {
                             if(fits(candidate, bundle))
                             {
-                                selected = AllocationLocation::reg(candidate);
+                                selected = PhysicalLocation::reg(candidate);
                                 break;
                             }
                         }
@@ -200,9 +200,9 @@ namespace cl::jit
                     place(bundle_id, *selected);
                 }
 
-                std::vector<AllocationLocation> result;
+                std::vector<PhysicalLocation> result;
                 result.reserve(location_by_bundle_.size());
-                for(const std::optional<AllocationLocation> &location:
+                for(const std::optional<PhysicalLocation> &location:
                     location_by_bundle_)
                 {
                     if(!location.has_value())
@@ -227,13 +227,13 @@ namespace cl::jit
                 }
             }
 
-            std::optional<AllocationLocation>
+            std::optional<PhysicalLocation>
             required_location(const LiveBundle &bundle) const
             {
-                std::optional<AllocationLocation> result;
+                std::optional<PhysicalLocation> result;
                 for(FixedConstraintId fixed_id: bundle.fixed_constraints)
                 {
-                    AllocationLocation location =
+                    PhysicalLocation location =
                         problem_.fixed_constraints()[fixed_id.value()].location;
                     if(result.has_value() && !result->aliases(location))
                     {
@@ -294,7 +294,7 @@ namespace cl::jit
                 return true;
             }
 
-            void place(BundleId bundle_id, AllocationLocation location)
+            void place(BundleId bundle_id, PhysicalLocation location)
             {
                 assert(!location_by_bundle_[bundle_id.value()].has_value());
                 location_by_bundle_[bundle_id.value()] = location;
@@ -321,7 +321,7 @@ namespace cl::jit
             const PreparedAllocationProblem &problem_;
             std::span<const LiveBundle> bundles_;
             const AllocationConstraints &constraints_;
-            std::vector<std::optional<AllocationLocation>> location_by_bundle_;
+            std::vector<std::optional<PhysicalLocation>> location_by_bundle_;
             PerPhysicalRegister<RegisterOccupancy> occupancy_;
             std::unordered_map<int32_t, RegisterOccupancy> stack_occupancy_;
             PerPhysicalRegister<std::vector<LivenessRange>> clobber_ranges_;

@@ -21,9 +21,8 @@ namespace cl::jit
         PhysicalRegister x0(RegisterClass::GPR, 0);
         PhysicalRegister x1(RegisterClass::GPR, 1);
         LocationAssignmentsBuilder locations;
-        locations.assign(ProgramValueRef(parameter),
-                         AllocationLocation::reg(x0));
-        locations.assign(move, 0, AllocationLocation::reg(x1));
+        locations.assign(ProgramValueRef(parameter), PhysicalLocation::reg(x0));
+        locations.assign(move, 0, PhysicalLocation::reg(x1));
 
         LocationAssignments result = std::move(locations).finalize();
 
@@ -53,8 +52,8 @@ namespace cl::jit
         PhysicalRegister x0(RegisterClass::GPR, 0);
         PhysicalRegister x1(RegisterClass::GPR, 1);
         LocationAssignmentsBuilder locations;
-        locations.assign(ProgramValueRef(before), AllocationLocation::reg(x0));
-        locations.assign(before, 0, AllocationLocation::reg(x1));
+        locations.assign(ProgramValueRef(before), PhysicalLocation::reg(x0));
+        locations.assign(before, 0, PhysicalLocation::reg(x1));
         NormalizationRemapping normalization = {{before, after}};
 
         LocationAssignments result =

@@ -12,7 +12,7 @@ namespace cl::jit
         struct LocationDomain
         {
             bool register_required = false;
-            std::optional<AllocationLocation> fixed;
+            std::optional<PhysicalLocation> fixed;
 
             bool add_register_requirement()
             {
@@ -24,7 +24,7 @@ namespace cl::jit
                 return true;
             }
 
-            bool add_fixed(AllocationLocation location)
+            bool add_fixed(PhysicalLocation location)
             {
                 if(location.is_register())
                 {
@@ -53,11 +53,11 @@ namespace cl::jit
             }
         };
 
-        std::optional<AllocationLocation>
+        std::optional<PhysicalLocation>
         fixed_location_for(const PreparedAllocationProblem &problem,
                            OccurrenceId occurrence_id)
         {
-            std::optional<AllocationLocation> result;
+            std::optional<PhysicalLocation> result;
             for(const FixedLocationConstraint &fixed:
                 problem.fixed_constraints())
             {
@@ -169,7 +169,7 @@ namespace cl::jit
                     for(OccurrenceId occurrence_id: covered_occurrences(
                             bundles_[current.value()], problem_))
                     {
-                        std::optional<AllocationLocation> fixed =
+                        std::optional<PhysicalLocation> fixed =
                             fixed_location_for(problem_, occurrence_id);
                         bool compatible =
                             fixed.has_value()
