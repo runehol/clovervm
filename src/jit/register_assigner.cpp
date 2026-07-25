@@ -350,11 +350,10 @@ namespace cl::jit
         }
         BundleLocationAssignments assignments =
             std::move(assignment_result).value();
-        verify_bundle_assignments(problem, constraints, normalized.bundles,
-                                  assignments);
         RegisterAllocationResult allocation(std::move(normalized.bundles),
                                             std::move(assignments),
                                             std::move(normalized.transfers));
+        verify_register_allocation(problem, constraints, allocation);
         return Result<RegisterAllocationResult, RegisterAllocationError>::ok(
             std::move(allocation));
     }

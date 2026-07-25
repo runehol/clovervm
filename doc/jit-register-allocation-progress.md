@@ -71,16 +71,17 @@ than silently omitting recovery liveness.
   and record non-overlapping assignments in per-register maps.
 - [x] Define `AllocationLocation` and replace register-only requirements and
   fixed constraints with `AnyRegister`, `FixedLocation`, and `SameAsInput`.
-- [ ] Separate dense `LivenessPosition`/`LivenessRange` geometry from
-  structural zero-width `TransferPoint`s; compute the minimum coverage of
-  Early/Late uses and defs, including whole-instruction Early defs and Late
-  uses.
-- [ ] Add constraint-driven splitting immediately before the first
+- [x] Define dense `LivenessPosition`/`LivenessRange` occupancy geometry and
+  compute the minimum coverage of Early/Late uses and defs, including
+  whole-instruction Early defs and Late uses.
+- [x] Add structural zero-width `TransferPoint`s separately from liveness
+  geometry.
+- [x] Add constraint-driven splitting immediately before the first
   incompatible use, or after an incompatible def, and record connectors in a
   structural `BundleTransferSchedule` grouped by
   `(TransferPoint, TransferPhase)`.
-- [ ] Produce `RegisterAllocationResult` with separate
-  `BundleLocationAssignments` facts and `BundleTransferSchedule` value-flow
+- [x] Produce `RegisterAllocationResult` with final bundles,
+  `BundleLocationAssignments` facts, and `BundleTransferSchedule` value-flow
   actions.
 - [ ] Add generic allocation materialization that resolves supported transfer
   sets in parallel, inserts Core transfer instructions, rewrites

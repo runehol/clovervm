@@ -2,6 +2,7 @@
 
 #include "runtime/fatal.h"
 
+#include <algorithm>
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
@@ -479,6 +480,97 @@ namespace cl::jit
                 }
             }
         }
+    }
+
+    void verify_register_allocation(const PreparedAllocationProblem &problem,
+                                    const AllocationConstraints &constraints,
+                                    const RegisterAllocationResult &allocation)
+    {
+        std::span<const LiveBundle> bundles = allocation.bundles();
+        std::vector<std::vector<LivenessRange>> fragments_by_source(
+            problem.live_ranges().size());
+        for(const LiveBundle &bundle: bundles)
+        {
+            if(bundle.fragments.empty())
+            {
+                fatal("JIT allocation contains an empty bundle");
+            }
+            for(const BundleFragment &fragment: bundle.fragments)
+            {
+                if(fragment.source.value() >= problem.live_ranges().size() ||
+                   fragment.range.empty() ||
+                   !problem.live_ranges()[fragment.source.value()]
+                        .range.contains(fragment.range))
+                {
+                    fatal("JIT allocation contains an invalid fragment");
+                }
+                fragments_by_source[fragment.source.value()].push_back(
+                    fragment.range);
+            }
+        }
+
+        for(size_t source_index = 0;
+            source_index < problem.live_ranges().size(); ++source_index)
+        {
+            std::vector<LivenessRange> &fragments =
+                fragments_by_source[source_index];
+            std::ranges::sort(fragments,
+                              [](LivenessRange lhs, LivenessRange rhs) {
+                                  return lhs.start < rhs.start;
+                              });
+            LivenessPosition expected =
+                problem.live_ranges()[source_index].range.start;
+            for(LivenessRange fragment: fragments)
+            {
+                if(fragment.start != expected)
+                {
+                    fatal("JIT bundle partition loses or overlaps liveness");
+                }
+                expected = fragment.end;
+            }
+            if(expected != problem.live_ranges()[source_index].range.end)
+            {
+                fatal("JIT bundle partition does not cover a live range");
+            }
+        }
+
+        for(const BundleTransferSet &set: allocation.transfers().sets())
+        {
+            if(set.point.owner() == nullptr || set.transfers.empty())
+            {
+                fatal("invalid JIT bundle transfer set");
+            }
+            for(const BundleTransfer &transfer: set.transfers)
+            {
+                if(transfer.source.value() >= bundles.size() ||
+                   transfer.destination.value() >= bundles.size() ||
+                   transfer.source == transfer.destination)
+                {
+                    fatal("invalid JIT bundle transfer");
+                }
+                bool connected = false;
+                for(const BundleFragment &source:
+                    bundles[transfer.source.value()].fragments)
+                {
+                    for(const BundleFragment &destination:
+                        bundles[transfer.destination.value()].fragments)
+                    {
+                        if(source.source == destination.source &&
+                           source.range.end == destination.range.start)
+                        {
+                            connected = true;
+                        }
+                    }
+                }
+                if(!connected)
+                {
+                    fatal("JIT bundle transfer connects no adjacent fragments");
+                }
+            }
+        }
+
+        verify_bundle_assignments(problem, constraints, bundles,
+                                  allocation.locations());
     }
 
 }  // namespace cl::jit

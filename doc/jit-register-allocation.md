@@ -4,7 +4,7 @@
 |---|---|
 | Document type | Design |
 | Status | Accepted |
-| Implementation | Prepared allocation problem and initial conflict-free register assignment implemented; post-allocation materialization remains open |
+| Implementation | Prepared allocation, deterministic constraint splitting, transfer scheduling, and conflict-free register/stack assignment implemented; post-allocation materialization remains open |
 | Scope | Allocation constraints, allocator-local numbering, liveness, bundles, backtracking allocation, live-range splitting, block-edge transfers, clobbers, spills, and post-allocation materialization |
 | Owning layers | Target preparation owns occurrence constraints and physical-transfer capabilities; the generic register allocator owns numbering, liveness, bundles, splitting, allocation, spill decisions, and bundle transfers; generic allocation materialization resolves transfers, rewrites the Core CFG, and publishes occurrence locations; publication and recovery planners own canonical-state synchronization; machine-code emission only encodes the materialized graph |
 | Validated against | `tests/test_jit_allocation_constraints.cpp`, `tests/test_aarch64_allocation_constraints.cpp`, `tests/test_jit_register_allocator.cpp` |
@@ -43,6 +43,7 @@ BackendPreparation
     physical-transfer capabilities
 
 RegisterAllocationResult
+    final LiveBundles
     BundleLocationAssignments
     BundleTransferSchedule
 
@@ -58,9 +59,17 @@ anchored occurrences. ABI registers and stack locations use the same fixed
 constraint mechanism as every other fixed occurrence; there is no separate ABI
 constraint class.
 
-`BundleLocationAssignments` are allocator-local facts. They map each active
-bundle to the register, allocator spill slot, canonical frame slot, or other
-explicitly supported location selected for all of its fragments.
+`RegisterAllocationResult` owns the final active bundle vector after
+normalization, merging, and splitting. Its vector indices are the `BundleId`
+namespace used by the location table and transfer schedule. The initial bundle
+IDs retain their prepared-problem indices; new split children are appended. The
+immutable prepared problem continues to own source live ranges, occurrences,
+and their provenance.
+
+`BundleLocationAssignments` are allocator-local facts. They map each bundle in
+the final partition to the register, allocator spill slot, canonical frame
+slot, or other explicitly supported location selected for all of its
+fragments.
 
 `BundleTransferSchedule` records value flow introduced by allocation:
 
@@ -118,6 +127,7 @@ struct BundleTransferSet
 
 struct RegisterAllocationResult
 {
+    std::vector<LiveBundle> bundles;
     BundleLocationAssignments locations;
     std::vector<BundleTransferSet> transfers;
 };
@@ -130,11 +140,12 @@ LocationAssignments materialize_allocation(
     const PhysicalTransferConstraints &target);
 ```
 
-`RegisterAllocationResult` owns compiler-lifetime tables and borrows the
-prepared problem's bundle identities. Materialization consumes it before either
-object is discarded. `LocationAssignments` refer to the newly published graph
-generation. Recovery planning and machine-code emission consume that graph and
-its `LocationAssignments`.
+`RegisterAllocationResult` owns the final compiler-lifetime bundle partition,
+location table, and transfer schedule. Its fragments borrow the prepared
+problem's live-range identities, so materialization consumes both products
+before either is discarded. `LocationAssignments` refer to the newly published
+graph generation. Recovery planning and machine-code emission consume that
+graph and its `LocationAssignments`.
 
 Canonical VM homes and whether they currently contain an up-to-date value
 remain separate state. A canonical frame home is not silently converted into
@@ -765,6 +776,7 @@ The initial allocator-local shape is conceptually:
 struct Occurrence
 {
     LivenessPosition position;
+    LivenessRange minimum_coverage;
     LiveRangeId live_range;
     OccurrenceKind kind;
     OccurrenceAnchor anchor;
@@ -789,6 +801,8 @@ struct LiveRange
 };
 ```
 
+`minimum_coverage` is the already-computed irreducible range required by the
+occurrence's kind and timing. Legal bundle splitting must not cut through it.
 `OccurrenceAnchor` retains the instruction operand or result, block parameter,
 edge argument, or temporary identity needed by diagnostics and final lowering.
 It does not make ephemeral integer positions durable.
@@ -852,20 +866,21 @@ the first conflict-free assignment stage accepts executable graphs only when
 no cross-block bundle merging, edge moves, splitting, eviction, or spilling is
 required.
 
-The selected allocation is not stored in the prepared bundle. A separate
-bundle-assignment table records the physical register or later spill location
-chosen for each active bundle.
+The selected allocation is not stored in the prepared bundle. Normalization
+copies the initial bundles into the final vector owned by
+`RegisterAllocationResult`; a separate bundle-assignment table records the
+physical register or later spill location chosen for each active bundle.
 
-The currently implemented register-only assignment stage uses:
+The allocator-local forward assignment result uses:
 
 ```cpp
-class BundleRegisterAssignments
+class BundleLocationAssignments
 {
 public:
-    PhysicalRegister register_for(BundleId bundle) const;
+    AllocationLocation location_for(BundleId bundle) const;
 
 private:
-    std::vector<PhysicalRegister> register_by_bundle_;
+    std::vector<AllocationLocation> location_by_bundle_;
 };
 ```
 
@@ -881,15 +896,15 @@ therefore cost `O(F log A)` for `F` bundle fragments and `A` active fragments
 on the register. A bundle must be removed from this index before splitting or
 otherwise mutating its fragments.
 
-Constraint normalization generalizes the forward table to
-`BundleLocationAssignments`, whose entries are `AllocationLocation`s. Fixed
-stack bundles are assigned directly; register bundles continue to use the same
-register worklist and occupancy indexes. Stack occupancy is keyed by frame
-offset because that identifies the physical cell within one allocation
-problem. The exact `StackLocationKind` on each fixed occurrence is nevertheless
-retained for final `LocationAssignments`, because it selects addressing and
-instruction-generation policy even when two semantic stack locations alias the
-same cell.
+Constraint normalization produces the final bundle vector and generalizes the
+forward table to `BundleLocationAssignments`, whose entries are
+`AllocationLocation`s. Fixed stack bundles are assigned directly; register
+bundles continue to use the same register worklist and occupancy indexes. Stack
+occupancy is keyed by frame offset because that identifies the physical cell
+within one allocation problem. The exact `StackLocationKind` on each fixed
+occurrence is nevertheless retained for final `LocationAssignments`, because
+it selects addressing and instruction-generation policy even when two semantic
+stack locations alias the same cell.
 
 Clobber ranges remain separate because they are immutable reservations rather
 than allocatable bundles. They are sorted and coalesced once, then queried by
