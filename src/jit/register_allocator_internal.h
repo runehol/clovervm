@@ -27,6 +27,15 @@ namespace cl::jit
         const std::vector<FixedLocationConstraint> &fixed_constraints,
         const std::vector<LiveRange> &live_ranges);
 
+    struct NormalizedBundles
+    {
+        std::vector<LiveBundle> bundles;
+        BundleTransferSchedule transfers;
+    };
+
+    Result<NormalizedBundles, RegisterAllocationError>
+    normalize_bundle_constraints(const PreparedAllocationProblem &problem);
+
     std::optional<BundleId>
     split_bundle(std::vector<LiveBundle> &bundles,
                  BundleTransferSchedule &transfers,

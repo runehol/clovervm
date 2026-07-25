@@ -160,13 +160,8 @@ namespace cl::jit
                     const LiveBundle &bundle = bundles_[bundle_id.value()];
 
                     std::optional<AllocationLocation> selected;
-                    auto required_result = required_location(bundle);
-                    if(!required_result)
-                    {
-                        return propagate_failure(std::move(required_result));
-                    }
                     std::optional<AllocationLocation> required =
-                        required_result.value();
+                        required_location(bundle);
                     if(required.has_value() && required->is_stack())
                     {
                         if(fits(required->stack(), bundle))
@@ -232,7 +227,7 @@ namespace cl::jit
                 }
             }
 
-            Result<std::optional<AllocationLocation>, RegisterAllocationError>
+            std::optional<AllocationLocation>
             required_location(const LiveBundle &bundle) const
             {
                 std::optional<AllocationLocation> result;
@@ -242,18 +237,15 @@ namespace cl::jit
                         problem_.fixed_constraints()[fixed_id.value()].location;
                     if(result.has_value() && !result->aliases(location))
                     {
-                        return Result<std::optional<AllocationLocation>,
-                                      RegisterAllocationError>::
-                            error(RegisterAllocationError::
-                                      RequiresConstraintFixup);
+                        fatal("normalized JIT bundle has incompatible fixed "
+                              "locations");
                     }
                     if(!result.has_value())
                     {
                         result = location;
                     }
                 }
-                return Result<std::optional<AllocationLocation>,
-                              RegisterAllocationError>::ok(result);
+                return result;
             }
 
             const RegisterClassDefinition &
@@ -343,20 +335,26 @@ namespace cl::jit
     assign_bundles(const PreparedAllocationProblem &problem,
                    const AllocationConstraints &constraints)
     {
-        std::vector<LiveBundle> bundles(problem.bundles().begin(),
-                                        problem.bundles().end());
+        auto normalized_result = normalize_bundle_constraints(problem);
+        if(!normalized_result)
+        {
+            return propagate_failure(std::move(normalized_result));
+        }
+        NormalizedBundles normalized = std::move(normalized_result).value();
+
         auto assignment_result =
-            BundleAssigner(problem, bundles, constraints).run();
+            BundleAssigner(problem, normalized.bundles, constraints).run();
         if(!assignment_result)
         {
             return propagate_failure(std::move(assignment_result));
         }
         BundleLocationAssignments assignments =
             std::move(assignment_result).value();
-        verify_bundle_assignments(problem, constraints, bundles, assignments);
-        RegisterAllocationResult allocation(std::move(bundles),
+        verify_bundle_assignments(problem, constraints, normalized.bundles,
+                                  assignments);
+        RegisterAllocationResult allocation(std::move(normalized.bundles),
                                             std::move(assignments),
-                                            BundleTransferSchedule{});
+                                            std::move(normalized.transfers));
         return Result<RegisterAllocationResult, RegisterAllocationError>::ok(
             std::move(allocation));
     }

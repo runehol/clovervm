@@ -102,7 +102,7 @@ add_library(libclovervm_objects OBJECT
     jit/allocation_bundles.cpp
     jit/allocation_print.cpp
     jit/allocation_verifier.cpp
-    jit/bundle_register_assignments.h
+    jit/bundle_location_assignments.h
     jit/bundle_splitter.cpp
     jit/cfg_verifier.cpp
     jit/cfg_verifier.h
@@ -110,6 +110,7 @@ add_library(libclovervm_objects OBJECT
     jit/compilation_arena.h
     jit/compilation_session.cpp
     jit/compilation_session.h
+    jit/constraint_normalizer.cpp
     jit/control_flow_graph.cpp
     jit/control_flow_graph.h
     jit/core_bytecode_translator.cpp

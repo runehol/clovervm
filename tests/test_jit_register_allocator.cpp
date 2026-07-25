@@ -410,7 +410,7 @@ namespace cl::jit
                   assignment_result.error());
     }
 
-    TEST(JitRegisterAllocator, RejectsConflictingFixedRegisters)
+    TEST(JitRegisterAllocator, SplitsConflictingFixedRegisters)
     {
         CompilationSession session;
         GraphBuilder builder(session);
@@ -440,9 +440,23 @@ namespace cl::jit
 
         auto assignment_result = assign_bundles(prepared, constraints);
 
-        ASSERT_TRUE(assignment_result.has_error());
-        EXPECT_EQ(RegisterAllocationError::RequiresConstraintFixup,
-                  assignment_result.error());
+        ASSERT_TRUE(assignment_result);
+        RegisterAllocationResult allocation =
+            std::move(assignment_result).value();
+        ASSERT_EQ(2u, allocation.bundles().size());
+        EXPECT_EQ((LivenessRange{LivenessPosition(1), LivenessPosition(2)}),
+                  allocation.bundles()[0].fragments[0].range);
+        EXPECT_EQ((LivenessRange{LivenessPosition(2), LivenessPosition(3)}),
+                  allocation.bundles()[1].fragments[0].range);
+        EXPECT_EQ(x0, allocation.locations().location_for(BundleId(0)).reg());
+        EXPECT_EQ(x1, allocation.locations().location_for(BundleId(1)).reg());
+        ASSERT_EQ(1u, allocation.transfers().sets().size());
+        const BundleTransferSet &set = allocation.transfers().sets().front();
+        EXPECT_EQ(TransferPoint::before_instruction(return_instruction),
+                  set.point);
+        ASSERT_EQ(1u, set.transfers.size());
+        EXPECT_EQ(BundleId(0), set.transfers[0].source);
+        EXPECT_EQ(BundleId(1), set.transfers[0].destination);
     }
 
     TEST(JitRegisterAllocator,
@@ -495,6 +509,110 @@ namespace cl::jit
                   dump.find("fixed = [o0:incoming_parameter(4), o1:gpr0]"));
 
         auto assignment_result = assign_bundles(prepared, constraints);
+        ASSERT_TRUE(assignment_result);
+        RegisterAllocationResult allocation =
+            std::move(assignment_result).value();
+        ASSERT_EQ(2u, allocation.bundles().size());
+        AllocationLocation stack =
+            allocation.locations().location_for(BundleId(0));
+        ASSERT_TRUE(stack.is_stack());
+        EXPECT_EQ(StackLocationKind::IncomingParameter, stack.stack().kind());
+        EXPECT_EQ(4, stack.stack().frame_offset());
+        EXPECT_EQ(x0, allocation.locations().location_for(BundleId(1)).reg());
+        ASSERT_EQ(1u, allocation.transfers().sets().size());
+        EXPECT_EQ(TransferPoint::before_instruction(return_instruction),
+                  allocation.transfers().sets()[0].point);
+    }
+
+    TEST(JitRegisterAllocator, GroupsSamePointSplitTransfersInParallel)
+    {
+        CompilationSession session;
+        GraphBuilder builder(session);
+        Block *entry = builder.emplace_block();
+        ParameterInstruction *lhs =
+            builder.emplace_parameter<ParameterInstruction>(entry);
+        ParameterInstruction *rhs =
+            builder.emplace_parameter<ParameterInstruction>(entry);
+        AndSMIInstruction *operation =
+            builder.emplace_instruction<AndSMIInstruction>(
+                entry, TaggedValueRef(lhs), TaggedValueRef(rhs));
+        builder.emplace_instruction<ReturnInstruction>(
+            entry, TaggedValueRef(operation));
+        ControlFlowGraph *graph = builder.finalize();
+
+        LocationRequirement lhs_stack =
+            LocationRequirement::fixed(AllocationLocation::stack(
+                StackLocation(StackLocationKind::IncomingParameter, 4)));
+        LocationRequirement rhs_stack =
+            LocationRequirement::fixed(AllocationLocation::stack(
+                StackLocation(StackLocationKind::IncomingParameter, 3)));
+        std::vector<InstructionAllocationConstraints> overrides;
+        overrides.emplace_back(lhs, std::vector<ProgramValueUseConstraint>{},
+                               ResultConstraint{AccessTiming::Late, lhs_stack});
+        overrides.emplace_back(rhs, std::vector<ProgramValueUseConstraint>{},
+                               ResultConstraint{AccessTiming::Late, rhs_stack});
+        constexpr std::array registers = {x0, x1};
+        AllocationConstraints constraints =
+            gpr_constraints(registers, std::move(overrides));
+
+        auto prepared_result = prepare_register_allocation(*graph, constraints);
+        ASSERT_TRUE(prepared_result);
+        PreparedAllocationProblem prepared = std::move(prepared_result).value();
+        auto assignment_result = assign_bundles(prepared, constraints);
+        ASSERT_TRUE(assignment_result);
+        RegisterAllocationResult allocation =
+            std::move(assignment_result).value();
+
+        ASSERT_EQ(1u, allocation.transfers().sets().size());
+        const BundleTransferSet &set = allocation.transfers().sets().front();
+        EXPECT_EQ(TransferPoint::before_instruction(operation), set.point);
+        ASSERT_EQ(2u, set.transfers.size());
+        EXPECT_EQ(BundleId(0), set.transfers[0].source);
+        EXPECT_EQ(BundleId(3), set.transfers[0].destination);
+        EXPECT_EQ(BundleId(1), set.transfers[1].source);
+        EXPECT_EQ(BundleId(4), set.transfers[1].destination);
+
+        EXPECT_EQ("allocation_result {\n"
+                  "  b0 [[1, 2):l0] = incoming_parameter(4)\n"
+                  "  b1 [[1, 2):l1] = incoming_parameter(3)\n"
+                  "  b2 [[3, 5):l2] = gpr0\n"
+                  "  b3 [[2, 3):l0] = gpr0\n"
+                  "  b4 [[2, 3):l1] = gpr1\n"
+                  "  transfers {\n"
+                  "    before(%2) [b0 -> b3, b1 -> b4]\n"
+                  "  }\n"
+                  "}\n",
+                  format_register_allocation(prepared, allocation));
+    }
+
+    TEST(JitRegisterAllocator, RejectsSameInstructionLocationConflict)
+    {
+        CompilationSession session;
+        GraphBuilder builder(session);
+        Block *entry = builder.emplace_block();
+        ParameterInstruction *parameter =
+            builder.emplace_parameter<ParameterInstruction>(entry);
+        AndSMIInstruction *operation =
+            builder.emplace_instruction<AndSMIInstruction>(
+                entry, TaggedValueRef(parameter), TaggedValueRef(parameter));
+        builder.emplace_instruction<ReturnInstruction>(
+            entry, TaggedValueRef(operation));
+        ControlFlowGraph *graph = builder.finalize();
+
+        std::vector<InstructionAllocationConstraints> overrides;
+        overrides.emplace_back(operation,
+                               std::vector<ProgramValueUseConstraint>{
+                                   {0, AccessTiming::Early, fixed(x0)},
+                                   {1, AccessTiming::Early, fixed(x1)}});
+        constexpr std::array registers = {x0, x1};
+        AllocationConstraints constraints =
+            gpr_constraints(registers, std::move(overrides));
+
+        auto prepared_result = prepare_register_allocation(*graph, constraints);
+        ASSERT_TRUE(prepared_result);
+        PreparedAllocationProblem prepared = std::move(prepared_result).value();
+        auto assignment_result = assign_bundles(prepared, constraints);
+
         ASSERT_TRUE(assignment_result.has_error());
         EXPECT_EQ(RegisterAllocationError::RequiresConstraintFixup,
                   assignment_result.error());

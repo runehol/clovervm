@@ -148,6 +148,26 @@ namespace cl::jit
                                stack.frame_offset());
         }
 
+        std::string format_transfer_point(TransferPoint point,
+                                          const DumpNames &names)
+        {
+            switch(point.kind())
+            {
+                case TransferPoint::Kind::BeforeInstruction:
+                    return fmt::format("before({})",
+                                       names.instruction(point.instruction()));
+                case TransferPoint::Kind::BlockEntry:
+                    return fmt::format("entry(bb{})",
+                                       names.block(point.block()));
+                case TransferPoint::Kind::BlockExit:
+                    return fmt::format("exit(bb{})",
+                                       names.block(point.block()));
+                case TransferPoint::Kind::BlockEdge:
+                    return fmt::format("edge(e{})", names.edge(point.edge()));
+            }
+            fatal("invalid JIT transfer point in allocator dump");
+        }
+
         const char *occurrence_kind_name(OccurrenceKind kind)
         {
             switch(kind)
@@ -370,6 +390,55 @@ namespace cl::jit
                 format_location(assignments.location_for(BundleId(index))));
         }
         fmt::format_to(std::back_inserter(out), "}}\n");
+        return {out.data(), out.size()};
+    }
+
+    std::string
+    format_register_allocation(const PreparedAllocationProblem &problem,
+                               const RegisterAllocationResult &allocation)
+    {
+        DumpNames names(problem);
+        fmt::memory_buffer out;
+        fmt::format_to(std::back_inserter(out), "allocation_result {{\n");
+        for(size_t index = 0; index < allocation.bundles().size(); ++index)
+        {
+            const LiveBundle &bundle = allocation.bundles()[index];
+            fmt::format_to(std::back_inserter(out), "  b{} [", index);
+            for(size_t fragment_index = 0;
+                fragment_index < bundle.fragments.size(); ++fragment_index)
+            {
+                if(fragment_index != 0)
+                {
+                    fmt::format_to(std::back_inserter(out), ", ");
+                }
+                const BundleFragment &fragment =
+                    bundle.fragments[fragment_index];
+                fmt::format_to(std::back_inserter(out), "{}:l{}",
+                               format_range(fragment.range),
+                               fragment.source.value());
+            }
+            fmt::format_to(std::back_inserter(out), "] = {}\n",
+                           format_location(allocation.locations().location_for(
+                               BundleId(index))));
+        }
+        fmt::format_to(std::back_inserter(out), "  transfers {{\n");
+        for(const BundleTransferSet &set: allocation.transfers().sets())
+        {
+            fmt::format_to(std::back_inserter(out), "    {} [",
+                           format_transfer_point(set.point, names));
+            for(size_t index = 0; index < set.transfers.size(); ++index)
+            {
+                if(index != 0)
+                {
+                    fmt::format_to(std::back_inserter(out), ", ");
+                }
+                fmt::format_to(std::back_inserter(out), "b{} -> b{}",
+                               set.transfers[index].source.value(),
+                               set.transfers[index].destination.value());
+            }
+            fmt::format_to(std::back_inserter(out), "]\n");
+        }
+        fmt::format_to(std::back_inserter(out), "  }}\n}}\n");
         return {out.data(), out.size()};
     }
 
