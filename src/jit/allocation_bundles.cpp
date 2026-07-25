@@ -39,31 +39,23 @@ namespace cl::jit
             return hot + definition + requirement;
         }
 
-        bool is_minimal(const LiveRange &live_range)
+        uint64_t bundle_spill_weight(
+            const LiveBundle &bundle,
+            const std::vector<OccurrenceId> &covered_occurrences,
+            const std::vector<Occurrence> &occurrences)
         {
-            if(live_range.occurrences.size() != 1)
+            if(covered_occurrences.size() == 1 &&
+               bundle.allocation_priority ==
+                   occurrences[covered_occurrences.front().value()]
+                       .minimum_coverage.length())
             {
-                return false;
-            }
-            if(live_range.origin.kind() == LiveRangeOrigin::Kind::Temporary)
-            {
-                return true;
-            }
-            return live_range.range.length() == 1;
-        }
-
-        uint64_t bundle_spill_weight(const LiveRange &live_range,
-                                     const std::vector<Occurrence> &occurrences)
-        {
-            if(is_minimal(live_range))
-            {
-                return live_range.fixed_constraints.empty()
+                return bundle.fixed_constraints.empty()
                            ? OrdinaryMinimalSpillWeight
                            : FixedMinimalSpillWeight;
             }
 
             uint64_t total = 0;
-            for(OccurrenceId occurrence_id: live_range.occurrences)
+            for(OccurrenceId occurrence_id: covered_occurrences)
             {
                 uint64_t weight =
                     occurrences[occurrence_id.value()].spill_weight;
@@ -74,9 +66,58 @@ namespace cl::jit
                 }
                 total += weight;
             }
-            return std::max<uint64_t>(1, total / live_range.range.length());
+            return std::max<uint64_t>(1, total / bundle.allocation_priority);
         }
     }  // namespace
+
+    void recompute_bundle_properties(
+        LiveBundle &bundle, const std::vector<Occurrence> &occurrences,
+        const std::vector<FixedLocationConstraint> &fixed_constraints,
+        const std::vector<LiveRange> &live_ranges)
+    {
+        bundle.fixed_constraints.clear();
+        bundle.allocation_priority = 0;
+        std::vector<OccurrenceId> covered_occurrences;
+
+        for(const BundleFragment &fragment: bundle.fragments)
+        {
+            bundle.allocation_priority += fragment.range.length();
+            const LiveRange &source = live_ranges[fragment.source.value()];
+            for(OccurrenceId occurrence_id: source.occurrences)
+            {
+                const Occurrence &occurrence =
+                    occurrences[occurrence_id.value()];
+                if(fragment.range.contains(occurrence.minimum_coverage))
+                {
+                    covered_occurrences.push_back(occurrence_id);
+                }
+            }
+            for(FixedConstraintId fixed_id: source.fixed_constraints)
+            {
+                const FixedLocationConstraint &fixed =
+                    fixed_constraints[fixed_id.value()];
+                if(fragment.range.contains(
+                       occurrences[fixed.occurrence.value()].minimum_coverage))
+                {
+                    bundle.fixed_constraints.push_back(fixed_id);
+                }
+            }
+        }
+
+        std::ranges::sort(covered_occurrences);
+        if(std::ranges::adjacent_find(covered_occurrences) !=
+           covered_occurrences.end())
+        {
+            fatal("JIT bundle covers one occurrence more than once");
+        }
+        std::ranges::sort(bundle.fixed_constraints);
+        if(bundle.allocation_priority == 0)
+        {
+            fatal("JIT bundle has no liveness coverage");
+        }
+        bundle.spill_weight =
+            bundle_spill_weight(bundle, covered_occurrences, occurrences);
+    }
 
     bool bundles_overlap(const LiveBundle &lhs, const LiveBundle &rhs)
     {
@@ -126,12 +167,14 @@ namespace cl::jit
         {
             LiveRangeId live_range_id(index);
             const LiveRange &live_range = scan.live_ranges[index];
-            bundles.push_back(
-                {live_range.register_class,
-                 {{live_range.range, live_range_id}},
-                 live_range.fixed_constraints,
-                 live_range.range.length(),
-                 bundle_spill_weight(live_range, scan.occurrences)});
+            bundles.push_back({live_range.register_class,
+                               {{live_range.range, live_range_id}},
+                               {},
+                               0,
+                               0});
+            recompute_bundle_properties(bundles.back(), scan.occurrences,
+                                        scan.fixed_constraints,
+                                        scan.live_ranges);
         }
 
         return PreparedAllocationProblem(

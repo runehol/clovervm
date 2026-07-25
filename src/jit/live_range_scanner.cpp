@@ -222,8 +222,8 @@ namespace cl::jit
                 }
 
                 OccurrenceId occurrence_id(occurrences_.size());
-                occurrences_.push_back(
-                    {position, live_range_id, kind, std::move(anchor), 0});
+                occurrences_.push_back({position, coverage, live_range_id, kind,
+                                        std::move(anchor), 0});
                 live_range.occurrences.push_back(occurrence_id);
                 if(coverage.end > live_range.range.end)
                 {

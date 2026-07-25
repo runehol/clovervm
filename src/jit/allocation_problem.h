@@ -77,6 +77,8 @@ namespace cl::jit
             return start <= range.start && range.end <= end;
         }
         bool empty() const { return start == end; }
+
+        friend bool operator==(LivenessRange, LivenessRange) = default;
     };
 
     enum class OccurrenceKind : uint8_t
@@ -159,6 +161,8 @@ namespace cl::jit
     struct Occurrence
     {
         LivenessPosition position;
+        // The irreducible liveness interval required by this occurrence.
+        LivenessRange minimum_coverage;
         LiveRangeId live_range;
         OccurrenceKind kind;
         OccurrenceAnchor anchor;

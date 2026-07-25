@@ -113,7 +113,8 @@ namespace cl::jit
             }
             const LiveRange &live_range =
                 problem.live_ranges()[occurrence.live_range.value()];
-            if(!live_range.range.contains(occurrence.position) ||
+            if(!live_range.range.contains(occurrence.minimum_coverage) ||
+               !occurrence.minimum_coverage.contains(occurrence.position) ||
                occurrence.anchor.owner() == nullptr)
             {
                 fatal("invalid JIT allocator occurrence");
@@ -130,8 +131,8 @@ namespace cl::jit
                         if(parameter != parameter_positions.end())
                         {
                             expected = parameter->second;
-                            if(!live_range.range.contains(
-                                   {expected, expected.next()}))
+                            if(occurrence.minimum_coverage !=
+                               LivenessRange{expected, expected.next()})
                             {
                                 fatal("JIT allocator block parameter is not "
                                       "live at block entry");
@@ -153,10 +154,10 @@ namespace cl::jit
                                 expected == position->second.early
                                     ? AccessTiming::Early
                                     : AccessTiming::Late;
-                            if(!live_range.range.contains(
-                                   minimum_liveness_coverage(
-                                       position->second.early,
-                                       OccurrenceKind::Def, timing)))
+                            if(occurrence.minimum_coverage !=
+                               minimum_liveness_coverage(position->second.early,
+                                                         OccurrenceKind::Def,
+                                                         timing))
                             {
                                 fatal("JIT allocator result has insufficient "
                                       "liveness coverage");
@@ -194,9 +195,10 @@ namespace cl::jit
                             occurrence.position == position->second.early
                                 ? AccessTiming::Early
                                 : AccessTiming::Late;
-                        if(!live_range.range.contains(minimum_liveness_coverage(
-                               position->second.early, OccurrenceKind::Use,
-                               timing)))
+                        if(occurrence.minimum_coverage !=
+                           minimum_liveness_coverage(position->second.early,
+                                                     OccurrenceKind::Use,
+                                                     timing))
                         {
                             fatal("JIT allocator operand has insufficient "
                                   "liveness coverage");
@@ -218,9 +220,9 @@ namespace cl::jit
                                LiveRangeOrigin::Kind::ProgramValue ||
                            edge->arguments()[argument_index].instruction() !=
                                live_range.origin.instruction() ||
-                           !live_range.range.contains(
-                               {occurrence.position,
-                                occurrence.position.next()}))
+                           occurrence.minimum_coverage !=
+                               LivenessRange{occurrence.position,
+                                             occurrence.position.next()})
                         {
                             fatal("invalid JIT allocator edge occurrence");
                         }
@@ -240,6 +242,9 @@ namespace cl::jit
                            live_range.origin.instruction() != instruction ||
                            live_range.origin.temporary_index() !=
                                occurrence.anchor.index() ||
+                           occurrence.minimum_coverage !=
+                               LivenessRange{position->second.early,
+                                             position->second.late.next()} ||
                            live_range.range.start != position->second.early ||
                            live_range.range.end != position->second.late.next())
                         {
