@@ -3,6 +3,8 @@
 #include "jit/aarch64_assembler.h"
 #include "jit/control_flow_graph.h"
 #include "jit/instruction.h"
+#include "jit/location_assignments.h"
+#include "runtime/fatal.h"
 
 #include <cassert>
 #include <utility>
@@ -11,32 +13,46 @@ namespace cl::jit
 {
     namespace
     {
-        XRegister assigned_register(ProgramValueRef value)
+        XRegister assigned_register(const LocationAssignments &locations,
+                                    ProgramValueRef value)
         {
-            (void)value;
-            return XRegister(0);
+            PhysicalLocation location = locations.location_for(value);
+            if(!location.is_register())
+            {
+                fatal("AArch64 emitter requires a register-mapped value");
+            }
+            PhysicalRegister reg = location.reg();
+            if(reg.register_class() != RegisterClass::GPR)
+            {
+                fatal("AArch64 emitter requires a GPR-mapped value");
+            }
+            return XRegister(reg.number());
         }
 
         void emit_smi_logical(AArch64MacroAssembler &assembler,
+                              const LocationAssignments &locations,
                               LogicalOp operation, ProgramValueRef result,
                               ProgramValueRef lhs, ProgramValueRef rhs)
         {
-            assembler.emit_logical_reg(operation, assigned_register(result),
-                                       assigned_register(lhs),
-                                       assigned_register(rhs));
+            assembler.emit_logical_reg(operation,
+                                       assigned_register(locations, result),
+                                       assigned_register(locations, lhs),
+                                       assigned_register(locations, rhs));
         }
 
         Result<CodeAllocation, JitCodeError>
         generate_allocation(const ControlFlowGraph &graph, CodeCache &cache,
+                            const LocationAssignments &locations,
                             AArch64ValuePoolMode pool_mode)
         {
             AArch64MacroAssembler assembler(pool_mode);
-            generate_aarch64_assembly(graph, assembler);
+            generate_aarch64_assembly(graph, locations, assembler);
             return assembler.emitter().finalize(cache);
         }
     }  // namespace
 
     void generate_aarch64_assembly(const ControlFlowGraph &graph,
+                                   const LocationAssignments &locations,
                                    AArch64MacroAssembler &assembler)
     {
         assert(graph.is_published());
@@ -63,7 +79,8 @@ namespace cl::jit
                 {
                     Value constant = constant_instruction.constant();
                     XRegister destination =
-                        assigned_register(ProgramValueRef(instruction));
+                        assigned_register(locations,
+                                          ProgramValueRef(instruction));
                     if(constant.is_inline())
                     {
                         assembler.mov(
@@ -81,7 +98,7 @@ namespace cl::jit
                                              and_instruction)
                 {
                     emit_smi_logical(
-                        assembler, LogicalOp::And,
+                        assembler, locations, LogicalOp::And,
                         ProgramValueRef(instruction), and_instruction.lhs(),
                         and_instruction.rhs());
                     break;
@@ -91,7 +108,7 @@ namespace cl::jit
                                              orr_instruction)
                 {
                     emit_smi_logical(
-                        assembler, LogicalOp::Orr,
+                        assembler, locations, LogicalOp::Orr,
                         ProgramValueRef(instruction), orr_instruction.lhs(),
                         orr_instruction.rhs());
                     break;
@@ -101,17 +118,33 @@ namespace cl::jit
                                              eor_instruction)
                 {
                     emit_smi_logical(
-                        assembler, LogicalOp::Eor,
+                        assembler, locations, LogicalOp::Eor,
                         ProgramValueRef(instruction), eor_instruction.lhs(),
                         eor_instruction.rhs());
                     break;
                 }
 
+                case CL_JIT_INSTRUCTION_CASE(MovInstruction, move_instruction)
+                {
+                    assembler.mov(
+                        assigned_register(locations,
+                                          ProgramValueRef(instruction)),
+                        assigned_register(locations,
+                                          move_instruction.source()));
+                    break;
+                }
+
+                case InstructionKind::LoadStack:
+                case InstructionKind::LoadStackF64:
+                case InstructionKind::StoreStack:
+                case InstructionKind::StoreStackF64:
+                    fatal("AArch64 stack transfer emission is not implemented");
+
                 case CL_JIT_INSTRUCTION_CASE(ReturnInstruction,
                                              return_instruction)
                 {
                     (void)assigned_register(
-                        return_instruction.return_value());
+                        locations, return_instruction.return_value());
                     assembler.emit_ret();
                     break;
                 }
@@ -124,10 +157,12 @@ namespace cl::jit
     }
 
     Result<PublishedCode, JitCodeError>
-    emit_aarch64_from_cfg(const ControlFlowGraph &graph, CodeCache &cache)
+    emit_aarch64_from_cfg(const ControlFlowGraph &graph,
+                          const LocationAssignments &locations,
+                          CodeCache &cache)
     {
         Result<CodeAllocation, JitCodeError> near = generate_allocation(
-            graph, cache, AArch64ValuePoolMode::NearLiteral);
+            graph, cache, locations, AArch64ValuePoolMode::NearLiteral);
         if(near)
         {
             return cache.publish(std::move(near).value());
@@ -138,7 +173,7 @@ namespace cl::jit
         }
 
         Result<CodeAllocation, JitCodeError> far = generate_allocation(
-            graph, cache, AArch64ValuePoolMode::FarPageRelative);
+            graph, cache, locations, AArch64ValuePoolMode::FarPageRelative);
         if(!far)
         {
             return Result<PublishedCode, JitCodeError>::error(far.error());

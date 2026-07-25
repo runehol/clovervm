@@ -2,16 +2,44 @@
 #include "jit/aarch64_cfg_emitter.h"
 #include "jit/compilation_session.h"
 #include "jit/graph_builder.h"
+#include "jit/location_assignments.h"
 
 #include <gtest/gtest.h>
 
 #include <cstddef>
 #include <cstdint>
+#include <utility>
 
 namespace cl::jit
 {
     namespace
     {
+        constexpr PhysicalRegister x0(RegisterClass::GPR, 0);
+        constexpr PhysicalRegister x1(RegisterClass::GPR, 1);
+
+        LocationAssignments
+        assign_program_values_to_x0(const ControlFlowGraph &graph)
+        {
+            LocationAssignmentsBuilder locations;
+            for(Block *block: graph.blocks())
+            {
+                for(Instruction *parameter: block->parameters())
+                {
+                    locations.assign(ProgramValueRef(parameter),
+                                     PhysicalLocation::reg(x0));
+                }
+                for(Instruction *instruction: block->instructions())
+                {
+                    if(instruction->result_class() == ResultClass::ProgramValue)
+                    {
+                        locations.assign(ProgramValueRef(instruction),
+                                         PhysicalLocation::reg(x0));
+                    }
+                }
+            }
+            return std::move(locations).finalize();
+        }
+
         template <typename LogicalInstruction>
         uint64_t execute_smi_logical_with_identical_operands(Value input)
         {
@@ -27,10 +55,11 @@ namespace cl::jit
             builder.emplace_instruction<ReturnInstruction>(
                 entry, TaggedValueRef(result));
             ControlFlowGraph *graph = builder.finalize();
+            LocationAssignments locations = assign_program_values_to_x0(*graph);
 
             CodeCache cache;
             Result<PublishedCode, JitCodeError> emission =
-                emit_aarch64_from_cfg(*graph, cache);
+                emit_aarch64_from_cfg(*graph, locations, cache);
             EXPECT_TRUE(emission);
             if(!emission)
             {
@@ -55,10 +84,11 @@ namespace cl::jit
         builder.emplace_instruction<ReturnInstruction>(
             entry, TaggedValueRef(parameter));
         ControlFlowGraph *graph = builder.finalize();
+        LocationAssignments locations = assign_program_values_to_x0(*graph);
 
         CodeCache cache;
         Result<PublishedCode, JitCodeError> emission =
-            emit_aarch64_from_cfg(*graph, cache);
+            emit_aarch64_from_cfg(*graph, locations, cache);
         ASSERT_TRUE(emission);
         PublishedCode code = std::move(emission).value();
 
@@ -87,10 +117,11 @@ namespace cl::jit
         builder.emplace_instruction<ReturnInstruction>(
             entry, TaggedValueRef(constant));
         ControlFlowGraph *graph = builder.finalize();
+        LocationAssignments locations = assign_program_values_to_x0(*graph);
 
         CodeCache cache;
         Result<PublishedCode, JitCodeError> emission =
-            emit_aarch64_from_cfg(*graph, cache);
+            emit_aarch64_from_cfg(*graph, locations, cache);
         ASSERT_TRUE(emission);
         PublishedCode code = std::move(emission).value();
 
@@ -98,6 +129,70 @@ namespace cl::jit
         Function function =
             reinterpret_cast<Function>(code.entry().bits_for_indirect_target());
         EXPECT_EQ(static_cast<uint64_t>(expected.as.integer), function());
+    }
+
+    TEST(AArch64Execution, EmitsMoveBetweenAssignedRegisters)
+    {
+        CompilationSession session;
+        GraphBuilder builder(session);
+        Block *entry = builder.emplace_block();
+        ParameterInstruction *parameter =
+            builder.emplace_parameter<ParameterInstruction>(entry);
+        MovInstruction *to_x1 = builder.emplace_instruction<MovInstruction>(
+            entry, TaggedValueRef(parameter));
+        MovInstruction *to_x0 = builder.emplace_instruction<MovInstruction>(
+            entry, TaggedValueRef(to_x1));
+        builder.emplace_instruction<ReturnInstruction>(entry,
+                                                       TaggedValueRef(to_x0));
+        ControlFlowGraph *graph = builder.finalize();
+
+        LocationAssignmentsBuilder location_builder;
+        location_builder.assign(ProgramValueRef(parameter),
+                                PhysicalLocation::reg(x0));
+        location_builder.assign(ProgramValueRef(to_x1),
+                                PhysicalLocation::reg(x1));
+        location_builder.assign(ProgramValueRef(to_x0),
+                                PhysicalLocation::reg(x0));
+        LocationAssignments locations = std::move(location_builder).finalize();
+
+        CodeCache cache;
+        Result<PublishedCode, JitCodeError> emission =
+            emit_aarch64_from_cfg(*graph, locations, cache);
+        ASSERT_TRUE(emission);
+        PublishedCode code = std::move(emission).value();
+
+        using Function = uint64_t (*)(uint64_t);
+        Function function =
+            reinterpret_cast<Function>(code.entry().bits_for_indirect_target());
+        constexpr uint64_t input = 0x123456789abcdef0;
+        EXPECT_EQ(input, function(input));
+    }
+
+    TEST(AArch64Execution, RejectsStackTransferUntilAssemblerSupportsIt)
+    {
+        CompilationSession session;
+        GraphBuilder builder(session);
+        Block *entry = builder.emplace_block();
+        ParameterInstruction *parameter =
+            builder.emplace_parameter<ParameterInstruction>(entry);
+        LoadStackInstruction *load =
+            builder.emplace_instruction<LoadStackInstruction>(
+                entry, TaggedValueRef(parameter));
+        builder.emplace_instruction<ReturnInstruction>(entry,
+                                                       TaggedValueRef(load));
+        ControlFlowGraph *graph = builder.finalize();
+
+        LocationAssignmentsBuilder location_builder;
+        location_builder.assign(ProgramValueRef(parameter),
+                                PhysicalLocation::stack(StackLocation(
+                                    StackLocationKind::IncomingParameter, 8)));
+        location_builder.assign(ProgramValueRef(load),
+                                PhysicalLocation::reg(x0));
+        LocationAssignments locations = std::move(location_builder).finalize();
+        AArch64MacroAssembler assembler(AArch64ValuePoolMode::NearLiteral);
+
+        EXPECT_DEATH(generate_aarch64_assembly(*graph, locations, assembler),
+                     "stack transfer emission is not implemented");
     }
 
     TEST(AArch64Execution, EmitsAndSmiFromCfg)
