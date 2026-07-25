@@ -583,10 +583,12 @@ This is a bring-up choice, not the final CloverVM calling convention:
 - `Const`, SMI bitwise instructions, and the virtual `Snapshot` instruction
   need no target override.
 
-Stack-passed entry parameters, F64 entry parameters, calls, and instruction
+Overflow entry parameters, F64 entry parameters, calls, and instruction
 kinds without a bring-up lowering currently hard-fail instead of silently
-receiving an incomplete contract. Managed entry parameters use fixed
-`IncomingParameter` locations, while call preparation uses fixed
+receiving an incomplete contract. Under the proposed AArch64 JIT calling
+convention, tagged entry parameters zero through seven use fixed `x0` through
+`x7` locations. Overflow entry parameters use fixed `IncomingParameter`
+locations, while overflow call preparation uses fixed
 `OutgoingCallArgument` locations. They do not create separate ABI constraint
 mechanisms. ABI registers likewise remain ordinary fixed locations at exact
 occurrences.
@@ -1097,24 +1099,31 @@ first-class `BlockEdge` objects and ordered edge arguments.
 Calls are represented by ordinary allocation constraints:
 
 ```text
-managed Python arguments -> early or late uses in fixed outgoing argument slots
+managed arguments 0..7   -> early or late uses in fixed x0..x7
+managed overflow args    -> early or late uses in fixed outgoing argument slots
 native arguments         -> early or late uses in fixed platform ABI registers
 result definitions       -> early or late defs in fixed result locations
 temporaries              -> target register classes
 clobbers                 -> caller-saved register masks
 ```
 
-A managed Python call prepares the existing Clover argument window. Its
-arguments therefore use `FixedLocation(OutgoingCallArgument(...))`; moving the
-managed frame pointer reinterprets those same cells as
-`IncomingParameter` locations in the callee. The shared frame offset proves the
-physical alias, while the different semantic kinds let the target emit caller
-stores and callee accesses differently. A native call instead uses fixed
-platform calling-convention registers. Both are ordinary fixed-location
-constraints, and both generate transfers when the surrounding value fragment
-occupies a different location. Native stack arguments can extend the
-platform-call lowering later if Clover actually supports them; they are not
-part of the managed stack-location vocabulary.
+A managed Python call reserves the target's complete Clover argument window.
+Under the proposed AArch64 JIT convention, its first eight adapted tagged
+arguments use `FixedLocation(x0)` through `FixedLocation(x7)`. Only overflow
+arguments use `FixedLocation(OutgoingCallArgument(...))`; moving the managed
+frame pointer reinterprets those physical cells as `IncomingParameter`
+locations in the callee. Caller and callee frame offsets use different frame
+coordinate systems, so the frame-transition layout rather than numeric offset
+equality establishes that physical alias.
+
+Interpreter-to-JIT and JIT-to-interpreter call transitions are arity-specific:
+their complete contract belongs to
+[Proposed AArch64 JIT Calling Convention](aarch64-jit-calling-convention.md).
+A native call also uses fixed platform calling-convention registers. All of
+these remain ordinary fixed-location constraints and generate transfers when
+the surrounding value fragment occupies a different location. Native stack
+arguments can extend the platform-call lowering later if Clover actually
+supports them; they are not part of the managed stack-location vocabulary.
 
 A value live across a call must be assigned to a non-clobbered location or split
 around the call. The target describes clobbers; the allocator decides whether to

@@ -4,7 +4,7 @@
 |---|---|
 | Document type | Architecture contract |
 | Status | Accepted |
-| Implementation | Interpreter convention implemented; JIT stack-transition extension proposed |
+| Implementation | Interpreter convention implemented; proposed JIT convention specified separately |
 | Scope | Managed frame layout, call argument windows, entry, return, and interpreter dispatch state |
 | Owning layers | `CodeObject` owns frame metadata; codegen owns call-window construction; the interpreter owns managed entry and return; native boundaries and the JIT consume the contract |
 | Validated against | `df8fe91` (2026-07-18) |
@@ -292,3 +292,5 @@ calling convention used to bring up the JIT.
   publication and root scanning.
 - [JIT Compiler and IR](jit-compiler-and-ir.md) owns compiled entry, return, and
   deoptimization requirements built on this frame contract.
+- [Proposed AArch64 JIT Calling Convention](aarch64-jit-calling-convention.md)
+  defines the proposed register-argument extension for compiled managed code.

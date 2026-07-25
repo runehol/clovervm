@@ -212,12 +212,12 @@ Snapshot and replay point, not merely the same successful-path computation.
 
 ### Calls and runtime boundaries
 
-Interpreted and compiled Python execution share the managed calling convention:
-arguments occupy the outgoing argument window, moving the managed frame pointer
-activates the callee, and ordinary results travel through the accumulator.
+Interpreted and compiled Python execution share the managed frame layout,
+canonical argument window, and Python call-adaptation semantics. The proposed
+compiled transport is defined separately in
+[Proposed AArch64 JIT Calling Convention](aarch64-jit-calling-convention.md).
 Every frame retains both its canonical interpreted continuation and an
-executable compiled return target. Cross-mode dispatch selects an engine and
-continuation without introducing a second Python argument ABI.
+executable compiled return target.
 
 The exact frame header, target return sequences, post-return stack position,
 and interpreter-return thunk are defined by the
@@ -226,10 +226,10 @@ switching, re-entry, native result transport, and root publication across C or
 C++ calls are defined by
 [Native/Managed Boundary Contracts](native-managed-boundaries.md).
 
-Compiled-to-compiled performance should initially come from inlining rather
-than a separate fast-entry convention. Inlining still creates a logical Python
-frame with canonical backing and ordinary caller metadata, so a real call from
-inside an inline instance uses the same managed ABI.
+Inlining remains the initial mechanism for eliminating Python boundary boxing
+and whole-call overhead. Inlining still creates a logical Python frame with
+canonical backing and ordinary caller metadata, so a real call from inside an
+inline instance uses the same managed frame and transition rules.
 
 A Python call may be the successful action of any overloaded operator IC. State
 publication required before such a call is continuing successful-path work,
