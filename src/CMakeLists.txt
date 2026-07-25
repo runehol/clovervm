@@ -103,6 +103,7 @@ add_library(libclovervm_objects OBJECT
     jit/allocation_print.cpp
     jit/allocation_verifier.cpp
     jit/bundle_register_assignments.h
+    jit/bundle_splitter.cpp
     jit/cfg_verifier.cpp
     jit/cfg_verifier.h
     jit/compilation_arena.cpp

@@ -22,6 +22,17 @@ namespace cl::jit
 
     PreparedAllocationProblem build_initial_bundles(LiveRangeScan scan);
 
+    void recompute_bundle_properties(
+        LiveBundle &bundle, const std::vector<Occurrence> &occurrences,
+        const std::vector<FixedLocationConstraint> &fixed_constraints,
+        const std::vector<LiveRange> &live_ranges);
+
+    std::optional<BundleId>
+    split_bundle(std::vector<LiveBundle> &bundles,
+                 BundleTransferSchedule &transfers,
+                 const PreparedAllocationProblem &problem, BundleId bundle,
+                 LivenessPosition boundary, TransferPoint transfer_point);
+
 }  // namespace cl::jit
 
 #endif  // CL_JIT_REGISTER_ALLOCATOR_INTERNAL_H
