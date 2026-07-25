@@ -78,6 +78,31 @@ namespace cl::jit
         }
     }  // namespace
 
+    bool bundles_overlap(const LiveBundle &lhs, const LiveBundle &rhs)
+    {
+        size_t lhs_index = 0;
+        size_t rhs_index = 0;
+        while(lhs_index < lhs.fragments.size() &&
+              rhs_index < rhs.fragments.size())
+        {
+            ProgramRange lhs_range = lhs.fragments[lhs_index].range;
+            ProgramRange rhs_range = rhs.fragments[rhs_index].range;
+            if(lhs_range.end <= rhs_range.start)
+            {
+                ++lhs_index;
+            }
+            else if(rhs_range.end <= lhs_range.start)
+            {
+                ++rhs_index;
+            }
+            else
+            {
+                return true;
+            }
+        }
+        return false;
+    }
+
     PreparedAllocationProblem build_initial_bundles(LiveRangeScan scan)
     {
         for(size_t index = 0; index < scan.live_ranges.size(); ++index)

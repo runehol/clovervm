@@ -214,6 +214,37 @@ namespace cl::jit
                   format_bundle_assignments(assignments));
     }
 
+    TEST(JitRegisterAllocator, FindsOverlapBetweenSortedBundleFragments)
+    {
+        LiveBundle lhs{RegisterClass::GPR,
+                       {{{ProgramPoint(0), ProgramPoint(2)}, LiveRangeId(0)},
+                        {{ProgramPoint(4), ProgramPoint(6)}, LiveRangeId(1)},
+                        {{ProgramPoint(10), ProgramPoint(12)}, LiveRangeId(2)}},
+                       {},
+                       0,
+                       0};
+        LiveBundle abutting{
+            RegisterClass::GPR,
+            {{{ProgramPoint(2), ProgramPoint(4)}, LiveRangeId(3)},
+             {{ProgramPoint(6), ProgramPoint(10)}, LiveRangeId(4)},
+             {{ProgramPoint(12), ProgramPoint(14)}, LiveRangeId(5)}},
+            {},
+            0,
+            0};
+        LiveBundle overlapping{
+            RegisterClass::GPR,
+            {{{ProgramPoint(2), ProgramPoint(4)}, LiveRangeId(6)},
+             {{ProgramPoint(6), ProgramPoint(11)}, LiveRangeId(7)}},
+            {},
+            0,
+            0};
+
+        EXPECT_FALSE(bundles_overlap(lhs, abutting));
+        EXPECT_FALSE(bundles_overlap(abutting, lhs));
+        EXPECT_TRUE(bundles_overlap(lhs, overlapping));
+        EXPECT_TRUE(bundles_overlap(overlapping, lhs));
+    }
+
     TEST(JitRegisterAllocator,
          UsesAllocationOrderAndAllowsAbuttingRangesToShareARegister)
     {

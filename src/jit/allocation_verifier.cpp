@@ -360,7 +360,7 @@ namespace cl::jit
             }
             fatal("JIT allocator assignment has no register class definition");
         };
-        auto overlaps = [](ProgramRange lhs, ProgramRange rhs) {
+        auto ranges_overlap = [](ProgramRange lhs, ProgramRange rhs) {
             return lhs.start < rhs.end && rhs.start < lhs.end;
         };
 
@@ -391,7 +391,7 @@ namespace cl::jit
                 for(const ClobberReservation &clobber: problem.clobbers())
                 {
                     if(clobber.reg == reg &&
-                       overlaps(fragment.range, clobber.range))
+                       ranges_overlap(fragment.range, clobber.range))
                     {
                         fatal("JIT allocator assignment overlaps a clobber");
                     }
@@ -407,15 +407,9 @@ namespace cl::jit
                     continue;
                 }
                 const LiveBundle &other = problem.bundles()[other_index];
-                for(const BundleFragment &fragment: bundle.fragments)
+                if(bundles_overlap(bundle, other))
                 {
-                    for(const BundleFragment &other_fragment: other.fragments)
-                    {
-                        if(overlaps(fragment.range, other_fragment.range))
-                        {
-                            fatal("JIT allocator assignments interfere");
-                        }
-                    }
+                    fatal("JIT allocator assignments interfere");
                 }
             }
         }

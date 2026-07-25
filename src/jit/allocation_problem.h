@@ -239,6 +239,8 @@ namespace cl::jit
         uint64_t spill_weight;
     };
 
+    bool bundles_overlap(const LiveBundle &lhs, const LiveBundle &rhs);
+
     struct ClobberReservation
     {
         ProgramRange range;
