@@ -21,6 +21,11 @@ namespace cl::jit
             bool has_variadic_operands)
         {
             assert(inline_slot_count <= Instruction::InlineSlotCount);
+            assert(has_effects(may_effects, must_effects));
+            assert(!has_effects(must_effects, EffectProfile::TerminateBlock) ||
+                   has_effects(must_effects, EffectProfile::ControlFlow));
+            assert(!has_effects(may_effects, EffectProfile::TerminateBlock) ||
+                   has_effects(may_effects, EffectProfile::ControlFlow));
             return {allowed_ir_levels,    must_effects,    may_effects,
                     fixed_operand_count,  attribute_count, inline_slot_count,
                     has_variadic_operands};
@@ -43,6 +48,12 @@ namespace cl::jit
 #define CL_JIT_RESULT(...)
 #define CL_JIT_EFFECT_BOUNDS(must_effects, may_effects)                        \
     EffectProfile::must_effects, EffectProfile::may_effects
+#define CL_JIT_EFFECT_BOUNDS_MAY_TWO(must_effects, may_first, may_second)      \
+    EffectProfile::must_effects,                                               \
+        EffectProfile::may_first | EffectProfile::may_second
+#define CL_JIT_EXACT_EFFECTS_TWO(first, second)                                \
+    EffectProfile::first | EffectProfile::second,                              \
+        EffectProfile::first | EffectProfile::second
 #define CL_JIT_COUNT_FIXED_OPERAND(...)                                        \
     (assert(!has_variadic_operands &&                                          \
             "fixed operands must precede the variadic range"),                 \
@@ -78,6 +89,8 @@ namespace cl::jit
 #undef CL_JIT_COUNT_SNAPSHOT_VALUES
 #undef CL_JIT_COUNT_VARIADIC_OPERAND
 #undef CL_JIT_COUNT_FIXED_OPERAND
+#undef CL_JIT_EXACT_EFFECTS_TWO
+#undef CL_JIT_EFFECT_BOUNDS_MAY_TWO
 #undef CL_JIT_EFFECT_BOUNDS
 #undef CL_JIT_RESULT
 #undef CL_JIT_IR_LEVELS

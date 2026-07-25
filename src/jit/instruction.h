@@ -52,15 +52,33 @@ namespace cl::jit
 
     enum class EffectProfile : uint8_t
     {
-        None,
-        Deoptimize,
-        Allocate,
-        AllocateOrRaise,
-        CallPython,
-        ConservativeCall,
-        ExitJIT,
-        TerminateBlock,
+        None = 0,
+        SideExit = 1 << 0,
+        Allocate = 1 << 1,
+
+        PythonVisibleEffects = 1 << 2,
+        CallPython = PythonVisibleEffects,
+        ControlFlow = 1 << 3,
+        TerminateBlock = 1 << 4,
     };
+
+    constexpr EffectProfile operator|(EffectProfile lhs, EffectProfile rhs)
+    {
+        return static_cast<EffectProfile>(static_cast<uint8_t>(lhs) |
+                                          static_cast<uint8_t>(rhs));
+    }
+
+    constexpr bool operator<(EffectProfile lhs, EffectProfile rhs)
+    {
+        return static_cast<uint8_t>(lhs) < static_cast<uint8_t>(rhs);
+    }
+
+    constexpr bool has_effects(EffectProfile profile, EffectProfile effects)
+    {
+        uint8_t profile_bits = static_cast<uint8_t>(profile);
+        uint8_t effect_bits = static_cast<uint8_t>(effects);
+        return (profile_bits & effect_bits) == effect_bits;
+    }
 
     enum class IRLevelMask : uint8_t
     {
@@ -263,8 +281,8 @@ namespace cl::jit
 
         bool is_block_terminator() const
         {
-            return instruction_kind_metadata(kind()).must_effects ==
-                   EffectProfile::TerminateBlock;
+            return has_effects(instruction_kind_metadata(kind()).must_effects,
+                               EffectProfile::TerminateBlock);
         }
 
         uint16_t operand_count() const
@@ -611,7 +629,7 @@ namespace cl::jit
     //         ValueRepresentation::TaggedValue;
     //     static constexpr EffectProfile MustEffects = EffectProfile::None;
     //     static constexpr EffectProfile MayEffects =
-    //         EffectProfile::Deoptimize;
+    //         EffectProfile::SideExit;
     //     static constexpr IRLevelMask AllowedIRLevels = IRLevelMask::Core;
     //     static constexpr bool IsVariadic = false;
     //
@@ -672,6 +690,18 @@ namespace cl::jit
     InstructionEffectBounds                                                    \
     {                                                                          \
         EffectProfile::must_effects, EffectProfile::may_effects                \
+    }
+#define CL_JIT_EFFECT_BOUNDS_MAY_TWO(must_effects, may_first, may_second)      \
+    InstructionEffectBounds                                                    \
+    {                                                                          \
+        EffectProfile::must_effects,                                            \
+            EffectProfile::may_first | EffectProfile::may_second               \
+    }
+#define CL_JIT_EXACT_EFFECTS_TWO(first, second)                                \
+    InstructionEffectBounds                                                    \
+    {                                                                          \
+        EffectProfile::first | EffectProfile::second,                          \
+            EffectProfile::first | EffectProfile::second                       \
     }
 #define CL_JIT_COUNT_FIXED_OPERAND(...) +1
 #define CL_JIT_COUNT_NO_OPERAND(...) +0
@@ -934,6 +964,8 @@ namespace cl::jit
     static_assert(name##Instruction::AllowedIRLevels != IRLevelMask::None);
 #include "jit/instruction.def"
 #undef CL_JIT_INSTRUCTION
+#undef CL_JIT_EXACT_EFFECTS_TWO
+#undef CL_JIT_EFFECT_BOUNDS_MAY_TWO
 #undef CL_JIT_EFFECT_BOUNDS
 #undef CL_JIT_RESULT
 #undef CL_JIT_IR_LEVELS

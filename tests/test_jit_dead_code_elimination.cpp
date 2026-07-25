@@ -6,6 +6,7 @@
 #include <gtest/gtest.h>
 
 #include <array>
+#include <span>
 #include <utility>
 
 namespace cl::jit
@@ -93,7 +94,7 @@ namespace cl::jit
         EXPECT_EQ(InstructionKind::Return, entry->instructions()[0]->kind());
     }
 
-    TEST(JitDeadCodeElimination, RetainsUnusedObservableInstructions)
+    TEST(JitDeadCodeElimination, EliminatesUnusedAllocations)
     {
         CompilationSession session;
         GraphBuilder builder(session);
@@ -112,9 +113,62 @@ namespace cl::jit
         auto elimination = eliminate_dead_code(session, *graph);
 
         ASSERT_TRUE(elimination);
+        EXPECT_TRUE(std::move(elimination).value());
+        EXPECT_TRUE(unused_box->is_detached());
+        ASSERT_EQ(1u, entry->instructions().size());
+    }
+
+    TEST(JitDeadCodeElimination, RetainsUnusedControlFlowInstructions)
+    {
+        CompilationSession session;
+        GraphBuilder builder(session);
+        Block *entry = builder.emplace_block();
+        ParameterInstruction *parameter =
+            builder.emplace_parameter<ParameterInstruction>(entry);
+        SnapshotInstruction *snapshot =
+            builder.emplace_instruction<SnapshotInstruction>(
+                entry, std::span<const ProgramValueRef>{}, BytecodePC{7});
+        CheckNotImplementedInstruction *check =
+            builder.emplace_instruction<CheckNotImplementedInstruction>(
+                entry, TaggedValueRef(parameter), SnapshotRef(snapshot));
+        builder.emplace_instruction<ReturnInstruction>(
+            entry, TaggedValueRef(parameter));
+        ControlFlowGraph *graph = builder.finalize();
+
+        auto elimination = eliminate_dead_code(session, *graph);
+
+        ASSERT_TRUE(elimination);
         EXPECT_FALSE(std::move(elimination).value());
-        EXPECT_FALSE(unused_box->is_detached());
-        ASSERT_EQ(2u, entry->instructions().size());
+        EXPECT_FALSE(snapshot->is_detached());
+        EXPECT_FALSE(check->is_detached());
+        ASSERT_EQ(3u, entry->instructions().size());
+    }
+
+    TEST(JitDeadCodeElimination, RetainsUnusedPythonCalls)
+    {
+        CompilationSession session;
+        GraphBuilder builder(session);
+        Block *entry = builder.emplace_block();
+        ParameterInstruction *parameter =
+            builder.emplace_parameter<ParameterInstruction>(entry);
+        SnapshotInstruction *snapshot =
+            builder.emplace_instruction<SnapshotInstruction>(
+                entry, std::span<const ProgramValueRef>{}, BytecodePC{7});
+        PythonCallInstruction *unused_call =
+            builder.emplace_instruction<PythonCallInstruction>(
+                entry, TaggedValueRef(parameter), SnapshotRef(snapshot),
+                std::span<const TaggedValueRef>{}, BytecodePC{7});
+        builder.emplace_instruction<ReturnInstruction>(
+            entry, TaggedValueRef(parameter));
+        ControlFlowGraph *graph = builder.finalize();
+
+        auto elimination = eliminate_dead_code(session, *graph);
+
+        ASSERT_TRUE(elimination);
+        EXPECT_FALSE(std::move(elimination).value());
+        EXPECT_FALSE(snapshot->is_detached());
+        EXPECT_FALSE(unused_call->is_detached());
+        ASSERT_EQ(3u, entry->instructions().size());
     }
 
 }  // namespace cl::jit

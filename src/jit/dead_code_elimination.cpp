@@ -30,8 +30,7 @@ namespace cl::jit
                     instruction_kind_metadata(instruction->kind());
                 bool can_eliminate =
                     instruction->result_class() != ResultClass::None &&
-                    (metadata.may_effects == EffectProfile::None ||
-                     metadata.may_effects == EffectProfile::Deoptimize);
+                    metadata.may_effects < EffectProfile::PythonVisibleEffects;
                 if(can_eliminate && !used.contains(instruction))
                 {
                     dead.insert(instruction);

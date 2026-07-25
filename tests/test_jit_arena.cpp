@@ -17,6 +17,14 @@
 
 namespace cl::jit
 {
+    static_assert(EffectProfile::None < EffectProfile::PythonVisibleEffects);
+    static_assert((EffectProfile::SideExit | EffectProfile::Allocate) <
+                  EffectProfile::PythonVisibleEffects);
+    static_assert(!(EffectProfile::CallPython <
+                    EffectProfile::PythonVisibleEffects));
+    static_assert(!((EffectProfile::SideExit | EffectProfile::ControlFlow) <
+                    EffectProfile::PythonVisibleEffects));
+
     namespace
     {
         class DirectTestObject
@@ -233,7 +241,7 @@ namespace cl::jit
         EXPECT_EQ(ValueRepresentation::TaggedValue,
                   AddSMIInstruction::Representation);
         EXPECT_EQ(EffectProfile::None, AddSMIInstruction::MustEffects);
-        EXPECT_EQ(EffectProfile::Deoptimize, AddSMIInstruction::MayEffects);
+        EXPECT_EQ(EffectProfile::SideExit, AddSMIInstruction::MayEffects);
         EXPECT_EQ(IRLevelMask::Core, AddSMIInstruction::AllowedIRLevels);
         EXPECT_FALSE(AddSMIInstruction::IsVariadic);
         EXPECT_TRUE(PythonCallInstruction::IsVariadic);
@@ -244,15 +252,20 @@ namespace cl::jit
         EXPECT_EQ(ResultClass::ProgramValue, UninitializedInstruction::Result);
         EXPECT_EQ(ValueRepresentation::TaggedValue,
                   UninitializedInstruction::Representation);
-        EXPECT_EQ(EffectProfile::ExitJIT,
+        constexpr EffectProfile side_exit_control_flow =
+            EffectProfile::SideExit | EffectProfile::ControlFlow;
+        EXPECT_EQ(side_exit_control_flow,
+                  CheckNotImplementedInstruction::MayEffects);
+        EXPECT_EQ(side_exit_control_flow,
                   ResumeInInterpreterInstruction::MustEffects);
-        EXPECT_EQ(EffectProfile::ExitJIT,
+        EXPECT_EQ(side_exit_control_flow,
                   ResumeInInterpreterInstruction::MayEffects);
-        EXPECT_NE(EffectProfile::TerminateBlock,
-                  ResumeInInterpreterInstruction::MustEffects);
-        EXPECT_EQ(EffectProfile::TerminateBlock,
-                  ReturnInstruction::MustEffects);
-        EXPECT_EQ(EffectProfile::TerminateBlock, ReturnInstruction::MayEffects);
+        EXPECT_FALSE(has_effects(ResumeInInterpreterInstruction::MustEffects,
+                                 EffectProfile::TerminateBlock));
+        constexpr EffectProfile terminating_control_flow =
+            EffectProfile::ControlFlow | EffectProfile::TerminateBlock;
+        EXPECT_EQ(terminating_control_flow, ReturnInstruction::MustEffects);
+        EXPECT_EQ(terminating_control_flow, ReturnInstruction::MayEffects);
     }
 
     TEST(JitInstructionConstruction, EncodesFixedAttributes)
