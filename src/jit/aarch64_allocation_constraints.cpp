@@ -77,7 +77,7 @@ namespace cl::jit
         }
 
         InstructionAllocationConstraints
-        branch_constraints(const Instruction *instruction)
+        gpr_temporary_constraints(const Instruction *instruction)
         {
             return InstructionAllocationConstraints(
                 instruction, {}, std::nullopt,
@@ -120,6 +120,12 @@ namespace cl::jit
                     case InstructionKind::ResumeInInterpreter:
                         break;
 
+                    case InstructionKind::Is:
+                    case InstructionKind::IsNot:
+                        overrides.push_back(
+                            gpr_temporary_constraints(instruction));
+                        break;
+
                     case InstructionKind::Return:
                         overrides.push_back(return_constraints(
                             instruction->as<ReturnInstruction>()));
@@ -127,7 +133,8 @@ namespace cl::jit
 
                     case InstructionKind::ConditionalBranch:
                     case InstructionKind::UnconditionalBranch:
-                        overrides.push_back(branch_constraints(instruction));
+                        overrides.push_back(
+                            gpr_temporary_constraints(instruction));
                         break;
 
                     default:

@@ -135,6 +135,20 @@ namespace cl::jit
                 outputs.push_back(inputs.front());
                 break;
 
+            case Bytecode::TestIs:
+                assert(inputs.size() == 2);
+                outputs.emplace_back(
+                    builder_.emplace_instruction<IsInstruction>(
+                        block, tagged(inputs[0]), tagged(inputs[1])));
+                break;
+
+            case Bytecode::TestIsNot:
+                assert(inputs.size() == 2);
+                outputs.emplace_back(
+                    builder_.emplace_instruction<IsNotInstruction>(
+                        block, tagged(inputs[0]), tagged(inputs[1])));
+                break;
+
             case Bytecode::Nop:
                 break;
 

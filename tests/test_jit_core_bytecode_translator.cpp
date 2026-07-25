@@ -113,6 +113,51 @@ namespace cl::jit
                   return_instruction->return_value().instruction());
     }
 
+    TEST(JitCoreBytecodeTranslator, TranslatesIdentityTests)
+    {
+        TranslatorFixture fixture;
+        {
+            CodeObjectBuilder::TemporaryReg temporaries(fixture.code_builder,
+                                                        2);
+            fixture.code_builder.emit_lda_true(0).value();
+            fixture.code_builder.emit_star(0, temporaries).value();
+            fixture.code_builder.emit_lda_false(0).value();
+            fixture.code_builder.emit_star(0, uint32_t(temporaries) + 1)
+                .value();
+            fixture.code_builder
+                .emit_operator_reg(0, Bytecode::TestIs, temporaries,
+                                   OperatorBytecodeFormat::Plain)
+                .value();
+            fixture.code_builder.emit_ldar(0, uint32_t(temporaries) + 1)
+                .value();
+            fixture.code_builder
+                .emit_operator_reg(0, Bytecode::TestIsNot, temporaries,
+                                   OperatorBytecodeFormat::Plain)
+                .value();
+            fixture.code_builder.emit_return(0).value();
+        }
+
+        ControlFlowGraph *graph = fixture.translate();
+        Block *entry = graph->entry_block();
+        std::vector<Instruction *> constants =
+            instructions_of_kind(entry, InstructionKind::Const);
+        std::vector<Instruction *> is_instructions =
+            instructions_of_kind(entry, InstructionKind::Is);
+        std::vector<Instruction *> is_not_instructions =
+            instructions_of_kind(entry, InstructionKind::IsNot);
+        ASSERT_EQ(2u, constants.size());
+        ASSERT_EQ(1u, is_instructions.size());
+        ASSERT_EQ(1u, is_not_instructions.size());
+
+        IsInstruction *is = is_instructions.front()->as<IsInstruction>();
+        EXPECT_EQ(constants[0], is->lhs().instruction());
+        EXPECT_EQ(constants[1], is->rhs().instruction());
+        IsNotInstruction *is_not =
+            is_not_instructions.front()->as<IsNotInstruction>();
+        EXPECT_EQ(constants[0], is_not->lhs().instruction());
+        EXPECT_EQ(constants[1], is_not->rhs().instruction());
+    }
+
     TEST(JitCoreBytecodeTranslator,
          JumpIfFalseMapsFallthroughToTrueAndJumpToFalse)
     {

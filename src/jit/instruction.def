@@ -155,6 +155,28 @@ CL_JIT_INSTRUCTION(EorSMI, CL_JIT_IR_LEVELS(Core),
 #undef CL_JIT_EorSMI_ATTRIBUTES
 #undef CL_JIT_EorSMI_OPERANDS
 
+#define CL_JIT_Is_OPERANDS(fixed, variadic, snapshot_values)                  \
+    fixed(lhs, ProgramValue, TaggedValue)                                      \
+    fixed(rhs, ProgramValue, TaggedValue)
+#define CL_JIT_Is_ATTRIBUTES(attribute)
+CL_JIT_INSTRUCTION(Is, CL_JIT_IR_LEVELS(Core),
+                   CL_JIT_RESULT(ProgramValue, TaggedValue),
+                   CL_JIT_EFFECT_BOUNDS(None, None), CL_JIT_Is_OPERANDS,
+                   CL_JIT_Is_ATTRIBUTES)
+#undef CL_JIT_Is_ATTRIBUTES
+#undef CL_JIT_Is_OPERANDS
+
+#define CL_JIT_IsNot_OPERANDS(fixed, variadic, snapshot_values)               \
+    fixed(lhs, ProgramValue, TaggedValue)                                      \
+    fixed(rhs, ProgramValue, TaggedValue)
+#define CL_JIT_IsNot_ATTRIBUTES(attribute)
+CL_JIT_INSTRUCTION(IsNot, CL_JIT_IR_LEVELS(Core),
+                   CL_JIT_RESULT(ProgramValue, TaggedValue),
+                   CL_JIT_EFFECT_BOUNDS(None, None), CL_JIT_IsNot_OPERANDS,
+                   CL_JIT_IsNot_ATTRIBUTES)
+#undef CL_JIT_IsNot_ATTRIBUTES
+#undef CL_JIT_IsNot_OPERANDS
+
 #define CL_JIT_AddF64_OPERANDS(fixed, variadic, snapshot_values)              \
     fixed(lhs, ProgramValue, F64)                                              \
     fixed(rhs, ProgramValue, F64)

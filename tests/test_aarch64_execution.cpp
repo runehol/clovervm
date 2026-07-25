@@ -238,6 +238,56 @@ namespace cl::jit
         EXPECT_EQ(second, function(first, second));
     }
 
+    TEST(AArch64Execution, CompilesPythonIs)
+    {
+        PythonBackendFixture fixture;
+        CompilationSession session;
+        ControlFlowGraph *graph =
+            fixture.translate_first_function(L"def is_same(lhs, rhs):\n"
+                                             L"    return lhs is rhs\n",
+                                             session);
+
+        CodeCache cache;
+        auto compilation = compile_to_aarch64(session, *graph, cache);
+        ASSERT_TRUE(compilation);
+        PublishedCode code = std::move(compilation).value();
+
+        using Function = uint64_t (*)(uint64_t, uint64_t);
+        Function function =
+            reinterpret_cast<Function>(code.entry().bits_for_indirect_target());
+        uint64_t none = static_cast<uint64_t>(Value::None().as.integer);
+        uint64_t truth = static_cast<uint64_t>(Value::True().as.integer);
+        EXPECT_EQ(static_cast<uint64_t>(Value::True().as.integer),
+                  function(none, none));
+        EXPECT_EQ(static_cast<uint64_t>(Value::False().as.integer),
+                  function(none, truth));
+    }
+
+    TEST(AArch64Execution, CompilesPythonIsNot)
+    {
+        PythonBackendFixture fixture;
+        CompilationSession session;
+        ControlFlowGraph *graph =
+            fixture.translate_first_function(L"def is_distinct(lhs, rhs):\n"
+                                             L"    return lhs is not rhs\n",
+                                             session);
+
+        CodeCache cache;
+        auto compilation = compile_to_aarch64(session, *graph, cache);
+        ASSERT_TRUE(compilation);
+        PublishedCode code = std::move(compilation).value();
+
+        using Function = uint64_t (*)(uint64_t, uint64_t);
+        Function function =
+            reinterpret_cast<Function>(code.entry().bits_for_indirect_target());
+        uint64_t none = static_cast<uint64_t>(Value::None().as.integer);
+        uint64_t truth = static_cast<uint64_t>(Value::True().as.integer);
+        EXPECT_EQ(static_cast<uint64_t>(Value::False().as.integer),
+                  function(none, none));
+        EXPECT_EQ(static_cast<uint64_t>(Value::True().as.integer),
+                  function(none, truth));
+    }
+
     TEST(AArch64Execution, EmitsInlineConstantFunctionFromCfg)
     {
         CompilationSession session;

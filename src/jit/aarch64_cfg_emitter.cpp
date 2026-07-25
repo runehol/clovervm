@@ -7,6 +7,7 @@
 #include "runtime/fatal.h"
 
 #include <cassert>
+#include <cstddef>
 #include <cstdint>
 #include <utility>
 
@@ -26,6 +27,24 @@ namespace cl::jit
             if(reg.register_class() != RegisterClass::GPR)
             {
                 fatal("AArch64 emitter requires a GPR-mapped value");
+            }
+            return XRegister(reg.number());
+        }
+
+        XRegister assigned_temporary(const LocationAssignments &locations,
+                                     const Instruction *instruction,
+                                     size_t temporary_index)
+        {
+            PhysicalLocation location =
+                locations.location_for(instruction, temporary_index);
+            if(!location.is_register())
+            {
+                fatal("AArch64 emitter requires a register-mapped temporary");
+            }
+            PhysicalRegister reg = location.reg();
+            if(reg.register_class() != RegisterClass::GPR)
+            {
+                fatal("AArch64 emitter requires a GPR-mapped temporary");
             }
             return XRegister(reg.number());
         }
@@ -56,6 +75,25 @@ namespace cl::jit
                                        assigned_register(locations, result),
                                        assigned_register(locations, lhs),
                                        assigned_register(locations, rhs));
+        }
+
+        void emit_identity_test(AArch64MacroAssembler &assembler,
+                                const LocationAssignments &locations,
+                                AArch64Condition condition,
+                                Instruction *instruction, ProgramValueRef lhs,
+                                ProgramValueRef rhs)
+        {
+            XRegister result =
+                assigned_register(locations, ProgramValueRef(instruction));
+            XRegister temporary = assigned_temporary(locations, instruction, 0);
+            assembler.cmp(assigned_register(locations, lhs),
+                          assigned_register(locations, rhs));
+            assembler.mov(result,
+                          static_cast<uint64_t>(Value::False().as.integer));
+            assembler.mov(temporary,
+                          static_cast<uint64_t>(Value::True().as.integer));
+            assembler.emit_conditional_select(condition, result, temporary,
+                                              result);
         }
 
         Result<CodeAllocation, JitCodeError>
@@ -141,6 +179,24 @@ namespace cl::jit
                         assembler, locations, LogicalOp::Eor,
                         ProgramValueRef(instruction), eor_instruction.lhs(),
                         eor_instruction.rhs());
+                    break;
+                }
+
+                case CL_JIT_INSTRUCTION_CASE(IsInstruction, is_instruction)
+                {
+                    emit_identity_test(
+                        assembler, locations, AArch64Condition::Equal,
+                        instruction, is_instruction.lhs(), is_instruction.rhs());
+                    break;
+                }
+
+                case CL_JIT_INSTRUCTION_CASE(IsNotInstruction,
+                                             is_not_instruction)
+                {
+                    emit_identity_test(
+                        assembler, locations, AArch64Condition::NotEqual,
+                        instruction, is_not_instruction.lhs(),
+                        is_not_instruction.rhs());
                     break;
                 }
 

@@ -174,6 +174,42 @@ namespace cl::jit
         EXPECT_NE(nullptr, find_override(constraints, false_return));
     }
 
+    TEST(AArch64AllocationConstraints, GivesIdentityTestsOneGPRTemporary)
+    {
+        CompilationSession session;
+        GraphBuilder builder(session);
+        Block *entry = builder.emplace_block();
+        ParameterInstruction *lhs =
+            builder.emplace_parameter<ParameterInstruction>(entry);
+        ParameterInstruction *rhs =
+            builder.emplace_parameter<ParameterInstruction>(entry);
+        IsInstruction *is = builder.emplace_instruction<IsInstruction>(
+            entry, TaggedValueRef(lhs), TaggedValueRef(rhs));
+        IsNotInstruction *is_not =
+            builder.emplace_instruction<IsNotInstruction>(
+                entry, TaggedValueRef(lhs), TaggedValueRef(rhs));
+        builder.emplace_instruction<ReturnInstruction>(entry,
+                                                       TaggedValueRef(is_not));
+        ControlFlowGraph *graph = builder.finalize();
+
+        AllocationConstraints constraints =
+            make_aarch64_allocation_constraints(*graph);
+        for(const Instruction *instruction:
+            {static_cast<Instruction *>(is),
+             static_cast<Instruction *>(is_not)})
+        {
+            const InstructionAllocationConstraints *override =
+                find_override(constraints, instruction);
+            ASSERT_NE(nullptr, override);
+            ASSERT_EQ(1u, override->temporaries().size());
+            EXPECT_EQ(LocationRequirement::Kind::AnyRegister,
+                      override->temporaries().front().requirement.kind());
+            EXPECT_EQ(
+                RegisterClass::GPR,
+                override->temporaries().front().requirement.register_class());
+        }
+    }
+
     TEST(AArch64AllocationConstraints,
          InternalBlockParametersUseDefaultConstraints)
     {

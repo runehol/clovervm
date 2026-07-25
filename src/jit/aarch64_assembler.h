@@ -435,6 +435,26 @@ namespace cl::jit
                              shift, shift_amount);
         }
 
+        void emit_conditional_select(AArch64Condition condition,
+                                     XRegisterOrZero destination,
+                                     XRegisterOrZero when_true,
+                                     XRegisterOrZero when_false)
+        {
+            emit_conditional_select(
+                GPRWidth::X, condition, destination.encoding(),
+                when_true.encoding(), when_false.encoding());
+        }
+
+        void emit_conditional_select(AArch64Condition condition,
+                                     WRegisterOrZero destination,
+                                     WRegisterOrZero when_true,
+                                     WRegisterOrZero when_false)
+        {
+            emit_conditional_select(
+                GPRWidth::W, condition, destination.encoding(),
+                when_true.encoding(), when_false.encoding());
+        }
+
         void emit_move_wide_imm16(
             MoveWideOp operation, XRegisterOrZero destination,
             uint16_t immediate,
@@ -613,6 +633,17 @@ namespace cl::jit
                 aarch64_detail::encoding_bits(operation) |
                 aarch64_detail::encoding_bits(halfword) |
                 (static_cast<uint32_t>(immediate) << 5) | destination);
+        }
+
+        void emit_conditional_select(GPRWidth width, AArch64Condition condition,
+                                     uint32_t destination, uint32_t when_true,
+                                     uint32_t when_false)
+        {
+            write_instruction(
+                0x1a800000 | aarch64_detail::encoding_bits(width) |
+                aarch64_detail::register_field(when_false, 16) |
+                (static_cast<uint32_t>(condition) << 12) |
+                aarch64_detail::register_field(when_true, 5) | destination);
         }
 
         void emit_load_store_unsigned_offset(GPRWidth width,
