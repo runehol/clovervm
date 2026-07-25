@@ -10,6 +10,7 @@
 #include <iterator>
 #include <optional>
 #include <queue>
+#include <unordered_map>
 #include <utility>
 #include <vector>
 
@@ -123,9 +124,10 @@ namespace cl::jit
         {
         public:
             BundleAssigner(const PreparedAllocationProblem &problem,
+                           std::span<const LiveBundle> bundles,
                            const AllocationConstraints &constraints)
-                : problem_(problem), constraints_(constraints),
-                  register_by_bundle_(problem.bundles().size())
+                : problem_(problem), bundles_(bundles),
+                  constraints_(constraints), location_by_bundle_(bundles.size())
             {
                 for(const ClobberReservation &clobber: problem_.clobbers())
                 {
@@ -148,29 +150,35 @@ namespace cl::jit
                 }
             }
 
-            Result<BundleRegisterAssignments, RegisterAllocationError> run()
+            Result<BundleLocationAssignments, RegisterAllocationError> run()
             {
                 enqueue_bundles();
                 while(!worklist_.empty())
                 {
                     BundleId bundle_id = worklist_.top().bundle;
                     worklist_.pop();
-                    const LiveBundle &bundle =
-                        problem_.bundles()[bundle_id.value()];
+                    const LiveBundle &bundle = bundles_[bundle_id.value()];
 
-                    auto required = required_register(bundle);
-                    if(!required)
+                    std::optional<AllocationLocation> selected;
+                    auto required_result = required_location(bundle);
+                    if(!required_result)
                     {
-                        return propagate_failure(std::move(required));
+                        return propagate_failure(std::move(required_result));
                     }
-
-                    std::optional<PhysicalRegister> selected;
-                    if(required.value().has_value())
+                    std::optional<AllocationLocation> required =
+                        required_result.value();
+                    if(required.has_value() && required->is_stack())
                     {
-                        PhysicalRegister candidate = *required.value();
-                        if(fits(candidate, bundle))
+                        if(fits(required->stack(), bundle))
                         {
-                            selected = candidate;
+                            selected = required;
+                        }
+                    }
+                    else if(required.has_value())
+                    {
+                        if(fits(required->reg(), bundle))
+                        {
+                            selected = required;
                         }
                     }
                     else
@@ -181,7 +189,7 @@ namespace cl::jit
                         {
                             if(fits(candidate, bundle))
                             {
-                                selected = candidate;
+                                selected = AllocationLocation::reg(candidate);
                                 break;
                             }
                         }
@@ -189,7 +197,7 @@ namespace cl::jit
 
                     if(!selected.has_value())
                     {
-                        return Result<BundleRegisterAssignments,
+                        return Result<BundleLocationAssignments,
                                       RegisterAllocationError>::
                             error(RegisterAllocationError::
                                       RequiresSplittingOrSpilling);
@@ -197,60 +205,54 @@ namespace cl::jit
                     place(bundle_id, *selected);
                 }
 
-                std::vector<PhysicalRegister> result;
-                result.reserve(register_by_bundle_.size());
-                for(const std::optional<PhysicalRegister> &reg:
-                    register_by_bundle_)
+                std::vector<AllocationLocation> result;
+                result.reserve(location_by_bundle_.size());
+                for(const std::optional<AllocationLocation> &location:
+                    location_by_bundle_)
                 {
-                    if(!reg.has_value())
+                    if(!location.has_value())
                     {
                         fatal("JIT allocator left a bundle unassigned");
                     }
-                    result.push_back(*reg);
+                    result.push_back(*location);
                 }
-                return Result<BundleRegisterAssignments,
+                return Result<BundleLocationAssignments,
                               RegisterAllocationError>::
-                    ok(BundleRegisterAssignments(std::move(result)));
+                    ok(BundleLocationAssignments(std::move(result)));
             }
 
         private:
             void enqueue_bundles()
             {
-                for(size_t index = 0; index < problem_.bundles().size();
-                    ++index)
+                for(size_t index = 0; index < bundles_.size(); ++index)
                 {
-                    const LiveBundle &bundle = problem_.bundles()[index];
+                    const LiveBundle &bundle = bundles_[index];
                     worklist_.push(
                         {BundleId(index), bundle.allocation_priority});
                 }
             }
 
-            Result<std::optional<PhysicalRegister>, RegisterAllocationError>
-            required_register(const LiveBundle &bundle) const
+            Result<std::optional<AllocationLocation>, RegisterAllocationError>
+            required_location(const LiveBundle &bundle) const
             {
-                std::optional<PhysicalRegister> result;
+                std::optional<AllocationLocation> result;
                 for(FixedConstraintId fixed_id: bundle.fixed_constraints)
                 {
                     AllocationLocation location =
                         problem_.fixed_constraints()[fixed_id.value()].location;
-                    if(location.is_stack())
+                    if(result.has_value() && !result->aliases(location))
                     {
-                        return Result<std::optional<PhysicalRegister>,
+                        return Result<std::optional<AllocationLocation>,
                                       RegisterAllocationError>::
                             error(RegisterAllocationError::
                                       RequiresConstraintFixup);
                     }
-                    PhysicalRegister reg = location.reg();
-                    if(result.has_value() && *result != reg)
+                    if(!result.has_value())
                     {
-                        return Result<std::optional<PhysicalRegister>,
-                                      RegisterAllocationError>::
-                            error(RegisterAllocationError::
-                                      RequiresConstraintFixup);
+                        result = location;
                     }
-                    result = reg;
                 }
-                return Result<std::optional<PhysicalRegister>,
+                return Result<std::optional<AllocationLocation>,
                               RegisterAllocationError>::ok(result);
             }
 
@@ -283,14 +285,34 @@ namespace cl::jit
                 return true;
             }
 
-            void place(BundleId bundle_id, PhysicalRegister reg)
+            bool fits(StackLocation stack, const LiveBundle &bundle) const
             {
-                assert(!register_by_bundle_[bundle_id.value()].has_value());
-                register_by_bundle_[bundle_id.value()] = reg;
+                auto found = stack_occupancy_.find(stack.frame_offset());
+                if(found == stack_occupancy_.end())
+                {
+                    return true;
+                }
+                for(const BundleFragment &fragment: bundle.fragments)
+                {
+                    if(ranges_overlap(found->second, fragment.range))
+                    {
+                        return false;
+                    }
+                }
+                return true;
+            }
 
-                RegisterOccupancy &occupancy = occupancy_[reg];
+            void place(BundleId bundle_id, AllocationLocation location)
+            {
+                assert(!location_by_bundle_[bundle_id.value()].has_value());
+                location_by_bundle_[bundle_id.value()] = location;
+
+                RegisterOccupancy &occupancy =
+                    location.is_register()
+                        ? occupancy_[location.reg()]
+                        : stack_occupancy_[location.stack().frame_offset()];
                 for(const BundleFragment &fragment:
-                    problem_.bundles()[bundle_id.value()].fragments)
+                    bundles_[bundle_id.value()].fragments)
                 {
                     auto [position, inserted] = occupancy.emplace(
                         fragment.range.start,
@@ -305,9 +327,11 @@ namespace cl::jit
             }
 
             const PreparedAllocationProblem &problem_;
+            std::span<const LiveBundle> bundles_;
             const AllocationConstraints &constraints_;
-            std::vector<std::optional<PhysicalRegister>> register_by_bundle_;
+            std::vector<std::optional<AllocationLocation>> location_by_bundle_;
             PerPhysicalRegister<RegisterOccupancy> occupancy_;
+            std::unordered_map<int32_t, RegisterOccupancy> stack_occupancy_;
             PerPhysicalRegister<std::vector<LivenessRange>> clobber_ranges_;
             std::priority_queue<BundleWorkItem, std::vector<BundleWorkItem>,
                                 BundleWorkItemCompare>
@@ -315,16 +339,26 @@ namespace cl::jit
         };
     }  // namespace
 
-    Result<BundleRegisterAssignments, RegisterAllocationError>
+    Result<RegisterAllocationResult, RegisterAllocationError>
     assign_bundles(const PreparedAllocationProblem &problem,
                    const AllocationConstraints &constraints)
     {
-        auto result = BundleAssigner(problem, constraints).run();
-        if(result)
+        std::vector<LiveBundle> bundles(problem.bundles().begin(),
+                                        problem.bundles().end());
+        auto assignment_result =
+            BundleAssigner(problem, bundles, constraints).run();
+        if(!assignment_result)
         {
-            verify_bundle_assignments(problem, constraints, result.value());
+            return propagate_failure(std::move(assignment_result));
         }
-        return result;
+        BundleLocationAssignments assignments =
+            std::move(assignment_result).value();
+        verify_bundle_assignments(problem, constraints, bundles, assignments);
+        RegisterAllocationResult allocation(std::move(bundles),
+                                            std::move(assignments),
+                                            BundleTransferSchedule{});
+        return Result<RegisterAllocationResult, RegisterAllocationError>::ok(
+            std::move(allocation));
     }
 
 }  // namespace cl::jit

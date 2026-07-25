@@ -4,6 +4,20 @@
 
 namespace cl::jit
 {
+    void BundleTransferSchedule::add(TransferPoint point, TransferPhase phase,
+                                     BundleTransfer transfer)
+    {
+        for(BundleTransferSet &set: sets_)
+        {
+            if(set.point == point && set.phase == phase)
+            {
+                set.transfers.push_back(transfer);
+                return;
+            }
+        }
+        sets_.push_back({point, phase, {transfer}});
+    }
+
     LivenessRange minimum_liveness_coverage(LivenessPosition instruction_early,
                                             OccurrenceKind kind,
                                             AccessTiming timing)

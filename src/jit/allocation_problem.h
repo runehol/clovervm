@@ -9,6 +9,7 @@
 #include <compare>
 #include <cstddef>
 #include <cstdint>
+#include <utility>
 #include <vector>
 
 namespace cl::jit
@@ -246,6 +247,97 @@ namespace cl::jit
         std::vector<FixedConstraintId> fixed_constraints;
         size_t allocation_priority;
         uint64_t spill_weight;
+    };
+
+    class TransferPoint
+    {
+    public:
+        enum class Kind : uint8_t
+        {
+            BeforeInstruction,
+            BlockEntry,
+            BlockExit,
+            BlockEdge,
+        };
+
+        static TransferPoint before_instruction(const Instruction *instruction)
+        {
+            assert(instruction != nullptr);
+            return {Kind::BeforeInstruction, instruction};
+        }
+        static TransferPoint block_entry(const Block *block)
+        {
+            assert(block != nullptr);
+            return {Kind::BlockEntry, block};
+        }
+        static TransferPoint block_exit(const Block *block)
+        {
+            assert(block != nullptr);
+            return {Kind::BlockExit, block};
+        }
+        static TransferPoint block_edge(const BlockEdge *edge)
+        {
+            assert(edge != nullptr);
+            return {Kind::BlockEdge, edge};
+        }
+
+        Kind kind() const { return kind_; }
+        const void *owner() const { return owner_; }
+        const Instruction *instruction() const
+        {
+            assert(kind_ == Kind::BeforeInstruction);
+            return static_cast<const Instruction *>(owner_);
+        }
+        const Block *block() const
+        {
+            assert(kind_ == Kind::BlockEntry || kind_ == Kind::BlockExit);
+            return static_cast<const Block *>(owner_);
+        }
+        const BlockEdge *edge() const
+        {
+            assert(kind_ == Kind::BlockEdge);
+            return static_cast<const BlockEdge *>(owner_);
+        }
+
+        friend bool operator==(TransferPoint, TransferPoint) = default;
+
+    private:
+        TransferPoint(Kind kind, const void *owner) : kind_(kind), owner_(owner)
+        {
+        }
+
+        Kind kind_;
+        const void *owner_;
+    };
+
+    enum class TransferPhase : uint8_t
+    {
+        Regular,
+    };
+
+    struct BundleTransfer
+    {
+        BundleId source;
+        BundleId destination;
+    };
+
+    struct BundleTransferSet
+    {
+        TransferPoint point;
+        TransferPhase phase;
+        std::vector<BundleTransfer> transfers;
+    };
+
+    class BundleTransferSchedule
+    {
+    public:
+        void add(TransferPoint point, TransferPhase phase,
+                 BundleTransfer transfer);
+
+        const std::vector<BundleTransferSet> &sets() const { return sets_; }
+
+    private:
+        std::vector<BundleTransferSet> sets_;
     };
 
     bool bundles_overlap(const LiveBundle &lhs, const LiveBundle &rhs);

@@ -377,9 +377,10 @@ namespace cl::jit
 
     void verify_bundle_assignments(const PreparedAllocationProblem &problem,
                                    const AllocationConstraints &constraints,
-                                   const BundleRegisterAssignments &assignments)
+                                   std::span<const LiveBundle> bundles,
+                                   const BundleLocationAssignments &assignments)
     {
-        if(assignments.size() != problem.bundles().size())
+        if(assignments.size() != bundles.size())
         {
             fatal("JIT allocator assignment count does not match bundles");
         }
@@ -400,25 +401,30 @@ namespace cl::jit
             return lhs.start < rhs.end && rhs.start < lhs.end;
         };
 
-        for(size_t bundle_index = 0; bundle_index < problem.bundles().size();
+        for(size_t bundle_index = 0; bundle_index < bundles.size();
             ++bundle_index)
         {
             BundleId bundle_id(bundle_index);
-            const LiveBundle &bundle = problem.bundles()[bundle_index];
-            PhysicalRegister reg = assignments.register_for(bundle_id);
-            const RegisterClassDefinition &definition =
-                register_class(bundle.register_class);
-            if(reg.register_class() != bundle.register_class ||
-               !definition.members().contains(reg))
+            const LiveBundle &bundle = bundles[bundle_index];
+            AllocationLocation location = assignments.location_for(bundle_id);
+            if(location.is_register())
             {
-                fatal("JIT allocator bundle assigned an incompatible register");
+                PhysicalRegister reg = location.reg();
+                const RegisterClassDefinition &definition =
+                    register_class(bundle.register_class);
+                if(reg.register_class() != bundle.register_class ||
+                   !definition.members().contains(reg))
+                {
+                    fatal("JIT allocator bundle assigned an incompatible "
+                          "register");
+                }
             }
 
             for(FixedConstraintId fixed_id: bundle.fixed_constraints)
             {
                 AllocationLocation fixed =
                     problem.fixed_constraints()[fixed_id.value()].location;
-                if(fixed.is_stack() || fixed.reg() != reg)
+                if(!fixed.aliases(location))
                 {
                     fatal("JIT allocator assignment violates fixed constraint");
                 }
@@ -426,12 +432,34 @@ namespace cl::jit
 
             for(const BundleFragment &fragment: bundle.fragments)
             {
-                for(const ClobberReservation &clobber: problem.clobbers())
+                if(location.is_register())
                 {
-                    if(clobber.reg == reg &&
-                       ranges_overlap(fragment.range, clobber.range))
+                    for(const ClobberReservation &clobber: problem.clobbers())
                     {
-                        fatal("JIT allocator assignment overlaps a clobber");
+                        if(clobber.reg == location.reg() &&
+                           ranges_overlap(fragment.range, clobber.range))
+                        {
+                            fatal(
+                                "JIT allocator assignment overlaps a clobber");
+                        }
+                    }
+                }
+                else
+                {
+                    const LiveRange &source =
+                        problem.live_ranges()[fragment.source.value()];
+                    for(OccurrenceId occurrence_id: source.occurrences)
+                    {
+                        const Occurrence &occurrence =
+                            problem.occurrences()[occurrence_id.value()];
+                        if(fragment.range.contains(
+                               occurrence.minimum_coverage) &&
+                           !occurrence_is_fixed(source, occurrence_id,
+                                                problem.fixed_constraints()))
+                        {
+                            fatal("JIT stack bundle covers a register-only "
+                                  "occurrence");
+                        }
                     }
                 }
             }
@@ -440,11 +468,11 @@ namespace cl::jit
                 ++other_index)
             {
                 BundleId other_id(other_index);
-                if(assignments.register_for(other_id) != reg)
+                if(!assignments.location_for(other_id).aliases(location))
                 {
                     continue;
                 }
-                const LiveBundle &other = problem.bundles()[other_index];
+                const LiveBundle &other = bundles[other_index];
                 if(bundles_overlap(bundle, other))
                 {
                     fatal("JIT allocator assignments interfere");

@@ -230,13 +230,14 @@ namespace cl::jit
 
         auto assignment_result = assign_bundles(prepared, constraints);
         ASSERT_TRUE(assignment_result);
-        BundleRegisterAssignments assignments =
+        RegisterAllocationResult allocation =
             std::move(assignment_result).value();
+        const BundleLocationAssignments &assignments = allocation.locations();
 
         ASSERT_EQ(3u, assignments.size());
-        EXPECT_EQ(x0, assignments.register_for(BundleId(0)));
-        EXPECT_EQ(x1, assignments.register_for(BundleId(1)));
-        EXPECT_EQ(x0, assignments.register_for(BundleId(2)));
+        EXPECT_EQ(x0, assignments.location_for(BundleId(0)).reg());
+        EXPECT_EQ(x1, assignments.location_for(BundleId(1)).reg());
+        EXPECT_EQ(x0, assignments.location_for(BundleId(2)).reg());
         EXPECT_EQ("assignments {\n"
                   "  b0 = gpr0\n"
                   "  b1 = gpr1\n"
@@ -300,12 +301,13 @@ namespace cl::jit
 
         auto assignment_result = assign_bundles(prepared, constraints);
         ASSERT_TRUE(assignment_result);
-        BundleRegisterAssignments assignments =
+        RegisterAllocationResult allocation =
             std::move(assignment_result).value();
+        const BundleLocationAssignments &assignments = allocation.locations();
 
-        EXPECT_EQ(x0, assignments.register_for(BundleId(0)));
-        EXPECT_EQ(x1, assignments.register_for(BundleId(1)));
-        EXPECT_EQ(x0, assignments.register_for(BundleId(2)));
+        EXPECT_EQ(x0, assignments.location_for(BundleId(0)).reg());
+        EXPECT_EQ(x1, assignments.location_for(BundleId(1)).reg());
+        EXPECT_EQ(x0, assignments.location_for(BundleId(2)).reg());
     }
 
     TEST(JitRegisterAllocator, AssignsLargerBundlesFirst)
@@ -336,11 +338,12 @@ namespace cl::jit
                   prepared.bundles()[0].allocation_priority);
         auto assignment_result = assign_bundles(prepared, constraints);
         ASSERT_TRUE(assignment_result);
-        BundleRegisterAssignments assignments =
+        RegisterAllocationResult allocation =
             std::move(assignment_result).value();
+        const BundleLocationAssignments &assignments = allocation.locations();
 
-        EXPECT_EQ(x1, assignments.register_for(BundleId(0)));
-        EXPECT_EQ(x0, assignments.register_for(BundleId(1)));
+        EXPECT_EQ(x1, assignments.location_for(BundleId(0)).reg());
+        EXPECT_EQ(x0, assignments.location_for(BundleId(1)).reg());
     }
 
     TEST(JitRegisterAllocator, FindsARegisterConflictBeforeTheInsertionPoint)
@@ -372,11 +375,12 @@ namespace cl::jit
                   prepared.bundles()[0].fragments[0].range.start);
         auto assignment_result = assign_bundles(prepared, constraints);
         ASSERT_TRUE(assignment_result);
-        BundleRegisterAssignments assignments =
+        RegisterAllocationResult allocation =
             std::move(assignment_result).value();
+        const BundleLocationAssignments &assignments = allocation.locations();
 
-        EXPECT_EQ(x0, assignments.register_for(BundleId(0)));
-        EXPECT_EQ(x1, assignments.register_for(BundleId(1)));
+        EXPECT_EQ(x0, assignments.location_for(BundleId(0)).reg());
+        EXPECT_EQ(x1, assignments.location_for(BundleId(1)).reg());
     }
 
     TEST(JitRegisterAllocator, RejectsRegisterPressureWithoutSplitting)
@@ -526,7 +530,10 @@ namespace cl::jit
         auto assignment_result = assign_bundles(prepared, constraints);
         ASSERT_TRUE(assignment_result);
 
-        EXPECT_EQ(x1, assignment_result.value().register_for(BundleId(0)));
+        EXPECT_EQ(x1, assignment_result.value()
+                          .locations()
+                          .location_for(BundleId(0))
+                          .reg());
     }
 
     TEST(JitRegisterAllocator, RejectsAClobberedFixedRegister)
