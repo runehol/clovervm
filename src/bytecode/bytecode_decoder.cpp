@@ -1,8 +1,10 @@
 #include "bytecode/bytecode_decoder.h"
 
+#include <algorithm>
 #include <cassert>
 #include <cstdint>
 #include <limits>
+#include <utility>
 
 namespace cl
 {
@@ -169,7 +171,76 @@ namespace cl
                 blocks_[successor].predecessors_.push_back(block.id_);
             }
         }
+        discard_unreachable_blocks();
         assert(blocks_.front().predecessors_.empty());
+    }
+
+    void BytecodeDecoder::discard_unreachable_blocks()
+    {
+        std::vector<bool> reachable(blocks_.size(), false);
+        std::vector<BytecodeBlockId> pending = exception_handler_block_ids_;
+        pending.push_back(entry_block_id());
+        while(!pending.empty())
+        {
+            BytecodeBlockId block_id = pending.back();
+            pending.pop_back();
+            if(reachable[block_id])
+            {
+                continue;
+            }
+            reachable[block_id] = true;
+            for(BytecodeBlockId successor: blocks_[block_id].successors_)
+            {
+                pending.push_back(successor);
+            }
+        }
+
+        if(std::ranges::all_of(reachable, [](bool value) { return value; }))
+        {
+            return;
+        }
+
+        constexpr BytecodeBlockId InvalidBlockId =
+            std::numeric_limits<BytecodeBlockId>::max();
+        std::vector<BytecodeBlockId> new_id(blocks_.size(), InvalidBlockId);
+        std::vector<BytecodeBlock> reachable_blocks;
+        reachable_blocks.reserve(blocks_.size());
+        for(size_t index = 0; index < blocks_.size(); ++index)
+        {
+            if(!reachable[index])
+            {
+                continue;
+            }
+            BytecodeBlockId id =
+                static_cast<BytecodeBlockId>(reachable_blocks.size());
+            new_id[index] = id;
+            const BytecodeBlock &block = blocks_[index];
+            reachable_blocks.push_back(BytecodeBlock(
+                this, id, block.start_pc_offset_, block.end_pc_offset_));
+        }
+
+        for(size_t index = 0; index < blocks_.size(); ++index)
+        {
+            if(!reachable[index])
+            {
+                continue;
+            }
+            BytecodeBlock &block = reachable_blocks[new_id[index]];
+            for(BytecodeBlockId old_successor: blocks_[index].successors_)
+            {
+                BytecodeBlockId successor = new_id[old_successor];
+                assert(successor != InvalidBlockId);
+                block.successors_.push_back(successor);
+                reachable_blocks[successor].predecessors_.push_back(block.id_);
+            }
+        }
+
+        for(BytecodeBlockId &handler: exception_handler_block_ids_)
+        {
+            handler = new_id[handler];
+            assert(handler != InvalidBlockId);
+        }
+        blocks_ = std::move(reachable_blocks);
     }
 
     BytecodeInstruction

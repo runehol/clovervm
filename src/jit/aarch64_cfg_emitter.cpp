@@ -80,11 +80,10 @@ namespace cl::jit
         assert(entry != nullptr);
         assert(graph.blocks()[0] == entry);
         assert(entry->predecessor_edges().empty());
-        assert(entry->parameters().size() <= 1);
-        if(!entry->parameters().empty())
+        for(const Instruction *parameter: entry->parameters())
         {
-            assert(entry->parameters()[0]->kind() ==
-                   InstructionKind::Parameter);
+            (void)parameter;
+            assert(parameter->kind() == InstructionKind::Parameter);
         }
 
         for(Instruction *instruction: entry->instructions())

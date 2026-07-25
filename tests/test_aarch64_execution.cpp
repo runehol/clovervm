@@ -54,27 +54,26 @@ namespace cl::jit
             return std::move(locations).finalize();
         }
 
-        uint64_t execute_python_expression(const wchar_t *source)
+        struct PythonBackendFixture
         {
+            PythonBackendFixture() : activation_scope(context.thread()) {}
+
+            ControlFlowGraph *
+            translate_first_function(const wchar_t *source,
+                                     CompilationSession &session)
+            {
+                CodeObject *module_code = context.compile_file(source);
+                CodeObject *function_code = module_code->constant_table[0]
+                                                .value()
+                                                .get_ptr<CodeObject>();
+                GraphBuilder builder(session);
+                CoreBytecodeTranslator translator(*function_code, builder);
+                return translator.translate();
+            }
+
             test::VmTestContext context;
-            ThreadState::ActivationScope activation_scope(context.thread());
-            CodeObject *code = context.thread()
-                                   ->compile(source, StartRule::Interactive)
-                                   .value();
-
-            CompilationSession session;
-            GraphBuilder builder(session);
-            CoreBytecodeTranslator translator(*code, builder);
-            ControlFlowGraph *graph = translator.translate();
-
-            CodeCache cache;
-            PublishedCode published =
-                compile_to_aarch64(session, *graph, cache).value();
-            using Function = uint64_t (*)();
-            Function function = reinterpret_cast<Function>(
-                published.entry().bits_for_indirect_target());
-            return function();
-        }
+            ThreadState::ActivationScope activation_scope;
+        };
 
         template <typename LogicalInstruction>
         uint64_t execute_smi_logical_with_identical_operands(Value input)
@@ -169,14 +168,74 @@ namespace cl::jit
         EXPECT_EQ(input, function(input));
     }
 
-    TEST(AArch64Execution, CompilesPythonLiteralExpressions)
+    TEST(AArch64Execution, CompilesPythonIdentityFunction)
     {
-        EXPECT_EQ(static_cast<uint64_t>(Value::None().as.integer),
-                  execute_python_expression(L"None\n"));
-        EXPECT_EQ(static_cast<uint64_t>(Value::True().as.integer),
-                  execute_python_expression(L"True\n"));
+        PythonBackendFixture fixture;
+        CompilationSession session;
+        ControlFlowGraph *graph =
+            fixture.translate_first_function(L"def identity(value):\n"
+                                             L"    copy = value\n"
+                                             L"    return copy\n",
+                                             session);
+
+        CodeCache cache;
+        auto compilation = compile_to_aarch64(session, *graph, cache);
+        ASSERT_TRUE(compilation);
+        PublishedCode code = std::move(compilation).value();
+
+        using Function = uint64_t (*)(uint64_t);
+        Function function =
+            reinterpret_cast<Function>(code.entry().bits_for_indirect_target());
+        const Value inputs[] = {Value::None(), Value::True(),
+                                Value::from_smi(42)};
+        for(Value input: inputs)
+        {
+            EXPECT_EQ(static_cast<uint64_t>(input.as.integer),
+                      function(static_cast<uint64_t>(input.as.integer)));
+        }
+    }
+
+    TEST(AArch64Execution, CompilesPythonConstantFunction)
+    {
+        PythonBackendFixture fixture;
+        CompilationSession session;
+        ControlFlowGraph *graph =
+            fixture.translate_first_function(L"def answer():\n"
+                                             L"    return 42\n",
+                                             session);
+
+        CodeCache cache;
+        auto compilation = compile_to_aarch64(session, *graph, cache);
+        ASSERT_TRUE(compilation);
+        PublishedCode code = std::move(compilation).value();
+
+        using Function = uint64_t (*)();
+        Function function =
+            reinterpret_cast<Function>(code.entry().bits_for_indirect_target());
         EXPECT_EQ(static_cast<uint64_t>(Value::from_smi(42).as.integer),
-                  execute_python_expression(L"42\n"));
+                  function());
+    }
+
+    TEST(AArch64Execution, CompilesPythonFunctionReturningSecondArgument)
+    {
+        PythonBackendFixture fixture;
+        CompilationSession session;
+        ControlFlowGraph *graph =
+            fixture.translate_first_function(L"def second(first, second):\n"
+                                             L"    return second\n",
+                                             session);
+
+        CodeCache cache;
+        auto compilation = compile_to_aarch64(session, *graph, cache);
+        ASSERT_TRUE(compilation);
+        PublishedCode code = std::move(compilation).value();
+
+        using Function = uint64_t (*)(uint64_t, uint64_t);
+        Function function =
+            reinterpret_cast<Function>(code.entry().bits_for_indirect_target());
+        constexpr uint64_t first = 0x1111222233334444;
+        constexpr uint64_t second = 0xaaaabbbbccccdddd;
+        EXPECT_EQ(second, function(first, second));
     }
 
     TEST(AArch64Execution, EmitsInlineConstantFunctionFromCfg)

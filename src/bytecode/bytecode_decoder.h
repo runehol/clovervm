@@ -137,6 +137,7 @@ namespace cl
         friend class BytecodeInstructionIterator;
 
         void build_blocks();
+        void discard_unreachable_blocks();
         BytecodeInstruction decode_instruction_at(uint32_t pc_offset) const;
 
         const CodeObject &code_object_;

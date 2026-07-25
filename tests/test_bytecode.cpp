@@ -313,16 +313,12 @@ TEST(BytecodeDecoder, exposes_entry_and_exception_handler_blocks)
                                                    L"result\n");
 
     BytecodeDecoder decoder(*code_object);
-    ASSERT_EQ(4, decoder.blocks().size());
+    ASSERT_EQ(3, decoder.blocks().size());
 
     const BytecodeBlock &protected_block = find_block(decoder, 0);
     EXPECT_EQ(protected_block.id(), decoder.entry_block_id());
     EXPECT_EQ(4, protected_block.end_pc_offset());
     EXPECT_TRUE(protected_block.successors().empty());
-
-    const BytecodeBlock &jump_over_handler = find_block(decoder, 4);
-    ASSERT_EQ(1, jump_over_handler.successors().size());
-    EXPECT_EQ(find_block(decoder, 16).id(), jump_over_handler.successors()[0]);
 
     const BytecodeBlock &handler = find_block(decoder, 7);
     ASSERT_EQ(1, decoder.exception_handler_block_ids().size());
@@ -331,7 +327,23 @@ TEST(BytecodeDecoder, exposes_entry_and_exception_handler_blocks)
     EXPECT_EQ(find_block(decoder, 16).id(), handler.successors()[0]);
 
     const BytecodeBlock &join = find_block(decoder, 16);
-    EXPECT_EQ(2, join.predecessors().size());
+    EXPECT_EQ(1, join.predecessors().size());
+}
+
+TEST(BytecodeDecoder, discards_unreachable_implicit_return)
+{
+    test::VmTestContext context;
+    CodeObject *module_code = context.compile_file(L"def identity(value):\n"
+                                                   L"    return value\n");
+    CodeObject *function_code =
+        module_code->constant_table[0].value().get_ptr<CodeObject>();
+
+    BytecodeDecoder decoder(*function_code);
+
+    ASSERT_EQ(1, decoder.blocks().size());
+    EXPECT_EQ(0, decoder.blocks().front().start_pc_offset());
+    EXPECT_TRUE(decoder.blocks().front().predecessors().empty());
+    EXPECT_TRUE(decoder.blocks().front().successors().empty());
 }
 
 TEST(BytecodeDecoder, exception_spans_do_not_split_blocks)
