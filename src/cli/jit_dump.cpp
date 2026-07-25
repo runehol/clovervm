@@ -4,11 +4,9 @@
 #include "bytecode/code_object_print.h"
 #include "compiler/parser.h"
 #include "compiler/source_text.h"
-#include "jit/aarch64_backend.h"
-#include "jit/compilation_session.h"
-#include "jit/core_bytecode_translator.h"
-#include "jit/graph_builder.h"
+#include "jit/code_cache.h"
 #include "jit/ir_print.h"
+#include "jit/jit_compiler.h"
 #include "object_model/object.h"
 #include "runtime/exception_object.h"
 #include "runtime/thread_state.h"
@@ -328,6 +326,82 @@ namespace
         std::filesystem::remove_all(*temporary, ignored);
         return success;
     }
+
+    class DumpObserver : public cl::jit::JitCompilationObserver
+    {
+    public:
+        explicit DumpObserver(const CommandLine &command_line)
+            : command_line_(&command_line)
+        {
+        }
+
+        void on_bytecode(const cl::CodeObject &code_object) override
+        {
+            fmt::print("Bytecode:\n{}\n", code_object);
+        }
+
+        void
+        on_core_ir_translated(const cl::jit::ControlFlowGraph &graph) override
+        {
+            fmt::print("Core IR:\n{}\n", cl::jit::format_ir(graph));
+        }
+
+        void
+        on_core_ir_optimized(const cl::jit::ControlFlowGraph &graph) override
+        {
+            fmt::print("Optimized Core IR:\n{}\n", cl::jit::format_ir(graph));
+        }
+
+        void on_machine_code(const cl::jit::PublishedCode &code) override
+        {
+            std::vector<uint32_t> words = machine_words(code);
+            if(words.empty())
+            {
+                fmt::print(stderr,
+                           "AArch64 backend emitted malformed machine code\n");
+                succeeded_ = false;
+                return;
+            }
+
+            fmt::print("AArch64 machine code:\n");
+            for(uint32_t word: words)
+            {
+                fmt::print("  {:08x}\n", word);
+            }
+
+            int64_t signed_pool_offset =
+                code.entry().displacement_to(code.value_pool_address());
+            if(signed_pool_offset < 0)
+            {
+                fmt::print(stderr,
+                           "AArch64 constant pool precedes generated code\n");
+                succeeded_ = false;
+                return;
+            }
+            size_t pool_offset = static_cast<size_t>(signed_pool_offset);
+            std::span<const cl::Value> pool_values = code.value_pool_values();
+            if(!pool_values.empty())
+            {
+                fmt::print("\nAArch64 constant pool:\n");
+                for(size_t index = 0; index < pool_values.size(); ++index)
+                {
+                    fmt::print(
+                        "  +0x{:x} <_constant_pool_{}>: 0x{:016x}\n",
+                        pool_offset + index * sizeof(cl::Value), index,
+                        static_cast<uint64_t>(pool_values[index].as.integer));
+                }
+            }
+            fmt::print("\nAArch64 disassembly:\n");
+            succeeded_ = print_disassembly(words, pool_values, pool_offset,
+                                           *command_line_);
+        }
+
+        bool succeeded() const { return succeeded_; }
+
+    private:
+        const CommandLine *command_line_;
+        bool succeeded_ = true;
+    };
 }  // namespace
 
 int main(int argc, const char *argv[])
@@ -384,55 +458,14 @@ int main(int argc, const char *argv[])
     }
 
     fmt::print("Python:\n{}\n\n", cl::unicode::encode_utf8(input->source));
-    fmt::print("Bytecode:\n{}\n", *function);
-
-    cl::jit::CompilationSession session;
-    cl::jit::GraphBuilder builder(session);
-    cl::jit::CoreBytecodeTranslator translator(*function, builder);
-    cl::jit::ControlFlowGraph *graph = translator.translate();
-    fmt::print("Core IR:\n{}\n", cl::jit::format_ir(*graph));
-
-    cl::jit::CodeCache cache;
-    auto code_result = cl::jit::compile_to_aarch64(session, *graph, cache);
+    DumpObserver observer(command_line);
+    cl::jit::JitCompilerOptions compiler_options{&observer};
+    auto code_result =
+        cl::jit::compile_jit_code(*thread, *function, compiler_options);
     if(!code_result)
     {
-        fmt::print(stderr, "AArch64 compilation failed\n");
+        fmt::print(stderr, "JIT compilation failed\n");
         return 1;
     }
-    cl::jit::PublishedCode code = std::move(code_result).value();
-    std::vector<uint32_t> words = machine_words(code);
-    if(words.empty())
-    {
-        fmt::print(stderr, "AArch64 backend emitted malformed machine code\n");
-        return 1;
-    }
-
-    fmt::print("AArch64 machine code:\n");
-    for(uint32_t word: words)
-    {
-        fmt::print("  {:08x}\n", word);
-    }
-
-    int64_t signed_pool_offset =
-        code.entry().displacement_to(code.value_pool_address());
-    if(signed_pool_offset < 0)
-    {
-        fmt::print(stderr, "AArch64 constant pool precedes generated code\n");
-        return 1;
-    }
-    size_t pool_offset = static_cast<size_t>(signed_pool_offset);
-    std::span<const cl::Value> pool_values = code.value_pool_values();
-    if(!pool_values.empty())
-    {
-        fmt::print("\nAArch64 constant pool:\n");
-        for(size_t index = 0; index < pool_values.size(); ++index)
-        {
-            fmt::print("  +0x{:x} <_constant_pool_{}>: 0x{:016x}\n",
-                       pool_offset + index * sizeof(cl::Value), index,
-                       static_cast<uint64_t>(pool_values[index].as.integer));
-        }
-    }
-    fmt::print("\nAArch64 disassembly:\n");
-    return print_disassembly(words, pool_values, pool_offset, command_line) ? 0
-                                                                            : 1;
+    return observer.succeeded() ? 0 : 1;
 }

@@ -4,6 +4,8 @@
 #include "jit/compilation_session.h"
 #include "jit/core_bytecode_translator.h"
 #include "jit/graph_builder.h"
+#include "jit/jit_code_object.h"
+#include "jit/jit_compiler.h"
 #include "jit/location_assignments.h"
 #include "test_helpers.h"
 
@@ -58,14 +60,19 @@ namespace cl::jit
         {
             PythonBackendFixture() : activation_scope(context.thread()) {}
 
+            CodeObject *compile_first_function(const wchar_t *source)
+            {
+                CodeObject *module_code = context.compile_file(source);
+                return module_code->constant_table[0]
+                    .value()
+                    .get_ptr<CodeObject>();
+            }
+
             ControlFlowGraph *
             translate_first_function(const wchar_t *source,
                                      CompilationSession &session)
             {
-                CodeObject *module_code = context.compile_file(source);
-                CodeObject *function_code = module_code->constant_table[0]
-                                                .value()
-                                                .get_ptr<CodeObject>();
+                CodeObject *function_code = compile_first_function(source);
                 GraphBuilder builder(session);
                 CoreBytecodeTranslator translator(*function_code, builder);
                 return translator.translate();
@@ -193,6 +200,63 @@ namespace cl::jit
             EXPECT_EQ(static_cast<uint64_t>(input.as.integer),
                       function(static_cast<uint64_t>(input.as.integer)));
         }
+    }
+
+    TEST(AArch64Execution, CompilesBytecodeThroughJitCompiler)
+    {
+        class Observer : public JitCompilationObserver
+        {
+        public:
+            void on_bytecode(const CodeObject &) override
+            {
+                saw_bytecode = true;
+            }
+
+            void on_core_ir_translated(const ControlFlowGraph &graph) override
+            {
+                translated_instruction_count =
+                    graph.blocks().front()->instructions().size();
+            }
+
+            void on_core_ir_optimized(const ControlFlowGraph &graph) override
+            {
+                optimized_instruction_count =
+                    graph.blocks().front()->instructions().size();
+            }
+
+            void on_machine_code(const PublishedCode &) override
+            {
+                saw_machine_code = true;
+            }
+
+            bool saw_bytecode = false;
+            bool saw_machine_code = false;
+            size_t translated_instruction_count = 0;
+            size_t optimized_instruction_count = 0;
+        };
+
+        PythonBackendFixture fixture;
+        CodeObject *function_code =
+            fixture.compile_first_function(L"def identity(value):\n"
+                                           L"    unused = None\n"
+                                           L"    return value\n");
+        Observer observer;
+        auto compilation =
+            compile_jit_code(*fixture.context.thread(), *function_code,
+                             JitCompilerOptions{&observer});
+
+        ASSERT_TRUE(compilation);
+        JitCodeObject *code = std::move(compilation).value();
+        EXPECT_TRUE(observer.saw_bytecode);
+        EXPECT_TRUE(observer.saw_machine_code);
+        EXPECT_GT(observer.translated_instruction_count,
+                  observer.optimized_instruction_count);
+
+        using Function = uint64_t (*)(uint64_t);
+        Function function = reinterpret_cast<Function>(
+            code->entry().bits_for_indirect_target());
+        constexpr uint64_t input = 0x123456789abcdef0;
+        EXPECT_EQ(input, function(input));
     }
 
     TEST(AArch64Execution, CompilesPythonConstantFunction)

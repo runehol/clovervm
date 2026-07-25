@@ -138,6 +138,9 @@ add_library(libclovervm_objects OBJECT
     jit/ir_print.h
     jit/instruction_pool.cpp
     jit/instruction_pool.h
+    jit/jit_compilation_error.h
+    jit/jit_compiler.cpp
+    jit/jit_compiler.h
     jit/jit_code_object.cpp
     jit/jit_code_object.h
     jit/live_range_scanner.cpp
