@@ -156,13 +156,17 @@ namespace cl::jit
         struct StagedBlockRewrite
         {
             Block *block;
+            std::vector<Instruction *> parameters;
             std::vector<Instruction *> instructions;
             std::vector<Instruction *> removed_originals;
         };
+
+        using ParameterRetentionMasks =
+            absl::flat_hash_map<const Block *, std::vector<bool>>;
     }  // namespace
 
-    template <bool HasBlockEntryCallback, bool HasBeforeInstructionCallback,
-              bool HasInstructionCallback>
+    template <bool HasBlockParameterCallback, bool HasBlockEntryCallback,
+              bool HasBeforeInstructionCallback, bool HasInstructionCallback>
     RewriteSummary GraphRewriter::rewrite_instructions_erased(
         InstructionTraversal traversal, RewriteInput input, void *callback,
         const ErasedCallbacks &callbacks)
@@ -180,6 +184,10 @@ namespace cl::jit
         {
             assert(callbacks.at_block_entry != nullptr);
         }
+        if constexpr(HasBlockParameterCallback)
+        {
+            assert(callbacks.block_parameter != nullptr);
+        }
         if constexpr(HasBeforeInstructionCallback)
         {
             assert(callbacks.before_instruction != nullptr);
@@ -192,10 +200,33 @@ namespace cl::jit
         GraphQueries queries = graph_->prepare_queries(traversal.queries());
         absl::flat_hash_set<const Instruction *> allocated_instructions;
         RewriteContext context(session_, arena_, &allocated_instructions);
+        RewriteSummary summary;
+        ParameterRetentionMasks parameter_retention;
+        if constexpr(HasBlockParameterCallback)
+        {
+            parameter_retention.reserve(graph_->blocks_.size());
+            for(const Block *block: graph_->blocks_)
+            {
+                std::vector<bool> retained;
+                retained.reserve(block->parameters_.size());
+                for(size_t index = 0; index < block->parameters_.size();
+                    ++index)
+                {
+                    BlockParameterRewrite rewrite = callbacks.block_parameter(
+                        callback, context, queries, *block, index,
+                        *block->parameters_[index]);
+                    bool keep =
+                        rewrite.kind_ == BlockParameterRewrite::Kind::Keep;
+                    retained.push_back(keep);
+                    summary.block_parameters_changed |= !keep;
+                }
+                parameter_retention.emplace(block, std::move(retained));
+            }
+        }
+
         absl::flat_hash_set<const Instruction *> staged_instruction_set;
         std::vector<StagedBlockRewrite> staged_blocks;
         staged_blocks.reserve(graph_->blocks_.size());
-        RewriteSummary summary;
         bool edges_changed = false;
         auto record_normalization = [&](const Instruction *before,
                                         Instruction *after) {
@@ -216,13 +247,36 @@ namespace cl::jit
         for(Block *block: graph_->blocks_)
         {
             assert(block != nullptr);
-            StagedBlockRewrite staged{block, {}, {}};
+            StagedBlockRewrite staged{block, {}, {}, {}};
+            staged.parameters.reserve(block->parameters_.size());
             staged.instructions.reserve(block->instructions_.size());
+            if constexpr(HasBlockParameterCallback)
+            {
+                const std::vector<bool> &retained =
+                    parameter_retention.at(block);
+                for(size_t index = 0; index < block->parameters_.size();
+                    ++index)
+                {
+                    Instruction *parameter = block->parameters_[index];
+                    if(retained[index])
+                    {
+                        staged.parameters.push_back(parameter);
+                    }
+                    else
+                    {
+                        staged.removed_originals.push_back(parameter);
+                    }
+                }
+            }
+            else
+            {
+                staged.parameters = block->parameters_;
+            }
             DefReplacements def_replacements;
             EdgeReplacements edge_replacements;
             absl::flat_hash_set<const Instruction *> available_defs;
-            available_defs.insert(block->parameters_.begin(),
-                                  block->parameters_.end());
+            available_defs.insert(staged.parameters.begin(),
+                                  staged.parameters.end());
 
             auto process_insertion = [&](RewriteInsertion insertion) {
                 absl::flat_hash_set<const Instruction *> transfer_sources;
@@ -345,8 +399,29 @@ namespace cl::jit
                         std::vector<ProgramValueRef> arguments;
                         arguments.reserve(edge->arguments().size());
                         bool changed = false;
-                        for(ProgramValueRef argument: edge->arguments())
+                        const std::vector<bool> *retained_arguments = nullptr;
+                        if constexpr(HasBlockParameterCallback)
                         {
+                            retained_arguments =
+                                &parameter_retention.at(edge->target());
+                            require_rewrite_invariant(
+                                retained_arguments->size() ==
+                                    edge->arguments().size(),
+                                "JIT rewrite block parameter count does not "
+                                "match incoming edge arguments");
+                        }
+                        for(size_t index = 0; index < edge->arguments().size();
+                            ++index)
+                        {
+                            if constexpr(HasBlockParameterCallback)
+                            {
+                                if(!(*retained_arguments)[index])
+                                {
+                                    changed = true;
+                                    continue;
+                                }
+                            }
+                            ProgramValueRef argument = edge->arguments()[index];
                             Instruction *resolved =
                                 resolver.resolve(argument.instruction());
                             require_rewrite_invariant(
@@ -622,13 +697,14 @@ namespace cl::jit
             staged_blocks.push_back(std::move(staged));
         }
 
-        if(!summary.instructions_changed)
+        if(!summary.block_parameters_changed && !summary.instructions_changed)
         {
             return summary;
         }
 
         for(StagedBlockRewrite &staged: staged_blocks)
         {
+            staged.block->parameters_.swap(staged.parameters);
             staged.block->instructions_.swap(staged.instructions);
         }
         if(edges_changed)
@@ -655,26 +731,28 @@ namespace cl::jit
         return summary;
     }
 
-    template RewriteSummary
-    GraphRewriter::rewrite_instructions_erased<false, false, true>(
+#define CL_JIT_INSTANTIATE_GRAPH_REWRITER(parameters, entry, before,           \
+                                          instruction)                         \
+    template RewriteSummary GraphRewriter::rewrite_instructions_erased<        \
+        parameters, entry, before, instruction>(                               \
         InstructionTraversal, RewriteInput, void *, const ErasedCallbacks &);
-    template RewriteSummary
-    GraphRewriter::rewrite_instructions_erased<false, true, false>(
-        InstructionTraversal, RewriteInput, void *, const ErasedCallbacks &);
-    template RewriteSummary
-    GraphRewriter::rewrite_instructions_erased<false, true, true>(
-        InstructionTraversal, RewriteInput, void *, const ErasedCallbacks &);
-    template RewriteSummary
-    GraphRewriter::rewrite_instructions_erased<true, false, false>(
-        InstructionTraversal, RewriteInput, void *, const ErasedCallbacks &);
-    template RewriteSummary
-    GraphRewriter::rewrite_instructions_erased<true, false, true>(
-        InstructionTraversal, RewriteInput, void *, const ErasedCallbacks &);
-    template RewriteSummary
-    GraphRewriter::rewrite_instructions_erased<true, true, false>(
-        InstructionTraversal, RewriteInput, void *, const ErasedCallbacks &);
-    template RewriteSummary
-    GraphRewriter::rewrite_instructions_erased<true, true, true>(
-        InstructionTraversal, RewriteInput, void *, const ErasedCallbacks &);
+
+    CL_JIT_INSTANTIATE_GRAPH_REWRITER(false, false, false, true)
+    CL_JIT_INSTANTIATE_GRAPH_REWRITER(false, false, true, false)
+    CL_JIT_INSTANTIATE_GRAPH_REWRITER(false, false, true, true)
+    CL_JIT_INSTANTIATE_GRAPH_REWRITER(false, true, false, false)
+    CL_JIT_INSTANTIATE_GRAPH_REWRITER(false, true, false, true)
+    CL_JIT_INSTANTIATE_GRAPH_REWRITER(false, true, true, false)
+    CL_JIT_INSTANTIATE_GRAPH_REWRITER(false, true, true, true)
+    CL_JIT_INSTANTIATE_GRAPH_REWRITER(true, false, false, false)
+    CL_JIT_INSTANTIATE_GRAPH_REWRITER(true, false, false, true)
+    CL_JIT_INSTANTIATE_GRAPH_REWRITER(true, false, true, false)
+    CL_JIT_INSTANTIATE_GRAPH_REWRITER(true, false, true, true)
+    CL_JIT_INSTANTIATE_GRAPH_REWRITER(true, true, false, false)
+    CL_JIT_INSTANTIATE_GRAPH_REWRITER(true, true, false, true)
+    CL_JIT_INSTANTIATE_GRAPH_REWRITER(true, true, true, false)
+    CL_JIT_INSTANTIATE_GRAPH_REWRITER(true, true, true, true)
+
+#undef CL_JIT_INSTANTIATE_GRAPH_REWRITER
 
 }  // namespace cl::jit

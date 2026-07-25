@@ -65,6 +65,46 @@ namespace cl::jit
         EXPECT_EQ(argument, entry->instructions()[0]);
     }
 
+    TEST(JitDeadCodeElimination, RemovesDeadBlockParametersAndTheirArguments)
+    {
+        CompilationSession session;
+        GraphBuilder builder(session);
+        Block *entry = builder.emplace_block();
+        Block *exit = builder.emplace_block();
+        ConstInstruction *dead_argument =
+            builder.emplace_instruction<ConstInstruction>(entry,
+                                                          Value::False());
+        ConstInstruction *live_argument =
+            builder.emplace_instruction<ConstInstruction>(entry, Value::True());
+        std::array<ProgramValueRef, 2> arguments = {
+            ProgramValueRef(dead_argument), ProgramValueRef(live_argument)};
+        BlockEdge *old_edge = builder.make_block_edge(entry, exit, arguments);
+        builder.emplace_instruction<UnconditionalBranchInstruction>(entry,
+                                                                    old_edge);
+        ParameterInstruction *dead_parameter =
+            builder.emplace_parameter<ParameterInstruction>(exit);
+        ParameterInstruction *live_parameter =
+            builder.emplace_parameter<ParameterInstruction>(exit);
+        builder.emplace_instruction<ReturnInstruction>(
+            exit, TaggedValueRef(live_parameter));
+        ControlFlowGraph *graph = builder.finalize();
+
+        auto elimination = eliminate_dead_code(session, *graph);
+
+        ASSERT_TRUE(elimination);
+        EXPECT_TRUE(std::move(elimination).value());
+        EXPECT_TRUE(dead_argument->is_detached());
+        EXPECT_TRUE(dead_parameter->is_detached());
+        EXPECT_FALSE(live_argument->is_detached());
+        EXPECT_FALSE(live_parameter->is_detached());
+        ASSERT_EQ(1u, exit->parameters().size());
+        EXPECT_EQ(live_parameter, exit->parameters()[0]);
+        BlockEdge *new_edge = entry->block_successor_edges()[0];
+        EXPECT_NE(old_edge, new_edge);
+        ASSERT_EQ(1u, new_edge->arguments().size());
+        EXPECT_EQ(live_argument, new_edge->arguments()[0].instruction());
+    }
+
     TEST(JitDeadCodeElimination, EliminatesUnusedDeoptimizingInstructions)
     {
         CompilationSession session;

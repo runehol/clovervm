@@ -217,6 +217,61 @@ namespace cl::jit
         EXPECT_EQ(return_instruction, entry->instructions()[1]);
     }
 
+    TEST(JitGraphRewriter, CompactsBlockParametersAndIncomingArguments)
+    {
+        CompilationSession session;
+        GraphBuilder builder(session);
+        Block *entry = builder.emplace_block();
+        Block *exit = builder.emplace_block();
+        ParameterInstruction *first =
+            builder.emplace_parameter<ParameterInstruction>(entry);
+        ParameterInstruction *second =
+            builder.emplace_parameter<ParameterInstruction>(entry);
+        std::array<ProgramValueRef, 2> arguments = {ProgramValueRef(first),
+                                                    ProgramValueRef(second)};
+        BlockEdge *old_edge = builder.make_block_edge(entry, exit, arguments);
+        builder.emplace_instruction<UnconditionalBranchInstruction>(entry,
+                                                                    old_edge);
+        ParameterInstruction *exit_first =
+            builder.emplace_parameter<ParameterInstruction>(exit);
+        ParameterInstruction *exit_second =
+            builder.emplace_parameter<ParameterInstruction>(exit);
+        builder.emplace_instruction<ReturnInstruction>(
+            exit, TaggedValueRef(exit_first));
+        ControlFlowGraph *graph = builder.finalize();
+
+        struct Callback
+        {
+            const Instruction *removed;
+
+            BlockParameterRewrite block_parameter(RewriteContext &,
+                                                  const GraphQueries &,
+                                                  const Block &, size_t,
+                                                  const Instruction &parameter)
+            {
+                return &parameter == removed ? BlockParameterRewrite::erase()
+                                             : BlockParameterRewrite::keep();
+            }
+        } callback{exit_second};
+
+        GraphRewriter rewriter(session, *graph);
+        RewriteSummary summary =
+            rewriter.rewrite_instructions(InstructionTraversal(), callback);
+
+        EXPECT_TRUE(summary.block_parameters_changed);
+        EXPECT_TRUE(summary.instructions_changed);
+        EXPECT_TRUE(summary.terminators_changed);
+        EXPECT_TRUE(exit_second->is_detached());
+        ASSERT_EQ(1u, exit->parameters().size());
+        EXPECT_EQ(exit_first, exit->parameters()[0]);
+        BlockEdge *new_edge = entry->block_successor_edges()[0];
+        EXPECT_NE(old_edge, new_edge);
+        ASSERT_EQ(1u, new_edge->arguments().size());
+        EXPECT_EQ(first, new_edge->arguments()[0].instruction());
+        ASSERT_EQ(1u, exit->predecessor_edges().size());
+        EXPECT_EQ(new_edge, exit->predecessor_edges()[0]);
+    }
+
     TEST(JitGraphRewriter,
          StructuralTransfersRedirectDefinitionsFromTheirInsertionPoint)
     {

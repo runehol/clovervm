@@ -11,6 +11,7 @@
 
 #include <cassert>
 #include <concepts>
+#include <cstddef>
 #include <cstdint>
 #include <functional>
 #include <memory>
@@ -117,6 +118,33 @@ namespace cl::jit
         TransferOutputs transfer_outputs_;
     };
 
+    class BlockParameterRewrite
+    {
+    public:
+        static BlockParameterRewrite keep()
+        {
+            return BlockParameterRewrite(Kind::Keep);
+        }
+
+        static BlockParameterRewrite erase()
+        {
+            return BlockParameterRewrite(Kind::Erase);
+        }
+
+    private:
+        friend class GraphRewriter;
+
+        enum class Kind : uint8_t
+        {
+            Keep,
+            Erase,
+        };
+
+        explicit BlockParameterRewrite(Kind kind) : kind_(kind) {}
+
+        Kind kind_;
+    };
+
     class RewriteResult
     {
     public:
@@ -204,6 +232,7 @@ namespace cl::jit
 
     struct RewriteSummary
     {
+        bool block_parameters_changed = false;
         bool instructions_changed = false;
         bool terminators_changed = false;
         NormalizationRemapping normalization_remapping;
@@ -242,6 +271,15 @@ namespace cl::jit
                         candidate.at_block_entry(context, queries, block)
                     } -> std::same_as<RewriteInsertion>;
                 };
+            constexpr bool HasBlockParameterCallback =
+                requires(CallbackType &candidate, RewriteContext &context,
+                         const GraphQueries &queries, const Block &block,
+                         size_t parameter_index, const Instruction &parameter) {
+                    {
+                        candidate.block_parameter(context, queries, block,
+                                                  parameter_index, parameter)
+                    } -> std::same_as<BlockParameterRewrite>;
+                };
             constexpr bool HasBeforeInstructionCallback =
                 requires(CallbackType &candidate, RewriteContext &context,
                          const GraphQueries &queries, const Block &block,
@@ -262,13 +300,14 @@ namespace cl::jit
                 };
 
             static_assert(
-                IsInstructionCallback || HasBlockEntryCallback ||
-                    HasBeforeInstructionCallback || HasInstructionMethod,
+                IsInstructionCallback || HasBlockParameterCallback ||
+                    HasBlockEntryCallback || HasBeforeInstructionCallback ||
+                    HasInstructionMethod,
                 "a JIT rewrite callback has no supported callback operation");
             static_assert(
                 !IsInstructionCallback ||
-                    (!HasBlockEntryCallback && !HasBeforeInstructionCallback &&
-                     !HasInstructionMethod),
+                    (!HasBlockParameterCallback && !HasBlockEntryCallback &&
+                     !HasBeforeInstructionCallback && !HasInstructionMethod),
                 "a JIT rewrite callback must be either a callable or a "
                 "callback object");
 
@@ -285,6 +324,18 @@ namespace cl::jit
             }
             else
             {
+                if constexpr(HasBlockParameterCallback)
+                {
+                    callbacks.block_parameter =
+                        [](void *opaque, RewriteContext &context,
+                           const GraphQueries &queries, const Block &block,
+                           size_t parameter_index, const Instruction &parameter)
+                        -> BlockParameterRewrite {
+                        return static_cast<CallbackType *>(opaque)
+                            ->block_parameter(context, queries, block,
+                                              parameter_index, parameter);
+                    };
+                }
                 if constexpr(HasBlockEntryCallback)
                 {
                     callbacks.at_block_entry =
@@ -320,8 +371,8 @@ namespace cl::jit
             }
 
             return this->template rewrite_instructions_erased <
-                       HasBlockEntryCallback,
-                   HasBeforeInstructionCallback,
+                       HasBlockParameterCallback,
+                   HasBlockEntryCallback, HasBeforeInstructionCallback,
                    IsInstructionCallback ||
                        HasInstructionMethod >
                            (traversal, input,
@@ -333,6 +384,9 @@ namespace cl::jit
     private:
         struct ErasedCallbacks
         {
+            BlockParameterRewrite (*block_parameter)(
+                void *, RewriteContext &, const GraphQueries &, const Block &,
+                size_t, const Instruction &) = nullptr;
             RewriteInsertion (*at_block_entry)(void *, RewriteContext &,
                                                const GraphQueries &,
                                                const Block &) = nullptr;
@@ -345,7 +399,8 @@ namespace cl::jit
                                                  const Instruction &) = nullptr;
         };
 
-        template <bool HasBlockEntryCallback, bool HasBeforeInstructionCallback,
+        template <bool HasBlockParameterCallback, bool HasBlockEntryCallback,
+                  bool HasBeforeInstructionCallback,
                   bool HasInstructionCallback>
         RewriteSummary
         rewrite_instructions_erased(InstructionTraversal traversal,

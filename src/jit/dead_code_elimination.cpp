@@ -2,63 +2,130 @@
 
 #include "jit/graph_rewriter.h"
 
+#include <absl/container/flat_hash_map.h>
 #include <absl/container/flat_hash_set.h>
+
+#include <cassert>
+#include <cstddef>
+#include <vector>
 
 namespace cl::jit
 {
+    namespace
+    {
+        struct BlockParameterPosition
+        {
+            const Block *block;
+            size_t index;
+        };
+
+        bool instruction_can_be_eliminated(const Instruction &instruction)
+        {
+            return instruction.result_class() != ResultClass::None &&
+                   instruction_kind_metadata(instruction.kind()).may_effects <
+                       EffectProfile::PythonVisibleEffects;
+        }
+
+        class DeadCodeRewrite
+        {
+        public:
+            DeadCodeRewrite(
+                const ControlFlowGraph &graph,
+                const absl::flat_hash_set<const Instruction *> &live)
+                : graph_(&graph), live_(&live)
+            {
+            }
+
+            BlockParameterRewrite block_parameter(RewriteContext &,
+                                                  const GraphQueries &,
+                                                  const Block &block, size_t,
+                                                  const Instruction &parameter)
+            {
+                return &block == graph_->entry_block() ||
+                               live_->contains(&parameter)
+                           ? BlockParameterRewrite::keep()
+                           : BlockParameterRewrite::erase();
+            }
+
+            RewriteResult rewrite_instruction(RewriteContext &,
+                                              const GraphQueries &,
+                                              const Block &,
+                                              const Instruction &instruction)
+            {
+                return instruction_can_be_eliminated(instruction) &&
+                               !live_->contains(&instruction)
+                           ? RewriteResult::erase()
+                           : RewriteResult::keep();
+            }
+
+        private:
+            const ControlFlowGraph *graph_;
+            const absl::flat_hash_set<const Instruction *> *live_;
+        };
+    }  // namespace
+
     Result<bool, JitCompilationError>
     eliminate_dead_code(CompilationSession &session, ControlFlowGraph &graph)
     {
-        absl::flat_hash_set<const Instruction *> used;
-        absl::flat_hash_set<const Instruction *> dead;
-
+        absl::flat_hash_map<const Instruction *, BlockParameterPosition>
+            block_parameters;
         for(const Block *block: graph.blocks())
         {
-            for(const BlockEdge *edge: block->block_successor_edges())
+            for(size_t index = 0; index < block->parameters().size(); ++index)
             {
-                for(ProgramValueRef argument: edge->arguments())
-                {
-                    used.insert(argument.instruction());
-                }
-            }
-
-            for(auto position = block->instructions().rbegin();
-                position != block->instructions().rend(); ++position)
-            {
-                const Instruction *instruction = *position;
-                const InstructionKindMetadata &metadata =
-                    instruction_kind_metadata(instruction->kind());
-                bool can_eliminate =
-                    instruction->result_class() != ResultClass::None &&
-                    metadata.may_effects < EffectProfile::PythonVisibleEffects;
-                if(can_eliminate && !used.contains(instruction))
-                {
-                    dead.insert(instruction);
-                    continue;
-                }
-
-                visit_operand_references(
-                    *instruction,
-                    [&](uint32_t, OperandClass, ValueRepresentation,
-                        Instruction *definition) { used.insert(definition); });
+                block_parameters.emplace(block->parameters()[index],
+                                         BlockParameterPosition{block, index});
             }
         }
 
-        if(dead.empty())
+        absl::flat_hash_set<const Instruction *> live;
+        std::vector<const Instruction *> worklist;
+        auto mark_live = [&](const Instruction *instruction) {
+            if(live.insert(instruction).second)
+            {
+                worklist.push_back(instruction);
+            }
+        };
+        for(const Block *block: graph.blocks())
         {
-            return Result<bool, JitCompilationError>::ok(false);
+            for(const Instruction *instruction: block->instructions())
+            {
+                if(!instruction_can_be_eliminated(*instruction))
+                {
+                    mark_live(instruction);
+                }
+            }
+        }
+
+        while(!worklist.empty())
+        {
+            const Instruction *instruction = worklist.back();
+            worklist.pop_back();
+
+            auto parameter = block_parameters.find(instruction);
+            if(parameter != block_parameters.end())
+            {
+                const BlockParameterPosition &position = parameter->second;
+                for(const BlockEdge *edge: position.block->predecessor_edges())
+                {
+                    assert(position.index < edge->arguments().size());
+                    mark_live(edge->arguments()[position.index].instruction());
+                }
+                continue;
+            }
+
+            visit_operand_references(
+                *instruction,
+                [&](uint32_t, OperandClass, ValueRepresentation,
+                    Instruction *definition) { mark_live(definition); });
         }
 
         GraphRewriter rewriter(session, graph);
-        RewriteSummary summary = rewriter.rewrite_instructions(
-            InstructionTraversal(),
-            [&](RewriteContext &, const GraphQueries &, const Block &,
-                const Instruction &instruction) {
-                return dead.contains(&instruction) ? RewriteResult::erase()
-                                                   : RewriteResult::keep();
-            });
+        DeadCodeRewrite rewrite(graph, live);
+        RewriteSummary summary =
+            rewriter.rewrite_instructions(InstructionTraversal(), rewrite);
         return Result<bool, JitCompilationError>::ok(
-            summary.instructions_changed);
+            summary.block_parameters_changed || summary.instructions_changed);
     }
 
 }  // namespace cl::jit
