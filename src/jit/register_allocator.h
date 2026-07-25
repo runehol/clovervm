@@ -4,6 +4,7 @@
 #include "jit/allocation_constraints.h"
 #include "jit/allocation_problem.h"
 #include "jit/bundle_location_assignments.h"
+#include "jit/location_assignments.h"
 #include "util/result.h"
 
 #include <cstdint>
@@ -13,6 +14,8 @@
 
 namespace cl::jit
 {
+    class CompilationSession;
+
     enum class RegisterAllocationError : uint8_t
     {
         UnsupportedSnapshotConsumer,
@@ -55,6 +58,10 @@ namespace cl::jit
     Result<RegisterAllocationResult, RegisterAllocationError>
     assign_bundles(const PreparedAllocationProblem &problem,
                    const AllocationConstraints &constraints);
+
+    Result<LocationAssignments, RegisterAllocationError>
+    allocate_registers(CompilationSession &session, ControlFlowGraph &graph,
+                       const AllocationConstraints &constraints);
 
     void verify_prepared_allocation(const PreparedAllocationProblem &problem);
     void

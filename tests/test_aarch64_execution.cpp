@@ -1,4 +1,5 @@
 #include "jit/aarch64_assembler.h"
+#include "jit/aarch64_backend.h"
 #include "jit/aarch64_cfg_emitter.h"
 #include "jit/compilation_session.h"
 #include "jit/graph_builder.h"
@@ -115,6 +116,33 @@ namespace cl::jit
         {
             EXPECT_EQ(input, function(input));
         }
+    }
+
+    TEST(AArch64Execution, CompilesAllocatedCfg)
+    {
+        CompilationSession session;
+        GraphBuilder builder(session);
+        Block *entry = builder.emplace_block();
+        ParameterInstruction *parameter =
+            builder.emplace_parameter<ParameterInstruction>(entry);
+        TaggedValueRef operand(parameter);
+        AndSMIInstruction *result =
+            builder.emplace_instruction<AndSMIInstruction>(entry, operand,
+                                                           operand);
+        builder.emplace_instruction<ReturnInstruction>(entry,
+                                                       TaggedValueRef(result));
+        ControlFlowGraph *graph = builder.finalize();
+
+        CodeCache cache;
+        auto compilation = compile_to_aarch64(session, *graph, cache);
+        ASSERT_TRUE(compilation);
+        PublishedCode code = std::move(compilation).value();
+
+        using Function = uint64_t (*)(uint64_t);
+        Function function =
+            reinterpret_cast<Function>(code.entry().bits_for_indirect_target());
+        constexpr uint64_t input = 0x123456789abcdef0;
+        EXPECT_EQ(input, function(input));
     }
 
     TEST(AArch64Execution, EmitsInlineConstantFunctionFromCfg)

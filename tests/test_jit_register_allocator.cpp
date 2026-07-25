@@ -80,6 +80,26 @@ namespace cl::jit
         EXPECT_EQ(12u, late_def.end.value());
     }
 
+    TEST(JitRegisterAllocator, AllocatesAndMaterializesGraph)
+    {
+        CompilationSession session;
+        GraphBuilder builder(session);
+        Block *entry = builder.emplace_block();
+        ParameterInstruction *parameter =
+            builder.emplace_parameter<ParameterInstruction>(entry);
+        builder.emplace_instruction<ReturnInstruction>(
+            entry, TaggedValueRef(parameter));
+        ControlFlowGraph *graph = builder.finalize();
+        AllocationConstraints constraints =
+            make_aarch64_allocation_constraints(*graph);
+
+        auto allocation = allocate_registers(session, *graph, constraints);
+
+        ASSERT_TRUE(allocation);
+        EXPECT_EQ(PhysicalLocation::reg(x0),
+                  allocation.value().location_for(ProgramValueRef(parameter)));
+    }
+
     TEST(JitRegisterAllocator, PreparesRepresentativeOneBlockProblem)
     {
         CompilationSession session;
