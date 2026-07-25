@@ -237,7 +237,9 @@ initial vocabulary is:
 ```cpp
 enum class StackLocationKind : uint8_t
 {
-    CanonicalFrameSlot,
+    IncomingParameter,
+    LocalOrTemporary,
+    OutgoingCallArgument,
     SpillSlot,
 };
 
@@ -248,6 +250,8 @@ public:
 
     StackLocationKind kind() const;
     int32_t frame_offset() const;
+
+    bool aliases(const StackLocation &other) const;
 };
 
 class AllocationLocation
@@ -267,15 +271,44 @@ The signed frame offset uses the same stack-slot coordinate convention as
 `BytecodeValueLocation`. Frame layout can therefore slide offsets directly into
 `StackLocation` without an unsigned remapping layer.
 
-`CanonicalFrameSlot` covers parameters, locals, temporaries, and managed call
-argument windows. Moving the managed frame pointer may reinterpret one physical
-cell from a caller's argument window as a callee parameter; it does not create
-a distinct outgoing-argument location kind. Canonical slots are
-interpreter-visible homes and participate in publication, recovery, and stack
-scanning. `SpillSlot` is compiler-owned temporary storage and is not
-automatically an interpreter home. The value representation attached to the
-occurrence or transfer determines the width, register class, and stack access
-required for either kind.
+`frame_offset` uniquely identifies the physical stack cell within the compiled
+frame layout. `kind` does not participate in storage identity or aliasing; it
+records the semantic role of an access and guides instruction generation. Two
+`StackLocation`s with the same frame offset alias even if their kinds differ.
+Code that compares stack occupancy, detects redundant transfers, or checks
+location conflicts must therefore compare physical storage by frame offset,
+not by the complete tagged value. `aliases()` makes that choice explicit.
+
+The semantic kinds are:
+
+- `IncomingParameter` for a parameter supplied in the active function's
+  canonical entry slots;
+- `LocalOrTemporary` for the active function's ordinary canonical slots;
+- `OutgoingCallArgument` for a caller-owned argument-window destination;
+- `SpillSlot` for compiler-owned temporary storage below the ordinary
+  local/temporary extent.
+
+The first three kinds are interpreter-visible canonical homes and participate
+as appropriate in publication, recovery, and stack scanning. `SpillSlot` is
+not automatically an interpreter home. Its finalized frame offset extends the
+compiled frame below all ordinary local and temporary slots, so allocator
+spills and an emergency parallel-transfer temporary cannot collide with a
+managed call argument window. Generated frame setup must claim that extended
+extent, and safepoint scanning must either describe live spill slots precisely
+or ensure every scanned spill cell contains a safe tagged value.
+
+The semantic kind lets a target select an addressing mode without changing
+storage identity. For example, AArch64 may access incoming parameters and
+ordinary frame state relative to `fp`, but prepare an outgoing argument window
+with `sp`-relative stores. Moving the managed frame pointer then reinterprets
+those same physical cells as the callee's `IncomingParameter` slots. The
+logical frame offset continues to name each cell across that transition; the
+kind selects how the particular access is emitted. This does not require
+literal one-at-a-time pushes: a call lowering may claim the complete outgoing
+window and use paired or individual stores.
+
+The value representation attached to the occurrence or transfer determines
+the width, register class, and stack access required for every kind.
 
 A fixed location requirement applies only at its exact occurrence point. It
 does not pin the original live range to that location. The allocator may split
@@ -479,7 +512,7 @@ by a register-only occurrence creates statically incompatible requirements and
 forces splitting:
 
 ```text
-entry def  FixedLocation(CanonicalFrameSlot(parameter_offset))
+entry def  FixedLocation(IncomingParameter(parameter_offset))
 later use  AnyRegister(GPR)
 
 stack fragment -> register fragment
@@ -552,9 +585,10 @@ This is a bring-up choice, not the final CloverVM calling convention:
 
 Stack-passed entry parameters, F64 entry parameters, calls, and instruction
 kinds without a bring-up lowering currently hard-fail instead of silently
-receiving an incomplete contract. Managed stack arguments use fixed
-`CanonicalFrameSlot` locations; they do not create a separate ABI constraint
-mechanism. ABI registers likewise remain ordinary fixed locations at exact
+receiving an incomplete contract. Managed entry parameters use fixed
+`IncomingParameter` locations, while call preparation uses fixed
+`OutgoingCallArgument` locations. They do not create separate ABI constraint
+mechanisms. ABI registers likewise remain ordinary fixed locations at exact
 occurrences.
 
 Constraint validation enforces:
@@ -1063,7 +1097,7 @@ first-class `BlockEdge` objects and ordered edge arguments.
 Calls are represented by ordinary allocation constraints:
 
 ```text
-managed Python arguments -> early or late uses in fixed canonical frame slots
+managed Python arguments -> early or late uses in fixed outgoing argument slots
 native arguments         -> early or late uses in fixed platform ABI registers
 result definitions       -> early or late defs in fixed result locations
 temporaries              -> target register classes
@@ -1071,13 +1105,16 @@ clobbers                 -> caller-saved register masks
 ```
 
 A managed Python call prepares the existing Clover argument window. Its
-arguments therefore use `FixedLocation(CanonicalFrameSlot(...))`; moving the
-managed frame pointer reinterprets those same cells as the callee's parameters.
-A native call instead uses fixed platform calling-convention registers. Both
-are ordinary fixed-location constraints, and both generate transfers when the
-surrounding value fragment occupies a different location. Native stack
-arguments can extend the platform-call lowering later if Clover actually
-supports them; they are not part of the managed stack-location vocabulary.
+arguments therefore use `FixedLocation(OutgoingCallArgument(...))`; moving the
+managed frame pointer reinterprets those same cells as
+`IncomingParameter` locations in the callee. The shared frame offset proves the
+physical alias, while the different semantic kinds let the target emit caller
+stores and callee accesses differently. A native call instead uses fixed
+platform calling-convention registers. Both are ordinary fixed-location
+constraints, and both generate transfers when the surrounding value fragment
+occupies a different location. Native stack arguments can extend the
+platform-call lowering later if Clover actually supports them; they are not
+part of the managed stack-location vocabulary.
 
 A value live across a call must be assigned to a non-clobbered location or split
 around the call. The target describes clobbers; the allocator decides whether to
