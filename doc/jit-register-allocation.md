@@ -94,9 +94,11 @@ each destination bundle to the newly created definition. The rewrite publishes
 a new CFG generation; the prepared problem, bundle IDs, liveness positions,
 and transfer schedule are then discarded.
 
-The materializer also produces `LocationAssignments` for executable operands,
-results, temporaries, and the transfer instructions it creates. These are
-post-materialization facts; they contain no unresolved split actions or
+The materializer also produces `LocationAssignments` for physical program
+values and instruction temporaries, including the transfer instructions it
+creates. An operand reads the location assigned to its `ProgramValueRef`; a
+result establishes the location assigned to its own `ProgramValueRef`. These
+are post-materialization facts; they contain no unresolved split actions or
 parallel-copy policy. A transfer from register to register later encodes as a
 move; stack to register encodes as a load; register to stack encodes as a
 store. Memory-to-memory transfers are resolved through a target-legal scratch
@@ -911,8 +913,8 @@ Clobber ranges remain separate because they are immutable reservations rather
 than allocatable bundles. They are sorted and coalesced once, then queried by
 the same predecessor-and-successor rule.
 Later allocation materialization combines the bundle result with bundle
-transfers, rewrites the CFG, and produces occurrence-oriented
-`LocationAssignments` for the new graph generation.
+transfers, rewrites the CFG, and produces program-value and
+instruction-temporary `LocationAssignments` for the new graph generation.
 
 The corresponding prepared bundle is conceptually:
 

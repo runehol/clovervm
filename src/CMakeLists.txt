@@ -133,6 +133,8 @@ add_library(libclovervm_objects OBJECT
     jit/jit_code_object.cpp
     jit/jit_code_object.h
     jit/live_range_scanner.cpp
+    jit/location_assignments.cpp
+    jit/location_assignments.h
     jit/location_constraint_splitter.cpp
     jit/code_cache_types.h
     jit/machine_address.h
