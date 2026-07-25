@@ -16,6 +16,7 @@ namespace cl::jit
     {
         constexpr PhysicalRegister x0(RegisterClass::GPR, 0);
         constexpr PhysicalRegister x1(RegisterClass::GPR, 1);
+        constexpr PhysicalRegister x2(RegisterClass::GPR, 2);
 
         LocationRequirement fixed(PhysicalLocation location)
         {
@@ -27,7 +28,7 @@ namespace cl::jit
         {
             constexpr std::array registers = {x0, x1};
             std::vector<RegisterClassDefinition> definitions;
-            definitions.emplace_back(RegisterClass::GPR, registers);
+            definitions.emplace_back(RegisterClass::GPR, registers, x2);
             return AllocationConstraints(std::move(definitions),
                                          std::move(overrides));
         }
@@ -74,8 +75,8 @@ namespace cl::jit
         RegisterAllocationResult allocation =
             allocate(*graph, constraints, prepared);
 
-        auto materialized =
-            materialize_allocation(session, *graph, prepared, allocation);
+        auto materialized = materialize_allocation(session, *graph, prepared,
+                                                   constraints, allocation);
 
         ASSERT_TRUE(materialized);
         EXPECT_EQ(x0, materialized.value()
@@ -119,8 +120,8 @@ namespace cl::jit
         RegisterAllocationResult allocation =
             allocate(*graph, constraints, prepared);
 
-        auto materialized =
-            materialize_allocation(session, *graph, prepared, allocation);
+        auto materialized = materialize_allocation(session, *graph, prepared,
+                                                   constraints, allocation);
 
         ASSERT_TRUE(materialized);
         EXPECT_EQ(x1, materialized.value().location_for(operation, 0).reg());
@@ -163,8 +164,8 @@ namespace cl::jit
             allocate(*graph, constraints, prepared);
         ASSERT_TRUE(allocation.transfers().sets().empty());
 
-        auto materialized =
-            materialize_allocation(session, *graph, prepared, allocation);
+        auto materialized = materialize_allocation(session, *graph, prepared,
+                                                   constraints, allocation);
 
         ASSERT_TRUE(materialized);
         EXPECT_EQ(x0, materialized.value()
@@ -203,8 +204,8 @@ namespace cl::jit
         RegisterAllocationResult allocation =
             allocate(*graph, constraints, prepared);
 
-        auto materialized =
-            materialize_allocation(session, *graph, prepared, allocation);
+        auto materialized = materialize_allocation(session, *graph, prepared,
+                                                   constraints, allocation);
 
         ASSERT_TRUE(materialized);
         ASSERT_EQ(2u, entry->instructions().size());
@@ -222,7 +223,7 @@ namespace cl::jit
             x0, materialized.value().location_for(ProgramValueRef(move)).reg());
     }
 
-    TEST(JitAllocationMaterializer, RejectsParallelTransfersBeforeRewriting)
+    TEST(JitAllocationMaterializer, InsertsParallelStackToRegisterTransfers)
     {
         CompilationSession session;
         GraphBuilder builder(session);
@@ -258,11 +259,133 @@ namespace cl::jit
         ASSERT_EQ(1u, allocation.transfers().sets().size());
         ASSERT_EQ(2u, allocation.transfers().sets()[0].transfers.size());
 
-        auto materialized =
-            materialize_allocation(session, *graph, prepared, allocation);
+        auto materialized = materialize_allocation(session, *graph, prepared,
+                                                   constraints, allocation);
+
+        ASSERT_TRUE(materialized);
+        ASSERT_EQ(4u, entry->instructions().size());
+        MovInstruction *lhs_move =
+            entry->instructions()[0]->as<MovInstruction>();
+        MovInstruction *rhs_move =
+            entry->instructions()[1]->as<MovInstruction>();
+        AndSMIInstruction *new_operation =
+            entry->instructions()[2]->as<AndSMIInstruction>();
+        EXPECT_EQ(lhs, lhs_move->source().instruction());
+        EXPECT_EQ(rhs, rhs_move->source().instruction());
+        EXPECT_EQ(lhs_move, new_operation->lhs().instruction());
+        EXPECT_EQ(rhs_move, new_operation->rhs().instruction());
+        EXPECT_TRUE(operation->is_detached());
+        EXPECT_TRUE(return_instruction->is_detached());
+    }
+
+    TEST(JitAllocationMaterializer, ResolvesRegisterCycleWithScratch)
+    {
+        CompilationSession session;
+        GraphBuilder builder(session);
+        Block *entry = builder.emplace_block();
+        ParameterInstruction *lhs =
+            builder.emplace_parameter<ParameterInstruction>(entry);
+        ParameterInstruction *rhs =
+            builder.emplace_parameter<ParameterInstruction>(entry);
+        AndSMIInstruction *operation =
+            builder.emplace_instruction<AndSMIInstruction>(
+                entry, TaggedValueRef(lhs), TaggedValueRef(rhs));
+        builder.emplace_instruction<ReturnInstruction>(
+            entry, TaggedValueRef(operation));
+        ControlFlowGraph *graph = builder.finalize();
+
+        std::vector<InstructionAllocationConstraints> overrides;
+        overrides.emplace_back(
+            lhs, std::vector<ProgramValueUseConstraint>{},
+            ResultConstraint{AccessTiming::Late,
+                             fixed(PhysicalLocation::reg(x0))});
+        overrides.emplace_back(
+            rhs, std::vector<ProgramValueUseConstraint>{},
+            ResultConstraint{AccessTiming::Late,
+                             fixed(PhysicalLocation::reg(x1))});
+        overrides.emplace_back(
+            operation,
+            std::vector<ProgramValueUseConstraint>{
+                {0, AccessTiming::Early, fixed(PhysicalLocation::reg(x1))},
+                {1, AccessTiming::Early, fixed(PhysicalLocation::reg(x0))}});
+        AllocationConstraints constraints =
+            constraints_with(std::move(overrides));
+        PreparedAllocationProblem prepared({}, {}, {}, {}, {}, {});
+        RegisterAllocationResult allocation =
+            allocate(*graph, constraints, prepared);
+
+        auto materialized = materialize_allocation(session, *graph, prepared,
+                                                   constraints, allocation);
+
+        ASSERT_TRUE(materialized);
+        ASSERT_EQ(5u, entry->instructions().size());
+        MovInstruction *save = entry->instructions()[0]->as<MovInstruction>();
+        MovInstruction *move_rhs =
+            entry->instructions()[1]->as<MovInstruction>();
+        MovInstruction *move_lhs =
+            entry->instructions()[2]->as<MovInstruction>();
+        AndSMIInstruction *new_operation =
+            entry->instructions()[3]->as<AndSMIInstruction>();
+        EXPECT_EQ(lhs, save->source().instruction());
+        EXPECT_EQ(rhs, move_rhs->source().instruction());
+        EXPECT_EQ(save, move_lhs->source().instruction());
+        EXPECT_EQ(move_lhs, new_operation->lhs().instruction());
+        EXPECT_EQ(move_rhs, new_operation->rhs().instruction());
+        EXPECT_EQ(
+            x2, materialized.value().location_for(ProgramValueRef(save)).reg());
+        EXPECT_EQ(
+            x0,
+            materialized.value().location_for(ProgramValueRef(move_rhs)).reg());
+        EXPECT_EQ(
+            x1,
+            materialized.value().location_for(ProgramValueRef(move_lhs)).reg());
+    }
+
+    TEST(JitAllocationMaterializer, ReportsAllStackCycleBeforeRewriting)
+    {
+        CompilationSession session;
+        GraphBuilder builder(session);
+        Block *entry = builder.emplace_block();
+        ParameterInstruction *lhs =
+            builder.emplace_parameter<ParameterInstruction>(entry);
+        ParameterInstruction *rhs =
+            builder.emplace_parameter<ParameterInstruction>(entry);
+        AndSMIInstruction *operation =
+            builder.emplace_instruction<AndSMIInstruction>(
+                entry, TaggedValueRef(lhs), TaggedValueRef(rhs));
+        ReturnInstruction *return_instruction =
+            builder.emplace_instruction<ReturnInstruction>(
+                entry, TaggedValueRef(operation));
+        ControlFlowGraph *graph = builder.finalize();
+
+        StackLocation first(StackLocationKind::IncomingParameter, 8);
+        StackLocation second(StackLocationKind::IncomingParameter, 16);
+        std::vector<InstructionAllocationConstraints> overrides;
+        overrides.emplace_back(
+            lhs, std::vector<ProgramValueUseConstraint>{},
+            ResultConstraint{AccessTiming::Late,
+                             fixed(PhysicalLocation::stack(first))});
+        overrides.emplace_back(
+            rhs, std::vector<ProgramValueUseConstraint>{},
+            ResultConstraint{AccessTiming::Late,
+                             fixed(PhysicalLocation::stack(second))});
+        overrides.emplace_back(operation,
+                               std::vector<ProgramValueUseConstraint>{
+                                   {0, AccessTiming::Early,
+                                    fixed(PhysicalLocation::stack(second))},
+                                   {1, AccessTiming::Early,
+                                    fixed(PhysicalLocation::stack(first))}});
+        AllocationConstraints constraints =
+            constraints_with(std::move(overrides));
+        PreparedAllocationProblem prepared({}, {}, {}, {}, {}, {});
+        RegisterAllocationResult allocation =
+            allocate(*graph, constraints, prepared);
+
+        auto materialized = materialize_allocation(session, *graph, prepared,
+                                                   constraints, allocation);
 
         ASSERT_TRUE(materialized.has_error());
-        EXPECT_EQ(RegisterAllocationError::RequiresParallelTransferResolution,
+        EXPECT_EQ(RegisterAllocationError::RequiresTransferSpillSlot,
                   materialized.error());
         ASSERT_EQ(2u, entry->instructions().size());
         EXPECT_EQ(operation, entry->instructions()[0]);

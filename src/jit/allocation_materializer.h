@@ -12,6 +12,7 @@ namespace cl::jit
     Result<LocationAssignments, RegisterAllocationError>
     materialize_allocation(CompilationSession &session, ControlFlowGraph &graph,
                            const PreparedAllocationProblem &problem,
+                           const AllocationConstraints &constraints,
                            const RegisterAllocationResult &allocation);
 
 }  // namespace cl::jit

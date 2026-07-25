@@ -1,6 +1,7 @@
 #include "jit/allocation_materializer.h"
 
 #include "jit/graph_rewriter.h"
+#include "jit/parallel_transfer_resolver.h"
 #include "runtime/fatal.h"
 
 #include <absl/container/flat_hash_map.h>
@@ -13,11 +14,17 @@ namespace cl::jit
 {
     namespace
     {
+        struct PlannedTransferSet
+        {
+            const BundleTransferSet *original;
+            ResolvedTransferPlan resolved;
+        };
+
         struct MaterializationPlan
         {
-            absl::flat_hash_map<const Block *, const BundleTransferSet *>
+            absl::flat_hash_map<const Block *, PlannedTransferSet>
                 block_entries;
-            absl::flat_hash_map<const Instruction *, const BundleTransferSet *>
+            absl::flat_hash_map<const Instruction *, PlannedTransferSet>
                 before_instructions;
             LocationAssignmentsBuilder existing_locations;
             std::vector<Instruction *> initial_value_by_bundle;
@@ -25,51 +32,66 @@ namespace cl::jit
 
         Result<MaterializationPlan, RegisterAllocationError>
         plan_materialization(const PreparedAllocationProblem &problem,
+                             const AllocationConstraints &constraints,
                              const RegisterAllocationResult &allocation)
         {
             MaterializationPlan result;
+            ScratchRegisters scratch_registers;
+            for(const RegisterClassDefinition &definition:
+                constraints.register_classes())
+            {
+                scratch_registers[static_cast<size_t>(
+                    definition.register_class())] =
+                    definition.scratch_register();
+            }
             for(const BundleTransferSet &set: allocation.transfers().sets())
             {
-                bool has_non_aliasing_transfer = false;
+                std::vector<ParallelTransfer> transfers;
+                transfers.reserve(set.transfers.size());
                 for(const BundleTransfer &transfer: set.transfers)
                 {
-                    PhysicalLocation source =
-                        allocation.locations().location_for(transfer.source);
-                    PhysicalLocation destination =
-                        allocation.locations().location_for(
-                            transfer.destination);
-                    if(source.aliases(destination))
+                    if(transfer.source.value() >= allocation.bundles().size() ||
+                       transfer.destination.value() >=
+                           allocation.bundles().size())
                     {
-                        continue;
+                        fatal("materialization transfer names no bundle");
                     }
-                    if(has_non_aliasing_transfer)
+                    RegisterClass register_class =
+                        allocation.bundles()[transfer.source.value()]
+                            .register_class;
+                    if(allocation.bundles()[transfer.destination.value()]
+                           .register_class != register_class)
                     {
-                        return Result<MaterializationPlan,
-                                      RegisterAllocationError>::
-                            error(RegisterAllocationError::
-                                      RequiresParallelTransferResolution);
+                        fatal("materialization transfer crosses register "
+                              "classes");
                     }
-                    if(source.is_stack() && destination.is_stack())
-                    {
-                        return Result<MaterializationPlan,
-                                      RegisterAllocationError>::
-                            error(RegisterAllocationError::
-                                      RequiresTransferScratch);
-                    }
-                    has_non_aliasing_transfer = true;
+                    transfers.push_back(
+                        {allocation.locations().location_for(transfer.source),
+                         allocation.locations().location_for(
+                             transfer.destination),
+                         register_class});
                 }
+                auto resolved =
+                    resolve_parallel_transfers(transfers, scratch_registers);
+                if(!resolved)
+                {
+                    return propagate_failure(std::move(resolved));
+                }
+                PlannedTransferSet planned{&set, std::move(resolved).value()};
 
                 bool inserted = false;
                 switch(set.point.kind())
                 {
                     case TransferPoint::Kind::BlockEntry:
-                        inserted = result.block_entries
-                                       .emplace(set.point.block(), &set)
-                                       .second;
+                        inserted =
+                            result.block_entries
+                                .emplace(set.point.block(), std::move(planned))
+                                .second;
                         break;
                     case TransferPoint::Kind::BeforeInstruction:
                         inserted = result.before_instructions
-                                       .emplace(set.point.instruction(), &set)
+                                       .emplace(set.point.instruction(),
+                                                std::move(planned))
                                        .second;
                         break;
                     case TransferPoint::Kind::BlockExit:
@@ -181,10 +203,8 @@ namespace cl::jit
         class AllocationMaterializer
         {
         public:
-            AllocationMaterializer(const RegisterAllocationResult &allocation,
-                                   MaterializationPlan plan)
-                : allocation_(&allocation),
-                  block_entries_(std::move(plan.block_entries)),
+            explicit AllocationMaterializer(MaterializationPlan plan)
+                : block_entries_(std::move(plan.block_entries)),
                   before_instructions_(std::move(plan.before_instructions)),
                   locations_(std::move(plan.existing_locations)),
                   current_values_(std::move(plan.initial_value_by_bundle))
@@ -198,7 +218,7 @@ namespace cl::jit
                 auto found = block_entries_.find(&block);
                 return found == block_entries_.end()
                            ? RewriteInsertion::none()
-                           : emit_transfers(context, *found->second);
+                           : emit_transfers(context, found->second);
             }
 
             RewriteInsertion before_instruction(RewriteContext &context,
@@ -209,7 +229,7 @@ namespace cl::jit
                 auto found = before_instructions_.find(&instruction);
                 return found == before_instructions_.end()
                            ? RewriteInsertion::none()
-                           : emit_transfers(context, *found->second);
+                           : emit_transfers(context, found->second);
             }
 
             LocationAssignments
@@ -220,8 +240,9 @@ namespace cl::jit
 
         private:
             RewriteInsertion emit_transfers(RewriteContext &context,
-                                            const BundleTransferSet &set)
+                                            const PlannedTransferSet &planned)
             {
+                const BundleTransferSet &set = *planned.original;
                 std::vector<Instruction *> sources;
                 sources.reserve(set.transfers.size());
                 for(const BundleTransfer &transfer: set.transfers)
@@ -235,65 +256,75 @@ namespace cl::jit
                     sources.push_back(source);
                 }
 
-                const BundleTransfer *transfer_to_emit = nullptr;
-                Instruction *source_to_emit = nullptr;
-                for(size_t index = 0; index < set.transfers.size(); ++index)
+                for(size_t index: planned.resolved.aliasing_transfers)
                 {
                     const BundleTransfer &transfer = set.transfers[index];
-                    PhysicalLocation source =
-                        allocation_->locations().location_for(transfer.source);
-                    PhysicalLocation destination =
-                        allocation_->locations().location_for(
-                            transfer.destination);
-                    if(!source.aliases(destination))
-                    {
-                        if(transfer_to_emit != nullptr)
-                        {
-                            fatal("unresolved parallel JIT transfer reached "
-                                  "materialization");
-                        }
-                        transfer_to_emit = &transfer;
-                        source_to_emit = sources[index];
-                        continue;
-                    }
                     current_values_[transfer.destination.value()] =
                         sources[index];
                 }
 
-                if(transfer_to_emit == nullptr)
+                if(planned.resolved.steps.empty())
                 {
                     return RewriteInsertion::none();
                 }
 
-                Instruction *move = nullptr;
-                switch(source_to_emit->value_representation())
+                RewriteInsertion::InstructionSequence instructions;
+                RewriteInsertion::TransferOutputs outputs;
+                std::vector<Instruction *> step_values;
+                step_values.reserve(planned.resolved.steps.size());
+                for(const ResolvedTransferStep &step: planned.resolved.steps)
                 {
-                    case ValueRepresentation::TaggedValue:
-                        move = context.make_instruction<MovInstruction>(
-                            TaggedValueRef(source_to_emit));
-                        break;
-                    case ValueRepresentation::F64:
-                        move = context.make_instruction<MovF64Instruction>(
-                            F64Ref(source_to_emit));
-                        break;
-                    case ValueRepresentation::None:
-                    case ValueRepresentation::Count:
-                        fatal("invalid JIT bundle transfer representation");
+                    Instruction *source = nullptr;
+                    switch(step.source.kind())
+                    {
+                        case ResolvedTransferSource::Kind::OriginalTransfer:
+                            source = sources[step.source.index()];
+                            break;
+                        case ResolvedTransferSource::Kind::Step:
+                            source = step_values[step.source.index()];
+                            break;
+                    }
+
+                    Instruction *move = nullptr;
+                    switch(source->value_representation())
+                    {
+                        case ValueRepresentation::TaggedValue:
+                            move = context.make_instruction<MovInstruction>(
+                                TaggedValueRef(source));
+                            break;
+                        case ValueRepresentation::F64:
+                            move = context.make_instruction<MovF64Instruction>(
+                                F64Ref(source));
+                            break;
+                        case ValueRepresentation::None:
+                        case ValueRepresentation::Count:
+                            fatal("invalid JIT bundle transfer "
+                                  "representation");
+                    }
+                    instructions.push_back(move);
+                    step_values.push_back(move);
+                    locations_.assign(ProgramValueRef(move), step.destination);
+
+                    if(step.original_parallel_transfer_index >= 0)
+                    {
+                        int transfer_index =
+                            step.original_parallel_transfer_index;
+                        const BundleTransfer &transfer =
+                            set.transfers[transfer_index];
+                        current_values_[transfer.destination.value()] = move;
+                        outputs.emplace_back(
+                            ProgramValueRef(sources[transfer_index]),
+                            ProgramValueRef(move));
+                    }
                 }
 
-                current_values_[transfer_to_emit->destination.value()] = move;
-                locations_.assign(ProgramValueRef(move),
-                                  allocation_->locations().location_for(
-                                      transfer_to_emit->destination));
                 return RewriteInsertion::insert_transfers(
-                    {move},
-                    {{ProgramValueRef(source_to_emit), ProgramValueRef(move)}});
+                    std::move(instructions), std::move(outputs));
             }
 
-            const RegisterAllocationResult *allocation_;
-            absl::flat_hash_map<const Block *, const BundleTransferSet *>
+            absl::flat_hash_map<const Block *, PlannedTransferSet>
                 block_entries_;
-            absl::flat_hash_map<const Instruction *, const BundleTransferSet *>
+            absl::flat_hash_map<const Instruction *, PlannedTransferSet>
                 before_instructions_;
             LocationAssignmentsBuilder locations_;
             std::vector<Instruction *> current_values_;
@@ -303,16 +334,17 @@ namespace cl::jit
     Result<LocationAssignments, RegisterAllocationError>
     materialize_allocation(CompilationSession &session, ControlFlowGraph &graph,
                            const PreparedAllocationProblem &problem,
+                           const AllocationConstraints &constraints,
                            const RegisterAllocationResult &allocation)
     {
-        auto plan_result = plan_materialization(problem, allocation);
+        auto plan_result =
+            plan_materialization(problem, constraints, allocation);
         if(!plan_result)
         {
             return propagate_failure(std::move(plan_result));
         }
 
-        AllocationMaterializer materializer(allocation,
-                                            std::move(plan_result).value());
+        AllocationMaterializer materializer(std::move(plan_result).value());
         GraphRewriter rewriter(session, graph);
         RewriteSummary summary =
             rewriter.rewrite_instructions(InstructionTraversal(), materializer);

@@ -4,7 +4,7 @@
 |---|---|
 | Document type | Design |
 | Status | Accepted |
-| Implementation | Prepared allocation, deterministic constraint splitting, transfer scheduling, conflict-free register/stack assignment, and singleton-transfer materialization implemented; parallel-transfer resolution and edge materialization remain open |
+| Implementation | Prepared allocation, deterministic constraint splitting, transfer scheduling, conflict-free register/stack assignment, and parallel-transfer materialization implemented; all-stack transfer cycles and edge materialization remain open |
 | Scope | Allocation constraints, allocator-local numbering, liveness, bundles, backtracking allocation, live-range splitting, block-edge transfers, clobbers, spills, and post-allocation materialization |
 | Owning layers | Target preparation owns occurrence constraints and physical-transfer capabilities; the generic register allocator owns numbering, liveness, bundles, splitting, allocation, spill decisions, and bundle transfers; generic allocation materialization resolves transfers, rewrites the Core CFG, and publishes occurrence locations; publication and recovery planners own canonical-state synchronization; machine-code emission only encodes the materialized graph |
 | Validated against | `tests/test_jit_allocation_constraints.cpp`, `tests/test_aarch64_allocation_constraints.cpp`, `tests/test_jit_register_allocator.cpp` |
@@ -138,8 +138,8 @@ LocationAssignments materialize_allocation(
     CompilationSession &session,
     ControlFlowGraph &graph,
     const PreparedAllocationProblem &problem,
-    const RegisterAllocationResult &allocation,
-    const PhysicalTransferConstraints &target);
+    const AllocationConstraints &constraints,
+    const RegisterAllocationResult &allocation);
 ```
 
 `RegisterAllocationResult` owns the final compiler-lifetime bundle partition,
@@ -150,10 +150,12 @@ graph generation. Recovery planning and machine-code emission consume that
 graph and its `LocationAssignments`.
 
 The initial materializer accepts block-entry and before-instruction transfer
-points with at most one non-aliasing transfer. It rejects parallel sets,
-block-exit and block-edge points, and memory-to-memory transfers requiring a
-scratch location before beginning the graph rewrite. Parallel resolution and
-edge placement are separate implementation slices.
+points. It resolves parallel register and mixed register/stack cycles with the
+scratch register declared by the bundle's register class. Acyclic
+memory-to-memory transfers also pass through that scratch. A cycle whose
+endpoints are all stack locations requires an emergency spill slot and is
+rejected with `RequiresTransferSpillSlot` before beginning the graph rewrite.
+Block-exit and block-edge placement remain separate implementation slices.
 
 Canonical VM homes and whether they currently contain an up-to-date value
 remain separate state. A canonical frame home is not silently converted into
@@ -1305,9 +1307,34 @@ A transfer contains only source and destination `BundleId`s. After bundle
 assignment, generic materialization maps those endpoints to locations, removes
 aliasing transfers, and resolves each remaining set together. This avoids move
 chains created when block arguments, spills, and instruction fixups are lowered
-independently. The resolver handles cycles with an available temporary register
-or stack location and handles memory-to-memory transfers through a legal target
-temporary.
+independently. The resolver handles register and mixed register/stack cycles
+with the non-allocatable scratch register declared by the target register
+class. Acyclic memory-to-memory transfers pass through the same scratch.
+
+The parallel resolver itself has no register-allocator dependency in its input
+vocabulary:
+
+```cpp
+struct ParallelTransfer
+{
+    PhysicalLocation source;
+    PhysicalLocation destination;
+    RegisterClass register_class;
+};
+
+using ScratchRegisters =
+    std::array<std::optional<PhysicalRegister>,
+               static_cast<size_t>(RegisterClass::Count)>;
+
+ResolvedTransferPlan resolve_parallel_transfers(
+    std::span<const ParallelTransfer> transfers,
+    const ScratchRegisters &scratch_registers);
+```
+
+Input position is the resolver's opaque value identity. Register-allocation
+materialization translates bundle transfers into this physical form; side-exit
+and canonical-state synchronization can build the same input without depending
+on bundles or allocation constraints.
 
 Materialization then inserts the resolved sequential transfers into Core IR and
 rewrites the destination-bundle occurrences to the definitions produced by
@@ -1337,22 +1364,14 @@ destination is already current. The first implementation should emit the
 straightforward resolved move sequence, inspect generated-code quality, and add
 this analysis only if redundant transfers are material in practice.
 
-### Open Question: Guaranteed Move Scratch
+### All-Stack Transfer Cycles
 
-Parallel-transfer resolution must account for a cycle at a point where every
-suitable register is occupied. Memory-to-memory transfers introduce the same
-requirement even without a cycle. The initial design has no ordinary compiler
-spill area, so it cannot yet use the complete fallback of a temporary stack
-slot and, when necessary, briefly spilling a victim register.
-
-The implementation must choose a complete policy for every register class
-before parallel transfers are emitted. Plausible choices are to reserve a scratch
-register, introduce an allocator-visible emergency stack area, add ordinary
-spill slots, or make scratch exhaustion abort this compilation and return to
-the interpreter. Probing the allocation map for a free register should remain
-the cheap first choice, but it is not a correctness guarantee. This question is
-separate from instruction-declared temporaries: a parallel-transfer cycle is known
-only after allocation.
+One declared register scratch is sufficient for register cycles, mixed
+register/stack cycles, and acyclic memory-to-memory transfers. It cannot
+preserve one stack value while loading another during a cycle whose endpoints
+are all stack locations. Until the allocator owns emergency spill slots, the
+resolver reports `RequiresTransferSpillSlot` during materialization preflight.
+No CFG changes are made on that path.
 
 ## Interpreter Locations and Spillability
 

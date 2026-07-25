@@ -19,9 +19,9 @@ namespace cl::jit
         UnsupportedSameAsInput,
         UnsupportedTransferPoint,
         RequiresConstraintFixup,
-        RequiresParallelTransferResolution,
         RequiresSplittingOrSpilling,
         RequiresTransferScratch,
+        RequiresTransferSpillSlot,
     };
 
     class RegisterAllocationResult

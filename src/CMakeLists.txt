@@ -146,6 +146,8 @@ add_library(libclovervm_objects OBJECT
     jit/platform_code_memory.h
     jit/physical_register.cpp
     jit/physical_register.h
+    jit/parallel_transfer_resolver.cpp
+    jit/parallel_transfer_resolver.h
     jit/preferred_code_memory.cpp
     jit/register_allocator.h
     jit/register_allocator.cpp
