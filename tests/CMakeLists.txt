@@ -24,6 +24,7 @@ target_sources(test_clovervm PRIVATE
 	test_aarch64_allocation_constraints.cpp
 	test_code_cache.cpp
 	test_jit_allocation_constraints.cpp
+	test_jit_allocation_materializer.cpp
 	test_jit_arena.cpp
 	test_jit_bytecode_state.cpp
 	test_jit_cfg.cpp

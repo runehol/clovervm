@@ -4,7 +4,7 @@
 |---|---|
 | Document type | Design |
 | Status | Accepted |
-| Implementation | Prepared allocation, deterministic constraint splitting, transfer scheduling, and conflict-free register/stack assignment implemented; post-allocation materialization remains open |
+| Implementation | Prepared allocation, deterministic constraint splitting, transfer scheduling, conflict-free register/stack assignment, and singleton-transfer materialization implemented; parallel-transfer resolution and edge materialization remain open |
 | Scope | Allocation constraints, allocator-local numbering, liveness, bundles, backtracking allocation, live-range splitting, block-edge transfers, clobbers, spills, and post-allocation materialization |
 | Owning layers | Target preparation owns occurrence constraints and physical-transfer capabilities; the generic register allocator owns numbering, liveness, bundles, splitting, allocation, spill decisions, and bundle transfers; generic allocation materialization resolves transfers, rewrites the Core CFG, and publishes occurrence locations; publication and recovery planners own canonical-state synchronization; machine-code emission only encodes the materialized graph |
 | Validated against | `tests/test_jit_allocation_constraints.cpp`, `tests/test_aarch64_allocation_constraints.cpp`, `tests/test_jit_register_allocator.cpp` |
@@ -148,6 +148,12 @@ problem's live-range identities, so materialization consumes both products
 before either is discarded. `LocationAssignments` refer to the newly published
 graph generation. Recovery planning and machine-code emission consume that
 graph and its `LocationAssignments`.
+
+The initial materializer accepts block-entry and before-instruction transfer
+points with at most one non-aliasing transfer. It rejects parallel sets,
+block-exit and block-edge points, and memory-to-memory transfers requiring a
+scratch location before beginning the graph rewrite. Parallel resolution and
+edge placement are separate implementation slices.
 
 Canonical VM homes and whether they currently contain an up-to-date value
 remain separate state. A canonical frame home is not silently converted into

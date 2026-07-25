@@ -17,8 +17,11 @@ namespace cl::jit
     {
         UnsupportedSnapshotConsumer,
         UnsupportedSameAsInput,
+        UnsupportedTransferPoint,
         RequiresConstraintFixup,
+        RequiresParallelTransferResolution,
         RequiresSplittingOrSpilling,
+        RequiresTransferScratch,
     };
 
     class RegisterAllocationResult

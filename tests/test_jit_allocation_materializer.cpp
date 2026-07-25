@@ -1,0 +1,272 @@
+#include "jit/allocation_materializer.h"
+
+#include "jit/graph_builder.h"
+
+#include <gtest/gtest.h>
+
+#include <array>
+#include <optional>
+#include <span>
+#include <utility>
+#include <vector>
+
+namespace cl::jit
+{
+    namespace
+    {
+        constexpr PhysicalRegister x0(RegisterClass::GPR, 0);
+        constexpr PhysicalRegister x1(RegisterClass::GPR, 1);
+
+        LocationRequirement fixed(AllocationLocation location)
+        {
+            return LocationRequirement::fixed(location);
+        }
+
+        AllocationConstraints constraints_with(
+            std::vector<InstructionAllocationConstraints> overrides)
+        {
+            constexpr std::array registers = {x0, x1};
+            std::vector<RegisterClassDefinition> definitions;
+            definitions.emplace_back(RegisterClass::GPR, registers);
+            return AllocationConstraints(std::move(definitions),
+                                         std::move(overrides));
+        }
+
+        RegisterAllocationResult
+        allocate(const ControlFlowGraph &graph,
+                 const AllocationConstraints &constraints,
+                 PreparedAllocationProblem &prepared)
+        {
+            auto prepared_result =
+                prepare_register_allocation(graph, constraints);
+            EXPECT_TRUE(prepared_result);
+            prepared = std::move(prepared_result).value();
+            auto allocation_result = assign_bundles(prepared, constraints);
+            EXPECT_TRUE(allocation_result);
+            return std::move(allocation_result).value();
+        }
+    }  // namespace
+
+    TEST(JitAllocationMaterializer, PublishesExistingValueLocations)
+    {
+        CompilationSession session;
+        GraphBuilder builder(session);
+        Block *entry = builder.emplace_block();
+        ParameterInstruction *parameter =
+            builder.emplace_parameter<ParameterInstruction>(entry);
+        ReturnInstruction *return_instruction =
+            builder.emplace_instruction<ReturnInstruction>(
+                entry, TaggedValueRef(parameter));
+        ControlFlowGraph *graph = builder.finalize();
+
+        std::vector<InstructionAllocationConstraints> overrides;
+        overrides.emplace_back(
+            parameter, std::vector<ProgramValueUseConstraint>{},
+            ResultConstraint{AccessTiming::Late,
+                             fixed(AllocationLocation::reg(x0))});
+        overrides.emplace_back(
+            return_instruction,
+            std::vector<ProgramValueUseConstraint>{
+                {0, AccessTiming::Early, fixed(AllocationLocation::reg(x0))}});
+        AllocationConstraints constraints =
+            constraints_with(std::move(overrides));
+        PreparedAllocationProblem prepared({}, {}, {}, {}, {}, {});
+        RegisterAllocationResult allocation =
+            allocate(*graph, constraints, prepared);
+
+        auto materialized =
+            materialize_allocation(session, *graph, prepared, allocation);
+
+        ASSERT_TRUE(materialized);
+        EXPECT_EQ(x0, materialized.value()
+                          .location_for(ProgramValueRef(parameter))
+                          .reg());
+        ASSERT_EQ(1u, entry->instructions().size());
+        EXPECT_EQ(return_instruction, entry->instructions().front());
+    }
+
+    TEST(JitAllocationMaterializer, PublishesInstructionTemporaryLocations)
+    {
+        CompilationSession session;
+        GraphBuilder builder(session);
+        Block *entry = builder.emplace_block();
+        ParameterInstruction *parameter =
+            builder.emplace_parameter<ParameterInstruction>(entry);
+        AndSMIInstruction *operation =
+            builder.emplace_instruction<AndSMIInstruction>(
+                entry, TaggedValueRef(parameter), TaggedValueRef(parameter));
+        ReturnInstruction *return_instruction =
+            builder.emplace_instruction<ReturnInstruction>(
+                entry, TaggedValueRef(operation));
+        ControlFlowGraph *graph = builder.finalize();
+
+        std::vector<InstructionAllocationConstraints> overrides;
+        overrides.emplace_back(
+            parameter, std::vector<ProgramValueUseConstraint>{},
+            ResultConstraint{AccessTiming::Late,
+                             fixed(AllocationLocation::reg(x0))});
+        overrides.emplace_back(
+            operation, std::vector<ProgramValueUseConstraint>{}, std::nullopt,
+            std::vector<TemporaryConstraint>{TemporaryConstraint(
+                LocationRequirement::fixed(AllocationLocation::reg(x1)))});
+        overrides.emplace_back(
+            return_instruction,
+            std::vector<ProgramValueUseConstraint>{
+                {0, AccessTiming::Early, fixed(AllocationLocation::reg(x0))}});
+        AllocationConstraints constraints =
+            constraints_with(std::move(overrides));
+        PreparedAllocationProblem prepared({}, {}, {}, {}, {}, {});
+        RegisterAllocationResult allocation =
+            allocate(*graph, constraints, prepared);
+
+        auto materialized =
+            materialize_allocation(session, *graph, prepared, allocation);
+
+        ASSERT_TRUE(materialized);
+        EXPECT_EQ(x1, materialized.value().location_for(operation, 0).reg());
+    }
+
+    TEST(JitAllocationMaterializer, UsesGraphRewriterTraversalForEveryBlock)
+    {
+        CompilationSession session;
+        GraphBuilder builder(session);
+        Block *entry = builder.emplace_block();
+        Block *exit = builder.emplace_block();
+        ParameterInstruction *entry_parameter =
+            builder.emplace_parameter<ParameterInstruction>(entry);
+        std::array<ProgramValueRef, 1> arguments = {
+            ProgramValueRef(entry_parameter)};
+        BlockEdge *edge = builder.make_block_edge(
+            entry, exit, std::span<const ProgramValueRef>(arguments));
+        builder.emplace_instruction<UnconditionalBranchInstruction>(entry,
+                                                                    edge);
+        ParameterInstruction *exit_parameter =
+            builder.emplace_parameter<ParameterInstruction>(exit);
+        ReturnInstruction *return_instruction =
+            builder.emplace_instruction<ReturnInstruction>(
+                exit, TaggedValueRef(exit_parameter));
+        ControlFlowGraph *graph = builder.finalize();
+
+        std::vector<InstructionAllocationConstraints> overrides;
+        overrides.emplace_back(
+            entry_parameter, std::vector<ProgramValueUseConstraint>{},
+            ResultConstraint{AccessTiming::Late,
+                             fixed(AllocationLocation::reg(x0))});
+        overrides.emplace_back(
+            return_instruction,
+            std::vector<ProgramValueUseConstraint>{
+                {0, AccessTiming::Early, fixed(AllocationLocation::reg(x0))}});
+        AllocationConstraints constraints =
+            constraints_with(std::move(overrides));
+        PreparedAllocationProblem prepared({}, {}, {}, {}, {}, {});
+        RegisterAllocationResult allocation =
+            allocate(*graph, constraints, prepared);
+        ASSERT_TRUE(allocation.transfers().sets().empty());
+
+        auto materialized =
+            materialize_allocation(session, *graph, prepared, allocation);
+
+        ASSERT_TRUE(materialized);
+        EXPECT_EQ(x0, materialized.value()
+                          .location_for(ProgramValueRef(entry_parameter))
+                          .reg());
+        EXPECT_EQ(x0, materialized.value()
+                          .location_for(ProgramValueRef(exit_parameter))
+                          .reg());
+    }
+
+    TEST(JitAllocationMaterializer, InsertsSingletonStackToRegisterTransfer)
+    {
+        CompilationSession session;
+        GraphBuilder builder(session);
+        Block *entry = builder.emplace_block();
+        ParameterInstruction *parameter =
+            builder.emplace_parameter<ParameterInstruction>(entry);
+        ReturnInstruction *old_return =
+            builder.emplace_instruction<ReturnInstruction>(
+                entry, TaggedValueRef(parameter));
+        ControlFlowGraph *graph = builder.finalize();
+
+        StackLocation incoming(StackLocationKind::IncomingParameter, 4);
+        std::vector<InstructionAllocationConstraints> overrides;
+        overrides.emplace_back(
+            parameter, std::vector<ProgramValueUseConstraint>{},
+            ResultConstraint{AccessTiming::Late,
+                             fixed(AllocationLocation::stack(incoming))});
+        overrides.emplace_back(
+            old_return,
+            std::vector<ProgramValueUseConstraint>{
+                {0, AccessTiming::Early, fixed(AllocationLocation::reg(x0))}});
+        AllocationConstraints constraints =
+            constraints_with(std::move(overrides));
+        PreparedAllocationProblem prepared({}, {}, {}, {}, {}, {});
+        RegisterAllocationResult allocation =
+            allocate(*graph, constraints, prepared);
+
+        auto materialized =
+            materialize_allocation(session, *graph, prepared, allocation);
+
+        ASSERT_TRUE(materialized);
+        ASSERT_EQ(2u, entry->instructions().size());
+        MovInstruction *move = entry->instructions()[0]->as<MovInstruction>();
+        ReturnInstruction *new_return =
+            entry->instructions()[1]->as<ReturnInstruction>();
+        EXPECT_EQ(parameter, move->source().instruction());
+        EXPECT_EQ(move, new_return->return_value().instruction());
+        EXPECT_TRUE(old_return->is_detached());
+        EXPECT_EQ(4, materialized.value()
+                         .location_for(ProgramValueRef(parameter))
+                         .stack()
+                         .frame_offset());
+        EXPECT_EQ(
+            x0, materialized.value().location_for(ProgramValueRef(move)).reg());
+    }
+
+    TEST(JitAllocationMaterializer, RejectsParallelTransfersBeforeRewriting)
+    {
+        CompilationSession session;
+        GraphBuilder builder(session);
+        Block *entry = builder.emplace_block();
+        ParameterInstruction *lhs =
+            builder.emplace_parameter<ParameterInstruction>(entry);
+        ParameterInstruction *rhs =
+            builder.emplace_parameter<ParameterInstruction>(entry);
+        AndSMIInstruction *operation =
+            builder.emplace_instruction<AndSMIInstruction>(
+                entry, TaggedValueRef(lhs), TaggedValueRef(rhs));
+        ReturnInstruction *return_instruction =
+            builder.emplace_instruction<ReturnInstruction>(
+                entry, TaggedValueRef(operation));
+        ControlFlowGraph *graph = builder.finalize();
+
+        std::vector<InstructionAllocationConstraints> overrides;
+        overrides.emplace_back(
+            lhs, std::vector<ProgramValueUseConstraint>{},
+            ResultConstraint{AccessTiming::Late,
+                             fixed(AllocationLocation::stack(StackLocation(
+                                 StackLocationKind::IncomingParameter, 4)))});
+        overrides.emplace_back(
+            rhs, std::vector<ProgramValueUseConstraint>{},
+            ResultConstraint{AccessTiming::Late,
+                             fixed(AllocationLocation::stack(StackLocation(
+                                 StackLocationKind::IncomingParameter, 3)))});
+        AllocationConstraints constraints =
+            constraints_with(std::move(overrides));
+        PreparedAllocationProblem prepared({}, {}, {}, {}, {}, {});
+        RegisterAllocationResult allocation =
+            allocate(*graph, constraints, prepared);
+        ASSERT_EQ(1u, allocation.transfers().sets().size());
+        ASSERT_EQ(2u, allocation.transfers().sets()[0].transfers.size());
+
+        auto materialized =
+            materialize_allocation(session, *graph, prepared, allocation);
+
+        ASSERT_TRUE(materialized.has_error());
+        EXPECT_EQ(RegisterAllocationError::RequiresParallelTransferResolution,
+                  materialized.error());
+        ASSERT_EQ(2u, entry->instructions().size());
+        EXPECT_EQ(operation, entry->instructions()[0]);
+        EXPECT_EQ(return_instruction, entry->instructions()[1]);
+    }
+
+}  // namespace cl::jit
