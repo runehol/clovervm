@@ -6,7 +6,7 @@
 | Status | Accepted |
 | Implementation | Prepared allocation problem and initial conflict-free register assignment implemented; post-allocation materialization remains open |
 | Scope | Allocation constraints, allocator-local numbering, liveness, bundles, backtracking allocation, live-range splitting, block-edge transfers, clobbers, spills, and post-allocation materialization |
-| Owning layers | Target preparation owns occurrence constraints and physical-transfer capabilities; the generic register allocator owns numbering, liveness, bundles, splitting, allocation, spill decisions, and parallel transfers; generic allocation materialization resolves transfers and physicalizes instruction occurrences; publication and recovery planners own canonical-state synchronization; machine-code emission only encodes the materialized program |
+| Owning layers | Target preparation owns occurrence constraints and physical-transfer capabilities; the generic register allocator owns numbering, liveness, bundles, splitting, allocation, spill decisions, and bundle transfers; generic allocation materialization resolves transfers, rewrites the Core CFG, and publishes occurrence locations; publication and recovery planners own canonical-state synchronization; machine-code emission only encodes the materialized graph |
 | Validated against | `tests/test_jit_allocation_constraints.cpp`, `tests/test_aarch64_allocation_constraints.cpp`, `tests/test_jit_register_allocator.cpp` |
 | Supersedes | The open register-allocation direction in [JIT Compiler and IR](jit-compiler-and-ir.md) and [JIT Compiler Bring-up Plan](jit-compiler-bring-up-plan.md) |
 
@@ -17,9 +17,9 @@ target-independent SSA CFG with block parameters and edge arguments. Target
 backends describe physical requirements through `AllocationConstraints`; the
 generic allocator computes liveness, splits ranges, assigns locations, and
 produces a `RegisterAllocationResult`. Generic allocation materialization then
-turns that result into an `AllocatedProgram` whose executable instruction
-occurrences use physical registers and whose allocator-induced transfers are
-explicit.
+resolves its bundle transfers in parallel, inserts the resulting transfer
+instructions into Core IR, rewrites the affected uses, and publishes physical
+locations for the resulting instruction occurrences.
 
 Finite implementation work is tracked separately in
 [JIT Register Allocation Implementation Progress](jit-register-allocation-progress.md).
@@ -43,12 +43,12 @@ BackendPreparation
     physical-transfer capabilities
 
 RegisterAllocationResult
-    LocationAssignments
-    TransferSchedule
+    BundleLocationAssignments
+    BundleTransferSchedule
 
-AllocatedProgram
-    physical registers for executable instruction occurrences
-    resolved sequential physical transfers
+MaterializedAllocation
+    rewritten Core CFG
+    LocationAssignments
 
 machine code
 ```
@@ -58,13 +58,11 @@ anchored occurrences. ABI registers and stack locations use the same fixed
 constraint mechanism as every other fixed occurrence; there is no separate ABI
 constraint class.
 
-`LocationAssignments` contain post-allocation facts. They map value
-occurrences that require physical existence to registers, allocator spill
-slots, canonical frame slots, or other explicitly supported locations at the
-relevant points. They do not contain moves, loads, stores, split actions, or
-control-flow insertion policy.
+`BundleLocationAssignments` are allocator-local facts. They map each active
+bundle to the register, allocator spill slot, canonical frame slot, or other
+explicitly supported location selected for all of its fragments.
 
-`TransferSchedule` contains actions introduced by allocation:
+`BundleTransferSchedule` records value flow introduced by allocation:
 
 - connectors between split children;
 - fixed-location and reused-input fixups;
@@ -72,43 +70,71 @@ control-flow insertion policy.
 - block-edge parallel transfers;
 - spills and reloads.
 
-Transfers at one insertion point retain parallel semantics until generic
-materialization resolves them.
+Each transfer names only its source and destination bundles. Transfers sharing
+one structural point and phase are grouped into one parallel set; phases at the
+same point remain ordered. Transfers do not name source or destination live
+ranges, ProgramValueRefs, or physical locations: bundle fragments retain source
+provenance, and bundle assignment supplies the locations later.
 
-The generic materializer combines the original Core CFG, location facts,
-parallel transfers, and target-provided physical-transfer capabilities. Its
-result is an `AllocatedProgram`: a compiler-lifetime overlay whose semantic
-instructions still refer to immutable Core instructions, but whose executable
-operands, results, and temporaries name physical registers. It also contains
-the resolved sequential transfers to emit at block boundaries, instruction
-Early and Late points, and first-class block edges.
+The generic materializer combines the published Core CFG, prepared allocation
+problem, bundle locations, bundle transfers, and target-provided
+physical-transfer capabilities. It resolves every transfer set in parallel,
+inserts ordinary Core transfer instructions wherever the transfer point has a
+legal CFG sequence position, and rewrites precisely the occurrences covered by
+each destination bundle to the newly created definition. The rewrite publishes
+a new CFG generation; the prepared problem, bundle IDs, liveness positions,
+and transfer schedule are then discarded.
 
-The materializer introduces physical transfers, not target machine
-instructions. A transfer from register to register later encodes as a move;
-stack to register encodes as a load; register to stack encodes as a store.
-Memory-to-memory transfers are resolved through a target-legal scratch location
-before emission. The target emitter chooses the actual instruction encoding
-and addressing mode but makes no allocation, splitting, or move-order decision.
+The materializer also produces `LocationAssignments` for executable operands,
+results, temporaries, and the transfer instructions it creates. These are
+post-materialization facts; they contain no unresolved split actions or
+parallel-copy policy. A transfer from register to register later encodes as a
+move; stack to register encodes as a load; register to stack encodes as a
+store. Memory-to-memory transfers are resolved through a target-legal scratch
+location before the CFG rewrite is committed. The target emitter chooses the
+actual instruction encoding and addressing mode but makes no allocation,
+splitting, or move-order decision.
 
 The intended type boundary is:
 
 ```cpp
-struct RegisterAllocationResult
+struct BundleTransfer
 {
-    LocationAssignments locations;
-    TransferSchedule transfers;
+    BundleId source;
+    BundleId destination;
 };
 
-AllocatedProgram materialize_allocation(
-    const ControlFlowGraph &graph,
+enum class TransferPhase : uint8_t
+{
+    Regular,
+};
+
+struct BundleTransferSet
+{
+    TransferPoint point;
+    TransferPhase phase;
+    std::vector<BundleTransfer> transfers;
+};
+
+struct RegisterAllocationResult
+{
+    BundleLocationAssignments locations;
+    std::vector<BundleTransferSet> transfers;
+};
+
+LocationAssignments materialize_allocation(
+    CompilationSession &session,
+    ControlFlowGraph &graph,
+    const PreparedAllocationProblem &problem,
     const RegisterAllocationResult &allocation,
     const PhysicalTransferConstraints &target);
 ```
 
-`AllocatedProgram` and `RegisterAllocationResult` own their compiler-lifetime
-tables and borrow immutable Core instructions and edges from the still-live
-compilation session. Recovery planning consumes `LocationAssignments`;
-machine-code emission consumes `AllocatedProgram`.
+`RegisterAllocationResult` owns compiler-lifetime tables and borrows the
+prepared problem's bundle identities. Materialization consumes it before either
+object is discarded. `LocationAssignments` refer to the newly published graph
+generation. Recovery planning and machine-code emission consume that graph and
+its `LocationAssignments`.
 
 Canonical VM homes and whether they currently contain an up-to-date value
 remain separate state. A canonical frame home is not silently converted into
@@ -312,8 +338,9 @@ the width, register class, and stack access required for every kind.
 
 A fixed location requirement applies only at its exact occurrence point. It
 does not pin the original live range to that location. The allocator may split
-immediately before or after the occurrence, subject to its use/def and
-Early/Late timing, and connect the adjacent fragments with a transfer.
+at the nearest legal structural transfer point before an incompatible use or
+after the complete instruction containing an incompatible def, then connect
+the adjacent fragments with a transfer.
 Fragments constrained to a fixed stack location are assigned that location
 directly rather than entering a register probe queue. Their adjacent
 register-required children remain ordinary register bundles.
@@ -321,7 +348,7 @@ register-required children remain ordinary register bundles.
 ## Allocation Constraints
 
 An allocation constraint is anchored to a structural occurrence in prepared
-Core, not to a numeric program position. Target-authored constraints are
+Core, not to a numeric liveness position. Target-authored constraints are
 grouped by instruction:
 
 ```text
@@ -617,33 +644,35 @@ constraint APIs, and operand-index arithmetic use `uint32_t`. Widening at the
 representation boundary avoids narrow-integer wrap semantics in ordinary
 compiler loops.
 
-## Durable Anchors and Ephemeral Positions
+## Durable Anchors, Liveness Positions, and Transfer Points
 
 Constraints are durable within a backend preparation and allocation attempt
 because they are anchored to instructions, blocks, block parameters, and block
-edges. They are not anchored to integer positions.
+edges. They are not anchored to integer liveness positions.
 
 Immediately before allocation, the allocator builds an ephemeral numbering from
-the current prepared CFG order. The numbering uses two positions per executable
-instruction and two positions for each relevant block boundary:
+the current prepared CFG order. These `LivenessPosition`s describe occupancy,
+not places where instructions may be inserted. The numbering uses two
+positions per executable instruction and two positions for each relevant block
+boundary:
 
 ```text
-position = 2 * index + phase
+liveness_position = 2 * index + phase
 
-phase 0: before
-phase 1: after
+phase 0: Early
+phase 1: Late
 ```
 
-Early operands occur at `before`; late operands occur at `after`. Access kind
+`AccessTiming` determines whether an occurrence is Early or Late. Access kind
 does not determine timing. This lets a fixed-register call argument use and a
 fixed-register call result definition share the same physical register at
-different phases of the same instruction. It also makes same-as-input and
-destructive-operation lowering explicit without treating two SSA values as one
-value.
+different liveness positions of the same instruction. It also makes
+same-as-input and destructive-operation lowering explicit without treating two
+SSA values as one value.
 
 Block entry and block exit each provide use and definition phases. This gives
-block parameters, edge arguments, and edge moves stable allocation points
-without making integer positions durable:
+block parameters and edge arguments stable allocation positions without making
+integer positions durable:
 
 ```text
 predecessor block exit use   -> edge arguments are live here
@@ -654,23 +683,61 @@ Allocator numbering, liveness, live ranges, bundles, and partial assignments are
 local scratch state. The allocator does not publish or incrementally maintain a
 position map.
 
-Allocator ranges use one uniform half-open representation:
+`TransferPoint` is a separate structural coordinate naming a zero-width place
+where generic materialization may insert instructions:
 
 ```cpp
-struct ProgramRange
+class TransferPoint
 {
-    ProgramPoint start;  // inclusive
-    ProgramPoint end;    // exclusive
+    // BeforeInstruction, BlockEntry, BlockExit, or BlockEdge.
 };
 ```
 
-Half-open ranges make adjacency and splitting exact. Splitting `[a, c)` at
-`b` produces `[a, b)` and `[b, c)` without overlap, a gap, or predecessor
-arithmetic. `ProgramRange` contains no block, definition, occurrence, or
-allocation metadata. It may represent the empty intermediate range `[p, p)`,
-but every live range and bundle fragment is nonempty. Whether a point is a
+The intra-block transfer point between instructions A and B is canonically
+`BeforeInstruction(B)`. It translates to B's Early liveness position when
+splitting range geometry. A transfer point occupies no liveness position: it
+maps the incoming state immediately before the boundary to the outgoing state
+immediately after it.
+
+Allocator ranges use one uniform half-open representation:
+
+```cpp
+struct LivenessRange
+{
+    LivenessPosition start;  // inclusive
+    LivenessPosition end;    // exclusive
+};
+```
+
+Half-open ranges make adjacency and splitting exact. Splitting `[a, c)` at the
+liveness boundary `b` produces `[a, b)` and `[b, c)` without overlap, a gap, or
+predecessor arithmetic. The left range does not contain `b`; its assigned
+location supplies the transfer point's incoming value. The right range does
+contain `b`; its assigned location receives the outgoing value. The separate
+bundle transfer connects those two states.
+
+`LivenessRange` contains no block, definition, occurrence, or allocation
+metadata. It may represent the empty intermediate range `[p, p)`, but every
+live range and bundle fragment is nonempty. Whether a transfer point maps to a
 legal split boundary is enforced by the allocator operation performing the
-split rather than by `ProgramRange`.
+split rather than by `LivenessRange`.
+
+The minimum liveness coverage of one occurrence depends on both timing and
+access kind:
+
+| Occurrence | Minimum liveness range |
+|---|---|
+| Early use | `[instruction.Early, instruction.Late)` |
+| Late use | `[instruction.Early, next_instruction.Early)` |
+| Early def | `[instruction.Early, next_instruction.Early)` |
+| Late def | `[instruction.Late, next_instruction.Early)` |
+
+Early defs and Late uses occupy a location throughout the complete
+instruction. The live-range scanner computes this table directly; it must not
+assume every occurrence is covered by
+`[occurrence.position, occurrence.position.next())`.
+For the final instruction in a block, `next_instruction.Early` means the
+corresponding block-exit liveness position.
 
 ## Live Ranges and Bundles
 
@@ -681,11 +748,11 @@ the predecessor exit and its corresponding block parameter is a distinct
 definition at the successor entry. Consequently, each live range is local to
 one block even though preparation handles the complete multi-block CFG.
 
-A dead definition still receives the minimal half-open range from its
-definition point to the next program point. Preparation does not special-case
-dead `Uninitialized` or other definitions out of the allocation model.
+A dead definition still receives the minimum half-open liveness range required
+by the table above. Preparation does not special-case dead `Uninitialized` or
+other definitions out of the allocation model.
 
-The live range retains its stable ID, original `ProgramRange`, origin, and
+The live range retains its stable ID, original `LivenessRange`, origin, and
 ordered occurrence IDs. A ProgramValue origin records its `ProgramValueRef`; an
 anonymous temporary origin records its instruction and temporary index. Its
 register class is derived once from the ProgramValue representation or
@@ -697,7 +764,7 @@ The initial allocator-local shape is conceptually:
 ```cpp
 struct Occurrence
 {
-    ProgramPoint point;
+    LivenessPosition position;
     LiveRangeId live_range;
     OccurrenceKind kind;
     OccurrenceAnchor anchor;
@@ -706,7 +773,7 @@ struct Occurrence
 
 struct FixedLocationConstraint
 {
-    ProgramPoint point;
+    LivenessPosition position;
     AllocationLocation location;
     LiveRangeId live_range;
     OccurrenceId occurrence;
@@ -714,7 +781,7 @@ struct FixedLocationConstraint
 
 struct LiveRange
 {
-    ProgramRange range;
+    LivenessRange range;
     LiveRangeOrigin origin;
     RegisterClass register_class;
     std::vector<OccurrenceId> occurrences;
@@ -733,7 +800,7 @@ live range IDs. It owns an ordered list of copied allocation fragments:
 ```cpp
 struct BundleFragment
 {
-    ProgramRange range;
+    LivenessRange range;
     LiveRangeId source;
 };
 ```
@@ -789,7 +856,7 @@ The selected allocation is not stored in the prepared bundle. A separate
 bundle-assignment table records the physical register or later spill location
 chosen for each active bundle.
 
-The initial register-only assignment stage uses:
+The currently implemented register-only assignment stage uses:
 
 ```cpp
 class BundleRegisterAssignments
@@ -814,11 +881,22 @@ therefore cost `O(F log A)` for `F` bundle fragments and `A` active fragments
 on the register. A bundle must be removed from this index before splitting or
 otherwise mutating its fragments.
 
+Constraint normalization generalizes the forward table to
+`BundleLocationAssignments`, whose entries are `AllocationLocation`s. Fixed
+stack bundles are assigned directly; register bundles continue to use the same
+register worklist and occupancy indexes. Stack occupancy is keyed by frame
+offset because that identifies the physical cell within one allocation
+problem. The exact `StackLocationKind` on each fixed occurrence is nevertheless
+retained for final `LocationAssignments`, because it selects addressing and
+instruction-generation policy even when two semantic stack locations alias the
+same cell.
+
 Clobber ranges remain separate because they are immutable reservations rather
 than allocatable bundles. They are sorted and coalesced once, then queried by
 the same predecessor-and-successor rule.
-Later location materialization converts the bundle result into durable
-occurrence-oriented `LocationAssignments`.
+Later allocation materialization combines the bundle result with bundle
+transfers, rewrites the CFG, and produces occurrence-oriented
+`LocationAssignments` for the new graph generation.
 
 The corresponding prepared bundle is conceptually:
 
@@ -843,22 +921,23 @@ may evict conflicting allocated bundles. Both are recomputed for children
 created by splitting.
 
 A bundle's allocation priority is the sum of the lengths of its fragments in
-allocator program-point space. The priority queue therefore considers bundles
-covering more code first, while the physical register maps are relatively
-empty. Fixed-location constraints do not receive a separate priority boost.
+allocator liveness-position space. The priority queue therefore considers
+bundles covering more code first, while the physical register maps are
+relatively empty. Fixed-location constraints do not receive a separate priority
+boost.
 
 Ordinary `AnyRegister(register_class)` requirements are implicit in each live
 range's register class and are not copied into allocator occurrences. The
 allocator retains every ordinary use and def occurrence for liveness,
 constraint-driven splitting, spill weight, diagnostics, and later rewriting,
 but only nondefault fixed-location constraints need sparse requirement records.
-A fixed constraint records its program point, allocation location, source live
-range, and occurrence ID. Incompatible register classes, a fixed register from
-the wrong class, or a stack location incompatible with the value
+A fixed constraint records its liveness position, allocation location, source
+live range, and occurrence ID. Incompatible register classes, a fixed register
+from the wrong class, or a stack location incompatible with the value
 representation are compiler invariant failures.
 
 Each bundle keeps the fixed-constraint IDs covered by its current fragments,
-ordered by program point. Merging combines those sparse lists; splitting
+ordered by liveness position. Merging combines those sparse lists; splitting
 partitions them by point. Several fixed constraints naming the same location
 restrict the whole unsplit bundle to that location when the ordinary
 occurrences it covers are compatible. Different fixed locations at different
@@ -918,9 +997,25 @@ The normalizer splits immediately before the first incompatible use whenever
 legal. This keeps an earlier stack or spill fragment live until the last
 possible point, places its reload immediately before the register-only use, and
 minimizes register pressure. A constrained definition starts its fixed
-fragment at the definition point; a connector to a later fragment occurs after
-the def. Early and Late timing determine the exact legal side of the
+fragment at the definition's minimum liveness position; a connector to a later
+fragment occurs at the next legal transfer point after the complete defining
 instruction.
+
+Normal splitting never creates a transfer between an instruction's Early and
+Late actions. An incompatible use in instruction B selects
+`BeforeInstruction(B)`, which translates to `B.Early` for range geometry:
+
+```text
+left child  = [original.start, B.Early)
+right child = [B.Early, original.end)
+transfer    = BeforeInstruction(B), left bundle -> right bundle
+```
+
+This remains true for a Late use: its right child begins at `B.Early` and covers
+the complete instruction. A requested split after an instruction-local
+position advances to the next instruction's Early boundary. If incompatible
+requirements cannot be separated at an instruction boundary, normal splitting
+cannot solve them and a fixed-location fixup is required.
 
 If one SSA value is required in two locations at the same instruction, one
 constrained occurrence remains on the range and the other becomes a fixup
@@ -930,8 +1025,9 @@ high-priority merge opportunity between the two ranges. If they can share a
 location the transfer disappears; otherwise it remains in the schedule.
 
 This normalization preserves the invariant that a live-range fragment occupies
-one location at a point. It keeps special instruction shapes at the boundary of
-the allocator rather than complicating every bundle-placement decision.
+one location at a liveness position. It keeps special instruction shapes at the
+boundary of the allocator rather than complicating every bundle-placement
+decision.
 
 ## Initial Algorithm
 
@@ -950,10 +1046,10 @@ merge related non-overlapping ranges into bundles
 enqueue bundles by allocation priority
 assign a fitting register, evict lower-weight bundles, or split
 spill when splitting or register allocation is no longer legal or worthwhile
-collect split, fixup, explicit, and block-edge transfers
+collect split, fixup, explicit, and block-edge bundle transfers
 produce RegisterAllocationResult
-resolve parallel transfers and physicalize occurrences
-produce AllocatedProgram
+resolve parallel bundle transfers and rewrite Core IR
+publish LocationAssignments for the rewritten graph
 ```
 
 Backtracking alone does not guarantee forward progress. The allocator relies on
@@ -1015,8 +1111,8 @@ Splitting partitions bundle fragments; it does not mutate the original live
 range, the Core SSA graph, or durable structural constraints. The same source
 live-range ID may therefore appear in adjacent children. The child covering a
 fixed occurrence must satisfy that constraint. Moves reconnect adjacent
-children after assignment, and the shared source ID identifies the semantic
-value being transferred.
+children after assignment. The connector itself names the source and
+destination bundles; it does not duplicate their live-range provenance.
 
 ## Block Parameters and Edge Moves
 
@@ -1151,8 +1247,8 @@ the allocator problem rather than being consumed invisibly by emission.
 
 ## Unified Parallel Transfers
 
-After assigning locations, the allocator collects every physical transfer it
-introduced:
+During normalization, merging, splitting, and spill decisions, the allocator
+collects every bundle transfer it introduces:
 
 - connectors between split bundle children;
 - normalized fixed-location and reused-input fixups;
@@ -1161,14 +1257,30 @@ introduced:
 - spill and reload transfers;
 - ABI argument shuffles.
 
-Transfers at one program point form one parallel transfer set. Resolving them
-together avoids move chains created when block arguments, spills, and
-instruction fixups are lowered independently. The resolver handles cycles with
-an available temporary register or stack location and handles memory-to-memory
-transfers through a legal target temporary.
+Transfer sets are keyed by `(TransferPoint, TransferPhase)`. Transfers in one
+set have parallel semantics. Phases at the same structural point are ordered
+and are not incorrectly combined into one parallel operation. The initial
+constraint-split connector uses `TransferPhase::Regular`; later fixed-location,
+reused-input, and edge fixups add phases only when their required relative
+ordering is implemented.
+
+A transfer contains only source and destination `BundleId`s. After bundle
+assignment, generic materialization maps those endpoints to locations, removes
+aliasing transfers, and resolves each remaining set together. This avoids move
+chains created when block arguments, spills, and instruction fixups are lowered
+independently. The resolver handles cycles with an available temporary register
+or stack location and handles memory-to-memory transfers through a legal target
+temporary.
+
+Materialization then inserts the resolved sequential transfers into Core IR and
+rewrites the destination-bundle occurrences to the definitions produced by
+those instructions. It must therefore support occurrence-selective operand
+rewriting: replacing one original definition globally is insufficient when
+different fragments of that definition belong to different bundles.
 
 Canonical-state synchronization may contribute additional transfers at the same
-point, but the allocator does not decide which VM homes require publication.
+structural point and phase, but the allocator does not decide which VM homes
+require publication.
 `HomeState`, safepoint planning, or recovery planning owns that semantic
 decision. A shared physical-transfer resolver may combine its transfers with the
 allocator-produced set once both are known.
@@ -1338,9 +1450,11 @@ Generic materialization resolves those transfers and physicalizes instruction
 occurrences before target emission.
 
 Allocator-local positions, ranges, bundles, allocation maps, and heuristic
-state remain ephemeral. `RegisterAllocationResult` is the durable allocator
-result; recovery consumes its `LocationAssignments`, while emission consumes
-the derived `AllocatedProgram`.
+state remain ephemeral. `RegisterAllocationResult` is the boundary between
+allocation and generic materialization, but its bundle IDs are not durable past
+that rewrite. Materialization publishes `LocationAssignments` for the new CFG
+generation; recovery and emission consume those assignments together with the
+rewritten graph.
 
 ## External Model
 
@@ -1350,7 +1464,7 @@ parameters, branch arguments, operand constraints, independent access kind and
 timing, register classes, clobbers, and CFG structure through a
 target-independent interface. Clover keeps the same conceptual separation
 while using direct Core/CFG anchors instead of presenting a fully opaque IR
-adapter or making integer program points durable.
+adapter or making integer liveness positions durable.
 
 The allocation-priority, spill-weight, splitting, and progress rules above
 should be changed only with an equivalent termination argument.

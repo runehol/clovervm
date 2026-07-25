@@ -25,11 +25,12 @@ document and deliberately do not have checkboxes.
 
 ## Stage 1: Prepared Allocation Problem
 
-- [x] Define dense allocator-local IDs and storage for program points,
-  occurrences, immutable live ranges, bundle fragments, and singleton bundles.
+- [x] Define dense allocator-local IDs and storage for ephemeral allocation
+  positions, occurrences, immutable live ranges, bundle fragments, and
+  singleton bundles.
 - [x] Linearize every block's entry, instruction Early and Late points, and
-  exit without publishing positions into Core IR; represent all ranges as
-  inclusive-start, exclusive-end `ProgramRange`s.
+  exit without publishing positions into Core IR; represent all allocation
+  ranges as inclusive-start, exclusive-end intervals.
 - [x] Expand Core operands and results into anchored use and def occurrences,
   derive each range's one register class, retain sparse fixed constraints with
   their exact points, and reject incompatible class claims as compiler
@@ -42,7 +43,7 @@ document and deliberately do not have checkboxes.
   reservations rather than bundles.
 - [x] Give dead definitions minimal one-point ranges, including unused
   `Uninitialized` definitions.
-- [x] Create one singleton bundle with one exact `{ProgramRange, LiveRangeId}`
+- [x] Create one singleton bundle with one exact `{range, LiveRangeId}`
   fragment for every live range; keep chosen allocations in a later separate
   assignment table.
 - [x] Compute bundle allocation priority and spill weight by visiting the
@@ -70,16 +71,23 @@ than silently omitting recovery liveness.
   and record non-overlapping assignments in per-register maps.
 - [x] Define `AllocationLocation` and replace register-only requirements and
   fixed constraints with `AnyRegister`, `FixedLocation`, and `SameAsInput`.
+- [ ] Separate dense `LivenessPosition`/`LivenessRange` geometry from
+  structural zero-width `TransferPoint`s; compute the minimum coverage of
+  Early/Late uses and defs, including whole-instruction Early defs and Late
+  uses.
 - [ ] Add constraint-driven splitting immediately before the first
   incompatible use, or after an incompatible def, and record connectors in a
-  parallel `TransferSchedule`.
+  structural `BundleTransferSchedule` grouped by
+  `(TransferPoint, TransferPhase)`.
 - [ ] Produce `RegisterAllocationResult` with separate
-  `LocationAssignments` facts and `TransferSchedule` actions.
+  `BundleLocationAssignments` facts and `BundleTransferSchedule` value-flow
+  actions.
 - [ ] Add generic allocation materialization that resolves supported transfer
-  sets and produces an `AllocatedProgram` whose executable occurrences name
-  physical registers.
-- [ ] Make AArch64 CFG emission consume `AllocatedProgram` instead of its
-  hardcoded `x0` mapping.
+  sets in parallel, inserts Core transfer instructions, rewrites
+  destination-bundle occurrences, and publishes `LocationAssignments` for the
+  rewritten graph.
+- [ ] Make AArch64 CFG emission consume the rewritten graph and its
+  `LocationAssignments` instead of its hardcoded `x0` mapping.
 - [ ] Add a symbolic allocation checker covering assignments, occurrence
   requirements, interference, location transitions, and generated transfers.
 - [ ] Execute one-block multi-value AArch64 tests through the existing code
@@ -94,11 +102,11 @@ introduce a temporary allocation policy. Initial executable integration
 remains one-block even though the prepared-problem construction is not.
 
 The initial assignment step produces a dense allocator-local
-`BundleRegisterAssignments` table. Per-register assigned fragments and clobber
-ranges remain scratch indexes used only while probing candidates. The durable
-boundary is `RegisterAllocationResult`; recovery consumes its
-occurrence-oriented `LocationAssignments`, while machine emission consumes the
-derived `AllocatedProgram`.
+`BundleLocationAssignments` table. Per-register assigned fragments and clobber
+ranges remain scratch indexes used only while probing candidates. The
+allocator result remains valid only until generic materialization consumes its
+bundle IDs, rewrites the CFG, and produces occurrence-oriented
+`LocationAssignments` for recovery and machine emission.
 
 ## Stage 3: Affinities and CFG Transfers
 
@@ -130,7 +138,8 @@ may occur in several bundles.
   occurrences.
 - [ ] Normalize remaining same-as-input and multi-location occurrences into
   constrained fragments plus explicit fixups.
-- [ ] Record edge, pressure-split, and fixup transfers in `TransferSchedule`.
+- [ ] Record edge, pressure-split, and fixup transfers in
+  `BundleTransferSchedule`.
 - [ ] Complete the unified parallel-transfer resolver, including cycles and the
   agreed scratch-location policy.
 - [ ] Add reserved spill-weight tiers for ordinary minimal and fixed-location
