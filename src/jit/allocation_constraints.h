@@ -1,11 +1,13 @@
 #ifndef CL_JIT_ALLOCATION_CONSTRAINTS_H
 #define CL_JIT_ALLOCATION_CONSTRAINTS_H
 
+#include "jit/allocation_location.h"
 #include "jit/instruction.h"
-#include "jit/physical_register.h"
+#include "runtime/fatal.h"
 
 #include <optional>
 #include <utility>
+#include <variant>
 #include <vector>
 
 namespace cl::jit
@@ -16,56 +18,110 @@ namespace cl::jit
         Late,
     };
 
-    class RegisterRequirement
+    class LocationRequirement
     {
     public:
         enum class Kind : uint8_t
         {
-            Any,
-            Fixed,
+            AnyRegister,
+            FixedLocation,
             SameAsInput,
         };
 
-        static RegisterRequirement any(RegisterClass register_class);
-        static RegisterRequirement fixed(PhysicalRegister reg);
-        static RegisterRequirement same_as_input(uint32_t operand_index);
+        static LocationRequirement any_register(RegisterClass register_class)
+        {
+            return LocationRequirement(register_class);
+        }
+        static LocationRequirement fixed(AllocationLocation location)
+        {
+            return LocationRequirement(location);
+        }
+        static LocationRequirement same_as_input(uint32_t operand_index)
+        {
+            return LocationRequirement(operand_index);
+        }
 
-        Kind kind() const { return kind_; }
-        RegisterClass register_class() const;
-        PhysicalRegister fixed_register() const;
-        uint32_t input_index() const;
+        Kind kind() const
+        {
+            switch(payload_.index())
+            {
+                case 0:
+                    return Kind::AnyRegister;
+                case 1:
+                    return Kind::FixedLocation;
+                case 2:
+                    return Kind::SameAsInput;
+            }
+            fatal("invalid JIT location requirement");
+        }
+        RegisterClass register_class() const
+        {
+            if(kind() != Kind::AnyRegister)
+            {
+                fatal("register_class() requires an AnyRegister requirement");
+            }
+            return std::get<RegisterClass>(payload_);
+        }
+        AllocationLocation fixed_location() const
+        {
+            if(kind() != Kind::FixedLocation)
+            {
+                fatal("fixed_location() requires a FixedLocation requirement");
+            }
+            return std::get<AllocationLocation>(payload_);
+        }
+        uint32_t input_index() const
+        {
+            if(kind() != Kind::SameAsInput)
+            {
+                fatal("input_index() requires a SameAsInput location "
+                      "requirement");
+            }
+            return std::get<uint32_t>(payload_);
+        }
 
     private:
-        RegisterRequirement(Kind kind, uint32_t payload)
-            : kind_(kind), payload_(payload)
+        explicit LocationRequirement(RegisterClass register_class)
+            : payload_(register_class)
+        {
+            if(register_class >= RegisterClass::Count)
+            {
+                fatal("invalid register class requirement");
+            }
+        }
+        explicit LocationRequirement(AllocationLocation location)
+            : payload_(location)
+        {
+        }
+        explicit LocationRequirement(uint32_t operand_index)
+            : payload_(operand_index)
         {
         }
 
-        Kind kind_;
-        uint32_t payload_;
+        std::variant<RegisterClass, AllocationLocation, uint32_t> payload_;
     };
 
     struct ProgramValueUseConstraint
     {
         ProgramValueUseConstraint(uint32_t operand_index, AccessTiming timing,
-                                  RegisterRequirement requirement);
+                                  LocationRequirement requirement);
 
         uint32_t operand_index;
         AccessTiming timing;
-        RegisterRequirement requirement;
+        LocationRequirement requirement;
     };
 
     struct ResultConstraint
     {
         AccessTiming timing;
-        RegisterRequirement requirement;
+        LocationRequirement requirement;
     };
 
     struct TemporaryConstraint
     {
-        explicit TemporaryConstraint(RegisterRequirement requirement);
+        explicit TemporaryConstraint(LocationRequirement requirement);
 
-        RegisterRequirement requirement;
+        LocationRequirement requirement;
     };
 
     class InstructionAllocationConstraints

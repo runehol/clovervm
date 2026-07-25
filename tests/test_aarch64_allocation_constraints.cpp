@@ -97,9 +97,10 @@ namespace cl::jit
                 find_override(constraints, parameters[index]);
             ASSERT_NE(nullptr, parameter);
             ASSERT_TRUE(parameter->result_override().has_value());
-            EXPECT_EQ(
-                x(static_cast<uint8_t>(index)),
-                parameter->result_override()->requirement.fixed_register());
+            EXPECT_EQ(x(static_cast<uint8_t>(index)),
+                      parameter->result_override()
+                          ->requirement.fixed_location()
+                          .reg());
         }
 
         const InstructionAllocationConstraints *return_override =
@@ -108,9 +109,9 @@ namespace cl::jit
         ASSERT_EQ(1u, return_override->input_overrides().size());
         EXPECT_EQ(ReturnInstruction::return_value_operand_index,
                   return_override->input_overrides()[0].operand_index);
-        EXPECT_EQ(
-            x(0),
-            return_override->input_overrides()[0].requirement.fixed_register());
+        EXPECT_EQ(x(0), return_override->input_overrides()[0]
+                            .requirement.fixed_location()
+                            .reg());
     }
 
     TEST(AArch64AllocationConstraints,
@@ -160,7 +161,7 @@ namespace cl::jit
             find_override(constraints, branch);
         ASSERT_NE(nullptr, branch_override);
         ASSERT_EQ(1u, branch_override->temporaries().size());
-        EXPECT_EQ(RegisterRequirement::Kind::Any,
+        EXPECT_EQ(LocationRequirement::Kind::AnyRegister,
                   branch_override->temporaries()[0].requirement.kind());
         EXPECT_EQ(
             RegisterClass::GPR,

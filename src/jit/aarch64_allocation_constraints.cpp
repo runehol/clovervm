@@ -64,18 +64,20 @@ namespace cl::jit
             }
             return InstructionAllocationConstraints(
                 parameter, {},
-                ResultConstraint{AccessTiming::Late,
-                                 RegisterRequirement::fixed(gpr(
-                                     static_cast<uint8_t>(parameter_index)))});
+                ResultConstraint{
+                    AccessTiming::Late,
+                    LocationRequirement::fixed(AllocationLocation::reg(
+                        gpr(static_cast<uint8_t>(parameter_index))))});
         }
 
         InstructionAllocationConstraints
         return_constraints(const ReturnInstruction *instruction)
         {
             return InstructionAllocationConstraints(
-                instruction,
-                {{ReturnInstruction::return_value_operand_index,
-                  AccessTiming::Early, RegisterRequirement::fixed(gpr(0))}});
+                instruction, {{ReturnInstruction::return_value_operand_index,
+                               AccessTiming::Early,
+                               LocationRequirement::fixed(
+                                   AllocationLocation::reg(gpr(0)))}});
         }
 
         InstructionAllocationConstraints
@@ -84,7 +86,7 @@ namespace cl::jit
             return InstructionAllocationConstraints(
                 instruction, {}, std::nullopt,
                 {TemporaryConstraint(
-                    RegisterRequirement::any(RegisterClass::GPR))});
+                    LocationRequirement::any_register(RegisterClass::GPR))});
         }
     }  // namespace
 

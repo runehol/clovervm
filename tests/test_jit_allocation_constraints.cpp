@@ -17,6 +17,11 @@ namespace cl::jit
         constexpr PhysicalRegister x63(RegisterClass::GPR, 63);
         constexpr PhysicalRegister d0(RegisterClass::SIMD, 0);
 
+        LocationRequirement fixed(PhysicalRegister reg)
+        {
+            return LocationRequirement::fixed(AllocationLocation::reg(reg));
+        }
+
         SnapshotRef make_empty_snapshot(GraphBuilder &builder)
         {
             return SnapshotRef(builder.make_instruction<SnapshotInstruction>(
@@ -85,19 +90,89 @@ namespace cl::jit
                      "duplicate JIT register class definition");
     }
 
-    TEST(JitRegisterRequirement, RepresentsAnyFixedAndSameAsInput)
+    TEST(JitStackLocation, KeepsSemanticKindSeparateFromPhysicalIdentity)
     {
-        RegisterRequirement any = RegisterRequirement::any(RegisterClass::SIMD);
-        EXPECT_EQ(RegisterRequirement::Kind::Any, any.kind());
+        StackLocation incoming(StackLocationKind::IncomingParameter, 7);
+        StackLocation outgoing(StackLocationKind::OutgoingCallArgument, 7);
+        StackLocation local(StackLocationKind::LocalOrTemporary, -3);
+        StackLocation spill(StackLocationKind::SpillSlot, -19);
+
+        EXPECT_EQ(StackLocationKind::IncomingParameter, incoming.kind());
+        EXPECT_EQ(StackLocationKind::OutgoingCallArgument, outgoing.kind());
+        EXPECT_EQ(StackLocationKind::LocalOrTemporary, local.kind());
+        EXPECT_EQ(StackLocationKind::SpillSlot, spill.kind());
+        EXPECT_EQ(7, incoming.frame_offset());
+        EXPECT_EQ(-19, spill.frame_offset());
+        EXPECT_TRUE(incoming.aliases(outgoing));
+        EXPECT_FALSE(incoming.aliases(local));
+    }
+
+    TEST(JitAllocationLocation, RepresentsRegistersAndSemanticStackLocations)
+    {
+        AllocationLocation reg = AllocationLocation::reg(x0);
+        AllocationLocation same_reg = AllocationLocation::reg(x0);
+        AllocationLocation other_reg = AllocationLocation::reg(x1);
+        AllocationLocation incoming = AllocationLocation::stack(
+            StackLocation(StackLocationKind::IncomingParameter, 5));
+        AllocationLocation outgoing = AllocationLocation::stack(
+            StackLocation(StackLocationKind::OutgoingCallArgument, 5));
+
+        EXPECT_TRUE(reg.is_register());
+        EXPECT_FALSE(reg.is_stack());
+        EXPECT_EQ(x0, reg.reg());
+        EXPECT_TRUE(reg.aliases(same_reg));
+        EXPECT_FALSE(reg.aliases(other_reg));
+        EXPECT_FALSE(reg.aliases(incoming));
+        EXPECT_TRUE(incoming.is_stack());
+        EXPECT_EQ(StackLocationKind::IncomingParameter,
+                  incoming.stack().kind());
+        EXPECT_TRUE(incoming.aliases(outgoing));
+    }
+
+    TEST(JitLocationRequirement, RepresentsAnyFixedAndSameAsInput)
+    {
+        LocationRequirement any =
+            LocationRequirement::any_register(RegisterClass::SIMD);
+        EXPECT_EQ(LocationRequirement::Kind::AnyRegister, any.kind());
         EXPECT_EQ(RegisterClass::SIMD, any.register_class());
 
-        RegisterRequirement fixed = RegisterRequirement::fixed(x63);
-        EXPECT_EQ(RegisterRequirement::Kind::Fixed, fixed.kind());
-        EXPECT_EQ(x63, fixed.fixed_register());
+        LocationRequirement fixed_register = fixed(x63);
+        EXPECT_EQ(LocationRequirement::Kind::FixedLocation,
+                  fixed_register.kind());
+        EXPECT_EQ(x63, fixed_register.fixed_location().reg());
 
-        RegisterRequirement same = RegisterRequirement::same_as_input(1234);
-        EXPECT_EQ(RegisterRequirement::Kind::SameAsInput, same.kind());
+        LocationRequirement fixed_stack =
+            LocationRequirement::fixed(AllocationLocation::stack(
+                StackLocation(StackLocationKind::OutgoingCallArgument, -17)));
+        EXPECT_EQ(LocationRequirement::Kind::FixedLocation, fixed_stack.kind());
+        EXPECT_EQ(-17, fixed_stack.fixed_location().stack().frame_offset());
+
+        LocationRequirement same = LocationRequirement::same_as_input(1234);
+        EXPECT_EQ(LocationRequirement::Kind::SameAsInput, same.kind());
         EXPECT_EQ(1234u, same.input_index());
+    }
+
+    TEST(JitAllocationConstraints,
+         AcceptsFixedStackValuesButRequiresRegisterTemporaries)
+    {
+        CompilationSession session;
+        GraphBuilder builder(session);
+        TaggedValueRef source(builder.make_instruction<ParameterInstruction>());
+        MovInstruction *move = builder.make_instruction<MovInstruction>(source);
+        LocationRequirement outgoing =
+            LocationRequirement::fixed(AllocationLocation::stack(
+                StackLocation(StackLocationKind::OutgoingCallArgument, -8)));
+        LocationRequirement local =
+            LocationRequirement::fixed(AllocationLocation::stack(
+                StackLocation(StackLocationKind::LocalOrTemporary, -2)));
+
+        InstructionAllocationConstraints constraints(
+            move, {{0, AccessTiming::Early, outgoing}},
+            ResultConstraint{AccessTiming::Late, local});
+        constraints.validate();
+
+        EXPECT_DEATH((void)TemporaryConstraint(outgoing),
+                     "temporary requires a register location");
     }
 
     TEST(JitAllocationConstraints, ValidatesFixedInstructionShape)
@@ -111,15 +186,15 @@ namespace cl::jit
             builder.make_instruction<AddSMIInstruction>(lhs, rhs, snapshot);
 
         InstructionAllocationConstraints constraints(
-            add, {{1, AccessTiming::Late, RegisterRequirement::fixed(x1)}},
+            add, {{1, AccessTiming::Late, fixed(x1)}},
             ResultConstraint{AccessTiming::Late,
-                             RegisterRequirement::same_as_input(0)});
+                             LocationRequirement::same_as_input(0)});
 
         EXPECT_EQ(add, constraints.instruction());
         ASSERT_EQ(1u, constraints.input_overrides().size());
         EXPECT_EQ(1u, constraints.input_overrides()[0].operand_index);
         ASSERT_TRUE(constraints.result_override().has_value());
-        EXPECT_EQ(RegisterRequirement::Kind::SameAsInput,
+        EXPECT_EQ(LocationRequirement::Kind::SameAsInput,
                   constraints.result_override()->requirement.kind());
         EXPECT_EQ(AccessTiming::Late, default_snapshot_use_timing());
         constraints.validate();
@@ -142,10 +217,9 @@ namespace cl::jit
 
         InstructionAllocationConstraints constraints(
             call,
-            {{0, AccessTiming::Early, RegisterRequirement::fixed(x0)},
-             {2, AccessTiming::Early, RegisterRequirement::fixed(x1)}},
-            ResultConstraint{AccessTiming::Late,
-                             RegisterRequirement::fixed(x0)});
+            {{0, AccessTiming::Early, fixed(x0)},
+             {2, AccessTiming::Early, fixed(x1)}},
+            ResultConstraint{AccessTiming::Late, fixed(x0)});
 
         EXPECT_EQ(2u, constraints.input_overrides().size());
     }
@@ -177,9 +251,10 @@ namespace cl::jit
             builder.make_instruction<AddF64Instruction>(lhs, rhs);
 
         InstructionAllocationConstraints constraints(
-            add, {{1, AccessTiming::Early, RegisterRequirement::fixed(d0)}},
-            ResultConstraint{AccessTiming::Late,
-                             RegisterRequirement::any(RegisterClass::SIMD)});
+            add, {{1, AccessTiming::Early, fixed(d0)}},
+            ResultConstraint{
+                AccessTiming::Late,
+                LocationRequirement::any_register(RegisterClass::SIMD)});
         EXPECT_EQ(add, constraints.instruction());
 
         ProgramValueUseConstraint tagged_default =
@@ -197,8 +272,9 @@ namespace cl::jit
         EXPECT_DEATH(
             {
                 InstructionAllocationConstraints invalid(
-                    add, {{0, AccessTiming::Early,
-                           RegisterRequirement::any(RegisterClass::GPR)}});
+                    add,
+                    {{0, AccessTiming::Early,
+                      LocationRequirement::any_register(RegisterClass::GPR)}});
                 invalid.validate();
             },
             "input requirement has the wrong register class");
@@ -223,9 +299,9 @@ namespace cl::jit
                 InstructionAllocationConstraints invalid(
                     add,
                     {{0, AccessTiming::Early,
-                      RegisterRequirement::any(RegisterClass::GPR)},
+                      LocationRequirement::any_register(RegisterClass::GPR)},
                      {0, AccessTiming::Late,
-                      RegisterRequirement::any(RegisterClass::GPR)}},
+                      LocationRequirement::any_register(RegisterClass::GPR)}},
                     std::nullopt);
                 invalid.validate();
             },
@@ -234,8 +310,9 @@ namespace cl::jit
         EXPECT_DEATH(
             {
                 InstructionAllocationConstraints invalid(
-                    add, {{2, AccessTiming::Early,
-                           RegisterRequirement::any(RegisterClass::GPR)}});
+                    add,
+                    {{2, AccessTiming::Early,
+                      LocationRequirement::any_register(RegisterClass::GPR)}});
                 invalid.validate();
             },
             "does not name an allocatable ProgramValue operand");
@@ -245,10 +322,10 @@ namespace cl::jit
     {
         EXPECT_DEATH(
             (void)ProgramValueUseConstraint(
-                0, AccessTiming::Early, RegisterRequirement::same_as_input(0)),
+                0, AccessTiming::Early, LocationRequirement::same_as_input(0)),
             "input cannot have a SameAsInput");
         EXPECT_DEATH(
-            (void)TemporaryConstraint(RegisterRequirement::same_as_input(0)),
+            (void)TemporaryConstraint(LocationRequirement::same_as_input(0)),
             "temporary cannot have a SameAsInput");
 
         CompilationSession session;
@@ -262,9 +339,9 @@ namespace cl::jit
                 InstructionAllocationConstraints invalid(
                     box,
                     {{0, AccessTiming::Early,
-                      RegisterRequirement::any(RegisterClass::SIMD)}},
+                      LocationRequirement::any_register(RegisterClass::SIMD)}},
                     ResultConstraint{AccessTiming::Late,
-                                     RegisterRequirement::same_as_input(0)});
+                                     LocationRequirement::same_as_input(0)});
                 invalid.validate();
             },
             "different value representation");
@@ -281,20 +358,20 @@ namespace cl::jit
 
         // A clobber may follow an early fixed use.
         InstructionAllocationConstraints allowed(
-            move, {{0, AccessTiming::Early, RegisterRequirement::fixed(x0)}},
-            ResultConstraint{AccessTiming::Late,
-                             RegisterRequirement::any(RegisterClass::GPR)},
+            move, {{0, AccessTiming::Early, fixed(x0)}},
+            ResultConstraint{
+                AccessTiming::Late,
+                LocationRequirement::any_register(RegisterClass::GPR)},
             {}, x0_clobber);
         EXPECT_TRUE(allowed.clobbers().contains(x0));
 
         EXPECT_DEATH(
             {
                 InstructionAllocationConstraints invalid(
-                    move,
-                    {{0, AccessTiming::Late, RegisterRequirement::fixed(x0)}},
+                    move, {{0, AccessTiming::Late, fixed(x0)}},
                     ResultConstraint{
                         AccessTiming::Late,
-                        RegisterRequirement::any(RegisterClass::GPR)},
+                        LocationRequirement::any_register(RegisterClass::GPR)},
                     {}, x0_clobber);
                 invalid.validate();
             },
@@ -305,10 +382,9 @@ namespace cl::jit
                 InstructionAllocationConstraints invalid(
                     move,
                     {{0, AccessTiming::Early,
-                      RegisterRequirement::any(RegisterClass::GPR)}},
-                    ResultConstraint{AccessTiming::Late,
-                                     RegisterRequirement::fixed(x0)},
-                    {}, x0_clobber);
+                      LocationRequirement::any_register(RegisterClass::GPR)}},
+                    ResultConstraint{AccessTiming::Late, fixed(x0)}, {},
+                    x0_clobber);
                 invalid.validate();
             },
             "clobber collides with a fixed result");
@@ -318,12 +394,11 @@ namespace cl::jit
                 InstructionAllocationConstraints invalid(
                     move,
                     {{0, AccessTiming::Early,
-                      RegisterRequirement::any(RegisterClass::GPR)}},
+                      LocationRequirement::any_register(RegisterClass::GPR)}},
                     ResultConstraint{
                         AccessTiming::Late,
-                        RegisterRequirement::any(RegisterClass::GPR)},
-                    {TemporaryConstraint(RegisterRequirement::fixed(x0))},
-                    x0_clobber);
+                        LocationRequirement::any_register(RegisterClass::GPR)},
+                    {TemporaryConstraint(fixed(x0))}, x0_clobber);
                 invalid.validate();
             },
             "clobber collides with a fixed temporary");
@@ -331,10 +406,9 @@ namespace cl::jit
         EXPECT_DEATH(
             {
                 InstructionAllocationConstraints invalid(
-                    move,
-                    {{0, AccessTiming::Early, RegisterRequirement::fixed(x0)}},
+                    move, {{0, AccessTiming::Early, fixed(x0)}},
                     ResultConstraint{AccessTiming::Late,
-                                     RegisterRequirement::same_as_input(0)},
+                                     LocationRequirement::same_as_input(0)},
                     {}, x0_clobber);
                 invalid.validate();
             },

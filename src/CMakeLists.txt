@@ -96,6 +96,7 @@ add_library(libclovervm_objects OBJECT
     jit/aarch64_cfg_emitter.h
     jit/allocation_constraints.cpp
     jit/allocation_constraints.h
+    jit/allocation_location.h
     jit/allocation_problem.cpp
     jit/allocation_problem.h
     jit/allocation_bundles.cpp

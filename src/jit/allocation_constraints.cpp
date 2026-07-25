@@ -3,7 +3,6 @@
 #include "runtime/fatal.h"
 
 #include <array>
-#include <bit>
 #include <cstddef>
 #include <utility>
 #include <vector>
@@ -12,13 +11,6 @@ namespace cl::jit
 {
     namespace
     {
-        static_assert(
-            std::has_single_bit(PhysicalRegister::MaxRegistersPerClass));
-        constexpr unsigned RegisterNumberBits =
-            std::bit_width(PhysicalRegister::MaxRegistersPerClass - size_t{1});
-        constexpr uint32_t RegisterNumberMask =
-            (uint32_t{1} << RegisterNumberBits) - 1;
-
         void require_constraint(bool condition, const char *message)
         {
             if(!condition)
@@ -27,98 +19,62 @@ namespace cl::jit
             }
         }
 
-        uint32_t encode_register(PhysicalRegister reg)
-        {
-            return (static_cast<uint32_t>(reg.register_class())
-                    << RegisterNumberBits) |
-                   reg.number();
-        }
-
-        bool requirement_matches(RegisterRequirement requirement,
+        bool requirement_matches(LocationRequirement requirement,
                                  RegisterClass expected_class)
         {
             switch(requirement.kind())
             {
-                case RegisterRequirement::Kind::Any:
+                case LocationRequirement::Kind::AnyRegister:
                     return requirement.register_class() == expected_class;
-                case RegisterRequirement::Kind::Fixed:
-                    return requirement.fixed_register().register_class() ==
-                           expected_class;
-                case RegisterRequirement::Kind::SameAsInput:
+                case LocationRequirement::Kind::FixedLocation:
+                    {
+                        AllocationLocation location =
+                            requirement.fixed_location();
+                        return location.is_stack() ||
+                               location.reg().register_class() ==
+                                   expected_class;
+                    }
+                case LocationRequirement::Kind::SameAsInput:
                     return true;
             }
             return false;
         }
 
         std::optional<PhysicalRegister>
-        fixed_register_for(RegisterRequirement requirement)
+        fixed_register_for(LocationRequirement requirement)
         {
-            if(requirement.kind() == RegisterRequirement::Kind::Fixed)
+            if(requirement.kind() == LocationRequirement::Kind::FixedLocation)
             {
-                return requirement.fixed_register();
+                AllocationLocation location = requirement.fixed_location();
+                if(location.is_register())
+                {
+                    return location.reg();
+                }
             }
             return std::nullopt;
         }
     }  // namespace
 
-    RegisterRequirement RegisterRequirement::any(RegisterClass register_class)
-    {
-        require_constraint(register_class < RegisterClass::Count,
-                           "invalid register class requirement");
-        return RegisterRequirement(Kind::Any,
-                                   static_cast<uint32_t>(register_class));
-    }
-
-    RegisterRequirement RegisterRequirement::fixed(PhysicalRegister reg)
-    {
-        return RegisterRequirement(Kind::Fixed, encode_register(reg));
-    }
-
-    RegisterRequirement
-    RegisterRequirement::same_as_input(uint32_t operand_index)
-    {
-        return RegisterRequirement(Kind::SameAsInput, operand_index);
-    }
-
-    RegisterClass RegisterRequirement::register_class() const
-    {
-        require_constraint(kind_ == Kind::Any,
-                           "register_class() requires an Any requirement");
-        return static_cast<RegisterClass>(payload_);
-    }
-
-    PhysicalRegister RegisterRequirement::fixed_register() const
-    {
-        require_constraint(kind_ == Kind::Fixed,
-                           "fixed_register() requires a Fixed requirement");
-        return PhysicalRegister(
-            static_cast<RegisterClass>(payload_ >> RegisterNumberBits),
-            static_cast<uint8_t>(payload_ & RegisterNumberMask));
-    }
-
-    uint32_t RegisterRequirement::input_index() const
-    {
-        require_constraint(kind_ == Kind::SameAsInput,
-                           "input_index() requires a SameAsInput requirement");
-        return payload_;
-    }
-
     ProgramValueUseConstraint::ProgramValueUseConstraint(
         uint32_t operand_index, AccessTiming timing,
-        RegisterRequirement requirement)
+        LocationRequirement requirement)
         : operand_index(operand_index), timing(timing), requirement(requirement)
     {
         require_constraint(
-            requirement.kind() != RegisterRequirement::Kind::SameAsInput,
-            "a JIT input cannot have a SameAsInput register requirement");
+            requirement.kind() != LocationRequirement::Kind::SameAsInput,
+            "a JIT input cannot have a SameAsInput location requirement");
     }
 
-    TemporaryConstraint::TemporaryConstraint(RegisterRequirement requirement)
+    TemporaryConstraint::TemporaryConstraint(LocationRequirement requirement)
         : requirement(requirement)
     {
         require_constraint(
-            requirement.kind() != RegisterRequirement::Kind::SameAsInput,
-            "a JIT temporary cannot have a SameAsInput register requirement");
+            requirement.kind() != LocationRequirement::Kind::SameAsInput,
+            "a JIT temporary cannot have a SameAsInput location requirement");
+        require_constraint(requirement.kind() !=
+                                   LocationRequirement::Kind::FixedLocation ||
+                               requirement.fixed_location().is_register(),
+                           "a JIT temporary requires a register location");
     }
 
     RegisterClass
@@ -143,7 +99,7 @@ namespace cl::jit
     {
         return ProgramValueUseConstraint(
             operand_index, AccessTiming::Early,
-            RegisterRequirement::any(
+            LocationRequirement::any_register(
                 register_class_for_representation(representation)));
     }
 
@@ -152,7 +108,7 @@ namespace cl::jit
     {
         return ResultConstraint{
             AccessTiming::Late,
-            RegisterRequirement::any(
+            LocationRequirement::any_register(
                 register_class_for_representation(representation))};
     }
 
@@ -238,14 +194,14 @@ namespace cl::jit
                 instruction->result_class() == ResultClass::ProgramValue,
                 "non-ProgramValue JIT instruction cannot have a result "
                 "override");
-            RegisterRequirement requirement = result_override_->requirement;
+            LocationRequirement requirement = result_override_->requirement;
             RegisterClass result_class = register_class_for_representation(
                 instruction->value_representation());
             require_constraint(
                 requirement_matches(requirement, result_class),
                 "JIT result requirement has the wrong register class");
 
-            if(requirement.kind() == RegisterRequirement::Kind::SameAsInput)
+            if(requirement.kind() == LocationRequirement::Kind::SameAsInput)
             {
                 uint32_t input_index = requirement.input_index();
                 require_constraint(
@@ -289,7 +245,7 @@ namespace cl::jit
             std::optional<PhysicalRegister> fixed =
                 fixed_register_for(result_override_->requirement);
             if(result_override_->requirement.kind() ==
-               RegisterRequirement::Kind::SameAsInput)
+               LocationRequirement::Kind::SameAsInput)
             {
                 uint32_t input_index =
                     result_override_->requirement.input_index();

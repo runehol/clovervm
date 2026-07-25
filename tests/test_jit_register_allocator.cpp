@@ -24,6 +24,11 @@ namespace cl::jit
         constexpr PhysicalRegister v0(RegisterClass::SIMD, 0);
         constexpr PhysicalRegister v1(RegisterClass::SIMD, 1);
 
+        LocationRequirement fixed(PhysicalRegister reg)
+        {
+            return LocationRequirement::fixed(AllocationLocation::reg(reg));
+        }
+
         TaggedValueRef emplace_constant(GraphBuilder &builder, Block *block,
                                         Value value)
         {
@@ -387,15 +392,14 @@ namespace cl::jit
         ControlFlowGraph *graph = builder.finalize();
 
         std::vector<InstructionAllocationConstraints> overrides;
-        overrides.emplace_back(
-            parameter, std::vector<ProgramValueUseConstraint>{},
-            ResultConstraint{AccessTiming::Late,
-                             RegisterRequirement::fixed(x0)});
+        overrides.emplace_back(parameter,
+                               std::vector<ProgramValueUseConstraint>{},
+                               ResultConstraint{AccessTiming::Late, fixed(x0)});
         overrides.emplace_back(
             return_instruction,
             std::vector<ProgramValueUseConstraint>{
                 {ReturnInstruction::return_value_operand_index,
-                 AccessTiming::Early, RegisterRequirement::fixed(x1)}});
+                 AccessTiming::Early, fixed(x1)}});
         constexpr std::array registers = {x0, x1};
         AllocationConstraints constraints =
             gpr_constraints(registers, std::move(overrides));
@@ -461,10 +465,9 @@ namespace cl::jit
         RegisterSet clobbers;
         clobbers.insert(x0);
         std::vector<InstructionAllocationConstraints> overrides;
-        overrides.emplace_back(
-            parameter, std::vector<ProgramValueUseConstraint>{},
-            ResultConstraint{AccessTiming::Late,
-                             RegisterRequirement::fixed(x0)});
+        overrides.emplace_back(parameter,
+                               std::vector<ProgramValueUseConstraint>{},
+                               ResultConstraint{AccessTiming::Late, fixed(x0)});
         overrides.emplace_back(
             snapshot, std::vector<ProgramValueUseConstraint>{}, std::nullopt,
             std::vector<TemporaryConstraint>{}, clobbers);
@@ -500,8 +503,7 @@ namespace cl::jit
         overrides.emplace_back(
             result.instruction(), std::vector<ProgramValueUseConstraint>{},
             std::nullopt,
-            std::vector<TemporaryConstraint>{
-                TemporaryConstraint(RegisterRequirement::fixed(x1))},
+            std::vector<TemporaryConstraint>{TemporaryConstraint(fixed(x1))},
             clobbers);
         AllocationConstraints constraints(gpr_definition(),
                                           std::move(overrides));
@@ -651,7 +653,7 @@ namespace cl::jit
         overrides.emplace_back(
             move, std::vector<ProgramValueUseConstraint>{},
             ResultConstraint{AccessTiming::Late,
-                             RegisterRequirement::same_as_input(0)});
+                             LocationRequirement::same_as_input(0)});
         AllocationConstraints constraints(gpr_definition(),
                                           std::move(overrides));
 

@@ -18,15 +18,24 @@ namespace cl::jit
         }
 
         RegisterClass
-        requirement_register_class(RegisterRequirement requirement)
+        requirement_register_class(LocationRequirement requirement)
         {
             switch(requirement.kind())
             {
-                case RegisterRequirement::Kind::Any:
+                case LocationRequirement::Kind::AnyRegister:
                     return requirement.register_class();
-                case RegisterRequirement::Kind::Fixed:
-                    return requirement.fixed_register().register_class();
-                case RegisterRequirement::Kind::SameAsInput:
+                case LocationRequirement::Kind::FixedLocation:
+                    {
+                        AllocationLocation location =
+                            requirement.fixed_location();
+                        if(location.is_stack())
+                        {
+                            fatal("fixed stack locations are not yet supported "
+                                  "by JIT live-range scanning");
+                        }
+                        return location.reg().register_class();
+                    }
+                case LocationRequirement::Kind::SameAsInput:
                     break;
             }
             fatal("unresolved SameAsInput in JIT allocator preparation");
@@ -48,7 +57,7 @@ namespace cl::jit
         }
 
         void validate_requirement(const AllocationConstraints &constraints,
-                                  RegisterRequirement requirement,
+                                  LocationRequirement requirement,
                                   RegisterClass expected_class)
         {
             RegisterClass actual_class =
@@ -66,8 +75,9 @@ namespace cl::jit
                 fatal("JIT allocator has no definition for a required register "
                       "class");
             }
-            if(requirement.kind() == RegisterRequirement::Kind::Fixed &&
-               !definition->members().contains(requirement.fixed_register()))
+            if(requirement.kind() == LocationRequirement::Kind::FixedLocation &&
+               !definition->members().contains(
+                   requirement.fixed_location().reg()))
             {
                 fatal("JIT allocator fixed register is not a member of its "
                       "register class");
@@ -188,7 +198,7 @@ namespace cl::jit
             OccurrenceId add_occurrence(LiveRangeId live_range_id,
                                         ProgramPoint point, OccurrenceKind kind,
                                         OccurrenceAnchor anchor,
-                                        RegisterRequirement requirement)
+                                        LocationRequirement requirement)
             {
                 LiveRange &live_range = live_ranges_[live_range_id.value()];
                 validate_requirement(constraints_, requirement,
@@ -203,12 +213,13 @@ namespace cl::jit
                     live_range.range.end = point.next();
                 }
 
-                if(requirement.kind() == RegisterRequirement::Kind::Fixed)
+                if(requirement.kind() ==
+                   LocationRequirement::Kind::FixedLocation)
                 {
                     FixedConstraintId fixed_id(fixed_constraints_.size());
                     fixed_constraints_.push_back(
-                        {point, requirement.fixed_register(), live_range_id,
-                         occurrence_id});
+                        {point, requirement.fixed_location().reg(),
+                         live_range_id, occurrence_id});
                     live_range.fixed_constraints.push_back(fixed_id);
                 }
                 return occurrence_id;
@@ -253,7 +264,7 @@ namespace cl::jit
                             : default_result_constraint(
                                   parameter->value_representation());
                     if(result_constraint.requirement.kind() ==
-                       RegisterRequirement::Kind::SameAsInput)
+                       LocationRequirement::Kind::SameAsInput)
                     {
                         return Result<void, RegisterAllocationError>::error(
                             RegisterAllocationError::UnsupportedSameAsInput);
@@ -336,7 +347,7 @@ namespace cl::jit
                                 : default_result_constraint(
                                       instruction->value_representation());
                         if(result_constraint.requirement.kind() ==
-                           RegisterRequirement::Kind::SameAsInput)
+                           LocationRequirement::Kind::SameAsInput)
                         {
                             return Result<void, RegisterAllocationError>::error(
                                 RegisterAllocationError::
@@ -365,7 +376,7 @@ namespace cl::jit
                             temporary_index < override->temporaries().size();
                             ++temporary_index)
                         {
-                            RegisterRequirement requirement =
+                            LocationRequirement requirement =
                                 override->temporaries()[temporary_index]
                                     .requirement;
                             RegisterClass register_class =
@@ -419,8 +430,8 @@ namespace cl::jit
                         Instruction *definition =
                             arguments[argument_index].instruction();
                         LiveRangeId live_range = value_range(definition, block);
-                        RegisterRequirement requirement =
-                            RegisterRequirement::any(
+                        LocationRequirement requirement =
+                            LocationRequirement::any_register(
                                 live_ranges_[live_range.value()]
                                     .register_class);
                         add_occurrence(live_range, exit_before,
