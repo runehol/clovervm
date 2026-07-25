@@ -2,8 +2,10 @@
 #include "jit/aarch64_backend.h"
 #include "jit/aarch64_cfg_emitter.h"
 #include "jit/compilation_session.h"
+#include "jit/core_bytecode_translator.h"
 #include "jit/graph_builder.h"
 #include "jit/location_assignments.h"
+#include "test_helpers.h"
 
 #include <gtest/gtest.h>
 
@@ -50,6 +52,28 @@ namespace cl::jit
                 }
             }
             return std::move(locations).finalize();
+        }
+
+        uint64_t execute_python_expression(const wchar_t *source)
+        {
+            test::VmTestContext context;
+            ThreadState::ActivationScope activation_scope(context.thread());
+            CodeObject *code = context.thread()
+                                   ->compile(source, StartRule::Interactive)
+                                   .value();
+
+            CompilationSession session;
+            GraphBuilder builder(session);
+            CoreBytecodeTranslator translator(*code, builder);
+            ControlFlowGraph *graph = translator.translate();
+
+            CodeCache cache;
+            PublishedCode published =
+                compile_to_aarch64(session, *graph, cache).value();
+            using Function = uint64_t (*)();
+            Function function = reinterpret_cast<Function>(
+                published.entry().bits_for_indirect_target());
+            return function();
         }
 
         template <typename LogicalInstruction>
@@ -143,6 +167,16 @@ namespace cl::jit
             reinterpret_cast<Function>(code.entry().bits_for_indirect_target());
         constexpr uint64_t input = 0x123456789abcdef0;
         EXPECT_EQ(input, function(input));
+    }
+
+    TEST(AArch64Execution, CompilesPythonLiteralExpressions)
+    {
+        EXPECT_EQ(static_cast<uint64_t>(Value::None().as.integer),
+                  execute_python_expression(L"None\n"));
+        EXPECT_EQ(static_cast<uint64_t>(Value::True().as.integer),
+                  execute_python_expression(L"True\n"));
+        EXPECT_EQ(static_cast<uint64_t>(Value::from_smi(42).as.integer),
+                  execute_python_expression(L"42\n"));
     }
 
     TEST(AArch64Execution, EmitsInlineConstantFunctionFromCfg)

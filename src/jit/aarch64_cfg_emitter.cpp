@@ -92,6 +92,9 @@ namespace cl::jit
             // clang-format off
             CL_JIT_INSTRUCTION_SWITCH(*instruction)
             {
+                case InstructionKind::Uninitialized:
+                    break;
+
                 case CL_JIT_INSTRUCTION_CASE(ConstInstruction,
                                              constant_instruction)
                 {
