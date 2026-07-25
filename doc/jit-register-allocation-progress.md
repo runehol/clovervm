@@ -123,7 +123,7 @@ bundle IDs, rewrites the CFG, and produces occurrence-oriented
 Block parameters and edge arguments retain their distinct SSA identities.
 Bundle merging provides physical continuity without changing Core def/use
 semantics. Affinity merging finishes before pressure-driven allocation
-splitting begins; constraint normalization may already have partitioned
+splitting begins; location-constraint splitting may already have partitioned
 statically incompatible locations. After splitting, one source live-range ID
 may occur in several bundles.
 
@@ -137,8 +137,8 @@ may occur in several bundles.
   mutating the immutable source live ranges; partition sparse fixed constraints
   by point and recompute child priority and spill weight from covered
   occurrences.
-- [ ] Normalize remaining same-as-input and multi-location occurrences into
-  constrained fragments plus explicit fixups.
+- [ ] Split or add fixups for remaining same-as-input and multi-location
+  occurrences.
 - [ ] Record edge, pressure-split, and fixup transfers in
   `BundleTransferSchedule`.
 - [ ] Complete the unified parallel-transfer resolver, including cycles and the

@@ -237,8 +237,8 @@ namespace cl::jit
                         problem_.fixed_constraints()[fixed_id.value()].location;
                     if(result.has_value() && !result->aliases(location))
                     {
-                        fatal("normalized JIT bundle has incompatible fixed "
-                              "locations");
+                        fatal("location-split JIT bundle has incompatible "
+                              "fixed locations");
                     }
                     if(!result.has_value())
                     {
@@ -335,24 +335,24 @@ namespace cl::jit
     assign_bundles(const PreparedAllocationProblem &problem,
                    const AllocationConstraints &constraints)
     {
-        auto normalized_result = normalize_bundle_constraints(problem);
-        if(!normalized_result)
+        auto split_result = split_for_location_constraints(problem);
+        if(!split_result)
         {
-            return propagate_failure(std::move(normalized_result));
+            return propagate_failure(std::move(split_result));
         }
-        NormalizedBundles normalized = std::move(normalized_result).value();
+        LocationConstraintSplit split = std::move(split_result).value();
 
         auto assignment_result =
-            BundleAssigner(problem, normalized.bundles, constraints).run();
+            BundleAssigner(problem, split.bundles, constraints).run();
         if(!assignment_result)
         {
             return propagate_failure(std::move(assignment_result));
         }
         BundleLocationAssignments assignments =
             std::move(assignment_result).value();
-        RegisterAllocationResult allocation(std::move(normalized.bundles),
+        RegisterAllocationResult allocation(std::move(split.bundles),
                                             std::move(assignments),
-                                            std::move(normalized.transfers));
+                                            std::move(split.transfers));
         verify_register_allocation(problem, constraints, allocation);
         return Result<RegisterAllocationResult, RegisterAllocationError>::ok(
             std::move(allocation));

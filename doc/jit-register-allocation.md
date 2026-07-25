@@ -866,8 +866,9 @@ the first conflict-free assignment stage accepts executable graphs only when
 no cross-block bundle merging, edge moves, splitting, eviction, or spilling is
 required.
 
-The selected allocation is not stored in the prepared bundle. Normalization
-copies the initial bundles into the final vector owned by
+The selected allocation is not stored in the prepared bundle.
+Location-constraint splitting copies the initial bundles into the final vector
+owned by
 `RegisterAllocationResult`; a separate bundle-assignment table records the
 physical register or later spill location chosen for each active bundle.
 
@@ -896,15 +897,15 @@ therefore cost `O(F log A)` for `F` bundle fragments and `A` active fragments
 on the register. A bundle must be removed from this index before splitting or
 otherwise mutating its fragments.
 
-Constraint normalization produces the final bundle vector and generalizes the
-forward table to `BundleLocationAssignments`, whose entries are
+Location-constraint splitting produces the final bundle vector. The forward
+table is a `BundleLocationAssignments`, whose entries are
 `AllocationLocation`s. Fixed stack bundles are assigned directly; register
-bundles continue to use the same register worklist and occupancy indexes. Stack
-occupancy is keyed by frame offset because that identifies the physical cell
-within one allocation problem. The exact `StackLocationKind` on each fixed
-occurrence is nevertheless retained for final `LocationAssignments`, because
-it selects addressing and instruction-generation policy even when two semantic
-stack locations alias the same cell.
+bundles continue to use the same register worklist and occupancy indexes.
+Stack occupancy is keyed by frame offset because that identifies the physical
+cell within one allocation problem. The exact `StackLocationKind` on each
+fixed occurrence is nevertheless retained for final `LocationAssignments`,
+because it selects addressing and instruction-generation policy even when two
+semantic stack locations alias the same cell.
 
 Clobber ranges remain separate because they are immutable reservations rather
 than allocatable bundles. They are sorted and coalesced once, then queried by
@@ -978,8 +979,8 @@ Spill weights use 64-bit unsigned arithmetic because one bundle may accumulate
 contributions from many occurrences. Saturating addition prevents heuristic
 overflow from changing allocation ordering.
 
-Constraints normalized into fixup moves are weighted at the resulting
-occurrences. A non-minimal bundle's spill weight is:
+Constraints separated by splitting or fixup moves are weighted at the
+resulting occurrences. A non-minimal bundle's spill weight is:
 
 ```text
 sum(occurrence spill weights) / allocation priority
@@ -998,23 +999,24 @@ above every non-minimal bundle: a minimal fixed-location bundle has the maximum
 weight, and an ordinary minimal bundle has the next lower tier. Clobber
 reservations are not bundles and cannot be evicted.
 
-## Constraint Normalization and Fixups
+## Location-Constraint Splitting and Fixups
 
-The allocator normalizes awkward occurrence constraints into compatible
-fragments plus deferred fixup transfers before its core assignment loop.
+Before its core assignment loop, the allocator splits bundles wherever their
+occurrence constraints cannot share one location. The result is compatible
+fragments plus deferred transfers.
 
 Requirements covered by one fragment must admit one common location.
 `AnyRegister(GPR)` and `FixedLocation(x0)` are compatible. Two different fixed
 registers are incompatible, as are a fixed stack location and an ordinary
 register-only occurrence.
 
-The normalizer splits immediately before the first incompatible use whenever
-legal. This keeps an earlier stack or spill fragment live until the last
-possible point, places its reload immediately before the register-only use, and
-minimizes register pressure. A constrained definition starts its fixed
-fragment at the definition's minimum liveness position; a connector to a later
-fragment occurs at the next legal transfer point after the complete defining
-instruction.
+The location-constraint splitter splits immediately before the first
+incompatible use whenever legal. This keeps an earlier stack or spill fragment
+live until the last possible point, places its reload immediately before the
+register-only use, and minimizes register pressure. A constrained definition
+starts its fixed fragment at the definition's minimum liveness position; a
+connector to a later fragment occurs at the next legal transfer point after
+the complete defining instruction.
 
 Normal splitting never creates a transfer between an instruction's Early and
 Late actions. An incompatible use in instruction B selects
@@ -1039,8 +1041,8 @@ starting at the input phase, with a fixup transfer from the input and a
 high-priority merge opportunity between the two ranges. If they can share a
 location the transfer disappears; otherwise it remains in the schedule.
 
-This normalization preserves the invariant that a live-range fragment occupies
-one location at a liveness position. It keeps special instruction shapes at the
+This splitting preserves the invariant that a live-range fragment occupies one
+location at a liveness position. It keeps special instruction shapes at the
 boundary of the allocator rather than complicating every bundle-placement
 decision.
 
@@ -1056,7 +1058,7 @@ The allocator runs over prepared IR:
 build ephemeral positions
 compute precise allocation liveness
 build live ranges and attach constrained occurrences
-normalize constraints and record fixups
+split for incompatible location constraints and record transfers
 merge related non-overlapping ranges into bundles
 enqueue bundles by allocation priority
 assign a fitting register, evict lower-weight bundles, or split
@@ -1262,11 +1264,12 @@ the allocator problem rather than being consumed invisibly by emission.
 
 ## Unified Parallel Transfers
 
-During normalization, merging, splitting, and spill decisions, the allocator
+During constraint-driven splitting, merging, pressure-driven splitting, and
+spill decisions, the allocator
 collects every bundle transfer it introduces:
 
 - connectors between split bundle children;
-- normalized fixed-location and reused-input fixups;
+- fixed-location and reused-input fixups;
 - explicit machine-value moves;
 - block-edge argument transfers;
 - spill and reload transfers;

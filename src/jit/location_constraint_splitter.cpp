@@ -131,16 +131,16 @@ namespace cl::jit
             fatal("invalid occurrence anchor for JIT bundle split");
         }
 
-        class ConstraintNormalizer
+        class LocationConstraintSplitter
         {
         public:
-            explicit ConstraintNormalizer(
+            explicit LocationConstraintSplitter(
                 const PreparedAllocationProblem &problem)
                 : problem_(problem), bundles_(problem.bundles())
             {
             }
 
-            Result<NormalizedBundles, RegisterAllocationError> run()
+            Result<LocationConstraintSplit, RegisterAllocationError> run()
             {
                 size_t initial_bundle_count = bundles_.size();
                 for(size_t index = 0; index < initial_bundle_count; ++index)
@@ -151,8 +151,10 @@ namespace cl::jit
                         return propagate_failure(std::move(result));
                     }
                 }
-                return Result<NormalizedBundles, RegisterAllocationError>::ok(
-                    {std::move(bundles_), std::move(transfers_)});
+                return Result<LocationConstraintSplit,
+                              RegisterAllocationError>::ok({std::move(bundles_),
+                                                            std::move(
+                                                                transfers_)});
             }
 
         private:
@@ -210,10 +212,10 @@ namespace cl::jit
         };
     }  // namespace
 
-    Result<NormalizedBundles, RegisterAllocationError>
-    normalize_bundle_constraints(const PreparedAllocationProblem &problem)
+    Result<LocationConstraintSplit, RegisterAllocationError>
+    split_for_location_constraints(const PreparedAllocationProblem &problem)
     {
-        return ConstraintNormalizer(problem).run();
+        return LocationConstraintSplitter(problem).run();
     }
 
 }  // namespace cl::jit

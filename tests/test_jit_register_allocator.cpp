@@ -876,7 +876,7 @@ namespace cl::jit
                   prepared.error());
     }
 
-    TEST(JitRegisterAllocator, RejectsSameAsInputUntilNormalization)
+    TEST(JitRegisterAllocator, RejectsSameAsInputUntilConstraintSplitting)
     {
         CompilationSession session;
         GraphBuilder builder(session);

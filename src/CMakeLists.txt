@@ -110,7 +110,6 @@ add_library(libclovervm_objects OBJECT
     jit/compilation_arena.h
     jit/compilation_session.cpp
     jit/compilation_session.h
-    jit/constraint_normalizer.cpp
     jit/control_flow_graph.cpp
     jit/control_flow_graph.h
     jit/core_bytecode_translator.cpp
@@ -134,6 +133,7 @@ add_library(libclovervm_objects OBJECT
     jit/jit_code_object.cpp
     jit/jit_code_object.h
     jit/live_range_scanner.cpp
+    jit/location_constraint_splitter.cpp
     jit/code_cache_types.h
     jit/machine_address.h
     jit/machine_address_internal.h
