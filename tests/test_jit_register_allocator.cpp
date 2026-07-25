@@ -311,6 +311,42 @@ namespace cl::jit
         EXPECT_EQ(x0, assignments.register_for(BundleId(1)));
     }
 
+    TEST(JitRegisterAllocator, FindsARegisterConflictBeforeTheInsertionPoint)
+    {
+        CompilationSession session;
+        GraphBuilder builder(session);
+        Block *entry = builder.emplace_block();
+        TaggedValueRef long_lived =
+            emplace_constant(builder, entry, Value::from_smi(1));
+        TaggedValueRef later =
+            emplace_constant(builder, entry, Value::from_smi(2));
+        builder.emplace_instruction<AndSMIInstruction>(entry, later, later);
+        for(size_t index = 0; index < 4; ++index)
+        {
+            builder.emplace_instruction<UninitializedInstruction>(entry);
+        }
+        builder.emplace_instruction<ReturnInstruction>(entry, long_lived);
+        ControlFlowGraph *graph = builder.finalize();
+
+        constexpr std::array registers = {x0, x1};
+        AllocationConstraints constraints = gpr_constraints(registers);
+        auto prepared_result = prepare_register_allocation(*graph, constraints);
+        ASSERT_TRUE(prepared_result);
+        PreparedAllocationProblem prepared = std::move(prepared_result).value();
+
+        ASSERT_GT(prepared.bundles()[0].allocation_priority,
+                  prepared.bundles()[1].allocation_priority);
+        ASSERT_GT(prepared.bundles()[1].fragments[0].range.start,
+                  prepared.bundles()[0].fragments[0].range.start);
+        auto assignment_result = assign_bundles(prepared, constraints);
+        ASSERT_TRUE(assignment_result);
+        BundleRegisterAssignments assignments =
+            std::move(assignment_result).value();
+
+        EXPECT_EQ(x0, assignments.register_for(BundleId(0)));
+        EXPECT_EQ(x1, assignments.register_for(BundleId(1)));
+    }
+
     TEST(JitRegisterAllocator, RejectsRegisterPressureWithoutSplitting)
     {
         CompilationSession session;

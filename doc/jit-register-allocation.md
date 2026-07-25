@@ -631,6 +631,18 @@ private:
 This is the allocator-local forward result. The reverse
 `PhysicalRegister -> assigned fragments` index and the corresponding clobber
 range index are assignment scratch state and are discarded after placement.
+Each register's active fragments are stored in an `absl::btree_map` keyed only
+by fragment start, with fragment end and `BundleId` in the value. Active
+fragments are non-empty and conflict-free, so duplicate starts are an allocator
+error. Candidate lookup checks the predecessor of `lower_bound(start)` and then
+the entries beginning before the candidate end. Insertion and later eviction
+therefore cost `O(F log A)` for `F` bundle fragments and `A` active fragments
+on the register. A bundle must be removed from this index before splitting or
+otherwise mutating its fragments.
+
+Clobber ranges remain separate because they are immutable reservations rather
+than allocatable bundles. They are sorted and coalesced once, then queried by
+the same predecessor-and-successor rule.
 Later location materialization converts the bundle result into durable
 occurrence-oriented `LocationAssignments`.
 

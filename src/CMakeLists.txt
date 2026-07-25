@@ -303,8 +303,8 @@ endif()
 target_compile_definitions(libclovervm_objects
     PRIVATE CLOVERVM_BUILDING_SHARED)
 target_link_libraries(
-    libclovervm_objects PUBLIC absl::inlined_vector absl::flat_hash_map
-                              absl::flat_hash_set)
+    libclovervm_objects PUBLIC absl::btree absl::inlined_vector
+                              absl::flat_hash_map absl::flat_hash_set)
 target_link_libraries(libclovervm_objects PUBLIC fmt::fmt)
 target_link_libraries(libclovervm_objects PUBLIC ${CMAKE_DL_LIBS})
 

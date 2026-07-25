@@ -2,9 +2,12 @@
 
 #include "runtime/fatal.h"
 
+#include <absl/container/btree_map.h>
+
 #include <algorithm>
 #include <array>
 #include <cassert>
+#include <iterator>
 #include <optional>
 #include <queue>
 #include <utility>
@@ -40,9 +43,12 @@ namespace cl::jit
 
         struct AssignedFragment
         {
-            ProgramRange range;
+            ProgramPoint end;
             BundleId bundle;
         };
+
+        using RegisterOccupancy =
+            absl::btree_map<ProgramPoint, AssignedFragment>;
 
         struct BundleWorkItem
         {
@@ -63,9 +69,54 @@ namespace cl::jit
             }
         };
 
-        bool ranges_overlap(ProgramRange lhs, ProgramRange rhs)
+        void coalesce_ranges(std::vector<ProgramRange> &ranges)
         {
-            return lhs.start < rhs.end && rhs.start < lhs.end;
+            std::ranges::sort(ranges, [](ProgramRange lhs, ProgramRange rhs) {
+                return lhs.start < rhs.start;
+            });
+
+            size_t output = 0;
+            for(ProgramRange range: ranges)
+            {
+                if(output != 0 && range.start <= ranges[output - 1].end)
+                {
+                    ranges[output - 1].end =
+                        std::max(ranges[output - 1].end, range.end);
+                }
+                else
+                {
+                    ranges[output++] = range;
+                }
+            }
+            ranges.erase(ranges.begin() + static_cast<ptrdiff_t>(output),
+                         ranges.end());
+        }
+
+        bool ranges_overlap(const std::vector<ProgramRange> &ranges,
+                            ProgramRange candidate)
+        {
+            auto position = std::ranges::lower_bound(
+                ranges, candidate.start, {},
+                [](ProgramRange range) { return range.start; });
+            if(position != ranges.begin() &&
+               std::prev(position)->end > candidate.start)
+            {
+                return true;
+            }
+            return position != ranges.end() && position->start < candidate.end;
+        }
+
+        bool ranges_overlap(const RegisterOccupancy &occupancy,
+                            ProgramRange candidate)
+        {
+            auto position = occupancy.lower_bound(candidate.start);
+            if(position != occupancy.begin() &&
+               std::prev(position)->second.end > candidate.start)
+            {
+                return true;
+            }
+            return position != occupancy.end() &&
+                   position->first < candidate.end;
         }
 
         class BundleAssigner
@@ -92,11 +143,7 @@ namespace cl::jit
                     {
                         PhysicalRegister reg(register_class,
                                              static_cast<uint8_t>(number));
-                        std::ranges::sort(
-                            clobber_ranges_[reg],
-                            [](ProgramRange lhs, ProgramRange rhs) {
-                                return lhs.start < rhs.start;
-                            });
+                        coalesce_ranges(clobber_ranges_[reg]);
                     }
                 }
             }
@@ -219,20 +266,10 @@ namespace cl::jit
                 assert(reg.register_class() == bundle.register_class);
                 for(const BundleFragment &fragment: bundle.fragments)
                 {
-                    for(const AssignedFragment &assigned:
-                        assigned_fragments_[reg])
+                    if(ranges_overlap(occupancy_[reg], fragment.range) ||
+                       ranges_overlap(clobber_ranges_[reg], fragment.range))
                     {
-                        if(ranges_overlap(fragment.range, assigned.range))
-                        {
-                            return false;
-                        }
-                    }
-                    for(ProgramRange clobber: clobber_ranges_[reg])
-                    {
-                        if(ranges_overlap(fragment.range, clobber))
-                        {
-                            return false;
-                        }
+                        return false;
                     }
                 }
                 return true;
@@ -243,26 +280,26 @@ namespace cl::jit
                 assert(!register_by_bundle_[bundle_id.value()].has_value());
                 register_by_bundle_[bundle_id.value()] = reg;
 
-                std::vector<AssignedFragment> &assigned =
-                    assigned_fragments_[reg];
+                RegisterOccupancy &occupancy = occupancy_[reg];
                 for(const BundleFragment &fragment:
                     problem_.bundles()[bundle_id.value()].fragments)
                 {
-                    auto position = std::ranges::lower_bound(
-                        assigned, fragment.range.start, {},
-                        [](const AssignedFragment &entry) {
-                            return entry.range.start;
-                        });
-                    assigned.insert(
-                        position, AssignedFragment{fragment.range, bundle_id});
+                    auto [position, inserted] = occupancy.emplace(
+                        fragment.range.start,
+                        AssignedFragment{fragment.range.end, bundle_id});
+                    (void)position;
+                    if(!inserted)
+                    {
+                        fatal("JIT allocator assigned two fragments with the "
+                              "same start point to one register");
+                    }
                 }
             }
 
             const PreparedAllocationProblem &problem_;
             const AllocationConstraints &constraints_;
             std::vector<std::optional<PhysicalRegister>> register_by_bundle_;
-            PerPhysicalRegister<std::vector<AssignedFragment>>
-                assigned_fragments_;
+            PerPhysicalRegister<RegisterOccupancy> occupancy_;
             PerPhysicalRegister<std::vector<ProgramRange>> clobber_ranges_;
             std::priority_queue<BundleWorkItem, std::vector<BundleWorkItem>,
                                 BundleWorkItemCompare>
