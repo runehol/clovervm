@@ -225,16 +225,19 @@ class RegisterClassDefinition
 public:
     RegisterClassDefinition(
         RegisterClass register_class,
-        std::span<const PhysicalRegister> allocation_order);
+        std::span<const PhysicalRegister> allocation_order,
+        std::optional<PhysicalRegister> scratch_register = std::nullopt);
 
     RegisterClass register_class() const;
     const RegisterSet &members() const;
     const std::vector<PhysicalRegister> &allocation_order() const;
+    std::optional<PhysicalRegister> scratch_register() const;
 
 private:
     RegisterClass register_class_;
     RegisterSet members_;
     std::vector<PhysicalRegister> allocation_order_;
+    std::optional<PhysicalRegister> scratch_register_;
 };
 ```
 
@@ -253,6 +256,11 @@ AArch64 V0 / D0 / S0  -> { SIMD, 0 }
 x86-64 RAX/EAX/AX/AL  -> { GPR, 0 }
 x86-64 XMM0/YMM0/ZMM0 -> { SIMD, 0 }
 ```
+
+Each class may also declare one target-owned scratch register. Scratch is
+excluded from `members()` and `allocation_order()`, so allocator bundles and
+fixed instruction constraints cannot claim it. Post-allocation backend
+operations such as parallel-transfer resolution may use it explicitly.
 
 The emitter converts a `PhysicalRegister` to the target instruction's required
 view. A partial-width x86 definition still occupies and conflicts on the whole
@@ -612,9 +620,11 @@ This is a bring-up choice, not the final CloverVM calling convention:
 
 - the enabled GPR class contains `x0` through `x15`, in that allocation order;
 - the enabled SIMD class contains caller-saved `v0` through `v7` followed by
-  `v16` through `v31`;
-- `x16` and `x17` remain unavailable until allocation assignments are consumed
-  by every branch and call lowering that may need scratch registers;
+  `v16` through `v30`;
+- the GPR class declares `x16` as its non-allocatable scratch register;
+- the SIMD class declares `v31` as its non-allocatable scratch register;
+- `x17` remains unavailable until allocation assignments are consumed by every
+  branch and call lowering that may need scratch registers;
 - platform-reserved `x18` is unavailable;
 - callee-saved GPRs and `v8` through `v15` remain unavailable until prologue
   and epilogue generation preserves them;
@@ -1265,10 +1275,11 @@ argument use. The explicit late result def supplies the required interference
 for `x0` instead. A resultless call includes `x0` in its clobber set when the
 ABI permits the call to destroy it.
 
-Hidden scratch registers are not allowed. If a selected lowering needs a
-temporary, its `AllocationConstraints` must expose that temporary. A reserved
-global scratch during bring-up is still modeled as unavailable or clobbered in
-the allocator problem rather than being consumed invisibly by emission.
+Undeclared scratch registers are not allowed. Instruction lowerings expose
+ordinary temporaries through their `AllocationConstraints`; backend-only
+operations may use the scratch register explicitly declared by their
+`RegisterClassDefinition`. Such a register is excluded from allocation rather
+than being consumed invisibly by emission.
 
 ## Unified Parallel Transfers
 

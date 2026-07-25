@@ -7,6 +7,7 @@
 #include <bitset>
 #include <cstddef>
 #include <cstdint>
+#include <optional>
 #include <span>
 #include <vector>
 
@@ -102,7 +103,8 @@ namespace cl::jit
     public:
         RegisterClassDefinition(
             RegisterClass register_class,
-            std::span<const PhysicalRegister> allocation_order);
+            std::span<const PhysicalRegister> allocation_order,
+            std::optional<PhysicalRegister> scratch_register = std::nullopt);
 
         RegisterClass register_class() const { return register_class_; }
         const RegisterSet &members() const { return members_; }
@@ -110,11 +112,16 @@ namespace cl::jit
         {
             return allocation_order_;
         }
+        std::optional<PhysicalRegister> scratch_register() const
+        {
+            return scratch_register_;
+        }
 
     private:
         RegisterClass register_class_;
         RegisterSet members_;
         std::vector<PhysicalRegister> allocation_order_;
+        std::optional<PhysicalRegister> scratch_register_;
     };
 
 }  // namespace cl::jit

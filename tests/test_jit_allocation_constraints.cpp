@@ -67,6 +67,11 @@ namespace cl::jit
         EXPECT_EQ(RegisterClass::GPR, definition.register_class());
         EXPECT_EQ(members, definition.members());
         EXPECT_EQ(x1, definition.allocation_order()[0]);
+        EXPECT_FALSE(definition.scratch_register().has_value());
+
+        RegisterClassDefinition with_scratch(RegisterClass::GPR, order, x63);
+        ASSERT_TRUE(with_scratch.scratch_register().has_value());
+        EXPECT_EQ(x63, *with_scratch.scratch_register());
 
         std::array duplicate = {x0, x0};
         EXPECT_DEATH(
@@ -77,6 +82,12 @@ namespace cl::jit
         EXPECT_DEATH(
             (void)RegisterClassDefinition(RegisterClass::GPR, wrong_class),
             "wrong register class");
+        EXPECT_DEATH(
+            (void)RegisterClassDefinition(RegisterClass::GPR, order, d0),
+            "scratch register has the wrong");
+        EXPECT_DEATH(
+            (void)RegisterClassDefinition(RegisterClass::GPR, order, x0),
+            "scratch register is also allocatable");
     }
 
     TEST(JitPhysicalRegister, RejectsDuplicateClassDefinitions)

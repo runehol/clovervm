@@ -13,8 +13,6 @@ namespace cl::jit
     namespace
     {
         constexpr uint8_t PlatformIntegerArgumentRegisterCount = 8;
-        constexpr uint8_t InitialAllocatableGPRCount = 16;
-        constexpr uint8_t InitialAllocatableSIMDCount = 24;
 
         constexpr PhysicalRegister gpr(uint8_t number)
         {
@@ -26,19 +24,17 @@ namespace cl::jit
             return PhysicalRegister(RegisterClass::SIMD, number);
         }
 
-        constexpr std::array<PhysicalRegister, InitialAllocatableGPRCount>
-            GPRAllocationOrder = {
-                gpr(0),  gpr(1),  gpr(2),  gpr(3),  gpr(4),  gpr(5),
-                gpr(6),  gpr(7),  gpr(8),  gpr(9),  gpr(10), gpr(11),
-                gpr(12), gpr(13), gpr(14), gpr(15),
+        constexpr std::array GPRAllocationOrder = {
+            gpr(0),  gpr(1),  gpr(2),  gpr(3),  gpr(4),  gpr(5),
+            gpr(6),  gpr(7),  gpr(8),  gpr(9),  gpr(10), gpr(11),
+            gpr(12), gpr(13), gpr(14), gpr(15),
         };
 
-        constexpr std::array<PhysicalRegister, InitialAllocatableSIMDCount>
-            SIMDAllocationOrder = {
-                simd(0),  simd(1),  simd(2),  simd(3),  simd(4),  simd(5),
-                simd(6),  simd(7),  simd(16), simd(17), simd(18), simd(19),
-                simd(20), simd(21), simd(22), simd(23), simd(24), simd(25),
-                simd(26), simd(27), simd(28), simd(29), simd(30), simd(31),
+        constexpr std::array SIMDAllocationOrder = {
+            simd(0),  simd(1),  simd(2),  simd(3),  simd(4),  simd(5),
+            simd(6),  simd(7),  simd(16), simd(17), simd(18), simd(19),
+            simd(20), simd(21), simd(22), simd(23), simd(24), simd(25),
+            simd(26), simd(27), simd(28), simd(29), simd(30),
         };
 
         [[noreturn]] void unsupported_instruction(InstructionKind kind)
@@ -141,8 +137,10 @@ namespace cl::jit
         }
 
         std::vector<RegisterClassDefinition> register_classes;
-        register_classes.emplace_back(RegisterClass::GPR, GPRAllocationOrder);
-        register_classes.emplace_back(RegisterClass::SIMD, SIMDAllocationOrder);
+        register_classes.emplace_back(RegisterClass::GPR, GPRAllocationOrder,
+                                      gpr(16));
+        register_classes.emplace_back(RegisterClass::SIMD, SIMDAllocationOrder,
+                                      simd(31));
         return AllocationConstraints(std::move(register_classes),
                                      std::move(overrides));
     }
