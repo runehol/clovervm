@@ -38,6 +38,7 @@ namespace cl::jit
         EXPECT_EQ(ResolvedTransferSource::Kind::OriginalTransfer,
                   save.source.kind());
         EXPECT_EQ(0u, save.source.index());
+        EXPECT_EQ(x0, save.source_location.reg());
         EXPECT_EQ(x2, save.destination.reg());
         EXPECT_EQ(-1, save.original_parallel_transfer_index);
 
@@ -45,12 +46,14 @@ namespace cl::jit
         EXPECT_EQ(ResolvedTransferSource::Kind::OriginalTransfer,
                   move_rhs.source.kind());
         EXPECT_EQ(1u, move_rhs.source.index());
+        EXPECT_EQ(x1, move_rhs.source_location.reg());
         EXPECT_EQ(x0, move_rhs.destination.reg());
         EXPECT_EQ(1, move_rhs.original_parallel_transfer_index);
 
         const ResolvedTransferStep &move_lhs = resolved.value().steps[2];
         EXPECT_EQ(ResolvedTransferSource::Kind::Step, move_lhs.source.kind());
         EXPECT_EQ(0u, move_lhs.source.index());
+        EXPECT_EQ(x2, move_lhs.source_location.reg());
         EXPECT_EQ(x1, move_lhs.destination.reg());
         EXPECT_EQ(0, move_lhs.original_parallel_transfer_index);
     }
@@ -69,11 +72,15 @@ namespace cl::jit
 
         ASSERT_TRUE(resolved);
         ASSERT_EQ(2u, resolved.value().steps.size());
+        EXPECT_EQ(
+            8,
+            resolved.value().steps[0].source_location.stack().frame_offset());
         EXPECT_EQ(x2, resolved.value().steps[0].destination.reg());
         EXPECT_EQ(-1,
                   resolved.value().steps[0].original_parallel_transfer_index);
         EXPECT_EQ(ResolvedTransferSource::Kind::Step,
                   resolved.value().steps[1].source.kind());
+        EXPECT_EQ(x2, resolved.value().steps[1].source_location.reg());
         EXPECT_EQ(-8,
                   resolved.value().steps[1].destination.stack().frame_offset());
         EXPECT_EQ(0,

@@ -209,18 +209,19 @@ namespace cl::jit
 
         ASSERT_TRUE(materialized);
         ASSERT_EQ(2u, entry->instructions().size());
-        MovInstruction *move = entry->instructions()[0]->as<MovInstruction>();
+        LoadStackInstruction *load =
+            entry->instructions()[0]->as<LoadStackInstruction>();
         ReturnInstruction *new_return =
             entry->instructions()[1]->as<ReturnInstruction>();
-        EXPECT_EQ(parameter, move->source().instruction());
-        EXPECT_EQ(move, new_return->return_value().instruction());
+        EXPECT_EQ(parameter, load->source().instruction());
+        EXPECT_EQ(load, new_return->return_value().instruction());
         EXPECT_TRUE(old_return->is_detached());
         EXPECT_EQ(4, materialized.value()
                          .location_for(ProgramValueRef(parameter))
                          .stack()
                          .frame_offset());
         EXPECT_EQ(
-            x0, materialized.value().location_for(ProgramValueRef(move)).reg());
+            x0, materialized.value().location_for(ProgramValueRef(load)).reg());
     }
 
     TEST(JitAllocationMaterializer, InsertsParallelStackToRegisterTransfers)
@@ -264,18 +265,115 @@ namespace cl::jit
 
         ASSERT_TRUE(materialized);
         ASSERT_EQ(4u, entry->instructions().size());
-        MovInstruction *lhs_move =
-            entry->instructions()[0]->as<MovInstruction>();
-        MovInstruction *rhs_move =
-            entry->instructions()[1]->as<MovInstruction>();
+        LoadStackInstruction *lhs_load =
+            entry->instructions()[0]->as<LoadStackInstruction>();
+        LoadStackInstruction *rhs_load =
+            entry->instructions()[1]->as<LoadStackInstruction>();
         AndSMIInstruction *new_operation =
             entry->instructions()[2]->as<AndSMIInstruction>();
-        EXPECT_EQ(lhs, lhs_move->source().instruction());
-        EXPECT_EQ(rhs, rhs_move->source().instruction());
-        EXPECT_EQ(lhs_move, new_operation->lhs().instruction());
-        EXPECT_EQ(rhs_move, new_operation->rhs().instruction());
+        EXPECT_EQ(lhs, lhs_load->source().instruction());
+        EXPECT_EQ(rhs, rhs_load->source().instruction());
+        EXPECT_EQ(lhs_load, new_operation->lhs().instruction());
+        EXPECT_EQ(rhs_load, new_operation->rhs().instruction());
         EXPECT_TRUE(operation->is_detached());
         EXPECT_TRUE(return_instruction->is_detached());
+    }
+
+    TEST(JitAllocationMaterializer, InsertsRegisterToStackTransfer)
+    {
+        CompilationSession session;
+        GraphBuilder builder(session);
+        Block *entry = builder.emplace_block();
+        ParameterInstruction *parameter =
+            builder.emplace_parameter<ParameterInstruction>(entry);
+        ReturnInstruction *old_return =
+            builder.emplace_instruction<ReturnInstruction>(
+                entry, TaggedValueRef(parameter));
+        ControlFlowGraph *graph = builder.finalize();
+
+        StackLocation destination(StackLocationKind::LocalOrTemporary, -8);
+        std::vector<InstructionAllocationConstraints> overrides;
+        overrides.emplace_back(
+            parameter, std::vector<ProgramValueUseConstraint>{},
+            ResultConstraint{AccessTiming::Late,
+                             fixed(PhysicalLocation::reg(x0))});
+        overrides.emplace_back(
+            old_return, std::vector<ProgramValueUseConstraint>{
+                            {0, AccessTiming::Early,
+                             fixed(PhysicalLocation::stack(destination))}});
+        AllocationConstraints constraints =
+            constraints_with(std::move(overrides));
+        PreparedAllocationProblem prepared({}, {}, {}, {}, {}, {});
+        RegisterAllocationResult allocation =
+            allocate(*graph, constraints, prepared);
+
+        auto materialized = materialize_allocation(session, *graph, prepared,
+                                                   constraints, allocation);
+
+        ASSERT_TRUE(materialized);
+        ASSERT_EQ(2u, entry->instructions().size());
+        StoreStackInstruction *store =
+            entry->instructions()[0]->as<StoreStackInstruction>();
+        ReturnInstruction *new_return =
+            entry->instructions()[1]->as<ReturnInstruction>();
+        EXPECT_EQ(parameter, store->source().instruction());
+        EXPECT_EQ(store, new_return->return_value().instruction());
+        EXPECT_TRUE(old_return->is_detached());
+        EXPECT_EQ(-8, materialized.value()
+                          .location_for(ProgramValueRef(store))
+                          .stack()
+                          .frame_offset());
+    }
+
+    TEST(JitAllocationMaterializer, RoutesStackTransferThroughScratch)
+    {
+        CompilationSession session;
+        GraphBuilder builder(session);
+        Block *entry = builder.emplace_block();
+        ParameterInstruction *parameter =
+            builder.emplace_parameter<ParameterInstruction>(entry);
+        ReturnInstruction *old_return =
+            builder.emplace_instruction<ReturnInstruction>(
+                entry, TaggedValueRef(parameter));
+        ControlFlowGraph *graph = builder.finalize();
+
+        StackLocation source(StackLocationKind::IncomingParameter, 8);
+        StackLocation destination(StackLocationKind::LocalOrTemporary, -8);
+        std::vector<InstructionAllocationConstraints> overrides;
+        overrides.emplace_back(
+            parameter, std::vector<ProgramValueUseConstraint>{},
+            ResultConstraint{AccessTiming::Late,
+                             fixed(PhysicalLocation::stack(source))});
+        overrides.emplace_back(
+            old_return, std::vector<ProgramValueUseConstraint>{
+                            {0, AccessTiming::Early,
+                             fixed(PhysicalLocation::stack(destination))}});
+        AllocationConstraints constraints =
+            constraints_with(std::move(overrides));
+        PreparedAllocationProblem prepared({}, {}, {}, {}, {}, {});
+        RegisterAllocationResult allocation =
+            allocate(*graph, constraints, prepared);
+
+        auto materialized = materialize_allocation(session, *graph, prepared,
+                                                   constraints, allocation);
+
+        ASSERT_TRUE(materialized);
+        ASSERT_EQ(3u, entry->instructions().size());
+        LoadStackInstruction *load =
+            entry->instructions()[0]->as<LoadStackInstruction>();
+        StoreStackInstruction *store =
+            entry->instructions()[1]->as<StoreStackInstruction>();
+        ReturnInstruction *new_return =
+            entry->instructions()[2]->as<ReturnInstruction>();
+        EXPECT_EQ(parameter, load->source().instruction());
+        EXPECT_EQ(load, store->source().instruction());
+        EXPECT_EQ(store, new_return->return_value().instruction());
+        EXPECT_EQ(
+            x2, materialized.value().location_for(ProgramValueRef(load)).reg());
+        EXPECT_EQ(-8, materialized.value()
+                          .location_for(ProgramValueRef(store))
+                          .stack()
+                          .frame_offset());
     }
 
     TEST(JitAllocationMaterializer, ResolvesRegisterCycleWithScratch)

@@ -84,12 +84,13 @@ namespace cl::jit
 
         size_t append_step(ResolvedTransferPlan &result,
                            ResolvedTransferSource source,
+                           PhysicalLocation source_location,
                            PhysicalLocation destination,
                            int original_parallel_transfer_index)
         {
             size_t index = result.steps.size();
-            result.steps.push_back(
-                {source, destination, original_parallel_transfer_index});
+            result.steps.push_back({source, source_location, destination,
+                                    original_parallel_transfer_index});
             return index;
         }
 
@@ -102,8 +103,8 @@ namespace cl::jit
             if(!transfer.source_location.is_stack() ||
                !transfer.destination.is_stack())
             {
-                append_step(result, transfer.source, transfer.destination,
-                            transfer.original_index);
+                append_step(result, transfer.source, transfer.source_location,
+                            transfer.destination, transfer.original_index);
                 return Result<void, RegisterAllocationError>::ok();
             }
 
@@ -115,10 +116,12 @@ namespace cl::jit
                 return Result<void, RegisterAllocationError>::error(
                     RegisterAllocationError::RequiresTransferScratch);
             }
-            size_t scratch_step = append_step(
-                result, transfer.source, PhysicalLocation::reg(*scratch), -1);
+            size_t scratch_step =
+                append_step(result, transfer.source, transfer.source_location,
+                            PhysicalLocation::reg(*scratch), -1);
             append_step(result, ResolvedTransferSource::step(scratch_step),
-                        transfer.destination, transfer.original_index);
+                        PhysicalLocation::reg(*scratch), transfer.destination,
+                        transfer.original_index);
             return Result<void, RegisterAllocationError>::ok();
         }
     }  // namespace
@@ -225,8 +228,9 @@ namespace cl::jit
                 return Result<ResolvedTransferPlan, RegisterAllocationError>::
                     error(RegisterAllocationError::RequiresTransferScratch);
             }
-            size_t scratch_step = append_step(
-                result, cycle.source, PhysicalLocation::reg(*scratch), -1);
+            size_t scratch_step =
+                append_step(result, cycle.source, cycle.source_location,
+                            PhysicalLocation::reg(*scratch), -1);
             PhysicalLocation old_source = cycle.source_location;
             int32_t moved_sources = 0;
             for(PendingTransfer &transfer: pending)

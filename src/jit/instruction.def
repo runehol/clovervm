@@ -69,6 +69,47 @@ CL_JIT_INSTRUCTION(MovF64, CL_JIT_IR_LEVELS(Core),
 #undef CL_JIT_MovF64_ATTRIBUTES
 #undef CL_JIT_MovF64_OPERANDS
 
+#define CL_JIT_LoadStack_OPERANDS(fixed, variadic, snapshot_values)           \
+    fixed(source, ProgramValue, TaggedValue)
+#define CL_JIT_LoadStack_ATTRIBUTES(attribute)
+CL_JIT_INSTRUCTION(LoadStack, CL_JIT_IR_LEVELS(Core),
+                   CL_JIT_RESULT(ProgramValue, TaggedValue),
+                   CL_JIT_EFFECT_BOUNDS(None, None), CL_JIT_LoadStack_OPERANDS,
+                   CL_JIT_LoadStack_ATTRIBUTES)
+#undef CL_JIT_LoadStack_ATTRIBUTES
+#undef CL_JIT_LoadStack_OPERANDS
+
+#define CL_JIT_LoadStackF64_OPERANDS(fixed, variadic, snapshot_values)        \
+    fixed(source, ProgramValue, F64)
+#define CL_JIT_LoadStackF64_ATTRIBUTES(attribute)
+CL_JIT_INSTRUCTION(LoadStackF64, CL_JIT_IR_LEVELS(Core),
+                   CL_JIT_RESULT(ProgramValue, F64),
+                   CL_JIT_EFFECT_BOUNDS(None, None),
+                   CL_JIT_LoadStackF64_OPERANDS, CL_JIT_LoadStackF64_ATTRIBUTES)
+#undef CL_JIT_LoadStackF64_ATTRIBUTES
+#undef CL_JIT_LoadStackF64_OPERANDS
+
+#define CL_JIT_StoreStack_OPERANDS(fixed, variadic, snapshot_values)          \
+    fixed(source, ProgramValue, TaggedValue)
+#define CL_JIT_StoreStack_ATTRIBUTES(attribute)
+CL_JIT_INSTRUCTION(StoreStack, CL_JIT_IR_LEVELS(Core),
+                   CL_JIT_RESULT(ProgramValue, TaggedValue),
+                   CL_JIT_EFFECT_BOUNDS(None, None), CL_JIT_StoreStack_OPERANDS,
+                   CL_JIT_StoreStack_ATTRIBUTES)
+#undef CL_JIT_StoreStack_ATTRIBUTES
+#undef CL_JIT_StoreStack_OPERANDS
+
+#define CL_JIT_StoreStackF64_OPERANDS(fixed, variadic, snapshot_values)       \
+    fixed(source, ProgramValue, F64)
+#define CL_JIT_StoreStackF64_ATTRIBUTES(attribute)
+CL_JIT_INSTRUCTION(StoreStackF64, CL_JIT_IR_LEVELS(Core),
+                   CL_JIT_RESULT(ProgramValue, F64),
+                   CL_JIT_EFFECT_BOUNDS(None, None),
+                   CL_JIT_StoreStackF64_OPERANDS,
+                   CL_JIT_StoreStackF64_ATTRIBUTES)
+#undef CL_JIT_StoreStackF64_ATTRIBUTES
+#undef CL_JIT_StoreStackF64_OPERANDS
+
 #define CL_JIT_AddSMI_OPERANDS(fixed, variadic, snapshot_values)              \
     fixed(lhs, ProgramValue, TaggedValue)                                      \
     fixed(rhs, ProgramValue, TaggedValue)                                      \

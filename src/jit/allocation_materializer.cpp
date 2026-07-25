@@ -285,25 +285,67 @@ namespace cl::jit
                             break;
                     }
 
-                    Instruction *move = nullptr;
+                    Instruction *output = nullptr;
                     switch(source->value_representation())
                     {
                         case ValueRepresentation::TaggedValue:
-                            move = context.make_instruction<MovInstruction>(
-                                TaggedValueRef(source));
+                            if(step.source_location.is_register() &&
+                               step.destination.is_register())
+                            {
+                                output =
+                                    context.make_instruction<MovInstruction>(
+                                        TaggedValueRef(source));
+                            }
+                            else if(step.source_location.is_stack() &&
+                                    step.destination.is_register())
+                            {
+                                output =
+                                    context
+                                        .make_instruction<LoadStackInstruction>(
+                                            TaggedValueRef(source));
+                            }
+                            else if(step.source_location.is_register() &&
+                                    step.destination.is_stack())
+                            {
+                                output = context.make_instruction<
+                                    StoreStackInstruction>(
+                                    TaggedValueRef(source));
+                            }
                             break;
                         case ValueRepresentation::F64:
-                            move = context.make_instruction<MovF64Instruction>(
-                                F64Ref(source));
+                            if(step.source_location.is_register() &&
+                               step.destination.is_register())
+                            {
+                                output =
+                                    context.make_instruction<MovF64Instruction>(
+                                        F64Ref(source));
+                            }
+                            else if(step.source_location.is_stack() &&
+                                    step.destination.is_register())
+                            {
+                                output = context.make_instruction<
+                                    LoadStackF64Instruction>(F64Ref(source));
+                            }
+                            else if(step.source_location.is_register() &&
+                                    step.destination.is_stack())
+                            {
+                                output = context.make_instruction<
+                                    StoreStackF64Instruction>(F64Ref(source));
+                            }
                             break;
                         case ValueRepresentation::None:
                         case ValueRepresentation::Count:
                             fatal("invalid JIT bundle transfer "
                                   "representation");
                     }
-                    instructions.push_back(move);
-                    step_values.push_back(move);
-                    locations_.assign(ProgramValueRef(move), step.destination);
+                    if(output == nullptr)
+                    {
+                        fatal("invalid resolved JIT transfer locations");
+                    }
+                    instructions.push_back(output);
+                    step_values.push_back(output);
+                    locations_.assign(ProgramValueRef(output),
+                                      step.destination);
 
                     if(step.original_parallel_transfer_index >= 0)
                     {
@@ -311,10 +353,10 @@ namespace cl::jit
                             step.original_parallel_transfer_index;
                         const BundleTransfer &transfer =
                             set.transfers[transfer_index];
-                        current_values_[transfer.destination.value()] = move;
+                        current_values_[transfer.destination.value()] = output;
                         outputs.emplace_back(
                             ProgramValueRef(sources[transfer_index]),
-                            ProgramValueRef(move));
+                            ProgramValueRef(output));
                     }
                 }
 

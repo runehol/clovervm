@@ -57,6 +57,7 @@ namespace cl::jit
     struct ResolvedTransferStep
     {
         ResolvedTransferSource source;
+        PhysicalLocation source_location;
         PhysicalLocation destination;
         int original_parallel_transfer_index;
     };
