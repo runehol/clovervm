@@ -55,39 +55,50 @@ document and deliberately do not have checkboxes.
 This stage ends at a read-only prepared allocation problem. It performs no
 physical assignment and cannot affect generated code. The prepared
 representation is multi-block, but every bundle initially contains exactly one
-live range fragment. Ordinary `Any` requirements are implicit and are not
-stored per occurrence.
+live range fragment. Ordinary `AnyRegister` requirements are implicit and are
+not stored per occurrence.
 
 `Snapshot` results remain non-allocatable, and their captured values are not
 uses at the Snapshot definition. Until consumer-position expansion lands in
 Stage 6, this initial preparation rejects executable Snapshot consumers rather
 than silently omitting recovery liveness.
 
-## Stage 2: Conflict-Free Register Assignment
+## Stage 2: Conflict-Free Assignment and Materialization
 
 - [x] Add the priority queue and process larger bundles first.
 - [x] Probe legal registers in `RegisterClassDefinition::allocation_order()`
   and record non-overlapping assignments in per-register maps.
-- [ ] Produce the real `LocationAssignments` result and allocator move-bundle
-  container, even though the initial move set is empty.
-- [ ] Make AArch64 CFG emission consume `LocationAssignments` instead of its
+- [ ] Define `AllocationLocation` and replace register-only requirements and
+  fixed constraints with `AnyRegister`, `FixedLocation`, and `SameAsInput`.
+- [ ] Add constraint-driven splitting immediately before the first
+  incompatible use, or after an incompatible def, and record connectors in a
+  parallel `TransferSchedule`.
+- [ ] Produce `RegisterAllocationResult` with separate
+  `LocationAssignments` facts and `TransferSchedule` actions.
+- [ ] Add generic allocation materialization that resolves supported transfer
+  sets and produces an `AllocatedProgram` whose executable occurrences name
+  physical registers.
+- [ ] Make AArch64 CFG emission consume `AllocatedProgram` instead of its
   hardcoded `x0` mapping.
 - [ ] Add a symbolic allocation checker covering assignments, occurrence
-  requirements, interference, and generated move bundles.
+  requirements, interference, location transitions, and generated transfers.
 - [ ] Execute one-block multi-value AArch64 tests through the existing code
   cache and near/far pool retry.
 
 This stage accepts only allocation problems that fit without eviction,
-splitting, fixups, or spills. A conflict that the later allocator could solve
-is a recoverable compilation failure, not permission to introduce a temporary
-allocation policy. Initial executable integration remains one-block even though
-the prepared-problem construction is not.
+pressure-driven splitting, complex fixups, or allocator-owned spills. It does
+perform the deterministic splitting required when one fragment cannot satisfy
+its occurrence location requirements. A pressure conflict that the later
+allocator could solve is a recoverable compilation failure, not permission to
+introduce a temporary allocation policy. Initial executable integration
+remains one-block even though the prepared-problem construction is not.
 
 The initial assignment step produces a dense allocator-local
 `BundleRegisterAssignments` table. Per-register assigned fragments and clobber
 ranges remain scratch indexes used only while probing candidates. The durable
-occurrence-oriented `LocationAssignments` result and its empty initial move
-container remain the next boundary in this stage.
+boundary is `RegisterAllocationResult`; recovery consumes its
+occurrence-oriented `LocationAssignments`, while machine emission consumes the
+derived `AllocatedProgram`.
 
 ## Stage 3: Affinities and CFG Transfers
 
@@ -102,8 +113,10 @@ container remain the next boundary in this stage.
 
 Block parameters and edge arguments retain their distinct SSA identities.
 Bundle merging provides physical continuity without changing Core def/use
-semantics. Affinity merging finishes before allocation splitting begins; after
-splitting, one source live-range ID may occur in several bundles.
+semantics. Affinity merging finishes before pressure-driven allocation
+splitting begins; constraint normalization may already have partitioned
+statically incompatible locations. After splitting, one source live-range ID
+may occur in several bundles.
 
 ## Stage 4: Backtracking, Eviction, Splitting, and Fixups
 
@@ -115,30 +128,30 @@ splitting, one source live-range ID may occur in several bundles.
   mutating the immutable source live ranges; partition sparse fixed constraints
   by point and recompute child priority and spill weight from covered
   occurrences.
-- [ ] Normalize incompatible fixed-register and same-as-input occurrences into
+- [ ] Normalize remaining same-as-input and multi-location occurrences into
   constrained fragments plus explicit fixups.
-- [ ] Record edge, split, and fixup moves in allocator move bundles.
-- [ ] Implement the unified parallel-move resolver, including cycles and the
+- [ ] Record edge, pressure-split, and fixup transfers in `TransferSchedule`.
+- [ ] Complete the unified parallel-transfer resolver, including cycles and the
   agreed scratch-location policy.
-- [ ] Add reserved spill-weight tiers for ordinary minimal and fixed-register
+- [ ] Add reserved spill-weight tiers for ordinary minimal and fixed-location
   minimal bundles.
 - [ ] Detect irreducible excessive pressure and fail compilation cleanly.
-- [ ] Extend the symbolic checker for split connectors, fixed-register
+- [ ] Extend the symbolic checker for split connectors, fixed-location
   pressure, and preserved source-value provenance.
 - [ ] Add a debug iteration bound and adversarial tests for equal-weight
-  conflicts, repeated eviction, fixed-register pressure, and split progress.
+  conflicts, repeated eviction, fixed-location pressure, and split progress.
 
 The progress proof in the initial algorithm is the exit criterion for this
 stage. Merely passing ordinary examples is not enough.
 
 ## Stage 5: Temporaries, Clobbers, and Calls
 
-- [ ] Make general allocation enforce every prepared immovable Late clobber
-  reservation; earlier restricted assignment rejects graphs containing
-  clobbers it cannot honor.
+- [x] Make initial assignment enforce every prepared immovable Late clobber
+  reservation, selecting another register or failing compilation when it
+  cannot honor one.
 - [ ] Make instruction lowering consume the locations assigned to anonymous
   temporary ranges.
-- [ ] Support fixed call-argument and call-result occurrences without
+- [ ] Support fixed-location call-argument and call-result occurrences without
   hardcoding ABI policy into the generic allocator.
 - [ ] Validate calls whose early arguments remain legal in registers clobbered
   at Late, and reject contradictory fixed defs and clobbers.

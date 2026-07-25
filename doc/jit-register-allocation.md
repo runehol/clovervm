@@ -4,10 +4,10 @@
 |---|---|
 | Document type | Design |
 | Status | Accepted |
-| Implementation | Target register vocabulary, structural constraint validation, and the initial AArch64 platform-ABI constraint producer implemented |
-| Scope | Allocation constraints, allocator-local numbering, liveness, bundles, backtracking allocation, live-range splitting, block-argument moves, clobbers, spills, and post-allocation location assignments |
-| Owning layers | Target backends own allocation-constraint construction; the generic register allocator owns numbering, liveness, bundles, splitting, allocation, spill decisions, and allocator-induced move resolution; publication and recovery planners own canonical-state synchronization; machine-code emission consumes final assignments and resolved moves |
-| Validated against | `tests/test_jit_allocation_constraints.cpp`, `tests/test_aarch64_allocation_constraints.cpp` |
+| Implementation | Prepared allocation problem and initial conflict-free register assignment implemented; post-allocation materialization remains open |
+| Scope | Allocation constraints, allocator-local numbering, liveness, bundles, backtracking allocation, live-range splitting, block-edge transfers, clobbers, spills, and post-allocation materialization |
+| Owning layers | Target preparation owns occurrence constraints and physical-transfer capabilities; the generic register allocator owns numbering, liveness, bundles, splitting, allocation, spill decisions, and parallel transfers; generic allocation materialization resolves transfers and physicalizes instruction occurrences; publication and recovery planners own canonical-state synchronization; machine-code emission only encodes the materialized program |
+| Validated against | `tests/test_jit_allocation_constraints.cpp`, `tests/test_aarch64_allocation_constraints.cpp`, `tests/test_jit_register_allocator.cpp` |
 | Supersedes | The open register-allocation direction in [JIT Compiler and IR](jit-compiler-and-ir.md) and [JIT Compiler Bring-up Plan](jit-compiler-bring-up-plan.md) |
 
 This document defines the register-allocation contract for the clovervm JIT. It
@@ -16,7 +16,10 @@ and [JIT Control-Flow Graph](jit-control-flow-graph.md). Core IR remains a
 target-independent SSA CFG with block parameters and edge arguments. Target
 backends describe physical requirements through `AllocationConstraints`; the
 generic allocator computes liveness, splits ranges, assigns locations, and
-produces `LocationAssignments`.
+produces a `RegisterAllocationResult`. Generic allocation materialization then
+turns that result into an `AllocatedProgram` whose executable instruction
+occurrences use physical registers and whose allocator-induced transfers are
+explicit.
 
 Finite implementation work is tracked separately in
 [JIT Register Allocation Implementation Progress](jit-register-allocation-progress.md).
@@ -31,29 +34,85 @@ occurrence anchors are part of the common compiler contract.
 
 ## Phase Products
 
-The allocation pipeline has three main products:
+The allocation and emission boundary has four products:
 
 ```text
 BackendPreparation
-    selected lowerings, constant decisions, and target constraints
+    selected lowerings
+    AllocationConstraints
+    physical-transfer capabilities
 
-AllocationConstraints
-    target-produced pre-allocation requirements for operand occurrences
+RegisterAllocationResult
+    LocationAssignments
+    TransferSchedule
 
-LocationAssignments
-    allocator-produced post-allocation locations and move bundles
+AllocatedProgram
+    physical registers for executable instruction occurrences
+    resolved sequential physical transfers
+
+machine code
 ```
 
-`AllocationConstraints` describe requirements, not chosen locations.
+`AllocationConstraints` describe legal locations and timing at structurally
+anchored occurrences. ABI registers and stack locations use the same fixed
+constraint mechanism as every other fixed occurrence; there is no separate ABI
+constraint class.
 
-`LocationAssignments` are the durable post-allocation result. They map program
-value occurrences that require physical existence to registers, spill slots,
-constants, or other
-backend-supported physical locations at the points where code emission or
-recovery needs them. They also contain allocator-induced split moves and
-block-edge parallel-move bundles. Canonical VM homes and whether they currently
-contain an up-to-date value remain separate state; they are not silently
-converted into allocator-owned spill slots.
+`LocationAssignments` contain post-allocation facts. They map value
+occurrences that require physical existence to registers, allocator spill
+slots, canonical frame slots, or other explicitly supported locations at the
+relevant points. They do not contain moves, loads, stores, split actions, or
+control-flow insertion policy.
+
+`TransferSchedule` contains actions introduced by allocation:
+
+- connectors between split children;
+- fixed-location and reused-input fixups;
+- entry, return, and call ABI transfers;
+- block-edge parallel transfers;
+- spills and reloads.
+
+Transfers at one insertion point retain parallel semantics until generic
+materialization resolves them.
+
+The generic materializer combines the original Core CFG, location facts,
+parallel transfers, and target-provided physical-transfer capabilities. Its
+result is an `AllocatedProgram`: a compiler-lifetime overlay whose semantic
+instructions still refer to immutable Core instructions, but whose executable
+operands, results, and temporaries name physical registers. It also contains
+the resolved sequential transfers to emit at block boundaries, instruction
+Early and Late points, and first-class block edges.
+
+The materializer introduces physical transfers, not target machine
+instructions. A transfer from register to register later encodes as a move;
+stack to register encodes as a load; register to stack encodes as a store.
+Memory-to-memory transfers are resolved through a target-legal scratch location
+before emission. The target emitter chooses the actual instruction encoding
+and addressing mode but makes no allocation, splitting, or move-order decision.
+
+The intended type boundary is:
+
+```cpp
+struct RegisterAllocationResult
+{
+    LocationAssignments locations;
+    TransferSchedule transfers;
+};
+
+AllocatedProgram materialize_allocation(
+    const ControlFlowGraph &graph,
+    const RegisterAllocationResult &allocation,
+    const PhysicalTransferConstraints &target);
+```
+
+`AllocatedProgram` and `RegisterAllocationResult` own their compiler-lifetime
+tables and borrow immutable Core instructions and edges from the still-live
+compilation session. Recovery planning consumes `LocationAssignments`;
+machine-code emission consumes `AllocatedProgram`.
+
+Canonical VM homes and whether they currently contain an up-to-date value
+remain separate state. A canonical frame home is not silently converted into
+an allocator-owned spill slot.
 
 A Core def marked sunk has no `LocationAssignment`. Its recovery-only operation
 remains available to recovery planning, while allocation liveness reaches
@@ -170,6 +229,62 @@ that preference. A `RegisterSet` may contain registers from several classes,
 which keeps large call-clobber masks compact. The initial contract permits at
 most 64 physical registers in each class.
 
+## Allocation Locations
+
+An allocation location is a place that can contain one machine value. The
+initial vocabulary is:
+
+```cpp
+enum class StackLocationKind : uint8_t
+{
+    CanonicalFrameSlot,
+    SpillSlot,
+};
+
+class StackLocation
+{
+public:
+    StackLocation(StackLocationKind kind, int32_t frame_offset);
+
+    StackLocationKind kind() const;
+    int32_t frame_offset() const;
+};
+
+class AllocationLocation
+{
+public:
+    static AllocationLocation reg(PhysicalRegister reg);
+    static AllocationLocation stack(StackLocation stack);
+
+    bool is_register() const;
+    bool is_stack() const;
+    PhysicalRegister reg() const;
+    StackLocation stack() const;
+};
+```
+
+The signed frame offset uses the same stack-slot coordinate convention as
+`BytecodeValueLocation`. Frame layout can therefore slide offsets directly into
+`StackLocation` without an unsigned remapping layer.
+
+`CanonicalFrameSlot` covers parameters, locals, temporaries, and managed call
+argument windows. Moving the managed frame pointer may reinterpret one physical
+cell from a caller's argument window as a callee parameter; it does not create
+a distinct outgoing-argument location kind. Canonical slots are
+interpreter-visible homes and participate in publication, recovery, and stack
+scanning. `SpillSlot` is compiler-owned temporary storage and is not
+automatically an interpreter home. The value representation attached to the
+occurrence or transfer determines the width, register class, and stack access
+required for either kind.
+
+A fixed location requirement applies only at its exact occurrence point. It
+does not pin the original live range to that location. The allocator may split
+immediately before or after the occurrence, subject to its use/def and
+Early/Late timing, and connect the adjacent fragments with a transfer.
+Fragments constrained to a fixed stack location are assigned that location
+directly rather than entering a register probe queue. Their adjacent
+register-required children remain ordinary register bundles.
+
 ## Allocation Constraints
 
 An allocation constraint is anchored to a structural occurrence in prepared
@@ -222,14 +337,14 @@ actions. Likewise, an output written before every input has been consumed is an
 early def. `Use` therefore never implies `Early`, and `Def` never implies
 `Late`.
 
-The common layer derives ordinary register requirements directly from Core
+The common layer derives ordinary location requirements directly from Core
 `ValueRepresentation`:
 
 ```text
-TaggedValue input  -> Use Early, Any(GPR)
-F64 input          -> Use Early, Any(SIMD)
-TaggedValue result -> Def Late, Any(GPR)
-F64 result         -> Def Late, Any(SIMD)
+TaggedValue input  -> Use Early, AnyRegister(GPR)
+F64 input          -> Use Early, AnyRegister(SIMD)
+TaggedValue result -> Def Late, AnyRegister(GPR)
+F64 result         -> Def Late, AnyRegister(SIMD)
 Snapshot operand   -> captured values used Late
 ```
 
@@ -248,53 +363,53 @@ enum class AccessTiming : uint8_t
     Late,
 };
 
-class RegisterRequirement
+class LocationRequirement
 {
 public:
     enum class Kind : uint8_t
     {
-        Any,
-        Fixed,
+        AnyRegister,
+        FixedLocation,
         SameAsInput,
     };
 
-    static RegisterRequirement any(RegisterClass register_class);
-    static RegisterRequirement fixed(PhysicalRegister reg);
-    static RegisterRequirement same_as_input(uint32_t operand_index);
+    static LocationRequirement any_register(RegisterClass register_class);
+    static LocationRequirement fixed(AllocationLocation location);
+    static LocationRequirement same_as_input(uint32_t operand_index);
 
     Kind kind() const;
     RegisterClass register_class() const;
-    PhysicalRegister fixed_register() const;
+    AllocationLocation fixed_location() const;
     uint32_t input_index() const;
 
 private:
-    RegisterRequirement(Kind kind, uint32_t payload);
+    LocationRequirement(Kind kind, size_t payload);
 
     Kind kind_;
-    uint32_t payload_;
+    size_t payload_;
 };
 
 struct ProgramValueUseConstraint
 {
     ProgramValueUseConstraint(uint32_t operand_index, AccessTiming timing,
-                              RegisterRequirement requirement);
+                              LocationRequirement requirement);
 
     uint32_t operand_index;
     AccessTiming timing;
-    RegisterRequirement requirement;
+    LocationRequirement requirement;
 };
 
 struct ResultConstraint
 {
     AccessTiming timing;
-    RegisterRequirement requirement;
+    LocationRequirement requirement;
 };
 
 struct TemporaryConstraint
 {
-    explicit TemporaryConstraint(RegisterRequirement requirement);
+    explicit TemporaryConstraint(LocationRequirement requirement);
 
-    RegisterRequirement requirement;
+    LocationRequirement requirement;
 };
 
 class InstructionAllocationConstraints
@@ -350,13 +465,32 @@ allocation finishes; rewriting the graph first invalidates the product and
 requires rebuilding it. This phase contract avoids permanent placement metadata
 or per-access generation checks in the allocator.
 
-`RegisterRequirement::Any` names a register class;
-`RegisterRequirement::Fixed` names one physical register; and
-`RegisterRequirement::SameAsInput` names the ProgramValue input whose assigned
-register the result must reuse. Contextual constructors reject
+`LocationRequirement::AnyRegister` names a register class;
+`LocationRequirement::FixedLocation` names one register or stack location; and
+`LocationRequirement::SameAsInput` names the ProgramValue input whose assigned
+location the result must reuse. Contextual constructors reject
 `SameAsInput` for inputs and temporaries, so it remains a result-only
 requirement without a second variant-based representation. The compact
 allocator representation may encode these alternatives differently.
+
+Most executable Core occurrences use `AnyRegister`. A stack-assigned fragment
+therefore cannot cover such an occurrence. A fixed stack occurrence followed
+by a register-only occurrence creates statically incompatible requirements and
+forces splitting:
+
+```text
+entry def  FixedLocation(CanonicalFrameSlot(parameter_offset))
+later use  AnyRegister(GPR)
+
+stack fragment -> register fragment
+               ^ load immediately before the register-only use
+```
+
+Keeping the stack fragment until the latest legal split point delays the load
+and shortens register pressure. A fixed register and `AnyRegister` of the same
+class remain compatible; the unsplit bundle may simply use that register.
+Different fixed registers, or a fixed stack location and a register-only
+occurrence, require splitting or an explicit fixup.
 
 The allocator does not allocate a `SnapshotRef`. At each executable instruction
 that consumes one, allocator preparation expands the captured
@@ -368,9 +502,9 @@ instruction itself have no direct input constraints at the Snapshot's
 definition position. They become allocation uses only through this expansion at
 each Snapshot-consuming instruction.
 
-A temporary takes either an `Any` or `Fixed` register requirement and reserves
-the chosen register across the selected target sequence. `clobbers` instead
-describes registers destroyed implicitly by the operation. Structural
+A temporary takes either an `AnyRegister` or fixed-register requirement and
+reserves the chosen register across the selected target sequence. `clobbers`
+instead describes registers destroyed implicitly by the operation. Structural
 preparation retains the compact register set. Allocator preparation expands
 each member into an immovable half-open reservation covering the instruction's
 Late point in that physical register's allocation map. A clobber is not a
@@ -388,8 +522,9 @@ assigned temporary when the short branch form fits.
 
 Register requirements and spill compatibility must agree with the Core
 `ValueRepresentation` of the value. A constraint may narrow that representation
-to a target class or fixed register, but it must not change representation
-semantics. Representation changes remain explicit Core instructions.
+to a target class or compatible fixed location, but it must not change
+representation semantics. Representation changes remain explicit Core
+instructions.
 
 ## Initial AArch64 Bring-up Contract
 
@@ -404,20 +539,23 @@ This is a bring-up choice, not the final CloverVM calling convention:
 - platform-reserved `x18` is unavailable;
 - callee-saved GPRs and `v8` through `v15` remain unavailable until prologue
   and epilogue generation preserves them;
-- tagged entry-block parameters zero through seven have fixed result
+- tagged entry-block parameters zero through seven have fixed-location result
   constraints `x0` through `x7`;
-- tagged internal block parameters use the ordinary `Any(GPR)` default;
-- F64 internal block parameters use the ordinary `Any(SIMD)` default;
+- tagged internal block parameters use the ordinary `AnyRegister(GPR)`
+  default;
+- F64 internal block parameters use the ordinary `AnyRegister(SIMD)` default;
 - a `Return` input has a fixed `x0` constraint;
-- conditional and unconditional branches request one `Any(GPR)` temporary for
-  a possible long form;
+- conditional and unconditional branches request one `AnyRegister(GPR)`
+  temporary for a possible long form;
 - `Const`, SMI bitwise instructions, and the virtual `Snapshot` instruction
   need no target override.
 
 Stack-passed entry parameters, F64 entry parameters, calls, and instruction
-kinds without a bring-up lowering hard-fail instead of silently receiving an
-incomplete contract. Later CloverVM ABI work replaces the entry and return
-overrides without changing the generic constraint representation.
+kinds without a bring-up lowering currently hard-fail instead of silently
+receiving an incomplete contract. Managed stack arguments use fixed
+`CanonicalFrameSlot` locations; they do not create a separate ABI constraint
+mechanism. ABI registers likewise remain ordinary fixed locations at exact
+occurrences.
 
 Constraint validation enforces:
 
@@ -425,13 +563,13 @@ Constraint validation enforces:
   occurrence has two overrides;
 - a result override occurs only on a ProgramValue-producing instruction;
 - `SameAsInput` names a valid ProgramValue input and occurs only on a result;
-- fixed registers and `Any` classes are compatible with the occurrence's
-  `ValueRepresentation`;
+- fixed locations and `AnyRegister` classes are compatible with the
+  occurrence's `ValueRepresentation`;
 - every `RegisterClassDefinition::allocation_order` is a permutation of its
   members;
-- clobbers do not collide with explicit fixed defs, fixed late uses, or fixed
-  temporaries, including the fixed register obtained after resolving
-  `SameAsInput`.
+- register clobbers do not collide with explicit fixed-register defs, fixed
+  late uses, or fixed temporaries, including the fixed register obtained after
+  resolving `SameAsInput`.
 
 Parameter instructions use the same default result constraint, with target
 overrides for ABI-fixed entry parameters. Their placement in a block's
@@ -530,10 +668,10 @@ struct Occurrence
     uint64_t spill_weight;
 };
 
-struct FixedRegisterConstraint
+struct FixedLocationConstraint
 {
     ProgramPoint point;
-    PhysicalRegister reg;
+    AllocationLocation location;
     LiveRangeId live_range;
     OccurrenceId occurrence;
 };
@@ -671,36 +809,40 @@ created by splitting.
 A bundle's allocation priority is the sum of the lengths of its fragments in
 allocator program-point space. The priority queue therefore considers bundles
 covering more code first, while the physical register maps are relatively
-empty. Fixed-register constraints do not receive a separate priority boost.
+empty. Fixed-location constraints do not receive a separate priority boost.
 
-Ordinary `Any(register_class)` requirements are implicit in each live range's
-register class and are not copied into allocator occurrences. The allocator
-retains every ordinary use and def occurrence for liveness, splitting, spill
-weight, diagnostics, and later rewriting, but only nondefault fixed-register
-constraints need sparse requirement records. A fixed constraint records its
-program point, physical register, source live range, and occurrence ID.
-Incompatible register classes or a fixed register from the wrong class are
-compiler invariant failures.
+Ordinary `AnyRegister(register_class)` requirements are implicit in each live
+range's register class and are not copied into allocator occurrences. The
+allocator retains every ordinary use and def occurrence for liveness,
+constraint-driven splitting, spill weight, diagnostics, and later rewriting,
+but only nondefault fixed-location constraints need sparse requirement records.
+A fixed constraint records its program point, allocation location, source live
+range, and occurrence ID. Incompatible register classes, a fixed register from
+the wrong class, or a stack location incompatible with the value
+representation are compiler invariant failures.
 
 Each bundle keeps the fixed-constraint IDs covered by its current fragments,
 ordered by program point. Merging combines those sparse lists; splitting
-partitions them by point. Several fixed constraints naming the same register
-restrict the whole unsplit bundle to that register. Different fixed registers
-at different positions are valid pressure requiring later splitting or fixups,
-not a compiler invariant failure. The first non-splitting allocator reports a
-recoverable unsupported-allocation result for such a bundle.
+partitions them by point. Several fixed constraints naming the same location
+restrict the whole unsplit bundle to that location when the ordinary
+occurrences it covers are compatible. Different fixed locations at different
+positions are valid pressure requiring splitting or fixups, not a compiler
+invariant failure. A fixed stack location and an ordinary register-only
+occurrence are likewise incompatible within one fragment. The first
+non-splitting allocator reports a recoverable unsupported-allocation result for
+such a bundle.
 
 Each constrained occurrence contributes an initial spill weight:
 
 ```text
 hot contribution          = 1000 * 4^min(loop_depth, 10)
 definition contribution   = 2000 for a def, otherwise 0
-requirement contribution  = 1000 for Any, 2000 for Fixed
+requirement contribution  = 1000 for AnyRegister, 2000 for FixedLocation
 ```
 
-The ordinary `Any` contribution is implied by an unconstrained occurrence; it
-does not require a stored allocator constraint. A sparse fixed constraint
-replaces that occurrence's requirement contribution.
+The ordinary `AnyRegister` contribution is implied by an unconstrained
+occurrence; it does not require a stored allocator constraint. A sparse fixed
+constraint replaces that occurrence's requirement contribution.
 
 Spill weights use 64-bit unsigned arithmetic because one bundle may accumulate
 contributions from many occurrences. Saturating addition prevents heuristic
@@ -722,21 +864,34 @@ formula.
 
 A minimal bundle contains one fragment covering at most the irreducible range
 required by one occurrence. Minimal bundles use reserved spill-weight values
-above every non-minimal bundle: a minimal fixed-register bundle has the maximum
+above every non-minimal bundle: a minimal fixed-location bundle has the maximum
 weight, and an ordinary minimal bundle has the next lower tier. Clobber
 reservations are not bundles and cannot be evicted.
 
 ## Constraint Normalization and Fixups
 
-The allocator normalizes awkward occurrence constraints into live ranges plus
-deferred fixup moves before its core assignment loop.
+The allocator normalizes awkward occurrence constraints into compatible
+fragments plus deferred fixup transfers before its core assignment loop.
 
-If one SSA value is required in two fixed registers at the same instruction,
-one constrained occurrence remains on the range and the other becomes a fixup
-copy at that occurrence. A reused-input result is treated as a new range
-starting at the input phase, with a fixup copy from the input and a high-priority
-merge opportunity between the two ranges. If they can share a location the
-copy disappears; otherwise it remains part of the final move set.
+Requirements covered by one fragment must admit one common location.
+`AnyRegister(GPR)` and `FixedLocation(x0)` are compatible. Two different fixed
+registers are incompatible, as are a fixed stack location and an ordinary
+register-only occurrence.
+
+The normalizer splits immediately before the first incompatible use whenever
+legal. This keeps an earlier stack or spill fragment live until the last
+possible point, places its reload immediately before the register-only use, and
+minimizes register pressure. A constrained definition starts its fixed
+fragment at the definition point; a connector to a later fragment occurs after
+the def. Early and Late timing determine the exact legal side of the
+instruction.
+
+If one SSA value is required in two locations at the same instruction, one
+constrained occurrence remains on the range and the other becomes a fixup
+transfer at that occurrence. A reused-input result is treated as a new range
+starting at the input phase, with a fixup transfer from the input and a
+high-priority merge opportunity between the two ranges. If they can share a
+location the transfer disappears; otherwise it remains in the schedule.
 
 This normalization preserves the invariant that a live-range fragment occupies
 one location at a point. It keeps special instruction shapes at the boundary of
@@ -759,9 +914,10 @@ merge related non-overlapping ranges into bundles
 enqueue bundles by allocation priority
 assign a fitting register, evict lower-weight bundles, or split
 spill when splitting or register allocation is no longer legal or worthwhile
-collect split, fixup, explicit, and block-edge moves
-resolve parallel moves
-produce LocationAssignments
+collect split, fixup, explicit, and block-edge transfers
+produce RegisterAllocationResult
+resolve parallel transfers and physicalize occurrences
+produce AllocatedProgram
 ```
 
 Backtracking alone does not guarantee forward progress. The allocator relies on
@@ -772,7 +928,7 @@ the following ordering rules:
 - equal-weight bundles split rather than repeatedly evicting each other;
 - every split makes the affected bundles smaller;
 - minimal bundles occupy reserved spill-weight tiers above non-minimal bundles,
-  with minimal fixed-register bundles at the maximum weight.
+  with minimal fixed-location bundles at the maximum weight.
 
 These rules prevent two bundles from evicting each other indefinitely and
 ensure that repeated splitting eventually reaches irreducible allocation
@@ -856,13 +1012,13 @@ else -> join: b -> p
 The initial allocator must attempt these merges early. This is not just a
 code-size optimization: clovervm block
 arguments often carry broad logical frame state for safepoints and recovery, so
-missing obvious coalescing would create large move bundles at ordinary joins and
-loop backedges.
+missing obvious coalescing would create large transfer sets at ordinary joins
+and loop backedges.
 
 Edge coalescing is still a preference, not a correctness requirement. Allocation
 may coalesce an edge argument and its target parameter when their live ranges do
 not interfere and their constraints permit a shared location. If the assigned
-locations differ, the allocator records a parallel move bundle on the
+locations differ, the allocator records a parallel transfer set on the
 corresponding `BlockEdge`.
 
 First-class `BlockEdge` objects make these transfers directly addressable.
@@ -870,8 +1026,8 @@ Each ordered edge argument already pairs with the block parameter at the same
 index, and distinct edges remain distinguishable even when they have the same
 source and target. Allocation may tag the two boundary occurrences with the
 edge and argument index, or expose their assigned entry and exit locations
-through structural occurrence IDs. Final move generation can then walk each
-edge once and fill its parallel-move bundle directly. It does not need a
+through structural occurrence IDs. Final transfer generation can then walk
+each edge once and fill its scheduled parallel set. It does not need a
 collect-sort-join scheme for matching source and destination "half-moves",
 because Clover's edge arguments are represented by durable edge objects rather
 than embedded anonymously in branch instructions.
@@ -883,12 +1039,12 @@ for:
 - loop depth;
 - number of values transferred on the edge;
 - whether the value participates in Snapshot or recovery state;
-- whether either side has a fixed-register, clobber, or same-as-input pressure
+- whether either side has a fixed-location, clobber, or same-as-input pressure
   that makes coalescing unlikely.
 
 Fixed constraints, clobbers, and real overlap override merging. A failed merge
-does not constrain later location assignment; it merely leaves an edge move if
-the separately allocated locations differ.
+does not constrain later location assignment; it merely leaves an edge
+transfer if the separately allocated locations differ.
 
 Several canonical interpreter homes may name the same machine value. In that
 case the edge argument list references the same `ProgramValueRef` at each
@@ -898,8 +1054,8 @@ one predecessor range and one successor range, not overlapping duplicate SSA
 definitions. Repeating the same edge transfer or proposed bundle merge is
 idempotent.
 
-Critical-edge splitting is an implementation choice made when a move bundle has
-no legal insertion point on the original edge. The semantic CFG retains
+Critical-edge splitting is an implementation choice made when a transfer set
+has no legal insertion point on the original edge. The semantic CFG retains
 first-class `BlockEdge` objects and ordered edge arguments.
 
 ## Calls, Clobbers, and Temporaries
@@ -907,11 +1063,21 @@ first-class `BlockEdge` objects and ordered edge arguments.
 Calls are represented by ordinary allocation constraints:
 
 ```text
-argument uses      -> early or late uses in fixed ABI registers or stack slots
-result definitions -> early or late defs in fixed return registers
-temporaries        -> target register classes
-clobbers           -> caller-saved register masks
+managed Python arguments -> early or late uses in fixed canonical frame slots
+native arguments         -> early or late uses in fixed platform ABI registers
+result definitions       -> early or late defs in fixed result locations
+temporaries              -> target register classes
+clobbers                 -> caller-saved register masks
 ```
+
+A managed Python call prepares the existing Clover argument window. Its
+arguments therefore use `FixedLocation(CanonicalFrameSlot(...))`; moving the
+managed frame pointer reinterprets those same cells as the callee's parameters.
+A native call instead uses fixed platform calling-convention registers. Both
+are ordinary fixed-location constraints, and both generate transfers when the
+surrounding value fragment occupies a different location. Native stack
+arguments can extend the platform-call lowering later if Clover actually
+supports them; they are not part of the managed stack-location vocabulary.
 
 A value live across a call must be assigned to a non-clobbered location or split
 around the call. The target describes clobbers; the allocator decides whether to
@@ -921,9 +1087,9 @@ An explicit call result owns its fixed return register at the late point, so
 that register is omitted from the call's clobber set:
 
 ```text
-argument 0  -> Use Early, Fixed x0
-argument 1  -> Use Early, Fixed x1
-result      -> Def Late, Fixed x0
+argument 0  -> Use Early, FixedLocation(x0)
+argument 1  -> Use Early, FixedLocation(x1)
+result      -> Def Late, FixedLocation(x0)
 clobbers    -> caller-saved registers except x0
 ```
 
@@ -937,19 +1103,19 @@ temporary, its `AllocationConstraints` must expose that temporary. A reserved
 global scratch during bring-up is still modeled as unavailable or clobbered in
 the allocator problem rather than being consumed invisibly by emission.
 
-## Unified Parallel Moves
+## Unified Parallel Transfers
 
 After assigning locations, the allocator collects every physical transfer it
 introduced:
 
 - connectors between split bundle children;
-- normalized fixed-register and reused-input fixups;
+- normalized fixed-location and reused-input fixups;
 - explicit machine-value moves;
 - block-edge argument transfers;
-- spill loads and stores;
+- spill and reload transfers;
 - ABI argument shuffles.
 
-Transfers at one program point form one parallel move set. Resolving them
+Transfers at one program point form one parallel transfer set. Resolving them
 together avoids move chains created when block arguments, spills, and
 instruction fixups are lowered independently. The resolver handles cycles with
 an available temporary register or stack location and handles memory-to-memory
@@ -958,13 +1124,13 @@ transfers through a legal target temporary.
 Canonical-state synchronization may contribute additional transfers at the same
 point, but the allocator does not decide which VM homes require publication.
 `HomeState`, safepoint planning, or recovery planning owns that semantic
-decision. A shared physical move resolver may combine its transfers with the
+decision. A shared physical-transfer resolver may combine its transfers with the
 allocator-produced set once both are known.
 
-The register allocator should expose reusable physical-move machinery rather
-than hide it inside allocation. Canonical synchronization may reuse the same
-location representation, parallel-move set, cycle detection, scratch
-selection, register-to-register moves, spill loads and stores, and
+Generic allocation materialization should expose reusable physical-transfer
+machinery rather than hide it inside one emitter. Canonical synchronization may
+reuse the same location representation, parallel-transfer set, cycle
+detection, scratch selection, register moves, spill loads and stores, and
 memory-to-memory fallback. It supplies those mechanisms with transfers chosen
 by `HomeState` or recovery planning; it does not ask the allocator to infer
 which canonical homes are semantically current.
@@ -978,19 +1144,19 @@ this analysis only if redundant transfers are material in practice.
 
 ### Open Question: Guaranteed Move Scratch
 
-Parallel-move resolution must account for a cycle at a point where every
+Parallel-transfer resolution must account for a cycle at a point where every
 suitable register is occupied. Memory-to-memory transfers introduce the same
 requirement even without a cycle. The initial design has no ordinary compiler
 spill area, so it cannot yet use the complete fallback of a temporary stack
 slot and, when necessary, briefly spilling a victim register.
 
 The implementation must choose a complete policy for every register class
-before parallel moves are emitted. Plausible choices are to reserve a scratch
+before parallel transfers are emitted. Plausible choices are to reserve a scratch
 register, introduce an allocator-visible emergency stack area, add ordinary
 spill slots, or make scratch exhaustion abort this compilation and return to
 the interpreter. Probing the allocation map for a free register should remain
 the cheap first choice, but it is not a correctness guarantee. This question is
-separate from instruction-declared temporaries: a parallel-move cycle is known
+separate from instruction-declared temporaries: a parallel-transfer cycle is known
 only after allocation.
 
 ## Interpreter Locations and Spillability
@@ -1065,18 +1231,19 @@ RecoveryPlans need complete interpreter-visible state.
 
 ## Verification
 
-The verifier should be able to check the allocation boundary at three levels:
+The verifier should be able to check the allocation boundary at the following
+levels:
 
 - every prepared executable instruction has matching allocation constraints for
   its allocatable inputs, outputs, temporaries, and clobbers;
 - every constraint anchor resolves to a live prepared Core occurrence with a
   compatible `ValueRepresentation`, access kind, and early/late timing;
 - every post-allocation assignment satisfies the relevant constraint at its
-  occurrence position, including fixed registers, clobbers, reuse constraints,
-  split moves, and block-edge parallel-copy bundles;
+  occurrence position, including fixed locations, clobbers, reuse constraints,
+  split transfers, and block-edge parallel-transfer sets;
 - no sunk def receives a physical assignment, and every non-sunk input on the
   recovery frontier is live and assigned at each consuming exit;
-- symbolic execution of the resolved moves and assigned instruction operands
+- symbolic execution of the resolved transfers and assigned instruction operands
   preserves the original SSA def/use connectivity on every CFG path.
 
 Diagnostics should report the durable anchor: instruction serial and operand
@@ -1087,9 +1254,9 @@ The allocator should be developed with a generated SSA-CFG test input and a
 symbolic allocation checker from its first non-trivial stages. The generator,
 SSA validator, liveness implementation, allocator, and checker should be
 cross-checked rather than relying only on hand-written examples. Fuzzing must
-cover duplicate uses, fixed-register conflicts, early and late accesses,
+cover duplicate uses, fixed-location conflicts, early and late accesses,
 reused inputs, loops, irreducible control flow, duplicate edge arguments,
-spills, clobbers, split connectors, and cyclic parallel moves.
+spills, clobbers, split connectors, and cyclic parallel transfers.
 
 ## Implementation Discipline
 
@@ -1117,13 +1284,17 @@ results must use the general allocator model. Bring-up work must not introduce
 a one-block data model, target-specific allocator, or temporary fixed-first
 queue policy that will be discarded by the accepted allocator.
 
-Target code defines register vocabulary, availability, allocation order, and
-instruction constraints. The generic allocator owns liveness, bundle policy,
-priority, spill weight, probing, eviction, splitting, and assignment.
+Target code defines location vocabulary, register availability, allocation
+order, instruction constraints, and legal physical-transfer capabilities. The
+generic allocator owns liveness, bundle policy, priority, spill weight,
+probing, eviction, splitting, assignment, and parallel transfer scheduling.
+Generic materialization resolves those transfers and physicalizes instruction
+occurrences before target emission.
 
 Allocator-local positions, ranges, bundles, allocation maps, and heuristic
-state remain ephemeral. `LocationAssignments` and move bundles are the durable
-result consumed by emission and recovery planning.
+state remain ephemeral. `RegisterAllocationResult` is the durable allocator
+result; recovery consumes its `LocationAssignments`, while emission consumes
+the derived `AllocatedProgram`.
 
 ## External Model
 
