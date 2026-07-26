@@ -336,6 +336,7 @@ namespace cl::jit
 
     static_assert(sizeof(InstructionEntry) == 32);
     static_assert(alignof(InstructionEntry) == alignof(uintptr_t));
+    static_assert(std::is_standard_layout_v<InstructionEntry>);
     static_assert(std::is_trivially_destructible_v<InstructionEntry>);
     static_assert(static_cast<uint16_t>(InstructionOrdinal::Count) <=
                   InstructionOrdinalMask + 1);
@@ -447,9 +448,13 @@ namespace cl::jit
             return operands;
         }
 
-        template <size_t Index> Slot inline_word_at() const
+        template <size_t Index, typename Storage> Slot inline_word_at() const
         {
             static_assert(Index < InlineSlotCount);
+            static_assert(
+                (offsetof(InstructionEntry, slots_) + Index * sizeof(Slot)) %
+                    sizeof(Storage) ==
+                0);
             return slot(Index);
         }
 
@@ -633,6 +638,13 @@ namespace cl::jit
     };
 
     using BytecodePC = uint32_t;
+
+    using InstructionAttributeStorage_Shape = uint64_t;
+    using InstructionAttributeStorage_ValidityCell = uint64_t;
+    using InstructionAttributeStorage_ShapeKey = uint64_t;
+    using InstructionAttributeStorage_ValueConstant = uint64_t;
+    using InstructionAttributeStorage_BytecodePC = uint32_t;
+    using InstructionAttributeStorage_BlockEdge = uint32_t;
 
     inline Shape *decode_instruction_attribute_Shape(const CompilationStorage *,
                                                      uintptr_t word)
@@ -898,7 +910,9 @@ namespace cl::jit
         constexpr size_t index =                                               \
             AttributeBase + static_cast<size_t>(AttributeIndex::name);         \
         return decode_instruction_attribute_##attribute_class(                 \
-            storage(), inline_word_at<index>());                               \
+            storage(),                                                        \
+            inline_word_at<index,                                              \
+                           InstructionAttributeStorage_##attribute_class>());   \
     }
 #define CL_JIT_INSTRUCTION(name, ir_levels, result, effects, operands,         \
                            attributes)                                         \

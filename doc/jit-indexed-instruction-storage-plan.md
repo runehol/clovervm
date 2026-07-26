@@ -288,24 +288,30 @@ The schema computes 32-bit physical words for operands and attributes:
 - `BytecodePC` and other 32-bit attributes use one word;
 - `Value`, `ShapeKey`, runtime pointers, and other 64-bit attributes use two
   consecutive words;
-- padding words are inserted so every 64-bit attribute begins at an even inline
-  word index.
+- every 64-bit attribute must begin at an even inline word index.
 
 Attributes are always inline. For an instruction with inline operands, the
-operands begin at slot zero and the attributes follow them, including any
-padding needed to align a wide attribute. The schema selects this layout only
-when the complete sequence fits in three words.
+operands begin at slot zero and the attributes follow them in declaration order.
+The schema does not insert padding or reorder attributes. It selects this layout
+only when the complete sequence fits in three words and every attribute is
+properly aligned.
 
 When operands are indirect, attributes are instead laid out exactly as if the
 instruction had zero operands: they begin at slot zero with their ordinary
 alignment. Slot two contains the 32-bit operand-table offset. Consequently, the
 schema rejects an instruction kind whose attributes alone require more than two
-inline words.
+inline words or place a wide attribute at an odd word index.
 
-A fixed-arity kind uses indirect operands when its aligned inline layout does
-not fit. A variadic kind always uses indirect operands, even when a particular
-instance has few enough operands to fit inline. Storage mode is therefore
-determined by the instruction kind, never by a runtime operand count.
+A fixed-arity kind uses indirect operands when its operands-then-attributes
+layout does not fit or would misalign an attribute. A variadic kind always uses
+indirect operands, even when a particular instance has few enough operands to
+fit inline. Storage mode is therefore determined by the instruction kind, never
+by a runtime operand count.
+
+Each generated attribute accessor statically checks its physical slot address
+using `offsetof(InstructionEntry, slots_)`. The address must be a multiple of
+the attribute storage size. Instruction authors remain responsible for declaring
+attributes in an order that produces a valid indirect layout.
 
 The schema generates the storage mode as part of the concrete instruction type.
 A typed accessor therefore never switches between inline and indirect operands
@@ -600,13 +606,13 @@ from the later word-width conversion.
 
 Change inline slots and side-table words to 32 bits. Replace the indirect
 operand pointer with a 32-bit side-table offset in slot two. Generate attribute
-widths and padding from `instruction.def`; keep attributes inline and align
-every 64-bit attribute to an even word index.
+widths from `instruction.def`; keep attributes inline, do not insert padding,
+and statically require every 64-bit attribute to begin at an even word index.
 
-Fixed operands remain inline only when the aligned operands-then-attributes
-layout fits three words. Otherwise their operands become indirect and their
-attributes are laid out from slot zero. Variadic operands remain
-unconditionally indirect.
+Fixed operands remain inline only when the operands-then-attributes layout fits
+three words without misaligning an attribute. Otherwise their operands become
+indirect and their attributes are laid out from slot zero. Variadic operands
+remain unconditionally indirect.
 
 Focused layout verification must round-trip every attribute class, verify
 aligned 64-bit attributes, cover inline `AddSMI`, `Const`, and
