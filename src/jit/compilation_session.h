@@ -1,14 +1,14 @@
 #ifndef CL_JIT_COMPILATION_SESSION_H
 #define CL_JIT_COMPILATION_SESSION_H
 
-#include "jit/compilation_arena.h"
+#include "jit/compilation_storage.h"
 #include "object_model/owned.h"
 
 #include <vector>
 
 namespace cl::jit
 {
-    // Owns all resources whose lifetime is one compilation. The arena remains
+    // Owns all resources whose lifetime is one compilation. The storage remains
     // a separate storage mechanism: callers may borrow its handle, but only
     // its privileged construction APIs can allocate from it.
     class CompilationSession
@@ -21,8 +21,8 @@ namespace cl::jit
         CompilationSession(CompilationSession &&) = delete;
         CompilationSession &operator=(CompilationSession &&) = delete;
 
-        CompilationArena &arena() { return arena_; }
-        const CompilationArena &arena() const { return arena_; }
+        CompilationStorage *storage() { return &storage_; }
+        const CompilationStorage *storage() const { return &storage_; }
 
         template <typename T> T retain_and_pin_value(T value)
         {
@@ -35,10 +35,10 @@ namespace cl::jit
         }
 
     private:
-        // Members are destroyed in reverse order, so arena-owned compiler
+        // Members are destroyed in reverse order, so storage-owned compiler
         // state is released before the values it may reference.
         std::vector<Owned<Value>> retained_values_;
-        CompilationArena arena_;
+        CompilationStorage storage_;
     };
 
 }  // namespace cl::jit

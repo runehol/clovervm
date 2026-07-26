@@ -63,7 +63,7 @@ namespace cl::jit
         EXPECT_EQ(20, second->value());
     }
 
-    TEST(JitCompilationArena, UsesOneSerialSequencePerPool)
+    TEST(JitCompilationStorage, UsesOneSerialSequencePerPool)
     {
         CompilationSession session;
         GraphBuilder builder(session);
@@ -78,6 +78,21 @@ namespace cl::jit
         EXPECT_EQ(1u, second_block->serial().value());
         EXPECT_EQ(0u, first_instruction->serial().value());
         EXPECT_EQ(1u, second_instruction->serial().value());
+    }
+
+    TEST(JitCompilationStorage, GraphBorrowsItsOwningStorage)
+    {
+        CompilationSession session;
+        GraphBuilder builder(session);
+        Block *entry = builder.emplace_block();
+        ConstInstruction *none =
+            builder.emplace_instruction<ConstInstruction>(entry, Value::None());
+        builder.emplace_instruction<ReturnInstruction>(entry,
+                                                       TaggedValueRef(none));
+
+        ControlFlowGraph *graph = builder.finalize();
+
+        EXPECT_EQ(session.storage(), graph->storage());
     }
 
     TEST(JitCompilationSession,

@@ -110,8 +110,8 @@ add_library(libclovervm_objects OBJECT
     jit/bundle_splitter.cpp
     jit/cfg_verifier.cpp
     jit/cfg_verifier.h
-    jit/compilation_arena.cpp
-    jit/compilation_arena.h
+    jit/compilation_storage.cpp
+    jit/compilation_storage.h
     jit/compilation_session.cpp
     jit/compilation_session.h
     jit/control_flow_graph.cpp

@@ -7,7 +7,12 @@
 
 namespace cl::jit
 {
-    ControlFlowGraph::ControlFlowGraph(Serial serial) : serial_(serial) {}
+    ControlFlowGraph::ControlFlowGraph(Serial serial,
+                                       CompilationStorage *storage)
+        : serial_(serial), storage_(storage)
+    {
+        assert(storage_ != nullptr);
+    }
 
     ControlFlowGraph::~ControlFlowGraph() = default;
 

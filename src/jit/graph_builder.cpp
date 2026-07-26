@@ -8,15 +8,15 @@
 namespace cl::jit
 {
     GraphBuilder::GraphBuilder(CompilationSession &session)
-        : session_(&session), arena_(&session.arena()),
-          graph_(arena_->make_graph())
+        : session_(&session), storage_(session.storage()),
+          graph_(storage_->make_graph())
     {
     }
 
     Block *GraphBuilder::make_block()
     {
         assert_can_build();
-        return arena_->make_block();
+        return storage_->make_block();
     }
 
     void GraphBuilder::append_block(Block *block)
@@ -92,7 +92,7 @@ namespace cl::jit
         assert_can_mutate(source);
         assert(target != nullptr);
         assert(graph_->owns_block(target));
-        return arena_->make_block_edge(source, target, arguments);
+        return storage_->make_block_edge(source, target, arguments);
     }
 
     ControlFlowGraph *GraphBuilder::finalize()

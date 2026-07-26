@@ -14,6 +14,7 @@
 namespace cl::jit
 {
     class ControlFlowGraph;
+    class CompilationStorage;
     class GraphQueries;
     class GraphBuilder;
     class GraphRewriter;
@@ -121,7 +122,7 @@ namespace cl::jit
     public:
         using Serial = TypedSerial<ControlFlowGraph>;
 
-        explicit ControlFlowGraph(Serial serial);
+        ControlFlowGraph(Serial serial, CompilationStorage *storage);
         ~ControlFlowGraph();
 
         ControlFlowGraph(const ControlFlowGraph &) = delete;
@@ -130,6 +131,8 @@ namespace cl::jit
         ControlFlowGraph &operator=(ControlFlowGraph &&) = delete;
 
         Serial serial() const { return serial_; }
+        CompilationStorage *storage() { return storage_; }
+        const CompilationStorage *storage() const { return storage_; }
         Block *entry_block() const { return entry_block_; }
         const std::vector<Block *> &blocks() const { return blocks_; }
         bool is_published() const { return published_; }
@@ -149,6 +152,7 @@ namespace cl::jit
         void rebuild_predecessor_edge_index();
 
         Serial serial_;
+        CompilationStorage *storage_;
         Block *entry_block_ = nullptr;
         std::vector<Block *> blocks_;
         std::optional<BytecodeStateOrder> bytecode_state_order_;

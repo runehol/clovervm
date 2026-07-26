@@ -19,7 +19,7 @@ namespace cl::jit
 
     // Construction and rewriting APIs use one ownership vocabulary:
     //
-    //   make     allocate an arena-owned object without attaching it;
+    //   make     allocate a storage-owned object without attaching it;
     //   append   attach an existing object to the end of a specified container;
     //   emplace  allocate and attach to the end in one operation.
     //
@@ -55,7 +55,7 @@ namespace cl::jit
         T *make_instruction(Args &&...args)
         {
             assert_can_build();
-            return arena_->make_instruction<T>(std::forward<Args>(args)...);
+            return storage_->make_instruction<T>(std::forward<Args>(args)...);
         }
 
         void append_instruction(Block *block, Instruction *instruction);
@@ -95,7 +95,7 @@ namespace cl::jit
         void assert_can_mutate(const Block *block) const;
 
         CompilationSession *session_;
-        CompilationArena *arena_;
+        CompilationStorage *storage_;
         ControlFlowGraph *graph_;
     };
 

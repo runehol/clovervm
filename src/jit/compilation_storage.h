@@ -1,5 +1,5 @@
-#ifndef CL_JIT_COMPILATION_ARENA_H
-#define CL_JIT_COMPILATION_ARENA_H
+#ifndef CL_JIT_COMPILATION_STORAGE_H
+#define CL_JIT_COMPILATION_STORAGE_H
 
 #include "jit/control_flow_graph.h"
 #include "jit/instruction.h"
@@ -17,13 +17,13 @@ namespace cl::jit
     class CompilationSession;
     class RewriteContext;
 
-    class CompilationArena
+    class CompilationStorage
     {
     public:
-        CompilationArena(const CompilationArena &) = delete;
-        CompilationArena &operator=(const CompilationArena &) = delete;
-        CompilationArena(CompilationArena &&) = delete;
-        CompilationArena &operator=(CompilationArena &&) = delete;
+        CompilationStorage(const CompilationStorage &) = delete;
+        CompilationStorage &operator=(const CompilationStorage &) = delete;
+        CompilationStorage(CompilationStorage &&) = delete;
+        CompilationStorage &operator=(CompilationStorage &&) = delete;
 
     private:
         friend class CompilationSession;
@@ -31,7 +31,7 @@ namespace cl::jit
         friend class GraphRewriter;
         friend class RewriteContext;
 
-        CompilationArena() = default;
+        CompilationStorage() = default;
 
         template <typename... Args> Block *make_block(Args &&...args)
         {
@@ -61,7 +61,7 @@ namespace cl::jit
             }
         }
 
-        ControlFlowGraph *make_graph() { return graphs_.make(); }
+        ControlFlowGraph *make_graph() { return graphs_.make(this); }
 
         ObjectPool<ControlFlowGraph> graphs_;
         ObjectPool<Block> blocks_;
@@ -72,4 +72,4 @@ namespace cl::jit
 
 }  // namespace cl::jit
 
-#endif  // CL_JIT_COMPILATION_ARENA_H
+#endif  // CL_JIT_COMPILATION_STORAGE_H

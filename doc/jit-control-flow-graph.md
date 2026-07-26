@@ -86,19 +86,21 @@ provide diagnostics and deterministic tie-breaking rather than another
 reference mechanism.
 
 `ControlFlowGraph`, blocks, block edges, and instructions are all allocated from
-separate pools in the `CompilationArena`, so each object kind has its own serial
-sequence. The `CompilationSession` owns that arena and necessarily outlives
-every graph object. A graph does not store or use a session or arena pointer
-after construction. All concrete instruction views share the fixed-size
-`Instruction` pool and serial sequence.
+separate pools in the `CompilationStorage`, so each object kind has its own
+serial sequence. The `CompilationSession` owns that storage and necessarily
+outlives every graph object. A graph borrows its owning storage pointer so
+compiler passes can resolve compilation-relative identities without separately
+threading storage through every graph API. All concrete instruction views share
+the fixed-size `Instruction` pool and serial sequence.
 
-A `GraphBuilder` takes the session, borrows its arena, allocates one unpublished
-graph from it, and owns all initial mutation of that graph. `finalize()` verifies
-and publishes the graph, returns its stable arena-owned pointer, and makes that
-builder unusable. Destroying a builder without finalizing is valid; session
-teardown destroys the arena and reclaims the abandoned graph. One session arena
-may own multiple graphs. Instructions are not shared between them; this is
-currently a construction invariant rather than an arena-wide placement index.
+A `GraphBuilder` takes the session, borrows its storage, allocates one
+unpublished graph from it, and owns all initial mutation of that graph.
+`finalize()` verifies and publishes the graph, returns its stable storage-owned
+pointer, and makes that builder unusable. Destroying a builder without
+finalizing is valid; session teardown destroys the storage and reclaims the
+abandoned graph. One session storage may own multiple graphs. Instructions are
+not shared between them; this is currently a construction invariant rather than
+a storage-wide placement index.
 
 Each block carries a nonnegative loop-depth annotation. It defaults to zero and
 may be set through `GraphBuilder::set_loop_depth()` while the graph is
@@ -421,7 +423,7 @@ The current implementation establishes:
   list, and an ordered predecessor-edge index;
 - `BlockEdge` stores a typed serial, source block, target block, and ordered
   `ProgramValueRef` arguments;
-- `CompilationSession` owns the `CompilationArena`, which allocates blocks,
+- `CompilationSession` owns the `CompilationStorage`, which allocates blocks,
   block edges, and instructions from their designated pools;
 - schema-generated concrete instruction views provide typed branch conditions,
   return operands, block parameters, and terminator edges;

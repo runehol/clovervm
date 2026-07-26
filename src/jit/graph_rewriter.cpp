@@ -199,7 +199,7 @@ namespace cl::jit
 
         GraphQueries queries = graph_->prepare_queries(traversal.queries());
         absl::flat_hash_set<const Instruction *> allocated_instructions;
-        RewriteContext context(session_, arena_, &allocated_instructions);
+        RewriteContext context(session_, storage_, &allocated_instructions);
         RewriteSummary summary;
         ParameterRetentionMasks parameter_retention;
         if constexpr(HasBlockParameterCallback)
@@ -434,7 +434,7 @@ namespace cl::jit
                         BlockEdge *replacement = edge;
                         if(changed)
                         {
-                            replacement = arena_->make_block_edge(
+                            replacement = storage_->make_block_edge(
                                 edge->source(), edge->target(), arguments);
                             edges_changed = true;
                         }

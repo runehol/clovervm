@@ -1,4 +1,4 @@
-#include "jit/compilation_arena.h"
+#include "jit/compilation_storage.h"
 
 namespace cl::jit
 {

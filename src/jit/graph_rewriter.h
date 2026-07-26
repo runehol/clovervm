@@ -33,7 +33,7 @@ namespace cl::jit
         T *make_instruction(Args &&...args)
         {
             T *instruction =
-                arena_->make_instruction<T>(std::forward<Args>(args)...);
+                storage_->make_instruction<T>(std::forward<Args>(args)...);
             allocated_instructions_->insert(instruction);
             return instruction;
         }
@@ -47,15 +47,15 @@ namespace cl::jit
         friend class GraphRewriter;
 
         RewriteContext(
-            CompilationSession *session, CompilationArena *arena,
+            CompilationSession *session, CompilationStorage *storage,
             absl::flat_hash_set<const Instruction *> *allocated_instructions)
-            : session_(session), arena_(arena),
+            : session_(session), storage_(storage),
               allocated_instructions_(allocated_instructions)
         {
         }
 
         CompilationSession *session_;
-        CompilationArena *arena_;
+        CompilationStorage *storage_;
         absl::flat_hash_set<const Instruction *> *allocated_instructions_;
     };
 
@@ -242,8 +242,9 @@ namespace cl::jit
     {
     public:
         GraphRewriter(CompilationSession &session, ControlFlowGraph &graph)
-            : session_(&session), arena_(&session.arena()), graph_(&graph)
+            : session_(&session), storage_(session.storage()), graph_(&graph)
         {
+            assert(graph_->storage() == storage_);
         }
 
         template <typename Callback>
@@ -408,7 +409,7 @@ namespace cl::jit
                                     const ErasedCallbacks &callbacks);
 
         CompilationSession *session_;
-        CompilationArena *arena_;
+        CompilationStorage *storage_;
         ControlFlowGraph *graph_;
     };
 
