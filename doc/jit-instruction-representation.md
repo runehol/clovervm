@@ -69,10 +69,10 @@ IDs are never reused during one compilation. Construction checks once that the
 table still fits the ID domain. Existing views retain only the ID, so vector
 reallocation does not invalidate them.
 
-The physical `InstructionEntry` is an explicitly 8-byte-aligned 16-byte value:
+The physical `InstructionEntry` is an explicitly 16-byte-aligned 16-byte value:
 
 ```cpp
-class alignas(8) InstructionEntry
+class alignas(16) InstructionEntry
 {
 private:
     uint32_t slots_[3];
@@ -81,7 +81,7 @@ private:
 };
 
 static_assert(sizeof(InstructionEntry) == 16);
-static_assert(alignof(InstructionEntry) == 8);
+static_assert(alignof(InstructionEntry) == 16);
 ```
 
 The high bit of `operand_storage_` records indirect operands. The remaining 15

@@ -245,7 +245,7 @@ namespace cl::jit
     const InstructionKindMetadata &
     instruction_kind_metadata(InstructionKind kind);
 
-    class alignas(8) InstructionEntry
+    class alignas(16) InstructionEntry
     {
     public:
         using Slot = uint32_t;
@@ -335,7 +335,7 @@ namespace cl::jit
     };
 
     static_assert(sizeof(InstructionEntry) == 16);
-    static_assert(alignof(InstructionEntry) == 8);
+    static_assert(alignof(InstructionEntry) == 16);
     static_assert(std::is_standard_layout_v<InstructionEntry>);
     static_assert(std::is_trivially_destructible_v<InstructionEntry>);
     static_assert(static_cast<uint16_t>(InstructionOrdinal::Count) <=
