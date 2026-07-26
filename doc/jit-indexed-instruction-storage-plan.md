@@ -4,7 +4,7 @@
 |---|---|
 | Document type | Implementation plan |
 | Status | Accepted |
-| Implementation | Slice 1 complete |
+| Implementation | Slice 2 complete |
 | Scope | Replacing pointer-identified 48-byte JIT instructions with compact table-indexed instructions while retaining pointer-based CFG objects |
 | Owning layers | `CompilationStorage` owns compiler object lifetime and indexed lookup; the instruction schema owns physical payload layout and typed access; CFG objects own graph topology |
 | Validated against | `819673eba7e0ebff3560cc844746ea117e715efc` (2026-07-26) |
@@ -404,6 +404,10 @@ index. Deque growth preserves the existing instruction pointers, while
 `CompilationStorage::instruction(InstructionId)` provides constant-time indexed
 lookup.
 
+The slab-backed `InstructionPool` disappears in this slice. The unchanged
+indirect-operand allocator moves to the separately named
+`InstructionSideDataPool` component.
+
 Rename the stored instruction serial to `InstructionId`. During this transition
 the ID field supports pointer-to-ID conversion for old callers; it ceases to be
 stored once the logical `Instruction` carries the ID. Do not change
@@ -513,8 +517,8 @@ reconstruction, and enforce `sizeof(InstructionEntry) == 16`.
 
 ### 8. Remove transitional machinery and update measurements
 
-Remove the old instruction pool, pointer encoders, serial vocabulary, and any
-migration-only helpers. Update [JIT Instruction
+Remove pointer encoders, remaining serial vocabulary, and any migration-only
+helpers. Update [JIT Instruction
 Representation](jit-instruction-representation.md) to describe the implemented
 model and measure instruction-table and operand-table storage on representative
 compilations.

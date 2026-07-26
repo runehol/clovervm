@@ -63,7 +63,7 @@ namespace cl::jit
         EXPECT_EQ(20, second->value());
     }
 
-    TEST(JitCompilationStorage, UsesOneSerialSequencePerPool)
+    TEST(JitCompilationStorage, UsesOneDenseIdentitySequencePerObjectKind)
     {
         CompilationSession session;
         GraphBuilder builder(session);
@@ -76,8 +76,8 @@ namespace cl::jit
 
         EXPECT_EQ(0u, first_block->serial().value());
         EXPECT_EQ(1u, second_block->serial().value());
-        EXPECT_EQ(0u, first_instruction->serial().value());
-        EXPECT_EQ(1u, second_instruction->serial().value());
+        EXPECT_EQ(0u, first_instruction->id().value());
+        EXPECT_EQ(1u, second_instruction->id().value());
     }
 
     TEST(JitCompilationStorage, GraphBorrowsItsOwningStorage)
@@ -135,15 +135,16 @@ namespace cl::jit
         EXPECT_EQ(0, existing->refcount);
     }
 
-    TEST(JitInstructionStorage, HasFiveSlotsAndAlignedStableAddresses)
+    TEST(JitInstructionStorage, HasDenseIdsAndAlignedStableAddresses)
     {
         static_assert(sizeof(Instruction) == 48);
+        static_assert(sizeof(InstructionId) == sizeof(uint32_t));
         static_assert(std::is_trivially_destructible_v<Instruction>);
 
         CompilationSession session;
         GraphBuilder builder(session);
         std::vector<Instruction *> instructions;
-        for(size_t index = 0; index < 256; ++index)
+        for(size_t index = 0; index < 4096; ++index)
         {
             instructions.push_back(
                 builder.make_instruction<ParameterInstruction>());
@@ -152,11 +153,17 @@ namespace cl::jit
         for(size_t index = 0; index < instructions.size(); ++index)
         {
             Instruction *instruction = instructions[index];
-            EXPECT_EQ(index, instruction->serial().value());
+            EXPECT_EQ(index, instruction->id().value());
+            EXPECT_EQ(instruction,
+                      session.storage()->instruction(instruction->id()));
             EXPECT_EQ(0u, reinterpret_cast<uintptr_t>(instruction) %
                               alignof(Instruction));
             EXPECT_EQ(InstructionKind::Parameter, instruction->kind());
         }
+
+        const CompilationStorage *storage = session.storage();
+        EXPECT_EQ(instructions.front(),
+                  storage->instruction(instructions.front()->id()));
     }
 
     TEST(JitInstructionSchema, GeneratesIntrinsicMetadata)

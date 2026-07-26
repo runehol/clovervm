@@ -4,17 +4,17 @@
 |---|---|
 | Document type | Design |
 | Status | Accepted |
-| Implementation | Partial; the naturally aligned 48-byte record and instruction arena, schema-generated kind metadata and concrete subclasses, generated construction and operand indices, typed CFG terminators, variadic operands, generic operand traversal and reconstruction, deterministic textual IR printing, detachment poisoning, and graph-rewriter integration are implemented; representative layout measurement and complete Snapshot recovery encodings remain |
+| Implementation | Partial; the naturally aligned 48-byte record and deque-backed indexed instruction storage, schema-generated kind metadata and concrete subclasses, generated construction and operand indices, typed CFG terminators, variadic operands, generic operand traversal and reconstruction, deterministic textual IR printing, detachment poisoning, and graph-rewriter integration are implemented; representative layout measurement and complete Snapshot recovery encodings remain |
 | Scope | Physical instruction storage, typed instruction access, Core value representations, IR-level legality, phase metadata, effects, matching, and arena lifetime for Core and Semantic IR |
 | Owning layers | The JIT instruction representation owns storage, schema-generated construction, typed access, operand traversal, and reconstruction; the graph builder owns deferred-validation construction; concrete analyses own attached inferred facts and proven-absent effects; the graph rewriter owns staged body-instruction replacement and future CFG editing owns topology mutation |
-| Validated against | `tests/test_jit_arena.cpp`, `tests/test_jit_cfg.cpp`, `tests/test_jit_graph_rewrites.cpp`, and `tests/test_jit_ir_print.cpp` |
+| Validated against | `tests/test_jit_storage.cpp`, `tests/test_jit_cfg.cpp`, `tests/test_jit_graph_rewrites.cpp`, and `tests/test_jit_ir_print.cpp` |
 | Supersedes | The open instruction-representation alternatives in [JIT Control-Flow Graph](jit-control-flow-graph.md) and the integer-only instruction reference direction in [JIT Compiler and IR](jit-compiler-and-ir.md) |
 
 Core IR and the optional Semantic IR use a fixed-size, type-erased
 `Instruction` allocated with compilation lifetime. Instruction-result operands
 are pointers, while non-dataflow attributes use their schema-declared
-pointer-sized encodings. Each allocation also carries a typed serial for
-deterministic identity, diagnostics, and ordering. Fieldless concrete
+pointer-sized encodings. Each allocation also carries a typed, storage-relative
+ID for deterministic identity, diagnostics, and indexed lookup. Fieldless concrete
 instruction subclasses provide kind-specific read-only access without virtual
 dispatch or C++ RTTI.
 
@@ -23,7 +23,7 @@ The representation has deliberately different roles:
 ```text
 Instruction
     fixed-size stored object
-    stable address and serial
+    stable address and storage-relative ID
     instruction kind and intrinsic result class
     Core value representation when applicable
     encoded kind-specific payload
@@ -48,7 +48,7 @@ GraphRewriter
 ## Storage and Lifetime
 
 The physical `Instruction` is a 48-byte fixed-size record: an 8-byte header and
-five pointer-sized payload slots. The header contains a 32-bit serial, a 16-bit
+five pointer-sized payload slots. The header contains a 32-bit ID, a 16-bit
 kind, and a 16-bit operand-storage word. The high bit of the operand-storage
 word says whether operands are indirect; the low 15 bits hold the total operand
 count. Conceptually it contains:
@@ -57,14 +57,12 @@ count. Conceptually it contains:
 class Instruction
 {
 public:
-    using Serial = TypedSerial<Instruction>;
-
     Instruction(const Instruction &) = delete;
     Instruction &operator=(const Instruction &) = delete;
     Instruction(Instruction &&) = delete;
     Instruction &operator=(Instruction &&) = delete;
 
-    Serial serial() const;
+    InstructionId id() const;
     bool is_detached() const;
     // Requires !is_detached().
     InstructionKind kind() const;
@@ -78,16 +76,18 @@ public:
     const TypedInstruction *as() const;
 
 private:
-    uint32_t serial_;
+    InstructionId id_;
     uint16_t kind_;
     uint16_t operand_storage_;
     InstructionSlot payload_[5];
 };
 ```
 
-The instruction arena uses the natural alignment of `Instruction` and advances
-by the 48-byte record size. An instruction reference is an ordinary, directly
-dereferenceable `Instruction *`; its address carries no operand discriminator.
+Compilation storage placement-constructs instructions in an append-only deque
+of naturally aligned 48-byte raw slots. Deque growth preserves every
+instruction address, and the instruction ID is its slot index. An instruction
+reference is still an ordinary, directly dereferenceable `Instruction *`; its
+address carries no operand discriminator.
 
 The physical storage tag normally represents one live `InstructionKind`. The
 exact encoding may also reserve a poison tag used only after the graph rewriter has
@@ -95,7 +95,7 @@ removed an instruction from a published graph. `InstructionKind` remains the
 closed semantic enum generated from `src/jit/instruction.def`; the poison tag is
 not an instruction kind and is not a state ordinary passes handle. `kind()`,
 `result_class()`, typed conversion, and payload traversal all assert that the
-tag is live. Only `serial()` and `is_detached()` remain meaningful on poisoned
+tag is live. Only `id()` and `is_detached()` remain meaningful on poisoned
 storage, for diagnostics.
 
 Instruction results, instruction operands, and instruction attributes use
@@ -830,11 +830,11 @@ ordering description. Recovery reaches through any sunk conversion rather than
 interpreting a type-erased Snapshot operand.
 
 Each concrete instruction form is a final, fieldless subclass of `Instruction`.
-The instruction arena placement-constructs the subclass selected by the schema;
+Compilation storage placement-constructs the subclass selected by the schema;
 it must never construct a base `Instruction` and reinterpret it as a concrete
-kind. Because subclasses add neither fields nor virtual dispatch, every concrete
-kind has the same 48-byte representation as `Instruction` while providing
-kind-specific read-only accessors:
+kind. Because subclasses add neither fields nor virtual dispatch, every
+concrete kind has the same 48-byte representation as `Instruction` while
+providing kind-specific read-only accessors:
 
 ```cpp
 class AddF64Instruction final : public Instruction
@@ -853,8 +853,8 @@ public:
     F64Ref rhs() const;
 
 private:
-    friend class InstructionPool;
-    AddF64Instruction(uint32_t serial, F64Ref lhs, F64Ref rhs);
+    friend class CompilationStorage;
+    AddF64Instruction(InstructionId id, F64Ref lhs, F64Ref rhs);
 };
 
 static_assert(sizeof(AddF64Instruction) == sizeof(Instruction));
@@ -924,10 +924,10 @@ registered with the session remains retained until session teardown, so
 detachment does not prune that monotonic vector. Poisoned storage is never
 republished or returned to a live kind.
 
-The serial is deliberately preserved for diagnostics. Any detached instruction
+The ID is deliberately preserved for diagnostics. Any detached instruction
 encountered by verification, generic traversal, typed conversion, a result
 reference, or current `UseLists` are a hard compiler bug. The diagnostic reports
-the preserved serial and does not interpret the poisoned payload. Ordinary pass
+the preserved ID and does not interpret the poisoned payload. Ordinary pass
 code does not branch on detachedness as a supported case; concrete instruction
 pointers must not be retained across structural edits without proving that the
 instruction remains attached.
@@ -984,9 +984,9 @@ result must physically exist on the normal path.
 This is not a generic per-instruction property bag. Each attachment is a
 concrete type with its own invariants, key domain, mutation rules, and permitted
 graph level. Clients query it with an instruction pointer or typed result
-reference. A dense implementation may use the instruction serial as an internal
-vector index and retain the pointer in each populated entry for defensive
-identity validation; serial lookup is not exposed as the pass API.
+reference. A dense implementation may use the instruction ID as an internal
+vector index while the current pointer API remains authoritative for the
+attachment.
 
 Mutable analysis builds or updates its private table and publishes a frozen
 view tagged with the source graph and mutation generation. A phase-specific
@@ -1226,12 +1226,12 @@ defines representative constants, binary arithmetic, shape and shape-key
 guards, conditional branches, calls, Snapshots, and metadata-heavy Core
 instructions in `instruction.def`.
 
-The instruction arena placement-constructs the concrete subclass selected by
-the template. Generated constructors list operands and then attributes, while
-the pool privately prefixes the serial. Variadic construction asks the concrete
-class for `n_indirect_slots_for(...)`, allocates that side storage, and passes it
-to the in-place constructor. A later implementation slice should measure total
-graph and side-data use with realistic translated functions.
+Compilation storage placement-constructs the concrete subclass selected by the
+template. Generated constructors list operands and then attributes, while
+storage privately prefixes the ID. Variadic construction asks the concrete
+class for `n_indirect_slots_for(...)`, allocates that side storage, and passes
+it to the in-place constructor. A later implementation slice should measure
+total graph and side-data use with realistic translated functions.
 The current Snapshot constructor accepts `ProgramValueRef`s for every captured
 position. Adding the eventual non-tagged header representation and verifying
 each prefix against the CFG's canonical ordering description remain part of

@@ -44,8 +44,7 @@ namespace cl::jit
             {
                 return "null instruction";
             }
-            return "instruction i" +
-                   std::to_string(instruction->serial().value());
+            return "instruction i" + std::to_string(instruction->id().value());
         }
 
         bool is_core_instruction(InstructionKind kind)

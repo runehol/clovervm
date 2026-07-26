@@ -1,7 +1,6 @@
 #ifndef CL_JIT_INSTRUCTION_H
 #define CL_JIT_INSTRUCTION_H
 
-#include "jit/serial.h"
 #include "object_model/shape_key.h"
 #include "object_model/value.h"
 
@@ -25,8 +24,23 @@ namespace cl
 namespace cl::jit
 {
     class BlockEdge;
+    class CompilationStorage;
     class GraphRewriter;
-    class InstructionPool;
+
+    class InstructionId
+    {
+    public:
+        explicit constexpr InstructionId(uint32_t value) : value_(value) {}
+
+        constexpr uint32_t value() const { return value_; }
+
+        friend bool operator==(InstructionId, InstructionId) = default;
+
+    private:
+        uint32_t value_;
+    };
+
+    static_assert(sizeof(InstructionId) == sizeof(uint32_t));
 
     enum class ResultClass : uint8_t
     {
@@ -228,7 +242,6 @@ namespace cl::jit
     class Instruction
     {
     public:
-        using Serial = TypedSerial<Instruction>;
         using Slot = uintptr_t;
 
         static constexpr size_t InlineSlotCount = 5;
@@ -241,7 +254,7 @@ namespace cl::jit
         Instruction(Instruction &&) = delete;
         Instruction &operator=(Instruction &&) = delete;
 
-        Serial serial() const { return Serial(serial_); }
+        InstructionId id() const { return id_; }
         bool is_detached() const { return kind_ == DetachedStorageTag; }
 
         InstructionKind kind() const
@@ -303,12 +316,12 @@ namespace cl::jit
 
     protected:
         friend class GraphRewriter;
-        friend class InstructionPool;
+        friend class CompilationStorage;
 
-        Instruction(uint32_t serial, InstructionKind kind,
+        Instruction(InstructionId id, InstructionKind kind,
                     uint16_t operand_count, bool indirect_operands,
                     std::span<const Slot> inline_slots)
-            : serial_(serial), kind_(static_cast<uint16_t>(kind)),
+            : id_(id), kind_(static_cast<uint16_t>(kind)),
               operand_storage_(operand_count |
                                (indirect_operands ? IndirectOperandsBit : 0))
         {
@@ -326,10 +339,10 @@ namespace cl::jit
         }
 
         template <size_t N>
-        Instruction(uint32_t serial, InstructionKind kind,
+        Instruction(InstructionId id, InstructionKind kind,
                     uint16_t operand_count, bool indirect_operands,
                     const std::array<Slot, N> &inline_slots)
-            : Instruction(serial, kind, operand_count, indirect_operands,
+            : Instruction(id, kind, operand_count, indirect_operands,
                           std::span<const Slot>(inline_slots))
         {
         }
@@ -375,7 +388,7 @@ namespace cl::jit
             }
         }
 
-        uint32_t serial_;
+        InstructionId id_;
         uint16_t kind_;
         uint16_t operand_storage_;
         Slot slots_[InlineSlotCount];
@@ -638,14 +651,14 @@ namespace cl::jit
     //     Shape *expected_shape() const;
     //
     // private:
-    //     friend class InstructionPool;
-    //     ShapeGuardInstruction(uint32_t serial, TaggedValueRef object,
+    //     friend class CompilationStorage;
+    //     ShapeGuardInstruction(InstructionId id, TaggedValueRef object,
     //                           SnapshotRef snapshot, Shape *expected_shape);
     // };
     //
     // Variadic classes additionally expose n_indirect_slots_for(...), and
-    // their private constructor receives the arena-allocated indirect span
-    // after serial. The macros below generate these declarations, their slot
+    // their private constructor receives the storage-allocated indirect span
+    // after the ID. The macros below generate these declarations, their slot
     // encoders, and the accessor definitions from instruction.def.
 
     // clang-format off
@@ -910,17 +923,17 @@ namespace cl::jit
                     attributes(CL_JIT_ENCODE_ATTRIBUTE_INLINE)};               \
         }                                                                      \
                                                                                \
-        friend class InstructionPool;                                          \
+        friend class CompilationStorage;                                       \
         template <bool Variadic = IsVariadic>                                  \
         requires(!Variadic)                                                    \
-        name##Instruction(uint32_t serial,                                     \
+        name##Instruction(InstructionId id,                                    \
                           operands(CL_JIT_DECLARE_FIXED_PARAMETER,             \
                                    CL_JIT_DECLARE_VARIADIC_PARAMETER,          \
                                    CL_JIT_DECLARE_SNAPSHOT_VALUES_PARAMETER)   \
                               attributes(CL_JIT_DECLARE_ATTRIBUTE_PARAMETER)   \
                                   InstructionConstructorEnd = {})              \
             : Instruction(                                                     \
-                  serial, Kind, static_cast<uint16_t>(FixedOperandCount),      \
+                  id, Kind, static_cast<uint16_t>(FixedOperandCount),          \
                   false,                                                       \
                   fixed_inline_slots(                                          \
                       operands(CL_JIT_PASS_ARGUMENT, CL_JIT_PASS_ARGUMENT,     \
@@ -931,14 +944,14 @@ namespace cl::jit
                                                                                \
         template <bool Variadic = IsVariadic>                                  \
         requires(Variadic)                                                     \
-        name##Instruction(uint32_t serial, std::span<Slot> indirect_slots,    \
+        name##Instruction(InstructionId id, std::span<Slot> indirect_slots,   \
                           operands(CL_JIT_DECLARE_FIXED_PARAMETER,             \
                                    CL_JIT_DECLARE_VARIADIC_PARAMETER,          \
                                    CL_JIT_DECLARE_SNAPSHOT_VALUES_PARAMETER)   \
                               attributes(CL_JIT_DECLARE_ATTRIBUTE_PARAMETER)   \
                                   InstructionConstructorEnd = {})              \
             : Instruction(                                                     \
-                  serial, Kind,                                                \
+                  id, Kind,                                                    \
                   operand_count_for(                                           \
                       operands(CL_JIT_PASS_ARGUMENT, CL_JIT_PASS_ARGUMENT,     \
                                CL_JIT_PASS_ARGUMENT)                           \

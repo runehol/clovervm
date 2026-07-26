@@ -78,20 +78,20 @@ The initial implementation uses a vector for graph block order. A linked or
 chunked representation must be justified by measured editing costs before
 replacing it.
 
-The accepted instruction representation uses stable pointers for semantic
-references and zero-overhead typed pointer views for instruction results. The
-pointed-to objects also carry typed, stable arena serials. Compilation output
-must not depend on pointer values or unordered container iteration; serials
-provide diagnostics and deterministic tie-breaking rather than another
+The accepted instruction representation still uses stable pointers for semantic
+references and zero-overhead typed pointer views for instruction results. Each
+pointed-to instruction also carries a typed, storage-relative dense ID.
+Compilation output must not depend on pointer values or unordered container
+iteration; IDs provide diagnostics and deterministic lookup rather than another
 reference mechanism.
 
-`ControlFlowGraph`, blocks, block edges, and instructions are all allocated from
-separate pools in the `CompilationStorage`, so each object kind has its own
-serial sequence. The `CompilationSession` owns that storage and necessarily
-outlives every graph object. A graph borrows its owning storage pointer so
-compiler passes can resolve compilation-relative identities without separately
-threading storage through every graph API. All concrete instruction views share
-the fixed-size `Instruction` pool and serial sequence.
+`ControlFlowGraph`, blocks, and block edges are allocated from separate pools in
+the `CompilationStorage`, so each object kind has its own serial sequence.
+Instructions occupy an append-only deque of fixed-size raw slots and have their
+own dense ID sequence. The `CompilationSession` owns that storage and
+necessarily outlives every graph object. A graph borrows its owning storage
+pointer so compiler passes can resolve compilation-relative identities without
+separately threading storage through every graph API.
 
 A `GraphBuilder` takes the session, borrows its storage, allocates one
 unpublished graph from it, and owns all initial mutation of that graph.
@@ -359,8 +359,9 @@ The verifier inspects the raw instruction list rather than calling the checked
 `Block::terminator()` accessor, allowing it to diagnose an empty block or a
 malformed final instruction directly.
 
-The verifier is scoped to one `ControlFlowGraph`; it does not maintain an
-arena-wide index merely to diagnose an instruction placed in two graphs.
+The verifier is scoped to one `ControlFlowGraph`; it does not maintain a
+storage-wide placement index merely to diagnose an instruction placed in two
+graphs.
 
 Later cross-block SSA verification will replace the current immediate-source
 restriction with dominance and add these checks:
