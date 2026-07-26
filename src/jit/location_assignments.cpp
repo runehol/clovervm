@@ -22,13 +22,21 @@ namespace cl::jit
     LocationAssignments LocationAssignmentsBuilder::finalize(
         const NormalizationRemapping &normalization) &&
     {
+        absl::flat_hash_map<InstructionId, InstructionId> normalized_ids;
+        normalized_ids.reserve(normalization.size());
+        for(const auto &[before, after]: normalization)
+        {
+            normalized_ids.emplace(before->id(), after->id());
+        }
+
         LocationAssignments::ProgramValueMap program_values;
         program_values.reserve(program_values_.size());
-        for(const auto &[instruction, location]: program_values_)
+        for(const auto &[id, location]: program_values_)
         {
-            const Instruction *normalized =
-                normalized_instruction(normalization, instruction);
-            program_values.insert_or_assign(normalized, location);
+            auto normalized = normalized_ids.find(id);
+            program_values.insert_or_assign(
+                normalized == normalized_ids.end() ? id : normalized->second,
+                location);
         }
 
         LocationAssignments::TemporaryMap temporaries;

@@ -287,16 +287,14 @@ namespace cl::jit
                 for(const RewriteInsertion::TransferOutput &transfer:
                     insertion.transfer_outputs_)
                 {
+                    Instruction *source =
+                        storage_->instruction(transfer.source());
                     require_rewrite_invariant(
-                        transfer.source() != nullptr &&
-                            transfer.output() != nullptr,
-                        "JIT rewrite insertion has a null transfer output");
-                    require_rewrite_invariant(
-                        transfer_sources.insert(transfer.source()).second,
+                        transfer_sources.insert(source).second,
                         "JIT rewrite insertion transfers one source more than "
                         "once");
                     Instruction *active_source =
-                        existing_resolver.resolve(transfer.source());
+                        existing_resolver.resolve(source);
                     require_rewrite_invariant(
                         available_defs.contains(active_source),
                         "JIT rewrite insertion transfers a source not "
@@ -351,20 +349,21 @@ namespace cl::jit
                 for(const RewriteInsertion::TransferOutput &transfer:
                     insertion.transfer_outputs_)
                 {
-                    auto emitted =
-                        sequence_replacements.find(transfer.output());
+                    Instruction *source =
+                        storage_->instruction(transfer.source());
+                    Instruction *output =
+                        storage_->instruction(transfer.output());
+                    auto emitted = sequence_replacements.find(output);
                     require_rewrite_invariant(
                         emitted != sequence_replacements.end(),
                         "a rewrite insertion transfer output must be emitted "
                         "by that insertion");
                     require_rewrite_invariant(
-                        compatible_results(*transfer.source(),
-                                           *emitted->second),
+                        compatible_results(*source, *emitted->second),
                         "a rewrite insertion transfer has an incompatible "
                         "result class or value representation");
                     def_replacements.insert_or_assign(
-                        transfer.source(),
-                        DefReplacement{emitted->second, false});
+                        source, DefReplacement{emitted->second, false});
                 }
 
                 if(!insertion.instructions_.empty())
@@ -500,7 +499,9 @@ namespace cl::jit
                         break;
                     case RewriteResult::Kind::Replace:
                         proposed_instructions = std::move(result.instructions_);
-                        proposed_replacement = result.replacement_def_;
+                        assert(result.replacement_def_.has_value());
+                        proposed_replacement =
+                            storage_->instruction(*result.replacement_def_);
                         if(original->result_class() == ResultClass::None)
                         {
                             proposed_replacement = nullptr;
@@ -519,7 +520,9 @@ namespace cl::jit
                             "replace_with_def requires a result-producing "
                             "instruction");
                         assert(result.instructions_.empty());
-                        proposed_replacement = result.replacement_def_;
+                        assert(result.replacement_def_.has_value());
+                        proposed_replacement =
+                            storage_->instruction(*result.replacement_def_);
                         replacement_is_existing_def = true;
                         break;
                 }

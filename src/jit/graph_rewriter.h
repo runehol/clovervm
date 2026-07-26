@@ -15,6 +15,7 @@
 #include <cstdint>
 #include <functional>
 #include <memory>
+#include <optional>
 #include <type_traits>
 #include <utility>
 
@@ -68,21 +69,23 @@ namespace cl::jit
         {
         public:
             TransferOutput(ProgramValueRef source, ProgramValueRef output)
-                : source_(source.instruction()), output_(output.instruction())
+                : source_(source.instruction()->id()),
+                  output_(output.instruction()->id())
             {
             }
 
             TransferOutput(SnapshotRef source, SnapshotRef output)
-                : source_(source.instruction()), output_(output.instruction())
+                : source_(source.instruction()->id()),
+                  output_(output.instruction()->id())
             {
             }
 
-            Instruction *source() const { return source_; }
-            Instruction *output() const { return output_; }
+            InstructionId source() const { return source_; }
+            InstructionId output() const { return output_; }
 
         private:
-            Instruction *source_;
-            Instruction *output_;
+            InstructionId source_;
+            InstructionId output_;
         };
 
         using TransferOutputs = absl::InlinedVector<TransferOutput, 2>;
@@ -167,21 +170,22 @@ namespace cl::jit
         static RewriteResult replace(Instruction *instruction)
         {
             assert(instruction != nullptr);
-            return RewriteResult(Kind::Replace, {instruction}, instruction);
+            return RewriteResult(Kind::Replace, {instruction},
+                                 instruction->id());
         }
 
         static RewriteResult replace(InstructionSequence instructions,
                                      ProgramValueRef result)
         {
             return RewriteResult(Kind::Replace, std::move(instructions),
-                                 result.instruction());
+                                 result.instruction()->id());
         }
 
         static RewriteResult replace(InstructionSequence instructions,
                                      SnapshotRef result)
         {
             return RewriteResult(Kind::Replace, std::move(instructions),
-                                 result.instruction());
+                                 result.instruction()->id());
         }
 
         static RewriteResult
@@ -193,12 +197,14 @@ namespace cl::jit
 
         static RewriteResult replace_with_def(ProgramValueRef def)
         {
-            return RewriteResult(Kind::ReplaceWithDef, {}, def.instruction());
+            return RewriteResult(Kind::ReplaceWithDef, {},
+                                 def.instruction()->id());
         }
 
         static RewriteResult replace_with_def(SnapshotRef def)
         {
-            return RewriteResult(Kind::ReplaceWithDef, {}, def.instruction());
+            return RewriteResult(Kind::ReplaceWithDef, {},
+                                 def.instruction()->id());
         }
 
     private:
@@ -215,8 +221,9 @@ namespace cl::jit
             ReplaceWithDef,
         };
 
-        RewriteResult(Kind kind, InstructionSequence instructions = {},
-                      Instruction *replacement_def = nullptr)
+        RewriteResult(
+            Kind kind, InstructionSequence instructions = {},
+            std::optional<InstructionId> replacement_def = std::nullopt)
             : kind_(kind), instructions_(std::move(instructions)),
               replacement_def_(replacement_def)
         {
@@ -224,7 +231,7 @@ namespace cl::jit
 
         Kind kind_;
         InstructionSequence instructions_;
-        Instruction *replacement_def_;
+        std::optional<InstructionId> replacement_def_;
     };
 
     using NormalizationRemapping =

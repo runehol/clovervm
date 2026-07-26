@@ -36,6 +36,11 @@ namespace cl::jit
 
         friend bool operator==(InstructionId, InstructionId) = default;
 
+        template <typename H> friend H AbslHashValue(H hash, InstructionId id)
+        {
+            return H::combine(std::move(hash), id.value_);
+        }
+
     private:
         uint32_t value_;
     };

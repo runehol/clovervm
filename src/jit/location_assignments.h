@@ -18,7 +18,7 @@ namespace cl::jit
     public:
         bool contains(ProgramValueRef value) const
         {
-            return program_values_.contains(value.instruction());
+            return program_values_.contains(value.instruction()->id());
         }
 
         bool contains(const Instruction *instruction,
@@ -29,7 +29,7 @@ namespace cl::jit
 
         PhysicalLocation location_for(ProgramValueRef value) const
         {
-            return program_values_.at(value.instruction());
+            return program_values_.at(value.instruction()->id());
         }
 
         PhysicalLocation location_for(const Instruction *instruction,
@@ -42,7 +42,7 @@ namespace cl::jit
         friend class LocationAssignmentsBuilder;
 
         using ProgramValueMap =
-            absl::flat_hash_map<const Instruction *, PhysicalLocation>;
+            absl::flat_hash_map<InstructionId, PhysicalLocation>;
         using TemporaryKey = std::pair<const Instruction *, size_t>;
         using TemporaryMap =
             absl::flat_hash_map<TemporaryKey, PhysicalLocation>;
@@ -63,7 +63,8 @@ namespace cl::jit
     public:
         void assign(ProgramValueRef value, PhysicalLocation location)
         {
-            program_values_.insert_or_assign(value.instruction(), location);
+            program_values_.insert_or_assign(value.instruction()->id(),
+                                             location);
         }
 
         void assign(const Instruction *instruction, size_t temporary_index,
