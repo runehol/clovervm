@@ -20,8 +20,9 @@ calling conventions or other execution boundaries.
 The representation is restricted Core IR plus transition-specific
 `BeginTransition`, `Transfer`, and terminal handoff instructions. The first
 terminal is `ResumeInterpreter`. It is independent of Snapshots, register
-allocation, and interpreter frames after construction. A side-exit planner
-consumes those compiler structures and produces one immutable transition
+allocation objects, and Core graph identity after construction. Stack locations
+still encode offsets in the execution convention being entered. A side-exit
+planner consumes the compiler structures and produces one immutable transition
 program.
 
 ## Execution Shape
@@ -40,15 +41,16 @@ compiled side-exit branch
 ```
 
 The transition program is one continuous instruction stream with one location
-namespace. Semantic instructions naturally precede the transfers that publish
-their results, but the representation records no phase boundary and uses no
-separate executor or subprogram for publication.
+namespace. Semantic computation and transfers are ordered only by their
+dependencies and may interleave. The representation records no phase boundary
+and uses no separate executor or subprogram for publication.
 
 The target side-exit thunk is intentionally mechanical. It saves the selected
-machine register state into a fixed memory layout, passes the exit identifier
-and saved-state pointer to the transition executor, and does not know the
-logical Snapshot shape. Target-specific code owns the fixed register order and
-any platform calling details.
+machine register state into a fixed memory layout, passes the transition-program
+offset and saved-state pointer to the transition executor, and does not know the
+logical Snapshot shape.
+Target-specific code owns the fixed register order and any platform calling
+details.
 
 The first side-exit use maps the three areas as follows:
 
@@ -62,12 +64,13 @@ stack
     may be read and written
 
 scratch
-    dense transition-result slots
+    instruction-indexed transition-result and staging slots
     also used for parallel-move scratch space
 ```
 
-The scratch area is not register allocated. Every instruction index names one
-potential 64-bit scratch slot. Eligible Core results use
+The scratch area is not register allocated. Every dispatched body-instruction
+index names one potential 64-bit scratch slot; the `BeginTransition` header is
+not part of this index space. Eligible Core results use
 `Scratch[instruction_index]`; a `Transfer` used for staging also uses its own
 instruction index as the scratch destination. Resultless instructions that do
 not stage a value use no scratch.
@@ -184,15 +187,17 @@ through the compiled code object's constant pool and loaded by eligible
 constant instructions.
 
 The transition executor reads `InstructionEntry` directly. It dispatches on the
-stored kind and decodes slots according to generated metadata; it does not
-construct the storage-pointer-plus-ID typed views used by compiler code.
+stored kind and decodes slots through generated named layout accessors; it does
+not construct the storage-pointer-plus-ID typed views used by compiler code.
 
 ## Schema Eligibility
 
 `instruction.def` explicitly declares whether each instruction kind is legal in
-a `TransitionProgram`. The generator uses that declaration both to produce the
-transition dispatch and to reject an invalid eligible schema at build time.
-Eligibility is declared, not inferred from current operands or effects.
+a `TransitionProgram`. The generator uses that declaration to produce named
+transition-layout accessors and to reject an invalid eligible schema at build
+time. Eligibility is declared, not inferred from current operands or effects.
+Execution semantics remain explicit executor code; the initial implementation
+does not generate an interpreter body from the schema.
 
 An eligible Core instruction:
 
@@ -200,7 +205,8 @@ An eligible Core instruction:
 - has only inline scalar or constant-pool-index attributes;
 - has no `SnapshotRef`, block edge, `Shape *`, or `ValidityCell *`;
 - cannot branch, terminate a block, side exit, or invoke Python;
-- has a generated transition-executor handler.
+- has an explicit transition-executor implementation using the generated
+  layout accessors.
 
 Variadic instructions, resultless Core instructions, and instructions requiring
 indirect operands are excluded initially. `BeginTransition` is transition-only,
@@ -275,14 +281,13 @@ logical:
     home_b = home_a
 
 lowered:
-    Transfer home_a -> tmp0
-    Transfer home_b -> tmp1
-    Transfer tmp1 -> home_a
-    Transfer tmp0 -> home_b
+    Transfer home_a -> Scratch[0]
+    Transfer home_b -> home_a
+    Transfer Scratch[0] -> home_b
 ```
 
 The program does not distinguish compute scratch from transfer scratch;
-execution sees one dense scratch namespace.
+execution sees one instruction-indexed scratch namespace.
 
 ## Transition Program Product
 
@@ -331,26 +336,27 @@ IR than to interpreter bytecode. A hot side exit can later seed alternate-path
 compilation by rebuilding ordinary Core instructions from those records and
 connecting the published logical state to the resume point.
 
-With generated fixed entries, reinflation is mechanical. Each eligible entry
-names an ordinary Core `InstructionKind`; its fixed operands decode to
-frontier values, constants, canonical-home inputs, or previously reinflated
-scratch-slot values; and its metadata references resolve through the owning
-compiled code object's metadata tables. The reinflater walks the straight-line
-compute record sequence and constructs the corresponding ordinary Core
-instruction for each record.
+For eligible Core entries, generated reconstruction is mechanical once physical
+inputs have been represented as frontier values. The reinflater walks the
+entire stream while maintaining a symbolic value for each initialized
+`TransitionLocation`. An eligible Core entry constructs the corresponding Core
+instruction and binds its implicit scratch result. A `Transfer` updates the
+symbolic destination without becoming a Core instruction. Attributes such as
+constant-pool references resolve through the owning compiled code object's
+metadata.
 
 ```text
 RegisterFile / Stack
     -> frontier parameter or transition-entry load
 
-Constant
-    -> Const
-
 Scratch
-    -> ProgramValueRef produced by an earlier reinflated record
+    -> earlier reinflated Core result or value propagated by Transfer
 
-InstructionEntry(kind, transition operands, attributes)
+eligible InstructionEntry(kind, transition operands, attributes)
     -> ordinary Core instruction of the same kind
+
+Transfer(source, destination)
+    -> symbolic destination now names symbolic source
 ```
 
 Reinflation is not required for the first implementation. The proposed
@@ -359,9 +365,8 @@ representation keeps the option open by preserving:
 - Core instruction kind and attributes for sunk computation;
 - operand identity through scratch slots and frontier inputs;
 - canonical destination positions encoded by `Transfer.destination`;
-- aliasing of recovered object and boxed values within one exit;
-- the boundary between Python-value computation and machine transfer
-  publication.
+- aliasing of reconstructed object and boxed values within one exit;
+- the distinction between semantic computation and physical transfer.
 
 A later backend may omit final publication transfers that are unnecessary when
 alternate-path compilation continues without first materializing every
@@ -403,25 +408,32 @@ These checks belong near transition planning and allocation-boundary
 verification. A malformed transition program is a compiler bug, not a
 recoverable runtime condition.
 
-## Initial Slice
+## Implementation Slices
 
-The first implementation should be intentionally narrow:
+The first slice establishes only the representation:
 
-- add transition eligibility to `instruction.def` and generate the restricted
-  dispatch metadata;
+- extend `instruction.def` with the transition-only kinds and generate their
+  constructors, named accessors, and metadata;
 - define `TransitionLocation` and the three location areas;
-- add resultless `BeginTransition` with an inline scratch-slot count;
-- add transition-only `Transfer` with a source operand and destination
-  attribute;
-- add resultless terminal `ResumeInterpreter` with an inline `BytecodePC`;
-- represent `TransitionProgram` and fixed saved-state inputs;
-- create transition programs for Core `ResumeInInterpreter` without sunk
-  computation, ending each with transition `ResumeInterpreter`;
-- publish canonical Snapshot state through `Transfer` instructions in the same
-  transition stream;
-- expand Snapshot liveness at executable consumers;
-- run programs with reusable per-thread scratch storage sized by
-  `BeginTransition`.
+- add resultless `BeginTransition`, `Transfer`, and `ResumeInterpreter`;
+- build, verify, and format self-delimiting transition sequences;
+- test zero-scratch direct transfers and scratch-staged transfer cycles.
 
-This sequence validates the storage model and publication semantics before
-adding any Core computation to transition programs.
+The second slice adds execution and publication:
+
+- publish 16-byte-aligned transition sequences with compiled code-object
+  metadata;
+- add reusable per-thread scratch storage sized by `BeginTransition`;
+- interpret the three transition-only kinds without safepointing.
+
+The third slice connects side exits:
+
+- expand Snapshot liveness at executable exit consumers;
+- translate the physical frontier and `HomeState` into parallel transfers;
+- lower those transfers into transition `Transfer` entries;
+- end each side-exit program with `ResumeInterpreter`;
+- connect the target thunk and interpreter handoff.
+
+Only after those slices should Core instruction eligibility, sinking, and
+transition-local computation be added. This validates state translation before
+extending the program into a restricted Core interpreter.

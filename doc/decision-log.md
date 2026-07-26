@@ -243,8 +243,8 @@ an interpreted transition program. It does not initially require the collector
 or stack walker to understand optimized register state.
 
 The compiler does not construct separate `SafepointState` or `DeoptState`
-products. A Core Snapshot is the authoritative logical recovery description.
-After allocation, recovery generation combines it with `LocationAssignments`
+products. A Core Snapshot is the authoritative logical exit-state description.
+After allocation, transition planning combines it with `LocationAssignments`
 and canonical `HomeState`. Future precise root maps may project the required
 subset from the same inputs when measurements justify that work.
 
@@ -274,8 +274,8 @@ relocation.
 The initial policy minimizes simultaneous subsystem changes while the permanent
 contract avoids an architectural dead end. Snapshots preserve logical frame
 state independently of physical allocation, while `LocationAssignments` and
-`HomeState` provide the physical information needed by publication, recovery,
-and any future shadow-map projection.
+`HomeState` provide the physical information needed by publication,
+transitions, and any future shadow-map projection.
 
 ### Consequences
 
@@ -413,7 +413,7 @@ without requiring the compiler to globally expose every legal reordering.
 An ordered list makes conservative semantic and effect order visible by default
 and makes each intentional movement reviewable. It fits bytecode origins,
 side-exit frame states, commit boundaries, mutable CFG lowering, and precise
-post-allocation recovery. SSA and explicit dependency metadata still permit
+post-allocation transitions. SSA and explicit dependency metadata still permit
 code motion where it has clear value, while the target processors handle much
 of the remaining dynamic scheduling.
 
@@ -777,12 +777,13 @@ conventions.
 The program uses the 16-byte `InstructionEntry` layout and `InstructionKind`
 values, but its physical references are 32-bit `TransitionLocation`s rather
 than Core `InstructionId`s. Each location contains an area tag and an offset.
-The initial areas are register-file state, stack data, and dense scratch
-storage. An eligible Core instruction's result is implicitly
-`Scratch[instruction_index]`. The resultless `BeginTransition` header carries
-the actual scratch-slot requirement. `Transfer` has one source operand and one
-destination attribute, both encoded as `TransitionLocation`; it updates that
-location and has `ResultClass::None`. The resultless terminal
+The initial areas are register-file state, stack data, and instruction-indexed
+scratch storage. An eligible Core instruction's result is implicitly
+`Scratch[instruction_index]`, where the body-instruction index excludes the
+`BeginTransition` header. The resultless header carries the actual scratch-slot
+requirement. `Transfer` has one source operand and one destination attribute,
+both encoded as `TransitionLocation`; it updates that location and has
+`ResultClass::None`. The resultless terminal
 `ResumeInterpreter` carries an inline `BytecodePC`, ends transition execution,
 and identifies the interpreter continuation. Pointer-shaped tagged constants
 are loaded through the compiled code object's constant pool.
@@ -793,8 +794,9 @@ attributes, variadic or indirect operands, absent results, side exits, branches,
 Python calls, or unsupported fallibility. Resultless transition-only
 instructions such as `BeginTransition`, `Transfer`, and `ResumeInterpreter` are
 explicit exceptions to the Core result requirement. The transition executor
-dispatches directly over raw entries rather than constructing compiler-facing
-typed instruction views.
+dispatches directly over raw entries through generated named layout accessors
+rather than constructing compiler-facing typed instruction views. Execution
+semantics remain explicit executor code rather than a generated interpreter.
 
 Published programs are self-delimiting sequences in immutable code-object
 metadata. A caller refers by offset to `BeginTransition`; the final handoff ends
@@ -822,7 +824,8 @@ free of storage pointers and heavyweight typed views.
 Transition execution is a no-safepoint region. Transition instructions cannot
 invoke Python, trigger GC, or otherwise enter safepoint-capable VM code. Raw
 scratch words therefore require no transition-local root map. Canonical state
-is fully published before the terminal handoff leaves this region.
+or other required destination state is fully published before the terminal
+handoff leaves this region.
 
 ### Consequences
 

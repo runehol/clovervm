@@ -57,16 +57,16 @@ algorithms, invariants, and layer boundaries.
 Every register written by an instruction remains represented by either an
 explicit result def or a clobber reservation, never both.
 
-## Snapshots and Recovery
+## Snapshots and Transition Programs
 
 - [ ] Expand Snapshot captures into point uses at each consumer.
 - [ ] Derive legal canonical homes from later Snapshot consumers.
-- [ ] Reach through sunk recovery values to the first unsunk inputs that must
+- [ ] Reach through sunk transition values to the first unsunk inputs that must
   physically exist.
 - [ ] Feed finalized register, canonical-home, and rematerialization locations
   into transition planning without allocating virtual Snapshot results.
 - [ ] Cover shared Snapshots, multiple consumers, boxing, constants, and sunk
-  recovery closures in the symbolic checker.
+  transition closures in the symbolic checker.
 
 ## Robustness and Measurement
 

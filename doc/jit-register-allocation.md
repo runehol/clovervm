@@ -1449,9 +1449,9 @@ An unspillable bundle may evict spillable work, but if splitting and eviction
 cannot produce a legal register assignment, compilation fails and execution
 remains interpreted.
 
-## Recovery and Safepoints
+## Transitions and Safepoints
 
-Snapshots remain semantic recovery descriptions. Allocation does not rewrite
+Snapshots remain semantic exit-state descriptions. Allocation does not rewrite
 Snapshot contents. Instead, Snapshot operands become point uses at the
 instructions that consume them for exits or safepoints.
 
@@ -1468,10 +1468,10 @@ Snapshot
 `LocationAssignments` identify where each non-sunk physical frontier value
 lives at the exit position. `HomeState` identifies canonical frame homes that
 already contain required values. The transition program reads those locations,
-evaluates sunk instructions, performs constant materialization, F64 boxing, and
-future reification, and publishes canonical state without adding a second
-semantic state model. The initial executor interprets compact
-`InstructionEntry` records directly.
+evaluates explicitly eligible no-safepoint sunk instructions and
+materializations, and publishes canonical state without adding a second
+semantic state model. The initial executor interprets compact `InstructionEntry`
+records directly.
 
 Safepoint maps and transition programs may share physical location encodings,
 but they remain separate consumers. Safepoint maps need only managed roots;
@@ -1490,7 +1490,7 @@ levels:
   occurrence position, including fixed locations, clobbers, reuse constraints,
   split transfers, and block-edge parallel-transfer sets;
 - no sunk def receives a physical assignment, and every non-sunk input on the
-  recovery frontier is live and assigned at each consuming exit;
+  transition frontier is live and assigned at each consuming exit;
 - symbolic execution of the resolved transfers and assigned instruction operands
   preserves the original SSA def/use connectivity on every CFG path.
 

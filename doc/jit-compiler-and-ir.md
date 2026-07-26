@@ -4,8 +4,8 @@
 |---|---|
 | Document type | Design |
 | Status | Proposed |
-| Implementation | Partial; structural bytecode-to-Core translation, the common compiler driver, Core graph rewriting and global dead-code elimination, generic register allocation/materialization, code-cache publication, and executable one-block AArch64 emission are implemented; recovery, broader analyses/lowering, multi-block emission, and runtime entry remain |
-| Scope | JIT pipeline, Core IR, recovery state, effects, backend lowering, and compiled execution contracts |
+| Implementation | Partial; structural bytecode-to-Core translation, the common compiler driver, Core graph rewriting and global dead-code elimination, generic register allocation/materialization, code-cache publication, and executable one-block AArch64 emission are implemented; transition programs, broader analyses/lowering, multi-block emission, and runtime entry remain |
+| Scope | JIT pipeline, Core IR, exit state, effects, backend lowering, and compiled execution contracts |
 | Owning layers | The JIT owns IR and compiled execution; bytecode, runtime frames, object semantics, and reclamation remain authoritative contracts |
 | Validated against | The focused JIT instruction, CFG, rewrite, allocation-constraint, emitter, code-cache, and executable AArch64 tests |
 | Supersedes | N/A |
@@ -665,7 +665,7 @@ begins. Every position, including padding and frame-header positions, contains
 a `ProgramValueRef`. The two PCs and FP require a non-tagged representation
 whose exact form remains deferred; the return code object is tagged. Pure Core
 definitions can produce these contents without eagerly writing their canonical
-homes. Normal recovery-only sinking may then move those definitions into side
+homes. Normal transition-only sinking may then move those definitions into side
 exits before frame synchronization writes the complete prefix.
 
 The canonical ordering description is attached to the CFG. For each non-entry
@@ -707,11 +707,11 @@ action consumes it as the failure continuation:
     overflow %snapshot
 ```
 
-Snapshot operands are point uses for recovery liveness at every consuming
+Snapshot operands are point uses for transition liveness at every consuming
 exit, even when that exit is not an ordinary CFG successor. The allocator must
 make an ordinary captured value recoverable from a register, spill,
 synchronized home, or constant at that position. For a def marked sunk,
-liveness instead reaches through its recovery closure to the non-sunk physical
+liveness instead reaches through its transition closure to the non-sunk physical
 frontier.
 
 Several failures may share one Snapshot when they replay the same bytecode from
@@ -726,11 +726,11 @@ register shuffling, scratch use, and canonical-frame writes required by the take
 side exit.
 
 A Snapshot may capture the result of an ordinary instruction such as
-`BoxF64`. If that instruction is later marked sunk, recovery evaluates it once
-and shares the recovery-local result between every logical home that captures
-the same def. No special Snapshot operand form is required.
+`BoxF64`. If that instruction is later marked sunk, the transition program
+evaluates it once and shares the transition-local result between every logical
+home that captures the same def. No special Snapshot operand form is required.
 
-### Recovery-only instruction sinking
+### Transition-only instruction sinking
 
 Core may retain an instruction whose result has semantic existence but no
 normal-path physical existence. A late sinking analysis may mark an instruction
@@ -768,7 +768,7 @@ immediately enter a safepoint; crossing the allocation limit requests a later
 safepoint. An allocating instruction retains its declared effects when
 executed on the exit path. The question is whether it and its dependent
 initialization operations commute to every consuming exit and are supported by
-recovery.
+the transition executor without safepointing.
 
 For example, an object-construction chain used only by Snapshots is an
 excellent candidate:
@@ -787,12 +787,12 @@ version of the same runtime object. The ordinary def-use chain therefore
 captures the observable property-addition order and shape transitions all the
 way to the Snapshot. If the complete chain commutes to every consuming exit,
 normal execution emits none of it. A taken exit allocates one object, adds the
-properties in order, and publishes that same recovery-local object to every
+properties in order, and publishes that same transition-local object to every
 logical Snapshot position that aliases `object_s2`.
 
 Resultless mutating instructions would not naturally join such a closure. Two
 possible future directions are to give them the same receiver-versioning form,
-or to let the sinking attachment retain an explicitly ordered recovery-only
+or to let the sinking attachment retain an explicitly ordered transition-only
 effect chain. Neither general representation is selected here.
 
 Sinking changes three backend consumers:
@@ -807,11 +807,11 @@ Sinking changes three backend consumers:
 
 Several Snapshots may share one sunk closure. A value ceases to be sinkable as
 soon as any ordinary compiled path needs its result or any consuming exit
-rejects the commutation proof. Each exit derives and evaluates its own recovery
-closure, memoizing shared defs within that recovery so aliases preserve
-identity. This is the same broad principle already established by the virtual
-Snapshot instruction: presence in Core does not by itself require a runtime
-machine value.
+rejects the commutation proof. Each exit derives and evaluates its own
+transition closure, memoizing shared defs within that transition so aliases
+preserve identity. This is the same broad principle already established by the
+virtual Snapshot instruction: presence in Core does not by itself require a
+runtime machine value.
 
 LuaJIT is the closest external precedent. Its
 [sink pass](https://raw.githubusercontent.com/LuaJIT/LuaJIT/v2.1/src/lj_opt_sink.c)
@@ -856,9 +856,10 @@ shared logical frame chain named by that Snapshot, including any inlined
 frames. The initial backend builds transition programs directly from Snapshots,
 the sunk-instruction attachment, post-allocation locations, and `HomeState`; it
 does not introduce another deoptimization-state identity. `ResumeStateId` and
-`TransitionProgramId` exist only where the backend interns independently
-shareable resume metadata and transition programs. Future precise root maps are attached
-to machine-code positions rather than given IR result identities.
+`TransitionProgramId` exist only where the backend interns logical resume
+states and independently shareable transition programs. Future precise root
+maps are attached to machine-code positions rather than given IR result
+identities.
 
 Every instruction has a typed serial and an intrinsic `ResultClass`:
 
@@ -1156,10 +1157,10 @@ Verification at pass boundaries should require:
 - every SSA value transitively named by that Snapshot to be defined at the
   consuming exit, and every non-sunk physical frontier value to be available
   there even when it is dead on normal control flow;
-- every operation in a sunk recovery closure to accept the representation of
+- every operation in a sunk transition closure to accept the representation of
   its operands and produce the representation required by its consumers;
 - every sunk instruction to have no remaining normal use, commute to every
-  consuming exit, and preserve one recovery-local object for every logical
+  consuming exit, and preserve one transition-local object for every logical
   alias of a sunk boxing or allocation result within one Snapshot;
 - every block edge to supply exactly one argument of the required kind and
   representation for each destination block parameter;
@@ -1601,15 +1602,15 @@ destroyed. Initial generated code is installed once and remains
 alive until its owning heap objects and code-cache lifetime policy permit
 reclamation.
 
-### Snapshots, recovery, and future root maps
+### Snapshots, transitions, and future root maps
 
 A Core `Snapshot` is the authoritative logical description of
 interpreter-visible state. It already names the resume state, active logical
 frame chain, program values, and boxing or reification actions needed to leave
 compiled execution. Constants appear through ordinary `Const` defs. The
 backend consumes the Snapshot directly when constructing a transition program
-and may
-rematerialize those defs; managed values then use the emitter-owned pool.
+and may encode explicitly eligible defs there; managed constants then use the
+emitter-owned pool.
 
 After sinking and allocation, transition planning combines:
 
@@ -1622,10 +1623,11 @@ Snapshot
 ```
 
 Location assignments resolve each non-sunk captured `ProgramValueRef` or
-recovery-frontier input to its register, spill, or canonical slot at the exit.
-`HomeState` identifies canonical frame homes that already contain the required
-value. The sinking attachment identifies instructions that have no normal-path
-physical result and must instead be evaluated during recovery.
+transition-frontier input to its register, spill, or canonical slot at the
+exit. `HomeState` identifies canonical frame homes that already contain the
+required value. The sinking attachment identifies instructions that have no
+normal-path physical result and must instead be evaluated by the transition
+program.
 
 The resulting compact, pointer-free `TransitionProgram` is specified in
 [JIT Transition Programs](jit-transition-program.md). It uses explicitly
@@ -1650,9 +1652,9 @@ code policy is specified by the bring-up plan.
 
 Each Core IR failure retains an explicit non-returning exit consuming a
 `SnapshotRef` until the backend has determined the location of every value
-needed for recovery. A backend may carry the exit through Machine IR or consume
-it directly from Core IR. Side-exit frame publication is runtime recovery work,
-not an effectful Core instruction and not an ordinary CFG successor.
+needed for the transition. A backend may carry the exit through Machine IR or
+consume it directly from Core IR. Side-exit frame publication is transition
+work, not an effectful Core instruction and not an ordinary CFG successor.
 
 Transition-program construction consumes:
 
@@ -1670,19 +1672,19 @@ canonical HomeState:
     (frame instance, canonical slot) -> ProgramValueRef currently stored there
 
 sinking attachment:
-    recovery-local def -> operation and recovery-local operands
+    transition-local def -> operation and transition-local operands
 ```
 
 The resulting transition program makes logical and synchronized state agree. It
 includes dirty canonical-slot publications, accumulator publication,
-frame-header synchronization, and any sunk computation, boxing, allocation, or
-reification supported by recovery. Active inline frames already have canonical
+frame-header synchronization, and any explicitly eligible no-safepoint
+computation or materialization. Active inline frames already have canonical
 backing regions and do not require allocation or layout reconstruction.
 
 Machine liveness at the exit does not blindly include every def transitively
 named by the Snapshot. It recursively traverses sunk instructions and includes
-only the non-sunk physical frontier. Recovery evaluates the sunk closure after
-obtaining those values.
+only the non-sunk physical frontier. The transition program evaluates the sunk
+closure after obtaining those values.
 
 Location assignment and `HomeState` answer different questions. Location
 assignment says where a `ProgramValueRef` can be obtained at the exit.
@@ -1826,21 +1828,21 @@ boxing operation creates a new Python object, and reusing the input box would
 change observable identity. Only `UnboxF64(BoxF64(%raw))` cancels, and only
 when the newly allocated box has no other use or observable effect.
 
-A new unboxed arithmetic result has no box until compiled execution or recovery
-needs one. A normal-path `BoxF64` explicitly produces the tagged SSA value
-used by later compiled operations. It may be sunk into Snapshots only when it
-has no normal uses, deferring its allocation has no observable effect, and
-every affected Snapshot preserves one shared recovery result for all logical
-homes that require the object.
+A new unboxed arithmetic result has no box until compiled execution or a
+transition needs one. A normal-path `BoxF64` explicitly produces the tagged SSA
+value used by later compiled operations. It may be sunk into Snapshots only
+when it has no normal uses, deferring its allocation has no observable effect,
+and every affected Snapshot preserves one shared transition result for all
+logical homes that require the object.
 
-After sinking, each Snapshot continues to capture the `BoxF64` result. Recovery
-reaches through the sunk instruction and evaluates it only on a taken exit,
-keeping the hot path unboxed. Separate exits may evaluate it independently
-because only one exit can be taken in an execution; within one exit, every
-alias of the sunk result must use the same recovery-local box.
+After sinking, each Snapshot continues to capture the `BoxF64` result. The
+transition program reaches through the sunk instruction and evaluates it only
+on a taken exit, keeping the hot path unboxed. Separate exits may evaluate it
+independently because only one exit can be taken in an execution; within one
+exit, every alias of the sunk result must use the same transition-local box.
 
 If one unboxed result appears in multiple bytecode slots or inlined frames, its
-recovery evaluation must allocate one box and place that same `Value`
+transition evaluation must allocate one box and place that same `Value`
 everywhere.
 Boxing each occurrence independently would break `is`. Equivalent normal-path
 boxing operations may likewise be commoned only when doing so preserves the
@@ -1848,9 +1850,9 @@ required Python object identity and effects.
 
 Boxing or reification allocation may initially be treated as infallible because
 the runtime requests a reclamation safepoint before memory exhaustion. The
-first JIT needs no unboxed-float instructions or recovery boxing implementation;
-its IR must only preserve the representation, location, and Snapshot rules that
-allow them to be added later.
+first JIT needs no unboxed-float instructions or transition boxing
+implementation; its IR must only preserve the representation, location, and
+Snapshot rules that allow them to be added later.
 
 ## Inlined Frame Backing and Deoptimization
 
