@@ -27,19 +27,15 @@ namespace cl::jit
 
             // Phase one: establish every block parameter as a def before
             // examining uses in the body.
-            for(InstructionId parameter_id: block->parameters())
+            for(Instruction parameter: block->parameters())
             {
-                Instruction parameter =
-                    graph.storage()->instruction(parameter_id);
                 add_def(*block, parameter);
             }
 
             // Phase two: record body defs and instruction operand uses in
             // definition order.
-            for(InstructionId instruction_id: block->instructions())
+            for(Instruction instruction: block->instructions())
             {
-                Instruction instruction =
-                    graph.storage()->instruction(instruction_id);
                 add_def(*block, instruction);
                 add_instruction_uses(*block, instruction);
             }

@@ -118,16 +118,13 @@ namespace cl::jit
         assert(entry != nullptr);
         assert(graph.blocks()[0] == entry);
         assert(entry->predecessor_edges().empty());
-        for(InstructionId parameter_id: entry->parameters())
+        for(Instruction parameter: entry->parameters())
         {
-            Instruction parameter = graph.storage()->instruction(parameter_id);
             assert(parameter.kind() == InstructionKind::Parameter);
         }
 
-        for(InstructionId instruction_id: entry->instructions())
+        for(Instruction instruction: entry->instructions())
         {
-            Instruction instruction =
-                graph.storage()->instruction(instruction_id);
             // clang-format off
             CL_JIT_INSTRUCTION_SWITCH(instruction)
             {

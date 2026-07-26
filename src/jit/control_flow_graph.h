@@ -6,9 +6,11 @@
 #include "jit/instruction.h"
 #include "jit/serial.h"
 
+#include <cassert>
 #include <cstdint>
 #include <memory>
 #include <optional>
+#include <ranges>
 #include <span>
 #include <vector>
 
@@ -22,6 +24,28 @@ namespace cl::jit
     class BlockEdge;
     class UseLists;
     enum class GraphQuery : uint8_t;
+
+    namespace detail
+    {
+        class InstructionResolver
+        {
+        public:
+            explicit InstructionResolver(const CompilationStorage *storage)
+                : storage_(storage)
+            {
+                assert(storage != nullptr);
+            }
+
+            Instruction operator()(InstructionId id) const;
+
+        private:
+            const CompilationStorage *storage_;
+        };
+    }  // namespace detail
+
+    using InstructionRange =
+        std::ranges::transform_view<std::span<const InstructionId>,
+                                    detail::InstructionResolver>;
 
     class Block
     {
@@ -38,14 +62,26 @@ namespace cl::jit
         CompilationStorage *storage();
         const CompilationStorage *storage() const;
 
-        const std::vector<InstructionId> &instructions() const
+        InstructionRange instructions() const
         {
-            return instructions_;
+            return {std::span<const InstructionId>(instruction_ids_),
+                    detail::InstructionResolver(storage())};
         }
 
-        const std::vector<InstructionId> &parameters() const
+        InstructionRange parameters() const
         {
-            return parameters_;
+            return {std::span<const InstructionId>(parameter_ids_),
+                    detail::InstructionResolver(storage())};
+        }
+
+        const std::vector<InstructionId> &instruction_ids() const
+        {
+            return instruction_ids_;
+        }
+
+        const std::vector<InstructionId> &parameter_ids() const
+        {
+            return parameter_ids_;
         }
 
         Instruction instruction_at(size_t index) const;
@@ -70,12 +106,12 @@ namespace cl::jit
 
         void append_parameter(Instruction parameter)
         {
-            parameters_.push_back(parameter.id());
+            parameter_ids_.push_back(parameter.id());
         }
 
         void append_instruction(Instruction instruction)
         {
-            instructions_.push_back(instruction.id());
+            instruction_ids_.push_back(instruction.id());
         }
 
         void append_predecessor_edge(BlockEdge *edge)
@@ -86,8 +122,8 @@ namespace cl::jit
         Serial serial_;
         ControlFlowGraph *graph_;
         uint32_t loop_depth_ = 0;
-        std::vector<InstructionId> parameters_;
-        std::vector<InstructionId> instructions_;
+        std::vector<InstructionId> parameter_ids_;
+        std::vector<InstructionId> instruction_ids_;
         std::vector<BlockEdge *> predecessor_edges_;
     };
 

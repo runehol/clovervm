@@ -107,10 +107,8 @@ namespace cl::jit
         {
             assert(block != nullptr);
 
-            for(InstructionId instruction_id: block->instructions())
+            for(Instruction instruction: block->instructions())
             {
-                Instruction instruction =
-                    graph.storage()->instruction(instruction_id);
                 switch(instruction.kind())
                 {
                     case InstructionKind::Const:

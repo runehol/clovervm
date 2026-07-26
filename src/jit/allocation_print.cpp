@@ -26,23 +26,21 @@ namespace cl::jit
                     const Block *block =
                         problem.block_ranges()[block_index].block;
                     blocks_.emplace(block, block_index);
-                    for(InstructionId parameter_id: block->parameters())
+                    for(Instruction parameter: block->parameters())
                     {
-                        instructions_.emplace(parameter_id,
+                        instructions_.emplace(parameter.id(),
                                               instruction_index++);
-                        results_.emplace(parameter_id, result_index++);
-                        instruction_blocks_.emplace(parameter_id, block);
+                        results_.emplace(parameter.id(), result_index++);
+                        instruction_blocks_.emplace(parameter.id(), block);
                     }
-                    for(InstructionId instruction_id: block->instructions())
+                    for(Instruction instruction: block->instructions())
                     {
-                        Instruction instruction =
-                            block->storage()->instruction(instruction_id);
-                        instructions_.emplace(instruction_id,
+                        instructions_.emplace(instruction.id(),
                                               instruction_index++);
-                        instruction_blocks_.emplace(instruction_id, block);
+                        instruction_blocks_.emplace(instruction.id(), block);
                         if(instruction.result_class() != ResultClass::None)
                         {
-                            results_.emplace(instruction_id, result_index++);
+                            results_.emplace(instruction.id(), result_index++);
                         }
                     }
                     for(const BlockEdge *edge: block->block_successor_edges())

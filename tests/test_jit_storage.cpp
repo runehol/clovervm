@@ -11,12 +11,15 @@
 
 #include <array>
 #include <cstdint>
+#include <ranges>
 #include <type_traits>
 #include <utility>
 #include <vector>
 
 namespace cl::jit
 {
+    static_assert(std::ranges::random_access_range<InstructionRange>);
+
     static_assert(EffectProfile::None < EffectProfile::PythonVisibleEffects);
     static_assert((EffectProfile::SideExit | EffectProfile::Allocate) <
                   EffectProfile::PythonVisibleEffects);
@@ -110,6 +113,8 @@ namespace cl::jit
         ControlFlowGraph *graph = builder.finalize();
 
         EXPECT_EQ(session.storage(), graph->storage());
+        EXPECT_EQ(none, entry->instructions().front());
+        EXPECT_EQ(none.id(), entry->instruction_ids().front());
     }
 
     TEST(JitCompilationSession,

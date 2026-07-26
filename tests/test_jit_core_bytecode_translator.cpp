@@ -52,10 +52,8 @@ namespace cl::jit
                                                       InstructionKind kind)
         {
             std::vector<Instruction> matches;
-            for(InstructionId instruction_id: block->instructions())
+            for(Instruction instruction: block->instructions())
             {
-                Instruction instruction =
-                    block->storage()->instruction(instruction_id);
                 if(instruction.kind() == kind)
                 {
                     matches.push_back(instruction);

@@ -110,11 +110,9 @@ namespace cl::jit
 
         for(const Block *block: blocks)
         {
-            const std::vector<InstructionId> &parameters = block->parameters();
-            for(InstructionId parameter_id: parameters)
+            InstructionRange parameters = block->parameters();
+            for(Instruction parameter: parameters)
             {
-                Instruction parameter =
-                    graph.storage()->instruction(parameter_id);
                 if(parameter.is_detached())
                 {
                     return invalid(block_name(block) + " contains detached " +
@@ -139,8 +137,7 @@ namespace cl::jit
                 }
             }
 
-            const std::vector<InstructionId> &instructions =
-                block->instructions();
+            InstructionRange instructions = block->instructions();
             if(instructions.empty())
             {
                 return invalid(block_name(block) + " has no instructions");
@@ -148,8 +145,7 @@ namespace cl::jit
 
             for(size_t index = 0; index < instructions.size(); ++index)
             {
-                Instruction instruction =
-                    graph.storage()->instruction(instructions[index]);
+                Instruction instruction = instructions[index];
                 if(instruction.is_detached())
                 {
                     return invalid(block_name(block) + " contains detached " +
@@ -188,8 +184,7 @@ namespace cl::jit
                 }
             }
 
-            TerminatorInstruction terminator(
-                graph.storage()->instruction(instructions.back()));
+            TerminatorInstruction terminator(instructions.back());
             TerminatorInstruction::BlockSuccessorEdges successors =
                 terminator.block_successor_edges();
             size_t expected = expected_successor_count(terminator.kind());
@@ -296,8 +291,7 @@ namespace cl::jit
         {
             for(const BlockEdge *edge: block->block_successor_edges())
             {
-                const std::vector<InstructionId> &parameters =
-                    edge->target()->parameters();
+                InstructionRange parameters = edge->target()->parameters();
                 const std::vector<ProgramValueRef> &arguments =
                     edge->arguments();
                 if(arguments.size() != parameters.size())
@@ -313,9 +307,7 @@ namespace cl::jit
                     Instruction argument = graph.storage()->instruction(
                         arguments[index].instruction_id());
                     if(argument.value_representation() !=
-                       graph.storage()
-                           ->instruction(parameters[index])
-                           .value_representation())
+                       parameters[index].value_representation())
                     {
                         return invalid(edge_name(edge) + " argument " +
                                        std::to_string(index) +
@@ -330,15 +322,13 @@ namespace cl::jit
         for(const Block *block: blocks)
         {
             absl::flat_hash_set<InstructionId> available_definitions;
-            for(InstructionId parameter_id: block->parameters())
+            for(Instruction parameter: block->parameters())
             {
-                available_definitions.insert(parameter_id);
+                available_definitions.insert(parameter.id());
             }
 
-            for(InstructionId instruction_id: block->instructions())
+            for(Instruction instruction: block->instructions())
             {
-                Instruction instruction =
-                    graph.storage()->instruction(instruction_id);
                 std::string reference_error;
                 visit_operand_references(
                     instruction,

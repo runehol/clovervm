@@ -8,6 +8,11 @@
 
 namespace cl::jit
 {
+    Instruction detail::InstructionResolver::operator()(InstructionId id) const
+    {
+        return storage_->instruction(id);
+    }
+
     CompilationStorage *Block::storage()
     {
         assert(graph_ != nullptr);
@@ -22,12 +27,12 @@ namespace cl::jit
 
     Instruction Block::instruction_at(size_t index) const
     {
-        return storage()->instruction(instructions_.at(index));
+        return storage()->instruction(instruction_ids_.at(index));
     }
 
     Instruction Block::parameter_at(size_t index) const
     {
-        return storage()->instruction(parameters_.at(index));
+        return storage()->instruction(parameter_ids_.at(index));
     }
 
     ControlFlowGraph::ControlFlowGraph(Serial serial,
@@ -41,9 +46,9 @@ namespace cl::jit
 
     TerminatorInstruction Block::terminator() const
     {
-        assert(!instructions_.empty());
+        assert(!instruction_ids_.empty());
         Instruction instruction =
-            graph_->storage()->instruction(instructions_.back());
+            graph_->storage()->instruction(instruction_ids_.back());
         assert(instruction.is_block_terminator());
         return TerminatorInstruction(instruction);
     }
@@ -62,12 +67,12 @@ namespace cl::jit
 
         for(Block *block: blocks_)
         {
-            if(block->instructions_.empty())
+            if(block->instruction_ids_.empty())
             {
                 continue;
             }
             Instruction instruction =
-                storage_->instruction(block->instructions_.back());
+                storage_->instruction(block->instruction_ids_.back());
             if(!instruction.is_block_terminator())
             {
                 continue;

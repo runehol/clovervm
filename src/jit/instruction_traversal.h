@@ -57,10 +57,8 @@ namespace cl::jit
                 for(const Block *block: graph.blocks())
                 {
                     assert(block != nullptr);
-                    for(InstructionId instruction_id: block->instructions())
+                    for(Instruction instruction: block->instructions())
                     {
-                        Instruction instruction =
-                            graph.storage()->instruction(instruction_id);
                         std::invoke(callback, queries, *block, instruction);
                     }
                 }

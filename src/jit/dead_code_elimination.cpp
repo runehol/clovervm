@@ -88,10 +88,8 @@ namespace cl::jit
         };
         for(const Block *block: graph.blocks())
         {
-            for(InstructionId instruction_id: block->instructions())
+            for(Instruction instruction: block->instructions())
             {
-                Instruction instruction =
-                    graph.storage()->instruction(instruction_id);
                 if(!instruction_can_be_eliminated(instruction))
                 {
                     mark_live(instruction.id());

@@ -209,13 +209,13 @@ namespace cl::jit
             for(const Block *block: graph_->blocks_)
             {
                 std::vector<bool> retained;
-                retained.reserve(block->parameters_.size());
-                for(size_t index = 0; index < block->parameters_.size();
+                retained.reserve(block->parameter_ids_.size());
+                for(size_t index = 0; index < block->parameter_ids_.size();
                     ++index)
                 {
                     BlockParameterRewrite rewrite = callbacks.block_parameter(
                         callback, context, queries, *block, index,
-                        storage_->instruction(block->parameters_[index]));
+                        storage_->instruction(block->parameter_ids_[index]));
                     bool keep =
                         rewrite.kind_ == BlockParameterRewrite::Kind::Keep;
                     retained.push_back(keep);
@@ -247,16 +247,16 @@ namespace cl::jit
         {
             assert(block != nullptr);
             StagedBlockRewrite staged{block, {}, {}, {}};
-            staged.parameters.reserve(block->parameters_.size());
-            staged.instructions.reserve(block->instructions_.size());
+            staged.parameters.reserve(block->parameter_ids_.size());
+            staged.instructions.reserve(block->instruction_ids_.size());
             if constexpr(HasBlockParameterCallback)
             {
                 const std::vector<bool> &retained =
                     parameter_retention.at(block);
-                for(size_t index = 0; index < block->parameters_.size();
+                for(size_t index = 0; index < block->parameter_ids_.size();
                     ++index)
                 {
-                    InstructionId parameter_id = block->parameters_[index];
+                    InstructionId parameter_id = block->parameter_ids_[index];
                     if(retained[index])
                     {
                         staged.parameters.push_back(parameter_id);
@@ -269,7 +269,7 @@ namespace cl::jit
             }
             else
             {
-                staged.parameters = block->parameters_;
+                staged.parameters = block->parameter_ids_;
             }
             DefReplacements def_replacements;
             EdgeReplacements edge_replacements;
@@ -377,7 +377,7 @@ namespace cl::jit
                                                            queries, *block));
             }
 
-            for(InstructionId original_id: block->instructions_)
+            for(InstructionId original_id: block->instruction_ids_)
             {
                 Instruction original = storage_->instruction(original_id);
                 if constexpr(HasBeforeInstructionCallback)
@@ -712,8 +712,8 @@ namespace cl::jit
 
         for(StagedBlockRewrite &staged: staged_blocks)
         {
-            staged.block->parameters_.swap(staged.parameters);
-            staged.block->instructions_.swap(staged.instructions);
+            staged.block->parameter_ids_.swap(staged.parameters);
+            staged.block->instruction_ids_.swap(staged.instructions);
         }
         if(edges_changed)
         {

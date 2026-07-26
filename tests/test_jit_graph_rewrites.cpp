@@ -813,7 +813,7 @@ namespace cl::jit
         EXPECT_EQ(entry, new_edge->source());
         EXPECT_EQ(exit, new_edge->target());
         ASSERT_EQ(1u, new_edge->arguments().size());
-        EXPECT_EQ(entry->instructions()[0],
+        EXPECT_EQ(entry->instruction_at(0).id(),
                   new_edge->arguments()[0].instruction_id());
         ASSERT_EQ(1u, exit->predecessor_edges().size());
         EXPECT_EQ(new_edge, exit->predecessor_edges()[0]);

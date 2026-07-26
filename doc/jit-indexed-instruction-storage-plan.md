@@ -4,7 +4,7 @@
 |---|---|
 | Document type | Implementation plan |
 | Status | Accepted |
-| Implementation | Slice 8 complete |
+| Implementation | Slice 9 complete |
 | Scope | Replacing pointer-identified 48-byte JIT instructions with compact table-indexed instructions while retaining pointer-based CFG objects |
 | Owning layers | `CompilationStorage` owns compiler object lifetime and indexed lookup; the instruction schema owns physical payload layout and typed access; CFG objects own graph topology |
 | Validated against | `6bd0db58e27fab65beec822791ca0d610fc301b4` (2026-07-26) |
@@ -552,7 +552,21 @@ deterministic identity.
 Keep instruction slots pointer-sized in this slice so edge identity conversion
 is tested independently from physical packing.
 
-### 9. Shrink the physical instruction representation
+### 9. Return logical instructions from block traversal
+
+Keep block instruction and parameter storage as dense `InstructionId` vectors,
+but stop exposing that representation through the ordinary traversal API.
+`Block::instructions()` and `Block::parameters()` return lightweight
+random-access resolving views whose iteration and indexing yield `Instruction`
+handles by value. The views borrow the block's existing storage pointer through
+its owning CFG and have the same invalidation rules as the underlying vectors.
+
+Expose `instruction_ids()` and `parameter_ids()` for the smaller number of
+algorithms that genuinely operate in the ID namespace. Ordinary compiler
+passes, verification, printing, emitters, and tests should consume logical
+instructions directly.
+
+### 10. Shrink the physical instruction representation
 
 Change instruction and indirect-operand words to 32 bits, reorder the stored
 instruction so its slots precede its kind/count header, and reduce the common
@@ -570,7 +584,7 @@ aligned 64-bit attributes, cover inline `AddSMI`, `Const`, and
 `PythonCall` and `Snapshot`, preserve generic operand traversal and
 reconstruction, and enforce `sizeof(InstructionEntry) == 16`.
 
-### 10. Remove transitional machinery and update measurements
+### 11. Remove transitional machinery and update measurements
 
 Remove pointer encoders, remaining serial vocabulary, and any migration-only
 helpers. Update [JIT Instruction

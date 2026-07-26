@@ -80,9 +80,9 @@ namespace cl::jit
             }
 
             LivenessPosition entry_after = block_range.range.start.next();
-            for(InstructionId parameter_id: block_range.block->parameters())
+            for(Instruction parameter: block_range.block->parameters())
             {
-                if(!parameter_positions.emplace(parameter_id, entry_after)
+                if(!parameter_positions.emplace(parameter.id(), entry_after)
                         .second)
                 {
                     fatal("duplicate JIT allocator block parameter");
