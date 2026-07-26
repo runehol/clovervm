@@ -506,6 +506,8 @@ namespace cl::jit
 
         InstructionId instruction_id() const { return instruction_; }
 
+        friend bool operator==(SnapshotRef, SnapshotRef) = default;
+
     private:
         template <OperandClass, ValueRepresentation>
         friend auto decode_instruction_operand(uint32_t);
@@ -538,6 +540,9 @@ namespace cl::jit
             return reference_.instruction_id();
         }
         operator ProgramValueRef() const { return reference_; }
+
+        friend bool operator==(RepresentedValueRef,
+                               RepresentedValueRef) = default;
 
     private:
         template <OperandClass, ValueRepresentation>

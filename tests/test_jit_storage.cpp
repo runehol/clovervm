@@ -585,6 +585,9 @@ namespace cl::jit
         EXPECT_EQ(f64.instruction_id(), values[1].instruction_id());
         EXPECT_EQ(truth.instruction_id(), values[2].instruction_id());
         EXPECT_EQ(none.instruction_id(), values[3].instruction_id());
+        EXPECT_EQ(SnapshotRef(snapshot), SnapshotRef(snapshot));
+        EXPECT_EQ(TaggedValueRef(tagged), TaggedValueRef(tagged));
+        EXPECT_EQ(F64Ref(f64), F64Ref(f64));
         EXPECT_EQ(91u, snapshot.resume_pc());
 
         std::vector<InstructionId> references;
