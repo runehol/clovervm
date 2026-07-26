@@ -6,7 +6,7 @@
 | Status | Proposed |
 | Implementation | Not started |
 | Scope | Side-exit state recovery, sunk Core instruction execution, saved machine-state inputs, canonical publication, and future exit reinflation |
-| Owning layers | Core IR owns sunk operation semantics and Snapshot state; register allocation owns physical frontier locations; recovery planning owns side-exit programs and canonical publication; target thunks own fixed machine-state saves; machine transfer IR owns recovery-time loads, stores, and moves |
+| Owning layers | Core IR owns sunk operation semantics and Snapshot state; register allocation owns physical frontier locations; recovery planning owns the continuous side-exit program, scratch layout, and canonical publication; target thunks own fixed machine-state saves |
 | Validated against | N/A |
 | Supersedes | N/A |
 
@@ -24,18 +24,22 @@ language only for physical publication.
 
 ## Execution Shape
 
-A side exit runs in three phases:
+A side exit follows one fixed execution sequence:
 
 ```text
 compiled side-exit branch
     -> target side-exit thunk
        saves machine registers in a fixed layout
-    -> recovery compute plan
-       interprets sunk straight-line Core subset into scratch slots
-    -> recovery transfer plan
-       publishes the Snapshot state into canonical interpreter homes
-    -> interpreter resume at Snapshot.resume_pc
+    -> recovery program
+       computes recovered values and publishes canonical interpreter homes
+    -> interpreter resume at RecoveryPlan.resume_pc
 ```
+
+The recovery program is one continuous instruction stream with one operand and
+scratch-slot namespace. Semantic recovery instructions naturally precede the
+physical publication instructions that consume their results, but the
+representation records no phase boundary and uses no separate executor or
+subprogram for publication.
 
 The target side-exit thunk is intentionally mechanical. It saves the selected
 machine register state into a fixed memory layout, passes the exit identifier
@@ -59,18 +63,19 @@ scratch area
     also used for transfer scratch space
 ```
 
-The scratch area is not register allocated. Each recovery compute instruction
-with a result writes one dense scratch slot, usually in program order.
-Transfer lowering may allocate additional scratch slots. Avoiding coalescing
-and stack-slot packing keeps exit execution simple and keeps the representation
-predictable for debugging and future reinflation.
+The scratch area is not register allocated. Each value-producing recovery
+instruction writes one dense scratch slot, usually in program order. Lowering
+physical copies may allocate as many additional scratch slots as necessary to
+resolve publication safely. Avoiding coalescing and stack-slot packing keeps
+exit execution simple and keeps the representation predictable for debugging
+and future reinflation.
 
-## Core Recovery Compute
+## Core Recovery Instructions
 
-The recovery compute plan is an interpreter for a restricted straight-line
-subset of Core IR. It executes in SSA form: every step reads operands from
-saved machine state, canonical homes, constants, or earlier scratch slots, and
-writes its result to one scratch slot.
+The semantic instructions in the recovery program form a restricted
+straight-line subset of Core IR. They execute in SSA form: every instruction
+reads operands from saved machine state, canonical homes, constants, or earlier
+scratch slots, and writes its result to one scratch slot.
 
 It does not contain branches. It does not model arbitrary interpreter
 bytecode. Interpreter bytecode is slot-state oriented and owns generic Python
@@ -152,9 +157,10 @@ small and total under the facts already established on the optimized path.
 
 ## Versioned Object Recovery
 
-The recovery compute plan is not limited to pure scalar expressions. It must
-also support object materialization patterns where optimized execution avoided
-allocating a short-lived object that is needed only if an exit is taken.
+The semantic part of the recovery stream is not limited to pure scalar
+expressions. It must also support object materialization patterns where
+optimized execution avoided allocating a short-lived object that is needed only
+if an exit is taken.
 
 The preferred representation is receiver versioning:
 
@@ -205,25 +211,15 @@ Snapshot's desired values. Recovery planning combines both with the sinking
 attachment; it does not ask register allocation to assign locations to sunk
 defs.
 
-## Machine Transfer Publication
+## Physical Publication Instructions
 
-Canonical publication is not Core IR. It is a small machine-level transfer
-program whose job is to make the canonical interpreter stack match the
-Snapshot state.
+Canonical publication is not Core semantics. It uses physical-copy
+instructions in the same recovery stream to make the canonical interpreter
+stack match the Snapshot state.
 
-The initial operation set is:
-
-```text
-LoadStack
-LoadStackF64
-StoreStack
-StoreStackF64
-Mov
-```
-
-These operations move tagged or unboxed machine values between canonical homes,
-saved physical inputs, and scratch slots. They do not express Python semantics
-and should not be added to ordinary Core lowering.
+These representation-aware instructions move tagged or unboxed machine values
+between canonical homes, saved physical inputs, and scratch slots. They do not
+express Python semantics and should not be added to ordinary Core lowering.
 
 The logical publication step has parallel-assignment semantics. A source
 canonical home may also be a destination. Recovery planning must therefore
@@ -238,43 +234,44 @@ logical:
     home_b = home_a
 
 lowered:
-    LoadStack tmp0, home_a
-    LoadStack tmp1, home_b
-    StoreStack home_a, tmp1
-    StoreStack home_b, tmp0
+    tmp0 = load home_a
+    tmp1 = load home_b
+    store tmp1 to home_a
+    store tmp0 to home_b
 ```
 
-The scratch slots above are ordinary slots in the same scratch area as the
-compute results. A recovery plan may record the split:
-
-```text
-[0, n_compute_slots)     sunk Core SSA values
-[n_compute_slots, n)     transfer-only scratch
-```
-
-This distinction is diagnostic and reinflation metadata. Execution only needs
-the dense scratch area.
+The scratch slots above are ordinary slots in the same scratch area as semantic
+results. The program does not distinguish compute scratch from transfer
+scratch; execution sees one dense scratch namespace.
 
 ## Recovery Plan Product
 
-A side-exit recovery product should make the phase boundary visible:
+A side-exit recovery product owns one instruction stream:
 
 ```cpp
 struct RecoveryPlan
 {
     BytecodePC resume_pc;
-    SnapshotRef snapshot;
-    RecoveryStorageLayout storage;
-    std::vector<RecoveryInstructionRecord> compute_steps;
-    std::vector<RecoveryTransferStep> transfer_steps;
+    uint32_t scratch_slot_count;
+    std::vector<RecoveryInstructionRecord> instructions;
 };
 ```
 
-`RecoveryStorageLayout` describes the fixed saved-register layout, spill
-locations reachable from the compiled frame, scratch-area size, and canonical
-state ordering. The plan is tied to one compiled code object and one graph
-generation because it consumes post-allocation `LocationAssignments` and
-`HomeState`.
+`resume_pc` remains plan metadata. `scratch_slot_count` tells the recovery
+executor how much dense temporary storage to reserve. The fixed saved-register
+layout belongs to the target thunk, while saved-register slots, compiled-frame
+locations, canonical destinations, and their source values are encoded directly
+by instruction operands.
+
+The planner consumes a Snapshot, post-allocation `LocationAssignments`, and
+`HomeState`, but the resulting plan retains none of them. It is self-contained
+immutable metadata owned by one compiled code object. Core graph identity and
+graph generation end at planning.
+
+`RecoveryInstructionRecord` covers both schema-generated Core recovery records
+and recovery-specific physical-copy records. Their ordering supplies every
+dependency. There is no stored publication offset, phase tag, or secondary
+transfer vector.
 
 Several exits may share structurally identical compute fragments, but sharing
 is an optimization. The initial implementation may build one plan per side
@@ -283,10 +280,10 @@ interning or alternate-path compilation.
 
 ## Reinflating an Exit
 
-The recovery compute plan is deliberately closer to Core IR than to interpreter
-bytecode. A hot side exit can later seed alternate-path compilation by
-rebuilding ordinary Core instructions from the compute steps and connecting the
-published logical state to the resume point.
+The semantic records in the recovery program are deliberately closer to Core
+IR than to interpreter bytecode. A hot side exit can later seed alternate-path
+compilation by rebuilding ordinary Core instructions from those records and
+connecting the published logical state to the resume point.
 
 With generated fixed records, reinflation is mechanical. Each recovery record
 names an ordinary Core `InstructionKind`; its fixed operands decode to
@@ -315,15 +312,16 @@ representation keeps the option open by preserving:
 
 - Core instruction kind and attributes for sunk computation;
 - operand identity through recovery value slots and frontier inputs;
-- canonical Snapshot positions;
+- canonical destination positions encoded by physical-copy records;
 - aliasing of recovered object and boxed values within one exit;
 - the boundary between Python-value computation and machine transfer
   publication.
 
-The machine transfer plan is not reinflated as ordinary Core semantics. It is
-physical state movement. A later backend may compile it directly using the same
-machine transfer operations or replace it when alternate-path compilation can
-continue without first publishing every canonical home.
+Physical-copy records are not reinflated as ordinary Core semantics. A later
+backend may compile them directly or omit publication that is unnecessary when
+alternate-path compilation continues without first materializing every
+canonical home. This record distinction does not divide the stored recovery
+stream into phases.
 
 ## Verification
 
@@ -331,7 +329,7 @@ Recovery verification should check:
 
 - every sunk def has no ordinary executable use;
 - every sunk def captured by a Snapshot is reachable through the recovery
-  compute plan for each consuming exit;
+  program for each consuming exit;
 - every non-sunk frontier operand is live and has a physical source at the
   exit;
 - every recovery-supported Core step accepts the representations of its
@@ -341,7 +339,7 @@ Recovery verification should check:
 - object materialization chains preserve receiver-version order and aliasing;
 - transfer publication has parallel-assignment semantics after lowering;
 - every required Snapshot position is either already current in `HomeState` or
-  written by the transfer plan;
+  written by the recovery program;
 - no saved machine-state slot is written by recovery.
 
 These checks belong near recovery planning and allocation-boundary verification.
@@ -353,7 +351,8 @@ The first implementation should be intentionally narrow:
 
 - represent side-exit records and fixed saved-register inputs;
 - create recovery plans for `ResumeInInterpreter` without sunk computation;
-- use the transfer plan to publish canonical Snapshot state;
+- publish canonical Snapshot state through physical-copy instructions in the
+  same recovery stream;
 - expand Snapshot liveness at executable consumers;
 - add sunk-def metadata as an attachment, not an instruction flag;
 - add one or two total scalar recovery-supported Core operations;
