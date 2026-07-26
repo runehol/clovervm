@@ -56,7 +56,7 @@ namespace cl::jit
             static_assert(sizeof(T) == sizeof(Instruction));
 
             InstructionId id = next_instruction_id();
-            if constexpr(T::IsVariadic)
+            if constexpr(T::OperandsAreIndirect)
             {
                 size_t n_indirect_slots = T::n_indirect_slots_for(args...);
                 std::span<Instruction::Slot> indirect_slots =

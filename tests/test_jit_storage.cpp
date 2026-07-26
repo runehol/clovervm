@@ -229,13 +229,15 @@ namespace cl::jit
         EXPECT_EQ(0u, add.attribute_count);
         EXPECT_EQ(3u, add.inline_slot_count);
         EXPECT_FALSE(add.has_variadic_operands);
+        EXPECT_FALSE(add.operands_are_indirect);
 
         const InstructionKindMetadata &call =
             instruction_kind_metadata(InstructionKind::PythonCall);
         EXPECT_EQ(2u, call.fixed_operand_count);
         EXPECT_EQ(1u, call.attribute_count);
-        EXPECT_EQ(2u, call.inline_slot_count);
+        EXPECT_EQ(Instruction::InlineSlotCount, call.inline_slot_count);
         EXPECT_TRUE(call.has_variadic_operands);
+        EXPECT_TRUE(call.operands_are_indirect);
     }
 
     TEST(JitInstructionSchema, EncodesResultsWhileKeepingDenseOrdinals)
@@ -327,8 +329,11 @@ namespace cl::jit
         EXPECT_EQ(EffectProfile::SideExit, AddSMIInstruction::MayEffects);
         EXPECT_EQ(IRLevelMask::Core, AddSMIInstruction::AllowedIRLevels);
         EXPECT_FALSE(AddSMIInstruction::IsVariadic);
+        EXPECT_FALSE(AddSMIInstruction::OperandsAreIndirect);
         EXPECT_TRUE(PythonCallInstruction::IsVariadic);
+        EXPECT_TRUE(PythonCallInstruction::OperandsAreIndirect);
         EXPECT_TRUE(SnapshotInstruction::IsVariadic);
+        EXPECT_TRUE(SnapshotInstruction::OperandsAreIndirect);
         EXPECT_EQ(ResultClass::Snapshot, SnapshotInstruction::Result);
         EXPECT_EQ(ValueRepresentation::None,
                   SnapshotInstruction::Representation);
@@ -436,14 +441,14 @@ namespace cl::jit
 
         EXPECT_EQ(5u, call.operand_count());
         EXPECT_TRUE(call.operands_are_indirect());
-        EXPECT_EQ(23u, call.slot(1));
-        const uintptr_t *call_operands =
-            reinterpret_cast<const uintptr_t *>(call.slot(0));
+        EXPECT_EQ(23u, call.slot(0));
+        const uintptr_t *call_operands = reinterpret_cast<const uintptr_t *>(
+            call.slot(Instruction::IndirectOperandSlot));
         EXPECT_EQ(callable.instruction_id().value(), call_operands[0]);
         EXPECT_EQ(snapshot.instruction_id().value(), call_operands[1]);
         EXPECT_EQ(2u, call_without_arguments.operand_count());
         EXPECT_TRUE(call_without_arguments.operands_are_indirect());
-        EXPECT_EQ(41u, call_without_arguments.slot(1));
+        EXPECT_EQ(41u, call_without_arguments.slot(0));
         EXPECT_EQ(3u, call.arguments().size());
         EXPECT_EQ(first.instruction_id(), call.arguments()[0].instruction_id());
         EXPECT_EQ(none.instruction_id(), call.arguments()[1].instruction_id());
@@ -454,8 +459,9 @@ namespace cl::jit
             builder.storage()->instruction(snapshot.instruction_id());
         EXPECT_EQ(0u, snapshot_instruction.operand_count());
         EXPECT_TRUE(snapshot_instruction.operands_are_indirect());
-        EXPECT_EQ(0u, snapshot_instruction.slot(0));
-        EXPECT_EQ(23u, snapshot_instruction.slot(1));
+        EXPECT_EQ(23u, snapshot_instruction.slot(0));
+        EXPECT_EQ(0u,
+                  snapshot_instruction.slot(Instruction::IndirectOperandSlot));
 
         std::vector<std::pair<OperandClass, InstructionId>> references;
         visit_operand_references(
@@ -502,9 +508,9 @@ namespace cl::jit
 
         ASSERT_EQ(4u, snapshot.operand_count());
         ASSERT_TRUE(snapshot.operands_are_indirect());
-        ASSERT_NE(0u, snapshot.slot(0));
-        const uintptr_t *storage =
-            reinterpret_cast<const uintptr_t *>(snapshot.slot(0));
+        ASSERT_NE(0u, snapshot.slot(Instruction::IndirectOperandSlot));
+        const uintptr_t *storage = reinterpret_cast<const uintptr_t *>(
+            snapshot.slot(Instruction::IndirectOperandSlot));
         EXPECT_EQ(tagged.instruction_id().value(), storage[0]);
         EXPECT_EQ(f64.instruction_id().value(), storage[1]);
         EXPECT_EQ(truth.instruction_id().value(), storage[2]);

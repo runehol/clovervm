@@ -23,12 +23,11 @@
 // additionally require the declared representation. Constants enter ordinary
 // dataflow, including Snapshot capture, through Const definitions.
 //
-// A kind with any variadic operand stores its operand payloads in arena-owned
-// storage behind inline slot zero; attributes retain kind-constant inline
-// offsets beginning at slot one. The variadic range is always declared after
-// every fixed operand, so fixed operands retain kind-constant indices within
-// the indirect sequence. Snapshot appends one descriptor word per captured
-// payload after the complete payload array.
+// An instruction with indirect operands stores its operand payloads in
+// compilation-owned side data and the side-data pointer in the final inline
+// slot. Its attributes begin at slot zero. A variadic range follows every fixed
+// operand, so fixed operands retain kind-constant indices within the indirect
+// sequence.
 
 #define CL_JIT_Parameter_OPERANDS(fixed, variadic, snapshot_values)
 #define CL_JIT_Parameter_ATTRIBUTES(attribute)

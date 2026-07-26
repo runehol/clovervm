@@ -43,7 +43,7 @@ namespace cl::jit
             IRLevelMask allowed_ir_levels, EffectProfile must_effects,
             EffectProfile may_effects, uint8_t fixed_operand_count,
             uint8_t attribute_count, uint8_t inline_slot_count,
-            bool has_variadic_operands)
+            bool has_variadic_operands, bool operands_are_indirect)
         {
             assert(inline_slot_count <= Instruction::InlineSlotCount);
             assert(has_effects(may_effects, must_effects));
@@ -51,9 +51,10 @@ namespace cl::jit
                    has_effects(must_effects, EffectProfile::ControlFlow));
             assert(!has_effects(may_effects, EffectProfile::TerminateBlock) ||
                    has_effects(may_effects, EffectProfile::ControlFlow));
-            return {allowed_ir_levels,    must_effects,    may_effects,
-                    fixed_operand_count,  attribute_count, inline_slot_count,
-                    has_variadic_operands};
+            return {allowed_ir_levels,     must_effects,
+                    may_effects,           fixed_operand_count,
+                    attribute_count,       inline_slot_count,
+                    has_variadic_operands, operands_are_indirect};
         }
 
         InstructionKindMetadata metadata_for(InstructionKind kind)
@@ -98,15 +99,19 @@ namespace cl::jit
             uint8_t attribute_count = 0;                                       \
             uint8_t inline_slot_count = 0;                                     \
             bool has_variadic_operands = false;                                \
+            bool operands_are_indirect = false;                                \
             operands(CL_JIT_COUNT_FIXED_OPERAND,                               \
                      CL_JIT_COUNT_VARIADIC_OPERAND,                            \
                      CL_JIT_COUNT_SNAPSHOT_VALUES)                             \
-                attributes(CL_JIT_COUNT_ATTRIBUTE) inline_slot_count =         \
-                    (has_variadic_operands ? 1 : fixed_operand_count) +        \
-                    attribute_count;                                           \
+                attributes(CL_JIT_COUNT_ATTRIBUTE) operands_are_indirect =     \
+                    has_variadic_operands;                                     \
+            inline_slot_count = operands_are_indirect                          \
+                                    ? Instruction::InlineSlotCount             \
+                                    : fixed_operand_count + attribute_count;   \
             return make_instruction_kind_metadata(                             \
                 ir_levels, effects, fixed_operand_count, attribute_count,      \
-                inline_slot_count, has_variadic_operands);                     \
+                inline_slot_count, has_variadic_operands,                      \
+                operands_are_indirect);                                        \
         }
 #include "jit/instruction.def"
 #undef CL_JIT_INSTRUCTION

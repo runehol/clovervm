@@ -239,6 +239,7 @@ namespace cl::jit
         uint8_t attribute_count;
         uint8_t inline_slot_count;
         bool has_variadic_operands;
+        bool operands_are_indirect;
     };
 
     const InstructionKindMetadata &
@@ -354,6 +355,7 @@ namespace cl::jit
 
         static constexpr size_t InlineSlotCount =
             InstructionEntry::InlineSlotCount;
+        static constexpr size_t IndirectOperandSlot = InlineSlotCount - 1;
         static constexpr uint16_t IndirectOperandsBit =
             InstructionEntry::IndirectOperandsBit;
         static constexpr uint16_t OperandCountMask =
@@ -428,7 +430,8 @@ namespace cl::jit
             assert(index < operand_count());
             if constexpr(Indirect)
             {
-                const Slot *operands = reinterpret_cast<const Slot *>(slot(0));
+                const Slot *operands =
+                    reinterpret_cast<const Slot *>(slot(IndirectOperandSlot));
                 assert(operands != nullptr);
                 return operands[index];
             }
@@ -438,7 +441,8 @@ namespace cl::jit
         const Slot *indirect_operand_words() const
         {
             assert(operands_are_indirect());
-            const Slot *operands = reinterpret_cast<const Slot *>(slot(0));
+            const Slot *operands =
+                reinterpret_cast<const Slot *>(slot(IndirectOperandSlot));
             assert(operands != nullptr || operand_count() == 0);
             return operands;
         }
@@ -743,6 +747,7 @@ namespace cl::jit
     //         EffectProfile::SideExit;
     //     static constexpr IRLevelMask AllowedIRLevels = IRLevelMask::Core;
     //     static constexpr bool IsVariadic = false;
+    //     static constexpr bool OperandsAreIndirect = false;
     //
     //     TaggedValueRef object() const;
     //     SnapshotRef snapshot() const;
@@ -754,10 +759,11 @@ namespace cl::jit
     //                           SnapshotRef snapshot, Shape *expected_shape);
     // };
     //
-    // Variadic classes additionally expose n_indirect_slots_for(...), and
-    // their private constructor receives the storage-allocated indirect span
-    // after the ID. The macros below generate these declarations, their slot
-    // encoders, and the accessor definitions from instruction.def.
+    // Classes with indirect operands additionally expose
+    // n_indirect_slots_for(...), and their private constructor receives the
+    // storage-allocated indirect span after the ID. The macros below generate
+    // these declarations, their slot encoders, and the accessor definitions
+    // from instruction.def.
 
     // clang-format off
 #define CL_JIT_JOIN_INNER(first, second) first##second
@@ -836,6 +842,9 @@ namespace cl::jit
 #define CL_JIT_SKIP_INLINE(...)
 #define CL_JIT_ENCODE_ATTRIBUTE_INLINE(name, attribute_class)                  \
     encode_instruction_attribute_##attribute_class(name),
+#define CL_JIT_WRITE_INDIRECT_ATTRIBUTE(name, attribute_class)                 \
+    inline_slots[attribute_index++] =                                          \
+        encode_instruction_attribute_##attribute_class(name);
 #define CL_JIT_WRITE_INDIRECT_FIXED(name, ...)                                 \
     indirect_slots[index++] = encode_instruction_operand(name);
 #define CL_JIT_WRITE_INDIRECT_VARIADIC(name, ...)                              \
@@ -858,7 +867,7 @@ namespace cl::jit
         constexpr size_t index = static_cast<size_t>(OperandIndex::name);      \
         return decode_instruction_operand<                                     \
             OperandClass::operand_class, ValueRepresentation::representation>( \
-            operand_word_at<IsVariadic>(index));                               \
+            operand_word_at<OperandsAreIndirect>(index));                      \
     }
 #define CL_JIT_DECLARE_VARIADIC_ACCESSOR(name, operand_class, representation)  \
     static constexpr uint32_t name##_operand_index =                           \
@@ -922,9 +931,10 @@ namespace cl::jit
         static constexpr IRLevelMask AllowedIRLevels = ir_levels;              \
         static constexpr bool IsVariadic = false operands(                     \
             CL_JIT_HAS_NO_VARIADIC, CL_JIT_HAS_VARIADIC, CL_JIT_HAS_VARIADIC); \
+        static constexpr bool OperandsAreIndirect = IsVariadic;                \
                                                                                \
-        template <bool Variadic = IsVariadic>                                  \
-        requires(Variadic)                                                     \
+        template <bool Indirect = OperandsAreIndirect>                         \
+        requires(Indirect)                                                     \
         static size_t n_indirect_slots_for(                                    \
             operands(CL_JIT_DECLARE_FIXED_PARAMETER,                           \
                      CL_JIT_DECLARE_VARIADIC_PARAMETER,                        \
@@ -953,10 +963,13 @@ namespace cl::jit
                                                                                \
     CL_JIT_PRIVATE                                                             \
         static constexpr size_t AttributeBase =                                \
-            IsVariadic ? 1 : FixedOperandCount;                               \
+            OperandsAreIndirect ? 0 : FixedOperandCount;                       \
         static constexpr size_t InlineSlotCountForKind =                       \
-            AttributeBase + AttributeCount;                                    \
+            OperandsAreIndirect ? InlineSlotCount                              \
+                                : AttributeBase + AttributeCount;              \
         static_assert(InlineSlotCountForKind <= InlineSlotCount);              \
+        static_assert(!OperandsAreIndirect ||                                  \
+                      AttributeCount <= IndirectOperandSlot);                  \
                                                                                \
         static uint16_t                                                        \
         operand_count_for(operands(CL_JIT_DECLARE_FIXED_PARAMETER,             \
@@ -1004,7 +1017,7 @@ namespace cl::jit
             return indirect_slots.data();                                      \
         }                                                                      \
                                                                                \
-        static std::array<Slot, 1 + AttributeCount> indirect_inline_slots(     \
+        static std::array<Slot, InlineSlotCount> indirect_inline_slots(        \
             std::span<Slot> indirect_slots,                                   \
             operands(CL_JIT_DECLARE_FIXED_PARAMETER,                           \
                      CL_JIT_DECLARE_VARIADIC_PARAMETER,                        \
@@ -1017,8 +1030,13 @@ namespace cl::jit
                 operands(CL_JIT_PASS_ARGUMENT, CL_JIT_PASS_ARGUMENT,           \
                          CL_JIT_PASS_ARGUMENT)                                 \
                     attributes(CL_JIT_PASS_ARGUMENT){});                       \
-            return {reinterpret_cast<Slot>(stored_operands),                   \
-                    attributes(CL_JIT_ENCODE_ATTRIBUTE_INLINE)};               \
+            std::array<Slot, InlineSlotCount> inline_slots{};                   \
+            size_t attribute_index = 0;                                        \
+            attributes(CL_JIT_WRITE_INDIRECT_ATTRIBUTE)                       \
+            assert(attribute_index == AttributeCount);                         \
+            inline_slots[IndirectOperandSlot] =                                \
+                reinterpret_cast<Slot>(stored_operands);                       \
+            return inline_slots;                                               \
         }                                                                      \
                                                                                \
         friend class CompilationStorage;                                       \
@@ -1028,8 +1046,8 @@ namespace cl::jit
         {                                                                      \
         }                                                                      \
                                                                                \
-        template <bool Variadic = IsVariadic>                                  \
-        requires(!Variadic)                                                    \
+        template <bool Indirect = OperandsAreIndirect>                         \
+        requires(!Indirect)                                                    \
         static InstructionEntry make_entry(                                    \
             operands(CL_JIT_DECLARE_FIXED_PARAMETER,                           \
                      CL_JIT_DECLARE_VARIADIC_PARAMETER,                        \
@@ -1045,8 +1063,8 @@ namespace cl::jit
                         attributes(CL_JIT_PASS_ARGUMENT){}));                  \
         }                                                                      \
                                                                                \
-        template <bool Variadic = IsVariadic>                                  \
-        requires(Variadic)                                                     \
+        template <bool Indirect = OperandsAreIndirect>                         \
+        requires(Indirect)                                                     \
         static InstructionEntry make_entry(                                    \
             std::span<Slot> indirect_slots,                                    \
             operands(CL_JIT_DECLARE_FIXED_PARAMETER,                           \
@@ -1104,6 +1122,7 @@ namespace cl::jit
 #undef CL_JIT_WRITE_INDIRECT_SNAPSHOT_VALUES
 #undef CL_JIT_WRITE_INDIRECT_VARIADIC
 #undef CL_JIT_WRITE_INDIRECT_FIXED
+#undef CL_JIT_WRITE_INDIRECT_ATTRIBUTE
 #undef CL_JIT_ENCODE_ATTRIBUTE_INLINE
 #undef CL_JIT_SKIP_INLINE
 #undef CL_JIT_ENCODE_FIXED_INLINE
@@ -1176,14 +1195,14 @@ namespace cl::jit
         const InstructionKindMetadata &metadata =
             instruction_kind_metadata(instruction.kind());
         assert(instruction.operands_are_indirect() ==
-               metadata.has_variadic_operands);
+               metadata.operands_are_indirect);
 
         size_t slot_index = 0;
         const uintptr_t *operand_words = nullptr;
         if(instruction.operands_are_indirect())
         {
             operand_words = reinterpret_cast<const uintptr_t *>(
-                instruction.slot(slot_index++));
+                instruction.slot(Instruction::IndirectOperandSlot));
             assert(operand_words != nullptr ||
                    instruction.operand_count() == 0);
         }

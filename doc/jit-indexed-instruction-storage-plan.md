@@ -4,7 +4,7 @@
 |---|---|
 | Document type | Implementation plan |
 | Status | Accepted |
-| Implementation | Slice 9 complete |
+| Implementation | Slice 10 complete |
 | Scope | Replacing pointer-identified 48-byte JIT instructions with compact table-indexed instructions while retaining pointer-based CFG objects |
 | Owning layers | `CompilationStorage` owns compiler object lifetime and indexed lookup; the instruction schema owns physical payload layout and typed access; CFG objects own graph topology |
 | Validated against | `6bd0db58e27fab65beec822791ca0d610fc301b4` (2026-07-26) |
@@ -566,17 +566,47 @@ algorithms that genuinely operate in the ID namespace. Ordinary compiler
 passes, verification, printing, emitters, and tests should consume logical
 instructions directly.
 
-### 10. Shrink the physical instruction representation
+### 10. Separate operand indirection from variadicity
 
-Change instruction and indirect-operand words to 32 bits, reorder the stored
-instruction so its slots precede its kind/count header, and reduce the common
-record from five slots to three.
+Introduce a generated `OperandsAreIndirect` storage property distinct from
+`IsVariadic`. Variadic instructions remain unconditionally indirect in this
+slice, while all current fixed-arity instructions remain inline because they
+fit the existing five pointer-sized slots.
 
-Generate attribute widths and alignment padding from `instruction.def`. Keep all
-attributes inline, make fixed operands indirect when the aligned
-operands-then-attributes layout does not fit, keep variadic operands
-unconditionally indirect, and reserve slot two for every indirect operand-table
-offset.
+For every indirect instruction, lay attributes out from slot zero as though the
+instruction had no inline operands, and reserve the final inline slot for the
+operand-storage pointer. Typed fixed and variadic operand accessors continue to
+read the same logical indirect operand sequence. This changes neither slot
+width nor `InstructionEntry` size.
+
+Focused verification must cover indirect `PythonCall` and `Snapshot`
+attributes, fixed operands within the indirect sequence, empty and non-empty
+variadic ranges, generic operand traversal, reconstruction, and the generated
+distinction between `IsVariadic` and `OperandsAreIndirect`.
+
+### 11. Reduce and reorder pointer-sized slots
+
+Reduce `InstructionEntry` from five pointer-sized slots to three and reorder it
+so the slots precede the kind/count header. Keep slots and side-table words
+pointer-sized. All current fixed-arity instructions still fit inline; indirect
+instructions use slot two for their operand-storage pointer and begin
+attributes at slot zero.
+
+Focused verification must preserve every current instruction round trip and
+enforce the transitional pointer-sized record size and alignment independently
+from the later word-width conversion.
+
+### 12. Convert physical instruction words to 32 bits
+
+Change inline slots and side-table words to 32 bits. Replace the indirect
+operand pointer with a 32-bit side-table offset in slot two. Generate attribute
+widths and padding from `instruction.def`; keep attributes inline and align
+every 64-bit attribute to an even word index.
+
+Fixed operands remain inline only when the aligned operands-then-attributes
+layout fits three words. Otherwise their operands become indirect and their
+attributes are laid out from slot zero. Variadic operands remain
+unconditionally indirect.
 
 Focused layout verification must round-trip every attribute class, verify
 aligned 64-bit attributes, cover inline `AddSMI`, `Const`, and
@@ -584,7 +614,7 @@ aligned 64-bit attributes, cover inline `AddSMI`, `Const`, and
 `PythonCall` and `Snapshot`, preserve generic operand traversal and
 reconstruction, and enforce `sizeof(InstructionEntry) == 16`.
 
-### 11. Remove transitional machinery and update measurements
+### 13. Remove transitional machinery and update measurements
 
 Remove pointer encoders, remaining serial vocabulary, and any migration-only
 helpers. Update [JIT Instruction
