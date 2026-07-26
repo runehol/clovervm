@@ -373,7 +373,7 @@ constructed Core IR       -> explicit checks, effects, Snapshots, tagged values
 represented Core IR       -> selected operations and explicit representation conversions
 backend-prepared Core IR  -> lowering choices, legalized constants, AllocationConstraints
 allocated backend plan    -> locations, spills, and edge-move tables
-recovery plans            -> Snapshots and sunk defs resolved through locations and HomeState
+transition programs       -> Snapshots and sunk defs resolved through locations and HomeState
 ```
 
 Phase verification prevents arbitrary mixtures of these forms. Common
@@ -802,7 +802,7 @@ Sinking changes three backend consumers:
   and makes only the first non-sunk operands point uses at each Snapshot
   consumer;
 - allocation assigns no register, spill, or canonical home to a sunk result,
-  while the recovery program retains the sunk operation and evaluates it from
+  while the transition program retains the sunk operation and evaluates it from
   that physical frontier.
 
 Several Snapshots may share one sunk closure. A value ceases to be sinkable as
@@ -841,9 +841,9 @@ logical records rather than directly traversable IR objects:
 PartitionId
 FrameStateId
 
-# backend-interned recovery identities
+# backend-interned transition identities
 ResumeStateId
-RecoveryPlanId
+TransitionProgramId
 ```
 
 Partition IDs are compilation-wide because Semantic and Core IR refer to the
@@ -853,11 +853,11 @@ construction order and are not reused during a compilation.
 Snapshots do not have a separate ID namespace: a `SnapshotRef` is the typed
 result of a Core instruction. A `FrameStateId` identifies the structurally
 shared logical frame chain named by that Snapshot, including any inlined
-frames. The initial backend builds recovery plans directly from Snapshots,
+frames. The initial backend builds transition programs directly from Snapshots,
 the sunk-instruction attachment, post-allocation locations, and `HomeState`; it
 does not introduce another deoptimization-state identity. `ResumeStateId` and
-`RecoveryPlanId` exist only where the backend interns independently shareable
-resume and recovery records. Future precise root maps are attached
+`TransitionProgramId` exist only where the backend interns independently
+shareable resume metadata and transition programs. Future precise root maps are attached
 to machine-code positions rather than given IR result identities.
 
 Every instruction has a typed serial and an intrinsic `ResultClass`:
@@ -1607,17 +1607,18 @@ A Core `Snapshot` is the authoritative logical description of
 interpreter-visible state. It already names the resume state, active logical
 frame chain, program values, and boxing or reification actions needed to leave
 compiled execution. Constants appear through ordinary `Const` defs. The
-backend consumes the Snapshot directly when constructing recovery and may
+backend consumes the Snapshot directly when constructing a transition program
+and may
 rematerialize those defs; managed values then use the emitter-owned pool.
 
-After sinking and allocation, recovery planning combines:
+After sinking and allocation, transition planning combines:
 
 ```text
 Snapshot
     + sinking attachment
     + LocationAssignments
     + HomeState
-    -> RecoveryPlan
+    -> TransitionProgram
 ```
 
 Location assignments resolve each non-sunk captured `ProgramValueRef` or
@@ -1626,13 +1627,11 @@ recovery-frontier input to its register, spill, or canonical slot at the exit.
 value. The sinking attachment identifies instructions that have no normal-path
 physical result and must instead be evaluated during recovery.
 
-The exact recovery representation remains unsettled. The existing generated
-recovery design remains a valid bring-up implementation, but a restricted IR
-interpreted by a common recovery mechanism is attractive because it retains
-the sunk computation structurally and could later seed compilation from a hot
-exit. That possibility needs exploration before becoming an architectural
-commitment. Any representation must remain a physical execution of the
-Snapshot rather than a second logical state model.
+The resulting compact, pointer-free `TransitionProgram` is specified in
+[JIT Transition Programs](jit-transition-program.md). It uses explicitly
+eligible Core instruction kinds with implicit scratch results plus
+location-addressed `Transfer` instructions, and it executes the Snapshot rather
+than introducing a second logical state model.
 
 Precise GC root maps are a separate future backend projection. They select all
 managed values live at a continuing safepoint, including any compiler-only
@@ -1647,7 +1646,7 @@ from the compiled caller return PC while walking a suspended callee chain. Code
 retirement must preserve every active return continuation; the initial immortal
 code policy is specified by the bring-up plan.
 
-### Side exits and recovery planning
+### Side exits and transition planning
 
 Each Core IR failure retains an explicit non-returning exit consuming a
 `SnapshotRef` until the backend has determined the location of every value
@@ -1655,7 +1654,7 @@ needed for recovery. A backend may carry the exit through Machine IR or consume
 it directly from Core IR. Side-exit frame publication is runtime recovery work,
 not an effectful Core instruction and not an ordinary CFG successor.
 
-Recovery construction consumes:
+Transition-program construction consumes:
 
 ```text
 logical Snapshot and FrameState:
@@ -1674,7 +1673,7 @@ sinking attachment:
     recovery-local def -> operation and recovery-local operands
 ```
 
-The resulting recovery work makes logical and synchronized state agree. It
+The resulting transition program makes logical and synchronized state agree. It
 includes dirty canonical-slot publications, accumulator publication,
 frame-header synchronization, and any sunk computation, boxing, allocation, or
 reification supported by recovery. Active inline frames already have canonical
@@ -1695,13 +1694,13 @@ otherwise obtains the source from its allocated location and evaluates any
 sunk definitions needed to produce it before publishing.
 
 Canonical-slot writes are parallel assignments. A source home may be overwritten
-before its old value has been copied elsewhere, so recovery must schedule
-publications safely or stage their sources in recovery-local temporaries.
+before its old value has been copied elsewhere, so transition planning must
+schedule publications safely or stage their sources in scratch slots.
 
-If the recovery representation remains structural, a future compiler may be
-able to use it with the Snapshot to seed compilation from a hot side exit
-rather than first reconstructing the interpreter frame. Attaching and
-invalidating such compiled continuations is future design.
+Because the transition representation remains structural, a future compiler
+may be able to use it to seed compilation from a hot side exit rather than
+first reconstructing the interpreter frame. Attaching and invalidating such
+compiled continuations is future design.
 
 ### Continuing call state
 
@@ -1956,16 +1955,14 @@ The corresponding higher-effort polymorphic example is in
 - compiled exception handling and cross-frame unwinding;
 - final tracing, traceback, and stack-observability policy.
 
-### Recovery, maps, and backend lifecycle
+### Transitions, maps, and backend lifecycle
 
-- the concrete RecoveryPlan representation and its boundary with restricted
-  Core, physical location reads, and canonical publication;
-- the first recovery-supported instruction set and the per-exit commutability
+- the first transition-program-eligible instruction set and the per-exit commutability
   analysis required before instances may be sunk;
-- concrete encodings for machine locations, recovery operations, and future
+- concrete transition operand tag widths and future
   safepoint maps;
-- recovery-plan interning, size limits, and execution policy;
-- whether structural recovery can seed compilation from a hot side exit;
+- transition-program interning, size limits, and execution policy;
+- whether structural transitions can seed compilation from a hot side exit;
 - mixed-frame stack-walker contracts for frame kinds, PC lookup, unwind state,
   and callee-saved registers;
 - whether certified no-safepoint entries remain useful alongside precise maps;
@@ -1983,6 +1980,7 @@ every recovery policy must reconstruct the same canonical interpreter state.
 
 - [JIT Control-Flow Graph](jit-control-flow-graph.md)
 - [JIT Register Allocation](jit-register-allocation.md)
+- [JIT Transition Programs](jit-transition-program.md)
 - [JIT Machine-Code Emission](jit-machine-code-emission.md)
 - [JIT Code Cache and Publication](jit-code-cache.md)
 - [Semantic IR and Specialization](jit-semantic-ir-and-specialization.md)

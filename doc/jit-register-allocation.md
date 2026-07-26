@@ -6,7 +6,7 @@
 | Status | Accepted |
 | Implementation | Prepared allocation, deterministic constraint splitting, transfer scheduling, conflict-free register/stack assignment, and parallel-transfer materialization implemented; all-stack transfer cycles and edge materialization remain open |
 | Scope | Allocation constraints, allocator-local numbering, liveness, bundles, backtracking allocation, live-range splitting, block-edge transfers, clobbers, spills, and post-allocation materialization |
-| Owning layers | Target preparation owns occurrence constraints and physical-transfer capabilities; the generic register allocator owns numbering, liveness, bundles, splitting, allocation, spill decisions, and bundle transfers; generic allocation materialization resolves transfers, rewrites the Core CFG, and publishes occurrence locations; publication and recovery planners own canonical-state synchronization; machine-code emission only encodes the materialized graph |
+| Owning layers | Target preparation owns occurrence constraints and physical-transfer capabilities; the generic register allocator owns numbering, liveness, bundles, splitting, allocation, spill decisions, and bundle transfers; generic allocation materialization resolves transfers, rewrites the Core CFG, and publishes occurrence locations; publication and transition planners own canonical-state synchronization; machine-code emission only encodes the materialized graph |
 | Validated against | `tests/test_jit_allocation_constraints.cpp`, `tests/test_aarch64_allocation_constraints.cpp`, `tests/test_jit_register_allocator.cpp`, `tests/test_jit_parallel_transfer_resolver.cpp`, `tests/test_jit_allocation_materializer.cpp`, and `tests/test_aarch64_execution.cpp` |
 | Supersedes | The open register-allocation direction in [JIT Compiler and IR](jit-compiler-and-ir.md) |
 
@@ -151,7 +151,7 @@ Result<LocationAssignments, RegisterAllocationError> allocate_registers(
 location table, and transfer schedule. Its fragments borrow the prepared
 problem's live-range identities, so materialization consumes both products
 before either is discarded. `LocationAssignments` refer to the newly published
-graph generation. Recovery planning and machine-code emission consume that
+graph generation. Transition planning and machine-code emission consume that
 graph and its `LocationAssignments`.
 
 `allocate_registers()` is the common public orchestration verb. It prepares the
@@ -171,10 +171,10 @@ Canonical VM homes and whether they currently contain an up-to-date value
 remain separate state. A canonical frame home is not silently converted into
 an allocator-owned spill slot.
 
-A Core def marked sunk has no `LocationAssignment`. Its recovery-only operation
-remains available to recovery planning, while allocation liveness reaches
-through it to the first non-sunk operands that must physically exist at an
-exit.
+A Core def marked sunk has no `LocationAssignment`. Its transition-only
+operation remains available to transition planning, while allocation liveness
+reaches through it to the first non-sunk operands that must physically exist at
+an exit.
 
 Allocator-local position numbers, live intervals, split children, spill weights,
 and coalescing state are scratch data. They do not survive the allocator pass
@@ -1375,7 +1375,7 @@ different fragments of that definition belong to different bundles.
 Canonical-state synchronization may contribute additional transfers at the same
 structural point and phase, but the allocator does not decide which VM homes
 require publication.
-`HomeState`, safepoint planning, or recovery planning owns that semantic
+`HomeState`, safepoint planning, or transition planning owns that semantic
 decision. A shared physical-transfer resolver may combine its transfers with the
 allocator-produced set once both are known.
 
@@ -1383,11 +1383,12 @@ Generic allocation materialization exposes physical-transfer scheduling rather
 than hiding it inside one emitter. Canonical synchronization may reuse the
 location representation and the dependency, identity, and cycle-resolution
 parts of that machinery, but it is not required to reuse the allocator's exact
-lowering policy. Side-exit registers are already saved in memory, and recovery
-also needs constants, boxing, and other reification producers. Its transfer
-lowering may therefore use saved-register memory or another internal temporary
-where allocation materialization uses a target-declared scratch register.
-`HomeState` or recovery planning chooses the transfers; the allocator does not
+lowering policy. Side-exit registers are already saved in memory, and a
+transition also needs constants, boxing, and other reification producers. Its
+transfer lowering may therefore use saved-register memory or another internal
+temporary where allocation materialization uses a target-declared scratch
+register.
+`HomeState` or transition planning chooses the transfers; the allocator does not
 infer which canonical homes are semantically current.
 
 Redundant Move Elimination is a possible later quality pass, not part of the
@@ -1454,27 +1455,27 @@ Snapshots remain semantic recovery descriptions. Allocation does not rewrite
 Snapshot contents. Instead, Snapshot operands become point uses at the
 instructions that consume them for exits or safepoints.
 
-After allocation, recovery planning combines:
+After allocation, transition planning combines:
 
 ```text
 Snapshot
     + sinking attachment
     + LocationAssignments
     + HomeState
-    -> RecoveryPlan
+    -> TransitionProgram
 ```
 
 `LocationAssignments` identify where each non-sunk physical frontier value
 lives at the exit position. `HomeState` identifies canonical frame homes that
-already contain required values. Recovery reads those locations, evaluates
-sunk instructions, performs constant materialization, F64 boxing, and future
-reification, and publishes canonical state without adding a second semantic
-state model. Whether this becomes generated code or an interpreted restricted
-IR remains open.
+already contain required values. The transition program reads those locations,
+evaluates sunk instructions, performs constant materialization, F64 boxing, and
+future reification, and publishes canonical state without adding a second
+semantic state model. The initial executor interprets compact
+`InstructionEntry` records directly.
 
-Safepoint maps and RecoveryPlans may share physical location encodings, but
-they remain separate consumers. Safepoint maps need only managed roots;
-RecoveryPlans need complete interpreter-visible state.
+Safepoint maps and transition programs may share physical location encodings,
+but they remain separate consumers. Safepoint maps need only managed roots;
+side-exit transition programs need complete interpreter-visible state.
 
 ## Verification
 

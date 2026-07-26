@@ -239,8 +239,8 @@ rewrites, and simplify direct machine-code generation.
 The permanent contract requires precise root discovery at every safepoint and
 exact canonical interpreter reconstruction before interpreter resumption. The
 initial implementation satisfies it through canonical frame publication and
-generated recovery code. It does not initially require the collector or stack
-walker to understand optimized register state.
+an interpreted transition program. It does not initially require the collector
+or stack walker to understand optimized register state.
 
 The compiler does not construct separate `SafepointState` or `DeoptState`
 products. A Core Snapshot is the authoritative logical recovery description.
@@ -281,8 +281,8 @@ and any future shadow-map projection.
 
 - safepoint-capable calls initially publish dirty homes in all active logical
   frames;
-- initial side exits expand Snapshots into generated recovery code; identical
-  physical recovery plans may be interned later;
+- initial side exits expand Snapshots into transition programs; identical
+  physical programs may be interned later;
 - compiled frames and code objects must remain identifiable and walkable enough
   not to obstruct later maps;
 - future migration can validate shadow maps while publication remains
@@ -707,7 +707,7 @@ but forced a slab or segmented allocation model, made every persistent
 instruction reference pointer-sized, and spent substantial inline space on
 ordinary small instructions.
 
-Side-exit recovery and other compiler metadata also benefit from compact
+Side-exit transitions and other compiler metadata also benefit from compact
 instruction references. Once references became IDs, retaining stable entry
 addresses no longer justified the larger representation or indirect allocation
 model.
@@ -756,3 +756,89 @@ and alignment-constrained operand layouts without expanding every entry.
 
 - `doc/jit-instruction-representation.md`
 - Commits `646667e` through `80abb95`
+
+## D-0011: Use Compact Transition Programs Across Execution Boundaries
+
+**Date:** 2026-07-26
+**Status:** Accepted
+**Scope:** JIT side exits, frame synchronization, sunk computation, and future
+calling-convention adapters
+**Commitment:** Transition-program representation
+
+### Decision
+
+A `TransitionProgram` is restricted Core IR plus one transition-specific
+`Transfer` instruction. It is one continuous straight-line instruction stream
+that transforms values and machine state between execution conventions. The
+first consumer reconstructs canonical interpreter state for a JIT side exit.
+Future consumers may adapt between compiled function conventions.
+
+The program uses the 16-byte `InstructionEntry` layout and `InstructionKind`
+values, but its physical references are 32-bit `TransitionLocation`s rather
+than Core `InstructionId`s. Each location contains an area tag and an offset.
+The initial areas are register-file state, stack data, and dense scratch
+storage. An eligible Core instruction's result is implicitly
+`Scratch[instruction_index]`. `Transfer` has one source operand and one
+destination attribute, both encoded as `TransitionLocation`; it updates that
+location and has `ResultClass::None`. Pointer-shaped tagged constants are
+loaded through the compiled code object's constant pool.
+
+`instruction.def` explicitly declares transition-program eligibility. Generated
+checks reject eligible kinds with snapshots, block edges, shape or validity-cell
+attributes, variadic or indirect operands, absent results, side exits, branches,
+Python calls, or unsupported fallibility. The resultless `Transfer` is the
+explicit transition-only exception to the result requirement. The transition
+executor dispatches directly over raw entries rather than constructing
+compiler-facing typed instruction views.
+
+Published programs refer by offset and count to immutable transition
+instructions owned with the compiled code object; they do not own
+`std::vector`s or contain process-local pointers. The program record also holds
+its scratch-slot count. Boundary metadata such as the interpreter resume PC
+remains with the side-exit record.
+
+### Context
+
+Side-exit reconstruction contains computation and physical publication, but
+they are phases of one dependency-ordered program rather than separate
+products. `Transfer` directly copies between the three location areas and uses
+scratch only when parallel-transfer ordering requires it. The same mechanics
+also apply to adapters that move and materialize values between two function
+conventions, so recovery-specific terminology and types would make the
+representation unnecessarily narrow.
+
+The compact indexed Core instruction representation already supplies an
+appropriate physical record and generated schema. Reusing that layout avoids a
+second hand-maintained opcode structure while keeping the runtime interpreter
+free of storage pointers and heavyweight typed views.
+
+### Consequences
+
+- side-exit planning consumes Snapshots, sinking metadata,
+  `LocationAssignments`, and `HomeState`, but the resulting program retains none
+  of those compiler objects;
+- semantic computation and canonical publication share one scratch namespace
+  and have no stored phase boundary;
+- the side-exit register-file image is read-only, while stack and scratch may
+  be destinations;
+- scratch sources can name only slots initialized by earlier instructions;
+- transition programs are compact, relocatable data with no raw compiler or
+  runtime pointers;
+- operations that can themselves side exit cannot be transition-program
+  eligible.
+
+### Revisit When
+
+- a required transition operation cannot fit the restricted instruction schema;
+- measurements justify compiling transition programs instead of interpreting
+  them;
+- multiple consumers require an additional operand area or a different offset
+  partition;
+- object materialization requires a pointer-free metadata vocabulary beyond
+  the constant pool.
+
+### References
+
+- `doc/jit-transition-program.md`
+- `doc/jit-compiler-and-ir.md`
+- `doc/jit-register-allocation.md`

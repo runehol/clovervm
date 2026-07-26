@@ -64,7 +64,7 @@ explicit result def or a clobber reservation, never both.
 - [ ] Reach through sunk recovery values to the first unsunk inputs that must
   physically exist.
 - [ ] Feed finalized register, canonical-home, and rematerialization locations
-  into recovery planning without allocating virtual Snapshot results.
+  into transition planning without allocating virtual Snapshot results.
 - [ ] Cover shared Snapshots, multiple consumers, boxing, constants, and sunk
   recovery closures in the symbolic checker.
 
