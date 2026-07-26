@@ -1938,8 +1938,6 @@ The corresponding higher-effort polymorphic example is in
 
 ### Core IR and optimization
 
-- validation of the 48-byte fixed-record and side-data experiment specified in
-  [JIT Instruction Representation](jit-instruction-representation.md);
 - the topology-editor contract beyond implemented body-instruction rewriting;
 - optimizer organization and pass scheduling;
 - whether a narrow pass benefits from a temporary graph representation;

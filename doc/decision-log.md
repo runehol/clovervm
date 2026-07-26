@@ -59,6 +59,7 @@ rationale that remains clear from those sources.
 | D-0007 | Separate stable embedded metadata from movable compiled constants | Superseded |
 | D-0008 | Preserve separate managed and host stacks during JIT bring-up | Accepted |
 | D-0009 | Pool managed pointer constants and legalize non-pointer constants late | Accepted |
+| D-0010 | Use indexed compact JIT instruction storage | Accepted |
 
 ## D-0001: Compile Whole Functions Rather Than Hot Traces
 
@@ -669,3 +670,90 @@ the required moving-GC boundary without imposing it on self-contained values.
 - `doc/jit-instruction-representation.md`
 - `doc/jit-machine-code-emission.md`
 - `src/jit/instruction.def`
+
+## D-0010: Use Indexed Compact JIT Instruction Storage
+
+**Date:** 2026-07-26
+**Status:** Accepted
+**Scope:** JIT instruction identity, physical layout, CFG references, and
+instruction-indexed analyses
+**Commitment:** Compiler-wide representation contract
+
+### Decision
+
+`CompilationStorage` owns an append-only vector of 16-byte
+`InstructionEntry`s. `InstructionId` is the sole persistent instruction
+identity and is a typed 32-bit vector index. Instruction operands, block
+instruction sequences, block parameters, use lists, and instruction-indexed
+analyses store IDs rather than instruction pointers.
+
+`Instruction` and its concrete subclasses are lightweight views containing a
+storage pointer and an ID. Blocks and CFG edges remain stable-address objects;
+branch attributes use compact `BlockEdgeId`s resolved through compilation
+storage.
+
+Each entry contains three 32-bit inline slots followed by a 16-bit kind and a
+16-bit operand-storage word. Attributes are always inline. Direct operands
+precede attributes. When operands are indirect, attributes begin at slot zero,
+slot two holds an offset into the compilation-owned `InstructionOperandTable`,
+and all operands occupy one contiguous range in that table. Wide attributes
+consume two slots and their schema-authored positions are checked for alignment.
+
+### Context
+
+The original representation used stable instruction pointers and 48-byte
+records with five pointer-sized slots. Stable pointers simplified local access,
+but forced a slab or segmented allocation model, made every persistent
+instruction reference pointer-sized, and spent substantial inline space on
+ordinary small instructions.
+
+Side-exit recovery and other compiler metadata also benefit from compact
+instruction references. Once references became IDs, retaining stable entry
+addresses no longer justified the larger representation or indirect allocation
+model.
+
+### Alternatives Considered
+
+- retain slab-backed stable instruction objects and pointer references;
+- retain a deque so both IDs and stable entry pointers remain available;
+- use variable-size instruction records in a relocation-aware operation buffer;
+- put every payload, including attributes, in side storage;
+- retain pointer-sized operands and shrink only the number of inline slots.
+
+### Why Chosen
+
+Dense vector entries provide constant-time indexed lookup and cheap sequential
+traversal. Four-byte references reduce operands and analysis keys. Value views
+preserve the natural typed instruction API while making vector reallocation
+irrelevant to identity. Keeping attributes inline makes typed access
+kind-constant, while the separate operand table handles variadic, oversized,
+and alignment-constrained operand layouts without expanding every entry.
+
+### Consequences
+
+- code that dereferences an instruction ID must have its
+  `CompilationStorage`;
+- CFGs borrow their owning storage, and ordinary block iteration returns
+  resolving instruction views while explicit ID access remains available;
+- instruction and operand-table vector growth cannot invalidate IDs or views;
+- detachment poisons the indexed entry in place, and IDs are never reused;
+- construction checks the 32-bit instruction and operand-table domains;
+- generated schema checks determine direct versus indirect operands and reject
+  layouts whose inline attributes do not fit or align;
+- representative storage use and lookup cost remain to be measured.
+
+### Revisit When
+
+- profiles show storage-assisted instruction lookup materially limiting compiler
+  throughput;
+- operand-table traffic or wasted inline capacity dominates representative IR
+  memory;
+- real compilation units approach the 32-bit identity or operand-table limits;
+- a variable-size operation buffer demonstrates a measured advantage large
+  enough to justify its relocation and access machinery.
+
+### References
+
+- `doc/jit-instruction-representation.md`
+- `doc/jit-indexed-instruction-storage-plan.md`
+- Commits `646667e` through `80abb95`

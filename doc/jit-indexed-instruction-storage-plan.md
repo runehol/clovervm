@@ -4,11 +4,11 @@
 |---|---|
 | Document type | Implementation plan |
 | Status | Accepted |
-| Implementation | Slice 10 complete |
+| Implementation | Representation migration, transitional cleanup, and authoritative documentation complete; storage measurement remains |
 | Scope | Replacing pointer-identified 48-byte JIT instructions with compact table-indexed instructions while retaining pointer-based CFG objects |
 | Owning layers | `CompilationStorage` owns compiler object lifetime and indexed lookup; the instruction schema owns physical payload layout and typed access; CFG objects own graph topology |
-| Validated against | `6bd0db58e27fab65beec822791ca0d610fc301b4` (2026-07-26) |
-| Supersedes | N/A; when implemented, this replaces the storage and identity model in [JIT Instruction Representation](jit-instruction-representation.md) |
+| Validated against | `80abb95` (2026-07-26) |
+| Supersedes | N/A; the implemented model is authoritative in [JIT Instruction Representation](jit-instruction-representation.md) |
 
 The refactoring makes instruction identity relative to one compilation-owned
 storage table. It targets the representation that dominates Core IR memory
@@ -627,6 +627,9 @@ helpers. Update [JIT Instruction
 Representation](jit-instruction-representation.md) to describe the implemented
 model and measure instruction-table and operand-table storage on representative
 compilations.
+
+The transitional cleanup and authoritative documentation are complete.
+Representative storage measurement remains.
 
 Every slice must pass `ninja -C build-debug all check` and leave the repository
 in a coherent state. A slice must not quietly combine identity migration with

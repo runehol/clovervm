@@ -4,39 +4,38 @@
 |---|---|
 | Document type | Design |
 | Status | Accepted |
-| Implementation | Partial; the naturally aligned 48-byte record and deque-backed indexed instruction storage, schema-generated kind metadata and concrete subclasses, generated construction and operand indices, typed CFG terminators, variadic operands, generic operand traversal and reconstruction, deterministic textual IR printing, detachment poisoning, and graph-rewriter integration are implemented; representative layout measurement and complete Snapshot recovery encodings remain |
-| Scope | Physical instruction storage, typed instruction access, Core value representations, IR-level legality, phase metadata, effects, matching, and arena lifetime for Core and Semantic IR |
+| Implementation | The indexed 16-byte instruction entry, schema-generated typed views, compact operands and attributes, typed CFG terminators, generic operand traversal and reconstruction, deterministic textual IR printing, detachment poisoning, and graph-rewriter integration are implemented; representative storage measurement and complete Snapshot recovery encodings remain |
+| Scope | Physical instruction storage, typed instruction access, Core value representations, IR-level legality, phase metadata, effects, matching, and compilation lifetime for Core and Semantic IR |
 | Owning layers | The JIT instruction representation owns storage, schema-generated construction, typed access, operand traversal, and reconstruction; the graph builder owns deferred-validation construction; concrete analyses own attached inferred facts and proven-absent effects; the graph rewriter owns staged body-instruction replacement and future CFG editing owns topology mutation |
 | Validated against | `tests/test_jit_storage.cpp`, `tests/test_jit_cfg.cpp`, `tests/test_jit_graph_rewrites.cpp`, and `tests/test_jit_ir_print.cpp` |
 | Supersedes | The open instruction-representation alternatives in [JIT Control-Flow Graph](jit-control-flow-graph.md) and the integer-only instruction reference direction in [JIT Compiler and IR](jit-compiler-and-ir.md) |
 
-Core IR and the optional Semantic IR use a fixed-size, type-erased
-`Instruction` allocated with compilation lifetime. Instruction-result operands
-are pointers, while non-dataflow attributes use their schema-declared
-pointer-sized encodings. Each allocation also carries a typed, storage-relative
-ID for deterministic identity, diagnostics, and indexed lookup. Fieldless concrete
-instruction subclasses provide kind-specific read-only access without virtual
-dispatch or C++ RTTI.
+Core IR and the optional Semantic IR store instructions in one
+compilation-owned indexed table. `InstructionId` is the persistent identity.
+`Instruction` and its concrete subclasses are lightweight typed views
+containing the owning `CompilationStorage` and an ID; they do not own or embed
+the physical record. Instruction operands store compact IDs, while non-dataflow
+attributes use their schema-declared 32-bit or 64-bit encodings.
 
 The representation has deliberately different roles:
 
 ```text
-Instruction
-    fixed-size stored object
-    stable address and storage-relative ID
+InstructionEntry
+    fixed-size type-erased table entry
     instruction kind and intrinsic result class
-    Core value representation when applicable
-    encoded kind-specific payload
+    operand count and storage mode
+    three compact inline payload slots
 
-AddInstruction, CallInstruction, ...
-    fieldless concrete subclasses with typed read-only accessors
+Instruction, AddInstruction, CallInstruction, ...
+    storage-relative value views
+    typed read-only accessors
 
 SemanticValueAnalysis, CoreEffectAnalysis, ...
-    concrete phase-owned metadata indexed by instruction
+    concrete phase-owned metadata indexed by InstructionId
     attached, frozen, invalidated, recomputed, and discarded as required
 
 typed graph-builder construction
-    schema-safe allocation of intrinsically valid, unplaced instructions
+    schema-safe append of intrinsically valid, unplaced entries
 
 bulk graph builder
     cheap append/emplace during translation and one-shot publication validation
@@ -47,47 +46,78 @@ GraphRewriter
 
 ## Storage and Lifetime
 
-The physical `Instruction` is a 48-byte fixed-size record: an 8-byte header and
-five pointer-sized payload slots. The header contains a 32-bit ID, a 16-bit
-kind, and a 16-bit operand-storage word. The high bit of the operand-storage
-word says whether operands are indirect; the low 15 bits hold the total operand
-count. Conceptually it contains:
+`CompilationStorage` owns the append-only instruction table, the indirect
+operand table, and the stable-address CFG objects:
+
+```cpp
+class CompilationStorage
+{
+public:
+    Instruction instruction(InstructionId) const;
+
+private:
+    std::vector<InstructionEntry> instructions_;
+    InstructionOperandTable instruction_operands_;
+    ObjectPool<ControlFlowGraph> graphs_;
+    ObjectPool<Block> blocks_;
+    std::deque<BlockEdge> block_edges_;
+};
+```
+
+Instructions are append-only. `InstructionId` is a typed 32-bit vector index;
+IDs are never reused during one compilation. Construction checks once that the
+table still fits the ID domain. Existing views retain only the ID, so vector
+reallocation does not invalidate them.
+
+The physical `InstructionEntry` is an explicitly 8-byte-aligned 16-byte value:
+
+```cpp
+class alignas(8) InstructionEntry
+{
+private:
+    uint32_t slots_[3];
+    uint16_t kind_;
+    uint16_t operand_storage_;
+};
+
+static_assert(sizeof(InstructionEntry) == 16);
+static_assert(alignof(InstructionEntry) == 8);
+```
+
+The high bit of `operand_storage_` records indirect operands. The remaining 15
+bits hold the total logical operand count. `kind_` stores the encoded
+`InstructionKind`. The slots precede the header so slots zero and one form the
+one 8-byte-aligned position available to a 64-bit inline attribute.
+
+`Instruction` is the general typed view:
 
 ```cpp
 class Instruction
 {
 public:
-    Instruction(const Instruction &) = delete;
-    Instruction &operator=(const Instruction &) = delete;
-    Instruction(Instruction &&) = delete;
-    Instruction &operator=(Instruction &&) = delete;
-
     InstructionId id() const;
+    const CompilationStorage *storage() const;
     bool is_detached() const;
-    // Requires !is_detached().
     InstructionKind kind() const;
     ResultClass result_class() const;
-    // Requires a Core ProgramValue result.
     ValueRepresentation value_representation() const;
     uint16_t operand_count() const;
     bool operands_are_indirect() const;
 
-    template<typename TypedInstruction>
-    const TypedInstruction *as() const;
+    template<typename ConcreteInstruction>
+    ConcreteInstruction as() const;
 
 private:
+    const CompilationStorage *storage_;
     InstructionId id_;
-    uint16_t kind_;
-    uint16_t operand_storage_;
-    InstructionSlot payload_[5];
 };
+
+static_assert(sizeof(Instruction) == 16);
 ```
 
-Compilation storage placement-constructs instructions in an append-only deque
-of naturally aligned 48-byte raw slots. Deque growth preserves every
-instruction address, and the instruction ID is its slot index. An instruction
-reference is still an ordinary, directly dereferenceable `Instruction *`; its
-address carries no operand discriminator.
+Concrete instruction classes inherit `Instruction` and add no fields. They are
+views into `CompilationStorage`, not C++ objects stored in the instruction
+vector. `as<T>()` checks the kind and returns the corresponding view by value.
 
 The physical storage tag normally represents one live `InstructionKind`. The
 exact encoding may also reserve a poison tag used only after the graph rewriter has
@@ -98,17 +128,19 @@ not an instruction kind and is not a state ordinary passes handle. `kind()`,
 tag is live. Only `id()` and `is_detached()` remain meaningful on poisoned
 storage, for diagnostics.
 
-Instruction results, instruction operands, and instruction attributes use
-distinct enum types. Ordinary operands are always instruction-result references
-that participate in SSA use lists, dominance, liveness, and bulk replacement.
-Constants become ordinary program values through explicit `Const`
-instructions. Snapshot captures those program-value results like any other
-value.
-Attributes are semantic or structural payload such as block edges, shapes,
-immediates, bytecode origins, and return PCs; they affect instruction semantics
-but are not dataflow uses. The operand cases intentionally have the same numeric
-values as the matching result classes, so validation can compare result
-references cheaply without a mapping switch:
+Instruction results and operands use distinct enum types. Ordinary operands are
+always instruction-result references that participate in SSA use lists,
+dominance, liveness, and bulk replacement. Constants become ordinary program
+values through explicit `Const` instructions. Snapshot captures those
+program-value results like any other value.
+
+Attributes are schema-named semantic or structural payload such as block
+edges, shapes, bytecode origins, and return PCs. Each attribute class maps to
+one C++ parameter type and one generated encoder/decoder pair, but attributes
+do not need a runtime class enum because they are never generically interpreted
+as SSA uses. The operand cases intentionally have the same numeric values as
+the matching result classes, so validation can compare result references
+cheaply without a mapping switch:
 
 ```cpp
 enum class ResultClass : uint8_t
@@ -122,17 +154,6 @@ enum class OperandClass : uint8_t
 {
     ProgramValue = 1,
     Snapshot = 2,
-};
-
-enum class AttributeClass : uint8_t
-{
-    BlockEdge = 3,
-    Shape = 4,
-    ShapeKey = 5,
-    ValidityCell = 6,
-    BytecodePC = 7,
-    Immediate = 8,
-    ValueConstant = 9,
 };
 
 static_assert(static_cast<uint8_t>(OperandClass::ProgramValue) ==
@@ -151,12 +172,12 @@ describes which result class an SSA operand slot may consume. Keeping them
 separate makes invalid states such as a
 `BlockEdge` instruction result unrepresentable in the API, while the aligned
 `ProgramValue` and `Snapshot` values keep result-operand compatibility checks
-simple. `AttributeClass` describes non-dataflow payload. `BlockEdge` is an
-attribute instead of an operand because CFG edge maintenance is not SSA use
-tracking; the CFG still represents every control-transfer occurrence with a
-first-class edge. Operand classes control structural compatibility, physical
-decoding, and generic use handling. Core program-value operands apply the
-additional `ValueRepresentation` constraint described below.
+simple. `BlockEdge` is an attribute instead of an operand because CFG edge
+maintenance is not SSA use tracking; the CFG still represents every
+control-transfer occurrence with a first-class edge. Operand classes control
+structural compatibility, physical decoding, and generic use handling. Core
+program-value operands apply the additional `ValueRepresentation` constraint
+described below.
 
 `Instruction::result_class()` is decoded directly from the upper bits of
 `InstructionKind`; it is not another field in the record or an entry duplicated
@@ -204,24 +225,18 @@ The schema generates the representation-to-`Mov` mapping and rejects a missing
 or duplicate entry. The tagged kind retains the unsuffixed `Mov` name; other
 representations use `Mov` followed by their representation suffix.
 
-The record may contain raw pointers, serials, enums, flags, scalar immediates,
-and other trivially destructible values. It must not directly contain an
-owning `std::vector`, `std::string`, `std::unique_ptr`, reference-counted
-handle, or any value whose destructor releases resources.
-
-Payload slots are pointer-sized words. The schema, rather than a runtime tag
-stored beside each word, determines their C++ interpretation:
+The schema, rather than a runtime tag beside each word, determines the physical
+width and C++ interpretation of every payload:
 
 ```text
-ProgramValue   -> Instruction* wrapped as ProgramValueRef
-Snapshot       -> Instruction* wrapped as SnapshotRef
-BlockEdge      -> BlockEdge*
-Shape          -> Shape*
-ShapeKey       -> inline ShapeKey value
-ValidityCell   -> ValidityCell*
-BytecodePC     -> compact bytecode offset or pointer representation
-Immediate      -> inline integer or enum value
-ValueConstant  -> directly embedded Value with compilation-long backing
+ProgramValue   -> one InstructionId word wrapped as ProgramValueRef
+Snapshot       -> one InstructionId word wrapped as SnapshotRef
+BlockEdge      -> one BlockEdgeId word resolved through CompilationStorage
+Shape          -> two words containing Shape *
+ShapeKey       -> two words containing ShapeKey
+ValidityCell   -> two words containing ValidityCell *
+BytecodePC     -> one word
+ValueConstant  -> two words containing Value
 ```
 
 `ValueConstant` is the schema classification of that attribute, not a pool
@@ -235,32 +250,22 @@ existing constant is registered with `retain_and_pin_value()` when graph
 construction encounters it. A compiler-created value is registered with the
 same operation immediately after creation.
 
-Ordinary operand words are uniformly direct instruction pointers. Dereferencing
-one and decoding its def kind identifies whether it is a `ProgramValue` or
-`Snapshot`; a `ProgramValue` def kind also directly identifies its
-representation. The schema declares what each operand position is permitted to
-reference and describes fixed and variable ranges.
+All attributes are inline and have kind-constant offsets. Attribute layout is
+partly schema-authored: a 64-bit attribute must begin at an aligned slot.
+Generated accessors assert the required offset and width at compile time. Wide
+values are encoded and decoded with `memcpy`, avoiding object-lifetime and
+aliasing violations.
 
-The implementation enforces that every encoded class fits the slot size and
-alignment. Every fixed-arity instruction places all operands first and all
-attributes immediately after them in the five inline slots. The schema-derived
-layout must fit completely; schema generation rejects a fixed kind requiring
-more than five combined operand and attribute words.
+For direct operands, fixed operands occupy the leading slots and attributes
+follow them. The complete layout must fit in three slots and satisfy every
+attribute-alignment assertion.
 
-Every variable-operand instruction instead places a pointer to indirect storage
-in slot zero. Its fixed attributes begin in slot one and continue inline. The
-operand-storage high bit is set, and its low bits hold the total logical operand
-count, including the kind's fixed operands. This avoids a split operand
-representation for kinds such as `PythonCall`, and lets generic traversal select
-one contiguous operand source.
-
-This layout deliberately does not inline a small variable operand array even
-when it would fit in the remaining payload slots. Attribute positions must be
-compile-time constants determined solely by the instruction kind. For a
-fixed-arity kind, attribute `i` occupies slot `fixed_operand_count + i`; for a
-variable-operand kind, it occupies slot `1 + i`. Typed attribute accessors can
-therefore use constant offsets without inspecting the runtime operand count or
-branching on whether a particular instance happened to fit inline.
+For indirect operands, attributes are laid out from slot zero as though the
+instruction had no inline operands. Slot two stores the 32-bit offset into
+`InstructionOperandTable`. The schema requires the attributes plus this offset
+to fit in the three inline slots. Indirection is a generated storage property:
+an instruction is indirect when it is variadic, when operands and attributes
+do not fit inline, or when direct placement would misalign an attribute.
 
 A variable operand range is always the final operand declaration. All fixed
 operands therefore occupy kind-constant leading indices in the indirect array,
@@ -268,14 +273,15 @@ followed by the variable tail. For example, `PythonCall` stores its callable at
 operand zero, its Snapshot at operand one, and arguments beginning at operand
 two. Typed access to the fixed operands needs no runtime argument count.
 
-The indirect array uses compilation-arena side data. For ordinary homogeneous
-variadic kinds such as `PythonCall`, every indirect slot is an operand and the
-physical slot count equals the header's logical operand count:
+`InstructionOperandTable` is one compilation-owned `std::vector<uint32_t>`.
+Each indirect instruction stores its operands in one contiguous range:
 
 ```cpp
-using InstructionSlot = uintptr_t;
-
-const InstructionSlot *indirect_operands = ...;
+struct InstructionOperandTable::Allocation
+{
+    uint32_t offset;
+    std::span<uint32_t> words;
+};
 ```
 
 Snapshot is a representation-erased positional variadic range. A value-bearing
@@ -286,76 +292,54 @@ the return code object is tagged. The exact non-tagged representation remains
 deferred. No position uses a nullable or structural escape encoding.
 
 Each generated variadic class exposes hidden construction machinery
-`n_indirect_slots_for(constructor arguments...)`. The compilation arena uses it
-to allocate the physical side-data span before placement construction. It is
+`n_indirect_slots_for(constructor arguments...)`. Compilation storage uses it
+to allocate the physical operand-table span before appending the entry. It is
 deliberately separate from `operand_count()`: the former sizes storage, while
 the latter counts logical operands.
 
-The 15-bit count is an explicit representation limit. Exceeding it aborts that
-compilation and falls back to the interpreter; it is not a partially valid
-instruction state.
+The 15-bit count is an explicit representation limit. Generated construction
+asserts that an instruction fits it; exceeding the limit is a compiler logic
+error, not a partially valid instruction state.
 
 Construction may use a mutable buffer before completing the instruction, but
 stored and typed access decodes the declared operand or attribute class and
-exposes immutable typed values, for example `std::span<const ProgramValueRef>`.
-Clients cannot replace an operand by assigning through the span.
+exposes immutable typed values and range views such as
+`ProgramValueRefRange<F64>`. Clients cannot replace an operand through those
+views.
 
-For an indirect operand sequence, the side-data pool allocates the final
-arena-owned range first and returns a mutable span to the factory. The factory
-constructs operand words directly in that range; it does not build a temporary
-`std::vector` and then ask the pool to copy it. Publication retains only a const
-view of the completed range.
+The operand table allocates the final range first and returns a mutable span to
+the factory. The factory writes operand words directly into that range. A typed
+operand-range view retains the instruction view, logical offset, and count; it
+resolves the current table span when accessed, so later operand-table vector
+growth cannot leave a dangling span.
 
-Side-data types obey the same no-destruction contract. Instruction and
-side-data allocation should enforce at least:
-
-```cpp
-static_assert(std::is_trivially_destructible_v<Instruction>);
-static_assert(std::is_trivially_destructible_v<InstructionSideData>);
-```
-
-Trivial copyability is not initially required because instruction pointers are
-stable and the arena does not relocate records. It may be imposed later if a
-dense movable buffer demonstrates enough value to justify changing that
-contract.
-
-Trivial destruction is necessary but not sufficient: instruction side data may
-own only allocations made from the same bulk arena. Other pointers are borrowed
-from objects whose lifetimes cover the compilation. A trivially destructible
-raw pointer must not hide ownership of an external allocation or resource.
-
-The fixed payload is implemented as named, aligned pointer/integer/value slots,
-or by copying trivially copyable payload values with `memcpy`. Typed accessors must
-not reinterpret generic byte storage as an object whose lifetime has not begun,
-read inactive union members, or assume alignment that the payload does not
-provide. Side-data allocation checks alignment and allocation-size overflow.
-
-The compilation arena releases instruction and trivial side-data storage in
-bulk. It does not walk those objects to invoke destructors. The enclosing
-compilation session separately owns normally destroyed tables, retained values,
-and other scoped resources; common session lifetime does not imply that every object
-occupies the destructor-free arena allocation domain.
+`InstructionEntry` is trivially destructible and movable. Runtime pointers in
+attributes are borrowed from objects whose lifetimes cover compilation.
+Normally destroyed storage tables, CFG pools, retained values, and scoped
+resources are owned by `CompilationStorage` or the enclosing
+`CompilationSession`.
 
 ### Construction, Placement, and Publication
 
 Allocation and graph placement are separate operations. The typed builder API
-takes the compilation session, borrows its arena, and returns an intrinsically
-valid, unplaced concrete instruction. It does not need an insertion position:
+takes the compilation session, appends an intrinsically valid entry to its
+storage, and returns an unplaced typed instruction view. It does not need an
+insertion position:
 
 ```cpp
-AddSMIInstruction *sum =
+AddSMIInstruction sum =
     builder.make_instruction<AddSMIInstruction>(lhs, rhs, snapshot);
 ```
 
 The constructor surface is generated from `instruction.def`.
-`OperandTraits<OperandClass>` and `AttributeTraits<AttributeClass>` select the
+Operand and attribute traits select the
 C++ parameter type and encoding for each declared slot, representation traits
-refine Core program-value operands, and the template returns the requested
-concrete subclass. Consequently, ordinary callers cannot choose an
+refine Core program-value operands, and the template returns the requested typed
+view. Consequently, ordinary callers cannot choose an
 inconsistent kind, result class, operand class, attribute class, Core
 representation, arity, or payload layout.
 Future IR-level-specific wrappers may expose only instruction kinds permitted at
-that level. The arena constructor itself still records each kind's allowed
+that level. The generated metadata still records each kind's allowed
 levels for placement and verification.
 
 Instruction construction does not generically scan instructions for managed
@@ -371,7 +355,7 @@ graph properties such as dominance or block-edge ownership. There are two
 placement paths with deliberately different validation costs.
 
 A translator or major lowering uses a bulk `GraphBuilder`. Construction and
-rewriting APIs use `make` for arena allocation without attachment, `append` for
+rewriting APIs use `make` for storage allocation without attachment, `append` for
 attaching an existing object at the end of a specified container, and `emplace`
 for allocating and attaching at the end in one operation. The common append and
 emplace operations perform only work naturally
@@ -423,26 +407,25 @@ dependencies. The latter occurs only after all compiler phases succeed.
 
 The JIT distinguishes compiler logic errors from resource failure. Violating an
 instruction-schema, graph, rewriter, or pass invariant is a compiler bug. Such a
-violation hard-asserts, with the verifier and stable-serial diagnostics used to
+violation hard-asserts, with the verifier and stable-ID diagnostics used to
 identify the responsible pass. It is not reported as an ordinary inability to
 compile and must not silently fall back to the interpreter.
 
 Allocation exhaustion and comparable resource failures are expected compilation
-failures. Fallible arena, side-data, index, and code-buffer allocation propagates
+failures. Fallible storage, operand-table, index, and code-buffer allocation propagates
 an explicit compilation failure such as `CompileFailure::AllocationFailure` to
 the JIT entry point. The entire compilation session, including any partially
 built or partially rewritten graph, is then abandoned, and execution continues
 in the interpreter. The rewriter does not need to roll a graph back into a usable
 state after such a failure because no later pass may observe that compilation.
 
-This cheap whole-compilation abort is a primary reason for arena ownership.
-Instructions, blocks, edges, side data, and other bulk compiler storage are
-allocated from the compilation arena; when compilation fails, allowing that
-arena to leave scope releases the entire allocation domain at once. The
+Instructions, blocks, edges, operand data, and other compiler storage are owned
+by the compilation session; when compilation fails, allowing that session to
+leave scope releases the entire compilation domain. The
 compiler does not need to discover and individually undo partially constructed
 IR objects. Normally destroyed compilation tables and scoped external
 registrations remain owned by the enclosing compilation session and unwind
-alongside the arena.
+alongside its storage.
 
 This failure model does not permit leaked external state. The compilation
 session retains managed constants and similar runtime-visible resources, and
@@ -473,8 +456,8 @@ tuple produced by constant folding, has no durable source owner; the same
 operation adds its ownership retain immediately and returns the same typed
 handle. `GraphBuilder` and `RewriteContext` both expose this capability.
 
-Retained values are session state rather than fields in instructions or arena
-objects. Instruction construction does not infer ownership from a
+Retained values are session state rather than fields in instruction entries.
+Instruction construction does not infer ownership from a
 `ValueConstant`; the builder or transformation registers the value at the
 point where it encounters or creates it. In the current collector, the
 `Owned<Value>` is both the lifetime root and the compilation pin. A future
@@ -491,8 +474,8 @@ constants must take the traced-pool path; Core itself does not express this
 split.
 Successful publication initializes the `JitCodeObject` pool and establishes its
 ownership before session-retained constants are released. On failure, the
-emitter owners, retained values, and arena are discarded while the interpreter
-continues.
+emitter owners, retained values, and compilation storage are discarded while
+the interpreter continues.
 
 Allocation may request a future safepoint but does not synchronously enter one.
 Initial compilation does not acknowledge safepoints mid-compilation, so a pass
@@ -500,10 +483,10 @@ may create a managed value and immediately retain it in the session before
 making it available to later compiler work. Possible future phase-boundary
 yielding is specified in [JIT Compiler and IR](jit-compiler-and-ir.md).
 
-## Pointers, Serials, and Determinism
+## Indexed Identity and Determinism
 
-Structural relationships use pointers, while relationships that consume an
-instruction result use zero-overhead typed pointer wrappers:
+Persistent instruction relationships use typed 32-bit IDs. Relationships that
+consume results use typed wrappers around those IDs:
 
 ```cpp
 ProgramValueRef lhs;
@@ -513,21 +496,33 @@ BlockEdge *true_edge;
 BlockEdge *false_edge;
 ```
 
-A client can follow such a relationship without also carrying the graph or an
-indexed instruction store. This is more suitable for the list-based IR than a
-Carbon-style pervasive ID lookup.
+An instruction ID is meaningful only within its owning `CompilationStorage`.
+APIs that dereference a reference therefore receive storage explicitly or
+operate through an `Instruction` view that already carries it. A
+`ControlFlowGraph` borrows its owning storage, and block instruction and
+parameter accessors return resolving views over their stored ID sequences.
+Explicit `instruction_ids()` and `parameter_ids()` accessors remain available
+for algorithms that need compact identities.
 
-Pointers are references, not deterministic identities. Instructions, blocks,
-and block edges retain their typed, monotonically allocated serials. Compiler
-output must not depend on pointer values or unordered pointer-container
-iteration. Passes use defined traversal order and serials for diagnostics,
-stable tie-breaking, and deterministic ordering.
+Blocks and block edges remain stable-address CFG objects because they are few
+and mutation-heavy. Branch attributes store compact `BlockEdgeId`s and resolve
+them through compilation storage. Compiler output must not depend on CFG object
+addresses or unordered pointer-container iteration. Defined graph traversal
+order and typed IDs provide diagnostics, stable tie-breaking, and deterministic
+ordering.
 
 The result-reference wrappers are mandatory for every result-consuming field:
 
 ```cpp
-using ProgramValueRef = ResultRef<ResultClass::ProgramValue, Instruction *>;
-using SnapshotRef = ResultRef<ResultClass::Snapshot, Instruction *>;
+class ProgramValueRef
+{
+    InstructionId instruction_;
+};
+
+class SnapshotRef
+{
+    InstructionId instruction_;
+};
 ```
 
 Constructing a result reference validates that the def's intrinsic
@@ -539,13 +534,11 @@ an instruction result, the verifier uses `operand_accepts_result()` rather than 
 mapping switch. Generated construction signatures make mismatched classes
 unrepresentable to ordinary callers, structural operand replacement checks the
 declared operand class, and the verifier independently checks the encoded
-payload. Raw `Instruction *` remains the identity used for instruction-list
-placement, diagnostics, and other non-result structural operations. A result
-wrapper still contains a pointer; it does not turn the IR back into a
-container-relative integer-ID representation.
+payload. Instruction-list placement and instruction-indexed analyses use
+`InstructionId`; a typed reference does not carry a storage pointer.
 
 Generic traversal, dominance, use discovery, and Semantic IR use the erased
-`ProgramValueRef`. Core typed APIs refine it without changing its pointer-sized
+`ProgramValueRef`. Core typed APIs refine it without changing its 32-bit
 representation:
 
 ```cpp
@@ -571,7 +564,7 @@ live instruction kinds. Each definition names the instruction kind and typed
 view, the IR level or levels in which it is legal, its intrinsic
 `ResultClass`, its `MustEffects` lower bound and `MayEffects` upper bound, its
 payload shape, every fixed or variable operand slot with its `OperandClass`,
-and every immutable payload attribute with its `AttributeClass`. Every ordinary
+and every immutable payload attribute with its schema attribute class. Every ordinary
 operand is a typed instruction-result reference. Every attribute declared for a
 kind is present; the schema has no optional-attribute mechanism. Core
 program-value results and operands additionally declare fixed representation
@@ -768,10 +761,9 @@ concrete and prevents a representation-polymorphic instruction from becoming
 an unchecked escape hatch. Exact macro spelling remains an implementation
 detail.
 
-No `OperandClass`, `AttributeClass`, or `ValueRepresentation` tag is stored
+No `OperandClass`, attribute-class tag, or `ValueRepresentation` tag is stored
 beside each ordinary payload word. Generic code reads the instruction kind once
-and selects schema-generated layout metadata or a schema-generated per-kind
-enumerator. Conceptually:
+and selects a schema-generated per-kind enumerator. Conceptually:
 
 ```cpp
 struct OperandSlotDescriptor
@@ -782,25 +774,18 @@ struct OperandSlotDescriptor
     uint16_t offset;
 };
 
-struct AttributeSlotDescriptor
-{
-    AttributeClass attribute_class;
-    SlotLayout layout;  // Fixed or variable-length.
-    uint16_t offset;
-};
-
-void visit_operands(Instruction &instruction, OperandVisitor visitor);
-void visit_attributes(Instruction &instruction, AttributeVisitor visitor);
+void visit_operands(const Instruction &instruction, OperandVisitor visitor);
 ```
 
 The generated dispatch interprets each payload word only according to the
 schema for that instruction kind. `ProgramValue` and `Snapshot` operands are
 ordinary result-reference uses for SSA, liveness, and rewriting. Attribute
 slots such as `BlockEdge`,
-`Shape`, `ShapeKey`, `ValidityCell`, bytecode PCs, immediates, and value
+`Shape`, `ShapeKey`, `ValidityCell`, bytecode PCs, and value
 constants are immutable semantic payload; they are skipped by generic
 use discovery and result replacement. CFG maintenance, verification, printing,
-and cloning may inspect attributes through their own visitor or typed accessors.
+and cloning inspect attributes through generated typed accessors and
+schema-expanded code.
 
 `Snapshot` is the one explicit exception to ordinary local-use behavior. It is
 a zero-code aggregate result whose captured `ProgramValue` operands become point
@@ -829,12 +814,12 @@ representation is valid for the corresponding position in the CFG's canonical
 ordering description. Recovery reaches through any sunk conversion rather than
 interpreting a type-erased Snapshot operand.
 
-Each concrete instruction form is a final, fieldless subclass of `Instruction`.
-Compilation storage placement-constructs the subclass selected by the schema;
-it must never construct a base `Instruction` and reinterpret it as a concrete
-kind. Because subclasses add neither fields nor virtual dispatch, every
-concrete kind has the same 48-byte representation as `Instruction` while
-providing kind-specific read-only accessors:
+Each concrete instruction form is a fieldless value-view subclass of
+`Instruction`. Compilation storage always stores an `InstructionEntry`;
+requesting a concrete kind constructs the entry through the generated schema
+and returns the corresponding view. Because subclasses add neither fields nor
+virtual dispatch, every concrete view has the same two-word representation as
+`Instruction` while providing kind-specific read-only accessors:
 
 ```cpp
 class AddF64Instruction final : public Instruction
@@ -854,7 +839,7 @@ public:
 
 private:
     friend class CompilationStorage;
-    AddF64Instruction(InstructionId id, F64Ref lhs, F64Ref rhs);
+    AddF64Instruction(const CompilationStorage *storage, InstructionId id);
 };
 
 static_assert(sizeof(AddF64Instruction) == sizeof(Instruction));
@@ -870,8 +855,9 @@ construction and accessors.
 The subclass exposes only immutable fields meaningful for its instruction kind.
 Inferred types, proven-absent effects, locations, and other phase knowledge are
 read through the concrete metadata object that owns them, not through the
-instruction object. Ordinary code holds `Instruction *` for heterogeneous IR
-structure and performs a kind-checked downcast when it needs concrete access.
+instruction object. Ordinary code holds `Instruction` by value for
+heterogeneous IR structure and requests a kind-checked concrete view when it
+needs typed access.
 
 There is one semantic `InstructionKind` enum generated from
 `src/jit/instruction.def`; the generated `InstructionOrdinal` exists only for
@@ -882,17 +868,17 @@ the source of the expected kind:
 
 ```cpp
 template<typename TypedInstruction>
-const TypedInstruction *Instruction::as() const
+TypedInstruction Instruction::as() const
 {
     assert(kind() == TypedInstruction::Kind);
-    return static_cast<const TypedInstruction *>(this);
+    return TypedInstruction(storage_, id_);
 }
 ```
 
 `is<T>()` and `try_as<T>()`, if useful, follow the same mapping. They use an
-enum comparison followed by a static downcast; the arena has already begun the
-lifetime of the matching concrete subclass. The design does not use
-`dynamic_cast`, `typeid`, or virtual instruction methods.
+enum comparison followed by typed view construction. The design does not use
+`dynamic_cast`, `typeid`, virtual instruction methods, or C++ object-lifetime
+reinterpretation.
 
 Category views may later represent a deliberately defined set of kinds with a
 common payload shape. Such a view has no single `Kind`, so it is obtained
@@ -926,10 +912,10 @@ republished or returned to a live kind.
 
 The ID is deliberately preserved for diagnostics. Any detached instruction
 encountered by verification, generic traversal, typed conversion, a result
-reference, or current `UseLists` are a hard compiler bug. The diagnostic reports
+reference, or current `UseLists` is a hard compiler bug. The diagnostic reports
 the preserved ID and does not interpret the poisoned payload. Ordinary pass
-code does not branch on detachedness as a supported case; concrete instruction
-pointers must not be retained across structural edits without proving that the
+code does not branch on detachedness as a supported case; instruction IDs and
+views must not be reused across structural edits without proving that the
 instruction remains attached.
 
 Operand and attribute slots have no public mutable access. When an earlier def
@@ -952,12 +938,11 @@ commit contracts live in
 an independent mutable-slot editor API here.
 
 The same walker independently reconstructs uses for verification and also
-supports cloning and printing of operand relationships. Attribute visitors or
-typed accessors handle cloning, printing, CFG edge maintenance, constant
+supports cloning and printing of operand relationships. Typed accessors and
+schema-expanded code handle cloning, printing, CFG edge maintenance, constant
 diagnostics, and bytecode-PC diagnostics for non-dataflow payload. The verifier
 compares any current `UseLists` against reconstructed operand records and
-hard-fails on references to poisoned storage. Kind-specific named accessors
-such as branch edges remain available through concrete accessors.
+hard-fails on references to poisoned storage.
 
 ## Phase-Owned Attached Metadata
 
@@ -968,9 +953,9 @@ for example:
 
 ```text
 SemanticValueAnalysis   Semantic ProgramValueRef -> ValueFacts
-CoreEffectAnalysis      Core Instruction*        -> ProvenAbsentEffects
-LocationAssignments     Core Instruction*        -> backend locations
-UseLists                Instruction*             -> temporary UseRecords
+CoreEffectAnalysis      Core InstructionId       -> ProvenAbsentEffects
+LocationAssignments     Core ProgramValueRef     -> backend locations
+UseLists                InstructionId            -> temporary UseRecords
 ```
 
 Core `ValueRepresentation` is deliberately not an attachment. It is an
@@ -983,10 +968,9 @@ result must physically exist on the normal path.
 
 This is not a generic per-instruction property bag. Each attachment is a
 concrete type with its own invariants, key domain, mutation rules, and permitted
-graph level. Clients query it with an instruction pointer or typed result
-reference. A dense implementation may use the instruction ID as an internal
-vector index while the current pointer API remains authoritative for the
-attachment.
+graph level. Clients query it with an instruction ID, instruction view, or typed
+result reference as appropriate. Dense implementations use the ID directly as
+a vector index.
 
 Mutable analysis builds or updates its private table and publishes a frozen
 view tagged with the source graph and mutation generation. A phase-specific
@@ -1004,7 +988,7 @@ be discarded after effect-dependent optimization; backend location data has
 its own later lifetime. Committing a rewrite invalidates graph-generation-bound
 attachments before any later client may query their entries for removed
 instructions. Major representation boundaries may build a fresh graph while
-using the same instruction, CFG, serial, and arena machinery.
+using the same instruction, CFG, ID, and compilation-storage machinery.
 
 ## Kind Effect Bounds and Proven Absence
 
@@ -1100,8 +1084,8 @@ read-only view in each case:
 
 #define CL_JIT_INSTRUCTION_CASE(Type, variable)                        \
     Type::Kind:                                                        \
-    if (const Type &variable =                                        \
-            *cl_jit_instruction_switch_value.as<Type>();              \
+    if (const Type variable =                                         \
+            cl_jit_instruction_switch_value.as<Type>();               \
         false)                                                        \
     {                                                                 \
     }                                                                 \
@@ -1111,7 +1095,7 @@ read-only view in each case:
 A code-generation pass then reads as an ordinary match:
 
 ```cpp
-CL_JIT_INSTRUCTION_SWITCH(*instruction)
+CL_JIT_INSTRUCTION_SWITCH(instruction)
 {
     // Arithmetic.
     case CL_JIT_INSTRUCTION_CASE(AddInstruction, add)
@@ -1180,7 +1164,7 @@ bb1(%3):
 ```
 
 The printer assigns dense block and result numbers in graph order. These names
-do not expose arena serials, allocation addresses, or rewrite history. Tagged
+do not expose storage IDs, allocation addresses, or rewrite history. Tagged
 block parameters omit their representation; a non-default representation is
 written after the parameter, such as `%2: f64`. Instruction result
 representations are inferred from the operation kind. Snapshot results use the
@@ -1215,44 +1199,40 @@ adding a new attribute class requires one explicit formatting rule.
 
 ## Implementation Validation
 
-The implementation validates the naturally aligned 48-byte, five-slot record,
-schema-generated kind metadata, typed CFG terminators, explicit constant
-defs, fixed operand walking, and the PythonCall and Snapshot variadic ranges.
-Fixed kinds store operands before
-attributes; variable kinds store their entire operand array behind slot zero and
-their attributes in the remaining inline slots. The current generic traversal
-visits every stored Snapshot capture as a result reference. The schema also
-defines representative constants, binary arithmetic, shape and shape-key
-guards, conditional branches, calls, Snapshots, and metadata-heavy Core
-instructions in `instruction.def`.
+The implementation validates the explicitly 8-byte-aligned 16-byte entry, three
+32-bit inline slots, schema-generated kind metadata, typed CFG terminators,
+explicit constant defs, direct and indirect operand walking, wide-attribute
+alignment, and the PythonCall and Snapshot variadic ranges. Direct layouts
+store operands before attributes. Indirect layouts store attributes from slot
+zero, their operand-table offset in slot two, and every operand in the table.
+The current generic traversal visits every stored Snapshot capture as a result
+reference.
 
-Compilation storage placement-constructs the concrete subclass selected by the
-template. Generated constructors list operands and then attributes, while
-storage privately prefixes the ID. Variadic construction asks the concrete
-class for `n_indirect_slots_for(...)`, allocates that side storage, and passes
-it to the in-place constructor. A later implementation slice should measure
-total graph and side-data use with realistic translated functions.
+Compilation storage appends the `InstructionEntry` produced by the generated
+typed factory and returns the corresponding instruction view. Indirect
+construction asks the concrete class for `n_indirect_slots_for(...)`, allocates
+that operand-table range, writes it, and records the returned offset. Tests
+force both instruction-vector and operand-table reallocation while IDs, views,
+and operand-range views remain live. A later measurement slice should report
+entry and operand-table use for realistic translated functions.
 The current Snapshot constructor accepts `ProgramValueRef`s for every captured
 position. Adding the eventual non-tagged header representation and verifying
 each prefix against the CFG's canonical ordering description remain part of
 the edge-argument and recovery integration slices.
 Success does not require every payload to fit inline. It requires every
-representative layout to use the same declarative schema and uniform arena-owned
-side data without a handwritten storage or traversal escape hatch. Evidence
-that the five-slot record causes excessive side data or cache cost reopens the
-sizing decision.
+representative layout to use the same declarative schema and uniform operand
+table without a handwritten storage or traversal escape hatch.
 
 ## Rejected Directions
 
-A virtual, behavior-bearing instruction hierarchy would couple storage ownership to polymorphic
-deletion and encourage semantic behavior to spread across virtual methods. It
-would also retain the `std::deque<std::unique_ptr<Instruction>>` allocation
-shape that this representation makes unnecessary.
+A virtual, behavior-bearing instruction hierarchy would couple storage
+ownership to polymorphic deletion and encourage semantic behavior to spread
+across virtual methods. It would also require separately allocated instruction
+objects instead of the compact table.
 
 C++ RTTI and `dynamic_cast` add no useful checking beyond the explicit closed
-`InstructionKind` enum. A checked kind comparison followed by a static downcast
-to the arena-constructed fieldless subclass is simpler and makes exhaustive
-matching possible.
+`InstructionKind` enum. A checked kind comparison followed by construction of a
+fieldless typed view is simpler and makes exhaustive matching possible.
 
 A visitor-based exhaustive dispatcher would scatter a pass across overloads
 and obscure the grouping and ordering of related instructions. Direct typed
@@ -1262,17 +1242,19 @@ local. This rejects generated visitor dispatch, not the declarative
 synchronized.
 
 Per-instruction variable-size records could improve density, as in V8
-Turboshaft, but would require a relocation-aware operation buffer and index
-references instead of stable pointers. Fixed records with arena-owned side
-data preserve the desired lifetime and typed-access properties with much less
-storage machinery.
+Turboshaft, but would make random indexed access and fixed entry layout more
+complex. Fixed 16-byte entries plus a separate operand table retain constant-time
+lookup and compact ordinary instructions.
 
-Pervasive integer instruction IDs would make every semantic traversal depend
-on an instruction container. Stable pointers are the usable reference form;
-typed serials provide deterministic identity without that lookup indirection.
+Stable instruction pointers would make the common view cheaper to dereference,
+but would either prevent dense vector storage or require a segmented container.
+The selected design pays storage-assisted lookup in exchange for four-byte
+persistent references, movable entries, and direct dense indexing.
 
 ## Related Documents
 
+- [Decision Log](decision-log.md)
+- [Indexed JIT Instruction Storage Refactoring](jit-indexed-instruction-storage-plan.md)
 - [JIT Compiler and IR](jit-compiler-and-ir.md)
 - [JIT Control-Flow Graph](jit-control-flow-graph.md)
 - [JIT Register Allocation](jit-register-allocation.md)
