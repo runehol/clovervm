@@ -1254,7 +1254,6 @@ persistent references, movable entries, and direct dense indexing.
 ## Related Documents
 
 - [Decision Log](decision-log.md)
-- [Indexed JIT Instruction Storage Refactoring](jit-indexed-instruction-storage-plan.md)
 - [JIT Compiler and IR](jit-compiler-and-ir.md)
 - [JIT Control-Flow Graph](jit-control-flow-graph.md)
 - [JIT Register Allocation](jit-register-allocation.md)

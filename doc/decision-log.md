@@ -755,5 +755,4 @@ and alignment-constrained operand layouts without expanding every entry.
 ### References
 
 - `doc/jit-instruction-representation.md`
-- `doc/jit-indexed-instruction-storage-plan.md`
 - Commits `646667e` through `80abb95`
