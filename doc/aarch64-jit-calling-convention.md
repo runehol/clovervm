@@ -4,7 +4,7 @@
 |---|---|
 | Document type | Proposed architecture contract |
 | Status | Proposed |
-| Implementation | Not implemented |
+| Implementation | Partial; entry-parameter and result fixed-location constraints, canonical incoming stack locations, allocation-order register sets, and per-class scratch registers are implemented; managed calls and transition adapters are not |
 | Scope | AArch64 compiled managed argument transport, call adaptation, cross-engine entry, return, and safepoint placement |
 | Owning layers | Call-site lowering owns guarded Python adaptation; the AArch64 backend owns argument and result locations; transition adapters own cross-engine reshuffling; the generic allocator and materializer implement the resulting fixed-location constraints and transfers |
 | Builds on | [CloverVM Function Calling Convention](function-calling-convention.md) |

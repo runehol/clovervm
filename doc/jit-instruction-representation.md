@@ -1011,6 +1011,31 @@ Each instruction kind declares two immutable effect bounds in
 - `MayEffects` is the upper bound: every effect that any instance of that kind
   may perform without changing instruction kind.
 
+The currently implemented coarse vocabulary is:
+
+```cpp
+enum class EffectProfile : uint8_t
+{
+    None = 0,
+    SideExit = 1 << 0,
+    Allocate = 1 << 1,
+
+    PythonVisibleEffects = 1 << 2,
+    CallPython = PythonVisibleEffects,
+    ControlFlow = 1 << 3,
+    TerminateBlock = 1 << 4,
+};
+```
+
+These are composable flags, but their powers-of-two ordering also establishes
+the initial DCE boundary: any complete profile numerically below
+`PythonVisibleEffects` is discardable when its result is dead. Thus allocation
+and a side exit are not by themselves Python-visible effects. An instruction
+that can change control flow is not discarded merely because the exit itself
+is invisible to Python. `TerminateBlock` is used together with `ControlFlow`.
+This coarse boundary is implemented; the refined dependency and
+proven-absence analyses below remain later work.
+
 Examples of must-effects include a return terminating its block or an operation
 performing an inherently visible write. A generic call's may-effects include
 raising and its other conservative call implications even when target analysis

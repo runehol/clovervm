@@ -7,7 +7,7 @@
 | Implementation | Prepared allocation, deterministic constraint splitting, transfer scheduling, conflict-free register/stack assignment, and parallel-transfer materialization implemented; all-stack transfer cycles and edge materialization remain open |
 | Scope | Allocation constraints, allocator-local numbering, liveness, bundles, backtracking allocation, live-range splitting, block-edge transfers, clobbers, spills, and post-allocation materialization |
 | Owning layers | Target preparation owns occurrence constraints and physical-transfer capabilities; the generic register allocator owns numbering, liveness, bundles, splitting, allocation, spill decisions, and bundle transfers; generic allocation materialization resolves transfers, rewrites the Core CFG, and publishes occurrence locations; publication and recovery planners own canonical-state synchronization; machine-code emission only encodes the materialized graph |
-| Validated against | `tests/test_jit_allocation_constraints.cpp`, `tests/test_aarch64_allocation_constraints.cpp`, `tests/test_jit_register_allocator.cpp` |
+| Validated against | `tests/test_jit_allocation_constraints.cpp`, `tests/test_aarch64_allocation_constraints.cpp`, `tests/test_jit_register_allocator.cpp`, `tests/test_jit_parallel_transfer_resolver.cpp`, `tests/test_jit_allocation_materializer.cpp`, and `tests/test_aarch64_execution.cpp` |
 | Supersedes | The open register-allocation direction in [JIT Compiler and IR](jit-compiler-and-ir.md) and [JIT Compiler Bring-up Plan](jit-compiler-bring-up-plan.md) |
 
 This document defines the register-allocation contract for the clovervm JIT. It
@@ -134,12 +134,17 @@ struct RegisterAllocationResult
     std::vector<BundleTransferSet> transfers;
 };
 
-LocationAssignments materialize_allocation(
+Result<LocationAssignments, RegisterAllocationError> materialize_allocation(
     CompilationSession &session,
     ControlFlowGraph &graph,
     const PreparedAllocationProblem &problem,
     const AllocationConstraints &constraints,
     const RegisterAllocationResult &allocation);
+
+Result<LocationAssignments, RegisterAllocationError> allocate_registers(
+    CompilationSession &session,
+    ControlFlowGraph &graph,
+    const AllocationConstraints &constraints);
 ```
 
 `RegisterAllocationResult` owns the final compiler-lifetime bundle partition,
@@ -148,6 +153,11 @@ problem's live-range identities, so materialization consumes both products
 before either is discarded. `LocationAssignments` refer to the newly published
 graph generation. Recovery planning and machine-code emission consume that
 graph and its `LocationAssignments`.
+
+`allocate_registers()` is the common public orchestration verb. It prepares the
+problem, assigns final bundle locations, and materializes the resulting
+transfers. Backends provide constraints and consume only the rewritten graph
+plus returned `LocationAssignments`.
 
 The initial materializer accepts block-entry and before-instruction transfer
 points. It resolves parallel register and mixed register/stack cycles with the
@@ -1326,15 +1336,35 @@ using ScratchRegisters =
     std::array<std::optional<PhysicalRegister>,
                static_cast<size_t>(RegisterClass::Count)>;
 
-ResolvedTransferPlan resolve_parallel_transfers(
+struct ResolvedTransferStep
+{
+    ResolvedTransferSource source;
+    PhysicalLocation source_location;
+    PhysicalLocation destination;
+    int original_parallel_transfer_index; // -1 for scratch-only steps
+};
+
+struct ResolvedTransferPlan
+{
+    std::vector<size_t> aliasing_transfers;
+    std::vector<ResolvedTransferStep> steps;
+};
+
+Result<ResolvedTransferPlan, RegisterAllocationError>
+resolve_parallel_transfers(
     std::span<const ParallelTransfer> transfers,
     const ScratchRegisters &scratch_registers);
 ```
 
-Input position is the resolver's opaque value identity. Register-allocation
-materialization translates bundle transfers into this physical form; side-exit
-and canonical-state synchronization can build the same input without depending
-on bundles or allocation constraints.
+An input vector index is the resolver's opaque value identity.
+`ResolvedTransferSource` names either one original input transfer or the output
+of an earlier resolved step. Identity transfers are reported separately so the
+caller can propagate value identity without emitting an instruction.
+`original_parallel_transfer_index` identifies the input completed by a step;
+scratch-only preservation steps use `-1`. Register-allocation materialization
+translates bundle transfers into this physical form; side-exit and
+canonical-state synchronization can build the same input without depending on
+bundles or allocation constraints.
 
 Materialization then inserts the resolved sequential transfers into Core IR and
 rewrites the destination-bundle occurrences to the definitions produced by
@@ -1349,13 +1379,16 @@ require publication.
 decision. A shared physical-transfer resolver may combine its transfers with the
 allocator-produced set once both are known.
 
-Generic allocation materialization should expose reusable physical-transfer
-machinery rather than hide it inside one emitter. Canonical synchronization may
-reuse the same location representation, parallel-transfer set, cycle
-detection, scratch selection, register moves, spill loads and stores, and
-memory-to-memory fallback. It supplies those mechanisms with transfers chosen
-by `HomeState` or recovery planning; it does not ask the allocator to infer
-which canonical homes are semantically current.
+Generic allocation materialization exposes physical-transfer scheduling rather
+than hiding it inside one emitter. Canonical synchronization may reuse the
+location representation and the dependency, identity, and cycle-resolution
+parts of that machinery, but it is not required to reuse the allocator's exact
+lowering policy. Side-exit registers are already saved in memory, and recovery
+also needs constants, boxing, and other reification producers. Its transfer
+lowering may therefore use saved-register memory or another internal temporary
+where allocation materialization uses a target-declared scratch register.
+`HomeState` or recovery planning chooses the transfers; the allocator does not
+infer which canonical homes are semantically current.
 
 Redundant Move Elimination is a possible later quality pass, not part of the
 initial allocator. It would symbolically track which value each physical
@@ -1491,12 +1524,13 @@ The first allocator has no ordinary compiler spill area. It may use registers
 or a derived canonical home when one is proven legal; otherwise excessive
 pressure aborts compilation and execution remains interpreted.
 
-The hardcoded `x0` emitter path is test scaffolding, not a second allocation
-strategy. The first assignment stage may accept only one-block executable
-graphs, but preparation, live-range storage, bundle fragments, and assignment
-results must use the general allocator model. Bring-up work must not introduce
-a one-block data model, target-specific allocator, or temporary fixed-first
-queue policy that will be discarded by the accepted allocator.
+The AArch64 emitter consumes the materialized graph and its
+`LocationAssignments`; the former hardcoded `x0` path has been removed.
+Executable emission still accepts only one-block graphs, but preparation,
+live-range storage, bundle fragments, assignment, and materialization use the
+general allocator model. Bring-up work must not introduce a one-block data
+model, target-specific allocator, or temporary fixed-first queue policy that
+will be discarded by the accepted allocator.
 
 Target code defines location vocabulary, register availability, allocation
 order, instruction constraints, and legal physical-transfer capabilities. The

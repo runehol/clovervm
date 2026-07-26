@@ -3,11 +3,11 @@
 | Field | Value |
 |---|---|
 | Document type | Implementation plan |
-| Status | Proposed |
-| Implementation | Core instruction storage, graph publication and rewriting, opcode-blind bytecode state tracking, the initial structural `CoreBytecodeTranslator`, compilation-session constant retention, code-cache publication, heap `JitCodeObject` ownership, generic machine-code emission, AArch64 assembly, the initial AArch64 `AllocationConstraints`, and a direct single-register CFG-to-AArch64 path are implemented; broader translation, register allocation, and compiler/runtime entry remain |
+| Status | Active |
+| Implementation | The common bytecode-to-code compiler driver, an executable straight-line frontend slice, fallible Core pass sequence with global dead-code elimination, generic register allocation and materialization, heap `JitCodeObject` publication, and executable one-block AArch64 emission are implemented; side exits, broader lowering, multi-block emission, and interpreter/runtime entry remain |
 | Scope | Initial JIT staging, vertical slices, temporary runtime policies, and validation |
 | Owning layers | The JIT owns compilation and generated transitions; the interpreter, managed calling convention, native boundaries, and reclaimer retain their existing contracts |
-| Validated against | Supporting infrastructure, instruction-representation tests, CFG and rewrite tests, code-cache tests, and executable AArch64 tests in the working tree on 2026-07-23 |
+| Validated against | Supporting infrastructure, instruction-representation, CFG/rewrite/DCE, translation, register-allocation/materialization, code-cache, compiler-driver, dump-tool, and executable AArch64 tests in the working tree on 2026-07-26 |
 | Supersedes | Bring-up material formerly embedded in [JIT Compiler and IR](jit-compiler-and-ir.md) |
 
 This plan brings up compiled execution through small, executable vertical
@@ -100,8 +100,8 @@ unsupported bytecode -> recover its pre-bytecode state
 ```
 
 This is the universal feature-staging mechanism. It applies to explicit raise
-operations, `ReturnOrRaiseException`, and every other bytecode not yet lowered.
-The JIT does not partly execute an unsupported operation.
+and exception-return operations as well as every other bytecode not yet
+lowered. The JIT does not partly execute an unsupported operation.
 
 A Python call itself may eventually be compiled without compiled exception
 dispatch. The selected callee runs in generated code when its `CodeObject` has
@@ -160,12 +160,18 @@ The first implementation slice is already in the tree. It established:
   and on-demand `UseLists`;
 - program-order read-only instruction traversal and graph-wide staged rewriting,
   including original or normalized callback input, operand reconstruction,
-  prefix and suffix insertion, def replacement, detachment poisoning, and
-  post-rewrite verification;
+  prefix and suffix insertion, def replacement, block-parameter and matching
+  edge-argument compaction, detachment poisoning, and post-rewrite
+  verification;
 - `CompilationSession` ownership of the arena and a monotonic retained-value
   vector exposed through `retain_and_pin_value()`;
 - the target-independent physical-register and allocation-constraint
-  vocabulary, plus initial AArch64 platform-ABI constraints.
+  vocabulary, plus initial AArch64 platform-ABI constraints;
+- `compile_jit_code()` as the common bytecode-to-`JitCodeObject` driver, with
+  observer hooks after bytecode, translated Core, optimized Core, and machine
+  code;
+- a fallible ordered Core pass sequence whose first pass is global
+  mark-and-sweep dead-code elimination.
 
 Physical code-cache publication now returns `PublishedCode`. The internal heap
 `JitCodeObject` retains its external pool slots, releases them through its
@@ -210,29 +216,20 @@ Entry block parameters already represent function arguments.
 
 ### Milestone 2: executable AArch64 from minimal Core
 
-Lower a hand-constructed, verified Core CFG all the way to executable AArch64
-without decoded bytecode, interpreter entry, Snapshots, side exits, overflow
-checks, recovery, or register allocation.
+Lower a verified Core CFG all the way to executable AArch64 without interpreter
+entry, executable Snapshots, side exits, overflow checks, or recovery.
 
-The first slice is complete. The emitter accepts one tagged entry `Parameter`
-and walks one published block containing non-pointer `Const`, `AndSMI`,
-`OrrSMI`, `EorSMI`, and `Return`. Focused tests execute the resulting AArch64.
-The backend intentionally maps every `ProgramValueRef` to `x0`; this proves the
-CFG-to-code path but cannot represent two simultaneously live values.
+The initial one-block path is complete. The common compiler driver translates
+decoded bytecode, runs the fallible Core optimization sequence, allocates and
+materializes locations, and invokes the AArch64 backend. The emitter consumes
+`LocationAssignments` and supports the straight-line value movement,
+constant-materialization, pure tagged operations, temporary-register, stack
+transfer, and return machinery needed by the current frontend slice. Focused
+tests compile Python functions through the frontend and execute the resulting
+AArch64. Exact instruction coverage belongs to backend tests and dispatch code,
+not this plan.
 
-The first programs are:
-
-```text
-entry:
-    %arg0 = Parameter
-    Return %arg0
-
-entry:
-    %constant = Const ValueConstant(non-pointer)
-    Return %constant
-```
-
-The initial identity sub-slice exposes two layers. `generate_aarch64_assembly`
+The backend exposes two layers. `generate_aarch64_assembly`
 deterministically lowers a published CFG into a caller-selected
 `AArch64MacroAssembler`. `emit_aarch64_from_cfg` owns finalization and code-cache
 publication: it first generates in `NearLiteral` mode and, only when finalization
@@ -240,14 +237,10 @@ returns `PoolOutOfRange`, discards that emission and regenerates from the CFG in
 `FarPageRelative` mode. Allocation and publication failures remain typed
 compilation failures and do not trigger the range retry.
 
-For the single-parameter identity graph, the backend maps the tagged parameter
-directly to the AArch64 argument/result register `x0`. This deliberately avoids
-introducing a pretend allocation table before any instruction presents a
-placement choice. A non-pointer `Const` uses the macro assembler's immediate
-`mov` operation. The assembler and code cache can already emit and rewrite
-value-pool slots, but a managed-pointer `Const` is not a complete published-code
-feature until the heap `JitCodeObject` owns a native layout that scans those
-slots.
+Allocation constraints place entry parameters and the return occurrence in
+their required ABI locations. Constants use immediate synthesis or traced
+value-pool loads, and the heap `JitCodeObject` owns the initialized external
+pool.
 
 If the full function-call ABI is not ready, the test may use a narrow generated
 leaf harness that passes machine-level tagged `Value` arguments and reads the
@@ -256,14 +249,10 @@ CFG and the output is executable machine code, not another standalone assembler
 test. This private harness is not the interpreter main harness and does not need
 the JIT-to-interpreter thunk.
 
-Remaining scope:
-
-- replace the universal `x0` mapping with `LocationAssignments` from the
-  allocator defined by [JIT Register Allocation](jit-register-allocation.md);
-- classify constants during backend preparation and emit immediate synthesis or
-  traced value-pool loads as appropriate;
-- preserve the already working near-pool retry, code-cache publication, and
-  focused execution tests.
+Remaining scope includes multi-block branch emission, executable side exits and
+recovery, broader lowering coverage, and the runtime entry adapter.
+The near-pool retry, code-cache publication, and focused execution tests remain
+part of every extension.
 
 The first allocator tests may use these one-block graphs, but the implementation
 must be the initial slice of the accepted SSA bundle allocator rather than a
@@ -273,23 +262,20 @@ first executable integration.
 
 ### Immediate implementation frontier
 
-Three coherent slices can proceed from the landed foundation:
+The landed vertical path makes three next fronts useful:
 
-1. **Register allocator foundation.** Implement the ephemeral positions,
-   default and sparse constraint occurrences, liveness, live ranges, bundles,
-   and initial register assignment tracked by the
-   [JIT Register Allocation progress plan](jit-register-allocation-progress.md).
-   Integrate its first `LocationAssignments` with Milestone 2 one-block
-   execution before adding CFG-edge moves or canonical-home spilling.
-2. **Bytecode-to-Core construction.** Begin Milestone 3 as a structural path
-   that produces and verifies Core plus Snapshots without executing it. This
-   can advance independently of register allocation and establishes the actual
-   compiler input.
-3. **Heap `JitCodeObject` publication.** This slice is complete. Physical
-   publication returns `PublishedCode`; the heap object retains the initialized
-   external pool, releases it through custom deallocation, and installs once
-   into `CodeObject`. This closes managed-constant lifetime but does not by
-   itself make generated functions more expressive.
+1. **Side-exit frame synchronization.** Define the recovery descriptor and
+   synchronization program for Snapshot values, including saved register
+   locations, canonical frame homes, constants, boxing, and other reification.
+   Its parallel scheduling may share physical-transfer machinery, but
+   register-save memory means it need not inherit allocator scratch policy.
+2. **Broader Core and AArch64 lowering.** Add operation families that require
+   guards or checked failure once they can use the side-exit machinery, then
+   expand tagged and unboxed representations in measured vertical slices.
+3. **Multi-block emission and runtime adaptation.** Emit branches and edge
+   transfers for general CFGs. The interpreter-to-JIT entry adapter remains a
+   separate runtime integration step; code-generation breadth is currently the
+   priority.
 
 No option should introduce a second CFG, constant-pool, or emission path. The
 backend and translator consume the existing published graph; heap publication
@@ -310,22 +296,24 @@ Scope:
 - model the symbolic accumulator, bytecode registers, current bytecode PC, and
   logical frame identity;
 - lower function arguments as entry definitions;
-- lower accumulator/register movement to symbolic bindings and `Mov` only when
-  a real Core value is needed;
-- lower tagged constants uniformly to `Const` and capture their
-  `ProgramValueRef`s in Snapshots;
+- lower accumulator/register movement to symbolic bindings and materialize a
+  Core value only when one is needed;
+- lower tagged constants uniformly to explicit Core definitions and capture
+  their `ProgramValueRef`s in Snapshots;
 - build Snapshot instructions from the symbolic state at entry, return, and
   unsupported-bytecode boundaries;
 - verify the produced Core graph against expected structure.
 
 The initial `BytecodeState`, opcode-blind `BytecodeStateTracker`, and structural
 `CoreBytecodeTranslator` slices are complete. The translator creates eager
-block parameters and state-carrying edges, lowers constants, symbolic
-register transfers, basic branches, and return, and emits a pre-instruction
-Snapshot plus `ResumeInInterpreter` for every unsupported bytecode. It poisons
-the unreachable continuation state so the remainder of the Core graph can
-still be constructed and verified. Snapshot recovery layout, broader opcode
-coverage, and executable side exits remain.
+block parameters and state-carrying edges, lowers constants, symbolic register
+transfers, a small pure comparison family, basic branches, and return, and
+emits a pre-instruction Snapshot plus `ResumeInInterpreter` for every
+unsupported bytecode. Global dead-code elimination removes unused non-entry
+parameters and their matching incoming arguments. The translator poisons
+unreachable continuation state so the remainder of the Core graph can still be
+constructed and verified. Snapshot recovery layout, broader semantic coverage,
+and executable side exits remain.
 
 Generated side-exit code and runtime recovery are deferred, but this milestone
 should already make Snapshot construction boring. That unlocks unsupported
@@ -488,13 +476,16 @@ results. Enable optimizations only when accompanied by IR verification and
 interpreter differential tests. The effect model, not pass order or intuition,
 must authorize movement.
 
-Initial optimization candidates are local and easy to invalidate:
+Global mark-and-sweep DCE has landed for Core results and non-entry block
+parameters. It uses conservative kind effect bounds and compacts matching edge
+arguments. Snapshot operands participate in the same mark graph; expanding
+their uses at consumer positions remains a separate register-allocation task.
+Other initial optimization candidates are local and easy to invalidate:
 
 - redundant dominating guards with identical Snapshots and replay states;
-- trivial `Mov` forwarding where representation and Snapshot availability
+- trivial copy forwarding where representation and Snapshot availability
   remain valid;
 - local constant folding into explicit `Const` defs;
-- dead code with no effects and no Snapshot-expanded point uses;
 - recovery-only sinking after the final graph rewrite and immediately before
   allocation. An instruction is marked globally sunk only when it has no
   hot-path use and its complete sunk closure commutes to every consuming exit.

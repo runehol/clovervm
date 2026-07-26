@@ -83,15 +83,15 @@ than silently omitting recovery liveness.
 - [x] Produce `RegisterAllocationResult` with final bundles,
   `BundleLocationAssignments` facts, and `BundleTransferSchedule` value-flow
   actions.
-- [ ] Add generic allocation materialization that resolves supported transfer
+- [x] Add generic allocation materialization that resolves supported transfer
   sets in parallel, inserts Core transfer instructions, rewrites
   destination-bundle occurrences, and publishes `LocationAssignments` for the
   rewritten graph.
-- [ ] Make AArch64 CFG emission consume the rewritten graph and its
+- [x] Make AArch64 CFG emission consume the rewritten graph and its
   `LocationAssignments` instead of its hardcoded `x0` mapping.
 - [ ] Add a symbolic allocation checker covering assignments, occurrence
   requirements, interference, location transitions, and generated transfers.
-- [ ] Execute one-block multi-value AArch64 tests through the existing code
+- [x] Execute one-block multi-value AArch64 tests through the existing code
   cache and near/far pool retry.
 
 This stage accepts only allocation problems that fit without eviction,
@@ -141,8 +141,11 @@ may occur in several bundles.
   occurrences.
 - [ ] Record edge, pressure-split, and fixup transfers in
   `BundleTransferSchedule`.
-- [ ] Complete the unified parallel-transfer resolver, including cycles and the
-  agreed scratch-location policy.
+- [x] Resolve identity transfers, acyclic transfers, register and mixed
+  register/stack cycles, and acyclic stack-to-stack transfers using
+  target-declared scratch registers.
+- [ ] Provide an emergency spill slot for cycles whose endpoints are all stack
+  locations.
 - [ ] Add reserved spill-weight tiers for ordinary minimal and fixed-location
   minimal bundles.
 - [ ] Detect irreducible excessive pressure and fail compilation cleanly.
@@ -159,7 +162,7 @@ stage. Merely passing ordinary examples is not enough.
 - [x] Make initial assignment enforce every prepared immovable Late clobber
   reservation, selecting another register or failing compilation when it
   cannot honor one.
-- [ ] Make instruction lowering consume the locations assigned to anonymous
+- [x] Make instruction lowering consume the locations assigned to anonymous
   temporary ranges.
 - [ ] Support fixed-location call-argument and call-result occurrences without
   hardcoding ABI policy into the generic allocator.

@@ -4,7 +4,7 @@
 |---|---|
 | Document type | Design |
 | Status | Proposed |
-| Implementation | Partial; instruction storage and schema, Core CFG construction and verification, graph queries and rewriting, compilation sessions, allocation constraints, code-cache publication, machine-code emission, and a direct AArch64 CFG path are implemented; bytecode translation, analyses, register allocation, recovery, and runtime entry remain |
+| Implementation | Partial; structural bytecode-to-Core translation, the common compiler driver, Core graph rewriting and global dead-code elimination, generic register allocation/materialization, code-cache publication, and executable one-block AArch64 emission are implemented; recovery, broader analyses/lowering, multi-block emission, and runtime entry remain |
 | Scope | JIT pipeline, Core IR, recovery state, effects, backend lowering, and compiled execution contracts |
 | Owning layers | The JIT owns IR and compiled execution; bytecode, runtime frames, object semantics, and reclamation remain authoritative contracts |
 | Validated against | The focused JIT instruction, CFG, rewrite, allocation-constraint, emitter, code-cache, and executable AArch64 tests |
@@ -545,8 +545,8 @@ uses the Core schedule plus backend location and edge-move side tables.
 Operations that only move an existing Python value do not create new semantic
 SSA identities:
 
-- `Ldar`, `Star`, and `Mov` update the accumulator/register environment to
-  reference an existing value;
+- bytecode state-location copies update the accumulator/register environment
+  to reference an existing value;
 - expanding a bytecode preserves the semantic identity of its result;
 - guards and shape-changing mutations may introduce a new statically refined
   identity for the same runtime `Value` bits;
@@ -560,10 +560,10 @@ SSA identities:
 For example:
 
 ```text
-LdaSmi 1       accumulator -> %v1
-Star r2        r2          -> %v1
-Ldar r2        accumulator -> %v1
-Mov r2, r3     r3          -> %v1
+load constant 1         accumulator -> %v1
+copy accumulator to r2  r2          -> %v1
+copy r2 to accumulator  accumulator -> %v1
+copy r2 to r3           r3          -> %v1
 ```
 
 All four interpreter locations refer to the same semantic value `%v1`.
@@ -1410,6 +1410,15 @@ prohibition on inferring purity from `MustEffects` alone are specified in
 [JIT Instruction Representation](jit-instruction-representation.md).
 Specialization that selects a different semantic operation constructs a
 replacement instruction and therefore adopts the new kind's bounds.
+
+The current Core implementation uses a deliberately coarse ordered flag
+vocabulary: `SideExit`, `Allocate`, the `PythonVisibleEffects` boundary
+(`CallPython`), `ControlFlow`, and `TerminateBlock`. Global DCE may discard a
+dead result only when the kind's conservative `MayEffects` profile is below the
+Python-visible boundary. This already permits removal of dead allocations and
+dead side exits while retaining instructions that can alter control flow. The
+finer dependency taxonomy and per-instance proven-absence analysis described
+here remain future precision work.
 
 Effect implications are centralized. `MayCallPython`, for example, implies
 broad heap access, possible shape mutation, validity invalidation, raising, and

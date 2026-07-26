@@ -4,7 +4,7 @@
 |---|---|
 | Document type | Architecture contract |
 | Status | Accepted |
-| Implementation | Partial: graph construction and publication, fixed-representation terminators, block parameters and edge arguments, predecessor indexes, structural verification, queries, and body-instruction rewriting are implemented; cross-block dominance and CFG-topology editing are deferred |
+| Implementation | Partial: graph construction and publication, fixed-representation terminators, block parameters and edge arguments, predecessor indexes, structural verification, queries, body-instruction rewriting, and topology-preserving parameter/argument compaction are implemented; cross-block dominance and general CFG-topology editing are deferred |
 | Scope | Structural CFG shared by Core IR and an optional Semantic IR, including implemented block parameters and the planned edge-argument extension |
 | Owning layers | The JIT CFG owns block order, block edges, block parameters, instruction placement, and structural verification; individual IR levels own instruction semantics and side exits |
 | Validated against | `tests/test_jit_cfg.cpp` and `tests/test_jit_graph_rewrites.cpp` |

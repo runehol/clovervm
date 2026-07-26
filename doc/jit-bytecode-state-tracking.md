@@ -4,7 +4,7 @@
 |---|---|
 | Document type | Design |
 | Status | Accepted |
-| Implementation | Partial: canonical outer-frame state ordering and CFG attachment, shared state tracking, and the initial `CoreBytecodeTranslator` structural slice are implemented; frame-header value definitions, broader Core opcode coverage, and Semantic translation remain |
+| Implementation | Partial: canonical outer-frame state ordering and CFG attachment, shared state tracking, and an executable straight-line Core translation slice with basic control flow are implemented; frame-header value definitions, broader semantic coverage, executable side exits, and Semantic translation remain |
 | Scope | Shared symbolic bytecode state, target-driven bytecode-to-IR translation, block state transfer, multiple results, and Snapshot state queries |
 | Owning layers | The bytecode decoder owns decoded locations and structural blocks; the shared JIT state layer owns opcode-blind bytecode state tracking and its canonical ordering description; each concrete translator owns traversal, IR construction, opcode semantics, and Snapshot extent |
 | Validated against | `tests/test_jit_bytecode_state.cpp`, `tests/test_jit_core_bytecode_translator.cpp`, `tests/test_jit_cfg.cpp`, and `tests/test_jit_arena.cpp` |
@@ -241,19 +241,20 @@ first-class bytecode property rather than a special case.
 
 ### Aliasing bytecodes
 
-Bytecodes such as `Ldar`, `Star`, and `Mov` need not create a new IR value.
-Their translation may return an input reference unchanged:
+Bytecodes that only copy a value between interpreter-visible state locations
+need not create a new IR value. Their translation may return an input reference
+unchanged:
 
 ```text
-Ldar r0:
-    input  = state[r0]
-    output = input
+copy state[r0] to accumulator:
+    input                   = state[r0]
+    output                  = input
     destination accumulator = output
 ```
 
 The state tracker then records that the source and destination denote the same
-SSA value. It does not emit a target `Mov` merely because the bytecode changes
-an interpreter-visible location.
+SSA value. It does not emit a target copy merely because the bytecode changes an
+interpreter-visible location.
 
 ## Blocks, Parameters, and Edge Arguments
 
@@ -279,10 +280,12 @@ machinery:
 Block parameters and edge arguments are the IR's native SSA merge mechanism.
 The state tracker does not construct a parallel phi representation.
 
-Every ordinary block receives an eager parameter for every position in the
-complete canonical state order, including padding and frame-header positions.
-Every incoming edge supplies the complete corresponding argument vector.
-Redundant parameters and moves are register-allocation concerns.
+Every ordinary block initially receives an eager parameter for every position
+in the complete canonical state order, including padding and frame-header
+positions. Every incoming edge initially supplies the complete corresponding
+argument vector. Core dead-code elimination later removes unused non-entry
+parameters and the matching argument from every incoming edge before register
+allocation.
 
 In the initial design, one decoded bytecode block maps to one target IR block.
 Expanding one bytecode operation may append several target instructions, but it
@@ -344,10 +347,8 @@ Core represents ordinary conditional control flow with one
 branch polarity only determines how decoded edge occurrences map onto those
 two attributes:
 
-```text
-JumpIfTrue:  true edge = jump,        false edge = fallthrough
-JumpIfFalse: true edge = fallthrough, false edge = jump
-```
+One polarity maps the jump occurrence to the true edge and fallthrough to the
+false edge; the opposite polarity reverses that mapping.
 
 The two `BlockEdge`s carry their independently constructed state arguments.
 Core does not need separate branch instruction kinds for the two bytecode
@@ -361,9 +362,9 @@ There is no shared result protocol combining ordinary continuation,
 conditional edges, return, unsupported bytecode, and side exit. The concrete
 translator owns those control decisions. In particular, an unsupported
 fallthrough bytecode may emit a generic `Snapshot` plus
-`ResumeInInterpreter`. `ResumeInInterpreter` has the exact `ExitJIT` effect but
-is not a CFG terminator: the translator continues generating the rest of the
-decoded block, which must still end in an ordinary CFG terminator.
+`ResumeInInterpreter`. `ResumeInInterpreter` has `SideExit | ControlFlow`
+effects but is not a CFG terminator: the translator continues generating the
+rest of the decoded block, which must still end in an ordinary CFG terminator.
 
 ## Complete State Capture and Snapshots
 
@@ -420,13 +421,14 @@ Its implementation owns the block walk, opcode dispatch, state queries,
 Snapshot placement, unsupported-operation exits, and graph finalization. The
 optional Semantic translator will own an analogous walk when it is implemented.
 
-The first Core slice lowers `LdaConstant`, `LdaSmi`, `LdaTrue`, `LdaFalse`,
-`LdaNone`, `Ldar`, `Star`, `Mov`, `Nop`, `Jump`, `JumpIfTrue`, `JumpIfFalse`,
-and `Return`. Unsupported bytecodes capture their pre-instruction state in a
-Snapshot and emit `ResumeInInterpreter`. Because that exit is not a CFG
-terminator, each unsupported destination is then bound to an `Uninitialized`
-poison value so structural translation can continue. No generated execution
-reaches those poisoned values.
+The implemented Core slice covers canonical constants, symbolic state
+movement, a small pure comparison family, basic control flow, and return.
+Unsupported bytecodes capture their pre-instruction state in a Snapshot and
+emit `ResumeInInterpreter`. Because that exit is not a CFG terminator, each
+unsupported destination is then bound to an `Uninitialized` poison value so
+structural translation can continue. No generated execution reaches those
+poisoned values. Exact opcode coverage belongs to translator tests and dispatch
+code rather than this design contract.
 
 Both translators reuse `BytecodeState` and `BytecodeStateTracker`. They may also
 reuse small helpers for block signatures or edge argument construction. They do
@@ -453,8 +455,9 @@ Initial translation and CFG verification must establish:
 - bytecode definite-initialization invariants prevent normal operations from
   consuming the initial accumulator or temporary sentinel;
 - every completed target block has a valid terminator;
-- `ResumeInInterpreter` is an instruction-local `ExitJIT` operation rather than
-  a CFG terminator, so translation continues after emitting it;
+- `ResumeInInterpreter` is an instruction-local
+  `SideExit | ControlFlow` operation rather than a CFG terminator, so
+  translation continues after emitting it;
 - every unsupported destination is assigned a structural `Uninitialized`
   poison reference after `ResumeInInterpreter`;
 - instruction-local guards and side exits do not become CFG block successors.
@@ -466,7 +469,7 @@ Focused tests should cover:
   state positions;
 - canonical position calculation for parameterized and zero-parameter
   functions;
-- `Ldar`, `Star`, and `Mov` preserving `ProgramValueRef` identity;
+- state-location copies preserving `ProgramValueRef` identity;
 - one-result, zero-result, and multiple-result state updates;
 - simultaneous read-modify-write updates;
 - forward edges and loop backedges with eager block arguments;

@@ -4,10 +4,10 @@
 |---|---|
 | Document type | Design |
 | Status | Accepted |
-| Implementation | Read-only traversal, instruction use lists, and body-instruction graph rewriting implemented; block arguments and CFG-topology rewriting not started |
-| Scope | Read-only instruction traversal, on-demand use lists, and forward instruction rewriting within published JIT IR basic blocks |
+| Implementation | Read-only traversal, instruction use lists, body-instruction rewriting, block-parameter filtering, matching edge-argument compaction, and global dead-code elimination implemented; general CFG-topology rewriting not started |
+| Scope | Read-only instruction traversal, on-demand use lists, forward instruction rewriting, and topology-preserving parameter/edge-argument compaction in published JIT IR graphs |
 | Owning layers | The CFG owns mutation generation and cached analysis storage; the traversal contract declares observable walk order and required queries; `GraphQueries` owns generation-checked callback access; the use-list builder owns use occurrences; the graph rewriter owns operand substitution, instruction placement, and commit; the instruction schema owns reconstruction; individual passes own matching and semantic legality; CFG editing owns successor and predecessor changes |
-| Validated against | `tests/test_jit_graph_rewrites.cpp` |
+| Validated against | `tests/test_jit_graph_rewrites.cpp` and `tests/test_jit_dead_code_elimination.cpp` |
 | Supersedes | The incremental mutable-operand rewrite direction in [JIT Instruction Representation](jit-instruction-representation.md) and [JIT Compiler and IR](jit-compiler-and-ir.md) |
 
 JIT IR instructions are immutable. A graph rewrite constructs a replacement
@@ -19,8 +19,9 @@ returns, the rewriter resolves the proposed output in either mode and appends
 the canonical form to a staged instruction stream.
 
 This design covers local instruction rewrites, lowering one instruction to an
-instruction sequence, erasure, and passes such as dead-code elimination. It
-does not cover changes to the CFG topology.
+instruction sequence, erasure, topology-preserving block-parameter and
+edge-argument compaction, and passes such as dead-code elimination. It does not
+cover adding, removing, or redirecting CFG edges.
 
 Read-only traversal, use-list construction, and structural rewriting remain separate
 algorithms. The CFG owns on-demand cached analysis storage because it also owns
@@ -266,10 +267,13 @@ The replacement map is a construction detail of the staged result, not a
 partially rewritten input exposed to the pass. A transformation that wants to
 optimize the rewritten result runs another pass.
 
-This model relies on the current Core IR rule that an instruction result is
-used only later in the same block. Block parameters remain unchanged definitions
-available before the instruction stream. Cross-block SSA values and parameter
-replacement would require a graph-level renaming design.
+This model relies on the current Core IR rule that an ordinary instruction
+result is used only later in the same block. Block parameters are definitions
+available before the instruction stream. A parameter callback may keep or erase
+each parameter; erasure also removes the corresponding argument from every
+incoming edge. Replacing a parameter with an arbitrary definition, changing
+edge targets, or introducing general cross-block SSA values would require a
+broader graph-level renaming or CFG-editing design.
 
 ## Rewrite API
 
@@ -297,6 +301,22 @@ RewriteSummary summary = rewriter.rewrite_instructions(
 ```
 
 The overload without a `RewriteInput` selects `Original`.
+
+A callback class may also provide the optional parameter hook:
+
+```cpp
+BlockParameterRewrite block_parameter(
+    RewriteContext &context,
+    const GraphQueries &queries,
+    const Block &block,
+    size_t index,
+    const Instruction &parameter);
+```
+
+It returns `BlockParameterRewrite::keep()` or
+`BlockParameterRewrite::erase()`. Parameter decisions are collected for the
+whole graph before instruction rewriting so every incoming edge can be
+compacted consistently.
 
 `RewriteContext` also exposes
 `retain_and_pin_value()`. A transformation calls it immediately when creating a
@@ -362,8 +382,10 @@ The initial summary is:
 ```cpp
 struct RewriteSummary
 {
+    bool block_parameters_changed = false;
     bool instructions_changed = false;
     bool terminators_changed = false;
+    NormalizationRemapping normalization_remapping;
 };
 ```
 
@@ -510,10 +532,21 @@ a compiler error identifying the erased def and its use. Because the
 rewrite is staged, this does not expose a partially rewritten block.
 
 The graph-rewrite mechanism does not itself decide whether an instruction is
-dead. A dead-code-elimination pass requests use lists, makes its own effect
-and liveness decisions, and returns `erase()` for removable instructions. A
-simple post-rewrite DCE pass can remove constants made dead by an earlier
-folding or lowering pass.
+dead. The implemented Core dead-code-elimination pass performs one global
+mark-and-sweep instead of iterating local use counts:
+
+1. mark every instruction that cannot be discarded under its conservative
+   effect profile;
+2. follow ordinary operand definitions from every marked instruction;
+3. when a marked definition is a block parameter, follow the corresponding
+   argument on every predecessor edge;
+4. keep entry parameters as external roots;
+5. erase unmarked result definitions and non-entry parameters, letting the
+   rewriter compact incoming edge arguments atomically.
+
+This removes dead cross-block chains and dead cycles without dominators or
+repeated use-list rebuilding. Effect legality belongs to the DCE pass; the
+rewriter only provides the structural erasure and compaction mechanism.
 
 ## Instruction Reconstruction
 
@@ -553,27 +586,32 @@ deferred until a concrete pass establishes their required semantics.
 
 ## Staging and Commit
 
-The rewriter builds one new body-instruction pointer vector per block while all
-original block vectors remain unchanged:
+The rewriter builds new parameter and body-instruction pointer vectors per
+block while all original block vectors remain unchanged:
 
 ```cpp
 struct StagedBlockRewrite
 {
     Block *block;
+    std::vector<Instruction *> parameters;
     std::vector<Instruction *> instructions;
+    std::vector<Instruction *> removed_originals;
 };
 ```
 
-Block-parameter vectors are neither copied nor replaced because parameters are
-outside the initial traversal and rewrite surface. Peak transient storage is
-therefore approximately a second copy of the body instruction pointers, not a
-second copy of the arena-owned instructions or payloads.
+When no parameter callback exists, the original parameter vector is copied
+unchanged. When one exists, the rewriter first records a retention mask for
+every block. It uses the target block's mask to reconstruct incoming edges with
+matching argument vectors and then reconstructs their owning terminators.
+Source block, target block, edge order, and edge count remain unchanged.
 
 After every block has been traversed:
 
-1. it validates every completed output vector and replacement map;
-2. it swaps every staged body vector into its block;
-3. it uses the old vectors left by those swaps to identify and detach original
+1. it validates every completed output vector, edge argument vector, and
+   replacement map;
+2. it swaps every staged parameter and body vector into its block and rebuilds
+   predecessor indexes when edges changed;
+3. it uses staged removal records to identify and detach original
    instructions no longer present in the graph;
 4. it advances the graph mutation generation once and invalidates affected
    attached analyses;
@@ -588,14 +626,14 @@ borrows that arena from the compilation session passed to its constructor.
 Allocation failure abandons the session under the existing JIT failure model.
 Ordinary passes cannot observe the staged block.
 
-The callback-based API is the initial public surface. A cursor or callback class
-with hooks for additional rewrite events may later wrap the same staging engine
-if a pass needs more control, but it must preserve the selected input view,
-post-result normalization, and commit rules.
+The callback-class API detects the presence of each optional hook at compile
+time, so passes pay only for the events they implement. A cursor or additional
+rewrite event may later extend the same staging engine, but it must preserve
+the selected input view, post-result normalization, and commit rules.
 
 ## Terminators and CFG Changes
 
-Instruction rewriting and CFG editing remain separate responsibilities.
+Instruction rewriting and general CFG editing remain separate responsibilities.
 
 Initially:
 
@@ -604,10 +642,12 @@ Initially:
 - a sequence replacing a terminator ends in exactly one terminator;
 - a replacement terminator preserves the original successor edges.
 
-Changing successors, redirecting edges, splitting blocks, and replacing one
-operation with a multi-block region require a CFG editor that updates target
-predecessor indexes and invalidates CFG analyses. They are not implicit side
-effects of `rewrite_instructions()`.
+Parameter filtering is the narrow exception: it reconstructs each incoming
+edge and its owning terminator with fewer arguments while preserving the
+source, target, order, and number of edges. Changing successors, redirecting
+edges, splitting blocks, and replacing one operation with a multi-block region
+still require a CFG editor. They are not implicit side effects of
+`rewrite_instructions()`.
 
 ## Analysis Interaction
 
