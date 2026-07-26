@@ -767,43 +767,50 @@ calling-convention adapters
 
 ### Decision
 
-A `TransitionProgram` is restricted Core IR plus one transition-specific
-`Transfer` instruction. It is one continuous straight-line instruction stream
-that transforms values and machine state between execution conventions. The
-first consumer reconstructs canonical interpreter state for a JIT side exit.
-Future consumers may adapt between compiled function conventions.
+A `TransitionProgram` is restricted Core IR plus transition-specific header,
+transfer, and terminal handoff instructions. It is one continuous straight-line
+instruction stream that transforms values and machine state between execution
+conventions. The first consumer reconstructs canonical interpreter state for a
+JIT side exit. Future consumers may adapt between compiled function
+conventions.
 
 The program uses the 16-byte `InstructionEntry` layout and `InstructionKind`
 values, but its physical references are 32-bit `TransitionLocation`s rather
 than Core `InstructionId`s. Each location contains an area tag and an offset.
 The initial areas are register-file state, stack data, and dense scratch
 storage. An eligible Core instruction's result is implicitly
-`Scratch[instruction_index]`. `Transfer` has one source operand and one
+`Scratch[instruction_index]`. The resultless `BeginTransition` header carries
+the actual scratch-slot requirement. `Transfer` has one source operand and one
 destination attribute, both encoded as `TransitionLocation`; it updates that
-location and has `ResultClass::None`. Pointer-shaped tagged constants are
-loaded through the compiled code object's constant pool.
+location and has `ResultClass::None`. The resultless terminal
+`ResumeInterpreter` carries an inline `BytecodePC`, ends transition execution,
+and identifies the interpreter continuation. Pointer-shaped tagged constants
+are loaded through the compiled code object's constant pool.
 
 `instruction.def` explicitly declares transition-program eligibility. Generated
 checks reject eligible kinds with snapshots, block edges, shape or validity-cell
 attributes, variadic or indirect operands, absent results, side exits, branches,
-Python calls, or unsupported fallibility. The resultless `Transfer` is the
-explicit transition-only exception to the result requirement. The transition
-executor dispatches directly over raw entries rather than constructing
-compiler-facing typed instruction views.
+Python calls, or unsupported fallibility. Resultless transition-only
+instructions such as `BeginTransition`, `Transfer`, and `ResumeInterpreter` are
+explicit exceptions to the Core result requirement. The transition executor
+dispatches directly over raw entries rather than constructing compiler-facing
+typed instruction views.
 
-Published programs refer by offset and count to immutable transition
-instructions owned with the compiled code object; they do not own
-`std::vector`s or contain process-local pointers. The program record also holds
-its scratch-slot count. Boundary metadata such as the interpreter resume PC
-remains with the side-exit record.
+Published programs are self-delimiting sequences in immutable code-object
+metadata. A caller refers by offset to `BeginTransition`; the final handoff ends
+execution. They do not own `std::vector`s or contain process-local pointers.
+Each thread owns a reusable `std::vector<uint64_t>` scratch buffer and grows it
+to `BeginTransition.scratch_slot_count` before dispatch.
 
 ### Context
 
 Side-exit reconstruction contains computation and physical publication, but
 they are phases of one dependency-ordered program rather than separate
 products. `Transfer` directly copies between the three location areas and uses
-scratch only when parallel-transfer ordering requires it. The same mechanics
-also apply to adapters that move and materialize values between two function
+scratch only when parallel-transfer ordering requires it. A program containing
+only direct resultless transfers may request zero scratch slots; a cycle
+requests the staging slots introduced by its lowering. The same mechanics also
+apply to adapters that move and materialize values between two function
 conventions, so recovery-specific terminology and types would make the
 representation unnecessarily narrow.
 
@@ -812,6 +819,11 @@ appropriate physical record and generated schema. Reusing that layout avoids a
 second hand-maintained opcode structure while keeping the runtime interpreter
 free of storage pointers and heavyweight typed views.
 
+Transition execution is a no-safepoint region. Transition instructions cannot
+invoke Python, trigger GC, or otherwise enter safepoint-capable VM code. Raw
+scratch words therefore require no transition-local root map. Canonical state
+is fully published before the terminal handoff leaves this region.
+
 ### Consequences
 
 - side-exit planning consumes Snapshots, sinking metadata,
@@ -819,9 +831,13 @@ free of storage pointers and heavyweight typed views.
   of those compiler objects;
 - semantic computation and canonical publication share one scratch namespace
   and have no stored phase boundary;
+- `BeginTransition` carries the actual scratch capacity, including zero for
+  programs that do not use scratch;
 - the side-exit register-file image is read-only, while stack and scratch may
   be destinations;
 - scratch sources can name only slots initialized by earlier instructions;
+- a side-exit program ends with `ResumeInterpreter`, which carries its bytecode
+  continuation PC;
 - transition programs are compact, relocatable data with no raw compiler or
   runtime pointers;
 - operations that can themselves side exit cannot be transition-program

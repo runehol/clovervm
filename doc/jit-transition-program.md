@@ -6,7 +6,7 @@
 | Status | Accepted |
 | Implementation | Not started |
 | Scope | Compact straight-line programs that transform values and machine state between execution conventions; the first consumer is JIT side exit |
-| Owning layers | Core IR owns sunk operation semantics and Snapshot state; register allocation owns physical frontier locations; transition planning owns the continuous transition program, scratch layout, and canonical publication; target thunks own fixed machine-state saves |
+| Owning layers | Core IR owns sunk operation semantics and Snapshot state; register allocation owns physical frontier locations; transition planning owns the continuous transition program and canonical publication; each thread owns reusable transition scratch storage; target thunks own fixed machine-state saves |
 | Validated against | N/A |
 | Supersedes | N/A |
 
@@ -17,10 +17,12 @@ reconstructs canonical interpreter state from optimized compiled execution.
 The same representation may later implement adapters between compiled function
 calling conventions or other execution boundaries.
 
-The representation is restricted Core IR plus one transition-specific
-`Transfer` instruction. It is independent of Snapshots, register allocation,
-and interpreter frames after construction. A side-exit planner consumes those
-compiler structures and produces one immutable transition program.
+The representation is restricted Core IR plus transition-specific
+`BeginTransition`, `Transfer`, and terminal handoff instructions. The first
+terminal is `ResumeInterpreter`. It is independent of Snapshots, register
+allocation, and interpreter frames after construction. A side-exit planner
+consumes those compiler structures and produces one immutable transition
+program.
 
 ## Execution Shape
 
@@ -31,8 +33,10 @@ compiled side-exit branch
     -> target side-exit thunk
        saves machine registers in a fixed layout
     -> transition program
+       BeginTransition sizes reusable thread scratch
        computes required values and publishes canonical interpreter homes
-    -> interpreter resume at side_exit.resume_pc
+       ResumeInterpreter identifies the bytecode continuation
+    -> interpreter resumes
 ```
 
 The transition program is one continuous instruction stream with one location
@@ -62,10 +66,30 @@ scratch
     also used for parallel-move scratch space
 ```
 
-The scratch area is not register allocated. Transition planning may allocate as
-many scratch slots as necessary for computed values and parallel-move
-resolution. Avoiding coalescing and stack-slot packing keeps execution simple
-and keeps the representation predictable for debugging and future reinflation.
+The scratch area is not register allocated. Every instruction index names one
+potential 64-bit scratch slot. Eligible Core results use
+`Scratch[instruction_index]`; a `Transfer` used for staging also uses its own
+instruction index as the scratch destination. Resultless instructions that do
+not stage a value use no scratch.
+
+Each thread owns a reusable `std::vector<uint64_t>` transition scratch buffer.
+`BeginTransition.scratch_slot_count` records the actual capacity required by
+the lowered program. The executor grows the buffer to at least that many
+elements and does not clear it: verification ensures that every scratch source
+was initialized earlier in the current program. A program containing only
+direct resultless transfers may request zero slots. A parallel-transfer cycle
+requests the slots introduced for staging. The planner computes the count as
+zero when the program contains no scratch locations, otherwise one plus the
+highest scratch offset read or written. Resultless instructions after the final
+scratch use do not increase it.
+
+Transition execution is a no-safepoint region. No transition instruction may
+invoke Python, trigger GC, or otherwise enter safepoint-capable VM code. Saved
+registers, stack locations, and raw scratch words therefore remain stable and
+need no transition-local root map. `ResumeInterpreter` first completes
+canonical publication and then leaves this no-safepoint region. Any future
+eligible allocation operation must use a mechanism guaranteed not to
+safepoint.
 
 ## Instruction Representation
 
@@ -111,6 +135,20 @@ detail, but construction must check that every offset fits. A reference to an
 earlier eligible Core result is `Scratch[instruction_index]`. A scratch source
 must have been initialized by an earlier instruction.
 
+`BeginTransition` is the first 16-byte entry and acts as the program header:
+
+```text
+BeginTransition
+    attribute:
+        scratch_slot_count : uint32_t
+```
+
+It has no operands or result. The executor reads it before dispatching the
+remaining entries and grows the current thread's scratch buffer when necessary.
+The count may be zero. Because the header occupies one aligned
+`InstructionEntry`, the first dispatched instruction begins at the next
+16-byte-aligned address.
+
 `Transfer` is a resultless transition instruction with an explicit destination:
 
 ```text
@@ -124,7 +162,21 @@ Transfer
 The source is an operand because it is read. The destination is an attribute
 because it is a write target rather than a use. Executing the instruction
 updates that location and produces no Core-style result. A `Transfer` that
-stages a value in scratch names the chosen scratch slot explicitly.
+stages a value in scratch explicitly names `Scratch[instruction_index]`.
+
+`ResumeInterpreter` is the initial terminal handoff instruction:
+
+```text
+ResumeInterpreter
+    attribute:
+        resume_pc : BytecodePC
+```
+
+It has no operands or result. It ends transition execution after canonical
+interpreter state has been published and identifies the bytecode continuation.
+The resume PC is therefore part of the continuous program rather than parallel
+side-exit metadata. Future transition consumers may define different terminal
+handoff instructions.
 
 Constants are not a fourth mutable storage area. Scalar constants remain inline
 attributes where the schema permits. Pointer-shaped tagged values are addressed
@@ -151,9 +203,12 @@ An eligible Core instruction:
 - has a generated transition-executor handler.
 
 Variadic instructions, resultless Core instructions, and instructions requiring
-indirect operands are excluded initially. `Transfer` is transition-only and has
-`ResultClass::None` together with its generated source-operand and
-destination-attribute layout.
+indirect operands are excluded initially. `BeginTransition` is transition-only,
+has `ResultClass::None`, and carries one inline scratch-count attribute.
+`Transfer` is transition-only and has `ResultClass::None` together with its
+generated source-operand and destination-attribute layout. `ResumeInterpreter`
+is transition-only, has `ResultClass::None`, carries one inline `BytecodePC`
+attribute, and terminates the stream.
 
 A Core instruction is initially sinkable only when all of these are true:
 
@@ -165,8 +220,9 @@ A Core instruction is initially sinkable only when all of these are true:
 - the instruction kind is transition-program eligible;
 - the instruction has no side exit;
 - the instruction does not invoke Python dispatch;
-- any allocation, mutation, identity, and failure behavior is explicitly part
-  of the transition contract.
+- it cannot safepoint or trigger GC;
+- any mutation, identity, and failure behavior is explicitly part of the
+  transition contract.
 
 Instructions such as `AddSMI` are not sinkable under this policy because their
 overflow behavior is itself a side exit. The first scalar subset should be
@@ -230,38 +286,38 @@ execution sees one dense scratch namespace.
 
 ## Transition Program Product
 
-A side exit refers to one transition program stored in immutable code-object
-metadata:
+A published transition program is a self-delimiting sequence in immutable
+code-object metadata:
 
-```cpp
-struct TransitionProgramRecord
-{
-    uint32_t scratch_slot_count;
-    uint32_t instruction_offset;
-    uint32_t instruction_count;
-};
+```text
+BeginTransition {scratch_slot_count = N}
+...
+terminal handoff
 ```
 
-The offset and count select a contiguous sequence from the compiled code
-object's transition-instruction storage. Published transition programs
-therefore do not own `std::vector`s or contain process-local pointers. A
-compiler-side builder may use ordinary growable containers before publication.
+The compiled caller refers to the first entry by a code-object-relative offset.
+`BeginTransition` supplies the scratch requirement, and the terminal handoff
+ends execution. No separate program record, instruction count, completion
+record, `std::vector`, or process-local pointer is retained. The enclosing
+code-object metadata allocation provides the outer bounds used by verification.
+A compiler-side builder may use ordinary growable containers before
+publication.
 
-`scratch_slot_count` tells the transition executor how much dense temporary
-storage to reserve. A side exit stores its `resume_pc` beside the program; a
-function adapter carries its own caller-owned completion metadata. The fixed
-saved-register layout belongs to the target thunk, while saved-register slots,
-compiled-frame locations, canonical destinations, and their source values are
-encoded by `TransitionLocation` operands and attributes.
+The fixed saved-register layout belongs to the target thunk, while
+saved-register slots, compiled-frame locations, canonical destinations, and
+their source values are encoded by `TransitionLocation` operands and
+attributes.
 
 The planner consumes a Snapshot, post-allocation `LocationAssignments`, and
 `HomeState`, but the resulting plan retains none of them. It is self-contained
 immutable metadata owned by one compiled code object. Core graph identity and
 graph generation end at planning.
 
-The selected instruction sequence contains schema-generated eligible Core
-operations and `Transfer`. Its ordering supplies every dependency. There is no
-publication offset, phase tag, or secondary transfer vector.
+The selected instruction sequence begins with `BeginTransition`, contains
+schema-generated eligible Core operations and `Transfer`, and ends with one
+terminal handoff. Its ordering supplies every dependency. There is no
+publication offset, phase tag, secondary transfer vector, or separate
+completion record.
 
 Several exits may share structurally identical compute fragments, but sharing
 is an optimization. The initial implementation may build one plan per side
@@ -310,6 +366,8 @@ representation keeps the option open by preserving:
 A later backend may omit final publication transfers that are unnecessary when
 alternate-path compilation continues without first materializing every
 canonical home. This does not divide the stored transition stream into phases.
+Transition-only transfers and terminal handoffs are not reinflated as ordinary
+Core instructions.
 
 Reinflation is one possible consumer, not part of the representation contract.
 A function adapter may instead execute or compile the same transition program
@@ -328,12 +386,18 @@ Transition-program verification should check:
   representations of its operands and result;
 - no transition step contains branches, side exits, Python dispatch, or
   unsupported fallibility;
+- transition execution contains no safepoint or GC-capable operation;
 - transfer publication has parallel-assignment semantics after lowering;
 - every required Snapshot position is either already current in `HomeState` or
   written by the transition program;
 - every encoded area and offset is valid for the owning transition;
+- `BeginTransition` is the first entry and its scratch count covers every
+  scratch location used by the program;
 - every scratch source has been initialized by an earlier instruction;
-- a side-exit transition never writes its register-file image.
+- every scratch write targets the current instruction's scratch slot;
+- a side-exit transition never writes its register-file image;
+- exactly one terminal handoff is present and it is the final instruction;
+- `ResumeInterpreter.resume_pc` is valid for the owning bytecode code object.
 
 These checks belong near transition planning and allocation-boundary
 verification. A malformed transition program is a compiler bug, not a
@@ -346,17 +410,18 @@ The first implementation should be intentionally narrow:
 - add transition eligibility to `instruction.def` and generate the restricted
   dispatch metadata;
 - define `TransitionLocation` and the three location areas;
+- add resultless `BeginTransition` with an inline scratch-slot count;
 - add transition-only `Transfer` with a source operand and destination
   attribute;
+- add resultless terminal `ResumeInterpreter` with an inline `BytecodePC`;
 - represent `TransitionProgram` and fixed saved-state inputs;
-- create transition programs for `ResumeInInterpreter` without sunk computation;
+- create transition programs for Core `ResumeInInterpreter` without sunk
+  computation, ending each with transition `ResumeInterpreter`;
 - publish canonical Snapshot state through `Transfer` instructions in the same
   transition stream;
 - expand Snapshot liveness at executable consumers;
-- add sunk-def metadata as an attachment, not an instruction flag;
-- add one or two total scalar transition-program-eligible Core operations;
-- only then consider allocation and object materialization instructions that
-  satisfy the pointer-free eligibility rules.
+- run programs with reusable per-thread scratch storage sized by
+  `BeginTransition`.
 
 This sequence validates the storage model and publication semantics before
-introducing allocation or mutation in transitions.
+adding any Core computation to transition programs.
