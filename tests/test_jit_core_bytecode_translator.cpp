@@ -48,12 +48,14 @@ namespace cl::jit
             GraphBuilder graph_builder;
         };
 
-        std::vector<Instruction *> instructions_of_kind(const Block *block,
+        std::vector<Instruction *> instructions_of_kind(Block *block,
                                                         InstructionKind kind)
         {
             std::vector<Instruction *> matches;
-            for(Instruction *instruction: block->instructions())
+            for(InstructionId instruction_id: block->instructions())
             {
+                Instruction *instruction =
+                    block->storage()->instruction(instruction_id);
                 if(instruction->kind() == kind)
                 {
                     matches.push_back(instruction);
@@ -108,7 +110,8 @@ namespace cl::jit
         EXPECT_TRUE(instructions_of_kind(entry, InstructionKind::Mov).empty());
 
         ReturnInstruction *return_instruction =
-            entry->instructions().back()->as<ReturnInstruction>();
+            entry->instruction_at(entry->instructions().size() - 1)
+                ->as<ReturnInstruction>();
         EXPECT_EQ(constants[0]->id(),
                   return_instruction->return_value().instruction_id());
     }
@@ -177,7 +180,8 @@ namespace cl::jit
         Block *fallthrough = graph->blocks()[1];
         Block *jump = graph->blocks()[2];
         ConditionalBranchInstruction *branch =
-            entry->instructions().back()->as<ConditionalBranchInstruction>();
+            entry->instruction_at(entry->instructions().size() - 1)
+                ->as<ConditionalBranchInstruction>();
 
         EXPECT_EQ(fallthrough, branch->true_edge()->target());
         EXPECT_EQ(jump, branch->false_edge()->target());
@@ -207,10 +211,9 @@ namespace cl::jit
 
         ControlFlowGraph *graph = fixture.translate();
         ASSERT_EQ(3u, graph->blocks().size());
+        Block *entry = graph->blocks()[0];
         ConditionalBranchInstruction *branch =
-            graph->blocks()[0]
-                ->instructions()
-                .back()
+            entry->instruction_at(entry->instructions().size() - 1)
                 ->as<ConditionalBranchInstruction>();
 
         EXPECT_EQ(graph->blocks()[2], branch->true_edge()->target());
@@ -235,15 +238,15 @@ namespace cl::jit
         Block *loop_block = graph->blocks()[1];
 
         UnconditionalBranchInstruction *entry_branch =
-            entry->instructions().back()->as<UnconditionalBranchInstruction>();
+            entry->instruction_at(entry->instructions().size() - 1)
+                ->as<UnconditionalBranchInstruction>();
         EXPECT_EQ(loop_block, entry_branch->edge()->target());
         size_t state_size = bytecode_state_size(*graph);
         ASSERT_EQ(state_size, entry_branch->edge()->arguments().size());
         ASSERT_EQ(state_size, loop_block->parameters().size());
 
         ConditionalBranchInstruction *loop_branch =
-            loop_block->instructions()
-                .back()
+            loop_block->instruction_at(loop_block->instructions().size() - 1)
                 ->as<ConditionalBranchInstruction>();
         EXPECT_EQ(loop_block, loop_branch->true_edge()->target());
         ASSERT_EQ(state_size, loop_branch->true_edge()->arguments().size());
@@ -288,7 +291,8 @@ namespace cl::jit
                                       .instruction_id());
 
         ReturnInstruction *return_instruction =
-            entry->instructions().back()->as<ReturnInstruction>();
+            entry->instruction_at(entry->instructions().size() - 1)
+                ->as<ReturnInstruction>();
         EXPECT_EQ(uninitialized.back()->id(),
                   return_instruction->return_value().instruction_id());
     }
@@ -306,7 +310,7 @@ namespace cl::jit
         ControlFlowGraph *graph = fixture.translate();
         Block *entry = graph->entry_block();
         ASSERT_EQ(1u, entry->parameters().size());
-        Instruction *parameter = entry->parameters().front();
+        Instruction *parameter = entry->parameter_at(0);
         std::vector<Instruction *> snapshots =
             instructions_of_kind(entry, InstructionKind::Snapshot);
         ASSERT_EQ(1u, snapshots.size());
@@ -336,7 +340,8 @@ namespace cl::jit
             instructions_of_kind(entry, InstructionKind::ResumeInInterpreter);
         ASSERT_EQ(1u, resumes.size());
         ConditionalBranchInstruction *branch =
-            entry->instructions().back()->as<ConditionalBranchInstruction>();
+            entry->instruction_at(entry->instructions().size() - 1)
+                ->as<ConditionalBranchInstruction>();
         EXPECT_EQ(InstructionKind::Uninitialized,
                   graph->storage()
                       ->instruction(branch->condition().instruction_id())

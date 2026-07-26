@@ -39,13 +39,17 @@ namespace cl::jit
             LocationAssignmentsBuilder locations;
             for(Block *block: graph.blocks())
             {
-                for(Instruction *parameter: block->parameters())
+                for(InstructionId parameter_id: block->parameters())
                 {
+                    const Instruction *parameter =
+                        graph.storage()->instruction(parameter_id);
                     locations.assign(ProgramValueRef(parameter),
                                      PhysicalLocation::reg(x0));
                 }
-                for(Instruction *instruction: block->instructions())
+                for(InstructionId instruction_id: block->instructions())
                 {
+                    const Instruction *instruction =
+                        graph.storage()->instruction(instruction_id);
                     if(instruction->result_class() == ResultClass::ProgramValue)
                     {
                         locations.assign(ProgramValueRef(instruction),

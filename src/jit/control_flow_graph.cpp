@@ -1,5 +1,6 @@
 #include "jit/control_flow_graph.h"
 
+#include "jit/compilation_storage.h"
 #include "jit/graph_queries.h"
 #include "jit/use_lists.h"
 
@@ -19,6 +20,26 @@ namespace cl::jit
         return graph_->storage();
     }
 
+    Instruction *Block::instruction_at(size_t index)
+    {
+        return storage()->instruction(instructions_.at(index));
+    }
+
+    const Instruction *Block::instruction_at(size_t index) const
+    {
+        return storage()->instruction(instructions_.at(index));
+    }
+
+    Instruction *Block::parameter_at(size_t index)
+    {
+        return storage()->instruction(parameters_.at(index));
+    }
+
+    const Instruction *Block::parameter_at(size_t index) const
+    {
+        return storage()->instruction(parameters_.at(index));
+    }
+
     ControlFlowGraph::ControlFlowGraph(Serial serial,
                                        CompilationStorage *storage)
         : serial_(serial), storage_(storage)
@@ -31,8 +52,8 @@ namespace cl::jit
     TerminatorInstruction Block::terminator() const
     {
         assert(!instructions_.empty());
-        Instruction *instruction = instructions_.back();
-        assert(instruction != nullptr);
+        Instruction *instruction =
+            graph_->storage()->instruction(instructions_.back());
         assert(instruction->is_block_terminator());
         return TerminatorInstruction(instruction);
     }
@@ -55,8 +76,9 @@ namespace cl::jit
             {
                 continue;
             }
-            Instruction *instruction = block->instructions_.back();
-            if(instruction == nullptr || !instruction->is_block_terminator())
+            Instruction *instruction =
+                storage_->instruction(block->instructions_.back());
+            if(!instruction->is_block_terminator())
             {
                 continue;
             }

@@ -26,14 +26,18 @@ namespace cl::jit
                     const Block *block =
                         problem.block_ranges()[block_index].block;
                     blocks_.emplace(block, block_index);
-                    for(const Instruction *parameter: block->parameters())
+                    for(InstructionId parameter_id: block->parameters())
                     {
+                        const Instruction *parameter =
+                            block->storage()->instruction(parameter_id);
                         instructions_.emplace(parameter, instruction_index++);
                         results_.emplace(parameter, result_index++);
                         instruction_blocks_.emplace(parameter, block);
                     }
-                    for(const Instruction *instruction: block->instructions())
+                    for(InstructionId instruction_id: block->instructions())
                     {
+                        const Instruction *instruction =
+                            block->storage()->instruction(instruction_id);
                         instructions_.emplace(instruction, instruction_index++);
                         instruction_blocks_.emplace(instruction, block);
                         if(instruction->result_class() != ResultClass::None)

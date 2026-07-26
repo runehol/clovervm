@@ -4,7 +4,7 @@
 |---|---|
 | Document type | Implementation plan |
 | Status | Accepted |
-| Implementation | Slice 4 complete |
+| Implementation | Slice 5 complete |
 | Scope | Replacing pointer-identified 48-byte JIT instructions with compact table-indexed instructions while retaining pointer-based CFG objects |
 | Owning layers | `CompilationStorage` owns compiler object lifetime and indexed lookup; the instruction schema owns physical payload layout and typed access; CFG objects own graph topology |
 | Validated against | `6bd0db58e27fab65beec822791ca0d610fc301b4` (2026-07-26) |
@@ -477,7 +477,30 @@ pointer-to-typed-reference construction still checks representation, CFG
 verification and rewrite reconstruction preserve type checks, and all existing
 IR dumps remain unchanged.
 
-### 5. Convert instruction access and CFG state to logical handles
+### 5. Move CFG instruction collections into the ID namespace
+
+Keep the existing concrete instruction objects in the transitional deque and
+keep `CompilationStorage::instruction(InstructionId)` returning their stable
+pointers. Convert each block's parameter and instruction collections from
+`Instruction *` to `InstructionId`.
+
+Builders still return typed concrete pointers while constructing the graph, but
+attachment records the pointer's ID. Graph traversal resolves collection IDs
+through the graph's borrowed storage pointer. `GraphRewriter` stages and commits
+IDs while continuing to resolve callback inputs and reconstruction operands to
+the current concrete pointers.
+
+Do not change allocator anchors, allocation constraints, transfer points,
+temporary-location keys, callback signatures, or other pointer-indexed analysis
+state in this slice. Those pointers still refer to stable concrete objects in
+the deque. Do not introduce logical instruction handles or `InstructionEntry`.
+
+Focused verification must cover parameter and body traversal by ID, terminator
+lookup, predecessor rebuilding, rewriting with insertion/replacement/removal,
+detachment after the new block collections have been committed, and unchanged
+IR and allocator output.
+
+### 6. Convert instruction access and remaining state to logical handles
 
 Make `Instruction` a table-aware logical handle containing
 `CompilationStorage *` and `InstructionId`, and make each concrete instruction
@@ -487,11 +510,12 @@ replace the transitional raw slots with `std::deque<InstructionEntry>`.
 slots; this slice does not compress or reorganize payloads.
 
 Remove the stored instruction ID field because the logical `Instruction`
-already carries the deque index. Convert block parameter and instruction lists,
-block-edge arguments, use lists, rewriter state, allocator anchors, location
-maps, emitter inputs, and instruction-indexed analysis maps from pointers to
-IDs. Operand words remain pointer-sized and retain the zero-extended instruction
-IDs introduced by the previous slice.
+already carries the deque index. Convert the remaining rewriter state,
+allocator anchors, allocation constraints, temporary-location keys, emitter
+inputs, and instruction-indexed analysis maps from pointers to IDs.
+Block-edge arguments and block instruction collections already carry IDs from
+the preceding slices. Operand words remain pointer-sized and retain the
+zero-extended instruction IDs introduced earlier.
 
 Route arbitrary result-class and representation queries through the owning
 graph's storage. Schema-generated typed operand accessors preserve their
@@ -502,13 +526,12 @@ declared reference type without re-reading the defining instruction.
 poisons the entry in the deque. It does not create auxiliary detached state or
 alter ID resolution.
 
-This remains the broadest slice, but it changes only instruction access and
-persistent CFG identity. Focused verification must establish that generic and
+Focused verification must establish that generic and
 concrete logical handles resolve the expected entry, typed downcasts preserve
 their storage and ID, detached IDs fail on access, rewriting and analyses use
 the new ID namespace consistently, and all existing IR dumps remain unchanged.
 
-### 6. Replace the transitional deque with a vector
+### 7. Replace the transitional deque with a vector
 
 Make `InstructionEntry` an ordinary trivially movable entry and replace
 `std::deque<InstructionEntry>` with `std::vector<InstructionEntry>`. No external
@@ -519,7 +542,7 @@ Focused verification must retain a live logical instruction and references
 across forced vector reallocations, then successfully access their kind,
 operands, and attributes.
 
-### 7. Compact block-edge attributes
+### 8. Compact block-edge attributes
 
 Introduce `BlockEdgeId` lookup while preserving pointer-based CFG APIs. Convert
 branch instruction attributes from `BlockEdge *` to IDs and resolve typed edge
@@ -529,7 +552,7 @@ deterministic identity.
 Keep instruction slots pointer-sized in this slice so edge identity conversion
 is tested independently from physical packing.
 
-### 8. Shrink the physical instruction representation
+### 9. Shrink the physical instruction representation
 
 Change instruction and indirect-operand words to 32 bits, reorder the stored
 instruction so its slots precede its kind/count header, and reduce the common
@@ -547,7 +570,7 @@ aligned 64-bit attributes, cover inline `AddSMI`, `Const`, and
 `PythonCall` and `Snapshot`, preserve generic operand traversal and
 reconstruction, and enforce `sizeof(InstructionEntry) == 16`.
 
-### 9. Remove transitional machinery and update measurements
+### 10. Remove transitional machinery and update measurements
 
 Remove pointer encoders, remaining serial vocabulary, and any migration-only
 helpers. Update [JIT Instruction

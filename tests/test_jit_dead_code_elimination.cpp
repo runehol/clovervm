@@ -32,8 +32,8 @@ namespace cl::jit
         ASSERT_TRUE(elimination);
         EXPECT_TRUE(std::move(elimination).value());
         ASSERT_EQ(2u, entry->instructions().size());
-        EXPECT_EQ(result, entry->instructions()[0]);
-        EXPECT_EQ(InstructionKind::Return, entry->instructions()[1]->kind());
+        EXPECT_EQ(result, entry->instruction_at(0));
+        EXPECT_EQ(InstructionKind::Return, entry->instruction_at(1)->kind());
         EXPECT_TRUE(unused->is_detached());
         EXPECT_TRUE(unused_copy->is_detached());
     }
@@ -62,7 +62,7 @@ namespace cl::jit
         EXPECT_FALSE(std::move(elimination).value());
         EXPECT_FALSE(argument->is_detached());
         ASSERT_EQ(2u, entry->instructions().size());
-        EXPECT_EQ(argument, entry->instructions()[0]);
+        EXPECT_EQ(argument, entry->instruction_at(0));
     }
 
     TEST(JitDeadCodeElimination, RemovesDeadBlockParametersAndTheirArguments)
@@ -98,7 +98,7 @@ namespace cl::jit
         EXPECT_FALSE(live_argument->is_detached());
         EXPECT_FALSE(live_parameter->is_detached());
         ASSERT_EQ(1u, exit->parameters().size());
-        EXPECT_EQ(live_parameter, exit->parameters()[0]);
+        EXPECT_EQ(live_parameter, exit->parameter_at(0));
         BlockEdge *new_edge = entry->block_successor_edges()[0];
         EXPECT_NE(old_edge, new_edge);
         ASSERT_EQ(1u, new_edge->arguments().size());
@@ -132,7 +132,7 @@ namespace cl::jit
         EXPECT_TRUE(snapshot->is_detached());
         EXPECT_TRUE(unused_add->is_detached());
         ASSERT_EQ(1u, entry->instructions().size());
-        EXPECT_EQ(InstructionKind::Return, entry->instructions()[0]->kind());
+        EXPECT_EQ(InstructionKind::Return, entry->instruction_at(0)->kind());
     }
 
     TEST(JitDeadCodeElimination, EliminatesUnusedAllocations)

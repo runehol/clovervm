@@ -213,8 +213,8 @@ namespace cl::jit
         EXPECT_TRUE(summary.normalization_remapping.empty());
         EXPECT_EQ(0u, graph->mutation_generation());
         ASSERT_EQ(2u, entry->instructions().size());
-        EXPECT_EQ(constant, entry->instructions()[0]);
-        EXPECT_EQ(return_instruction, entry->instructions()[1]);
+        EXPECT_EQ(constant, entry->instruction_at(0));
+        EXPECT_EQ(return_instruction, entry->instruction_at(1));
     }
 
     TEST(JitGraphRewriter, CompactsBlockParametersAndIncomingArguments)
@@ -263,7 +263,7 @@ namespace cl::jit
         EXPECT_TRUE(summary.terminators_changed);
         EXPECT_TRUE(exit_second->is_detached());
         ASSERT_EQ(1u, exit->parameters().size());
-        EXPECT_EQ(exit_first, exit->parameters()[0]);
+        EXPECT_EQ(exit_first, exit->parameter_at(0));
         BlockEdge *new_edge = entry->block_successor_edges()[0];
         EXPECT_NE(old_edge, new_edge);
         ASSERT_EQ(1u, new_edge->arguments().size());
@@ -337,18 +337,18 @@ namespace cl::jit
         EXPECT_TRUE(summary.terminators_changed);
         EXPECT_TRUE(old_return->is_detached());
         ASSERT_EQ(4u, entry->instructions().size());
-        EXPECT_EQ(callback.entry_move, entry->instructions()[0]);
+        EXPECT_EQ(callback.entry_move, entry->instruction_at(0));
         const MovInstruction *first_late_move =
-            entry->instructions()[1]->as<MovInstruction>();
+            entry->instruction_at(1)->as<MovInstruction>();
         const MovInstruction *second_late_move =
-            entry->instructions()[2]->as<MovInstruction>();
+            entry->instruction_at(2)->as<MovInstruction>();
         EXPECT_NE(callback.first_late_move, first_late_move);
         EXPECT_NE(callback.second_late_move, second_late_move);
         EXPECT_EQ(first_late_move,
                   summary.normalization_remapping.at(callback.first_late_move));
         EXPECT_EQ(second_late_move, summary.normalization_remapping.at(
                                         callback.second_late_move));
-        EXPECT_EQ(entry->instructions()[3],
+        EXPECT_EQ(entry->instruction_at(3),
                   summary.normalization_remapping.at(old_return));
         EXPECT_FALSE(
             summary.normalization_remapping.contains(callback.entry_move));
@@ -358,7 +358,7 @@ namespace cl::jit
                   first_late_move->source().instruction_id());
         EXPECT_EQ(first_late_move->id(),
                   second_late_move->source().instruction_id());
-        EXPECT_EQ(second_late_move->id(), entry->instructions()[3]
+        EXPECT_EQ(second_late_move->id(), entry->instruction_at(3)
                                               ->as<ReturnInstruction>()
                                               ->return_value()
                                               .instruction_id());
@@ -424,8 +424,8 @@ namespace cl::jit
         EXPECT_TRUE(summary.terminators_changed);
         EXPECT_TRUE(old_branch->is_detached());
         ASSERT_EQ(3u, entry->instructions().size());
-        EXPECT_EQ(callback.first_move, entry->instructions()[0]);
-        EXPECT_EQ(callback.second_move, entry->instructions()[1]);
+        EXPECT_EQ(callback.first_move, entry->instruction_at(0));
+        EXPECT_EQ(callback.second_move, entry->instruction_at(1));
         EXPECT_EQ(second->id(), callback.first_move->source().instruction_id());
         EXPECT_EQ(first->id(), callback.second_move->source().instruction_id());
 
@@ -436,7 +436,7 @@ namespace cl::jit
                   new_edge->arguments()[0].instruction_id());
         EXPECT_EQ(callback.second_move->id(),
                   new_edge->arguments()[1].instruction_id());
-        EXPECT_EQ(entry->instructions()[2],
+        EXPECT_EQ(entry->instruction_at(2),
                   summary.normalization_remapping.at(old_branch));
         EXPECT_FALSE(
             summary.normalization_remapping.contains(callback.first_move));
@@ -559,7 +559,7 @@ namespace cl::jit
             EXPECT_TRUE(summary.instructions_changed);
             ASSERT_NE(nullptr, folded_constant);
             EXPECT_EQ(value.raw_value(), folded_constant->constant());
-            EXPECT_EQ(folded_constant, entry->instructions()[0]);
+            EXPECT_EQ(folded_constant, entry->instruction_at(0));
             EXPECT_EQ(1, string->refcount);
         }
         EXPECT_EQ(0, string->refcount);
@@ -611,11 +611,11 @@ namespace cl::jit
         EXPECT_FALSE(second->is_detached());
         EXPECT_FALSE(return_instruction->is_detached());
         ASSERT_EQ(5u, entry->instructions().size());
-        EXPECT_EQ(prefix, entry->instructions()[0]);
-        EXPECT_EQ(first, entry->instructions()[1]);
-        EXPECT_EQ(second, entry->instructions()[2]);
-        EXPECT_EQ(suffix, entry->instructions()[3]);
-        EXPECT_EQ(return_instruction, entry->instructions()[4]);
+        EXPECT_EQ(prefix, entry->instruction_at(0));
+        EXPECT_EQ(first, entry->instruction_at(1));
+        EXPECT_EQ(second, entry->instruction_at(2));
+        EXPECT_EQ(suffix, entry->instruction_at(3));
+        EXPECT_EQ(return_instruction, entry->instruction_at(4));
         EXPECT_EQ(second->id(), suffix->source().instruction_id());
     }
 
@@ -656,7 +656,7 @@ namespace cl::jit
         EXPECT_DEATH((void)old_return->kind(), "detached JIT instruction");
         ASSERT_EQ(1u, entry->instructions().size());
         const ReturnInstruction *new_return =
-            entry->instructions()[0]->as<ReturnInstruction>();
+            entry->instruction_at(0)->as<ReturnInstruction>();
         EXPECT_EQ(new_return, summary.normalization_remapping.at(old_return));
         EXPECT_EQ(parameter->id(), new_return->return_value().instruction_id());
 
@@ -723,9 +723,9 @@ namespace cl::jit
         EXPECT_TRUE(old_move->is_detached());
         EXPECT_TRUE(old_return->is_detached());
         ASSERT_EQ(3u, entry->instructions().size());
-        EXPECT_EQ(new_constant, entry->instructions()[0]);
-        EXPECT_EQ(return_prefix, entry->instructions()[1]);
-        EXPECT_EQ(new_constant->id(), entry->instructions()[2]
+        EXPECT_EQ(new_constant, entry->instruction_at(0));
+        EXPECT_EQ(return_prefix, entry->instruction_at(1));
+        EXPECT_EQ(new_constant->id(), entry->instruction_at(2)
                                           ->as<ReturnInstruction>()
                                           ->return_value()
                                           .instruction_id());
@@ -801,7 +801,7 @@ namespace cl::jit
         EXPECT_EQ(entry, new_edge->source());
         EXPECT_EQ(exit, new_edge->target());
         ASSERT_EQ(1u, new_edge->arguments().size());
-        EXPECT_EQ(entry->instructions()[0]->id(),
+        EXPECT_EQ(entry->instructions()[0],
                   new_edge->arguments()[0].instruction_id());
         ASSERT_EQ(1u, exit->predecessor_edges().size());
         EXPECT_EQ(new_edge, exit->predecessor_edges()[0]);
@@ -851,11 +851,11 @@ namespace cl::jit
         EXPECT_TRUE(call->is_detached());
         ASSERT_EQ(4u, entry->instructions().size());
         const auto *new_callable =
-            entry->instructions()[0]->as<ConstInstruction>();
+            entry->instruction_at(0)->as<ConstInstruction>();
         const auto *new_snapshot =
-            entry->instructions()[1]->as<SnapshotInstruction>();
+            entry->instruction_at(1)->as<SnapshotInstruction>();
         const auto *new_call =
-            entry->instructions()[2]->as<PythonCallInstruction>();
+            entry->instruction_at(2)->as<PythonCallInstruction>();
         EXPECT_EQ(Value::True(), new_callable->constant());
         EXPECT_EQ(new_callable->id(),
                   new_snapshot->captured_values()[0].instruction_id());
@@ -908,8 +908,8 @@ namespace cl::jit
                    instruction.kind() == InstructionKind::Const)
                 {
                     EXPECT_EQ(2u, entry->instructions().size());
-                    EXPECT_EQ(move, entry->instructions()[0]);
-                    EXPECT_EQ(branch, entry->instructions()[1]);
+                    EXPECT_EQ(move, entry->instruction_at(0));
+                    EXPECT_EQ(branch, entry->instruction_at(1));
                     EXPECT_FALSE(move->is_detached());
                 }
                 return RewriteResult::keep();
@@ -919,11 +919,11 @@ namespace cl::jit
         EXPECT_FALSE(summary.terminators_changed);
         EXPECT_TRUE(move->is_detached());
         ASSERT_EQ(3u, entry->instructions().size());
-        const auto *first = entry->instructions()[0]->as<MovInstruction>();
-        const auto *second = entry->instructions()[1]->as<MovInstruction>();
+        const auto *first = entry->instruction_at(0)->as<MovInstruction>();
+        const auto *second = entry->instruction_at(1)->as<MovInstruction>();
         EXPECT_EQ(parameter->id(), first->source().instruction_id());
         EXPECT_EQ(first->id(), second->source().instruction_id());
-        EXPECT_EQ(branch, entry->instructions()[2]);
+        EXPECT_EQ(branch, entry->instruction_at(2));
     }
 
     TEST(JitGraphRewriter, RejectsAUseOfAnErasedDefinition)

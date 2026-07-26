@@ -416,7 +416,7 @@ namespace cl::jit
     class ProgramValueRef
     {
     public:
-        explicit ProgramValueRef(Instruction *instruction)
+        explicit ProgramValueRef(const Instruction *instruction)
             : instruction_(checked_instruction_id(instruction))
         {
         }
@@ -431,7 +431,8 @@ namespace cl::jit
         template <ValueRepresentation> friend class RepresentedValueRef;
         friend class SnapshotValueRefRange;
 
-        static InstructionId checked_instruction_id(Instruction *instruction)
+        static InstructionId
+        checked_instruction_id(const Instruction *instruction)
         {
             assert(instruction != nullptr);
             assert(instruction->result_class() == ResultClass::ProgramValue);
@@ -449,7 +450,7 @@ namespace cl::jit
     class SnapshotRef
     {
     public:
-        explicit SnapshotRef(Instruction *instruction)
+        explicit SnapshotRef(const Instruction *instruction)
             : instruction_(checked_instruction_id(instruction))
         {
         }
@@ -460,7 +461,8 @@ namespace cl::jit
         template <OperandClass, ValueRepresentation>
         friend auto decode_instruction_operand(uintptr_t);
 
-        static InstructionId checked_instruction_id(Instruction *instruction)
+        static InstructionId
+        checked_instruction_id(const Instruction *instruction)
         {
             assert(instruction != nullptr);
             assert(instruction->result_class() == ResultClass::Snapshot);
@@ -483,7 +485,7 @@ namespace cl::jit
     template <ValueRepresentation Representation> class RepresentedValueRef
     {
     public:
-        explicit RepresentedValueRef(Instruction *instruction)
+        explicit RepresentedValueRef(const Instruction *instruction)
             : reference_(instruction)
         {
             assert(instruction->value_representation() == Representation);

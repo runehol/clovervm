@@ -165,10 +165,10 @@ namespace cl::jit
         EXPECT_TRUE(graph->is_published());
 
         ASSERT_EQ(2u, entry->parameters().size());
-        EXPECT_EQ(tagged_parameter, entry->parameters()[0]);
-        EXPECT_EQ(f64_parameter, entry->parameters()[1]);
+        EXPECT_EQ(tagged_parameter, entry->parameter_at(0));
+        EXPECT_EQ(f64_parameter, entry->parameter_at(1));
         ASSERT_EQ(1u, entry->instructions().size());
-        EXPECT_EQ(return_instruction, entry->instructions()[0]);
+        EXPECT_EQ(return_instruction, entry->instruction_at(0));
     }
 
     TEST(JitCfg, ParametersMayBelongToAnyBlock)
@@ -193,7 +193,7 @@ namespace cl::jit
 
         EXPECT_TRUE(graph->is_published());
         ASSERT_EQ(1u, exit->parameters().size());
-        EXPECT_EQ(parameter, exit->parameters()[0]);
+        EXPECT_EQ(parameter, exit->parameter_at(0));
     }
 
     TEST(JitCfgVerifier, RejectsWrongBlockArgumentArity)

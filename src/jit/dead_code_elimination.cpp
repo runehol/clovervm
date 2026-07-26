@@ -74,7 +74,7 @@ namespace cl::jit
         {
             for(size_t index = 0; index < block->parameters().size(); ++index)
             {
-                block_parameters.emplace(block->parameters()[index],
+                block_parameters.emplace(block->parameter_at(index),
                                          BlockParameterPosition{block, index});
             }
         }
@@ -89,8 +89,10 @@ namespace cl::jit
         };
         for(const Block *block: graph.blocks())
         {
-            for(const Instruction *instruction: block->instructions())
+            for(InstructionId instruction_id: block->instructions())
             {
+                const Instruction *instruction =
+                    graph.storage()->instruction(instruction_id);
                 if(!instruction_can_be_eliminated(*instruction))
                 {
                     mark_live(instruction);

@@ -18,16 +18,20 @@ namespace cl::jit
 
             // Phase one: establish every block parameter as a def before
             // examining uses in the body.
-            for(const Instruction *parameter: block->parameters())
+            for(InstructionId parameter_id: block->parameters())
             {
+                const Instruction *parameter =
+                    graph.storage()->instruction(parameter_id);
                 assert(parameter != nullptr);
                 add_def(*block, *parameter);
             }
 
             // Phase two: record body defs and instruction operand uses in
             // definition order.
-            for(const Instruction *instruction: block->instructions())
+            for(InstructionId instruction_id: block->instructions())
             {
+                const Instruction *instruction =
+                    graph.storage()->instruction(instruction_id);
                 assert(instruction != nullptr);
                 add_def(*block, *instruction);
                 add_instruction_uses(*block, *instruction);

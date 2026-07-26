@@ -1,5 +1,6 @@
 #include "jit/ir_print.h"
 
+#include "jit/compilation_storage.h"
 #include "jit/control_flow_graph.h"
 #include "jit/instruction.h"
 
@@ -31,12 +32,16 @@ namespace cl::jit
                     const Block *block = graph.blocks()[index];
                     assert(block != nullptr);
                     blocks_.emplace(block, index);
-                    for(const Instruction *parameter: block->parameters())
+                    for(InstructionId parameter_id: block->parameters())
                     {
+                        const Instruction *parameter =
+                            graph.storage()->instruction(parameter_id);
                         add_result(parameter);
                     }
-                    for(const Instruction *instruction: block->instructions())
+                    for(InstructionId instruction_id: block->instructions())
                     {
+                        const Instruction *instruction =
+                            graph.storage()->instruction(instruction_id);
                         add_result(instruction);
                     }
                 }
@@ -426,7 +431,7 @@ namespace cl::jit
                     {
                         fmt::format_to(std::back_inserter(out), ", ");
                     }
-                    print_parameter(out, state, *block.parameters()[index]);
+                    print_parameter(out, state, *block.parameter_at(index));
                 }
                 fmt::format_to(std::back_inserter(out), ")");
             }
@@ -437,8 +442,10 @@ namespace cl::jit
             }
             fmt::format_to(std::back_inserter(out), ":\n");
 
-            for(const Instruction *instruction: block.instructions())
+            for(InstructionId instruction_id: block.instructions())
             {
+                const Instruction *instruction =
+                    block.storage()->instruction(instruction_id);
                 fmt::format_to(std::back_inserter(out), "  ");
                 print_instruction(out, state, *instruction);
                 fmt::format_to(std::back_inserter(out), "\n");

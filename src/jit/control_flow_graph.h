@@ -37,15 +37,20 @@ namespace cl::jit
         CompilationStorage *storage();
         const CompilationStorage *storage() const;
 
-        const std::vector<Instruction *> &instructions() const
+        const std::vector<InstructionId> &instructions() const
         {
             return instructions_;
         }
 
-        const std::vector<Instruction *> &parameters() const
+        const std::vector<InstructionId> &parameters() const
         {
             return parameters_;
         }
+
+        Instruction *instruction_at(size_t index);
+        const Instruction *instruction_at(size_t index) const;
+        Instruction *parameter_at(size_t index);
+        const Instruction *parameter_at(size_t index) const;
 
         const std::vector<BlockEdge *> &predecessor_edges() const
         {
@@ -66,12 +71,14 @@ namespace cl::jit
 
         void append_parameter(Instruction *parameter)
         {
-            parameters_.push_back(parameter);
+            assert(parameter != nullptr);
+            parameters_.push_back(parameter->id());
         }
 
         void append_instruction(Instruction *instruction)
         {
-            instructions_.push_back(instruction);
+            assert(instruction != nullptr);
+            instructions_.push_back(instruction->id());
         }
 
         void append_predecessor_edge(BlockEdge *edge)
@@ -82,8 +89,8 @@ namespace cl::jit
         Serial serial_;
         ControlFlowGraph *graph_;
         uint32_t loop_depth_ = 0;
-        std::vector<Instruction *> parameters_;
-        std::vector<Instruction *> instructions_;
+        std::vector<InstructionId> parameters_;
+        std::vector<InstructionId> instructions_;
         std::vector<BlockEdge *> predecessor_edges_;
     };
 

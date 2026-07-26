@@ -157,8 +157,8 @@ namespace cl::jit
         struct StagedBlockRewrite
         {
             Block *block;
-            std::vector<Instruction *> parameters;
-            std::vector<Instruction *> instructions;
+            std::vector<InstructionId> parameters;
+            std::vector<InstructionId> instructions;
             std::vector<Instruction *> removed_originals;
         };
 
@@ -215,7 +215,7 @@ namespace cl::jit
                 {
                     BlockParameterRewrite rewrite = callbacks.block_parameter(
                         callback, context, queries, *block, index,
-                        *block->parameters_[index]);
+                        *storage_->instruction(block->parameters_[index]));
                     bool keep =
                         rewrite.kind_ == BlockParameterRewrite::Kind::Keep;
                     retained.push_back(keep);
@@ -258,10 +258,12 @@ namespace cl::jit
                 for(size_t index = 0; index < block->parameters_.size();
                     ++index)
                 {
-                    Instruction *parameter = block->parameters_[index];
+                    InstructionId parameter_id = block->parameters_[index];
+                    Instruction *parameter =
+                        storage_->instruction(parameter_id);
                     if(retained[index])
                     {
-                        staged.parameters.push_back(parameter);
+                        staged.parameters.push_back(parameter_id);
                     }
                     else
                     {
@@ -276,8 +278,10 @@ namespace cl::jit
             DefReplacements def_replacements;
             EdgeReplacements edge_replacements;
             absl::flat_hash_set<const Instruction *> available_defs;
-            available_defs.insert(staged.parameters.begin(),
-                                  staged.parameters.end());
+            for(InstructionId parameter: staged.parameters)
+            {
+                available_defs.insert(storage_->instruction(parameter));
+            }
 
             auto process_insertion = [&](RewriteInsertion insertion) {
                 absl::flat_hash_set<const Instruction *> transfer_sources;
@@ -341,7 +345,7 @@ namespace cl::jit
                     record_normalization(proposed, normalized);
                     validate_available_operands(*storage_, *normalized,
                                                 available_defs);
-                    staged.instructions.push_back(normalized);
+                    staged.instructions.push_back(normalized->id());
                     if(normalized->result_class() != ResultClass::None)
                     {
                         available_defs.insert(normalized);
@@ -380,9 +384,9 @@ namespace cl::jit
                                                            queries, *block));
             }
 
-            for(Instruction *original: block->instructions_)
+            for(InstructionId original_id: block->instructions_)
             {
-                assert(original != nullptr);
+                Instruction *original = storage_->instruction(original_id);
                 if constexpr(HasBeforeInstructionCallback)
                 {
                     process_insertion(callbacks.before_instruction(
@@ -574,7 +578,7 @@ namespace cl::jit
                     record_normalization(proposed, normalized);
                     validate_available_operands(*storage_, *normalized,
                                                 available_defs);
-                    staged.instructions.push_back(normalized);
+                    staged.instructions.push_back(normalized->id());
                     if(normalized->result_class() != ResultClass::None)
                     {
                         available_defs.insert(normalized);
@@ -641,12 +645,13 @@ namespace cl::jit
                 size_t output_count = staged.instructions.size() - output_start;
                 bool position_unchanged =
                     output_count == 1 &&
-                    staged.instructions[output_start] == original;
+                    staged.instructions[output_start] == original->id();
                 bool original_retained = false;
                 for(size_t index = output_start;
                     index < staged.instructions.size(); ++index)
                 {
-                    original_retained |= staged.instructions[index] == original;
+                    original_retained |=
+                        staged.instructions[index] == original->id();
                 }
                 if(!original_retained)
                 {
@@ -664,7 +669,8 @@ namespace cl::jit
                     bool is_final_output =
                         index + 1 == staged.instructions.size();
                     bool emitted_terminator =
-                        staged.instructions[index]->is_block_terminator();
+                        storage_->instruction(staged.instructions[index])
+                            ->is_block_terminator();
                     if(original_is_terminator)
                     {
                         require_rewrite_invariant(
@@ -683,7 +689,8 @@ namespace cl::jit
                 {
                     require_rewrite_invariant(output_count != 0,
                                               "a terminator cannot be erased");
-                    Instruction *new_terminator = staged.instructions.back();
+                    Instruction *new_terminator =
+                        storage_->instruction(staged.instructions.back());
                     require_rewrite_invariant(
                         new_terminator->is_block_terminator(),
                         "a terminator replacement must end in a terminator");
@@ -699,7 +706,8 @@ namespace cl::jit
             require_rewrite_invariant(!staged.instructions.empty(),
                                       "a rewritten block cannot be empty");
             require_rewrite_invariant(
-                staged.instructions.back()->is_block_terminator(),
+                storage_->instruction(staged.instructions.back())
+                    ->is_block_terminator(),
                 "a rewritten block must end in a terminator");
 
             staged_blocks.push_back(std::move(staged));

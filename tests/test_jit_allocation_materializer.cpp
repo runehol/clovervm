@@ -83,7 +83,7 @@ namespace cl::jit
                           .location_for(ProgramValueRef(parameter))
                           .reg());
         ASSERT_EQ(1u, entry->instructions().size());
-        EXPECT_EQ(return_instruction, entry->instructions().front());
+        EXPECT_EQ(return_instruction, entry->instruction_at(0));
     }
 
     TEST(JitAllocationMaterializer, PublishesInstructionTemporaryLocations)
@@ -210,9 +210,9 @@ namespace cl::jit
         ASSERT_TRUE(materialized);
         ASSERT_EQ(2u, entry->instructions().size());
         LoadStackInstruction *load =
-            entry->instructions()[0]->as<LoadStackInstruction>();
+            entry->instruction_at(0)->as<LoadStackInstruction>();
         ReturnInstruction *new_return =
-            entry->instructions()[1]->as<ReturnInstruction>();
+            entry->instruction_at(1)->as<ReturnInstruction>();
         EXPECT_EQ(parameter->id(), load->source().instruction_id());
         EXPECT_EQ(load->id(), new_return->return_value().instruction_id());
         EXPECT_TRUE(old_return->is_detached());
@@ -266,11 +266,11 @@ namespace cl::jit
         ASSERT_TRUE(materialized);
         ASSERT_EQ(4u, entry->instructions().size());
         LoadStackInstruction *lhs_load =
-            entry->instructions()[0]->as<LoadStackInstruction>();
+            entry->instruction_at(0)->as<LoadStackInstruction>();
         LoadStackInstruction *rhs_load =
-            entry->instructions()[1]->as<LoadStackInstruction>();
+            entry->instruction_at(1)->as<LoadStackInstruction>();
         AndSMIInstruction *new_operation =
-            entry->instructions()[2]->as<AndSMIInstruction>();
+            entry->instruction_at(2)->as<AndSMIInstruction>();
         EXPECT_EQ(lhs->id(), lhs_load->source().instruction_id());
         EXPECT_EQ(rhs->id(), rhs_load->source().instruction_id());
         EXPECT_EQ(lhs_load->id(), new_operation->lhs().instruction_id());
@@ -313,9 +313,9 @@ namespace cl::jit
         ASSERT_TRUE(materialized);
         ASSERT_EQ(2u, entry->instructions().size());
         StoreStackInstruction *store =
-            entry->instructions()[0]->as<StoreStackInstruction>();
+            entry->instruction_at(0)->as<StoreStackInstruction>();
         ReturnInstruction *new_return =
-            entry->instructions()[1]->as<ReturnInstruction>();
+            entry->instruction_at(1)->as<ReturnInstruction>();
         EXPECT_EQ(parameter->id(), store->source().instruction_id());
         EXPECT_EQ(store->id(), new_return->return_value().instruction_id());
         EXPECT_TRUE(old_return->is_detached());
@@ -360,11 +360,11 @@ namespace cl::jit
         ASSERT_TRUE(materialized);
         ASSERT_EQ(3u, entry->instructions().size());
         LoadStackInstruction *load =
-            entry->instructions()[0]->as<LoadStackInstruction>();
+            entry->instruction_at(0)->as<LoadStackInstruction>();
         StoreStackInstruction *store =
-            entry->instructions()[1]->as<StoreStackInstruction>();
+            entry->instruction_at(1)->as<StoreStackInstruction>();
         ReturnInstruction *new_return =
-            entry->instructions()[2]->as<ReturnInstruction>();
+            entry->instruction_at(2)->as<ReturnInstruction>();
         EXPECT_EQ(parameter->id(), load->source().instruction_id());
         EXPECT_EQ(load->id(), store->source().instruction_id());
         EXPECT_EQ(store->id(), new_return->return_value().instruction_id());
@@ -417,13 +417,13 @@ namespace cl::jit
 
         ASSERT_TRUE(materialized);
         ASSERT_EQ(5u, entry->instructions().size());
-        MovInstruction *save = entry->instructions()[0]->as<MovInstruction>();
+        MovInstruction *save = entry->instruction_at(0)->as<MovInstruction>();
         MovInstruction *move_rhs =
-            entry->instructions()[1]->as<MovInstruction>();
+            entry->instruction_at(1)->as<MovInstruction>();
         MovInstruction *move_lhs =
-            entry->instructions()[2]->as<MovInstruction>();
+            entry->instruction_at(2)->as<MovInstruction>();
         AndSMIInstruction *new_operation =
-            entry->instructions()[3]->as<AndSMIInstruction>();
+            entry->instruction_at(3)->as<AndSMIInstruction>();
         EXPECT_EQ(lhs->id(), save->source().instruction_id());
         EXPECT_EQ(rhs->id(), move_rhs->source().instruction_id());
         EXPECT_EQ(save->id(), move_lhs->source().instruction_id());
@@ -486,8 +486,8 @@ namespace cl::jit
         EXPECT_EQ(RegisterAllocationError::RequiresTransferSpillSlot,
                   materialized.error());
         ASSERT_EQ(2u, entry->instructions().size());
-        EXPECT_EQ(operation, entry->instructions()[0]);
-        EXPECT_EQ(return_instruction, entry->instructions()[1]);
+        EXPECT_EQ(operation, entry->instruction_at(0));
+        EXPECT_EQ(return_instruction, entry->instruction_at(1));
     }
 
 }  // namespace cl::jit

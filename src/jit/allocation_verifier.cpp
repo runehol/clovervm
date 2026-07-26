@@ -79,8 +79,10 @@ namespace cl::jit
             }
 
             LivenessPosition entry_after = block_range.range.start.next();
-            for(const Instruction *parameter: block_range.block->parameters())
+            for(InstructionId parameter_id: block_range.block->parameters())
             {
+                const Instruction *parameter =
+                    block_range.block->storage()->instruction(parameter_id);
                 if(!parameter_positions.emplace(parameter, entry_after).second)
                 {
                     fatal("duplicate JIT allocator block parameter");
@@ -92,7 +94,7 @@ namespace cl::jit
                 LivenessPosition early(block_range.range.start.value() + 2 +
                                        index * 2);
                 const Instruction *instruction =
-                    block_range.block->instructions()[index];
+                    block_range.block->instruction_at(index);
                 if(!instruction_positions
                         .emplace(instruction,
                                  InstructionPosition{block_range.block, early,

@@ -1,5 +1,6 @@
 #include "jit/aarch64_allocation_constraints.h"
 
+#include "jit/compilation_storage.h"
 #include "jit/control_flow_graph.h"
 #include "runtime/fatal.h"
 
@@ -99,16 +100,17 @@ namespace cl::jit
         for(size_t index = 0; index < entry->parameters().size(); ++index)
         {
             overrides.push_back(
-                entry_parameter_constraints(entry->parameters()[index], index));
+                entry_parameter_constraints(entry->parameter_at(index), index));
         }
 
         for(const Block *block: graph.blocks())
         {
             assert(block != nullptr);
 
-            for(const Instruction *instruction: block->instructions())
+            for(InstructionId instruction_id: block->instructions())
             {
-                assert(instruction != nullptr);
+                const Instruction *instruction =
+                    graph.storage()->instruction(instruction_id);
                 switch(instruction->kind())
                 {
                     case InstructionKind::Const:

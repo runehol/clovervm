@@ -263,8 +263,10 @@ namespace cl::jit
             scan_block(const Block &block, LivenessPosition block_start)
             {
                 LivenessPosition entry_after = position_at(block_start, 1);
-                for(Instruction *parameter: block.parameters())
+                for(InstructionId parameter_id: block.parameters())
                 {
+                    const Instruction *parameter =
+                        graph_.storage()->instruction(parameter_id);
                     const InstructionAllocationConstraints *override =
                         override_for(parameter);
                     if(override != nullptr &&
@@ -305,8 +307,9 @@ namespace cl::jit
                     instruction_index < block.instructions().size();
                     ++instruction_index)
                 {
-                    Instruction *instruction =
-                        block.instructions()[instruction_index];
+                    const Instruction *instruction =
+                        graph_.storage()->instruction(
+                            block.instructions()[instruction_index]);
                     LivenessPosition early =
                         position_at(block_start, 2 + instruction_index * 2);
                     LivenessPosition late = early.next();

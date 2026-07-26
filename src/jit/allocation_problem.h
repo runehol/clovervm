@@ -187,13 +187,13 @@ namespace cl::jit
             Temporary,
         };
 
-        static LiveRangeOrigin program_value(Instruction *definition)
+        static LiveRangeOrigin program_value(const Instruction *definition)
         {
             assert(definition != nullptr);
             assert(definition->result_class() == ResultClass::ProgramValue);
             return {Kind::ProgramValue, definition, 0};
         }
-        static LiveRangeOrigin temporary(Instruction *instruction,
+        static LiveRangeOrigin temporary(const Instruction *instruction,
                                          size_t temporary_index)
         {
             assert(instruction != nullptr);
@@ -214,13 +214,13 @@ namespace cl::jit
         }
 
     private:
-        LiveRangeOrigin(Kind kind, Instruction *instruction, size_t index)
+        LiveRangeOrigin(Kind kind, const Instruction *instruction, size_t index)
             : kind_(kind), instruction_(instruction), index_(index)
         {
         }
 
         Kind kind_;
-        Instruction *instruction_;
+        const Instruction *instruction_;
         size_t index_;
     };
 

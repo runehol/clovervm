@@ -1,6 +1,7 @@
 #ifndef CL_JIT_INSTRUCTION_TRAVERSAL_H
 #define CL_JIT_INSTRUCTION_TRAVERSAL_H
 
+#include "jit/compilation_storage.h"
 #include "jit/graph_queries.h"
 
 #include <cassert>
@@ -56,9 +57,10 @@ namespace cl::jit
                 for(const Block *block: graph.blocks())
                 {
                     assert(block != nullptr);
-                    for(const Instruction *instruction: block->instructions())
+                    for(InstructionId instruction_id: block->instructions())
                     {
-                        assert(instruction != nullptr);
+                        const Instruction *instruction =
+                            graph.storage()->instruction(instruction_id);
                         std::invoke(callback, queries, *block, *instruction);
                     }
                 }

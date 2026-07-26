@@ -80,8 +80,8 @@ namespace cl::jit
         void emit_identity_test(AArch64MacroAssembler &assembler,
                                 const LocationAssignments &locations,
                                 AArch64Condition condition,
-                                Instruction *instruction, ProgramValueRef lhs,
-                                ProgramValueRef rhs)
+                                const Instruction *instruction,
+                                ProgramValueRef lhs, ProgramValueRef rhs)
         {
             XRegister result =
                 assigned_register(locations, ProgramValueRef(instruction));
@@ -118,14 +118,18 @@ namespace cl::jit
         assert(entry != nullptr);
         assert(graph.blocks()[0] == entry);
         assert(entry->predecessor_edges().empty());
-        for(const Instruction *parameter: entry->parameters())
+        for(InstructionId parameter_id: entry->parameters())
         {
+            const Instruction *parameter =
+                graph.storage()->instruction(parameter_id);
             (void)parameter;
             assert(parameter->kind() == InstructionKind::Parameter);
         }
 
-        for(Instruction *instruction: entry->instructions())
+        for(InstructionId instruction_id: entry->instructions())
         {
+            const Instruction *instruction =
+                graph.storage()->instruction(instruction_id);
             // clang-format off
             CL_JIT_INSTRUCTION_SWITCH(*instruction)
             {

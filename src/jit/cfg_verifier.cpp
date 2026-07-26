@@ -114,14 +114,11 @@ namespace cl::jit
 
         for(const Block *block: blocks)
         {
-            const std::vector<Instruction *> &parameters = block->parameters();
-            for(const Instruction *parameter: parameters)
+            const std::vector<InstructionId> &parameters = block->parameters();
+            for(InstructionId parameter_id: parameters)
             {
-                if(parameter == nullptr)
-                {
-                    return invalid(block_name(block) +
-                                   " contains a null block parameter");
-                }
+                const Instruction *parameter =
+                    graph.storage()->instruction(parameter_id);
                 if(parameter->is_detached())
                 {
                     return invalid(block_name(block) + " contains detached " +
@@ -146,7 +143,7 @@ namespace cl::jit
                 }
             }
 
-            const std::vector<Instruction *> &instructions =
+            const std::vector<InstructionId> &instructions =
                 block->instructions();
             if(instructions.empty())
             {
@@ -155,12 +152,8 @@ namespace cl::jit
 
             for(size_t index = 0; index < instructions.size(); ++index)
             {
-                const Instruction *instruction = instructions[index];
-                if(instruction == nullptr)
-                {
-                    return invalid(block_name(block) +
-                                   " contains a null instruction");
-                }
+                const Instruction *instruction =
+                    graph.storage()->instruction(instructions[index]);
                 if(instruction->is_detached())
                 {
                     return invalid(block_name(block) + " contains detached " +
@@ -199,7 +192,8 @@ namespace cl::jit
                 }
             }
 
-            TerminatorInstruction terminator(instructions.back());
+            TerminatorInstruction terminator(
+                graph.storage()->instruction(instructions.back()));
             TerminatorInstruction::BlockSuccessorEdges successors =
                 terminator.block_successor_edges();
             size_t expected = expected_successor_count(terminator.kind());
@@ -306,7 +300,7 @@ namespace cl::jit
         {
             for(const BlockEdge *edge: block->block_successor_edges())
             {
-                const std::vector<Instruction *> &parameters =
+                const std::vector<InstructionId> &parameters =
                     edge->target()->parameters();
                 const std::vector<ProgramValueRef> &arguments =
                     edge->arguments();
@@ -323,7 +317,9 @@ namespace cl::jit
                     const Instruction *argument = graph.storage()->instruction(
                         arguments[index].instruction_id());
                     if(argument->value_representation() !=
-                       parameters[index]->value_representation())
+                       graph.storage()
+                           ->instruction(parameters[index])
+                           ->value_representation())
                     {
                         return invalid(edge_name(edge) + " argument " +
                                        std::to_string(index) +
@@ -338,13 +334,16 @@ namespace cl::jit
         for(const Block *block: blocks)
         {
             absl::flat_hash_set<const Instruction *> available_definitions;
-            for(const Instruction *parameter: block->parameters())
+            for(InstructionId parameter_id: block->parameters())
             {
-                available_definitions.insert(parameter);
+                available_definitions.insert(
+                    graph.storage()->instruction(parameter_id));
             }
 
-            for(const Instruction *instruction: block->instructions())
+            for(InstructionId instruction_id: block->instructions())
             {
+                const Instruction *instruction =
+                    graph.storage()->instruction(instruction_id);
                 std::string reference_error;
                 visit_operand_references(
                     *instruction,
