@@ -649,6 +649,11 @@ ShapeGuard
     result: ProgramValue(TaggedValue)
     object: ProgramValue(TaggedValue)
     expected_shape: attr Shape
+    snapshot: Snapshot
+
+ValidityCellGuard
+    result: ProgramValue(TaggedValue)
+    value: ProgramValue(TaggedValue)
     validity: attr ValidityCell
     snapshot: Snapshot
 

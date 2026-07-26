@@ -636,13 +636,11 @@ namespace cl::jit
     //     TaggedValueRef object() const;
     //     SnapshotRef snapshot() const;
     //     Shape *expected_shape() const;
-    //     ValidityCell *validity() const;
     //
     // private:
     //     friend class InstructionPool;
     //     ShapeGuardInstruction(uint32_t serial, TaggedValueRef object,
-    //                           SnapshotRef snapshot, Shape *expected_shape,
-    //                           ValidityCell *validity);
+    //                           SnapshotRef snapshot, Shape *expected_shape);
     // };
     //
     // Variadic classes additionally expose n_indirect_slots_for(...), and

@@ -210,6 +210,16 @@ namespace cl::jit
                       decltype(std::declval<const ShapeGuardInstruction &>()
                                    .expected_shape()),
                       Shape *>);
+        static_assert(
+            std::is_same_v<
+                decltype(std::declval<const ValidityCellGuardInstruction &>()
+                             .value()),
+                TaggedValueRef>);
+        static_assert(
+            std::is_same_v<
+                decltype(std::declval<const ValidityCellGuardInstruction &>()
+                             .validity()),
+                ValidityCell *>);
         static_assert(std::is_same_v<
                       decltype(std::declval<const PythonCallInstruction &>()
                                    .arguments()),

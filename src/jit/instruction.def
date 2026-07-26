@@ -213,8 +213,7 @@ CL_JIT_INSTRUCTION(UnboxF64, CL_JIT_IR_LEVELS(Core),
     fixed(object, ProgramValue, TaggedValue)                                   \
     fixed(snapshot, Snapshot, None)
 #define CL_JIT_ShapeGuard_ATTRIBUTES(attribute)                               \
-    attribute(expected_shape, Shape)                                           \
-    attribute(validity, ValidityCell)
+    attribute(expected_shape, Shape)
 CL_JIT_INSTRUCTION(ShapeGuard, CL_JIT_IR_LEVELS(Core),
                    CL_JIT_RESULT(ProgramValue, TaggedValue),
                    CL_JIT_EFFECT_BOUNDS(None, SideExit),
@@ -222,6 +221,19 @@ CL_JIT_INSTRUCTION(ShapeGuard, CL_JIT_IR_LEVELS(Core),
                    CL_JIT_ShapeGuard_ATTRIBUTES)
 #undef CL_JIT_ShapeGuard_ATTRIBUTES
 #undef CL_JIT_ShapeGuard_OPERANDS
+
+#define CL_JIT_ValidityCellGuard_OPERANDS(fixed, variadic, snapshot_values)    \
+    fixed(value, ProgramValue, TaggedValue)                                    \
+    fixed(snapshot, Snapshot, None)
+#define CL_JIT_ValidityCellGuard_ATTRIBUTES(attribute)                        \
+    attribute(validity, ValidityCell)
+CL_JIT_INSTRUCTION(ValidityCellGuard, CL_JIT_IR_LEVELS(Core),
+                   CL_JIT_RESULT(ProgramValue, TaggedValue),
+                   CL_JIT_EFFECT_BOUNDS(None, SideExit),
+                   CL_JIT_ValidityCellGuard_OPERANDS,
+                   CL_JIT_ValidityCellGuard_ATTRIBUTES)
+#undef CL_JIT_ValidityCellGuard_ATTRIBUTES
+#undef CL_JIT_ValidityCellGuard_OPERANDS
 
 #define CL_JIT_ShapeKeyGuard_OPERANDS(fixed, variadic, snapshot_values)       \
     fixed(object, ProgramValue, TaggedValue)                                   \
