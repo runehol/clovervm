@@ -3,7 +3,7 @@
 
 #include "jit/control_flow_graph.h"
 #include "jit/instruction.h"
-#include "jit/instruction_side_data.h"
+#include "jit/instruction_operand_table.h"
 #include "jit/object_pool.h"
 
 #include <span>
@@ -59,8 +59,8 @@ namespace cl::jit
             if constexpr(T::OperandsAreIndirect)
             {
                 size_t n_indirect_slots = T::n_indirect_slots_for(args...);
-                InstructionSideDataAllocation indirect =
-                    instruction_side_data_.allocate_words(n_indirect_slots);
+                InstructionOperandTable::Allocation indirect =
+                    instruction_operands_.allocate(n_indirect_slots);
                 instructions_.push_back(
                     T::make_entry(indirect.offset, indirect.words,
                                   std::forward<Args>(args)...));
@@ -79,14 +79,14 @@ namespace cl::jit
         BlockEdgeId next_block_edge_id() const;
         const InstructionEntry &instruction_entry(InstructionId id) const;
         std::span<const Instruction::Slot>
-        instruction_side_data(uint32_t offset, size_t count) const;
+        instruction_operands(uint32_t offset, size_t count) const;
         void detach_instruction(InstructionId id);
 
         ObjectPool<ControlFlowGraph> graphs_;
         ObjectPool<Block> blocks_;
         std::deque<BlockEdge> block_edges_;
         std::vector<InstructionEntry> instructions_;
-        InstructionSideDataPool instruction_side_data_;
+        InstructionOperandTable instruction_operands_;
     };
 
 }  // namespace cl::jit

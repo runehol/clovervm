@@ -36,10 +36,10 @@ namespace cl::jit
     }
 
     std::span<const Instruction::Slot>
-    CompilationStorage::instruction_side_data(uint32_t offset,
-                                              size_t count) const
+    CompilationStorage::instruction_operands(uint32_t offset,
+                                             size_t count) const
     {
-        return instruction_side_data_.words(offset, count);
+        return instruction_operands_.words(offset, count);
     }
 
     void CompilationStorage::detach_instruction(InstructionId id)

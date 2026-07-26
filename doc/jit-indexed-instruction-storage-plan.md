@@ -62,7 +62,7 @@ private:
     ControlFlowGraph *make_graph(); // Constructs the graph with `this`.
 
     std::vector<InstructionEntry> instructions_;
-    InstructionSideTable instruction_side_data_;
+    InstructionOperandTable instruction_operands_;
 
     ObjectPool<ControlFlowGraph> graphs_;
     ObjectPool<Block> blocks_;
@@ -412,7 +412,7 @@ lookup.
 
 The slab-backed `InstructionPool` disappears in this slice. The unchanged
 indirect-operand allocator moves to the separately named
-`InstructionSideDataPool` component.
+`InstructionOperandTable` component.
 
 Rename the stored instruction serial to `InstructionId`. During this transition
 the ID field supports pointer-to-ID conversion for old callers; it ceases to be

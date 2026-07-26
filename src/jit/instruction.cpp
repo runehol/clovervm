@@ -44,8 +44,8 @@ namespace cl::jit
         {
             return slot(index);
         }
-        return storage_->instruction_side_data(slot(IndirectOperandSlot),
-                                               operand_count())[index];
+        return storage_->instruction_operands(slot(IndirectOperandSlot),
+                                              operand_count())[index];
     }
 
     namespace

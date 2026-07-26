@@ -524,11 +524,6 @@ namespace cl::jit
         InstructionId instruction_;
     };
 
-    inline uint32_t instruction_reference_word(InstructionId instruction)
-    {
-        return instruction.value();
-    }
-
     template <ValueRepresentation Representation> class RepresentedValueRef
     {
     public:
@@ -715,22 +710,22 @@ namespace cl::jit
 
     inline uint32_t encode_instruction_operand(TaggedValueRef reference)
     {
-        return instruction_reference_word(reference.instruction_id());
+        return reference.instruction_id().value();
     }
 
     inline uint32_t encode_instruction_operand(ProgramValueRef reference)
     {
-        return instruction_reference_word(reference.instruction_id());
+        return reference.instruction_id().value();
     }
 
     inline uint32_t encode_instruction_operand(F64Ref reference)
     {
-        return instruction_reference_word(reference.instruction_id());
+        return reference.instruction_id().value();
     }
 
     inline uint32_t encode_instruction_operand(SnapshotRef reference)
     {
-        return instruction_reference_word(reference.instruction_id());
+        return reference.instruction_id().value();
     }
 
     inline void encode_instruction_attribute_Shape(uint32_t *words,

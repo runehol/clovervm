@@ -136,8 +136,8 @@ add_library(libclovervm_objects OBJECT
     jit/instruction_traversal.h
     jit/ir_print.cpp
     jit/ir_print.h
-    jit/instruction_side_data.cpp
-    jit/instruction_side_data.h
+    jit/instruction_operand_table.cpp
+    jit/instruction_operand_table.h
     jit/jit_compilation_error.h
     jit/jit_compiler.cpp
     jit/jit_compiler.h
