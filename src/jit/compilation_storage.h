@@ -10,10 +10,9 @@
 
 #include <cstddef>
 #include <cstdint>
-#include <deque>
-#include <new>
 #include <type_traits>
 #include <utility>
+#include <vector>
 
 namespace cl::jit
 {
@@ -81,7 +80,7 @@ namespace cl::jit
         ObjectPool<ControlFlowGraph> graphs_;
         ObjectPool<Block> blocks_;
         ObjectPool<BlockEdge> block_edges_;
-        std::deque<InstructionEntry> instructions_;
+        std::vector<InstructionEntry> instructions_;
         InstructionSideDataPool instruction_side_data_;
     };
 

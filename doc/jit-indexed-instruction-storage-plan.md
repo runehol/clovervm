@@ -4,7 +4,7 @@
 |---|---|
 | Document type | Implementation plan |
 | Status | Accepted |
-| Implementation | Slice 6 complete |
+| Implementation | Slice 7 complete |
 | Scope | Replacing pointer-identified 48-byte JIT instructions with compact table-indexed instructions while retaining pointer-based CFG objects |
 | Owning layers | `CompilationStorage` owns compiler object lifetime and indexed lookup; the instruction schema owns physical payload layout and typed access; CFG objects own graph topology |
 | Validated against | `6bd0db58e27fab65beec822791ca0d610fc301b4` (2026-07-26) |

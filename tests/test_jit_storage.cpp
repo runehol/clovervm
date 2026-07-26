@@ -140,11 +140,29 @@ namespace cl::jit
         static_assert(sizeof(InstructionEntry) == 48);
         static_assert(sizeof(Instruction) == 16);
         static_assert(sizeof(InstructionId) == sizeof(uint32_t));
+        static_assert(std::is_trivially_copyable_v<InstructionEntry>);
         static_assert(std::is_trivially_destructible_v<Instruction>);
 
         CompilationSession session;
         GraphBuilder builder(session);
         std::vector<Instruction> instructions;
+
+        ParameterInstruction lhs =
+            builder.make_instruction<ParameterInstruction>();
+        ParameterInstruction rhs =
+            builder.make_instruction<ParameterInstruction>();
+        SnapshotInstruction snapshot =
+            builder.make_instruction<SnapshotInstruction>(
+                std::span<const ProgramValueRef>{}, BytecodePC{17});
+        AddSMIInstruction add = builder.make_instruction<AddSMIInstruction>(
+            TaggedValueRef(lhs), TaggedValueRef(rhs), SnapshotRef(snapshot));
+        ConstInstruction constant =
+            builder.make_instruction<ConstInstruction>(Value::False());
+        TaggedValueRef lhs_reference(lhs);
+        SnapshotRef snapshot_reference(snapshot);
+        instructions.insert(instructions.end(),
+                            {lhs, rhs, snapshot, add, constant});
+
         for(size_t index = 0; index < 4096; ++index)
         {
             instructions.push_back(
@@ -157,12 +175,24 @@ namespace cl::jit
             EXPECT_EQ(index, instruction.id().value());
             EXPECT_EQ(instruction,
                       session.storage()->instruction(instruction.id()));
-            EXPECT_EQ(InstructionKind::Parameter, instruction.kind());
+            if(index >= 5)
+            {
+                EXPECT_EQ(InstructionKind::Parameter, instruction.kind());
+            }
         }
 
         const CompilationStorage *storage = session.storage();
         EXPECT_EQ(instructions.front(),
                   storage->instruction(instructions.front().id()));
+        EXPECT_EQ(InstructionKind::Parameter, lhs.kind());
+        EXPECT_EQ(Value::False(), constant.constant());
+        EXPECT_EQ(lhs.id(), add.lhs().instruction_id());
+        EXPECT_EQ(rhs.id(), add.rhs().instruction_id());
+        EXPECT_EQ(snapshot.id(), add.snapshot().instruction_id());
+        EXPECT_EQ(BytecodePC{17}, snapshot.resume_pc());
+        EXPECT_TRUE(snapshot.captured_values().empty());
+        EXPECT_EQ(lhs.id(), lhs_reference.instruction_id());
+        EXPECT_EQ(snapshot.id(), snapshot_reference.instruction_id());
     }
 
     TEST(JitInstructionSchema, GeneratesIntrinsicMetadata)
