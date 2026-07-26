@@ -115,15 +115,19 @@ namespace cl::jit
                 case OccurrenceAnchor::Kind::InstructionOperand:
                 case OccurrenceAnchor::Kind::InstructionTemporary:
                     return TransferPoint::before_instruction(
-                        occurrence.anchor.instruction());
+                        source.block->storage()->instruction(
+                            occurrence.anchor.instruction_id()));
                 case OccurrenceAnchor::Kind::InstructionResult:
                     if(is_block_parameter_kind(
-                           occurrence.anchor.instruction()->kind()))
+                           source.block->storage()
+                               ->instruction(occurrence.anchor.instruction_id())
+                               .kind()))
                     {
                         return TransferPoint::block_entry(source.block);
                     }
                     return TransferPoint::before_instruction(
-                        occurrence.anchor.instruction());
+                        source.block->storage()->instruction(
+                            occurrence.anchor.instruction_id()));
                 case OccurrenceAnchor::Kind::BlockEdgeArgument:
                     return TransferPoint::block_exit(
                         occurrence.anchor.block_edge()->source());

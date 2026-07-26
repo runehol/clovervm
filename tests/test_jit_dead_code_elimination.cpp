@@ -16,12 +16,12 @@ namespace cl::jit
         CompilationSession session;
         GraphBuilder builder(session);
         Block *entry = builder.emplace_block();
-        ConstInstruction *unused =
+        ConstInstruction unused =
             builder.emplace_instruction<ConstInstruction>(entry, Value::None());
-        MovInstruction *unused_copy =
+        MovInstruction unused_copy =
             builder.emplace_instruction<MovInstruction>(entry,
                                                         TaggedValueRef(unused));
-        ConstInstruction *result =
+        ConstInstruction result =
             builder.emplace_instruction<ConstInstruction>(entry, Value::True());
         builder.emplace_instruction<ReturnInstruction>(entry,
                                                        TaggedValueRef(result));
@@ -33,9 +33,9 @@ namespace cl::jit
         EXPECT_TRUE(std::move(elimination).value());
         ASSERT_EQ(2u, entry->instructions().size());
         EXPECT_EQ(result, entry->instruction_at(0));
-        EXPECT_EQ(InstructionKind::Return, entry->instruction_at(1)->kind());
-        EXPECT_TRUE(unused->is_detached());
-        EXPECT_TRUE(unused_copy->is_detached());
+        EXPECT_EQ(InstructionKind::Return, entry->instruction_at(1).kind());
+        EXPECT_TRUE(unused.is_detached());
+        EXPECT_TRUE(unused_copy.is_detached());
     }
 
     TEST(JitDeadCodeElimination, RetainsValuesPassedAcrossBlockEdges)
@@ -44,13 +44,13 @@ namespace cl::jit
         GraphBuilder builder(session);
         Block *entry = builder.emplace_block();
         Block *exit = builder.emplace_block();
-        ConstInstruction *argument =
+        ConstInstruction argument =
             builder.emplace_instruction<ConstInstruction>(entry, Value::True());
         std::array<ProgramValueRef, 1> arguments = {ProgramValueRef(argument)};
         BlockEdge *edge = builder.make_block_edge(entry, exit, arguments);
         builder.emplace_instruction<UnconditionalBranchInstruction>(entry,
                                                                     edge);
-        ParameterInstruction *parameter =
+        ParameterInstruction parameter =
             builder.emplace_parameter<ParameterInstruction>(exit);
         builder.emplace_instruction<ReturnInstruction>(
             exit, TaggedValueRef(parameter));
@@ -60,7 +60,7 @@ namespace cl::jit
 
         ASSERT_TRUE(elimination);
         EXPECT_FALSE(std::move(elimination).value());
-        EXPECT_FALSE(argument->is_detached());
+        EXPECT_FALSE(argument.is_detached());
         ASSERT_EQ(2u, entry->instructions().size());
         EXPECT_EQ(argument, entry->instruction_at(0));
     }
@@ -71,19 +71,19 @@ namespace cl::jit
         GraphBuilder builder(session);
         Block *entry = builder.emplace_block();
         Block *exit = builder.emplace_block();
-        ConstInstruction *dead_argument =
+        ConstInstruction dead_argument =
             builder.emplace_instruction<ConstInstruction>(entry,
                                                           Value::False());
-        ConstInstruction *live_argument =
+        ConstInstruction live_argument =
             builder.emplace_instruction<ConstInstruction>(entry, Value::True());
         std::array<ProgramValueRef, 2> arguments = {
             ProgramValueRef(dead_argument), ProgramValueRef(live_argument)};
         BlockEdge *old_edge = builder.make_block_edge(entry, exit, arguments);
         builder.emplace_instruction<UnconditionalBranchInstruction>(entry,
                                                                     old_edge);
-        ParameterInstruction *dead_parameter =
+        ParameterInstruction dead_parameter =
             builder.emplace_parameter<ParameterInstruction>(exit);
-        ParameterInstruction *live_parameter =
+        ParameterInstruction live_parameter =
             builder.emplace_parameter<ParameterInstruction>(exit);
         builder.emplace_instruction<ReturnInstruction>(
             exit, TaggedValueRef(live_parameter));
@@ -93,16 +93,16 @@ namespace cl::jit
 
         ASSERT_TRUE(elimination);
         EXPECT_TRUE(std::move(elimination).value());
-        EXPECT_TRUE(dead_argument->is_detached());
-        EXPECT_TRUE(dead_parameter->is_detached());
-        EXPECT_FALSE(live_argument->is_detached());
-        EXPECT_FALSE(live_parameter->is_detached());
+        EXPECT_TRUE(dead_argument.is_detached());
+        EXPECT_TRUE(dead_parameter.is_detached());
+        EXPECT_FALSE(live_argument.is_detached());
+        EXPECT_FALSE(live_parameter.is_detached());
         ASSERT_EQ(1u, exit->parameters().size());
         EXPECT_EQ(live_parameter, exit->parameter_at(0));
         BlockEdge *new_edge = entry->block_successor_edges()[0];
         EXPECT_NE(old_edge, new_edge);
         ASSERT_EQ(1u, new_edge->arguments().size());
-        EXPECT_EQ(live_argument->id(),
+        EXPECT_EQ(live_argument.id(),
                   new_edge->arguments()[0].instruction_id());
     }
 
@@ -111,13 +111,13 @@ namespace cl::jit
         CompilationSession session;
         GraphBuilder builder(session);
         Block *entry = builder.emplace_block();
-        ParameterInstruction *parameter =
+        ParameterInstruction parameter =
             builder.emplace_parameter<ParameterInstruction>(entry);
         std::array<ProgramValueRef, 1> captured = {ProgramValueRef(parameter)};
-        SnapshotInstruction *snapshot =
+        SnapshotInstruction snapshot =
             builder.emplace_instruction<SnapshotInstruction>(entry, captured,
                                                              BytecodePC{7});
-        AddSMIInstruction *unused_add =
+        AddSMIInstruction unused_add =
             builder.emplace_instruction<AddSMIInstruction>(
                 entry, TaggedValueRef(parameter), TaggedValueRef(parameter),
                 SnapshotRef(snapshot));
@@ -129,10 +129,10 @@ namespace cl::jit
 
         ASSERT_TRUE(elimination);
         EXPECT_TRUE(std::move(elimination).value());
-        EXPECT_TRUE(snapshot->is_detached());
-        EXPECT_TRUE(unused_add->is_detached());
+        EXPECT_TRUE(snapshot.is_detached());
+        EXPECT_TRUE(unused_add.is_detached());
         ASSERT_EQ(1u, entry->instructions().size());
-        EXPECT_EQ(InstructionKind::Return, entry->instruction_at(0)->kind());
+        EXPECT_EQ(InstructionKind::Return, entry->instruction_at(0).kind());
     }
 
     TEST(JitDeadCodeElimination, EliminatesUnusedAllocations)
@@ -140,11 +140,11 @@ namespace cl::jit
         CompilationSession session;
         GraphBuilder builder(session);
         Block *entry = builder.emplace_block();
-        ParameterInstruction *result =
+        ParameterInstruction result =
             builder.emplace_parameter<ParameterInstruction>(entry);
-        ParameterF64Instruction *value =
+        ParameterF64Instruction value =
             builder.emplace_parameter<ParameterF64Instruction>(entry);
-        BoxF64Instruction *unused_box =
+        BoxF64Instruction unused_box =
             builder.emplace_instruction<BoxF64Instruction>(entry,
                                                            F64Ref(value));
         builder.emplace_instruction<ReturnInstruction>(entry,
@@ -155,7 +155,7 @@ namespace cl::jit
 
         ASSERT_TRUE(elimination);
         EXPECT_TRUE(std::move(elimination).value());
-        EXPECT_TRUE(unused_box->is_detached());
+        EXPECT_TRUE(unused_box.is_detached());
         ASSERT_EQ(1u, entry->instructions().size());
     }
 
@@ -164,12 +164,12 @@ namespace cl::jit
         CompilationSession session;
         GraphBuilder builder(session);
         Block *entry = builder.emplace_block();
-        ParameterInstruction *parameter =
+        ParameterInstruction parameter =
             builder.emplace_parameter<ParameterInstruction>(entry);
-        SnapshotInstruction *snapshot =
+        SnapshotInstruction snapshot =
             builder.emplace_instruction<SnapshotInstruction>(
                 entry, std::span<const ProgramValueRef>{}, BytecodePC{7});
-        CheckNotImplementedInstruction *check =
+        CheckNotImplementedInstruction check =
             builder.emplace_instruction<CheckNotImplementedInstruction>(
                 entry, TaggedValueRef(parameter), SnapshotRef(snapshot));
         builder.emplace_instruction<ReturnInstruction>(
@@ -180,8 +180,8 @@ namespace cl::jit
 
         ASSERT_TRUE(elimination);
         EXPECT_FALSE(std::move(elimination).value());
-        EXPECT_FALSE(snapshot->is_detached());
-        EXPECT_FALSE(check->is_detached());
+        EXPECT_FALSE(snapshot.is_detached());
+        EXPECT_FALSE(check.is_detached());
         ASSERT_EQ(3u, entry->instructions().size());
     }
 
@@ -190,12 +190,12 @@ namespace cl::jit
         CompilationSession session;
         GraphBuilder builder(session);
         Block *entry = builder.emplace_block();
-        ParameterInstruction *parameter =
+        ParameterInstruction parameter =
             builder.emplace_parameter<ParameterInstruction>(entry);
-        SnapshotInstruction *snapshot =
+        SnapshotInstruction snapshot =
             builder.emplace_instruction<SnapshotInstruction>(
                 entry, std::span<const ProgramValueRef>{}, BytecodePC{7});
-        PythonCallInstruction *unused_call =
+        PythonCallInstruction unused_call =
             builder.emplace_instruction<PythonCallInstruction>(
                 entry, TaggedValueRef(parameter), SnapshotRef(snapshot),
                 std::span<const TaggedValueRef>{}, BytecodePC{7});
@@ -207,8 +207,8 @@ namespace cl::jit
 
         ASSERT_TRUE(elimination);
         EXPECT_FALSE(std::move(elimination).value());
-        EXPECT_FALSE(snapshot->is_detached());
-        EXPECT_FALSE(unused_call->is_detached());
+        EXPECT_FALSE(snapshot.is_detached());
+        EXPECT_FALSE(unused_call.is_detached());
         ASSERT_EQ(3u, entry->instructions().size());
     }
 

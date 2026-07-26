@@ -39,13 +39,9 @@ namespace cl::jit
             return "block edge e" + std::to_string(edge->serial().value());
         }
 
-        std::string instruction_name(const Instruction *instruction)
+        std::string instruction_name(Instruction instruction)
         {
-            if(instruction == nullptr)
-            {
-                return "null instruction";
-            }
-            return "instruction i" + std::to_string(instruction->id().value());
+            return "instruction i" + std::to_string(instruction.id().value());
         }
 
         bool is_core_instruction(InstructionKind kind)
@@ -109,7 +105,7 @@ namespace cl::jit
                            "graph");
         }
 
-        absl::flat_hash_set<const Instruction *> instruction_set;
+        absl::flat_hash_set<InstructionId> instruction_set;
         absl::flat_hash_map<const BlockEdge *, size_t> outgoing_edge_uses;
 
         for(const Block *block: blocks)
@@ -117,25 +113,25 @@ namespace cl::jit
             const std::vector<InstructionId> &parameters = block->parameters();
             for(InstructionId parameter_id: parameters)
             {
-                const Instruction *parameter =
+                Instruction parameter =
                     graph.storage()->instruction(parameter_id);
-                if(parameter->is_detached())
+                if(parameter.is_detached())
                 {
                     return invalid(block_name(block) + " contains detached " +
                                    instruction_name(parameter));
                 }
-                if(!is_block_parameter_kind(parameter->kind()))
+                if(!is_block_parameter_kind(parameter.kind()))
                 {
                     return invalid(instruction_name(parameter) + " in " +
                                    block_name(block) +
                                    " is not a block-parameter instruction");
                 }
-                if(!is_core_instruction(parameter->kind()))
+                if(!is_core_instruction(parameter.kind()))
                 {
                     return invalid(instruction_name(parameter) +
                                    " is not legal in Core IR");
                 }
-                if(!instruction_set.insert(parameter).second)
+                if(!instruction_set.insert(parameter.id()).second)
                 {
                     return invalid(instruction_name(parameter) +
                                    " belongs to more than one instruction "
@@ -152,26 +148,26 @@ namespace cl::jit
 
             for(size_t index = 0; index < instructions.size(); ++index)
             {
-                const Instruction *instruction =
+                Instruction instruction =
                     graph.storage()->instruction(instructions[index]);
-                if(instruction->is_detached())
+                if(instruction.is_detached())
                 {
                     return invalid(block_name(block) + " contains detached " +
                                    instruction_name(instruction));
                 }
-                if(is_block_parameter_kind(instruction->kind()))
+                if(is_block_parameter_kind(instruction.kind()))
                 {
                     return invalid(instruction_name(instruction) + " in " +
                                    block_name(block) +
                                    " is a block parameter in the instruction "
                                    "list");
                 }
-                if(!is_core_instruction(instruction->kind()))
+                if(!is_core_instruction(instruction.kind()))
                 {
                     return invalid(instruction_name(instruction) +
                                    " is not legal in Core IR");
                 }
-                if(!instruction_set.insert(instruction).second)
+                if(!instruction_set.insert(instruction.id()).second)
                 {
                     return invalid(instruction_name(instruction) +
                                    " belongs to more than one instruction "
@@ -179,12 +175,12 @@ namespace cl::jit
                 }
 
                 bool is_last = index + 1 == instructions.size();
-                if(is_last && !instruction->is_block_terminator())
+                if(is_last && !instruction.is_block_terminator())
                 {
                     return invalid(block_name(block) +
                                    " does not end in a block terminator");
                 }
-                if(!is_last && instruction->is_block_terminator())
+                if(!is_last && instruction.is_block_terminator())
                 {
                     return invalid(block_name(block) +
                                    " contains a block terminator before its "
@@ -314,12 +310,12 @@ namespace cl::jit
                 }
                 for(size_t index = 0; index < arguments.size(); ++index)
                 {
-                    const Instruction *argument = graph.storage()->instruction(
+                    Instruction argument = graph.storage()->instruction(
                         arguments[index].instruction_id());
-                    if(argument->value_representation() !=
+                    if(argument.value_representation() !=
                        graph.storage()
                            ->instruction(parameters[index])
-                           ->value_representation())
+                           .value_representation())
                     {
                         return invalid(edge_name(edge) + " argument " +
                                        std::to_string(index) +
@@ -333,30 +329,29 @@ namespace cl::jit
 
         for(const Block *block: blocks)
         {
-            absl::flat_hash_set<const Instruction *> available_definitions;
+            absl::flat_hash_set<InstructionId> available_definitions;
             for(InstructionId parameter_id: block->parameters())
             {
-                available_definitions.insert(
-                    graph.storage()->instruction(parameter_id));
+                available_definitions.insert(parameter_id);
             }
 
             for(InstructionId instruction_id: block->instructions())
             {
-                const Instruction *instruction =
+                Instruction instruction =
                     graph.storage()->instruction(instruction_id);
                 std::string reference_error;
                 visit_operand_references(
-                    *instruction,
+                    instruction,
                     [&](uint32_t, OperandClass operand_class,
                         ValueRepresentation required_representation,
                         InstructionId definition_id) {
-                        const Instruction *def =
+                        Instruction def =
                             graph.storage()->instruction(definition_id);
                         if(!reference_error.empty())
                         {
                             return;
                         }
-                        if(available_definitions.find(def) ==
+                        if(available_definitions.find(def.id()) ==
                            available_definitions.end())
                         {
                             reference_error = instruction_name(instruction) +
@@ -368,7 +363,7 @@ namespace cl::jit
                             return;
                         }
                         if(static_cast<uint8_t>(operand_class) !=
-                           static_cast<uint8_t>(def->result_class()))
+                           static_cast<uint8_t>(def.result_class()))
                         {
                             reference_error =
                                 instruction_name(instruction) +
@@ -379,7 +374,7 @@ namespace cl::jit
                         if(operand_class == OperandClass::ProgramValue &&
                            required_representation !=
                                ValueRepresentation::None &&
-                           def->value_representation() !=
+                           def.value_representation() !=
                                required_representation)
                         {
                             reference_error =
@@ -392,7 +387,7 @@ namespace cl::jit
                 {
                     return invalid(std::move(reference_error));
                 }
-                available_definitions.insert(instruction);
+                available_definitions.insert(instruction.id());
             }
 
             for(const BlockEdge *edge: block->block_successor_edges())
@@ -401,9 +396,9 @@ namespace cl::jit
                     edge->arguments();
                 for(size_t index = 0; index < arguments.size(); ++index)
                 {
-                    const Instruction *def = graph.storage()->instruction(
+                    Instruction def = graph.storage()->instruction(
                         arguments[index].instruction_id());
-                    if(!available_definitions.contains(def))
+                    if(!available_definitions.contains(def.id()))
                     {
                         return invalid(edge_name(edge) + " argument " +
                                        std::to_string(index) + " references " +

@@ -2,11 +2,11 @@
 
 #include "runtime/fatal.h"
 
+#include <absl/container/flat_hash_map.h>
 #include <fmt/format.h>
 
 #include <iterator>
 #include <string>
-#include <unordered_map>
 
 namespace cl::jit
 {
@@ -28,21 +28,21 @@ namespace cl::jit
                     blocks_.emplace(block, block_index);
                     for(InstructionId parameter_id: block->parameters())
                     {
-                        const Instruction *parameter =
-                            block->storage()->instruction(parameter_id);
-                        instructions_.emplace(parameter, instruction_index++);
-                        results_.emplace(parameter, result_index++);
-                        instruction_blocks_.emplace(parameter, block);
+                        instructions_.emplace(parameter_id,
+                                              instruction_index++);
+                        results_.emplace(parameter_id, result_index++);
+                        instruction_blocks_.emplace(parameter_id, block);
                     }
                     for(InstructionId instruction_id: block->instructions())
                     {
-                        const Instruction *instruction =
+                        Instruction instruction =
                             block->storage()->instruction(instruction_id);
-                        instructions_.emplace(instruction, instruction_index++);
-                        instruction_blocks_.emplace(instruction, block);
-                        if(instruction->result_class() != ResultClass::None)
+                        instructions_.emplace(instruction_id,
+                                              instruction_index++);
+                        instruction_blocks_.emplace(instruction_id, block);
+                        if(instruction.result_class() != ResultClass::None)
                         {
-                            results_.emplace(instruction, result_index++);
+                            results_.emplace(instruction_id, result_index++);
                         }
                     }
                     for(const BlockEdge *edge: block->block_successor_edges())
@@ -52,7 +52,7 @@ namespace cl::jit
                 }
             }
 
-            std::string instruction(const Instruction *instruction) const
+            std::string instruction(InstructionId instruction) const
             {
                 auto result = results_.find(instruction);
                 if(result != results_.end())
@@ -64,18 +64,18 @@ namespace cl::jit
 
             size_t block(const Block *block) const { return blocks_.at(block); }
             size_t edge(const BlockEdge *edge) const { return edges_.at(edge); }
-            const Block *instruction_block(const Instruction *instruction) const
+            const Block *instruction_block(InstructionId instruction) const
             {
                 return instruction_blocks_.at(instruction);
             }
 
         private:
-            std::unordered_map<const Instruction *, size_t> instructions_;
-            std::unordered_map<const Instruction *, size_t> results_;
-            std::unordered_map<const Instruction *, const Block *>
+            absl::flat_hash_map<InstructionId, size_t> instructions_;
+            absl::flat_hash_map<InstructionId, size_t> results_;
+            absl::flat_hash_map<InstructionId, const Block *>
                 instruction_blocks_;
-            std::unordered_map<const Block *, size_t> blocks_;
-            std::unordered_map<const BlockEdge *, size_t> edges_;
+            absl::flat_hash_map<const Block *, size_t> blocks_;
+            absl::flat_hash_map<const BlockEdge *, size_t> edges_;
         };
 
         std::string format_range(LivenessRange range)
@@ -90,20 +90,23 @@ namespace cl::jit
             switch(anchor.kind())
             {
                 case OccurrenceAnchor::Kind::InstructionOperand:
-                    return fmt::format("operand({}, {})",
-                                       names.instruction(anchor.instruction()),
-                                       anchor.index());
+                    return fmt::format(
+                        "operand({}, {})",
+                        names.instruction(anchor.instruction_id()),
+                        anchor.index());
                 case OccurrenceAnchor::Kind::InstructionResult:
-                    return fmt::format("result({})",
-                                       names.instruction(anchor.instruction()));
+                    return fmt::format(
+                        "result({})",
+                        names.instruction(anchor.instruction_id()));
                 case OccurrenceAnchor::Kind::BlockEdgeArgument:
                     return fmt::format("edge_argument(e{}, {})",
                                        names.edge(anchor.block_edge()),
                                        anchor.index());
                 case OccurrenceAnchor::Kind::InstructionTemporary:
-                    return fmt::format("temporary({}, {})",
-                                       names.instruction(anchor.instruction()),
-                                       anchor.index());
+                    return fmt::format(
+                        "temporary({}, {})",
+                        names.instruction(anchor.instruction_id()),
+                        anchor.index());
             }
             fatal("invalid occurrence anchor in JIT allocator dump");
         }
@@ -158,8 +161,9 @@ namespace cl::jit
             switch(point.kind())
             {
                 case TransferPoint::Kind::BeforeInstruction:
-                    return fmt::format("before({})",
-                                       names.instruction(point.instruction()));
+                    return fmt::format(
+                        "before({})",
+                        names.instruction(point.instruction_id()));
                 case TransferPoint::Kind::BlockEntry:
                     return fmt::format("entry(bb{})",
                                        names.block(point.block()));
@@ -291,13 +295,14 @@ namespace cl::jit
                 if(live_range.origin.kind() ==
                    LiveRangeOrigin::Kind::ProgramValue)
                 {
-                    append(names.instruction(live_range.origin.instruction()));
+                    append(
+                        names.instruction(live_range.origin.instruction_id()));
                 }
                 else
                 {
                     fmt::format_to(
                         std::back_inserter(out), "temporary({}, {})",
-                        names.instruction(live_range.origin.instruction()),
+                        names.instruction(live_range.origin.instruction_id()),
                         live_range.origin.temporary_index());
                 }
                 append(", occurrences = [");

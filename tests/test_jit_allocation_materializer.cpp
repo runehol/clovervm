@@ -53,9 +53,9 @@ namespace cl::jit
         CompilationSession session;
         GraphBuilder builder(session);
         Block *entry = builder.emplace_block();
-        ParameterInstruction *parameter =
+        ParameterInstruction parameter =
             builder.emplace_parameter<ParameterInstruction>(entry);
-        ReturnInstruction *return_instruction =
+        ReturnInstruction return_instruction =
             builder.emplace_instruction<ReturnInstruction>(
                 entry, TaggedValueRef(parameter));
         ControlFlowGraph *graph = builder.finalize();
@@ -91,12 +91,12 @@ namespace cl::jit
         CompilationSession session;
         GraphBuilder builder(session);
         Block *entry = builder.emplace_block();
-        ParameterInstruction *parameter =
+        ParameterInstruction parameter =
             builder.emplace_parameter<ParameterInstruction>(entry);
-        AndSMIInstruction *operation =
+        AndSMIInstruction operation =
             builder.emplace_instruction<AndSMIInstruction>(
                 entry, TaggedValueRef(parameter), TaggedValueRef(parameter));
-        ReturnInstruction *return_instruction =
+        ReturnInstruction return_instruction =
             builder.emplace_instruction<ReturnInstruction>(
                 entry, TaggedValueRef(operation));
         ControlFlowGraph *graph = builder.finalize();
@@ -133,7 +133,7 @@ namespace cl::jit
         GraphBuilder builder(session);
         Block *entry = builder.emplace_block();
         Block *exit = builder.emplace_block();
-        ParameterInstruction *entry_parameter =
+        ParameterInstruction entry_parameter =
             builder.emplace_parameter<ParameterInstruction>(entry);
         std::array<ProgramValueRef, 1> arguments = {
             ProgramValueRef(entry_parameter)};
@@ -141,9 +141,9 @@ namespace cl::jit
             entry, exit, std::span<const ProgramValueRef>(arguments));
         builder.emplace_instruction<UnconditionalBranchInstruction>(entry,
                                                                     edge);
-        ParameterInstruction *exit_parameter =
+        ParameterInstruction exit_parameter =
             builder.emplace_parameter<ParameterInstruction>(exit);
-        ReturnInstruction *return_instruction =
+        ReturnInstruction return_instruction =
             builder.emplace_instruction<ReturnInstruction>(
                 exit, TaggedValueRef(exit_parameter));
         ControlFlowGraph *graph = builder.finalize();
@@ -181,9 +181,9 @@ namespace cl::jit
         CompilationSession session;
         GraphBuilder builder(session);
         Block *entry = builder.emplace_block();
-        ParameterInstruction *parameter =
+        ParameterInstruction parameter =
             builder.emplace_parameter<ParameterInstruction>(entry);
-        ReturnInstruction *old_return =
+        ReturnInstruction old_return =
             builder.emplace_instruction<ReturnInstruction>(
                 entry, TaggedValueRef(parameter));
         ControlFlowGraph *graph = builder.finalize();
@@ -209,13 +209,13 @@ namespace cl::jit
 
         ASSERT_TRUE(materialized);
         ASSERT_EQ(2u, entry->instructions().size());
-        LoadStackInstruction *load =
-            entry->instruction_at(0)->as<LoadStackInstruction>();
-        ReturnInstruction *new_return =
-            entry->instruction_at(1)->as<ReturnInstruction>();
-        EXPECT_EQ(parameter->id(), load->source().instruction_id());
-        EXPECT_EQ(load->id(), new_return->return_value().instruction_id());
-        EXPECT_TRUE(old_return->is_detached());
+        LoadStackInstruction load =
+            entry->instruction_at(0).as<LoadStackInstruction>();
+        ReturnInstruction new_return =
+            entry->instruction_at(1).as<ReturnInstruction>();
+        EXPECT_EQ(parameter.id(), load.source().instruction_id());
+        EXPECT_EQ(load.id(), new_return.return_value().instruction_id());
+        EXPECT_TRUE(old_return.is_detached());
         EXPECT_EQ(4, materialized.value()
                          .location_for(ProgramValueRef(parameter))
                          .stack()
@@ -229,14 +229,14 @@ namespace cl::jit
         CompilationSession session;
         GraphBuilder builder(session);
         Block *entry = builder.emplace_block();
-        ParameterInstruction *lhs =
+        ParameterInstruction lhs =
             builder.emplace_parameter<ParameterInstruction>(entry);
-        ParameterInstruction *rhs =
+        ParameterInstruction rhs =
             builder.emplace_parameter<ParameterInstruction>(entry);
-        AndSMIInstruction *operation =
+        AndSMIInstruction operation =
             builder.emplace_instruction<AndSMIInstruction>(
                 entry, TaggedValueRef(lhs), TaggedValueRef(rhs));
-        ReturnInstruction *return_instruction =
+        ReturnInstruction return_instruction =
             builder.emplace_instruction<ReturnInstruction>(
                 entry, TaggedValueRef(operation));
         ControlFlowGraph *graph = builder.finalize();
@@ -265,18 +265,18 @@ namespace cl::jit
 
         ASSERT_TRUE(materialized);
         ASSERT_EQ(4u, entry->instructions().size());
-        LoadStackInstruction *lhs_load =
-            entry->instruction_at(0)->as<LoadStackInstruction>();
-        LoadStackInstruction *rhs_load =
-            entry->instruction_at(1)->as<LoadStackInstruction>();
-        AndSMIInstruction *new_operation =
-            entry->instruction_at(2)->as<AndSMIInstruction>();
-        EXPECT_EQ(lhs->id(), lhs_load->source().instruction_id());
-        EXPECT_EQ(rhs->id(), rhs_load->source().instruction_id());
-        EXPECT_EQ(lhs_load->id(), new_operation->lhs().instruction_id());
-        EXPECT_EQ(rhs_load->id(), new_operation->rhs().instruction_id());
-        EXPECT_TRUE(operation->is_detached());
-        EXPECT_TRUE(return_instruction->is_detached());
+        LoadStackInstruction lhs_load =
+            entry->instruction_at(0).as<LoadStackInstruction>();
+        LoadStackInstruction rhs_load =
+            entry->instruction_at(1).as<LoadStackInstruction>();
+        AndSMIInstruction new_operation =
+            entry->instruction_at(2).as<AndSMIInstruction>();
+        EXPECT_EQ(lhs.id(), lhs_load.source().instruction_id());
+        EXPECT_EQ(rhs.id(), rhs_load.source().instruction_id());
+        EXPECT_EQ(lhs_load.id(), new_operation.lhs().instruction_id());
+        EXPECT_EQ(rhs_load.id(), new_operation.rhs().instruction_id());
+        EXPECT_TRUE(operation.is_detached());
+        EXPECT_TRUE(return_instruction.is_detached());
     }
 
     TEST(JitAllocationMaterializer, InsertsRegisterToStackTransfer)
@@ -284,9 +284,9 @@ namespace cl::jit
         CompilationSession session;
         GraphBuilder builder(session);
         Block *entry = builder.emplace_block();
-        ParameterInstruction *parameter =
+        ParameterInstruction parameter =
             builder.emplace_parameter<ParameterInstruction>(entry);
-        ReturnInstruction *old_return =
+        ReturnInstruction old_return =
             builder.emplace_instruction<ReturnInstruction>(
                 entry, TaggedValueRef(parameter));
         ControlFlowGraph *graph = builder.finalize();
@@ -312,13 +312,13 @@ namespace cl::jit
 
         ASSERT_TRUE(materialized);
         ASSERT_EQ(2u, entry->instructions().size());
-        StoreStackInstruction *store =
-            entry->instruction_at(0)->as<StoreStackInstruction>();
-        ReturnInstruction *new_return =
-            entry->instruction_at(1)->as<ReturnInstruction>();
-        EXPECT_EQ(parameter->id(), store->source().instruction_id());
-        EXPECT_EQ(store->id(), new_return->return_value().instruction_id());
-        EXPECT_TRUE(old_return->is_detached());
+        StoreStackInstruction store =
+            entry->instruction_at(0).as<StoreStackInstruction>();
+        ReturnInstruction new_return =
+            entry->instruction_at(1).as<ReturnInstruction>();
+        EXPECT_EQ(parameter.id(), store.source().instruction_id());
+        EXPECT_EQ(store.id(), new_return.return_value().instruction_id());
+        EXPECT_TRUE(old_return.is_detached());
         EXPECT_EQ(-8, materialized.value()
                           .location_for(ProgramValueRef(store))
                           .stack()
@@ -330,9 +330,9 @@ namespace cl::jit
         CompilationSession session;
         GraphBuilder builder(session);
         Block *entry = builder.emplace_block();
-        ParameterInstruction *parameter =
+        ParameterInstruction parameter =
             builder.emplace_parameter<ParameterInstruction>(entry);
-        ReturnInstruction *old_return =
+        ReturnInstruction old_return =
             builder.emplace_instruction<ReturnInstruction>(
                 entry, TaggedValueRef(parameter));
         ControlFlowGraph *graph = builder.finalize();
@@ -359,15 +359,15 @@ namespace cl::jit
 
         ASSERT_TRUE(materialized);
         ASSERT_EQ(3u, entry->instructions().size());
-        LoadStackInstruction *load =
-            entry->instruction_at(0)->as<LoadStackInstruction>();
-        StoreStackInstruction *store =
-            entry->instruction_at(1)->as<StoreStackInstruction>();
-        ReturnInstruction *new_return =
-            entry->instruction_at(2)->as<ReturnInstruction>();
-        EXPECT_EQ(parameter->id(), load->source().instruction_id());
-        EXPECT_EQ(load->id(), store->source().instruction_id());
-        EXPECT_EQ(store->id(), new_return->return_value().instruction_id());
+        LoadStackInstruction load =
+            entry->instruction_at(0).as<LoadStackInstruction>();
+        StoreStackInstruction store =
+            entry->instruction_at(1).as<StoreStackInstruction>();
+        ReturnInstruction new_return =
+            entry->instruction_at(2).as<ReturnInstruction>();
+        EXPECT_EQ(parameter.id(), load.source().instruction_id());
+        EXPECT_EQ(load.id(), store.source().instruction_id());
+        EXPECT_EQ(store.id(), new_return.return_value().instruction_id());
         EXPECT_EQ(
             x2, materialized.value().location_for(ProgramValueRef(load)).reg());
         EXPECT_EQ(-8, materialized.value()
@@ -381,11 +381,11 @@ namespace cl::jit
         CompilationSession session;
         GraphBuilder builder(session);
         Block *entry = builder.emplace_block();
-        ParameterInstruction *lhs =
+        ParameterInstruction lhs =
             builder.emplace_parameter<ParameterInstruction>(entry);
-        ParameterInstruction *rhs =
+        ParameterInstruction rhs =
             builder.emplace_parameter<ParameterInstruction>(entry);
-        AndSMIInstruction *operation =
+        AndSMIInstruction operation =
             builder.emplace_instruction<AndSMIInstruction>(
                 entry, TaggedValueRef(lhs), TaggedValueRef(rhs));
         builder.emplace_instruction<ReturnInstruction>(
@@ -417,18 +417,16 @@ namespace cl::jit
 
         ASSERT_TRUE(materialized);
         ASSERT_EQ(5u, entry->instructions().size());
-        MovInstruction *save = entry->instruction_at(0)->as<MovInstruction>();
-        MovInstruction *move_rhs =
-            entry->instruction_at(1)->as<MovInstruction>();
-        MovInstruction *move_lhs =
-            entry->instruction_at(2)->as<MovInstruction>();
-        AndSMIInstruction *new_operation =
-            entry->instruction_at(3)->as<AndSMIInstruction>();
-        EXPECT_EQ(lhs->id(), save->source().instruction_id());
-        EXPECT_EQ(rhs->id(), move_rhs->source().instruction_id());
-        EXPECT_EQ(save->id(), move_lhs->source().instruction_id());
-        EXPECT_EQ(move_lhs->id(), new_operation->lhs().instruction_id());
-        EXPECT_EQ(move_rhs->id(), new_operation->rhs().instruction_id());
+        MovInstruction save = entry->instruction_at(0).as<MovInstruction>();
+        MovInstruction move_rhs = entry->instruction_at(1).as<MovInstruction>();
+        MovInstruction move_lhs = entry->instruction_at(2).as<MovInstruction>();
+        AndSMIInstruction new_operation =
+            entry->instruction_at(3).as<AndSMIInstruction>();
+        EXPECT_EQ(lhs.id(), save.source().instruction_id());
+        EXPECT_EQ(rhs.id(), move_rhs.source().instruction_id());
+        EXPECT_EQ(save.id(), move_lhs.source().instruction_id());
+        EXPECT_EQ(move_lhs.id(), new_operation.lhs().instruction_id());
+        EXPECT_EQ(move_rhs.id(), new_operation.rhs().instruction_id());
         EXPECT_EQ(
             x2, materialized.value().location_for(ProgramValueRef(save)).reg());
         EXPECT_EQ(
@@ -444,14 +442,14 @@ namespace cl::jit
         CompilationSession session;
         GraphBuilder builder(session);
         Block *entry = builder.emplace_block();
-        ParameterInstruction *lhs =
+        ParameterInstruction lhs =
             builder.emplace_parameter<ParameterInstruction>(entry);
-        ParameterInstruction *rhs =
+        ParameterInstruction rhs =
             builder.emplace_parameter<ParameterInstruction>(entry);
-        AndSMIInstruction *operation =
+        AndSMIInstruction operation =
             builder.emplace_instruction<AndSMIInstruction>(
                 entry, TaggedValueRef(lhs), TaggedValueRef(rhs));
-        ReturnInstruction *return_instruction =
+        ReturnInstruction return_instruction =
             builder.emplace_instruction<ReturnInstruction>(
                 entry, TaggedValueRef(operation));
         ControlFlowGraph *graph = builder.finalize();

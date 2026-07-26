@@ -7,16 +7,23 @@
 
 namespace cl::jit
 {
-    Instruction *CompilationStorage::instruction(InstructionId id)
+    Instruction CompilationStorage::instruction(InstructionId id) const
     {
         assert(id.value() < instructions_.size());
-        return instructions_[id.value()].instruction();
+        return Instruction(this, id);
     }
 
-    const Instruction *CompilationStorage::instruction(InstructionId id) const
+    const InstructionEntry &
+    CompilationStorage::instruction_entry(InstructionId id) const
     {
         assert(id.value() < instructions_.size());
-        return instructions_[id.value()].instruction();
+        return instructions_[id.value()];
+    }
+
+    void CompilationStorage::detach_instruction(InstructionId id)
+    {
+        assert(id.value() < instructions_.size());
+        instructions_[id.value()].detach_and_poison();
     }
 
     InstructionId CompilationStorage::next_instruction_id() const

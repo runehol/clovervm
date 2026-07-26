@@ -69,15 +69,15 @@ namespace cl::jit
         GraphBuilder builder(session);
         Block *first_block = builder.make_block();
         Block *second_block = builder.make_block();
-        ParameterInstruction *first_instruction =
+        ParameterInstruction first_instruction =
             builder.make_instruction<ParameterInstruction>();
-        ParameterInstruction *second_instruction =
+        ParameterInstruction second_instruction =
             builder.make_instruction<ParameterInstruction>();
 
         EXPECT_EQ(0u, first_block->serial().value());
         EXPECT_EQ(1u, second_block->serial().value());
-        EXPECT_EQ(0u, first_instruction->id().value());
-        EXPECT_EQ(1u, second_instruction->id().value());
+        EXPECT_EQ(0u, first_instruction.id().value());
+        EXPECT_EQ(1u, second_instruction.id().value());
     }
 
     TEST(JitCompilationStorage, GraphBorrowsItsOwningStorage)
@@ -85,7 +85,7 @@ namespace cl::jit
         CompilationSession session;
         GraphBuilder builder(session);
         Block *entry = builder.emplace_block();
-        ConstInstruction *none =
+        ConstInstruction none =
             builder.emplace_instruction<ConstInstruction>(entry, Value::None());
         builder.emplace_instruction<ReturnInstruction>(entry,
                                                        TaggedValueRef(none));
@@ -119,7 +119,7 @@ namespace cl::jit
                 builder.retain_and_pin_value(existing_value);
             builder.emplace_instruction<ConstInstruction>(
                 entry, retained_created.raw_value());
-            ConstInstruction *constant =
+            ConstInstruction constant =
                 builder.emplace_instruction<ConstInstruction>(
                     entry, retained_existing);
             builder.emplace_instruction<ReturnInstruction>(
@@ -135,15 +135,16 @@ namespace cl::jit
         EXPECT_EQ(0, existing->refcount);
     }
 
-    TEST(JitInstructionStorage, HasDenseIdsAndAlignedStableAddresses)
+    TEST(JitInstructionStorage, HasDenseIdsAndStableHandles)
     {
-        static_assert(sizeof(Instruction) == 48);
+        static_assert(sizeof(InstructionEntry) == 48);
+        static_assert(sizeof(Instruction) == 16);
         static_assert(sizeof(InstructionId) == sizeof(uint32_t));
         static_assert(std::is_trivially_destructible_v<Instruction>);
 
         CompilationSession session;
         GraphBuilder builder(session);
-        std::vector<Instruction *> instructions;
+        std::vector<Instruction> instructions;
         for(size_t index = 0; index < 4096; ++index)
         {
             instructions.push_back(
@@ -152,18 +153,16 @@ namespace cl::jit
 
         for(size_t index = 0; index < instructions.size(); ++index)
         {
-            Instruction *instruction = instructions[index];
-            EXPECT_EQ(index, instruction->id().value());
+            Instruction instruction = instructions[index];
+            EXPECT_EQ(index, instruction.id().value());
             EXPECT_EQ(instruction,
-                      session.storage()->instruction(instruction->id()));
-            EXPECT_EQ(0u, reinterpret_cast<uintptr_t>(instruction) %
-                              alignof(Instruction));
-            EXPECT_EQ(InstructionKind::Parameter, instruction->kind());
+                      session.storage()->instruction(instruction.id()));
+            EXPECT_EQ(InstructionKind::Parameter, instruction.kind());
         }
 
         const CompilationStorage *storage = session.storage();
         EXPECT_EQ(instructions.front(),
-                  storage->instruction(instructions.front()->id()));
+                  storage->instruction(instructions.front().id()));
     }
 
     TEST(JitInstructionSchema, GeneratesIntrinsicMetadata)
@@ -217,7 +216,7 @@ namespace cl::jit
         static_assert(std::is_same_v<
                       decltype(std::declval<GraphBuilder &>()
                                    .make_instruction<ParameterInstruction>()),
-                      ParameterInstruction *>);
+                      ParameterInstruction>);
         static_assert(std::is_same_v<
                       decltype(std::declval<const AddSMIInstruction &>().lhs()),
                       TaggedValueRef>);
@@ -304,20 +303,20 @@ namespace cl::jit
     {
         CompilationSession session;
         GraphBuilder builder(session);
-        ConstInstruction *instruction =
+        ConstInstruction instruction =
             builder.make_instruction<ConstInstruction>(Value::False());
 
-        EXPECT_EQ(InstructionKind::Const, instruction->kind());
-        EXPECT_EQ(Value::False(), instruction->constant());
-        EXPECT_EQ(0u, instruction->operand_count());
-        EXPECT_FALSE(instruction->operands_are_indirect());
-        EXPECT_EQ(instruction, instruction->as<ConstInstruction>());
+        EXPECT_EQ(InstructionKind::Const, instruction.kind());
+        EXPECT_EQ(Value::False(), instruction.constant());
+        EXPECT_EQ(0u, instruction.operand_count());
+        EXPECT_FALSE(instruction.operands_are_indirect());
+        EXPECT_EQ(instruction, instruction.as<ConstInstruction>());
 
-        UninitializedInstruction *uninitialized =
+        UninitializedInstruction uninitialized =
             builder.make_instruction<UninitializedInstruction>();
-        EXPECT_EQ(InstructionKind::Uninitialized, uninitialized->kind());
-        EXPECT_EQ(0u, uninitialized->operand_count());
-        EXPECT_FALSE(uninitialized->operands_are_indirect());
+        EXPECT_EQ(InstructionKind::Uninitialized, uninitialized.kind());
+        EXPECT_EQ(0u, uninitialized.operand_count());
+        EXPECT_FALSE(uninitialized.operands_are_indirect());
     }
 
     TEST(JitInstructionTraversal, WalksProgramValueAndSnapshotReferences)
@@ -329,22 +328,22 @@ namespace cl::jit
             builder.make_instruction<ConstInstruction>(Value::from_smi(3)));
         SnapshotRef snapshot(builder.make_instruction<SnapshotInstruction>(
             std::span<const ProgramValueRef>{}, BytecodePC{17}));
-        AddSMIInstruction *add =
+        AddSMIInstruction add =
             builder.make_instruction<AddSMIInstruction>(lhs, rhs, snapshot);
 
-        EXPECT_EQ(3u, add->operand_count());
-        EXPECT_FALSE(add->operands_are_indirect());
-        EXPECT_EQ(lhs.instruction_id().value(), add->slot(0));
-        EXPECT_EQ(rhs.instruction_id().value(), add->slot(1));
-        EXPECT_EQ(snapshot.instruction_id().value(), add->slot(2));
-        EXPECT_EQ(lhs.instruction_id(), add->lhs().instruction_id());
-        EXPECT_EQ(rhs.instruction_id(), add->rhs().instruction_id());
-        EXPECT_EQ(snapshot.instruction_id(), add->snapshot().instruction_id());
+        EXPECT_EQ(3u, add.operand_count());
+        EXPECT_FALSE(add.operands_are_indirect());
+        EXPECT_EQ(lhs.instruction_id().value(), add.slot(0));
+        EXPECT_EQ(rhs.instruction_id().value(), add.slot(1));
+        EXPECT_EQ(snapshot.instruction_id().value(), add.slot(2));
+        EXPECT_EQ(lhs.instruction_id(), add.lhs().instruction_id());
+        EXPECT_EQ(rhs.instruction_id(), add.rhs().instruction_id());
+        EXPECT_EQ(snapshot.instruction_id(), add.snapshot().instruction_id());
 
         std::vector<std::pair<OperandClass, InstructionId>> references;
         visit_operand_references(
-            *add, [&](uint32_t operand_index, OperandClass operand_class,
-                      ValueRepresentation representation, InstructionId def) {
+            add, [&](uint32_t operand_index, OperandClass operand_class,
+                     ValueRepresentation representation, InstructionId def) {
                 EXPECT_EQ(references.size(), operand_index);
                 EXPECT_EQ(operand_class == OperandClass::ProgramValue
                               ? ValueRepresentation::TaggedValue
@@ -374,43 +373,42 @@ namespace cl::jit
         SnapshotRef snapshot(builder.make_instruction<SnapshotInstruction>(
             std::span<const ProgramValueRef>{}, BytecodePC{23}));
         std::array<TaggedValueRef, 3> arguments = {first, none, second};
-        PythonCallInstruction *call =
+        PythonCallInstruction call =
             builder.make_instruction<PythonCallInstruction>(
                 callable, snapshot, std::span<const TaggedValueRef>(arguments),
                 BytecodePC{23});
-        PythonCallInstruction *call_without_arguments =
+        PythonCallInstruction call_without_arguments =
             builder.make_instruction<PythonCallInstruction>(
                 callable, snapshot, std::span<const TaggedValueRef>{},
                 BytecodePC{41});
 
-        EXPECT_EQ(5u, call->operand_count());
-        EXPECT_TRUE(call->operands_are_indirect());
-        EXPECT_EQ(23u, call->slot(1));
+        EXPECT_EQ(5u, call.operand_count());
+        EXPECT_TRUE(call.operands_are_indirect());
+        EXPECT_EQ(23u, call.slot(1));
         const uintptr_t *call_operands =
-            reinterpret_cast<const uintptr_t *>(call->slot(0));
+            reinterpret_cast<const uintptr_t *>(call.slot(0));
         EXPECT_EQ(callable.instruction_id().value(), call_operands[0]);
         EXPECT_EQ(snapshot.instruction_id().value(), call_operands[1]);
-        EXPECT_EQ(2u, call_without_arguments->operand_count());
-        EXPECT_TRUE(call_without_arguments->operands_are_indirect());
-        EXPECT_EQ(41u, call_without_arguments->slot(1));
-        EXPECT_EQ(3u, call->arguments().size());
-        EXPECT_EQ(first.instruction_id(),
-                  call->arguments()[0].instruction_id());
-        EXPECT_EQ(none.instruction_id(), call->arguments()[1].instruction_id());
+        EXPECT_EQ(2u, call_without_arguments.operand_count());
+        EXPECT_TRUE(call_without_arguments.operands_are_indirect());
+        EXPECT_EQ(41u, call_without_arguments.slot(1));
+        EXPECT_EQ(3u, call.arguments().size());
+        EXPECT_EQ(first.instruction_id(), call.arguments()[0].instruction_id());
+        EXPECT_EQ(none.instruction_id(), call.arguments()[1].instruction_id());
         EXPECT_EQ(second.instruction_id(),
-                  call->arguments()[2].instruction_id());
-        EXPECT_EQ(23u, call->interpreter_return_pc());
-        Instruction *snapshot_instruction =
+                  call.arguments()[2].instruction_id());
+        EXPECT_EQ(23u, call.interpreter_return_pc());
+        Instruction snapshot_instruction =
             builder.storage()->instruction(snapshot.instruction_id());
-        EXPECT_EQ(0u, snapshot_instruction->operand_count());
-        EXPECT_TRUE(snapshot_instruction->operands_are_indirect());
-        EXPECT_EQ(0u, snapshot_instruction->slot(0));
-        EXPECT_EQ(23u, snapshot_instruction->slot(1));
+        EXPECT_EQ(0u, snapshot_instruction.operand_count());
+        EXPECT_TRUE(snapshot_instruction.operands_are_indirect());
+        EXPECT_EQ(0u, snapshot_instruction.slot(0));
+        EXPECT_EQ(23u, snapshot_instruction.slot(1));
 
         std::vector<std::pair<OperandClass, InstructionId>> references;
         visit_operand_references(
-            *call, [&](uint32_t operand_index, OperandClass operand_class,
-                       ValueRepresentation representation, InstructionId def) {
+            call, [&](uint32_t operand_index, OperandClass operand_class,
+                      ValueRepresentation representation, InstructionId def) {
                 EXPECT_EQ(references.size(), operand_index);
                 EXPECT_EQ(operand_class == OperandClass::ProgramValue
                               ? ValueRepresentation::TaggedValue
@@ -445,32 +443,32 @@ namespace cl::jit
                           std::span<const ProgramValueRef>(captured_values),
                           BytecodePC{91}));
 
-        SnapshotInstruction *snapshot =
+        SnapshotInstruction snapshot =
             builder.make_instruction<SnapshotInstruction>(
                 std::span<const ProgramValueRef>(captured_values),
                 BytecodePC{91});
 
-        ASSERT_EQ(4u, snapshot->operand_count());
-        ASSERT_TRUE(snapshot->operands_are_indirect());
-        ASSERT_NE(0u, snapshot->slot(0));
+        ASSERT_EQ(4u, snapshot.operand_count());
+        ASSERT_TRUE(snapshot.operands_are_indirect());
+        ASSERT_NE(0u, snapshot.slot(0));
         const uintptr_t *storage =
-            reinterpret_cast<const uintptr_t *>(snapshot->slot(0));
+            reinterpret_cast<const uintptr_t *>(snapshot.slot(0));
         EXPECT_EQ(tagged.instruction_id().value(), storage[0]);
         EXPECT_EQ(f64.instruction_id().value(), storage[1]);
         EXPECT_EQ(truth.instruction_id().value(), storage[2]);
         EXPECT_EQ(none.instruction_id().value(), storage[3]);
 
-        SnapshotValueRefRange values = snapshot->captured_values();
+        SnapshotValueRefRange values = snapshot.captured_values();
         ASSERT_EQ(4u, values.size());
         EXPECT_EQ(tagged.instruction_id(), values[0].instruction_id());
         EXPECT_EQ(f64.instruction_id(), values[1].instruction_id());
         EXPECT_EQ(truth.instruction_id(), values[2].instruction_id());
         EXPECT_EQ(none.instruction_id(), values[3].instruction_id());
-        EXPECT_EQ(91u, snapshot->resume_pc());
+        EXPECT_EQ(91u, snapshot.resume_pc());
 
         std::vector<InstructionId> references;
         visit_operand_references(
-            *snapshot,
+            snapshot,
             [&](uint32_t operand_index, OperandClass operand_class,
                 ValueRepresentation representation, InstructionId def) {
                 EXPECT_EQ(references.size(), operand_index);

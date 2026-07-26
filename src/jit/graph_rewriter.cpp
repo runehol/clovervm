@@ -25,14 +25,14 @@ namespace cl::jit
 
         struct DefReplacement
         {
-            Instruction *def;
+            std::optional<InstructionId> def;
             bool erased;
         };
 
         using DefReplacements =
-            absl::flat_hash_map<const Instruction *, DefReplacement>;
+            absl::flat_hash_map<InstructionId, DefReplacement>;
         using SequenceReplacements =
-            absl::flat_hash_map<const Instruction *, Instruction *>;
+            absl::flat_hash_map<InstructionId, InstructionId>;
         using EdgeReplacements =
             absl::flat_hash_map<const BlockEdge *, BlockEdge *>;
 
@@ -48,7 +48,7 @@ namespace cl::jit
             {
             }
 
-            Instruction *resolve(Instruction *def) const
+            InstructionId resolve(InstructionId def) const
             {
                 auto sequence = sequence_replacements_->find(def);
                 if(sequence != sequence_replacements_->end())
@@ -65,9 +65,9 @@ namespace cl::jit
                     !replacement->second.erased,
                     "JIT rewrite uses an erased definition");
                 require_rewrite_invariant(
-                    replacement->second.def != nullptr,
+                    replacement->second.def.has_value(),
                     "JIT rewrite resolved a definition to null");
-                return replacement->second.def;
+                return *replacement->second.def;
             }
 
             BlockEdge *resolve(BlockEdge *edge) const
@@ -103,9 +103,9 @@ namespace cl::jit
                                   const EdgeReplacements &edge_replacements)
         {
             auto original_edges =
-                TerminatorInstruction(&original).block_successor_edges();
+                TerminatorInstruction(original).block_successor_edges();
             auto replacement_edges =
-                TerminatorInstruction(&replacement).block_successor_edges();
+                TerminatorInstruction(replacement).block_successor_edges();
             if(original_edges.size() != replacement_edges.size())
             {
                 return false;
@@ -126,27 +126,27 @@ namespace cl::jit
 
         void validate_available_operands(
             const CompilationStorage &storage, const Instruction &instruction,
-            const absl::flat_hash_set<const Instruction *> &available_defs)
+            const absl::flat_hash_set<InstructionId> &available_defs)
         {
             visit_operand_references(
                 instruction, [&](uint32_t, OperandClass operand_class,
                                  ValueRepresentation required_representation,
                                  InstructionId definition_id) {
-                    const Instruction *def = storage.instruction(definition_id);
+                    Instruction def = storage.instruction(definition_id);
                     require_rewrite_invariant(
-                        available_defs.contains(def),
+                        available_defs.contains(def.id()),
                         "rewritten instruction refers to a definition outside "
                         "its block or before its definition");
                     require_rewrite_invariant(
                         static_cast<uint8_t>(operand_class) ==
-                            static_cast<uint8_t>(def->result_class()),
+                            static_cast<uint8_t>(def.result_class()),
                         "rewritten instruction has an operand with an "
                         "incompatible result class");
                     if(operand_class == OperandClass::ProgramValue &&
                        required_representation != ValueRepresentation::None)
                     {
                         require_rewrite_invariant(
-                            def->value_representation() ==
+                            def.value_representation() ==
                                 required_representation,
                             "rewritten instruction has an operand with an "
                             "incompatible value representation");
@@ -159,7 +159,7 @@ namespace cl::jit
             Block *block;
             std::vector<InstructionId> parameters;
             std::vector<InstructionId> instructions;
-            std::vector<Instruction *> removed_originals;
+            std::vector<InstructionId> removed_originals;
         };
 
         using ParameterRetentionMasks =
@@ -199,7 +199,7 @@ namespace cl::jit
         }
 
         GraphQueries queries = graph_->prepare_queries(traversal.queries());
-        absl::flat_hash_set<const Instruction *> allocated_instructions;
+        absl::flat_hash_set<InstructionId> allocated_instructions;
         RewriteContext context(session_, storage_, &allocated_instructions);
         RewriteSummary summary;
         ParameterRetentionMasks parameter_retention;
@@ -215,7 +215,7 @@ namespace cl::jit
                 {
                     BlockParameterRewrite rewrite = callbacks.block_parameter(
                         callback, context, queries, *block, index,
-                        *storage_->instruction(block->parameters_[index]));
+                        storage_->instruction(block->parameters_[index]));
                     bool keep =
                         rewrite.kind_ == BlockParameterRewrite::Kind::Keep;
                     retained.push_back(keep);
@@ -225,14 +225,12 @@ namespace cl::jit
             }
         }
 
-        absl::flat_hash_set<const Instruction *> staged_instruction_set;
+        absl::flat_hash_set<InstructionId> staged_instruction_set;
         std::vector<StagedBlockRewrite> staged_blocks;
         staged_blocks.reserve(graph_->blocks_.size());
         bool edges_changed = false;
-        auto record_normalization = [&](const Instruction *before,
-                                        Instruction *after) {
-            assert(before != nullptr);
-            assert(after != nullptr);
+        auto record_normalization = [&](InstructionId before,
+                                        InstructionId after) {
             if(before == after)
             {
                 return;
@@ -259,15 +257,13 @@ namespace cl::jit
                     ++index)
                 {
                     InstructionId parameter_id = block->parameters_[index];
-                    Instruction *parameter =
-                        storage_->instruction(parameter_id);
                     if(retained[index])
                     {
                         staged.parameters.push_back(parameter_id);
                     }
                     else
                     {
-                        staged.removed_originals.push_back(parameter);
+                        staged.removed_originals.push_back(parameter_id);
                     }
                 }
             }
@@ -277,14 +273,14 @@ namespace cl::jit
             }
             DefReplacements def_replacements;
             EdgeReplacements edge_replacements;
-            absl::flat_hash_set<const Instruction *> available_defs;
+            absl::flat_hash_set<InstructionId> available_defs;
             for(InstructionId parameter: staged.parameters)
             {
-                available_defs.insert(storage_->instruction(parameter));
+                available_defs.insert(parameter);
             }
 
             auto process_insertion = [&](RewriteInsertion insertion) {
-                absl::flat_hash_set<const Instruction *> transfer_sources;
+                absl::flat_hash_set<InstructionId> transfer_sources;
                 SequenceReplacements no_sequence_replacements;
                 DefResolver existing_resolver(def_replacements,
                                               no_sequence_replacements,
@@ -292,14 +288,12 @@ namespace cl::jit
                 for(const RewriteInsertion::TransferOutput &transfer:
                     insertion.transfer_outputs_)
                 {
-                    Instruction *source =
-                        storage_->instruction(transfer.source());
                     require_rewrite_invariant(
-                        transfer_sources.insert(source).second,
+                        transfer_sources.insert(transfer.source()).second,
                         "JIT rewrite insertion transfers one source more than "
                         "once");
-                    Instruction *active_source =
-                        existing_resolver.resolve(source);
+                    InstructionId active_source =
+                        existing_resolver.resolve(transfer.source());
                     require_rewrite_invariant(
                         available_defs.contains(active_source),
                         "JIT rewrite insertion transfers a source not "
@@ -307,69 +301,68 @@ namespace cl::jit
                 }
 
                 SequenceReplacements sequence_replacements;
-                for(Instruction *proposed: insertion.instructions_)
+                for(Instruction proposed: insertion.instructions_)
                 {
                     require_rewrite_invariant(
-                        proposed != nullptr,
-                        "JIT rewrite insertion emitted a null instruction");
-                    require_rewrite_invariant(
-                        allocated_instructions.contains(proposed),
+                        allocated_instructions.contains(proposed.id()),
                         "inserted instructions must be allocated through this "
                         "rewrite's context");
                     require_rewrite_invariant(
-                        !sequence_replacements.contains(proposed),
+                        !sequence_replacements.contains(proposed.id()),
                         "a rewrite insertion may not emit one instruction "
                         "twice");
 
                     DefResolver resolver(def_replacements,
                                          sequence_replacements,
                                          edge_replacements);
-                    Instruction *normalized =
-                        rebuild_instruction_with_references(
-                            *proposed, *storage_, resolver, context);
+                    Instruction normalized =
+                        rebuild_instruction_with_references(proposed, *storage_,
+                                                            resolver, context);
                     require_rewrite_invariant(
-                        !normalized->is_detached(),
+                        !normalized.is_detached(),
                         "a detached instruction cannot be inserted");
                     require_rewrite_invariant(
-                        !is_block_parameter_kind(normalized->kind()),
+                        !is_block_parameter_kind(normalized.kind()),
                         "block-parameter instructions cannot be inserted into "
                         "a block body");
                     require_rewrite_invariant(
-                        !normalized->is_block_terminator(),
+                        !normalized.is_block_terminator(),
                         "a block terminator cannot be structurally inserted");
                     require_rewrite_invariant(
-                        staged_instruction_set.insert(normalized).second,
+                        staged_instruction_set.insert(normalized.id()).second,
                         "an instruction cannot occupy more than one graph "
                         "position");
-                    sequence_replacements.emplace(proposed, normalized);
-                    record_normalization(proposed, normalized);
-                    validate_available_operands(*storage_, *normalized,
+                    sequence_replacements.emplace(proposed.id(),
+                                                  normalized.id());
+                    record_normalization(proposed.id(), normalized.id());
+                    validate_available_operands(*storage_, normalized,
                                                 available_defs);
-                    staged.instructions.push_back(normalized->id());
-                    if(normalized->result_class() != ResultClass::None)
+                    staged.instructions.push_back(normalized.id());
+                    if(normalized.result_class() != ResultClass::None)
                     {
-                        available_defs.insert(normalized);
+                        available_defs.insert(normalized.id());
                     }
                 }
 
                 for(const RewriteInsertion::TransferOutput &transfer:
                     insertion.transfer_outputs_)
                 {
-                    Instruction *source =
+                    Instruction source =
                         storage_->instruction(transfer.source());
-                    Instruction *output =
-                        storage_->instruction(transfer.output());
-                    auto emitted = sequence_replacements.find(output);
+                    auto emitted =
+                        sequence_replacements.find(transfer.output());
                     require_rewrite_invariant(
                         emitted != sequence_replacements.end(),
                         "a rewrite insertion transfer output must be emitted "
                         "by that insertion");
                     require_rewrite_invariant(
-                        compatible_results(*source, *emitted->second),
+                        compatible_results(
+                            source, storage_->instruction(emitted->second)),
                         "a rewrite insertion transfer has an incompatible "
                         "result class or value representation");
                     def_replacements.insert_or_assign(
-                        source, DefReplacement{emitted->second, false});
+                        transfer.source(),
+                        DefReplacement{emitted->second, false});
                 }
 
                 if(!insertion.instructions_.empty())
@@ -386,13 +379,13 @@ namespace cl::jit
 
             for(InstructionId original_id: block->instructions_)
             {
-                Instruction *original = storage_->instruction(original_id);
+                Instruction original = storage_->instruction(original_id);
                 if constexpr(HasBeforeInstructionCallback)
                 {
                     process_insertion(callbacks.before_instruction(
-                        callback, context, queries, *block, *original));
+                        callback, context, queries, *block, original));
                 }
-                if(original->is_block_terminator())
+                if(original.is_block_terminator())
                 {
                     SequenceReplacements no_sequence_replacements;
                     DefResolver resolver(def_replacements,
@@ -427,16 +420,15 @@ namespace cl::jit
                                 }
                             }
                             ProgramValueRef argument = edge->arguments()[index];
-                            Instruction *resolved =
-                                resolver.resolve(storage_->instruction(
-                                    argument.instruction_id()));
+                            InstructionId resolved =
+                                resolver.resolve(argument.instruction_id());
                             require_rewrite_invariant(
                                 available_defs.contains(resolved),
                                 "rewritten block edge refers to a definition "
                                 "outside its source block or after the edge");
-                            changed |=
-                                resolved->id() != argument.instruction_id();
-                            arguments.emplace_back(resolved);
+                            changed |= resolved != argument.instruction_id();
+                            arguments.emplace_back(
+                                storage_->instruction(resolved));
                         }
                         BlockEdge *replacement = edge;
                         if(changed)
@@ -449,7 +441,7 @@ namespace cl::jit
                     }
                 }
 
-                Instruction *callback_input = original;
+                Instruction callback_input = original;
                 if(input == RewriteInput::Normalized)
                 {
                     SequenceReplacements no_sequence_replacements;
@@ -457,20 +449,20 @@ namespace cl::jit
                                          no_sequence_replacements,
                                          edge_replacements);
                     callback_input = rebuild_instruction_with_references(
-                        *original, *storage_, resolver, context);
-                    record_normalization(original, callback_input);
-                    validate_available_operands(*storage_, *callback_input,
+                        original, *storage_, resolver, context);
+                    record_normalization(original.id(), callback_input.id());
+                    validate_available_operands(*storage_, callback_input,
                                                 available_defs);
                 }
                 RewriteResult result = RewriteResult::keep();
                 if constexpr(HasInstructionCallback)
                 {
                     result = callbacks.rewrite_instruction(
-                        callback, context, queries, *block, *callback_input);
+                        callback, context, queries, *block, callback_input);
                 }
                 SequenceReplacements sequence_replacements;
                 RewriteResult::InstructionSequence proposed_instructions;
-                Instruction *proposed_replacement = nullptr;
+                std::optional<InstructionId> proposed_replacement;
                 bool replacement_is_existing_def = false;
                 bool explicitly_erased = false;
 
@@ -479,17 +471,17 @@ namespace cl::jit
                     case RewriteResult::Kind::Keep:
                         proposed_instructions.push_back(callback_input);
                         proposed_replacement =
-                            callback_input->result_class() == ResultClass::None
-                                ? nullptr
-                                : callback_input;
+                            callback_input.result_class() == ResultClass::None
+                                ? std::nullopt
+                                : std::optional(callback_input.id());
                         break;
                     case RewriteResult::Kind::KeepWithPrefix:
                         proposed_instructions = std::move(result.instructions_);
                         proposed_instructions.push_back(callback_input);
                         proposed_replacement =
-                            callback_input->result_class() == ResultClass::None
-                                ? nullptr
-                                : callback_input;
+                            callback_input.result_class() == ResultClass::None
+                                ? std::nullopt
+                                : std::optional(callback_input.id());
                         break;
                     case RewriteResult::Kind::KeepWithSuffix:
                         proposed_instructions.push_back(callback_input);
@@ -498,9 +490,9 @@ namespace cl::jit
                             result.instructions_.begin(),
                             result.instructions_.end());
                         proposed_replacement =
-                            callback_input->result_class() == ResultClass::None
-                                ? nullptr
-                                : callback_input;
+                            callback_input.result_class() == ResultClass::None
+                                ? std::nullopt
+                                : std::optional(callback_input.id());
                         break;
                     case RewriteResult::Kind::Erase:
                         explicitly_erased = true;
@@ -508,29 +500,27 @@ namespace cl::jit
                     case RewriteResult::Kind::Replace:
                         proposed_instructions = std::move(result.instructions_);
                         assert(result.replacement_def_.has_value());
-                        proposed_replacement =
-                            storage_->instruction(*result.replacement_def_);
-                        if(original->result_class() == ResultClass::None)
+                        proposed_replacement = *result.replacement_def_;
+                        if(original.result_class() == ResultClass::None)
                         {
-                            proposed_replacement = nullptr;
+                            proposed_replacement = std::nullopt;
                         }
                         break;
                     case RewriteResult::Kind::ReplaceWithoutResult:
                         require_rewrite_invariant(
-                            original->result_class() == ResultClass::None,
+                            original.result_class() == ResultClass::None,
                             "replace_without_result requires an instruction "
                             "without a result");
                         proposed_instructions = std::move(result.instructions_);
                         break;
                     case RewriteResult::Kind::ReplaceWithDef:
                         require_rewrite_invariant(
-                            original->result_class() != ResultClass::None,
+                            original.result_class() != ResultClass::None,
                             "replace_with_def requires a result-producing "
                             "instruction");
                         assert(result.instructions_.empty());
                         assert(result.replacement_def_.has_value());
-                        proposed_replacement =
-                            storage_->instruction(*result.replacement_def_);
+                        proposed_replacement = *result.replacement_def_;
                         replacement_is_existing_def = true;
                         break;
                 }
@@ -540,53 +530,52 @@ namespace cl::jit
                     result.kind_ == RewriteResult::Kind::Keep ||
                     result.kind_ == RewriteResult::Kind::KeepWithPrefix ||
                     result.kind_ == RewriteResult::Kind::KeepWithSuffix;
-                for(Instruction *proposed: proposed_instructions)
+                for(Instruction proposed: proposed_instructions)
                 {
-                    require_rewrite_invariant(
-                        proposed != nullptr,
-                        "JIT rewrite emitted a null instruction");
-                    if(!keeps_callback_input || proposed != callback_input)
+                    if(!keeps_callback_input ||
+                       proposed.id() != callback_input.id())
                     {
                         require_rewrite_invariant(
-                            allocated_instructions.contains(proposed),
+                            allocated_instructions.contains(proposed.id()),
                             "replacement instructions must be allocated "
                             "through this rewrite's context");
                     }
                     require_rewrite_invariant(
-                        !sequence_replacements.contains(proposed),
+                        !sequence_replacements.contains(proposed.id()),
                         "a replacement sequence may not emit one instruction "
                         "twice");
 
                     DefResolver resolver(def_replacements,
                                          sequence_replacements,
                                          edge_replacements);
-                    Instruction *normalized =
-                        rebuild_instruction_with_references(
-                            *proposed, *storage_, resolver, context);
+                    Instruction normalized =
+                        rebuild_instruction_with_references(proposed, *storage_,
+                                                            resolver, context);
                     require_rewrite_invariant(
-                        !normalized->is_detached(),
+                        !normalized.is_detached(),
                         "a detached instruction cannot be emitted");
                     require_rewrite_invariant(
-                        !is_block_parameter_kind(normalized->kind()),
+                        !is_block_parameter_kind(normalized.kind()),
                         "block-parameter instructions cannot be emitted into a "
                         "block body");
                     require_rewrite_invariant(
-                        staged_instruction_set.insert(normalized).second,
+                        staged_instruction_set.insert(normalized.id()).second,
                         "an instruction cannot occupy more than one graph "
                         "position");
-                    sequence_replacements.emplace(proposed, normalized);
-                    record_normalization(proposed, normalized);
-                    validate_available_operands(*storage_, *normalized,
+                    sequence_replacements.emplace(proposed.id(),
+                                                  normalized.id());
+                    record_normalization(proposed.id(), normalized.id());
+                    validate_available_operands(*storage_, normalized,
                                                 available_defs);
-                    staged.instructions.push_back(normalized->id());
-                    if(normalized->result_class() != ResultClass::None)
+                    staged.instructions.push_back(normalized.id());
+                    if(normalized.result_class() != ResultClass::None)
                     {
-                        available_defs.insert(normalized);
+                        available_defs.insert(normalized.id());
                     }
                 }
 
-                Instruction *normalized_replacement = nullptr;
-                if(proposed_replacement != nullptr)
+                std::optional<InstructionId> normalized_replacement;
+                if(proposed_replacement.has_value())
                 {
                     DefResolver resolver(def_replacements,
                                          sequence_replacements,
@@ -594,16 +583,16 @@ namespace cl::jit
                     if(replacement_is_existing_def)
                     {
                         normalized_replacement =
-                            resolver.resolve(proposed_replacement);
+                            resolver.resolve(*proposed_replacement);
                         require_rewrite_invariant(
-                            available_defs.contains(normalized_replacement),
+                            available_defs.contains(*normalized_replacement),
                             "replace_with_def requires a definition already "
                             "available in the staged block");
                     }
                     else
                     {
                         auto replacement =
-                            sequence_replacements.find(proposed_replacement);
+                            sequence_replacements.find(*proposed_replacement);
                         require_rewrite_invariant(
                             replacement != sequence_replacements.end(),
                             "a replacement result must be emitted by its "
@@ -611,33 +600,35 @@ namespace cl::jit
                         normalized_replacement = replacement->second;
                     }
                     require_rewrite_invariant(
-                        compatible_results(*original, *normalized_replacement),
+                        compatible_results(
+                            original,
+                            storage_->instruction(*normalized_replacement)),
                         "a replacement definition has an incompatible result "
                         "class or value representation");
                 }
 
-                if(original->result_class() != ResultClass::None)
+                if(original.result_class() != ResultClass::None)
                 {
                     if(explicitly_erased)
                     {
-                        def_replacements.emplace(original,
-                                                 DefReplacement{nullptr, true});
+                        def_replacements.emplace(
+                            original.id(), DefReplacement{std::nullopt, true});
                     }
                     else
                     {
                         require_rewrite_invariant(
-                            normalized_replacement != nullptr,
+                            normalized_replacement.has_value(),
                             "a result-producing instruction requires a "
                             "replacement definition");
                         def_replacements.emplace(
-                            original,
+                            original.id(),
                             DefReplacement{normalized_replacement, false});
                     }
                 }
                 else
                 {
                     require_rewrite_invariant(
-                        normalized_replacement == nullptr,
+                        !normalized_replacement.has_value(),
                         "an instruction without a result cannot have a "
                         "replacement definition");
                 }
@@ -645,24 +636,24 @@ namespace cl::jit
                 size_t output_count = staged.instructions.size() - output_start;
                 bool position_unchanged =
                     output_count == 1 &&
-                    staged.instructions[output_start] == original->id();
+                    staged.instructions[output_start] == original.id();
                 bool original_retained = false;
                 for(size_t index = output_start;
                     index < staged.instructions.size(); ++index)
                 {
                     original_retained |=
-                        staged.instructions[index] == original->id();
+                        staged.instructions[index] == original.id();
                 }
                 if(!original_retained)
                 {
-                    staged.removed_originals.push_back(original);
+                    staged.removed_originals.push_back(original.id());
                 }
                 if(!position_unchanged)
                 {
                     summary.instructions_changed = true;
                 }
 
-                bool original_is_terminator = original->is_block_terminator();
+                bool original_is_terminator = original.is_block_terminator();
                 for(size_t index = output_start;
                     index < staged.instructions.size(); ++index)
                 {
@@ -670,7 +661,7 @@ namespace cl::jit
                         index + 1 == staged.instructions.size();
                     bool emitted_terminator =
                         storage_->instruction(staged.instructions[index])
-                            ->is_block_terminator();
+                            .is_block_terminator();
                     if(original_is_terminator)
                     {
                         require_rewrite_invariant(
@@ -689,17 +680,18 @@ namespace cl::jit
                 {
                     require_rewrite_invariant(output_count != 0,
                                               "a terminator cannot be erased");
-                    Instruction *new_terminator =
+                    Instruction new_terminator =
                         storage_->instruction(staged.instructions.back());
                     require_rewrite_invariant(
-                        new_terminator->is_block_terminator(),
+                        new_terminator.is_block_terminator(),
                         "a terminator replacement must end in a terminator");
                     require_rewrite_invariant(
-                        same_successor_edges(*original, *new_terminator,
+                        same_successor_edges(original, new_terminator,
                                              edge_replacements),
                         "instruction rewriting cannot change CFG successor "
                         "edges");
-                    summary.terminators_changed |= new_terminator != original;
+                    summary.terminators_changed |=
+                        new_terminator.id() != original.id();
                 }
             }
 
@@ -707,7 +699,7 @@ namespace cl::jit
                                       "a rewritten block cannot be empty");
             require_rewrite_invariant(
                 storage_->instruction(staged.instructions.back())
-                    ->is_block_terminator(),
+                    .is_block_terminator(),
                 "a rewritten block must end in a terminator");
 
             staged_blocks.push_back(std::move(staged));
@@ -729,9 +721,9 @@ namespace cl::jit
         }
         for(StagedBlockRewrite &staged: staged_blocks)
         {
-            for(Instruction *removed: staged.removed_originals)
+            for(InstructionId removed: staged.removed_originals)
             {
-                removed->detach_and_poison();
+                storage_->detach_instruction(removed);
             }
         }
         ++graph_->mutation_generation_;

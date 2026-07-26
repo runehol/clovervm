@@ -46,10 +46,10 @@ namespace cl::jit
         }
 
         InstructionAllocationConstraints
-        entry_parameter_constraints(const Instruction *parameter,
+        entry_parameter_constraints(Instruction parameter,
                                     size_t parameter_index)
         {
-            if(parameter->kind() != InstructionKind::Parameter)
+            if(parameter.kind() != InstructionKind::Parameter)
             {
                 fatal("AArch64 allocation constraint bring-up does not "
                       "support F64 entry parameters");
@@ -68,7 +68,7 @@ namespace cl::jit
         }
 
         InstructionAllocationConstraints
-        return_constraints(const ReturnInstruction *instruction)
+        return_constraints(ReturnInstruction instruction)
         {
             return InstructionAllocationConstraints(
                 instruction,
@@ -78,7 +78,7 @@ namespace cl::jit
         }
 
         InstructionAllocationConstraints
-        gpr_temporary_constraints(const Instruction *instruction)
+        gpr_temporary_constraints(Instruction instruction)
         {
             return InstructionAllocationConstraints(
                 instruction, {}, std::nullopt,
@@ -109,9 +109,9 @@ namespace cl::jit
 
             for(InstructionId instruction_id: block->instructions())
             {
-                const Instruction *instruction =
+                Instruction instruction =
                     graph.storage()->instruction(instruction_id);
-                switch(instruction->kind())
+                switch(instruction.kind())
                 {
                     case InstructionKind::Const:
                     case InstructionKind::Uninitialized:
@@ -130,7 +130,7 @@ namespace cl::jit
 
                     case InstructionKind::Return:
                         overrides.push_back(return_constraints(
-                            instruction->as<ReturnInstruction>()));
+                            instruction.as<ReturnInstruction>()));
                         break;
 
                     case InstructionKind::ConditionalBranch:
@@ -140,7 +140,7 @@ namespace cl::jit
                         break;
 
                     default:
-                        unsupported_instruction(instruction->kind());
+                        unsupported_instruction(instruction.kind());
                 }
             }
         }

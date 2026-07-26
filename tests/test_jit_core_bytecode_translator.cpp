@@ -48,15 +48,15 @@ namespace cl::jit
             GraphBuilder graph_builder;
         };
 
-        std::vector<Instruction *> instructions_of_kind(Block *block,
-                                                        InstructionKind kind)
+        std::vector<Instruction> instructions_of_kind(Block *block,
+                                                      InstructionKind kind)
         {
-            std::vector<Instruction *> matches;
+            std::vector<Instruction> matches;
             for(InstructionId instruction_id: block->instructions())
             {
-                Instruction *instruction =
+                Instruction instruction =
                     block->storage()->instruction(instruction_id);
-                if(instruction->kind() == kind)
+                if(instruction.kind() == kind)
                 {
                     matches.push_back(instruction);
                 }
@@ -98,22 +98,22 @@ namespace cl::jit
         ASSERT_EQ(1u, graph->blocks().size());
         Block *entry = graph->entry_block();
 
-        std::vector<Instruction *> constants =
+        std::vector<Instruction> constants =
             instructions_of_kind(entry, InstructionKind::Const);
         ASSERT_EQ(3u, constants.size());
         EXPECT_EQ(Value::from_smi(37),
-                  constants[0]->as<ConstInstruction>()->constant());
+                  constants[0].as<ConstInstruction>().constant());
         EXPECT_EQ(Value::None(),
-                  constants[1]->as<ConstInstruction>()->constant());
+                  constants[1].as<ConstInstruction>().constant());
         EXPECT_EQ(fixture.name.raw_value(),
-                  constants[2]->as<ConstInstruction>()->constant());
+                  constants[2].as<ConstInstruction>().constant());
         EXPECT_TRUE(instructions_of_kind(entry, InstructionKind::Mov).empty());
 
-        ReturnInstruction *return_instruction =
+        ReturnInstruction return_instruction =
             entry->instruction_at(entry->instructions().size() - 1)
-                ->as<ReturnInstruction>();
-        EXPECT_EQ(constants[0]->id(),
-                  return_instruction->return_value().instruction_id());
+                .as<ReturnInstruction>();
+        EXPECT_EQ(constants[0].id(),
+                  return_instruction.return_value().instruction_id());
     }
 
     TEST(JitCoreBytecodeTranslator, TranslatesIdentityTests)
@@ -142,23 +142,23 @@ namespace cl::jit
 
         ControlFlowGraph *graph = fixture.translate();
         Block *entry = graph->entry_block();
-        std::vector<Instruction *> constants =
+        std::vector<Instruction> constants =
             instructions_of_kind(entry, InstructionKind::Const);
-        std::vector<Instruction *> is_instructions =
+        std::vector<Instruction> is_instructions =
             instructions_of_kind(entry, InstructionKind::Is);
-        std::vector<Instruction *> is_not_instructions =
+        std::vector<Instruction> is_not_instructions =
             instructions_of_kind(entry, InstructionKind::IsNot);
         ASSERT_EQ(2u, constants.size());
         ASSERT_EQ(1u, is_instructions.size());
         ASSERT_EQ(1u, is_not_instructions.size());
 
-        IsInstruction *is = is_instructions.front()->as<IsInstruction>();
-        EXPECT_EQ(constants[0]->id(), is->lhs().instruction_id());
-        EXPECT_EQ(constants[1]->id(), is->rhs().instruction_id());
-        IsNotInstruction *is_not =
-            is_not_instructions.front()->as<IsNotInstruction>();
-        EXPECT_EQ(constants[0]->id(), is_not->lhs().instruction_id());
-        EXPECT_EQ(constants[1]->id(), is_not->rhs().instruction_id());
+        IsInstruction is = is_instructions.front().as<IsInstruction>();
+        EXPECT_EQ(constants[0].id(), is.lhs().instruction_id());
+        EXPECT_EQ(constants[1].id(), is.rhs().instruction_id());
+        IsNotInstruction is_not =
+            is_not_instructions.front().as<IsNotInstruction>();
+        EXPECT_EQ(constants[0].id(), is_not.lhs().instruction_id());
+        EXPECT_EQ(constants[1].id(), is_not.rhs().instruction_id());
     }
 
     TEST(JitCoreBytecodeTranslator,
@@ -179,19 +179,19 @@ namespace cl::jit
         Block *entry = graph->blocks()[0];
         Block *fallthrough = graph->blocks()[1];
         Block *jump = graph->blocks()[2];
-        ConditionalBranchInstruction *branch =
+        ConditionalBranchInstruction branch =
             entry->instruction_at(entry->instructions().size() - 1)
-                ->as<ConditionalBranchInstruction>();
+                .as<ConditionalBranchInstruction>();
 
-        EXPECT_EQ(fallthrough, branch->true_edge()->target());
-        EXPECT_EQ(jump, branch->false_edge()->target());
+        EXPECT_EQ(fallthrough, branch.true_edge()->target());
+        EXPECT_EQ(jump, branch.false_edge()->target());
         size_t state_size = bytecode_state_size(*graph);
-        ASSERT_EQ(state_size, branch->true_edge()->arguments().size());
-        ASSERT_EQ(state_size, branch->false_edge()->arguments().size());
-        EXPECT_EQ(branch->condition().instruction_id(),
-                  branch->true_edge()->arguments()[0].instruction_id());
-        EXPECT_EQ(branch->condition().instruction_id(),
-                  branch->false_edge()->arguments()[0].instruction_id());
+        ASSERT_EQ(state_size, branch.true_edge()->arguments().size());
+        ASSERT_EQ(state_size, branch.false_edge()->arguments().size());
+        EXPECT_EQ(branch.condition().instruction_id(),
+                  branch.true_edge()->arguments()[0].instruction_id());
+        EXPECT_EQ(branch.condition().instruction_id(),
+                  branch.false_edge()->arguments()[0].instruction_id());
         EXPECT_EQ(state_size, fallthrough->parameters().size());
         EXPECT_EQ(state_size, jump->parameters().size());
     }
@@ -212,12 +212,12 @@ namespace cl::jit
         ControlFlowGraph *graph = fixture.translate();
         ASSERT_EQ(3u, graph->blocks().size());
         Block *entry = graph->blocks()[0];
-        ConditionalBranchInstruction *branch =
+        ConditionalBranchInstruction branch =
             entry->instruction_at(entry->instructions().size() - 1)
-                ->as<ConditionalBranchInstruction>();
+                .as<ConditionalBranchInstruction>();
 
-        EXPECT_EQ(graph->blocks()[2], branch->true_edge()->target());
-        EXPECT_EQ(graph->blocks()[1], branch->false_edge()->target());
+        EXPECT_EQ(graph->blocks()[2], branch.true_edge()->target());
+        EXPECT_EQ(graph->blocks()[1], branch.false_edge()->target());
     }
 
     TEST(JitCoreBytecodeTranslator,
@@ -237,22 +237,22 @@ namespace cl::jit
         Block *entry = graph->blocks()[0];
         Block *loop_block = graph->blocks()[1];
 
-        UnconditionalBranchInstruction *entry_branch =
+        UnconditionalBranchInstruction entry_branch =
             entry->instruction_at(entry->instructions().size() - 1)
-                ->as<UnconditionalBranchInstruction>();
-        EXPECT_EQ(loop_block, entry_branch->edge()->target());
+                .as<UnconditionalBranchInstruction>();
+        EXPECT_EQ(loop_block, entry_branch.edge()->target());
         size_t state_size = bytecode_state_size(*graph);
-        ASSERT_EQ(state_size, entry_branch->edge()->arguments().size());
+        ASSERT_EQ(state_size, entry_branch.edge()->arguments().size());
         ASSERT_EQ(state_size, loop_block->parameters().size());
 
-        ConditionalBranchInstruction *loop_branch =
+        ConditionalBranchInstruction loop_branch =
             loop_block->instruction_at(loop_block->instructions().size() - 1)
-                ->as<ConditionalBranchInstruction>();
-        EXPECT_EQ(loop_block, loop_branch->true_edge()->target());
-        ASSERT_EQ(state_size, loop_branch->true_edge()->arguments().size());
+                .as<ConditionalBranchInstruction>();
+        EXPECT_EQ(loop_block, loop_branch.true_edge()->target());
+        ASSERT_EQ(state_size, loop_branch.true_edge()->arguments().size());
         ASSERT_EQ(2u, loop_block->predecessor_edges().size());
-        EXPECT_EQ(entry_branch->edge(), loop_block->predecessor_edges()[0]);
-        EXPECT_EQ(loop_branch->true_edge(), loop_block->predecessor_edges()[1]);
+        EXPECT_EQ(entry_branch.edge(), loop_block->predecessor_edges()[0]);
+        EXPECT_EQ(loop_branch.true_edge(), loop_block->predecessor_edges()[1]);
     }
 
     TEST(JitCoreBytecodeTranslator,
@@ -265,36 +265,36 @@ namespace cl::jit
 
         ControlFlowGraph *graph = fixture.translate();
         Block *entry = graph->entry_block();
-        std::vector<Instruction *> snapshots =
+        std::vector<Instruction> snapshots =
             instructions_of_kind(entry, InstructionKind::Snapshot);
-        std::vector<Instruction *> resumes =
+        std::vector<Instruction> resumes =
             instructions_of_kind(entry, InstructionKind::ResumeInInterpreter);
-        std::vector<Instruction *> uninitialized =
+        std::vector<Instruction> uninitialized =
             instructions_of_kind(entry, InstructionKind::Uninitialized);
         ASSERT_EQ(1u, snapshots.size());
         ASSERT_EQ(1u, resumes.size());
         ASSERT_EQ(3u, uninitialized.size());
 
-        SnapshotInstruction *snapshot =
-            snapshots.front()->as<SnapshotInstruction>();
-        EXPECT_EQ(2u, snapshot->resume_pc());
+        SnapshotInstruction snapshot =
+            snapshots.front().as<SnapshotInstruction>();
+        EXPECT_EQ(2u, snapshot.resume_pc());
         ASSERT_EQ(bytecode_state_size(*graph),
-                  snapshot->captured_values().size());
-        std::vector<Instruction *> constants =
+                  snapshot.captured_values().size());
+        std::vector<Instruction> constants =
             instructions_of_kind(entry, InstructionKind::Const);
         ASSERT_EQ(1u, constants.size());
-        EXPECT_EQ(constants.front()->id(),
-                  snapshot->captured_values()[0].instruction_id());
-        EXPECT_EQ(snapshot->id(), resumes.front()
-                                      ->as<ResumeInInterpreterInstruction>()
-                                      ->snapshot()
-                                      .instruction_id());
+        EXPECT_EQ(constants.front().id(),
+                  snapshot.captured_values()[0].instruction_id());
+        EXPECT_EQ(snapshot.id(), resumes.front()
+                                     .as<ResumeInInterpreterInstruction>()
+                                     .snapshot()
+                                     .instruction_id());
 
-        ReturnInstruction *return_instruction =
+        ReturnInstruction return_instruction =
             entry->instruction_at(entry->instructions().size() - 1)
-                ->as<ReturnInstruction>();
-        EXPECT_EQ(uninitialized.back()->id(),
-                  return_instruction->return_value().instruction_id());
+                .as<ReturnInstruction>();
+        EXPECT_EQ(uninitialized.back().id(),
+                  return_instruction.return_value().instruction_id());
     }
 
     TEST(JitCoreBytecodeTranslator,
@@ -310,15 +310,15 @@ namespace cl::jit
         ControlFlowGraph *graph = fixture.translate();
         Block *entry = graph->entry_block();
         ASSERT_EQ(1u, entry->parameters().size());
-        Instruction *parameter = entry->parameter_at(0);
-        std::vector<Instruction *> snapshots =
+        Instruction parameter = entry->parameter_at(0);
+        std::vector<Instruction> snapshots =
             instructions_of_kind(entry, InstructionKind::Snapshot);
         ASSERT_EQ(1u, snapshots.size());
         SnapshotValueRefRange captured =
-            snapshots.front()->as<SnapshotInstruction>()->captured_values();
+            snapshots.front().as<SnapshotInstruction>().captured_values();
         ASSERT_EQ(bytecode_state_size(*graph), captured.size());
-        EXPECT_EQ(parameter->id(), captured[0].instruction_id());
-        EXPECT_EQ(parameter->id(), captured[1].instruction_id());
+        EXPECT_EQ(parameter.id(), captured[0].instruction_id());
+        EXPECT_EQ(parameter.id(), captured[1].instruction_id());
     }
 
     TEST(JitCoreBytecodeTranslator,
@@ -336,27 +336,27 @@ namespace cl::jit
 
         ControlFlowGraph *graph = fixture.translate();
         Block *entry = graph->entry_block();
-        std::vector<Instruction *> resumes =
+        std::vector<Instruction> resumes =
             instructions_of_kind(entry, InstructionKind::ResumeInInterpreter);
         ASSERT_EQ(1u, resumes.size());
-        ConditionalBranchInstruction *branch =
+        ConditionalBranchInstruction branch =
             entry->instruction_at(entry->instructions().size() - 1)
-                ->as<ConditionalBranchInstruction>();
+                .as<ConditionalBranchInstruction>();
         EXPECT_EQ(InstructionKind::Uninitialized,
                   graph->storage()
-                      ->instruction(branch->condition().instruction_id())
-                      ->kind());
+                      ->instruction(branch.condition().instruction_id())
+                      .kind());
 
-        std::vector<Instruction *> constants =
+        std::vector<Instruction> constants =
             instructions_of_kind(entry, InstructionKind::Const);
         ASSERT_EQ(1u, constants.size());
         size_t state_size = bytecode_state_size(*graph);
-        ASSERT_EQ(state_size, branch->true_edge()->arguments().size());
-        ASSERT_EQ(state_size, branch->false_edge()->arguments().size());
-        EXPECT_EQ(constants.front()->id(),
-                  branch->true_edge()->arguments()[0].instruction_id());
-        EXPECT_EQ(constants.front()->id(),
-                  branch->false_edge()->arguments()[0].instruction_id());
+        ASSERT_EQ(state_size, branch.true_edge()->arguments().size());
+        ASSERT_EQ(state_size, branch.false_edge()->arguments().size());
+        EXPECT_EQ(constants.front().id(),
+                  branch.true_edge()->arguments()[0].instruction_id());
+        EXPECT_EQ(constants.front().id(),
+                  branch.false_edge()->arguments()[0].instruction_id());
     }
 
 }  // namespace cl::jit

@@ -2,8 +2,9 @@
 
 #include "runtime/fatal.h"
 
+#include <absl/container/flat_hash_map.h>
+
 #include <algorithm>
-#include <unordered_map>
 #include <unordered_set>
 #include <vector>
 
@@ -32,18 +33,18 @@ namespace cl::jit
             return false;
         }
 
-        bool instruction_operand_matches(const Instruction *instruction,
+        bool instruction_operand_matches(Instruction instruction,
                                          size_t operand_index,
-                                         const Instruction *definition)
+                                         InstructionId definition)
         {
             bool found = false;
             visit_operand_references(
-                *instruction,
+                instruction,
                 [&](uint32_t index, OperandClass operand_class,
                     ValueRepresentation, InstructionId operand_definition) {
                     if(operand_class != OperandClass::Snapshot &&
                        index == operand_index &&
-                       operand_definition == definition->id())
+                       operand_definition == definition)
                     {
                         found = true;
                     }
@@ -54,10 +55,10 @@ namespace cl::jit
 
     void verify_prepared_allocation(const PreparedAllocationProblem &problem)
     {
-        std::unordered_map<const Block *, LivenessRange> block_ranges;
-        std::unordered_map<const Instruction *, LivenessPosition>
+        absl::flat_hash_map<const Block *, LivenessRange> block_ranges;
+        absl::flat_hash_map<InstructionId, LivenessPosition>
             parameter_positions;
-        std::unordered_map<const Instruction *, InstructionPosition>
+        absl::flat_hash_map<InstructionId, InstructionPosition>
             instruction_positions;
 
         LivenessPosition expected_block_start(0);
@@ -81,9 +82,8 @@ namespace cl::jit
             LivenessPosition entry_after = block_range.range.start.next();
             for(InstructionId parameter_id: block_range.block->parameters())
             {
-                const Instruction *parameter =
-                    block_range.block->storage()->instruction(parameter_id);
-                if(!parameter_positions.emplace(parameter, entry_after).second)
+                if(!parameter_positions.emplace(parameter_id, entry_after)
+                        .second)
                 {
                     fatal("duplicate JIT allocator block parameter");
                 }
@@ -93,10 +93,10 @@ namespace cl::jit
             {
                 LivenessPosition early(block_range.range.start.value() + 2 +
                                        index * 2);
-                const Instruction *instruction =
+                Instruction instruction =
                     block_range.block->instruction_at(index);
                 if(!instruction_positions
-                        .emplace(instruction,
+                        .emplace(instruction.id(),
                                  InstructionPosition{block_range.block, early,
                                                      early.next()})
                         .second)
@@ -117,8 +117,7 @@ namespace cl::jit
             const LiveRange &live_range =
                 problem.live_ranges()[occurrence.live_range.value()];
             if(!live_range.range.contains(occurrence.minimum_coverage) ||
-               !occurrence.minimum_coverage.contains(occurrence.position) ||
-               occurrence.anchor.owner() == nullptr)
+               !occurrence.minimum_coverage.contains(occurrence.position))
             {
                 fatal("invalid JIT allocator occurrence");
             }
@@ -127,8 +126,8 @@ namespace cl::jit
             {
                 case OccurrenceAnchor::Kind::InstructionResult:
                     {
-                        const Instruction *instruction =
-                            occurrence.anchor.instruction();
+                        InstructionId instruction =
+                            occurrence.anchor.instruction_id();
                         LivenessPosition expected = LivenessPosition(0);
                         auto parameter = parameter_positions.find(instruction);
                         if(parameter != parameter_positions.end())
@@ -169,7 +168,7 @@ namespace cl::jit
                         if(occurrence.kind != OccurrenceKind::Def ||
                            live_range.origin.kind() !=
                                LiveRangeOrigin::Kind::ProgramValue ||
-                           live_range.origin.instruction() != instruction ||
+                           live_range.origin.instruction_id() != instruction ||
                            occurrence.position != expected)
                         {
                             fatal("invalid JIT allocator result occurrence");
@@ -178,8 +177,8 @@ namespace cl::jit
                     }
                 case OccurrenceAnchor::Kind::InstructionOperand:
                     {
-                        const Instruction *instruction =
-                            occurrence.anchor.instruction();
+                        InstructionId instruction =
+                            occurrence.anchor.instruction_id();
                         auto position = instruction_positions.find(instruction);
                         if(position == instruction_positions.end() ||
                            position->second.block != live_range.block ||
@@ -189,8 +188,10 @@ namespace cl::jit
                            live_range.origin.kind() !=
                                LiveRangeOrigin::Kind::ProgramValue ||
                            !instruction_operand_matches(
-                               instruction, occurrence.anchor.index(),
-                               live_range.origin.instruction()))
+                               live_range.block->storage()->instruction(
+                                   instruction),
+                               occurrence.anchor.index(),
+                               live_range.origin.instruction_id()))
                         {
                             fatal("invalid JIT allocator operand occurrence");
                         }
@@ -213,7 +214,8 @@ namespace cl::jit
                         const BlockEdge *edge = occurrence.anchor.block_edge();
                         size_t argument_index = occurrence.anchor.index();
                         auto range = block_ranges.find(live_range.block);
-                        if(edge->source() != live_range.block ||
+                        if(edge == nullptr ||
+                           edge->source() != live_range.block ||
                            argument_index >= edge->arguments().size() ||
                            range == block_ranges.end() ||
                            occurrence.position.value() + 2 !=
@@ -222,7 +224,7 @@ namespace cl::jit
                            live_range.origin.kind() !=
                                LiveRangeOrigin::Kind::ProgramValue ||
                            edge->arguments()[argument_index].instruction_id() !=
-                               live_range.origin.instruction()->id() ||
+                               live_range.origin.instruction_id() ||
                            occurrence.minimum_coverage !=
                                LivenessRange{occurrence.position,
                                              occurrence.position.next()})
@@ -233,8 +235,8 @@ namespace cl::jit
                     }
                 case OccurrenceAnchor::Kind::InstructionTemporary:
                     {
-                        const Instruction *instruction =
-                            occurrence.anchor.instruction();
+                        InstructionId instruction =
+                            occurrence.anchor.instruction_id();
                         auto position = instruction_positions.find(instruction);
                         if(position == instruction_positions.end() ||
                            position->second.block != live_range.block ||
@@ -242,7 +244,7 @@ namespace cl::jit
                            occurrence.position != position->second.early ||
                            live_range.origin.kind() !=
                                LiveRangeOrigin::Kind::Temporary ||
-                           live_range.origin.instruction() != instruction ||
+                           live_range.origin.instruction_id() != instruction ||
                            live_range.origin.temporary_index() !=
                                occurrence.anchor.index() ||
                            occurrence.minimum_coverage !=
@@ -538,7 +540,21 @@ namespace cl::jit
 
         for(const BundleTransferSet &set: allocation.transfers().sets())
         {
-            if(set.point.owner() == nullptr || set.transfers.empty())
+            bool valid_point = false;
+            switch(set.point.kind())
+            {
+                case TransferPoint::Kind::BeforeInstruction:
+                    valid_point = true;
+                    break;
+                case TransferPoint::Kind::BlockEntry:
+                case TransferPoint::Kind::BlockExit:
+                    valid_point = set.point.block() != nullptr;
+                    break;
+                case TransferPoint::Kind::BlockEdge:
+                    valid_point = set.point.edge() != nullptr;
+                    break;
+            }
+            if(!valid_point || set.transfers.empty())
             {
                 fatal("invalid JIT bundle transfer set");
             }

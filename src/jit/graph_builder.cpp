@@ -76,12 +76,10 @@ namespace cl::jit
         graph_->bytecode_state_order_ = order;
     }
 
-    void GraphBuilder::append_instruction(Block *block,
-                                          Instruction *instruction)
+    void GraphBuilder::append_instruction(Block *block, Instruction instruction)
     {
         assert_can_mutate(block);
-        assert(instruction != nullptr);
-        assert(!is_block_parameter_kind(instruction->kind()));
+        assert(!is_block_parameter_kind(instruction.kind()));
         block->append_instruction(instruction);
     }
 

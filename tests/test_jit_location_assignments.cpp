@@ -10,9 +10,9 @@ namespace cl::jit
         CompilationSession session;
         GraphBuilder builder(session);
         Block *entry = builder.emplace_block();
-        ParameterInstruction *parameter =
+        ParameterInstruction parameter =
             builder.emplace_parameter<ParameterInstruction>(entry);
-        MovInstruction *move = builder.emplace_instruction<MovInstruction>(
+        MovInstruction move = builder.emplace_instruction<MovInstruction>(
             entry, TaggedValueRef(parameter));
         builder.emplace_instruction<ReturnInstruction>(entry,
                                                        TaggedValueRef(move));
@@ -39,11 +39,11 @@ namespace cl::jit
         CompilationSession session;
         GraphBuilder builder(session);
         Block *entry = builder.emplace_block();
-        ParameterInstruction *parameter =
+        ParameterInstruction parameter =
             builder.emplace_parameter<ParameterInstruction>(entry);
-        MovInstruction *before = builder.emplace_instruction<MovInstruction>(
+        MovInstruction before = builder.emplace_instruction<MovInstruction>(
             entry, TaggedValueRef(parameter));
-        MovInstruction *after = builder.emplace_instruction<MovInstruction>(
+        MovInstruction after = builder.emplace_instruction<MovInstruction>(
             entry, TaggedValueRef(parameter));
         builder.emplace_instruction<ReturnInstruction>(entry,
                                                        TaggedValueRef(after));
@@ -54,7 +54,7 @@ namespace cl::jit
         LocationAssignmentsBuilder locations;
         locations.assign(ProgramValueRef(before), PhysicalLocation::reg(x0));
         locations.assign(before, 0, PhysicalLocation::reg(x1));
-        NormalizationRemapping normalization = {{before, after}};
+        NormalizationRemapping normalization = {{before.id(), after.id()}};
 
         LocationAssignments result =
             std::move(locations).finalize(normalization);

@@ -20,22 +20,12 @@ namespace cl::jit
         return graph_->storage();
     }
 
-    Instruction *Block::instruction_at(size_t index)
+    Instruction Block::instruction_at(size_t index) const
     {
         return storage()->instruction(instructions_.at(index));
     }
 
-    const Instruction *Block::instruction_at(size_t index) const
-    {
-        return storage()->instruction(instructions_.at(index));
-    }
-
-    Instruction *Block::parameter_at(size_t index)
-    {
-        return storage()->instruction(parameters_.at(index));
-    }
-
-    const Instruction *Block::parameter_at(size_t index) const
+    Instruction Block::parameter_at(size_t index) const
     {
         return storage()->instruction(parameters_.at(index));
     }
@@ -52,9 +42,9 @@ namespace cl::jit
     TerminatorInstruction Block::terminator() const
     {
         assert(!instructions_.empty());
-        Instruction *instruction =
+        Instruction instruction =
             graph_->storage()->instruction(instructions_.back());
-        assert(instruction->is_block_terminator());
+        assert(instruction.is_block_terminator());
         return TerminatorInstruction(instruction);
     }
 
@@ -76,9 +66,9 @@ namespace cl::jit
             {
                 continue;
             }
-            Instruction *instruction =
+            Instruction instruction =
                 storage_->instruction(block->instructions_.back());
-            if(!instruction->is_block_terminator())
+            if(!instruction.is_block_terminator())
             {
                 continue;
             }

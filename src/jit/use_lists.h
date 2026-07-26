@@ -13,7 +13,7 @@ namespace cl::jit
 {
     struct InstructionUse
     {
-        const Instruction *instruction;
+        InstructionId instruction;
         uint32_t operand_index;
     };
 
@@ -26,15 +26,11 @@ namespace cl::jit
     class Uses
     {
     public:
-        const Instruction *def() const { return def_; }
+        Instruction def() const;
         const Block *block() const { return block_; }
 
-        ResultClass result_class() const { return def_->result_class(); }
-
-        ValueRepresentation value_representation() const
-        {
-            return instruction_value_representation(def_->kind());
-        }
+        ResultClass result_class() const;
+        ValueRepresentation value_representation() const;
 
         size_t n_uses() const
         {
@@ -61,12 +57,14 @@ namespace cl::jit
     private:
         friend class UseLists;
 
-        Uses(const Instruction *def, const Block *block)
-            : def_(def), block_(block)
+        Uses(const CompilationStorage *storage, InstructionId def,
+             const Block *block)
+            : storage_(storage), def_(def), block_(block)
         {
         }
 
-        const Instruction *def_;
+        const CompilationStorage *storage_;
+        InstructionId def_;
         const Block *block_;
         std::vector<InstructionUse> instruction_uses_;
         std::vector<BlockArgumentUse> block_argument_uses_;
@@ -95,7 +93,7 @@ namespace cl::jit
 
         uint64_t graph_generation_;
         std::vector<Uses> uses_;
-        absl::flat_hash_map<const Instruction *, size_t> index_by_def_;
+        absl::flat_hash_map<InstructionId, size_t> index_by_def_;
     };
 
 }  // namespace cl::jit

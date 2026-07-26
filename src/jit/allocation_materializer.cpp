@@ -7,6 +7,7 @@
 #include <absl/container/flat_hash_map.h>
 
 #include <algorithm>
+#include <optional>
 #include <utility>
 #include <vector>
 
@@ -24,10 +25,10 @@ namespace cl::jit
         {
             absl::flat_hash_map<const Block *, PlannedTransferSet>
                 block_entries;
-            absl::flat_hash_map<const Instruction *, PlannedTransferSet>
+            absl::flat_hash_map<InstructionId, PlannedTransferSet>
                 before_instructions;
             LocationAssignmentsBuilder existing_locations;
-            std::vector<Instruction *> initial_value_by_bundle;
+            std::vector<std::optional<InstructionId>> initial_value_by_bundle;
         };
 
         Result<MaterializationPlan, RegisterAllocationError>
@@ -91,7 +92,7 @@ namespace cl::jit
                         break;
                     case TransferPoint::Kind::BeforeInstruction:
                         inserted = result.before_instructions
-                                       .emplace(set.point.instruction(),
+                                       .emplace(set.point.instruction_id(),
                                                 std::move(planned))
                                        .second;
                         break;
@@ -161,7 +162,8 @@ namespace cl::jit
                         }
                     case OccurrenceAnchor::Kind::InstructionTemporary:
                         result.existing_locations.assign(
-                            occurrence.anchor.instruction(),
+                            storage.instruction(
+                                occurrence.anchor.instruction_id()),
                             occurrence.anchor.index(), location);
                         break;
                     case OccurrenceAnchor::Kind::InstructionOperand:
@@ -170,11 +172,10 @@ namespace cl::jit
                 }
             }
 
-            result.initial_value_by_bundle.resize(allocation.bundles().size(),
-                                                  nullptr);
+            result.initial_value_by_bundle.resize(allocation.bundles().size());
             for(size_t index = 0; index < allocation.bundles().size(); ++index)
             {
-                Instruction *value = nullptr;
+                std::optional<InstructionId> value;
                 for(const BundleFragment &fragment:
                     allocation.bundles()[index].fragments)
                 {
@@ -185,9 +186,9 @@ namespace cl::jit
                     {
                         continue;
                     }
-                    Instruction *candidate = storage.instruction(
-                        source.origin.program_value().instruction_id());
-                    if(value != nullptr && value != candidate)
+                    InstructionId candidate =
+                        source.origin.program_value().instruction_id();
+                    if(value.has_value() && *value != candidate)
                     {
                         fatal("JIT materialization of merged bundle values is "
                               "not implemented");
@@ -227,7 +228,7 @@ namespace cl::jit
                                                 const Block &,
                                                 const Instruction &instruction)
             {
-                auto found = before_instructions_.find(&instruction);
+                auto found = before_instructions_.find(instruction.id());
                 return found == before_instructions_.end()
                            ? RewriteInsertion::none()
                            : emit_transfers(context, found->second);
@@ -244,17 +245,17 @@ namespace cl::jit
                                             const PlannedTransferSet &planned)
             {
                 const BundleTransferSet &set = *planned.original;
-                std::vector<Instruction *> sources;
+                std::vector<InstructionId> sources;
                 sources.reserve(set.transfers.size());
                 for(const BundleTransfer &transfer: set.transfers)
                 {
-                    Instruction *source =
+                    std::optional<InstructionId> source =
                         current_values_[transfer.source.value()];
-                    if(source == nullptr)
+                    if(!source.has_value())
                     {
                         fatal("JIT bundle transfer has no program value");
                     }
-                    sources.push_back(source);
+                    sources.push_back(*source);
                 }
 
                 for(size_t index: planned.resolved.aliasing_transfers)
@@ -271,11 +272,11 @@ namespace cl::jit
 
                 RewriteInsertion::InstructionSequence instructions;
                 RewriteInsertion::TransferOutputs outputs;
-                std::vector<Instruction *> step_values;
+                std::vector<InstructionId> step_values;
                 step_values.reserve(planned.resolved.steps.size());
                 for(const ResolvedTransferStep &step: planned.resolved.steps)
                 {
-                    Instruction *source = nullptr;
+                    InstructionId source(0);
                     switch(step.source.kind())
                     {
                         case ResolvedTransferSource::Kind::OriginalTransfer:
@@ -286,8 +287,10 @@ namespace cl::jit
                             break;
                     }
 
-                    Instruction *output = nullptr;
-                    switch(source->value_representation())
+                    Instruction source_instruction =
+                        context.instruction(source);
+                    std::optional<Instruction> output;
+                    switch(source_instruction.value_representation())
                     {
                         case ValueRepresentation::TaggedValue:
                             if(step.source_location.is_register() &&
@@ -295,7 +298,7 @@ namespace cl::jit
                             {
                                 output =
                                     context.make_instruction<MovInstruction>(
-                                        TaggedValueRef(source));
+                                        TaggedValueRef(source_instruction));
                             }
                             else if(step.source_location.is_stack() &&
                                     step.destination.is_register())
@@ -303,14 +306,14 @@ namespace cl::jit
                                 output =
                                     context
                                         .make_instruction<LoadStackInstruction>(
-                                            TaggedValueRef(source));
+                                            TaggedValueRef(source_instruction));
                             }
                             else if(step.source_location.is_register() &&
                                     step.destination.is_stack())
                             {
                                 output = context.make_instruction<
                                     StoreStackInstruction>(
-                                    TaggedValueRef(source));
+                                    TaggedValueRef(source_instruction));
                             }
                             break;
                         case ValueRepresentation::F64:
@@ -319,19 +322,21 @@ namespace cl::jit
                             {
                                 output =
                                     context.make_instruction<MovF64Instruction>(
-                                        F64Ref(source));
+                                        F64Ref(source_instruction));
                             }
                             else if(step.source_location.is_stack() &&
                                     step.destination.is_register())
                             {
                                 output = context.make_instruction<
-                                    LoadStackF64Instruction>(F64Ref(source));
+                                    LoadStackF64Instruction>(
+                                    F64Ref(source_instruction));
                             }
                             else if(step.source_location.is_register() &&
                                     step.destination.is_stack())
                             {
                                 output = context.make_instruction<
-                                    StoreStackF64Instruction>(F64Ref(source));
+                                    StoreStackF64Instruction>(
+                                    F64Ref(source_instruction));
                             }
                             break;
                         case ValueRepresentation::None:
@@ -339,13 +344,13 @@ namespace cl::jit
                             fatal("invalid JIT bundle transfer "
                                   "representation");
                     }
-                    if(output == nullptr)
+                    if(!output.has_value())
                     {
                         fatal("invalid resolved JIT transfer locations");
                     }
-                    instructions.push_back(output);
-                    step_values.push_back(output);
-                    locations_.assign(ProgramValueRef(output),
+                    instructions.push_back(*output);
+                    step_values.push_back(output->id());
+                    locations_.assign(ProgramValueRef(*output),
                                       step.destination);
 
                     if(step.original_parallel_transfer_index >= 0)
@@ -354,10 +359,12 @@ namespace cl::jit
                             step.original_parallel_transfer_index;
                         const BundleTransfer &transfer =
                             set.transfers[transfer_index];
-                        current_values_[transfer.destination.value()] = output;
+                        current_values_[transfer.destination.value()] =
+                            output->id();
                         outputs.emplace_back(
-                            ProgramValueRef(sources[transfer_index]),
-                            ProgramValueRef(output));
+                            ProgramValueRef(
+                                context.instruction(sources[transfer_index])),
+                            ProgramValueRef(*output));
                     }
                 }
 
@@ -367,10 +374,10 @@ namespace cl::jit
 
             absl::flat_hash_map<const Block *, PlannedTransferSet>
                 block_entries_;
-            absl::flat_hash_map<const Instruction *, PlannedTransferSet>
+            absl::flat_hash_map<InstructionId, PlannedTransferSet>
                 before_instructions_;
             LocationAssignmentsBuilder locations_;
-            std::vector<Instruction *> current_values_;
+            std::vector<std::optional<InstructionId>> current_values_;
         };
     }  // namespace
 

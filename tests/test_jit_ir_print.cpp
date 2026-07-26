@@ -35,7 +35,7 @@ namespace cl::jit
                   "}\n",
                   format_ir(*graph));
         EXPECT_EQ("%2 = and_smi %0, %1",
-                  format_instruction(*graph, *graph->storage()->instruction(
+                  format_instruction(*graph, graph->storage()->instruction(
                                                  result.instruction_id())));
         EXPECT_EQ(format_ir(*graph), fmt::format("{}", *graph));
     }

@@ -179,7 +179,7 @@ namespace cl::jit
         CompilationSession session;
         GraphBuilder builder(session);
         TaggedValueRef source(builder.make_instruction<ParameterInstruction>());
-        MovInstruction *move = builder.make_instruction<MovInstruction>(source);
+        MovInstruction move = builder.make_instruction<MovInstruction>(source);
         LocationRequirement outgoing =
             LocationRequirement::fixed(PhysicalLocation::stack(
                 StackLocation(StackLocationKind::OutgoingCallArgument, -8)));
@@ -190,7 +190,7 @@ namespace cl::jit
         InstructionAllocationConstraints constraints(
             move, {{0, AccessTiming::Early, outgoing}},
             ResultConstraint{AccessTiming::Late, local});
-        constraints.validate();
+        constraints.validate(*session.storage());
 
         EXPECT_DEATH((void)TemporaryConstraint(outgoing),
                      "temporary requires a register location");
@@ -203,7 +203,7 @@ namespace cl::jit
         TaggedValueRef lhs(builder.make_instruction<ParameterInstruction>());
         TaggedValueRef rhs(builder.make_instruction<ParameterInstruction>());
         SnapshotRef snapshot = make_empty_snapshot(builder);
-        AddSMIInstruction *add =
+        AddSMIInstruction add =
             builder.make_instruction<AddSMIInstruction>(lhs, rhs, snapshot);
 
         InstructionAllocationConstraints constraints(
@@ -211,14 +211,14 @@ namespace cl::jit
             ResultConstraint{AccessTiming::Late,
                              LocationRequirement::same_as_input(0)});
 
-        EXPECT_EQ(add, constraints.instruction());
+        EXPECT_EQ(add.id(), constraints.instruction_id());
         ASSERT_EQ(1u, constraints.input_overrides().size());
         EXPECT_EQ(1u, constraints.input_overrides()[0].operand_index);
         ASSERT_TRUE(constraints.result_override().has_value());
         EXPECT_EQ(LocationRequirement::Kind::SameAsInput,
                   constraints.result_override()->requirement.kind());
         EXPECT_EQ(AccessTiming::Late, default_snapshot_use_timing());
-        constraints.validate();
+        constraints.validate(*session.storage());
     }
 
     TEST(JitAllocationConstraints, ValidatesVariadicInstructionShape)
@@ -231,7 +231,7 @@ namespace cl::jit
         TaggedValueRef second(builder.make_instruction<ParameterInstruction>());
         SnapshotRef snapshot = make_empty_snapshot(builder);
         std::array arguments = {first, second};
-        PythonCallInstruction *call =
+        PythonCallInstruction call =
             builder.make_instruction<PythonCallInstruction>(
                 callable, snapshot, std::span<const TaggedValueRef>(arguments),
                 BytecodePC{19});
@@ -252,7 +252,7 @@ namespace cl::jit
         TaggedValueRef tagged(builder.make_instruction<ParameterInstruction>());
         F64Ref f64(builder.make_instruction<ParameterF64Instruction>());
         std::array<ProgramValueRef, 2> captures = {tagged, f64};
-        SnapshotInstruction *snapshot =
+        SnapshotInstruction snapshot =
             builder.make_instruction<SnapshotInstruction>(
                 std::span<const ProgramValueRef>(captures), BytecodePC{23});
 
@@ -268,7 +268,7 @@ namespace cl::jit
         GraphBuilder builder(session);
         F64Ref lhs(builder.make_instruction<ParameterF64Instruction>());
         F64Ref rhs(builder.make_instruction<ParameterF64Instruction>());
-        AddF64Instruction *add =
+        AddF64Instruction add =
             builder.make_instruction<AddF64Instruction>(lhs, rhs);
 
         InstructionAllocationConstraints constraints(
@@ -276,7 +276,7 @@ namespace cl::jit
             ResultConstraint{
                 AccessTiming::Late,
                 LocationRequirement::any_register(RegisterClass::SIMD)});
-        EXPECT_EQ(add, constraints.instruction());
+        EXPECT_EQ(add.id(), constraints.instruction_id());
 
         ProgramValueUseConstraint tagged_default =
             default_program_value_use_constraint(
@@ -296,7 +296,7 @@ namespace cl::jit
                     add,
                     {{0, AccessTiming::Early,
                       LocationRequirement::any_register(RegisterClass::GPR)}});
-                invalid.validate();
+                invalid.validate(*session.storage());
             },
             "input requirement has the wrong register class");
     }
@@ -308,7 +308,7 @@ namespace cl::jit
         TaggedValueRef lhs(builder.make_instruction<ParameterInstruction>());
         TaggedValueRef rhs(builder.make_instruction<ParameterInstruction>());
         SnapshotRef snapshot = make_empty_snapshot(builder);
-        AddSMIInstruction *add =
+        AddSMIInstruction add =
             builder.make_instruction<AddSMIInstruction>(lhs, rhs, snapshot);
 
         InstructionAllocationConstraints defaults(add);
@@ -324,7 +324,7 @@ namespace cl::jit
                      {0, AccessTiming::Late,
                       LocationRequirement::any_register(RegisterClass::GPR)}},
                     std::nullopt);
-                invalid.validate();
+                invalid.validate(*session.storage());
             },
             "duplicate input overrides");
 
@@ -334,7 +334,7 @@ namespace cl::jit
                     add,
                     {{2, AccessTiming::Early,
                       LocationRequirement::any_register(RegisterClass::GPR)}});
-                invalid.validate();
+                invalid.validate(*session.storage());
             },
             "does not name an allocatable ProgramValue operand");
     }
@@ -352,7 +352,7 @@ namespace cl::jit
         CompilationSession session;
         GraphBuilder builder(session);
         F64Ref source(builder.make_instruction<ParameterF64Instruction>());
-        BoxF64Instruction *box =
+        BoxF64Instruction box =
             builder.make_instruction<BoxF64Instruction>(source);
 
         EXPECT_DEATH(
@@ -363,7 +363,7 @@ namespace cl::jit
                       LocationRequirement::any_register(RegisterClass::SIMD)}},
                     ResultConstraint{AccessTiming::Late,
                                      LocationRequirement::same_as_input(0)});
-                invalid.validate();
+                invalid.validate(*session.storage());
             },
             "different value representation");
     }
@@ -373,7 +373,7 @@ namespace cl::jit
         CompilationSession session;
         GraphBuilder builder(session);
         TaggedValueRef source(builder.make_instruction<ParameterInstruction>());
-        MovInstruction *move = builder.make_instruction<MovInstruction>(source);
+        MovInstruction move = builder.make_instruction<MovInstruction>(source);
         RegisterSet x0_clobber;
         x0_clobber.insert(x0);
 
@@ -394,7 +394,7 @@ namespace cl::jit
                         AccessTiming::Late,
                         LocationRequirement::any_register(RegisterClass::GPR)},
                     {}, x0_clobber);
-                invalid.validate();
+                invalid.validate(*session.storage());
             },
             "clobber collides with a fixed late input");
 
@@ -406,7 +406,7 @@ namespace cl::jit
                       LocationRequirement::any_register(RegisterClass::GPR)}},
                     ResultConstraint{AccessTiming::Late, fixed(x0)}, {},
                     x0_clobber);
-                invalid.validate();
+                invalid.validate(*session.storage());
             },
             "clobber collides with a fixed result");
 
@@ -420,7 +420,7 @@ namespace cl::jit
                         AccessTiming::Late,
                         LocationRequirement::any_register(RegisterClass::GPR)},
                     {TemporaryConstraint(fixed(x0))}, x0_clobber);
-                invalid.validate();
+                invalid.validate(*session.storage());
             },
             "clobber collides with a fixed temporary");
 
@@ -431,7 +431,7 @@ namespace cl::jit
                     ResultConstraint{AccessTiming::Late,
                                      LocationRequirement::same_as_input(0)},
                     {}, x0_clobber);
-                invalid.validate();
+                invalid.validate(*session.storage());
             },
             "clobber collides with a fixed result");
     }

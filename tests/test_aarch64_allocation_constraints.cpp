@@ -6,6 +6,7 @@
 #include <gtest/gtest.h>
 
 #include <array>
+#include <optional>
 #include <span>
 
 namespace cl::jit
@@ -24,12 +25,12 @@ namespace cl::jit
 
         const InstructionAllocationConstraints *
         find_override(const AllocationConstraints &constraints,
-                      const Instruction *instruction)
+                      Instruction instruction)
         {
             for(const InstructionAllocationConstraints &candidate:
                 constraints.instruction_overrides())
             {
-                if(candidate.instruction() == instruction)
+                if(candidate.instruction_id() == instruction.id())
                 {
                     return &candidate;
                 }
@@ -51,13 +52,13 @@ namespace cl::jit
         CompilationSession session;
         GraphBuilder builder(session);
         Block *entry = builder.emplace_block();
-        ParameterInstruction *first =
+        ParameterInstruction first =
             builder.emplace_parameter<ParameterInstruction>(entry);
-        ParameterInstruction *second =
+        ParameterInstruction second =
             builder.emplace_parameter<ParameterInstruction>(entry);
-        ParameterInstruction *third =
+        ParameterInstruction third =
             builder.emplace_parameter<ParameterInstruction>(entry);
-        ReturnInstruction *return_instruction =
+        ReturnInstruction return_instruction =
             builder.emplace_instruction<ReturnInstruction>(
                 entry, TaggedValueRef(third));
         ControlFlowGraph *graph = builder.finalize();
@@ -126,7 +127,7 @@ namespace cl::jit
         Block *entry = builder.emplace_block();
         Block *if_true = builder.emplace_block();
         Block *if_false = builder.emplace_block();
-        ParameterInstruction *condition =
+        ParameterInstruction condition =
             builder.emplace_parameter<ParameterInstruction>(entry);
         BlockEdge *true_edge = builder.make_block_edge(entry, if_true);
         BlockEdge *false_edge = builder.make_block_edge(entry, if_false);
@@ -135,19 +136,19 @@ namespace cl::jit
             emplace_constant(builder, entry, Value::from_smi(0b1010));
         TaggedValueRef rhs =
             emplace_constant(builder, entry, Value::from_smi(0b1100));
-        AndSMIInstruction *and_instruction =
+        AndSMIInstruction and_instruction =
             builder.emplace_instruction<AndSMIInstruction>(entry, lhs, rhs);
-        OrrSMIInstruction *orr_instruction =
+        OrrSMIInstruction orr_instruction =
             builder.emplace_instruction<OrrSMIInstruction>(entry, lhs, rhs);
-        EorSMIInstruction *eor_instruction =
+        EorSMIInstruction eor_instruction =
             builder.emplace_instruction<EorSMIInstruction>(entry, lhs, rhs);
-        ConditionalBranchInstruction *branch =
+        ConditionalBranchInstruction branch =
             builder.emplace_instruction<ConditionalBranchInstruction>(
                 entry, TaggedValueRef(condition), true_edge, false_edge);
-        ReturnInstruction *true_return =
+        ReturnInstruction true_return =
             builder.emplace_instruction<ReturnInstruction>(
                 if_true, emplace_constant(builder, if_true, Value::True()));
-        ReturnInstruction *false_return =
+        ReturnInstruction false_return =
             builder.emplace_instruction<ReturnInstruction>(
                 if_false, emplace_constant(builder, if_false, Value::False()));
         ControlFlowGraph *graph = builder.finalize();
@@ -183,24 +184,22 @@ namespace cl::jit
         CompilationSession session;
         GraphBuilder builder(session);
         Block *entry = builder.emplace_block();
-        ParameterInstruction *lhs =
+        ParameterInstruction lhs =
             builder.emplace_parameter<ParameterInstruction>(entry);
-        ParameterInstruction *rhs =
+        ParameterInstruction rhs =
             builder.emplace_parameter<ParameterInstruction>(entry);
-        IsInstruction *is = builder.emplace_instruction<IsInstruction>(
+        IsInstruction is = builder.emplace_instruction<IsInstruction>(
             entry, TaggedValueRef(lhs), TaggedValueRef(rhs));
-        IsNotInstruction *is_not =
-            builder.emplace_instruction<IsNotInstruction>(
-                entry, TaggedValueRef(lhs), TaggedValueRef(rhs));
+        IsNotInstruction is_not = builder.emplace_instruction<IsNotInstruction>(
+            entry, TaggedValueRef(lhs), TaggedValueRef(rhs));
         builder.emplace_instruction<ReturnInstruction>(entry,
                                                        TaggedValueRef(is_not));
         ControlFlowGraph *graph = builder.finalize();
 
         AllocationConstraints constraints =
             make_aarch64_allocation_constraints(*graph);
-        for(const Instruction *instruction:
-            {static_cast<Instruction *>(is),
-             static_cast<Instruction *>(is_not)})
+        for(Instruction instruction:
+            {static_cast<Instruction>(is), static_cast<Instruction>(is_not)})
         {
             const InstructionAllocationConstraints *override =
                 find_override(constraints, instruction);
@@ -221,17 +220,17 @@ namespace cl::jit
         GraphBuilder builder(session);
         Block *entry = builder.emplace_block();
         Block *exit = builder.emplace_block();
-        ParameterInstruction *argument =
+        ParameterInstruction argument =
             builder.emplace_parameter<ParameterInstruction>(entry);
         std::array<ProgramValueRef, 1> arguments = {ProgramValueRef(argument)};
         BlockEdge *edge = builder.make_block_edge(
             entry, exit, std::span<const ProgramValueRef>(arguments));
-        UnconditionalBranchInstruction *branch =
+        UnconditionalBranchInstruction branch =
             builder.emplace_instruction<UnconditionalBranchInstruction>(entry,
                                                                         edge);
-        ParameterInstruction *parameter =
+        ParameterInstruction parameter =
             builder.emplace_parameter<ParameterInstruction>(exit);
-        ReturnInstruction *return_instruction =
+        ReturnInstruction return_instruction =
             builder.emplace_instruction<ReturnInstruction>(
                 exit, TaggedValueRef(parameter));
         ControlFlowGraph *graph = builder.finalize();
@@ -263,10 +262,10 @@ namespace cl::jit
             CompilationSession session;
             GraphBuilder builder(session);
             Block *entry = builder.emplace_block();
-            ParameterInstruction *first = nullptr;
+            std::optional<ParameterInstruction> first;
             for(size_t index = 0; index < 9; ++index)
             {
-                ParameterInstruction *parameter =
+                ParameterInstruction parameter =
                     builder.emplace_parameter<ParameterInstruction>(entry);
                 if(index == 0)
                 {
@@ -274,7 +273,7 @@ namespace cl::jit
                 }
             }
             builder.emplace_instruction<ReturnInstruction>(
-                entry, TaggedValueRef(first));
+                entry, TaggedValueRef(*first));
             ControlFlowGraph *graph = builder.finalize();
 
             EXPECT_DEATH((void)make_aarch64_allocation_constraints(*graph),
@@ -290,7 +289,7 @@ namespace cl::jit
             SnapshotRef snapshot(
                 builder.emplace_instruction<SnapshotInstruction>(
                     entry, std::span<const ProgramValueRef>{}, BytecodePC{5}));
-            PythonCallInstruction *call =
+            PythonCallInstruction call =
                 builder.emplace_instruction<PythonCallInstruction>(
                     entry, callable, snapshot,
                     std::span<const TaggedValueRef>{}, BytecodePC{5});

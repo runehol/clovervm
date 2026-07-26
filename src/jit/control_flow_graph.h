@@ -47,10 +47,8 @@ namespace cl::jit
             return parameters_;
         }
 
-        Instruction *instruction_at(size_t index);
-        const Instruction *instruction_at(size_t index) const;
-        Instruction *parameter_at(size_t index);
-        const Instruction *parameter_at(size_t index) const;
+        Instruction instruction_at(size_t index) const;
+        Instruction parameter_at(size_t index) const;
 
         const std::vector<BlockEdge *> &predecessor_edges() const
         {
@@ -69,16 +67,14 @@ namespace cl::jit
         friend class GraphBuilder;
         friend class GraphRewriter;
 
-        void append_parameter(Instruction *parameter)
+        void append_parameter(Instruction parameter)
         {
-            assert(parameter != nullptr);
-            parameters_.push_back(parameter->id());
+            parameters_.push_back(parameter.id());
         }
 
-        void append_instruction(Instruction *instruction)
+        void append_instruction(Instruction instruction)
         {
-            assert(instruction != nullptr);
-            instructions_.push_back(instruction->id());
+            instructions_.push_back(instruction.id());
         }
 
         void append_predecessor_edge(BlockEdge *edge)

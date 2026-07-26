@@ -7,6 +7,15 @@
 
 namespace cl::jit
 {
+    Instruction Uses::def() const { return storage_->instruction(def_); }
+
+    ResultClass Uses::result_class() const { return def().result_class(); }
+
+    ValueRepresentation Uses::value_representation() const
+    {
+        return instruction_value_representation(def().kind());
+    }
+
     UseLists::UseLists(const ControlFlowGraph &graph)
         : graph_generation_(graph.mutation_generation())
     {
@@ -20,21 +29,19 @@ namespace cl::jit
             // examining uses in the body.
             for(InstructionId parameter_id: block->parameters())
             {
-                const Instruction *parameter =
+                Instruction parameter =
                     graph.storage()->instruction(parameter_id);
-                assert(parameter != nullptr);
-                add_def(*block, *parameter);
+                add_def(*block, parameter);
             }
 
             // Phase two: record body defs and instruction operand uses in
             // definition order.
             for(InstructionId instruction_id: block->instructions())
             {
-                const Instruction *instruction =
+                Instruction instruction =
                     graph.storage()->instruction(instruction_id);
-                assert(instruction != nullptr);
-                add_def(*block, *instruction);
-                add_instruction_uses(*block, *instruction);
+                add_def(*block, instruction);
+                add_instruction_uses(*block, instruction);
             }
 
             // Phase three: record uses at each outgoing edge after every body
@@ -50,7 +57,7 @@ namespace cl::jit
 
     const Uses &UseLists::uses_of(const Instruction &def) const
     {
-        auto found = index_by_def_.find(&def);
+        auto found = index_by_def_.find(def.id());
         if(found == index_by_def_.end())
         {
             fatal("JIT use lists were queried for a non-definition");
@@ -65,10 +72,10 @@ namespace cl::jit
             return;
         }
         auto [position, inserted] =
-            index_by_def_.try_emplace(&def, uses_.size());
+            index_by_def_.try_emplace(def.id(), uses_.size());
         assert(inserted);
         (void)position;
-        uses_.push_back(Uses(&def, &block));
+        uses_.push_back(Uses(block.storage(), def.id(), &block));
     }
 
     void UseLists::add_instruction_uses(const Block &block,
@@ -77,14 +84,12 @@ namespace cl::jit
         visit_operand_references(
             instruction, [&](uint32_t operand_index, OperandClass,
                              ValueRepresentation, InstructionId definition_id) {
-                const Instruction *def =
-                    block.storage()->instruction(definition_id);
-                auto found = index_by_def_.find(def);
+                auto found = index_by_def_.find(definition_id);
                 assert(found != index_by_def_.end());
                 Uses &uses = uses_[found->second];
                 assert(uses.block_ == &block);
                 uses.instruction_uses_.push_back(
-                    InstructionUse{&instruction, operand_index});
+                    InstructionUse{instruction.id(), operand_index});
             });
     }
 
@@ -94,9 +99,7 @@ namespace cl::jit
         const std::vector<ProgramValueRef> &arguments = edge.arguments();
         for(size_t index = 0; index < arguments.size(); ++index)
         {
-            const Instruction *def =
-                block.storage()->instruction(arguments[index].instruction_id());
-            auto found = index_by_def_.find(def);
+            auto found = index_by_def_.find(arguments[index].instruction_id());
             assert(found != index_by_def_.end());
             Uses &uses = uses_[found->second];
             assert(uses.block_ == &block);

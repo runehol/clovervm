@@ -85,7 +85,7 @@ namespace cl::jit
         CompilationSession session;
         GraphBuilder builder(session);
         Block *entry = builder.emplace_block();
-        ParameterInstruction *parameter =
+        ParameterInstruction parameter =
             builder.emplace_parameter<ParameterInstruction>(entry);
         builder.emplace_instruction<ReturnInstruction>(
             entry, TaggedValueRef(parameter));
@@ -435,9 +435,9 @@ namespace cl::jit
         CompilationSession session;
         GraphBuilder builder(session);
         Block *entry = builder.emplace_block();
-        ParameterInstruction *parameter =
+        ParameterInstruction parameter =
             builder.emplace_parameter<ParameterInstruction>(entry);
-        ReturnInstruction *return_instruction =
+        ReturnInstruction return_instruction =
             builder.emplace_instruction<ReturnInstruction>(
                 entry, TaggedValueRef(parameter));
         ControlFlowGraph *graph = builder.finalize();
@@ -485,9 +485,9 @@ namespace cl::jit
         CompilationSession session;
         GraphBuilder builder(session);
         Block *entry = builder.emplace_block();
-        ParameterInstruction *parameter =
+        ParameterInstruction parameter =
             builder.emplace_parameter<ParameterInstruction>(entry);
-        ReturnInstruction *return_instruction =
+        ReturnInstruction return_instruction =
             builder.emplace_instruction<ReturnInstruction>(
                 entry, TaggedValueRef(parameter));
         ControlFlowGraph *graph = builder.finalize();
@@ -549,11 +549,11 @@ namespace cl::jit
         CompilationSession session;
         GraphBuilder builder(session);
         Block *entry = builder.emplace_block();
-        ParameterInstruction *lhs =
+        ParameterInstruction lhs =
             builder.emplace_parameter<ParameterInstruction>(entry);
-        ParameterInstruction *rhs =
+        ParameterInstruction rhs =
             builder.emplace_parameter<ParameterInstruction>(entry);
-        AndSMIInstruction *operation =
+        AndSMIInstruction operation =
             builder.emplace_instruction<AndSMIInstruction>(
                 entry, TaggedValueRef(lhs), TaggedValueRef(rhs));
         builder.emplace_instruction<ReturnInstruction>(
@@ -610,9 +610,9 @@ namespace cl::jit
         CompilationSession session;
         GraphBuilder builder(session);
         Block *entry = builder.emplace_block();
-        ParameterInstruction *parameter =
+        ParameterInstruction parameter =
             builder.emplace_parameter<ParameterInstruction>(entry);
-        AndSMIInstruction *operation =
+        AndSMIInstruction operation =
             builder.emplace_instruction<AndSMIInstruction>(
                 entry, TaggedValueRef(parameter), TaggedValueRef(parameter));
         builder.emplace_instruction<ReturnInstruction>(
@@ -646,7 +646,7 @@ namespace cl::jit
         TaggedValueRef parameter(
             builder.emplace_parameter<ParameterInstruction>(entry));
         std::span<const ProgramValueRef> captured;
-        SnapshotInstruction *snapshot =
+        SnapshotInstruction snapshot =
             builder.emplace_instruction<SnapshotInstruction>(entry, captured,
                                                              BytecodePC{7});
         builder.emplace_instruction<ReturnInstruction>(entry, parameter);
@@ -679,10 +679,10 @@ namespace cl::jit
         CompilationSession session;
         GraphBuilder builder(session);
         Block *entry = builder.emplace_block();
-        ParameterInstruction *parameter =
+        ParameterInstruction parameter =
             builder.emplace_parameter<ParameterInstruction>(entry);
         std::span<const ProgramValueRef> captured;
-        SnapshotInstruction *snapshot =
+        SnapshotInstruction snapshot =
             builder.emplace_instruction<SnapshotInstruction>(entry, captured,
                                                              BytecodePC{7});
         builder.emplace_instruction<ReturnInstruction>(
@@ -788,7 +788,7 @@ namespace cl::jit
         CompilationSession session;
         GraphBuilder builder(session);
         Block *entry = builder.emplace_block();
-        Instruction *early_definition =
+        Instruction early_definition =
             builder.emplace_instruction<UninitializedInstruction>(entry);
         TaggedValueRef result = emplace_constant(builder, entry, Value::None());
         builder.emplace_instruction<ReturnInstruction>(entry, result);
@@ -810,7 +810,7 @@ namespace cl::jit
 
         ASSERT_FALSE(prepared.live_ranges().empty());
         const LiveRange &early_range = prepared.live_ranges().front();
-        EXPECT_EQ(early_definition, early_range.origin.instruction());
+        EXPECT_EQ(early_definition.id(), early_range.origin.instruction_id());
         EXPECT_EQ(2u, early_range.range.start.value());
         EXPECT_EQ(4u, early_range.range.end.value());
     }
@@ -903,7 +903,7 @@ namespace cl::jit
         Block *entry = builder.emplace_block();
         TaggedValueRef parameter(
             builder.emplace_parameter<ParameterInstruction>(entry));
-        MovInstruction *move =
+        MovInstruction move =
             builder.emplace_instruction<MovInstruction>(entry, parameter);
         builder.emplace_instruction<ReturnInstruction>(entry,
                                                        TaggedValueRef(move));

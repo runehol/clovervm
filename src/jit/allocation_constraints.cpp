@@ -1,5 +1,6 @@
 #include "jit/allocation_constraints.h"
 
+#include "jit/compilation_storage.h"
 #include "runtime/fatal.h"
 
 #include <array>
@@ -129,25 +130,24 @@ namespace cl::jit
     }
 
     InstructionAllocationConstraints::InstructionAllocationConstraints(
-        const Instruction *instruction,
+        Instruction instruction,
         std::vector<ProgramValueUseConstraint> input_overrides,
         std::optional<ResultConstraint> result_override,
         std::vector<TemporaryConstraint> temporaries, RegisterSet clobbers)
-        : instruction_(instruction),
+        : instruction_(instruction.id()),
           input_overrides_(std::move(input_overrides)),
           result_override_(std::move(result_override)),
           temporaries_(std::move(temporaries)), clobbers_(clobbers)
     {
 #ifndef NDEBUG
-        validate();
+        validate(*instruction.storage());
 #endif
     }
 
-    void InstructionAllocationConstraints::validate() const
+    void InstructionAllocationConstraints::validate(
+        const CompilationStorage &storage) const
     {
-        const Instruction *instruction = instruction_;
-        require_constraint(instruction != nullptr,
-                           "JIT allocation constraints require an instruction");
+        Instruction instruction = storage.instruction(instruction_);
 
         struct OperandInfo
         {
@@ -157,9 +157,9 @@ namespace cl::jit
         };
 
         std::vector<OperandInfo> operands;
-        operands.reserve(instruction->operand_count());
+        operands.reserve(instruction.operand_count());
         visit_operand_references(
-            *instruction,
+            instruction,
             [&](uint32_t operand_index, OperandClass operand_class,
                 ValueRepresentation representation, InstructionId) {
                 require_constraint(operand_index == operands.size(),
@@ -191,12 +191,12 @@ namespace cl::jit
         if(result_override_.has_value())
         {
             require_constraint(
-                instruction->result_class() == ResultClass::ProgramValue,
+                instruction.result_class() == ResultClass::ProgramValue,
                 "non-ProgramValue JIT instruction cannot have a result "
                 "override");
             LocationRequirement requirement = result_override_->requirement;
             RegisterClass result_class = register_class_for_representation(
-                instruction->value_representation());
+                instruction.value_representation());
             require_constraint(
                 requirement_matches(requirement, result_class),
                 "JIT result requirement has the wrong register class");
@@ -213,7 +213,7 @@ namespace cl::jit
                     "SameAsInput names no allocatable ProgramValue operand");
                 require_constraint(
                     operands[input_index].representation ==
-                        instruction->value_representation(),
+                        instruction.value_representation(),
                     "SameAsInput names an operand with a different value "
                     "representation");
             }

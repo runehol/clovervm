@@ -37,7 +37,7 @@ namespace cl::jit
         Block *join = builder.block_at(1);
         BlockEdge *true_edge = builder.make_block_edge(entry, join);
         BlockEdge *false_edge = builder.make_block_edge(entry, join);
-        Instruction *branch_instruction =
+        Instruction branch_instruction =
             builder.make_instruction<ConditionalBranchInstruction>(
                 emplace_constant(builder, entry, Value::True()), true_edge,
                 false_edge);
@@ -72,9 +72,9 @@ namespace cl::jit
         EXPECT_EQ(0u, exit->loop_depth());
         builder.set_loop_depth(exit, 2);
         BlockEdge *edge = builder.make_block_edge(entry, exit);
-        Instruction *branch_instruction =
+        Instruction branch_instruction =
             builder.make_instruction<UnconditionalBranchInstruction>(edge);
-        Instruction *return_instruction =
+        Instruction return_instruction =
             builder.make_instruction<ReturnInstruction>(
                 emplace_constant(builder, exit, Value::None()));
         builder.append_instruction(entry, branch_instruction);
@@ -85,7 +85,7 @@ namespace cl::jit
         ASSERT_EQ(1u, successors.size());
         EXPECT_EQ(edge, successors[0]);
         EXPECT_TRUE(exit->block_successor_edges().empty());
-        EXPECT_EQ(InstructionKind::Return, return_instruction->kind());
+        EXPECT_EQ(InstructionKind::Return, return_instruction.kind());
         ControlFlowGraph *graph = builder.finalize();
         EXPECT_TRUE(graph->is_published());
         EXPECT_EQ(0u, graph->blocks()[0]->loop_depth());
@@ -99,14 +99,14 @@ namespace cl::jit
         Block *entry = builder.emplace_block();
         SnapshotRef snapshot(builder.emplace_instruction<SnapshotInstruction>(
             entry, std::span<const ProgramValueRef>{}, BytecodePC{7}));
-        ResumeInInterpreterInstruction *resume =
+        ResumeInInterpreterInstruction resume =
             builder.emplace_instruction<ResumeInInterpreterInstruction>(
                 entry, snapshot);
         builder.emplace_instruction<UninitializedInstruction>(entry);
         builder.emplace_instruction<ReturnInstruction>(
             entry, emplace_constant(builder, entry, Value::None()));
 
-        EXPECT_FALSE(resume->is_block_terminator());
+        EXPECT_FALSE(resume.is_block_terminator());
         ControlFlowGraph *graph = builder.finalize();
         EXPECT_TRUE(graph->is_published());
         EXPECT_EQ(5u, entry->instructions().size());
@@ -130,7 +130,7 @@ namespace cl::jit
             entry, join, std::span<const ProgramValueRef>(false_arguments));
         builder.emplace_instruction<ConditionalBranchInstruction>(
             entry, true_value, true_edge, false_edge);
-        ParameterInstruction *parameter =
+        ParameterInstruction parameter =
             builder.emplace_parameter<ParameterInstruction>(join);
         builder.emplace_instruction<ReturnInstruction>(
             join, TaggedValueRef(parameter));
@@ -151,12 +151,12 @@ namespace cl::jit
         CompilationSession session;
         GraphBuilder builder(session);
         Block *entry = builder.emplace_block();
-        ParameterInstruction *tagged_parameter =
+        ParameterInstruction tagged_parameter =
             builder.make_instruction<ParameterInstruction>();
         builder.append_parameter(entry, tagged_parameter);
-        ParameterF64Instruction *f64_parameter =
+        ParameterF64Instruction f64_parameter =
             builder.emplace_parameter<ParameterF64Instruction>(entry);
-        ReturnInstruction *return_instruction =
+        ReturnInstruction return_instruction =
             builder.make_instruction<ReturnInstruction>(
                 TaggedValueRef(tagged_parameter));
 
@@ -184,7 +184,7 @@ namespace cl::jit
             entry, exit, std::span<const ProgramValueRef>(arguments));
         builder.emplace_instruction<UnconditionalBranchInstruction>(entry,
                                                                     edge);
-        ParameterInstruction *parameter =
+        ParameterInstruction parameter =
             builder.emplace_parameter<ParameterInstruction>(exit);
         builder.emplace_instruction<ReturnInstruction>(
             exit, emplace_constant(builder, exit, Value::None()));
@@ -218,7 +218,7 @@ namespace cl::jit
         GraphBuilder builder(session);
         Block *entry = builder.emplace_block();
         Block *exit = builder.emplace_block();
-        ParameterF64Instruction *argument =
+        ParameterF64Instruction argument =
             builder.emplace_parameter<ParameterF64Instruction>(entry);
         std::array<ProgramValueRef, 1> arguments = {ProgramValueRef(argument)};
         BlockEdge *edge = builder.make_block_edge(
@@ -238,7 +238,7 @@ namespace cl::jit
         GraphBuilder builder(session);
         Block *entry = builder.emplace_block();
         Block *exit = builder.emplace_block();
-        ParameterInstruction *unavailable =
+        ParameterInstruction unavailable =
             builder.emplace_parameter<ParameterInstruction>(exit);
         std::array<ProgramValueRef, 1> arguments = {
             ProgramValueRef(unavailable)};
@@ -332,7 +332,7 @@ namespace cl::jit
         CompilationSession session;
         GraphBuilder builder(session);
         Block *entry = builder.emplace_block();
-        ParameterInstruction *unplaced =
+        ParameterInstruction unplaced =
             builder.make_instruction<ParameterInstruction>();
         builder.append_instruction(entry,
                                    builder.make_instruction<ReturnInstruction>(
@@ -348,7 +348,7 @@ namespace cl::jit
         GraphBuilder builder(session);
         Block *entry = builder.emplace_block();
         Block *exit = builder.emplace_block();
-        ParameterInstruction *parameter =
+        ParameterInstruction parameter =
             builder.make_instruction<ParameterInstruction>();
         builder.append_parameter(entry, parameter);
         BlockEdge *edge = builder.make_block_edge(entry, exit);
@@ -363,7 +363,7 @@ namespace cl::jit
                             "outside its block or before its definition");
     }
 
-    TEST(JitCfg, OneArenaCanOwnMultipleGraphs)
+    TEST(JitCfg, OneStorageCanOwnMultipleGraphs)
     {
         CompilationSession session;
         GraphBuilder first_builder(session);

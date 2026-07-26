@@ -28,13 +28,13 @@ namespace cl::jit
         CompilationStorage(CompilationStorage &&) = delete;
         CompilationStorage &operator=(CompilationStorage &&) = delete;
 
-        Instruction *instruction(InstructionId id);
-        const Instruction *instruction(InstructionId id) const;
+        Instruction instruction(InstructionId id) const;
 
     private:
         friend class CompilationSession;
         friend class GraphBuilder;
         friend class GraphRewriter;
+        friend class Instruction;
         friend class RewriteContext;
 
         CompilationStorage() = default;
@@ -50,68 +50,38 @@ namespace cl::jit
         }
 
         template <typename T, typename... Args>
-        T *make_instruction(Args &&...args)
+        T make_instruction(Args &&...args)
         {
             static_assert(std::is_base_of_v<Instruction, T>);
             static_assert(sizeof(T) == sizeof(Instruction));
-            static_assert(alignof(T) == alignof(Instruction));
-            static_assert(std::is_trivially_destructible_v<T>);
 
             InstructionId id = next_instruction_id();
-            instructions_.emplace_back();
-            void *storage = instructions_.back().storage();
             if constexpr(T::IsVariadic)
             {
                 size_t n_indirect_slots = T::n_indirect_slots_for(args...);
                 std::span<Instruction::Slot> indirect_slots =
                     instruction_side_data_.allocate_words(n_indirect_slots);
-                return new(storage)
-                    T(id, indirect_slots, std::forward<Args>(args)...);
+                instructions_.push_back(
+                    T::make_entry(indirect_slots, std::forward<Args>(args)...));
             }
             else
             {
-                return new(storage) T(id, std::forward<Args>(args)...);
+                instructions_.push_back(
+                    T::make_entry(std::forward<Args>(args)...));
             }
+            return T(this, id);
         }
 
         ControlFlowGraph *make_graph() { return graphs_.make(this); }
 
-        class InstructionSlot
-        {
-        public:
-            InstructionSlot() = default;
-
-            InstructionSlot(const InstructionSlot &) = delete;
-            InstructionSlot &operator=(const InstructionSlot &) = delete;
-            InstructionSlot(InstructionSlot &&) = delete;
-            InstructionSlot &operator=(InstructionSlot &&) = delete;
-
-            void *storage() { return storage_; }
-
-            Instruction *instruction()
-            {
-                return std::launder(reinterpret_cast<Instruction *>(storage_));
-            }
-
-            const Instruction *instruction() const
-            {
-                return std::launder(
-                    reinterpret_cast<const Instruction *>(storage_));
-            }
-
-        private:
-            alignas(Instruction) std::byte storage_[sizeof(Instruction)];
-        };
-
-        static_assert(sizeof(InstructionSlot) == sizeof(Instruction));
-        static_assert(alignof(InstructionSlot) == alignof(Instruction));
-
         InstructionId next_instruction_id() const;
+        const InstructionEntry &instruction_entry(InstructionId id) const;
+        void detach_instruction(InstructionId id);
 
         ObjectPool<ControlFlowGraph> graphs_;
         ObjectPool<Block> blocks_;
         ObjectPool<BlockEdge> block_edges_;
-        std::deque<InstructionSlot> instructions_;
+        std::deque<InstructionEntry> instructions_;
         InstructionSideDataPool instruction_side_data_;
     };
 

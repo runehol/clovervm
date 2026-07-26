@@ -53,34 +53,33 @@ namespace cl::jit
         }
 
         template <typename T, typename... Args>
-        T *make_instruction(Args &&...args)
+        T make_instruction(Args &&...args)
         {
             assert_can_build();
             return storage_->make_instruction<T>(std::forward<Args>(args)...);
         }
 
-        void append_instruction(Block *block, Instruction *instruction);
+        void append_instruction(Block *block, Instruction instruction);
 
         template <typename T, typename... Args>
-        T *emplace_instruction(Block *block, Args &&...args)
+        T emplace_instruction(Block *block, Args &&...args)
         {
-            T *instruction = make_instruction<T>(std::forward<Args>(args)...);
+            T instruction = make_instruction<T>(std::forward<Args>(args)...);
             append_instruction(block, instruction);
             return instruction;
         }
 
         template <ParameterInstructionType T>
-        void append_parameter(Block *block, T *parameter)
+        void append_parameter(Block *block, T parameter)
         {
             assert_can_mutate(block);
-            assert(parameter != nullptr);
             block->append_parameter(parameter);
         }
 
         template <ParameterInstructionType T, typename... Args>
-        T *emplace_parameter(Block *block, Args &&...args)
+        T emplace_parameter(Block *block, Args &&...args)
         {
-            T *parameter = make_instruction<T>(std::forward<Args>(args)...);
+            T parameter = make_instruction<T>(std::forward<Args>(args)...);
             append_parameter(block, parameter);
             return parameter;
         }

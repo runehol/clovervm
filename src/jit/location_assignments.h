@@ -21,10 +21,9 @@ namespace cl::jit
             return program_values_.contains(value.instruction_id());
         }
 
-        bool contains(const Instruction *instruction,
-                      size_t temporary_index) const
+        bool contains(Instruction instruction, size_t temporary_index) const
         {
-            return temporaries_.contains({instruction, temporary_index});
+            return temporaries_.contains({instruction.id(), temporary_index});
         }
 
         PhysicalLocation location_for(ProgramValueRef value) const
@@ -32,10 +31,10 @@ namespace cl::jit
             return program_values_.at(value.instruction_id());
         }
 
-        PhysicalLocation location_for(const Instruction *instruction,
+        PhysicalLocation location_for(Instruction instruction,
                                       size_t temporary_index) const
         {
-            return temporaries_.at({instruction, temporary_index});
+            return temporaries_.at({instruction.id(), temporary_index});
         }
 
     private:
@@ -43,7 +42,7 @@ namespace cl::jit
 
         using ProgramValueMap =
             absl::flat_hash_map<InstructionId, PhysicalLocation>;
-        using TemporaryKey = std::pair<const Instruction *, size_t>;
+        using TemporaryKey = std::pair<InstructionId, size_t>;
         using TemporaryMap =
             absl::flat_hash_map<TemporaryKey, PhysicalLocation>;
 
@@ -66,10 +65,10 @@ namespace cl::jit
             program_values_.insert_or_assign(value.instruction_id(), location);
         }
 
-        void assign(const Instruction *instruction, size_t temporary_index,
+        void assign(Instruction instruction, size_t temporary_index,
                     PhysicalLocation location)
         {
-            temporaries_.insert_or_assign({instruction, temporary_index},
+            temporaries_.insert_or_assign({instruction.id(), temporary_index},
                                           location);
         }
 

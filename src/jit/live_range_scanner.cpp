@@ -2,10 +2,11 @@
 
 #include "runtime/fatal.h"
 
+#include <absl/container/flat_hash_map.h>
+#include <absl/container/flat_hash_set.h>
+
 #include <cassert>
 #include <cstddef>
-#include <unordered_map>
-#include <unordered_set>
 #include <utility>
 
 namespace cl::jit
@@ -122,9 +123,9 @@ namespace cl::jit
                 for(const InstructionAllocationConstraints &override:
                     constraints_.instruction_overrides())
                 {
-                    override.validate();
-                    auto [position, inserted] =
-                        overrides_.emplace(override.instruction(), &override);
+                    override.validate(*graph_.storage());
+                    auto [position, inserted] = overrides_.emplace(
+                        override.instruction_id(), &override);
                     (void)position;
                     if(!inserted)
                     {
@@ -172,7 +173,7 @@ namespace cl::jit
             }
 
             const InstructionAllocationConstraints *
-            override_for(const Instruction *instruction)
+            override_for(InstructionId instruction)
             {
                 auto found = overrides_.find(instruction);
                 if(found == overrides_.end())
@@ -195,7 +196,7 @@ namespace cl::jit
                    LiveRangeOrigin::Kind::ProgramValue)
                 {
                     auto [position, inserted] = value_ranges_.emplace(
-                        live_ranges_.back().origin.instruction(), id);
+                        live_ranges_.back().origin.instruction_id(), id);
                     (void)position;
                     if(!inserted)
                     {
@@ -242,7 +243,7 @@ namespace cl::jit
                 return occurrence_id;
             }
 
-            LiveRangeId value_range(const Instruction *definition,
+            LiveRangeId value_range(InstructionId definition,
                                     const Block &block) const
             {
                 auto found = value_ranges_.find(definition);
@@ -265,10 +266,10 @@ namespace cl::jit
                 LivenessPosition entry_after = position_at(block_start, 1);
                 for(InstructionId parameter_id: block.parameters())
                 {
-                    const Instruction *parameter =
+                    Instruction parameter =
                         graph_.storage()->instruction(parameter_id);
                     const InstructionAllocationConstraints *override =
-                        override_for(parameter);
+                        override_for(parameter_id);
                     if(override != nullptr &&
                        (!override->temporaries().empty() ||
                         override->clobbers().size() != 0))
@@ -281,7 +282,7 @@ namespace cl::jit
                                 override->result_override().has_value()
                             ? *override->result_override()
                             : default_result_constraint(
-                                  parameter->value_representation());
+                                  parameter.value_representation());
                     if(result_constraint.requirement.kind() ==
                        LocationRequirement::Kind::SameAsInput)
                     {
@@ -291,7 +292,7 @@ namespace cl::jit
 
                     RegisterClass register_class =
                         register_class_for_representation(
-                            parameter->value_representation());
+                            parameter.value_representation());
                     LiveRangeId live_range = add_live_range(
                         {entry_after, entry_after.next()},
                         LiveRangeOrigin::program_value(parameter), block,
@@ -307,24 +308,22 @@ namespace cl::jit
                     instruction_index < block.instructions().size();
                     ++instruction_index)
                 {
-                    const Instruction *instruction =
-                        graph_.storage()->instruction(
-                            block.instructions()[instruction_index]);
+                    Instruction instruction = graph_.storage()->instruction(
+                        block.instructions()[instruction_index]);
                     LivenessPosition early =
                         position_at(block_start, 2 + instruction_index * 2);
                     LivenessPosition late = early.next();
                     const InstructionAllocationConstraints *override =
-                        override_for(instruction);
+                        override_for(instruction.id());
 
-                    if(instruction->kind() != InstructionKind::Snapshot)
+                    if(instruction.kind() != InstructionKind::Snapshot)
                     {
                         bool has_snapshot_operand = false;
                         visit_operand_references(
-                            *instruction,
-                            [&](uint32_t operand_index,
-                                OperandClass operand_class,
-                                ValueRepresentation representation,
-                                InstructionId definition_id) {
+                            instruction, [&](uint32_t operand_index,
+                                             OperandClass operand_class,
+                                             ValueRepresentation representation,
+                                             InstructionId definition_id) {
                                 if(operand_class == OperandClass::Snapshot)
                                 {
                                     has_snapshot_operand = true;
@@ -344,9 +343,7 @@ namespace cl::jit
                                         ? early
                                         : late;
                                 LiveRangeId live_range =
-                                    value_range(graph_.storage()->instruction(
-                                                    definition_id),
-                                                block);
+                                    value_range(definition_id, block);
                                 add_occurrence(
                                     live_range, position,
                                     minimum_liveness_coverage(
@@ -365,14 +362,14 @@ namespace cl::jit
                         }
                     }
 
-                    if(instruction->result_class() == ResultClass::ProgramValue)
+                    if(instruction.result_class() == ResultClass::ProgramValue)
                     {
                         ResultConstraint result_constraint =
                             override != nullptr &&
                                     override->result_override().has_value()
                                 ? *override->result_override()
                                 : default_result_constraint(
-                                      instruction->value_representation());
+                                      instruction.value_representation());
                         if(result_constraint.requirement.kind() ==
                            LocationRequirement::Kind::SameAsInput)
                         {
@@ -389,7 +386,7 @@ namespace cl::jit
                             result_constraint.timing);
                         RegisterClass register_class =
                             register_class_for_representation(
-                                instruction->value_representation());
+                                instruction.value_representation());
                         LiveRangeId live_range = add_live_range(
                             coverage,
                             LiveRangeOrigin::program_value(instruction), block,
@@ -442,7 +439,7 @@ namespace cl::jit
                                 {
                                     clobbers_.push_back({{late, late.next()},
                                                          reg,
-                                                         instruction});
+                                                         instruction.id()});
                                 }
                             }
                         }
@@ -458,10 +455,8 @@ namespace cl::jit
                     for(size_t argument_index = 0;
                         argument_index < arguments.size(); ++argument_index)
                     {
-                        const Instruction *definition =
-                            graph_.storage()->instruction(
-                                arguments[argument_index].instruction_id());
-                        LiveRangeId live_range = value_range(definition, block);
+                        LiveRangeId live_range = value_range(
+                            arguments[argument_index].instruction_id(), block);
                         LocationRequirement requirement =
                             LocationRequirement::any_register(
                                 live_ranges_[live_range.value()]
@@ -488,11 +483,11 @@ namespace cl::jit
 
             const ControlFlowGraph &graph_;
             const AllocationConstraints &constraints_;
-            std::unordered_map<const Instruction *,
-                               const InstructionAllocationConstraints *>
+            absl::flat_hash_map<InstructionId,
+                                const InstructionAllocationConstraints *>
                 overrides_;
-            std::unordered_set<const Instruction *> consumed_overrides_;
-            std::unordered_map<const Instruction *, LiveRangeId> value_ranges_;
+            absl::flat_hash_set<InstructionId> consumed_overrides_;
+            absl::flat_hash_map<InstructionId, LiveRangeId> value_ranges_;
             std::vector<BlockLivenessRange> block_ranges_;
             std::vector<Occurrence> occurrences_;
             std::vector<FixedLocationConstraint> fixed_constraints_;

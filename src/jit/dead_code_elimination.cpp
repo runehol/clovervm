@@ -30,9 +30,8 @@ namespace cl::jit
         class DeadCodeRewrite
         {
         public:
-            DeadCodeRewrite(
-                const ControlFlowGraph &graph,
-                const absl::flat_hash_set<const Instruction *> &live)
+            DeadCodeRewrite(const ControlFlowGraph &graph,
+                            const absl::flat_hash_set<InstructionId> &live)
                 : graph_(&graph), live_(&live)
             {
             }
@@ -43,7 +42,7 @@ namespace cl::jit
                                                   const Instruction &parameter)
             {
                 return &block == graph_->entry_block() ||
-                               live_->contains(&parameter)
+                               live_->contains(parameter.id())
                            ? BlockParameterRewrite::keep()
                            : BlockParameterRewrite::erase();
             }
@@ -54,34 +53,34 @@ namespace cl::jit
                                               const Instruction &instruction)
             {
                 return instruction_can_be_eliminated(instruction) &&
-                               !live_->contains(&instruction)
+                               !live_->contains(instruction.id())
                            ? RewriteResult::erase()
                            : RewriteResult::keep();
             }
 
         private:
             const ControlFlowGraph *graph_;
-            const absl::flat_hash_set<const Instruction *> *live_;
+            const absl::flat_hash_set<InstructionId> *live_;
         };
     }  // namespace
 
     Result<bool, JitCompilationError>
     eliminate_dead_code(CompilationSession &session, ControlFlowGraph &graph)
     {
-        absl::flat_hash_map<const Instruction *, BlockParameterPosition>
+        absl::flat_hash_map<InstructionId, BlockParameterPosition>
             block_parameters;
         for(const Block *block: graph.blocks())
         {
             for(size_t index = 0; index < block->parameters().size(); ++index)
             {
-                block_parameters.emplace(block->parameter_at(index),
+                block_parameters.emplace(block->parameter_at(index).id(),
                                          BlockParameterPosition{block, index});
             }
         }
 
-        absl::flat_hash_set<const Instruction *> live;
-        std::vector<const Instruction *> worklist;
-        auto mark_live = [&](const Instruction *instruction) {
+        absl::flat_hash_set<InstructionId> live;
+        std::vector<InstructionId> worklist;
+        auto mark_live = [&](InstructionId instruction) {
             if(live.insert(instruction).second)
             {
                 worklist.push_back(instruction);
@@ -91,38 +90,39 @@ namespace cl::jit
         {
             for(InstructionId instruction_id: block->instructions())
             {
-                const Instruction *instruction =
+                Instruction instruction =
                     graph.storage()->instruction(instruction_id);
-                if(!instruction_can_be_eliminated(*instruction))
+                if(!instruction_can_be_eliminated(instruction))
                 {
-                    mark_live(instruction);
+                    mark_live(instruction.id());
                 }
             }
         }
 
         while(!worklist.empty())
         {
-            const Instruction *instruction = worklist.back();
+            InstructionId instruction_id = worklist.back();
             worklist.pop_back();
 
-            auto parameter = block_parameters.find(instruction);
+            auto parameter = block_parameters.find(instruction_id);
             if(parameter != block_parameters.end())
             {
                 const BlockParameterPosition &position = parameter->second;
                 for(const BlockEdge *edge: position.block->predecessor_edges())
                 {
                     assert(position.index < edge->arguments().size());
-                    mark_live(graph.storage()->instruction(
-                        edge->arguments()[position.index].instruction_id()));
+                    mark_live(
+                        edge->arguments()[position.index].instruction_id());
                 }
                 continue;
             }
 
+            Instruction instruction =
+                graph.storage()->instruction(instruction_id);
             visit_operand_references(
-                *instruction, [&](uint32_t, OperandClass, ValueRepresentation,
-                                  InstructionId definition) {
-                    mark_live(graph.storage()->instruction(definition));
-                });
+                instruction,
+                [&](uint32_t, OperandClass, ValueRepresentation,
+                    InstructionId definition) { mark_live(definition); });
         }
 
         GraphRewriter rewriter(session, graph);

@@ -21,7 +21,7 @@ namespace cl::jit
             {
             }
 
-            Instruction *resolve(Instruction *def) const
+            InstructionId resolve(InstructionId def) const
             {
                 return resolver_->resolve(def);
             }
@@ -29,19 +29,19 @@ namespace cl::jit
             TaggedValueRef resolve(TaggedValueRef def) const
             {
                 return TaggedValueRef(
-                    resolve(storage_->instruction(def.instruction_id())));
+                    storage_->instruction(resolve(def.instruction_id())));
             }
 
             F64Ref resolve(F64Ref def) const
             {
                 return F64Ref(
-                    resolve(storage_->instruction(def.instruction_id())));
+                    storage_->instruction(resolve(def.instruction_id())));
             }
 
             SnapshotRef resolve(SnapshotRef def) const
             {
                 return SnapshotRef(
-                    resolve(storage_->instruction(def.instruction_id())));
+                    storage_->instruction(resolve(def.instruction_id())));
             }
 
             template <typename T> T resolve_attribute(T attribute) const
@@ -74,8 +74,8 @@ namespace cl::jit
                 resolved.reserve(defs.size());
                 for(size_t index = 0; index < defs.size(); ++index)
                 {
-                    resolved.emplace_back(resolve(
-                        storage_->instruction(defs[index].instruction_id())));
+                    resolved.emplace_back(storage_->instruction(
+                        resolve(defs[index].instruction_id())));
                 }
                 return resolved;
             }
@@ -93,14 +93,14 @@ namespace cl::jit
     //
     // DefResolver provides:
     //
-    //     Instruction *resolve(Instruction *def) const;
+    //     InstructionId resolve(InstructionId def) const;
     //
     // InstructionFactory provides:
     //
     //     template <typename T, typename... Args>
-    //     T *make_instruction(Args &&...args);
+    //     T make_instruction(Args &&...args);
     template <typename DefResolver, typename InstructionFactory>
-    Instruction *rebuild_instruction_with_references(
+    Instruction rebuild_instruction_with_references(
         Instruction &instruction, CompilationStorage &storage,
         const DefResolver &def_resolver, InstructionFactory &factory)
     {
@@ -108,20 +108,19 @@ namespace cl::jit
         visit_operand_references(instruction, [&](uint32_t, OperandClass,
                                                   ValueRepresentation,
                                                   InstructionId definition_id) {
-            Instruction *def = storage.instruction(definition_id);
-            changed |= def_resolver.resolve(def) != def;
+            changed |= def_resolver.resolve(definition_id) != definition_id;
         });
         if(instruction.is_block_terminator())
         {
             for(BlockEdge *edge:
-                TerminatorInstruction(&instruction).block_successor_edges())
+                TerminatorInstruction(instruction).block_successor_edges())
             {
                 changed |= def_resolver.resolve(edge) != edge;
             }
         }
         if(!changed)
         {
-            return &instruction;
+            return instruction;
         }
 
         detail::TypedReferenceResolver resolver(storage, def_resolver);
@@ -139,8 +138,8 @@ namespace cl::jit
                            attributes)                                         \
     case InstructionKind::name:                                                \
         {                                                                      \
-            [[maybe_unused]] const name##Instruction &typed =                  \
-                *instruction.as<name##Instruction>();                          \
+            [[maybe_unused]] const name##Instruction typed =                   \
+                instruction.as<name##Instruction>();                           \
             return factory.template make_instruction<name##Instruction>(       \
                 operands(CL_JIT_RESOLVE_FIXED, CL_JIT_RESOLVE_VARIADIC,        \
                          CL_JIT_RESOLVE_SNAPSHOT_VALUES)                       \
@@ -158,7 +157,7 @@ namespace cl::jit
 #undef CL_JIT_IR_LEVELS
         }
         assert(false);
-        return nullptr;
+        return instruction;
     }
 
 }  // namespace cl::jit

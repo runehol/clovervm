@@ -41,16 +41,16 @@ namespace cl::jit
             {
                 for(InstructionId parameter_id: block->parameters())
                 {
-                    const Instruction *parameter =
+                    Instruction parameter =
                         graph.storage()->instruction(parameter_id);
                     locations.assign(ProgramValueRef(parameter),
                                      PhysicalLocation::reg(x0));
                 }
                 for(InstructionId instruction_id: block->instructions())
                 {
-                    const Instruction *instruction =
+                    Instruction instruction =
                         graph.storage()->instruction(instruction_id);
-                    if(instruction->result_class() == ResultClass::ProgramValue)
+                    if(instruction.result_class() == ResultClass::ProgramValue)
                     {
                         locations.assign(ProgramValueRef(instruction),
                                          PhysicalLocation::reg(x0));
@@ -92,10 +92,10 @@ namespace cl::jit
             CompilationSession session;
             GraphBuilder builder(session);
             Block *entry = builder.emplace_block();
-            ParameterInstruction *parameter =
+            ParameterInstruction parameter =
                 builder.emplace_parameter<ParameterInstruction>(entry);
             TaggedValueRef operand(parameter);
-            LogicalInstruction *result =
+            LogicalInstruction result =
                 builder.emplace_instruction<LogicalInstruction>(entry, operand,
                                                                 operand);
             builder.emplace_instruction<ReturnInstruction>(
@@ -125,7 +125,7 @@ namespace cl::jit
         CompilationSession session;
         GraphBuilder builder(session);
         Block *entry = builder.emplace_block();
-        ParameterInstruction *parameter =
+        ParameterInstruction parameter =
             builder.emplace_parameter<ParameterInstruction>(entry);
         builder.emplace_instruction<ReturnInstruction>(
             entry, TaggedValueRef(parameter));
@@ -157,10 +157,10 @@ namespace cl::jit
         CompilationSession session;
         GraphBuilder builder(session);
         Block *entry = builder.emplace_block();
-        ParameterInstruction *parameter =
+        ParameterInstruction parameter =
             builder.emplace_parameter<ParameterInstruction>(entry);
         TaggedValueRef operand(parameter);
-        AndSMIInstruction *result =
+        AndSMIInstruction result =
             builder.emplace_instruction<AndSMIInstruction>(entry, operand,
                                                            operand);
         builder.emplace_instruction<ReturnInstruction>(entry,
@@ -362,7 +362,7 @@ namespace cl::jit
         GraphBuilder builder(session);
         Block *entry = builder.emplace_block();
         Value expected = Value::from_smi(0x123456789abcd);
-        ConstInstruction *constant =
+        ConstInstruction constant =
             builder.emplace_instruction<ConstInstruction>(entry, expected);
         builder.emplace_instruction<ReturnInstruction>(
             entry, TaggedValueRef(constant));
@@ -386,11 +386,11 @@ namespace cl::jit
         CompilationSession session;
         GraphBuilder builder(session);
         Block *entry = builder.emplace_block();
-        ParameterInstruction *parameter =
+        ParameterInstruction parameter =
             builder.emplace_parameter<ParameterInstruction>(entry);
-        MovInstruction *to_x1 = builder.emplace_instruction<MovInstruction>(
+        MovInstruction to_x1 = builder.emplace_instruction<MovInstruction>(
             entry, TaggedValueRef(parameter));
-        MovInstruction *to_x0 = builder.emplace_instruction<MovInstruction>(
+        MovInstruction to_x0 = builder.emplace_instruction<MovInstruction>(
             entry, TaggedValueRef(to_x1));
         builder.emplace_instruction<ReturnInstruction>(entry,
                                                        TaggedValueRef(to_x0));
@@ -423,15 +423,15 @@ namespace cl::jit
         CompilationSession session;
         GraphBuilder builder(session);
         Block *entry = builder.emplace_block();
-        ParameterInstruction *parameter =
+        ParameterInstruction parameter =
             builder.emplace_parameter<ParameterInstruction>(entry);
-        LoadStackInstruction *load =
+        LoadStackInstruction load =
             builder.emplace_instruction<LoadStackInstruction>(
                 entry, TaggedValueRef(parameter));
-        StoreStackInstruction *store =
+        StoreStackInstruction store =
             builder.emplace_instruction<StoreStackInstruction>(
                 entry, TaggedValueRef(load));
-        LoadStackInstruction *reload =
+        LoadStackInstruction reload =
             builder.emplace_instruction<LoadStackInstruction>(
                 entry, TaggedValueRef(store));
         builder.emplace_instruction<ReturnInstruction>(entry,

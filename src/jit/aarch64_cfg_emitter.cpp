@@ -32,7 +32,7 @@ namespace cl::jit
         }
 
         XRegister assigned_temporary(const LocationAssignments &locations,
-                                     const Instruction *instruction,
+                                     Instruction instruction,
                                      size_t temporary_index)
         {
             PhysicalLocation location =
@@ -80,8 +80,8 @@ namespace cl::jit
         void emit_identity_test(AArch64MacroAssembler &assembler,
                                 const LocationAssignments &locations,
                                 AArch64Condition condition,
-                                const Instruction *instruction,
-                                ProgramValueRef lhs, ProgramValueRef rhs)
+                                Instruction instruction, ProgramValueRef lhs,
+                                ProgramValueRef rhs)
         {
             XRegister result =
                 assigned_register(locations, ProgramValueRef(instruction));
@@ -120,18 +120,16 @@ namespace cl::jit
         assert(entry->predecessor_edges().empty());
         for(InstructionId parameter_id: entry->parameters())
         {
-            const Instruction *parameter =
-                graph.storage()->instruction(parameter_id);
-            (void)parameter;
-            assert(parameter->kind() == InstructionKind::Parameter);
+            Instruction parameter = graph.storage()->instruction(parameter_id);
+            assert(parameter.kind() == InstructionKind::Parameter);
         }
 
         for(InstructionId instruction_id: entry->instructions())
         {
-            const Instruction *instruction =
+            Instruction instruction =
                 graph.storage()->instruction(instruction_id);
             // clang-format off
-            CL_JIT_INSTRUCTION_SWITCH(*instruction)
+            CL_JIT_INSTRUCTION_SWITCH(instruction)
             {
                 case InstructionKind::Uninitialized:
                     break;

@@ -34,13 +34,13 @@ namespace cl::jit
                     blocks_.emplace(block, index);
                     for(InstructionId parameter_id: block->parameters())
                     {
-                        const Instruction *parameter =
+                        Instruction parameter =
                             graph.storage()->instruction(parameter_id);
                         add_result(parameter);
                     }
                     for(InstructionId instruction_id: block->instructions())
                     {
-                        const Instruction *instruction =
+                        Instruction instruction =
                             graph.storage()->instruction(instruction_id);
                         add_result(instruction);
                     }
@@ -85,13 +85,11 @@ namespace cl::jit
             }
 
         private:
-            void add_result(const Instruction *instruction)
+            void add_result(Instruction instruction)
             {
-                assert(instruction != nullptr);
-                if(instruction->result_class() != ResultClass::None)
+                if(instruction.result_class() != ResultClass::None)
                 {
-                    results_.emplace(instruction->id().value(),
-                                     results_.size());
+                    results_.emplace(instruction.id().value(), results_.size());
                 }
             }
 
@@ -159,7 +157,7 @@ namespace cl::jit
             {
                 if(instruction.result_class() != ResultClass::None)
                 {
-                    print_result_reference(&instruction);
+                    print_result_reference(instruction);
                     write(" = ");
                 }
                 write(instruction_mnemonic(class_name));
@@ -269,9 +267,9 @@ namespace cl::jit
                 write(" = ");
             }
 
-            void print_result_reference(const Instruction *instruction)
+            void print_result_reference(Instruction instruction)
             {
-                print_result_reference(instruction->id());
+                print_result_reference(instruction.id());
             }
 
             void print_result_reference(InstructionId instruction)
@@ -354,7 +352,7 @@ namespace cl::jit
     case InstructionKind::name:                                                \
         {                                                                      \
             const name##Instruction &concrete =                                \
-                *instruction.as<name##Instruction>();                          \
+                instruction.as<name##Instruction>();                           \
             (void)concrete;                                                    \
             OperationPrinter printer(out, state, instruction, #name);          \
             operands(CL_IR_PRINT_FIXED, CL_IR_PRINT_VARIADIC,                  \
@@ -431,7 +429,7 @@ namespace cl::jit
                     {
                         fmt::format_to(std::back_inserter(out), ", ");
                     }
-                    print_parameter(out, state, *block.parameter_at(index));
+                    print_parameter(out, state, block.parameter_at(index));
                 }
                 fmt::format_to(std::back_inserter(out), ")");
             }
@@ -444,10 +442,10 @@ namespace cl::jit
 
             for(InstructionId instruction_id: block.instructions())
             {
-                const Instruction *instruction =
+                Instruction instruction =
                     block.storage()->instruction(instruction_id);
                 fmt::format_to(std::back_inserter(out), "  ");
-                print_instruction(out, state, *instruction);
+                print_instruction(out, state, instruction);
                 fmt::format_to(std::back_inserter(out), "\n");
             }
         }

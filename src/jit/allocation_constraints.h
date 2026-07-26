@@ -128,15 +128,15 @@ namespace cl::jit
     {
     public:
         InstructionAllocationConstraints(
-            const Instruction *instruction,
+            Instruction instruction,
             std::vector<ProgramValueUseConstraint> input_overrides = {},
             std::optional<ResultConstraint> result_override = std::nullopt,
             std::vector<TemporaryConstraint> temporaries = {},
             RegisterSet clobbers = {});
 
-        void validate() const;
+        void validate(const CompilationStorage &storage) const;
 
-        const Instruction *instruction() const { return instruction_; }
+        InstructionId instruction_id() const { return instruction_; }
 
         const std::vector<ProgramValueUseConstraint> &input_overrides() const
         {
@@ -156,7 +156,7 @@ namespace cl::jit
         const RegisterSet &clobbers() const { return clobbers_; }
 
     private:
-        const Instruction *instruction_;
+        InstructionId instruction_;
         std::vector<ProgramValueUseConstraint> input_overrides_;
         std::optional<ResultConstraint> result_override_;
         std::vector<TemporaryConstraint> temporaries_;

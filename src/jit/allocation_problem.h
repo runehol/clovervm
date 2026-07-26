@@ -104,18 +104,14 @@ namespace cl::jit
             InstructionTemporary,
         };
 
-        static OccurrenceAnchor
-        instruction_operand(const Instruction *instruction,
-                            size_t operand_index)
+        static OccurrenceAnchor instruction_operand(Instruction instruction,
+                                                    size_t operand_index)
         {
-            assert(instruction != nullptr);
-            return {Kind::InstructionOperand, instruction, operand_index};
+            return {Kind::InstructionOperand, instruction.id(), operand_index};
         }
-        static OccurrenceAnchor
-        instruction_result(const Instruction *instruction)
+        static OccurrenceAnchor instruction_result(Instruction instruction)
         {
-            assert(instruction != nullptr);
-            return {Kind::InstructionResult, instruction, 0};
+            return {Kind::InstructionResult, instruction.id(), 0};
         }
         static OccurrenceAnchor block_edge_argument(const BlockEdge *edge,
                                                     size_t argument_index)
@@ -123,24 +119,22 @@ namespace cl::jit
             assert(edge != nullptr);
             return {Kind::BlockEdgeArgument, edge, argument_index};
         }
-        static OccurrenceAnchor
-        instruction_temporary(const Instruction *instruction,
-                              size_t temporary_index)
+        static OccurrenceAnchor instruction_temporary(Instruction instruction,
+                                                      size_t temporary_index)
         {
-            assert(instruction != nullptr);
-            return {Kind::InstructionTemporary, instruction, temporary_index};
+            return {Kind::InstructionTemporary, instruction.id(),
+                    temporary_index};
         }
 
         Kind kind() const { return kind_; }
-        const void *owner() const { return owner_; }
         size_t index() const { return index_; }
 
-        const Instruction *instruction() const
+        InstructionId instruction_id() const
         {
             assert(kind_ == Kind::InstructionOperand ||
                    kind_ == Kind::InstructionResult ||
                    kind_ == Kind::InstructionTemporary);
-            return static_cast<const Instruction *>(owner_);
+            return instruction_;
         }
         const BlockEdge *block_edge() const
         {
@@ -149,12 +143,18 @@ namespace cl::jit
         }
 
     private:
-        OccurrenceAnchor(Kind kind, const void *owner, size_t index)
-            : kind_(kind), owner_(owner), index_(index)
+        OccurrenceAnchor(Kind kind, InstructionId instruction, size_t index)
+            : kind_(kind), instruction_(instruction), owner_(nullptr),
+              index_(index)
+        {
+        }
+        OccurrenceAnchor(Kind kind, const BlockEdge *edge, size_t index)
+            : kind_(kind), instruction_(0), owner_(edge), index_(index)
         {
         }
 
         Kind kind_;
+        InstructionId instruction_;
         const void *owner_;
         size_t index_;
     };
@@ -187,21 +187,19 @@ namespace cl::jit
             Temporary,
         };
 
-        static LiveRangeOrigin program_value(const Instruction *definition)
+        static LiveRangeOrigin program_value(Instruction definition)
         {
-            assert(definition != nullptr);
-            assert(definition->result_class() == ResultClass::ProgramValue);
-            return {Kind::ProgramValue, definition, 0};
+            assert(definition.result_class() == ResultClass::ProgramValue);
+            return {Kind::ProgramValue, definition.id(), 0};
         }
-        static LiveRangeOrigin temporary(const Instruction *instruction,
+        static LiveRangeOrigin temporary(Instruction instruction,
                                          size_t temporary_index)
         {
-            assert(instruction != nullptr);
-            return {Kind::Temporary, instruction, temporary_index};
+            return {Kind::Temporary, instruction.id(), temporary_index};
         }
 
         Kind kind() const { return kind_; }
-        const Instruction *instruction() const { return instruction_; }
+        InstructionId instruction_id() const { return instruction_; }
         size_t temporary_index() const
         {
             assert(kind_ == Kind::Temporary);
@@ -214,13 +212,13 @@ namespace cl::jit
         }
 
     private:
-        LiveRangeOrigin(Kind kind, const Instruction *instruction, size_t index)
+        LiveRangeOrigin(Kind kind, InstructionId instruction, size_t index)
             : kind_(kind), instruction_(instruction), index_(index)
         {
         }
 
         Kind kind_;
-        const Instruction *instruction_;
+        InstructionId instruction_;
         size_t index_;
     };
 
@@ -260,10 +258,9 @@ namespace cl::jit
             BlockEdge,
         };
 
-        static TransferPoint before_instruction(const Instruction *instruction)
+        static TransferPoint before_instruction(Instruction instruction)
         {
-            assert(instruction != nullptr);
-            return {Kind::BeforeInstruction, instruction};
+            return TransferPoint(instruction.id());
         }
         static TransferPoint block_entry(const Block *block)
         {
@@ -282,11 +279,10 @@ namespace cl::jit
         }
 
         Kind kind() const { return kind_; }
-        const void *owner() const { return owner_; }
-        const Instruction *instruction() const
+        InstructionId instruction_id() const
         {
             assert(kind_ == Kind::BeforeInstruction);
-            return static_cast<const Instruction *>(owner_);
+            return instruction_;
         }
         const Block *block() const
         {
@@ -302,11 +298,18 @@ namespace cl::jit
         friend bool operator==(TransferPoint, TransferPoint) = default;
 
     private:
-        TransferPoint(Kind kind, const void *owner) : kind_(kind), owner_(owner)
+        explicit TransferPoint(InstructionId instruction)
+            : kind_(Kind::BeforeInstruction), instruction_(instruction),
+              owner_(nullptr)
+        {
+        }
+        TransferPoint(Kind kind, const void *owner)
+            : kind_(kind), instruction_(0), owner_(owner)
         {
         }
 
         Kind kind_;
+        InstructionId instruction_;
         const void *owner_;
     };
 
@@ -346,7 +349,7 @@ namespace cl::jit
     {
         LivenessRange range;
         PhysicalRegister reg;
-        const Instruction *instruction;
+        InstructionId instruction;
     };
 
     struct BlockLivenessRange

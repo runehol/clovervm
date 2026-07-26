@@ -1,5 +1,6 @@
 #include "jit/instruction.h"
 
+#include "jit/compilation_storage.h"
 #include "runtime/fatal.h"
 
 #include <array>
@@ -7,9 +8,33 @@
 
 namespace cl::jit
 {
-    [[noreturn]] void Instruction::fatal_detached_access()
+    [[noreturn]] void InstructionEntry::fatal_detached_access()
     {
         fatal("attempted to access a detached JIT instruction");
+    }
+
+    const InstructionEntry &Instruction::entry() const
+    {
+        return storage_->instruction_entry(id_);
+    }
+
+    bool Instruction::is_detached() const { return entry().is_detached(); }
+
+    InstructionKind Instruction::kind() const { return entry().kind(); }
+
+    uint16_t Instruction::operand_count() const
+    {
+        return entry().operand_count();
+    }
+
+    bool Instruction::operands_are_indirect() const
+    {
+        return entry().operands_are_indirect();
+    }
+
+    Instruction::Slot Instruction::slot(size_t index) const
+    {
+        return entry().slot(index);
     }
 
     namespace
@@ -126,17 +151,17 @@ namespace cl::jit
     TerminatorInstruction::BlockSuccessorEdges
     TerminatorInstruction::block_successor_edges() const
     {
-        switch(instruction_->kind())
+        switch(instruction_.kind())
         {
             case InstructionKind::ConditionalBranch:
                 {
-                    const auto *branch =
-                        instruction_->as<ConditionalBranchInstruction>();
-                    return {branch->true_edge(), branch->false_edge()};
+                    auto branch =
+                        instruction_.as<ConditionalBranchInstruction>();
+                    return {branch.true_edge(), branch.false_edge()};
                 }
             case InstructionKind::UnconditionalBranch:
                 return {
-                    instruction_->as<UnconditionalBranchInstruction>()->edge()};
+                    instruction_.as<UnconditionalBranchInstruction>().edge()};
             case InstructionKind::Return:
                 return {};
             default:

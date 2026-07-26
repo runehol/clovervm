@@ -31,11 +31,11 @@ namespace cl::jit
     {
     public:
         template <typename T, typename... Args>
-        T *make_instruction(Args &&...args)
+        T make_instruction(Args &&...args)
         {
-            T *instruction =
+            T instruction =
                 storage_->make_instruction<T>(std::forward<Args>(args)...);
-            allocated_instructions_->insert(instruction);
+            allocated_instructions_->insert(instruction.id());
             return instruction;
         }
 
@@ -44,12 +44,17 @@ namespace cl::jit
             return session_->retain_and_pin_value(value);
         }
 
+        Instruction instruction(InstructionId id) const
+        {
+            return storage_->instruction(id);
+        }
+
     private:
         friend class GraphRewriter;
 
         RewriteContext(
             CompilationSession *session, CompilationStorage *storage,
-            absl::flat_hash_set<const Instruction *> *allocated_instructions)
+            absl::flat_hash_set<InstructionId> *allocated_instructions)
             : session_(session), storage_(storage),
               allocated_instructions_(allocated_instructions)
         {
@@ -57,13 +62,13 @@ namespace cl::jit
 
         CompilationSession *session_;
         CompilationStorage *storage_;
-        absl::flat_hash_set<const Instruction *> *allocated_instructions_;
+        absl::flat_hash_set<InstructionId> *allocated_instructions_;
     };
 
     class RewriteInsertion
     {
     public:
-        using InstructionSequence = absl::InlinedVector<Instruction *, 2>;
+        using InstructionSequence = absl::InlinedVector<Instruction, 2>;
 
         class TransferOutput
         {
@@ -151,7 +156,7 @@ namespace cl::jit
     class RewriteResult
     {
     public:
-        using InstructionSequence = absl::InlinedVector<Instruction *, 2>;
+        using InstructionSequence = absl::InlinedVector<Instruction, 2>;
 
         static RewriteResult keep() { return RewriteResult(Kind::Keep); }
 
@@ -167,11 +172,10 @@ namespace cl::jit
             return RewriteResult(Kind::KeepWithSuffix, std::move(instructions));
         }
 
-        static RewriteResult replace(Instruction *instruction)
+        static RewriteResult replace(Instruction instruction)
         {
-            assert(instruction != nullptr);
             return RewriteResult(Kind::Replace, {instruction},
-                                 instruction->id());
+                                 instruction.id());
         }
 
         static RewriteResult replace(InstructionSequence instructions,
@@ -235,7 +239,7 @@ namespace cl::jit
     };
 
     using NormalizationRemapping =
-        absl::flat_hash_map<const Instruction *, Instruction *>;
+        absl::flat_hash_map<InstructionId, InstructionId>;
 
     struct RewriteSummary
     {

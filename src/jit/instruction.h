@@ -244,7 +244,7 @@ namespace cl::jit
     const InstructionKindMetadata &
     instruction_kind_metadata(InstructionKind kind);
 
-    class Instruction
+    class InstructionEntry
     {
     public:
         using Slot = uintptr_t;
@@ -254,12 +254,6 @@ namespace cl::jit
         static constexpr uint16_t OperandCountMask = IndirectOperandsBit - 1;
         static constexpr uint16_t DetachedStorageTag = UINT16_MAX;
 
-        Instruction(const Instruction &) = delete;
-        Instruction &operator=(const Instruction &) = delete;
-        Instruction(Instruction &&) = delete;
-        Instruction &operator=(Instruction &&) = delete;
-
-        InstructionId id() const { return id_; }
         bool is_detached() const { return kind_ == DetachedStorageTag; }
 
         InstructionKind kind() const
@@ -273,17 +267,109 @@ namespace cl::jit
             return result;
         }
 
-        template <typename ConcreteInstruction> ConcreteInstruction *as()
+        uint16_t operand_count() const
         {
-            assert(kind() == ConcreteInstruction::Kind);
-            return static_cast<ConcreteInstruction *>(this);
+            return operand_storage_ & OperandCountMask;
         }
 
-        template <typename ConcreteInstruction>
-        const ConcreteInstruction *as() const
+        bool operands_are_indirect() const
+        {
+            return (operand_storage_ & IndirectOperandsBit) != 0;
+        }
+
+        Slot slot(size_t index) const
+        {
+            assert(index < InlineSlotCount);
+            return slots_[index];
+        }
+
+    private:
+        friend class CompilationStorage;
+        friend class Instruction;
+
+        InstructionEntry(InstructionKind kind, uint16_t operand_count,
+                         bool indirect_operands,
+                         std::span<const Slot> inline_slots)
+            : kind_(static_cast<uint16_t>(kind)),
+              operand_storage_(operand_count |
+                               (indirect_operands ? IndirectOperandsBit : 0))
+        {
+            assert(operand_count <= OperandCountMask);
+            assert(inline_slots.size() <= InlineSlotCount);
+            for(size_t index = 0; index < inline_slots.size(); ++index)
+            {
+                slots_[index] = inline_slots[index];
+            }
+            for(size_t index = inline_slots.size(); index < InlineSlotCount;
+                ++index)
+            {
+                slots_[index] = 0;
+            }
+        }
+
+        template <size_t N>
+        InstructionEntry(InstructionKind kind, uint16_t operand_count,
+                         bool indirect_operands,
+                         const std::array<Slot, N> &inline_slots)
+            : InstructionEntry(kind, operand_count, indirect_operands,
+                               std::span<const Slot>(inline_slots))
+        {
+        }
+        [[noreturn]] static void fatal_detached_access();
+
+        void detach_and_poison()
+        {
+            assert(!is_detached());
+            kind_ = DetachedStorageTag;
+            operand_storage_ = DetachedStorageTag;
+            for(Slot &slot: slots_)
+            {
+                slot = UINTPTR_MAX;
+            }
+        }
+
+        uint16_t kind_;
+        uint16_t operand_storage_;
+        Slot slots_[InlineSlotCount];
+    };
+
+    static_assert(sizeof(InstructionEntry) == 48);
+    static_assert(alignof(InstructionEntry) == alignof(uintptr_t));
+    static_assert(std::is_trivially_destructible_v<InstructionEntry>);
+    static_assert(static_cast<uint16_t>(InstructionOrdinal::Count) <=
+                  InstructionOrdinalMask + 1);
+#define CL_JIT_INSTRUCTION(name, ir_levels, result, effects, operands,         \
+                           attributes)                                         \
+    static_assert(                                                             \
+        instruction_kind_has_valid_result_encoding(InstructionKind::name));
+#include "jit/instruction.def"
+#undef CL_JIT_INSTRUCTION
+    static_assert(!is_valid_instruction_kind(
+        static_cast<InstructionKind>(InstructionEntry::DetachedStorageTag)));
+
+    class Instruction
+    {
+    public:
+        using Slot = InstructionEntry::Slot;
+
+        static constexpr size_t InlineSlotCount =
+            InstructionEntry::InlineSlotCount;
+        static constexpr uint16_t IndirectOperandsBit =
+            InstructionEntry::IndirectOperandsBit;
+        static constexpr uint16_t OperandCountMask =
+            InstructionEntry::OperandCountMask;
+        static constexpr uint16_t DetachedStorageTag =
+            InstructionEntry::DetachedStorageTag;
+
+        InstructionId id() const { return id_; }
+        const CompilationStorage *storage() const { return storage_; }
+        bool is_detached() const;
+        InstructionKind kind() const;
+
+        template <typename ConcreteInstruction> ConcreteInstruction as() const
         {
             assert(kind() == ConcreteInstruction::Kind);
-            return static_cast<const ConcreteInstruction *>(this);
+            return ConcreteInstruction(storage_, id_);
         }
 
         ResultClass result_class() const
@@ -303,53 +389,38 @@ namespace cl::jit
                                EffectProfile::TerminateBlock);
         }
 
-        uint16_t operand_count() const
-        {
-            return operand_storage_ & OperandCountMask;
-        }
+        uint16_t operand_count() const;
+        bool operands_are_indirect() const;
+        Slot slot(size_t index) const;
 
-        bool operands_are_indirect() const
-        {
-            return (operand_storage_ & IndirectOperandsBit) != 0;
-        }
-
-        Slot slot(size_t index) const
-        {
-            assert(index < InlineSlotCount);
-            return slots_[index];
-        }
+        friend bool operator==(Instruction, Instruction) = default;
 
     protected:
-        friend class GraphRewriter;
         friend class CompilationStorage;
 
-        Instruction(InstructionId id, InstructionKind kind,
-                    uint16_t operand_count, bool indirect_operands,
-                    std::span<const Slot> inline_slots)
-            : id_(id), kind_(static_cast<uint16_t>(kind)),
-              operand_storage_(operand_count |
-                               (indirect_operands ? IndirectOperandsBit : 0))
+        Instruction(const CompilationStorage *storage, InstructionId id)
+            : storage_(storage), id_(id)
         {
-            assert(operand_count <= OperandCountMask);
-            assert(inline_slots.size() <= InlineSlotCount);
-            for(size_t index = 0; index < inline_slots.size(); ++index)
-            {
-                slots_[index] = inline_slots[index];
-            }
-            for(size_t index = inline_slots.size(); index < InlineSlotCount;
-                ++index)
-            {
-                slots_[index] = 0;
-            }
+            assert(storage != nullptr);
+        }
+
+        static InstructionEntry
+        make_instruction_entry(InstructionKind kind, uint16_t operand_count,
+                               bool indirect_operands,
+                               std::span<const Slot> inline_slots)
+        {
+            return InstructionEntry(kind, operand_count, indirect_operands,
+                                    inline_slots);
         }
 
         template <size_t N>
-        Instruction(InstructionId id, InstructionKind kind,
-                    uint16_t operand_count, bool indirect_operands,
-                    const std::array<Slot, N> &inline_slots)
-            : Instruction(id, kind, operand_count, indirect_operands,
-                          std::span<const Slot>(inline_slots))
+        static InstructionEntry
+        make_instruction_entry(InstructionKind kind, uint16_t operand_count,
+                               bool indirect_operands,
+                               const std::array<Slot, N> &inline_slots)
         {
+            return InstructionEntry(kind, operand_count, indirect_operands,
+                                    inline_slots);
         }
 
         template <bool Indirect> Slot operand_word_at(size_t index) const
@@ -357,18 +428,17 @@ namespace cl::jit
             assert(index < operand_count());
             if constexpr(Indirect)
             {
-                const Slot *operands =
-                    reinterpret_cast<const Slot *>(slots_[0]);
+                const Slot *operands = reinterpret_cast<const Slot *>(slot(0));
                 assert(operands != nullptr);
                 return operands[index];
             }
-            return slots_[index];
+            return slot(index);
         }
 
         const Slot *indirect_operand_words() const
         {
             assert(operands_are_indirect());
-            const Slot *operands = reinterpret_cast<const Slot *>(slots_[0]);
+            const Slot *operands = reinterpret_cast<const Slot *>(slot(0));
             assert(operands != nullptr || operand_count() == 0);
             return operands;
         }
@@ -376,47 +446,22 @@ namespace cl::jit
         template <size_t Index> Slot inline_word_at() const
         {
             static_assert(Index < InlineSlotCount);
-            return slots_[Index];
+            return slot(Index);
         }
 
     private:
-        [[noreturn]] static void fatal_detached_access();
+        const InstructionEntry &entry() const;
 
-        void detach_and_poison()
-        {
-            assert(!is_detached());
-            kind_ = DetachedStorageTag;
-            operand_storage_ = DetachedStorageTag;
-            for(Slot &slot: slots_)
-            {
-                slot = UINTPTR_MAX;
-            }
-        }
-
+        const CompilationStorage *storage_;
         InstructionId id_;
-        uint16_t kind_;
-        uint16_t operand_storage_;
-        Slot slots_[InlineSlotCount];
     };
 
-    static_assert(sizeof(Instruction) == 48);
-    static_assert(alignof(Instruction) == alignof(uintptr_t));
-    static_assert(std::is_trivially_destructible_v<Instruction>);
-    static_assert(static_cast<uint16_t>(InstructionOrdinal::Count) <=
-                  InstructionOrdinalMask + 1);
-#define CL_JIT_INSTRUCTION(name, ir_levels, result, effects, operands,         \
-                           attributes)                                         \
-    static_assert(                                                             \
-        instruction_kind_has_valid_result_encoding(InstructionKind::name));
-#include "jit/instruction.def"
-#undef CL_JIT_INSTRUCTION
-    static_assert(!is_valid_instruction_kind(
-        static_cast<InstructionKind>(Instruction::DetachedStorageTag)));
+    static_assert(sizeof(Instruction) == 16);
 
     class ProgramValueRef
     {
     public:
-        explicit ProgramValueRef(const Instruction *instruction)
+        explicit ProgramValueRef(Instruction instruction)
             : instruction_(checked_instruction_id(instruction))
         {
         }
@@ -429,14 +474,13 @@ namespace cl::jit
         template <OperandClass, ValueRepresentation>
         friend auto decode_instruction_operand(uintptr_t);
         template <ValueRepresentation> friend class RepresentedValueRef;
+        friend class LiveRangeOrigin;
         friend class SnapshotValueRefRange;
 
-        static InstructionId
-        checked_instruction_id(const Instruction *instruction)
+        static InstructionId checked_instruction_id(Instruction instruction)
         {
-            assert(instruction != nullptr);
-            assert(instruction->result_class() == ResultClass::ProgramValue);
-            return instruction->id();
+            assert(instruction.result_class() == ResultClass::ProgramValue);
+            return instruction.id();
         }
 
         explicit ProgramValueRef(InstructionId instruction)
@@ -450,7 +494,7 @@ namespace cl::jit
     class SnapshotRef
     {
     public:
-        explicit SnapshotRef(const Instruction *instruction)
+        explicit SnapshotRef(Instruction instruction)
             : instruction_(checked_instruction_id(instruction))
         {
         }
@@ -461,12 +505,10 @@ namespace cl::jit
         template <OperandClass, ValueRepresentation>
         friend auto decode_instruction_operand(uintptr_t);
 
-        static InstructionId
-        checked_instruction_id(const Instruction *instruction)
+        static InstructionId checked_instruction_id(Instruction instruction)
         {
-            assert(instruction != nullptr);
-            assert(instruction->result_class() == ResultClass::Snapshot);
-            return instruction->id();
+            assert(instruction.result_class() == ResultClass::Snapshot);
+            return instruction.id();
         }
 
         explicit SnapshotRef(InstructionId instruction)
@@ -485,10 +527,10 @@ namespace cl::jit
     template <ValueRepresentation Representation> class RepresentedValueRef
     {
     public:
-        explicit RepresentedValueRef(const Instruction *instruction)
+        explicit RepresentedValueRef(Instruction instruction)
             : reference_(instruction)
         {
-            assert(instruction->value_representation() == Representation);
+            assert(instruction.value_representation() == Representation);
         }
 
         InstructionId instruction_id() const
@@ -977,45 +1019,51 @@ namespace cl::jit
         }                                                                      \
                                                                                \
         friend class CompilationStorage;                                       \
-        template <bool Variadic = IsVariadic>                                  \
-        requires(!Variadic)                                                    \
-        name##Instruction(InstructionId id,                                    \
-                          operands(CL_JIT_DECLARE_FIXED_PARAMETER,             \
-                                   CL_JIT_DECLARE_VARIADIC_PARAMETER,          \
-                                   CL_JIT_DECLARE_SNAPSHOT_VALUES_PARAMETER)   \
-                              attributes(CL_JIT_DECLARE_ATTRIBUTE_PARAMETER)   \
-                                  InstructionConstructorEnd = {})              \
-            : Instruction(                                                     \
-                  id, Kind, static_cast<uint16_t>(FixedOperandCount),          \
-                  false,                                                       \
-                  fixed_inline_slots(                                          \
-                      operands(CL_JIT_PASS_ARGUMENT, CL_JIT_PASS_ARGUMENT,     \
-                               CL_JIT_PASS_ARGUMENT)                           \
-                          attributes(CL_JIT_PASS_ARGUMENT){}))                 \
+        friend class Instruction;                                              \
+        name##Instruction(const CompilationStorage *storage, InstructionId id) \
+            : Instruction(storage, id)                                         \
         {                                                                      \
         }                                                                      \
                                                                                \
         template <bool Variadic = IsVariadic>                                  \
-        requires(Variadic)                                                     \
-        name##Instruction(InstructionId id, std::span<Slot> indirect_slots,   \
-                          operands(CL_JIT_DECLARE_FIXED_PARAMETER,             \
-                                   CL_JIT_DECLARE_VARIADIC_PARAMETER,          \
-                                   CL_JIT_DECLARE_SNAPSHOT_VALUES_PARAMETER)   \
-                              attributes(CL_JIT_DECLARE_ATTRIBUTE_PARAMETER)   \
-                                  InstructionConstructorEnd = {})              \
-            : Instruction(                                                     \
-                  id, Kind,                                                    \
-                  operand_count_for(                                           \
-                      operands(CL_JIT_PASS_ARGUMENT, CL_JIT_PASS_ARGUMENT,     \
-                               CL_JIT_PASS_ARGUMENT)                           \
-                          attributes(CL_JIT_PASS_ARGUMENT){}),                 \
-                  true,                                                        \
-                  indirect_inline_slots(                                       \
-                      indirect_slots,                                          \
-                      operands(CL_JIT_PASS_ARGUMENT, CL_JIT_PASS_ARGUMENT,     \
-                               CL_JIT_PASS_ARGUMENT)                           \
-                          attributes(CL_JIT_PASS_ARGUMENT){}))                 \
+        requires(!Variadic)                                                    \
+        static InstructionEntry make_entry(                                    \
+            operands(CL_JIT_DECLARE_FIXED_PARAMETER,                           \
+                     CL_JIT_DECLARE_VARIADIC_PARAMETER,                        \
+                     CL_JIT_DECLARE_SNAPSHOT_VALUES_PARAMETER)                 \
+                attributes(CL_JIT_DECLARE_ATTRIBUTE_PARAMETER)                 \
+                    InstructionConstructorEnd = {})                            \
         {                                                                      \
+            return make_instruction_entry(                                    \
+                Kind, static_cast<uint16_t>(FixedOperandCount), false,         \
+                fixed_inline_slots(                                            \
+                    operands(CL_JIT_PASS_ARGUMENT, CL_JIT_PASS_ARGUMENT,       \
+                             CL_JIT_PASS_ARGUMENT)                             \
+                        attributes(CL_JIT_PASS_ARGUMENT){}));                  \
+        }                                                                      \
+                                                                               \
+        template <bool Variadic = IsVariadic>                                  \
+        requires(Variadic)                                                     \
+        static InstructionEntry make_entry(                                    \
+            std::span<Slot> indirect_slots,                                    \
+            operands(CL_JIT_DECLARE_FIXED_PARAMETER,                           \
+                     CL_JIT_DECLARE_VARIADIC_PARAMETER,                        \
+                     CL_JIT_DECLARE_SNAPSHOT_VALUES_PARAMETER)                 \
+                attributes(CL_JIT_DECLARE_ATTRIBUTE_PARAMETER)                 \
+                    InstructionConstructorEnd = {})                            \
+        {                                                                      \
+            return make_instruction_entry(                                    \
+                Kind,                                                          \
+                operand_count_for(                                             \
+                    operands(CL_JIT_PASS_ARGUMENT, CL_JIT_PASS_ARGUMENT,       \
+                             CL_JIT_PASS_ARGUMENT)                             \
+                        attributes(CL_JIT_PASS_ARGUMENT){}),                   \
+                true,                                                          \
+                indirect_inline_slots(                                         \
+                    indirect_slots,                                            \
+                    operands(CL_JIT_PASS_ARGUMENT, CL_JIT_PASS_ARGUMENT,       \
+                             CL_JIT_PASS_ARGUMENT)                             \
+                        attributes(CL_JIT_PASS_ARGUMENT){}));                  \
         }                                                                      \
     };                                                                         \
     static_assert(sizeof(name##Instruction) == sizeof(Instruction));           \
@@ -1093,8 +1141,7 @@ namespace cl::jit
 
 #define CL_JIT_INSTRUCTION_CASE(Type, variable)                                \
     Type::Kind:                                                                \
-    if(const Type &variable =                                                  \
-           *cl_jit_instruction_switch_value.as<Type>();                        \
+    if(const Type variable = cl_jit_instruction_switch_value.as<Type>();       \
        false)                                                                  \
     {                                                                          \
     }                                                                          \
@@ -1106,17 +1153,17 @@ namespace cl::jit
     public:
         using BlockSuccessorEdges = absl::InlinedVector<BlockEdge *, 2>;
 
-        explicit TerminatorInstruction(const Instruction *instruction)
+        explicit TerminatorInstruction(Instruction instruction)
             : instruction_(instruction)
         {
-            assert(instruction_->is_block_terminator());
+            assert(instruction_.is_block_terminator());
         }
 
-        InstructionKind kind() const { return instruction_->kind(); }
+        InstructionKind kind() const { return instruction_.kind(); }
         BlockSuccessorEdges block_successor_edges() const;
 
     private:
-        const Instruction *instruction_;
+        Instruction instruction_;
     };
 
     template <typename Visitor>
