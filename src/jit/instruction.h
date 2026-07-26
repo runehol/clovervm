@@ -630,40 +630,47 @@ namespace cl::jit
 
     using BytecodePC = uint32_t;
 
-    inline Shape *decode_instruction_attribute_Shape(uintptr_t word)
+    inline Shape *decode_instruction_attribute_Shape(const CompilationStorage *,
+                                                     uintptr_t word)
     {
         return reinterpret_cast<Shape *>(word);
     }
 
     inline ValidityCell *
-    decode_instruction_attribute_ValidityCell(uintptr_t word)
+    decode_instruction_attribute_ValidityCell(const CompilationStorage *,
+                                              uintptr_t word)
     {
         return reinterpret_cast<ValidityCell *>(word);
     }
 
-    inline ShapeKey decode_instruction_attribute_ShapeKey(uintptr_t word)
+    inline ShapeKey
+    decode_instruction_attribute_ShapeKey(const CompilationStorage *,
+                                          uintptr_t word)
     {
         static_assert(sizeof(ShapeKey) == sizeof(word));
         static_assert(std::is_trivially_copyable_v<ShapeKey>);
         return std::bit_cast<ShapeKey>(word);
     }
 
-    inline Value decode_instruction_attribute_ValueConstant(uintptr_t word)
+    inline Value
+    decode_instruction_attribute_ValueConstant(const CompilationStorage *,
+                                               uintptr_t word)
     {
         Value value;
         value.as.integer = static_cast<long long>(word);
         return value;
     }
 
-    inline BytecodePC decode_instruction_attribute_BytecodePC(uintptr_t word)
+    inline BytecodePC
+    decode_instruction_attribute_BytecodePC(const CompilationStorage *,
+                                            uintptr_t word)
     {
         return static_cast<BytecodePC>(word);
     }
 
-    inline BlockEdge *decode_instruction_attribute_BlockEdge(uintptr_t word)
-    {
-        return reinterpret_cast<BlockEdge *>(word);
-    }
+    BlockEdge *
+    decode_instruction_attribute_BlockEdge(const CompilationStorage *storage,
+                                           uintptr_t word);
 
     inline uintptr_t encode_instruction_operand(TaggedValueRef reference)
     {
@@ -715,11 +722,7 @@ namespace cl::jit
         return static_cast<uintptr_t>(pc);
     }
 
-    inline uintptr_t encode_instruction_attribute_BlockEdge(BlockEdge *edge)
-    {
-        assert(edge != nullptr);
-        return reinterpret_cast<uintptr_t>(edge);
-    }
+    uintptr_t encode_instruction_attribute_BlockEdge(BlockEdge *edge);
 
     struct InstructionConstructorEnd
     {
@@ -886,7 +889,7 @@ namespace cl::jit
         constexpr size_t index =                                               \
             AttributeBase + static_cast<size_t>(AttributeIndex::name);         \
         return decode_instruction_attribute_##attribute_class(                 \
-            inline_word_at<index>());                                          \
+            storage(), inline_word_at<index>());                               \
     }
 #define CL_JIT_INSTRUCTION(name, ir_levels, result, effects, operands,         \
                            attributes)                                         \

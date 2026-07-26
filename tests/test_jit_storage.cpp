@@ -67,17 +67,34 @@ namespace cl::jit
     {
         CompilationSession session;
         GraphBuilder builder(session);
-        Block *first_block = builder.make_block();
-        Block *second_block = builder.make_block();
+        Block *first_block = builder.emplace_block();
+        Block *second_block = builder.emplace_block();
         ParameterInstruction first_instruction =
             builder.make_instruction<ParameterInstruction>();
         ParameterInstruction second_instruction =
             builder.make_instruction<ParameterInstruction>();
+        BlockEdge *first_edge =
+            builder.make_block_edge(first_block, second_block);
+        BlockEdge *second_edge =
+            builder.make_block_edge(first_block, second_block);
+        ConditionalBranchInstruction branch =
+            builder.make_instruction<ConditionalBranchInstruction>(
+                TaggedValueRef(first_instruction), first_edge, second_edge);
 
         EXPECT_EQ(0u, first_block->serial().value());
         EXPECT_EQ(1u, second_block->serial().value());
         EXPECT_EQ(0u, first_instruction.id().value());
         EXPECT_EQ(1u, second_instruction.id().value());
+        EXPECT_EQ(0u, first_edge->id().value());
+        EXPECT_EQ(1u, second_edge->id().value());
+        EXPECT_EQ(first_edge, session.storage()->block_edge(first_edge->id()));
+        EXPECT_EQ(second_edge,
+                  session.storage()->block_edge(second_edge->id()));
+        EXPECT_EQ(first_edge, branch.true_edge());
+        EXPECT_EQ(second_edge, branch.false_edge());
+        EXPECT_EQ(first_edge->id().value(), branch.slot(1));
+        EXPECT_EQ(second_edge->id().value(), branch.slot(2));
+        static_assert(sizeof(BlockEdgeId) == sizeof(uint32_t));
     }
 
     TEST(JitCompilationStorage, GraphBorrowsItsOwningStorage)

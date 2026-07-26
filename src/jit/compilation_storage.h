@@ -10,6 +10,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <deque>
 #include <type_traits>
 #include <utility>
 #include <vector>
@@ -28,6 +29,7 @@ namespace cl::jit
         CompilationStorage &operator=(CompilationStorage &&) = delete;
 
         Instruction instruction(InstructionId id) const;
+        BlockEdge *block_edge(BlockEdgeId id) const;
 
     private:
         friend class CompilationSession;
@@ -43,10 +45,9 @@ namespace cl::jit
             return blocks_.make(std::forward<Args>(args)...);
         }
 
-        template <typename... Args> BlockEdge *make_block_edge(Args &&...args)
-        {
-            return block_edges_.make(std::forward<Args>(args)...);
-        }
+        BlockEdge *
+        make_block_edge(Block *source, Block *target,
+                        std::span<const ProgramValueRef> arguments = {});
 
         template <typename T, typename... Args>
         T make_instruction(Args &&...args)
@@ -74,12 +75,13 @@ namespace cl::jit
         ControlFlowGraph *make_graph() { return graphs_.make(this); }
 
         InstructionId next_instruction_id() const;
+        BlockEdgeId next_block_edge_id() const;
         const InstructionEntry &instruction_entry(InstructionId id) const;
         void detach_instruction(InstructionId id);
 
         ObjectPool<ControlFlowGraph> graphs_;
         ObjectPool<Block> blocks_;
-        ObjectPool<BlockEdge> block_edges_;
+        std::deque<BlockEdge> block_edges_;
         std::vector<InstructionEntry> instructions_;
         InstructionSideDataPool instruction_side_data_;
     };

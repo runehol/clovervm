@@ -1,6 +1,7 @@
 #ifndef CL_JIT_CONTROL_FLOW_GRAPH_H
 #define CL_JIT_CONTROL_FLOW_GRAPH_H
 
+#include "jit/block_edge_id.h"
 #include "jit/bytecode_state.h"
 #include "jit/instruction.h"
 #include "jit/serial.h"
@@ -93,11 +94,9 @@ namespace cl::jit
     class BlockEdge
     {
     public:
-        using Serial = TypedSerial<BlockEdge>;
-
-        BlockEdge(Serial serial, Block *source, Block *target,
+        BlockEdge(BlockEdgeId id, Block *source, Block *target,
                   std::span<const ProgramValueRef> arguments)
-            : serial_(serial), source_(source), target_(target),
+            : id_(id), source_(source), target_(target),
               arguments_(arguments.begin(), arguments.end())
         {
         }
@@ -107,7 +106,7 @@ namespace cl::jit
         BlockEdge(BlockEdge &&) = delete;
         BlockEdge &operator=(BlockEdge &&) = delete;
 
-        Serial serial() const { return serial_; }
+        BlockEdgeId id() const { return id_; }
         Block *source() const { return source_; }
         Block *target() const { return target_; }
         const std::vector<ProgramValueRef> &arguments() const
@@ -116,7 +115,7 @@ namespace cl::jit
         }
 
     private:
-        Serial serial_;
+        BlockEdgeId id_;
         Block *source_;
         Block *target_;
         std::vector<ProgramValueRef> arguments_;

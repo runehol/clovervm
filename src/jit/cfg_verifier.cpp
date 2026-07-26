@@ -36,7 +36,7 @@ namespace cl::jit
             {
                 return "null edge";
             }
-            return "block edge e" + std::to_string(edge->serial().value());
+            return "block edge e" + std::to_string(edge->id().value());
         }
 
         std::string instruction_name(Instruction instruction)

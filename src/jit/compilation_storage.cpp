@@ -7,6 +7,21 @@
 
 namespace cl::jit
 {
+    BlockEdge *CompilationStorage::make_block_edge(
+        Block *source, Block *target,
+        std::span<const ProgramValueRef> arguments)
+    {
+        BlockEdgeId id = next_block_edge_id();
+        block_edges_.emplace_back(id, source, target, arguments);
+        return &block_edges_.back();
+    }
+
+    BlockEdge *CompilationStorage::block_edge(BlockEdgeId id) const
+    {
+        assert(id.value() < block_edges_.size());
+        return const_cast<BlockEdge *>(&block_edges_[id.value()]);
+    }
+
     Instruction CompilationStorage::instruction(InstructionId id) const
     {
         assert(id.value() < instructions_.size());
@@ -33,6 +48,29 @@ namespace cl::jit
             fatal("too many JIT instructions");
         }
         return InstructionId(static_cast<uint32_t>(instructions_.size()));
+    }
+
+    BlockEdgeId CompilationStorage::next_block_edge_id() const
+    {
+        if(block_edges_.size() > std::numeric_limits<uint32_t>::max())
+        {
+            fatal("too many JIT block edges");
+        }
+        return BlockEdgeId(static_cast<uint32_t>(block_edges_.size()));
+    }
+
+    BlockEdge *
+    decode_instruction_attribute_BlockEdge(const CompilationStorage *storage,
+                                           uintptr_t word)
+    {
+        assert(storage != nullptr);
+        return storage->block_edge(BlockEdgeId(static_cast<uint32_t>(word)));
+    }
+
+    uintptr_t encode_instruction_attribute_BlockEdge(BlockEdge *edge)
+    {
+        assert(edge != nullptr);
+        return edge->id().value();
     }
 
 }  // namespace cl::jit
