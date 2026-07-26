@@ -250,7 +250,7 @@ namespace cl::jit
     public:
         using Slot = uintptr_t;
 
-        static constexpr size_t InlineSlotCount = 5;
+        static constexpr size_t InlineSlotCount = 3;
         static constexpr uint16_t IndirectOperandsBit = uint16_t{1} << 15;
         static constexpr uint16_t OperandCountMask = IndirectOperandsBit - 1;
         static constexpr uint16_t DetachedStorageTag = UINT16_MAX;
@@ -329,12 +329,12 @@ namespace cl::jit
             }
         }
 
+        Slot slots_[InlineSlotCount];
         uint16_t kind_;
         uint16_t operand_storage_;
-        Slot slots_[InlineSlotCount];
     };
 
-    static_assert(sizeof(InstructionEntry) == 48);
+    static_assert(sizeof(InstructionEntry) == 32);
     static_assert(alignof(InstructionEntry) == alignof(uintptr_t));
     static_assert(std::is_trivially_destructible_v<InstructionEntry>);
     static_assert(static_cast<uint16_t>(InstructionOrdinal::Count) <=
@@ -931,7 +931,9 @@ namespace cl::jit
         static constexpr IRLevelMask AllowedIRLevels = ir_levels;              \
         static constexpr bool IsVariadic = false operands(                     \
             CL_JIT_HAS_NO_VARIADIC, CL_JIT_HAS_VARIADIC, CL_JIT_HAS_VARIADIC); \
-        static constexpr bool OperandsAreIndirect = IsVariadic;                \
+        static constexpr bool OperandsAreIndirect =                            \
+            IsVariadic ||                                                      \
+            FixedOperandCount + AttributeCount > InlineSlotCount;              \
                                                                                \
         template <bool Indirect = OperandsAreIndirect>                         \
         requires(Indirect)                                                     \
@@ -969,7 +971,7 @@ namespace cl::jit
                                 : AttributeBase + AttributeCount;              \
         static_assert(InlineSlotCountForKind <= InlineSlotCount);              \
         static_assert(!OperandsAreIndirect ||                                  \
-                      AttributeCount <= IndirectOperandSlot);                  \
+                      AttributeCount + 1 <= InlineSlotCount);                  \
                                                                                \
         static uint16_t                                                        \
         operand_count_for(operands(CL_JIT_DECLARE_FIXED_PARAMETER,             \

@@ -159,7 +159,7 @@ namespace cl::jit
 
     TEST(JitInstructionStorage, HasDenseIdsAndStableHandles)
     {
-        static_assert(sizeof(InstructionEntry) == 48);
+        static_assert(sizeof(InstructionEntry) == 32);
         static_assert(sizeof(Instruction) == 16);
         static_assert(sizeof(InstructionId) == sizeof(uint32_t));
         static_assert(std::is_trivially_copyable_v<InstructionEntry>);
