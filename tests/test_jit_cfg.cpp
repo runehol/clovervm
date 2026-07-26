@@ -139,11 +139,11 @@ namespace cl::jit
 
         EXPECT_TRUE(graph->is_published());
         ASSERT_EQ(1u, true_edge->arguments().size());
-        EXPECT_EQ(true_value.instruction(),
-                  true_edge->arguments()[0].instruction());
+        EXPECT_EQ(true_value.instruction_id(),
+                  true_edge->arguments()[0].instruction_id());
         ASSERT_EQ(1u, false_edge->arguments().size());
-        EXPECT_EQ(false_value.instruction(),
-                  false_edge->arguments()[0].instruction());
+        EXPECT_EQ(false_value.instruction_id(),
+                  false_edge->arguments()[0].instruction_id());
     }
 
     TEST(JitCfg, EntryParametersArePlacedSeparatelyFromInstructions)

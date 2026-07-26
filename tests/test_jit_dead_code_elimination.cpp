@@ -102,7 +102,8 @@ namespace cl::jit
         BlockEdge *new_edge = entry->block_successor_edges()[0];
         EXPECT_NE(old_edge, new_edge);
         ASSERT_EQ(1u, new_edge->arguments().size());
-        EXPECT_EQ(live_argument, new_edge->arguments()[0].instruction());
+        EXPECT_EQ(live_argument->id(),
+                  new_edge->arguments()[0].instruction_id());
     }
 
     TEST(JitDeadCodeElimination, EliminatesUnusedDeoptimizingInstructions)

@@ -1,5 +1,6 @@
 #include "jit/cfg_verifier.h"
 
+#include "jit/compilation_storage.h"
 #include "jit/control_flow_graph.h"
 #include "jit/instruction.h"
 
@@ -319,7 +320,9 @@ namespace cl::jit
                 }
                 for(size_t index = 0; index < arguments.size(); ++index)
                 {
-                    if(arguments[index].instruction()->value_representation() !=
+                    const Instruction *argument = graph.storage()->instruction(
+                        arguments[index].instruction_id());
+                    if(argument->value_representation() !=
                        parameters[index]->value_representation())
                     {
                         return invalid(edge_name(edge) + " argument " +
@@ -347,7 +350,9 @@ namespace cl::jit
                     *instruction,
                     [&](uint32_t, OperandClass operand_class,
                         ValueRepresentation required_representation,
-                        Instruction *def) {
+                        InstructionId definition_id) {
+                        const Instruction *def =
+                            graph.storage()->instruction(definition_id);
                         if(!reference_error.empty())
                         {
                             return;
@@ -397,7 +402,8 @@ namespace cl::jit
                     edge->arguments();
                 for(size_t index = 0; index < arguments.size(); ++index)
                 {
-                    const Instruction *def = arguments[index].instruction();
+                    const Instruction *def = graph.storage()->instruction(
+                        arguments[index].instruction_id());
                     if(!available_definitions.contains(def))
                     {
                         return invalid(edge_name(edge) + " argument " +

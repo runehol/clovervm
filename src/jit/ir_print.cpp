@@ -49,9 +49,9 @@ namespace cl::jit
                 return found->second;
             }
 
-            size_t result_id(const Instruction *instruction) const
+            size_t result_id(InstructionId instruction) const
             {
-                auto found = results_.find(instruction);
+                auto found = results_.find(instruction.value());
                 assert(found != results_.end());
                 return found->second;
             }
@@ -85,7 +85,8 @@ namespace cl::jit
                 assert(instruction != nullptr);
                 if(instruction->result_class() != ResultClass::None)
                 {
-                    results_.emplace(instruction, results_.size());
+                    results_.emplace(instruction->id().value(),
+                                     results_.size());
                 }
             }
 
@@ -98,7 +99,7 @@ namespace cl::jit
             }
 
             std::unordered_map<const Block *, size_t> blocks_;
-            std::unordered_map<const Instruction *, size_t> results_;
+            std::unordered_map<uint32_t, size_t> results_;
             std::unordered_map<uintptr_t, size_t> heap_values_;
             std::unordered_map<const Shape *, size_t> shapes_;
             std::unordered_map<const ValidityCell *, size_t> validities_;
@@ -162,7 +163,7 @@ namespace cl::jit
             template <typename Ref> void fixed_operand(Ref reference)
             {
                 operand_separator();
-                print_result_reference(reference.instruction());
+                print_result_reference(reference.instruction_id());
             }
 
             template <typename Range> void variadic_operand(const Range &range)
@@ -175,7 +176,7 @@ namespace cl::jit
                     {
                         write(", ");
                     }
-                    print_result_reference(range[index].instruction());
+                    print_result_reference(range[index].instruction_id());
                 }
                 write("]");
             }
@@ -227,7 +228,7 @@ namespace cl::jit
                             write(", ");
                         }
                         print_result_reference(
-                            edge->arguments()[index].instruction());
+                            edge->arguments()[index].instruction_id());
                     }
                     write(")");
                 }
@@ -264,6 +265,11 @@ namespace cl::jit
             }
 
             void print_result_reference(const Instruction *instruction)
+            {
+                print_result_reference(instruction->id());
+            }
+
+            void print_result_reference(InstructionId instruction)
             {
                 format("%{}", state_.result_id(instruction));
             }
@@ -365,7 +371,7 @@ namespace cl::jit
                              const Instruction &parameter)
         {
             fmt::format_to(std::back_inserter(out), "%{}",
-                           state.result_id(&parameter));
+                           state.result_id(parameter.id()));
             switch(parameter.value_representation())
             {
                 case ValueRepresentation::TaggedValue:

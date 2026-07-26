@@ -321,7 +321,7 @@ namespace cl::jit
                             [&](uint32_t operand_index,
                                 OperandClass operand_class,
                                 ValueRepresentation representation,
-                                Instruction *definition) {
+                                InstructionId definition_id) {
                                 if(operand_class == OperandClass::Snapshot)
                                 {
                                     has_snapshot_operand = true;
@@ -341,7 +341,9 @@ namespace cl::jit
                                         ? early
                                         : late;
                                 LiveRangeId live_range =
-                                    value_range(definition, block);
+                                    value_range(graph_.storage()->instruction(
+                                                    definition_id),
+                                                block);
                                 add_occurrence(
                                     live_range, position,
                                     minimum_liveness_coverage(
@@ -453,8 +455,9 @@ namespace cl::jit
                     for(size_t argument_index = 0;
                         argument_index < arguments.size(); ++argument_index)
                     {
-                        Instruction *definition =
-                            arguments[argument_index].instruction();
+                        const Instruction *definition =
+                            graph_.storage()->instruction(
+                                arguments[argument_index].instruction_id());
                         LiveRangeId live_range = value_range(definition, block);
                         LocationRequirement requirement =
                             LocationRequirement::any_register(

@@ -33,7 +33,8 @@ namespace cl::jit
         Result<MaterializationPlan, RegisterAllocationError>
         plan_materialization(const PreparedAllocationProblem &problem,
                              const AllocationConstraints &constraints,
-                             const RegisterAllocationResult &allocation)
+                             const RegisterAllocationResult &allocation,
+                             CompilationStorage &storage)
         {
             MaterializationPlan result;
             ScratchRegisters scratch_registers;
@@ -184,8 +185,8 @@ namespace cl::jit
                     {
                         continue;
                     }
-                    Instruction *candidate =
-                        source.origin.program_value().instruction();
+                    Instruction *candidate = storage.instruction(
+                        source.origin.program_value().instruction_id());
                     if(value != nullptr && value != candidate)
                     {
                         fatal("JIT materialization of merged bundle values is "
@@ -379,8 +380,8 @@ namespace cl::jit
                            const AllocationConstraints &constraints,
                            const RegisterAllocationResult &allocation)
     {
-        auto plan_result =
-            plan_materialization(problem, constraints, allocation);
+        auto plan_result = plan_materialization(problem, constraints,
+                                                allocation, *graph.storage());
         if(!plan_result)
         {
             return propagate_failure(std::move(plan_result));

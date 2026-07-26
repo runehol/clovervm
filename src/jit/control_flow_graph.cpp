@@ -7,6 +7,18 @@
 
 namespace cl::jit
 {
+    CompilationStorage *Block::storage()
+    {
+        assert(graph_ != nullptr);
+        return graph_->storage();
+    }
+
+    const CompilationStorage *Block::storage() const
+    {
+        assert(graph_ != nullptr);
+        return graph_->storage();
+    }
+
     ControlFlowGraph::ControlFlowGraph(Serial serial,
                                        CompilationStorage *storage)
         : serial_(serial), storage_(storage)

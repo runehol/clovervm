@@ -155,8 +155,12 @@ namespace cl::jit
         AllocationConstraints constraints =
             make_aarch64_allocation_constraints(*graph);
 
-        EXPECT_EQ(nullptr, find_override(constraints, lhs.instruction()));
-        EXPECT_EQ(nullptr, find_override(constraints, rhs.instruction()));
+        EXPECT_EQ(nullptr,
+                  find_override(constraints, graph->storage()->instruction(
+                                                 lhs.instruction_id())));
+        EXPECT_EQ(nullptr,
+                  find_override(constraints, graph->storage()->instruction(
+                                                 rhs.instruction_id())));
         EXPECT_EQ(nullptr, find_override(constraints, and_instruction));
         EXPECT_EQ(nullptr, find_override(constraints, orr_instruction));
         EXPECT_EQ(nullptr, find_override(constraints, eor_instruction));

@@ -125,13 +125,14 @@ namespace cl::jit
         }
 
         void validate_available_operands(
-            const Instruction &instruction,
+            const CompilationStorage &storage, const Instruction &instruction,
             const absl::flat_hash_set<const Instruction *> &available_defs)
         {
             visit_operand_references(
                 instruction, [&](uint32_t, OperandClass operand_class,
                                  ValueRepresentation required_representation,
-                                 Instruction *def) {
+                                 InstructionId definition_id) {
+                    const Instruction *def = storage.instruction(definition_id);
                     require_rewrite_invariant(
                         available_defs.contains(def),
                         "rewritten instruction refers to a definition outside "
@@ -320,8 +321,8 @@ namespace cl::jit
                                          sequence_replacements,
                                          edge_replacements);
                     Instruction *normalized =
-                        rebuild_instruction_with_references(*proposed, resolver,
-                                                            context);
+                        rebuild_instruction_with_references(
+                            *proposed, *storage_, resolver, context);
                     require_rewrite_invariant(
                         !normalized->is_detached(),
                         "a detached instruction cannot be inserted");
@@ -338,7 +339,8 @@ namespace cl::jit
                         "position");
                     sequence_replacements.emplace(proposed, normalized);
                     record_normalization(proposed, normalized);
-                    validate_available_operands(*normalized, available_defs);
+                    validate_available_operands(*storage_, *normalized,
+                                                available_defs);
                     staged.instructions.push_back(normalized);
                     if(normalized->result_class() != ResultClass::None)
                     {
@@ -422,12 +424,14 @@ namespace cl::jit
                             }
                             ProgramValueRef argument = edge->arguments()[index];
                             Instruction *resolved =
-                                resolver.resolve(argument.instruction());
+                                resolver.resolve(storage_->instruction(
+                                    argument.instruction_id()));
                             require_rewrite_invariant(
                                 available_defs.contains(resolved),
                                 "rewritten block edge refers to a definition "
                                 "outside its source block or after the edge");
-                            changed |= resolved != argument.instruction();
+                            changed |=
+                                resolved->id() != argument.instruction_id();
                             arguments.emplace_back(resolved);
                         }
                         BlockEdge *replacement = edge;
@@ -449,9 +453,9 @@ namespace cl::jit
                                          no_sequence_replacements,
                                          edge_replacements);
                     callback_input = rebuild_instruction_with_references(
-                        *original, resolver, context);
+                        *original, *storage_, resolver, context);
                     record_normalization(original, callback_input);
-                    validate_available_operands(*callback_input,
+                    validate_available_operands(*storage_, *callback_input,
                                                 available_defs);
                 }
                 RewriteResult result = RewriteResult::keep();
@@ -553,8 +557,8 @@ namespace cl::jit
                                          sequence_replacements,
                                          edge_replacements);
                     Instruction *normalized =
-                        rebuild_instruction_with_references(*proposed, resolver,
-                                                            context);
+                        rebuild_instruction_with_references(
+                            *proposed, *storage_, resolver, context);
                     require_rewrite_invariant(
                         !normalized->is_detached(),
                         "a detached instruction cannot be emitted");
@@ -568,7 +572,8 @@ namespace cl::jit
                         "position");
                     sequence_replacements.emplace(proposed, normalized);
                     record_normalization(proposed, normalized);
-                    validate_available_operands(*normalized, available_defs);
+                    validate_available_operands(*storage_, *normalized,
+                                                available_defs);
                     staged.instructions.push_back(normalized);
                     if(normalized->result_class() != ResultClass::None)
                     {

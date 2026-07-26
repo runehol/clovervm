@@ -43,6 +43,7 @@ namespace cl::jit
 
         Block *block_at(size_t index) const;
         size_t block_count() const;
+        CompilationStorage *storage() const { return storage_; }
         void set_loop_depth(Block *block, uint32_t loop_depth);
         void set_bytecode_state_order(const BytecodeStateOrder &order);
 

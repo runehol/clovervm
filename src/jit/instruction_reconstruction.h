@@ -1,6 +1,7 @@
 #ifndef CL_JIT_INSTRUCTION_RECONSTRUCTION_H
 #define CL_JIT_INSTRUCTION_RECONSTRUCTION_H
 
+#include "jit/compilation_storage.h"
 #include "jit/instruction.h"
 
 #include <cassert>
@@ -14,8 +15,9 @@ namespace cl::jit
         template <typename DefResolver> class TypedReferenceResolver
         {
         public:
-            explicit TypedReferenceResolver(const DefResolver &resolver)
-                : resolver_(&resolver)
+            TypedReferenceResolver(CompilationStorage &storage,
+                                   const DefResolver &resolver)
+                : storage_(&storage), resolver_(&resolver)
             {
             }
 
@@ -26,17 +28,20 @@ namespace cl::jit
 
             TaggedValueRef resolve(TaggedValueRef def) const
             {
-                return TaggedValueRef(resolve(def.instruction()));
+                return TaggedValueRef(
+                    resolve(storage_->instruction(def.instruction_id())));
             }
 
             F64Ref resolve(F64Ref def) const
             {
-                return F64Ref(resolve(def.instruction()));
+                return F64Ref(
+                    resolve(storage_->instruction(def.instruction_id())));
             }
 
             SnapshotRef resolve(SnapshotRef def) const
             {
-                return SnapshotRef(resolve(def.instruction()));
+                return SnapshotRef(
+                    resolve(storage_->instruction(def.instruction_id())));
             }
 
             template <typename T> T resolve_attribute(T attribute) const
@@ -69,12 +74,14 @@ namespace cl::jit
                 resolved.reserve(defs.size());
                 for(size_t index = 0; index < defs.size(); ++index)
                 {
-                    resolved.emplace_back(resolve(defs[index].instruction()));
+                    resolved.emplace_back(resolve(
+                        storage_->instruction(defs[index].instruction_id())));
                 }
                 return resolved;
             }
 
         private:
+            CompilationStorage *storage_;
             const DefResolver *resolver_;
         };
     }  // namespace detail
@@ -93,17 +100,17 @@ namespace cl::jit
     //     template <typename T, typename... Args>
     //     T *make_instruction(Args &&...args);
     template <typename DefResolver, typename InstructionFactory>
-    Instruction *
-    rebuild_instruction_with_references(Instruction &instruction,
-                                        const DefResolver &def_resolver,
-                                        InstructionFactory &factory)
+    Instruction *rebuild_instruction_with_references(
+        Instruction &instruction, CompilationStorage &storage,
+        const DefResolver &def_resolver, InstructionFactory &factory)
     {
         bool changed = false;
-        visit_operand_references(
-            instruction,
-            [&](uint32_t, OperandClass, ValueRepresentation, Instruction *def) {
-                changed |= def_resolver.resolve(def) != def;
-            });
+        visit_operand_references(instruction, [&](uint32_t, OperandClass,
+                                                  ValueRepresentation,
+                                                  InstructionId definition_id) {
+            Instruction *def = storage.instruction(definition_id);
+            changed |= def_resolver.resolve(def) != def;
+        });
         if(instruction.is_block_terminator())
         {
             for(BlockEdge *edge:
@@ -117,7 +124,7 @@ namespace cl::jit
             return &instruction;
         }
 
-        detail::TypedReferenceResolver resolver(def_resolver);
+        detail::TypedReferenceResolver resolver(storage, def_resolver);
         switch(instruction.kind())
         {
 #define CL_JIT_IR_LEVELS(...)

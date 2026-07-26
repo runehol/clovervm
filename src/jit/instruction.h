@@ -417,38 +417,67 @@ namespace cl::jit
     {
     public:
         explicit ProgramValueRef(Instruction *instruction)
-            : instruction_(instruction)
+            : instruction_(checked_instruction_id(instruction))
+        {
+        }
+
+        InstructionId instruction_id() const { return instruction_; }
+
+        friend bool operator==(ProgramValueRef, ProgramValueRef) = default;
+
+    private:
+        template <OperandClass, ValueRepresentation>
+        friend auto decode_instruction_operand(uintptr_t);
+        template <ValueRepresentation> friend class RepresentedValueRef;
+        friend class SnapshotValueRefRange;
+
+        static InstructionId checked_instruction_id(Instruction *instruction)
         {
             assert(instruction != nullptr);
             assert(instruction->result_class() == ResultClass::ProgramValue);
+            return instruction->id();
         }
 
-        Instruction *instruction() const { return instruction_; }
+        explicit ProgramValueRef(InstructionId instruction)
+            : instruction_(instruction)
+        {
+        }
 
-    private:
-        Instruction *instruction_;
+        InstructionId instruction_;
     };
 
     class SnapshotRef
     {
     public:
         explicit SnapshotRef(Instruction *instruction)
-            : instruction_(instruction)
+            : instruction_(checked_instruction_id(instruction))
+        {
+        }
+
+        InstructionId instruction_id() const { return instruction_; }
+
+    private:
+        template <OperandClass, ValueRepresentation>
+        friend auto decode_instruction_operand(uintptr_t);
+
+        static InstructionId checked_instruction_id(Instruction *instruction)
         {
             assert(instruction != nullptr);
             assert(instruction->result_class() == ResultClass::Snapshot);
+            return instruction->id();
         }
 
-        Instruction *instruction() const { return instruction_; }
+        explicit SnapshotRef(InstructionId instruction)
+            : instruction_(instruction)
+        {
+        }
 
-    private:
-        Instruction *instruction_;
+        InstructionId instruction_;
     };
 
-    inline uintptr_t instruction_reference_word(Instruction *instruction)
+    inline uintptr_t instruction_reference_word(InstructionId instruction)
     {
-        assert(instruction != nullptr);
-        return reinterpret_cast<uintptr_t>(instruction);
+        return instruction.value();
     }
 
     template <ValueRepresentation Representation> class RepresentedValueRef
@@ -460,10 +489,21 @@ namespace cl::jit
             assert(instruction->value_representation() == Representation);
         }
 
-        Instruction *instruction() const { return reference_.instruction(); }
+        InstructionId instruction_id() const
+        {
+            return reference_.instruction_id();
+        }
         operator ProgramValueRef() const { return reference_; }
 
     private:
+        template <OperandClass, ValueRepresentation>
+        friend auto decode_instruction_operand(uintptr_t);
+
+        explicit RepresentedValueRef(InstructionId instruction)
+            : reference_(instruction)
+        {
+        }
+
         ProgramValueRef reference_;
     };
 
@@ -471,22 +511,28 @@ namespace cl::jit
         RepresentedValueRef<ValueRepresentation::TaggedValue>;
     using F64Ref = RepresentedValueRef<ValueRepresentation::F64>;
 
+    static_assert(sizeof(ProgramValueRef) == sizeof(uint32_t));
+    static_assert(sizeof(SnapshotRef) == sizeof(uint32_t));
+    static_assert(sizeof(TaggedValueRef) == sizeof(uint32_t));
+    static_assert(sizeof(F64Ref) == sizeof(uint32_t));
+
     template <OperandClass Class, ValueRepresentation Representation>
     auto decode_instruction_operand(uintptr_t word)
     {
+        InstructionId instruction(static_cast<uint32_t>(word));
         if constexpr(Class == OperandClass::Snapshot)
         {
             static_assert(Representation == ValueRepresentation::None);
-            return SnapshotRef(reinterpret_cast<Instruction *>(word));
+            return SnapshotRef(instruction);
         }
         else if constexpr(Representation == ValueRepresentation::TaggedValue)
         {
-            return TaggedValueRef(reinterpret_cast<Instruction *>(word));
+            return TaggedValueRef(instruction);
         }
         else
         {
             static_assert(Representation == ValueRepresentation::F64);
-            return F64Ref(reinterpret_cast<Instruction *>(word));
+            return F64Ref(instruction);
         }
     }
 
@@ -530,7 +576,7 @@ namespace cl::jit
         {
             assert(index < size_);
             return ProgramValueRef(
-                reinterpret_cast<Instruction *>(words_[index]));
+                InstructionId(static_cast<uint32_t>(words_[index])));
         }
 
     private:
@@ -577,22 +623,22 @@ namespace cl::jit
 
     inline uintptr_t encode_instruction_operand(TaggedValueRef reference)
     {
-        return instruction_reference_word(reference.instruction());
+        return instruction_reference_word(reference.instruction_id());
     }
 
     inline uintptr_t encode_instruction_operand(ProgramValueRef reference)
     {
-        return instruction_reference_word(reference.instruction());
+        return instruction_reference_word(reference.instruction_id());
     }
 
     inline uintptr_t encode_instruction_operand(F64Ref reference)
     {
-        return instruction_reference_word(reference.instruction());
+        return instruction_reference_word(reference.instruction_id());
     }
 
     inline uintptr_t encode_instruction_operand(SnapshotRef reference)
     {
-        return instruction_reference_word(reference.instruction());
+        return instruction_reference_word(reference.instruction_id());
     }
 
     inline uintptr_t encode_instruction_attribute_Shape(Shape *shape)
@@ -1106,17 +1152,12 @@ namespace cl::jit
 
         auto visit_program_value = [&](uint32_t index, uintptr_t word,
                                        ValueRepresentation representation) {
-            Instruction *def = reinterpret_cast<Instruction *>(word);
-            assert(def != nullptr);
-            assert(def->result_class() == ResultClass::ProgramValue);
-            visitor(index, OperandClass::ProgramValue, representation, def);
+            visitor(index, OperandClass::ProgramValue, representation,
+                    InstructionId(static_cast<uint32_t>(word)));
         };
         auto visit_snapshot = [&](uint32_t index, uintptr_t word) {
-            Instruction *def = reinterpret_cast<Instruction *>(word);
-            assert(def != nullptr);
-            assert(def->result_class() == ResultClass::Snapshot);
             visitor(index, OperandClass::Snapshot, ValueRepresentation::None,
-                    def);
+                    InstructionId(static_cast<uint32_t>(word)));
         };
 
         switch(instruction.kind())

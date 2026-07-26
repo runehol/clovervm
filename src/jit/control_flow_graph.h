@@ -34,6 +34,8 @@ namespace cl::jit
 
         Serial serial() const { return serial_; }
         uint32_t loop_depth() const { return loop_depth_; }
+        CompilationStorage *storage();
+        const CompilationStorage *storage() const;
 
         const std::vector<Instruction *> &instructions() const
         {

@@ -18,7 +18,7 @@ namespace cl::jit
     public:
         bool contains(ProgramValueRef value) const
         {
-            return program_values_.contains(value.instruction()->id());
+            return program_values_.contains(value.instruction_id());
         }
 
         bool contains(const Instruction *instruction,
@@ -29,7 +29,7 @@ namespace cl::jit
 
         PhysicalLocation location_for(ProgramValueRef value) const
         {
-            return program_values_.at(value.instruction()->id());
+            return program_values_.at(value.instruction_id());
         }
 
         PhysicalLocation location_for(const Instruction *instruction,
@@ -63,8 +63,7 @@ namespace cl::jit
     public:
         void assign(ProgramValueRef value, PhysicalLocation location)
         {
-            program_values_.insert_or_assign(value.instruction()->id(),
-                                             location);
+            program_values_.insert_or_assign(value.instruction_id(), location);
         }
 
         void assign(const Instruction *instruction, size_t temporary_index,

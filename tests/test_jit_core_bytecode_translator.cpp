@@ -109,8 +109,8 @@ namespace cl::jit
 
         ReturnInstruction *return_instruction =
             entry->instructions().back()->as<ReturnInstruction>();
-        EXPECT_EQ(constants[0],
-                  return_instruction->return_value().instruction());
+        EXPECT_EQ(constants[0]->id(),
+                  return_instruction->return_value().instruction_id());
     }
 
     TEST(JitCoreBytecodeTranslator, TranslatesIdentityTests)
@@ -150,12 +150,12 @@ namespace cl::jit
         ASSERT_EQ(1u, is_not_instructions.size());
 
         IsInstruction *is = is_instructions.front()->as<IsInstruction>();
-        EXPECT_EQ(constants[0], is->lhs().instruction());
-        EXPECT_EQ(constants[1], is->rhs().instruction());
+        EXPECT_EQ(constants[0]->id(), is->lhs().instruction_id());
+        EXPECT_EQ(constants[1]->id(), is->rhs().instruction_id());
         IsNotInstruction *is_not =
             is_not_instructions.front()->as<IsNotInstruction>();
-        EXPECT_EQ(constants[0], is_not->lhs().instruction());
-        EXPECT_EQ(constants[1], is_not->rhs().instruction());
+        EXPECT_EQ(constants[0]->id(), is_not->lhs().instruction_id());
+        EXPECT_EQ(constants[1]->id(), is_not->rhs().instruction_id());
     }
 
     TEST(JitCoreBytecodeTranslator,
@@ -184,10 +184,10 @@ namespace cl::jit
         size_t state_size = bytecode_state_size(*graph);
         ASSERT_EQ(state_size, branch->true_edge()->arguments().size());
         ASSERT_EQ(state_size, branch->false_edge()->arguments().size());
-        EXPECT_EQ(branch->condition().instruction(),
-                  branch->true_edge()->arguments()[0].instruction());
-        EXPECT_EQ(branch->condition().instruction(),
-                  branch->false_edge()->arguments()[0].instruction());
+        EXPECT_EQ(branch->condition().instruction_id(),
+                  branch->true_edge()->arguments()[0].instruction_id());
+        EXPECT_EQ(branch->condition().instruction_id(),
+                  branch->false_edge()->arguments()[0].instruction_id());
         EXPECT_EQ(state_size, fallthrough->parameters().size());
         EXPECT_EQ(state_size, jump->parameters().size());
     }
@@ -280,17 +280,17 @@ namespace cl::jit
         std::vector<Instruction *> constants =
             instructions_of_kind(entry, InstructionKind::Const);
         ASSERT_EQ(1u, constants.size());
-        EXPECT_EQ(constants.front(),
-                  snapshot->captured_values()[0].instruction());
-        EXPECT_EQ(snapshot, resumes.front()
-                                ->as<ResumeInInterpreterInstruction>()
-                                ->snapshot()
-                                .instruction());
+        EXPECT_EQ(constants.front()->id(),
+                  snapshot->captured_values()[0].instruction_id());
+        EXPECT_EQ(snapshot->id(), resumes.front()
+                                      ->as<ResumeInInterpreterInstruction>()
+                                      ->snapshot()
+                                      .instruction_id());
 
         ReturnInstruction *return_instruction =
             entry->instructions().back()->as<ReturnInstruction>();
-        EXPECT_EQ(uninitialized.back(),
-                  return_instruction->return_value().instruction());
+        EXPECT_EQ(uninitialized.back()->id(),
+                  return_instruction->return_value().instruction_id());
     }
 
     TEST(JitCoreBytecodeTranslator,
@@ -313,8 +313,8 @@ namespace cl::jit
         SnapshotValueRefRange captured =
             snapshots.front()->as<SnapshotInstruction>()->captured_values();
         ASSERT_EQ(bytecode_state_size(*graph), captured.size());
-        EXPECT_EQ(parameter, captured[0].instruction());
-        EXPECT_EQ(parameter, captured[1].instruction());
+        EXPECT_EQ(parameter->id(), captured[0].instruction_id());
+        EXPECT_EQ(parameter->id(), captured[1].instruction_id());
     }
 
     TEST(JitCoreBytecodeTranslator,
@@ -338,7 +338,9 @@ namespace cl::jit
         ConditionalBranchInstruction *branch =
             entry->instructions().back()->as<ConditionalBranchInstruction>();
         EXPECT_EQ(InstructionKind::Uninitialized,
-                  branch->condition().instruction()->kind());
+                  graph->storage()
+                      ->instruction(branch->condition().instruction_id())
+                      ->kind());
 
         std::vector<Instruction *> constants =
             instructions_of_kind(entry, InstructionKind::Const);
@@ -346,10 +348,10 @@ namespace cl::jit
         size_t state_size = bytecode_state_size(*graph);
         ASSERT_EQ(state_size, branch->true_edge()->arguments().size());
         ASSERT_EQ(state_size, branch->false_edge()->arguments().size());
-        EXPECT_EQ(constants.front(),
-                  branch->true_edge()->arguments()[0].instruction());
-        EXPECT_EQ(constants.front(),
-                  branch->false_edge()->arguments()[0].instruction());
+        EXPECT_EQ(constants.front()->id(),
+                  branch->true_edge()->arguments()[0].instruction_id());
+        EXPECT_EQ(constants.front()->id(),
+                  branch->false_edge()->arguments()[0].instruction_id());
     }
 
 }  // namespace cl::jit

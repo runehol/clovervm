@@ -161,7 +161,7 @@ namespace cl::jit
         visit_operand_references(
             *instruction,
             [&](uint32_t operand_index, OperandClass operand_class,
-                ValueRepresentation representation, Instruction *) {
+                ValueRepresentation representation, InstructionId) {
                 require_constraint(operand_index == operands.size(),
                                    "JIT operand traversal is not contiguous");
                 operands.push_back({operand_class, representation, false});

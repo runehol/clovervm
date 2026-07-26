@@ -1,5 +1,6 @@
 #include "jit/dead_code_elimination.h"
 
+#include "jit/compilation_storage.h"
 #include "jit/graph_rewriter.h"
 
 #include <absl/container/flat_hash_map.h>
@@ -109,15 +110,17 @@ namespace cl::jit
                 for(const BlockEdge *edge: position.block->predecessor_edges())
                 {
                     assert(position.index < edge->arguments().size());
-                    mark_live(edge->arguments()[position.index].instruction());
+                    mark_live(graph.storage()->instruction(
+                        edge->arguments()[position.index].instruction_id()));
                 }
                 continue;
             }
 
             visit_operand_references(
-                *instruction,
-                [&](uint32_t, OperandClass, ValueRepresentation,
-                    Instruction *definition) { mark_live(definition); });
+                *instruction, [&](uint32_t, OperandClass, ValueRepresentation,
+                                  InstructionId definition) {
+                    mark_live(graph.storage()->instruction(definition));
+                });
         }
 
         GraphRewriter rewriter(session, graph);

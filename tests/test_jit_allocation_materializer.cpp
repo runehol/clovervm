@@ -213,8 +213,8 @@ namespace cl::jit
             entry->instructions()[0]->as<LoadStackInstruction>();
         ReturnInstruction *new_return =
             entry->instructions()[1]->as<ReturnInstruction>();
-        EXPECT_EQ(parameter, load->source().instruction());
-        EXPECT_EQ(load, new_return->return_value().instruction());
+        EXPECT_EQ(parameter->id(), load->source().instruction_id());
+        EXPECT_EQ(load->id(), new_return->return_value().instruction_id());
         EXPECT_TRUE(old_return->is_detached());
         EXPECT_EQ(4, materialized.value()
                          .location_for(ProgramValueRef(parameter))
@@ -271,10 +271,10 @@ namespace cl::jit
             entry->instructions()[1]->as<LoadStackInstruction>();
         AndSMIInstruction *new_operation =
             entry->instructions()[2]->as<AndSMIInstruction>();
-        EXPECT_EQ(lhs, lhs_load->source().instruction());
-        EXPECT_EQ(rhs, rhs_load->source().instruction());
-        EXPECT_EQ(lhs_load, new_operation->lhs().instruction());
-        EXPECT_EQ(rhs_load, new_operation->rhs().instruction());
+        EXPECT_EQ(lhs->id(), lhs_load->source().instruction_id());
+        EXPECT_EQ(rhs->id(), rhs_load->source().instruction_id());
+        EXPECT_EQ(lhs_load->id(), new_operation->lhs().instruction_id());
+        EXPECT_EQ(rhs_load->id(), new_operation->rhs().instruction_id());
         EXPECT_TRUE(operation->is_detached());
         EXPECT_TRUE(return_instruction->is_detached());
     }
@@ -316,8 +316,8 @@ namespace cl::jit
             entry->instructions()[0]->as<StoreStackInstruction>();
         ReturnInstruction *new_return =
             entry->instructions()[1]->as<ReturnInstruction>();
-        EXPECT_EQ(parameter, store->source().instruction());
-        EXPECT_EQ(store, new_return->return_value().instruction());
+        EXPECT_EQ(parameter->id(), store->source().instruction_id());
+        EXPECT_EQ(store->id(), new_return->return_value().instruction_id());
         EXPECT_TRUE(old_return->is_detached());
         EXPECT_EQ(-8, materialized.value()
                           .location_for(ProgramValueRef(store))
@@ -365,9 +365,9 @@ namespace cl::jit
             entry->instructions()[1]->as<StoreStackInstruction>();
         ReturnInstruction *new_return =
             entry->instructions()[2]->as<ReturnInstruction>();
-        EXPECT_EQ(parameter, load->source().instruction());
-        EXPECT_EQ(load, store->source().instruction());
-        EXPECT_EQ(store, new_return->return_value().instruction());
+        EXPECT_EQ(parameter->id(), load->source().instruction_id());
+        EXPECT_EQ(load->id(), store->source().instruction_id());
+        EXPECT_EQ(store->id(), new_return->return_value().instruction_id());
         EXPECT_EQ(
             x2, materialized.value().location_for(ProgramValueRef(load)).reg());
         EXPECT_EQ(-8, materialized.value()
@@ -424,11 +424,11 @@ namespace cl::jit
             entry->instructions()[2]->as<MovInstruction>();
         AndSMIInstruction *new_operation =
             entry->instructions()[3]->as<AndSMIInstruction>();
-        EXPECT_EQ(lhs, save->source().instruction());
-        EXPECT_EQ(rhs, move_rhs->source().instruction());
-        EXPECT_EQ(save, move_lhs->source().instruction());
-        EXPECT_EQ(move_lhs, new_operation->lhs().instruction());
-        EXPECT_EQ(move_rhs, new_operation->rhs().instruction());
+        EXPECT_EQ(lhs->id(), save->source().instruction_id());
+        EXPECT_EQ(rhs->id(), move_rhs->source().instruction_id());
+        EXPECT_EQ(save->id(), move_lhs->source().instruction_id());
+        EXPECT_EQ(move_lhs->id(), new_operation->lhs().instruction_id());
+        EXPECT_EQ(move_rhs->id(), new_operation->rhs().instruction_id());
         EXPECT_EQ(
             x2, materialized.value().location_for(ProgramValueRef(save)).reg());
         EXPECT_EQ(

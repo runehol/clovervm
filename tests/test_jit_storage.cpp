@@ -334,14 +334,17 @@ namespace cl::jit
 
         EXPECT_EQ(3u, add->operand_count());
         EXPECT_FALSE(add->operands_are_indirect());
-        EXPECT_EQ(lhs.instruction(), add->lhs().instruction());
-        EXPECT_EQ(rhs.instruction(), add->rhs().instruction());
-        EXPECT_EQ(snapshot.instruction(), add->snapshot().instruction());
+        EXPECT_EQ(lhs.instruction_id().value(), add->slot(0));
+        EXPECT_EQ(rhs.instruction_id().value(), add->slot(1));
+        EXPECT_EQ(snapshot.instruction_id().value(), add->slot(2));
+        EXPECT_EQ(lhs.instruction_id(), add->lhs().instruction_id());
+        EXPECT_EQ(rhs.instruction_id(), add->rhs().instruction_id());
+        EXPECT_EQ(snapshot.instruction_id(), add->snapshot().instruction_id());
 
-        std::vector<std::pair<OperandClass, Instruction *>> references;
+        std::vector<std::pair<OperandClass, InstructionId>> references;
         visit_operand_references(
             *add, [&](uint32_t operand_index, OperandClass operand_class,
-                      ValueRepresentation representation, Instruction *def) {
+                      ValueRepresentation representation, InstructionId def) {
                 EXPECT_EQ(references.size(), operand_index);
                 EXPECT_EQ(operand_class == OperandClass::ProgramValue
                               ? ValueRepresentation::TaggedValue
@@ -352,10 +355,10 @@ namespace cl::jit
 
         ASSERT_EQ(3u, references.size());
         EXPECT_EQ(OperandClass::ProgramValue, references[0].first);
-        EXPECT_EQ(lhs.instruction(), references[0].second);
-        EXPECT_EQ(rhs.instruction(), references[1].second);
+        EXPECT_EQ(lhs.instruction_id(), references[0].second);
+        EXPECT_EQ(rhs.instruction_id(), references[1].second);
         EXPECT_EQ(OperandClass::Snapshot, references[2].first);
-        EXPECT_EQ(snapshot.instruction(), references[2].second);
+        EXPECT_EQ(snapshot.instruction_id(), references[2].second);
     }
 
     TEST(JitInstructionTraversal, WalksVariadicPythonCallArguments)
@@ -385,27 +388,29 @@ namespace cl::jit
         EXPECT_EQ(23u, call->slot(1));
         const uintptr_t *call_operands =
             reinterpret_cast<const uintptr_t *>(call->slot(0));
-        EXPECT_EQ(callable.instruction(),
-                  reinterpret_cast<Instruction *>(call_operands[0]));
-        EXPECT_EQ(snapshot.instruction(),
-                  reinterpret_cast<Instruction *>(call_operands[1]));
+        EXPECT_EQ(callable.instruction_id().value(), call_operands[0]);
+        EXPECT_EQ(snapshot.instruction_id().value(), call_operands[1]);
         EXPECT_EQ(2u, call_without_arguments->operand_count());
         EXPECT_TRUE(call_without_arguments->operands_are_indirect());
         EXPECT_EQ(41u, call_without_arguments->slot(1));
         EXPECT_EQ(3u, call->arguments().size());
-        EXPECT_EQ(first.instruction(), call->arguments()[0].instruction());
-        EXPECT_EQ(none.instruction(), call->arguments()[1].instruction());
-        EXPECT_EQ(second.instruction(), call->arguments()[2].instruction());
+        EXPECT_EQ(first.instruction_id(),
+                  call->arguments()[0].instruction_id());
+        EXPECT_EQ(none.instruction_id(), call->arguments()[1].instruction_id());
+        EXPECT_EQ(second.instruction_id(),
+                  call->arguments()[2].instruction_id());
         EXPECT_EQ(23u, call->interpreter_return_pc());
-        EXPECT_EQ(0u, snapshot.instruction()->operand_count());
-        EXPECT_TRUE(snapshot.instruction()->operands_are_indirect());
-        EXPECT_EQ(0u, snapshot.instruction()->slot(0));
-        EXPECT_EQ(23u, snapshot.instruction()->slot(1));
+        Instruction *snapshot_instruction =
+            builder.storage()->instruction(snapshot.instruction_id());
+        EXPECT_EQ(0u, snapshot_instruction->operand_count());
+        EXPECT_TRUE(snapshot_instruction->operands_are_indirect());
+        EXPECT_EQ(0u, snapshot_instruction->slot(0));
+        EXPECT_EQ(23u, snapshot_instruction->slot(1));
 
-        std::vector<std::pair<OperandClass, Instruction *>> references;
+        std::vector<std::pair<OperandClass, InstructionId>> references;
         visit_operand_references(
             *call, [&](uint32_t operand_index, OperandClass operand_class,
-                       ValueRepresentation representation, Instruction *def) {
+                       ValueRepresentation representation, InstructionId def) {
                 EXPECT_EQ(references.size(), operand_index);
                 EXPECT_EQ(operand_class == OperandClass::ProgramValue
                               ? ValueRepresentation::TaggedValue
@@ -415,12 +420,12 @@ namespace cl::jit
             });
 
         ASSERT_EQ(5u, references.size());
-        EXPECT_EQ(callable.instruction(), references[0].second);
+        EXPECT_EQ(callable.instruction_id(), references[0].second);
         EXPECT_EQ(OperandClass::Snapshot, references[1].first);
-        EXPECT_EQ(snapshot.instruction(), references[1].second);
-        EXPECT_EQ(first.instruction(), references[2].second);
-        EXPECT_EQ(none.instruction(), references[3].second);
-        EXPECT_EQ(second.instruction(), references[4].second);
+        EXPECT_EQ(snapshot.instruction_id(), references[1].second);
+        EXPECT_EQ(first.instruction_id(), references[2].second);
+        EXPECT_EQ(none.instruction_id(), references[3].second);
+        EXPECT_EQ(second.instruction_id(), references[4].second);
     }
 
     TEST(JitInstructionTraversal, SnapshotStoresProgramValueReferences)
@@ -450,38 +455,34 @@ namespace cl::jit
         ASSERT_NE(0u, snapshot->slot(0));
         const uintptr_t *storage =
             reinterpret_cast<const uintptr_t *>(snapshot->slot(0));
-        EXPECT_EQ(tagged.instruction(),
-                  reinterpret_cast<Instruction *>(storage[0]));
-        EXPECT_EQ(f64.instruction(),
-                  reinterpret_cast<Instruction *>(storage[1]));
-        EXPECT_EQ(truth.instruction(),
-                  reinterpret_cast<Instruction *>(storage[2]));
-        EXPECT_EQ(none.instruction(),
-                  reinterpret_cast<Instruction *>(storage[3]));
+        EXPECT_EQ(tagged.instruction_id().value(), storage[0]);
+        EXPECT_EQ(f64.instruction_id().value(), storage[1]);
+        EXPECT_EQ(truth.instruction_id().value(), storage[2]);
+        EXPECT_EQ(none.instruction_id().value(), storage[3]);
 
         SnapshotValueRefRange values = snapshot->captured_values();
         ASSERT_EQ(4u, values.size());
-        EXPECT_EQ(tagged.instruction(), values[0].instruction());
-        EXPECT_EQ(f64.instruction(), values[1].instruction());
-        EXPECT_EQ(truth.instruction(), values[2].instruction());
-        EXPECT_EQ(none.instruction(), values[3].instruction());
+        EXPECT_EQ(tagged.instruction_id(), values[0].instruction_id());
+        EXPECT_EQ(f64.instruction_id(), values[1].instruction_id());
+        EXPECT_EQ(truth.instruction_id(), values[2].instruction_id());
+        EXPECT_EQ(none.instruction_id(), values[3].instruction_id());
         EXPECT_EQ(91u, snapshot->resume_pc());
 
-        std::vector<Instruction *> references;
+        std::vector<InstructionId> references;
         visit_operand_references(
             *snapshot,
             [&](uint32_t operand_index, OperandClass operand_class,
-                ValueRepresentation representation, Instruction *def) {
+                ValueRepresentation representation, InstructionId def) {
                 EXPECT_EQ(references.size(), operand_index);
                 EXPECT_EQ(OperandClass::ProgramValue, operand_class);
                 EXPECT_EQ(ValueRepresentation::None, representation);
                 references.push_back(def);
             });
         ASSERT_EQ(4u, references.size());
-        EXPECT_EQ(tagged.instruction(), references[0]);
-        EXPECT_EQ(f64.instruction(), references[1]);
-        EXPECT_EQ(truth.instruction(), references[2]);
-        EXPECT_EQ(none.instruction(), references[3]);
+        EXPECT_EQ(tagged.instruction_id(), references[0]);
+        EXPECT_EQ(f64.instruction_id(), references[1]);
+        EXPECT_EQ(truth.instruction_id(), references[2]);
+        EXPECT_EQ(none.instruction_id(), references[3]);
     }
 
 }  // namespace cl::jit

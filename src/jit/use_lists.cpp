@@ -1,5 +1,6 @@
 #include "jit/use_lists.h"
 
+#include "jit/compilation_storage.h"
 #include "runtime/fatal.h"
 
 #include <cassert>
@@ -71,7 +72,9 @@ namespace cl::jit
     {
         visit_operand_references(
             instruction, [&](uint32_t operand_index, OperandClass,
-                             ValueRepresentation, Instruction *def) {
+                             ValueRepresentation, InstructionId definition_id) {
+                const Instruction *def =
+                    block.storage()->instruction(definition_id);
                 auto found = index_by_def_.find(def);
                 assert(found != index_by_def_.end());
                 Uses &uses = uses_[found->second];
@@ -87,7 +90,8 @@ namespace cl::jit
         const std::vector<ProgramValueRef> &arguments = edge.arguments();
         for(size_t index = 0; index < arguments.size(); ++index)
         {
-            Instruction *def = arguments[index].instruction();
+            const Instruction *def =
+                block.storage()->instruction(arguments[index].instruction_id());
             auto found = index_by_def_.find(def);
             assert(found != index_by_def_.end());
             Uses &uses = uses_[found->second];

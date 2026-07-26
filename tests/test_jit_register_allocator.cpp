@@ -728,8 +728,8 @@ namespace cl::jit
         clobbers.insert(x2);
         std::vector<InstructionAllocationConstraints> overrides;
         overrides.emplace_back(
-            result.instruction(), std::vector<ProgramValueUseConstraint>{},
-            std::nullopt,
+            graph->storage()->instruction(result.instruction_id()),
+            std::vector<ProgramValueUseConstraint>{}, std::nullopt,
             std::vector<TemporaryConstraint>{TemporaryConstraint(fixed(x1))},
             clobbers);
         AllocationConstraints constraints(gpr_definition(),

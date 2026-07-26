@@ -69,14 +69,14 @@ namespace cl::jit
         {
         public:
             TransferOutput(ProgramValueRef source, ProgramValueRef output)
-                : source_(source.instruction()->id()),
-                  output_(output.instruction()->id())
+                : source_(source.instruction_id()),
+                  output_(output.instruction_id())
             {
             }
 
             TransferOutput(SnapshotRef source, SnapshotRef output)
-                : source_(source.instruction()->id()),
-                  output_(output.instruction()->id())
+                : source_(source.instruction_id()),
+                  output_(output.instruction_id())
             {
             }
 
@@ -178,14 +178,14 @@ namespace cl::jit
                                      ProgramValueRef result)
         {
             return RewriteResult(Kind::Replace, std::move(instructions),
-                                 result.instruction()->id());
+                                 result.instruction_id());
         }
 
         static RewriteResult replace(InstructionSequence instructions,
                                      SnapshotRef result)
         {
             return RewriteResult(Kind::Replace, std::move(instructions),
-                                 result.instruction()->id());
+                                 result.instruction_id());
         }
 
         static RewriteResult
@@ -198,13 +198,13 @@ namespace cl::jit
         static RewriteResult replace_with_def(ProgramValueRef def)
         {
             return RewriteResult(Kind::ReplaceWithDef, {},
-                                 def.instruction()->id());
+                                 def.instruction_id());
         }
 
         static RewriteResult replace_with_def(SnapshotRef def)
         {
             return RewriteResult(Kind::ReplaceWithDef, {},
-                                 def.instruction()->id());
+                                 def.instruction_id());
         }
 
     private:

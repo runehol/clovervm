@@ -4,10 +4,10 @@
 |---|---|
 | Document type | Implementation plan |
 | Status | Accepted |
-| Implementation | Slice 3 complete |
+| Implementation | Slice 4 complete |
 | Scope | Replacing pointer-identified 48-byte JIT instructions with compact table-indexed instructions while retaining pointer-based CFG objects |
 | Owning layers | `CompilationStorage` owns compiler object lifetime and indexed lookup; the instruction schema owns physical payload layout and typed access; CFG objects own graph topology |
-| Validated against | `819673eba7e0ebff3560cc844746ea117e715efc` (2026-07-26) |
+| Validated against | `6bd0db58e27fab65beec822791ca0d610fc301b4` (2026-07-26) |
 | Supersedes | N/A; when implemented, this replaces the storage and identity model in [JIT Instruction Representation](jit-instruction-representation.md) |
 
 The refactoring makes instruction identity relative to one compilation-owned
@@ -473,7 +473,7 @@ slice remains ID-based.
 
 Focused verification must establish that references are four bytes,
 ID-encoded operands round-trip through every fixed and variadic accessor,
-incompatible generic-to-represented conversions are still rejected, CFG
+pointer-to-typed-reference construction still checks representation, CFG
 verification and rewrite reconstruction preserve type checks, and all existing
 IR dumps remain unchanged.
 

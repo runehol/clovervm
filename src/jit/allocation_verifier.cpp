@@ -40,10 +40,10 @@ namespace cl::jit
             visit_operand_references(
                 *instruction,
                 [&](uint32_t index, OperandClass operand_class,
-                    ValueRepresentation, Instruction *operand_definition) {
+                    ValueRepresentation, InstructionId operand_definition) {
                     if(operand_class != OperandClass::Snapshot &&
                        index == operand_index &&
-                       operand_definition == definition)
+                       operand_definition == definition->id())
                     {
                         found = true;
                     }
@@ -219,8 +219,8 @@ namespace cl::jit
                            occurrence.kind != OccurrenceKind::Use ||
                            live_range.origin.kind() !=
                                LiveRangeOrigin::Kind::ProgramValue ||
-                           edge->arguments()[argument_index].instruction() !=
-                               live_range.origin.instruction() ||
+                           edge->arguments()[argument_index].instruction_id() !=
+                               live_range.origin.instruction()->id() ||
                            occurrence.minimum_coverage !=
                                LivenessRange{occurrence.position,
                                              occurrence.position.next()})

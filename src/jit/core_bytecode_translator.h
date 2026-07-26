@@ -53,9 +53,10 @@ namespace cl::jit
         BlockEdge *make_state_edge(Block *source, BytecodeBlockId target,
                                    const State &state);
 
-        static TaggedValueRef tagged(ProgramValueRef value)
+        TaggedValueRef tagged(ProgramValueRef value) const
         {
-            return TaggedValueRef(value.instruction());
+            return TaggedValueRef(
+                builder_.storage()->instruction(value.instruction_id()));
         }
 
         const CodeObject &code_object_;
