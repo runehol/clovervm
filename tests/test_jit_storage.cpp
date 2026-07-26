@@ -3,6 +3,7 @@
 #include "jit/graph_builder.h"
 #include "jit/instruction.h"
 #include "jit/object_pool.h"
+#include "object_model/validity_cell.h"
 #include "object_model/value.h"
 #include "runtime/thread_state.h"
 #include "test_helpers.h"
@@ -159,7 +160,7 @@ namespace cl::jit
 
     TEST(JitInstructionStorage, HasDenseIdsAndStableHandles)
     {
-        static_assert(sizeof(InstructionEntry) == 32);
+        static_assert(sizeof(InstructionEntry) == 16);
         static_assert(sizeof(Instruction) == 16);
         static_assert(sizeof(InstructionId) == sizeof(uint32_t));
         static_assert(std::is_trivially_copyable_v<InstructionEntry>);
@@ -238,6 +239,14 @@ namespace cl::jit
         EXPECT_EQ(Instruction::InlineSlotCount, call.inline_slot_count);
         EXPECT_TRUE(call.has_variadic_operands);
         EXPECT_TRUE(call.operands_are_indirect);
+
+        const InstructionKindMetadata &guard =
+            instruction_kind_metadata(InstructionKind::ShapeGuard);
+        EXPECT_EQ(2u, guard.fixed_operand_count);
+        EXPECT_EQ(1u, guard.attribute_count);
+        EXPECT_EQ(Instruction::InlineSlotCount, guard.inline_slot_count);
+        EXPECT_FALSE(guard.has_variadic_operands);
+        EXPECT_TRUE(guard.operands_are_indirect);
     }
 
     TEST(JitInstructionSchema, EncodesResultsWhileKeepingDenseOrdinals)
@@ -334,6 +343,10 @@ namespace cl::jit
         EXPECT_TRUE(PythonCallInstruction::OperandsAreIndirect);
         EXPECT_TRUE(SnapshotInstruction::IsVariadic);
         EXPECT_TRUE(SnapshotInstruction::OperandsAreIndirect);
+        EXPECT_TRUE(ShapeGuardInstruction::OperandsAreIndirect);
+        EXPECT_TRUE(ValidityCellGuardInstruction::OperandsAreIndirect);
+        EXPECT_TRUE(ShapeKeyGuardInstruction::OperandsAreIndirect);
+        EXPECT_FALSE(ConstInstruction::OperandsAreIndirect);
         EXPECT_EQ(ResultClass::Snapshot, SnapshotInstruction::Result);
         EXPECT_EQ(ValueRepresentation::None,
                   SnapshotInstruction::Representation);
@@ -374,6 +387,48 @@ namespace cl::jit
         EXPECT_EQ(InstructionKind::Uninitialized, uninitialized.kind());
         EXPECT_EQ(0u, uninitialized.operand_count());
         EXPECT_FALSE(uninitialized.operands_are_indirect());
+    }
+
+    TEST(JitInstructionConstruction,
+         StoresWideGuardAttributesWithIndirectOperands)
+    {
+        test::VmTestContext context;
+        ThreadState::ActivationScope activation_scope(context.thread());
+        Shape *shape = context.vm().str_instance_root_shape();
+        ValidityCell *validity =
+            context.thread()->make_internal_raw<ValidityCell>();
+
+        CompilationSession session;
+        GraphBuilder builder(session);
+        TaggedValueRef value(builder.make_instruction<ParameterInstruction>());
+        SnapshotRef snapshot(builder.make_instruction<SnapshotInstruction>(
+            std::span<const ProgramValueRef>{}, BytecodePC{17}));
+        ShapeGuardInstruction shape_guard =
+            builder.make_instruction<ShapeGuardInstruction>(value, snapshot,
+                                                            shape);
+        ValidityCellGuardInstruction validity_guard =
+            builder.make_instruction<ValidityCellGuardInstruction>(
+                value, snapshot, validity);
+        ShapeKey shape_key = ShapeKey::from_shape(shape);
+        ShapeKeyGuardInstruction shape_key_guard =
+            builder.make_instruction<ShapeKeyGuardInstruction>(value, snapshot,
+                                                               shape_key);
+
+        EXPECT_EQ(shape, shape_guard.expected_shape());
+        EXPECT_EQ(validity, validity_guard.validity());
+        EXPECT_EQ(shape_key, shape_key_guard.expected_shape_key());
+
+        for(Instruction instruction:
+            {Instruction(shape_guard), Instruction(validity_guard),
+             Instruction(shape_key_guard)})
+        {
+            ASSERT_TRUE(instruction.operands_are_indirect());
+            ASSERT_EQ(2u, instruction.operand_count());
+            EXPECT_EQ(value.instruction_id().value(),
+                      instruction.operand_word(0));
+            EXPECT_EQ(snapshot.instruction_id().value(),
+                      instruction.operand_word(1));
+        }
     }
 
     TEST(JitInstructionTraversal, WalksProgramValueAndSnapshotReferences)
@@ -434,18 +489,23 @@ namespace cl::jit
             builder.make_instruction<PythonCallInstruction>(
                 callable, snapshot, std::span<const TaggedValueRef>(arguments),
                 BytecodePC{23});
+        auto retained_arguments = call.arguments();
         PythonCallInstruction call_without_arguments =
             builder.make_instruction<PythonCallInstruction>(
                 callable, snapshot, std::span<const TaggedValueRef>{},
                 BytecodePC{41});
+        std::array<ProgramValueRef, 1> captured = {first};
+        for(size_t index = 0; index < 1024; ++index)
+        {
+            builder.make_instruction<SnapshotInstruction>(
+                std::span<const ProgramValueRef>(captured), BytecodePC{51});
+        }
 
         EXPECT_EQ(5u, call.operand_count());
         EXPECT_TRUE(call.operands_are_indirect());
         EXPECT_EQ(23u, call.slot(0));
-        const uintptr_t *call_operands = reinterpret_cast<const uintptr_t *>(
-            call.slot(Instruction::IndirectOperandSlot));
-        EXPECT_EQ(callable.instruction_id().value(), call_operands[0]);
-        EXPECT_EQ(snapshot.instruction_id().value(), call_operands[1]);
+        EXPECT_EQ(callable.instruction_id().value(), call.operand_word(0));
+        EXPECT_EQ(snapshot.instruction_id().value(), call.operand_word(1));
         EXPECT_EQ(2u, call_without_arguments.operand_count());
         EXPECT_TRUE(call_without_arguments.operands_are_indirect());
         EXPECT_EQ(41u, call_without_arguments.slot(0));
@@ -454,6 +514,12 @@ namespace cl::jit
         EXPECT_EQ(none.instruction_id(), call.arguments()[1].instruction_id());
         EXPECT_EQ(second.instruction_id(),
                   call.arguments()[2].instruction_id());
+        EXPECT_EQ(first.instruction_id(),
+                  retained_arguments[0].instruction_id());
+        EXPECT_EQ(none.instruction_id(),
+                  retained_arguments[1].instruction_id());
+        EXPECT_EQ(second.instruction_id(),
+                  retained_arguments[2].instruction_id());
         EXPECT_EQ(23u, call.interpreter_return_pc());
         Instruction snapshot_instruction =
             builder.storage()->instruction(snapshot.instruction_id());
@@ -508,13 +574,10 @@ namespace cl::jit
 
         ASSERT_EQ(4u, snapshot.operand_count());
         ASSERT_TRUE(snapshot.operands_are_indirect());
-        ASSERT_NE(0u, snapshot.slot(Instruction::IndirectOperandSlot));
-        const uintptr_t *storage = reinterpret_cast<const uintptr_t *>(
-            snapshot.slot(Instruction::IndirectOperandSlot));
-        EXPECT_EQ(tagged.instruction_id().value(), storage[0]);
-        EXPECT_EQ(f64.instruction_id().value(), storage[1]);
-        EXPECT_EQ(truth.instruction_id().value(), storage[2]);
-        EXPECT_EQ(none.instruction_id().value(), storage[3]);
+        EXPECT_EQ(tagged.instruction_id().value(), snapshot.operand_word(0));
+        EXPECT_EQ(f64.instruction_id().value(), snapshot.operand_word(1));
+        EXPECT_EQ(truth.instruction_id().value(), snapshot.operand_word(2));
+        EXPECT_EQ(none.instruction_id().value(), snapshot.operand_word(3));
 
         SnapshotValueRefRange values = snapshot.captured_values();
         ASSERT_EQ(4u, values.size());

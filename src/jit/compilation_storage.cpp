@@ -35,6 +35,13 @@ namespace cl::jit
         return instructions_[id.value()];
     }
 
+    std::span<const Instruction::Slot>
+    CompilationStorage::instruction_side_data(uint32_t offset,
+                                              size_t count) const
+    {
+        return instruction_side_data_.words(offset, count);
+    }
+
     void CompilationStorage::detach_instruction(InstructionId id)
     {
         assert(id.value() < instructions_.size());
@@ -61,16 +68,17 @@ namespace cl::jit
 
     BlockEdge *
     decode_instruction_attribute_BlockEdge(const CompilationStorage *storage,
-                                           uintptr_t word)
+                                           const uint32_t *words)
     {
         assert(storage != nullptr);
-        return storage->block_edge(BlockEdgeId(static_cast<uint32_t>(word)));
+        return storage->block_edge(BlockEdgeId(*words));
     }
 
-    uintptr_t encode_instruction_attribute_BlockEdge(BlockEdge *edge)
+    void encode_instruction_attribute_BlockEdge(uint32_t *words,
+                                                BlockEdge *edge)
     {
         assert(edge != nullptr);
-        return edge->id().value();
+        *words = edge->id().value();
     }
 
 }  // namespace cl::jit

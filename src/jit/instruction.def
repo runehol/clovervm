@@ -24,7 +24,7 @@
 // dataflow, including Snapshot capture, through Const definitions.
 //
 // An instruction with indirect operands stores its operand payloads in
-// compilation-owned side data and the side-data pointer in the final inline
+// compilation-owned side data and the side-data offset in the final inline
 // slot. Its attributes begin at slot zero. A variadic range follows every fixed
 // operand, so fixed operands retain kind-constant indices within the indirect
 // sequence.

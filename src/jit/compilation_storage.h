@@ -59,10 +59,11 @@ namespace cl::jit
             if constexpr(T::OperandsAreIndirect)
             {
                 size_t n_indirect_slots = T::n_indirect_slots_for(args...);
-                std::span<Instruction::Slot> indirect_slots =
+                InstructionSideDataAllocation indirect =
                     instruction_side_data_.allocate_words(n_indirect_slots);
                 instructions_.push_back(
-                    T::make_entry(indirect_slots, std::forward<Args>(args)...));
+                    T::make_entry(indirect.offset, indirect.words,
+                                  std::forward<Args>(args)...));
             }
             else
             {
@@ -77,6 +78,8 @@ namespace cl::jit
         InstructionId next_instruction_id() const;
         BlockEdgeId next_block_edge_id() const;
         const InstructionEntry &instruction_entry(InstructionId id) const;
+        std::span<const Instruction::Slot>
+        instruction_side_data(uint32_t offset, size_t count) const;
         void detach_instruction(InstructionId id);
 
         ObjectPool<ControlFlowGraph> graphs_;

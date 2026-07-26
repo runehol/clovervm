@@ -3,12 +3,17 @@
 
 #include <cstddef>
 #include <cstdint>
-#include <memory>
 #include <span>
 #include <vector>
 
 namespace cl::jit
 {
+    struct InstructionSideDataAllocation
+    {
+        uint32_t offset;
+        std::span<uint32_t> words;
+    };
+
     class InstructionSideDataPool
     {
     public:
@@ -20,19 +25,11 @@ namespace cl::jit
         InstructionSideDataPool(InstructionSideDataPool &&) = delete;
         InstructionSideDataPool &operator=(InstructionSideDataPool &&) = delete;
 
-        std::span<uintptr_t> allocate_words(size_t count);
+        InstructionSideDataAllocation allocate_words(size_t count);
+        std::span<const uint32_t> words(uint32_t offset, size_t count) const;
 
     private:
-        static constexpr size_t WordsPerSlab = 256;
-
-        struct Slab
-        {
-            std::unique_ptr<uintptr_t[]> storage;
-            size_t capacity = 0;
-            size_t used = 0;
-        };
-
-        std::vector<Slab> slabs_;
+        std::vector<uint32_t> words_;
     };
 
 }  // namespace cl::jit

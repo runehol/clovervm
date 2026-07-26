@@ -8,10 +8,10 @@
 #include <span>
 
 #include <array>
-#include <bit>
 #include <cassert>
 #include <cstddef>
 #include <cstdint>
+#include <cstring>
 #include <type_traits>
 #include <utility>
 
@@ -245,10 +245,10 @@ namespace cl::jit
     const InstructionKindMetadata &
     instruction_kind_metadata(InstructionKind kind);
 
-    class InstructionEntry
+    class alignas(8) InstructionEntry
     {
     public:
-        using Slot = uintptr_t;
+        using Slot = uint32_t;
 
         static constexpr size_t InlineSlotCount = 3;
         static constexpr uint16_t IndirectOperandsBit = uint16_t{1} << 15;
@@ -325,7 +325,7 @@ namespace cl::jit
             operand_storage_ = DetachedStorageTag;
             for(Slot &slot: slots_)
             {
-                slot = UINTPTR_MAX;
+                slot = UINT32_MAX;
             }
         }
 
@@ -334,8 +334,8 @@ namespace cl::jit
         uint16_t operand_storage_;
     };
 
-    static_assert(sizeof(InstructionEntry) == 32);
-    static_assert(alignof(InstructionEntry) == alignof(uintptr_t));
+    static_assert(sizeof(InstructionEntry) == 16);
+    static_assert(alignof(InstructionEntry) == 8);
     static_assert(std::is_standard_layout_v<InstructionEntry>);
     static_assert(std::is_trivially_destructible_v<InstructionEntry>);
     static_assert(static_cast<uint16_t>(InstructionOrdinal::Count) <=
@@ -395,6 +395,7 @@ namespace cl::jit
         uint16_t operand_count() const;
         bool operands_are_indirect() const;
         Slot slot(size_t index) const;
+        Slot operand_word(size_t index) const;
 
         friend bool operator==(Instruction, Instruction) = default;
 
@@ -431,31 +432,26 @@ namespace cl::jit
             assert(index < operand_count());
             if constexpr(Indirect)
             {
-                const Slot *operands =
-                    reinterpret_cast<const Slot *>(slot(IndirectOperandSlot));
-                assert(operands != nullptr);
-                return operands[index];
+                return operand_word(index);
             }
             return slot(index);
         }
 
-        const Slot *indirect_operand_words() const
+        static consteval bool inline_storage_is_aligned(size_t index,
+                                                        size_t storage_size)
         {
-            assert(operands_are_indirect());
-            const Slot *operands =
-                reinterpret_cast<const Slot *>(slot(IndirectOperandSlot));
-            assert(operands != nullptr || operand_count() == 0);
-            return operands;
+            return (offsetof(InstructionEntry, slots_) + index * sizeof(Slot)) %
+                       storage_size ==
+                   0;
         }
 
-        template <size_t Index, typename Storage> Slot inline_word_at() const
+        template <size_t Index, typename Storage>
+        const Slot *inline_words_at() const
         {
-            static_assert(Index < InlineSlotCount);
-            static_assert(
-                (offsetof(InstructionEntry, slots_) + Index * sizeof(Slot)) %
-                    sizeof(Storage) ==
-                0);
-            return slot(Index);
+            static_assert(Index + sizeof(Storage) / sizeof(Slot) <=
+                          InlineSlotCount);
+            static_assert(inline_storage_is_aligned(Index, sizeof(Storage)));
+            return entry().slots_ + Index;
         }
 
     private:
@@ -481,7 +477,7 @@ namespace cl::jit
 
     private:
         template <OperandClass, ValueRepresentation>
-        friend auto decode_instruction_operand(uintptr_t);
+        friend auto decode_instruction_operand(uint32_t);
         template <ValueRepresentation> friend class RepresentedValueRef;
         friend class LiveRangeOrigin;
         friend class SnapshotValueRefRange;
@@ -512,7 +508,7 @@ namespace cl::jit
 
     private:
         template <OperandClass, ValueRepresentation>
-        friend auto decode_instruction_operand(uintptr_t);
+        friend auto decode_instruction_operand(uint32_t);
 
         static InstructionId checked_instruction_id(Instruction instruction)
         {
@@ -528,7 +524,7 @@ namespace cl::jit
         InstructionId instruction_;
     };
 
-    inline uintptr_t instruction_reference_word(InstructionId instruction)
+    inline uint32_t instruction_reference_word(InstructionId instruction)
     {
         return instruction.value();
     }
@@ -550,7 +546,7 @@ namespace cl::jit
 
     private:
         template <OperandClass, ValueRepresentation>
-        friend auto decode_instruction_operand(uintptr_t);
+        friend auto decode_instruction_operand(uint32_t);
 
         explicit RepresentedValueRef(InstructionId instruction)
             : reference_(instruction)
@@ -570,7 +566,7 @@ namespace cl::jit
     static_assert(sizeof(F64Ref) == sizeof(uint32_t));
 
     template <OperandClass Class, ValueRepresentation Representation>
-    auto decode_instruction_operand(uintptr_t word)
+    auto decode_instruction_operand(uint32_t word)
     {
         InstructionId instruction(static_cast<uint32_t>(word));
         if constexpr(Class == OperandClass::Snapshot)
@@ -592,10 +588,12 @@ namespace cl::jit
     template <ValueRepresentation Representation> class ProgramValueRefRange
     {
     public:
-        ProgramValueRefRange(const uintptr_t *words, size_t size)
-            : words_(words), size_(size)
+        ProgramValueRefRange(Instruction instruction, uint32_t offset,
+                             uint32_t size)
+            : instruction_(instruction), offset_(offset), size_(size)
         {
-            assert(words != nullptr || size == 0);
+            assert(offset <= instruction.operand_count());
+            assert(size <= instruction.operand_count() - offset);
         }
 
         size_t size() const { return size_; }
@@ -605,21 +603,25 @@ namespace cl::jit
         {
             assert(index < size_);
             return decode_instruction_operand<OperandClass::ProgramValue,
-                                              Representation>(words_[index]);
+                                              Representation>(
+                instruction_.operand_word(offset_ + index));
         }
 
     private:
-        const uintptr_t *words_;
-        size_t size_;
+        Instruction instruction_;
+        uint32_t offset_;
+        uint32_t size_;
     };
 
     class SnapshotValueRefRange
     {
     public:
-        SnapshotValueRefRange(const uintptr_t *words, size_t size)
-            : words_(words), size_(size)
+        SnapshotValueRefRange(Instruction instruction, uint32_t offset,
+                              uint32_t size)
+            : instruction_(instruction), offset_(offset), size_(size)
         {
-            assert(words != nullptr || size == 0);
+            assert(offset <= instruction.operand_count());
+            assert(size <= instruction.operand_count() - offset);
         }
 
         size_t size() const { return size_; }
@@ -629,12 +631,13 @@ namespace cl::jit
         {
             assert(index < size_);
             return ProgramValueRef(
-                InstructionId(static_cast<uint32_t>(words_[index])));
+                InstructionId(instruction_.operand_word(offset_ + index)));
         }
 
     private:
-        const uintptr_t *words_;
-        size_t size_;
+        Instruction instruction_;
+        uint32_t offset_;
+        uint32_t size_;
     };
 
     using BytecodePC = uint32_t;
@@ -646,99 +649,128 @@ namespace cl::jit
     using InstructionAttributeStorage_BytecodePC = uint32_t;
     using InstructionAttributeStorage_BlockEdge = uint32_t;
 
-    inline Shape *decode_instruction_attribute_Shape(const CompilationStorage *,
-                                                     uintptr_t word)
+    static_assert(sizeof(uintptr_t) == sizeof(uint64_t));
+    static_assert(sizeof(ShapeKey) ==
+                  sizeof(InstructionAttributeStorage_ShapeKey));
+    static_assert(sizeof(Value) ==
+                  sizeof(InstructionAttributeStorage_ValueConstant));
+
+    template <typename Storage>
+    Storage decode_instruction_attribute_storage(const uint32_t *words)
     {
-        return reinterpret_cast<Shape *>(word);
+        static_assert(std::is_trivially_copyable_v<Storage>);
+        static_assert(sizeof(Storage) % sizeof(uint32_t) == 0);
+        Storage result;
+        std::memcpy(&result, words, sizeof(result));
+        return result;
+    }
+
+    template <typename Storage>
+    void encode_instruction_attribute_storage(uint32_t *words, Storage value)
+    {
+        static_assert(std::is_trivially_copyable_v<Storage>);
+        static_assert(sizeof(Storage) % sizeof(uint32_t) == 0);
+        std::memcpy(words, &value, sizeof(value));
+    }
+
+    inline Shape *decode_instruction_attribute_Shape(const CompilationStorage *,
+                                                     const uint32_t *words)
+    {
+        uint64_t value = decode_instruction_attribute_storage<uint64_t>(words);
+        return reinterpret_cast<Shape *>(static_cast<uintptr_t>(value));
     }
 
     inline ValidityCell *
     decode_instruction_attribute_ValidityCell(const CompilationStorage *,
-                                              uintptr_t word)
+                                              const uint32_t *words)
     {
-        return reinterpret_cast<ValidityCell *>(word);
+        uint64_t value = decode_instruction_attribute_storage<uint64_t>(words);
+        return reinterpret_cast<ValidityCell *>(static_cast<uintptr_t>(value));
     }
 
     inline ShapeKey
     decode_instruction_attribute_ShapeKey(const CompilationStorage *,
-                                          uintptr_t word)
+                                          const uint32_t *words)
     {
-        static_assert(sizeof(ShapeKey) == sizeof(word));
-        static_assert(std::is_trivially_copyable_v<ShapeKey>);
-        return std::bit_cast<ShapeKey>(word);
+        return decode_instruction_attribute_storage<ShapeKey>(words);
     }
 
     inline Value
     decode_instruction_attribute_ValueConstant(const CompilationStorage *,
-                                               uintptr_t word)
+                                               const uint32_t *words)
     {
-        Value value;
-        value.as.integer = static_cast<long long>(word);
-        return value;
+        return decode_instruction_attribute_storage<Value>(words);
     }
 
     inline BytecodePC
     decode_instruction_attribute_BytecodePC(const CompilationStorage *,
-                                            uintptr_t word)
+                                            const uint32_t *words)
     {
-        return static_cast<BytecodePC>(word);
+        return decode_instruction_attribute_storage<BytecodePC>(words);
     }
 
     BlockEdge *
     decode_instruction_attribute_BlockEdge(const CompilationStorage *storage,
-                                           uintptr_t word);
+                                           const uint32_t *words);
 
-    inline uintptr_t encode_instruction_operand(TaggedValueRef reference)
+    inline uint32_t encode_instruction_operand(TaggedValueRef reference)
     {
         return instruction_reference_word(reference.instruction_id());
     }
 
-    inline uintptr_t encode_instruction_operand(ProgramValueRef reference)
+    inline uint32_t encode_instruction_operand(ProgramValueRef reference)
     {
         return instruction_reference_word(reference.instruction_id());
     }
 
-    inline uintptr_t encode_instruction_operand(F64Ref reference)
+    inline uint32_t encode_instruction_operand(F64Ref reference)
     {
         return instruction_reference_word(reference.instruction_id());
     }
 
-    inline uintptr_t encode_instruction_operand(SnapshotRef reference)
+    inline uint32_t encode_instruction_operand(SnapshotRef reference)
     {
         return instruction_reference_word(reference.instruction_id());
     }
 
-    inline uintptr_t encode_instruction_attribute_Shape(Shape *shape)
+    inline void encode_instruction_attribute_Shape(uint32_t *words,
+                                                   Shape *shape)
     {
         assert(shape != nullptr);
-        return reinterpret_cast<uintptr_t>(shape);
+        encode_instruction_attribute_storage(
+            words, static_cast<uint64_t>(reinterpret_cast<uintptr_t>(shape)));
     }
 
-    inline uintptr_t
-    encode_instruction_attribute_ValidityCell(ValidityCell *validity)
+    inline void
+    encode_instruction_attribute_ValidityCell(uint32_t *words,
+                                              ValidityCell *validity)
     {
         assert(validity != nullptr);
-        return reinterpret_cast<uintptr_t>(validity);
+        encode_instruction_attribute_storage(
+            words,
+            static_cast<uint64_t>(reinterpret_cast<uintptr_t>(validity)));
     }
 
-    inline uintptr_t encode_instruction_attribute_ShapeKey(ShapeKey shape_key)
+    inline void encode_instruction_attribute_ShapeKey(uint32_t *words,
+                                                      ShapeKey shape_key)
     {
-        static_assert(sizeof(ShapeKey) == sizeof(uintptr_t));
-        static_assert(std::is_trivially_copyable_v<ShapeKey>);
-        return std::bit_cast<uintptr_t>(shape_key);
+        encode_instruction_attribute_storage(words, shape_key);
     }
 
-    inline uintptr_t encode_instruction_attribute_ValueConstant(Value value)
+    inline void encode_instruction_attribute_ValueConstant(uint32_t *words,
+                                                           Value value)
     {
-        return static_cast<uintptr_t>(value.as.integer);
+        encode_instruction_attribute_storage(words, value);
     }
 
-    inline uintptr_t encode_instruction_attribute_BytecodePC(BytecodePC pc)
+    inline void encode_instruction_attribute_BytecodePC(uint32_t *words,
+                                                        BytecodePC pc)
     {
-        return static_cast<uintptr_t>(pc);
+        encode_instruction_attribute_storage(words, pc);
     }
 
-    uintptr_t encode_instruction_attribute_BlockEdge(BlockEdge *edge);
+    void encode_instruction_attribute_BlockEdge(uint32_t *words,
+                                                BlockEdge *edge);
 
     struct InstructionConstructorEnd
     {
@@ -850,13 +882,31 @@ namespace cl::jit
 #define CL_JIT_COUNT_LOGICAL_FIXED(name, ...) (void)name;
 #define CL_JIT_COUNT_LOGICAL_VARIADIC(name, ...) n_operands += name.size();
 #define CL_JIT_COUNT_LOGICAL_SNAPSHOT_VALUES(name) n_operands += name.size();
-#define CL_JIT_ENCODE_FIXED_INLINE(name, ...) encode_instruction_operand(name),
 #define CL_JIT_SKIP_INLINE(...)
-#define CL_JIT_ENCODE_ATTRIBUTE_INLINE(name, attribute_class)                  \
-    encode_instruction_attribute_##attribute_class(name),
-#define CL_JIT_WRITE_INDIRECT_ATTRIBUTE(name, attribute_class)                 \
-    inline_slots[attribute_index++] =                                          \
-        encode_instruction_attribute_##attribute_class(name);
+#define CL_JIT_COUNT_ATTRIBUTE_WORDS(name, attribute_class)                    \
+    +sizeof(InstructionAttributeStorage_##attribute_class) / sizeof(Slot)
+#define CL_JIT_CHECK_ATTRIBUTE_ALIGNMENT(name, attribute_class)                \
+    aligned = aligned &&                                                       \
+              inline_storage_is_aligned(                                       \
+                  offset, sizeof(InstructionAttributeStorage_##attribute_class)); \
+    offset +=                                                                  \
+        sizeof(InstructionAttributeStorage_##attribute_class) / sizeof(Slot);
+#define CL_JIT_FIND_ATTRIBUTE_SLOT(name, attribute_class)                      \
+    if(current == target)                                                      \
+    {                                                                          \
+        return offset;                                                         \
+    }                                                                          \
+    ++current;                                                                 \
+    offset +=                                                                  \
+        sizeof(InstructionAttributeStorage_##attribute_class) / sizeof(Slot);
+#define CL_JIT_WRITE_FIXED_INLINE(name, ...)                                   \
+    inline_slots[index++] = encode_instruction_operand(name);
+#define CL_JIT_WRITE_ATTRIBUTE_INLINE(name, attribute_class)                   \
+    encode_instruction_attribute_##attribute_class(inline_slots.data() +      \
+                                                        index,                 \
+                                                    name);                     \
+    index +=                                                                   \
+        sizeof(InstructionAttributeStorage_##attribute_class) / sizeof(Slot);
 #define CL_JIT_WRITE_INDIRECT_FIXED(name, ...)                                 \
     indirect_slots[index++] = encode_instruction_operand(name);
 #define CL_JIT_WRITE_INDIRECT_VARIADIC(name, ...)                              \
@@ -889,10 +939,8 @@ namespace cl::jit
         static_assert(OperandClass::operand_class ==                           \
                       OperandClass::ProgramValue);                             \
         constexpr size_t index = static_cast<size_t>(OperandIndex::name);      \
-        const Slot *words = indirect_operand_words();                          \
-        const Slot *first = words == nullptr ? nullptr : words + index;        \
         return ProgramValueRefRange<ValueRepresentation::representation>(      \
-            first, operand_count() - index);                                   \
+            *this, static_cast<uint32_t>(index), operand_count() - index);      \
     }
 #define CL_JIT_DECLARE_SNAPSHOT_VALUES_ACCESSOR(name)                          \
     static constexpr uint32_t name##_operand_index =                           \
@@ -900,19 +948,17 @@ namespace cl::jit
     SnapshotValueRefRange name() const                                         \
     {                                                                          \
         constexpr size_t index = static_cast<size_t>(OperandIndex::name);      \
-        const Slot *words = indirect_operand_words();                          \
-        const Slot *first = words == nullptr ? nullptr : words + index;        \
-        return SnapshotValueRefRange(first, operand_count() - index);          \
+        return SnapshotValueRefRange(                                          \
+            *this, static_cast<uint32_t>(index), operand_count() - index);      \
     }
 #define CL_JIT_DECLARE_ATTRIBUTE_ACCESSOR(name, attribute_class)               \
     auto name() const                                                          \
     {                                                                          \
-        constexpr size_t index =                                               \
-            AttributeBase + static_cast<size_t>(AttributeIndex::name);         \
+        constexpr size_t index = attribute_slot(AttributeIndex::name);         \
         return decode_instruction_attribute_##attribute_class(                 \
             storage(),                                                        \
-            inline_word_at<index,                                              \
-                           InstructionAttributeStorage_##attribute_class>());   \
+            inline_words_at<index,                                             \
+                            InstructionAttributeStorage_##attribute_class>());  \
     }
 #define CL_JIT_INSTRUCTION(name, ir_levels, result, effects, operands,         \
                            attributes)                                         \
@@ -934,6 +980,22 @@ namespace cl::jit
                        CL_JIT_COUNT_NO_OPERAND);                               \
         static constexpr size_t AttributeCount =                               \
             static_cast<size_t>(AttributeIndex::Count);                        \
+        static constexpr size_t AttributeWordCount =                           \
+            0 attributes(CL_JIT_COUNT_ATTRIBUTE_WORDS);                        \
+        static constexpr bool DirectAttributesAligned = [] {                   \
+            size_t offset = FixedOperandCount;                                 \
+            bool aligned = true;                                               \
+            attributes(CL_JIT_CHECK_ATTRIBUTE_ALIGNMENT)                      \
+            (void)offset;                                                      \
+            return aligned;                                                    \
+        }();                                                                   \
+        static constexpr bool IndirectAttributesAligned = [] {                 \
+            size_t offset = 0;                                                 \
+            bool aligned = true;                                               \
+            attributes(CL_JIT_CHECK_ATTRIBUTE_ALIGNMENT)                      \
+            (void)offset;                                                      \
+            return aligned;                                                    \
+        }();                                                                   \
                                                                                \
     public:                                                                    \
         static constexpr InstructionKind Kind = InstructionKind::name;         \
@@ -947,7 +1009,8 @@ namespace cl::jit
             CL_JIT_HAS_NO_VARIADIC, CL_JIT_HAS_VARIADIC, CL_JIT_HAS_VARIADIC); \
         static constexpr bool OperandsAreIndirect =                            \
             IsVariadic ||                                                      \
-            FixedOperandCount + AttributeCount > InlineSlotCount;              \
+            FixedOperandCount + AttributeWordCount > InlineSlotCount ||        \
+            !DirectAttributesAligned;                                          \
                                                                                \
         template <bool Indirect = OperandsAreIndirect>                         \
         requires(Indirect)                                                     \
@@ -975,18 +1038,31 @@ namespace cl::jit
                                                                                \
     operands(CL_JIT_DECLARE_FIXED_ACCESSOR, CL_JIT_DECLARE_VARIADIC_ACCESSOR,  \
              CL_JIT_DECLARE_SNAPSHOT_VALUES_ACCESSOR)                          \
-        attributes(CL_JIT_DECLARE_ATTRIBUTE_ACCESSOR)                          \
                                                                                \
     CL_JIT_PRIVATE                                                             \
         static constexpr size_t AttributeBase =                                \
             OperandsAreIndirect ? 0 : FixedOperandCount;                       \
+        static consteval size_t attribute_slot(AttributeIndex target_index)    \
+        {                                                                      \
+            size_t target = static_cast<size_t>(target_index);                 \
+            size_t current = 0;                                                \
+            size_t offset = AttributeBase;                                     \
+            attributes(CL_JIT_FIND_ATTRIBUTE_SLOT)                            \
+            assert(current == target);                                         \
+            return offset;                                                     \
+        }                                                                      \
         static constexpr size_t InlineSlotCountForKind =                       \
             OperandsAreIndirect ? InlineSlotCount                              \
-                                : AttributeBase + AttributeCount;              \
+                                : AttributeBase + AttributeWordCount;          \
         static_assert(InlineSlotCountForKind <= InlineSlotCount);              \
         static_assert(!OperandsAreIndirect ||                                  \
-                      AttributeCount + 1 <= InlineSlotCount);                  \
+                      AttributeWordCount + 1 <= InlineSlotCount);              \
+        static_assert(!OperandsAreIndirect || IndirectAttributesAligned);      \
                                                                                \
+    public:                                                                    \
+        attributes(CL_JIT_DECLARE_ATTRIBUTE_ACCESSOR)                          \
+                                                                               \
+    private:                                                                   \
         static uint16_t                                                        \
         operand_count_for(operands(CL_JIT_DECLARE_FIXED_PARAMETER,             \
                                    CL_JIT_DECLARE_VARIADIC_PARAMETER,          \
@@ -1003,19 +1079,24 @@ namespace cl::jit
             return static_cast<uint16_t>(n_operands);                          \
         }                                                                      \
                                                                                \
-        static std::array<Slot, FixedOperandCount + AttributeCount>            \
+        static std::array<Slot, FixedOperandCount + AttributeWordCount>        \
         fixed_inline_slots(operands(CL_JIT_DECLARE_FIXED_PARAMETER,            \
                                     CL_JIT_DECLARE_VARIADIC_PARAMETER,         \
                                     CL_JIT_DECLARE_SNAPSHOT_VALUES_PARAMETER)  \
                                attributes(CL_JIT_DECLARE_ATTRIBUTE_PARAMETER)  \
                                    InstructionConstructorEnd = {})             \
         {                                                                      \
-            return {operands(CL_JIT_ENCODE_FIXED_INLINE, CL_JIT_SKIP_INLINE,   \
-                             CL_JIT_SKIP_INLINE)                               \
-                        attributes(CL_JIT_ENCODE_ATTRIBUTE_INLINE)};           \
+            std::array<Slot, FixedOperandCount + AttributeWordCount>           \
+                inline_slots{};                                                \
+            size_t index = 0;                                                  \
+            operands(CL_JIT_WRITE_FIXED_INLINE, CL_JIT_SKIP_INLINE,            \
+                     CL_JIT_SKIP_INLINE)                                       \
+            attributes(CL_JIT_WRITE_ATTRIBUTE_INLINE)                         \
+            assert(index == inline_slots.size());                              \
+            return inline_slots;                                               \
         }                                                                      \
                                                                                \
-        static Slot *initialize_indirect_slots(                                \
+        static void initialize_indirect_slots(                                 \
             std::span<Slot> indirect_slots,                                   \
             operands(CL_JIT_DECLARE_FIXED_PARAMETER,                           \
                      CL_JIT_DECLARE_VARIADIC_PARAMETER,                        \
@@ -1030,10 +1111,10 @@ namespace cl::jit
             attributes(CL_JIT_IGNORE_ARGUMENT)                                \
             (void)index;                                                       \
             assert(index == indirect_slots.size());                            \
-            return indirect_slots.data();                                      \
         }                                                                      \
                                                                                \
         static std::array<Slot, InlineSlotCount> indirect_inline_slots(        \
+            uint32_t indirect_offset,                                          \
             std::span<Slot> indirect_slots,                                   \
             operands(CL_JIT_DECLARE_FIXED_PARAMETER,                           \
                      CL_JIT_DECLARE_VARIADIC_PARAMETER,                        \
@@ -1041,17 +1122,16 @@ namespace cl::jit
                 attributes(CL_JIT_DECLARE_ATTRIBUTE_PARAMETER)                 \
                     InstructionConstructorEnd = {})                            \
         {                                                                      \
-            Slot *stored_operands = initialize_indirect_slots(                 \
+            initialize_indirect_slots(                                        \
                 indirect_slots,                                                \
                 operands(CL_JIT_PASS_ARGUMENT, CL_JIT_PASS_ARGUMENT,           \
                          CL_JIT_PASS_ARGUMENT)                                 \
                     attributes(CL_JIT_PASS_ARGUMENT){});                       \
             std::array<Slot, InlineSlotCount> inline_slots{};                   \
-            size_t attribute_index = 0;                                        \
-            attributes(CL_JIT_WRITE_INDIRECT_ATTRIBUTE)                       \
-            assert(attribute_index == AttributeCount);                         \
-            inline_slots[IndirectOperandSlot] =                                \
-                reinterpret_cast<Slot>(stored_operands);                       \
+            size_t index = 0;                                                  \
+            attributes(CL_JIT_WRITE_ATTRIBUTE_INLINE)                         \
+            assert(index == AttributeWordCount);                               \
+            inline_slots[IndirectOperandSlot] = indirect_offset;               \
             return inline_slots;                                               \
         }                                                                      \
                                                                                \
@@ -1082,6 +1162,7 @@ namespace cl::jit
         template <bool Indirect = OperandsAreIndirect>                         \
         requires(Indirect)                                                     \
         static InstructionEntry make_entry(                                    \
+            uint32_t indirect_offset,                                          \
             std::span<Slot> indirect_slots,                                    \
             operands(CL_JIT_DECLARE_FIXED_PARAMETER,                           \
                      CL_JIT_DECLARE_VARIADIC_PARAMETER,                        \
@@ -1097,7 +1178,7 @@ namespace cl::jit
                         attributes(CL_JIT_PASS_ARGUMENT){}),                   \
                 true,                                                          \
                 indirect_inline_slots(                                         \
-                    indirect_slots,                                            \
+                    indirect_offset, indirect_slots,                           \
                     operands(CL_JIT_PASS_ARGUMENT, CL_JIT_PASS_ARGUMENT,       \
                              CL_JIT_PASS_ARGUMENT)                             \
                         attributes(CL_JIT_PASS_ARGUMENT){}));                  \
@@ -1138,10 +1219,12 @@ namespace cl::jit
 #undef CL_JIT_WRITE_INDIRECT_SNAPSHOT_VALUES
 #undef CL_JIT_WRITE_INDIRECT_VARIADIC
 #undef CL_JIT_WRITE_INDIRECT_FIXED
-#undef CL_JIT_WRITE_INDIRECT_ATTRIBUTE
-#undef CL_JIT_ENCODE_ATTRIBUTE_INLINE
+#undef CL_JIT_WRITE_ATTRIBUTE_INLINE
+#undef CL_JIT_WRITE_FIXED_INLINE
+#undef CL_JIT_FIND_ATTRIBUTE_SLOT
+#undef CL_JIT_CHECK_ATTRIBUTE_ALIGNMENT
+#undef CL_JIT_COUNT_ATTRIBUTE_WORDS
 #undef CL_JIT_SKIP_INLINE
-#undef CL_JIT_ENCODE_FIXED_INLINE
 #undef CL_JIT_COUNT_LOGICAL_SNAPSHOT_VALUES
 #undef CL_JIT_COUNT_LOGICAL_VARIADIC
 #undef CL_JIT_COUNT_LOGICAL_FIXED
@@ -1214,14 +1297,6 @@ namespace cl::jit
                metadata.operands_are_indirect);
 
         size_t slot_index = 0;
-        const uintptr_t *operand_words = nullptr;
-        if(instruction.operands_are_indirect())
-        {
-            operand_words = reinterpret_cast<const uintptr_t *>(
-                instruction.slot(Instruction::IndirectOperandSlot));
-            assert(operand_words != nullptr ||
-                   instruction.operand_count() == 0);
-        }
         assert(instruction.operand_count() >= metadata.fixed_operand_count);
         uint32_t variable_count =
             instruction.operand_count() - metadata.fixed_operand_count;
@@ -1231,18 +1306,18 @@ namespace cl::jit
             assert(operand_index < instruction.operand_count());
             if(instruction.operands_are_indirect())
             {
-                return operand_words[operand_index++];
+                return instruction.operand_word(operand_index++);
             }
             ++operand_index;
             return instruction.slot(slot_index++);
         };
 
-        auto visit_program_value = [&](uint32_t index, uintptr_t word,
+        auto visit_program_value = [&](uint32_t index, uint32_t word,
                                        ValueRepresentation representation) {
             visitor(index, OperandClass::ProgramValue, representation,
                     InstructionId(static_cast<uint32_t>(word)));
         };
-        auto visit_snapshot = [&](uint32_t index, uintptr_t word) {
+        auto visit_snapshot = [&](uint32_t index, uint32_t word) {
             visitor(index, OperandClass::Snapshot, ValueRepresentation::None,
                     InstructionId(static_cast<uint32_t>(word)));
         };
@@ -1255,7 +1330,7 @@ namespace cl::jit
 #define CL_JIT_VISIT_FIXED_OPERAND(name, operand_class, representation)        \
     ([&] {                                                                     \
         uint32_t current_operand_index = operand_index;                        \
-        uintptr_t word = next_operand_word();                                  \
+        uint32_t word = next_operand_word();                                   \
         if constexpr(OperandClass::operand_class ==                            \
                      OperandClass::ProgramValue)                               \
         {                                                                      \
@@ -1272,7 +1347,7 @@ namespace cl::jit
         for(uint32_t index = 0; index < variable_count; ++index)               \
         {                                                                      \
             uint32_t current_operand_index = operand_index;                    \
-            uintptr_t word = next_operand_word();                              \
+            uint32_t word = next_operand_word();                               \
             if constexpr(OperandClass::operand_class ==                        \
                          OperandClass::ProgramValue)                           \
             {                                                                  \

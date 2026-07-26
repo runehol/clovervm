@@ -1,30 +1,41 @@
 #include "jit/instruction_side_data.h"
 
-#include <algorithm>
-#include <new>
+#include "runtime/fatal.h"
+
+#include <limits>
 
 namespace cl::jit
 {
-    std::span<uintptr_t> InstructionSideDataPool::allocate_words(size_t count)
+    InstructionSideDataAllocation
+    InstructionSideDataPool::allocate_words(size_t count)
+    {
+        if(count == 0)
+        {
+            return {0, {}};
+        }
+        if(words_.size() > std::numeric_limits<uint32_t>::max() ||
+           count > std::numeric_limits<uint32_t>::max() - words_.size())
+        {
+            fatal("too much JIT instruction side data");
+        }
+
+        uint32_t offset = static_cast<uint32_t>(words_.size());
+        words_.resize(words_.size() + count);
+        return {offset, std::span<uint32_t>(words_).subspan(offset, count)};
+    }
+
+    std::span<const uint32_t> InstructionSideDataPool::words(uint32_t offset,
+                                                             size_t count) const
     {
         if(count == 0)
         {
             return {};
         }
-
-        if(slabs_.empty() ||
-           slabs_.back().capacity - slabs_.back().used < count)
+        if(offset > words_.size() || count > words_.size() - offset)
         {
-            size_t capacity = std::max(WordsPerSlab, count);
-            slabs_.push_back(
-                {std::unique_ptr<uintptr_t[]>(new uintptr_t[capacity]),
-                 capacity, 0});
+            fatal("invalid JIT instruction side-data range");
         }
-
-        Slab &slab = slabs_.back();
-        uintptr_t *result = slab.storage.get() + slab.used;
-        slab.used += count;
-        return {result, count};
+        return std::span<const uint32_t>(words_).subspan(offset, count);
     }
 
 }  // namespace cl::jit

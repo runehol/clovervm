@@ -37,6 +37,17 @@ namespace cl::jit
         return entry().slot(index);
     }
 
+    Instruction::Slot Instruction::operand_word(size_t index) const
+    {
+        assert(index < operand_count());
+        if(!operands_are_indirect())
+        {
+            return slot(index);
+        }
+        return storage_->instruction_side_data(slot(IndirectOperandSlot),
+                                               operand_count())[index];
+    }
+
     namespace
     {
         InstructionKindMetadata make_instruction_kind_metadata(
@@ -91,23 +102,29 @@ namespace cl::jit
 #define CL_JIT_COUNT_SNAPSHOT_VALUES(...)                                      \
     CL_JIT_COUNT_VARIADIC_OPERAND(__VA_ARGS__)
 #define CL_JIT_COUNT_ATTRIBUTE(...) (++attribute_count);
+#define CL_JIT_COUNT_ATTRIBUTE_WORDS(name, attribute_class)                    \
+    attribute_word_count +=                                                    \
+        sizeof(InstructionAttributeStorage_##attribute_class) /                \
+        sizeof(Instruction::Slot);
 #define CL_JIT_INSTRUCTION(name, ir_levels, result, effects, operands,         \
                            attributes)                                         \
     case InstructionKind::name:                                                \
         {                                                                      \
             uint8_t fixed_operand_count = 0;                                   \
             uint8_t attribute_count = 0;                                       \
+            uint8_t attribute_word_count = 0;                                  \
             uint8_t inline_slot_count = 0;                                     \
             bool has_variadic_operands = false;                                \
-            bool operands_are_indirect = false;                                \
             operands(CL_JIT_COUNT_FIXED_OPERAND,                               \
                      CL_JIT_COUNT_VARIADIC_OPERAND,                            \
                      CL_JIT_COUNT_SNAPSHOT_VALUES)                             \
-                attributes(CL_JIT_COUNT_ATTRIBUTE) operands_are_indirect =     \
-                    has_variadic_operands;                                     \
-            inline_slot_count = operands_are_indirect                          \
-                                    ? Instruction::InlineSlotCount             \
-                                    : fixed_operand_count + attribute_count;   \
+                attributes(CL_JIT_COUNT_ATTRIBUTE) attributes(                 \
+                    CL_JIT_COUNT_ATTRIBUTE_WORDS) bool operands_are_indirect = \
+                    name##Instruction::OperandsAreIndirect;                    \
+            inline_slot_count =                                                \
+                operands_are_indirect                                          \
+                    ? Instruction::InlineSlotCount                             \
+                    : fixed_operand_count + attribute_word_count;              \
             return make_instruction_kind_metadata(                             \
                 ir_levels, effects, fixed_operand_count, attribute_count,      \
                 inline_slot_count, has_variadic_operands,                      \
@@ -115,6 +132,7 @@ namespace cl::jit
         }
 #include "jit/instruction.def"
 #undef CL_JIT_INSTRUCTION
+#undef CL_JIT_COUNT_ATTRIBUTE_WORDS
 #undef CL_JIT_COUNT_ATTRIBUTE
 #undef CL_JIT_COUNT_SNAPSHOT_VALUES
 #undef CL_JIT_COUNT_VARIADIC_OPERAND
