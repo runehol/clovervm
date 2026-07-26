@@ -8,7 +8,7 @@
 | Scope | Allocation constraints, allocator-local numbering, liveness, bundles, backtracking allocation, live-range splitting, block-edge transfers, clobbers, spills, and post-allocation materialization |
 | Owning layers | Target preparation owns occurrence constraints and physical-transfer capabilities; the generic register allocator owns numbering, liveness, bundles, splitting, allocation, spill decisions, and bundle transfers; generic allocation materialization resolves transfers, rewrites the Core CFG, and publishes occurrence locations; publication and recovery planners own canonical-state synchronization; machine-code emission only encodes the materialized graph |
 | Validated against | `tests/test_jit_allocation_constraints.cpp`, `tests/test_aarch64_allocation_constraints.cpp`, `tests/test_jit_register_allocator.cpp`, `tests/test_jit_parallel_transfer_resolver.cpp`, `tests/test_jit_allocation_materializer.cpp`, and `tests/test_aarch64_execution.cpp` |
-| Supersedes | The open register-allocation direction in [JIT Compiler and IR](jit-compiler-and-ir.md) and [JIT Compiler Bring-up Plan](jit-compiler-bring-up-plan.md) |
+| Supersedes | The open register-allocation direction in [JIT Compiler and IR](jit-compiler-and-ir.md) |
 
 This document defines the register-allocation contract for the clovervm JIT. It
 fits the Core IR and CFG contracts in [JIT Compiler and IR](jit-compiler-and-ir.md)
@@ -22,7 +22,7 @@ instructions into Core IR, rewrites the affected uses, and publishes physical
 locations for the resulting instruction occurrences.
 
 Finite implementation work is tracked separately in
-[JIT Register Allocation Implementation Progress](jit-register-allocation-progress.md).
+[JIT Register Allocation Open Work](jit-register-allocation-progress.md).
 
 The allocator is target-independent. It may know about register classes,
 physical registers, stack slots, clobber masks, operand access timing, and

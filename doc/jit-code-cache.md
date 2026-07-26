@@ -504,5 +504,4 @@ into the target assembler or fragment-layout algorithm.
 
 - [JIT Machine-Code Emission](jit-machine-code-emission.md)
 - [JIT Compiler and IR](jit-compiler-and-ir.md)
-- [JIT Compiler Bring-up Plan](jit-compiler-bring-up-plan.md)
 - [Decision Log](decision-log.md)

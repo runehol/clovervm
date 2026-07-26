@@ -1272,4 +1272,3 @@ typed serials provide deterministic identity without that lookup indirection.
 - [JIT Control-Flow Graph](jit-control-flow-graph.md)
 - [JIT Register Allocation](jit-register-allocation.md)
 - [Semantic IR and Specialization](jit-semantic-ir-and-specialization.md)
-- [JIT Compiler Bring-up Plan](jit-compiler-bring-up-plan.md)

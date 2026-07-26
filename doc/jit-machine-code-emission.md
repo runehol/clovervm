@@ -800,5 +800,4 @@ unit design. They do not change or block the implemented generic emitter.
 - [JIT Code Cache and Publication](jit-code-cache.md)
 - [JIT Compiler and IR](jit-compiler-and-ir.md)
 - [JIT Control-Flow Graph](jit-control-flow-graph.md)
-- [JIT Compiler Bring-up Plan](jit-compiler-bring-up-plan.md)
 - [Decision Log](decision-log.md)

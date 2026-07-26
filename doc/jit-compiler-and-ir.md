@@ -15,8 +15,8 @@ clovervm JIT compiler. Its purpose is to keep compiled execution compatible
 with the existing bytecode, object model, inline caches, calling convention,
 and reclamation machinery.
 
-Implementation order and temporary runtime policies belong to the
-[JIT Compiler Bring-up Plan](jit-compiler-bring-up-plan.md). The optional
+The implementation field above records the current vertical boundary; exact
+operation coverage belongs to compiler tests and dispatch code. The optional
 higher-effort inference frontend belongs to
 [Semantic IR and Specialization](jit-semantic-ir-and-specialization.md). The
 fixed instruction storage, typed read-only views, and restricted analysis
@@ -151,12 +151,12 @@ executes on the existing Clover stack, while the hand-written interpreter and
 all C or C++ targets execute on the host stack through reentrant transition
 thunks. These are staging policies rather than permanent runtime invariants.
 
-Their implementation order, consequences, and migration toward precise stack
-maps and a future mixed platform stack are owned by the
-[JIT Compiler Bring-up Plan](jit-compiler-bring-up-plan.md). The durable IR
-contract is that Snapshots, managed-value liveness, and post-allocation
-locations contain enough information to generate both exact recovery and,
-later, precise root maps independently of which runtime policy consumes them.
+The durable IR contract is that Snapshots, managed-value liveness, and
+post-allocation locations contain enough information to generate both exact
+recovery and, later, precise root maps independently of which runtime policy
+consumes them. Replacing the initial runtime policy requires updating this
+contract and the owning boundary documents rather than a separate bring-up
+plan.
 
 ### Interpreter-visible state
 
@@ -268,8 +268,8 @@ operator completion.
 The cost of publishing dirty canonical homes at small non-inlined calls is a
 runtime-policy question rather than an IR ambiguity. Core IR and its backend
 metadata must support both generated publication and future precise stack maps.
-The initial choice and measurements that may replace it belong to the
-[JIT Compiler Bring-up Plan](jit-compiler-bring-up-plan.md).
+Measurements may justify replacing the initial choice, but do not change this
+metadata requirement.
 
 ### Exceptions, unsupported operations, and observability
 
@@ -286,8 +286,8 @@ generated control flow. Both policies use the same commit-boundary rule.
 Tracing, traceback construction, stack inspection, and similar facilities may
 request exact logical frames and bytecode PCs without a failed speculation.
 Such requests use the same Snapshot and recovery model. The initial set of
-unsupported bytecodes and observability fallbacks belongs to the
-[JIT Compiler Bring-up Plan](jit-compiler-bring-up-plan.md).
+unsupported operations and observability fallbacks belongs to compiler dispatch
+code and focused tests, not this architecture document.
 
 ## Compiler Pipeline and Phase Ownership
 
@@ -319,9 +319,9 @@ conservative Python call or return to the interpreter. Core IR can perform
 ordinary SSA optimization, dominator-based redundant-check elimination, and
 effect-aware local code motion without a general Python type lattice.
 
-The zero-opcode first vertical slice, conservative initial optimizer, and order
-in which opcode families enter this path are specified by the
-[JIT Compiler Bring-up Plan](jit-compiler-bring-up-plan.md).
+The compiler grows through executable vertical slices. Exact operation coverage
+and pass ordering are implementation facts recorded by dispatch code and
+focused tests rather than an architectural opcode ledger.
 
 ### Optional Semantic IR frontend
 
@@ -1973,9 +1973,8 @@ The corresponding higher-effort polymorphic example is in
 - whether certified no-safepoint entries remain useful alongside precise maps;
 - active-frame-aware generated-code retirement, relocation, and reclamation.
 
-Bring-up sequencing and temporary runtime-policy questions are tracked in the
-[JIT Compiler Bring-up Plan](jit-compiler-bring-up-plan.md). Optional inference,
-partition, feedback, and contextual-inlining questions are tracked in
+Optional inference, partition, feedback, and contextual-inlining questions are
+tracked in
 [Semantic IR and Specialization](jit-semantic-ir-and-specialization.md).
 
 These questions must be answered without weakening bytecode compatibility.
@@ -1988,7 +1987,6 @@ every recovery policy must reconstruct the same canonical interpreter state.
 - [JIT Register Allocation](jit-register-allocation.md)
 - [JIT Machine-Code Emission](jit-machine-code-emission.md)
 - [JIT Code Cache and Publication](jit-code-cache.md)
-- [JIT Compiler Bring-up Plan](jit-compiler-bring-up-plan.md)
 - [Semantic IR and Specialization](jit-semantic-ir-and-specialization.md)
 - [Function Calling Convention](function-calling-convention.md)
 - [Native/Managed Boundary Contracts](native-managed-boundaries.md)

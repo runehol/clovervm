@@ -454,5 +454,4 @@ remain deferred.
 - [JIT Instruction Representation](jit-instruction-representation.md)
 - [JIT Compiler and IR](jit-compiler-and-ir.md)
 - [Semantic IR and Specialization](jit-semantic-ir-and-specialization.md)
-- [JIT Compiler Bring-up Plan](jit-compiler-bring-up-plan.md)
 - [Decision Log](decision-log.md)
