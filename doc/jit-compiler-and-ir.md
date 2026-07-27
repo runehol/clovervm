@@ -464,7 +464,10 @@ to live across Core instructions as SSA program values.
 `AllocationConstraints` may narrow that default to a fixed register or another
 operation-specific constraint, but it may not assign an incompatible class.
 `UnboxF64` therefore crosses from a general-purpose input to a floating-point
-output, while `BoxF64` crosses in the opposite direction.
+output, while `BoxF64` crosses in the opposite direction. `UnboxF64` is a total
+representation conversion whose input has already passed a `ShapeGuard` for the
+builtin float shape; the guard, not the conversion, owns the possible side
+exit.
 
 These are backend results, not mutations of Core instructions. Every internal
 temporary required by a selected lowering is explicit in its
@@ -1817,6 +1820,10 @@ while the original tagged value preserves the existing object identity. If
 interpreter state still denotes that object, its Snapshot entry uses the
 original tagged `ProgramValueRef`; the compiler must not discard it and later
 manufacture a replacement box from the unboxed value.
+
+The input to `UnboxF64` must be the refined tagged result of a `ShapeGuard`
+against the builtin float shape. The guard owns recovery for a shape mismatch;
+the representation conversion itself is total and has no Snapshot operand.
 
 `BoxF64(UnboxF64(%boxed))` must not simplify to `%boxed`: the explicit
 boxing operation creates a new Python object, and reusing the input box would

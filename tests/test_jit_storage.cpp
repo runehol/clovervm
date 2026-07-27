@@ -372,6 +372,8 @@ namespace cl::jit
                   AddSMIInstruction::Representation);
         EXPECT_EQ(EffectProfile::None, AddSMIInstruction::MustEffects);
         EXPECT_EQ(EffectProfile::SideExit, AddSMIInstruction::MayEffects);
+        EXPECT_EQ(EffectProfile::None, UnboxF64Instruction::MustEffects);
+        EXPECT_EQ(EffectProfile::None, UnboxF64Instruction::MayEffects);
         EXPECT_EQ(IRLevelMask::Core, AddSMIInstruction::AllowedIRLevels);
         EXPECT_FALSE(AddSMIInstruction::IsVariadic);
         EXPECT_FALSE(AddSMIInstruction::OperandsAreIndirect);
@@ -382,6 +384,9 @@ namespace cl::jit
         EXPECT_TRUE(ShapeGuardInstruction::OperandsAreIndirect);
         EXPECT_TRUE(ValidityCellGuardInstruction::OperandsAreIndirect);
         EXPECT_TRUE(ShapeKeyGuardInstruction::OperandsAreIndirect);
+        EXPECT_EQ(1u, instruction_kind_metadata(InstructionKind::UnboxF64)
+                          .fixed_operand_count);
+        EXPECT_FALSE(UnboxF64Instruction::OperandsAreIndirect);
         EXPECT_FALSE(ConstInstruction::OperandsAreIndirect);
         EXPECT_EQ(ResultClass::Snapshot, SnapshotInstruction::Result);
         EXPECT_EQ(ValueRepresentation::None,

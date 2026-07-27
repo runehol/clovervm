@@ -636,7 +636,6 @@ BoxF64
 UnboxF64
     result: ProgramValue(F64)
     source: ProgramValue(TaggedValue)
-    snapshot: Snapshot
 
 ShapeGuard
     result: ProgramValue(TaggedValue)

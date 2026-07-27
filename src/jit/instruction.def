@@ -198,12 +198,11 @@ CL_JIT_INSTRUCTION(BoxF64, CL_JIT_IR_LEVELS(Core),
 #undef CL_JIT_BoxF64_OPERANDS
 
 #define CL_JIT_UnboxF64_OPERANDS(fixed, variadic, snapshot_values)            \
-    fixed(source, ProgramValue, TaggedValue)                                   \
-    fixed(snapshot, Snapshot, None)
+    fixed(source, ProgramValue, TaggedValue)
 #define CL_JIT_UnboxF64_ATTRIBUTES(attribute)
 CL_JIT_INSTRUCTION(UnboxF64, CL_JIT_IR_LEVELS(Core),
                    CL_JIT_RESULT(ProgramValue, F64),
-                   CL_JIT_EFFECT_BOUNDS(None, SideExit),
+                   CL_JIT_EFFECT_BOUNDS(None, None),
                    CL_JIT_UnboxF64_OPERANDS, CL_JIT_UnboxF64_ATTRIBUTES)
 #undef CL_JIT_UnboxF64_ATTRIBUTES
 #undef CL_JIT_UnboxF64_OPERANDS
