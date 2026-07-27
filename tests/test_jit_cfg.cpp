@@ -156,6 +156,8 @@ namespace cl::jit
         builder.append_parameter(entry, tagged_parameter);
         ParameterF64Instruction f64_parameter =
             builder.emplace_parameter<ParameterF64Instruction>(entry);
+        ParameterPointerInstruction pointer_parameter =
+            builder.emplace_parameter<ParameterPointerInstruction>(entry);
         ReturnInstruction return_instruction =
             builder.make_instruction<ReturnInstruction>(
                 TaggedValueRef(tagged_parameter));
@@ -164,9 +166,10 @@ namespace cl::jit
         ControlFlowGraph *graph = builder.finalize();
         EXPECT_TRUE(graph->is_published());
 
-        ASSERT_EQ(2u, entry->parameters().size());
+        ASSERT_EQ(3u, entry->parameters().size());
         EXPECT_EQ(tagged_parameter, entry->parameter_at(0));
         EXPECT_EQ(f64_parameter, entry->parameter_at(1));
+        EXPECT_EQ(pointer_parameter, entry->parameter_at(2));
         ASSERT_EQ(1u, entry->instructions().size());
         EXPECT_EQ(return_instruction, entry->instruction_at(0));
     }

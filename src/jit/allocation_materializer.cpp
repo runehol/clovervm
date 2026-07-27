@@ -484,6 +484,29 @@ namespace cl::jit
                                     F64Ref(source_instruction));
                             }
                             break;
+                        case ValueRepresentation::Pointer:
+                            if(move.source_location.is_register() &&
+                               move.destination.is_register())
+                            {
+                                output = context.make_instruction<
+                                    MovPointerInstruction>(
+                                    PointerRef(source_instruction));
+                            }
+                            else if(move.source_location.is_stack() &&
+                                    move.destination.is_register())
+                            {
+                                output = context.make_instruction<
+                                    LoadStackPointerInstruction>(
+                                    PointerRef(source_instruction));
+                            }
+                            else if(move.source_location.is_register() &&
+                                    move.destination.is_stack())
+                            {
+                                output = context.make_instruction<
+                                    StoreStackPointerInstruction>(
+                                    PointerRef(source_instruction));
+                            }
+                            break;
                         case ValueRepresentation::None:
                         case ValueRepresentation::Count:
                             fatal("invalid JIT bundle transfer "

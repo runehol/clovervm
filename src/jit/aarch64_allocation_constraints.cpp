@@ -120,6 +120,9 @@ namespace cl::jit
                     case InstructionKind::EorSMI:
                     case InstructionKind::Snapshot:
                     case InstructionKind::ResumeInInterpreter:
+                    case InstructionKind::MovPointer:
+                    case InstructionKind::LoadStackPointer:
+                    case InstructionKind::StoreStackPointer:
                         break;
 
                     case InstructionKind::Is:

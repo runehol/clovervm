@@ -294,6 +294,11 @@ namespace cl::jit
         EXPECT_EQ(AccessTiming::Late, f64_default.timing);
         EXPECT_EQ(RegisterClass::SIMD,
                   f64_default.requirement.register_class());
+        ResultConstraint pointer_default =
+            default_result_constraint(ValueRepresentation::Pointer);
+        EXPECT_EQ(AccessTiming::Late, pointer_default.timing);
+        EXPECT_EQ(RegisterClass::GPR,
+                  pointer_default.requirement.register_class());
 
         EXPECT_DEATH(
             {

@@ -378,6 +378,9 @@ namespace cl::jit
                 case ValueRepresentation::F64:
                     fmt::format_to(std::back_inserter(out), ": f64");
                     return;
+                case ValueRepresentation::Pointer:
+                    fmt::format_to(std::back_inserter(out), ": ptr");
+                    return;
                 case ValueRepresentation::None:
                 case ValueRepresentation::Count:
                     break;

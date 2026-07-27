@@ -66,6 +66,7 @@ namespace cl::jit
         None,
         TaggedValue,
         F64,
+        Pointer,
         Count,
     };
 
@@ -303,7 +304,8 @@ namespace cl::jit
     constexpr bool is_block_parameter_kind(InstructionKind kind)
     {
         return kind == InstructionKind::Parameter ||
-               kind == InstructionKind::ParameterF64;
+               kind == InstructionKind::ParameterF64 ||
+               kind == InstructionKind::ParameterPointer;
     }
 
     constexpr ResultClass instruction_result_class(InstructionKind kind)
@@ -338,7 +340,8 @@ namespace cl::jit
         if(result_class == ResultClass::ProgramValue)
         {
             return representation == ValueRepresentation::TaggedValue ||
-                   representation == ValueRepresentation::F64;
+                   representation == ValueRepresentation::F64 ||
+                   representation == ValueRepresentation::Pointer;
         }
         return (result_class == ResultClass::None ||
                 result_class == ResultClass::Snapshot) &&
@@ -785,11 +788,13 @@ namespace cl::jit
     using TaggedValueRef =
         RepresentedValueRef<ValueRepresentation::TaggedValue>;
     using F64Ref = RepresentedValueRef<ValueRepresentation::F64>;
+    using PointerRef = RepresentedValueRef<ValueRepresentation::Pointer>;
 
     static_assert(sizeof(ProgramValueRef) == sizeof(uint32_t));
     static_assert(sizeof(SnapshotRef) == sizeof(uint32_t));
     static_assert(sizeof(TaggedValueRef) == sizeof(uint32_t));
     static_assert(sizeof(F64Ref) == sizeof(uint32_t));
+    static_assert(sizeof(PointerRef) == sizeof(uint32_t));
 
     template <OperandClass Class, ValueRepresentation Representation>
     auto decode_instruction_operand(uint32_t word)
@@ -804,10 +809,14 @@ namespace cl::jit
         {
             return TaggedValueRef(instruction);
         }
+        else if constexpr(Representation == ValueRepresentation::F64)
+        {
+            return F64Ref(instruction);
+        }
         else
         {
-            static_assert(Representation == ValueRepresentation::F64);
-            return F64Ref(instruction);
+            static_assert(Representation == ValueRepresentation::Pointer);
+            return PointerRef(instruction);
         }
     }
 
@@ -1040,6 +1049,7 @@ namespace cl::jit
 #define CL_JIT_JOIN(first, second) CL_JIT_JOIN_INNER(first, second)
 #define CL_JIT_OPERAND_TYPE_ProgramValue_TaggedValue TaggedValueRef
 #define CL_JIT_OPERAND_TYPE_ProgramValue_F64 F64Ref
+#define CL_JIT_OPERAND_TYPE_ProgramValue_Pointer PointerRef
 #define CL_JIT_OPERAND_TYPE_Snapshot_None SnapshotRef
 #define CL_JIT_OPERAND_TYPE_INNER(operand_class, representation)               \
     CL_JIT_OPERAND_TYPE_##operand_class##_##representation
@@ -1464,6 +1474,7 @@ namespace cl::jit
 #undef CL_JIT_OPERAND_TYPE
 #undef CL_JIT_OPERAND_TYPE_INNER
 #undef CL_JIT_OPERAND_TYPE_Snapshot_None
+#undef CL_JIT_OPERAND_TYPE_ProgramValue_Pointer
 #undef CL_JIT_OPERAND_TYPE_ProgramValue_F64
 #undef CL_JIT_OPERAND_TYPE_ProgramValue_TaggedValue
 #undef CL_JIT_JOIN

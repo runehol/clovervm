@@ -197,14 +197,16 @@ enum class ValueRepresentation
 {
     TaggedValue,
     F64,
+    Pointer,
 };
 ```
 
 `ValueRepresentation` describes the target-independent encoding of a Core SSA
 value. It is not an operand or result class, Python type fact, register class,
-or assigned location. `Int64` or another representation is added only when an
-implemented Core instruction requires it. `Address` remains backend-local unless addresses
-demonstrably need to live across Core instructions as SSA program values.
+or assigned location. `Pointer` represents an untagged pointer carried through
+Core dataflow, initially for values such as `ThreadState *`, raw code-object
+pointers, and pointer-shaped frame metadata. Target-specific addresses formed
+only during instruction selection remain backend-local.
 
 Every Core instruction producing a `ProgramValue` has exactly one immutable
 representation. For most kinds it is fixed by `instruction.def` and occupies no
@@ -212,13 +214,14 @@ instruction space. Instruction kinds are not representation-parametric: when
 the same operation is required for more than one representation, the schema
 defines one kind for each representation. In particular, Core has one `Mov`
 kind and one block-parameter kind per `ValueRepresentation`, initially
-`Mov`, `MovF64`, `Parameter`, and `ParameterF64`. The unsuffixed kinds
-have the common `TaggedValue` representation. Semantic IR does not assign
-representations to its `ProgramValueRef`s; Semantic-to-Core lowering creates a
-fresh graph whose program values all have concrete representations. Generic
-Core construction starts with `TaggedValue` and introduces another
-representation only through explicit conversion or specialized instructions,
-so Core never contains an unknown representation.
+`Mov`, `MovF64`, `MovPointer`, `Parameter`, `ParameterF64`, and
+`ParameterPointer`. The unsuffixed kinds have the common `TaggedValue`
+representation. Semantic IR does not assign representations to its
+`ProgramValueRef`s; Semantic-to-Core lowering creates a fresh graph whose
+program values all have concrete representations. Generic Core construction
+starts with `TaggedValue` and introduces another representation only through
+explicit conversion or specialized instructions, so Core never contains an
+unknown representation.
 
 Every `ValueRepresentation` must have exactly one corresponding `Mov` kind.
 The schema generates the representation-to-`Mov` mapping and rejects a missing

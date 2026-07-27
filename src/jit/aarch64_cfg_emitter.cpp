@@ -120,7 +120,7 @@ namespace cl::jit
         assert(entry->predecessor_edges().empty());
         for(Instruction parameter: entry->parameters())
         {
-            assert(parameter.kind() == InstructionKind::Parameter);
+            assert(is_block_parameter_kind(parameter.kind()));
             (void)parameter;
         }
 
@@ -212,6 +212,17 @@ namespace cl::jit
                     break;
                 }
 
+                case CL_JIT_CORE_INSTRUCTION_CASE(
+                    MovPointerInstruction, move_pointer_instruction)
+                {
+                    assembler.mov(
+                        assigned_register(locations,
+                                          ProgramValueRef(instruction)),
+                        assigned_register(locations,
+                                          move_pointer_instruction.source()));
+                    break;
+                }
+
                 case CL_JIT_CORE_INSTRUCTION_CASE(LoadStackInstruction,
                                                   load_instruction)
                 {
@@ -225,6 +236,19 @@ namespace cl::jit
                     break;
                 }
 
+                case CL_JIT_CORE_INSTRUCTION_CASE(
+                    LoadStackPointerInstruction, load_pointer_instruction)
+                {
+                    constexpr XRegister FramePointer(29);
+                    assembler.ldr(
+                        assigned_register(locations,
+                                          ProgramValueRef(instruction)),
+                        FramePointer,
+                        stack_byte_offset(assigned_stack(
+                            locations, load_pointer_instruction.source())));
+                    break;
+                }
+
                 case CL_JIT_CORE_INSTRUCTION_CASE(StoreStackInstruction,
                                                   store_instruction)
                 {
@@ -232,6 +256,19 @@ namespace cl::jit
                     assembler.str(
                         assigned_register(locations,
                                           store_instruction.source()),
+                        FramePointer,
+                        stack_byte_offset(assigned_stack(
+                            locations, ProgramValueRef(instruction))));
+                    break;
+                }
+
+                case CL_JIT_CORE_INSTRUCTION_CASE(
+                    StoreStackPointerInstruction, store_pointer_instruction)
+                {
+                    constexpr XRegister FramePointer(29);
+                    assembler.str(
+                        assigned_register(locations,
+                                          store_pointer_instruction.source()),
                         FramePointer,
                         stack_byte_offset(assigned_stack(
                             locations, ProgramValueRef(instruction))));

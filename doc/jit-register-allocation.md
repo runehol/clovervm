@@ -442,8 +442,10 @@ The common layer derives ordinary location requirements directly from Core
 ```text
 TaggedValue input  -> Use Early, AnyRegister(GPR)
 F64 input          -> Use Early, AnyRegister(SIMD)
+Pointer input      -> Use Early, AnyRegister(GPR)
 TaggedValue result -> Def Late, AnyRegister(GPR)
 F64 result         -> Def Late, AnyRegister(SIMD)
+Pointer result     -> Def Late, AnyRegister(GPR)
 Snapshot operand   -> captured values used Late
 ```
 

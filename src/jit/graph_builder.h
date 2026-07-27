@@ -14,8 +14,10 @@
 namespace cl::jit
 {
     template <typename T>
-    concept ParameterInstructionType = std::same_as<T, ParameterInstruction> ||
-                                       std::same_as<T, ParameterF64Instruction>;
+    concept ParameterInstructionType =
+        std::same_as<T, ParameterInstruction> ||
+        std::same_as<T, ParameterF64Instruction> ||
+        std::same_as<T, ParameterPointerInstruction>;
 
     // Construction and rewriting APIs use one ownership vocabulary:
     //

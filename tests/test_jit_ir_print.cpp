@@ -94,6 +94,9 @@ namespace cl::jit
         TaggedValueRef argument(
             builder.emplace_parameter<ParameterInstruction>(entry));
         F64Ref f64(builder.emplace_parameter<ParameterF64Instruction>(entry));
+        PointerRef pointer(
+            builder.emplace_parameter<ParameterPointerInstruction>(entry));
+        (void)pointer;
 
         std::array<ProgramValueRef, 2> captured = {callable, argument};
         SnapshotRef snapshot(builder.emplace_instruction<SnapshotInstruction>(
@@ -110,13 +113,13 @@ namespace cl::jit
         ControlFlowGraph *graph = builder.finalize();
 
         EXPECT_EQ("graph {\n"
-                  "bb0(%0, %1, %2: f64):\n"
-                  "  %3 = snapshot [%0, %1] {resume_pc = 9}\n"
-                  "  %4 = python_call %0, %3, [%1] "
+                  "bb0(%0, %1, %2: f64, %3: ptr):\n"
+                  "  %4 = snapshot [%0, %1] {resume_pc = 9}\n"
+                  "  %5 = python_call %0, %4, [%1] "
                   "{interpreter_return_pc = 11}\n"
-                  "  %5 = add_f64 %2, %2\n"
-                  "  %6 = box_f64 %5\n"
-                  "  return %6\n"
+                  "  %6 = add_f64 %2, %2\n"
+                  "  %7 = box_f64 %6\n"
+                  "  return %7\n"
                   "}\n",
                   format_ir(*graph));
     }

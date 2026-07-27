@@ -38,6 +38,12 @@ namespace cl::jit
                     storage_->instruction(resolve(def.instruction_id())));
             }
 
+            PointerRef resolve(PointerRef def) const
+            {
+                return PointerRef(
+                    storage_->instruction(resolve(def.instruction_id())));
+            }
+
             SnapshotRef resolve(SnapshotRef def) const
             {
                 return SnapshotRef(

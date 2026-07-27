@@ -628,6 +628,16 @@ namespace cl::jit
         EXPECT_EQ(none.instruction_id(), values[3].instruction_id());
         EXPECT_EQ(SnapshotRef(snapshot), SnapshotRef(snapshot));
         EXPECT_EQ(TaggedValueRef(tagged), TaggedValueRef(tagged));
+        ParameterPointerInstruction pointer_parameter =
+            builder.make_instruction<ParameterPointerInstruction>();
+        PointerRef pointer(pointer_parameter);
+        MovPointerInstruction pointer_move =
+            builder.make_instruction<MovPointerInstruction>(pointer);
+        EXPECT_EQ(ValueRepresentation::Pointer,
+                  pointer_move.value_representation());
+        EXPECT_EQ(pointer.instruction_id(),
+                  pointer_move.source().instruction_id());
+        EXPECT_EQ(pointer, PointerRef(pointer_parameter));
         EXPECT_EQ(F64Ref(f64), F64Ref(f64));
         EXPECT_EQ(91u, snapshot.resume_pc());
 

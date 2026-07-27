@@ -233,6 +233,51 @@ namespace cl::jit
             x0, materialized.value().location_for(ProgramValueRef(load)).reg());
     }
 
+    TEST(JitAllocationMaterializer, MaterializesPointerTransfers)
+    {
+        CompilationSession session;
+        GraphBuilder builder(session);
+        Block *entry = builder.emplace_block();
+        ParameterPointerInstruction parameter =
+            builder.emplace_parameter<ParameterPointerInstruction>(entry);
+        MovPointerInstruction move =
+            builder.emplace_instruction<MovPointerInstruction>(
+                entry, PointerRef(parameter));
+        TaggedValueRef result(builder.emplace_instruction<ConstInstruction>(
+            entry, Value::None()));
+        builder.emplace_instruction<ReturnInstruction>(entry, result);
+        ControlFlowGraph *graph = builder.finalize();
+
+        StackLocation incoming(StackLocationKind::IncomingParameter, 4);
+        std::vector<InstructionAllocationConstraints> overrides;
+        overrides.emplace_back(
+            parameter, std::vector<ProgramValueUseConstraint>{},
+            ResultConstraint{AccessTiming::Late,
+                             fixed(PhysicalLocation::stack(incoming))});
+        overrides.emplace_back(move, std::vector<ProgramValueUseConstraint>{
+                                         {0, AccessTiming::Early,
+                                          fixed(PhysicalLocation::reg(x0))}});
+        AllocationConstraints constraints =
+            constraints_with(std::move(overrides));
+        PreparedAllocationProblem prepared({}, {}, {}, {}, {}, {});
+        RegisterAllocationResult allocation =
+            allocate(*graph, constraints, prepared);
+
+        auto materialized = materialize_allocation(session, *graph, prepared,
+                                                   constraints, allocation);
+
+        ASSERT_TRUE(materialized);
+        ASSERT_EQ(4u, entry->instructions().size());
+        LoadStackPointerInstruction load =
+            entry->instruction_at(0).as<LoadStackPointerInstruction>();
+        MovPointerInstruction rewritten_move =
+            entry->instruction_at(1).as<MovPointerInstruction>();
+        EXPECT_EQ(parameter.id(), load.source().instruction_id());
+        EXPECT_EQ(load.id(), rewritten_move.source().instruction_id());
+        EXPECT_EQ(
+            x0, materialized.value().location_for(ProgramValueRef(load)).reg());
+    }
+
     TEST(JitAllocationMaterializer, InsertsParallelStackToRegisterTransfers)
     {
         CompilationSession session;

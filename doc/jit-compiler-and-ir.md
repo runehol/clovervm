@@ -459,12 +459,12 @@ representations to its own classes, for example:
 ```text
 TaggedValue -> general-purpose register class
 F64         -> floating-point/SIMD register class
+Pointer     -> general-purpose register class
 ```
 
-Addresses used only while selecting or emitting one instruction are backend
-temporaries, not a common Core representation. `Address` should become a
-`ValueRepresentation` only if implementation demonstrates a need for addresses
-to live across Core instructions as SSA program values.
+`Pointer` is for untagged pointers that genuinely live across Core instructions
+as SSA values. Addresses used only while selecting or emitting one instruction
+remain backend temporaries.
 
 `AllocationConstraints` may narrow that default to a fixed register or another
 operation-specific constraint, but it may not assign an incompatible class.
@@ -1766,8 +1766,8 @@ unboxing to execute ordinary compiled code.
 ### One representation and location per Core SSA value
 
 Every Core `ProgramValueRef` has exactly one immutable
-`ValueRepresentation`. The first schema supports `TaggedValue` and `F64`,
-although bring-up produces only tagged values until unboxing is implemented.
+`ValueRepresentation`. The first schema supports `TaggedValue`, `F64`, and
+`Pointer`, although ordinary Python values enter bring-up as tagged values.
 Representation is an intrinsic def and operand contract declared by
 `instruction.def`, not an analysis or register-allocation attachment. Semantic
 IR, when present, keeps representation-free references; its lowering creates
@@ -1785,7 +1785,7 @@ Representation also determines the value's default backend register class and
 spill layout. On AArch64 a tagged `Value` normally occupies an `X` register and
 an unboxed `F64` a scalar lane of a NEON/FP register; x86-64 uses its
 corresponding general-purpose and XMM classes. These target classes belong to
-the backend, while `TaggedValue` and `F64` remain common Core
+the backend, while `TaggedValue`, `F64`, and `Pointer` remain common Core
 representations.
 
 Several representations of one logical Python value may therefore coexist, but

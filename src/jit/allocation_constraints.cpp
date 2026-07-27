@@ -84,6 +84,7 @@ namespace cl::jit
         switch(representation)
         {
             case ValueRepresentation::TaggedValue:
+            case ValueRepresentation::Pointer:
                 return RegisterClass::GPR;
             case ValueRepresentation::F64:
                 return RegisterClass::SIMD;

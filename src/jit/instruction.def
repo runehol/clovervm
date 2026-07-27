@@ -48,6 +48,16 @@ CL_JIT_INSTRUCTION(ParameterF64, CL_JIT_IR_LEVELS(Core),
 #undef CL_JIT_ParameterF64_ATTRIBUTES
 #undef CL_JIT_ParameterF64_OPERANDS
 
+#define CL_JIT_ParameterPointer_OPERANDS(fixed, variadic, snapshot_values)
+#define CL_JIT_ParameterPointer_ATTRIBUTES(attribute)
+CL_JIT_INSTRUCTION(ParameterPointer, CL_JIT_IR_LEVELS(Core),
+                   CL_JIT_RESULT(ProgramValue, Pointer),
+                   CL_JIT_EFFECT_BOUNDS(None, None),
+                   CL_JIT_ParameterPointer_OPERANDS,
+                   CL_JIT_ParameterPointer_ATTRIBUTES)
+#undef CL_JIT_ParameterPointer_ATTRIBUTES
+#undef CL_JIT_ParameterPointer_OPERANDS
+
 #define CL_JIT_Mov_OPERANDS(fixed, variadic, snapshot_values)                 \
     fixed(source, ProgramValue, TaggedValue)
 #define CL_JIT_Mov_ATTRIBUTES(attribute)
@@ -67,6 +77,17 @@ CL_JIT_INSTRUCTION(MovF64, CL_JIT_IR_LEVELS(Core),
                    CL_JIT_MovF64_ATTRIBUTES)
 #undef CL_JIT_MovF64_ATTRIBUTES
 #undef CL_JIT_MovF64_OPERANDS
+
+#define CL_JIT_MovPointer_OPERANDS(fixed, variadic, snapshot_values)           \
+    fixed(source, ProgramValue, Pointer)
+#define CL_JIT_MovPointer_ATTRIBUTES(attribute)
+CL_JIT_INSTRUCTION(MovPointer, CL_JIT_IR_LEVELS(Core),
+                   CL_JIT_RESULT(ProgramValue, Pointer),
+                   CL_JIT_EFFECT_BOUNDS(None, None),
+                   CL_JIT_MovPointer_OPERANDS,
+                   CL_JIT_MovPointer_ATTRIBUTES)
+#undef CL_JIT_MovPointer_ATTRIBUTES
+#undef CL_JIT_MovPointer_OPERANDS
 
 #define CL_JIT_LoadStack_OPERANDS(fixed, variadic, snapshot_values)           \
     fixed(source, ProgramValue, TaggedValue)
@@ -88,6 +109,17 @@ CL_JIT_INSTRUCTION(LoadStackF64, CL_JIT_IR_LEVELS(Core),
 #undef CL_JIT_LoadStackF64_ATTRIBUTES
 #undef CL_JIT_LoadStackF64_OPERANDS
 
+#define CL_JIT_LoadStackPointer_OPERANDS(fixed, variadic, snapshot_values)     \
+    fixed(source, ProgramValue, Pointer)
+#define CL_JIT_LoadStackPointer_ATTRIBUTES(attribute)
+CL_JIT_INSTRUCTION(LoadStackPointer, CL_JIT_IR_LEVELS(Core),
+                   CL_JIT_RESULT(ProgramValue, Pointer),
+                   CL_JIT_EFFECT_BOUNDS(None, None),
+                   CL_JIT_LoadStackPointer_OPERANDS,
+                   CL_JIT_LoadStackPointer_ATTRIBUTES)
+#undef CL_JIT_LoadStackPointer_ATTRIBUTES
+#undef CL_JIT_LoadStackPointer_OPERANDS
+
 #define CL_JIT_StoreStack_OPERANDS(fixed, variadic, snapshot_values)          \
     fixed(source, ProgramValue, TaggedValue)
 #define CL_JIT_StoreStack_ATTRIBUTES(attribute)
@@ -108,6 +140,17 @@ CL_JIT_INSTRUCTION(StoreStackF64, CL_JIT_IR_LEVELS(Core),
                    CL_JIT_StoreStackF64_ATTRIBUTES)
 #undef CL_JIT_StoreStackF64_ATTRIBUTES
 #undef CL_JIT_StoreStackF64_OPERANDS
+
+#define CL_JIT_StoreStackPointer_OPERANDS(fixed, variadic, snapshot_values)    \
+    fixed(source, ProgramValue, Pointer)
+#define CL_JIT_StoreStackPointer_ATTRIBUTES(attribute)
+CL_JIT_INSTRUCTION(StoreStackPointer, CL_JIT_IR_LEVELS(Core),
+                   CL_JIT_RESULT(ProgramValue, Pointer),
+                   CL_JIT_EFFECT_BOUNDS(None, None),
+                   CL_JIT_StoreStackPointer_OPERANDS,
+                   CL_JIT_StoreStackPointer_ATTRIBUTES)
+#undef CL_JIT_StoreStackPointer_ATTRIBUTES
+#undef CL_JIT_StoreStackPointer_OPERANDS
 
 #define CL_JIT_AddSMI_OPERANDS(fixed, variadic, snapshot_values)              \
     fixed(lhs, ProgramValue, TaggedValue)                                      \
