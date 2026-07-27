@@ -800,11 +800,20 @@ different generic behavior.
 
 An instruction definition may name one IR level or an explicit set when the
 same semantic kind is valid in more than one IR. Allowed levels are kind
-metadata and consume no space in an instruction. The implemented CFG is Core
-and its builder, rewriter, and verifier reject kinds not declared Core-legal.
-If Semantic or Machine IR later reuse the same graph representation, the graph
-will gain one immutable level discriminator and level-specific construction and
-analysis façades.
+metadata and consume no space in an instruction. The schema also generates
+`SemanticInstructionKind`, `CoreInstructionKind`, `MachineInstructionKind`,
+and `TransitionInstructionKind`; each contains only the kinds declared for
+that level while retaining the shared physical `InstructionKind` value.
+Level-specific dispatch checks the stored kind's metadata mask, converts it to
+the filtered enum, and switches exhaustively.
+
+The schema names only meaningful membership sets rather than accepting an
+arbitrary combination of level bits. Initial sets include the four individual
+levels, `SemanticCore`, `CoreMachine`, `CoreTransition`,
+`CoreMachineTransition`, and `SemanticCoreMachineTransition`. A new
+combination is added only when an instruction genuinely spans that exact set of
+IRs. The implemented CFG is Core and its builder, rewriter, and verifier reject
+kinds not declared Core-legal.
 
 For Core graphs, verification additionally requires every `ProgramValue` def to
 have one legal representation, every operand constraint to match its def, and

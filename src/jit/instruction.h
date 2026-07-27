@@ -105,6 +105,13 @@ namespace cl::jit
         Semantic = 1 << 0,
         Core = 1 << 1,
         Machine = 1 << 2,
+        Transition = 1 << 3,
+        SemanticCore = (1 << 0) | (1 << 1),
+        CoreMachine = (1 << 1) | (1 << 2),
+        CoreTransition = (1 << 1) | (1 << 3),
+        CoreMachineTransition = (1 << 1) | (1 << 2) | (1 << 3),
+        SemanticCoreMachineTransition =
+            (1 << 0) | (1 << 1) | (1 << 2) | (1 << 3),
     };
 
     constexpr IRLevelMask operator|(IRLevelMask lhs, IRLevelMask rhs)
@@ -172,6 +179,112 @@ namespace cl::jit
 #undef CL_JIT_INSTRUCTION
 #undef CL_JIT_RESULT
     };
+
+    // clang-format off
+#define CL_JIT_LEVEL_KIND_JOIN_INNER(first, second) first##second
+#define CL_JIT_LEVEL_KIND_JOIN(first, second)                                 \
+    CL_JIT_LEVEL_KIND_JOIN_INNER(first, second)
+#define CL_JIT_IR_LEVEL_MEMBERS(set, callback, name)                          \
+    CL_JIT_LEVEL_KIND_JOIN(CL_JIT_IR_LEVEL_MEMBERS_, set)(callback, name)
+#define CL_JIT_IR_LEVEL_MEMBERS_Semantic(callback, name)                      \
+    callback(name, Semantic)
+#define CL_JIT_IR_LEVEL_MEMBERS_Core(callback, name)                          \
+    callback(name, Core)
+#define CL_JIT_IR_LEVEL_MEMBERS_Machine(callback, name)                       \
+    callback(name, Machine)
+#define CL_JIT_IR_LEVEL_MEMBERS_Transition(callback, name)                    \
+    callback(name, Transition)
+#define CL_JIT_IR_LEVEL_MEMBERS_SemanticCore(callback, name)                  \
+    callback(name, Semantic) callback(name, Core)
+#define CL_JIT_IR_LEVEL_MEMBERS_CoreMachine(callback, name)                   \
+    callback(name, Core) callback(name, Machine)
+#define CL_JIT_IR_LEVEL_MEMBERS_CoreTransition(callback, name)                \
+    callback(name, Core) callback(name, Transition)
+#define CL_JIT_IR_LEVEL_MEMBERS_CoreMachineTransition(callback, name)         \
+    callback(name, Core) callback(name, Machine) callback(name, Transition)
+#define CL_JIT_IR_LEVEL_MEMBERS_SemanticCoreMachineTransition(callback, name) \
+    callback(name, Semantic) callback(name, Core) callback(name, Machine)     \
+        callback(name, Transition)
+#define CL_JIT_LEVEL_KIND_MEMBER(name, level)                                 \
+    CL_JIT_LEVEL_KIND_JOIN(CL_JIT_LEVEL_KIND_MEMBER_, level)(name)
+#define CL_JIT_IR_LEVELS(set) set
+#define CL_JIT_INSTRUCTION(name, ir_levels, result, effects, operands,        \
+                           attributes)                                        \
+    CL_JIT_IR_LEVEL_MEMBERS(                                                   \
+        ir_levels, CL_JIT_LEVEL_KIND_MEMBER, name)
+
+#define CL_JIT_LEVEL_KIND_MEMBER_Semantic(name)                               \
+    name = static_cast<uint16_t>(InstructionKind::name),
+#define CL_JIT_LEVEL_KIND_MEMBER_Core(name)
+#define CL_JIT_LEVEL_KIND_MEMBER_Machine(name)
+#define CL_JIT_LEVEL_KIND_MEMBER_Transition(name)
+    enum class SemanticInstructionKind : uint16_t
+    {
+#include "jit/instruction.def"
+    };
+#undef CL_JIT_LEVEL_KIND_MEMBER_Transition
+#undef CL_JIT_LEVEL_KIND_MEMBER_Machine
+#undef CL_JIT_LEVEL_KIND_MEMBER_Core
+#undef CL_JIT_LEVEL_KIND_MEMBER_Semantic
+
+#define CL_JIT_LEVEL_KIND_MEMBER_Semantic(name)
+#define CL_JIT_LEVEL_KIND_MEMBER_Core(name)                                   \
+    name = static_cast<uint16_t>(InstructionKind::name),
+#define CL_JIT_LEVEL_KIND_MEMBER_Machine(name)
+#define CL_JIT_LEVEL_KIND_MEMBER_Transition(name)
+    enum class CoreInstructionKind : uint16_t
+    {
+#include "jit/instruction.def"
+    };
+#undef CL_JIT_LEVEL_KIND_MEMBER_Transition
+#undef CL_JIT_LEVEL_KIND_MEMBER_Machine
+#undef CL_JIT_LEVEL_KIND_MEMBER_Core
+#undef CL_JIT_LEVEL_KIND_MEMBER_Semantic
+
+#define CL_JIT_LEVEL_KIND_MEMBER_Semantic(name)
+#define CL_JIT_LEVEL_KIND_MEMBER_Core(name)
+#define CL_JIT_LEVEL_KIND_MEMBER_Machine(name)                                \
+    name = static_cast<uint16_t>(InstructionKind::name),
+#define CL_JIT_LEVEL_KIND_MEMBER_Transition(name)
+    enum class MachineInstructionKind : uint16_t
+    {
+#include "jit/instruction.def"
+    };
+#undef CL_JIT_LEVEL_KIND_MEMBER_Transition
+#undef CL_JIT_LEVEL_KIND_MEMBER_Machine
+#undef CL_JIT_LEVEL_KIND_MEMBER_Core
+#undef CL_JIT_LEVEL_KIND_MEMBER_Semantic
+
+#define CL_JIT_LEVEL_KIND_MEMBER_Semantic(name)
+#define CL_JIT_LEVEL_KIND_MEMBER_Core(name)
+#define CL_JIT_LEVEL_KIND_MEMBER_Machine(name)
+#define CL_JIT_LEVEL_KIND_MEMBER_Transition(name)                             \
+    name = static_cast<uint16_t>(InstructionKind::name),
+    enum class TransitionInstructionKind : uint16_t
+    {
+#include "jit/instruction.def"
+    };
+#undef CL_JIT_LEVEL_KIND_MEMBER_Transition
+#undef CL_JIT_LEVEL_KIND_MEMBER_Machine
+#undef CL_JIT_LEVEL_KIND_MEMBER_Core
+#undef CL_JIT_LEVEL_KIND_MEMBER_Semantic
+
+#undef CL_JIT_INSTRUCTION
+#undef CL_JIT_IR_LEVELS
+#undef CL_JIT_LEVEL_KIND_MEMBER
+#undef CL_JIT_IR_LEVEL_MEMBERS_SemanticCoreMachineTransition
+#undef CL_JIT_IR_LEVEL_MEMBERS_CoreMachineTransition
+#undef CL_JIT_IR_LEVEL_MEMBERS_CoreTransition
+#undef CL_JIT_IR_LEVEL_MEMBERS_CoreMachine
+#undef CL_JIT_IR_LEVEL_MEMBERS_SemanticCore
+#undef CL_JIT_IR_LEVEL_MEMBERS_Transition
+#undef CL_JIT_IR_LEVEL_MEMBERS_Machine
+#undef CL_JIT_IR_LEVEL_MEMBERS_Core
+#undef CL_JIT_IR_LEVEL_MEMBERS_Semantic
+#undef CL_JIT_IR_LEVEL_MEMBERS
+#undef CL_JIT_LEVEL_KIND_JOIN
+#undef CL_JIT_LEVEL_KIND_JOIN_INNER
+    // clang-format on
 
     constexpr InstructionOrdinal instruction_ordinal(InstructionKind kind)
     {
@@ -244,6 +357,60 @@ namespace cl::jit
 
     const InstructionKindMetadata &
     instruction_kind_metadata(InstructionKind kind);
+
+    inline bool instruction_kind_is_allowed_at(InstructionKind kind,
+                                               IRLevelMask level)
+    {
+        IRLevelMask allowed = instruction_kind_metadata(kind).allowed_ir_levels;
+        return (static_cast<uint8_t>(allowed) & static_cast<uint8_t>(level)) !=
+               0;
+    }
+
+    inline SemanticInstructionKind
+    semantic_instruction_kind(InstructionKind kind)
+    {
+        assert(instruction_kind_is_allowed_at(kind, IRLevelMask::Semantic));
+        return static_cast<SemanticInstructionKind>(kind);
+    }
+
+    constexpr InstructionKind instruction_kind(SemanticInstructionKind kind)
+    {
+        return static_cast<InstructionKind>(kind);
+    }
+
+    inline CoreInstructionKind core_instruction_kind(InstructionKind kind)
+    {
+        assert(instruction_kind_is_allowed_at(kind, IRLevelMask::Core));
+        return static_cast<CoreInstructionKind>(kind);
+    }
+
+    constexpr InstructionKind instruction_kind(CoreInstructionKind kind)
+    {
+        return static_cast<InstructionKind>(kind);
+    }
+
+    inline MachineInstructionKind machine_instruction_kind(InstructionKind kind)
+    {
+        assert(instruction_kind_is_allowed_at(kind, IRLevelMask::Machine));
+        return static_cast<MachineInstructionKind>(kind);
+    }
+
+    constexpr InstructionKind instruction_kind(MachineInstructionKind kind)
+    {
+        return static_cast<InstructionKind>(kind);
+    }
+
+    inline TransitionInstructionKind
+    transition_instruction_kind(InstructionKind kind)
+    {
+        assert(instruction_kind_is_allowed_at(kind, IRLevelMask::Transition));
+        return static_cast<TransitionInstructionKind>(kind);
+    }
+
+    constexpr InstructionKind instruction_kind(TransitionInstructionKind kind)
+    {
+        return static_cast<InstructionKind>(kind);
+    }
 
     class alignas(16) InstructionEntry
     {
@@ -830,16 +997,7 @@ namespace cl::jit
 #define CL_JIT_DECLARE_OPERAND_INDEX(name, operand_class, representation) name,
 #define CL_JIT_DECLARE_VARIADIC_INDEX(name, operand_class, representation) name,
 #define CL_JIT_DECLARE_SNAPSHOT_VALUES_INDEX(name) name,
-#define CL_JIT_IR_LEVELS_ONE(first) IRLevelMask::first
-#define CL_JIT_IR_LEVELS_TWO(first, second)                                    \
-    (IRLevelMask::first | IRLevelMask::second)
-#define CL_JIT_IR_LEVELS_THREE(first, second, third)                           \
-    (IRLevelMask::first | IRLevelMask::second | IRLevelMask::third)
-#define CL_JIT_SELECT_IR_LEVELS(_1, _2, _3, selected, ...) selected
-#define CL_JIT_IR_LEVELS(...)                                                  \
-    CL_JIT_SELECT_IR_LEVELS(__VA_ARGS__, CL_JIT_IR_LEVELS_THREE,               \
-                            CL_JIT_IR_LEVELS_TWO,                              \
-                            CL_JIT_IR_LEVELS_ONE)(__VA_ARGS__)
+#define CL_JIT_IR_LEVELS(set) IRLevelMask::set
 #define CL_JIT_RESULT(result_class, representation)                            \
     InstructionResultInfo                                                      \
     {                                                                          \
@@ -1203,10 +1361,6 @@ namespace cl::jit
 #undef CL_JIT_EFFECT_BOUNDS
 #undef CL_JIT_RESULT
 #undef CL_JIT_IR_LEVELS
-#undef CL_JIT_SELECT_IR_LEVELS
-#undef CL_JIT_IR_LEVELS_THREE
-#undef CL_JIT_IR_LEVELS_TWO
-#undef CL_JIT_IR_LEVELS_ONE
 #undef CL_JIT_DECLARE_ATTRIBUTE_ACCESSOR
 #undef CL_JIT_DECLARE_SNAPSHOT_VALUES_ACCESSOR
 #undef CL_JIT_DECLARE_VARIADIC_ACCESSOR

@@ -249,6 +249,40 @@ namespace cl::jit
         EXPECT_TRUE(guard.operands_are_indirect);
     }
 
+    TEST(JitInstructionSchema, GeneratesKindsForEachIRLevel)
+    {
+        static_assert(
+            std::is_same_v<std::underlying_type_t<SemanticInstructionKind>,
+                           uint16_t>);
+        static_assert(
+            std::is_same_v<std::underlying_type_t<CoreInstructionKind>,
+                           uint16_t>);
+        static_assert(
+            std::is_same_v<std::underlying_type_t<MachineInstructionKind>,
+                           uint16_t>);
+        static_assert(
+            std::is_same_v<std::underlying_type_t<TransitionInstructionKind>,
+                           uint16_t>);
+
+        EXPECT_EQ(static_cast<uint8_t>(IRLevelMask::Core) |
+                      static_cast<uint8_t>(IRLevelMask::Transition),
+                  static_cast<uint8_t>(IRLevelMask::CoreTransition));
+        EXPECT_EQ(
+            static_cast<uint8_t>(IRLevelMask::Semantic) |
+                static_cast<uint8_t>(IRLevelMask::Core) |
+                static_cast<uint8_t>(IRLevelMask::Machine) |
+                static_cast<uint8_t>(IRLevelMask::Transition),
+            static_cast<uint8_t>(IRLevelMask::SemanticCoreMachineTransition));
+        EXPECT_TRUE(instruction_kind_is_allowed_at(InstructionKind::Return,
+                                                   IRLevelMask::Core));
+        EXPECT_FALSE(instruction_kind_is_allowed_at(InstructionKind::Return,
+                                                    IRLevelMask::Transition));
+        EXPECT_EQ(CoreInstructionKind::Return,
+                  core_instruction_kind(InstructionKind::Return));
+        EXPECT_EQ(InstructionKind::Return,
+                  instruction_kind(CoreInstructionKind::Return));
+    }
+
     TEST(JitInstructionSchema, EncodesResultsWhileKeepingDenseOrdinals)
     {
         EXPECT_EQ(ResultClass::None,

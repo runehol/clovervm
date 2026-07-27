@@ -72,16 +72,7 @@ namespace cl::jit
         {
             switch(kind)
             {
-#define CL_JIT_IR_LEVELS_ONE(first) IRLevelMask::first
-#define CL_JIT_IR_LEVELS_TWO(first, second)                                    \
-    (IRLevelMask::first | IRLevelMask::second)
-#define CL_JIT_IR_LEVELS_THREE(first, second, third)                           \
-    (IRLevelMask::first | IRLevelMask::second | IRLevelMask::third)
-#define CL_JIT_SELECT_IR_LEVELS(_1, _2, _3, selected, ...) selected
-#define CL_JIT_IR_LEVELS(...)                                                  \
-    CL_JIT_SELECT_IR_LEVELS(__VA_ARGS__, CL_JIT_IR_LEVELS_THREE,               \
-                            CL_JIT_IR_LEVELS_TWO,                              \
-                            CL_JIT_IR_LEVELS_ONE)(__VA_ARGS__)
+#define CL_JIT_IR_LEVELS(set) IRLevelMask::set
 #define CL_JIT_RESULT(...)
 #define CL_JIT_EFFECT_BOUNDS(must_effects, may_effects)                        \
     EffectProfile::must_effects, EffectProfile::may_effects
@@ -142,10 +133,6 @@ namespace cl::jit
 #undef CL_JIT_EFFECT_BOUNDS
 #undef CL_JIT_RESULT
 #undef CL_JIT_IR_LEVELS
-#undef CL_JIT_SELECT_IR_LEVELS
-#undef CL_JIT_IR_LEVELS_THREE
-#undef CL_JIT_IR_LEVELS_TWO
-#undef CL_JIT_IR_LEVELS_ONE
             }
             assert(false);
             return {};
