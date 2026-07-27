@@ -11,6 +11,9 @@
 
 namespace cl::jit
 {
+    // One assignment in a simultaneous physical-location shuffle. The value
+    // initially in source must end in destination; register_class selects the
+    // compatible scratch-register bank used while ordering the shuffle.
     struct ParallelTransfer
     {
         PhysicalLocation source;

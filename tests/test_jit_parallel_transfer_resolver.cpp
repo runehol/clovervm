@@ -178,4 +178,42 @@ namespace cl::jit
                   resolved.error());
     }
 
+    TEST(JitParallelTransferResolver, ResolvesLongDependencyChain)
+    {
+        constexpr int TransferCount = 1024;
+        std::vector<ParallelTransfer> transfers;
+        transfers.reserve(TransferCount);
+        for(int index = 0; index < TransferCount; ++index)
+        {
+            StackLocation source(StackLocationKind::LocalOrTemporary,
+                                 index * 8);
+            StackLocation destination(StackLocationKind::LocalOrTemporary,
+                                      (index + 1) * 8);
+            transfers.push_back({PhysicalLocation::stack(source),
+                                 PhysicalLocation::stack(destination),
+                                 RegisterClass::GPR});
+        }
+
+        auto resolved =
+            resolve_parallel_transfers(transfers, scratch_registers());
+
+        ASSERT_TRUE(resolved);
+        EXPECT_EQ(TransferCount * 2, resolved.value().steps.size());
+    }
+
+    TEST(JitParallelTransferResolver, RejectsDuplicateDestinations)
+    {
+        StackLocation source(StackLocationKind::LocalOrTemporary, -8);
+        std::vector<ParallelTransfer> transfers = {
+            {PhysicalLocation::reg(x0), PhysicalLocation::reg(x1),
+             RegisterClass::GPR},
+            {PhysicalLocation::stack(source), PhysicalLocation::reg(x1),
+             RegisterClass::GPR},
+        };
+
+        EXPECT_DEATH(
+            (void)resolve_parallel_transfers(transfers, scratch_registers()),
+            "duplicate destination");
+    }
+
 }  // namespace cl::jit
