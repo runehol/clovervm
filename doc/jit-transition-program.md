@@ -4,10 +4,10 @@
 |---|---|
 | Document type | Design |
 | Status | Accepted |
-| Implementation | In progress |
+| Implementation | The compact transition instruction representation, builder, verifier, formatter, reusable execution context, and direct switch executor for `BeginTransition`, `Transfer`, and `ResumeInterpreter` are implemented; code-object publication, side-exit planning, target thunks, and interpreter handoff remain |
 | Scope | Compact straight-line programs that transform values and machine state between execution conventions; the first consumer is JIT side exit |
 | Owning layers | Core IR owns sunk operation semantics and Snapshot state; register allocation owns physical frontier locations; transition planning owns the continuous transition program and canonical publication; each thread owns reusable transition scratch storage; target thunks own fixed machine-state saves |
-| Validated against | N/A |
+| Validated against | `tests/test_transition_program.cpp` and `tests/test_transition_executor.cpp` |
 | Supersedes | N/A |
 
 This document defines a compact `TransitionProgram`: a straight-line program

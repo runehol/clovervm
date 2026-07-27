@@ -5,14 +5,13 @@
 | Document type | Architecture contract |
 | Status | Accepted |
 | Implementation | Partial: graph construction and publication, fixed-representation terminators, block parameters and edge arguments, predecessor indexes, structural verification, queries, body-instruction rewriting, and topology-preserving parameter/argument compaction are implemented; cross-block dominance and general CFG-topology editing are deferred |
-| Scope | Structural CFG shared by Core IR and an optional Semantic IR, including implemented block parameters and the planned edge-argument extension |
+| Scope | Structural CFG shared by Core IR and an optional Semantic IR, including block parameters and first-class block-edge arguments |
 | Owning layers | The JIT CFG owns block order, block edges, block parameters, instruction placement, and structural verification; individual IR levels own instruction semantics and side exits |
 | Validated against | `tests/test_jit_cfg.cpp` and `tests/test_jit_graph_rewrites.cpp` |
 | Supersedes | N/A |
 
 This document describes the implemented structural control-flow representation
-shared in shape by Core IR and the optional Semantic IR. It also specifies the
-remaining edge-argument extension. It refines the
+shared in shape by Core IR and the optional Semantic IR. It refines the
 ordered list-based SSA direction in
 [JIT Compiler and IR](jit-compiler-and-ir.md). The permanent instruction
 storage and typed-access direction is specified separately in
@@ -40,7 +39,7 @@ Block terminator instruction
 Block edge
     source block
     target block
-    ordered arguments for the target block parameters [planned]
+    ordered arguments for the target block parameters
 ```
 
 Block edges and non-returning side exits are different concepts even when
@@ -58,8 +57,8 @@ and analysis attachments can enforce the appropriate instruction set.
 
 ## Block Identity, Order, and Numbering
 
-An arena allocation serial identifies a block for its lifetime. The graph also
-owns an explicit mutable block order. These are deliberately separate:
+An allocation serial identifies a block for its lifetime. The graph also owns
+an explicit mutable block order. These are deliberately separate:
 
 ```text
 block serial       stable allocation identity
@@ -78,20 +77,20 @@ The initial implementation uses a vector for graph block order. A linked or
 chunked representation must be justified by measured editing costs before
 replacing it.
 
-The accepted instruction representation still uses stable pointers for semantic
-references and zero-overhead typed pointer views for instruction results. Each
-pointed-to instruction also carries a typed, storage-relative dense ID.
-Compilation output must not depend on pointer values or unordered container
-iteration; IDs provide diagnostics and deterministic lookup rather than another
-reference mechanism.
+Instructions use typed, storage-relative `InstructionId`s as persistent
+identity. Operand references and block parameter/body vectors store those IDs;
+ordinary iteration resolves them into lightweight `Instruction` views that
+carry the owning `CompilationStorage` pointer. Compilation output must not
+depend on pointer values or unordered-container iteration.
 
-`ControlFlowGraph`, blocks, and block edges are allocated from separate pools in
-the `CompilationStorage`, so each object kind has its own serial sequence.
-Instructions occupy an append-only deque of fixed-size raw slots and have their
-own dense ID sequence. The `CompilationSession` owns that storage and
-necessarily outlives every graph object. A graph borrows its owning storage
-pointer so compiler passes can resolve compilation-relative identities without
-separately threading storage through every graph API.
+`ControlFlowGraph` and blocks are allocated from stable-address object pools in
+`CompilationStorage`. Block edges remain stable-address CFG objects but also
+receive compact `BlockEdgeId`s because branch instruction attributes store IDs.
+Instructions occupy an append-only `std::vector<InstructionEntry>` and have a
+dense `InstructionId` sequence. The `CompilationSession` owns the storage and
+necessarily outlives every graph object and instruction view. A graph borrows
+its owning storage pointer so compiler passes can resolve compilation-relative
+identities without separately threading storage through every graph API.
 
 A `GraphBuilder` takes the session, borrows its storage, allocates one
 unpublished graph from it, and owns all initial mutation of that graph.
@@ -120,10 +119,10 @@ The implemented accessor is equivalent to:
 ```cpp
 TerminatorInstruction Block::terminator() const
 {
-    assert(!instructions_.empty());
-    Instruction *instruction = instructions_.back();
-    assert(instruction != nullptr);
-    assert(instruction->is_block_terminator());
+    assert(!instruction_ids_.empty());
+    Instruction instruction =
+        storage()->instruction(instruction_ids_.back());
+    assert(instruction.is_block_terminator());
     return TerminatorInstruction(instruction);
 }
 ```
@@ -168,7 +167,7 @@ contains:
 
 ```text
 BlockEdge:
-    serial
+    BlockEdgeId
     source block
     target block
     ordered ProgramValueRef arguments

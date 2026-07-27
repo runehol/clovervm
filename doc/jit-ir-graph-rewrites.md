@@ -161,20 +161,20 @@ Uses are the first cached graph query:
 ```cpp
 struct InstructionUse
 {
-    const Instruction *instruction;
-    uint16_t operand_index;
+    InstructionId instruction;
+    uint32_t operand_index;
 };
 
 struct BlockArgumentUse
 {
     const BlockEdge *edge;
-    uint16_t argument_index;
+    size_t argument_index;
 };
 
 class Uses
 {
 public:
-    const Instruction *def() const;
+    Instruction def() const;
     const Block *block() const;
 
     ResultClass result_class() const;
@@ -203,15 +203,10 @@ three phases:
    recording instruction operand uses;
 3. walk outgoing edges and record their block-argument uses.
 
-The third phase produces no entries until `BlockEdge` gains its argument
-payload. The index nevertheless exposes block-argument uses separately now so
-that adding edge arguments does not change the analysis interface.
-
 The index contains one stable `Uses` object for every result-producing
 instruction, including definitions with no uses. Its def and block identify the
-definition and the block containing all of its uses. The result class and value
-representation are derived from the def kind rather than
-copied into each use occurrence.
+definition and its containing block. The result class and value representation
+are derived from the def kind rather than copied into each use occurrence.
 
 An `InstructionUse` identifies an immutable consuming instruction and its
 semantic operand ordinal, not the address of a mutable payload slot. A
@@ -553,15 +548,17 @@ rewriter only provides the structural erasure and compaction mechanism.
 The instruction schema generates a generic reconstruction operation:
 
 ```cpp
-Instruction *rebuild_instruction_with_operands(
+Instruction rebuild_instruction_with_references(
     Instruction &instruction,
-    DefResolver resolver,
+    CompilationStorage &storage,
+    const DefResolver &resolver,
     InstructionFactory &factory);
 ```
 
 It reconstructs the same concrete instruction kind with resolved typed operands
-and unchanged attributes. It returns the original instruction when no operand
-changed. The graph rewriter supplies only its old-def-to-new-def resolution;
+and resolved first-class `BlockEdge` attributes; other attributes remain
+unchanged. It returns the original instruction when no reference changed. The
+graph rewriter supplies only its old-reference-to-new-reference resolution;
 typed operand adaptation, variadic reconstruction, attribute copying, and the
 generated kind switch belong to the instruction layer. Reconstruction is
 generated from `src/jit/instruction.def`; it does not mutate raw slots or
@@ -586,16 +583,16 @@ deferred until a concrete pass establishes their required semantics.
 
 ## Staging and Commit
 
-The rewriter builds new parameter and body-instruction pointer vectors per
-block while all original block vectors remain unchanged:
+The rewriter builds new parameter and body `InstructionId` vectors per block
+while all original block vectors remain unchanged:
 
 ```cpp
 struct StagedBlockRewrite
 {
     Block *block;
-    std::vector<Instruction *> parameters;
-    std::vector<Instruction *> instructions;
-    std::vector<Instruction *> removed_originals;
+    std::vector<InstructionId> parameters;
+    std::vector<InstructionId> instructions;
+    std::vector<InstructionId> removed_originals;
 };
 ```
 
@@ -621,10 +618,11 @@ This graph-wide commit keeps the original graph and any permitted prepared
 `GraphQueries` valid throughout all callbacks. No callback observes a graph in
 which only earlier blocks have committed.
 
-Arena allocations created during the rewrite need no rollback. The rewriter
-borrows that arena from the compilation session passed to its constructor.
-Allocation failure abandons the session under the existing JIT failure model.
-Ordinary passes cannot observe the staged block.
+Instruction entries created during the rewrite are append-only and need no
+rollback. The rewriter borrows `CompilationStorage` from the compilation
+session passed to its constructor. Allocation failure abandons the session
+under the existing JIT failure model. Ordinary passes cannot observe the staged
+block.
 
 The callback-class API detects the presence of each optional hook at compile
 time, so passes pay only for the events they implement. A cursor or additional

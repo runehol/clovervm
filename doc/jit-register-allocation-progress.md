@@ -8,10 +8,10 @@
 | Design authority | [JIT Register Allocation](jit-register-allocation.md) |
 
 The prepared problem, deterministic constraint splitting, conflict-free initial
-assignment, generic materialization, parallel transfers except all-stack
-cycles, `LocationAssignments`, and one-block AArch64 integration are
-implemented. This ledger records only unfinished work; the design document owns
-algorithms, invariants, and layer boundaries.
+assignment, generic materialization, worklist-driven parallel assignment
+ordering including all-stack cycles, `LocationAssignments`, and one-block
+AArch64 integration are implemented. This ledger records only unfinished work;
+the design document owns algorithms, invariants, and layer boundaries.
 
 ## Correctness Checking
 
@@ -41,8 +41,7 @@ algorithms, invariants, and layer boundaries.
   ranges; repartition fixed constraints and recompute child heuristics.
 - [ ] Add remaining same-as-input and multi-location fixups.
 - [ ] Record pressure-split and fixup connectors in the transfer schedule.
-- [ ] Provide allocator-owned spill slots, including an emergency slot for
-  all-stack parallel-transfer cycles.
+- [ ] Provide allocator-owned spill slots for ordinary allocation pressure.
 - [ ] Add the reserved spill-weight tiers and a debug iteration bound required
   by the allocator's progress argument.
 - [ ] Detect irreducible pressure and fail compilation cleanly.

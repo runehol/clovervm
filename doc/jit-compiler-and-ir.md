@@ -4,7 +4,7 @@
 |---|---|
 | Document type | Design |
 | Status | Proposed |
-| Implementation | Partial; structural bytecode-to-Core translation, the common compiler driver, Core graph rewriting and global dead-code elimination, generic register allocation/materialization, code-cache publication, and executable one-block AArch64 emission are implemented; transition programs, broader analyses/lowering, multi-block emission, and runtime entry remain |
+| Implementation | Partial; structural bytecode-to-Core translation, the common compiler driver, Core graph rewriting and global dead-code elimination, generic register allocation/materialization, standalone transition-program construction and execution, code-cache publication, and executable one-block AArch64 emission are implemented; side-exit integration, broader analyses/lowering, multi-block emission, and runtime entry remain |
 | Scope | JIT pipeline, Core IR, exit state, effects, backend lowering, and compiled execution contracts |
 | Owning layers | The JIT owns IR and compiled execution; bytecode, runtime frames, object semantics, and reclamation remain authoritative contracts |
 | Validated against | The focused JIT instruction, CFG, rewrite, allocation-constraint, emitter, code-cache, and executable AArch64 tests |
@@ -394,8 +394,8 @@ A direct backend may maintain tables such as:
 
 ```text
 ProgramValueRef -> register | spill | canonical slot
-BlockEdge *      -> parallel move bundle
-Instruction *    -> AllocationConstraints and lowering choice
+BlockEdgeId      -> parallel move bundle
+InstructionId   -> AllocationConstraints and lowering choice
 ```
 
 A target-specific `AllocationConstraints` record describes the input, output,
@@ -828,14 +828,13 @@ in position-anchored trace side tables. Clover instead retains a first-class
 Snapshot instruction because CFG rewriting needs explicit SSA dependencies
 rather than one linear trace position.
 
-### Instruction results, pointer references, and deterministic traversal
+### Instruction results, indexed references, and deterministic traversal
 
-Instructions, blocks, and block edges use stable pointers for semantic
-references. A client can follow an operand or CFG edge without also carrying a
-container that translates an integer ID back into the referenced object. Each
-arena pool nevertheless assigns a strongly typed, monotonically increasing
-serial to every allocation. Serials identify objects for diagnostics, stable
-tie-breaking, and deterministic ordering; pointer values do not.
+`CompilationStorage` owns an append-only vector of compact
+`InstructionEntry`s. `InstructionId` is a typed 32-bit vector index and the
+instruction's persistent identity. `Instruction` and its concrete subclasses
+are lightweight views containing the owning storage pointer and an ID; appending
+an entry does not invalidate an existing view.
 
 Compilation-wide semantic identities remain integer IDs where they name
 logical records rather than directly traversable IR objects:
@@ -864,7 +863,7 @@ interns logical resume states and independently shareable transition programs.
 Future precise root maps are attached to machine-code positions rather than
 given IR result identities.
 
-Every instruction has a typed serial and an intrinsic `ResultClass`:
+Every instruction has a typed ID and an intrinsic `ResultClass`:
 
 ```text
 ResultClass::None
@@ -886,23 +885,23 @@ the result class, the class and layout of every fixed or variable operand, and
 the class and layout of every attribute as defined in
 [JIT Instruction Representation](jit-instruction-representation.md).
 
-The instruction pointer also names its result when it has one. Typed result
-references may be zero-overhead pointer views:
+Operands and persistent result references store IDs rather than instruction
+pointers:
 
 ```text
-ProgramValueRef = ResultRef<ResultClass::ProgramValue, Instruction *>
-SnapshotRef     = ResultRef<ResultClass::Snapshot, Instruction *>
+ProgramValueRef -> InstructionId checked as ResultClass::ProgramValue
+SnapshotRef     -> InstructionId checked as ResultClass::Snapshot
+TaggedValueRef  -> ProgramValueRef checked as TaggedValue
+F64Ref          -> ProgramValueRef checked as F64
 ```
 
-Constructing a result reference requires the def's intrinsic `ResultClass`
-to match. Graph ownership and IR-level verification prevent Semantic and Core
-references from being mixed. A value-less instruction retains its pointer and
-serial for traversal, diagnostics, effects, and rewriting, but cannot be used
-as a result operand. A Snapshot can be used only through `SnapshotRef`, never as
-a program value. This gives C++ analyses and backends useful static distinctions
-without container-relative instruction IDs. Here, a program value is a value in
-the compiled program's SSA semantics; it does not prescribe the concrete
-`cl::Value` representation.
+Each wrapper is four bytes. Constructing one requires the definition's
+intrinsic result class and representation to match. Dereferencing it requires
+the owning `CompilationStorage`, which is available through the graph, builder,
+rewriter, or compilation session. A resultless instruction retains an ID for
+traversal, diagnostics, effects, and rewriting, but cannot be used as a result
+operand. A Snapshot can be used only through `SnapshotRef`, never as a program
+value.
 
 Core refines `ProgramValueRef` with the def's immutable
 `ValueRepresentation`. Fixed-representation instruction APIs use zero-overhead
@@ -919,16 +918,13 @@ ordered parameter vector. A genuine need for multi-result instructions would
 justify revisiting this rule, but none is currently required.
 
 A block stores parameter instructions separately from its ordinary instruction
-sequence. Both are ordinary reclaimable vectors of arena-owned `Instruction *`
-pointers. For a bytecode-derived non-entry block, parameter-vector position is
-the canonical state position described by the CFG. Frame-header positions have
-ordinary parameter instructions with their required representations rather
-than non-value entries or null pointers. Value parameters conceptually precede
-every body instruction but are not schedulable members of the body vector.
-Blocks are relatively few and are destroyed
-normally so vector storage can be reclaimed during repeated graph rebuilding,
-while the much more numerous fixed-size instructions remain trivially
-destructible arena records.
+sequence. Both backing vectors store `InstructionId`s. Ordinary
+`parameters()` and `instructions()` accessors return resolving ranges that
+yield `Instruction` views; `parameter_ids()` and `instruction_ids()` expose
+the backing IDs to identity-oriented algorithms. For a bytecode-derived
+non-entry block, parameter-vector position is the canonical state position
+described by the CFG. Value parameters conceptually precede every body
+instruction but are not schedulable members of the body vector.
 
 A block owns one ordered parameter vector, and every incoming edge supplies an
 equally sized argument vector. The entire edge transfer has parallel-copy
@@ -944,16 +940,15 @@ the body vector's order and avoids a graph-wide instruction-placement index.
 
 Compilation behavior must not depend on pointer addresses or hash-table
 iteration order. Passes traverse blocks, instructions, edges, and worklists in
-defined orders, using typed serials as stable tie-breakers. If a hash table is
-needed, any results that affect compiler output are ordered by serial before
-use. Dense side tables may use a pool serial's numeric value as an index where
-the table applies to every instruction. Dumps and diagnostics print typed
-serials rather than addresses.
+defined orders, using typed IDs or allocation serials as stable tie-breakers.
+Blocks and block edges remain stable-address CFG objects because they are
+comparatively few and manipulated directly; block edges also receive compact
+`BlockEdgeId`s for encoded instruction attributes.
 
 IR instructions, partition anchors, frame states, and related compilation
-objects have compilation-scoped lifetime. Their pointers, serials, and IDs
-remain valid for that lifetime. The fixed, trivially destructible instruction
-storage and bulk arena lifetime are specified in
+objects have compilation-scoped lifetime. Their views, serials, and IDs remain
+valid for that lifetime. The indexed instruction storage and compilation-owned
+lifetime are specified in
 [JIT Instruction Representation](jit-instruction-representation.md).
 
 ### Compilation safepoints and retained constants
@@ -1023,9 +1018,9 @@ Logical interpreter homes are tracked by FrameStates and Snapshots rather than
 by preserving an SSA result identity across rewrites.
 
 Initial construction uses a privileged `GraphBuilder` that takes the compilation
-session and allocates its unpublished graph from the session-owned arena; blocks
+session and allocates its unpublished graph from the session-owned storage; blocks
 expose their vectors read-only to ordinary clients. Builder finalization
-verifies and publishes the graph, returns its stable arena-owned pointer, and
+verifies and publishes the graph, returns its stable storage-owned pointer, and
 invalidates the builder. It is valid to abandon an unfinalized graph when the
 enclosing compilation fails. Builder and rewriter APIs consistently use `make`
 for allocation without attachment, `append` for attachment at the end of a
@@ -1034,7 +1029,7 @@ specified container, and `emplace` for allocation and attachment at the end.
 Initial translation and major representation boundaries use a bulk graph
 builder rather than paying rewrite costs for every appended
 instruction. Schema-generated, IR-level-specific factories allocate
-intrinsically valid, unplaced instructions from the compilation arena. Builder
+intrinsically valid, unplaced instructions from compilation storage. Builder
 append and emplace are amortized constant time and deliberately defer global
 structural checks. Finalization validates the complete destination graph once
 in linear time before publishing it to passes. This keeps type-safe construction
@@ -1054,7 +1049,7 @@ and rewrite contract is specified in
 Compilation failure follows the detailed contract in
 [JIT Instruction Representation](jit-instruction-representation.md): structural
 invariant violations diagnose and hard-assert, while allocation or resource
-failure abandons the arena-backed compilation and continues in the interpreter.
+failure abandons the compilation session and continues in the interpreter.
 The enclosing session unwinds retained constants and normally destroyed state;
 generated code, dependencies, assumptions, and cache entries become persistent
 only at final successful publication. Rewrite rollback is not required after an
@@ -1066,7 +1061,7 @@ instructions or typed results, for example:
 
 ```text
 Semantic ProgramValueRef -> ValueFacts
-Core Instruction*        -> ProvenAbsentEffects
+Core InstructionId       -> ProvenAbsentEffects
 PartitionId     -> ConditionalFacts
 ProgramValueRef -> CorrelatedEvidence
 ```

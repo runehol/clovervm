@@ -743,7 +743,7 @@ for its declared representation:
 ```cpp
 F64Ref make_add_f64(F64Ref lhs, F64Ref rhs);
 TaggedValueRef make_box_f64(F64Ref source);
-F64Ref make_unbox_f64(TaggedValueRef source, SnapshotRef snapshot);
+F64Ref make_unbox_f64(TaggedValueRef source);
 TaggedValueRef make_mov(TaggedValueRef source);
 TaggedValueRef make_const(Value constant);
 F64Ref make_mov_f64(F64Ref source);

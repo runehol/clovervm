@@ -515,22 +515,22 @@ class InstructionAllocationConstraints
 {
 public:
     InstructionAllocationConstraints(
-        const Instruction *instruction,
+        Instruction instruction,
         std::vector<ProgramValueUseConstraint> input_overrides = {},
         std::optional<ResultConstraint> result_override = std::nullopt,
         std::vector<TemporaryConstraint> temporaries = {},
         RegisterSet clobbers = {});
 
-    void validate() const;
+    void validate(const CompilationStorage &) const;
 
-    const Instruction *instruction() const;
+    InstructionId instruction_id() const;
     const std::vector<ProgramValueUseConstraint> &input_overrides() const;
     const std::optional<ResultConstraint> &result_override() const;
     const std::vector<TemporaryConstraint> &temporaries() const;
     const RegisterSet &clobbers() const;
 
 private:
-    const Instruction *instruction_;
+    InstructionId instruction_;
     std::vector<ProgramValueUseConstraint> input_overrides_;
     std::optional<ResultConstraint> result_override_;
     std::vector<TemporaryConstraint> temporaries_;
