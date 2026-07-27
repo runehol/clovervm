@@ -60,7 +60,7 @@ register file
     read-only transition input
 
 stack
-    canonical frame slots, accumulator home, frame headers, and compiled spills
+    canonical frame slots, frame headers, and compiled spills
     may be read and written
 
 scratch
@@ -171,15 +171,19 @@ stages a value in scratch explicitly names `Scratch[instruction_index]`.
 
 ```text
 ResumeInterpreter
+    operand:
+        accumulator : TransitionLocation
     attribute:
         resume_pc : BytecodePC
 ```
 
-It has no operands or result. It ends transition execution after canonical
-interpreter state has been published and identifies the bytecode continuation.
-The resume PC is therefore part of the continuous program rather than parallel
-side-exit metadata. Future transition consumers may define different terminal
-handoff instructions.
+It has no result. It reads the reconstructed accumulator from its explicit
+source, ends transition execution after canonical interpreter state has been
+published, and identifies the bytecode continuation. The initial non-inlined
+side-exit context supplies the owning `CodeObject`; representing the active code
+object for an inlined frame is deferred with inlining. The resume PC is part of
+the continuous program rather than parallel side-exit metadata. Future
+transition consumers may define different terminal handoff instructions.
 
 Constants are not a fourth mutable storage area. Scalar constants remain inline
 attributes where the schema permits. Pointer-shaped tagged values are addressed
@@ -213,8 +217,8 @@ indirect operands are excluded initially. `BeginTransition` is transition-only,
 has `ResultClass::None`, and carries one inline scratch-count attribute.
 `Transfer` is transition-only and has `ResultClass::None` together with its
 generated source-operand and destination-attribute layout. `ResumeInterpreter`
-is transition-only, has `ResultClass::None`, carries one inline `BytecodePC`
-attribute, and terminates the stream.
+is transition-only, has `ResultClass::None`, carries one accumulator source and
+one inline `BytecodePC` attribute, and terminates the stream.
 
 A Core instruction is initially sinkable only when all of these are true:
 
@@ -243,7 +247,7 @@ RegisterFile + offset
     slot in the register image saved by the target thunk
 
 Stack + offset
-    canonical frame slot, accumulator home, frame header, or compiled spill
+    canonical frame slot, frame header, or compiled spill
 
 Scratch + offset
     slot initialized by an earlier Core result or Transfer
@@ -254,11 +258,17 @@ transition program therefore needs no embedded physical-register object or
 target-specific register numbering. The side-exit register file is read-only.
 Any temporary or computed value goes to the scratch area.
 
-`LocationAssignments` resolve non-sunk frontier values to registers and spill
-locations. `HomeState` identifies canonical homes that already contain the
-Snapshot's desired values. Transition planning combines both with the sinking
+The Snapshot identifies the value required at each state position, and the
+CFG's `BytecodeStateOrder` maps those positions to the accumulator and canonical
+frame homes. `LocationAssignments` resolve non-sunk frontier values to registers
+and spill locations. Transition planning combines these with the sinking
 attachment; it does not ask register allocation to assign locations to sunk
 defs.
+
+The initial side-exit implementation supports only the outer bytecode frame.
+`BytecodeStateOrder` supplies that frame's complete position mapping. Inlining
+must extend the Snapshot's frame description with one corresponding mapping per
+active logical frame before inlined exits are supported.
 
 ## Transfers and Publication
 
@@ -313,10 +323,11 @@ saved-register slots, compiled-frame locations, canonical destinations, and
 their source values are encoded by `TransitionLocation` operands and
 attributes.
 
-The planner consumes a Snapshot, post-allocation `LocationAssignments`, and
-`HomeState`, but the resulting plan retains none of them. It is self-contained
-immutable metadata owned by one compiled code object. Core graph identity and
-graph generation end at planning.
+The planner consumes a Snapshot, the CFG's `BytecodeStateOrder`,
+post-allocation `LocationAssignments`, and the sinking attachment, but the
+resulting plan retains none of them. It is self-contained immutable metadata
+owned by one compiled code object. Core graph identity and graph generation end
+at planning.
 
 The selected instruction sequence begins with `BeginTransition`, contains
 schema-generated eligible Core operations and `Transfer`, and ends with one
@@ -393,14 +404,15 @@ Transition-program verification should check:
   unsupported fallibility;
 - transition execution contains no safepoint or GC-capable operation;
 - transfer publication has parallel-assignment semantics after lowering;
-- every required Snapshot position is either already current in `HomeState` or
-  written by the transition program;
+- every required Snapshot position either has a physical source that aliases its
+  canonical destination or is written by the transition program;
 - every encoded area and offset is valid for the owning transition;
 - `BeginTransition` is the first entry and its scratch count covers every
   scratch location used by the program;
 - every scratch source has been initialized by an earlier instruction;
 - every scratch write targets the current instruction's scratch slot;
 - a side-exit transition never writes its register-file image;
+- `ResumeInterpreter` reads an initialized tagged accumulator source;
 - exactly one terminal handoff is present and it is the final instruction;
 - `ResumeInterpreter.resume_pc` is valid for the owning bytecode code object.
 
@@ -429,7 +441,8 @@ The second slice adds execution and publication:
 The third slice connects side exits:
 
 - expand Snapshot liveness at executable exit consumers;
-- translate the physical frontier and `HomeState` into parallel transfers;
+- translate Snapshot positions through `BytecodeStateOrder` and combine them
+  with the physical frontier to form parallel transfers;
 - lower those transfers into transition `Transfer` entries;
 - end each side-exit program with `ResumeInterpreter`;
 - connect the target thunk and interpreter handoff.

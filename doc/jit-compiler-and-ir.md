@@ -373,7 +373,7 @@ constructed Core IR       -> explicit checks, effects, Snapshots, tagged values
 represented Core IR       -> selected operations and explicit representation conversions
 backend-prepared Core IR  -> lowering choices, legalized constants, AllocationConstraints
 allocated backend plan    -> locations, spills, and edge-move tables
-transition programs       -> Snapshots and sunk defs resolved through locations and HomeState
+transition programs       -> Snapshot positions and sunk defs resolved through physical locations
 ```
 
 Phase verification prevents arbitrary mixtures of these forms. Common
@@ -517,8 +517,8 @@ chosen placement until a pass deliberately moves them.
 
 Frame publication for deoptimization is not a Core IR side effect. Core IR
 records the Snapshot and the point that may exit; target-specific side-exit code
-materializes the interpreter frame state later from the Snapshot, allocated
-locations, and canonical-home state.
+materializes the interpreter frame state later from the Snapshot,
+`BytecodeStateOrder`, and allocated locations.
 
 This representation fits clovervm because:
 
@@ -854,12 +854,12 @@ Snapshots do not have a separate ID namespace: a `SnapshotRef` is the typed
 result of a Core instruction. A `FrameStateId` identifies the structurally
 shared logical frame chain named by that Snapshot, including any inlined
 frames. The initial backend builds transition programs directly from Snapshots,
-the sunk-instruction attachment, post-allocation locations, and `HomeState`; it
-does not introduce another deoptimization-state identity. `ResumeStateId` and
-`TransitionProgramId` exist only where the backend interns logical resume
-states and independently shareable transition programs. Future precise root
-maps are attached to machine-code positions rather than given IR result
-identities.
+the CFG's `BytecodeStateOrder`, the sunk-instruction attachment, and
+post-allocation locations; it does not introduce another deoptimization-state
+identity. `ResumeStateId` and `TransitionProgramId` exist only where the backend
+interns logical resume states and independently shareable transition programs.
+Future precise root maps are attached to machine-code positions rather than
+given IR result identities.
 
 Every instruction has a typed serial and an intrinsic `ResultClass`:
 
@@ -1616,17 +1616,17 @@ After sinking and allocation, transition planning combines:
 
 ```text
 Snapshot
+    + BytecodeStateOrder
     + sinking attachment
     + LocationAssignments
-    + HomeState
     -> TransitionProgram
 ```
 
 Location assignments resolve each non-sunk captured `ProgramValueRef` or
 transition-frontier input to its register, spill, or canonical slot at the
-exit. `HomeState` identifies canonical frame homes that already contain the
-required value. The sinking attachment identifies instructions that have no
-normal-path physical result and must instead be evaluated by the transition
+exit. `BytecodeStateOrder` maps each Snapshot position to the accumulator or a
+canonical frame home. The sinking attachment identifies instructions that have
+no normal-path physical result and must instead be evaluated by the transition
 program.
 
 The resulting compact, pointer-free `TransitionProgram` is specified in
@@ -1668,9 +1668,6 @@ machine location state at the exit:
     ProgramValueRef -> register | spill | canonical slot
                    | rematerializable Const
 
-canonical HomeState:
-    (frame instance, canonical slot) -> ProgramValueRef currently stored there
-
 sinking attachment:
     transition-local def -> operation and transition-local operands
 ```
@@ -1686,14 +1683,12 @@ named by the Snapshot. It recursively traverses sunk instructions and includes
 only the non-sunk physical frontier. The transition program evaluates the sunk
 closure after obtaining those values.
 
-Location assignment and `HomeState` answer different questions. Location
-assignment says where a `ProgramValueRef` can be obtained at the exit.
-`HomeState` records which `ProgramValueRef`, if any, is already synchronized in
-each canonical home. Changing the builder's slot binding does not update
-`HomeState`; only an explicit publication store does. Exit planning skips a
-destination whose home already contains the Snapshot's desired value and
-otherwise obtains the source from its allocated location and evaluates any
-sunk definitions needed to produce it before publishing.
+The Snapshot says which `ProgramValueRef` each state position requires,
+`BytecodeStateOrder` supplies its canonical destination, and location assignment
+says where the value can be obtained at the exit. Exit planning skips a transfer
+when the allocated source already aliases its canonical destination; otherwise
+it obtains the source from its allocated location and evaluates any sunk
+definitions needed to produce it before publishing.
 
 Canonical-slot writes are parallel assignments. A source home may be overwritten
 before its old value has been copied elsewhere, so transition planning must
@@ -1925,8 +1920,8 @@ The direct path requires neither Semantic IR nor type inference:
 6. Core optimization may remove a redundant dominating check when effects,
    Snapshot availability, and replay semantics permit it.
 7. The target backend assigns locations, combines each Snapshot and any sunk
-   closure with physical and canonical-home state, constructs the required
-   recovery, and encodes the function, optionally through Machine IR.
+   closure with `BytecodeStateOrder` and physical state, constructs the required
+   transition, and encodes the function, optionally through Machine IR.
 
 Unsupported or polymorphic cases may conservatively call Python or return to
 the interpreter. The direct compiler need not infer a type merely to reproduce

@@ -1375,8 +1375,8 @@ different fragments of that definition belong to different bundles.
 Canonical-state synchronization may contribute additional transfers at the same
 structural point and phase, but the allocator does not decide which VM homes
 require publication.
-`HomeState`, safepoint planning, or transition planning owns that semantic
-decision. A shared physical-transfer resolver may combine its transfers with the
+The Snapshot and transition planning own that semantic decision. A shared
+physical-transfer resolver may combine its transfers with the
 allocator-produced set once both are known.
 
 Generic allocation materialization exposes physical-transfer scheduling rather
@@ -1388,8 +1388,8 @@ transition also needs constants, boxing, and other reification producers. Its
 transfer lowering may therefore use saved-register memory or another internal
 temporary where allocation materialization uses a target-declared scratch
 register.
-`HomeState` or transition planning chooses the transfers; the allocator does not
-infer which canonical homes are semantically current.
+Transition planning chooses the transfers from the Snapshot; the allocator does
+not infer which canonical homes need publication.
 
 Redundant Move Elimination is a possible later quality pass, not part of the
 initial allocator. It would symbolically track which value each physical
@@ -1416,7 +1416,6 @@ separate:
 live range                 where one SSA value needs physical storage
 bundle                     ranges that prefer one allocation
 interpreter-location map   canonical VM homes naming the value over time
-HomeState                  which homes currently contain an up-to-date copy
 ```
 
 A bytecode-level move may change the interpreter-location map without creating
@@ -1440,10 +1439,11 @@ home there. Block parameters and edge arguments translate the demanded
 
 A canonical home is not automatically the value's permanent spill slot.
 Synchronizing a value there is valid only over the derived range section, and
-the write must update `HomeState`. The initial implementation has no ordinary
-compiler spill area: it may rematerialize a value or place it in a derived
-canonical home, but otherwise the value is register-only. A later design may
-add ordinary spill slots without changing the snapshot-demand analysis.
+the location assignment over that section is the evidence that the home contains
+the value. The initial implementation has no ordinary compiler spill area: it
+may rematerialize a value or place it in a derived canonical home, but otherwise
+the value is register-only. A later design may add ordinary spill slots without
+changing the snapshot-demand analysis.
 
 An unspillable bundle may evict spillable work, but if splitting and eviction
 cannot produce a legal register assignment, compilation fails and execution
@@ -1459,19 +1459,19 @@ After allocation, transition planning combines:
 
 ```text
 Snapshot
+    + BytecodeStateOrder
     + sinking attachment
     + LocationAssignments
-    + HomeState
     -> TransitionProgram
 ```
 
 `LocationAssignments` identify where each non-sunk physical frontier value
-lives at the exit position. `HomeState` identifies canonical frame homes that
-already contain required values. The transition program reads those locations,
-evaluates explicitly eligible no-safepoint sunk instructions and
-materializations, and publishes canonical state without adding a second
-semantic state model. The initial executor interprets compact `InstructionEntry`
-records directly.
+lives at the exit position. The Snapshot identifies the required values and
+`BytecodeStateOrder` maps their positions to canonical destinations. The
+transition program reads the assigned locations, evaluates explicitly eligible
+no-safepoint sunk instructions and materializations, and publishes canonical
+state without adding a second semantic state model. The initial executor
+interprets compact `InstructionEntry` records directly.
 
 Safepoint maps and transition programs may share physical location encodings,
 but they remain separate consumers. Safepoint maps need only managed roots;

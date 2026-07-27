@@ -244,9 +244,10 @@ or stack walker to understand optimized register state.
 
 The compiler does not construct separate `SafepointState` or `DeoptState`
 products. A Core Snapshot is the authoritative logical exit-state description.
-After allocation, transition planning combines it with `LocationAssignments`
-and canonical `HomeState`. Future precise root maps may project the required
-subset from the same inputs when measurements justify that work.
+The CFG's `BytecodeStateOrder` maps Snapshot positions to canonical homes.
+After allocation, transition planning combines those inputs with
+`LocationAssignments`. Future precise root maps may project the required subset
+from the same inputs when measurements justify that work.
 
 ### Context
 
@@ -273,9 +274,10 @@ relocation.
 
 The initial policy minimizes simultaneous subsystem changes while the permanent
 contract avoids an architectural dead end. Snapshots preserve logical frame
-state independently of physical allocation, while `LocationAssignments` and
-`HomeState` provide the physical information needed by publication,
-transitions, and any future shadow-map projection.
+state independently of physical allocation, `BytecodeStateOrder` maps state
+positions to canonical homes, and `LocationAssignments` provide the physical
+information needed by publication, transitions, and any future shadow-map
+projection.
 
 ### Consequences
 
@@ -784,9 +786,11 @@ scratch storage. An eligible Core instruction's result is implicitly
 requirement. `Transfer` has one source operand and one destination attribute,
 both encoded as `TransitionLocation`; it updates that location and has
 `ResultClass::None`. The resultless terminal
-`ResumeInterpreter` carries an inline `BytecodePC`, ends transition execution,
-and identifies the interpreter continuation. Pointer-shaped tagged constants
-are loaded through the compiled code object's constant pool.
+`ResumeInterpreter` reads the reconstructed accumulator from an explicit
+`TransitionLocation`, carries an inline `BytecodePC`, ends transition execution,
+and identifies the interpreter continuation. The initial non-inlined side-exit
+context supplies the owning `CodeObject`. Pointer-shaped tagged constants are
+loaded through the compiled code object's constant pool.
 
 `instruction.def` explicitly declares transition-program eligibility. Generated
 checks reject eligible kinds with snapshots, block edges, shape or validity-cell
@@ -829,9 +833,9 @@ handoff leaves this region.
 
 ### Consequences
 
-- side-exit planning consumes Snapshots, sinking metadata,
-  `LocationAssignments`, and `HomeState`, but the resulting program retains none
-  of those compiler objects;
+- side-exit planning consumes Snapshots, `BytecodeStateOrder`, sinking metadata,
+  and `LocationAssignments`, but the resulting program retains none of those
+  compiler objects;
 - semantic computation and canonical publication share one scratch namespace
   and have no stored phase boundary;
 - `BeginTransition` carries the actual scratch capacity, including zero for
@@ -839,8 +843,8 @@ handoff leaves this region.
 - the side-exit register-file image is read-only, while stack and scratch may
   be destinations;
 - scratch sources can name only slots initialized by earlier instructions;
-- a side-exit program ends with `ResumeInterpreter`, which carries its bytecode
-  continuation PC;
+- a side-exit program ends with `ResumeInterpreter`, which reads the
+  reconstructed accumulator and carries its bytecode continuation PC;
 - transition programs are compact, relocatable data with no raw compiler or
   runtime pointers;
 - operations that can themselves side exit cannot be transition-program
