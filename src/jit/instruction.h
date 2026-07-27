@@ -263,7 +263,15 @@ namespace cl::jit
     enum class TransitionInstructionKind : uint16_t
     {
 #include "jit/instruction.def"
+        // These kinds use TransitionInstruction's handwritten payload rather
+        // than the graph instruction schema.
+        BeginTransition = InstructionOrdinalMask - 2,
+        Transfer = InstructionOrdinalMask - 1,
+        ResumeInterpreter = InstructionOrdinalMask,
     };
+    static_assert(static_cast<uint16_t>(InstructionOrdinal::Count) <=
+                  static_cast<uint16_t>(
+                      TransitionInstructionKind::BeginTransition));
 #undef CL_JIT_LEVEL_KIND_MEMBER_Transition
 #undef CL_JIT_LEVEL_KIND_MEMBER_Machine
 #undef CL_JIT_LEVEL_KIND_MEMBER_Core
@@ -453,11 +461,6 @@ namespace cl::jit
         return instruction_detail::instruction_kind_for_level<
             TransitionInstructionKind, IRLevelMask::Transition,
             ConcreteInstruction>();
-    }
-
-    constexpr InstructionKind instruction_kind(TransitionInstructionKind kind)
-    {
-        return static_cast<InstructionKind>(kind);
     }
 
     class alignas(16) InstructionEntry
@@ -1490,11 +1493,6 @@ namespace cl::jit
 #define CL_JIT_MACHINE_INSTRUCTION_CASE(Type, variable)                        \
     CL_JIT_LEVEL_INSTRUCTION_CASE(Type, variable, machine_instruction_kind)
 
-#define CL_JIT_TRANSITION_INSTRUCTION_SWITCH(instruction)                      \
-    CL_JIT_LEVEL_INSTRUCTION_SWITCH(instruction, transition_instruction_kind)
-#define CL_JIT_TRANSITION_INSTRUCTION_CASE(Type, variable)                     \
-    CL_JIT_LEVEL_INSTRUCTION_CASE(                                             \
-        Type, variable, transition_instruction_kind)
     // clang-format on
 
     class TerminatorInstruction

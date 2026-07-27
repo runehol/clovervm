@@ -23,7 +23,8 @@ terminal is `ResumeInterpreter`. It is independent of Snapshots, register
 allocation objects, and Core graph identity after construction. Stack locations
 still encode offsets in the execution convention being entered. A side-exit
 planner consumes the compiler structures and produces one immutable transition
-program.
+program for publication. During construction, the instruction sequence is
+mutable only through the specific fix-ups its representation requires.
 
 ## Execution Shape
 
@@ -106,13 +107,17 @@ bytecode. Interpreter bytecode is slot-state oriented and owns generic Python
 fallback semantics; a transition program replays only the already-proven
 straight-line fragment needed at its boundary.
 
-The stored instruction uses the compact 16-byte `InstructionEntry` physical
-layout and ordinary `InstructionKind` values. Its references are not Core
-`InstructionId`s. Every physical source or destination is a self-contained
-32-bit `TransitionLocation`:
+Transition IR has its own directly stored 16-byte `TransitionInstruction`.
+Unlike graph IR, it has no separate storage entry, storage pointer, instruction
+ID, or typed view hierarchy. `TransitionInstructionKind` shares the underlying
+values of eligible ordinary `InstructionKind`s, so translating eligible Core
+computation does not remap kinds. Transition-only kinds occupy reserved values
+in that enum.
+
+Every physical source or destination is a four-byte `TransitionLocation`:
 
 ```cpp
-enum class TransitionLocationArea : uint32_t
+enum class TransitionLocationArea : uint8_t
 {
     RegisterFile,
     Stack,
@@ -122,21 +127,51 @@ enum class TransitionLocationArea : uint32_t
 class TransitionLocation
 {
 public:
+    static TransitionLocation register_file(int16_t index);
+    static TransitionLocation stack(int16_t frame_offset);
+    static TransitionLocation scratch(int16_t index);
+
     TransitionLocationArea area() const;
-    int32_t offset() const;
+    int16_t offset() const;
 
 private:
-    uint32_t bits_;
+    TransitionLocationArea area_;
+    int16_t offset_;
 };
-static_assert(sizeof(TransitionLocation) == sizeof(uint32_t));
+static_assert(sizeof(TransitionLocation) == 4);
 ```
 
-The high tag bits select one of the three areas and the remaining bits encode
-an offset within that area. Stack offsets may be signed; register-file and
-scratch offsets are non-negative. The exact bit partition is an encoding
-detail, but construction must check that every offset fits. A reference to an
-earlier eligible Core result is `Scratch[instruction_index]`. A scratch source
-must have been initialized by an earlier instruction.
+Stack offsets may be signed; register-file and scratch offsets are
+non-negative. A reference to an earlier eligible Core result is
+`Scratch[instruction_index]`. A scratch source must have been initialized by an
+earlier instruction.
+
+The initial stored instruction exposes named construction and access only for
+the three transition-specific kinds:
+
+```cpp
+class alignas(16) TransitionInstruction
+{
+public:
+    static TransitionInstruction
+    begin_transition(uint32_t scratch_slot_count);
+    static TransitionInstruction
+    transfer(TransitionLocation source, TransitionLocation destination);
+    static TransitionInstruction
+    resume_interpreter(TransitionLocation accumulator, BytecodePC resume_pc);
+
+    TransitionInstructionKind kind() const;
+
+private:
+    uint32_t slots_[3];
+    TransitionInstructionKind kind_;
+    uint16_t reserved_;
+};
+```
+
+Once sinking introduces several eligible Core computations, generated typed
+transition access may be justified. The initial representation does not
+generate graph-style instruction views speculatively.
 
 `BeginTransition` is the first 16-byte entry and acts as the program header:
 
@@ -149,8 +184,14 @@ BeginTransition
 It has no operands or result. The executor reads it before dispatching the
 remaining entries and grows the current thread's scratch buffer when necessary.
 The count may be zero. Because the header occupies one aligned
-`InstructionEntry`, the first dispatched instruction begins at the next
+`TransitionInstruction`, the first dispatched instruction begins at the next
 16-byte-aligned address.
+
+The builder emits `BeginTransition {scratch_slot_count = 0}` before any
+position-derived result exists. Once the complete stream determines its scratch
+requirement, it patches that instruction through
+`set_scratch_slot_count()`. This is the only initial instruction mutation API;
+other fix-ups are added only when construction requires them.
 
 `Transfer` is a resultless transition instruction with an explicit destination:
 
@@ -190,18 +231,17 @@ attributes where the schema permits. Pointer-shaped tagged values are addressed
 through the compiled code object's constant pool and loaded by eligible
 constant instructions.
 
-The transition executor reads `InstructionEntry` directly. It dispatches on the
-stored kind and decodes slots through generated named layout accessors; it does
-not construct the storage-pointer-plus-ID typed views used by compiler code.
+The transition executor reads `TransitionInstruction` directly and dispatches
+on its stored kind. It does not construct the storage-pointer-plus-ID typed
+views used by graph IR.
 
 ## Schema Eligibility
 
-`instruction.def` explicitly declares whether each instruction kind is legal in
-a `TransitionProgram`. The generator uses that declaration to produce named
-transition-layout accessors and to reject an invalid eligible schema at build
-time. Eligibility is declared, not inferred from current operands or effects.
-Execution semantics remain explicit executor code; the initial implementation
-does not generate an interpreter body from the schema.
+`instruction.def` explicitly declares whether each ordinary instruction kind is
+legal in a `TransitionProgram`. Eligibility is declared, not inferred from
+current operands or effects. Execution semantics remain explicit executor code;
+the initial implementation does not generate an interpreter body or typed
+transition views from the schema.
 
 An eligible Core instruction:
 
@@ -213,12 +253,9 @@ An eligible Core instruction:
   layout accessors.
 
 Variadic instructions, resultless Core instructions, and instructions requiring
-indirect operands are excluded initially. `BeginTransition` is transition-only,
-has `ResultClass::None`, and carries one inline scratch-count attribute.
-`Transfer` is transition-only and has `ResultClass::None` together with its
-generated source-operand and destination-attribute layout. `ResumeInterpreter`
-is transition-only, has `ResultClass::None`, carries one accumulator source and
-one inline `BytecodePC` attribute, and terminates the stream.
+indirect operands are excluded initially. `BeginTransition`, `Transfer`, and
+`ResumeInterpreter` are transition-only kinds described by
+`TransitionInstruction` rather than the graph instruction schema.
 
 A Core instruction is initially sinkable only when all of these are true:
 
@@ -369,7 +406,7 @@ RegisterFile / Stack
 Scratch
     -> earlier reinflated Core result or value propagated by Transfer
 
-eligible InstructionEntry(kind, transition operands, attributes)
+eligible TransitionInstruction(kind, transition operands, attributes)
     -> ordinary Core instruction of the same kind
 
 Transfer(source, destination)
@@ -430,15 +467,16 @@ recoverable runtime condition.
 
 The first slice establishes only the representation:
 
-- extend `instruction.def` with the transition-only kinds and generate their
-  constructors, named accessors, and metadata;
 - define `TransitionLocation` and the three location areas;
-- add resultless `BeginTransition`, `Transfer`, and `ResumeInterpreter`;
-- build, verify, and format self-delimiting transition sequences;
-- test zero-scratch direct transfers and scratch-staged transfer cycles.
+- define the directly stored 16-byte `TransitionInstruction`;
+- add named construction and access for resultless `BeginTransition`,
+  `Transfer`, and `ResumeInterpreter`;
+- permit patching the initial `BeginTransition` scratch count after the stream
+  has been constructed.
 
 The second slice adds execution and publication:
 
+- build, verify, and format self-delimiting transition sequences;
 - publish 16-byte-aligned transition sequences with compiled code-object
   metadata;
 - add reusable per-thread scratch storage sized by `BeginTransition`;
