@@ -100,25 +100,46 @@ namespace cl::jit
         return (profile_bits & effect_bits) == effect_bits;
     }
 
-    enum class IRLevelMask : uint8_t
+    enum class IRLevel : uint8_t
     {
-        None = 0,
         Semantic = 1 << 0,
         Core = 1 << 1,
         Machine = 1 << 2,
         Transition = 1 << 3,
-        SemanticCore = (1 << 0) | (1 << 1),
-        CoreMachine = (1 << 1) | (1 << 2),
-        CoreTransition = (1 << 1) | (1 << 3),
-        CoreMachineTransition = (1 << 1) | (1 << 2) | (1 << 3),
+    };
+
+    enum class IRLevelMask : uint8_t
+    {
+        None = 0,
+        Semantic = static_cast<uint8_t>(IRLevel::Semantic),
+        Core = static_cast<uint8_t>(IRLevel::Core),
+        Machine = static_cast<uint8_t>(IRLevel::Machine),
+        Transition = static_cast<uint8_t>(IRLevel::Transition),
+        SemanticCore = static_cast<uint8_t>(IRLevel::Semantic) |
+                       static_cast<uint8_t>(IRLevel::Core),
+        CoreMachine = static_cast<uint8_t>(IRLevel::Core) |
+                      static_cast<uint8_t>(IRLevel::Machine),
+        CoreTransition = static_cast<uint8_t>(IRLevel::Core) |
+                         static_cast<uint8_t>(IRLevel::Transition),
+        CoreMachineTransition = static_cast<uint8_t>(IRLevel::Core) |
+                                static_cast<uint8_t>(IRLevel::Machine) |
+                                static_cast<uint8_t>(IRLevel::Transition),
         SemanticCoreMachineTransition =
-            (1 << 0) | (1 << 1) | (1 << 2) | (1 << 3),
+            static_cast<uint8_t>(IRLevel::Semantic) |
+            static_cast<uint8_t>(IRLevel::Core) |
+            static_cast<uint8_t>(IRLevel::Machine) |
+            static_cast<uint8_t>(IRLevel::Transition),
     };
 
     constexpr IRLevelMask operator|(IRLevelMask lhs, IRLevelMask rhs)
     {
         return static_cast<IRLevelMask>(static_cast<uint8_t>(lhs) |
                                         static_cast<uint8_t>(rhs));
+    }
+
+    constexpr IRLevelMask ir_level_mask(IRLevel level)
+    {
+        return static_cast<IRLevelMask>(level);
     }
 
     struct InstructionResultInfo
@@ -388,6 +409,12 @@ namespace cl::jit
     {
         IRLevelMask allowed = instruction_kind_metadata(kind).allowed_ir_levels;
         return ir_levels_include(allowed, level);
+    }
+
+    inline bool instruction_kind_is_allowed_at(InstructionKind kind,
+                                               IRLevel level)
+    {
+        return instruction_kind_is_allowed_at(kind, ir_level_mask(level));
     }
 
     namespace instruction_detail

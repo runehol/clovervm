@@ -179,6 +179,14 @@ with auxiliary `SideExit` records. The optimized Core graph may remain intact
 as the lowering input; sunk instructions are removed from executable block order
 but remain valid storage-owned instruction records referenced by side exits.
 
+Every `ControlFlowGraph` declares one current IR level. Graph verification
+requires every executable parameter and instruction to be legal at that level.
+Ordinary graph rewrites preserve the declared level, including passes such as
+DCE that operate at several levels. The later Core-to-Machine outlining pass
+will own the graph-level transition once all executable instructions are
+Machine-compatible; retained sunk Core instructions are storage-owned side-exit
+metadata rather than members of the Machine graph.
+
 A Core instruction that can exit names recovery state through a `SnapshotRef`
 operand:
 

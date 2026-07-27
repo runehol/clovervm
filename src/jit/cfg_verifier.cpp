@@ -44,11 +44,21 @@ namespace cl::jit
             return "instruction i" + std::to_string(instruction.id().value());
         }
 
-        bool is_core_instruction(InstructionKind kind)
+        const char *ir_level_name(IRLevel level)
         {
-            uint8_t levels = static_cast<uint8_t>(
-                instruction_kind_metadata(kind).allowed_ir_levels);
-            return (levels & static_cast<uint8_t>(IRLevelMask::Core)) != 0;
+            switch(level)
+            {
+                case IRLevel::Semantic:
+                    return "Semantic";
+                case IRLevel::Core:
+                    return "Core";
+                case IRLevel::Machine:
+                    return "Machine";
+                case IRLevel::Transition:
+                    return "Transition";
+            }
+            assert(false);
+            return "unknown";
         }
 
         size_t expected_successor_count(InstructionKind kind)
@@ -124,10 +134,12 @@ namespace cl::jit
                                    block_name(block) +
                                    " is not a block-parameter instruction");
                 }
-                if(!is_core_instruction(parameter.kind()))
+                if(!instruction_kind_is_allowed_at(parameter.kind(),
+                                                   graph.ir_level()))
                 {
                     return invalid(instruction_name(parameter) +
-                                   " is not legal in Core IR");
+                                   " is not legal in " +
+                                   ir_level_name(graph.ir_level()) + " IR");
                 }
                 if(!instruction_set.insert(parameter.id()).second)
                 {
@@ -158,10 +170,12 @@ namespace cl::jit
                                    " is a block parameter in the instruction "
                                    "list");
                 }
-                if(!is_core_instruction(instruction.kind()))
+                if(!instruction_kind_is_allowed_at(instruction.kind(),
+                                                   graph.ir_level()))
                 {
                     return invalid(instruction_name(instruction) +
-                                   " is not legal in Core IR");
+                                   " is not legal in " +
+                                   ir_level_name(graph.ir_level()) + " IR");
                 }
                 if(!instruction_set.insert(instruction.id()).second)
                 {

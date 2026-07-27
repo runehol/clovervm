@@ -73,7 +73,10 @@ namespace cl::jit
             return T(this, id);
         }
 
-        ControlFlowGraph *make_graph() { return graphs_.make(this); }
+        ControlFlowGraph *make_graph(IRLevel ir_level)
+        {
+            return graphs_.make(this, ir_level);
+        }
 
         InstructionId next_instruction_id() const;
         BlockEdgeId next_block_edge_id() const;

@@ -60,6 +60,18 @@ namespace cl::jit
         EXPECT_EQ(entry, graph->blocks()[0]);
         EXPECT_EQ(join, graph->blocks()[1]);
         EXPECT_TRUE(graph->is_published());
+        EXPECT_EQ(IRLevel::Core, graph->ir_level());
+    }
+
+    TEST(JitCfg, RejectsInstructionsOutsideDeclaredIRLevel)
+    {
+        CompilationSession session;
+        GraphBuilder builder(session, IRLevel::Machine);
+        Block *entry = builder.emplace_block();
+        builder.emplace_instruction<ReturnInstruction>(
+            entry, emplace_constant(builder, entry, Value::None()));
+
+        expect_invalid_with(builder, "is not legal in Machine IR");
     }
 
     TEST(JitCfg, ExplicitUnconditionalBranchAndReturnFormValidGraph)

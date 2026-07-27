@@ -7,9 +7,9 @@
 
 namespace cl::jit
 {
-    GraphBuilder::GraphBuilder(CompilationSession &session)
+    GraphBuilder::GraphBuilder(CompilationSession &session, IRLevel ir_level)
         : session_(&session), storage_(session.storage()),
-          graph_(storage_->make_graph())
+          graph_(storage_->make_graph(ir_level))
     {
     }
 

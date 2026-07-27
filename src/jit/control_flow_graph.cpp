@@ -36,8 +36,9 @@ namespace cl::jit
     }
 
     ControlFlowGraph::ControlFlowGraph(Serial serial,
-                                       CompilationStorage *storage)
-        : serial_(serial), storage_(storage)
+                                       CompilationStorage *storage,
+                                       IRLevel ir_level)
+        : serial_(serial), storage_(storage), ir_level_(ir_level)
     {
         assert(storage_ != nullptr);
     }
