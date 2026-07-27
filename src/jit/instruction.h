@@ -358,19 +358,44 @@ namespace cl::jit
     const InstructionKindMetadata &
     instruction_kind_metadata(InstructionKind kind);
 
+    constexpr bool ir_levels_include(IRLevelMask levels, IRLevelMask level)
+    {
+        uint8_t level_bits = static_cast<uint8_t>(level);
+        return (static_cast<uint8_t>(levels) & level_bits) == level_bits;
+    }
+
     inline bool instruction_kind_is_allowed_at(InstructionKind kind,
                                                IRLevelMask level)
     {
         IRLevelMask allowed = instruction_kind_metadata(kind).allowed_ir_levels;
-        return (static_cast<uint8_t>(allowed) & static_cast<uint8_t>(level)) !=
-               0;
+        return ir_levels_include(allowed, level);
     }
+
+    namespace instruction_detail
+    {
+        template <typename LevelKind, IRLevelMask Level,
+                  typename ConcreteInstruction>
+        consteval LevelKind instruction_kind_for_level()
+        {
+            static_assert(
+                ir_levels_include(ConcreteInstruction::AllowedIRLevels, Level));
+            return static_cast<LevelKind>(ConcreteInstruction::Kind);
+        }
+    }  // namespace instruction_detail
 
     inline SemanticInstructionKind
     semantic_instruction_kind(InstructionKind kind)
     {
         assert(instruction_kind_is_allowed_at(kind, IRLevelMask::Semantic));
         return static_cast<SemanticInstructionKind>(kind);
+    }
+
+    template <typename ConcreteInstruction>
+    consteval SemanticInstructionKind semantic_instruction_kind()
+    {
+        return instruction_detail::instruction_kind_for_level<
+            SemanticInstructionKind, IRLevelMask::Semantic,
+            ConcreteInstruction>();
     }
 
     constexpr InstructionKind instruction_kind(SemanticInstructionKind kind)
@@ -384,6 +409,13 @@ namespace cl::jit
         return static_cast<CoreInstructionKind>(kind);
     }
 
+    template <typename ConcreteInstruction>
+    consteval CoreInstructionKind core_instruction_kind()
+    {
+        return instruction_detail::instruction_kind_for_level<
+            CoreInstructionKind, IRLevelMask::Core, ConcreteInstruction>();
+    }
+
     constexpr InstructionKind instruction_kind(CoreInstructionKind kind)
     {
         return static_cast<InstructionKind>(kind);
@@ -393,6 +425,14 @@ namespace cl::jit
     {
         assert(instruction_kind_is_allowed_at(kind, IRLevelMask::Machine));
         return static_cast<MachineInstructionKind>(kind);
+    }
+
+    template <typename ConcreteInstruction>
+    consteval MachineInstructionKind machine_instruction_kind()
+    {
+        return instruction_detail::instruction_kind_for_level<
+            MachineInstructionKind, IRLevelMask::Machine,
+            ConcreteInstruction>();
     }
 
     constexpr InstructionKind instruction_kind(MachineInstructionKind kind)
@@ -405,6 +445,14 @@ namespace cl::jit
     {
         assert(instruction_kind_is_allowed_at(kind, IRLevelMask::Transition));
         return static_cast<TransitionInstructionKind>(kind);
+    }
+
+    template <typename ConcreteInstruction>
+    consteval TransitionInstructionKind transition_instruction_kind()
+    {
+        return instruction_detail::instruction_kind_for_level<
+            TransitionInstructionKind, IRLevelMask::Transition,
+            ConcreteInstruction>();
     }
 
     constexpr InstructionKind instruction_kind(TransitionInstructionKind kind)
@@ -1411,20 +1459,42 @@ namespace cl::jit
 #undef CL_JIT_JOIN_INNER
     // clang-format on
 
-// Preserve a compiler-visible switch while binding each case to the checked,
-// read-only concrete instruction type named by that case.
+// Preserve a compiler-visible, IR-specific switch while binding each case to
+// the checked, read-only concrete instruction type named by that case.
 // clang-format off
-#define CL_JIT_INSTRUCTION_SWITCH(instruction)                                 \
+#define CL_JIT_LEVEL_INSTRUCTION_SWITCH(instruction, convert_kind)             \
     switch(const auto &cl_jit_instruction_switch_value = (instruction);        \
-           cl_jit_instruction_switch_value.kind())
+           convert_kind(cl_jit_instruction_switch_value.kind()))
 
-#define CL_JIT_INSTRUCTION_CASE(Type, variable)                                \
-    Type::Kind:                                                                \
+#define CL_JIT_LEVEL_INSTRUCTION_CASE(Type, variable, convert_kind)            \
+    convert_kind<Type>():                                                      \
     if(const Type variable = cl_jit_instruction_switch_value.as<Type>();       \
        false)                                                                  \
     {                                                                          \
     }                                                                          \
     else
+
+#define CL_JIT_SEMANTIC_INSTRUCTION_SWITCH(instruction)                        \
+    CL_JIT_LEVEL_INSTRUCTION_SWITCH(instruction, semantic_instruction_kind)
+#define CL_JIT_SEMANTIC_INSTRUCTION_CASE(Type, variable)                       \
+    CL_JIT_LEVEL_INSTRUCTION_CASE(                                             \
+        Type, variable, semantic_instruction_kind)
+
+#define CL_JIT_CORE_INSTRUCTION_SWITCH(instruction)                            \
+    CL_JIT_LEVEL_INSTRUCTION_SWITCH(instruction, core_instruction_kind)
+#define CL_JIT_CORE_INSTRUCTION_CASE(Type, variable)                           \
+    CL_JIT_LEVEL_INSTRUCTION_CASE(Type, variable, core_instruction_kind)
+
+#define CL_JIT_MACHINE_INSTRUCTION_SWITCH(instruction)                         \
+    CL_JIT_LEVEL_INSTRUCTION_SWITCH(instruction, machine_instruction_kind)
+#define CL_JIT_MACHINE_INSTRUCTION_CASE(Type, variable)                        \
+    CL_JIT_LEVEL_INSTRUCTION_CASE(Type, variable, machine_instruction_kind)
+
+#define CL_JIT_TRANSITION_INSTRUCTION_SWITCH(instruction)                      \
+    CL_JIT_LEVEL_INSTRUCTION_SWITCH(instruction, transition_instruction_kind)
+#define CL_JIT_TRANSITION_INSTRUCTION_CASE(Type, variable)                     \
+    CL_JIT_LEVEL_INSTRUCTION_CASE(                                             \
+        Type, variable, transition_instruction_kind)
     // clang-format on
 
     class TerminatorInstruction

@@ -805,7 +805,10 @@ metadata and consume no space in an instruction. The schema also generates
 and `TransitionInstructionKind`; each contains only the kinds declared for
 that level while retaining the shared physical `InstructionKind` value.
 Level-specific dispatch checks the stored kind's metadata mask, converts it to
-the filtered enum, and switches exhaustively.
+the filtered enum, and switches exhaustively. The
+`CL_JIT_<LEVEL>_INSTRUCTION_SWITCH` and
+`CL_JIT_<LEVEL>_INSTRUCTION_CASE` helpers require the dispatching IR explicitly
+and reject a concrete case type that is not declared for that level.
 
 The schema names only meaningful membership sets rather than accepting an
 arbitrary combination of level bits. Initial sets include the four individual

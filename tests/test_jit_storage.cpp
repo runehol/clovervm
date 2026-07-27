@@ -279,6 +279,8 @@ namespace cl::jit
                                                     IRLevelMask::Transition));
         EXPECT_EQ(CoreInstructionKind::Return,
                   core_instruction_kind(InstructionKind::Return));
+        EXPECT_EQ(CoreInstructionKind::Return,
+                  core_instruction_kind<ReturnInstruction>());
         EXPECT_EQ(InstructionKind::Return,
                   instruction_kind(CoreInstructionKind::Return));
     }
