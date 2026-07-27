@@ -64,14 +64,16 @@ namespace cl::jit
 
         InstructionRange instructions() const
         {
-            return {std::span<const InstructionId>(instruction_ids_),
-                    detail::InstructionResolver(storage())};
+            return InstructionRange(
+                std::span<const InstructionId>(instruction_ids_),
+                detail::InstructionResolver(storage()));
         }
 
         InstructionRange parameters() const
         {
-            return {std::span<const InstructionId>(parameter_ids_),
-                    detail::InstructionResolver(storage())};
+            return InstructionRange(
+                std::span<const InstructionId>(parameter_ids_),
+                detail::InstructionResolver(storage()));
         }
 
         const std::vector<InstructionId> &instruction_ids() const
