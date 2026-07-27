@@ -141,7 +141,7 @@ namespace cl::jit
         builder.emplace_instruction<ReturnInstruction>(entry, none);
         ControlFlowGraph *graph = builder.finalize();
 
-        EXPECT_EQ("graph state(acc, fp[3..-3]) {\n"
+        EXPECT_EQ("graph state(acc, thread, fp[3..-3]) {\n"
                   "bb0:\n"
                   "  %0 = const {constant = none}\n"
                   "  return %0\n"

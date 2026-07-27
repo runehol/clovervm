@@ -402,9 +402,9 @@ namespace cl::jit
         if(graph.bytecode_state_order().has_value())
         {
             const BytecodeStateOrder &order = *graph.bytecode_state_order();
-            fmt::format_to(std::back_inserter(out), " state(acc, fp[{}..{}])",
-                           order.highest_frame_offset(),
-                           order.lowest_frame_offset());
+            fmt::format_to(
+                std::back_inserter(out), " state(acc, thread, fp[{}..{}])",
+                order.highest_frame_offset(), order.lowest_frame_offset());
         }
         fmt::format_to(std::back_inserter(out), " {{\n");
 

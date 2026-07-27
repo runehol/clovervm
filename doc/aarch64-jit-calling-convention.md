@@ -4,7 +4,7 @@
 |---|---|
 | Document type | Proposed architecture contract |
 | Status | Proposed |
-| Implementation | Partial; result constraints, canonical incoming stack locations, allocation-order register sets, and per-class scratch registers are implemented; entry constraints still use the superseded eight-Python-register layout and must add the hidden `ThreadState *`; managed calls and transition adapters are not implemented |
+| Implementation | Partial; hidden `ThreadState *` and the first seven Python entry arguments have fixed register constraints, while result constraints, canonical incoming stack locations, allocation-order register sets, and per-class scratch registers are implemented; stack-passed entry arguments, managed calls, and transition adapters are not implemented |
 | Scope | AArch64 compiled managed argument transport, call adaptation, cross-engine entry, return, and safepoint placement |
 | Owning layers | Call-site lowering owns guarded Python adaptation; the AArch64 backend owns argument and result locations; transition adapters own cross-engine reshuffling; the generic allocator and materializer implement the resulting fixed-location constraints and transfers |
 | Builds on | [CloverVM Function Calling Convention](function-calling-convention.md) |
@@ -27,10 +27,10 @@ result               -> x0
 ```
 
 The thread pointer is compiler state, not Python parameter zero. It does not
-contribute to Python arity, `BytecodeStateOrder`, Snapshot positions, or the
-canonical parameter window. It enters the compiled function as a hidden
-Machine value and may be moved or spilled by ordinary allocation after its
-fixed `x0` entry definition.
+contribute to Python arity or the canonical parameter window. It is position
+one in `BytecodeStateOrder` and in Snapshots so side exits can recover the
+active execution context. It enters Core as a hidden `Pointer` value and may be
+moved or spilled by ordinary allocation after its fixed `x0` entry definition.
 
 The initial JIT relies on inlining to eliminate boxing. It does not introduce
 representation-specialized entry signatures. A later convention may add such
@@ -209,8 +209,8 @@ compiled unwinding and stack walking.
   frame even when its register-parameter cells are stale.
 - Non-inlined Python boundaries use tagged parameters; inlining is the initial
   mechanism for avoiding boxing.
-- Every compiled entry receives the active `ThreadState *` in `x0`; it is not a
-  Python argument or canonical bytecode-state position.
+- Every compiled entry receives the active `ThreadState *` in `x0`; it is state
+  position one, but not a Python argument or canonical frame home.
 - Successful adaptation determines the callee arity before argument transport.
 - Call transitions are specialized by arity in both engine directions.
 - Return transitions do not depend on arity.

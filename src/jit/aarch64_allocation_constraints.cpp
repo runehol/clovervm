@@ -51,6 +51,19 @@ namespace cl::jit
         entry_parameter_constraints(Instruction parameter,
                                     size_t parameter_index)
         {
+            if(parameter_index == 0)
+            {
+                if(parameter.kind() != InstructionKind::ParameterPointer)
+                {
+                    fatal("AArch64 JIT entry parameter zero is not the thread "
+                          "state pointer");
+                }
+                return InstructionAllocationConstraints(
+                    parameter, {},
+                    ResultConstraint{AccessTiming::Late,
+                                     LocationRequirement::fixed(
+                                         PhysicalLocation::reg(gpr(0)))});
+            }
             if(parameter.kind() != InstructionKind::Parameter)
             {
                 fatal("AArch64 allocation constraint bring-up does not "

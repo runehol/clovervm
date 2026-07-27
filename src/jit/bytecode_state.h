@@ -16,6 +16,10 @@ namespace cl::jit
     class BytecodeStateOrder
     {
     public:
+        static constexpr size_t AccumulatorPosition = 0;
+        static constexpr size_t ThreadStatePosition = 1;
+        static constexpr size_t FirstFramePosition = 2;
+
         explicit BytecodeStateOrder(const CodeObject &code_object)
             : n_parameters_(code_object.function_signature.n_parameters),
               n_locals_(code_object.n_locals),
@@ -27,7 +31,7 @@ namespace cl::jit
         {
         }
 
-        size_t size() const { return size_t(1) + frame_slot_count(); }
+        size_t size() const { return FirstFramePosition + frame_slot_count(); }
 
         size_t frame_slot_count() const
         {
@@ -40,11 +44,12 @@ namespace cl::jit
 
         int32_t frame_offset_at(size_t position) const
         {
-            if(position == 0 || position >= size())
+            if(position < FirstFramePosition || position >= size())
             {
                 fatal("JIT bytecode state position is not a stack slot");
             }
-            return highest_frame_offset_ - int32_t(position - 1);
+            return highest_frame_offset_ -
+                   int32_t(position - FirstFramePosition);
         }
 
         size_t position_for_frame_offset(int32_t frame_offset) const
@@ -54,7 +59,8 @@ namespace cl::jit
             {
                 fatal("JIT bytecode frame offset is outside the state order");
             }
-            return size_t(1) + size_t(highest_frame_offset_ - frame_offset);
+            return FirstFramePosition +
+                   size_t(highest_frame_offset_ - frame_offset);
         }
 
         size_t position_for(BytecodeValueLocation location) const
@@ -66,7 +72,7 @@ namespace cl::jit
                     fatal("JIT bytecode accumulator location has a nonzero "
                           "frame offset");
                 }
-                return 0;
+                return AccumulatorPosition;
             }
             if(location.kind != BytecodeValueLocationKind::StackSlot)
             {
@@ -121,7 +127,8 @@ namespace cl::jit
         {
         }
 
-        BytecodeState<Ref> make_entry_state(std::span<const Ref> parameters,
+        BytecodeState<Ref> make_entry_state(Ref thread_state,
+                                            std::span<const Ref> parameters,
                                             Ref uninitialized_local,
                                             Ref unavailable) const
         {
@@ -132,9 +139,11 @@ namespace cl::jit
             }
 
             std::vector<Ref> values(order_.size(), unavailable);
+            values[BytecodeStateOrder::ThreadStatePosition] = thread_state;
             for(uint32_t index = 0; index < order_.n_parameters(); ++index)
             {
-                values[size_t(1) + index] = parameters[index];
+                values[BytecodeStateOrder::FirstFramePosition + index] =
+                    parameters[index];
             }
             for(uint32_t index = 0; index < order_.n_locals(); ++index)
             {

@@ -166,8 +166,9 @@ class. Acyclic memory-to-memory transfers pass through the first available
 scratch. Block-exit and block-edge placement remain separate implementation
 slices.
 
-The Snapshot and `BytecodeStateOrder` define canonical VM homes. A canonical
-frame home is not silently converted into an allocator-owned spill slot.
+The Snapshot and `BytecodeStateOrder` define the accumulator, active thread,
+and canonical VM homes. A canonical frame home is not silently converted into
+an allocator-owned spill slot.
 
 A Core def marked sunk has no `LocationAssignment`. Its transition-only
 operation remains available to transition planning, while allocation liveness
@@ -642,8 +643,10 @@ This is a bring-up choice, not the final CloverVM calling convention:
 - platform-reserved `x18` is unavailable;
 - callee-saved GPRs and `v8` through `v15` remain unavailable until prologue
   and epilogue generation preserves them;
-- tagged entry-block parameters zero through seven have fixed-location result
-  constraints `x0` through `x7`;
+- the pointer entry-block parameter zero has a fixed-location result constraint
+  for `x0`;
+- tagged entry-block parameters one through seven have fixed-location result
+  constraints `x1` through `x7`;
 - tagged internal block parameters use the ordinary `AnyRegister(GPR)`
   default;
 - F64 internal block parameters use the ordinary `AnyRegister(SIMD)` default;
@@ -653,16 +656,15 @@ This is a bring-up choice, not the final CloverVM calling convention:
 - `Const`, SMI bitwise instructions, and the virtual `Snapshot` instruction
   need no target override.
 
-Overflow entry parameters, F64 entry parameters, calls, and instruction
-kinds without a bring-up lowering currently hard-fail instead of silently
-receiving an incomplete contract. Under the proposed AArch64 JIT calling
-convention, a hidden `ThreadState *` entry value uses fixed `x0`, tagged Python
-parameters zero through six use fixed `x1` through `x7`, and later parameters
-use fixed `IncomingParameter` locations. The hidden thread value is not a
-Python parameter or a `BytecodeStateOrder` position. Overflow call preparation
-uses fixed `OutgoingCallArgument` locations. These do not create separate ABI
-constraint mechanisms: the thread and ABI registers remain ordinary fixed
-locations at exact occurrences.
+Overflow entry parameters, F64 entry parameters, calls, and instruction kinds
+without a bring-up lowering currently hard-fail instead of silently receiving
+an incomplete contract. The hidden thread value occupies
+`BytecodeStateOrder::ThreadStatePosition` but is not a Python parameter or
+canonical frame home. Later entry parameters will use fixed
+`IncomingParameter` locations, while overflow call preparation uses fixed
+`OutgoingCallArgument` locations. These do not create separate ABI constraint
+mechanisms: the thread and ABI registers remain ordinary fixed locations at
+exact occurrences.
 
 Constraint validation enforces:
 
@@ -1459,11 +1461,12 @@ Snapshot
 
 `LocationAssignments` identify where each non-sunk physical frontier value
 lives at the exit position. The Snapshot identifies the required values and
-`BytecodeStateOrder` maps their positions to canonical destinations. The
-transition program reads the assigned locations, evaluates explicitly eligible
-no-safepoint sunk instructions and materializations, and publishes canonical
-state without adding a second semantic state model. The initial executor
-interprets compact `InstructionEntry` records directly.
+`BytecodeStateOrder` identifies the accumulator, active thread, and canonical
+frame destinations. The transition program reads the assigned locations,
+evaluates explicitly eligible no-safepoint sunk instructions and
+materializations, and publishes canonical state without adding a second
+semantic state model. The initial executor interprets compact
+`InstructionEntry` records directly.
 
 Safepoint maps and transition programs may share physical location encodings,
 but they remain separate consumers. Safepoint maps need only managed roots;

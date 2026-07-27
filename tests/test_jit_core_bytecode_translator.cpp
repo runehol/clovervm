@@ -192,6 +192,13 @@ namespace cl::jit
                   branch.false_edge()->arguments()[0].instruction_id());
         EXPECT_EQ(state_size, fallthrough->parameters().size());
         EXPECT_EQ(state_size, jump->parameters().size());
+        EXPECT_EQ(
+            InstructionKind::ParameterPointer,
+            fallthrough->parameter_at(BytecodeStateOrder::ThreadStatePosition)
+                .kind());
+        EXPECT_EQ(
+            InstructionKind::ParameterPointer,
+            jump->parameter_at(BytecodeStateOrder::ThreadStatePosition).kind());
     }
 
     TEST(JitCoreBytecodeTranslator,
@@ -283,6 +290,10 @@ namespace cl::jit
         ASSERT_EQ(1u, constants.size());
         EXPECT_EQ(constants.front().id(),
                   snapshot.captured_values()[0].instruction_id());
+        Instruction thread_state = graph->storage()->instruction(
+            snapshot.captured_values()[BytecodeStateOrder::ThreadStatePosition]
+                .instruction_id());
+        EXPECT_EQ(InstructionKind::ParameterPointer, thread_state.kind());
         EXPECT_EQ(snapshot.id(), resumes.front()
                                      .as<ResumeInInterpreterInstruction>()
                                      .snapshot()
@@ -307,8 +318,11 @@ namespace cl::jit
 
         ControlFlowGraph *graph = fixture.translate();
         Block *entry = graph->entry_block();
-        ASSERT_EQ(1u, entry->parameters().size());
-        Instruction parameter = entry->parameter_at(0);
+        ASSERT_EQ(2u, entry->parameters().size());
+        Instruction thread_state = entry->parameter_at(0);
+        Instruction parameter = entry->parameter_at(1);
+        EXPECT_EQ(InstructionKind::ParameterPointer, thread_state.kind());
+        EXPECT_EQ(InstructionKind::Parameter, parameter.kind());
         std::vector<Instruction> snapshots =
             instructions_of_kind(entry, InstructionKind::Snapshot);
         ASSERT_EQ(1u, snapshots.size());
@@ -316,7 +330,8 @@ namespace cl::jit
             snapshots.front().as<SnapshotInstruction>().captured_values();
         ASSERT_EQ(bytecode_state_size(*graph), captured.size());
         EXPECT_EQ(parameter.id(), captured[0].instruction_id());
-        EXPECT_EQ(parameter.id(), captured[1].instruction_id());
+        EXPECT_EQ(thread_state.id(), captured[1].instruction_id());
+        EXPECT_EQ(parameter.id(), captured[2].instruction_id());
     }
 
     TEST(JitCoreBytecodeTranslator,

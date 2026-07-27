@@ -7,6 +7,7 @@
 #include <gtest/gtest.h>
 
 #include <array>
+#include <initializer_list>
 #include <limits>
 #include <optional>
 #include <span>
@@ -53,6 +54,41 @@ namespace cl::jit
             return AllocationConstraints(std::move(definitions),
                                          std::move(overrides));
         }
+
+        AllocationConstraints allocator_test_constraints(
+            std::initializer_list<Instruction> entry_parameters,
+            ReturnInstruction return_instruction,
+            std::optional<Instruction> instruction_with_temporary =
+                std::nullopt)
+        {
+            std::vector<InstructionAllocationConstraints> overrides;
+            size_t parameter_index = 0;
+            for(Instruction parameter: entry_parameters)
+            {
+                overrides.emplace_back(
+                    parameter, std::vector<ProgramValueUseConstraint>{},
+                    ResultConstraint{
+                        AccessTiming::Late,
+                        fixed(PhysicalRegister(RegisterClass::GPR,
+                                               parameter_index++))});
+            }
+            overrides.emplace_back(
+                return_instruction,
+                std::vector<ProgramValueUseConstraint>{
+                    {ReturnInstruction::return_value_operand_index,
+                     AccessTiming::Early, fixed(x0)}});
+            if(instruction_with_temporary.has_value())
+            {
+                overrides.emplace_back(
+                    *instruction_with_temporary,
+                    std::vector<ProgramValueUseConstraint>{}, std::nullopt,
+                    std::vector<TemporaryConstraint>{
+                        TemporaryConstraint(LocationRequirement::any_register(
+                            RegisterClass::GPR))});
+            }
+            return AllocationConstraints(gpr_definition(),
+                                         std::move(overrides));
+        }
     }  // namespace
 
     TEST(JitRegisterAllocator, ComputesMinimumInstructionLivenessCoverage)
@@ -87,11 +123,12 @@ namespace cl::jit
         Block *entry = builder.emplace_block();
         ParameterInstruction parameter =
             builder.emplace_parameter<ParameterInstruction>(entry);
-        builder.emplace_instruction<ReturnInstruction>(
-            entry, TaggedValueRef(parameter));
+        ReturnInstruction return_instruction =
+            builder.emplace_instruction<ReturnInstruction>(
+                entry, TaggedValueRef(parameter));
         ControlFlowGraph *graph = builder.finalize();
         AllocationConstraints constraints =
-            make_aarch64_allocation_constraints(*graph);
+            allocator_test_constraints({parameter}, return_instruction);
 
         auto allocation = allocate_registers(session, *graph, constraints);
 
@@ -111,11 +148,14 @@ namespace cl::jit
             builder.emplace_parameter<ParameterInstruction>(entry));
         TaggedValueRef result(
             builder.emplace_instruction<AndSMIInstruction>(entry, lhs, rhs));
-        builder.emplace_instruction<ReturnInstruction>(entry, result);
+        ReturnInstruction return_instruction =
+            builder.emplace_instruction<ReturnInstruction>(entry, result);
         ControlFlowGraph *graph = builder.finalize();
 
-        AllocationConstraints constraints =
-            make_aarch64_allocation_constraints(*graph);
+        AllocationConstraints constraints = allocator_test_constraints(
+            {builder.storage()->instruction(lhs.instruction_id()),
+             builder.storage()->instruction(rhs.instruction_id())},
+            return_instruction);
         auto prepared_result = prepare_register_allocation(*graph, constraints);
         ASSERT_TRUE(prepared_result);
         PreparedAllocationProblem prepared = std::move(prepared_result).value();
@@ -186,15 +226,17 @@ namespace cl::jit
         std::array<ProgramValueRef, 1> arguments = {value};
         BlockEdge *edge = builder.make_block_edge(
             entry, exit, std::span<const ProgramValueRef>(arguments));
-        builder.emplace_instruction<UnconditionalBranchInstruction>(entry,
-                                                                    edge);
+        UnconditionalBranchInstruction branch =
+            builder.emplace_instruction<UnconditionalBranchInstruction>(entry,
+                                                                        edge);
         TaggedValueRef parameter(
             builder.emplace_parameter<ParameterInstruction>(exit));
-        builder.emplace_instruction<ReturnInstruction>(exit, parameter);
+        ReturnInstruction return_instruction =
+            builder.emplace_instruction<ReturnInstruction>(exit, parameter);
         ControlFlowGraph *graph = builder.finalize();
 
         AllocationConstraints constraints =
-            make_aarch64_allocation_constraints(*graph);
+            allocator_test_constraints({}, return_instruction, branch);
         auto prepared_result = prepare_register_allocation(*graph, constraints);
         ASSERT_TRUE(prepared_result);
         PreparedAllocationProblem prepared = std::move(prepared_result).value();
@@ -239,11 +281,14 @@ namespace cl::jit
             builder.emplace_parameter<ParameterInstruction>(entry));
         TaggedValueRef result(
             builder.emplace_instruction<AndSMIInstruction>(entry, lhs, rhs));
-        builder.emplace_instruction<ReturnInstruction>(entry, result);
+        ReturnInstruction return_instruction =
+            builder.emplace_instruction<ReturnInstruction>(entry, result);
         ControlFlowGraph *graph = builder.finalize();
 
-        AllocationConstraints constraints =
-            make_aarch64_allocation_constraints(*graph);
+        AllocationConstraints constraints = allocator_test_constraints(
+            {builder.storage()->instruction(lhs.instruction_id()),
+             builder.storage()->instruction(rhs.instruction_id())},
+            return_instruction);
         auto prepared_result = prepare_register_allocation(*graph, constraints);
         ASSERT_TRUE(prepared_result);
         PreparedAllocationProblem prepared = std::move(prepared_result).value();
@@ -761,13 +806,15 @@ namespace cl::jit
         CompilationSession session;
         GraphBuilder builder(session);
         Block *entry = builder.emplace_block();
-        builder.emplace_parameter<ParameterInstruction>(entry);
+        ParameterInstruction parameter =
+            builder.emplace_parameter<ParameterInstruction>(entry);
         builder.emplace_instruction<UninitializedInstruction>(entry);
         TaggedValueRef result = emplace_constant(builder, entry, Value::None());
-        builder.emplace_instruction<ReturnInstruction>(entry, result);
+        ReturnInstruction return_instruction =
+            builder.emplace_instruction<ReturnInstruction>(entry, result);
         ControlFlowGraph *graph = builder.finalize();
         AllocationConstraints constraints =
-            make_aarch64_allocation_constraints(*graph);
+            allocator_test_constraints({parameter}, return_instruction);
 
         auto prepared_result = prepare_register_allocation(*graph, constraints);
         ASSERT_TRUE(prepared_result);
@@ -826,10 +873,12 @@ namespace cl::jit
         {
             builder.emplace_instruction<UninitializedInstruction>(entry);
         }
-        builder.emplace_instruction<ReturnInstruction>(entry, parameter);
+        ReturnInstruction return_instruction =
+            builder.emplace_instruction<ReturnInstruction>(entry, parameter);
         ControlFlowGraph *graph = builder.finalize();
-        AllocationConstraints constraints =
-            make_aarch64_allocation_constraints(*graph);
+        AllocationConstraints constraints = allocator_test_constraints(
+            {builder.storage()->instruction(parameter.instruction_id())},
+            return_instruction);
 
         auto prepared_result = prepare_register_allocation(*graph, constraints);
         ASSERT_TRUE(prepared_result);
@@ -884,10 +933,12 @@ namespace cl::jit
             entry, std::span<const ProgramValueRef>(captured), BytecodePC{7}));
         builder.emplace_instruction<ResumeInInterpreterInstruction>(entry,
                                                                     snapshot);
-        builder.emplace_instruction<ReturnInstruction>(entry, parameter);
+        ReturnInstruction return_instruction =
+            builder.emplace_instruction<ReturnInstruction>(entry, parameter);
         ControlFlowGraph *graph = builder.finalize();
-        AllocationConstraints constraints =
-            make_aarch64_allocation_constraints(*graph);
+        AllocationConstraints constraints = allocator_test_constraints(
+            {builder.storage()->instruction(parameter.instruction_id())},
+            return_instruction);
 
         auto prepared = prepare_register_allocation(*graph, constraints);
 
