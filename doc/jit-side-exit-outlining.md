@@ -6,7 +6,7 @@
 | Status | Proposed |
 | Implementation | Not started |
 | Scope | Attaching transition-only computation and Snapshot state to executable side-exit consumers immediately before register allocation |
-| Owning layers | Core optimization owns sinking analysis while all instructions remain in the main CFG; side-exit outlining owns per-consumer `SideExit` records; use lists and register allocation own side-exit value uses at the owner position; allocation materialization owns point-correct side-exit use renaming; transition emission owns deferred computation and interpreter-state publication |
+| Owning layers | Core optimization owns sinking analysis while all instructions remain in the main CFG; side-exit outlining owns per-consumer `SideExit` records and the matching argument ranges on executable owners; ordinary instruction rewriting, use lists, and register allocation own those arguments thereafter; transition emission owns deferred computation and interpreter-state publication |
 | Validated against | N/A |
 | Supersedes | N/A; if accepted, this direction requires corresponding changes to [JIT Compiler and IR](jit-compiler-and-ir.md), [JIT Register Allocation](jit-register-allocation.md), and [JIT Transition Programs](jit-transition-program.md) |
 
@@ -17,12 +17,13 @@ instructions in the main graph. This preserves the existing SSA, use-list,
 code-motion, CSE, DCE, and sinking analyses.
 
 Immediately before register allocation, each executable side exit receives an
-attached `SideExit` record. It contains the non-sunk values that must be read at
-the owner's side-exit position, an ordered list of original sunk instruction IDs
-needed by that exit, and the original `Snapshot` instruction that describes the
-interpreter state. The sunk instructions and Snapshot stay
-`CompilationStorage`-owned and valid, but they are removed from executable block
-order. The owning instruction names the resulting record by `SideExitId`.
+attached `SideExit` record. It contains the original non-sunk input identities
+named by the deferred computation and an ordered list of existing Core
+instruction IDs ending in the original `Snapshot`. The sunk instructions and
+Snapshot stay `CompilationStorage`-owned and valid, but they are removed from
+executable block order. The owning Machine instruction names the resulting
+record by `SideExitId` and carries a parallel range of executable argument
+values.
 
 A `SideExit` is not a CFG block or edge. It has no successors, predecessors,
 reachability, dominance, loop membership, or normal-path execution. It is an
@@ -54,10 +55,10 @@ different allocation positions.
 Retaining a separate occurrence-to-location model through transition planning
 could describe the physical frontier, but it would create a second
 position-sensitive identity system beside the materialized Core graph. Side-exit
-outlining instead makes every deferred sequence consumer-specific enough for the
-position-sensitive allocation phases: non-sunk inputs become explicit uses at
-the owner, while sunk computation is kept out of the executable path and emitted
-only by transition-program generation.
+outlining instead gives each deferred sequence a lightweight argument binding:
+immutable body inputs remain on the `SideExit`, while matching executable
+arguments are ordinary operands of the owner. Sunk computation stays out of the
+executable path and is emitted only by transition-program generation.
 
 ## Representation
 
@@ -71,75 +72,68 @@ using SideExitId = DenseId<SideExitIdTag>;
 class SideExit
 {
 public:
-    SideExitId id() const;
-    InstructionId owner() const;
-    std::span<const ProgramValueRef> uses() const;
-    std::span<const InstructionId> body() const;
-    SnapshotRef snapshot() const;
+    std::span<const ProgramValueRef> inputs() const;
+    std::span<const InstructionId> instructions() const;
 
 private:
-    ControlFlowGraph *graph_;
-    SideExitId id_;
-    InstructionId owner_;
-    std::vector<ProgramValueRef> uses_;
-    std::vector<InstructionId> body_;
-    SnapshotRef snapshot_;
+    std::vector<ProgramValueRef> inputs_;
+    std::vector<InstructionId> instructions_;
 };
 ```
 
 `ControlFlowGraph` owns the `SideExitId` namespace and the collection of
 `SideExit` objects without adding them to its CFG block list.
 `CompilationStorage` continues to own the ordinary instruction entries named by
-`body()`. A side-exit-capable lowered instruction carries a `SideExitId`
-attribute instead of the Core instruction's `SnapshotRef` operand. The ID is
-structural metadata like a block-edge ID: it is not an SSA operand, does not
-itself appear in use lists, and receives no allocation.
+`instructions()`. A side-exit-capable lowered instruction carries a
+`SideExitId` attribute instead of the Core instruction's `SnapshotRef` operand.
+The ID is structural metadata: it is not an SSA operand and receives no
+allocation.
 
-The `SideExit` uses are different. They are logical source operands observed at
-the owning instruction's side-exit position even though they reside in the
-side-exit table rather than in the instruction's inline operand payload. They
-use an explicit use-list category:
+The same Machine instruction exposes a `side_exit_arguments()` operand range.
+That range is parallel to `SideExit::inputs()`: input `i` is the identity named
+by the retained Core instructions, while argument `i` is the executable value
+available at the owner. Initially they name the same definition. Ordinary graph
+rewriting may later change the argument without modifying the shared retained
+instructions.
 
-```cpp
-struct SideExitUse
-{
-    SideExitId side_exit;
-    size_t use_index;
-};
-```
+Side-exit arguments are ordinary program-value operands. Existing use-list,
+DCE, graph-rewriting, and allocation-materialization machinery therefore
+handles them without a side-exit-specific use category or traversal path.
+Liveness observes this named operand range at the owner's Late position.
 
-Use lists count these uses alongside ordinary instruction uses and block-edge
-argument uses. Verification, liveness, and allocation materialization resolve
-the owning instruction's `SideExitId` and handle its uses at that instruction's
-side-exit position. They do not make the uses part of the instruction's encoded
-operand range.
+The input and argument order has no interpreter-state meaning. It is only a
+binding convention between one `SideExit` and its owner. Outlining may use
+first occurrence in retained-instruction order, provided it builds both lists
+in the same order.
 
 A side exit has these structural properties:
 
-- it belongs to exactly one executable owner;
-- every use names a non-sunk executable value available at the owner's
-  side-exit position;
-- its body contains non-owning `InstructionId` references to sunk instructions
-  in original block order;
+- it is named by exactly one executable owner;
+- its input count equals the owner's side-exit argument count;
+- every input names a non-sunk value referenced by the retained instruction
+  sequence;
+- its instruction sequence contains non-owning `InstructionId` references to
+  sunk instructions in original block order followed by one `Snapshot`;
 - a sunk instruction may appear in several side exits;
-- every body operand refers to an earlier body instruction or one of the
-  side-exit uses;
-- every Snapshot operand refers to a body instruction or one of the side-exit
-  uses;
-- its Snapshot supplies the ordered interpreter state and resume PC;
+- every retained operand refers to an earlier retained instruction or one of
+  the side-exit inputs;
+- every distinct operand not defined by an earlier retained instruction appears
+  exactly once in `inputs()`, whether it is used by sunk computation or by the
+  final Snapshot;
+- the final Snapshot supplies the ordered interpreter state and resume PC;
 - it has no branches, block edges, or ordinary CFG topology.
 
-The side-exit use relationship can be printed directly:
+The side-exit input/argument binding can be printed directly:
 
 ```text
-check ... {side_exit = s0}
+check ... side_exit_arguments(%4, %7) {side_exit = s0}
 
-s0(%4, %7):
+s0 inputs(%4, %7):
     %x = BoxF64 %4
     Snapshot %x, %7 {resume_pc = 12}
 ```
 
-Every side-exit use is observed at the owner's Late liveness position. This
+Every side-exit argument is observed at the owner's Late liveness position. This
 conservatively preserves recovery state through the selected operation and its
 failure test. The operation's ordinary inputs may still be consumed Early.
 Attaching the side exit to the exact lowered instruction that performs the
@@ -159,7 +153,7 @@ Snapshot definitions
 executable Snapshot consumers
 ```
 
-The sinking analysis marks an instruction as transition-only only when:
+The sinking analysis marks an instruction as sunk only when:
 
 - it has no executable main-path use;
 - all transitive uses lead through other sunk instructions to Snapshots;
@@ -179,13 +173,9 @@ with auxiliary `SideExit` records. The optimized Core graph may remain intact
 as the lowering input; sunk instructions are removed from executable block order
 but remain valid storage-owned instruction records referenced by side exits.
 
-Every `ControlFlowGraph` declares one current IR level. Graph verification
-requires every executable parameter and instruction to be legal at that level.
-Ordinary graph rewrites preserve the declared level, including passes such as
-DCE that operate at several levels. The later Core-to-Machine outlining pass
-will own the graph-level transition once all executable instructions are
-Machine-compatible; retained sunk Core instructions are storage-owned side-exit
-metadata rather than members of the Machine graph.
+The Core-to-Machine outlining pass owns the graph-level transition once all
+executable instructions are Machine-compatible. Retained sunk Core instructions
+are storage-owned side-exit metadata rather than members of the Machine graph.
 
 A Core instruction that can exit names recovery state through a `SnapshotRef`
 operand:
@@ -199,37 +189,31 @@ Its lowered variant instead carries a `SideExitId` attribute:
 
 ```text
 Lowered executable graph:
-    %result = SelectedOperation %inputs... {side_exit = s0}
+    %result = SelectedOperation %inputs...
+        side_exit_arguments(%state0, ...) {side_exit = s0}
 
-    s0(%state0, ...):
+    s0 inputs(%state0, ...):
         ...
         Snapshot %state0, ...
 ```
 
-The Machine kind is distinct whenever this changes the instruction's schema.
-One Core operation may lower to several Machine instructions, in which case the
-`SideExitId` belongs to the exact selected instruction that can take the exit.
-Several Core operations may also share one Machine kind when their selected
-operation and side-exit behavior are identical.
-
-Instructions whose shape is unchanged may remain shared between Core and
-Machine. An instruction kind must not have one operand layout in Core and a
-different layout in Machine: the kind must continue to determine the physical
-schema unambiguously.
+If lowering expands one Core operation into several Machine instructions, the
+exact instruction that can take the exit carries both the `SideExitId` and its
+parallel side-exit argument range.
 
 `SideExitId` is an attribute rather than an operand because it names auxiliary
-structure, not a produced value. Resolving the ID exposes the attached
-`SideExit::uses()`, which are additional program-value sources of the owning
-instruction at its side-exit position.
+structure, not a produced value. The matching side-exit arguments are a
+separate named operand range because they are genuine program-value sources of
+the owning instruction at its side-exit position.
 
-The Core Snapshot itself moves into the side-exit record rather than being
+The Core Snapshot becomes the final retained instruction rather than being
 copied or rewritten at this boundary:
 
 ```text
 Core:
     %snapshot = Snapshot %state_values... {resume_pc = pc}
 
-Side exit:
+Side-exit instructions:
     Snapshot %state_values... {resume_pc = pc}
 ```
 
@@ -282,15 +266,21 @@ stabilized, immediately before register-allocation preparation.
 For each non-returning side-exit Snapshot consumer, it:
 
 1. walks backward from the referenced Snapshot through instructions marked sunk;
-2. records every reachable sunk instruction ID in original block order;
-3. identifies each distinct non-sunk dependency of the body or Snapshot as a
-   side-exit use;
-4. records the Snapshot as the source of interpreter state and resume PC;
-5. removes sunk instructions from executable block order after proving no
-   unsunk executable instruction uses them;
+2. records every reachable sunk instruction ID in original block order and
+   appends the Snapshot ID;
+3. walks the complete retained sequence, not only the Snapshot, and identifies
+   every distinct operand not defined by an earlier retained instruction;
+4. records those identities as `SideExit::inputs()` and supplies the same
+   ordered values as the lowered owner's side-exit arguments;
+5. removes sunk instructions and the Snapshot from executable block order after
+   proving that no unsunk executable instruction uses them;
 6. assigns the new `SideExit` a `SideExitId`;
-7. lowers the consumer to an executable instruction carrying that ID as an
-   attribute instead of a `SnapshotRef` operand.
+7. lowers the consumer to a Machine instruction carrying that ID and argument
+   range instead of a `SnapshotRef` operand.
+
+Input discovery must visit operands of every retained sunk instruction. If the
+Snapshot captures a sunk `BoxF64` result, for example, the unboxed source of the
+box is an input even though it does not appear directly in the Snapshot.
 
 One logical sunk DAG may be shared by several Snapshots or consumers before
 outlining. Each consumer records the instruction IDs it needs in its own
@@ -314,39 +304,35 @@ executable graph
     instructions carrying SideExitId
 
 per-consumer SideExit records
-    uses read at the owner exit position
+    immutable input identities
     sunk instruction IDs in original block order
-    Snapshot state
+    final Snapshot instruction ID
 ```
 
 ## Register Allocation
 
 The live-range scanner processes executable blocks in the usual program order.
-When it encounters an instruction with a side exit, it scans the attached
-uses at that instruction's Late liveness position.
-
-The scanner resolves the instruction's `SideExitId` and visits every
-`SideExitUse`. Each use creates an ordinary frontier use at the owner's Late
-position. It does not scan the side-exit body to rediscover its frontier.
+The owning Machine instruction exposes its side-exit arguments as an ordinary
+operand range whose allocation timing is Late. The scanner processes that range
+without traversing the `SideExit` or its retained instruction sequence.
 
 Side-exit body results receive no live range, bundle, register, or spill slot.
 They exist only in the deferred sequence and are mapped to transition scratch
 while emitting the transition program.
 
-Use-list construction after outlining must therefore distinguish executable
-defs from side-exit-only defs. Executable defs can receive ordinary `Uses`
-entries and side-exit use records. Sunk body defs and moved Snapshots do not
-need executable `Uses` entries merely because a side-exit body references them;
-their internal ordering is verified by the side-exit verifier instead.
+Use-list construction needs no side-exit special case. The owner arguments are
+ordinary executable operands and keep their definitions live. Retained sunk
+definitions are outside executable traversal; their internal dependencies are
+verified by the side-exit verifier instead.
 
 This makes allocation preserve precisely the main-program values needed to
 enter the deferred computation. The same executable definition may have
 different side-exit occurrences at different consumers and may therefore be
 covered by different split bundles.
 
-The allocator does not interpret interpreter-state positions, assign transition
-scratch, or lower deferred computation. It only observes point uses of the
-executable frontier.
+The allocator does not interpret `SideExit::inputs()`, interpreter-state
+positions, transition scratch, or deferred computation. It only observes the
+owner's executable argument operands.
 
 ## Dead Code Elimination
 
@@ -355,23 +341,12 @@ Sunk candidates are still ordinary instructions until the outlining boundary,
 so existing use-list and effect rules keep them live through Snapshots exactly
 as they do before sinking is introduced.
 
-After outlining, DCE must treat side exits as attached roots rather than
-detached dead metadata:
-
-- an executable instruction carrying a `SideExitId` keeps that side-exit record
-  reachable;
-- every side-exit use keeps its non-sunk executable definition live;
-- every body instruction ID keeps that storage-owned sunk instruction valid;
-- every body operand that names an earlier body instruction keeps that earlier
-  sunk instruction in the same side-exit body;
-- every Snapshot operand keeps either its side-exit use or its body instruction
-  live.
-
-Side-exit-only body instructions and moved Snapshots are not reinserted into
-executable block order merely to satisfy DCE. They are live because the side
-exit references them, and they become transition-program input rather than
-main-path code. Conversely, if no executable owner references a side exit, the
-side exit and its body references are unreachable and may be discarded together.
+After outlining, DCE also needs no side-exit-specific operand traversal. Every
+frontier value is an ordinary operand of the executable owner, so the existing
+marking algorithm keeps it live. The owner structurally names the `SideExitId`;
+the CFG-owned record in turn retains the storage-owned sunk instructions and
+Snapshot for transition emission. Those retained instructions do not re-enter
+executable block order merely to satisfy DCE.
 
 ## Split Materialization and Renaming
 
@@ -380,52 +355,41 @@ main-program value from that point onward:
 
 ```text
 %1 = Mov %0
-check ... side_exit=s0
-```
+check ... side_exit_arguments(%1) {side_exit=s0}
 
-The attached side exit logically lives after that transfer. When
-allocation materialization reaches the owning instruction, it rewrites the
-side-exit uses through the definition-remapping environment active at that exact
-point:
-
-```text
-s0(%1):
-    %2 = BoxF64 %1
+s0 inputs(%0):
+    %2 = BoxF64 %0
     Snapshot ..., %2
 ```
 
-Side-exit uses receive the active main-program identities. The body still names
-the same sunk instruction IDs, but transition emission resolves their non-sunk
-operands through the normalized side-exit use list. Because each side exit has
-one owner, normalization does not need to reconcile consumers on opposite sides
-of a split.
-
-This is the same semantic operation as rebuilding ordinary instruction
-operands through the graph rewriter. Source traversal exposes the side-exit
-uses at their owner, but the `SideExit` remains outside CFG topology.
+The retained instructions continue to name the immutable input identity `%0`.
+The owner's parallel side-exit argument is an ordinary operand, so allocation
+materialization rewrites it to `%1` through the existing graph-rewriter path.
+No `SideExit` field is mutated and shared retained instructions remain valid for
+other exits.
 
 After this step, ordinary post-materialization `LocationAssignments` are
-sufficient for transition emission: every normalized side-exit use names the
-program value that physically exists at that point. No occurrence IDs or
-allocator bundle identities need survive into the emitted transition program.
+sufficient for transition emission: each owner argument names the program value
+that physically exists at that point. No occurrence IDs or allocator bundle
+identities need survive into the emitted transition program.
 
 ## Transition Emission
 
 The backend emits an executable instruction and prepares its attached side
 transition from the same normalized graph generation.
 
-The side-transition emitter first maps every normalized side-exit use to its
-physical location through `LocationAssignments`, then walks the side-exit body
-in order:
+The side-transition emitter pairs `SideExit::inputs()[i]` with the physical
+location of `owner.side_exit_arguments()[i]`, then walks the retained
+instructions in order:
 
 - an eligible sunk Core instruction becomes the corresponding transition
   computation and writes transition scratch;
-- a non-sunk operand reads the saved register-file or compiled-stack location
-  obtained from that value's `LocationAssignments`;
+- a retained operand matching a side-exit input reads the saved register-file or
+  compiled-stack location supplied by the corresponding owner argument;
 - an internal body operand refers to the scratch result of an earlier emitted
   instruction;
-- the Snapshot maps its ordered state values through `BytecodeStateOrder` to
-  canonical interpreter destinations;
+- the final Snapshot maps its ordered state values through `BytecodeStateOrder`
+  to canonical interpreter destinations;
 - interpreter-state publication is lowered as a parallel assignment into ordered
   `Transfer` instructions;
 - emission ends with `ResumeInterpreter`.
@@ -439,43 +403,48 @@ Verification at the outlining and allocation boundaries must establish:
 
 - every side-exit consumer names one valid `SideExit`;
 - every `SideExit` has exactly one owner;
-- every side-exit use is available at the owner's side-exit position;
-- every side-exit body is in original block order;
-- every body reference names a side-exit use or an earlier body instruction;
-- every Snapshot reference names a side-exit use or a side-exit body
+- every side-exit input has one corresponding owner argument;
+- every owner argument is an ordinary program-value operand observed Late;
+- every retained sequence is nonempty, contains sunk instructions in original
+  block order, and ends in one Snapshot;
+- every retained operand names a side-exit input or an earlier retained
   instruction;
+- the inputs are exactly the distinct external operands of the complete
+  retained sequence, including operands needed only by sunk computation;
+- input and owner-argument ordering agrees, although that ordering has no
+  semantic meaning;
 - a sunk instruction referenced by several side exits remains storage-owned and
   valid;
 - every side-exit ID is structural metadata rather than an SSA use;
-- every side-exit use is exposed as one `SideExitUse` of the owner;
 - every removed sunk instruction has no executable main-program use;
-- every side-exit use becomes a liveness use at the owner's Late position;
 - no side-exit body result receives a main-program allocation;
-- allocation materialization normalizes every side-exit use using the remapping
-  active at the owner without rebuilding the side-exit body;
+- ordinary graph rewriting and allocation materialization normalize owner
+  arguments without rebuilding or mutating the side exit;
 - transition emission handles every outlined instruction kind and interpreter
   state position.
 
 ## Proposed Implementation Slices
 
 This proposal is not yet accepted. If adopted, the smallest implementation
-sequence appears to be:
+sequence appears below. The prerequisite for a CFG to declare and verify one
+current IR level is already implemented.
 
-1. Add CFG-owned `SideExit` and `SideExitId` representation without changing
-   existing Snapshot consumers.
-2. Add the first outlining pass for non-returning side-exit consumers of direct
-   Snapshots with no sunk computation, replace their Snapshot operands with
-   side-exit-ID attributes, and keep Snapshot state on the side-exit record.
-3. Expose side-exit uses as `SideExitUse` records and teach liveness
-   scanning to use them at the owning instruction's Late position.
-4. Teach allocation materialization to rewrite side-exit uses through the
-   owner's active definition remapping.
+1. Add CFG-owned `SideExit` and `SideExitId` representation containing immutable
+   input identities and retained instruction IDs, without changing existing
+   Snapshot consumers.
+2. Add Machine owner forms with `SideExitId` and a named side-exit argument
+   range; make ordinary instruction traversal, use lists, DCE, and rewriting see
+   those arguments.
+3. Add the first outlining pass for non-returning side-exit consumers of direct
+   Snapshots with no sunk computation, and change the CFG level from Core to
+   Machine once all executable instructions are compatible.
+4. Teach allocation constraints and liveness to observe side-exit arguments at
+   the owner's Late position.
 5. Emit direct-Snapshot side exits as transition transfers and
    `ResumeInterpreter`.
-6. Add sinking metadata, record reachable sunk instruction IDs in original block
-   order during outlining, and emit eligible transition computation.
+6. Add sinking metadata, record reachable sunk instruction IDs in original
+   block order, discover inputs across the complete retained sequence, and emit
+   eligible transition computation.
 
 Call-boundary Snapshot lowering is a separate adjacent design and is not part of
-these slices. Before implementation, the exact graph-rewriter API used to
-expose and normalize attached side-exit uses requires a focused readiness
-review.
+these slices.

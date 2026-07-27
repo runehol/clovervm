@@ -387,6 +387,20 @@ instructions remain target-neutral; target constraints and allocated locations
 belong to backend side tables. If those tables grow into an implicit machine
 instruction graph, the backend may introduce Machine IR instead.
 
+Every `ControlFlowGraph` declares one current IR level. Graph verification
+requires every executable parameter and instruction to be legal at that level.
+Ordinary graph rewrites preserve the declared level, including passes such as
+DCE that operate at several levels. A lowering that changes the graph level owns
+that transition and publishes the new level only after every executable
+instruction is legal in the destination IR.
+
+An instruction kind may be shared across IR levels only when its complete
+physical schema is unchanged. A lowering that changes an instruction's
+operands or attributes creates a distinct destination-level kind. One source
+operation may lower to several destination instructions, and several source
+operations may share one destination kind when their selected operation and
+schema are identical.
+
 ### Optional backend Machine IR
 
 A target backend owns register classes, target operations, calls, flags,
