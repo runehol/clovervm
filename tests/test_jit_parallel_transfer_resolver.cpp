@@ -11,11 +11,16 @@ namespace cl::jit
         constexpr PhysicalRegister x0(RegisterClass::GPR, 0);
         constexpr PhysicalRegister x1(RegisterClass::GPR, 1);
         constexpr PhysicalRegister x2(RegisterClass::GPR, 2);
+        constexpr PhysicalRegister x3(RegisterClass::GPR, 3);
 
-        ScratchRegisters scratch_registers()
+        ScratchRegisters scratch_registers(bool include_second = true)
         {
             ScratchRegisters result;
             result[static_cast<size_t>(RegisterClass::GPR)].push_back(x2);
+            if(include_second)
+            {
+                result[static_cast<size_t>(RegisterClass::GPR)].push_back(x3);
+            }
             return result;
         }
     }  // namespace
@@ -87,7 +92,8 @@ namespace cl::jit
                   resolved.value().steps[1].original_parallel_transfer_index);
     }
 
-    TEST(JitParallelTransferResolver, ReportsAllStackCycleNeedsSpillSlot)
+    TEST(JitParallelTransferResolver,
+         ResolvesAllStackCycleWithTwoScratchRegisters)
     {
         StackLocation first(StackLocationKind::LocalOrTemporary, -8);
         StackLocation second(StackLocationKind::LocalOrTemporary, -16);
@@ -101,8 +107,74 @@ namespace cl::jit
         auto resolved =
             resolve_parallel_transfers(transfers, scratch_registers());
 
+        ASSERT_TRUE(resolved);
+        ASSERT_EQ(4u, resolved.value().steps.size());
+        EXPECT_EQ(x2, resolved.value().steps[0].destination.reg());
+        EXPECT_EQ(-1,
+                  resolved.value().steps[0].original_parallel_transfer_index);
+        EXPECT_EQ(x3, resolved.value().steps[1].destination.reg());
+        EXPECT_EQ(-1,
+                  resolved.value().steps[1].original_parallel_transfer_index);
+        EXPECT_EQ(x3, resolved.value().steps[2].source_location.reg());
+        EXPECT_EQ(-8,
+                  resolved.value().steps[2].destination.stack().frame_offset());
+        EXPECT_EQ(1,
+                  resolved.value().steps[2].original_parallel_transfer_index);
+        EXPECT_EQ(x2, resolved.value().steps[3].source_location.reg());
+        EXPECT_EQ(-16,
+                  resolved.value().steps[3].destination.stack().frame_offset());
+        EXPECT_EQ(0,
+                  resolved.value().steps[3].original_parallel_transfer_index);
+    }
+
+    TEST(JitParallelTransferResolver,
+         ResolvesThreeLocationAllStackCycleWithTwoScratchRegisters)
+    {
+        StackLocation first(StackLocationKind::LocalOrTemporary, -8);
+        StackLocation second(StackLocationKind::LocalOrTemporary, -16);
+        StackLocation third(StackLocationKind::LocalOrTemporary, -24);
+        std::vector<ParallelTransfer> transfers = {
+            {PhysicalLocation::stack(first), PhysicalLocation::stack(second),
+             RegisterClass::GPR},
+            {PhysicalLocation::stack(second), PhysicalLocation::stack(third),
+             RegisterClass::GPR},
+            {PhysicalLocation::stack(third), PhysicalLocation::stack(first),
+             RegisterClass::GPR},
+        };
+
+        auto resolved =
+            resolve_parallel_transfers(transfers, scratch_registers());
+
+        ASSERT_TRUE(resolved);
+        ASSERT_EQ(6u, resolved.value().steps.size());
+        EXPECT_EQ(x2, resolved.value().steps[0].destination.reg());
+        EXPECT_EQ(x3, resolved.value().steps[1].destination.reg());
+        EXPECT_EQ(-8,
+                  resolved.value().steps[2].destination.stack().frame_offset());
+        EXPECT_EQ(x3, resolved.value().steps[3].destination.reg());
+        EXPECT_EQ(-24,
+                  resolved.value().steps[4].destination.stack().frame_offset());
+        EXPECT_EQ(-16,
+                  resolved.value().steps[5].destination.stack().frame_offset());
+    }
+
+    TEST(JitParallelTransferResolver,
+         ReportsAllStackCycleRequiresSecondScratchRegister)
+    {
+        StackLocation first(StackLocationKind::LocalOrTemporary, -8);
+        StackLocation second(StackLocationKind::LocalOrTemporary, -16);
+        std::vector<ParallelTransfer> transfers = {
+            {PhysicalLocation::stack(first), PhysicalLocation::stack(second),
+             RegisterClass::GPR},
+            {PhysicalLocation::stack(second), PhysicalLocation::stack(first),
+             RegisterClass::GPR},
+        };
+
+        auto resolved =
+            resolve_parallel_transfers(transfers, scratch_registers(false));
+
         ASSERT_TRUE(resolved.has_error());
-        EXPECT_EQ(RegisterAllocationError::RequiresTransferSpillSlot,
+        EXPECT_EQ(RegisterAllocationError::InsufficientTransferScratchRegisters,
                   resolved.error());
     }
 

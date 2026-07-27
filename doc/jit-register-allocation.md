@@ -4,7 +4,7 @@
 |---|---|
 | Document type | Design |
 | Status | Accepted |
-| Implementation | Prepared allocation, deterministic constraint splitting, transfer scheduling, conflict-free register/stack assignment, and parallel-transfer materialization implemented; all-stack transfer cycles and edge materialization remain open |
+| Implementation | Prepared allocation, deterministic constraint splitting, transfer scheduling, conflict-free register/stack assignment, and parallel-transfer materialization implemented; edge materialization remains open |
 | Scope | Allocation constraints, allocator-local numbering, liveness, bundles, backtracking allocation, live-range splitting, block-edge transfers, clobbers, spills, and post-allocation materialization |
 | Owning layers | Target preparation owns occurrence constraints and physical-transfer capabilities; the generic register allocator owns numbering, liveness, bundles, splitting, allocation, spill decisions, and bundle transfers; generic allocation materialization resolves transfers, rewrites the Core CFG, and publishes occurrence locations; publication and transition planners own canonical-state synchronization; machine-code emission only encodes the materialized graph |
 | Validated against | `tests/test_jit_allocation_constraints.cpp`, `tests/test_aarch64_allocation_constraints.cpp`, `tests/test_jit_register_allocator.cpp`, `tests/test_jit_parallel_transfer_resolver.cpp`, `tests/test_jit_allocation_materializer.cpp`, and `tests/test_aarch64_execution.cpp` |
@@ -160,12 +160,11 @@ transfers. Backends provide constraints and consume only the rewritten graph
 plus returned `LocationAssignments`.
 
 The initial materializer accepts block-entry and before-instruction transfer
-points. It resolves parallel register and mixed register/stack cycles with the
-primary scratch register declared by the bundle's register class. Acyclic
-memory-to-memory transfers also pass through that scratch. A cycle whose
-endpoints are all stack locations requires an emergency spill slot and is
-rejected with `RequiresTransferSpillSlot` before beginning the graph rewrite.
-Block-exit and block-edge placement remain separate implementation slices.
+points. It resolves register, mixed register/stack, and all-stack parallel
+cycles with the ordered scratch registers declared by the bundle's register
+class. Acyclic memory-to-memory transfers pass through the first available
+scratch. Block-exit and block-edge placement remain separate implementation
+slices.
 
 The Snapshot and `BytecodeStateOrder` define canonical VM homes. A canonical
 frame home is not silently converted into an allocator-owned spill slot.
@@ -1318,10 +1317,10 @@ A transfer contains only source and destination `BundleId`s. After bundle
 assignment, generic materialization maps those endpoints to locations, removes
 aliasing transfers, and resolves each remaining set together. This avoids move
 chains created when block arguments, spills, and instruction fixups are lowered
-independently. The resolver handles register and mixed register/stack cycles
-with the primary non-allocatable scratch register declared by the target
-register class. Acyclic memory-to-memory transfers pass through the same
-scratch.
+independently. The resolver handles register, mixed register/stack, and
+all-stack cycles with the ordered non-allocatable scratch registers declared by
+the target register class. Acyclic memory-to-memory transfers pass through the
+first available scratch.
 
 The parallel resolver itself has no register-allocator dependency in its input
 vocabulary:
@@ -1402,13 +1401,13 @@ this analysis only if redundant transfers are material in practice.
 
 ### All-Stack Transfer Cycles
 
-The current resolver uses only the first declared scratch register. One scratch
-is sufficient for register cycles, mixed register/stack cycles, and acyclic
-memory-to-memory transfers. It cannot preserve one stack value while loading
-another during a cycle whose endpoints are all stack locations. Until
-two-scratch scheduling lands, the resolver reports
-`RequiresTransferSpillSlot` during materialization preflight. No CFG changes are
-made on that path.
+An all-stack cycle uses the first scratch to preserve the value at the broken
+cycle edge and the second scratch to shuttle the remaining memory-to-memory
+transfers. Longer cycles reuse the second scratch after each store. Targets
+must therefore provide two scratch registers for every class that may carry
+stack values. If no scratch is currently available, resolution reports
+`InsufficientTransferScratchRegisters` during materialization preflight and
+makes no CFG changes.
 
 ## Interpreter Locations and Spillability
 

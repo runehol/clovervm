@@ -4,7 +4,6 @@
 
 #include <absl/container/flat_hash_map.h>
 
-#include <algorithm>
 #include <cstdint>
 #include <optional>
 #include <utility>
@@ -23,23 +22,6 @@ namespace cl::jit
             RegisterClass register_class;
         };
 
-        std::optional<PhysicalRegister>
-        scratch_for(const ScratchRegisters &scratch_registers,
-                    RegisterClass register_class)
-        {
-            const std::vector<PhysicalRegister> &scratch =
-                scratch_registers[static_cast<size_t>(register_class)];
-            if(scratch.empty())
-            {
-                return std::nullopt;
-            }
-            if(scratch.front().register_class() != register_class)
-            {
-                fatal("parallel-transfer scratch has the wrong register class");
-            }
-            return scratch.front();
-        }
-
         using PendingSourceCounts =
             absl::flat_hash_map<PhysicalLocation, int32_t>;
 
@@ -50,39 +32,26 @@ namespace cl::jit
             return n_pending_sources.contains(location);
         }
 
-        bool scratch_is_occupied(PhysicalRegister scratch,
-                                 const PendingSourceCounts &n_pending_sources)
+        std::optional<PhysicalRegister>
+        available_scratch(const ScratchRegisters &scratch_registers,
+                          RegisterClass register_class,
+                          const PendingSourceCounts &n_pending_sources)
         {
-            return location_is_pending_source(PhysicalLocation::reg(scratch),
-                                              n_pending_sources);
-        }
-
-        bool cycle_is_all_stack(size_t start,
-                                const std::vector<PendingTransfer> &pending)
-        {
-            size_t current = start;
-            do
+            for(PhysicalRegister scratch:
+                scratch_registers[static_cast<size_t>(register_class)])
             {
-                const PendingTransfer &transfer = pending[current];
-                if(transfer.source_location.is_register() ||
-                   transfer.destination.is_register())
+                if(scratch.register_class() != register_class)
                 {
-                    return false;
+                    fatal("parallel-transfer scratch has the wrong register "
+                          "class");
                 }
-
-                auto next = std::ranges::find_if(
-                    pending, [&](const PendingTransfer &candidate) {
-                        return transfer.destination.aliases(
-                            candidate.source_location);
-                    });
-                if(next == pending.end())
+                if(!location_is_pending_source(PhysicalLocation::reg(scratch),
+                                               n_pending_sources))
                 {
-                    fatal("malformed parallel-transfer dependency cycle");
+                    return scratch;
                 }
-                current = static_cast<size_t>(next - pending.begin());
             }
-            while(current != start);
-            return true;
+            return std::nullopt;
         }
 
         size_t append_step(ResolvedTransferPlan &result,
@@ -100,8 +69,7 @@ namespace cl::jit
         Result<void, RegisterAllocationError>
         append_transfer(ResolvedTransferPlan &result,
                         const PendingTransfer &transfer,
-                        const ScratchRegisters &scratch_registers,
-                        const PendingSourceCounts &n_pending_sources)
+                        std::optional<PhysicalRegister> scratch)
         {
             if(!transfer.source_location.is_stack() ||
                !transfer.destination.is_stack())
@@ -111,13 +79,11 @@ namespace cl::jit
                 return Result<void, RegisterAllocationError>::ok();
             }
 
-            std::optional<PhysicalRegister> scratch =
-                scratch_for(scratch_registers, transfer.register_class);
-            if(!scratch.has_value() ||
-               scratch_is_occupied(*scratch, n_pending_sources))
+            if(!scratch.has_value())
             {
                 return Result<void, RegisterAllocationError>::error(
-                    RegisterAllocationError::RequiresTransferScratch);
+                    RegisterAllocationError::
+                        InsufficientTransferScratchRegisters);
             }
             size_t scratch_step =
                 append_step(result, transfer.source, transfer.source_location,
@@ -167,7 +133,12 @@ namespace cl::jit
 
         while(!pending.empty())
         {
-            std::optional<size_t> ready;
+            struct ReadyTransfer
+            {
+                size_t index;
+                std::optional<PhysicalRegister> scratch;
+            };
+            std::optional<ReadyTransfer> ready;
             for(size_t index = 0; index < pending.size(); ++index)
             {
                 const PendingTransfer &transfer = pending[index];
@@ -176,26 +147,27 @@ namespace cl::jit
                 {
                     continue;
                 }
+                std::optional<PhysicalRegister> scratch;
                 if(transfer.source_location.is_stack() &&
                    transfer.destination.is_stack())
                 {
-                    std::optional<PhysicalRegister> scratch =
-                        scratch_for(scratch_registers, transfer.register_class);
-                    if(scratch.has_value() &&
-                       scratch_is_occupied(*scratch, n_pending_sources))
+                    scratch = available_scratch(scratch_registers,
+                                                transfer.register_class,
+                                                n_pending_sources);
+                    if(!scratch.has_value())
                     {
                         continue;
                     }
                 }
-                ready = index;
+                ready = ReadyTransfer{index, scratch};
                 break;
             }
 
             if(ready.has_value())
             {
-                PendingTransfer transfer = pending[*ready];
-                auto appended = append_transfer(
-                    result, transfer, scratch_registers, n_pending_sources);
+                PendingTransfer transfer = pending[ready->index];
+                auto appended =
+                    append_transfer(result, transfer, ready->scratch);
                 if(!appended)
                 {
                     return propagate_failure(std::move(appended));
@@ -211,25 +183,19 @@ namespace cl::jit
                 {
                     n_pending_sources.erase(source_count);
                 }
-                pending[*ready] = std::move(pending.back());
+                pending[ready->index] = std::move(pending.back());
                 pending.pop_back();
                 continue;
             }
 
-            if(cycle_is_all_stack(0, pending))
-            {
-                return Result<ResolvedTransferPlan, RegisterAllocationError>::
-                    error(RegisterAllocationError::RequiresTransferSpillSlot);
-            }
-
             PendingTransfer &cycle = pending.front();
-            std::optional<PhysicalRegister> scratch =
-                scratch_for(scratch_registers, cycle.register_class);
-            if(!scratch.has_value() ||
-               scratch_is_occupied(*scratch, n_pending_sources))
+            std::optional<PhysicalRegister> scratch = available_scratch(
+                scratch_registers, cycle.register_class, n_pending_sources);
+            if(!scratch.has_value())
             {
                 return Result<ResolvedTransferPlan, RegisterAllocationError>::
-                    error(RegisterAllocationError::RequiresTransferScratch);
+                    error(RegisterAllocationError::
+                              InsufficientTransferScratchRegisters);
             }
             size_t scratch_step =
                 append_step(result, cycle.source, cycle.source_location,

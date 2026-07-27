@@ -17,6 +17,7 @@ namespace cl::jit
         constexpr PhysicalRegister x0(RegisterClass::GPR, 0);
         constexpr PhysicalRegister x1(RegisterClass::GPR, 1);
         constexpr PhysicalRegister x2(RegisterClass::GPR, 2);
+        constexpr PhysicalRegister x3(RegisterClass::GPR, 3);
 
         LocationRequirement fixed(PhysicalLocation location)
         {
@@ -27,7 +28,7 @@ namespace cl::jit
             std::vector<InstructionAllocationConstraints> overrides)
         {
             constexpr std::array registers = {x0, x1};
-            constexpr std::array scratch_registers = {x2};
+            constexpr std::array scratch_registers = {x2, x3};
             std::vector<RegisterClassDefinition> definitions;
             definitions.emplace_back(RegisterClass::GPR, registers,
                                      scratch_registers);
@@ -439,7 +440,8 @@ namespace cl::jit
             materialized.value().location_for(ProgramValueRef(move_lhs)).reg());
     }
 
-    TEST(JitAllocationMaterializer, ReportsAllStackCycleBeforeRewriting)
+    TEST(JitAllocationMaterializer,
+         ResolvesAllStackCycleWithTwoScratchRegisters)
     {
         CompilationSession session;
         GraphBuilder builder(session);
@@ -482,12 +484,40 @@ namespace cl::jit
         auto materialized = materialize_allocation(session, *graph, prepared,
                                                    constraints, allocation);
 
-        ASSERT_TRUE(materialized.has_error());
-        EXPECT_EQ(RegisterAllocationError::RequiresTransferSpillSlot,
-                  materialized.error());
-        ASSERT_EQ(2u, entry->instructions().size());
-        EXPECT_EQ(operation, entry->instruction_at(0));
-        EXPECT_EQ(return_instruction, entry->instruction_at(1));
+        ASSERT_TRUE(materialized);
+        ASSERT_EQ(6u, entry->instructions().size());
+        LoadStackInstruction save_lhs =
+            entry->instruction_at(0).as<LoadStackInstruction>();
+        LoadStackInstruction save_rhs =
+            entry->instruction_at(1).as<LoadStackInstruction>();
+        StoreStackInstruction move_rhs =
+            entry->instruction_at(2).as<StoreStackInstruction>();
+        StoreStackInstruction move_lhs =
+            entry->instruction_at(3).as<StoreStackInstruction>();
+        AndSMIInstruction new_operation =
+            entry->instruction_at(4).as<AndSMIInstruction>();
+        EXPECT_EQ(lhs.id(), save_lhs.source().instruction_id());
+        EXPECT_EQ(rhs.id(), save_rhs.source().instruction_id());
+        EXPECT_EQ(save_rhs.id(), move_rhs.source().instruction_id());
+        EXPECT_EQ(save_lhs.id(), move_lhs.source().instruction_id());
+        EXPECT_EQ(move_lhs.id(), new_operation.lhs().instruction_id());
+        EXPECT_EQ(move_rhs.id(), new_operation.rhs().instruction_id());
+        EXPECT_EQ(
+            x2,
+            materialized.value().location_for(ProgramValueRef(save_lhs)).reg());
+        EXPECT_EQ(
+            x3,
+            materialized.value().location_for(ProgramValueRef(save_rhs)).reg());
+        EXPECT_EQ(8, materialized.value()
+                         .location_for(ProgramValueRef(move_rhs))
+                         .stack()
+                         .frame_offset());
+        EXPECT_EQ(16, materialized.value()
+                          .location_for(ProgramValueRef(move_lhs))
+                          .stack()
+                          .frame_offset());
+        EXPECT_TRUE(operation.is_detached());
+        EXPECT_TRUE(return_instruction.is_detached());
     }
 
 }  // namespace cl::jit

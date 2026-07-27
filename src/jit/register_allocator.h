@@ -23,8 +23,7 @@ namespace cl::jit
         UnsupportedTransferPoint,
         RequiresConstraintFixup,
         RequiresSplittingOrSpilling,
-        RequiresTransferScratch,
-        RequiresTransferSpillSlot,
+        InsufficientTransferScratchRegisters,
     };
 
     class RegisterAllocationResult
