@@ -283,6 +283,12 @@ resolve the parallel assignment into ordered `Transfer` instructions,
 introducing a scratch transfer before a write would clobber a value still
 needed later.
 
+Transition planning reuses `order_parallel_assignments<TransitionLocation>()`.
+Its cycle-scratch callback allocates the scratch location belonging to the
+preservation `Transfer`; unlike physical register-allocation materialization,
+it needs no second legalization pass because a transition `Transfer` directly
+supports stack-to-stack locations.
+
 For example:
 
 ```text

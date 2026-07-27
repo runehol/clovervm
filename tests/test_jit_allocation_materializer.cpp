@@ -25,13 +25,19 @@ namespace cl::jit
         }
 
         AllocationConstraints constraints_with(
-            std::vector<InstructionAllocationConstraints> overrides)
+            std::vector<InstructionAllocationConstraints> overrides,
+            bool include_second_scratch = true)
         {
             constexpr std::array registers = {x0, x1};
             constexpr std::array scratch_registers = {x2, x3};
+            std::span<const PhysicalRegister> selected_scratch =
+                include_second_scratch
+                    ? std::span<const PhysicalRegister>(scratch_registers)
+                    : std::span<const PhysicalRegister>(scratch_registers)
+                          .first(1);
             std::vector<RegisterClassDefinition> definitions;
             definitions.emplace_back(RegisterClass::GPR, registers,
-                                     scratch_registers);
+                                     selected_scratch);
             return AllocationConstraints(std::move(definitions),
                                          std::move(overrides));
         }
@@ -518,6 +524,54 @@ namespace cl::jit
                           .frame_offset());
         EXPECT_TRUE(operation.is_detached());
         EXPECT_TRUE(return_instruction.is_detached());
+    }
+
+    TEST(JitAllocationMaterializer,
+         ReportsAllStackCycleWithoutSecondScratchRegister)
+    {
+        CompilationSession session;
+        GraphBuilder builder(session);
+        Block *entry = builder.emplace_block();
+        ParameterInstruction lhs =
+            builder.emplace_parameter<ParameterInstruction>(entry);
+        ParameterInstruction rhs =
+            builder.emplace_parameter<ParameterInstruction>(entry);
+        AndSMIInstruction operation =
+            builder.emplace_instruction<AndSMIInstruction>(
+                entry, TaggedValueRef(lhs), TaggedValueRef(rhs));
+        builder.emplace_instruction<ReturnInstruction>(
+            entry, TaggedValueRef(operation));
+        ControlFlowGraph *graph = builder.finalize();
+
+        StackLocation first(StackLocationKind::IncomingParameter, 8);
+        StackLocation second(StackLocationKind::IncomingParameter, 16);
+        std::vector<InstructionAllocationConstraints> overrides;
+        overrides.emplace_back(
+            lhs, std::vector<ProgramValueUseConstraint>{},
+            ResultConstraint{AccessTiming::Late,
+                             fixed(PhysicalLocation::stack(first))});
+        overrides.emplace_back(
+            rhs, std::vector<ProgramValueUseConstraint>{},
+            ResultConstraint{AccessTiming::Late,
+                             fixed(PhysicalLocation::stack(second))});
+        overrides.emplace_back(operation,
+                               std::vector<ProgramValueUseConstraint>{
+                                   {0, AccessTiming::Early,
+                                    fixed(PhysicalLocation::stack(second))},
+                                   {1, AccessTiming::Early,
+                                    fixed(PhysicalLocation::stack(first))}});
+        AllocationConstraints constraints =
+            constraints_with(std::move(overrides), false);
+        PreparedAllocationProblem prepared({}, {}, {}, {}, {}, {});
+        RegisterAllocationResult allocation =
+            allocate(*graph, constraints, prepared);
+
+        auto materialized = materialize_allocation(session, *graph, prepared,
+                                                   constraints, allocation);
+
+        ASSERT_TRUE(materialized.has_error());
+        EXPECT_EQ(RegisterAllocationError::InsufficientTransferScratchRegisters,
+                  materialized.error());
     }
 
 }  // namespace cl::jit

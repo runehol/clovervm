@@ -7,7 +7,7 @@
 | Implementation | Prepared allocation, deterministic constraint splitting, transfer scheduling, conflict-free register/stack assignment, and parallel-transfer materialization implemented; edge materialization remains open |
 | Scope | Allocation constraints, allocator-local numbering, liveness, bundles, backtracking allocation, live-range splitting, block-edge transfers, clobbers, spills, and post-allocation materialization |
 | Owning layers | Target preparation owns occurrence constraints and physical-transfer capabilities; the generic register allocator owns numbering, liveness, bundles, splitting, allocation, spill decisions, and bundle transfers; generic allocation materialization resolves transfers, rewrites the Core CFG, and publishes occurrence locations; publication and transition planners own canonical-state synchronization; machine-code emission only encodes the materialized graph |
-| Validated against | `tests/test_jit_allocation_constraints.cpp`, `tests/test_aarch64_allocation_constraints.cpp`, `tests/test_jit_register_allocator.cpp`, `tests/test_jit_parallel_transfer_resolver.cpp`, `tests/test_jit_allocation_materializer.cpp`, and `tests/test_aarch64_execution.cpp` |
+| Validated against | `tests/test_jit_allocation_constraints.cpp`, `tests/test_aarch64_allocation_constraints.cpp`, `tests/test_jit_register_allocator.cpp`, `tests/test_jit_parallel_assignment_resolver.cpp`, `tests/test_jit_allocation_materializer.cpp`, and `tests/test_aarch64_execution.cpp` |
 | Supersedes | The open register-allocation direction in [JIT Compiler and IR](jit-compiler-and-ir.md) |
 
 This document defines the register-allocation contract for the clovervm JIT. It
@@ -1322,50 +1322,34 @@ all-stack cycles with the ordered non-allocatable scratch registers declared by
 the target register class. Acyclic memory-to-memory transfers pass through the
 first available scratch.
 
-The parallel resolver itself has no register-allocator dependency in its input
-vocabulary:
+The reusable ordering engine has no register-allocator dependency in its
+location vocabulary:
 
 ```cpp
-struct ParallelTransfer
+template<typename Location>
+struct ParallelAssignment
 {
-    PhysicalLocation source;
-    PhysicalLocation destination;
+    Location source;
+    Location destination;
     RegisterClass register_class;
 };
 
-using ScratchRegisters =
-    std::array<std::vector<PhysicalRegister>,
-               static_cast<size_t>(RegisterClass::Count)>;
-
-struct ResolvedTransferStep
-{
-    ResolvedTransferSource source;
-    PhysicalLocation source_location;
-    PhysicalLocation destination;
-    int original_parallel_transfer_index; // -1 for scratch-only steps
-};
-
-struct ResolvedTransferPlan
-{
-    std::vector<size_t> aliasing_transfers;
-    std::vector<ResolvedTransferStep> steps;
-};
-
-Result<ResolvedTransferPlan, RegisterAllocationError>
-resolve_parallel_transfers(
-    std::span<const ParallelTransfer> transfers,
-    const ScratchRegisters &scratch_registers);
+order_parallel_assignments<Location>(assignments, make_cycle_scratch);
 ```
 
-An input vector index is the resolver's opaque value identity.
-`ResolvedTransferSource` names either one original input transfer or the output
-of an earlier resolved step. Identity transfers are reported separately so the
-caller can propagate value identity without emitting an instruction.
-`original_parallel_transfer_index` identifies the input completed by a step;
-scratch-only preservation steps use `-1`. Register-allocation materialization
-translates bundle transfers into this physical form; side-exit and
-canonical-state synchronization can build the same input without depending on
-bundles or allocation constraints.
+`order_parallel_assignments<Location>()` uses a worklist to order assignments
+and breaks cycles with one caller-provided scratch location. Its ordered moves
+refer either to one original assignment or to the output of an earlier move.
+Identity assignments are reported separately so a caller can propagate value
+identity without emitting an instruction.
+
+Register-allocation materialization instantiates the engine with
+`PhysicalLocation`. It then performs the physical-only legalization step:
+each ordered stack-to-stack move passes through a scratch register that is not
+a future move source. This is why an all-stack cycle uses one register for the
+generic preservation move and another for the physical memory-to-memory move.
+That policy lives beside physical move emission rather than in another public
+resolver layer.
 
 Materialization then inserts the resolved sequential transfers into Core IR and
 rewrites the destination-bundle occurrences to the definitions produced by

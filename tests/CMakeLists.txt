@@ -25,7 +25,7 @@ target_sources(test_clovervm PRIVATE
 	test_code_cache.cpp
 	test_jit_allocation_constraints.cpp
 	test_jit_allocation_materializer.cpp
-	test_jit_parallel_transfer_resolver.cpp
+	test_jit_parallel_assignment_resolver.cpp
 	test_jit_storage.cpp
 	test_jit_bytecode_state.cpp
 	test_jit_cfg.cpp

@@ -1,12 +1,14 @@
 #include "jit/allocation_materializer.h"
 
 #include "jit/graph_rewriter.h"
-#include "jit/parallel_transfer_resolver.h"
+#include "jit/parallel_assignment_resolver.h"
 #include "runtime/fatal.h"
 
 #include <absl/container/flat_hash_map.h>
 
 #include <algorithm>
+#include <array>
+#include <cstdint>
 #include <optional>
 #include <utility>
 #include <vector>
@@ -15,10 +17,16 @@ namespace cl::jit
 {
     namespace
     {
+        using ScratchRegisters =
+            std::array<std::vector<PhysicalRegister>,
+                       static_cast<size_t>(RegisterClass::Count)>;
+        using FutureSourceCounts =
+            absl::flat_hash_map<PhysicalLocation, int32_t>;
+
         struct PlannedTransferSet
         {
             const BundleTransferSet *original;
-            ResolvedTransferPlan resolved;
+            OrderedParallelAssignment<PhysicalLocation> ordered;
         };
 
         struct MaterializationPlan
@@ -30,6 +38,142 @@ namespace cl::jit
             LocationAssignmentsBuilder existing_locations;
             std::vector<std::optional<InstructionId>> initial_value_by_bundle;
         };
+
+        size_t append_move(OrderedParallelAssignment<PhysicalLocation> &result,
+                           OrderedMoveSource source,
+                           PhysicalLocation source_location,
+                           PhysicalLocation destination,
+                           RegisterClass register_class,
+                           int original_assignment_index)
+        {
+            size_t index = result.moves.size();
+            result.moves.push_back({source, source_location, destination,
+                                    register_class, original_assignment_index});
+            return index;
+        }
+
+        std::optional<PhysicalRegister>
+        available_scratch(const ScratchRegisters &scratch_registers,
+                          RegisterClass register_class,
+                          const FutureSourceCounts &future_sources)
+        {
+            for(PhysicalRegister scratch:
+                scratch_registers[static_cast<size_t>(register_class)])
+            {
+                if(!future_sources.contains(PhysicalLocation::reg(scratch)))
+                {
+                    return scratch;
+                }
+            }
+            return std::nullopt;
+        }
+
+        OrderedMoveSource
+        remap_source(OrderedMoveSource source,
+                     const std::vector<size_t> &legalized_move_by_ordered_move)
+        {
+            switch(source.kind())
+            {
+                case OrderedMoveSource::Kind::OriginalAssignment:
+                    return source;
+                case OrderedMoveSource::Kind::Move:
+                    return OrderedMoveSource::move(
+                        legalized_move_by_ordered_move[source.index()]);
+            }
+        }
+
+        Result<OrderedParallelAssignment<PhysicalLocation>,
+               RegisterAllocationError>
+        legalize_stack_transfers(
+            OrderedParallelAssignment<PhysicalLocation> ordered,
+            const ScratchRegisters &scratch_registers)
+        {
+            OrderedParallelAssignment<PhysicalLocation> result;
+            result.aliasing_assignments =
+                std::move(ordered.aliasing_assignments);
+
+            FutureSourceCounts future_sources;
+            for(const OrderedMove<PhysicalLocation> &move: ordered.moves)
+            {
+                ++future_sources[move.source_location];
+            }
+
+            std::vector<size_t> legalized_move_by_ordered_move;
+            legalized_move_by_ordered_move.reserve(ordered.moves.size());
+            for(const OrderedMove<PhysicalLocation> &move: ordered.moves)
+            {
+                OrderedMoveSource source =
+                    remap_source(move.source, legalized_move_by_ordered_move);
+                size_t completed_move = 0;
+                if(move.source_location.is_stack() &&
+                   move.destination.is_stack())
+                {
+                    std::optional<PhysicalRegister> scratch = available_scratch(
+                        scratch_registers, move.register_class, future_sources);
+                    if(!scratch.has_value())
+                    {
+                        return Result<
+                            OrderedParallelAssignment<PhysicalLocation>,
+                            RegisterAllocationError>::
+                            error(RegisterAllocationError::
+                                      InsufficientTransferScratchRegisters);
+                    }
+                    PhysicalLocation scratch_location =
+                        PhysicalLocation::reg(*scratch);
+                    size_t scratch_move =
+                        append_move(result, source, move.source_location,
+                                    scratch_location, move.register_class, -1);
+                    completed_move = append_move(
+                        result, OrderedMoveSource::move(scratch_move),
+                        scratch_location, move.destination, move.register_class,
+                        move.original_assignment_index);
+                }
+                else
+                {
+                    completed_move = append_move(
+                        result, source, move.source_location, move.destination,
+                        move.register_class, move.original_assignment_index);
+                }
+                legalized_move_by_ordered_move.push_back(completed_move);
+
+                auto future = future_sources.find(move.source_location);
+                if(--future->second == 0)
+                {
+                    future_sources.erase(future);
+                }
+            }
+            return Result<OrderedParallelAssignment<PhysicalLocation>,
+                          RegisterAllocationError>::ok(std::move(result));
+        }
+
+        Result<OrderedParallelAssignment<PhysicalLocation>,
+               RegisterAllocationError>
+        plan_physical_assignments(
+            std::span<const ParallelAssignment<PhysicalLocation>> assignments,
+            const ScratchRegisters &scratch_registers)
+        {
+            auto ordered = order_parallel_assignments<PhysicalLocation>(
+                assignments,
+                [&](RegisterClass register_class,
+                    size_t) -> std::optional<PhysicalLocation> {
+                    const std::vector<PhysicalRegister> &scratch =
+                        scratch_registers[static_cast<size_t>(register_class)];
+                    if(scratch.empty())
+                    {
+                        return std::nullopt;
+                    }
+                    return PhysicalLocation::reg(scratch.front());
+                });
+            if(!ordered)
+            {
+                return Result<OrderedParallelAssignment<PhysicalLocation>,
+                              RegisterAllocationError>::
+                    error(RegisterAllocationError::
+                              InsufficientTransferScratchRegisters);
+            }
+            return legalize_stack_transfers(std::move(ordered).value(),
+                                            scratch_registers);
+        }
 
         Result<MaterializationPlan, RegisterAllocationError>
         plan_materialization(const PreparedAllocationProblem &problem,
@@ -48,7 +192,7 @@ namespace cl::jit
             }
             for(const BundleTransferSet &set: allocation.transfers().sets())
             {
-                std::vector<ParallelTransfer> transfers;
+                std::vector<ParallelAssignment<PhysicalLocation>> transfers;
                 transfers.reserve(set.transfers.size());
                 for(const BundleTransfer &transfer: set.transfers)
                 {
@@ -73,13 +217,13 @@ namespace cl::jit
                              transfer.destination),
                          register_class});
                 }
-                auto resolved =
-                    resolve_parallel_transfers(transfers, scratch_registers);
-                if(!resolved)
+                auto ordered =
+                    plan_physical_assignments(transfers, scratch_registers);
+                if(!ordered)
                 {
-                    return propagate_failure(std::move(resolved));
+                    return propagate_failure(std::move(ordered));
                 }
-                PlannedTransferSet planned{&set, std::move(resolved).value()};
+                PlannedTransferSet planned{&set, std::move(ordered).value()};
 
                 bool inserted = false;
                 switch(set.point.kind())
@@ -258,32 +402,33 @@ namespace cl::jit
                     sources.push_back(*source);
                 }
 
-                for(size_t index: planned.resolved.aliasing_transfers)
+                for(size_t index: planned.ordered.aliasing_assignments)
                 {
                     const BundleTransfer &transfer = set.transfers[index];
                     current_values_[transfer.destination.value()] =
                         sources[index];
                 }
 
-                if(planned.resolved.steps.empty())
+                if(planned.ordered.moves.empty())
                 {
                     return RewriteInsertion::none();
                 }
 
                 RewriteInsertion::InstructionSequence instructions;
                 RewriteInsertion::TransferOutputs outputs;
-                std::vector<InstructionId> step_values;
-                step_values.reserve(planned.resolved.steps.size());
-                for(const ResolvedTransferStep &step: planned.resolved.steps)
+                std::vector<InstructionId> move_values;
+                move_values.reserve(planned.ordered.moves.size());
+                for(const OrderedMove<PhysicalLocation> &move:
+                    planned.ordered.moves)
                 {
                     InstructionId source(0);
-                    switch(step.source.kind())
+                    switch(move.source.kind())
                     {
-                        case ResolvedTransferSource::Kind::OriginalTransfer:
-                            source = sources[step.source.index()];
+                        case OrderedMoveSource::Kind::OriginalAssignment:
+                            source = sources[move.source.index()];
                             break;
-                        case ResolvedTransferSource::Kind::Step:
-                            source = step_values[step.source.index()];
+                        case OrderedMoveSource::Kind::Move:
+                            source = move_values[move.source.index()];
                             break;
                     }
 
@@ -293,23 +438,23 @@ namespace cl::jit
                     switch(source_instruction.value_representation())
                     {
                         case ValueRepresentation::TaggedValue:
-                            if(step.source_location.is_register() &&
-                               step.destination.is_register())
+                            if(move.source_location.is_register() &&
+                               move.destination.is_register())
                             {
                                 output =
                                     context.make_instruction<MovInstruction>(
                                         TaggedValueRef(source_instruction));
                             }
-                            else if(step.source_location.is_stack() &&
-                                    step.destination.is_register())
+                            else if(move.source_location.is_stack() &&
+                                    move.destination.is_register())
                             {
                                 output =
                                     context
                                         .make_instruction<LoadStackInstruction>(
                                             TaggedValueRef(source_instruction));
                             }
-                            else if(step.source_location.is_register() &&
-                                    step.destination.is_stack())
+                            else if(move.source_location.is_register() &&
+                                    move.destination.is_stack())
                             {
                                 output = context.make_instruction<
                                     StoreStackInstruction>(
@@ -317,22 +462,22 @@ namespace cl::jit
                             }
                             break;
                         case ValueRepresentation::F64:
-                            if(step.source_location.is_register() &&
-                               step.destination.is_register())
+                            if(move.source_location.is_register() &&
+                               move.destination.is_register())
                             {
                                 output =
                                     context.make_instruction<MovF64Instruction>(
                                         F64Ref(source_instruction));
                             }
-                            else if(step.source_location.is_stack() &&
-                                    step.destination.is_register())
+                            else if(move.source_location.is_stack() &&
+                                    move.destination.is_register())
                             {
                                 output = context.make_instruction<
                                     LoadStackF64Instruction>(
                                     F64Ref(source_instruction));
                             }
-                            else if(step.source_location.is_register() &&
-                                    step.destination.is_stack())
+                            else if(move.source_location.is_register() &&
+                                    move.destination.is_stack())
                             {
                                 output = context.make_instruction<
                                     StoreStackF64Instruction>(
@@ -349,14 +494,13 @@ namespace cl::jit
                         fatal("invalid resolved JIT transfer locations");
                     }
                     instructions.push_back(*output);
-                    step_values.push_back(output->id());
+                    move_values.push_back(output->id());
                     locations_.assign(ProgramValueRef(*output),
-                                      step.destination);
+                                      move.destination);
 
-                    if(step.original_parallel_transfer_index >= 0)
+                    if(move.original_assignment_index >= 0)
                     {
-                        int transfer_index =
-                            step.original_parallel_transfer_index;
+                        int transfer_index = move.original_assignment_index;
                         const BundleTransfer &transfer =
                             set.transfers[transfer_index];
                         current_values_[transfer.destination.value()] =
