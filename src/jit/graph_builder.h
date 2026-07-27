@@ -3,6 +3,7 @@
 
 #include "jit/compilation_session.h"
 #include "jit/instruction.h"
+#include "jit/side_exit_id.h"
 
 #include <cassert>
 #include <concepts>
@@ -90,6 +91,10 @@ namespace cl::jit
         BlockEdge *
         make_block_edge(Block *source, Block *target,
                         std::span<const ProgramValueRef> arguments = {});
+
+        SideExitId
+        emplace_side_exit(std::span<const ProgramValueRef> inputs,
+                          std::span<const InstructionId> instructions);
 
         ControlFlowGraph *finalize();
 

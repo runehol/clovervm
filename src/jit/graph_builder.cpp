@@ -4,6 +4,7 @@
 #include "runtime/fatal.h"
 
 #include <cassert>
+#include <limits>
 
 namespace cl::jit
 {
@@ -91,6 +92,21 @@ namespace cl::jit
         assert(target != nullptr);
         assert(graph_->owns_block(target));
         return storage_->make_block_edge(source, target, arguments);
+    }
+
+    SideExitId
+    GraphBuilder::emplace_side_exit(std::span<const ProgramValueRef> inputs,
+                                    std::span<const InstructionId> instructions)
+    {
+        assert_can_build();
+        if(graph_->side_exits_.size() > std::numeric_limits<uint32_t>::max())
+        {
+            fatal("too many JIT side exits");
+        }
+        SideExitId id(static_cast<uint32_t>(graph_->side_exits_.size()));
+        graph_->side_exits_.push_back(
+            storage_->make_side_exit(inputs, instructions));
+        return id;
     }
 
     ControlFlowGraph *GraphBuilder::finalize()

@@ -124,6 +124,65 @@ namespace cl::jit
         EXPECT_EQ(5u, entry->instructions().size());
     }
 
+    TEST(JitCfg, OwnsSideExitInputsAndRetainedInstructions)
+    {
+        CompilationSession session;
+        GraphBuilder builder(session);
+        Block *entry = builder.emplace_block();
+        TaggedValueRef source = emplace_constant(builder, entry, Value::True());
+        MovInstruction moved =
+            builder.emplace_instruction<MovInstruction>(entry, source);
+        std::array<ProgramValueRef, 1> snapshot_values = {
+            ProgramValueRef(moved)};
+        SnapshotInstruction snapshot =
+            builder.emplace_instruction<SnapshotInstruction>(
+                entry, snapshot_values, BytecodePC{7});
+        std::array<ProgramValueRef, 1> inputs = {source};
+        std::array<InstructionId, 2> retained = {moved.id(), snapshot.id()};
+        SideExitId side_exit = builder.emplace_side_exit(inputs, retained);
+        builder.emplace_instruction<ReturnInstruction>(entry, source);
+
+        ControlFlowGraph *graph = builder.finalize();
+
+        ASSERT_EQ(1u, graph->side_exits().size());
+        const SideExit &stored = graph->side_exit(side_exit);
+        ASSERT_EQ(1u, stored.inputs().size());
+        EXPECT_EQ(source.instruction_id(), stored.inputs()[0].instruction_id());
+        ASSERT_EQ(2u, stored.instructions().size());
+        EXPECT_EQ(moved.id(), stored.instructions()[0]);
+        EXPECT_EQ(snapshot.id(), stored.instructions()[1]);
+    }
+
+    TEST(JitSideExit, RejectsIncorrectInputEnvironment)
+    {
+        CompilationSession session;
+        GraphBuilder builder(session);
+        Block *entry = builder.emplace_block();
+        TaggedValueRef source = emplace_constant(builder, entry, Value::True());
+        std::array<ProgramValueRef, 1> snapshot_values = {source};
+        SnapshotInstruction snapshot =
+            builder.emplace_instruction<SnapshotInstruction>(
+                entry, snapshot_values, BytecodePC{7});
+        std::array<InstructionId, 1> retained = {snapshot.id()};
+
+        EXPECT_DEATH(builder.emplace_side_exit(
+                         std::span<const ProgramValueRef>{}, retained),
+                     "inputs do not match its external operand environment");
+    }
+
+    TEST(JitSideExit, RejectsMissingFinalSnapshot)
+    {
+        CompilationSession session;
+        GraphBuilder builder(session);
+        Block *entry = builder.emplace_block();
+        TaggedValueRef source = emplace_constant(builder, entry, Value::True());
+        std::array<InstructionId, 1> retained = {source.instruction_id()};
+
+        EXPECT_DEATH(builder.emplace_side_exit(
+                         std::span<const ProgramValueRef>{}, retained),
+                     "does not end in a Snapshot");
+    }
+
     TEST(JitCfg, ParallelEdgesCarryIndependentOrderedArguments)
     {
         CompilationSession session;
