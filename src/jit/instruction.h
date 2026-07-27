@@ -1048,6 +1048,8 @@ namespace cl::jit
             size_t current = 0;                                                \
             size_t offset = AttributeBase;                                     \
             attributes(CL_JIT_FIND_ATTRIBUTE_SLOT)                            \
+            (void)target;                                                      \
+            (void)current;                                                     \
             assert(current == target);                                         \
             return offset;                                                     \
         }                                                                      \
@@ -1092,6 +1094,7 @@ namespace cl::jit
             operands(CL_JIT_WRITE_FIXED_INLINE, CL_JIT_SKIP_INLINE,            \
                      CL_JIT_SKIP_INLINE)                                       \
             attributes(CL_JIT_WRITE_ATTRIBUTE_INLINE)                         \
+            (void)index;                                                       \
             assert(index == inline_slots.size());                              \
             return inline_slots;                                               \
         }                                                                      \
@@ -1130,6 +1133,7 @@ namespace cl::jit
             std::array<Slot, InlineSlotCount> inline_slots{};                   \
             size_t index = 0;                                                  \
             attributes(CL_JIT_WRITE_ATTRIBUTE_INLINE)                         \
+            (void)index;                                                       \
             assert(index == AttributeWordCount);                               \
             inline_slots[IndirectOperandSlot] = indirect_offset;               \
             return inline_slots;                                               \

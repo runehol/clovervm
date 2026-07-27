@@ -121,6 +121,7 @@ namespace cl::jit
         for(Instruction parameter: entry->parameters())
         {
             assert(parameter.kind() == InstructionKind::Parameter);
+            (void)parameter;
         }
 
         for(Instruction instruction: entry->instructions())
