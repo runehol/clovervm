@@ -163,6 +163,8 @@ add_library(libclovervm_objects OBJECT
     jit/serial.h
     jit/standard_code_memory.cpp
     jit/standard_code_memory.h
+    jit/transition_executor.cpp
+    jit/transition_executor.h
     jit/transition_program.cpp
     jit/transition_program.h
     jit/use_lists.cpp

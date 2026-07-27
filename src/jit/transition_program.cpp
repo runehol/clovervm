@@ -157,6 +157,12 @@ namespace cl::jit
                         require_declared_scratch(destination,
                                                  scratch_slot_count);
                         if(destination.area() ==
+                           TransitionLocationArea::RegisterFile)
+                        {
+                            fatal("transition program writes its register "
+                                  "file");
+                        }
+                        if(destination.area() ==
                            TransitionLocationArea::Scratch)
                         {
                             initialized_scratch[static_cast<size_t>(

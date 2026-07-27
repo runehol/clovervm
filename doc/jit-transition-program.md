@@ -76,16 +76,18 @@ not part of this index space. Eligible Core results use
 instruction index as the scratch destination. Resultless instructions that do
 not stage a value use no scratch.
 
-Each thread owns a reusable `std::vector<uint64_t>` transition scratch buffer.
+`TransitionExecutionContext` owns a reusable `std::vector<uint64_t>` transition
+scratch buffer. A thread embeds one context for production execution, while
+tests and other consumers may construct a context independently.
 `BeginTransition.scratch_slot_count` records the actual capacity required by
-the lowered program. The executor grows the buffer to at least that many
-elements and does not clear it: verification ensures that every scratch source
-was initialized earlier in the current program. A program containing only
-direct resultless transfers may request zero slots. A parallel-transfer cycle
-requests the slots introduced for staging. The planner computes the count as
-zero when the program contains no scratch locations, otherwise one plus the
-highest scratch offset read or written. Resultless instructions after the final
-scratch use do not increase it.
+the lowered program. The context grows the buffer to at least that many elements
+and does not clear it: verification ensures that every scratch source was
+initialized earlier in the current program. A program containing only direct
+resultless transfers may request zero slots. A parallel-transfer cycle requests
+the slots introduced for staging. The planner computes the count as zero when
+the program contains no scratch locations, otherwise one plus the highest
+scratch offset read or written. Resultless instructions after the final scratch
+use do not increase it.
 
 Transition execution is a no-safepoint region. No transition instruction may
 invoke Python, trigger GC, or otherwise enter safepoint-capable VM code. Saved
@@ -94,6 +96,34 @@ need no transition-local root map. `ResumeInterpreter` first completes
 canonical publication and then leaves this no-safepoint region. Any future
 eligible allocation operation must use a mechanism guaranteed not to
 safepoint.
+
+Initial execution is a direct switch interpreter:
+
+```cpp
+struct TransitionExecutionInput
+{
+    std::span<const uint64_t> register_file;
+    Value *frame_pointer;
+};
+
+struct InterpreterResumeState
+{
+    Value accumulator;
+    BytecodePC resume_pc;
+};
+
+InterpreterResumeState execute_transition_program(
+    TransitionExecutionContext &context,
+    std::span<const TransitionInstruction> instructions,
+    TransitionExecutionInput input);
+```
+
+`Transfer` copies one raw 64-bit word so tagged and unboxed representations use
+the same path. Register-file locations are read-only; stack locations are
+relative to the supplied frame pointer; scratch locations address the context.
+`ResumeInterpreter` reconstructs the tagged accumulator and returns the
+bytecode continuation to the future side-exit adapter. This initial executor
+does not itself enter the bytecode interpreter.
 
 ## Instruction Representation
 
@@ -484,7 +514,8 @@ Transition-program verification should check:
 - `BeginTransition` is the first entry and its scratch count covers every
   scratch location used by the program;
 - every scratch source has been initialized by an earlier instruction;
-- every scratch write targets the current instruction's scratch slot;
+- every implicit result targets its instruction's body position, while an
+  explicit `Transfer` may target any declared scratch location;
 - a side-exit transition never writes its register-file image;
 - `ResumeInterpreter` reads an initialized tagged accumulator source;
 - exactly one terminal handoff is present and it is the final instruction;
@@ -505,16 +536,18 @@ The first slice establishes only the representation:
 - permit patching the initial `BeginTransition` scratch count after the stream
   has been constructed.
 
-The second slice adds execution and publication:
+The second slice builds and executes standalone programs:
 
 - build, verify, and format self-delimiting transition sequences;
-- publish 16-byte-aligned transition sequences with compiled code-object
-  metadata;
-- add reusable per-thread scratch storage sized by `BeginTransition`;
+- add a reusable execution context with scratch storage sized by
+  `BeginTransition`;
 - interpret the three transition-only kinds without safepointing.
 
-The third slice connects side exits:
+The third slice publishes programs and connects side exits:
 
+- publish 16-byte-aligned transition sequences with compiled code-object
+  metadata;
+- embed a reusable transition execution context in each thread;
 - expand Snapshot liveness at executable exit consumers;
 - translate Snapshot positions through `BytecodeStateOrder` and combine them
   with the physical frontier to form parallel transfers;
