@@ -7,10 +7,10 @@ namespace cl::jit
     RegisterClassDefinition::RegisterClassDefinition(
         RegisterClass register_class,
         std::span<const PhysicalRegister> allocation_order,
-        std::optional<PhysicalRegister> scratch_register)
+        std::span<const PhysicalRegister> scratch_registers)
         : register_class_(register_class),
           allocation_order_(allocation_order.begin(), allocation_order.end()),
-          scratch_register_(scratch_register)
+          scratch_registers_(scratch_registers.begin(), scratch_registers.end())
     {
         if(register_class >= RegisterClass::Count)
         {
@@ -31,16 +31,22 @@ namespace cl::jit
             members_.insert(reg);
         }
 
-        if(scratch_register_.has_value())
+        RegisterSet seen_scratch;
+        for(PhysicalRegister scratch: scratch_registers_)
         {
-            if(scratch_register_->register_class() != register_class)
+            if(scratch.register_class() != register_class)
             {
                 fatal("JIT scratch register has the wrong register class");
             }
-            if(members_.contains(*scratch_register_))
+            if(members_.contains(scratch))
             {
                 fatal("JIT scratch register is also allocatable");
             }
+            if(seen_scratch.contains(scratch))
+            {
+                fatal("JIT scratch register list contains a duplicate");
+            }
+            seen_scratch.insert(scratch);
         }
     }
 

@@ -15,7 +15,7 @@ namespace cl::jit
         ScratchRegisters scratch_registers()
         {
             ScratchRegisters result;
-            result[static_cast<size_t>(RegisterClass::GPR)] = x2;
+            result[static_cast<size_t>(RegisterClass::GPR)].push_back(x2);
             return result;
         }
     }  // namespace

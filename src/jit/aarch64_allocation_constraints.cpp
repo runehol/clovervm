@@ -30,13 +30,15 @@ namespace cl::jit
             gpr(6),  gpr(7),  gpr(8),  gpr(9),  gpr(10), gpr(11),
             gpr(12), gpr(13), gpr(14), gpr(15),
         };
+        constexpr std::array GPRScratchRegisters = {gpr(16), gpr(17)};
 
         constexpr std::array SIMDAllocationOrder = {
             simd(0),  simd(1),  simd(2),  simd(3),  simd(4),  simd(5),
             simd(6),  simd(7),  simd(16), simd(17), simd(18), simd(19),
             simd(20), simd(21), simd(22), simd(23), simd(24), simd(25),
-            simd(26), simd(27), simd(28), simd(29), simd(30),
+            simd(26), simd(27), simd(28), simd(29),
         };
+        constexpr std::array SIMDScratchRegisters = {simd(30), simd(31)};
 
         [[noreturn]] void unsupported_instruction(InstructionKind kind)
         {
@@ -145,9 +147,9 @@ namespace cl::jit
 
         std::vector<RegisterClassDefinition> register_classes;
         register_classes.emplace_back(RegisterClass::GPR, GPRAllocationOrder,
-                                      gpr(16));
+                                      GPRScratchRegisters);
         register_classes.emplace_back(RegisterClass::SIMD, SIMDAllocationOrder,
-                                      simd(31));
+                                      SIMDScratchRegisters);
         return AllocationConstraints(std::move(register_classes),
                                      std::move(overrides));
     }

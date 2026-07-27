@@ -27,8 +27,10 @@ namespace cl::jit
             std::vector<InstructionAllocationConstraints> overrides)
         {
             constexpr std::array registers = {x0, x1};
+            constexpr std::array scratch_registers = {x2};
             std::vector<RegisterClassDefinition> definitions;
-            definitions.emplace_back(RegisterClass::GPR, registers, x2);
+            definitions.emplace_back(RegisterClass::GPR, registers,
+                                     scratch_registers);
             return AllocationConstraints(std::move(definitions),
                                          std::move(overrides));
         }

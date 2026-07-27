@@ -6,7 +6,6 @@
 
 #include <array>
 #include <cstddef>
-#include <optional>
 #include <span>
 #include <vector>
 
@@ -20,7 +19,7 @@ namespace cl::jit
     };
 
     using ScratchRegisters =
-        std::array<std::optional<PhysicalRegister>,
+        std::array<std::vector<PhysicalRegister>,
                    static_cast<size_t>(RegisterClass::Count)>;
 
     class ResolvedTransferSource

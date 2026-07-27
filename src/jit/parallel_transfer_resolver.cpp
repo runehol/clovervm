@@ -27,14 +27,17 @@ namespace cl::jit
         scratch_for(const ScratchRegisters &scratch_registers,
                     RegisterClass register_class)
         {
-            std::optional<PhysicalRegister> scratch =
+            const std::vector<PhysicalRegister> &scratch =
                 scratch_registers[static_cast<size_t>(register_class)];
-            if(scratch.has_value() &&
-               scratch->register_class() != register_class)
+            if(scratch.empty())
+            {
+                return std::nullopt;
+            }
+            if(scratch.front().register_class() != register_class)
             {
                 fatal("parallel-transfer scratch has the wrong register class");
             }
-            return scratch;
+            return scratch.front();
         }
 
         using PendingSourceCounts =

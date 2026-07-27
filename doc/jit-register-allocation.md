@@ -161,15 +161,14 @@ plus returned `LocationAssignments`.
 
 The initial materializer accepts block-entry and before-instruction transfer
 points. It resolves parallel register and mixed register/stack cycles with the
-scratch register declared by the bundle's register class. Acyclic
+primary scratch register declared by the bundle's register class. Acyclic
 memory-to-memory transfers also pass through that scratch. A cycle whose
 endpoints are all stack locations requires an emergency spill slot and is
 rejected with `RequiresTransferSpillSlot` before beginning the graph rewrite.
 Block-exit and block-edge placement remain separate implementation slices.
 
-Canonical VM homes and whether they currently contain an up-to-date value
-remain separate state. A canonical frame home is not silently converted into
-an allocator-owned spill slot.
+The Snapshot and `BytecodeStateOrder` define canonical VM homes. A canonical
+frame home is not silently converted into an allocator-owned spill slot.
 
 A Core def marked sunk has no `LocationAssignment`. Its transition-only
 operation remains available to transition planning, while allocation liveness
@@ -238,18 +237,18 @@ public:
     RegisterClassDefinition(
         RegisterClass register_class,
         std::span<const PhysicalRegister> allocation_order,
-        std::optional<PhysicalRegister> scratch_register = std::nullopt);
+        std::span<const PhysicalRegister> scratch_registers = {});
 
     RegisterClass register_class() const;
     const RegisterSet &members() const;
     const std::vector<PhysicalRegister> &allocation_order() const;
-    std::optional<PhysicalRegister> scratch_register() const;
+    const std::vector<PhysicalRegister> &scratch_registers() const;
 
 private:
     RegisterClass register_class_;
     RegisterSet members_;
     std::vector<PhysicalRegister> allocation_order_;
-    std::optional<PhysicalRegister> scratch_register_;
+    std::vector<PhysicalRegister> scratch_registers_;
 };
 ```
 
@@ -269,10 +268,12 @@ x86-64 RAX/EAX/AX/AL  -> { GPR, 0 }
 x86-64 XMM0/YMM0/ZMM0 -> { SIMD, 0 }
 ```
 
-Each class may also declare one target-owned scratch register. Scratch is
-excluded from `members()` and `allocation_order()`, so allocator bundles and
-fixed instruction constraints cannot claim it. Post-allocation backend
-operations such as parallel-transfer resolution may use it explicitly.
+Each class may also declare an ordered list of target-owned scratch registers.
+Scratch registers are excluded from `members()` and `allocation_order()`, so
+allocator bundles and fixed instruction constraints cannot claim them.
+Post-allocation backend operations such as parallel-transfer resolution may use
+them explicitly. The initial resolver continues to use only the first register
+until two-scratch transfer scheduling is implemented.
 
 The emitter converts a `PhysicalRegister` to the target instruction's required
 view. A partial-width x86 definition still occupies and conflicts on the whole
@@ -632,11 +633,11 @@ This is a bring-up choice, not the final CloverVM calling convention:
 
 - the enabled GPR class contains `x0` through `x15`, in that allocation order;
 - the enabled SIMD class contains caller-saved `v0` through `v7` followed by
-  `v16` through `v30`;
-- the GPR class declares `x16` as its non-allocatable scratch register;
-- the SIMD class declares `v31` as its non-allocatable scratch register;
-- `x17` remains unavailable until allocation assignments are consumed by every
-  branch and call lowering that may need scratch registers;
+  `v16` through `v29`;
+- the GPR class declares `x16` and `x17` as ordered non-allocatable scratch
+  registers;
+- the SIMD class declares `v30` and `v31` as ordered non-allocatable scratch
+  registers;
 - platform-reserved `x18` is unavailable;
 - callee-saved GPRs and `v8` through `v15` remain unavailable until prologue
   and epilogue generation preserves them;
@@ -1289,8 +1290,8 @@ ABI permits the call to destroy it.
 
 Undeclared scratch registers are not allowed. Instruction lowerings expose
 ordinary temporaries through their `AllocationConstraints`; backend-only
-operations may use the scratch register explicitly declared by their
-`RegisterClassDefinition`. Such a register is excluded from allocation rather
+operations may use scratch registers explicitly declared by their
+`RegisterClassDefinition`. Such registers are excluded from allocation rather
 than being consumed invisibly by emission.
 
 ## Unified Parallel Transfers
@@ -1318,8 +1319,9 @@ assignment, generic materialization maps those endpoints to locations, removes
 aliasing transfers, and resolves each remaining set together. This avoids move
 chains created when block arguments, spills, and instruction fixups are lowered
 independently. The resolver handles register and mixed register/stack cycles
-with the non-allocatable scratch register declared by the target register
-class. Acyclic memory-to-memory transfers pass through the same scratch.
+with the primary non-allocatable scratch register declared by the target
+register class. Acyclic memory-to-memory transfers pass through the same
+scratch.
 
 The parallel resolver itself has no register-allocator dependency in its input
 vocabulary:
@@ -1333,7 +1335,7 @@ struct ParallelTransfer
 };
 
 using ScratchRegisters =
-    std::array<std::optional<PhysicalRegister>,
+    std::array<std::vector<PhysicalRegister>,
                static_cast<size_t>(RegisterClass::Count)>;
 
 struct ResolvedTransferStep
@@ -1400,12 +1402,13 @@ this analysis only if redundant transfers are material in practice.
 
 ### All-Stack Transfer Cycles
 
-One declared register scratch is sufficient for register cycles, mixed
-register/stack cycles, and acyclic memory-to-memory transfers. It cannot
-preserve one stack value while loading another during a cycle whose endpoints
-are all stack locations. Until the allocator owns emergency spill slots, the
-resolver reports `RequiresTransferSpillSlot` during materialization preflight.
-No CFG changes are made on that path.
+The current resolver uses only the first declared scratch register. One scratch
+is sufficient for register cycles, mixed register/stack cycles, and acyclic
+memory-to-memory transfers. It cannot preserve one stack value while loading
+another during a cycle whose endpoints are all stack locations. Until
+two-scratch scheduling lands, the resolver reports
+`RequiresTransferSpillSlot` during materialization preflight. No CFG changes are
+made on that path.
 
 ## Interpreter Locations and Spillability
 

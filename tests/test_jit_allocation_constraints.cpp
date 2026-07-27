@@ -68,11 +68,13 @@ namespace cl::jit
         EXPECT_EQ(RegisterClass::GPR, definition.register_class());
         EXPECT_EQ(members, definition.members());
         EXPECT_EQ(x1, definition.allocation_order()[0]);
-        EXPECT_FALSE(definition.scratch_register().has_value());
+        EXPECT_TRUE(definition.scratch_registers().empty());
 
-        RegisterClassDefinition with_scratch(RegisterClass::GPR, order, x63);
-        ASSERT_TRUE(with_scratch.scratch_register().has_value());
-        EXPECT_EQ(x63, *with_scratch.scratch_register());
+        std::array scratch = {x63};
+        RegisterClassDefinition with_scratch(RegisterClass::GPR, order,
+                                             scratch);
+        ASSERT_EQ(1u, with_scratch.scratch_registers().size());
+        EXPECT_EQ(x63, with_scratch.scratch_registers()[0]);
 
         std::array duplicate = {x0, x0};
         EXPECT_DEATH(
@@ -83,12 +85,15 @@ namespace cl::jit
         EXPECT_DEATH(
             (void)RegisterClassDefinition(RegisterClass::GPR, wrong_class),
             "wrong register class");
-        EXPECT_DEATH(
-            (void)RegisterClassDefinition(RegisterClass::GPR, order, d0),
-            "scratch register has the wrong");
-        EXPECT_DEATH(
-            (void)RegisterClassDefinition(RegisterClass::GPR, order, x0),
-            "scratch register is also allocatable");
+        EXPECT_DEATH((void)RegisterClassDefinition(RegisterClass::GPR, order,
+                                                   std::array{d0}),
+                     "scratch register has the wrong");
+        EXPECT_DEATH((void)RegisterClassDefinition(RegisterClass::GPR, order,
+                                                   std::array{x0}),
+                     "scratch register is also allocatable");
+        EXPECT_DEATH((void)RegisterClassDefinition(RegisterClass::GPR, order,
+                                                   std::array{x63, x63}),
+                     "scratch register list contains a duplicate");
     }
 
     TEST(JitPhysicalRegister, RejectsDuplicateClassDefinitions)

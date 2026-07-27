@@ -76,23 +76,26 @@ namespace cl::jit
         ASSERT_EQ(16u, gprs.allocation_order().size());
         EXPECT_EQ(x(0), gprs.allocation_order().front());
         EXPECT_EQ(x(15), gprs.allocation_order().back());
-        ASSERT_TRUE(gprs.scratch_register().has_value());
-        EXPECT_EQ(x(16), *gprs.scratch_register());
+        ASSERT_EQ(2u, gprs.scratch_registers().size());
+        EXPECT_EQ(x(16), gprs.scratch_registers()[0]);
+        EXPECT_EQ(x(17), gprs.scratch_registers()[1]);
 
         const RegisterClassDefinition &simd = constraints.register_classes()[1];
         EXPECT_EQ(RegisterClass::SIMD, simd.register_class());
-        EXPECT_EQ(23u, simd.members().size());
+        EXPECT_EQ(22u, simd.members().size());
         EXPECT_TRUE(simd.members().contains(v(0)));
         EXPECT_TRUE(simd.members().contains(v(7)));
         EXPECT_FALSE(simd.members().contains(v(8)));
         EXPECT_FALSE(simd.members().contains(v(15)));
         EXPECT_TRUE(simd.members().contains(v(16)));
+        EXPECT_FALSE(simd.members().contains(v(30)));
         EXPECT_FALSE(simd.members().contains(v(31)));
-        ASSERT_EQ(23u, simd.allocation_order().size());
+        ASSERT_EQ(22u, simd.allocation_order().size());
         EXPECT_EQ(v(0), simd.allocation_order().front());
-        EXPECT_EQ(v(30), simd.allocation_order().back());
-        ASSERT_TRUE(simd.scratch_register().has_value());
-        EXPECT_EQ(v(31), *simd.scratch_register());
+        EXPECT_EQ(v(29), simd.allocation_order().back());
+        ASSERT_EQ(2u, simd.scratch_registers().size());
+        EXPECT_EQ(v(30), simd.scratch_registers()[0]);
+        EXPECT_EQ(v(31), simd.scratch_registers()[1]);
 
         ASSERT_EQ(4u, constraints.instruction_overrides().size());
         std::array parameters = {first, second, third};

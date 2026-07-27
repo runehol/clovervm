@@ -44,7 +44,7 @@ namespace cl::jit
             {
                 scratch_registers[static_cast<size_t>(
                     definition.register_class())] =
-                    definition.scratch_register();
+                    definition.scratch_registers();
             }
             for(const BundleTransferSet &set: allocation.transfers().sets())
             {
