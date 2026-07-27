@@ -4,7 +4,7 @@
 |---|---|
 | Document type | Proposed architecture contract |
 | Status | Proposed |
-| Implementation | Partial; entry-parameter and result fixed-location constraints, canonical incoming stack locations, allocation-order register sets, and per-class scratch registers are implemented; managed calls and transition adapters are not |
+| Implementation | Partial; result constraints, canonical incoming stack locations, allocation-order register sets, and per-class scratch registers are implemented; entry constraints still use the superseded eight-Python-register layout and must add the hidden `ThreadState *`; managed calls and transition adapters are not implemented |
 | Scope | AArch64 compiled managed argument transport, call adaptation, cross-engine entry, return, and safepoint placement |
 | Owning layers | Call-site lowering owns guarded Python adaptation; the AArch64 backend owns argument and result locations; transition adapters own cross-engine reshuffling; the generic allocator and materializer implement the resulting fixed-location constraints and transfers |
 | Builds on | [CloverVM Function Calling Convention](function-calling-convention.md) |
@@ -20,26 +20,35 @@ All Python-visible parameters use `TaggedValue` at a non-inlined function
 boundary:
 
 ```text
-parameter 0..7  -> x0..x7
-parameter 8..N  -> canonical parameter cells in the argument window
-result          -> x0
+hidden ThreadState * -> x0
+parameter 0..6       -> x1..x7
+parameter 7..N       -> canonical parameter cells in the argument window
+result               -> x0
 ```
+
+The thread pointer is compiler state, not Python parameter zero. It does not
+contribute to Python arity, `BytecodeStateOrder`, Snapshot positions, or the
+canonical parameter window. It enters the compiled function as a hidden
+Machine value and may be moved or spilled by ordinary allocation after its
+fixed `x0` entry definition.
 
 The initial JIT relies on inlining to eliminate boxing. It does not introduce
 representation-specialized entry signatures. A later convention may add such
 entries explicitly; arity alone describes the proposed initial boundary.
 
-The use of `x0` through `x7` deliberately matches the profitable tagged-value
-subset of AAPCS64. This is not the platform ABI as a whole. Clover retains its
-managed stack, frame header, call adaptation, continuation mechanism, and
-canonical overflow-argument layout.
+This register prefix deliberately matches native Clover handlers such as
+`Value handler(ThreadState *, Value, ...)`: the thread is in `x0`, the first
+seven Python values are in `x1` through `x7`, and the result returns in `x0`.
+It is not the platform ABI as a whole. Native overflow arguments use the host
+ABI stack, while compiled managed overflow arguments use Clover's canonical
+managed argument window.
 
 ## Canonical Argument Window
 
 The caller reserves the target's complete ABI-padded canonical parameter
 window, including cells for parameters transported in registers. Canonical
-cells zero through seven therefore exist even when they are not current at the
-call transition. Parameters beyond seven are written directly to their
+cells zero through six therefore exist even when they are not current at the
+call transition. Parameters beyond six are written directly to their
 ordinary canonical outgoing cells.
 
 Moving the managed frame pointer reinterprets overflow cells as the callee's
@@ -75,12 +84,14 @@ The AArch64 backend describes a compiled managed call with ordinary fixed
 locations:
 
 ```text
-caller argument 0..7  -> Use FixedLocation(x0..x7)
-caller argument 8..N  -> Use FixedLocation(
+hidden caller thread  -> Use FixedLocation(x0)
+caller argument 0..6  -> Use FixedLocation(x1..x7)
+caller argument 7..N  -> Use FixedLocation(
                               OutgoingCallArgument(caller_frame_offset))
 
-callee parameter 0..7 -> Def FixedLocation(x0..x7)
-callee parameter 8..N -> Def FixedLocation(
+hidden callee thread  -> Def FixedLocation(x0)
+callee parameter 0..6 -> Def FixedLocation(x1..x7)
+callee parameter 7..N -> Def FixedLocation(
                               IncomingParameter(callee_frame_offset))
 
 return result          -> FixedLocation(x0)
@@ -96,7 +107,8 @@ not enter the allocator.
 Cross-engine call entry uses this internal AArch64 transition state:
 
 ```text
-x0..x7 = first eight adapted tagged parameters
+x0      = active ThreadState *
+x1..x7 = first seven adapted tagged parameters
 x16    = target CodeObject *
 x29/fp = committed callee managed frame pointer
 ```
@@ -110,7 +122,7 @@ The JIT-to-interpreter adapter:
 
 ```text
 arity = x16->function_signature.n_parameters
-store x0..x[min(arity, 8)-1] into fp-relative canonical parameter cells
+store x1..x[min(arity, 7)] into fp-relative canonical parameter cells
 publish x16 as the current CodeObject
 set the interpreter pc to x16->code.data()
 publish the managed frame frontier
@@ -122,7 +134,8 @@ The interpreter-to-JIT adapter is symmetric:
 
 ```text
 arity = x16->function_signature.n_parameters
-load x0..x[min(arity, 8)-1] from fp-relative canonical parameter cells
+place the active ThreadState * in x0
+load the first min(arity, 7) parameters into x1..x7
 leave overflow parameters in their canonical cells
 switch the architectural stack pointer to managed Clover storage
 enter compiled code
@@ -196,6 +209,8 @@ compiled unwinding and stack walking.
   frame even when its register-parameter cells are stale.
 - Non-inlined Python boundaries use tagged parameters; inlining is the initial
   mechanism for avoiding boxing.
+- Every compiled entry receives the active `ThreadState *` in `x0`; it is not a
+  Python argument or canonical bytecode-state position.
 - Successful adaptation determines the callee arity before argument transport.
 - Call transitions are specialized by arity in both engine directions.
 - Return transitions do not depend on arity.

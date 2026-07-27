@@ -654,12 +654,13 @@ This is a bring-up choice, not the final CloverVM calling convention:
 Overflow entry parameters, F64 entry parameters, calls, and instruction
 kinds without a bring-up lowering currently hard-fail instead of silently
 receiving an incomplete contract. Under the proposed AArch64 JIT calling
-convention, tagged entry parameters zero through seven use fixed `x0` through
-`x7` locations. Overflow entry parameters use fixed `IncomingParameter`
-locations, while overflow call preparation uses fixed
-`OutgoingCallArgument` locations. They do not create separate ABI constraint
-mechanisms. ABI registers likewise remain ordinary fixed locations at exact
-occurrences.
+convention, a hidden `ThreadState *` entry value uses fixed `x0`, tagged Python
+parameters zero through six use fixed `x1` through `x7`, and later parameters
+use fixed `IncomingParameter` locations. The hidden thread value is not a
+Python parameter or a `BytecodeStateOrder` position. Overflow call preparation
+uses fixed `OutgoingCallArgument` locations. These do not create separate ABI
+constraint mechanisms: the thread and ABI registers remain ordinary fixed
+locations at exact occurrences.
 
 Constraint validation enforces:
 
@@ -1242,7 +1243,8 @@ first-class `BlockEdge` objects and ordered edge arguments.
 Calls are represented by ordinary allocation constraints:
 
 ```text
-managed arguments 0..7   -> early or late uses in fixed x0..x7
+hidden ThreadState *     -> early or late use in fixed x0
+managed arguments 0..6   -> early or late uses in fixed x1..x7
 managed overflow args    -> early or late uses in fixed outgoing argument slots
 native arguments         -> early or late uses in fixed platform ABI registers
 result definitions       -> early or late defs in fixed result locations
@@ -1251,13 +1253,14 @@ clobbers                 -> caller-saved register masks
 ```
 
 A managed Python call reserves the target's complete Clover argument window.
-Under the proposed AArch64 JIT convention, its first eight adapted tagged
-arguments use `FixedLocation(x0)` through `FixedLocation(x7)`. Only overflow
-arguments use `FixedLocation(OutgoingCallArgument(...))`; moving the managed
-frame pointer reinterprets those physical cells as `IncomingParameter`
-locations in the callee. Caller and callee frame offsets use different frame
-coordinate systems, so the frame-transition layout rather than numeric offset
-equality establishes that physical alias.
+Under the proposed AArch64 JIT convention, the active `ThreadState *` uses
+`FixedLocation(x0)`, its first seven adapted tagged arguments use
+`FixedLocation(x1)` through `FixedLocation(x7)`, and later arguments use
+`FixedLocation(OutgoingCallArgument(...))`. Moving the managed frame pointer
+reinterprets those physical cells as `IncomingParameter` locations in the
+callee. Caller and callee frame offsets use different frame coordinate systems,
+so the frame-transition layout rather than numeric offset equality establishes
+that physical alias.
 
 Interpreter-to-JIT and JIT-to-interpreter call transitions are arity-specific:
 their complete contract belongs to
@@ -1276,13 +1279,14 @@ An explicit call result owns its fixed return register at the late point, so
 that register is omitted from the call's clobber set:
 
 ```text
-argument 0  -> Use Early, FixedLocation(x0)
-argument 1  -> Use Early, FixedLocation(x1)
-result      -> Def Late, FixedLocation(x0)
-clobbers    -> caller-saved registers except x0
+ThreadState * -> Use Early, FixedLocation(x0)
+argument 0    -> Use Early, FixedLocation(x1)
+argument 1    -> Use Early, FixedLocation(x2)
+result        -> Def Late, FixedLocation(x0)
+clobbers      -> caller-saved registers except x0
 ```
 
-The immovable Late reservation for the `x1` clobber may follow the early
+The immovable Late reservation for the `x2` clobber may follow the early
 argument use. The explicit late result def supplies the required interference
 for `x0` instead. A resultless call includes `x0` in its clobber set when the
 ABI permits the call to destroy it.

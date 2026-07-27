@@ -216,6 +216,11 @@ Interpreted and compiled Python execution share the managed frame layout,
 canonical argument window, and Python call-adaptation semantics. The proposed
 compiled transport is defined separately in
 [Proposed AArch64 JIT Calling Convention](aarch64-jit-calling-convention.md).
+Every compiled function also receives the active `ThreadState *` as a hidden
+entry value. It is not a Python argument, bytecode-state position, or canonical
+frame slot. On AArch64 it occupies `x0`, making the register prefix compatible
+with native Clover handlers while shifting the first seven Python arguments to
+`x1` through `x7`.
 Every frame retains both its canonical interpreted continuation and an
 executable compiled return target.
 
