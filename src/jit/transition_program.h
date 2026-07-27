@@ -7,6 +7,9 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
+#include <span>
+#include <string>
+#include <vector>
 
 namespace cl::jit
 {
@@ -69,12 +72,12 @@ namespace cl::jit
             return result;
         }
 
-        static TransitionInstruction transfer(TransitionLocation source,
-                                              TransitionLocation destination)
+        static TransitionInstruction transfer(TransitionLocation destination,
+                                              TransitionLocation source)
         {
             TransitionInstruction result(TransitionInstructionKind::Transfer);
-            result.set_location(0, source);
-            result.set_location(1, destination);
+            result.set_location(0, destination);
+            result.set_location(1, source);
             return result;
         }
 
@@ -105,13 +108,13 @@ namespace cl::jit
         TransitionLocation transfer_source() const
         {
             assert(kind_ == TransitionInstructionKind::Transfer);
-            return location(0);
+            return location(1);
         }
 
         TransitionLocation transfer_destination() const
         {
             assert(kind_ == TransitionInstructionKind::Transfer);
-            return location(1);
+            return location(0);
         }
 
         TransitionLocation interpreter_accumulator() const
@@ -155,6 +158,32 @@ namespace cl::jit
 
     static_assert(sizeof(TransitionInstruction) == 16);
     static_assert(alignof(TransitionInstruction) == 16);
+
+    class TransitionProgramBuilder
+    {
+    public:
+        TransitionProgramBuilder();
+
+        void append_instruction(TransitionInstruction instruction);
+
+        void emplace_transfer(TransitionLocation destination,
+                              TransitionLocation source);
+        void emplace_resume_interpreter(TransitionLocation accumulator,
+                                        BytecodePC resume_pc);
+
+        std::vector<TransitionInstruction> finalize() &&;
+
+    private:
+        void require_scratch_slot(uint32_t slot);
+
+        std::vector<TransitionInstruction> instructions_;
+    };
+
+    void verify_transition_program(
+        std::span<const TransitionInstruction> instructions);
+
+    std::string format_transition_program(
+        std::span<const TransitionInstruction> instructions);
 
 }  // namespace cl::jit
 

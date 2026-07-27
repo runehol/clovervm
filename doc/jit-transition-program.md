@@ -4,7 +4,7 @@
 |---|---|
 | Document type | Design |
 | Status | Accepted |
-| Implementation | Not started |
+| Implementation | In progress |
 | Scope | Compact straight-line programs that transform values and machine state between execution conventions; the first consumer is JIT side exit |
 | Owning layers | Core IR owns sunk operation semantics and Snapshot state; register allocation owns physical frontier locations; transition planning owns the continuous transition program and canonical publication; each thread owns reusable transition scratch storage; target thunks own fixed machine-state saves |
 | Validated against | N/A |
@@ -156,7 +156,7 @@ public:
     static TransitionInstruction
     begin_transition(uint32_t scratch_slot_count);
     static TransitionInstruction
-    transfer(TransitionLocation source, TransitionLocation destination);
+    transfer(TransitionLocation destination, TransitionLocation source);
     static TransitionInstruction
     resume_interpreter(TransitionLocation accumulator, BytecodePC resume_pc);
 
@@ -189,18 +189,49 @@ The count may be zero. Because the header occupies one aligned
 
 The builder emits `BeginTransition {scratch_slot_count = 0}` before any
 position-derived result exists. Once the complete stream determines its scratch
-requirement, it patches that instruction through
-`set_scratch_slot_count()`. This is the only initial instruction mutation API;
-other fix-ups are added only when construction requires them.
+requirement, each append immediately patches that instruction through
+`set_scratch_slot_count()`. An instruction with an implicit result requires the
+scratch slot named by its body position. A `Transfer` with an explicit scratch
+destination requires that destination slot. The builder retains no duplicate
+scratch-count field and `finalize()` performs no sizing scan.
+
+Compiler-side construction follows the graph builder's ownership vocabulary:
+
+```cpp
+class TransitionProgramBuilder
+{
+public:
+    TransitionProgramBuilder();
+
+    void append_instruction(TransitionInstruction instruction);
+    void emplace_transfer(TransitionLocation destination,
+                          TransitionLocation source);
+    void emplace_resume_interpreter(TransitionLocation accumulator,
+                                    BytecodePC resume_pc);
+
+    std::vector<TransitionInstruction> finalize() &&;
+
+private:
+    void require_scratch_slot(uint32_t slot);
+
+    std::vector<TransitionInstruction> instructions_;
+};
+```
+
+`append_instruction()` is the single placement and scratch-accounting path.
+The `emplace` operations construct and append the transition-specific
+instructions. `finalize()` verifies the completed stream and moves out the
+compiler-side vector. This is the only initial instruction mutation API; other
+fix-ups are added only when construction requires them.
 
 `Transfer` is a resultless transition instruction with an explicit destination:
 
 ```text
 Transfer
-    operand:
-        source : TransitionLocation
     attribute:
         destination : TransitionLocation
+    operand:
+        source : TransitionLocation
 ```
 
 The source is an operand because it is read. The destination is an attribute
@@ -334,9 +365,9 @@ logical:
     home_b = home_a
 
 lowered:
-    Transfer home_a -> Scratch[0]
-    Transfer home_b -> home_a
-    Transfer Scratch[0] -> home_b
+    Transfer Scratch[0], home_a
+    Transfer home_a, home_b
+    Transfer home_b, Scratch[0]
 ```
 
 The program does not distinguish compute scratch from transfer scratch;
@@ -409,7 +440,7 @@ Scratch
 eligible TransitionInstruction(kind, transition operands, attributes)
     -> ordinary Core instruction of the same kind
 
-Transfer(source, destination)
+Transfer(destination, source)
     -> symbolic destination now names symbolic source
 ```
 

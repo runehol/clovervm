@@ -313,6 +313,14 @@ namespace cl::jit
             InstructionResultClassShift);
     }
 
+    constexpr ResultClass
+    instruction_result_class(TransitionInstructionKind kind)
+    {
+        return static_cast<ResultClass>(
+            (static_cast<uint16_t>(kind) & InstructionResultClassMask) >>
+            InstructionResultClassShift);
+    }
+
     constexpr ValueRepresentation
     instruction_value_representation(InstructionKind kind)
     {

@@ -3,7 +3,9 @@
 #include <gtest/gtest.h>
 
 #include <cstdint>
+#include <string>
 #include <type_traits>
+#include <utility>
 #include <vector>
 
 namespace cl::jit
@@ -29,8 +31,8 @@ namespace cl::jit
         TransitionInstruction begin =
             TransitionInstruction::begin_transition(0);
         TransitionInstruction transfer = TransitionInstruction::transfer(
-            TransitionLocation::register_file(1),
-            TransitionLocation::stack(-4));
+            TransitionLocation::stack(-4),
+            TransitionLocation::register_file(1));
         TransitionInstruction resume =
             TransitionInstruction::resume_interpreter(
                 TransitionLocation::scratch(2), 37);
@@ -53,8 +55,8 @@ namespace cl::jit
         std::vector<TransitionInstruction> instructions;
         instructions.push_back(TransitionInstruction::begin_transition(0));
         instructions.push_back(TransitionInstruction::transfer(
-            TransitionLocation::register_file(0),
-            TransitionLocation::scratch(3)));
+            TransitionLocation::scratch(3),
+            TransitionLocation::register_file(0)));
         instructions.push_back(TransitionInstruction::resume_interpreter(
             TransitionLocation::scratch(3), 12));
 
@@ -72,6 +74,82 @@ namespace cl::jit
         EXPECT_LE(
             static_cast<uint16_t>(InstructionOrdinal::Count),
             static_cast<uint16_t>(TransitionInstructionKind::BeginTransition));
+    }
+
+    TEST(TransitionProgramBuilder, KeepsScratchCountCurrentWhileAppending)
+    {
+        TransitionProgramBuilder builder;
+        builder.emplace_transfer(TransitionLocation::scratch(3),
+                                 TransitionLocation::stack(-2));
+        builder.emplace_transfer(TransitionLocation::stack(-1),
+                                 TransitionLocation::scratch(3));
+        builder.emplace_resume_interpreter(TransitionLocation::stack(-1), 42);
+
+        std::vector<TransitionInstruction> instructions =
+            std::move(builder).finalize();
+
+        ASSERT_EQ(4u, instructions.size());
+        EXPECT_EQ(4u, instructions.front().scratch_slot_count());
+    }
+
+    TEST(TransitionProgramBuilder, DirectTransfersNeedNoScratch)
+    {
+        TransitionProgramBuilder builder;
+        builder.append_instruction(TransitionInstruction::transfer(
+            TransitionLocation::stack(-1),
+            TransitionLocation::register_file(0)));
+        builder.emplace_resume_interpreter(TransitionLocation::stack(-1), 7);
+
+        std::vector<TransitionInstruction> instructions =
+            std::move(builder).finalize();
+
+        EXPECT_EQ(0u, instructions.front().scratch_slot_count());
+    }
+
+    TEST(TransitionProgramBuilder, RejectsUninitializedScratchRead)
+    {
+        EXPECT_DEATH(
+            {
+                TransitionProgramBuilder builder;
+                builder.emplace_transfer(TransitionLocation::stack(-1),
+                                         TransitionLocation::scratch(0));
+                builder.emplace_resume_interpreter(
+                    TransitionLocation::stack(-1), 7);
+                (void)std::move(builder).finalize();
+            },
+            "reads uninitialized scratch");
+    }
+
+    TEST(TransitionProgramBuilder, RequiresFinalTerminal)
+    {
+        EXPECT_DEATH(
+            {
+                TransitionProgramBuilder builder;
+                builder.emplace_transfer(TransitionLocation::stack(-1),
+                                         TransitionLocation::register_file(0));
+                (void)std::move(builder).finalize();
+            },
+            "no final terminal instruction");
+    }
+
+    TEST(TransitionProgram, FormatsBodyPositions)
+    {
+        TransitionProgramBuilder builder;
+        builder.emplace_transfer(TransitionLocation::scratch(0),
+                                 TransitionLocation::register_file(1));
+        builder.emplace_transfer(TransitionLocation::stack(-3),
+                                 TransitionLocation::scratch(0));
+        builder.emplace_resume_interpreter(TransitionLocation::stack(-3), 91);
+        std::vector<TransitionInstruction> instructions =
+            std::move(builder).finalize();
+
+        EXPECT_EQ("transition {\n"
+                  "  begin_transition {scratch_slots = 1}\n"
+                  "  0: transfer scratch[0], register_file[1]\n"
+                  "  1: transfer stack[-3], scratch[0]\n"
+                  "  2: resume_interpreter stack[-3] {resume_pc = 91}\n"
+                  "}\n",
+                  format_transition_program(instructions));
     }
 
 }  // namespace cl::jit
