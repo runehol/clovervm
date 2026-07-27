@@ -88,7 +88,7 @@ namespace cl::jit
                                     problem.live_ranges());
 
         bundles[bundle_id.value()] = std::move(left);
-        BundleId right_id(bundles.size());
+        BundleId right_id(static_cast<uint32_t>(bundles.size()));
         bundles.push_back(std::move(right));
         if(crosses_boundary)
         {

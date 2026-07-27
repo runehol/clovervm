@@ -4,6 +4,7 @@
 #include "jit/allocation_constraints.h"
 #include "jit/control_flow_graph.h"
 #include "runtime/fatal.h"
+#include "util/dense_id.h"
 
 #include <cassert>
 #include <compare>
@@ -14,32 +15,15 @@
 
 namespace cl::jit
 {
-    namespace register_allocator_detail
-    {
-        template <typename Tag> class DenseId
-        {
-        public:
-            explicit constexpr DenseId(size_t value) : value_(value) {}
+    struct FixedLocationConstraint;
+    struct LiveBundle;
+    struct LiveRange;
+    struct Occurrence;
 
-            constexpr size_t value() const { return value_; }
-
-            friend constexpr auto operator<=>(DenseId, DenseId) = default;
-
-        private:
-            size_t value_;
-        };
-    }  // namespace register_allocator_detail
-
-    struct OccurrenceIdTag;
-    struct LiveRangeIdTag;
-    struct BundleIdTag;
-    struct FixedConstraintIdTag;
-
-    using OccurrenceId = register_allocator_detail::DenseId<OccurrenceIdTag>;
-    using LiveRangeId = register_allocator_detail::DenseId<LiveRangeIdTag>;
-    using BundleId = register_allocator_detail::DenseId<BundleIdTag>;
-    using FixedConstraintId =
-        register_allocator_detail::DenseId<FixedConstraintIdTag>;
+    using OccurrenceId = DenseId<Occurrence>;
+    using LiveRangeId = DenseId<LiveRange>;
+    using BundleId = DenseId<LiveBundle>;
+    using FixedConstraintId = DenseId<FixedLocationConstraint>;
 
     class LivenessPosition
     {

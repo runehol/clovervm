@@ -189,7 +189,7 @@ namespace cl::jit
                                        const Block &block,
                                        RegisterClass register_class)
             {
-                LiveRangeId id(live_ranges_.size());
+                LiveRangeId id(static_cast<uint32_t>(live_ranges_.size()));
                 live_ranges_.push_back(
                     {range, std::move(origin), &block, register_class, {}, {}});
                 if(live_ranges_.back().origin.kind() ==
@@ -222,7 +222,8 @@ namespace cl::jit
                           "liveness coverage");
                 }
 
-                OccurrenceId occurrence_id(occurrences_.size());
+                OccurrenceId occurrence_id(
+                    static_cast<uint32_t>(occurrences_.size()));
                 occurrences_.push_back({position, coverage, live_range_id, kind,
                                         std::move(anchor), 0});
                 live_range.occurrences.push_back(occurrence_id);
@@ -234,7 +235,8 @@ namespace cl::jit
                 if(requirement.kind() ==
                    LocationRequirement::Kind::FixedLocation)
                 {
-                    FixedConstraintId fixed_id(fixed_constraints_.size());
+                    FixedConstraintId fixed_id(
+                        static_cast<uint32_t>(fixed_constraints_.size()));
                     fixed_constraints_.push_back(
                         {position, requirement.fixed_location(), live_range_id,
                          occurrence_id});

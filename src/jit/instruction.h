@@ -3,6 +3,7 @@
 
 #include "object_model/shape_key.h"
 #include "object_model/value.h"
+#include "util/dense_id.h"
 
 #include <absl/container/inlined_vector.h>
 #include <span>
@@ -26,26 +27,9 @@ namespace cl::jit
     class BlockEdge;
     class CompilationStorage;
     class GraphRewriter;
+    class Instruction;
 
-    class InstructionId
-    {
-    public:
-        explicit constexpr InstructionId(uint32_t value) : value_(value) {}
-
-        constexpr uint32_t value() const { return value_; }
-
-        friend bool operator==(InstructionId, InstructionId) = default;
-
-        template <typename H> friend H AbslHashValue(H hash, InstructionId id)
-        {
-            return H::combine(std::move(hash), id.value_);
-        }
-
-    private:
-        uint32_t value_;
-    };
-
-    static_assert(sizeof(InstructionId) == sizeof(uint32_t));
+    using InstructionId = DenseId<Instruction>;
 
     enum class ResultClass : uint8_t
     {

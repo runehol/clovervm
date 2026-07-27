@@ -66,8 +66,7 @@ The proposed graph product contains executable CFG blocks and an auxiliary
 table of side-exit records:
 
 ```cpp
-struct SideExitIdTag;
-using SideExitId = DenseId<SideExitIdTag>;
+using SideExitId = DenseId<SideExit>;
 
 class SideExit
 {
