@@ -4,10 +4,10 @@
 |---|---|
 | Document type | Design |
 | Status | Accepted |
-| Implementation | The compact transition representation and executor are implemented, together with backend-independent emission of snapshot-only side exits from resolved transition input locations; sunk computation, backend location adapters, code-object publication, target thunks, and interpreter handoff remain |
+| Implementation | The compact representation and executor, snapshot-only emission, AArch64 location mapping, untagged code-object publication, and AArch64 side-exit references are implemented; sunk computation, target thunks, thread-owned execution context, and interpreter handoff remain |
 | Scope | Compact straight-line programs that transform values and machine state between execution conventions; the first consumer is JIT side exit |
 | Owning layers | Core IR owns sunk operation semantics and Snapshot state; register allocation owns physical frontier locations; transition emission owns the continuous transition program and canonical publication; each thread owns reusable transition scratch storage; target thunks own fixed machine-state saves |
-| Validated against | `tests/test_transition_program.cpp`, `tests/test_transition_executor.cpp`, and `tests/test_transition_program_emitter.cpp` |
+| Validated against | `tests/test_transition_program.cpp`, `tests/test_transition_executor.cpp`, `tests/test_transition_program_emitter.cpp`, and `tests/test_aarch64_transition.cpp` |
 | Supersedes | N/A |
 
 This document defines a compact `TransitionProgram`: a straight-line program
@@ -543,9 +543,9 @@ These checks belong near transition emission and allocation-boundary
 verification. A malformed transition program is a compiler bug, not a
 recoverable runtime condition.
 
-## Implementation Slices
+## Implementation Progress
 
-The first slice establishes only the representation:
+The representation and standalone execution slices are complete:
 
 - define `TransitionLocation` and the three location areas;
 - define the directly stored 16-byte `TransitionInstruction`;
@@ -561,17 +561,19 @@ The second slice builds and executes standalone programs:
   `BeginTransition`;
 - interpret the three transition-only kinds without safepointing.
 
-The third slice publishes programs and connects side exits:
+The publication slice is complete through the compiled side-exit branch:
 
 - publish 8-byte-aligned transition sequences with compiled code-object
   metadata;
-- embed a reusable transition execution context in each thread;
-- expand Snapshot liveness at executable exit consumers;
 - translate backend physical locations into the transition input-location
   convention;
 - end each side-exit program with `ResumeInterpreter`;
-- connect the target thunk and interpreter handoff.
+- materialize its address through AArch64 near/far constant-pool relocation and
+  branch to a supplied thunk address.
 
-Only after those slices should Core instruction eligibility, sinking, and
-transition-local computation be added. This validates state translation before
-extending the program into a restricted Core interpreter.
+The remaining runtime slice must settle and implement the target thunk,
+thread-owned execution context, and interpreter handoff. In particular, the
+thunk needs a durable way to recover the allocator-placed `ThreadState *`; that
+contract is intentionally unresolved and is not encoded as an ad hoc transition
+header field. General sinking and transition-local Core computation follow
+after the snapshot-only execution path closes.

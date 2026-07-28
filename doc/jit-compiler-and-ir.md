@@ -4,7 +4,7 @@
 |---|---|
 | Document type | Design |
 | Status | Proposed |
-| Implementation | Partial; structural bytecode-to-Core translation, the common compiler driver, Core graph rewriting and global dead-code elimination, generic register allocation/materialization, standalone transition-program construction and execution, code-cache publication, and executable one-block AArch64 emission are implemented; side-exit integration, broader analyses/lowering, multi-block emission, and runtime entry remain |
+| Implementation | Partial; structural bytecode-to-Core translation, optimization, Core-to-Machine side-exit lowering, generic register allocation/materialization, snapshot-only transition emission and publication, and executable one-block AArch64 emission are implemented; target thunks, sunk computation, broader lowering, multi-block emission, and runtime entry remain |
 | Scope | JIT pipeline, Core IR, exit state, effects, backend lowering, and compiled execution contracts |
 | Owning layers | The JIT owns IR and compiled execution; bytecode, runtime frames, object semantics, and reclamation remain authoritative contracts |
 | Validated against | The focused JIT instruction, CFG, rewrite, allocation-constraint, emitter, code-cache, and executable AArch64 tests |
@@ -690,7 +690,7 @@ begins. Every position, including padding and frame-header positions, contains
 a `ProgramValueRef`. The two PCs and FP require a non-tagged representation
 whose exact form remains deferred; the return code object is tagged. Pure Core
 definitions can produce these contents without eagerly writing their canonical
-homes. Normal transition-only sinking may then move those definitions into side
+homes. Normal sinking may then move those definitions into side
 exits before frame synchronization writes the complete prefix.
 
 The canonical ordering description is attached to the CFG. For each non-entry
@@ -817,7 +817,7 @@ logical Snapshot position that aliases `object_s2`.
 
 Resultless mutating instructions would not naturally join such a closure. Two
 possible future directions are to give them the same receiver-versioning form,
-or to let the sinking attachment retain an explicitly ordered transition-only
+or to let the sinking attachment retain an explicitly ordered sunk
 effect chain. Neither general representation is selected here.
 
 Sinking changes three backend consumers:
@@ -1628,27 +1628,26 @@ A Core `Snapshot` is the authoritative logical description of
 interpreter-visible state. It already names the resume state, active logical
 frame chain, program values, and boxing or reification actions needed to leave
 compiled execution. Constants appear through ordinary `Const` defs. The
-backend consumes the Snapshot directly when constructing a transition program
-and may encode explicitly eligible defs there; managed constants then use the
-emitter-owned pool.
+Core-to-Machine side-exit lowering removes the Snapshot and any sunk definitions
+from executable block order while retaining their storage entries in a
+per-consumer `SideExit`. The Machine owner carries ordinary executable
+arguments corresponding to the side exit's immutable external inputs.
 
 After sinking and allocation, transition planning combines:
 
 ```text
-Snapshot
+SideExit retained body ending in Snapshot
     + BytecodeStateOrder
-    + sinking attachment
-    + LocationAssignments
+    + allocated owner arguments
     -> TransitionProgram
 ```
 
-Location assignments resolve each non-sunk captured `ProgramValueRef` or
-transition-frontier input to its register, spill, or canonical slot at the
-exit. `BytecodeStateOrder` maps each Snapshot position to the accumulator or a
-canonical frame home, except for position one, which supplies the active thread
-pointer. The sinking attachment identifies instructions that have no
-normal-path physical result and must instead be evaluated by the transition
-program.
+Location assignments resolve each owner argument to its register, spill, or
+canonical slot at the exit. Its position matches one immutable `SideExit`
+input, so transition emission can interpret retained operands without
+register-allocating the retained body. `BytecodeStateOrder` maps each Snapshot
+position to the accumulator or a canonical frame home, except for position one,
+which supplies the active thread pointer.
 
 The resulting compact, pointer-free `TransitionProgram` is specified in
 [JIT Transition Programs](jit-transition-program.md). It uses explicitly
@@ -1672,25 +1671,22 @@ code policy is specified by the bring-up plan.
 ### Side exits and transition planning
 
 Each Core IR failure retains an explicit non-returning exit consuming a
-`SnapshotRef` until the backend has determined the location of every value
-needed for the transition. A backend may carry the exit through Machine IR or
-consume it directly from Core IR. Side-exit frame publication is transition
-work, not an effectful Core instruction and not an ordinary CFG successor.
+`SnapshotRef` until the backend boundary. Side-exit lowering then creates a
+storage-owned `SideExit`, replaces the consumer with its Machine owner, and
+exposes the external frontier as a trailing executable argument range. Side-exit
+frame publication is transition work, not an effectful Core instruction and
+not an ordinary CFG successor.
 
 Transition-program construction consumes:
 
 ```text
-logical Snapshot and FrameState:
-    resume state
-    active frame chain
-    canonical state position -> ProgramValueRef
+SideExit:
+    immutable external inputs
+    retained instructions ending in Snapshot
 
-machine location state at the exit:
-    ProgramValueRef -> register | spill | canonical slot
-                   | rematerializable Const
-
-sinking attachment:
-    transition-local def -> operation and transition-local operands
+Machine owner:
+    executable argument corresponding to each SideExit input
+    post-allocation argument -> register | spill | canonical slot
 ```
 
 The resulting transition program makes logical and synchronized state agree. It

@@ -3,16 +3,16 @@
 | Field | Value |
 |---|---|
 | Document type | Design |
-| Status | Proposed |
-| Implementation | Not started |
-| Scope | Attaching transition-only computation and Snapshot state to executable side-exit consumers immediately before register allocation |
+| Status | Accepted |
+| Implementation | Partial; CFG-owned side exits, the first Core-to-Machine owner lowering, late side-exit arguments, allocation materialization, IR printing, and snapshot-only transition emission are implemented; general sinking analysis and sunk computation emission remain |
+| Scope | Attaching sunk computation and Snapshot state to executable side-exit consumers immediately before register allocation |
 | Owning layers | Core optimization owns sinking analysis while all instructions remain in the main CFG; side-exit lowering owns per-consumer `SideExit` records and the matching argument ranges on executable owners; ordinary instruction rewriting, use lists, and register allocation own those arguments thereafter; transition emission owns deferred computation and interpreter-state publication |
-| Validated against | N/A |
-| Supersedes | N/A; if accepted, this direction requires corresponding changes to [JIT Compiler and IR](jit-compiler-and-ir.md), [JIT Register Allocation](jit-register-allocation.md), and [JIT Transition Programs](jit-transition-program.md) |
+| Validated against | `tests/test_jit_side_exit_lowering.cpp`, `tests/test_jit_register_allocator.cpp`, and `tests/test_transition_program_emitter.cpp` |
+| Supersedes | The direct-Snapshot backend model previously described by [JIT Compiler and IR](jit-compiler-and-ir.md) |
 
-This proposal introduces a side-exit lowering boundary between Core
+This design introduces a side-exit lowering boundary between Core
 optimization and register allocation. Before that boundary, Snapshots and
-instructions selected for transition-only sinking remain ordinary Core
+instructions selected for sinking remain ordinary Core
 instructions in the main graph. This preserves the existing SSA, use-list,
 code-motion, CSE, DCE, and sinking analyses.
 
@@ -44,7 +44,7 @@ register allocation:
 - allocation materialization renames executable operands from an insertion
   point onward, but does not naturally reach backward into an earlier
   Snapshot;
-- transition-only sunk instructions have SSA dependencies but no executable
+- sunk instructions have SSA dependencies but no executable
   main-program position or register-allocated result.
 
 Moving Snapshot instructions beside their consumers addresses only direct
@@ -62,7 +62,7 @@ executable path and is emitted only by transition-program generation.
 
 ## Representation
 
-The proposed graph product contains executable CFG blocks and an auxiliary
+The graph product contains executable CFG blocks and an auxiliary
 table of side-exit records:
 
 ```cpp
@@ -422,28 +422,24 @@ Verification at the lowering and allocation boundaries must establish:
 - transition emission handles every lowered instruction kind and interpreter
   state position.
 
-## Proposed Implementation Slices
+## Implementation Progress
 
-This proposal is not yet accepted. If adopted, the smallest implementation
-sequence appears below. The prerequisite for a CFG to declare and verify one
-current IR level is already implemented.
+The first five implementation slices are complete:
 
-1. Add CFG-owned `SideExit` and `SideExitId` representation containing immutable
-   input identities and retained instruction IDs, without changing existing
-   Snapshot consumers.
-2. Add Machine owner forms with `SideExitId` and a named side-exit argument
-   range; make ordinary instruction traversal, use lists, DCE, and rewriting see
-   those arguments.
-3. Add the first lowering pass for non-returning side-exit consumers of direct
-   Snapshots with no sunk computation, and change the CFG level from Core to
-   Machine once all executable instructions are compatible.
-4. Teach allocation constraints and liveness to observe side-exit arguments at
-   the owner's Late position.
-5. Emit direct-Snapshot side exits as transition transfers and
-   `ResumeInterpreter`.
-6. Add sinking metadata, record reachable sunk instruction IDs in original
-   block order, discover inputs across the complete retained sequence, and emit
-   eligible transition computation.
+- CFG-owned `SideExit` records retain immutable input identities and existing
+  instruction IDs;
+- the first Machine owner carries `SideExitId` plus a named heterogeneous
+  side-exit argument tail;
+- the backend boundary lowers direct-Snapshot exits and changes the CFG from
+  Core to Machine;
+- allocation observes side-exit arguments at the owner's Late position and
+  materialization rewrites those executable arguments normally;
+- snapshot-only exits emit transition transfers and `ResumeInterpreter`.
+
+The remaining slice is substantive rather than structural: add sinking
+analysis, retain the reachable sunk instruction closure in original block
+order, discover its complete external frontier, and emit each eligible
+transition computation kind.
 
 Call-boundary Snapshot lowering is a separate adjacent design and is not part of
 these slices.

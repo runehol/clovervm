@@ -4,7 +4,7 @@
 |---|---|
 | Document type | Proposed architecture contract |
 | Status | Proposed |
-| Implementation | Partial; hidden `ThreadState *` and the first seven Python entry arguments have fixed register constraints, while result constraints, canonical incoming stack locations, allocation-order register sets, and per-class scratch registers are implemented; stack-passed entry arguments, managed calls, and transition adapters are not implemented |
+| Implementation | Partial; entry constraints, result constraints, canonical incoming stack locations, allocation-order register sets, per-class scratch registers, and emitted side-exit transition references are implemented; stack-passed entry arguments, managed calls, entry/exit thunks, and the side-exit thunk remain |
 | Scope | AArch64 compiled managed argument transport, call adaptation, cross-engine entry, return, and safepoint placement |
 | Owning layers | Call-site lowering owns guarded Python adaptation; the AArch64 backend owns argument and result locations; transition adapters own cross-engine reshuffling; the generic allocator and materializer implement the resulting fixed-location constraints and transfers |
 | Builds on | [CloverVM Function Calling Convention](function-calling-convention.md) |
@@ -238,6 +238,14 @@ needed for a side exit, belongs behind the interpreter re-entry path or another
 thunk that has first restored host-stack discipline. The side-exit
 register-save thunk owns only target state capture and the cold `ret xtarget`
 handoff into interpreter dispatch.
+
+The emitted side-exit sequence and transition-program address convention are
+implemented; the thunk itself is not. One contract remains deliberately open:
+ordinary allocation may place the active `ThreadState *` in any valid register
+or spill location at the exit, while the thunk needs it to reach thread-owned
+transition state. The final design must solve that boundary together with
+register saving and host-stack restoration. The transition header does not
+currently encode an allocator-chosen `ThreadState *` location.
 
 ## Returns
 
