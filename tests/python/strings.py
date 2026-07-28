@@ -1,3 +1,11 @@
+def assert_items(seq, *expected):
+    assert len(seq) == len(expected)
+    idx = 0
+    while idx < len(expected):
+        assert seq[idx] == expected[idx]
+        idx = idx + 1
+
+
 s = "clover"
 assert s[0] == "c"
 assert s[1] == "l"
@@ -50,20 +58,20 @@ assert "value.txt".removesuffix(".py") == "value.txt"
 assert "prefix-value".removeprefix(prefix="prefix-") == "value"
 assert "value.txt".removesuffix(suffix=".txt") == "value"
 
-assert "a,b,c".split(",") == ["a", "b", "c"]
-assert "a,b,c".split(",", 1) == ["a", "b,c"]
-assert "a,b,c".split(sep=",", maxsplit=1) == ["a", "b,c"]
-assert " a  b ".split() == ["a", "b"]
-assert "".split() == []
-assert "".split(",") == [""]
-assert "a,b,c".rsplit(",", 1) == ["a,b", "c"]
-assert " a  b ".rsplit(maxsplit=1) == ["a", "b"]
-assert "a,b,c".rsplit(sep=",", maxsplit=1) == ["a,b", "c"]
-assert "a=b=c".partition("=") == ("a", "=", "b=c")
-assert "a=b=c".rpartition("=") == ("a=b", "=", "c")
-assert "abc".partition("=") == ("abc", "", "")
-assert "abc".rpartition("=") == ("", "", "abc")
-assert "a=b".partition(sep="=") == ("a", "=", "b")
+assert_items("a,b,c".split(","), "a", "b", "c")
+assert_items("a,b,c".split(",", 1), "a", "b,c")
+assert_items("a,b,c".split(sep=",", maxsplit=1), "a", "b,c")
+assert_items(" a  b ".split(), "a", "b")
+assert_items("".split())
+assert_items("".split(","), "")
+assert_items("a,b,c".rsplit(",", 1), "a,b", "c")
+assert_items(" a  b ".rsplit(maxsplit=1), "a", "b")
+assert_items("a,b,c".rsplit(sep=",", maxsplit=1), "a,b", "c")
+assert_items("a=b=c".partition("="), "a", "=", "b=c")
+assert_items("a=b=c".rpartition("="), "a=b", "=", "c")
+assert_items("abc".partition("="), "abc", "", "")
+assert_items("abc".rpartition("="), "", "", "abc")
+assert_items("a=b".partition(sep="="), "a", "=", "b")
 
 assert "banana".replace("na", "NA") == "baNANA"
 assert "banana".replace("na", "NA", 1) == "baNAna"
