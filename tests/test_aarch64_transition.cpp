@@ -1,10 +1,11 @@
 #include "jit/aarch64_transition.h"
 
 #include "jit/aarch64_allocation_constraints.h"
-#include "jit/aarch64_assembler.h"
+#include "jit/aarch64_cfg_emitter.h"
 #include "jit/bytecode_state.h"
 #include "jit/compilation_session.h"
 #include "jit/graph_builder.h"
+#include "jit/machine_address_internal.h"
 #include "jit/register_allocator.h"
 #include "jit/side_exit_lowering.h"
 #include "jit/transition_executor.h"
@@ -71,12 +72,7 @@ namespace cl::jit
             FAIL() << "allocator input unexpectedly mapped to scratch";
         }
 
-        CodeAllocation
-        take_allocation(Result<CodeAllocation, JitCodeError> result)
-        {
-            EXPECT_TRUE(result);
-            return std::move(result).value();
-        }
+        void unused_side_exit_thunk() {}
     }  // namespace
 
     TEST(AArch64Transition, MapsPhysicalLocationsIntoSavedState)
@@ -157,16 +153,13 @@ namespace cl::jit
         }
 
         CacheAndPlatform fixture(16);
-        AArch64MacroAssembler assembler(AArch64ValuePoolMode::NearLiteral);
-        std::vector<TransitionInstruction> emitted_program =
-            emit_aarch64_side_exit_transition_program(
-                *graph->storage(), *graph->bytecode_state_order(), side_exit,
-                owner.side_exit_arguments(), locations);
-        ConstantPoolEntry program_entry =
-            assembler.add_transition_program(emitted_program);
-        assembler.adr(XRegister(16), program_entry);
-        CodeAllocation code =
-            take_allocation(assembler.emitter().finalize(*fixture.cache));
+        MachineAddress side_exit_thunk =
+            detail::MachineAddressAccess::from_pointer(
+                reinterpret_cast<const void *>(&unused_side_exit_thunk));
+        auto emission = emit_aarch64_from_cfg(*graph, locations, *fixture.cache,
+                                              side_exit_thunk);
+        ASSERT_TRUE(emission);
+        PublishedCode code = std::move(emission).value();
         std::span<const std::byte> program_bytes = code.constant_pool();
         ASSERT_EQ(0u, program_bytes.size() % sizeof(TransitionInstruction));
         std::span<const TransitionInstruction> program(

@@ -7,6 +7,7 @@
 #include "jit/jit_code_object.h"
 #include "jit/jit_compiler.h"
 #include "jit/location_assignments.h"
+#include "jit/machine_address_internal.h"
 #include "test_helpers.h"
 
 #include <gtest/gtest.h>
@@ -22,6 +23,11 @@ namespace cl::jit
     {
         constexpr PhysicalRegister x0(RegisterClass::GPR, 0);
         constexpr PhysicalRegister x1(RegisterClass::GPR, 1);
+
+        MachineAddress no_side_exit_thunk()
+        {
+            return detail::MachineAddressAccess::from_bits(0);
+        }
 
         uint32_t instruction_at(const void *code, size_t index)
         {
@@ -112,7 +118,8 @@ namespace cl::jit
 
             CodeCache cache;
             Result<PublishedCode, JitCodeError> emission =
-                emit_aarch64_from_cfg(*graph, locations, cache);
+                emit_aarch64_from_cfg(*graph, locations, cache,
+                                      no_side_exit_thunk());
             EXPECT_TRUE(emission);
             if(!emission)
             {
@@ -140,8 +147,8 @@ namespace cl::jit
         LocationAssignments locations = assign_program_values_to_x0(*graph);
 
         CodeCache cache;
-        Result<PublishedCode, JitCodeError> emission =
-            emit_aarch64_from_cfg(*graph, locations, cache);
+        Result<PublishedCode, JitCodeError> emission = emit_aarch64_from_cfg(
+            *graph, locations, cache, no_side_exit_thunk());
         ASSERT_TRUE(emission);
         PublishedCode code = std::move(emission).value();
 
@@ -176,7 +183,8 @@ namespace cl::jit
         ControlFlowGraph *graph = builder.finalize();
 
         CodeCache cache;
-        auto compilation = compile_to_aarch64(session, *graph, cache);
+        auto compilation =
+            compile_to_aarch64(session, *graph, cache, no_side_exit_thunk());
         ASSERT_TRUE(compilation);
         EXPECT_EQ(IRLevel::Machine, graph->ir_level());
         PublishedCode code = std::move(compilation).value();
@@ -199,7 +207,8 @@ namespace cl::jit
                                              session);
 
         CodeCache cache;
-        auto compilation = compile_to_aarch64(session, *graph, cache);
+        auto compilation =
+            compile_to_aarch64(session, *graph, cache, no_side_exit_thunk());
         ASSERT_TRUE(compilation);
         PublishedCode code = std::move(compilation).value();
 
@@ -283,7 +292,8 @@ namespace cl::jit
                                              session);
 
         CodeCache cache;
-        auto compilation = compile_to_aarch64(session, *graph, cache);
+        auto compilation =
+            compile_to_aarch64(session, *graph, cache, no_side_exit_thunk());
         ASSERT_TRUE(compilation);
         PublishedCode code = std::move(compilation).value();
 
@@ -304,7 +314,8 @@ namespace cl::jit
                                              session);
 
         CodeCache cache;
-        auto compilation = compile_to_aarch64(session, *graph, cache);
+        auto compilation =
+            compile_to_aarch64(session, *graph, cache, no_side_exit_thunk());
         ASSERT_TRUE(compilation);
         PublishedCode code = std::move(compilation).value();
 
@@ -326,7 +337,8 @@ namespace cl::jit
                                              session);
 
         CodeCache cache;
-        auto compilation = compile_to_aarch64(session, *graph, cache);
+        auto compilation =
+            compile_to_aarch64(session, *graph, cache, no_side_exit_thunk());
         ASSERT_TRUE(compilation);
         PublishedCode code = std::move(compilation).value();
 
@@ -351,7 +363,8 @@ namespace cl::jit
                                              session);
 
         CodeCache cache;
-        auto compilation = compile_to_aarch64(session, *graph, cache);
+        auto compilation =
+            compile_to_aarch64(session, *graph, cache, no_side_exit_thunk());
         ASSERT_TRUE(compilation);
         PublishedCode code = std::move(compilation).value();
 
@@ -380,8 +393,8 @@ namespace cl::jit
         LocationAssignments locations = assign_program_values_to_x0(*graph);
 
         CodeCache cache;
-        Result<PublishedCode, JitCodeError> emission =
-            emit_aarch64_from_cfg(*graph, locations, cache);
+        Result<PublishedCode, JitCodeError> emission = emit_aarch64_from_cfg(
+            *graph, locations, cache, no_side_exit_thunk());
         ASSERT_TRUE(emission);
         PublishedCode code = std::move(emission).value();
 
@@ -416,8 +429,8 @@ namespace cl::jit
         LocationAssignments locations = std::move(location_builder).finalize();
 
         CodeCache cache;
-        Result<PublishedCode, JitCodeError> emission =
-            emit_aarch64_from_cfg(*graph, locations, cache);
+        Result<PublishedCode, JitCodeError> emission = emit_aarch64_from_cfg(
+            *graph, locations, cache, no_side_exit_thunk());
         ASSERT_TRUE(emission);
         PublishedCode code = std::move(emission).value();
 
@@ -462,7 +475,8 @@ namespace cl::jit
         LocationAssignments locations = std::move(location_builder).finalize();
         AArch64MacroAssembler assembler(AArch64ValuePoolMode::NearLiteral);
 
-        generate_aarch64_assembly(*graph, locations, assembler);
+        generate_aarch64_assembly(*graph, locations, assembler,
+                                  no_side_exit_thunk());
         CodeCache cache;
         Result<CodeAllocation, JitCodeError> finalization =
             assembler.emitter().finalize(cache);

@@ -48,8 +48,8 @@ and uses no separate executor or subprogram for publication.
 
 The target side-exit thunk is intentionally mechanical. It saves the selected
 machine register state into a fixed memory layout, passes the transition-program
-offset and saved-state pointer to the transition executor, and does not know the
-logical Snapshot shape.
+address and saved-state pointer to the transition executor, and does not know
+the logical Snapshot shape.
 Target-specific code owns the fixed register order and any platform calling
 details.
 
@@ -424,7 +424,8 @@ BeginTransition {scratch_slot_count = N}
 terminal handoff
 ```
 
-The compiled caller refers to the first entry by a code-object-relative offset.
+The compiled caller materializes the address of the first entry from its
+constant pool.
 `BeginTransition` supplies the scratch requirement, and the terminal handoff
 ends execution. No separate program record, instruction count, completion
 record, `std::vector`, or process-local pointer is retained. The enclosing

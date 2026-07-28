@@ -11,12 +11,13 @@ namespace cl::jit
 
     void generate_aarch64_assembly(const ControlFlowGraph &graph,
                                    const LocationAssignments &locations,
-                                   AArch64MacroAssembler &assembler);
+                                   AArch64MacroAssembler &assembler,
+                                   MachineAddress side_exit_thunk);
 
     [[nodiscard]] Result<PublishedCode, JitCodeError>
     emit_aarch64_from_cfg(const ControlFlowGraph &graph,
                           const LocationAssignments &locations,
-                          CodeCache &cache);
+                          CodeCache &cache, MachineAddress side_exit_thunk);
 
 }  // namespace cl::jit
 

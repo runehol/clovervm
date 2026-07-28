@@ -211,11 +211,13 @@ re-entry program counter and returning to that handler:
 
 ```text
 compiled guard failure
+    x16 = address of side-exit transition program
+    x17 = available branch-materialization scratch
     b side_exit_register_save_thunk
 
 side_exit_register_save_thunk
     save the fixed compiled register image
-    save compiled fp/sp and the owning side-exit identity
+    save compiled fp/sp and the transition-program address from x16
     publish or record the side-exit capture for interpreter recovery
     pc = interpreter return/recovery opcode pc
     ldr xtarget, [dispatch_table, pc]

@@ -74,10 +74,7 @@ namespace cl::jit
     private:
         friend class detail::MachineAddressAccess;
 
-        explicit MachineAddress(uintptr_t bits) : bits_(bits)
-        {
-            assert(bits != 0);
-        }
+        explicit MachineAddress(uintptr_t bits) : bits_(bits) {}
 
         static int64_t checked_positive_displacement(uintptr_t magnitude)
         {

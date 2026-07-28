@@ -16,7 +16,7 @@ namespace cl::jit
 
     [[nodiscard]] Result<PublishedCode, AArch64CompilationError>
     compile_to_aarch64(CompilationSession &session, ControlFlowGraph &graph,
-                       CodeCache &cache);
+                       CodeCache &cache, MachineAddress side_exit_thunk);
 
 }  // namespace cl::jit
 

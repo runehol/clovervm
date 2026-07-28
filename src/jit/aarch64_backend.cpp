@@ -11,7 +11,7 @@ namespace cl::jit
 {
     Result<PublishedCode, AArch64CompilationError>
     compile_to_aarch64(CompilationSession &session, ControlFlowGraph &graph,
-                       CodeCache &cache)
+                       CodeCache &cache, MachineAddress side_exit_thunk)
     {
         assert(graph.ir_level() == IRLevel::Core);
         SunkInstructionIds sunk_instructions = sink_snapshots(graph);
@@ -33,7 +33,8 @@ namespace cl::jit
         }
         LocationAssignments locations = std::move(locations_result).value();
 
-        auto emission = emit_aarch64_from_cfg(graph, locations, cache);
+        auto emission =
+            emit_aarch64_from_cfg(graph, locations, cache, side_exit_thunk);
         if(!emission)
         {
             return Result<PublishedCode, AArch64CompilationError>::error(

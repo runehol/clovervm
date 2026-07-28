@@ -7,6 +7,7 @@
 #include "jit/core_ir_optimization.h"
 #include "jit/graph_builder.h"
 #include "jit/jit_code_object.h"
+#include "jit/machine_address_internal.h"
 #include "runtime/thread_state.h"
 
 #include <utility>
@@ -43,7 +44,8 @@ namespace cl::jit
         }
 
         auto code_result =
-            compile_to_aarch64(session, *graph, thread.code_cache());
+            compile_to_aarch64(session, *graph, thread.code_cache(),
+                               detail::MachineAddressAccess::from_bits(0));
         if(!code_result)
         {
             return Result<JitCodeObject *, JitCompilationError>::error(

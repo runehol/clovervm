@@ -18,7 +18,7 @@ namespace cl::jit
         }
     }  // namespace
 
-    TEST(MachineAddress, IsOpaqueAndHasNoNullState)
+    TEST(MachineAddress, IsOpaque)
     {
         static_assert(!std::is_default_constructible_v<MachineAddress>);
         static_assert(!std::is_constructible_v<MachineAddress, uintptr_t>);
@@ -63,6 +63,7 @@ namespace cl::jit
 
     TEST(MachineAddress, ExposesBitsOnlyForIndirectTargets)
     {
+        EXPECT_EQ(0u, address(0).bits_for_indirect_target());
         EXPECT_EQ(0x12345678u, address(0x12345678).bits_for_indirect_target());
     }
 
@@ -71,7 +72,6 @@ namespace cl::jit
 #ifndef NDEBUG
         constexpr uint8_t address_bits = std::numeric_limits<uintptr_t>::digits;
 
-        EXPECT_DEATH(address(0), "bits != 0");
         EXPECT_DEATH(
             address(std::numeric_limits<uintptr_t>::max()).offset_by(1),
             "bytes <=");

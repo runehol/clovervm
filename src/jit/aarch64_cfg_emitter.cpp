@@ -1,6 +1,7 @@
 #include "jit/aarch64_cfg_emitter.h"
 
 #include "jit/aarch64_assembler.h"
+#include "jit/aarch64_transition.h"
 #include "jit/control_flow_graph.h"
 #include "jit/instruction.h"
 #include "jit/location_assignments.h"
@@ -10,6 +11,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <utility>
+#include <vector>
 
 namespace cl::jit
 {
@@ -99,10 +101,12 @@ namespace cl::jit
         Result<PublishedCode, JitCodeError>
         generate_code(const ControlFlowGraph &graph, CodeCache &cache,
                       const LocationAssignments &locations,
-                      AArch64ValuePoolMode pool_mode)
+                      AArch64ValuePoolMode pool_mode,
+                      MachineAddress side_exit_thunk)
         {
             AArch64MacroAssembler assembler(pool_mode);
-            generate_aarch64_assembly(graph, locations, assembler);
+            generate_aarch64_assembly(graph, locations, assembler,
+                                      side_exit_thunk);
             CodeAllocation allocation =
                 CL_TRY(assembler.emitter().finalize(cache));
             size_t tagged_value_count =
@@ -117,7 +121,8 @@ namespace cl::jit
 
     void generate_aarch64_assembly(const ControlFlowGraph &graph,
                                    const LocationAssignments &locations,
-                                   AArch64MacroAssembler &assembler)
+                                   AArch64MacroAssembler &assembler,
+                                   MachineAddress side_exit_thunk)
     {
         assert(graph.is_published());
         assert(graph.ir_level() == IRLevel::Machine);
@@ -289,8 +294,26 @@ namespace cl::jit
                     fatal("AArch64 F64 stack transfer emission is not "
                           "implemented");
 
-                case MachineInstructionKind::ResumeInInterpreterWithSideExit:
-                    fatal("AArch64 side-exit emission is not implemented");
+                case CL_JIT_MACHINE_INSTRUCTION_CASE(
+                    ResumeInInterpreterWithSideExitInstruction,
+                    resume_instruction)
+                {
+                    assert(side_exit_thunk.bits_for_indirect_target() != 0);
+                    assert(graph.bytecode_state_order().has_value());
+                    const SideExit &side_exit =
+                        graph.side_exit(resume_instruction.side_exit());
+                    std::vector<TransitionInstruction> program =
+                        emit_aarch64_side_exit_transition_program(
+                            *graph.storage(), *graph.bytecode_state_order(),
+                            side_exit,
+                            resume_instruction.side_exit_arguments(),
+                            locations);
+                    ConstantPoolEntry entry =
+                        assembler.add_transition_program(program);
+                    assembler.adr(XRegister(16), entry);
+                    assembler.b(side_exit_thunk, XRegister(17));
+                    break;
+                }
 
                 case CL_JIT_MACHINE_INSTRUCTION_CASE(
                     ReturnInstruction, return_instruction)
@@ -311,10 +334,11 @@ namespace cl::jit
     Result<PublishedCode, JitCodeError>
     emit_aarch64_from_cfg(const ControlFlowGraph &graph,
                           const LocationAssignments &locations,
-                          CodeCache &cache)
+                          CodeCache &cache, MachineAddress side_exit_thunk)
     {
-        Result<PublishedCode, JitCodeError> near = generate_code(
-            graph, cache, locations, AArch64ValuePoolMode::NearLiteral);
+        Result<PublishedCode, JitCodeError> near =
+            generate_code(graph, cache, locations,
+                          AArch64ValuePoolMode::NearLiteral, side_exit_thunk);
         if(near)
         {
             return near;
@@ -325,7 +349,8 @@ namespace cl::jit
         }
 
         Result<PublishedCode, JitCodeError> far = generate_code(
-            graph, cache, locations, AArch64ValuePoolMode::FarPageRelative);
+            graph, cache, locations, AArch64ValuePoolMode::FarPageRelative,
+            side_exit_thunk);
         if(!far)
         {
             return Result<PublishedCode, JitCodeError>::error(far.error());
