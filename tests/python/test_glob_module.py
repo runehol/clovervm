@@ -43,12 +43,29 @@ test_sources = glob.glob("tests/python/test_*.py")
 assert contains(test_sources, "tests/python/test_fnmatch_module.py")
 assert contains(test_sources, "tests/python/test_glob_module.py")
 
+rooted_stdlib = glob.glob("*.py", root_dir="stdlib")
+assert contains(rooted_stdlib, "glob.py")
+assert contains(rooted_stdlib, "fnmatch.py")
+assert not contains(rooted_stdlib, "stdlib/glob.py")
+
+rooted_prefixed = glob.glob("stdlib/*.py", root_dir=".")
+assert contains(rooted_prefixed, "stdlib/glob.py")
+assert contains(rooted_prefixed, "stdlib/fnmatch.py")
+
 iterator = glob.iglob("stdlib/glob.py")
 assert next(iterator) == "stdlib/glob.py"
+
+rooted_iterator = glob.iglob("*.py", root_dir="stdlib")
+assert next(rooted_iterator).endswith(".py")
 
 recursive = glob.glob("stdlib/**/*.py", recursive=True)
 assert contains(recursive, "stdlib/glob.py")
 assert contains(recursive, "stdlib/fnmatch.py")
+
+rooted_recursive = glob.glob("**/*.py", root_dir="stdlib", recursive=True)
+assert contains(rooted_recursive, "glob.py")
+assert contains(rooted_recursive, "fnmatch.py")
+assert not contains(rooted_recursive, "stdlib/glob.py")
 
 original_directory = os.getcwd()
 os.chdir("stdlib")

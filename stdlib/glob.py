@@ -6,9 +6,18 @@ import os
 
 def glob(pathname, *, root_dir=None, dir_fd=None, recursive=False, include_hidden=False):
     """Return a list of paths matching a pathname pattern."""
-    if root_dir is not None or dir_fd is not None:
+    if dir_fd is not None:
         raise UnimplementedError
-    return _glob(pathname, recursive, include_hidden)
+    if root_dir is None:
+        return _glob(pathname, recursive, include_hidden)
+    if os.path.isabs(pathname):
+        return _glob(pathname, recursive, include_hidden)
+
+    matches = _glob(os.path.join(root_dir, pathname), recursive, include_hidden)
+    result = []
+    for match in matches:
+        result.append(_remove_root(root_dir, match))
+    return result
 
 
 def iglob(pathname, *, root_dir=None, dir_fd=None, recursive=False, include_hidden=False):
@@ -40,9 +49,9 @@ def escape(pathname):
     while idx < len(pathname):
         ch = pathname[idx]
         if ch == "*" or ch == "?" or ch == "[":
-            result = result.__add__("[").__add__(ch).__add__("]")
+            result = result + "[" + ch + "]"
         else:
-            result = result.__add__(ch)
+            result = result + ch
         idx += 1
     return result
 
@@ -158,8 +167,21 @@ def _listdir(dirname):
 
 def _join(dirname, basename):
     if dirname == "" or basename == "":
-        return dirname.__add__(basename)
+        return dirname + basename
     return os.path.join(dirname, basename)
+
+
+def _remove_root(root_dir, path):
+    if root_dir == "":
+        return path
+    prefix = root_dir
+    if not prefix.endswith(os.path.sep):
+        prefix = prefix + os.path.sep
+    if path.startswith(prefix):
+        return path[len(prefix) :]
+    if path == root_dir:
+        return ""
+    return path
 
 
 def _ishidden(path):
@@ -176,14 +198,14 @@ def translate(pat, *, recursive=False, include_hidden=False, seps=None):
     while idx < len(pat):
         ch = pat[idx]
         if ch == os.path.sep:
-            result = result.__add__(_translate_part(part, recursive, include_hidden))
-            result = result.__add__("/")
+            result = result + _translate_part(part, recursive, include_hidden)
+            result = result + "/"
             part = ""
         else:
-            part = part.__add__(ch)
+            part = part + ch
         idx += 1
-    result = result.__add__(_translate_part(part, recursive, include_hidden))
-    return "(?s:".__add__(result).__add__(")\\z")
+    result = result + _translate_part(part, recursive, include_hidden)
+    return "(?s:" + result + ")\\z"
 
 
 def _translate_part(part, recursive, include_hidden):
@@ -198,18 +220,18 @@ def _translate_part(part, recursive, include_hidden):
         if ch == "*":
             while idx + 1 < len(part) and part[idx + 1] == "*":
                 idx += 1
-            translated = translated.__add__("[^/]*")
+            translated = translated + "[^/]*"
         elif ch == "?":
-            translated = translated.__add__("[^/]")
+            translated = translated + "[^/]"
         elif ch == "[":
             end = _class_end(part, idx)
             if end < 0:
-                translated = translated.__add__("\\[")
+                translated = translated + "\\["
             else:
-                translated = translated.__add__(_translate_class(part, idx, end))
+                translated = translated + _translate_class(part, idx, end)
                 idx = end
         else:
-            translated = translated.__add__(_regex_escape(ch))
+            translated = translated + _regex_escape(ch)
         idx += 1
     return translated
 
@@ -239,38 +261,38 @@ def _translate_class(pat, start, end):
     if negate:
         stuff = "^"
     if idx < end and pat[idx] == "]":
-        stuff = stuff.__add__("\\]")
+        stuff = stuff + "\\]"
         idx += 1
 
     previous = None
     while idx < end:
         ch = pat[idx]
         if ch == "\\":
-            stuff = stuff.__add__("\\\\")
+            stuff = stuff + "\\\\"
         elif ch == "-" and (idx == start + 1 or idx == end - 1):
-            stuff = stuff.__add__("\\-")
+            stuff = stuff + "\\-"
         elif ch == "-" and previous is not None and idx + 1 < end:
             next_ch = pat[idx + 1]
             if previous > next_ch:
                 return "(?!)"
-            stuff = stuff.__add__("-")
+            stuff = stuff + "-"
         elif ch == "[":
-            stuff = stuff.__add__("\\[")
+            stuff = stuff + "\\["
         elif ch == "^":
-            stuff = stuff.__add__("\\^")
+            stuff = stuff + "\\^"
         else:
-            stuff = stuff.__add__(ch)
+            stuff = stuff + ch
         previous = ch
         idx += 1
 
     if stuff == "^":
         return "[^/]"
-    return "[".__add__(stuff).__add__("]")
+    return "[" + stuff + "]"
 
 
 def _regex_escape(ch):
     if ch in "\\.^$+{}[]|()":
-        return "\\".__add__(ch)
+        return "\\" + ch
     return ch
 
 

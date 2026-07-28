@@ -55,9 +55,14 @@ def filterfalse(names, pat):
 
 def _match_at(name, pat, name_idx, pat_idx):
     pat_is_bytes = _is_bytes(pat)
-    star = 42 if pat_is_bytes else "*"
-    question = 63 if pat_is_bytes else "?"
-    open_bracket = 91 if pat_is_bytes else "["
+    if pat_is_bytes:
+        star = 42
+        question = 63
+        open_bracket = 91
+    else:
+        star = "*"
+        question = "?"
+        open_bracket = "["
     name_len = len(name)
     pat_len = len(pat)
     while pat_idx < pat_len:
@@ -104,8 +109,12 @@ def _match_at(name, pat, name_idx, pat_idx):
 
 def _class_end(pat, start):
     pat_is_bytes = _is_bytes(pat)
-    bang = 33 if pat_is_bytes else "!"
-    close_bracket = 93 if pat_is_bytes else "]"
+    if pat_is_bytes:
+        bang = 33
+        close_bracket = 93
+    else:
+        bang = "!"
+        close_bracket = "]"
     pat_len = len(pat)
     idx = start + 1
     if idx < pat_len and pat[idx] == bang:
@@ -121,9 +130,14 @@ def _class_end(pat, start):
 
 def _class_matches(ch, pat, start, end):
     pat_is_bytes = _is_bytes(pat)
-    bang = 33 if pat_is_bytes else "!"
-    close_bracket = 93 if pat_is_bytes else "]"
-    dash = 45 if pat_is_bytes else "-"
+    if pat_is_bytes:
+        bang = 33
+        close_bracket = 93
+        dash = 45
+    else:
+        bang = "!"
+        close_bracket = "]"
+        dash = "-"
     idx = start + 1
     negate = False
     if idx < end and pat[idx] == bang:
@@ -165,20 +179,20 @@ def translate(pat):
         if ch == "*":
             while idx + 1 < pat_len and pat[idx + 1] == "*":
                 idx += 1
-            result = result.__add__(".*")
+            result = result + ".*"
         elif ch == "?":
-            result = result.__add__(".")
+            result = result + "."
         elif ch == "[":
             end = _class_end(pat, idx)
             if end < 0:
-                result = result.__add__("\\[")
+                result = result + "\\["
             else:
-                result = result.__add__(_translate_class(pat, idx, end))
+                result = result + _translate_class(pat, idx, end)
                 idx = end
         else:
-            result = result.__add__(_regex_escape(ch))
+            result = result + _regex_escape(ch)
         idx += 1
-    return "(?s:".__add__(result).__add__(")\\z")
+    return "(?s:" + result + ")\\z"
 
 
 def _translate_class(pat, start, end):
@@ -196,38 +210,38 @@ def _translate_class(pat, start, end):
         stuff = "^"
 
     if idx < end and pat[idx] == "]":
-        stuff = stuff.__add__("\\]")
+        stuff = stuff + "\\]"
         idx += 1
 
     previous = None
     while idx < end:
         ch = pat[idx]
         if ch == "\\":
-            stuff = stuff.__add__("\\\\")
+            stuff = stuff + "\\\\"
         elif ch == "-" and (idx == start + 1 or idx == end - 1):
-            stuff = stuff.__add__("\\-")
+            stuff = stuff + "\\-"
         elif ch == "-" and previous is not None and idx + 1 < end:
             next_ch = pat[idx + 1]
             if previous > next_ch:
                 return "(?!)"
-            stuff = stuff.__add__("-")
+            stuff = stuff + "-"
         elif ch == "[":
-            stuff = stuff.__add__("\\[")
+            stuff = stuff + "\\["
         elif ch == "^":
-            stuff = stuff.__add__("\\^")
+            stuff = stuff + "\\^"
         else:
-            stuff = stuff.__add__(ch)
+            stuff = stuff + ch
         previous = ch
         idx += 1
 
     if stuff == "^":
         return "."
-    return "[".__add__(stuff).__add__("]")
+    return "[" + stuff + "]"
 
 
 def _regex_escape(ch):
     if ch in "\\.^$+{}[]|()":
-        return "\\".__add__(ch)
+        return "\\" + ch
     return ch
 
 
