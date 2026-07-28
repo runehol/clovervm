@@ -350,14 +350,15 @@ namespace cl::jit
                 decltype(std::declval<const ValidityCellGuardInstruction &>()
                              .validity()),
                 ValidityCell *>);
-        static_assert(std::is_same_v<
-                      decltype(std::declval<const PythonCallInstruction &>()
-                                   .arguments()),
-                      ProgramValueRefRange<ValueRepresentation::TaggedValue>>);
+        static_assert(
+            std::is_same_v<
+                decltype(std::declval<const PythonCallInstruction &>()
+                             .arguments()),
+                RepresentedValueRefRange<ValueRepresentation::TaggedValue>>);
         static_assert(
             std::is_same_v<decltype(std::declval<const SnapshotInstruction &>()
                                         .captured_values()),
-                           SnapshotValueRefRange>);
+                           ProgramValueRefRange>);
         static_assert(
             std::is_same_v<
                 decltype(std::declval<const ConditionalBranchInstruction &>()
@@ -368,7 +369,6 @@ namespace cl::jit
                 decltype(std::declval<const ResumeInInterpreterInstruction &>()
                              .snapshot()),
                 SnapshotRef>);
-
         EXPECT_EQ(InstructionKind::AddSMI, AddSMIInstruction::Kind);
         EXPECT_EQ(InstructionKind::Snapshot, SnapshotInstruction::Kind);
         EXPECT_EQ(InstructionKind::Uninitialized,
@@ -508,11 +508,12 @@ namespace cl::jit
         std::vector<std::pair<OperandClass, InstructionId>> references;
         visit_operand_references(
             add, [&](uint32_t operand_index, OperandClass operand_class,
-                     ValueRepresentation representation, InstructionId def) {
+                     ValueRepresentationRequirement representation,
+                     InstructionId def) {
                 EXPECT_EQ(references.size(), operand_index);
                 EXPECT_EQ(operand_class == OperandClass::ProgramValue
-                              ? ValueRepresentation::TaggedValue
-                              : ValueRepresentation::None,
+                              ? ValueRepresentationRequirement::TaggedValue
+                              : ValueRepresentationRequirement::Any,
                           representation);
                 references.emplace_back(operand_class, def);
             });
@@ -585,11 +586,12 @@ namespace cl::jit
         std::vector<std::pair<OperandClass, InstructionId>> references;
         visit_operand_references(
             call, [&](uint32_t operand_index, OperandClass operand_class,
-                      ValueRepresentation representation, InstructionId def) {
+                      ValueRepresentationRequirement representation,
+                      InstructionId def) {
                 EXPECT_EQ(references.size(), operand_index);
                 EXPECT_EQ(operand_class == OperandClass::ProgramValue
-                              ? ValueRepresentation::TaggedValue
-                              : ValueRepresentation::None,
+                              ? ValueRepresentationRequirement::TaggedValue
+                              : ValueRepresentationRequirement::Any,
                           representation);
                 references.emplace_back(operand_class, def);
             });
@@ -632,7 +634,7 @@ namespace cl::jit
         EXPECT_EQ(truth.instruction_id().value(), snapshot.operand_word(2));
         EXPECT_EQ(none.instruction_id().value(), snapshot.operand_word(3));
 
-        SnapshotValueRefRange values = snapshot.captured_values();
+        ProgramValueRefRange values = snapshot.captured_values();
         ASSERT_EQ(4u, values.size());
         EXPECT_EQ(tagged.instruction_id(), values[0].instruction_id());
         EXPECT_EQ(f64.instruction_id(), values[1].instruction_id());
@@ -655,12 +657,12 @@ namespace cl::jit
 
         std::vector<InstructionId> references;
         visit_operand_references(
-            snapshot,
-            [&](uint32_t operand_index, OperandClass operand_class,
-                ValueRepresentation representation, InstructionId def) {
+            snapshot, [&](uint32_t operand_index, OperandClass operand_class,
+                          ValueRepresentationRequirement representation,
+                          InstructionId def) {
                 EXPECT_EQ(references.size(), operand_index);
                 EXPECT_EQ(OperandClass::ProgramValue, operand_class);
-                EXPECT_EQ(ValueRepresentation::None, representation);
+                EXPECT_EQ(ValueRepresentationRequirement::Any, representation);
                 references.push_back(def);
             });
         ASSERT_EQ(4u, references.size());

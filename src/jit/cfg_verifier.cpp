@@ -118,7 +118,6 @@ namespace cl::jit
 
         absl::flat_hash_set<InstructionId> instruction_set;
         absl::flat_hash_map<const BlockEdge *, size_t> outgoing_edge_uses;
-
         for(const Block *block: blocks)
         {
             InstructionRange parameters = block->parameters();
@@ -184,7 +183,6 @@ namespace cl::jit
                                    " belongs to more than one instruction "
                                    "position");
                 }
-
                 bool is_last = index + 1 == instructions.size();
                 if(is_last && !instruction.is_block_terminator())
                 {
@@ -348,7 +346,7 @@ namespace cl::jit
                 visit_operand_references(
                     instruction,
                     [&](uint32_t, OperandClass operand_class,
-                        ValueRepresentation required_representation,
+                        ValueRepresentationRequirement required_representation,
                         InstructionId definition_id) {
                         Instruction def =
                             graph.storage()->instruction(definition_id);
@@ -377,10 +375,8 @@ namespace cl::jit
                             return;
                         }
                         if(operand_class == OperandClass::ProgramValue &&
-                           required_representation !=
-                               ValueRepresentation::None &&
-                           def.value_representation() !=
-                               required_representation)
+                           !representation_matches(required_representation,
+                                                   def.value_representation()))
                         {
                             reference_error =
                                 instruction_name(instruction) +

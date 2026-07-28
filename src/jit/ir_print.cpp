@@ -339,7 +339,7 @@ namespace cl::jit
 #define CL_IR_PRINT_FIXED(name, ...) printer.fixed_operand(concrete.name());
 #define CL_IR_PRINT_VARIADIC(name, ...)                                        \
     printer.variadic_operand(concrete.name());
-#define CL_IR_PRINT_SNAPSHOT_VALUES(name)                                      \
+#define CL_IR_PRINT_PROGRAM_VALUES(name)                                       \
     printer.variadic_operand(concrete.name());
 #define CL_IR_PRINT_ATTRIBUTE(name, attribute_class)                           \
     printer.attribute_##attribute_class(#name, concrete.name());
@@ -352,14 +352,14 @@ namespace cl::jit
             (void)concrete;                                                    \
             OperationPrinter printer(out, state, instruction, #name);          \
             operands(CL_IR_PRINT_FIXED, CL_IR_PRINT_VARIADIC,                  \
-                     CL_IR_PRINT_SNAPSHOT_VALUES)                              \
+                     CL_IR_PRINT_PROGRAM_VALUES)                               \
                 attributes(CL_IR_PRINT_ATTRIBUTE) printer.finish();            \
             return;                                                            \
         }
 #include "jit/instruction.def"
 #undef CL_JIT_INSTRUCTION
 #undef CL_IR_PRINT_ATTRIBUTE
-#undef CL_IR_PRINT_SNAPSHOT_VALUES
+#undef CL_IR_PRINT_PROGRAM_VALUES
 #undef CL_IR_PRINT_VARIADIC
 #undef CL_IR_PRINT_FIXED
             }

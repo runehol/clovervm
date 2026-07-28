@@ -78,8 +78,9 @@ namespace cl::jit
                                         const Instruction &instruction)
     {
         visit_operand_references(
-            instruction, [&](uint32_t operand_index, OperandClass,
-                             ValueRepresentation, InstructionId definition_id) {
+            instruction,
+            [&](uint32_t operand_index, OperandClass,
+                ValueRepresentationRequirement, InstructionId definition_id) {
                 auto found = index_by_def_.find(definition_id);
                 assert(found != index_by_def_.end());
                 Uses &uses = uses_[found->second];

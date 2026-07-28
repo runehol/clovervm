@@ -54,6 +54,61 @@ namespace cl::jit
         Count,
     };
 
+    enum class ValueRepresentationRequirement : uint8_t
+    {
+        Any,
+        TaggedValue,
+        F64,
+        Pointer,
+    };
+
+    constexpr bool
+    representation_matches(ValueRepresentationRequirement requirement,
+                           ValueRepresentation representation)
+    {
+        switch(requirement)
+        {
+            case ValueRepresentationRequirement::Any:
+                return representation != ValueRepresentation::None &&
+                       representation != ValueRepresentation::Count;
+            case ValueRepresentationRequirement::TaggedValue:
+                return representation == ValueRepresentation::TaggedValue;
+            case ValueRepresentationRequirement::F64:
+                return representation == ValueRepresentation::F64;
+            case ValueRepresentationRequirement::Pointer:
+                return representation == ValueRepresentation::Pointer;
+        }
+        return false;
+    }
+
+    template <OperandClass Class, ValueRepresentation Representation>
+    consteval ValueRepresentationRequirement
+    operand_representation_requirement()
+    {
+        if constexpr(Class == OperandClass::Snapshot)
+        {
+            static_assert(Representation == ValueRepresentation::None);
+            return ValueRepresentationRequirement::Any;
+        }
+        else
+        {
+            static_assert(Representation != ValueRepresentation::None);
+            static_assert(Representation != ValueRepresentation::Count);
+            switch(Representation)
+            {
+                case ValueRepresentation::TaggedValue:
+                    return ValueRepresentationRequirement::TaggedValue;
+                case ValueRepresentation::F64:
+                    return ValueRepresentationRequirement::F64;
+                case ValueRepresentation::Pointer:
+                    return ValueRepresentationRequirement::Pointer;
+                case ValueRepresentation::None:
+                case ValueRepresentation::Count:
+                    break;
+            }
+        }
+    }
+
     enum class EffectProfile : uint8_t
     {
         None = 0,
@@ -720,7 +775,7 @@ namespace cl::jit
         friend auto decode_instruction_operand(uint32_t);
         template <ValueRepresentation> friend class RepresentedValueRef;
         friend class LiveRangeOrigin;
-        friend class SnapshotValueRefRange;
+        friend class ProgramValueRefRange;
 
         static InstructionId checked_instruction_id(Instruction instruction)
         {
@@ -831,11 +886,11 @@ namespace cl::jit
         }
     }
 
-    template <ValueRepresentation Representation> class ProgramValueRefRange
+    template <ValueRepresentation Representation> class RepresentedValueRefRange
     {
     public:
-        ProgramValueRefRange(Instruction instruction, uint32_t offset,
-                             uint32_t size)
+        RepresentedValueRefRange(Instruction instruction, uint32_t offset,
+                                 uint32_t size)
             : instruction_(instruction), offset_(offset), size_(size)
         {
             assert(offset <= instruction.operand_count());
@@ -845,7 +900,7 @@ namespace cl::jit
         size_t size() const { return size_; }
         bool empty() const { return size_ == 0; }
 
-        RepresentedValueRef<Representation> operator[](size_t index) const
+        auto operator[](size_t index) const
         {
             assert(index < size_);
             return decode_instruction_operand<OperandClass::ProgramValue,
@@ -859,11 +914,11 @@ namespace cl::jit
         uint32_t size_;
     };
 
-    class SnapshotValueRefRange
+    class ProgramValueRefRange
     {
     public:
-        SnapshotValueRefRange(Instruction instruction, uint32_t offset,
-                              uint32_t size)
+        ProgramValueRefRange(Instruction instruction, uint32_t offset,
+                             uint32_t size)
             : instruction_(instruction), offset_(offset), size_(size)
         {
             assert(offset <= instruction.operand_count());
@@ -1076,7 +1131,7 @@ namespace cl::jit
     CL_JIT_JOIN(CL_JIT_ATTRIBUTE_TYPE_, attribute_class)
 #define CL_JIT_DECLARE_OPERAND_INDEX(name, operand_class, representation) name,
 #define CL_JIT_DECLARE_VARIADIC_INDEX(name, operand_class, representation) name,
-#define CL_JIT_DECLARE_SNAPSHOT_VALUES_INDEX(name) name,
+#define CL_JIT_DECLARE_PROGRAM_VALUES_INDEX(name) name,
 #define CL_JIT_IR_LEVELS(set) IRLevelMask::set
 #define CL_JIT_RESULT(result_class, representation)                            \
     InstructionResultInfo                                                      \
@@ -1115,7 +1170,7 @@ namespace cl::jit
     CL_JIT_OPERAND_TYPE(operand_class, representation) name,
 #define CL_JIT_DECLARE_VARIADIC_PARAMETER(name, operand_class, representation) \
     std::span<const CL_JIT_OPERAND_TYPE(operand_class, representation)> name,
-#define CL_JIT_DECLARE_SNAPSHOT_VALUES_PARAMETER(name)                         \
+#define CL_JIT_DECLARE_PROGRAM_VALUES_PARAMETER(name)                          \
     std::span<const ProgramValueRef> name,
 #define CL_JIT_DECLARE_ATTRIBUTE_PARAMETER(name, attribute_class)              \
     CL_JIT_ATTRIBUTE_TYPE(attribute_class) name,
@@ -1123,10 +1178,10 @@ namespace cl::jit
 #define CL_JIT_IGNORE_ARGUMENT(name, ...) (void)name;
 #define CL_JIT_COUNT_INDIRECT_FIXED(name, ...) (void)name;
 #define CL_JIT_COUNT_INDIRECT_VARIADIC(name, ...) n_slots += name.size();
-#define CL_JIT_COUNT_INDIRECT_SNAPSHOT_VALUES(name) n_slots += name.size();
+#define CL_JIT_COUNT_INDIRECT_PROGRAM_VALUES(name) n_slots += name.size();
 #define CL_JIT_COUNT_LOGICAL_FIXED(name, ...) (void)name;
 #define CL_JIT_COUNT_LOGICAL_VARIADIC(name, ...) n_operands += name.size();
-#define CL_JIT_COUNT_LOGICAL_SNAPSHOT_VALUES(name) n_operands += name.size();
+#define CL_JIT_COUNT_LOGICAL_PROGRAM_VALUES(name) n_operands += name.size();
 #define CL_JIT_SKIP_INLINE(...)
 #define CL_JIT_COUNT_ATTRIBUTE_WORDS(name, attribute_class)                    \
     +sizeof(InstructionAttributeStorage_##attribute_class) / sizeof(Slot)
@@ -1159,7 +1214,7 @@ namespace cl::jit
     {                                                                          \
         indirect_slots[index++] = encode_instruction_operand(operand);         \
     }
-#define CL_JIT_WRITE_INDIRECT_SNAPSHOT_VALUES(name)                            \
+#define CL_JIT_WRITE_INDIRECT_PROGRAM_VALUES(name)                             \
     for(ProgramValueRef value: name)                                           \
     {                                                                          \
         indirect_slots[index++] = encode_instruction_operand(value);           \
@@ -1184,16 +1239,16 @@ namespace cl::jit
         static_assert(OperandClass::operand_class ==                           \
                       OperandClass::ProgramValue);                             \
         constexpr size_t index = static_cast<size_t>(OperandIndex::name);      \
-        return ProgramValueRefRange<ValueRepresentation::representation>(      \
+        return RepresentedValueRefRange<ValueRepresentation::representation>(  \
             *this, static_cast<uint32_t>(index), operand_count() - index);      \
     }
-#define CL_JIT_DECLARE_SNAPSHOT_VALUES_ACCESSOR(name)                          \
+#define CL_JIT_DECLARE_PROGRAM_VALUES_ACCESSOR(name)                           \
     static constexpr uint32_t name##_operand_index =                           \
         static_cast<uint32_t>(OperandIndex::name);                             \
-    SnapshotValueRefRange name() const                                         \
+    ProgramValueRefRange name() const                                          \
     {                                                                          \
         constexpr size_t index = static_cast<size_t>(OperandIndex::name);      \
-        return SnapshotValueRefRange(                                          \
+        return ProgramValueRefRange(                                           \
             *this, static_cast<uint32_t>(index), operand_count() - index);      \
     }
 #define CL_JIT_DECLARE_ATTRIBUTE_ACCESSOR(name, attribute_class)               \
@@ -1214,7 +1269,7 @@ namespace cl::jit
         {                                                                      \
             operands(CL_JIT_DECLARE_OPERAND_INDEX,                             \
                      CL_JIT_DECLARE_VARIADIC_INDEX,                            \
-                     CL_JIT_DECLARE_SNAPSHOT_VALUES_INDEX) Count,              \
+                     CL_JIT_DECLARE_PROGRAM_VALUES_INDEX) Count,               \
         };                                                                     \
         enum class AttributeIndex : size_t                                     \
         {                                                                      \
@@ -1262,27 +1317,27 @@ namespace cl::jit
         static size_t n_indirect_slots_for(                                    \
             operands(CL_JIT_DECLARE_FIXED_PARAMETER,                           \
                      CL_JIT_DECLARE_VARIADIC_PARAMETER,                        \
-                     CL_JIT_DECLARE_SNAPSHOT_VALUES_PARAMETER)                 \
+                     CL_JIT_DECLARE_PROGRAM_VALUES_PARAMETER)                  \
                 attributes(CL_JIT_DECLARE_ATTRIBUTE_PARAMETER)                 \
                     InstructionConstructorEnd = {})                            \
         {                                                                      \
             size_t n_operands = FixedOperandCount;                             \
             operands(CL_JIT_COUNT_LOGICAL_FIXED,                              \
                      CL_JIT_COUNT_LOGICAL_VARIADIC,                           \
-                     CL_JIT_COUNT_LOGICAL_SNAPSHOT_VALUES)                    \
+                     CL_JIT_COUNT_LOGICAL_PROGRAM_VALUES)                     \
             attributes(CL_JIT_IGNORE_ARGUMENT)                                \
             assert(n_operands <= OperandCountMask);                            \
             (void)n_operands;                                                  \
             size_t n_slots = FixedOperandCount;                                \
             operands(CL_JIT_COUNT_INDIRECT_FIXED,                              \
                      CL_JIT_COUNT_INDIRECT_VARIADIC,                           \
-                     CL_JIT_COUNT_INDIRECT_SNAPSHOT_VALUES)                    \
+                     CL_JIT_COUNT_INDIRECT_PROGRAM_VALUES)                     \
             attributes(CL_JIT_IGNORE_ARGUMENT)                                \
             return n_slots;                                                    \
         }                                                                      \
                                                                                \
     operands(CL_JIT_DECLARE_FIXED_ACCESSOR, CL_JIT_DECLARE_VARIADIC_ACCESSOR,  \
-             CL_JIT_DECLARE_SNAPSHOT_VALUES_ACCESSOR)                          \
+             CL_JIT_DECLARE_PROGRAM_VALUES_ACCESSOR)                           \
                                                                                \
     CL_JIT_PRIVATE                                                             \
         static constexpr size_t AttributeBase =                                \
@@ -1313,14 +1368,14 @@ namespace cl::jit
         static uint16_t                                                        \
         operand_count_for(operands(CL_JIT_DECLARE_FIXED_PARAMETER,             \
                                    CL_JIT_DECLARE_VARIADIC_PARAMETER,          \
-                                   CL_JIT_DECLARE_SNAPSHOT_VALUES_PARAMETER)   \
+                                   CL_JIT_DECLARE_PROGRAM_VALUES_PARAMETER)    \
                               attributes(CL_JIT_DECLARE_ATTRIBUTE_PARAMETER)   \
                                   InstructionConstructorEnd = {})              \
         {                                                                      \
             size_t n_operands = FixedOperandCount;                             \
             operands(CL_JIT_COUNT_LOGICAL_FIXED,                               \
                      CL_JIT_COUNT_LOGICAL_VARIADIC,                            \
-                     CL_JIT_COUNT_LOGICAL_SNAPSHOT_VALUES)                     \
+                     CL_JIT_COUNT_LOGICAL_PROGRAM_VALUES)                      \
             attributes(CL_JIT_IGNORE_ARGUMENT)                                \
             assert(n_operands <= OperandCountMask);                            \
             return static_cast<uint16_t>(n_operands);                          \
@@ -1329,7 +1384,7 @@ namespace cl::jit
         static std::array<Slot, FixedOperandCount + AttributeWordCount>        \
         fixed_inline_slots(operands(CL_JIT_DECLARE_FIXED_PARAMETER,            \
                                     CL_JIT_DECLARE_VARIADIC_PARAMETER,         \
-                                    CL_JIT_DECLARE_SNAPSHOT_VALUES_PARAMETER)  \
+                                    CL_JIT_DECLARE_PROGRAM_VALUES_PARAMETER)   \
                                attributes(CL_JIT_DECLARE_ATTRIBUTE_PARAMETER)  \
                                    InstructionConstructorEnd = {})             \
         {                                                                      \
@@ -1348,14 +1403,14 @@ namespace cl::jit
             std::span<Slot> indirect_slots,                                   \
             operands(CL_JIT_DECLARE_FIXED_PARAMETER,                           \
                      CL_JIT_DECLARE_VARIADIC_PARAMETER,                        \
-                     CL_JIT_DECLARE_SNAPSHOT_VALUES_PARAMETER)                 \
+                     CL_JIT_DECLARE_PROGRAM_VALUES_PARAMETER)                  \
                 attributes(CL_JIT_DECLARE_ATTRIBUTE_PARAMETER)                 \
                     InstructionConstructorEnd = {})                            \
         {                                                                      \
             size_t index = 0;                                                  \
             operands(CL_JIT_WRITE_INDIRECT_FIXED,                              \
                      CL_JIT_WRITE_INDIRECT_VARIADIC,                           \
-                     CL_JIT_WRITE_INDIRECT_SNAPSHOT_VALUES)                    \
+                     CL_JIT_WRITE_INDIRECT_PROGRAM_VALUES)                     \
             attributes(CL_JIT_IGNORE_ARGUMENT)                                \
             (void)index;                                                       \
             assert(index == indirect_slots.size());                            \
@@ -1366,7 +1421,7 @@ namespace cl::jit
             std::span<Slot> indirect_slots,                                   \
             operands(CL_JIT_DECLARE_FIXED_PARAMETER,                           \
                      CL_JIT_DECLARE_VARIADIC_PARAMETER,                        \
-                     CL_JIT_DECLARE_SNAPSHOT_VALUES_PARAMETER)                 \
+                     CL_JIT_DECLARE_PROGRAM_VALUES_PARAMETER)                  \
                 attributes(CL_JIT_DECLARE_ATTRIBUTE_PARAMETER)                 \
                     InstructionConstructorEnd = {})                            \
         {                                                                      \
@@ -1396,7 +1451,7 @@ namespace cl::jit
         static InstructionEntry make_entry(                                    \
             operands(CL_JIT_DECLARE_FIXED_PARAMETER,                           \
                      CL_JIT_DECLARE_VARIADIC_PARAMETER,                        \
-                     CL_JIT_DECLARE_SNAPSHOT_VALUES_PARAMETER)                 \
+                     CL_JIT_DECLARE_PROGRAM_VALUES_PARAMETER)                  \
                 attributes(CL_JIT_DECLARE_ATTRIBUTE_PARAMETER)                 \
                     InstructionConstructorEnd = {})                            \
         {                                                                      \
@@ -1415,7 +1470,7 @@ namespace cl::jit
             std::span<Slot> indirect_slots,                                    \
             operands(CL_JIT_DECLARE_FIXED_PARAMETER,                           \
                      CL_JIT_DECLARE_VARIADIC_PARAMETER,                        \
-                     CL_JIT_DECLARE_SNAPSHOT_VALUES_PARAMETER)                 \
+                     CL_JIT_DECLARE_PROGRAM_VALUES_PARAMETER)                  \
                 attributes(CL_JIT_DECLARE_ATTRIBUTE_PARAMETER)                 \
                     InstructionConstructorEnd = {})                            \
         {                                                                      \
@@ -1450,7 +1505,7 @@ namespace cl::jit
 #undef CL_JIT_RESULT
 #undef CL_JIT_IR_LEVELS
 #undef CL_JIT_DECLARE_ATTRIBUTE_ACCESSOR
-#undef CL_JIT_DECLARE_SNAPSHOT_VALUES_ACCESSOR
+#undef CL_JIT_DECLARE_PROGRAM_VALUES_ACCESSOR
 #undef CL_JIT_DECLARE_VARIADIC_ACCESSOR
 #undef CL_JIT_DECLARE_FIXED_ACCESSOR
 #undef CL_JIT_PRIVATE
@@ -1459,10 +1514,10 @@ namespace cl::jit
 #undef CL_JIT_HAS_NO_VARIADIC
 #undef CL_JIT_COUNT_NO_OPERAND
 #undef CL_JIT_COUNT_FIXED_OPERAND
-#undef CL_JIT_DECLARE_SNAPSHOT_VALUES_INDEX
+#undef CL_JIT_DECLARE_PROGRAM_VALUES_INDEX
 #undef CL_JIT_DECLARE_VARIADIC_INDEX
 #undef CL_JIT_DECLARE_OPERAND_INDEX
-#undef CL_JIT_WRITE_INDIRECT_SNAPSHOT_VALUES
+#undef CL_JIT_WRITE_INDIRECT_PROGRAM_VALUES
 #undef CL_JIT_WRITE_INDIRECT_VARIADIC
 #undef CL_JIT_WRITE_INDIRECT_FIXED
 #undef CL_JIT_WRITE_ATTRIBUTE_INLINE
@@ -1471,16 +1526,16 @@ namespace cl::jit
 #undef CL_JIT_CHECK_ATTRIBUTE_ALIGNMENT
 #undef CL_JIT_COUNT_ATTRIBUTE_WORDS
 #undef CL_JIT_SKIP_INLINE
-#undef CL_JIT_COUNT_LOGICAL_SNAPSHOT_VALUES
+#undef CL_JIT_COUNT_LOGICAL_PROGRAM_VALUES
 #undef CL_JIT_COUNT_LOGICAL_VARIADIC
 #undef CL_JIT_COUNT_LOGICAL_FIXED
-#undef CL_JIT_COUNT_INDIRECT_SNAPSHOT_VALUES
+#undef CL_JIT_COUNT_INDIRECT_PROGRAM_VALUES
 #undef CL_JIT_COUNT_INDIRECT_VARIADIC
 #undef CL_JIT_COUNT_INDIRECT_FIXED
 #undef CL_JIT_IGNORE_ARGUMENT
 #undef CL_JIT_PASS_ARGUMENT
 #undef CL_JIT_DECLARE_ATTRIBUTE_PARAMETER
-#undef CL_JIT_DECLARE_SNAPSHOT_VALUES_PARAMETER
+#undef CL_JIT_DECLARE_PROGRAM_VALUES_PARAMETER
 #undef CL_JIT_DECLARE_VARIADIC_PARAMETER
 #undef CL_JIT_DECLARE_FIXED_PARAMETER
 #undef CL_JIT_ATTRIBUTE_TYPE
@@ -1576,13 +1631,15 @@ namespace cl::jit
             return instruction.slot(slot_index++);
         };
 
-        auto visit_program_value = [&](uint32_t index, uint32_t word,
-                                       ValueRepresentation representation) {
-            visitor(index, OperandClass::ProgramValue, representation,
-                    InstructionId(static_cast<uint32_t>(word)));
-        };
+        auto visit_program_value =
+            [&](uint32_t index, uint32_t word,
+                ValueRepresentationRequirement representation) {
+                visitor(index, OperandClass::ProgramValue, representation,
+                        InstructionId(static_cast<uint32_t>(word)));
+            };
         auto visit_snapshot = [&](uint32_t index, uint32_t word) {
-            visitor(index, OperandClass::Snapshot, ValueRepresentation::None,
+            visitor(index, OperandClass::Snapshot,
+                    ValueRepresentationRequirement::Any,
                     InstructionId(static_cast<uint32_t>(word)));
         };
 
@@ -1599,7 +1656,9 @@ namespace cl::jit
                      OperandClass::ProgramValue)                               \
         {                                                                      \
             visit_program_value(current_operand_index, word,                   \
-                                ValueRepresentation::representation);          \
+                                operand_representation_requirement<            \
+                                    OperandClass::operand_class,               \
+                                    ValueRepresentation::representation>());   \
         }                                                                      \
         else                                                                   \
         {                                                                      \
@@ -1615,8 +1674,11 @@ namespace cl::jit
             if constexpr(OperandClass::operand_class ==                        \
                          OperandClass::ProgramValue)                           \
             {                                                                  \
-                visit_program_value(current_operand_index, word,               \
-                                    ValueRepresentation::representation);      \
+                visit_program_value(                                           \
+                    current_operand_index, word,                               \
+                    operand_representation_requirement<                        \
+                        OperandClass::operand_class,                           \
+                        ValueRepresentation::representation>());               \
             }                                                                  \
             else                                                               \
             {                                                                  \
@@ -1624,25 +1686,25 @@ namespace cl::jit
             }                                                                  \
         }                                                                      \
     }());
-#define CL_JIT_VISIT_SNAPSHOT_VALUES(name)                                     \
+#define CL_JIT_VISIT_PROGRAM_VALUES(name)                                      \
     ([&] {                                                                     \
         for(uint32_t index = 0; index < variable_count; ++index)               \
         {                                                                      \
             uint32_t current_operand_index = operand_index;                    \
             visit_program_value(current_operand_index, next_operand_word(),    \
-                                ValueRepresentation::None);                    \
+                                ValueRepresentationRequirement::Any);          \
         }                                                                      \
     }());
 #define CL_JIT_INSTRUCTION(name, ir_levels, result, effects, operands,         \
                            attributes)                                         \
     case InstructionKind::name:                                                \
         operands(CL_JIT_VISIT_FIXED_OPERAND, CL_JIT_VISIT_VARIADIC_OPERAND,    \
-                 CL_JIT_VISIT_SNAPSHOT_VALUES)                                 \
+                 CL_JIT_VISIT_PROGRAM_VALUES)                                  \
             assert(operand_index == instruction.operand_count());              \
         return;
 #include "jit/instruction.def"
 #undef CL_JIT_INSTRUCTION
-#undef CL_JIT_VISIT_SNAPSHOT_VALUES
+#undef CL_JIT_VISIT_PROGRAM_VALUES
 #undef CL_JIT_VISIT_VARIADIC_OPERAND
 #undef CL_JIT_VISIT_FIXED_OPERAND
 #undef CL_JIT_EFFECT_BOUNDS

@@ -26,6 +26,12 @@ namespace cl::jit
                 return resolver_->resolve(def);
             }
 
+            ProgramValueRef resolve(ProgramValueRef def) const
+            {
+                return ProgramValueRef(
+                    storage_->instruction(resolve(def.instruction_id())));
+            }
+
             TaggedValueRef resolve(TaggedValueRef def) const
             {
                 return TaggedValueRef(
@@ -61,10 +67,10 @@ namespace cl::jit
             }
 
             template <ValueRepresentation Representation>
-            std::vector<RepresentedValueRef<Representation>>
-            resolve(ProgramValueRefRange<Representation> defs) const
+            auto resolve(RepresentedValueRefRange<Representation> defs) const
             {
-                std::vector<RepresentedValueRef<Representation>> resolved;
+                using Reference = decltype(defs[size_t{0}]);
+                std::vector<Reference> resolved;
                 resolved.reserve(defs.size());
                 for(size_t index = 0; index < defs.size(); ++index)
                 {
@@ -74,7 +80,7 @@ namespace cl::jit
             }
 
             std::vector<ProgramValueRef>
-            resolve(SnapshotValueRefRange defs) const
+            resolve(ProgramValueRefRange defs) const
             {
                 std::vector<ProgramValueRef> resolved;
                 resolved.reserve(defs.size());
@@ -111,11 +117,12 @@ namespace cl::jit
         const DefResolver &def_resolver, InstructionFactory &factory)
     {
         bool changed = false;
-        visit_operand_references(instruction, [&](uint32_t, OperandClass,
-                                                  ValueRepresentation,
-                                                  InstructionId definition_id) {
-            changed |= def_resolver.resolve(definition_id) != definition_id;
-        });
+        visit_operand_references(
+            instruction,
+            [&](uint32_t, OperandClass, ValueRepresentationRequirement,
+                InstructionId definition_id) {
+                changed |= def_resolver.resolve(definition_id) != definition_id;
+            });
         if(instruction.is_block_terminator())
         {
             for(BlockEdge *edge:
@@ -137,7 +144,7 @@ namespace cl::jit
 #define CL_JIT_EFFECT_BOUNDS(...)
 #define CL_JIT_RESOLVE_FIXED(name, ...) resolver.resolve(typed.name()),
 #define CL_JIT_RESOLVE_VARIADIC(name, ...) resolver.resolve(typed.name()),
-#define CL_JIT_RESOLVE_SNAPSHOT_VALUES(name) resolver.resolve(typed.name()),
+#define CL_JIT_RESOLVE_PROGRAM_VALUES(name) resolver.resolve(typed.name()),
 #define CL_JIT_COPY_ATTRIBUTE(name, ...)                                       \
     resolver.resolve_attribute(typed.name()),
 #define CL_JIT_INSTRUCTION(name, ir_levels, result, effects, operands,         \
@@ -148,14 +155,14 @@ namespace cl::jit
                 instruction.as<name##Instruction>();                           \
             return factory.template make_instruction<name##Instruction>(       \
                 operands(CL_JIT_RESOLVE_FIXED, CL_JIT_RESOLVE_VARIADIC,        \
-                         CL_JIT_RESOLVE_SNAPSHOT_VALUES)                       \
+                         CL_JIT_RESOLVE_PROGRAM_VALUES)                        \
                     attributes(CL_JIT_COPY_ATTRIBUTE)                          \
                         InstructionConstructorEnd{});                          \
         }
 #include "jit/instruction.def"
 #undef CL_JIT_INSTRUCTION
 #undef CL_JIT_COPY_ATTRIBUTE
-#undef CL_JIT_RESOLVE_SNAPSHOT_VALUES
+#undef CL_JIT_RESOLVE_PROGRAM_VALUES
 #undef CL_JIT_RESOLVE_VARIADIC
 #undef CL_JIT_RESOLVE_FIXED
 #undef CL_JIT_EFFECT_BOUNDS

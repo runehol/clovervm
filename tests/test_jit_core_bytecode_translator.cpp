@@ -324,7 +324,7 @@ namespace cl::jit
         std::vector<Instruction> snapshots =
             instructions_of_kind(entry, InstructionKind::Snapshot);
         ASSERT_EQ(1u, snapshots.size());
-        SnapshotValueRefRange captured =
+        ProgramValueRefRange captured =
             snapshots.front().as<SnapshotInstruction>().captured_values();
         ASSERT_EQ(bytecode_state_size(*graph), captured.size());
         EXPECT_EQ(parameter.id(), captured[0].instruction_id());

@@ -39,9 +39,9 @@ namespace cl::jit
         {
             bool found = false;
             visit_operand_references(
-                instruction,
-                [&](uint32_t index, OperandClass operand_class,
-                    ValueRepresentation, InstructionId operand_definition) {
+                instruction, [&](uint32_t index, OperandClass operand_class,
+                                 ValueRepresentationRequirement,
+                                 InstructionId operand_definition) {
                     if(operand_class != OperandClass::Snapshot &&
                        index == operand_index &&
                        operand_definition == definition)

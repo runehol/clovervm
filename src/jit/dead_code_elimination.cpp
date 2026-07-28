@@ -119,7 +119,7 @@ namespace cl::jit
                 graph.storage()->instruction(instruction_id);
             visit_operand_references(
                 instruction,
-                [&](uint32_t, OperandClass, ValueRepresentation,
+                [&](uint32_t, OperandClass, ValueRepresentationRequirement,
                     InstructionId definition) { mark_live(definition); });
         }
 

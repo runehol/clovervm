@@ -306,9 +306,11 @@ error, not a partially valid instruction state.
 
 Construction may use a mutable buffer before completing the instruction, but
 stored and typed access decodes the declared operand or attribute class and
-exposes immutable typed values and range views such as
-`ProgramValueRefRange<F64>`. Clients cannot replace an operand through those
-views.
+exposes immutable typed values. Homogeneous ranges use views such as
+`RepresentedValueRefRange<F64>`. Heterogeneous program-value ranges such as
+Snapshot captures use `ProgramValueRefRange` and return
+representation-erased `ProgramValueRef` values. Clients cannot replace an
+operand through those views.
 
 The operand table allocates the final range first and returns a mutable span to
 the factory. The factory writes operand words directly into that range. A typed

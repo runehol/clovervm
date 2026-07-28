@@ -335,8 +335,8 @@ CL_JIT_INSTRUCTION(CheckNotImplemented, CL_JIT_IR_LEVELS(Core),
 #undef CL_JIT_CheckNotImplemented_ATTRIBUTES
 #undef CL_JIT_CheckNotImplemented_OPERANDS
 
-#define CL_JIT_Snapshot_OPERANDS(fixed, variadic, snapshot_values)            \
-    snapshot_values(captured_values)
+#define CL_JIT_Snapshot_OPERANDS(fixed, variadic, program_values)              \
+    program_values(captured_values)
 #define CL_JIT_Snapshot_ATTRIBUTES(attribute) attribute(resume_pc, BytecodePC)
 CL_JIT_INSTRUCTION(Snapshot, CL_JIT_IR_LEVELS(Core),
                    CL_JIT_RESULT(Snapshot, None),

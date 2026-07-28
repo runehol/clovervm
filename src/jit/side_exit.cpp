@@ -53,8 +53,8 @@ namespace cl::jit
             }
             visit_operand_references(
                 instruction,
-                [&](uint32_t, OperandClass operand_class, ValueRepresentation,
-                    InstructionId definition) {
+                [&](uint32_t, OperandClass operand_class,
+                    ValueRepresentationRequirement, InstructionId definition) {
                     if(operand_class != OperandClass::ProgramValue)
                     {
                         fatal("JIT side exit contains a non-program-value "

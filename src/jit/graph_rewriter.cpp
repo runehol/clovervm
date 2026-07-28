@@ -129,9 +129,10 @@ namespace cl::jit
             const absl::flat_hash_set<InstructionId> &available_defs)
         {
             visit_operand_references(
-                instruction, [&](uint32_t, OperandClass operand_class,
-                                 ValueRepresentation required_representation,
-                                 InstructionId definition_id) {
+                instruction,
+                [&](uint32_t, OperandClass operand_class,
+                    ValueRepresentationRequirement required_representation,
+                    InstructionId definition_id) {
                     Instruction def = storage.instruction(definition_id);
                     require_rewrite_invariant(
                         available_defs.contains(def.id()),
@@ -142,12 +143,11 @@ namespace cl::jit
                             static_cast<uint8_t>(def.result_class()),
                         "rewritten instruction has an operand with an "
                         "incompatible result class");
-                    if(operand_class == OperandClass::ProgramValue &&
-                       required_representation != ValueRepresentation::None)
+                    if(operand_class == OperandClass::ProgramValue)
                     {
                         require_rewrite_invariant(
-                            def.value_representation() ==
-                                required_representation,
+                            representation_matches(required_representation,
+                                                   def.value_representation()),
                             "rewritten instruction has an operand with an "
                             "incompatible value representation");
                     }

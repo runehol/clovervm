@@ -162,9 +162,19 @@ namespace cl::jit
         visit_operand_references(
             instruction,
             [&](uint32_t operand_index, OperandClass operand_class,
-                ValueRepresentation representation, InstructionId) {
+                ValueRepresentationRequirement required_representation,
+                InstructionId definition) {
                 require_constraint(operand_index == operands.size(),
                                    "JIT operand traversal is not contiguous");
+                ValueRepresentation representation =
+                    operand_class == OperandClass::ProgramValue
+                        ? storage.instruction(definition).value_representation()
+                        : ValueRepresentation::None;
+                require_constraint(
+                    operand_class != OperandClass::ProgramValue ||
+                        representation_matches(required_representation,
+                                               representation),
+                    "JIT operand has an incompatible value representation");
                 operands.push_back({operand_class, representation, false});
             });
 

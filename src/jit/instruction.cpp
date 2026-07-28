@@ -93,7 +93,7 @@ namespace cl::jit
     (assert(!has_variadic_operands &&                                          \
             "an instruction may have only one variadic range"),                \
      has_variadic_operands = true);
-#define CL_JIT_COUNT_SNAPSHOT_VALUES(...)                                      \
+#define CL_JIT_COUNT_PROGRAM_VALUES(...)                                       \
     CL_JIT_COUNT_VARIADIC_OPERAND(__VA_ARGS__)
 #define CL_JIT_COUNT_ATTRIBUTE(...) (++attribute_count);
 #define CL_JIT_COUNT_ATTRIBUTE_WORDS(name, attribute_class)                    \
@@ -111,7 +111,7 @@ namespace cl::jit
             bool has_variadic_operands = false;                                \
             operands(CL_JIT_COUNT_FIXED_OPERAND,                               \
                      CL_JIT_COUNT_VARIADIC_OPERAND,                            \
-                     CL_JIT_COUNT_SNAPSHOT_VALUES)                             \
+                     CL_JIT_COUNT_PROGRAM_VALUES)                              \
                 attributes(CL_JIT_COUNT_ATTRIBUTE) attributes(                 \
                     CL_JIT_COUNT_ATTRIBUTE_WORDS) bool operands_are_indirect = \
                     name##Instruction::OperandsAreIndirect;                    \
@@ -128,7 +128,7 @@ namespace cl::jit
 #undef CL_JIT_INSTRUCTION
 #undef CL_JIT_COUNT_ATTRIBUTE_WORDS
 #undef CL_JIT_COUNT_ATTRIBUTE
-#undef CL_JIT_COUNT_SNAPSHOT_VALUES
+#undef CL_JIT_COUNT_PROGRAM_VALUES
 #undef CL_JIT_COUNT_VARIADIC_OPERAND
 #undef CL_JIT_COUNT_FIXED_OPERAND
 #undef CL_JIT_EXACT_EFFECTS_THREE

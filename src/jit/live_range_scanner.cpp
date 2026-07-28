@@ -322,7 +322,8 @@ namespace cl::jit
                         visit_operand_references(
                             instruction, [&](uint32_t operand_index,
                                              OperandClass operand_class,
-                                             ValueRepresentation representation,
+                                             ValueRepresentationRequirement
+                                                 required_representation,
                                              InstructionId definition_id) {
                                 if(operand_class == OperandClass::Snapshot)
                                 {
@@ -330,6 +331,16 @@ namespace cl::jit
                                     return;
                                 }
 
+                                ValueRepresentation representation =
+                                    graph_.storage()
+                                        ->instruction(definition_id)
+                                        .value_representation();
+                                if(!representation_matches(
+                                       required_representation, representation))
+                                {
+                                    fatal("JIT operand has an incompatible "
+                                          "value representation");
+                                }
                                 const ProgramValueUseConstraint *input =
                                     find_input_override(override,
                                                         operand_index);
