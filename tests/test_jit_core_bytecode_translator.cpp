@@ -29,7 +29,7 @@ namespace cl::jit
                                                  .global_builtins_module()
                                                  .raw_value())),
                                nullptr, name),
-                  graph_builder(session)
+                  graph_builder(session, IRLevel::Core)
             {
             }
 

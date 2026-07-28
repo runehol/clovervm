@@ -182,7 +182,7 @@ namespace cl::jit
          AcceptsFixedStackValuesButRequiresRegisterTemporaries)
     {
         CompilationSession session;
-        GraphBuilder builder(session);
+        GraphBuilder builder(session, IRLevel::Core);
         TaggedValueRef source(builder.make_instruction<ParameterInstruction>());
         MovInstruction move = builder.make_instruction<MovInstruction>(source);
         LocationRequirement outgoing =
@@ -204,7 +204,7 @@ namespace cl::jit
     TEST(JitAllocationConstraints, ValidatesFixedInstructionShape)
     {
         CompilationSession session;
-        GraphBuilder builder(session);
+        GraphBuilder builder(session, IRLevel::Core);
         TaggedValueRef lhs(builder.make_instruction<ParameterInstruction>());
         TaggedValueRef rhs(builder.make_instruction<ParameterInstruction>());
         SnapshotRef snapshot = make_empty_snapshot(builder);
@@ -229,7 +229,7 @@ namespace cl::jit
     TEST(JitAllocationConstraints, ValidatesVariadicInstructionShape)
     {
         CompilationSession session;
-        GraphBuilder builder(session);
+        GraphBuilder builder(session, IRLevel::Core);
         TaggedValueRef callable(
             builder.make_instruction<ParameterInstruction>());
         TaggedValueRef first(builder.make_instruction<ParameterInstruction>());
@@ -253,7 +253,7 @@ namespace cl::jit
     TEST(JitAllocationConstraints, AcceptsVirtualSnapshotWithoutDirectUses)
     {
         CompilationSession session;
-        GraphBuilder builder(session);
+        GraphBuilder builder(session, IRLevel::Core);
         TaggedValueRef tagged(builder.make_instruction<ParameterInstruction>());
         F64Ref f64(builder.make_instruction<ParameterF64Instruction>());
         std::array<ProgramValueRef, 2> captures = {tagged, f64};
@@ -270,7 +270,7 @@ namespace cl::jit
     TEST(JitAllocationConstraints, MapsValueRepresentationsToRegisterClasses)
     {
         CompilationSession session;
-        GraphBuilder builder(session);
+        GraphBuilder builder(session, IRLevel::Core);
         F64Ref lhs(builder.make_instruction<ParameterF64Instruction>());
         F64Ref rhs(builder.make_instruction<ParameterF64Instruction>());
         AddF64Instruction add =
@@ -314,7 +314,7 @@ namespace cl::jit
     TEST(JitAllocationConstraints, AcceptsDefaultsAndRejectsInvalidOverrides)
     {
         CompilationSession session;
-        GraphBuilder builder(session);
+        GraphBuilder builder(session, IRLevel::Core);
         TaggedValueRef lhs(builder.make_instruction<ParameterInstruction>());
         TaggedValueRef rhs(builder.make_instruction<ParameterInstruction>());
         SnapshotRef snapshot = make_empty_snapshot(builder);
@@ -360,7 +360,7 @@ namespace cl::jit
             "temporary cannot have a SameAsInput");
 
         CompilationSession session;
-        GraphBuilder builder(session);
+        GraphBuilder builder(session, IRLevel::Core);
         F64Ref source(builder.make_instruction<ParameterF64Instruction>());
         BoxF64Instruction box =
             builder.make_instruction<BoxF64Instruction>(source);
@@ -381,7 +381,7 @@ namespace cl::jit
     TEST(JitAllocationConstraints, ValidatesClobberCollisions)
     {
         CompilationSession session;
-        GraphBuilder builder(session);
+        GraphBuilder builder(session, IRLevel::Core);
         TaggedValueRef source(builder.make_instruction<ParameterInstruction>());
         MovInstruction move = builder.make_instruction<MovInstruction>(source);
         RegisterSet x0_clobber;

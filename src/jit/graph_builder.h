@@ -32,8 +32,7 @@ namespace cl::jit
     class GraphBuilder
     {
     public:
-        explicit GraphBuilder(CompilationSession &session,
-                              IRLevel ir_level = IRLevel::Core);
+        GraphBuilder(CompilationSession &session, IRLevel ir_level);
 
         GraphBuilder(const GraphBuilder &) = delete;
         GraphBuilder &operator=(const GraphBuilder &) = delete;

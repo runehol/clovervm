@@ -70,7 +70,7 @@ namespace cl::jit
     TEST(JitCompilationStorage, UsesOneDenseIdentitySequencePerObjectKind)
     {
         CompilationSession session;
-        GraphBuilder builder(session);
+        GraphBuilder builder(session, IRLevel::Core);
         Block *first_block = builder.emplace_block();
         Block *second_block = builder.emplace_block();
         ParameterInstruction first_instruction =
@@ -104,7 +104,7 @@ namespace cl::jit
     TEST(JitCompilationStorage, GraphBorrowsItsOwningStorage)
     {
         CompilationSession session;
-        GraphBuilder builder(session);
+        GraphBuilder builder(session, IRLevel::Core);
         Block *entry = builder.emplace_block();
         ConstInstruction none =
             builder.emplace_instruction<ConstInstruction>(entry, Value::None());
@@ -134,7 +134,7 @@ namespace cl::jit
         EXPECT_EQ(0, existing->refcount);
         {
             CompilationSession session;
-            GraphBuilder builder(session);
+            GraphBuilder builder(session, IRLevel::Core);
             Block *entry = builder.emplace_block();
             TValue<String> retained_created =
                 session.retain_and_pin_value(created_value);
@@ -167,7 +167,7 @@ namespace cl::jit
         static_assert(std::is_trivially_destructible_v<Instruction>);
 
         CompilationSession session;
-        GraphBuilder builder(session);
+        GraphBuilder builder(session, IRLevel::Core);
         std::vector<Instruction> instructions;
 
         ParameterInstruction lhs =
@@ -457,7 +457,7 @@ namespace cl::jit
     TEST(JitInstructionConstruction, EncodesFixedAttributes)
     {
         CompilationSession session;
-        GraphBuilder builder(session);
+        GraphBuilder builder(session, IRLevel::Core);
         ConstInstruction instruction =
             builder.make_instruction<ConstInstruction>(Value::False());
 
@@ -484,7 +484,7 @@ namespace cl::jit
             context.thread()->make_internal_raw<ValidityCell>();
 
         CompilationSession session;
-        GraphBuilder builder(session);
+        GraphBuilder builder(session, IRLevel::Core);
         TaggedValueRef value(builder.make_instruction<ParameterInstruction>());
         SnapshotRef snapshot(builder.make_instruction<SnapshotInstruction>(
             std::span<const ProgramValueRef>{}, BytecodePC{17}));
@@ -519,7 +519,7 @@ namespace cl::jit
     TEST(JitInstructionTraversal, WalksProgramValueAndSnapshotReferences)
     {
         CompilationSession session;
-        GraphBuilder builder(session);
+        GraphBuilder builder(session, IRLevel::Core);
         TaggedValueRef lhs(builder.make_instruction<ParameterInstruction>());
         TaggedValueRef rhs(
             builder.make_instruction<ConstInstruction>(Value::from_smi(3)));
@@ -561,7 +561,7 @@ namespace cl::jit
     TEST(JitInstructionTraversal, WalksVariadicPythonCallArguments)
     {
         CompilationSession session;
-        GraphBuilder builder(session);
+        GraphBuilder builder(session, IRLevel::Core);
         TaggedValueRef callable(
             builder.make_instruction<ParameterInstruction>());
         TaggedValueRef first(builder.make_instruction<ParameterInstruction>());
@@ -640,7 +640,7 @@ namespace cl::jit
     TEST(JitInstructionTraversal, SnapshotStoresProgramValueReferences)
     {
         CompilationSession session;
-        GraphBuilder builder(session);
+        GraphBuilder builder(session, IRLevel::Core);
         TaggedValueRef tagged(builder.make_instruction<ParameterInstruction>());
         F64Ref f64(builder.make_instruction<ParameterF64Instruction>());
         TaggedValueRef truth(

@@ -32,7 +32,7 @@ namespace cl::jit
     TEST(JitCfg, ConditionalBranchExposesSemanticAndGenericEdges)
     {
         CompilationSession session;
-        GraphBuilder builder(session);
+        GraphBuilder builder(session, IRLevel::Core);
         builder.emplace_n_blocks(2);
         ASSERT_EQ(2u, builder.block_count());
         Block *entry = builder.block_at(0);
@@ -81,7 +81,7 @@ namespace cl::jit
     TEST(JitCfg, ExplicitUnconditionalBranchAndReturnFormValidGraph)
     {
         CompilationSession session;
-        GraphBuilder builder(session);
+        GraphBuilder builder(session, IRLevel::Core);
         Block *entry = builder.emplace_block();
         Block *exit = builder.emplace_block();
         EXPECT_EQ(0u, entry->loop_depth());
@@ -111,7 +111,7 @@ namespace cl::jit
     TEST(JitCfg, ResumeInInterpreterTerminatesItsBlock)
     {
         CompilationSession session;
-        GraphBuilder builder(session);
+        GraphBuilder builder(session, IRLevel::Core);
         Block *entry = builder.emplace_block();
         SnapshotRef snapshot(builder.emplace_instruction<SnapshotInstruction>(
             entry, std::span<const ProgramValueRef>{}, BytecodePC{7}));
@@ -259,7 +259,7 @@ namespace cl::jit
     TEST(JitSideExit, RejectsIncorrectInputEnvironment)
     {
         CompilationSession session;
-        GraphBuilder builder(session);
+        GraphBuilder builder(session, IRLevel::Core);
         Block *entry = builder.emplace_block();
         TaggedValueRef source = emplace_constant(builder, entry, Value::True());
         std::array<ProgramValueRef, 1> snapshot_values = {source};
@@ -276,7 +276,7 @@ namespace cl::jit
     TEST(JitSideExit, RejectsMissingFinalSnapshot)
     {
         CompilationSession session;
-        GraphBuilder builder(session);
+        GraphBuilder builder(session, IRLevel::Core);
         Block *entry = builder.emplace_block();
         TaggedValueRef source = emplace_constant(builder, entry, Value::True());
         std::array<InstructionId, 1> retained = {source.instruction_id()};
@@ -289,7 +289,7 @@ namespace cl::jit
     TEST(JitCfg, ParallelEdgesCarryIndependentOrderedArguments)
     {
         CompilationSession session;
-        GraphBuilder builder(session);
+        GraphBuilder builder(session, IRLevel::Core);
         Block *entry = builder.emplace_block();
         Block *join = builder.emplace_block();
         TaggedValueRef true_value =
@@ -323,7 +323,7 @@ namespace cl::jit
     TEST(JitCfg, EntryParametersArePlacedSeparatelyFromInstructions)
     {
         CompilationSession session;
-        GraphBuilder builder(session);
+        GraphBuilder builder(session, IRLevel::Core);
         Block *entry = builder.emplace_block();
         ParameterInstruction tagged_parameter =
             builder.make_instruction<ParameterInstruction>();
@@ -351,7 +351,7 @@ namespace cl::jit
     TEST(JitCfg, ParametersMayBelongToAnyBlock)
     {
         CompilationSession session;
-        GraphBuilder builder(session);
+        GraphBuilder builder(session, IRLevel::Core);
         Block *entry = builder.emplace_block();
         Block *exit = builder.emplace_block();
         TaggedValueRef argument =
@@ -376,7 +376,7 @@ namespace cl::jit
     TEST(JitCfgVerifier, RejectsWrongBlockArgumentArity)
     {
         CompilationSession session;
-        GraphBuilder builder(session);
+        GraphBuilder builder(session, IRLevel::Core);
         Block *entry = builder.emplace_block();
         Block *exit = builder.emplace_block();
         BlockEdge *edge = builder.make_block_edge(entry, exit);
@@ -392,7 +392,7 @@ namespace cl::jit
     TEST(JitCfgVerifier, RejectsIncompatibleBlockArgumentRepresentation)
     {
         CompilationSession session;
-        GraphBuilder builder(session);
+        GraphBuilder builder(session, IRLevel::Core);
         Block *entry = builder.emplace_block();
         Block *exit = builder.emplace_block();
         ParameterF64Instruction argument =
@@ -412,7 +412,7 @@ namespace cl::jit
     TEST(JitCfgVerifier, RejectsUnavailableBlockArgument)
     {
         CompilationSession session;
-        GraphBuilder builder(session);
+        GraphBuilder builder(session, IRLevel::Core);
         Block *entry = builder.emplace_block();
         Block *exit = builder.emplace_block();
         ParameterInstruction unavailable =
@@ -432,7 +432,7 @@ namespace cl::jit
     TEST(JitCfgVerifier, RejectsEmptyBlock)
     {
         CompilationSession session;
-        GraphBuilder builder(session);
+        GraphBuilder builder(session, IRLevel::Core);
         builder.emplace_block();
 
         expect_invalid_with(builder, "has no instructions");
@@ -441,7 +441,7 @@ namespace cl::jit
     TEST(JitCfgVerifier, RejectsNonTerminatorAsFinalInstruction)
     {
         CompilationSession session;
-        GraphBuilder builder(session);
+        GraphBuilder builder(session, IRLevel::Core);
         Block *entry = builder.emplace_block();
         builder.append_instruction(
             entry, builder.make_instruction<ConstInstruction>(Value::None()));
@@ -452,7 +452,7 @@ namespace cl::jit
     TEST(JitCfgVerifier, RejectsTerminatorBeforeFinalInstruction)
     {
         CompilationSession session;
-        GraphBuilder builder(session);
+        GraphBuilder builder(session, IRLevel::Core);
         Block *entry = builder.emplace_block();
         TaggedValueRef none = emplace_constant(builder, entry, Value::None());
         builder.append_instruction(
@@ -467,7 +467,7 @@ namespace cl::jit
     TEST(JitCfgVerifier, RejectsConditionalBranchThatReusesOneEdge)
     {
         CompilationSession session;
-        GraphBuilder builder(session);
+        GraphBuilder builder(session, IRLevel::Core);
         Block *entry = builder.emplace_block();
         Block *exit = builder.emplace_block();
         BlockEdge *edge = builder.make_block_edge(entry, exit);
@@ -485,7 +485,7 @@ namespace cl::jit
     TEST(JitCfgVerifier, RejectsEdgeReferencedByTheWrongSource)
     {
         CompilationSession session;
-        GraphBuilder builder(session);
+        GraphBuilder builder(session, IRLevel::Core);
         Block *declared_source = builder.emplace_block();
         Block *actual_source = builder.emplace_block();
         Block *target = builder.emplace_block();
@@ -507,7 +507,7 @@ namespace cl::jit
     TEST(JitCfgVerifier, RejectsReferenceToAnUnplacedInstruction)
     {
         CompilationSession session;
-        GraphBuilder builder(session);
+        GraphBuilder builder(session, IRLevel::Core);
         Block *entry = builder.emplace_block();
         ParameterInstruction unplaced =
             builder.make_instruction<ParameterInstruction>();
@@ -522,7 +522,7 @@ namespace cl::jit
     TEST(JitCfgVerifier, RejectsReferenceAcrossBlocks)
     {
         CompilationSession session;
-        GraphBuilder builder(session);
+        GraphBuilder builder(session, IRLevel::Core);
         Block *entry = builder.emplace_block();
         Block *exit = builder.emplace_block();
         ParameterInstruction parameter =
@@ -543,7 +543,7 @@ namespace cl::jit
     TEST(JitCfg, OneStorageCanOwnMultipleGraphs)
     {
         CompilationSession session;
-        GraphBuilder first_builder(session);
+        GraphBuilder first_builder(session, IRLevel::Core);
         Block *first_entry = first_builder.emplace_block();
         first_builder.append_instruction(
             first_entry,
@@ -551,7 +551,7 @@ namespace cl::jit
                 emplace_constant(first_builder, first_entry, Value::None())));
         ControlFlowGraph *first_graph = first_builder.finalize();
 
-        GraphBuilder second_builder(session);
+        GraphBuilder second_builder(session, IRLevel::Core);
         Block *second_entry = second_builder.emplace_block();
         second_builder.append_instruction(
             second_entry,

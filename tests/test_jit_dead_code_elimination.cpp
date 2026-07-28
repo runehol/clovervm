@@ -14,7 +14,7 @@ namespace cl::jit
     TEST(JitDeadCodeElimination, EliminatesUnusedEffectFreeInstructions)
     {
         CompilationSession session;
-        GraphBuilder builder(session);
+        GraphBuilder builder(session, IRLevel::Core);
         Block *entry = builder.emplace_block();
         ConstInstruction unused =
             builder.emplace_instruction<ConstInstruction>(entry, Value::None());
@@ -41,7 +41,7 @@ namespace cl::jit
     TEST(JitDeadCodeElimination, RetainsValuesPassedAcrossBlockEdges)
     {
         CompilationSession session;
-        GraphBuilder builder(session);
+        GraphBuilder builder(session, IRLevel::Core);
         Block *entry = builder.emplace_block();
         Block *exit = builder.emplace_block();
         ConstInstruction argument =
@@ -68,7 +68,7 @@ namespace cl::jit
     TEST(JitDeadCodeElimination, RemovesDeadBlockParametersAndTheirArguments)
     {
         CompilationSession session;
-        GraphBuilder builder(session);
+        GraphBuilder builder(session, IRLevel::Core);
         Block *entry = builder.emplace_block();
         Block *exit = builder.emplace_block();
         ConstInstruction dead_argument =
@@ -109,7 +109,7 @@ namespace cl::jit
     TEST(JitDeadCodeElimination, EliminatesUnusedDeoptimizingInstructions)
     {
         CompilationSession session;
-        GraphBuilder builder(session);
+        GraphBuilder builder(session, IRLevel::Core);
         Block *entry = builder.emplace_block();
         ParameterInstruction parameter =
             builder.emplace_parameter<ParameterInstruction>(entry);
@@ -138,7 +138,7 @@ namespace cl::jit
     TEST(JitDeadCodeElimination, EliminatesUnusedAllocations)
     {
         CompilationSession session;
-        GraphBuilder builder(session);
+        GraphBuilder builder(session, IRLevel::Core);
         Block *entry = builder.emplace_block();
         ParameterInstruction result =
             builder.emplace_parameter<ParameterInstruction>(entry);
@@ -162,7 +162,7 @@ namespace cl::jit
     TEST(JitDeadCodeElimination, RetainsUnusedControlFlowInstructions)
     {
         CompilationSession session;
-        GraphBuilder builder(session);
+        GraphBuilder builder(session, IRLevel::Core);
         Block *entry = builder.emplace_block();
         ParameterInstruction parameter =
             builder.emplace_parameter<ParameterInstruction>(entry);
@@ -188,7 +188,7 @@ namespace cl::jit
     TEST(JitDeadCodeElimination, RetainsUnusedPythonCalls)
     {
         CompilationSession session;
-        GraphBuilder builder(session);
+        GraphBuilder builder(session, IRLevel::Core);
         Block *entry = builder.emplace_block();
         ParameterInstruction parameter =
             builder.emplace_parameter<ParameterInstruction>(entry);

@@ -120,7 +120,7 @@ namespace cl::jit
     TEST(JitRegisterAllocator, AllocatesAndMaterializesGraph)
     {
         CompilationSession session;
-        GraphBuilder builder(session);
+        GraphBuilder builder(session, IRLevel::Core);
         Block *entry = builder.emplace_block();
         ParameterInstruction parameter =
             builder.emplace_parameter<ParameterInstruction>(entry);
@@ -142,7 +142,7 @@ namespace cl::jit
          MaterializesSideExitArgumentsWithoutRewritingSideExitInputs)
     {
         CompilationSession session;
-        GraphBuilder builder(session);
+        GraphBuilder builder(session, IRLevel::Core);
         Block *entry = builder.emplace_block();
         ParameterInstruction parameter =
             builder.emplace_parameter<ParameterInstruction>(entry);
@@ -213,7 +213,7 @@ namespace cl::jit
     TEST(JitRegisterAllocator, PreparesRepresentativeOneBlockProblem)
     {
         CompilationSession session;
-        GraphBuilder builder(session);
+        GraphBuilder builder(session, IRLevel::Core);
         Block *entry = builder.emplace_block();
         TaggedValueRef lhs(
             builder.emplace_parameter<ParameterInstruction>(entry));
@@ -289,7 +289,7 @@ namespace cl::jit
          KeepsEdgeArgumentsAndBlockParametersInSeparateLocalRanges)
     {
         CompilationSession session;
-        GraphBuilder builder(session);
+        GraphBuilder builder(session, IRLevel::Core);
         Block *entry = builder.emplace_block();
         Block *exit = builder.emplace_block();
         builder.set_loop_depth(entry, 2);
@@ -346,7 +346,7 @@ namespace cl::jit
     TEST(JitRegisterAllocator, AssignsRepresentativeBundles)
     {
         CompilationSession session;
-        GraphBuilder builder(session);
+        GraphBuilder builder(session, IRLevel::Core);
         Block *entry = builder.emplace_block();
         TaggedValueRef lhs(
             builder.emplace_parameter<ParameterInstruction>(entry));
@@ -420,7 +420,7 @@ namespace cl::jit
          UsesAllocationOrderAndAllowsAbuttingRangesToShareARegister)
     {
         CompilationSession session;
-        GraphBuilder builder(session);
+        GraphBuilder builder(session, IRLevel::Core);
         Block *entry = builder.emplace_block();
         TaggedValueRef lhs(
             builder.emplace_parameter<ParameterInstruction>(entry));
@@ -451,7 +451,7 @@ namespace cl::jit
     TEST(JitRegisterAllocator, AssignsLargerBundlesFirst)
     {
         CompilationSession session;
-        GraphBuilder builder(session);
+        GraphBuilder builder(session, IRLevel::Core);
         Block *entry = builder.emplace_block();
         TaggedValueRef short_lived =
             emplace_constant(builder, entry, Value::from_smi(1));
@@ -487,7 +487,7 @@ namespace cl::jit
     TEST(JitRegisterAllocator, FindsARegisterConflictBeforeTheInsertionPoint)
     {
         CompilationSession session;
-        GraphBuilder builder(session);
+        GraphBuilder builder(session, IRLevel::Core);
         Block *entry = builder.emplace_block();
         TaggedValueRef long_lived =
             emplace_constant(builder, entry, Value::from_smi(1));
@@ -524,7 +524,7 @@ namespace cl::jit
     TEST(JitRegisterAllocator, RejectsRegisterPressureWithoutSplitting)
     {
         CompilationSession session;
-        GraphBuilder builder(session);
+        GraphBuilder builder(session, IRLevel::Core);
         Block *entry = builder.emplace_block();
         TaggedValueRef lhs(
             builder.emplace_parameter<ParameterInstruction>(entry));
@@ -551,7 +551,7 @@ namespace cl::jit
     TEST(JitRegisterAllocator, SplitsConflictingFixedRegisters)
     {
         CompilationSession session;
-        GraphBuilder builder(session);
+        GraphBuilder builder(session, IRLevel::Core);
         Block *entry = builder.emplace_block();
         ParameterInstruction parameter =
             builder.emplace_parameter<ParameterInstruction>(entry);
@@ -601,7 +601,7 @@ namespace cl::jit
          PreservesFixedStackLocationsForConstraintSplitting)
     {
         CompilationSession session;
-        GraphBuilder builder(session);
+        GraphBuilder builder(session, IRLevel::Core);
         Block *entry = builder.emplace_block();
         ParameterInstruction parameter =
             builder.emplace_parameter<ParameterInstruction>(entry);
@@ -665,7 +665,7 @@ namespace cl::jit
     TEST(JitRegisterAllocator, GroupsSamePointSplitTransfersInParallel)
     {
         CompilationSession session;
-        GraphBuilder builder(session);
+        GraphBuilder builder(session, IRLevel::Core);
         Block *entry = builder.emplace_block();
         ParameterInstruction lhs =
             builder.emplace_parameter<ParameterInstruction>(entry);
@@ -726,7 +726,7 @@ namespace cl::jit
     TEST(JitRegisterAllocator, RejectsSameInstructionLocationConflict)
     {
         CompilationSession session;
-        GraphBuilder builder(session);
+        GraphBuilder builder(session, IRLevel::Core);
         Block *entry = builder.emplace_block();
         ParameterInstruction parameter =
             builder.emplace_parameter<ParameterInstruction>(entry);
@@ -759,7 +759,7 @@ namespace cl::jit
     TEST(JitRegisterAllocator, AvoidsClobberedRegisters)
     {
         CompilationSession session;
-        GraphBuilder builder(session);
+        GraphBuilder builder(session, IRLevel::Core);
         Block *entry = builder.emplace_block();
         TaggedValueRef parameter(
             builder.emplace_parameter<ParameterInstruction>(entry));
@@ -795,7 +795,7 @@ namespace cl::jit
     TEST(JitRegisterAllocator, RejectsAClobberedFixedRegister)
     {
         CompilationSession session;
-        GraphBuilder builder(session);
+        GraphBuilder builder(session, IRLevel::Core);
         Block *entry = builder.emplace_block();
         ParameterInstruction parameter =
             builder.emplace_parameter<ParameterInstruction>(entry);
@@ -833,7 +833,7 @@ namespace cl::jit
     TEST(JitRegisterAllocator, PreparesTemporaryAndClobberReservations)
     {
         CompilationSession session;
-        GraphBuilder builder(session);
+        GraphBuilder builder(session, IRLevel::Core);
         Block *entry = builder.emplace_block();
         TaggedValueRef parameter(
             builder.emplace_parameter<ParameterInstruction>(entry));
@@ -877,7 +877,7 @@ namespace cl::jit
     TEST(JitRegisterAllocator, GivesDeadDefinitionsMinimalRanges)
     {
         CompilationSession session;
-        GraphBuilder builder(session);
+        GraphBuilder builder(session, IRLevel::Core);
         Block *entry = builder.emplace_block();
         ParameterInstruction parameter =
             builder.emplace_parameter<ParameterInstruction>(entry);
@@ -906,7 +906,7 @@ namespace cl::jit
          KeepsDeadEarlyDefinitionsLiveUntilNextInstruction)
     {
         CompilationSession session;
-        GraphBuilder builder(session);
+        GraphBuilder builder(session, IRLevel::Core);
         Block *entry = builder.emplace_block();
         Instruction early_definition =
             builder.emplace_instruction<UninitializedInstruction>(entry);
@@ -938,7 +938,7 @@ namespace cl::jit
     TEST(JitRegisterAllocator, GivesSparseLongRangesNonzeroSpillWeight)
     {
         CompilationSession session;
-        GraphBuilder builder(session);
+        GraphBuilder builder(session, IRLevel::Core);
         Block *entry = builder.emplace_block();
         TaggedValueRef parameter(
             builder.emplace_parameter<ParameterInstruction>(entry));
@@ -964,7 +964,7 @@ namespace cl::jit
     TEST(JitRegisterAllocator, DerivesRegisterClassesFromRepresentations)
     {
         CompilationSession session;
-        GraphBuilder builder(session);
+        GraphBuilder builder(session, IRLevel::Core);
         Block *entry = builder.emplace_block();
         F64Ref parameter(
             builder.emplace_parameter<ParameterF64Instruction>(entry));
@@ -997,7 +997,7 @@ namespace cl::jit
     TEST(JitRegisterAllocator, RejectsExecutableSnapshotConsumers)
     {
         CompilationSession session;
-        GraphBuilder builder(session);
+        GraphBuilder builder(session, IRLevel::Core);
         Block *entry = builder.emplace_block();
         TaggedValueRef parameter(
             builder.emplace_parameter<ParameterInstruction>(entry));
@@ -1019,7 +1019,7 @@ namespace cl::jit
     TEST(JitRegisterAllocator, RejectsSameAsInputUntilConstraintSplitting)
     {
         CompilationSession session;
-        GraphBuilder builder(session);
+        GraphBuilder builder(session, IRLevel::Core);
         Block *entry = builder.emplace_block();
         TaggedValueRef parameter(
             builder.emplace_parameter<ParameterInstruction>(entry));

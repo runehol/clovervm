@@ -23,7 +23,7 @@ namespace cl::jit
         }
 
         CompilationSession session;
-        GraphBuilder builder(session);
+        GraphBuilder builder(session, IRLevel::Core);
         CoreBytecodeTranslator translator(code_object, builder);
         ControlFlowGraph *graph = translator.translate();
         if(options.observer != nullptr)

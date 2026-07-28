@@ -21,7 +21,7 @@ namespace cl::jit
     TEST(JitInstructionTraversal, WalksBodyInstructionsInProgramOrder)
     {
         CompilationSession session;
-        GraphBuilder builder(session);
+        GraphBuilder builder(session, IRLevel::Core);
         Block *entry = builder.emplace_block();
         Block *exit = builder.emplace_block();
         builder.emplace_parameter<ParameterInstruction>(entry);
@@ -66,7 +66,7 @@ namespace cl::jit
     TEST(JitUseLists, RecordsUseOccurrencesAndZeroUseDefinitions)
     {
         CompilationSession session;
-        GraphBuilder builder(session);
+        GraphBuilder builder(session, IRLevel::Core);
         Block *entry = builder.emplace_block();
         ParameterInstruction parameter =
             builder.emplace_parameter<ParameterInstruction>(entry);
@@ -137,7 +137,7 @@ namespace cl::jit
     TEST(JitUseLists, RecordsBlockArgumentUseOccurrences)
     {
         CompilationSession session;
-        GraphBuilder builder(session);
+        GraphBuilder builder(session, IRLevel::Core);
         Block *entry = builder.emplace_block();
         Block *exit = builder.emplace_block();
         ParameterInstruction source_parameter =
@@ -167,7 +167,7 @@ namespace cl::jit
     TEST(JitUseLists, TraversalPreparesOnlyRequestedQueries)
     {
         CompilationSession session;
-        GraphBuilder builder(session);
+        GraphBuilder builder(session, IRLevel::Core);
         Block *entry = builder.emplace_block();
         ConstInstruction constant =
             builder.emplace_instruction<ConstInstruction>(entry, Value::None());
@@ -193,7 +193,7 @@ namespace cl::jit
     TEST(JitGraphRewriter, KeepsAnUnchangedGraphWithoutAdvancingGeneration)
     {
         CompilationSession session;
-        GraphBuilder builder(session);
+        GraphBuilder builder(session, IRLevel::Core);
         Block *entry = builder.emplace_block();
         ConstInstruction constant =
             builder.emplace_instruction<ConstInstruction>(entry, Value::None());
@@ -221,7 +221,7 @@ namespace cl::jit
     TEST(JitGraphRewriter, DetachesInstructionWithoutPoisoningStorage)
     {
         CompilationSession session;
-        GraphBuilder builder(session);
+        GraphBuilder builder(session, IRLevel::Core);
         Block *entry = builder.emplace_block();
         ConstInstruction detached =
             builder.emplace_instruction<ConstInstruction>(entry, Value::True());
@@ -254,7 +254,7 @@ namespace cl::jit
     TEST(JitGraphRewriter, CommitsTargetIrLevelWithRewrite)
     {
         CompilationSession session;
-        GraphBuilder builder(session);
+        GraphBuilder builder(session, IRLevel::Core);
         Block *entry = builder.emplace_block();
         ConstInstruction result =
             builder.emplace_instruction<ConstInstruction>(entry, Value::None());
@@ -279,7 +279,7 @@ namespace cl::jit
     TEST(JitGraphRewriter, CompactsBlockParametersAndIncomingArguments)
     {
         CompilationSession session;
-        GraphBuilder builder(session);
+        GraphBuilder builder(session, IRLevel::Core);
         Block *entry = builder.emplace_block();
         Block *exit = builder.emplace_block();
         ParameterInstruction first =
@@ -336,7 +336,7 @@ namespace cl::jit
          StructuralTransfersRedirectDefinitionsFromTheirInsertionPoint)
     {
         CompilationSession session;
-        GraphBuilder builder(session);
+        GraphBuilder builder(session, IRLevel::Core);
         Block *entry = builder.emplace_block();
         ParameterInstruction parameter =
             builder.emplace_parameter<ParameterInstruction>(entry);
@@ -431,7 +431,7 @@ namespace cl::jit
          StructuralTransfersApplySimultaneouslyBeforeEdgeArguments)
     {
         CompilationSession session;
-        GraphBuilder builder(session);
+        GraphBuilder builder(session, IRLevel::Core);
         Block *entry = builder.emplace_block();
         Block *exit = builder.emplace_block();
         ParameterInstruction first =
@@ -514,7 +514,7 @@ namespace cl::jit
         EXPECT_DEATH(
             {
                 CompilationSession session;
-                GraphBuilder builder(session);
+                GraphBuilder builder(session, IRLevel::Core);
                 Block *entry = builder.emplace_block();
                 ConstInstruction constant =
                     builder.emplace_instruction<ConstInstruction>(
@@ -552,7 +552,7 @@ namespace cl::jit
         EXPECT_DEATH(
             {
                 CompilationSession session;
-                GraphBuilder builder(session);
+                GraphBuilder builder(session, IRLevel::Core);
                 Block *entry = builder.emplace_block();
                 ParameterInstruction parameter =
                     builder.emplace_parameter<ParameterInstruction>(entry);
@@ -594,7 +594,7 @@ namespace cl::jit
         EXPECT_EQ(0, string->refcount);
         {
             CompilationSession session;
-            GraphBuilder builder(session);
+            GraphBuilder builder(session, IRLevel::Core);
             Block *entry = builder.emplace_block();
             ConstInstruction constant =
                 builder.emplace_instruction<ConstInstruction>(entry,
@@ -634,7 +634,7 @@ namespace cl::jit
          InsertsPrefixesAndSuffixesAroundTheCurrentInstruction)
     {
         CompilationSession session;
-        GraphBuilder builder(session);
+        GraphBuilder builder(session, IRLevel::Core);
         Block *entry = builder.emplace_block();
         ParameterInstruction parameter =
             builder.emplace_parameter<ParameterInstruction>(entry);
@@ -689,7 +689,7 @@ namespace cl::jit
     TEST(JitGraphRewriter, ReplacesAnIdentityWithItsExistingDefinition)
     {
         CompilationSession session;
-        GraphBuilder builder(session);
+        GraphBuilder builder(session, IRLevel::Core);
         Block *entry = builder.emplace_block();
         ParameterInstruction parameter =
             builder.emplace_parameter<ParameterInstruction>(entry);
@@ -735,7 +735,7 @@ namespace cl::jit
     TEST(JitGraphRewriter, CanPassNormalizedInstructionsToTheCallback)
     {
         CompilationSession session;
-        GraphBuilder builder(session);
+        GraphBuilder builder(session, IRLevel::Core);
         Block *entry = builder.emplace_block();
         ConstInstruction old_constant =
             builder.emplace_instruction<ConstInstruction>(entry, Value::None());
@@ -807,7 +807,7 @@ namespace cl::jit
         EXPECT_DEATH(
             {
                 CompilationSession session;
-                GraphBuilder builder(session);
+                GraphBuilder builder(session, IRLevel::Core);
                 Block *entry = builder.emplace_block();
                 ConstInstruction constant =
                     builder.emplace_instruction<ConstInstruction>(
@@ -829,7 +829,7 @@ namespace cl::jit
     TEST(JitGraphRewriter, ReconstructsTerminatorForNormalizedEdgeArguments)
     {
         CompilationSession session;
-        GraphBuilder builder(session);
+        GraphBuilder builder(session, IRLevel::Core);
         Block *entry = builder.emplace_block();
         Block *exit = builder.emplace_block();
         ConstInstruction original =
@@ -881,7 +881,7 @@ namespace cl::jit
     TEST(JitGraphRewriter, ReconstructsVariadicInstructionsFromTheSchema)
     {
         CompilationSession session;
-        GraphBuilder builder(session);
+        GraphBuilder builder(session, IRLevel::Core);
         Block *entry = builder.emplace_block();
         ParameterInstruction parameter =
             builder.emplace_parameter<ParameterInstruction>(entry);
@@ -1004,7 +1004,7 @@ namespace cl::jit
     TEST(JitGraphRewriter, StagesSequencesAcrossTheWholeGraphBeforeCommit)
     {
         CompilationSession session;
-        GraphBuilder builder(session);
+        GraphBuilder builder(session, IRLevel::Core);
         Block *entry = builder.emplace_block();
         Block *exit = builder.emplace_block();
         ParameterInstruction parameter =
@@ -1064,7 +1064,7 @@ namespace cl::jit
         EXPECT_DEATH(
             {
                 CompilationSession session;
-                GraphBuilder builder(session);
+                GraphBuilder builder(session, IRLevel::Core);
                 Block *entry = builder.emplace_block();
                 ConstInstruction constant =
                     builder.emplace_instruction<ConstInstruction>(

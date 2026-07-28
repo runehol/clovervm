@@ -16,7 +16,7 @@ namespace cl::jit
     TEST(JitIRPrint, PrintsDenseValuesAndPositionalOperands)
     {
         CompilationSession session;
-        GraphBuilder builder(session);
+        GraphBuilder builder(session, IRLevel::Core);
         Block *entry = builder.emplace_block();
         TaggedValueRef parameter(
             builder.emplace_parameter<ParameterInstruction>(entry));
@@ -43,7 +43,7 @@ namespace cl::jit
     TEST(JitIRPrint, SegmentsSnapshotsAndNamesEdgeAttributes)
     {
         CompilationSession session;
-        GraphBuilder builder(session);
+        GraphBuilder builder(session, IRLevel::Core);
         Block *entry = builder.emplace_block();
         Block *join = builder.emplace_block();
         builder.set_loop_depth(join, 2);
@@ -86,7 +86,7 @@ namespace cl::jit
     TEST(JitIRPrint, PrintsVariadicCallsAndNonDefaultBlockParameterTypes)
     {
         CompilationSession session;
-        GraphBuilder builder(session);
+        GraphBuilder builder(session, IRLevel::Core);
         Block *entry = builder.emplace_block();
 
         TaggedValueRef callable(
@@ -133,7 +133,7 @@ namespace cl::jit
         code_object->n_temporaries = 1;
 
         CompilationSession session;
-        GraphBuilder builder(session);
+        GraphBuilder builder(session, IRLevel::Core);
         builder.set_bytecode_state_order(BytecodeStateOrder(*code_object));
         Block *entry = builder.emplace_block();
         TaggedValueRef none(builder.emplace_instruction<ConstInstruction>(

@@ -14,7 +14,7 @@ namespace cl::jit
          RetainsSunkInstructionsInProgramOrderAndBindsTheirInputs)
     {
         CompilationSession session;
-        GraphBuilder builder(session);
+        GraphBuilder builder(session, IRLevel::Core);
         Block *entry = builder.emplace_block();
         ParameterInstruction first =
             builder.emplace_parameter<ParameterInstruction>(entry);
@@ -75,7 +75,7 @@ namespace cl::jit
         EXPECT_DEATH(
             ([] {
                 CompilationSession session;
-                GraphBuilder builder(session);
+                GraphBuilder builder(session, IRLevel::Core);
                 Block *entry = builder.emplace_block();
                 ParameterInstruction parameter =
                     builder.emplace_parameter<ParameterInstruction>(entry);

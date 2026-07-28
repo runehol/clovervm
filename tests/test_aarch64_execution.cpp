@@ -73,7 +73,7 @@ namespace cl::jit
                                      CompilationSession &session)
             {
                 CodeObject *function_code = compile_first_function(source);
-                GraphBuilder builder(session);
+                GraphBuilder builder(session, IRLevel::Core);
                 CoreBytecodeTranslator translator(*function_code, builder);
                 return translator.translate();
             }
@@ -151,7 +151,7 @@ namespace cl::jit
     TEST(AArch64Execution, CompilesAllocatedCfg)
     {
         CompilationSession session;
-        GraphBuilder builder(session);
+        GraphBuilder builder(session, IRLevel::Core);
         Block *entry = builder.emplace_block();
         builder.emplace_parameter<ParameterPointerInstruction>(entry);
         ParameterInstruction parameter =

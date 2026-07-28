@@ -8,7 +8,7 @@ namespace cl::jit
     TEST(JitLocationAssignments, StoresProgramValuesAndTemporaries)
     {
         CompilationSession session;
-        GraphBuilder builder(session);
+        GraphBuilder builder(session, IRLevel::Core);
         Block *entry = builder.emplace_block();
         ParameterInstruction parameter =
             builder.emplace_parameter<ParameterInstruction>(entry);
@@ -37,7 +37,7 @@ namespace cl::jit
     TEST(JitLocationAssignments, RemapsKeysAfterInstructionNormalization)
     {
         CompilationSession session;
-        GraphBuilder builder(session);
+        GraphBuilder builder(session, IRLevel::Core);
         Block *entry = builder.emplace_block();
         ParameterInstruction parameter =
             builder.emplace_parameter<ParameterInstruction>(entry);
