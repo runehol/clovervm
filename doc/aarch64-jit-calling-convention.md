@@ -147,12 +147,95 @@ an arity-specialized entry address or a second metadata input. A compiled call
 site may still emit its known register-to-canonical stores directly when doing
 so produces better code.
 
-`x16` is interprocedural scratch at this controlled Clover boundary. It does
-not remain an allocator-visible live value after compiled entry and is not a
-preserved call argument. Generated far-call or transition sequences must not
-overwrite it while materializing the adapter target; they may use `x17` for
-that purpose. This convention does not rely on `x16` surviving an arbitrary
+`x16` is interprocedural scratch at this controlled Clover boundary. It is an
+entry/setup carrier for the target `CodeObject *`, not a durable code-identity
+register. It does not remain an allocator-visible live value after compiled
+entry and is not a preserved call argument. Generated far-call or transition
+sequences must not overwrite it before the entry handoff consumes it; they may
+use `x17` for target materialization when `x16` still carries the target
+`CodeObject *`. This convention does not rely on `x16` surviving an arbitrary
 platform-ABI call or linker veneer.
+
+Compiled code that needs its owning `CodeObject` or `JitCodeObject` after
+entry must materialize that identity explicitly from generated-code metadata,
+the compiled code object's constant pool, or another backend-defined metadata
+source. It must not treat `x16` as a persistent self pointer.
+
+## Entry And Exit Thunks
+
+Cross-engine transitions use a target-specific interpreter/JIT entry-exit
+thunk. This thunk owns the durable transition between host/interpreter stack
+discipline and compiled Clover stack discipline. Compiled code is entered with
+a real AArch64 call so ordinary successful returns use the hardware return
+address predictor:
+
+```text
+interpreter-to-JIT entry-exit thunk
+    save host/interpreter execution state
+    install the compiled Clover stack pointer
+    place ThreadState * in x0
+    place target CodeObject * in x16
+    derive arity from the target CodeObject in x16
+    place first min(arity, 7) tagged parameters in x1..x7
+    place the committed managed frame pointer in x29/fp
+    blr compiled_entry
+
+jit_return_label
+    restore host/interpreter stack discipline
+    consume the JIT return result
+    continue in the interpreter or caller path
+```
+
+A normal compiled Python return places the tagged result in `x0` and executes
+`ret` through the link register established by the entry thunk's
+`blr compiled_entry`. The hot call/return pair is therefore balanced:
+
+```text
+compiled normal return
+    x0 = tagged result
+    ret
+```
+
+The entry-exit thunk is the only ordinary caller of compiled code from the
+hand-written interpreter. It must be able to distinguish an ordinary compiled
+result from any later explicit JIT-exit state, but successful returns stay on
+the single-result path above.
+
+## Side-Exit Register-Save Thunk
+
+A compiled side exit is not modeled as a normal return to the entry-exit thunk.
+It branches to a target-specific side-exit register-save thunk. That thunk
+captures enough compiled machine state for recovery and then enters the
+interpreter's threaded dispatch path by loading the handler for the selected
+re-entry program counter and returning to that handler:
+
+```text
+compiled guard failure
+    b side_exit_register_save_thunk
+
+side_exit_register_save_thunk
+    save the fixed compiled register image
+    save compiled fp/sp and the owning side-exit identity
+    publish or record the side-exit capture for interpreter recovery
+    pc = interpreter return/recovery opcode pc
+    ldr xtarget, [dispatch_table, pc]
+    ret xtarget
+```
+
+This deliberately spends one cold-path return-prediction miss. The outstanding
+return-stack entry from the entry thunk's `blr compiled_entry` predicts the
+entry thunk's `jit_return_label`, while the actual side-exit target is the
+interpreter dispatch handler. Executing `ret xtarget` nevertheless consumes that
+stale return-stack entry, so the interpreter continues in its usual
+threaded-dispatch regime instead of carrying a polluted return predictor into a
+chain of later returns.
+
+The side-exit thunk must not call C++ transition code while still using the
+compiled stack as an ordinary platform stack. Portable transition execution, if
+needed for a side exit, belongs behind the interpreter re-entry path or another
+thunk that has first restored host-stack discipline. The side-exit
+register-save thunk owns only target state capture and the cold `ret xtarget`
+handoff into interpreter dispatch.
 
 ## Returns
 
@@ -211,11 +294,20 @@ compiled unwinding and stack walking.
   mechanism for avoiding boxing.
 - Every compiled entry receives the active `ThreadState *` in `x0`; it is state
   position one, but not a Python argument or canonical frame home.
+- `x16` may carry the target `CodeObject *` only as entry/setup state; compiled
+  code must rematerialize code-object identity when it needs it after entry.
 - Successful adaptation determines the callee arity before argument transport.
 - Call transitions are specialized by arity in both engine directions.
 - Return transitions do not depend on arity.
 - Overflow arguments already in canonical cells are not copied merely because
   execution changes engine.
+- The interpreter/JIT entry-exit thunk enters compiled code with a real call;
+  ordinary successful compiled returns use `ret` back to that thunk.
+- Side exits branch to a side-exit register-save thunk, capture compiled state,
+  and enter interpreter dispatch with `ldr xtarget, [dispatch_table, pc]` plus
+  `ret xtarget` rather than a plain branch.
+- The side-exit register-save thunk must not call C++ while using the compiled
+  stack as an ordinary platform stack.
 - Side exits before call commitment reconstruct the original bytecode call
   state rather than the adapted JIT argument vector.
 - Safepoints discover every live root regardless of whether its canonical home
