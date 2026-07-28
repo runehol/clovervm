@@ -8,6 +8,11 @@
 import os
 
 
+def assert_pair(pair, first, second):
+    assert pair[0] == first
+    assert pair[1] == second
+
+
 assert os.name == "posix"
 assert os.curdir == "."
 assert os.pardir == ".."
@@ -22,19 +27,46 @@ assert os.path.join("a", "b", "c") == "a/b/c"
 assert os.path.join("a", "/b", "c") == "/b/c"
 assert os.path.split("a/b.txt")[0] == "a"
 assert os.path.split("a/b.txt")[1] == "b.txt"
-assert os.path.split("plain") == ("", "plain")
-assert os.path.split("/tmp/") == ("/tmp", "")
-assert os.path.split("/") == ("/", "")
-assert os.path.split("///") == ("///", "")
-assert os.path.split("//tmp//name") == ("//tmp", "name")
-assert os.path.splitdrive("/tmp/name") == ("", "/tmp/name")
-assert os.path.splitext("plain") == ("plain", "")
-assert os.path.splitext("plain.txt") == ("plain", ".txt")
-assert os.path.splitext(".profile") == (".profile", "")
-assert os.path.splitext("/tmp/archive.tar.gz") == ("/tmp/archive.tar", ".gz")
-assert os.path.splitext("/tmp/name.") == ("/tmp/name", ".")
+assert_pair(os.path.split("plain"), "", "plain")
+assert_pair(os.path.split("/tmp/"), "/tmp", "")
+assert_pair(os.path.split("/"), "/", "")
+assert_pair(os.path.split("///"), "///", "")
+assert_pair(os.path.split("//tmp//name"), "//tmp", "name")
+assert_pair(os.path.splitdrive("/tmp/name"), "", "/tmp/name")
+assert_pair(os.path.splitext("plain"), "plain", "")
+assert_pair(os.path.splitext("plain.txt"), "plain", ".txt")
+assert_pair(os.path.splitext(".profile"), ".profile", "")
+assert_pair(os.path.splitext("/tmp/archive.tar.gz"), "/tmp/archive.tar", ".gz")
+assert_pair(os.path.splitext("/tmp/name."), "/tmp/name", ".")
 assert os.path.dirname("/tmp/name") == "/tmp"
 assert os.path.basename("/tmp/name") == "name"
+assert os.path.normpath("") == "."
+assert os.path.normpath(".//a/./b/../c") == "a/c"
+assert os.path.normpath("/a//b/..") == "/a"
+assert os.path.normpath("//a//b") == "//a/b"
+assert os.path.normpath("a/../../b") == "../b"
+assert os.path.commonprefix(("/usr/lib", "/usr/local")) == "/usr/l"
+assert os.path.commonprefix(("alpha", "beta")) == ""
+assert os.path.commonpath(("a/b", "a/c")) == "a"
+assert os.path.commonpath(("a", "b")) == ""
+assert os.path.commonpath(("/a/b", "/a/c")) == "/a"
+assert os.path.relpath("/a/b", "/a/c") == "../b"
+assert os.path.relpath("/a/b", "/a/b") == "."
+assert os.path.relpath("a/b", ".") == "a/b"
+
+try:
+    os.path.commonpath(("a", "/a"))
+    mixed_commonpath_raised = False
+except ValueError:
+    mixed_commonpath_raised = True
+assert mixed_commonpath_raised
+
+try:
+    os.path.relpath("")
+    empty_relpath_raised = False
+except ValueError:
+    empty_relpath_raised = True
+assert empty_relpath_raised
 
 cwd = os.getcwd()
 assert len(cwd) > 0
