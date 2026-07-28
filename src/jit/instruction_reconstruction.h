@@ -144,7 +144,8 @@ namespace cl::jit
 #define CL_JIT_EFFECT_BOUNDS(...)
 #define CL_JIT_RESOLVE_FIXED(name, ...) resolver.resolve(typed.name()),
 #define CL_JIT_RESOLVE_VARIADIC(name, ...) resolver.resolve(typed.name()),
-#define CL_JIT_RESOLVE_PROGRAM_VALUES(name) resolver.resolve(typed.name()),
+#define CL_JIT_RESOLVE_PROGRAM_VALUES(name, role)                              \
+    resolver.resolve(typed.name()),
 #define CL_JIT_COPY_ATTRIBUTE(name, ...)                                       \
     resolver.resolve_attribute(typed.name()),
 #define CL_JIT_INSTRUCTION(name, ir_levels, result, effects, operands,         \

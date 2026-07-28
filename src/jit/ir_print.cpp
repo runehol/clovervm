@@ -346,7 +346,7 @@ namespace cl::jit
 #define CL_IR_PRINT_FIXED(name, ...) printer.fixed_operand(concrete.name());
 #define CL_IR_PRINT_VARIADIC(name, ...)                                        \
     printer.variadic_operand(concrete.name());
-#define CL_IR_PRINT_PROGRAM_VALUES(name)                                       \
+#define CL_IR_PRINT_PROGRAM_VALUES(name, role)                                 \
     printer.variadic_operand(concrete.name());
 #define CL_IR_PRINT_ATTRIBUTE(name, attribute_class)                           \
     printer.attribute_##attribute_class(#name, concrete.name());

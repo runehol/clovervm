@@ -1,9 +1,10 @@
 // Representative authoritative schema for Core JIT instruction kinds.
 //
 // Each operand-list macro accepts callbacks for fixed operands, a trailing
-// homogeneous variadic range, and Snapshot's heterogeneous capture range. Each
-// attribute-list macro accepts one attribute callback. Keeping the lists as
-// reusable callbacks lets repeated includers derive indices, accessors,
+// homogeneous variadic range, and a trailing heterogeneous ProgramValue range.
+// The ProgramValue range declares whether it belongs to a Snapshot or a side
+// exit. Each attribute-list macro accepts one attribute callback. Keeping the
+// lists as reusable callbacks lets repeated includers derive indices, accessors,
 // traversal, constructors, and metadata from declaration order.
 //
 // CL_JIT_INSTRUCTION arguments:
@@ -336,7 +337,7 @@ CL_JIT_INSTRUCTION(CheckNotImplemented, CL_JIT_IR_LEVELS(Core),
 #undef CL_JIT_CheckNotImplemented_OPERANDS
 
 #define CL_JIT_Snapshot_OPERANDS(fixed, variadic, program_values)              \
-    program_values(captured_values)
+    program_values(captured_values, Snapshot)
 #define CL_JIT_Snapshot_ATTRIBUTES(attribute) attribute(resume_pc, BytecodePC)
 CL_JIT_INSTRUCTION(Snapshot, CL_JIT_IR_LEVELS(Core),
                    CL_JIT_RESULT(Snapshot, None),
@@ -359,7 +360,7 @@ CL_JIT_INSTRUCTION(ResumeInInterpreter, CL_JIT_IR_LEVELS(Core),
 
 #define CL_JIT_ResumeInInterpreterWithSideExit_OPERANDS(                       \
     fixed, variadic, program_values)                                           \
-    program_values(side_exit_arguments)
+    program_values(side_exit_arguments, SideExit)
 #define CL_JIT_ResumeInInterpreterWithSideExit_ATTRIBUTES(attribute)           \
     attribute(side_exit, SideExitId)
 CL_JIT_INSTRUCTION(

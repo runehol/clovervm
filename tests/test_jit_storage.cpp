@@ -231,6 +231,8 @@ namespace cl::jit
         EXPECT_EQ(3u, add.inline_slot_count);
         EXPECT_FALSE(add.has_variadic_operands);
         EXPECT_FALSE(add.operands_are_indirect);
+        EXPECT_EQ(InstructionKindMetadata::NoSideExitArguments,
+                  add.side_exit_argument_start);
 
         const InstructionKindMetadata &call =
             instruction_kind_metadata(InstructionKind::PythonCall);
@@ -239,6 +241,14 @@ namespace cl::jit
         EXPECT_EQ(Instruction::InlineSlotCount, call.inline_slot_count);
         EXPECT_TRUE(call.has_variadic_operands);
         EXPECT_TRUE(call.operands_are_indirect);
+        EXPECT_EQ(InstructionKindMetadata::NoSideExitArguments,
+                  call.side_exit_argument_start);
+
+        const InstructionKindMetadata &side_exit = instruction_kind_metadata(
+            InstructionKind::ResumeInInterpreterWithSideExit);
+        EXPECT_EQ(ResumeInInterpreterWithSideExitInstruction::
+                      side_exit_arguments_operand_index,
+                  side_exit.side_exit_argument_start);
 
         const InstructionKindMetadata &guard =
             instruction_kind_metadata(InstructionKind::ShapeGuard);

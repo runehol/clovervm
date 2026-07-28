@@ -52,9 +52,10 @@ namespace cl::jit
     {
         InstructionKindMetadata make_instruction_kind_metadata(
             IRLevelMask allowed_ir_levels, EffectProfile must_effects,
-            EffectProfile may_effects, uint8_t fixed_operand_count,
-            uint8_t attribute_count, uint8_t inline_slot_count,
-            bool has_variadic_operands, bool operands_are_indirect)
+            EffectProfile may_effects, uint32_t side_exit_argument_start,
+            uint8_t fixed_operand_count, uint8_t attribute_count,
+            uint8_t inline_slot_count, bool has_variadic_operands,
+            bool operands_are_indirect)
         {
             assert(inline_slot_count <= Instruction::InlineSlotCount);
             assert(has_effects(may_effects, must_effects));
@@ -62,10 +63,15 @@ namespace cl::jit
                    has_effects(must_effects, EffectProfile::ControlFlow));
             assert(!has_effects(may_effects, EffectProfile::TerminateBlock) ||
                    has_effects(may_effects, EffectProfile::ControlFlow));
-            return {allowed_ir_levels,     must_effects,
-                    may_effects,           fixed_operand_count,
-                    attribute_count,       inline_slot_count,
-                    has_variadic_operands, operands_are_indirect};
+            assert(side_exit_argument_start ==
+                       InstructionKindMetadata::NoSideExitArguments ||
+                   (has_variadic_operands &&
+                    side_exit_argument_start == fixed_operand_count));
+            return {allowed_ir_levels,    must_effects,
+                    may_effects,          side_exit_argument_start,
+                    fixed_operand_count,  attribute_count,
+                    inline_slot_count,    has_variadic_operands,
+                    operands_are_indirect};
         }
 
         InstructionKindMetadata metadata_for(InstructionKind kind)
@@ -93,8 +99,15 @@ namespace cl::jit
     (assert(!has_variadic_operands &&                                          \
             "an instruction may have only one variadic range"),                \
      has_variadic_operands = true);
-#define CL_JIT_COUNT_PROGRAM_VALUES(...)                                       \
-    CL_JIT_COUNT_VARIADIC_OPERAND(__VA_ARGS__)
+#define CL_JIT_COUNT_PROGRAM_VALUES(name, role)                                \
+    CL_JIT_COUNT_PROGRAM_VALUES_##role(name)
+#define CL_JIT_COUNT_PROGRAM_VALUES_Snapshot(name)                             \
+    CL_JIT_COUNT_VARIADIC_OPERAND(name)
+#define CL_JIT_COUNT_PROGRAM_VALUES_SideExit(name)                             \
+    (assert(!has_variadic_operands &&                                          \
+            "an instruction may have only one variadic range"),                \
+     side_exit_argument_start = fixed_operand_count,                           \
+     has_variadic_operands = true);
 #define CL_JIT_COUNT_ATTRIBUTE(...) (++attribute_count);
 #define CL_JIT_COUNT_ATTRIBUTE_WORDS(name, attribute_class)                    \
     attribute_word_count +=                                                    \
@@ -109,6 +122,8 @@ namespace cl::jit
             uint8_t attribute_word_count = 0;                                  \
             uint8_t inline_slot_count = 0;                                     \
             bool has_variadic_operands = false;                                \
+            uint32_t side_exit_argument_start =                                \
+                InstructionKindMetadata::NoSideExitArguments;                  \
             operands(CL_JIT_COUNT_FIXED_OPERAND,                               \
                      CL_JIT_COUNT_VARIADIC_OPERAND,                            \
                      CL_JIT_COUNT_PROGRAM_VALUES)                              \
@@ -120,14 +135,16 @@ namespace cl::jit
                     ? Instruction::InlineSlotCount                             \
                     : fixed_operand_count + attribute_word_count;              \
             return make_instruction_kind_metadata(                             \
-                ir_levels, effects, fixed_operand_count, attribute_count,      \
-                inline_slot_count, has_variadic_operands,                      \
-                operands_are_indirect);                                        \
+                ir_levels, effects, side_exit_argument_start,                  \
+                fixed_operand_count, attribute_count, inline_slot_count,       \
+                has_variadic_operands, operands_are_indirect);                 \
         }
 #include "jit/instruction.def"
 #undef CL_JIT_INSTRUCTION
 #undef CL_JIT_COUNT_ATTRIBUTE_WORDS
 #undef CL_JIT_COUNT_ATTRIBUTE
+#undef CL_JIT_COUNT_PROGRAM_VALUES_SideExit
+#undef CL_JIT_COUNT_PROGRAM_VALUES_Snapshot
 #undef CL_JIT_COUNT_PROGRAM_VALUES
 #undef CL_JIT_COUNT_VARIADIC_OPERAND
 #undef CL_JIT_COUNT_FIXED_OPERAND

@@ -425,9 +425,12 @@ namespace cl::jit
 
     struct InstructionKindMetadata
     {
+        static constexpr uint32_t NoSideExitArguments = UINT32_MAX;
+
         IRLevelMask allowed_ir_levels;
         EffectProfile must_effects;
         EffectProfile may_effects;
+        uint32_t side_exit_argument_start;
         uint8_t fixed_operand_count;
         uint8_t attribute_count;
         uint8_t inline_slot_count;
@@ -686,6 +689,11 @@ namespace cl::jit
         {
             return has_effects(instruction_kind_metadata(kind()).must_effects,
                                EffectProfile::TerminateBlock);
+        }
+
+        uint32_t side_exit_argument_start() const
+        {
+            return instruction_kind_metadata(kind()).side_exit_argument_start;
         }
 
         uint16_t operand_count() const;
@@ -1147,7 +1155,7 @@ namespace cl::jit
     CL_JIT_JOIN(CL_JIT_ATTRIBUTE_TYPE_, attribute_class)
 #define CL_JIT_DECLARE_OPERAND_INDEX(name, operand_class, representation) name,
 #define CL_JIT_DECLARE_VARIADIC_INDEX(name, operand_class, representation) name,
-#define CL_JIT_DECLARE_PROGRAM_VALUES_INDEX(name) name,
+#define CL_JIT_DECLARE_PROGRAM_VALUES_INDEX(name, role) name,
 #define CL_JIT_IR_LEVELS(set) IRLevelMask::set
 #define CL_JIT_RESULT(result_class, representation)                            \
     InstructionResultInfo                                                      \
@@ -1186,7 +1194,7 @@ namespace cl::jit
     CL_JIT_OPERAND_TYPE(operand_class, representation) name,
 #define CL_JIT_DECLARE_VARIADIC_PARAMETER(name, operand_class, representation) \
     std::span<const CL_JIT_OPERAND_TYPE(operand_class, representation)> name,
-#define CL_JIT_DECLARE_PROGRAM_VALUES_PARAMETER(name)                          \
+#define CL_JIT_DECLARE_PROGRAM_VALUES_PARAMETER(name, role)                    \
     std::span<const ProgramValueRef> name,
 #define CL_JIT_DECLARE_ATTRIBUTE_PARAMETER(name, attribute_class)              \
     CL_JIT_ATTRIBUTE_TYPE(attribute_class) name,
@@ -1194,10 +1202,10 @@ namespace cl::jit
 #define CL_JIT_IGNORE_ARGUMENT(name, ...) (void)name;
 #define CL_JIT_COUNT_INDIRECT_FIXED(name, ...) (void)name;
 #define CL_JIT_COUNT_INDIRECT_VARIADIC(name, ...) n_slots += name.size();
-#define CL_JIT_COUNT_INDIRECT_PROGRAM_VALUES(name) n_slots += name.size();
+#define CL_JIT_COUNT_INDIRECT_PROGRAM_VALUES(name, role) n_slots += name.size();
 #define CL_JIT_COUNT_LOGICAL_FIXED(name, ...) (void)name;
 #define CL_JIT_COUNT_LOGICAL_VARIADIC(name, ...) n_operands += name.size();
-#define CL_JIT_COUNT_LOGICAL_PROGRAM_VALUES(name) n_operands += name.size();
+#define CL_JIT_COUNT_LOGICAL_PROGRAM_VALUES(name, role) n_operands += name.size();
 #define CL_JIT_SKIP_INLINE(...)
 #define CL_JIT_COUNT_ATTRIBUTE_WORDS(name, attribute_class)                    \
     +sizeof(InstructionAttributeStorage_##attribute_class) / sizeof(Slot)
@@ -1230,7 +1238,7 @@ namespace cl::jit
     {                                                                          \
         indirect_slots[index++] = encode_instruction_operand(operand);         \
     }
-#define CL_JIT_WRITE_INDIRECT_PROGRAM_VALUES(name)                             \
+#define CL_JIT_WRITE_INDIRECT_PROGRAM_VALUES(name, role)                       \
     for(ProgramValueRef value: name)                                           \
     {                                                                          \
         indirect_slots[index++] = encode_instruction_operand(value);           \
@@ -1258,7 +1266,7 @@ namespace cl::jit
         return RepresentedValueRefRange<ValueRepresentation::representation>(  \
             *this, static_cast<uint32_t>(index), operand_count() - index);      \
     }
-#define CL_JIT_DECLARE_PROGRAM_VALUES_ACCESSOR(name)                           \
+#define CL_JIT_DECLARE_PROGRAM_VALUES_ACCESSOR(name, role)                     \
     static constexpr uint32_t name##_operand_index =                           \
         static_cast<uint32_t>(OperandIndex::name);                             \
     ProgramValueRefRange name() const                                          \
@@ -1703,7 +1711,7 @@ namespace cl::jit
             }                                                                  \
         }                                                                      \
     }());
-#define CL_JIT_VISIT_PROGRAM_VALUES(name)                                      \
+#define CL_JIT_VISIT_PROGRAM_VALUES(name, role)                                \
     ([&] {                                                                     \
         for(uint32_t index = 0; index < variable_count; ++index)               \
         {                                                                      \
