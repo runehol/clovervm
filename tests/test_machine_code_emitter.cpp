@@ -187,8 +187,9 @@ namespace cl::jit
         ConstantPoolEntry target =
             emitter.add_value_to_constant_pool(Value::True());
         uint8_t instruction = 0;
-        emitter.emit_relocatable(&instruction, sizeof(instruction),
-                                 TestRelocation(target, &observation));
+        emitter.emit_bytes(&instruction, sizeof(instruction));
+        emitter.add_relocation_to_last_emitted(
+            sizeof(instruction), TestRelocation(target, &observation));
 
         CodeAllocation allocation =
             take_allocation(emitter.finalize(*fixture.cache));
@@ -222,13 +223,16 @@ namespace cl::jit
             emitter.add_value_to_constant_pool(Value::True());
         uint8_t instructions[] = {0, 0, 0};
 
-        emitter.emit_relocatable(&instructions[0], sizeof(instructions[0]),
-                                 TestRelocation(first, &first_observation));
-        emitter.emit_relocatable(
-            &instructions[1], sizeof(instructions[1]),
+        emitter.emit_bytes(&instructions[0], sizeof(instructions[0]));
+        emitter.add_relocation_to_last_emitted(
+            sizeof(instructions[0]), TestRelocation(first, &first_observation));
+        emitter.emit_bytes(&instructions[1], sizeof(instructions[1]));
+        emitter.add_relocation_to_last_emitted(
+            sizeof(instructions[1]),
             TestRelocation(distinct, &distinct_observation));
-        emitter.emit_relocatable(
-            &instructions[2], sizeof(instructions[2]),
+        emitter.emit_bytes(&instructions[2], sizeof(instructions[2]));
+        emitter.add_relocation_to_last_emitted(
+            sizeof(instructions[2]),
             TestRelocation(duplicate, &duplicate_observation));
 
         CodeAllocation allocation =
@@ -264,14 +268,18 @@ namespace cl::jit
 
         std::array<RelocationObservation, 4> observations;
         uint8_t instructions[] = {0, 0, 0, 0};
-        emitter.emit_relocatable(&instructions[0], sizeof(instructions[0]),
-                                 TestRelocation(first, &observations[0]));
-        emitter.emit_relocatable(&instructions[1], sizeof(instructions[1]),
-                                 TestRelocation(none, &observations[1]));
-        emitter.emit_relocatable(&instructions[2], sizeof(instructions[2]),
-                                 TestRelocation(second, &observations[2]));
-        emitter.emit_relocatable(&instructions[3], sizeof(instructions[3]),
-                                 TestRelocation(truth, &observations[3]));
+        emitter.emit_bytes(&instructions[0], sizeof(instructions[0]));
+        emitter.add_relocation_to_last_emitted(
+            sizeof(instructions[0]), TestRelocation(first, &observations[0]));
+        emitter.emit_bytes(&instructions[1], sizeof(instructions[1]));
+        emitter.add_relocation_to_last_emitted(
+            sizeof(instructions[1]), TestRelocation(none, &observations[1]));
+        emitter.emit_bytes(&instructions[2], sizeof(instructions[2]));
+        emitter.add_relocation_to_last_emitted(
+            sizeof(instructions[2]), TestRelocation(second, &observations[2]));
+        emitter.emit_bytes(&instructions[3], sizeof(instructions[3]));
+        emitter.add_relocation_to_last_emitted(
+            sizeof(instructions[3]), TestRelocation(truth, &observations[3]));
 
         CodeAllocation allocation =
             take_allocation(emitter.finalize(*fixture.cache));
@@ -306,8 +314,9 @@ namespace cl::jit
         ConstantPoolEntry target =
             emitter.add_value_to_constant_pool(Value::None());
         uint8_t instruction = 0;
-        emitter.emit_relocatable(&instruction, sizeof(instruction),
-                                 TestRelocation(target, &observation));
+        emitter.emit_bytes(&instruction, sizeof(instruction));
+        emitter.add_relocation_to_last_emitted(
+            sizeof(instruction), TestRelocation(target, &observation));
 
         Result<CodeAllocation, JitCodeError> result =
             emitter.finalize(*fixture.cache);

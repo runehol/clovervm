@@ -276,12 +276,18 @@ namespace cl::jit
         std::optional<bool> direct_;
     };
 
+    enum class AArch64RelocationKind : uint8_t
+    {
+        Literal19,
+        PageAddress21,
+        Load64PageOffset12,
+    };
+
     class AArch64Relocation
     {
     public:
-        AArch64Relocation(ConstantPoolEntry target, XRegister destination,
-                          AArch64ValuePoolMode mode)
-            : target_(target), destination_(destination), mode_(mode)
+        AArch64Relocation(ConstantPoolEntry target, AArch64RelocationKind kind)
+            : target_(target), kind_(kind)
         {
         }
 
@@ -291,8 +297,7 @@ namespace cl::jit
 
     private:
         ConstantPoolEntry target_;
-        XRegister destination_;
-        AArch64ValuePoolMode mode_;
+        AArch64RelocationKind kind_;
     };
 
     using AArch64Emitter =

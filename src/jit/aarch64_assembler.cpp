@@ -3,6 +3,7 @@
 #include "runtime/fatal.h"
 
 #include <cassert>
+#include <cstring>
 #include <limits>
 
 namespace cl::jit
@@ -13,6 +14,20 @@ namespace cl::jit
         {
             assert(index < 4);
             return static_cast<MoveWideHalfword>(index << 21);
+        }
+
+        int64_t decode_signed_scaled_immediate(uint32_t immediate,
+                                               uint8_t immediate_bits,
+                                               uint8_t scale_shift)
+        {
+            assert(immediate_bits != 0);
+            assert(immediate < (uint32_t{1} << immediate_bits));
+            int64_t value = immediate;
+            if((immediate & (uint32_t{1} << (immediate_bits - 1))) != 0)
+            {
+                value -= int64_t{1} << immediate_bits;
+            }
+            return value * (int64_t{1} << scale_shift);
         }
 
         void emit_mov(AArch64EmitterAssembler &assembler,
@@ -154,20 +169,57 @@ namespace cl::jit
                                   MachineAddress instruction_pc,
                                   MachineAddress target) const
     {
-        AArch64BufferAssembler assembler(write_pointer);
-        if(mode_ == AArch64ValuePoolMode::NearLiteral)
-        {
-            assembler.emit_ldr_literal_immediate_19(
-                destination_, instruction_pc.displacement_to(target));
-            return;
-        }
+        uint32_t instruction;
+        std::memcpy(&instruction, write_pointer, sizeof(instruction));
 
-        int64_t page_displacement =
-            instruction_pc.aligned_displacement_to(target, 12);
-        assembler.emit_adrp_page_immediate_21(destination_, page_displacement);
-        assembler.emit_load_store_unsigned_offset(
-            LoadStoreOp::Load, destination_, destination_,
-            static_cast<uint16_t>(target.offset_within(12)));
+        switch(kind_)
+        {
+            case AArch64RelocationKind::Literal19:
+                {
+                    constexpr uint32_t ImmediateMask = 0x7ffff << 5;
+                    int64_t addend = decode_signed_scaled_immediate(
+                        (instruction & ImmediateMask) >> 5, 19, 2);
+                    uint32_t immediate = aarch64_detail::signed_immediate(
+                        addend + instruction_pc.displacement_to(target), 19, 2);
+                    instruction =
+                        (instruction & ~ImmediateMask) | (immediate << 5);
+                    break;
+                }
+            case AArch64RelocationKind::PageAddress21:
+                {
+                    constexpr uint32_t ImmediateMask =
+                        (uint32_t{3} << 29) | (uint32_t{0x7ffff} << 5);
+                    uint32_t encoded_addend =
+                        ((instruction >> 29) & 3) |
+                        (((instruction >> 5) & 0x7ffff) << 2);
+                    int64_t addend =
+                        decode_signed_scaled_immediate(encoded_addend, 21, 12);
+                    int64_t page_displacement =
+                        addend +
+                        instruction_pc.aligned_displacement_to(target, 12);
+                    uint32_t immediate = aarch64_detail::signed_immediate(
+                        page_displacement, 21, 12);
+                    instruction = (instruction & ~ImmediateMask) |
+                                  ((immediate & 3) << 29) |
+                                  ((immediate >> 2) << 5);
+                    break;
+                }
+            case AArch64RelocationKind::Load64PageOffset12:
+                {
+                    constexpr uint32_t ImmediateMask = 0xfff << 10;
+                    uint32_t addend = ((instruction & ImmediateMask) >> 10) *
+                                      sizeof(uint64_t);
+                    uintptr_t byte_offset = addend + target.offset_within(12);
+                    assert(byte_offset % sizeof(uint64_t) == 0);
+                    uint32_t scaled_offset =
+                        static_cast<uint32_t>(byte_offset / sizeof(uint64_t));
+                    assert(scaled_offset < (1 << 12));
+                    instruction =
+                        (instruction & ~ImmediateMask) | (scaled_offset << 10);
+                    break;
+                }
+        }
+        std::memcpy(write_pointer, &instruction, sizeof(instruction));
     }
 
     void AArch64MacroAssembler::mov(XRegisterOrZero destination,
@@ -250,13 +302,25 @@ namespace cl::jit
     void AArch64MacroAssembler::ldr(XRegister destination, Value value)
     {
         ConstantPoolEntry entry = emitter().add_value_to_constant_pool(value);
-        uint32_t instructions[2] = {};
-        size_t size = pool_mode_ == AArch64ValuePoolMode::NearLiteral
-                          ? sizeof(uint32_t)
-                          : sizeof(instructions);
-        emitter().emit_relocatable(
-            instructions, size,
-            AArch64Relocation(entry, destination, pool_mode_));
+        if(pool_mode_ == AArch64ValuePoolMode::NearLiteral)
+        {
+            emit_ldr_literal_immediate_19(destination, 0);
+            emitter().add_relocation_to_last_emitted(
+                sizeof(uint32_t),
+                AArch64Relocation(entry, AArch64RelocationKind::Literal19));
+            return;
+        }
+
+        emit_adrp_page_immediate_21(destination, 0);
+        emitter().add_relocation_to_last_emitted(
+            sizeof(uint32_t),
+            AArch64Relocation(entry, AArch64RelocationKind::PageAddress21));
+        emit_load_store_unsigned_offset(LoadStoreOp::Load, destination,
+                                        destination, 0);
+        emitter().add_relocation_to_last_emitted(
+            sizeof(uint32_t),
+            AArch64Relocation(entry,
+                              AArch64RelocationKind::Load64PageOffset12));
     }
 
     void AArch64MacroAssembler::str(XRegister source, XRegisterOrSP base,

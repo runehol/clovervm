@@ -110,15 +110,14 @@ namespace cl::jit
                                             begin, begin + size);
         }
 
-        void emit_relocatable(const void *bytes, size_t size,
-                              Relocation relocation)
+        void add_relocation_to_last_emitted(size_t size, Relocation relocation)
         {
             assert(size != 0);
+            assert(size <= current_fragment().bytes.size());
             assert(current_fragment().bytes.size() <=
                    std::numeric_limits<uint32_t>::max());
             uint32_t offset =
-                static_cast<uint32_t>(current_fragment().bytes.size());
-            emit_bytes(bytes, size);
+                static_cast<uint32_t>(current_fragment().bytes.size() - size);
             current_fragment().relocations.emplace_back(offset,
                                                         std::move(relocation));
         }
