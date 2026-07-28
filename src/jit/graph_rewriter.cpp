@@ -202,6 +202,7 @@ namespace cl::jit
         absl::flat_hash_set<InstructionId> allocated_instructions;
         RewriteContext context(session_, storage_, &allocated_instructions);
         RewriteSummary summary;
+        summary.ir_level_changed = graph_->ir_level() != target_ir_level_;
         ParameterRetentionMasks parameter_retention;
         if constexpr(HasBlockParameterCallback)
         {
@@ -464,7 +465,8 @@ namespace cl::jit
                 RewriteResult::InstructionSequence proposed_instructions;
                 std::optional<InstructionId> proposed_replacement;
                 bool replacement_is_existing_def = false;
-                bool explicitly_erased = false;
+                bool definition_removed = false;
+                bool detached = false;
 
                 switch(result.kind_)
                 {
@@ -495,7 +497,14 @@ namespace cl::jit
                                 : std::optional(callback_input.id());
                         break;
                     case RewriteResult::Kind::Erase:
-                        explicitly_erased = true;
+                        definition_removed = true;
+                        break;
+                    case RewriteResult::Kind::Detach:
+                        require_rewrite_invariant(
+                            input == RewriteInput::Original,
+                            "detach requires original rewrite input");
+                        definition_removed = true;
+                        detached = true;
                         break;
                     case RewriteResult::Kind::Replace:
                         proposed_instructions = std::move(result.instructions_);
@@ -609,7 +618,7 @@ namespace cl::jit
 
                 if(original.result_class() != ResultClass::None)
                 {
-                    if(explicitly_erased)
+                    if(definition_removed)
                     {
                         def_replacements.emplace(
                             original.id(), DefReplacement{std::nullopt, true});
@@ -644,7 +653,7 @@ namespace cl::jit
                     original_retained |=
                         staged.instructions[index] == original.id();
                 }
-                if(!original_retained)
+                if(!original_retained && !detached)
                 {
                     staged.removed_originals.push_back(original.id());
                 }
@@ -705,7 +714,8 @@ namespace cl::jit
             staged_blocks.push_back(std::move(staged));
         }
 
-        if(!summary.block_parameters_changed && !summary.instructions_changed)
+        if(!summary.block_parameters_changed && !summary.instructions_changed &&
+           !summary.ir_level_changed)
         {
             return summary;
         }
@@ -726,6 +736,7 @@ namespace cl::jit
                 storage_->poison_instruction(removed);
             }
         }
+        graph_->ir_level_ = target_ir_level_;
         ++graph_->mutation_generation_;
 
 #ifndef NDEBUG

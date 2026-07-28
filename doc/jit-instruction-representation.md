@@ -384,8 +384,10 @@ Once a graph is published, body-instruction transformations use
 `GraphRewriter`. The callback allocates replacement instructions through a
 narrow `RewriteContext`; the rewriter reconstructs changed operands, builds one
 staged vector per block, verifies the proposed stream, swaps all changed block
-vectors at one graph-wide commit, poisons removed instructions, and increments
-the mutation generation once. Optional `UseLists` describe the original
+vectors at one graph-wide commit, poisons erased or replaced instructions, and
+increments the mutation generation once. Detached instructions may remain live
+outside executable block order for auxiliary compiler-owned structures.
+Optional `UseLists` describe the original
 published generation and are invalidated rather than incrementally maintained.
 CFG-topology mutation remains a separate future editor responsibility. Neither
 path is a mandatory route through which an unplaced instruction must be
@@ -400,9 +402,11 @@ allocated and unplaced -> placed in one graph -> removed from graph
 
 An unplaced instruction has a live instruction kind and a schema-valid payload,
 but is not yet a member of any graph. It may be attached at most once. After
-removal, the rewriter may poison the abandoned storage with the reserved poison
-tag to catch stale references. Poisoning is not an allocation-reuse mechanism,
-not graph membership, and not a semantic IR state.
+removal, the rewriter may poison abandoned storage with the reserved poison tag
+to catch stale references, or leave a detached entry live for an auxiliary
+compiler-owned structure. A detached entry is not eligible for later
+reattachment. Poisoning is not an allocation-reuse mechanism, graph membership,
+or a semantic IR state.
 
 ### Compilation Failure and Runtime Publication
 

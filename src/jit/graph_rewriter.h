@@ -162,6 +162,8 @@ namespace cl::jit
 
         static RewriteResult erase() { return RewriteResult(Kind::Erase); }
 
+        static RewriteResult detach() { return RewriteResult(Kind::Detach); }
+
         static RewriteResult keep_with_prefix(InstructionSequence instructions)
         {
             return RewriteResult(Kind::KeepWithPrefix, std::move(instructions));
@@ -220,6 +222,7 @@ namespace cl::jit
             KeepWithPrefix,
             KeepWithSuffix,
             Erase,
+            Detach,
             Replace,
             ReplaceWithoutResult,
             ReplaceWithDef,
@@ -246,6 +249,7 @@ namespace cl::jit
         bool block_parameters_changed = false;
         bool instructions_changed = false;
         bool terminators_changed = false;
+        bool ir_level_changed = false;
         NormalizationRemapping normalization_remapping;
     };
 
@@ -253,10 +257,13 @@ namespace cl::jit
     {
     public:
         GraphRewriter(CompilationSession &session, ControlFlowGraph &graph)
-            : session_(&session), storage_(session.storage()), graph_(&graph)
+            : session_(&session), storage_(session.storage()), graph_(&graph),
+              target_ir_level_(graph.ir_level())
         {
             assert(graph_->storage() == storage_);
         }
+
+        void set_target_ir_level(IRLevel target) { target_ir_level_ = target; }
 
         template <typename Callback>
         RewriteSummary rewrite_instructions(InstructionTraversal traversal,
@@ -422,6 +429,7 @@ namespace cl::jit
         CompilationSession *session_;
         CompilationStorage *storage_;
         ControlFlowGraph *graph_;
+        IRLevel target_ir_level_;
     };
 
 }  // namespace cl::jit
