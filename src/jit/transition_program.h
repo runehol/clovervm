@@ -9,6 +9,7 @@
 #include <cstring>
 #include <span>
 #include <string>
+#include <utility>
 #include <vector>
 
 namespace cl::jit
@@ -47,6 +48,13 @@ namespace cl::jit
 
         friend bool operator==(TransitionLocation,
                                TransitionLocation) = default;
+
+        template <typename H>
+        friend H AbslHashValue(H hash, TransitionLocation location)
+        {
+            return H::combine(std::move(hash), location.area_,
+                              location.offset_);
+        }
 
     private:
         TransitionLocation(TransitionLocationArea area, int16_t offset)
@@ -172,6 +180,11 @@ namespace cl::jit
     {
     public:
         TransitionProgramBuilder();
+
+        uint32_t next_scratch_slot() const
+        {
+            return instructions_.front().scratch_slot_count();
+        }
 
         void append_instruction(TransitionInstruction instruction);
 

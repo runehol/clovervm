@@ -172,6 +172,8 @@ add_library(libclovervm_objects OBJECT
     jit/transition_executor.h
     jit/transition_program.cpp
     jit/transition_program.h
+    jit/transition_program_emitter.cpp
+    jit/transition_program_emitter.h
     jit/use_lists.cpp
     jit/use_lists.h
     runtime/interpreter.cpp

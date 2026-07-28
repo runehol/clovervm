@@ -4,10 +4,10 @@
 |---|---|
 | Document type | Design |
 | Status | Accepted |
-| Implementation | The compact transition instruction representation, builder, verifier, formatter, reusable execution context, and direct switch executor for `BeginTransition`, `Transfer`, and `ResumeInterpreter` are implemented; code-object publication, side-exit planning, target thunks, and interpreter handoff remain |
+| Implementation | The compact transition representation and executor are implemented, together with backend-independent emission of snapshot-only side exits from resolved transition input locations; sunk computation, backend location adapters, code-object publication, target thunks, and interpreter handoff remain |
 | Scope | Compact straight-line programs that transform values and machine state between execution conventions; the first consumer is JIT side exit |
-| Owning layers | Core IR owns sunk operation semantics and Snapshot state; register allocation owns physical frontier locations; transition planning owns the continuous transition program and canonical publication; each thread owns reusable transition scratch storage; target thunks own fixed machine-state saves |
-| Validated against | `tests/test_transition_program.cpp` and `tests/test_transition_executor.cpp` |
+| Owning layers | Core IR owns sunk operation semantics and Snapshot state; register allocation owns physical frontier locations; transition emission owns the continuous transition program and canonical publication; each thread owns reusable transition scratch storage; target thunks own fixed machine-state saves |
+| Validated against | `tests/test_transition_program.cpp`, `tests/test_transition_executor.cpp`, and `tests/test_transition_program_emitter.cpp` |
 | Supersedes | N/A |
 
 This document defines a compact `TransitionProgram`: a straight-line program
@@ -22,7 +22,7 @@ The representation is restricted Core IR plus transition-specific
 terminal is `ResumeInterpreter`. It is independent of Snapshots, register
 allocation objects, and Core graph identity after construction. Stack locations
 still encode offsets in the execution convention being entered. A side-exit
-planner consumes the compiler structures and produces one immutable transition
+emitter consumes the compiler structures and produces one immutable transition
 program for publication. During construction, the instruction sequence is
 mutable only through the specific fix-ups its representation requires.
 
@@ -84,7 +84,7 @@ the lowered program. The context grows the buffer to at least that many elements
 and does not clear it: verification ensures that every scratch source was
 initialized earlier in the current program. A program containing only direct
 resultless transfers may request zero slots. A parallel-transfer cycle requests
-the slots introduced for staging. The planner computes the count as zero when
+the slots introduced for staging. The builder computes the count as zero when
 the program contains no scratch locations, otherwise one plus the highest
 scratch offset read or written. Resultless instructions after the final scratch
 use do not increase it.
@@ -358,15 +358,15 @@ Scratch + offset
     slot initialized by an earlier Core result or Transfer
 ```
 
-The side-exit thunk and planner agree on the register-file layout. The
-transition program therefore needs no embedded physical-register object or
-target-specific register numbering. The side-exit register file is read-only.
-Any temporary or computed value goes to the scratch area.
+The side-exit thunk and backend location adapter agree on the register-file
+layout. The transition program therefore needs no embedded physical-register
+object or target-specific register numbering. The side-exit register file is
+read-only. Any temporary or computed value goes to the scratch area.
 
 The Snapshot identifies the value required at each state position, and the
 CFG's `BytecodeStateOrder` maps those positions to the accumulator and canonical
 frame homes. `LocationAssignments` resolve non-sunk frontier values to registers
-and spill locations. Transition planning combines these with the sinking
+and spill locations. Transition emission combines these with the sinking
 attachment; it does not ask register allocation to assign locations to sunk
 defs.
 
@@ -382,17 +382,20 @@ stream. Source and destination area tags distinguish register-to-scratch,
 stack-to-scratch, scratch-to-stack, and direct stack-to-stack transfers without
 separate load and store opcodes.
 
-The logical publication step has parallel-assignment semantics. A source
-canonical home may also be a destination. Transition planning must therefore
-resolve the parallel assignment into ordered `Transfer` instructions,
-introducing a scratch transfer before a write would clobber a value still
-needed later.
+The logical publication step has parallel-assignment semantics. It includes
+the accumulator and thread-state outputs to fresh scratch locations alongside
+the canonical frame destinations. A source canonical home may also be a
+destination. Transition emission resolves the complete assignment into ordered
+`Transfer` instructions, introducing a move-scratch transfer before a write
+would clobber a value still needed later.
 
-Transition planning reuses `order_parallel_assignments<TransitionLocation>()`.
-Its cycle-scratch callback allocates the scratch location belonging to the
-preservation `Transfer`; unlike physical register-allocation materialization,
-it needs no second legalization pass because a transition `Transfer` directly
-supports stack-to-stack locations.
+Transition emission reuses `order_parallel_assignments<TransitionLocation>()`.
+The accumulator and thread-state result locations follow all scratch
+destinations already written by earlier computation. The cycle-scratch
+location follows those results and is counted only if the resolver emits a
+preservation `Transfer`. Unlike physical register-allocation materialization,
+transition publication needs no second legalization pass because a `Transfer`
+directly supports stack-to-stack locations.
 
 For example:
 
@@ -434,11 +437,17 @@ saved-register slots, compiled-frame locations, canonical destinations, and
 their source values are encoded by `TransitionLocation` operands and
 attributes.
 
-The planner consumes a Snapshot, the CFG's `BytecodeStateOrder`,
-post-allocation `LocationAssignments`, and the sinking attachment, but the
-resulting plan retains none of them. It is self-contained immutable metadata
-owned by one compiled code object. Core graph identity and graph generation end
-at planning.
+The generic emitter consumes a Snapshot, `BytecodeStateOrder`, the side-exit
+input identities, and a parallel list of resolved `TransitionLocation` inputs.
+A backend adapter is responsible for translating the owner's post-allocation
+locations into that list. The resulting plan retains none of those compiler
+structures. It is self-contained immutable metadata owned by one compiled code
+object. Core graph identity and graph generation end at emission.
+
+The emitter walks the retained side-exit instruction sequence in order and
+dispatches each ordinary instruction kind. Snapshot publication is the only
+implemented case initially; other retained kinds fail at that dispatch point
+until their transition lowering is added.
 
 The selected instruction sequence begins with `BeginTransition`, contains
 schema-generated eligible Core operations and `Transfer`, and ends with one
@@ -529,7 +538,7 @@ Transition-program verification should check:
 - exactly one terminal handoff is present and it is the final instruction;
 - `ResumeInterpreter.resume_pc` is valid for the owning bytecode code object.
 
-These checks belong near transition planning and allocation-boundary
+These checks belong near transition emission and allocation-boundary
 verification. A malformed transition program is a compiler bug, not a
 recoverable runtime condition.
 
@@ -557,9 +566,8 @@ The third slice publishes programs and connects side exits:
   metadata;
 - embed a reusable transition execution context in each thread;
 - expand Snapshot liveness at executable exit consumers;
-- translate Snapshot positions through `BytecodeStateOrder` and combine them
-  with the physical frontier to form parallel transfers;
-- lower those transfers into transition `Transfer` entries;
+- translate backend physical locations into the transition input-location
+  convention;
 - end each side-exit program with `ResumeInterpreter`;
 - connect the target thunk and interpreter handoff.
 

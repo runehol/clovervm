@@ -1,0 +1,229 @@
+#include "jit/transition_program_emitter.h"
+
+#include "jit/bytecode_state.h"
+#include "jit/compilation_session.h"
+#include "jit/graph_builder.h"
+#include "jit/side_exit.h"
+#include "jit/transition_executor.h"
+#include "test_helpers.h"
+
+#include <gtest/gtest.h>
+
+#include <array>
+#include <cstdint>
+#include <cstring>
+#include <memory>
+#include <optional>
+#include <span>
+#include <utility>
+#include <vector>
+
+namespace cl::jit
+{
+    namespace
+    {
+        uint64_t word_for(Value value)
+        {
+            static_assert(sizeof(value) == sizeof(uint64_t));
+            uint64_t result;
+            std::memcpy(&result, &value, sizeof(result));
+            return result;
+        }
+
+        uint64_t word_for(ThreadState *thread_state)
+        {
+            static_assert(sizeof(thread_state) == sizeof(uint64_t));
+            uint64_t result;
+            std::memcpy(&result, &thread_state, sizeof(result));
+            return result;
+        }
+
+        struct EmitterFixture
+        {
+            EmitterFixture() : builder(session, IRLevel::Core)
+            {
+                code_object = context.compile_file(L"pass\n");
+                code_object->function_signature.n_parameters = 0;
+                code_object->n_locals = 2;
+                code_object->n_temporaries = 1;
+                state_order =
+                    std::make_unique<BytecodeStateOrder>(*code_object);
+
+                captured.emplace_back(
+                    builder.make_instruction<ParameterInstruction>());
+                captured.emplace_back(
+                    builder.make_instruction<ParameterPointerInstruction>());
+                while(captured.size() < state_order->size())
+                {
+                    captured.emplace_back(
+                        builder.make_instruction<ParameterInstruction>());
+                }
+
+                SnapshotInstruction snapshot =
+                    builder.make_instruction<SnapshotInstruction>(
+                        captured, BytecodePC{37});
+                snapshot_id = snapshot.id();
+                std::array instructions = {snapshot.id()};
+                side_exit = std::make_unique<SideExit>(*session.storage(),
+                                                       captured, instructions);
+            }
+
+            test::VmTestContext context;
+            CodeObject *code_object = nullptr;
+            std::unique_ptr<BytecodeStateOrder> state_order;
+            CompilationSession session;
+            GraphBuilder builder;
+            std::vector<ProgramValueRef> captured;
+            std::optional<InstructionId> snapshot_id;
+            std::unique_ptr<SideExit> side_exit;
+        };
+
+        struct ExecutionStorage
+        {
+            std::array<Value, 64> stack{};
+            Value *frame_pointer = stack.data() + 32;
+            ThreadState *thread_state =
+                reinterpret_cast<ThreadState *>(stack.data());
+        };
+    }  // namespace
+
+    TEST(TransitionProgramEmitter, PublishesSnapshotStateWithoutMoveScratch)
+    {
+        EmitterFixture fixture;
+        ExecutionStorage execution;
+        std::vector<uint64_t> register_file(fixture.state_order->size());
+        std::vector<TransitionLocation> input_locations;
+        input_locations.reserve(fixture.state_order->size());
+
+        Value accumulator = Value::from_smi(101);
+        register_file[BytecodeStateOrder::AccumulatorPosition] =
+            word_for(accumulator);
+        register_file[BytecodeStateOrder::ThreadStatePosition] =
+            word_for(execution.thread_state);
+        for(size_t position = 0; position < fixture.state_order->size();
+            ++position)
+        {
+            input_locations.push_back(TransitionLocation::register_file(
+                static_cast<int16_t>(position)));
+            if(position >= BytecodeStateOrder::FirstFramePosition)
+            {
+                register_file[position] =
+                    word_for(Value::from_smi(static_cast<int64_t>(position)));
+            }
+        }
+
+        std::vector<TransitionInstruction> program =
+            emit_side_exit_transition_program(
+                *fixture.session.storage(), *fixture.state_order,
+                *fixture.side_exit, input_locations);
+
+        ASSERT_FALSE(program.empty());
+        EXPECT_EQ(2u, program.front().scratch_slot_count());
+        TransitionExecutionContext context;
+        InterpreterResumeState resume = execute_transition_program(
+            context, program, {register_file, execution.frame_pointer});
+
+        EXPECT_EQ(accumulator, resume.accumulator);
+        EXPECT_EQ(execution.thread_state, resume.thread_state);
+        EXPECT_EQ(37u, resume.resume_pc);
+        for(size_t position = BytecodeStateOrder::FirstFramePosition;
+            position < fixture.state_order->size(); ++position)
+        {
+            EXPECT_EQ(
+                Value::from_smi(static_cast<int64_t>(position)),
+                execution.frame_pointer[fixture.state_order->frame_offset_at(
+                    position)]);
+        }
+    }
+
+    TEST(TransitionProgramEmitter, UsesMoveScratchForAFrameCycle)
+    {
+        EmitterFixture fixture;
+        ExecutionStorage execution;
+        std::array<uint64_t, 2> register_file = {
+            word_for(Value::from_smi(71)), word_for(execution.thread_state)};
+        std::vector<TransitionLocation> input_locations = {
+            TransitionLocation::register_file(0),
+            TransitionLocation::register_file(1),
+        };
+
+        for(size_t position = BytecodeStateOrder::FirstFramePosition;
+            position < fixture.state_order->size(); ++position)
+        {
+            int32_t destination =
+                fixture.state_order->frame_offset_at(position);
+            int32_t source = destination;
+            if(position == BytecodeStateOrder::FirstFramePosition)
+            {
+                source = fixture.state_order->frame_offset_at(position + 1);
+            }
+            else if(position == BytecodeStateOrder::FirstFramePosition + 1)
+            {
+                source = fixture.state_order->frame_offset_at(position - 1);
+            }
+            input_locations.push_back(
+                TransitionLocation::stack(static_cast<int16_t>(source)));
+            execution.frame_pointer[source] =
+                Value::from_smi(static_cast<int64_t>(position));
+        }
+
+        std::vector<TransitionInstruction> program =
+            emit_side_exit_transition_program(
+                *fixture.session.storage(), *fixture.state_order,
+                *fixture.side_exit, input_locations);
+
+        EXPECT_EQ(3u, program.front().scratch_slot_count());
+        TransitionExecutionContext context;
+        InterpreterResumeState resume = execute_transition_program(
+            context, program, {register_file, execution.frame_pointer});
+
+        EXPECT_EQ(Value::from_smi(71), resume.accumulator);
+        EXPECT_EQ(execution.thread_state, resume.thread_state);
+        for(size_t position = BytecodeStateOrder::FirstFramePosition;
+            position < fixture.state_order->size(); ++position)
+        {
+            EXPECT_EQ(
+                Value::from_smi(static_cast<int64_t>(position)),
+                execution.frame_pointer[fixture.state_order->frame_offset_at(
+                    position)]);
+        }
+    }
+
+    TEST(TransitionProgramEmitter, RejectsMismatchedInputLocations)
+    {
+        EXPECT_DEATH(
+            {
+                EmitterFixture fixture;
+                std::array locations = {TransitionLocation::register_file(0)};
+                (void)emit_side_exit_transition_program(
+                    *fixture.session.storage(), *fixture.state_order,
+                    *fixture.side_exit, locations);
+            },
+            "input locations do not match");
+    }
+
+    TEST(TransitionProgramEmitter, RejectsAnUnsupportedRetainedInstruction)
+    {
+        EXPECT_DEATH(
+            ([] {
+                EmitterFixture fixture;
+                ConstInstruction constant =
+                    fixture.builder.make_instruction<ConstInstruction>(
+                        Value::None());
+                std::array instructions = {constant.id(), *fixture.snapshot_id};
+                SideExit side_exit(*fixture.session.storage(), fixture.captured,
+                                   instructions);
+                std::vector<TransitionLocation> locations;
+                for(size_t index = 0; index < fixture.captured.size(); ++index)
+                {
+                    locations.push_back(TransitionLocation::register_file(
+                        static_cast<int16_t>(index)));
+                }
+                (void)emit_side_exit_transition_program(
+                    *fixture.session.storage(), *fixture.state_order, side_exit,
+                    locations);
+            }()),
+            "unsupported instruction in transition program");
+    }
+
+}  // namespace cl::jit
