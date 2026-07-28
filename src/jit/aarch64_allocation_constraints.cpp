@@ -145,6 +145,7 @@ namespace cl::jit
     make_aarch64_allocation_constraints(const ControlFlowGraph &graph)
     {
         assert(graph.is_published());
+        assert(graph.ir_level() == IRLevel::Machine);
         const Block *entry = graph.entry_block();
         assert(entry != nullptr);
 
@@ -165,19 +166,18 @@ namespace cl::jit
             {
                 std::vector<ProgramValueUseConstraint> input_overrides =
                     side_exit_argument_constraints(instruction);
-                switch(instruction.kind())
+                // clang-format off
+                CL_JIT_MACHINE_INSTRUCTION_SWITCH(instruction)
                 {
-                    case InstructionKind::Const:
-                    case InstructionKind::Uninitialized:
-                    case InstructionKind::AndSMI:
-                    case InstructionKind::OrrSMI:
-                    case InstructionKind::EorSMI:
-                    case InstructionKind::Snapshot:
-                    case InstructionKind::ResumeInInterpreter:
-                    case InstructionKind::MovPointer:
-                    case InstructionKind::LoadStackPointer:
-                    case InstructionKind::StoreStackPointer:
-                    case InstructionKind::ResumeInInterpreterWithSideExit:
+                    case MachineInstructionKind::Const:
+                    case MachineInstructionKind::Uninitialized:
+                    case MachineInstructionKind::AndSMI:
+                    case MachineInstructionKind::OrrSMI:
+                    case MachineInstructionKind::EorSMI:
+                    case MachineInstructionKind::MovPointer:
+                    case MachineInstructionKind::LoadStackPointer:
+                    case MachineInstructionKind::StoreStackPointer:
+                    case MachineInstructionKind::ResumeInInterpreterWithSideExit:
                         if(!input_overrides.empty())
                         {
                             overrides.emplace_back(instruction,
@@ -185,20 +185,23 @@ namespace cl::jit
                         }
                         break;
 
-                    case InstructionKind::Is:
-                    case InstructionKind::IsNot:
+                    case MachineInstructionKind::Is:
+                    case MachineInstructionKind::IsNot:
                         overrides.push_back(gpr_temporary_constraints(
                             instruction, std::move(input_overrides)));
                         break;
 
-                    case InstructionKind::Return:
+                    case CL_JIT_MACHINE_INSTRUCTION_CASE(
+                        ReturnInstruction, return_instruction)
+                    {
                         overrides.push_back(return_constraints(
-                            instruction.as<ReturnInstruction>(),
+                            return_instruction,
                             std::move(input_overrides)));
                         break;
+                    }
 
-                    case InstructionKind::ConditionalBranch:
-                    case InstructionKind::UnconditionalBranch:
+                    case MachineInstructionKind::ConditionalBranch:
+                    case MachineInstructionKind::UnconditionalBranch:
                         overrides.push_back(gpr_temporary_constraints(
                             instruction, std::move(input_overrides)));
                         break;
@@ -206,6 +209,7 @@ namespace cl::jit
                     default:
                         unsupported_instruction(instruction.kind());
                 }
+                // clang-format on
             }
         }
 

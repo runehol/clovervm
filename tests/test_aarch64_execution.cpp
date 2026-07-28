@@ -86,7 +86,7 @@ namespace cl::jit
         uint64_t execute_smi_logical_with_identical_operands(Value input)
         {
             CompilationSession session;
-            GraphBuilder builder(session);
+            GraphBuilder builder(session, IRLevel::Machine);
             Block *entry = builder.emplace_block();
             ParameterInstruction parameter =
                 builder.emplace_parameter<ParameterInstruction>(entry);
@@ -119,7 +119,7 @@ namespace cl::jit
     TEST(AArch64Execution, EmitsIdentityFunctionFromCfg)
     {
         CompilationSession session;
-        GraphBuilder builder(session);
+        GraphBuilder builder(session, IRLevel::Machine);
         Block *entry = builder.emplace_block();
         ParameterInstruction parameter =
             builder.emplace_parameter<ParameterInstruction>(entry);
@@ -167,6 +167,7 @@ namespace cl::jit
         CodeCache cache;
         auto compilation = compile_to_aarch64(session, *graph, cache);
         ASSERT_TRUE(compilation);
+        EXPECT_EQ(IRLevel::Machine, graph->ir_level());
         PublishedCode code = std::move(compilation).value();
 
         using Function = uint64_t (*)(ThreadState *, uint64_t);
@@ -357,7 +358,7 @@ namespace cl::jit
     TEST(AArch64Execution, EmitsInlineConstantFunctionFromCfg)
     {
         CompilationSession session;
-        GraphBuilder builder(session);
+        GraphBuilder builder(session, IRLevel::Machine);
         Block *entry = builder.emplace_block();
         Value expected = Value::from_smi(0x123456789abcd);
         ConstInstruction constant =
@@ -382,7 +383,7 @@ namespace cl::jit
     TEST(AArch64Execution, EmitsMoveBetweenAssignedRegisters)
     {
         CompilationSession session;
-        GraphBuilder builder(session);
+        GraphBuilder builder(session, IRLevel::Machine);
         Block *entry = builder.emplace_block();
         ParameterInstruction parameter =
             builder.emplace_parameter<ParameterInstruction>(entry);
@@ -419,7 +420,7 @@ namespace cl::jit
     TEST(AArch64Execution, EmitsFPRelativeStackTransfers)
     {
         CompilationSession session;
-        GraphBuilder builder(session);
+        GraphBuilder builder(session, IRLevel::Machine);
         Block *entry = builder.emplace_block();
         ParameterInstruction parameter =
             builder.emplace_parameter<ParameterInstruction>(entry);

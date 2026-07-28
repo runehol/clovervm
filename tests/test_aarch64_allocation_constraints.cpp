@@ -57,7 +57,7 @@ namespace cl::jit
          DefinesInitialGPRClassAndPlatformEntryABI)
     {
         CompilationSession session;
-        GraphBuilder builder(session);
+        GraphBuilder builder(session, IRLevel::Machine);
         Block *entry = builder.emplace_block();
         ParameterPointerInstruction thread_state =
             emplace_thread_state(builder, entry);
@@ -136,7 +136,7 @@ namespace cl::jit
          OmitsOrdinaryInstructionsAndConstrainsBranches)
     {
         CompilationSession session;
-        GraphBuilder builder(session);
+        GraphBuilder builder(session, IRLevel::Machine);
         Block *entry = builder.emplace_block();
         Block *if_true = builder.emplace_block();
         Block *if_false = builder.emplace_block();
@@ -236,7 +236,7 @@ namespace cl::jit
     TEST(AArch64AllocationConstraints, GivesIdentityTestsOneGPRTemporary)
     {
         CompilationSession session;
-        GraphBuilder builder(session);
+        GraphBuilder builder(session, IRLevel::Machine);
         Block *entry = builder.emplace_block();
         emplace_thread_state(builder, entry);
         ParameterInstruction lhs =
@@ -272,7 +272,7 @@ namespace cl::jit
          InternalBlockParametersUseDefaultConstraints)
     {
         CompilationSession session;
-        GraphBuilder builder(session);
+        GraphBuilder builder(session, IRLevel::Machine);
         Block *entry = builder.emplace_block();
         Block *exit = builder.emplace_block();
         emplace_thread_state(builder, entry);
@@ -303,7 +303,7 @@ namespace cl::jit
     {
         {
             CompilationSession session;
-            GraphBuilder builder(session);
+            GraphBuilder builder(session, IRLevel::Machine);
             Block *entry = builder.emplace_block();
             emplace_thread_state(builder, entry);
             builder.emplace_parameter<ParameterF64Instruction>(entry);
@@ -317,7 +317,7 @@ namespace cl::jit
 
         {
             CompilationSession session;
-            GraphBuilder builder(session);
+            GraphBuilder builder(session, IRLevel::Machine);
             Block *entry = builder.emplace_block();
             emplace_thread_state(builder, entry);
             std::optional<ParameterInstruction> first;
@@ -340,20 +340,15 @@ namespace cl::jit
 
         {
             CompilationSession session;
-            GraphBuilder builder(session);
+            GraphBuilder builder(session, IRLevel::Machine);
             Block *entry = builder.emplace_block();
             emplace_thread_state(builder, entry);
-            TaggedValueRef callable(
+            TaggedValueRef parameter(
                 builder.emplace_parameter<ParameterInstruction>(entry));
-            SnapshotRef snapshot(
-                builder.emplace_instruction<SnapshotInstruction>(
-                    entry, std::span<const ProgramValueRef>{}, BytecodePC{5}));
-            PythonCallInstruction call =
-                builder.emplace_instruction<PythonCallInstruction>(
-                    entry, callable, snapshot,
-                    std::span<const TaggedValueRef>{}, BytecodePC{5});
+            MovInstruction move =
+                builder.emplace_instruction<MovInstruction>(entry, parameter);
             builder.emplace_instruction<ReturnInstruction>(
-                entry, TaggedValueRef(call));
+                entry, TaggedValueRef(move));
             ControlFlowGraph *graph = builder.finalize();
 
             EXPECT_DEATH((void)make_aarch64_allocation_constraints(*graph),

@@ -112,6 +112,7 @@ namespace cl::jit
                                    AArch64MacroAssembler &assembler)
     {
         assert(graph.is_published());
+        assert(graph.ir_level() == IRLevel::Machine);
         assert(graph.blocks().size() == 1);
 
         const Block *entry = graph.entry_block();
@@ -127,13 +128,13 @@ namespace cl::jit
         for(Instruction instruction: entry->instructions())
         {
             // clang-format off
-            CL_JIT_CORE_INSTRUCTION_SWITCH(instruction)
+            CL_JIT_MACHINE_INSTRUCTION_SWITCH(instruction)
             {
-                case CoreInstructionKind::Uninitialized:
+                case MachineInstructionKind::Uninitialized:
                     break;
 
-                case CL_JIT_CORE_INSTRUCTION_CASE(ConstInstruction,
-                                                  constant_instruction)
+                case CL_JIT_MACHINE_INSTRUCTION_CASE(
+                    ConstInstruction, constant_instruction)
                 {
                     Value constant = constant_instruction.constant();
                     XRegister destination =
@@ -152,8 +153,8 @@ namespace cl::jit
                     break;
                 }
 
-                case CL_JIT_CORE_INSTRUCTION_CASE(AndSMIInstruction,
-                                                  and_instruction)
+                case CL_JIT_MACHINE_INSTRUCTION_CASE(
+                    AndSMIInstruction, and_instruction)
                 {
                     emit_smi_logical(
                         assembler, locations, LogicalOp::And,
@@ -162,8 +163,8 @@ namespace cl::jit
                     break;
                 }
 
-                case CL_JIT_CORE_INSTRUCTION_CASE(OrrSMIInstruction,
-                                                  orr_instruction)
+                case CL_JIT_MACHINE_INSTRUCTION_CASE(
+                    OrrSMIInstruction, orr_instruction)
                 {
                     emit_smi_logical(
                         assembler, locations, LogicalOp::Orr,
@@ -172,8 +173,8 @@ namespace cl::jit
                     break;
                 }
 
-                case CL_JIT_CORE_INSTRUCTION_CASE(EorSMIInstruction,
-                                                  eor_instruction)
+                case CL_JIT_MACHINE_INSTRUCTION_CASE(
+                    EorSMIInstruction, eor_instruction)
                 {
                     emit_smi_logical(
                         assembler, locations, LogicalOp::Eor,
@@ -182,8 +183,8 @@ namespace cl::jit
                     break;
                 }
 
-                case CL_JIT_CORE_INSTRUCTION_CASE(IsInstruction,
-                                                  is_instruction)
+                case CL_JIT_MACHINE_INSTRUCTION_CASE(
+                    IsInstruction, is_instruction)
                 {
                     emit_identity_test(
                         assembler, locations, AArch64Condition::Equal,
@@ -191,8 +192,8 @@ namespace cl::jit
                     break;
                 }
 
-                case CL_JIT_CORE_INSTRUCTION_CASE(IsNotInstruction,
-                                                  is_not_instruction)
+                case CL_JIT_MACHINE_INSTRUCTION_CASE(
+                    IsNotInstruction, is_not_instruction)
                 {
                     emit_identity_test(
                         assembler, locations, AArch64Condition::NotEqual,
@@ -201,8 +202,8 @@ namespace cl::jit
                     break;
                 }
 
-                case CL_JIT_CORE_INSTRUCTION_CASE(MovInstruction,
-                                                  move_instruction)
+                case CL_JIT_MACHINE_INSTRUCTION_CASE(
+                    MovInstruction, move_instruction)
                 {
                     assembler.mov(
                         assigned_register(locations,
@@ -212,7 +213,7 @@ namespace cl::jit
                     break;
                 }
 
-                case CL_JIT_CORE_INSTRUCTION_CASE(
+                case CL_JIT_MACHINE_INSTRUCTION_CASE(
                     MovPointerInstruction, move_pointer_instruction)
                 {
                     assembler.mov(
@@ -223,8 +224,8 @@ namespace cl::jit
                     break;
                 }
 
-                case CL_JIT_CORE_INSTRUCTION_CASE(LoadStackInstruction,
-                                                  load_instruction)
+                case CL_JIT_MACHINE_INSTRUCTION_CASE(
+                    LoadStackInstruction, load_instruction)
                 {
                     constexpr XRegister FramePointer(29);
                     assembler.ldr(
@@ -236,7 +237,7 @@ namespace cl::jit
                     break;
                 }
 
-                case CL_JIT_CORE_INSTRUCTION_CASE(
+                case CL_JIT_MACHINE_INSTRUCTION_CASE(
                     LoadStackPointerInstruction, load_pointer_instruction)
                 {
                     constexpr XRegister FramePointer(29);
@@ -249,8 +250,8 @@ namespace cl::jit
                     break;
                 }
 
-                case CL_JIT_CORE_INSTRUCTION_CASE(StoreStackInstruction,
-                                                  store_instruction)
+                case CL_JIT_MACHINE_INSTRUCTION_CASE(
+                    StoreStackInstruction, store_instruction)
                 {
                     constexpr XRegister FramePointer(29);
                     assembler.str(
@@ -262,7 +263,7 @@ namespace cl::jit
                     break;
                 }
 
-                case CL_JIT_CORE_INSTRUCTION_CASE(
+                case CL_JIT_MACHINE_INSTRUCTION_CASE(
                     StoreStackPointerInstruction, store_pointer_instruction)
                 {
                     constexpr XRegister FramePointer(29);
@@ -275,13 +276,16 @@ namespace cl::jit
                     break;
                 }
 
-                case CoreInstructionKind::LoadStackF64:
-                case CoreInstructionKind::StoreStackF64:
+                case MachineInstructionKind::LoadStackF64:
+                case MachineInstructionKind::StoreStackF64:
                     fatal("AArch64 F64 stack transfer emission is not "
                           "implemented");
 
-                case CL_JIT_CORE_INSTRUCTION_CASE(ReturnInstruction,
-                                                  return_instruction)
+                case MachineInstructionKind::ResumeInInterpreterWithSideExit:
+                    fatal("AArch64 side-exit emission is not implemented");
+
+                case CL_JIT_MACHINE_INSTRUCTION_CASE(
+                    ReturnInstruction, return_instruction)
                 {
                     (void)assigned_register(
                         locations, return_instruction.return_value());
