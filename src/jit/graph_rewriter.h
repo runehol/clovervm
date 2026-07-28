@@ -49,19 +49,25 @@ namespace cl::jit
             return storage_->instruction(id);
         }
 
+        SideExitId
+        emplace_side_exit(std::span<const ProgramValueRef> inputs,
+                          std::span<const InstructionId> instructions);
+
     private:
         friend class GraphRewriter;
 
         RewriteContext(
             CompilationSession *session, CompilationStorage *storage,
+            ControlFlowGraph *graph,
             absl::flat_hash_set<InstructionId> *allocated_instructions)
-            : session_(session), storage_(storage),
+            : session_(session), storage_(storage), graph_(graph),
               allocated_instructions_(allocated_instructions)
         {
         }
 
         CompilationSession *session_;
         CompilationStorage *storage_;
+        ControlFlowGraph *graph_;
         absl::flat_hash_set<InstructionId> *allocated_instructions_;
     };
 

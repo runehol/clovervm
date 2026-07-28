@@ -13,6 +13,16 @@
 
 namespace cl::jit
 {
+    SideExitId RewriteContext::emplace_side_exit(
+        std::span<const ProgramValueRef> inputs,
+        std::span<const InstructionId> instructions)
+    {
+        SideExitId id(static_cast<uint32_t>(graph_->side_exits_.size()));
+        graph_->side_exits_.push_back(
+            storage_->make_side_exit(inputs, instructions));
+        return id;
+    }
+
     namespace
     {
         void require_rewrite_invariant(bool condition, const char *message)
@@ -200,7 +210,8 @@ namespace cl::jit
 
         GraphQueries queries = graph_->prepare_queries(traversal.queries());
         absl::flat_hash_set<InstructionId> allocated_instructions;
-        RewriteContext context(session_, storage_, &allocated_instructions);
+        RewriteContext context(session_, storage_, graph_,
+                               &allocated_instructions);
         RewriteSummary summary;
         summary.ir_level_changed = graph_->ir_level() != target_ir_level_;
         ParameterRetentionMasks parameter_retention;

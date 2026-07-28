@@ -23,6 +23,7 @@ namespace cl::jit
     class GraphQueries;
     class GraphBuilder;
     class GraphRewriter;
+    class RewriteContext;
     class BlockEdge;
     class UseLists;
     enum class GraphQuery : uint8_t;
@@ -200,6 +201,7 @@ namespace cl::jit
     private:
         friend class GraphBuilder;
         friend class GraphRewriter;
+        friend class RewriteContext;
 
         void rebuild_predecessor_edge_index();
 

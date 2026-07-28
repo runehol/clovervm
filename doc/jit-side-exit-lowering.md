@@ -1,4 +1,4 @@
-# JIT Side-Exit Outlining
+# JIT Side-Exit Lowering
 
 | Field | Value |
 |---|---|
@@ -6,11 +6,11 @@
 | Status | Proposed |
 | Implementation | Not started |
 | Scope | Attaching transition-only computation and Snapshot state to executable side-exit consumers immediately before register allocation |
-| Owning layers | Core optimization owns sinking analysis while all instructions remain in the main CFG; side-exit outlining owns per-consumer `SideExit` records and the matching argument ranges on executable owners; ordinary instruction rewriting, use lists, and register allocation own those arguments thereafter; transition emission owns deferred computation and interpreter-state publication |
+| Owning layers | Core optimization owns sinking analysis while all instructions remain in the main CFG; side-exit lowering owns per-consumer `SideExit` records and the matching argument ranges on executable owners; ordinary instruction rewriting, use lists, and register allocation own those arguments thereafter; transition emission owns deferred computation and interpreter-state publication |
 | Validated against | N/A |
 | Supersedes | N/A; if accepted, this direction requires corresponding changes to [JIT Compiler and IR](jit-compiler-and-ir.md), [JIT Register Allocation](jit-register-allocation.md), and [JIT Transition Programs](jit-transition-program.md) |
 
-This proposal introduces a side-exit outlining boundary between Core
+This proposal introduces a side-exit lowering boundary between Core
 optimization and register allocation. Before that boundary, Snapshots and
 instructions selected for transition-only sinking remain ordinary Core
 instructions in the main graph. This preserves the existing SSA, use-list,
@@ -55,7 +55,7 @@ different allocation positions.
 Retaining a separate occurrence-to-location model through transition planning
 could describe the physical frontier, but it would create a second
 position-sensitive identity system beside the materialized Core graph. Side-exit
-outlining instead gives each deferred sequence a lightweight argument binding:
+lowering instead gives each deferred sequence a lightweight argument binding:
 immutable body inputs remain on the `SideExit`, while matching executable
 arguments are ordinary operands of the owner. Sunk computation stays out of the
 executable path and is emitted only by transition-program generation.
@@ -101,7 +101,7 @@ handles them without a side-exit-specific use category or traversal path.
 Liveness observes this named operand range at the owner's Late position.
 
 The input and argument order has no interpreter-state meaning. It is only a
-binding convention between one `SideExit` and its owner. Outlining may use
+binding convention between one `SideExit` and its owner. Lowering may use
 first occurrence in retained-instruction order, provided it builds both lists
 in the same order.
 
@@ -143,7 +143,7 @@ future lowering.
 
 ## Optimization and Sinking
 
-Before outlining, the main Core graph remains the analysis representation:
+Before lowering, the main Core graph remains the analysis representation:
 
 ```text
 ordinary Core computation
@@ -166,13 +166,13 @@ dependencies and ordinary instruction effects.
 
 ## Lowering Boundary
 
-Side-exit outlining is part of the lowering boundary before register
+Side-exit lowering runs before register
 allocation. It consumes optimized Core IR and annotates the executable graph
 with auxiliary `SideExit` records. The optimized Core graph may remain intact
 as the lowering input; sunk instructions are removed from executable block order
 but remain valid storage-owned instruction records referenced by side exits.
 
-The Core-to-Machine outlining pass owns the graph-level transition once all
+The Core-to-Machine side-exit lowering pass owns the graph-level transition once all
 executable instructions are Machine-compatible. Retained sunk Core instructions
 are storage-owned side-exit metadata rather than members of the Machine graph.
 
@@ -257,9 +257,9 @@ needs to settle:
 - how canonical-state publication interacts with outgoing call-argument setup;
 - where the synchronized-state lifetime ends after the call.
 
-## Outlining
+## Lowering
 
-The outlining pass runs after Core optimization and sinking decisions have
+The lowering pass runs after Core optimization and sinking decisions have
 stabilized, immediately before register-allocation preparation.
 
 For each non-returning side-exit Snapshot consumer, it:
@@ -282,7 +282,7 @@ Snapshot captures a sunk `BoxF64` result, for example, the unboxed source of the
 box is an input even though it does not appear directly in the Snapshot.
 
 One logical sunk DAG may be shared by several Snapshots or consumers before
-outlining. Each consumer records the instruction IDs it needs in its own
+lowering. Each consumer records the instruction IDs it needs in its own
 side-exit body. A sunk instruction may therefore appear in several side exits
 without being cloned. If later implementation pressure requires per-exit
 specialization, cloning remains an optimization, not the default
@@ -335,12 +335,12 @@ owner's executable argument operands.
 
 ## Dead Code Elimination
 
-Before outlining, ordinary DCE uses the main Core graph and sinking metadata.
-Sunk candidates are still ordinary instructions until the outlining boundary,
+Before lowering, ordinary DCE uses the main Core graph and sinking metadata.
+Sunk candidates are still ordinary instructions until the lowering boundary,
 so existing use-list and effect rules keep them live through Snapshots exactly
 as they do before sinking is introduced.
 
-After outlining, DCE also needs no side-exit-specific operand traversal. Every
+After lowering, DCE also needs no side-exit-specific operand traversal. Every
 frontier value is an ordinary operand of the executable owner, so the existing
 marking algorithm keeps it live. The owner structurally names the `SideExitId`;
 the CFG-owned record in turn retains the storage-owned sunk instructions and
@@ -398,7 +398,7 @@ The emitted transition program retains no `SideExitId`, Snapshot,
 
 ## Required Invariants
 
-Verification at the outlining and allocation boundaries must establish:
+Verification at the lowering and allocation boundaries must establish:
 
 - every side-exit consumer names one valid `SideExit`;
 - every `SideExit` has exactly one owner;
@@ -419,7 +419,7 @@ Verification at the outlining and allocation boundaries must establish:
 - no side-exit body result receives a main-program allocation;
 - ordinary graph rewriting and allocation materialization normalize owner
   arguments without rebuilding or mutating the side exit;
-- transition emission handles every outlined instruction kind and interpreter
+- transition emission handles every lowered instruction kind and interpreter
   state position.
 
 ## Proposed Implementation Slices
@@ -434,7 +434,7 @@ current IR level is already implemented.
 2. Add Machine owner forms with `SideExitId` and a named side-exit argument
    range; make ordinary instruction traversal, use lists, DCE, and rewriting see
    those arguments.
-3. Add the first outlining pass for non-returning side-exit consumers of direct
+3. Add the first lowering pass for non-returning side-exit consumers of direct
    Snapshots with no sunk computation, and change the CFG level from Core to
    Machine once all executable instructions are compatible.
 4. Teach allocation constraints and liveness to observe side-exit arguments at

@@ -164,6 +164,8 @@ add_library(libclovervm_objects OBJECT
     jit/side_exit.cpp
     jit/side_exit.h
     jit/side_exit_id.h
+    jit/side_exit_lowering.cpp
+    jit/side_exit_lowering.h
     jit/standard_code_memory.cpp
     jit/standard_code_memory.h
     jit/transition_executor.cpp

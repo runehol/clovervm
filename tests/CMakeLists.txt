@@ -38,6 +38,7 @@ target_sources(test_clovervm PRIVATE
 	test_jit_ir_print.cpp
 	test_jit_location_assignments.cpp
 	test_jit_register_allocator.cpp
+	test_jit_side_exit_lowering.cpp
 	test_machine_address.cpp
 	test_machine_code_emitter.cpp
 	test_native_module_build.cpp
