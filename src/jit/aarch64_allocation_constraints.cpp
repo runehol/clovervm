@@ -7,6 +7,7 @@
 #include <array>
 #include <cassert>
 #include <span>
+#include <utility>
 #include <vector>
 
 namespace cl::jit
@@ -82,23 +83,61 @@ namespace cl::jit
                         gpr(static_cast<uint8_t>(parameter_index))))});
         }
 
-        InstructionAllocationConstraints
-        return_constraints(ReturnInstruction instruction)
+        InstructionAllocationConstraints return_constraints(
+            ReturnInstruction instruction,
+            std::vector<ProgramValueUseConstraint> input_overrides)
         {
-            return InstructionAllocationConstraints(
-                instruction,
-                {{ReturnInstruction::return_value_operand_index,
-                  AccessTiming::Early,
-                  LocationRequirement::fixed(PhysicalLocation::reg(gpr(0)))}});
+            input_overrides.emplace_back(
+                ReturnInstruction::return_value_operand_index,
+                AccessTiming::Early,
+                LocationRequirement::fixed(PhysicalLocation::reg(gpr(0))));
+            return InstructionAllocationConstraints(instruction,
+                                                    std::move(input_overrides));
         }
 
-        InstructionAllocationConstraints
-        gpr_temporary_constraints(Instruction instruction)
+        InstructionAllocationConstraints gpr_temporary_constraints(
+            Instruction instruction,
+            std::vector<ProgramValueUseConstraint> input_overrides)
         {
             return InstructionAllocationConstraints(
-                instruction, {}, std::nullopt,
+                instruction, std::move(input_overrides), std::nullopt,
                 {TemporaryConstraint(
                     LocationRequirement::any_register(RegisterClass::GPR))});
+        }
+
+        std::vector<ProgramValueUseConstraint>
+        side_exit_argument_constraints(Instruction instruction)
+        {
+            std::vector<ProgramValueUseConstraint> result;
+            uint32_t first_argument = instruction.side_exit_argument_start();
+            if(first_argument == InstructionKindMetadata::NoSideExitArguments)
+            {
+                return result;
+            }
+
+            visit_operand_references(
+                instruction,
+                [&](uint32_t operand_index, OperandClass operand_class,
+                    ValueRepresentationRequirement, InstructionId definition) {
+                    if(operand_index < first_argument)
+                    {
+                        return;
+                    }
+                    if(operand_class != OperandClass::ProgramValue)
+                    {
+                        fatal("AArch64 side-exit argument is not a program "
+                              "value");
+                    }
+                    ValueRepresentation representation =
+                        instruction.storage()
+                            ->instruction(definition)
+                            .value_representation();
+                    result.emplace_back(
+                        operand_index, AccessTiming::Late,
+                        LocationRequirement::any_register(
+                            register_class_for_representation(representation)));
+                });
+            return result;
         }
     }  // namespace
 
@@ -124,6 +163,8 @@ namespace cl::jit
 
             for(Instruction instruction: block->instructions())
             {
+                std::vector<ProgramValueUseConstraint> input_overrides =
+                    side_exit_argument_constraints(instruction);
                 switch(instruction.kind())
                 {
                     case InstructionKind::Const:
@@ -136,23 +177,30 @@ namespace cl::jit
                     case InstructionKind::MovPointer:
                     case InstructionKind::LoadStackPointer:
                     case InstructionKind::StoreStackPointer:
+                    case InstructionKind::ResumeInInterpreterWithSideExit:
+                        if(!input_overrides.empty())
+                        {
+                            overrides.emplace_back(instruction,
+                                                   std::move(input_overrides));
+                        }
                         break;
 
                     case InstructionKind::Is:
                     case InstructionKind::IsNot:
-                        overrides.push_back(
-                            gpr_temporary_constraints(instruction));
+                        overrides.push_back(gpr_temporary_constraints(
+                            instruction, std::move(input_overrides)));
                         break;
 
                     case InstructionKind::Return:
                         overrides.push_back(return_constraints(
-                            instruction.as<ReturnInstruction>()));
+                            instruction.as<ReturnInstruction>(),
+                            std::move(input_overrides)));
                         break;
 
                     case InstructionKind::ConditionalBranch:
                     case InstructionKind::UnconditionalBranch:
-                        overrides.push_back(
-                            gpr_temporary_constraints(instruction));
+                        overrides.push_back(gpr_temporary_constraints(
+                            instruction, std::move(input_overrides)));
                         break;
 
                     default:
