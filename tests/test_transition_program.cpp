@@ -35,7 +35,8 @@ namespace cl::jit
             TransitionLocation::register_file(1));
         TransitionInstruction resume =
             TransitionInstruction::resume_interpreter(
-                TransitionLocation::scratch(2), 37);
+                TransitionLocation::scratch(2),
+                TransitionLocation::register_file(7), 37);
 
         EXPECT_EQ(TransitionInstructionKind::BeginTransition, begin.kind());
         EXPECT_EQ(0u, begin.scratch_slot_count());
@@ -45,6 +46,8 @@ namespace cl::jit
         EXPECT_EQ(TransitionLocation::stack(-4),
                   transfer.transfer_destination());
         EXPECT_EQ(TransitionInstructionKind::ResumeInterpreter, resume.kind());
+        EXPECT_EQ(TransitionLocation::register_file(7),
+                  resume.interpreter_thread_state());
         EXPECT_EQ(TransitionLocation::scratch(2),
                   resume.interpreter_accumulator());
         EXPECT_EQ(37u, resume.resume_pc());
@@ -58,7 +61,8 @@ namespace cl::jit
             TransitionLocation::scratch(3),
             TransitionLocation::register_file(0)));
         instructions.push_back(TransitionInstruction::resume_interpreter(
-            TransitionLocation::scratch(3), 12));
+            TransitionLocation::scratch(3),
+            TransitionLocation::register_file(7), 12));
 
         instructions.front().set_scratch_slot_count(4);
 
@@ -83,7 +87,9 @@ namespace cl::jit
                                  TransitionLocation::stack(-2));
         builder.emplace_transfer(TransitionLocation::stack(-1),
                                  TransitionLocation::scratch(3));
-        builder.emplace_resume_interpreter(TransitionLocation::stack(-1), 42);
+        builder.emplace_resume_interpreter(TransitionLocation::stack(-1),
+                                           TransitionLocation::register_file(7),
+                                           42);
 
         std::vector<TransitionInstruction> instructions =
             std::move(builder).finalize();
@@ -98,7 +104,9 @@ namespace cl::jit
         builder.append_instruction(TransitionInstruction::transfer(
             TransitionLocation::stack(-1),
             TransitionLocation::register_file(0)));
-        builder.emplace_resume_interpreter(TransitionLocation::stack(-1), 7);
+        builder.emplace_resume_interpreter(TransitionLocation::stack(-1),
+                                           TransitionLocation::register_file(7),
+                                           7);
 
         std::vector<TransitionInstruction> instructions =
             std::move(builder).finalize();
@@ -114,7 +122,21 @@ namespace cl::jit
                 builder.emplace_transfer(TransitionLocation::stack(-1),
                                          TransitionLocation::scratch(0));
                 builder.emplace_resume_interpreter(
-                    TransitionLocation::stack(-1), 7);
+                    TransitionLocation::stack(-1),
+                    TransitionLocation::register_file(7), 7);
+                (void)std::move(builder).finalize();
+            },
+            "reads uninitialized scratch");
+    }
+
+    TEST(TransitionProgramBuilder, RejectsUninitializedThreadState)
+    {
+        EXPECT_DEATH(
+            {
+                TransitionProgramBuilder builder;
+                builder.emplace_resume_interpreter(
+                    TransitionLocation::register_file(0),
+                    TransitionLocation::scratch(0), 7);
                 (void)std::move(builder).finalize();
             },
             "reads uninitialized scratch");
@@ -139,7 +161,9 @@ namespace cl::jit
                                  TransitionLocation::register_file(1));
         builder.emplace_transfer(TransitionLocation::stack(-3),
                                  TransitionLocation::scratch(0));
-        builder.emplace_resume_interpreter(TransitionLocation::stack(-3), 91);
+        builder.emplace_resume_interpreter(TransitionLocation::stack(-3),
+                                           TransitionLocation::register_file(7),
+                                           91);
         std::vector<TransitionInstruction> instructions =
             std::move(builder).finalize();
 
@@ -147,7 +171,8 @@ namespace cl::jit
                   "  begin_transition {scratch_slots = 1}\n"
                   "  0: transfer scratch[0], register_file[1]\n"
                   "  1: transfer stack[-3], scratch[0]\n"
-                  "  2: resume_interpreter stack[-3] {resume_pc = 91}\n"
+                  "  2: resume_interpreter stack[-3], register_file[7] "
+                  "{resume_pc = 91}\n"
                   "}\n",
                   format_transition_program(instructions));
     }

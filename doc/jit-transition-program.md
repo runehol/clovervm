@@ -109,6 +109,7 @@ struct TransitionExecutionInput
 struct InterpreterResumeState
 {
     Value accumulator;
+    ThreadState *thread_state;
     BytecodePC resume_pc;
 };
 
@@ -121,8 +122,9 @@ InterpreterResumeState execute_transition_program(
 `Transfer` copies one raw 64-bit word so tagged and unboxed representations use
 the same path. Register-file locations are read-only; stack locations are
 relative to the supplied frame pointer; scratch locations address the context.
-`ResumeInterpreter` reconstructs the tagged accumulator and returns the
-bytecode continuation to the future side-exit adapter. This initial executor
+`ResumeInterpreter` reconstructs the thread-state pointer and tagged
+accumulator and returns them with the bytecode continuation to the future
+side-exit adapter. This initial executor
 does not itself enter the bytecode interpreter.
 
 ## Instruction Representation
@@ -188,7 +190,9 @@ public:
     static TransitionInstruction
     transfer(TransitionLocation destination, TransitionLocation source);
     static TransitionInstruction
-    resume_interpreter(TransitionLocation accumulator, BytecodePC resume_pc);
+    resume_interpreter(TransitionLocation accumulator,
+                       TransitionLocation thread_state,
+                       BytecodePC resume_pc);
 
     TransitionInstructionKind kind() const;
 
@@ -237,6 +241,7 @@ public:
     void emplace_transfer(TransitionLocation destination,
                           TransitionLocation source);
     void emplace_resume_interpreter(TransitionLocation accumulator,
+                                    TransitionLocation thread_state,
                                     BytecodePC resume_pc);
 
     std::vector<TransitionInstruction> finalize() &&;
@@ -273,19 +278,21 @@ stages a value in scratch explicitly names `Scratch[instruction_index]`.
 
 ```text
 ResumeInterpreter
-    operand:
+    operands:
         accumulator : TransitionLocation
+        thread_state : TransitionLocation
     attribute:
         resume_pc : BytecodePC
 ```
 
-It has no result. It reads the reconstructed accumulator from its explicit
-source, ends transition execution after canonical interpreter state has been
-published, and identifies the bytecode continuation. The initial non-inlined
-side-exit context supplies the owning `CodeObject`; representing the active code
-object for an inlined frame is deferred with inlining. The resume PC is part of
-the continuous program rather than parallel side-exit metadata. Future
-transition consumers may define different terminal handoff instructions.
+It has no result. It reads the reconstructed accumulator and thread-state
+pointer from its explicit sources, ends transition execution after canonical
+interpreter state has been published, and identifies the bytecode continuation.
+The initial non-inlined side-exit context supplies the owning `CodeObject`;
+representing the active code object for an inlined frame is deferred with
+inlining. The resume PC is part of the continuous program rather than parallel
+side-exit metadata. Future transition consumers may define different terminal
+handoff instructions.
 
 Constants are not a fourth mutable storage area. Scalar constants remain inline
 attributes where the schema permits. Pointer-shaped tagged values are addressed
@@ -517,7 +524,8 @@ Transition-program verification should check:
 - every implicit result targets its instruction's body position, while an
   explicit `Transfer` may target any declared scratch location;
 - a side-exit transition never writes its register-file image;
-- `ResumeInterpreter` reads an initialized tagged accumulator source;
+- `ResumeInterpreter` reads initialized tagged accumulator and thread-state
+  pointer sources;
 - exactly one terminal handoff is present and it is the final instruction;
 - `ResumeInterpreter.resume_pc` is valid for the owning bytecode code object.
 

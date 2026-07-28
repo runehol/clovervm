@@ -34,6 +34,14 @@ namespace cl::jit
             return result;
         }
 
+        ThreadState *thread_state_from_word(uint64_t word)
+        {
+            static_assert(sizeof(ThreadState *) == sizeof(word));
+            ThreadState *result;
+            std::memcpy(&result, &word, sizeof(result));
+            return result;
+        }
+
         uint64_t read_location(TransitionLocation location,
                                TransitionExecutionInput input,
                                std::span<uint64_t> scratch)
@@ -115,6 +123,9 @@ namespace cl::jit
                         value_from_word(
                             read_location(instruction.interpreter_accumulator(),
                                           input, scratch)),
+                        thread_state_from_word(read_location(
+                            instruction.interpreter_thread_state(), input,
+                            scratch)),
                         instruction.resume_pc(),
                     };
                 default:

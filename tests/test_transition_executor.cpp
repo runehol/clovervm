@@ -21,6 +21,14 @@ namespace cl::jit
             return result;
         }
 
+        uint64_t word_for(ThreadState *thread_state)
+        {
+            static_assert(sizeof(thread_state) == sizeof(uint64_t));
+            uint64_t result;
+            std::memcpy(&result, &thread_state, sizeof(result));
+            return result;
+        }
+
         uint64_t stack_word(Value *location)
         {
             uint64_t result;
@@ -32,16 +40,21 @@ namespace cl::jit
     TEST(TransitionExecutor, TransfersThroughScratchAndReturnsResumeState)
     {
         Value expected = Value::from_smi(123);
-        std::array<uint64_t, 1> register_file = {word_for(expected)};
         std::array<Value, 8> stack = {};
         Value *frame_pointer = stack.data() + 4;
+        ThreadState *expected_thread_state =
+            reinterpret_cast<ThreadState *>(stack.data());
+        std::array<uint64_t, 2> register_file = {
+            word_for(expected_thread_state), word_for(expected)};
 
         TransitionProgramBuilder builder;
         builder.emplace_transfer(TransitionLocation::scratch(0),
-                                 TransitionLocation::register_file(0));
+                                 TransitionLocation::register_file(1));
         builder.emplace_transfer(TransitionLocation::stack(-2),
                                  TransitionLocation::scratch(0));
-        builder.emplace_resume_interpreter(TransitionLocation::stack(-2), 41);
+        builder.emplace_resume_interpreter(TransitionLocation::stack(-2),
+                                           TransitionLocation::register_file(0),
+                                           41);
         std::vector<TransitionInstruction> instructions =
             std::move(builder).finalize();
 
@@ -49,6 +62,7 @@ namespace cl::jit
         InterpreterResumeState result = execute_transition_program(
             context, instructions, {register_file, frame_pointer});
 
+        EXPECT_EQ(expected_thread_state, result.thread_state);
         EXPECT_EQ(expected, result.accumulator);
         EXPECT_EQ(41u, result.resume_pc);
         EXPECT_EQ(word_for(expected), stack_word(frame_pointer - 2));
@@ -58,22 +72,27 @@ namespace cl::jit
     {
         constexpr uint64_t Bits = 0xfedcba9876543210;
         Value accumulator = Value::from_smi(1);
-        std::array<uint64_t, 2> register_file = {Bits, word_for(accumulator)};
         std::array<Value, 8> stack = {};
         Value *frame_pointer = stack.data() + 4;
+        ThreadState *expected_thread_state =
+            reinterpret_cast<ThreadState *>(stack.data());
+        std::array<uint64_t, 3> register_file = {
+            Bits, word_for(accumulator), word_for(expected_thread_state)};
 
         TransitionProgramBuilder builder;
         builder.emplace_transfer(TransitionLocation::stack(1),
                                  TransitionLocation::register_file(0));
         builder.emplace_resume_interpreter(TransitionLocation::register_file(1),
+                                           TransitionLocation::register_file(2),
                                            9);
         std::vector<TransitionInstruction> instructions =
             std::move(builder).finalize();
 
         TransitionExecutionContext context;
-        (void)execute_transition_program(context, instructions,
-                                         {register_file, frame_pointer});
+        InterpreterResumeState result = execute_transition_program(
+            context, instructions, {register_file, frame_pointer});
 
+        EXPECT_EQ(expected_thread_state, result.thread_state);
         EXPECT_EQ(Bits, stack_word(frame_pointer + 1));
     }
 
@@ -99,7 +118,8 @@ namespace cl::jit
                 builder.emplace_transfer(TransitionLocation::register_file(0),
                                          TransitionLocation::stack(-1));
                 builder.emplace_resume_interpreter(
-                    TransitionLocation::stack(-1), 3);
+                    TransitionLocation::stack(-1),
+                    TransitionLocation::register_file(0), 3);
                 (void)std::move(builder).finalize();
             },
             "writes its register file");

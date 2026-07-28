@@ -98,10 +98,11 @@ namespace cl::jit
     }
 
     void TransitionProgramBuilder::emplace_resume_interpreter(
-        TransitionLocation accumulator, BytecodePC resume_pc)
+        TransitionLocation accumulator, TransitionLocation thread_state,
+        BytecodePC resume_pc)
     {
-        append_instruction(
-            TransitionInstruction::resume_interpreter(accumulator, resume_pc));
+        append_instruction(TransitionInstruction::resume_interpreter(
+            accumulator, thread_state, resume_pc));
     }
 
     std::vector<TransitionInstruction> TransitionProgramBuilder::finalize() &&
@@ -172,6 +173,12 @@ namespace cl::jit
                     }
                 case TransitionInstructionKind::ResumeInterpreter:
                     require_initialized_scratch(
+                        instruction.interpreter_thread_state(),
+                        initialized_scratch);
+                    require_declared_scratch(
+                        instruction.interpreter_thread_state(),
+                        scratch_slot_count);
+                    require_initialized_scratch(
                         instruction.interpreter_accumulator(),
                         initialized_scratch);
                     require_declared_scratch(
@@ -239,9 +246,11 @@ namespace cl::jit
                 case TransitionInstructionKind::ResumeInterpreter:
                     fmt::format_to(
                         std::back_inserter(result),
-                        "  {}: resume_interpreter {} {{resume_pc = {}}}\n",
+                        "  {}: resume_interpreter {}, {} "
+                        "{{resume_pc = {}}}\n",
                         body_position,
                         format_location(instruction.interpreter_accumulator()),
+                        format_location(instruction.interpreter_thread_state()),
                         instruction.resume_pc());
                     break;
                 default:

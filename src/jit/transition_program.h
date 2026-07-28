@@ -82,12 +82,15 @@ namespace cl::jit
         }
 
         static TransitionInstruction
-        resume_interpreter(TransitionLocation accumulator, BytecodePC resume_pc)
+        resume_interpreter(TransitionLocation accumulator,
+                           TransitionLocation thread_state,
+                           BytecodePC resume_pc)
         {
             TransitionInstruction result(
                 TransitionInstructionKind::ResumeInterpreter);
             result.set_location(0, accumulator);
-            result.slots_[1] = resume_pc;
+            result.set_location(1, thread_state);
+            result.slots_[2] = resume_pc;
             return result;
         }
 
@@ -123,10 +126,16 @@ namespace cl::jit
             return location(0);
         }
 
+        TransitionLocation interpreter_thread_state() const
+        {
+            assert(kind_ == TransitionInstructionKind::ResumeInterpreter);
+            return location(1);
+        }
+
         BytecodePC resume_pc() const
         {
             assert(kind_ == TransitionInstructionKind::ResumeInterpreter);
-            return slots_[1];
+            return slots_[2];
         }
 
     private:
@@ -169,6 +178,7 @@ namespace cl::jit
         void emplace_transfer(TransitionLocation destination,
                               TransitionLocation source);
         void emplace_resume_interpreter(TransitionLocation accumulator,
+                                        TransitionLocation thread_state,
                                         BytecodePC resume_pc);
 
         std::vector<TransitionInstruction> finalize() &&;
