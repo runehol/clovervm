@@ -182,7 +182,7 @@ The initial stored instruction exposes named construction and access only for
 the three transition-specific kinds:
 
 ```cpp
-class alignas(16) TransitionInstruction
+class alignas(8) TransitionInstruction
 {
 public:
     static TransitionInstruction
@@ -217,9 +217,9 @@ BeginTransition
 
 It has no operands or result. The executor reads it before dispatching the
 remaining entries and grows the current thread's scratch buffer when necessary.
-The count may be zero. Because the header occupies one aligned
+The count may be zero. Because the header occupies one
 `TransitionInstruction`, the first dispatched instruction begins at the next
-16-byte-aligned address.
+entry.
 
 The builder emits `BeginTransition {scratch_slot_count = 0}` before any
 position-derived result exists. Once the complete stream determines its scratch
@@ -562,7 +562,7 @@ The second slice builds and executes standalone programs:
 
 The third slice publishes programs and connects side exits:
 
-- publish 16-byte-aligned transition sequences with compiled code-object
+- publish 8-byte-aligned transition sequences with compiled code-object
   metadata;
 - embed a reusable transition execution context in each thread;
 - expand Snapshot liveness at executable exit consumers;

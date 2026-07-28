@@ -68,7 +68,7 @@ namespace cl::jit
 
     static_assert(sizeof(TransitionLocation) == sizeof(uint32_t));
 
-    class alignas(16) TransitionInstruction
+    class alignas(8) TransitionInstruction
     {
     public:
         static TransitionInstruction
@@ -174,7 +174,7 @@ namespace cl::jit
     };
 
     static_assert(sizeof(TransitionInstruction) == 16);
-    static_assert(alignof(TransitionInstruction) == 16);
+    static_assert(alignof(TransitionInstruction) == 8);
 
     class TransitionProgramBuilder
     {
