@@ -25,20 +25,8 @@ def and_(a, b):
     return a & b
 
 
-def call(obj, *args):
-    if len(args) == 0:
-        return obj()
-    if len(args) == 1:
-        return obj(args[0])
-    if len(args) == 2:
-        return obj(args[0], args[1])
-    if len(args) == 3:
-        return obj(args[0], args[1], args[2])
-    raise TypeError
-
-
 def concat(a, b):
-    return a.__add__(b)
+    return a + b
 
 
 def contains(a, b):
@@ -86,7 +74,7 @@ def iand(a, b):
 
 
 def iconcat(a, b):
-    return a.__add__(b)
+    return a + b
 
 
 def ifloordiv(a, b):
@@ -268,7 +256,6 @@ def methodcaller(name, *args):
 __abs__ = abs
 __add__ = add
 __and__ = and_
-__call__ = call
 __concat__ = concat
 __contains__ = contains
 __delitem__ = delitem
@@ -318,7 +305,6 @@ __all__ = (
     "add",
     "and_",
     "attrgetter",
-    "call",
     "concat",
     "contains",
     "countOf",

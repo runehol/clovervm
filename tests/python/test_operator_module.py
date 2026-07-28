@@ -81,19 +81,9 @@ assert operator.length_hint(42, 9) == 9
 assert operator.index(12) == 12
 
 
-def constant():
-    return 37
-
-
-def add3(a, b, c):
-    return a + b + c
-
-
-assert operator.call(constant) == 37
-assert operator.call(add3, 1, 2, 3) == 6
 assert operator.__all__[0] == "abs"
 assert operator.__all__[2] == "and_"
-assert operator.__all__[19] == "imatmul"
+assert operator.__all__[18] == "imatmul"
 
 
 class LeftMatmul:
