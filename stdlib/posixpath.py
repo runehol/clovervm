@@ -1,5 +1,4 @@
 import os
-import _os
 import stat
 
 
@@ -13,8 +12,8 @@ altsep = None
 devnull = "/dev/null"
 
 
-def _concat(left, right):
-    return left.__add__(right)
+def _all_sep(path):
+    return len(path) > 0 and path.count(sep) == len(path)
 
 
 def isabs(path):
@@ -31,14 +30,43 @@ def join(path, *paths):
         if item.startswith(sep):
             result = item
         elif result == "" or result.endswith(sep):
-            result = _concat(result, item)
+            result = result + item
         else:
-            result = _concat(_concat(result, sep), item)
+            result = result + sep + item
     return result
 
 
 def split(path):
-    return _os._path_split(path)
+    sep_idx = path.rfind(sep)
+    if sep_idx < 0:
+        return ("", path)
+
+    head = path[:sep_idx + 1]
+    tail = path[sep_idx + 1:]
+    if not _all_sep(head):
+        head = head.rstrip(sep)
+    return (head, tail)
+
+
+def splitdrive(path):
+    return ("", path)
+
+
+def splitext(path):
+    sep_idx = path.rfind(sep)
+    dot_idx = path.rfind(extsep)
+    filename_start = sep_idx + 1
+
+    if dot_idx <= filename_start:
+        return (path, "")
+
+    idx = filename_start
+    while idx < dot_idx and path[idx] == extsep:
+        idx = idx + 1
+    if idx == dot_idx:
+        return (path, "")
+
+    return (path[:dot_idx], path[dot_idx:])
 
 
 def dirname(path):

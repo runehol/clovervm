@@ -16,6 +16,9 @@ assert not "clover".endswith("ve")
 
 assert "banana".find("na") == 2
 assert "banana".find("zz") == -1
+assert "banana".rfind("na") == 4
+assert "banana".rfind("zz") == -1
+assert "banana".rfind("") == 6
 assert "banana".index("na") == 2
 assert "banana".count("na") == 2
 assert "banana".count("") == 7
@@ -24,8 +27,15 @@ assert "banana".replace("na", "NA") == "baNANA"
 assert "abc".replace("", "-") == "-a-b-c-"
 
 assert "  hello  ".strip() == "hello"
+assert "...path/".strip("./") == "path"
+assert "abba".strip("ab") == ""
+assert "miss".strip("/") == "miss"
 assert "  hello  ".lstrip() == "hello  "
 assert "  hello  ".rstrip() == "  hello"
+assert "path///".rstrip("/") == "path"
+assert "///".rstrip("/") == ""
+assert "miss".rstrip("/") == "miss"
+assert "abcxy".rstrip("xy") == "abc"
 
 assert ",".join(["a", "b", "c"]) == "a,b,c"
 assert "::".join(("a", "b")) == "a::b"

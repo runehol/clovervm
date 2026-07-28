@@ -480,44 +480,6 @@ static clover_handle os_rename(clover_context *ctx, clover_handle src_value,
     return clover_none(ctx);
 }
 
-static clover_handle os_path_split(clover_context *ctx,
-                                   clover_handle path_value)
-{
-    path_string path;
-    if(path_string_init(ctx, path_value, &path) != CLOVER_STATUS_OK)
-    {
-        return clover_propagate_error(ctx);
-    }
-
-    char *last_sep = strrchr(path.data, '/');
-    if(last_sep == NULL)
-    {
-        clover_handle result =
-            clover_tuple_from_pair(ctx, clover_string_from_utf8(ctx, ""),
-                                   clover_string_from_utf8(ctx, path.data));
-        path_string_destroy(&path);
-        return result;
-    }
-
-    size_t head_size = (size_t)(last_sep - path.data);
-    const char *tail = last_sep + 1;
-    if(head_size == 0)
-    {
-        clover_handle result =
-            clover_tuple_from_pair(ctx, clover_string_from_utf8(ctx, "/"),
-                                   clover_string_from_utf8(ctx, tail));
-        path_string_destroy(&path);
-        return result;
-    }
-
-    *last_sep = '\0';
-    clover_handle result =
-        clover_tuple_from_pair(ctx, clover_string_from_utf8(ctx, path.data),
-                               clover_string_from_utf8(ctx, tail));
-    path_string_destroy(&path);
-    return result;
-}
-
 #define ADD_FUNCTION_0(name, fn, doc)                                          \
     do                                                                         \
     {                                                                          \
@@ -593,8 +555,6 @@ clover_status clover_module_init__os(clover_context *ctx,
     ADD_FUNCTION_2("chmod", os_chmod, "Change path mode bits.");
     ADD_FUNCTION_2("mkdir", os_mkdir, "Create a directory.");
     ADD_FUNCTION_2("rename", os_rename, "Rename a path.");
-    ADD_FUNCTION_1("_path_split", os_path_split, "Split a POSIX path.");
-
     ADD_INT("F_OK", F_OK);
     ADD_INT("R_OK", R_OK);
     ADD_INT("W_OK", W_OK);

@@ -22,6 +22,17 @@ assert os.path.join("a", "b", "c") == "a/b/c"
 assert os.path.join("a", "/b", "c") == "/b/c"
 assert os.path.split("a/b.txt")[0] == "a"
 assert os.path.split("a/b.txt")[1] == "b.txt"
+assert os.path.split("plain") == ("", "plain")
+assert os.path.split("/tmp/") == ("/tmp", "")
+assert os.path.split("/") == ("/", "")
+assert os.path.split("///") == ("///", "")
+assert os.path.split("//tmp//name") == ("//tmp", "name")
+assert os.path.splitdrive("/tmp/name") == ("", "/tmp/name")
+assert os.path.splitext("plain") == ("plain", "")
+assert os.path.splitext("plain.txt") == ("plain", ".txt")
+assert os.path.splitext(".profile") == (".profile", "")
+assert os.path.splitext("/tmp/archive.tar.gz") == ("/tmp/archive.tar", ".gz")
+assert os.path.splitext("/tmp/name.") == ("/tmp/name", ".")
 assert os.path.dirname("/tmp/name") == "/tmp"
 assert os.path.basename("/tmp/name") == "name"
 

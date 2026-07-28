@@ -573,6 +573,16 @@ namespace cl
             self.get_ptr<String>()->find(needle_value.get_ptr<String>()));
     }
 
+    static Value native_str_rfind(ThreadState *thread, Value self,
+                                  Value needle_value)
+    {
+        CL_PROPAGATE_EXCEPTION(require_str_receiver(self, L"rfind"));
+        CL_PROPAGATE_EXCEPTION(
+            require_string_argument(needle_value, L"must be str, not other"));
+        return Value::from_smi(
+            self.get_ptr<String>()->rfind(needle_value.get_ptr<String>()));
+    }
+
     static Value native_str_contains(ThreadState *thread, Value self,
                                      Value needle_value)
     {
@@ -618,10 +628,19 @@ namespace cl
 
     static bool is_strip_space(wchar_t ch) { return std::iswspace(ch) != 0; }
 
-    static Value native_str_strip(ThreadState *thread, Value self)
+    static Value native_str_strip(ThreadState *thread, Value self,
+                                  Value chars_value)
     {
         CL_PROPAGATE_EXCEPTION(require_str_receiver(self, L"strip"));
-        return self.get_ptr<String>()->strip().raw_value();
+        if(chars_value.is_none())
+        {
+            return self.get_ptr<String>()->strip().raw_value();
+        }
+        CL_PROPAGATE_EXCEPTION(
+            require_string_argument(chars_value, L"strip arg must be str"));
+        return self.get_ptr<String>()
+            ->strip(chars_value.get_ptr<String>())
+            .raw_value();
     }
 
     static Value native_str_lstrip(ThreadState *thread, Value self)
@@ -630,10 +649,19 @@ namespace cl
         return self.get_ptr<String>()->lstrip().raw_value();
     }
 
-    static Value native_str_rstrip(ThreadState *thread, Value self)
+    static Value native_str_rstrip(ThreadState *thread, Value self,
+                                   Value chars_value)
     {
         CL_PROPAGATE_EXCEPTION(require_str_receiver(self, L"rstrip"));
-        return self.get_ptr<String>()->rstrip().raw_value();
+        if(chars_value.is_none())
+        {
+            return self.get_ptr<String>()->rstrip().raw_value();
+        }
+        CL_PROPAGATE_EXCEPTION(
+            require_string_argument(chars_value, L"rstrip arg must be str"));
+        return self.get_ptr<String>()
+            ->rstrip(chars_value.get_ptr<String>())
+            .raw_value();
     }
 
     static bool is_string_sequence(Value value)
@@ -801,6 +829,19 @@ namespace cl
         return static_cast<int64_t>(found);
     }
 
+    int64_t String::rfind(const String *needle) const
+    {
+        std::wstring_view str(data, size_t(count.extract()));
+        std::wstring_view needle_view(needle->data,
+                                      size_t(needle->count.extract()));
+        size_t found = str.rfind(needle_view);
+        if(found == std::wstring_view::npos)
+        {
+            return -1;
+        }
+        return static_cast<int64_t>(found);
+    }
+
     Value String::index(const String *needle) const
     {
         int64_t found = find(needle);
@@ -876,22 +917,40 @@ namespace cl
         return active_thread()->make_object_value<String>(result);
     }
 
+    static bool string_contains_char(std::wstring_view chars, wchar_t ch)
+    {
+        return chars.find(ch) != std::wstring_view::npos;
+    }
+
     static TValue<String> strip_string(const String *str, bool strip_left,
-                                       bool strip_right)
+                                       bool strip_right,
+                                       const String *chars = nullptr)
     {
         std::wstring_view view(str->data, size_t(str->count.extract()));
+        std::wstring_view chars_view;
+        if(chars != nullptr)
+        {
+            chars_view =
+                std::wstring_view(chars->data, size_t(chars->count.extract()));
+        }
         size_t start = 0;
         size_t end = view.size();
         if(strip_left)
         {
-            while(start < end && is_strip_space(view[start]))
+            while(start < end &&
+                  (chars == nullptr
+                       ? is_strip_space(view[start])
+                       : string_contains_char(chars_view, view[start])))
             {
                 ++start;
             }
         }
         if(strip_right)
         {
-            while(end > start && is_strip_space(view[end - 1]))
+            while(end > start &&
+                  (chars == nullptr
+                       ? is_strip_space(view[end - 1])
+                       : string_contains_char(chars_view, view[end - 1])))
             {
                 --end;
             }
@@ -905,6 +964,11 @@ namespace cl
         return strip_string(this, true, true);
     }
 
+    TValue<String> String::strip(const String *chars) const
+    {
+        return strip_string(this, true, true, chars);
+    }
+
     TValue<String> String::lstrip() const
     {
         return strip_string(this, true, false);
@@ -913,6 +977,11 @@ namespace cl
     TValue<String> String::rstrip() const
     {
         return strip_string(this, false, true);
+    }
+
+    TValue<String> String::rstrip(const String *chars) const
+    {
+        return strip_string(this, false, true, chars);
     }
 
     static void append_join_item(std::wstring &result,
@@ -1003,6 +1072,10 @@ namespace cl
             active_thread()->make_object_value<Tuple>(1));
         str_new_defaults.extract()->initialize_item_unchecked(
             0, vm->get_or_create_interned_string_value(L"").raw_value());
+        Owned<TValue<Tuple>> str_strip_defaults(
+            active_thread()->make_object_value<Tuple>(1));
+        str_strip_defaults.extract()->initialize_item_unchecked(0,
+                                                                Value::None());
         BuiltinIntrinsicMethod methods[] = {
             with_defaults(builtin_intrinsic_method(L"__new__", native_str_new,
                                                    L"Create a str object."),
@@ -1072,6 +1145,8 @@ namespace cl
                 resolve_trusted_str_contains_handler),
             builtin_intrinsic_method(L"find", native_str_find,
                                      L"Return first substring index or -1."),
+            builtin_intrinsic_method(L"rfind", native_str_rfind,
+                                     L"Return last substring index or -1."),
             builtin_intrinsic_method(L"index", native_str_index,
                                      L"Return first substring index."),
             builtin_intrinsic_method(
@@ -1079,12 +1154,15 @@ namespace cl
                 L"Return number of substring occurrences."),
             builtin_intrinsic_method(L"replace", native_str_replace,
                                      L"Return a copy with replacements."),
-            builtin_intrinsic_method(L"strip", native_str_strip,
-                                     L"Return a stripped copy."),
+            with_defaults(builtin_intrinsic_method(L"strip", native_str_strip,
+                                                   L"Return a stripped copy."),
+                          str_strip_defaults.value()),
             builtin_intrinsic_method(L"lstrip", native_str_lstrip,
                                      L"Return a left-stripped copy."),
-            builtin_intrinsic_method(L"rstrip", native_str_rstrip,
-                                     L"Return a right-stripped copy."),
+            with_defaults(
+                builtin_intrinsic_method(L"rstrip", native_str_rstrip,
+                                         L"Return a right-stripped copy."),
+                str_strip_defaults.value()),
             builtin_intrinsic_method(L"join", native_str_join,
                                      L"Join list or tuple of strings."),
             builtin_intrinsic_method(

@@ -122,13 +122,16 @@ namespace cl
         bool startswith(const String *prefix) const;
         bool endswith(const String *suffix) const;
         int64_t find(const String *needle) const;
+        int64_t rfind(const String *needle) const;
         [[nodiscard]] Value index(const String *needle) const;
         int64_t count_substring(const String *needle) const;
         [[nodiscard]] TValue<String> replace(const String *old,
                                              const String *replacement) const;
         [[nodiscard]] TValue<String> strip() const;
+        [[nodiscard]] TValue<String> strip(const String *chars) const;
         [[nodiscard]] TValue<String> lstrip() const;
         [[nodiscard]] TValue<String> rstrip() const;
+        [[nodiscard]] TValue<String> rstrip(const String *chars) const;
         [[nodiscard]] TValue<String> join_list(const List *sequence) const;
         [[nodiscard]] TValue<String> join_tuple(const Tuple *sequence) const;
         bool isalpha() const;
