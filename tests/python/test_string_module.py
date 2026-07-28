@@ -23,5 +23,9 @@ assert string.printable == (
 assert "a" in string.ascii_lowercase
 assert "Z" in string.ascii_uppercase
 assert "\n" in string.whitespace
+assert string.capwords("abc def") == "Abc Def"
+assert string.capwords("  abc   def  ") == "Abc Def"
+assert string.capwords("abc-def", "-") == "Abc-Def"
 assert string.__all__[0] == "ascii_letters"
-assert string.__all__[8] == "whitespace"
+assert string.__all__[3] == "capwords"
+assert string.__all__[9] == "whitespace"

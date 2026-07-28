@@ -24,6 +24,9 @@ namespace cl
         uint32_t n_parameters;
         const wchar_t *doc;
         Optional<TValue<Tuple>> default_parameters;
+        const wchar_t *const *keyword_parameter_names = nullptr;
+        uint32_t n_keyword_parameter_names = 0;
+        uint32_t first_keyword_parameter_index = 0;
         NativeFunctionParameterMode parameter_mode =
             NativeFunctionParameterMode::FixedArity;
         TrustedHandlerResolver trusted_handler_resolver = nullptr;
@@ -55,6 +58,10 @@ namespace cl
                              const wchar_t *doc = nullptr);
     BuiltinIntrinsicMethod with_defaults(BuiltinIntrinsicMethod method,
                                          TValue<Tuple> defaults);
+    BuiltinIntrinsicMethod
+    with_keyword_parameter_names(BuiltinIntrinsicMethod method,
+                                 const wchar_t *const *names, uint32_t n_names,
+                                 uint32_t first_parameter_index);
     BuiltinIntrinsicMethod with_varargs(BuiltinIntrinsicMethod method);
     BuiltinIntrinsicMethod
     with_trusted_handler_resolver(BuiltinIntrinsicMethod method,

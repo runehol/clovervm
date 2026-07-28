@@ -117,27 +117,47 @@ namespace cl
         get_slice(ThreadState *thread,
                   const NormalizedGeneralSlice &slice) const;
         [[nodiscard]] TValue<String> concat(const String *other) const;
+        [[nodiscard]] TValue<String> capitalize() const;
         [[nodiscard]] TValue<String> lower() const;
+        [[nodiscard]] TValue<String> swapcase() const;
         [[nodiscard]] TValue<String> upper() const;
         bool startswith(const String *prefix) const;
+        bool startswith(const String *prefix, size_t start, size_t end) const;
         bool endswith(const String *suffix) const;
+        bool endswith(const String *suffix, size_t start, size_t end) const;
         int64_t find(const String *needle) const;
+        int64_t find(const String *needle, size_t start, size_t end) const;
         int64_t rfind(const String *needle) const;
+        int64_t rfind(const String *needle, size_t start, size_t end) const;
         [[nodiscard]] Value index(const String *needle) const;
+        [[nodiscard]] Value index(const String *needle, size_t start,
+                                  size_t end) const;
+        [[nodiscard]] Value rindex(const String *needle) const;
+        [[nodiscard]] Value rindex(const String *needle, size_t start,
+                                   size_t end) const;
         int64_t count_substring(const String *needle) const;
+        int64_t count_substring(const String *needle, size_t start,
+                                size_t end) const;
+        [[nodiscard]] TValue<String> removeprefix(const String *prefix) const;
+        [[nodiscard]] TValue<String> removesuffix(const String *suffix) const;
         [[nodiscard]] TValue<String> replace(const String *old,
                                              const String *replacement) const;
         [[nodiscard]] TValue<String> strip() const;
         [[nodiscard]] TValue<String> strip(const String *chars) const;
         [[nodiscard]] TValue<String> lstrip() const;
+        [[nodiscard]] TValue<String> lstrip(const String *chars) const;
         [[nodiscard]] TValue<String> rstrip() const;
         [[nodiscard]] TValue<String> rstrip(const String *chars) const;
         [[nodiscard]] TValue<String> join_list(const List *sequence) const;
         [[nodiscard]] TValue<String> join_tuple(const Tuple *sequence) const;
+        bool isascii() const;
         bool isalpha() const;
         bool isdigit() const;
         bool isalnum() const;
+        bool islower() const;
+        bool isprintable() const;
         bool isspace() const;
+        bool isupper() const;
 
         Member<TValue<SMI>> count;
         cl_wchar data[1];

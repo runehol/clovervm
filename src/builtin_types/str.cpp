@@ -17,6 +17,7 @@
 #include <cassert>
 #include <cwctype>
 #include <iterator>
+#include <vector>
 
 namespace cl
 {
@@ -401,6 +402,49 @@ namespace cl
         return Value::None();
     }
 
+    static size_t normalize_string_bound(int64_t value, int64_t length)
+    {
+        if(value < 0)
+        {
+            value += length;
+        }
+        if(value < 0)
+        {
+            return 0;
+        }
+        if(value > length)
+        {
+            return static_cast<size_t>(length);
+        }
+        return static_cast<size_t>(value);
+    }
+
+    static Value normalize_string_range(Value self, Value start_value,
+                                        Value end_value, size_t &start,
+                                        size_t &end)
+    {
+        int64_t length = self.get_ptr<String>()->count.extract();
+        int64_t py_start = 0;
+        int64_t py_end = length;
+        if(!start_value.is_none())
+        {
+            CL_PROPAGATE_EXCEPTION(require_smi_index(
+                start_value, L"slice indices must be integers", py_start));
+        }
+        if(!end_value.is_none())
+        {
+            CL_PROPAGATE_EXCEPTION(require_smi_index(
+                end_value, L"slice indices must be integers", py_end));
+        }
+        start = normalize_string_bound(py_start, length);
+        end = normalize_string_bound(py_end, length);
+        if(end < start)
+        {
+            end = start;
+        }
+        return Value::None();
+    }
+
     static Value native_str_getitem(ThreadState *thread, Value self,
                                     Value index_value)
     {
@@ -534,6 +578,18 @@ namespace cl
         return self.get_ptr<String>()->lower().raw_value();
     }
 
+    static Value native_str_capitalize(ThreadState *thread, Value self)
+    {
+        CL_PROPAGATE_EXCEPTION(require_str_receiver(self, L"capitalize"));
+        return self.get_ptr<String>()->capitalize().raw_value();
+    }
+
+    static Value native_str_swapcase(ThreadState *thread, Value self)
+    {
+        CL_PROPAGATE_EXCEPTION(require_str_receiver(self, L"swapcase"));
+        return self.get_ptr<String>()->swapcase().raw_value();
+    }
+
     static Value native_str_upper(ThreadState *thread, Value self)
     {
         CL_PROPAGATE_EXCEPTION(require_str_receiver(self, L"upper"));
@@ -541,46 +597,67 @@ namespace cl
     }
 
     static Value native_str_startswith(ThreadState *thread, Value self,
-                                       Value prefix_value)
+                                       Value prefix_value, Value start_value,
+                                       Value end_value)
     {
         CL_PROPAGATE_EXCEPTION(require_str_receiver(self, L"startswith"));
         CL_PROPAGATE_EXCEPTION(require_string_argument(
             prefix_value, L"startswith first arg must be str"));
+        size_t start = 0;
+        size_t end = 0;
+        CL_PROPAGATE_EXCEPTION(
+            normalize_string_range(self, start_value, end_value, start, end));
         return self.get_ptr<String>()->startswith(
-                   prefix_value.get_ptr<String>())
+                   prefix_value.get_ptr<String>(), start, end)
                    ? Value::True()
                    : Value::False();
     }
 
     static Value native_str_endswith(ThreadState *thread, Value self,
-                                     Value suffix_value)
+                                     Value suffix_value, Value start_value,
+                                     Value end_value)
     {
         CL_PROPAGATE_EXCEPTION(require_str_receiver(self, L"endswith"));
         CL_PROPAGATE_EXCEPTION(require_string_argument(
             suffix_value, L"endswith first arg must be str"));
-        return self.get_ptr<String>()->endswith(suffix_value.get_ptr<String>())
+        size_t start = 0;
+        size_t end = 0;
+        CL_PROPAGATE_EXCEPTION(
+            normalize_string_range(self, start_value, end_value, start, end));
+        return self.get_ptr<String>()->endswith(suffix_value.get_ptr<String>(),
+                                                start, end)
                    ? Value::True()
                    : Value::False();
     }
 
     static Value native_str_find(ThreadState *thread, Value self,
-                                 Value needle_value)
+                                 Value needle_value, Value start_value,
+                                 Value end_value)
     {
         CL_PROPAGATE_EXCEPTION(require_str_receiver(self, L"find"));
         CL_PROPAGATE_EXCEPTION(
             require_string_argument(needle_value, L"must be str, not other"));
-        return Value::from_smi(
-            self.get_ptr<String>()->find(needle_value.get_ptr<String>()));
+        size_t start = 0;
+        size_t end = 0;
+        CL_PROPAGATE_EXCEPTION(
+            normalize_string_range(self, start_value, end_value, start, end));
+        return Value::from_smi(self.get_ptr<String>()->find(
+            needle_value.get_ptr<String>(), start, end));
     }
 
     static Value native_str_rfind(ThreadState *thread, Value self,
-                                  Value needle_value)
+                                  Value needle_value, Value start_value,
+                                  Value end_value)
     {
         CL_PROPAGATE_EXCEPTION(require_str_receiver(self, L"rfind"));
         CL_PROPAGATE_EXCEPTION(
             require_string_argument(needle_value, L"must be str, not other"));
-        return Value::from_smi(
-            self.get_ptr<String>()->rfind(needle_value.get_ptr<String>()));
+        size_t start = 0;
+        size_t end = 0;
+        CL_PROPAGATE_EXCEPTION(
+            normalize_string_range(self, start_value, end_value, start, end));
+        return Value::from_smi(self.get_ptr<String>()->rfind(
+            needle_value.get_ptr<String>(), start, end));
     }
 
     static Value native_str_contains(ThreadState *thread, Value self,
@@ -595,22 +672,330 @@ namespace cl
     }
 
     static Value native_str_index(ThreadState *thread, Value self,
-                                  Value needle_value)
+                                  Value needle_value, Value start_value,
+                                  Value end_value)
     {
         CL_PROPAGATE_EXCEPTION(require_str_receiver(self, L"index"));
         CL_PROPAGATE_EXCEPTION(
             require_string_argument(needle_value, L"must be str, not other"));
-        return self.get_ptr<String>()->index(needle_value.get_ptr<String>());
+        size_t start = 0;
+        size_t end = 0;
+        CL_PROPAGATE_EXCEPTION(
+            normalize_string_range(self, start_value, end_value, start, end));
+        return self.get_ptr<String>()->index(needle_value.get_ptr<String>(),
+                                             start, end);
+    }
+
+    static Value native_str_rindex(ThreadState *thread, Value self,
+                                   Value needle_value, Value start_value,
+                                   Value end_value)
+    {
+        CL_PROPAGATE_EXCEPTION(require_str_receiver(self, L"rindex"));
+        CL_PROPAGATE_EXCEPTION(
+            require_string_argument(needle_value, L"must be str, not other"));
+        size_t start = 0;
+        size_t end = 0;
+        CL_PROPAGATE_EXCEPTION(
+            normalize_string_range(self, start_value, end_value, start, end));
+        return self.get_ptr<String>()->rindex(needle_value.get_ptr<String>(),
+                                              start, end);
     }
 
     static Value native_str_count(ThreadState *thread, Value self,
-                                  Value needle_value)
+                                  Value needle_value, Value start_value,
+                                  Value end_value)
     {
         CL_PROPAGATE_EXCEPTION(require_str_receiver(self, L"count"));
         CL_PROPAGATE_EXCEPTION(
             require_string_argument(needle_value, L"must be str, not other"));
+        size_t start = 0;
+        size_t end = 0;
+        CL_PROPAGATE_EXCEPTION(
+            normalize_string_range(self, start_value, end_value, start, end));
         return Value::from_smi(self.get_ptr<String>()->count_substring(
-            needle_value.get_ptr<String>()));
+            needle_value.get_ptr<String>(), start, end));
+    }
+
+    static Value native_str_removeprefix(ThreadState *thread, Value self,
+                                         Value prefix_value)
+    {
+        CL_PROPAGATE_EXCEPTION(require_str_receiver(self, L"removeprefix"));
+        CL_PROPAGATE_EXCEPTION(require_string_argument(
+            prefix_value, L"removeprefix first arg must be str"));
+        return self.get_ptr<String>()
+            ->removeprefix(prefix_value.get_ptr<String>())
+            .raw_value();
+    }
+
+    static Value native_str_removesuffix(ThreadState *thread, Value self,
+                                         Value suffix_value)
+    {
+        CL_PROPAGATE_EXCEPTION(require_str_receiver(self, L"removesuffix"));
+        CL_PROPAGATE_EXCEPTION(require_string_argument(
+            suffix_value, L"removesuffix first arg must be str"));
+        return self.get_ptr<String>()
+            ->removesuffix(suffix_value.get_ptr<String>())
+            .raw_value();
+    }
+
+    static Value require_maxsplit(Value value, int64_t &out)
+    {
+        return require_smi_index(value, L"maxsplit must be an integer", out);
+    }
+
+    static void append_string_slice(TValue<List> result,
+                                    std::wstring_view slice)
+    {
+        result.extract()->append(
+            active_thread()->make_object_value<String>(slice).raw_value());
+    }
+
+    static Value split_empty_separator_error()
+    {
+        return active_thread()->set_pending_builtin_exception_string(
+            L"ValueError", L"empty separator");
+    }
+
+    static bool is_strip_space(wchar_t ch);
+
+    static Value split_whitespace(Value self, int64_t maxsplit, bool reverse)
+    {
+        std::wstring_view view(self.get_ptr<String>()->data,
+                               size_t(self.get_ptr<String>()->count.extract()));
+        Owned<TValue<List>> result(active_thread()->make_object_value<List>());
+        std::vector<std::wstring_view> pieces;
+        if(!reverse)
+        {
+            size_t pos = 0;
+            int64_t splits = 0;
+            while(pos < view.size())
+            {
+                while(pos < view.size() && is_strip_space(view[pos]))
+                {
+                    ++pos;
+                }
+                if(pos == view.size())
+                {
+                    break;
+                }
+                if(maxsplit >= 0 && splits == maxsplit)
+                {
+                    append_string_slice(result.value(), view.substr(pos));
+                    return result.value().raw_value();
+                }
+                size_t start = pos;
+                while(pos < view.size() && !is_strip_space(view[pos]))
+                {
+                    ++pos;
+                }
+                append_string_slice(result.value(),
+                                    view.substr(start, pos - start));
+                ++splits;
+            }
+            return result.value().raw_value();
+        }
+
+        size_t end = view.size();
+        int64_t splits = 0;
+        while(end > 0)
+        {
+            while(end > 0 && is_strip_space(view[end - 1]))
+            {
+                --end;
+            }
+            if(end == 0)
+            {
+                break;
+            }
+            if(maxsplit >= 0 && splits == maxsplit)
+            {
+                size_t remaining_start = 0;
+                if(splits > 0)
+                {
+                    while(remaining_start < end &&
+                          is_strip_space(view[remaining_start]))
+                    {
+                        ++remaining_start;
+                    }
+                }
+                pieces.push_back(
+                    view.substr(remaining_start, end - remaining_start));
+                break;
+            }
+            size_t start = end;
+            while(start > 0 && !is_strip_space(view[start - 1]))
+            {
+                --start;
+            }
+            pieces.push_back(view.substr(start, end - start));
+            end = start;
+            ++splits;
+        }
+        for(auto it = pieces.rbegin(); it != pieces.rend(); ++it)
+        {
+            append_string_slice(result.value(), *it);
+        }
+        return result.value().raw_value();
+    }
+
+    static Value split_explicit(Value self, const String *separator,
+                                int64_t maxsplit, bool reverse)
+    {
+        std::wstring_view view(self.get_ptr<String>()->data,
+                               size_t(self.get_ptr<String>()->count.extract()));
+        std::wstring_view sep_view(separator->data,
+                                   size_t(separator->count.extract()));
+        if(sep_view.empty())
+        {
+            return split_empty_separator_error();
+        }
+
+        Owned<TValue<List>> result(active_thread()->make_object_value<List>());
+        if(!reverse)
+        {
+            size_t pos = 0;
+            int64_t splits = 0;
+            while(maxsplit < 0 || splits < maxsplit)
+            {
+                size_t found = view.find(sep_view, pos);
+                if(found == std::wstring_view::npos)
+                {
+                    break;
+                }
+                append_string_slice(result.value(),
+                                    view.substr(pos, found - pos));
+                pos = found + sep_view.size();
+                ++splits;
+            }
+            append_string_slice(result.value(), view.substr(pos));
+            return result.value().raw_value();
+        }
+
+        std::vector<std::wstring_view> pieces;
+        size_t end = view.size();
+        int64_t splits = 0;
+        while((maxsplit < 0 || splits < maxsplit) && end >= sep_view.size())
+        {
+            size_t found = view.rfind(sep_view, end - sep_view.size());
+            if(found == std::wstring_view::npos)
+            {
+                break;
+            }
+            pieces.push_back(view.substr(found + sep_view.size(),
+                                         end - found - sep_view.size()));
+            end = found;
+            ++splits;
+        }
+        pieces.push_back(view.substr(0, end));
+        for(auto it = pieces.rbegin(); it != pieces.rend(); ++it)
+        {
+            append_string_slice(result.value(), *it);
+        }
+        return result.value().raw_value();
+    }
+
+    static Value native_str_split(ThreadState *thread, Value self,
+                                  Value sep_value, Value maxsplit_value)
+    {
+        CL_PROPAGATE_EXCEPTION(require_str_receiver(self, L"split"));
+        int64_t maxsplit = -1;
+        CL_PROPAGATE_EXCEPTION(require_maxsplit(maxsplit_value, maxsplit));
+        if(sep_value.is_none())
+        {
+            return split_whitespace(self, maxsplit, false);
+        }
+        CL_PROPAGATE_EXCEPTION(
+            require_string_argument(sep_value, L"split arg must be str"));
+        return split_explicit(self, sep_value.get_ptr<String>(), maxsplit,
+                              false);
+    }
+
+    static Value native_str_rsplit(ThreadState *thread, Value self,
+                                   Value sep_value, Value maxsplit_value)
+    {
+        CL_PROPAGATE_EXCEPTION(require_str_receiver(self, L"rsplit"));
+        int64_t maxsplit = -1;
+        CL_PROPAGATE_EXCEPTION(require_maxsplit(maxsplit_value, maxsplit));
+        if(sep_value.is_none())
+        {
+            return split_whitespace(self, maxsplit, true);
+        }
+        CL_PROPAGATE_EXCEPTION(
+            require_string_argument(sep_value, L"rsplit arg must be str"));
+        return split_explicit(self, sep_value.get_ptr<String>(), maxsplit,
+                              true);
+    }
+
+    static Value partition_string(Value self, Value sep_value, bool reverse)
+    {
+        CL_PROPAGATE_EXCEPTION(
+            require_string_argument(sep_value, L"separator must be str"));
+        String *str = self.get_ptr<String>();
+        String *separator = sep_value.get_ptr<String>();
+        std::wstring_view view(str->data, size_t(str->count.extract()));
+        std::wstring_view sep_view(separator->data,
+                                   size_t(separator->count.extract()));
+        if(sep_view.empty())
+        {
+            return split_empty_separator_error();
+        }
+        size_t found = reverse ? view.rfind(sep_view) : view.find(sep_view);
+
+        Owned<TValue<Tuple>> result(
+            active_thread()->make_object_value<Tuple>(3));
+        if(found == std::wstring_view::npos)
+        {
+            if(reverse)
+            {
+                result.extract()->initialize_item_unchecked(
+                    0, active_thread()
+                           ->make_object_value<String>(std::wstring_view())
+                           .raw_value());
+                result.extract()->initialize_item_unchecked(
+                    1, active_thread()
+                           ->make_object_value<String>(std::wstring_view())
+                           .raw_value());
+                result.extract()->initialize_item_unchecked(2, self);
+            }
+            else
+            {
+                result.extract()->initialize_item_unchecked(0, self);
+                result.extract()->initialize_item_unchecked(
+                    1, active_thread()
+                           ->make_object_value<String>(std::wstring_view())
+                           .raw_value());
+                result.extract()->initialize_item_unchecked(
+                    2, active_thread()
+                           ->make_object_value<String>(std::wstring_view())
+                           .raw_value());
+            }
+            return result.value().raw_value();
+        }
+        result.extract()->initialize_item_unchecked(
+            0, active_thread()
+                   ->make_object_value<String>(view.substr(0, found))
+                   .raw_value());
+        result.extract()->initialize_item_unchecked(1, sep_value);
+        result.extract()->initialize_item_unchecked(
+            2, active_thread()
+                   ->make_object_value<String>(
+                       view.substr(found + sep_view.size()))
+                   .raw_value());
+        return result.value().raw_value();
+    }
+
+    static Value native_str_partition(ThreadState *thread, Value self,
+                                      Value sep_value)
+    {
+        CL_PROPAGATE_EXCEPTION(require_str_receiver(self, L"partition"));
+        return partition_string(self, sep_value, false);
+    }
+
+    static Value native_str_rpartition(ThreadState *thread, Value self,
+                                       Value sep_value)
+    {
+        CL_PROPAGATE_EXCEPTION(require_str_receiver(self, L"rpartition"));
+        return partition_string(self, sep_value, true);
     }
 
     static Value native_str_replace(ThreadState *thread, Value self,
@@ -643,10 +1028,19 @@ namespace cl
             .raw_value();
     }
 
-    static Value native_str_lstrip(ThreadState *thread, Value self)
+    static Value native_str_lstrip(ThreadState *thread, Value self,
+                                   Value chars_value)
     {
         CL_PROPAGATE_EXCEPTION(require_str_receiver(self, L"lstrip"));
-        return self.get_ptr<String>()->lstrip().raw_value();
+        if(chars_value.is_none())
+        {
+            return self.get_ptr<String>()->lstrip().raw_value();
+        }
+        CL_PROPAGATE_EXCEPTION(
+            require_string_argument(chars_value, L"lstrip arg must be str"));
+        return self.get_ptr<String>()
+            ->lstrip(chars_value.get_ptr<String>())
+            .raw_value();
     }
 
     static Value native_str_rstrip(ThreadState *thread, Value self,
@@ -706,6 +1100,13 @@ namespace cl
                                                  : Value::False();
     }
 
+    static Value native_str_isascii(ThreadState *thread, Value self)
+    {
+        CL_PROPAGATE_EXCEPTION(require_str_receiver(self, L"isascii"));
+        return self.get_ptr<String>()->isascii() ? Value::True()
+                                                 : Value::False();
+    }
+
     static Value native_str_isdigit(ThreadState *thread, Value self)
     {
         CL_PROPAGATE_EXCEPTION(require_str_receiver(self, L"isdigit"));
@@ -720,10 +1121,31 @@ namespace cl
                                                  : Value::False();
     }
 
+    static Value native_str_islower(ThreadState *thread, Value self)
+    {
+        CL_PROPAGATE_EXCEPTION(require_str_receiver(self, L"islower"));
+        return self.get_ptr<String>()->islower() ? Value::True()
+                                                 : Value::False();
+    }
+
+    static Value native_str_isprintable(ThreadState *thread, Value self)
+    {
+        CL_PROPAGATE_EXCEPTION(require_str_receiver(self, L"isprintable"));
+        return self.get_ptr<String>()->isprintable() ? Value::True()
+                                                     : Value::False();
+    }
+
     static Value native_str_isspace(ThreadState *thread, Value self)
     {
         CL_PROPAGATE_EXCEPTION(require_str_receiver(self, L"isspace"));
         return self.get_ptr<String>()->isspace() ? Value::True()
+                                                 : Value::False();
+    }
+
+    static Value native_str_isupper(ThreadState *thread, Value self)
+    {
+        CL_PROPAGATE_EXCEPTION(require_str_receiver(self, L"isupper"));
+        return self.get_ptr<String>()->isupper() ? Value::True()
                                                  : Value::False();
     }
 
@@ -778,12 +1200,43 @@ namespace cl
         return active_thread()->make_object_value<String>(result);
     }
 
+    TValue<String> String::capitalize() const
+    {
+        std::wstring result(data, size_t(count.extract()));
+        if(!result.empty())
+        {
+            result[0] = static_cast<wchar_t>(std::towupper(result[0]));
+            for(size_t idx = 1; idx < result.size(); ++idx)
+            {
+                result[idx] = static_cast<wchar_t>(std::towlower(result[idx]));
+            }
+        }
+        return active_thread()->make_object_value<String>(result);
+    }
+
     TValue<String> String::lower() const
     {
         std::wstring result(data, size_t(count.extract()));
         for(wchar_t &ch: result)
         {
             ch = static_cast<wchar_t>(std::towlower(ch));
+        }
+        return active_thread()->make_object_value<String>(result);
+    }
+
+    TValue<String> String::swapcase() const
+    {
+        std::wstring result(data, size_t(count.extract()));
+        for(wchar_t &ch: result)
+        {
+            if(std::iswlower(ch) != 0)
+            {
+                ch = static_cast<wchar_t>(std::towupper(ch));
+            }
+            else if(std::iswupper(ch) != 0)
+            {
+                ch = static_cast<wchar_t>(std::towlower(ch));
+            }
         }
         return active_thread()->make_object_value<String>(result);
     }
@@ -800,51 +1253,97 @@ namespace cl
 
     bool String::startswith(const String *prefix) const
     {
+        return startswith(prefix, 0, size_t(count.extract()));
+    }
+
+    bool String::startswith(const String *prefix, size_t start,
+                            size_t end) const
+    {
         std::wstring_view str(data, size_t(count.extract()));
         std::wstring_view prefix_view(prefix->data,
                                       size_t(prefix->count.extract()));
-        return str.size() >= prefix_view.size() &&
-               str.substr(0, prefix_view.size()) == prefix_view;
+        std::wstring_view range = str.substr(start, end - start);
+        return range.size() >= prefix_view.size() &&
+               range.substr(0, prefix_view.size()) == prefix_view;
     }
 
     bool String::endswith(const String *suffix) const
     {
+        return endswith(suffix, 0, size_t(count.extract()));
+    }
+
+    bool String::endswith(const String *suffix, size_t start, size_t end) const
+    {
         std::wstring_view str(data, size_t(count.extract()));
         std::wstring_view suffix_view(suffix->data,
                                       size_t(suffix->count.extract()));
-        return str.size() >= suffix_view.size() &&
-               str.substr(str.size() - suffix_view.size()) == suffix_view;
+        std::wstring_view range = str.substr(start, end - start);
+        return range.size() >= suffix_view.size() &&
+               range.substr(range.size() - suffix_view.size()) == suffix_view;
     }
 
     int64_t String::find(const String *needle) const
     {
+        return find(needle, 0, size_t(count.extract()));
+    }
+
+    int64_t String::find(const String *needle, size_t start, size_t end) const
+    {
         std::wstring_view str(data, size_t(count.extract()));
         std::wstring_view needle_view(needle->data,
                                       size_t(needle->count.extract()));
-        size_t found = str.find(needle_view);
+        std::wstring_view range = str.substr(start, end - start);
+        size_t found = range.find(needle_view);
         if(found == std::wstring_view::npos)
         {
             return -1;
         }
-        return static_cast<int64_t>(found);
+        return static_cast<int64_t>(start + found);
     }
 
     int64_t String::rfind(const String *needle) const
     {
+        return rfind(needle, 0, size_t(count.extract()));
+    }
+
+    int64_t String::rfind(const String *needle, size_t start, size_t end) const
+    {
         std::wstring_view str(data, size_t(count.extract()));
         std::wstring_view needle_view(needle->data,
                                       size_t(needle->count.extract()));
-        size_t found = str.rfind(needle_view);
+        std::wstring_view range = str.substr(start, end - start);
+        size_t found = range.rfind(needle_view);
         if(found == std::wstring_view::npos)
         {
             return -1;
         }
-        return static_cast<int64_t>(found);
+        return static_cast<int64_t>(start + found);
     }
 
     Value String::index(const String *needle) const
     {
-        int64_t found = find(needle);
+        return index(needle, 0, size_t(count.extract()));
+    }
+
+    Value String::index(const String *needle, size_t start, size_t end) const
+    {
+        int64_t found = find(needle, start, end);
+        if(found == -1)
+        {
+            return active_thread()->set_pending_builtin_exception_string(
+                L"ValueError", L"substring not found");
+        }
+        return Value::from_smi(found);
+    }
+
+    Value String::rindex(const String *needle) const
+    {
+        return rindex(needle, 0, size_t(count.extract()));
+    }
+
+    Value String::rindex(const String *needle, size_t start, size_t end) const
+    {
+        int64_t found = rfind(needle, start, end);
         if(found == -1)
         {
             return active_thread()->set_pending_builtin_exception_string(
@@ -855,18 +1354,25 @@ namespace cl
 
     int64_t String::count_substring(const String *needle) const
     {
+        return count_substring(needle, 0, size_t(count.extract()));
+    }
+
+    int64_t String::count_substring(const String *needle, size_t start,
+                                    size_t end) const
+    {
         std::wstring_view str(data, size_t(count.extract()));
         std::wstring_view needle_view(needle->data,
                                       size_t(needle->count.extract()));
+        std::wstring_view range = str.substr(start, end - start);
         if(needle_view.empty())
         {
-            return static_cast<int64_t>(str.size() + 1);
+            return static_cast<int64_t>(range.size() + 1);
         }
         int64_t result = 0;
         size_t pos = 0;
-        while(pos <= str.size())
+        while(pos <= range.size())
         {
-            size_t found = str.find(needle_view, pos);
+            size_t found = range.find(needle_view, pos);
             if(found == std::wstring_view::npos)
             {
                 break;
@@ -875,6 +1381,32 @@ namespace cl
             pos = found + needle_view.size();
         }
         return result;
+    }
+
+    TValue<String> String::removeprefix(const String *prefix) const
+    {
+        if(startswith(prefix))
+        {
+            size_t prefix_len = size_t(prefix->count.extract());
+            std::wstring_view str(data, size_t(count.extract()));
+            return active_thread()->make_object_value<String>(
+                str.substr(prefix_len));
+        }
+        return active_thread()->make_object_value<String>(
+            std::wstring_view(data, size_t(count.extract())));
+    }
+
+    TValue<String> String::removesuffix(const String *suffix) const
+    {
+        if(endswith(suffix))
+        {
+            size_t suffix_len = size_t(suffix->count.extract());
+            std::wstring_view str(data, size_t(count.extract()));
+            return active_thread()->make_object_value<String>(
+                str.substr(0, str.size() - suffix_len));
+        }
+        return active_thread()->make_object_value<String>(
+            std::wstring_view(data, size_t(count.extract())));
     }
 
     TValue<String> String::replace(const String *old,
@@ -974,6 +1506,11 @@ namespace cl
         return strip_string(this, true, false);
     }
 
+    TValue<String> String::lstrip(const String *chars) const
+    {
+        return strip_string(this, true, false, chars);
+    }
+
     TValue<String> String::rstrip() const
     {
         return strip_string(this, false, true);
@@ -1036,6 +1573,18 @@ namespace cl
         return true;
     }
 
+    bool String::isascii() const
+    {
+        for(size_t idx = 0; idx < size_t(count.extract()); ++idx)
+        {
+            if(data[idx] > 0x7f)
+            {
+                return false;
+            }
+        }
+        return true;
+    }
+
     bool String::isalpha() const
     {
         return classify_string(this, std::iswalpha);
@@ -1051,9 +1600,50 @@ namespace cl
         return classify_string(this, std::iswalnum);
     }
 
+    static bool classify_cased_string(const String *str,
+                                      int (*cased_predicate)(std::wint_t))
+    {
+        bool saw_cased = false;
+        for(size_t idx = 0; idx < size_t(str->count.extract()); ++idx)
+        {
+            wchar_t ch = str->data[idx];
+            if(std::iswlower(ch) != 0 || std::iswupper(ch) != 0)
+            {
+                saw_cased = true;
+                if(cased_predicate(ch) == 0)
+                {
+                    return false;
+                }
+            }
+        }
+        return saw_cased;
+    }
+
+    bool String::islower() const
+    {
+        return classify_cased_string(this, std::iswlower);
+    }
+
+    bool String::isprintable() const
+    {
+        for(size_t idx = 0; idx < size_t(count.extract()); ++idx)
+        {
+            if(std::iswprint(data[idx]) == 0)
+            {
+                return false;
+            }
+        }
+        return true;
+    }
+
     bool String::isspace() const
     {
         return classify_string(this, std::iswspace);
+    }
+
+    bool String::isupper() const
+    {
+        return classify_cased_string(this, std::iswupper);
     }
 
     BuiltinClassDefinition make_str_class(VirtualMachine *vm)
@@ -1076,6 +1666,30 @@ namespace cl
             active_thread()->make_object_value<Tuple>(1));
         str_strip_defaults.extract()->initialize_item_unchecked(0,
                                                                 Value::None());
+        Owned<TValue<Tuple>> str_start_end_defaults(
+            active_thread()->make_object_value<Tuple>(2));
+        str_start_end_defaults.extract()->initialize_item_unchecked(
+            0, Value::None());
+        str_start_end_defaults.extract()->initialize_item_unchecked(
+            1, Value::None());
+        Owned<TValue<Tuple>> str_split_defaults(
+            active_thread()->make_object_value<Tuple>(2));
+        str_split_defaults.extract()->initialize_item_unchecked(0,
+                                                                Value::None());
+        str_split_defaults.extract()->initialize_item_unchecked(
+            1, Value::from_smi(-1));
+        static constexpr const wchar_t *prefix_start_end_names[] = {
+            L"prefix", L"start", L"end"};
+        static constexpr const wchar_t *suffix_start_end_names[] = {
+            L"suffix", L"start", L"end"};
+        static constexpr const wchar_t *sub_start_end_names[] = {
+            L"sub", L"start", L"end"};
+        static constexpr const wchar_t *chars_names[] = {L"chars"};
+        static constexpr const wchar_t *prefix_names[] = {L"prefix"};
+        static constexpr const wchar_t *suffix_names[] = {L"suffix"};
+        static constexpr const wchar_t *sep_names[] = {L"sep"};
+        static constexpr const wchar_t *sep_maxsplit_names[] = {L"sep",
+                                                                L"maxsplit"};
         BuiltinIntrinsicMethod methods[] = {
             with_defaults(builtin_intrinsic_method(L"__new__", native_str_new,
                                                    L"Create a str object."),
@@ -1131,51 +1745,133 @@ namespace cl
                 resolve_trusted_str_getitem_handler),
             builtin_intrinsic_method(L"lower", native_str_lower,
                                      L"Return a lowercase copy."),
+            builtin_intrinsic_method(L"capitalize", native_str_capitalize,
+                                     L"Return a capitalized copy."),
+            builtin_intrinsic_method(L"swapcase", native_str_swapcase,
+                                     L"Return a case-swapped copy."),
             builtin_intrinsic_method(L"upper", native_str_upper,
                                      L"Return an uppercase copy."),
-            builtin_intrinsic_method(
-                L"startswith", native_str_startswith,
-                L"Return whether self starts with prefix."),
-            builtin_intrinsic_method(L"endswith", native_str_endswith,
-                                     L"Return whether self ends with suffix."),
+            with_keyword_parameter_names(
+                with_defaults(builtin_intrinsic_method(
+                                  L"startswith", native_str_startswith,
+                                  L"Return whether self starts with prefix."),
+                              str_start_end_defaults.value()),
+                prefix_start_end_names, 3, 1),
+            with_keyword_parameter_names(
+                with_defaults(builtin_intrinsic_method(
+                                  L"endswith", native_str_endswith,
+                                  L"Return whether self ends with suffix."),
+                              str_start_end_defaults.value()),
+                suffix_start_end_names, 3, 1),
             with_trusted_handler_resolver(
                 builtin_intrinsic_method(
                     L"__contains__", native_str_contains,
                     L"Return whether needle is a substring of self."),
                 resolve_trusted_str_contains_handler),
-            builtin_intrinsic_method(L"find", native_str_find,
-                                     L"Return first substring index or -1."),
-            builtin_intrinsic_method(L"rfind", native_str_rfind,
-                                     L"Return last substring index or -1."),
-            builtin_intrinsic_method(L"index", native_str_index,
-                                     L"Return first substring index."),
-            builtin_intrinsic_method(
-                L"count", native_str_count,
-                L"Return number of substring occurrences."),
+            with_keyword_parameter_names(
+                with_defaults(builtin_intrinsic_method(
+                                  L"find", native_str_find,
+                                  L"Return first substring index or -1."),
+                              str_start_end_defaults.value()),
+                sub_start_end_names, 3, 1),
+            with_keyword_parameter_names(
+                with_defaults(builtin_intrinsic_method(
+                                  L"rfind", native_str_rfind,
+                                  L"Return last substring index or -1."),
+                              str_start_end_defaults.value()),
+                sub_start_end_names, 3, 1),
+            with_keyword_parameter_names(
+                with_defaults(
+                    builtin_intrinsic_method(L"index", native_str_index,
+                                             L"Return first substring index."),
+                    str_start_end_defaults.value()),
+                sub_start_end_names, 3, 1),
+            with_keyword_parameter_names(
+                with_defaults(
+                    builtin_intrinsic_method(L"rindex", native_str_rindex,
+                                             L"Return last substring index."),
+                    str_start_end_defaults.value()),
+                sub_start_end_names, 3, 1),
+            with_keyword_parameter_names(
+                with_defaults(builtin_intrinsic_method(
+                                  L"count", native_str_count,
+                                  L"Return number of substring occurrences."),
+                              str_start_end_defaults.value()),
+                sub_start_end_names, 3, 1),
+            with_keyword_parameter_names(
+                builtin_intrinsic_method(L"removeprefix",
+                                         native_str_removeprefix,
+                                         L"Return a copy with prefix removed."),
+                prefix_names, 1, 1),
+            with_keyword_parameter_names(
+                builtin_intrinsic_method(L"removesuffix",
+                                         native_str_removesuffix,
+                                         L"Return a copy with suffix removed."),
+                suffix_names, 1, 1),
+            with_keyword_parameter_names(
+                with_defaults(builtin_intrinsic_method(
+                                  L"split", native_str_split,
+                                  L"Return a list of split substrings."),
+                              str_split_defaults.value()),
+                sep_maxsplit_names, 2, 1),
+            with_keyword_parameter_names(
+                with_defaults(builtin_intrinsic_method(
+                                  L"rsplit", native_str_rsplit,
+                                  L"Return a list of split substrings."),
+                              str_split_defaults.value()),
+                sep_maxsplit_names, 2, 1),
+            with_keyword_parameter_names(
+                builtin_intrinsic_method(L"partition", native_str_partition,
+                                         L"Partition at separator."),
+                sep_names, 1, 1),
+            with_keyword_parameter_names(
+                builtin_intrinsic_method(L"rpartition", native_str_rpartition,
+                                         L"Partition at last separator."),
+                sep_names, 1, 1),
             builtin_intrinsic_method(L"replace", native_str_replace,
                                      L"Return a copy with replacements."),
-            with_defaults(builtin_intrinsic_method(L"strip", native_str_strip,
-                                                   L"Return a stripped copy."),
-                          str_strip_defaults.value()),
-            builtin_intrinsic_method(L"lstrip", native_str_lstrip,
-                                     L"Return a left-stripped copy."),
             with_defaults(
-                builtin_intrinsic_method(L"rstrip", native_str_rstrip,
-                                         L"Return a right-stripped copy."),
+                with_keyword_parameter_names(
+                    builtin_intrinsic_method(L"strip", native_str_strip,
+                                             L"Return a stripped copy."),
+                    chars_names, 1, 1),
+                str_strip_defaults.value()),
+            with_defaults(
+                with_keyword_parameter_names(
+                    builtin_intrinsic_method(L"lstrip", native_str_lstrip,
+                                             L"Return a left-stripped copy."),
+                    chars_names, 1, 1),
+                str_strip_defaults.value()),
+            with_defaults(
+                with_keyword_parameter_names(
+                    builtin_intrinsic_method(L"rstrip", native_str_rstrip,
+                                             L"Return a right-stripped copy."),
+                    chars_names, 1, 1),
                 str_strip_defaults.value()),
             builtin_intrinsic_method(L"join", native_str_join,
                                      L"Join list or tuple of strings."),
             builtin_intrinsic_method(
                 L"isalpha", native_str_isalpha,
                 L"Return whether all chars are alphabetic."),
+            builtin_intrinsic_method(L"isascii", native_str_isascii,
+                                     L"Return whether all chars are ASCII."),
             builtin_intrinsic_method(L"isdigit", native_str_isdigit,
                                      L"Return whether all chars are digits."),
             builtin_intrinsic_method(
                 L"isalnum", native_str_isalnum,
                 L"Return whether all chars are alphanumeric."),
             builtin_intrinsic_method(
+                L"islower", native_str_islower,
+                L"Return whether all cased chars are lowercase."),
+            builtin_intrinsic_method(
+                L"isprintable", native_str_isprintable,
+                L"Return whether all chars are printable."),
+            builtin_intrinsic_method(
                 L"isspace", native_str_isspace,
                 L"Return whether all chars are whitespace."),
+            builtin_intrinsic_method(
+                L"isupper", native_str_isupper,
+                L"Return whether all cased chars are uppercase."),
         };
         unwrap_bootstrap_expected(
             vm,

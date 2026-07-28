@@ -50,7 +50,7 @@ edge cases, platform behavior, or APIs are still missing.
 | Status | Module | Why it matters | Not handled / notes |
 | --- | --- | --- | --- |
 | [ ] | `re` | Regular expressions; required by many parsers and validators. | Not started / not assessed. |
-| [~] | `string` | Constants and formatter helpers. | Pure-Python module now exposes common constants (`ascii_*`, digits, hexdigits, octdigits, punctuation, whitespace, printable). Missing `capwords`, `Template`, and `Formatter`, which need richer string splitting/capitalization, formatting, regex, mapping, and protocol support. |
+| [~] | `string` | Constants and formatter helpers. | Pure-Python module now exposes common constants (`ascii_*`, digits, hexdigits, octdigits, punctuation, whitespace, printable) and `capwords`. Missing `Template` and `Formatter`, which need richer formatting, regex, mapping, and protocol support. |
 | [ ] | `enum` | Enum classes used by stdlib and application APIs. | Depends on class/metaclass behavior. |
 | [ ] | `dataclasses` | Common declarative class helper. | Depends on annotations, descriptors, introspection, and class mutation semantics. |
 | [ ] | `typing` | Type hint objects imported by modern Python code. | Runtime behavior can start small, but broad compatibility is large. |

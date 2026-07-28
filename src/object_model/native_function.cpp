@@ -30,6 +30,9 @@ namespace cl
         NativeFunctionParameterMode parameter_mode,
         Optional<TValue<Tuple>> default_parameters =
             Optional<TValue<Tuple>>::none(),
+        const wchar_t *const *keyword_parameter_names = nullptr,
+        uint32_t n_keyword_parameter_names = 0,
+        uint32_t first_keyword_parameter_index = 0,
         TrustedHandlerResolver trusted_handler_resolver = nullptr)
     {
         CodeObjectBuilder builder(vm, nullptr, vm->global_builtins_module(),
@@ -52,6 +55,13 @@ namespace cl
             assert(n_defaults < 64);
             builder.function_signature().default_presence_mask =
                 (uint64_t(1) << n_defaults) - 1;
+        }
+        for(uint32_t idx = 0; idx < n_keyword_parameter_names; ++idx)
+        {
+            builder.function_keyword_remap().add(
+                vm->get_or_create_interned_string_value(
+                    keyword_parameter_names[idx]),
+                static_cast<uint16_t>(first_keyword_parameter_index + idx));
         }
         uint32_t target_idx =
             CL_TRY(builder.add_native_function_target(target));
@@ -104,7 +114,7 @@ namespace cl
             call_opcode, n_parameters, Optional<TValue<String>>::none(),
             NativeFunctionKind::Intrinsic,
             NativeFunctionParameterMode::FixedArity, default_parameters,
-            trusted_handler_resolver);
+            nullptr, 0, 0, trusted_handler_resolver);
     }
 
     static Bytecode call_intrinsic_opcode_for_arity(uint32_t n_parameters)
@@ -220,6 +230,17 @@ namespace cl
         return method;
     }
 
+    BuiltinIntrinsicMethod
+    with_keyword_parameter_names(BuiltinIntrinsicMethod method,
+                                 const wchar_t *const *names, uint32_t n_names,
+                                 uint32_t first_parameter_index)
+    {
+        method.keyword_parameter_names = names;
+        method.n_keyword_parameter_names = n_names;
+        method.first_keyword_parameter_index = first_parameter_index;
+        return method;
+    }
+
     BuiltinIntrinsicMethod with_varargs(BuiltinIntrinsicMethod method)
     {
         method.parameter_mode = NativeFunctionParameterMode::VarArgs;
@@ -328,6 +349,8 @@ namespace cl
             method.target, call_intrinsic_opcode_for_arity(method.n_parameters),
             method.n_parameters, docstring, NativeFunctionKind::Intrinsic,
             method.parameter_mode, method.default_parameters,
+            method.keyword_parameter_names, method.n_keyword_parameter_names,
+            method.first_keyword_parameter_index,
             method.trusted_handler_resolver);
     }
 
