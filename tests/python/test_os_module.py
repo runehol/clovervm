@@ -74,10 +74,17 @@ assert os.access(cwd, os.F_OK)
 assert os.stat(cwd)[0] > 0
 assert os.lstat(cwd)[0] > 0
 assert os.path.exists(cwd)
+assert os.path.lexists(cwd)
 assert os.path.isdir(cwd)
 assert not os.path.isfile(cwd)
+assert not os.path.islink(cwd)
 assert os.path.isabs(cwd)
 assert os.path.abspath("stdlib").startswith(cwd)
+assert os.path.samefile(cwd, ".")
+assert os.path.samestat(os.stat(cwd), os.stat("."))
+assert os.path.ismount("/")
+assert not os.path.exists("stdlib/not-present")
+assert not os.path.lexists("stdlib/not-present")
 
 entries = os.listdir(".")
 found_stdlib = False
@@ -101,8 +108,21 @@ os.unsetenv(key)
 assert os.getenv(key) is None
 os.putenv(key, "present")
 assert os.getenv(key) == "present"
+assert os.path.expandvars("$CLOVERVM_OS_TEST_VALUE/path") == "present/path"
+assert os.path.expandvars("${CLOVERVM_OS_TEST_VALUE}/path") == "present/path"
 os.unsetenv(key)
 assert os.getenv(key) is None
+assert os.path.expandvars("$CLOVERVM_OS_TEST_VALUE/path") == "$CLOVERVM_OS_TEST_VALUE/path"
+assert os.path.expandvars("${CLOVERVM_OS_TEST_VALUE}/path") == "${CLOVERVM_OS_TEST_VALUE}/path"
+assert os.path.expandvars("$") == "$"
+assert os.path.expandvars("${") == "${"
+
+home_key = "HOME"
+os.putenv(home_key, "/tmp/clover-home")
+assert os.path.expanduser("~") == "/tmp/clover-home"
+assert os.path.expanduser("~/work") == "/tmp/clover-home/work"
+assert os.path.expanduser("~nosuchuser/work") == "~nosuchuser/work"
+assert os.path.expandvars("$HOME/work") == "/tmp/clover-home/work"
 
 base = "build-debug/clovervm-os-test"
 nested = base.__add__("/a/b")

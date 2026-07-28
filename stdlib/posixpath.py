@@ -41,6 +41,22 @@ def _prefix(parts, n):
     return result
 
 
+def _stat_or_none(stat_fn, path):
+    try:
+        return stat_fn(path)
+    except ValueError:
+        return None
+
+
+def _is_var_char(ch):
+    return (
+        ("a" <= ch and ch <= "z")
+        or ("A" <= ch and ch <= "Z")
+        or ("0" <= ch and ch <= "9")
+        or ch == "_"
+    )
+
+
 def join(path, *paths):
     result = path
     for item in paths:
@@ -145,6 +161,10 @@ def exists(path):
     return os.access(path, os.F_OK)
 
 
+def lexists(path):
+    return _stat_or_none(os.lstat, path) is not None
+
+
 def isdir(path):
     try:
         mode = os.stat(path)[0]
@@ -161,10 +181,102 @@ def isfile(path):
     return stat.S_ISREG(mode)
 
 
+def islink(path):
+    st = _stat_or_none(os.lstat, path)
+    if st is None:
+        return False
+    return stat.S_ISLNK(st[stat.ST_MODE])
+
+
+def samestat(stat1, stat2):
+    return (
+        stat1[stat.ST_INO] == stat2[stat.ST_INO]
+        and stat1[stat.ST_DEV] == stat2[stat.ST_DEV]
+    )
+
+
+def samefile(path1, path2):
+    return samestat(os.stat(path1), os.stat(path2))
+
+
+def ismount(path):
+    try:
+        path_stat = os.lstat(path)
+        parent_stat = os.lstat(join(path, pardir))
+    except ValueError:
+        return False
+    return (
+        path_stat[stat.ST_DEV] != parent_stat[stat.ST_DEV]
+        or path_stat[stat.ST_INO] == parent_stat[stat.ST_INO]
+    )
+
+
 def abspath(path):
     if isabs(path):
         return normpath(path)
     return normpath(join(os.getcwd(), path))
+
+
+def expanduser(path):
+    if not path.startswith("~"):
+        return path
+
+    slash_idx = path.find(sep)
+    if slash_idx < 0:
+        name = path[1:]
+        rest = ""
+    else:
+        name = path[1:slash_idx]
+        rest = path[slash_idx:]
+
+    if name != "":
+        return path
+
+    home = os.getenv("HOME")
+    if home is None:
+        return path
+    if home.endswith(sep) and home != sep:
+        home = home.rstrip(sep)
+    return home + rest
+
+
+def expandvars(path):
+    result = ""
+    idx = 0
+    while idx < len(path):
+        ch = path[idx]
+        if ch != "$":
+            result = result + ch
+            idx = idx + 1
+        elif idx + 1 < len(path) and path[idx + 1] == "{":
+            end = path.find("}", idx + 2)
+            if end < 0:
+                result = result + path[idx:]
+                idx = len(path)
+            else:
+                name = path[idx + 2:end]
+                value = os.getenv(name)
+                if name == "" or value is None:
+                    result = result + path[idx : end + 1]
+                else:
+                    result = result + value
+                idx = end + 1
+        else:
+            end = idx + 1
+            while end < len(path) and _is_var_char(path[end]):
+                end = end + 1
+            if end == idx + 1:
+                result = result + "$"
+                idx = idx + 1
+            else:
+                name = path[idx + 1:end]
+                value = os.getenv(name)
+                if value is None:
+                    result = result + path[idx:end]
+                else:
+                    result = result + value
+                idx = end
+    return result
 
 
 def normpath(path):
