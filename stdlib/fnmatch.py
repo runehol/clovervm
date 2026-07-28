@@ -7,13 +7,29 @@ CloverVM does not provide regular expressions yet.
 import os
 
 
+def _is_bytes(value):
+    return isinstance(value, bytes)
+
+
+def _check_types(name, pat):
+    name_is_bytes = _is_bytes(name)
+    pat_is_bytes = _is_bytes(pat)
+    if name_is_bytes and not pat_is_bytes:
+        raise TypeError("cannot use a string pattern on a bytes-like object")
+    if pat_is_bytes and not name_is_bytes:
+        raise TypeError("cannot use a bytes pattern on a string-like object")
+    return pat_is_bytes
+
+
 def fnmatch(name, pat):
     """Test whether FILENAME matches PATTERN after platform case normalization."""
+    _check_types(name, pat)
     return fnmatchcase(os.path.normcase(name), os.path.normcase(pat))
 
 
 def fnmatchcase(name, pat):
     """Test whether FILENAME matches PATTERN, including case."""
+    _check_types(name, pat)
     return _match_at(name, pat, 0, 0)
 
 
@@ -38,12 +54,16 @@ def filterfalse(names, pat):
 
 
 def _match_at(name, pat, name_idx, pat_idx):
+    pat_is_bytes = _is_bytes(pat)
+    star = 42 if pat_is_bytes else "*"
+    question = 63 if pat_is_bytes else "?"
+    open_bracket = 91 if pat_is_bytes else "["
     name_len = len(name)
     pat_len = len(pat)
     while pat_idx < pat_len:
         pat_ch = pat[pat_idx]
-        if pat_ch == "*":
-            while pat_idx + 1 < pat_len and pat[pat_idx + 1] == "*":
+        if pat_ch == star:
+            while pat_idx + 1 < pat_len and pat[pat_idx + 1] == star:
                 pat_idx += 1
             pat_idx += 1
             if pat_idx == pat_len:
@@ -59,13 +79,13 @@ def _match_at(name, pat, name_idx, pat_idx):
         if name_idx >= name_len:
             return False
 
-        if pat_ch == "?":
+        if pat_ch == question:
             name_idx += 1
             pat_idx += 1
-        elif pat_ch == "[":
+        elif pat_ch == open_bracket:
             end = _class_end(pat, pat_idx)
             if end < 0:
-                if name[name_idx] != "[":
+                if name[name_idx] != open_bracket:
                     return False
                 name_idx += 1
                 pat_idx += 1
@@ -83,13 +103,16 @@ def _match_at(name, pat, name_idx, pat_idx):
 
 
 def _class_end(pat, start):
+    pat_is_bytes = _is_bytes(pat)
+    bang = 33 if pat_is_bytes else "!"
+    close_bracket = 93 if pat_is_bytes else "]"
     pat_len = len(pat)
     idx = start + 1
-    if idx < pat_len and pat[idx] == "!":
+    if idx < pat_len and pat[idx] == bang:
         idx += 1
-    if idx < pat_len and pat[idx] == "]":
+    if idx < pat_len and pat[idx] == close_bracket:
         idx += 1
-    while idx < pat_len and pat[idx] != "]":
+    while idx < pat_len and pat[idx] != close_bracket:
         idx += 1
     if idx >= pat_len:
         return -1
@@ -97,21 +120,25 @@ def _class_end(pat, start):
 
 
 def _class_matches(ch, pat, start, end):
+    pat_is_bytes = _is_bytes(pat)
+    bang = 33 if pat_is_bytes else "!"
+    close_bracket = 93 if pat_is_bytes else "]"
+    dash = 45 if pat_is_bytes else "-"
     idx = start + 1
     negate = False
-    if idx < end and pat[idx] == "!":
+    if idx < end and pat[idx] == bang:
         negate = True
         idx += 1
 
     matched = False
-    if idx < end and pat[idx] == "]":
-        if ch == "]":
+    if idx < end and pat[idx] == close_bracket:
+        if ch == close_bracket:
             matched = True
         idx += 1
 
     while idx < end:
         first = pat[idx]
-        if idx + 2 < end and pat[idx + 1] == "-":
+        if idx + 2 < end and pat[idx + 1] == dash:
             last = pat[idx + 2]
             if first <= last and first <= ch and ch <= last:
                 matched = True
@@ -128,6 +155,8 @@ def _class_matches(ch, pat, start, end):
 
 def translate(pat):
     """Translate a shell PATTERN to a regular expression string."""
+    if _is_bytes(pat):
+        raise TypeError("translate expects a string pattern")
     result = ""
     idx = 0
     pat_len = len(pat)
