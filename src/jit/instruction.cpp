@@ -8,9 +8,9 @@
 
 namespace cl::jit
 {
-    [[noreturn]] void InstructionEntry::fatal_detached_access()
+    [[noreturn]] void InstructionEntry::fatal_poisoned_access()
     {
-        fatal("attempted to access a detached JIT instruction");
+        fatal("attempted to access a poisoned JIT instruction");
     }
 
     const InstructionEntry &Instruction::entry() const
@@ -18,7 +18,7 @@ namespace cl::jit
         return storage_->instruction_entry(id_);
     }
 
-    bool Instruction::is_detached() const { return entry().is_detached(); }
+    bool Instruction::is_poisoned() const { return entry().is_poisoned(); }
 
     InstructionKind Instruction::kind() const { return entry().kind(); }
 

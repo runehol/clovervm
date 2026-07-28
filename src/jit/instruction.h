@@ -549,15 +549,15 @@ namespace cl::jit
         static constexpr size_t InlineSlotCount = 3;
         static constexpr uint16_t IndirectOperandsBit = uint16_t{1} << 15;
         static constexpr uint16_t OperandCountMask = IndirectOperandsBit - 1;
-        static constexpr uint16_t DetachedStorageTag = UINT16_MAX;
+        static constexpr uint16_t PoisonedStorageTag = UINT16_MAX;
 
-        bool is_detached() const { return kind_ == DetachedStorageTag; }
+        bool is_poisoned() const { return kind_ == PoisonedStorageTag; }
 
         InstructionKind kind() const
         {
-            if(is_detached())
+            if(is_poisoned())
             {
-                fatal_detached_access();
+                fatal_poisoned_access();
             }
             InstructionKind result = static_cast<InstructionKind>(kind_);
             assert(is_valid_instruction_kind(result));
@@ -612,13 +612,13 @@ namespace cl::jit
                                std::span<const Slot>(inline_slots))
         {
         }
-        [[noreturn]] static void fatal_detached_access();
+        [[noreturn]] static void fatal_poisoned_access();
 
-        void detach_and_poison()
+        void poison()
         {
-            assert(!is_detached());
-            kind_ = DetachedStorageTag;
-            operand_storage_ = DetachedStorageTag;
+            assert(!is_poisoned());
+            kind_ = PoisonedStorageTag;
+            operand_storage_ = PoisonedStorageTag;
             for(Slot &slot: slots_)
             {
                 slot = UINT32_MAX;
@@ -643,7 +643,7 @@ namespace cl::jit
 #include "jit/instruction.def"
 #undef CL_JIT_INSTRUCTION
     static_assert(!is_valid_instruction_kind(
-        static_cast<InstructionKind>(InstructionEntry::DetachedStorageTag)));
+        static_cast<InstructionKind>(InstructionEntry::PoisonedStorageTag)));
 
     class Instruction
     {
@@ -657,12 +657,12 @@ namespace cl::jit
             InstructionEntry::IndirectOperandsBit;
         static constexpr uint16_t OperandCountMask =
             InstructionEntry::OperandCountMask;
-        static constexpr uint16_t DetachedStorageTag =
-            InstructionEntry::DetachedStorageTag;
+        static constexpr uint16_t PoisonedStorageTag =
+            InstructionEntry::PoisonedStorageTag;
 
         InstructionId id() const { return id_; }
         const CompilationStorage *storage() const { return storage_; }
-        bool is_detached() const;
+        bool is_poisoned() const;
         InstructionKind kind() const;
 
         template <typename ConcreteInstruction> ConcreteInstruction as() const

@@ -262,7 +262,7 @@ namespace cl::jit
         EXPECT_TRUE(summary.block_parameters_changed);
         EXPECT_TRUE(summary.instructions_changed);
         EXPECT_TRUE(summary.terminators_changed);
-        EXPECT_TRUE(exit_second.is_detached());
+        EXPECT_TRUE(exit_second.is_poisoned());
         ASSERT_EQ(1u, exit->parameters().size());
         EXPECT_EQ(exit_first, exit->parameter_at(0));
         BlockEdge *new_edge = entry->block_successor_edges()[0];
@@ -336,7 +336,7 @@ namespace cl::jit
 
         EXPECT_TRUE(summary.instructions_changed);
         EXPECT_TRUE(summary.terminators_changed);
-        EXPECT_TRUE(old_return.is_detached());
+        EXPECT_TRUE(old_return.is_poisoned());
         ASSERT_EQ(4u, entry->instructions().size());
         ASSERT_TRUE(callback.entry_move.has_value());
         ASSERT_TRUE(callback.first_late_move.has_value());
@@ -426,7 +426,7 @@ namespace cl::jit
 
         EXPECT_TRUE(summary.instructions_changed);
         EXPECT_TRUE(summary.terminators_changed);
-        EXPECT_TRUE(old_branch.is_detached());
+        EXPECT_TRUE(old_branch.is_poisoned());
         ASSERT_EQ(3u, entry->instructions().size());
         ASSERT_TRUE(callback.first_move.has_value());
         ASSERT_TRUE(callback.second_move.has_value());
@@ -613,9 +613,9 @@ namespace cl::jit
         EXPECT_TRUE(summary.instructions_changed);
         EXPECT_FALSE(summary.terminators_changed);
         EXPECT_EQ(1u, graph->mutation_generation());
-        EXPECT_FALSE(first.is_detached());
-        EXPECT_FALSE(second.is_detached());
-        EXPECT_FALSE(return_instruction.is_detached());
+        EXPECT_FALSE(first.is_poisoned());
+        EXPECT_FALSE(second.is_poisoned());
+        EXPECT_FALSE(return_instruction.is_poisoned());
         ASSERT_EQ(5u, entry->instructions().size());
         ASSERT_TRUE(prefix.has_value());
         ASSERT_TRUE(suffix.has_value());
@@ -659,9 +659,9 @@ namespace cl::jit
         EXPECT_TRUE(summary.terminators_changed);
         EXPECT_FALSE(summary.normalization_remapping.contains(move.id()));
         EXPECT_EQ(1u, graph->mutation_generation());
-        EXPECT_TRUE(move.is_detached());
-        EXPECT_TRUE(old_return.is_detached());
-        EXPECT_DEATH((void)old_return.kind(), "detached JIT instruction");
+        EXPECT_TRUE(move.is_poisoned());
+        EXPECT_TRUE(old_return.is_poisoned());
+        EXPECT_DEATH((void)old_return.kind(), "poisoned JIT instruction");
         ASSERT_EQ(1u, entry->instructions().size());
         ReturnInstruction new_return =
             entry->instruction_at(0).as<ReturnInstruction>();
@@ -729,9 +729,9 @@ namespace cl::jit
 
         EXPECT_TRUE(summary.instructions_changed);
         EXPECT_TRUE(summary.terminators_changed);
-        EXPECT_TRUE(old_constant.is_detached());
-        EXPECT_TRUE(old_move.is_detached());
-        EXPECT_TRUE(old_return.is_detached());
+        EXPECT_TRUE(old_constant.is_poisoned());
+        EXPECT_TRUE(old_move.is_poisoned());
+        EXPECT_TRUE(old_return.is_poisoned());
         ASSERT_EQ(3u, entry->instructions().size());
         ASSERT_TRUE(new_constant.has_value());
         ASSERT_TRUE(return_prefix.has_value());
@@ -803,8 +803,8 @@ namespace cl::jit
 
         EXPECT_TRUE(summary.instructions_changed);
         EXPECT_TRUE(summary.terminators_changed);
-        EXPECT_TRUE(original.is_detached());
-        EXPECT_TRUE(old_terminator.is_detached());
+        EXPECT_TRUE(original.is_poisoned());
+        EXPECT_TRUE(old_terminator.is_poisoned());
         ASSERT_EQ(1u, edge->arguments().size());
         EXPECT_EQ(original.id(), edge->arguments()[0].instruction_id());
 
@@ -858,9 +858,9 @@ namespace cl::jit
             });
 
         EXPECT_TRUE(summary.instructions_changed);
-        EXPECT_TRUE(callable.is_detached());
-        EXPECT_TRUE(snapshot.is_detached());
-        EXPECT_TRUE(call.is_detached());
+        EXPECT_TRUE(callable.is_poisoned());
+        EXPECT_TRUE(snapshot.is_poisoned());
+        EXPECT_TRUE(call.is_poisoned());
         ASSERT_EQ(4u, entry->instructions().size());
         auto new_callable = entry->instruction_at(0).as<ConstInstruction>();
         auto new_snapshot = entry->instruction_at(1).as<SnapshotInstruction>();
@@ -926,8 +926,8 @@ namespace cl::jit
 
         EXPECT_TRUE(summary.instructions_changed);
         EXPECT_TRUE(summary.terminators_changed);
-        EXPECT_FALSE(parameter.is_detached());
-        EXPECT_TRUE(old_owner.is_detached());
+        EXPECT_FALSE(parameter.is_poisoned());
+        EXPECT_TRUE(old_owner.is_poisoned());
         ASSERT_TRUE(callback.move.has_value());
         ASSERT_EQ(2u, entry->instructions().size());
         EXPECT_EQ(*callback.move, entry->instruction_at(0));
@@ -984,14 +984,14 @@ namespace cl::jit
                     EXPECT_EQ(2u, entry->instructions().size());
                     EXPECT_EQ(move, entry->instruction_at(0));
                     EXPECT_EQ(branch, entry->instruction_at(1));
-                    EXPECT_FALSE(move.is_detached());
+                    EXPECT_FALSE(move.is_poisoned());
                 }
                 return RewriteResult::keep();
             });
 
         EXPECT_TRUE(summary.instructions_changed);
         EXPECT_FALSE(summary.terminators_changed);
-        EXPECT_TRUE(move.is_detached());
+        EXPECT_TRUE(move.is_poisoned());
         ASSERT_EQ(3u, entry->instructions().size());
         auto first = entry->instruction_at(0).as<MovInstruction>();
         auto second = entry->instruction_at(1).as<MovInstruction>();

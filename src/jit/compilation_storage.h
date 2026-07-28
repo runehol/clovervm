@@ -90,7 +90,7 @@ namespace cl::jit
         const InstructionEntry &instruction_entry(InstructionId id) const;
         std::span<const Instruction::Slot>
         instruction_operands(uint32_t offset, size_t count) const;
-        void detach_instruction(InstructionId id);
+        void poison_instruction(InstructionId id);
 
         ObjectPool<ControlFlowGraph> graphs_;
         ObjectPool<Block> blocks_;

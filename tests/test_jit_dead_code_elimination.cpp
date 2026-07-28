@@ -34,8 +34,8 @@ namespace cl::jit
         ASSERT_EQ(2u, entry->instructions().size());
         EXPECT_EQ(result, entry->instruction_at(0));
         EXPECT_EQ(InstructionKind::Return, entry->instruction_at(1).kind());
-        EXPECT_TRUE(unused.is_detached());
-        EXPECT_TRUE(unused_copy.is_detached());
+        EXPECT_TRUE(unused.is_poisoned());
+        EXPECT_TRUE(unused_copy.is_poisoned());
     }
 
     TEST(JitDeadCodeElimination, RetainsValuesPassedAcrossBlockEdges)
@@ -60,7 +60,7 @@ namespace cl::jit
 
         ASSERT_TRUE(elimination);
         EXPECT_FALSE(std::move(elimination).value());
-        EXPECT_FALSE(argument.is_detached());
+        EXPECT_FALSE(argument.is_poisoned());
         ASSERT_EQ(2u, entry->instructions().size());
         EXPECT_EQ(argument, entry->instruction_at(0));
     }
@@ -93,10 +93,10 @@ namespace cl::jit
 
         ASSERT_TRUE(elimination);
         EXPECT_TRUE(std::move(elimination).value());
-        EXPECT_TRUE(dead_argument.is_detached());
-        EXPECT_TRUE(dead_parameter.is_detached());
-        EXPECT_FALSE(live_argument.is_detached());
-        EXPECT_FALSE(live_parameter.is_detached());
+        EXPECT_TRUE(dead_argument.is_poisoned());
+        EXPECT_TRUE(dead_parameter.is_poisoned());
+        EXPECT_FALSE(live_argument.is_poisoned());
+        EXPECT_FALSE(live_parameter.is_poisoned());
         ASSERT_EQ(1u, exit->parameters().size());
         EXPECT_EQ(live_parameter, exit->parameter_at(0));
         BlockEdge *new_edge = entry->block_successor_edges()[0];
@@ -129,8 +129,8 @@ namespace cl::jit
 
         ASSERT_TRUE(elimination);
         EXPECT_TRUE(std::move(elimination).value());
-        EXPECT_TRUE(snapshot.is_detached());
-        EXPECT_TRUE(unused_add.is_detached());
+        EXPECT_TRUE(snapshot.is_poisoned());
+        EXPECT_TRUE(unused_add.is_poisoned());
         ASSERT_EQ(1u, entry->instructions().size());
         EXPECT_EQ(InstructionKind::Return, entry->instruction_at(0).kind());
     }
@@ -155,7 +155,7 @@ namespace cl::jit
 
         ASSERT_TRUE(elimination);
         EXPECT_TRUE(std::move(elimination).value());
-        EXPECT_TRUE(unused_box.is_detached());
+        EXPECT_TRUE(unused_box.is_poisoned());
         ASSERT_EQ(1u, entry->instructions().size());
     }
 
@@ -180,8 +180,8 @@ namespace cl::jit
 
         ASSERT_TRUE(elimination);
         EXPECT_FALSE(std::move(elimination).value());
-        EXPECT_FALSE(snapshot.is_detached());
-        EXPECT_FALSE(check.is_detached());
+        EXPECT_FALSE(snapshot.is_poisoned());
+        EXPECT_FALSE(check.is_poisoned());
         ASSERT_EQ(3u, entry->instructions().size());
     }
 
@@ -207,8 +207,8 @@ namespace cl::jit
 
         ASSERT_TRUE(elimination);
         EXPECT_FALSE(std::move(elimination).value());
-        EXPECT_FALSE(snapshot.is_detached());
-        EXPECT_FALSE(unused_call.is_detached());
+        EXPECT_FALSE(snapshot.is_poisoned());
+        EXPECT_FALSE(unused_call.is_poisoned());
         ASSERT_EQ(3u, entry->instructions().size());
     }
 
@@ -235,7 +235,7 @@ namespace cl::jit
 
         ASSERT_TRUE(elimination);
         EXPECT_FALSE(std::move(elimination).value());
-        EXPECT_FALSE(input.is_detached());
+        EXPECT_FALSE(input.is_poisoned());
         ASSERT_EQ(1u, entry->parameters().size());
     }
 

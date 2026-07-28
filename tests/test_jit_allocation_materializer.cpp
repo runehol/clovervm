@@ -224,7 +224,7 @@ namespace cl::jit
             entry->instruction_at(1).as<ReturnInstruction>();
         EXPECT_EQ(parameter.id(), load.source().instruction_id());
         EXPECT_EQ(load.id(), new_return.return_value().instruction_id());
-        EXPECT_TRUE(old_return.is_detached());
+        EXPECT_TRUE(old_return.is_poisoned());
         EXPECT_EQ(4, materialized.value()
                          .location_for(ProgramValueRef(parameter))
                          .stack()
@@ -329,8 +329,8 @@ namespace cl::jit
         EXPECT_EQ(rhs.id(), rhs_load.source().instruction_id());
         EXPECT_EQ(lhs_load.id(), new_operation.lhs().instruction_id());
         EXPECT_EQ(rhs_load.id(), new_operation.rhs().instruction_id());
-        EXPECT_TRUE(operation.is_detached());
-        EXPECT_TRUE(return_instruction.is_detached());
+        EXPECT_TRUE(operation.is_poisoned());
+        EXPECT_TRUE(return_instruction.is_poisoned());
     }
 
     TEST(JitAllocationMaterializer, InsertsRegisterToStackTransfer)
@@ -372,7 +372,7 @@ namespace cl::jit
             entry->instruction_at(1).as<ReturnInstruction>();
         EXPECT_EQ(parameter.id(), store.source().instruction_id());
         EXPECT_EQ(store.id(), new_return.return_value().instruction_id());
-        EXPECT_TRUE(old_return.is_detached());
+        EXPECT_TRUE(old_return.is_poisoned());
         EXPECT_EQ(-8, materialized.value()
                           .location_for(ProgramValueRef(store))
                           .stack()
@@ -567,8 +567,8 @@ namespace cl::jit
                           .location_for(ProgramValueRef(move_lhs))
                           .stack()
                           .frame_offset());
-        EXPECT_TRUE(operation.is_detached());
-        EXPECT_TRUE(return_instruction.is_detached());
+        EXPECT_TRUE(operation.is_poisoned());
+        EXPECT_TRUE(return_instruction.is_poisoned());
     }
 
     TEST(JitAllocationMaterializer,

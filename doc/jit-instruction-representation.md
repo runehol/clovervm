@@ -4,7 +4,7 @@
 |---|---|
 | Document type | Design |
 | Status | Accepted |
-| Implementation | The indexed 16-byte instruction entry, schema-generated typed views, compact operands and attributes, typed CFG terminators, generic operand traversal and reconstruction, deterministic textual IR printing, detachment poisoning, and graph-rewriter integration are implemented; representative storage measurement and complete Snapshot recovery encodings remain |
+| Implementation | The indexed 16-byte instruction entry, schema-generated typed views, compact operands and attributes, typed CFG terminators, generic operand traversal and reconstruction, deterministic textual IR printing, instruction poisoning, and graph-rewriter integration are implemented; representative storage measurement and complete Snapshot recovery encodings remain |
 | Scope | Physical instruction storage, typed instruction access, Core value representations, IR-level legality, phase metadata, effects, matching, and compilation lifetime for Core and Semantic IR |
 | Owning layers | The JIT instruction representation owns storage, schema-generated construction, typed access, operand traversal, and reconstruction; the graph builder owns deferred-validation construction; concrete analyses own attached inferred facts and proven-absent effects; the graph rewriter owns staged body-instruction replacement and future CFG editing owns topology mutation |
 | Validated against | `tests/test_jit_storage.cpp`, `tests/test_jit_cfg.cpp`, `tests/test_jit_graph_rewrites.cpp`, and `tests/test_jit_ir_print.cpp` |
@@ -97,7 +97,7 @@ class Instruction
 public:
     InstructionId id() const;
     const CompilationStorage *storage() const;
-    bool is_detached() const;
+    bool is_poisoned() const;
     InstructionKind kind() const;
     ResultClass result_class() const;
     ValueRepresentation value_representation() const;
@@ -125,7 +125,7 @@ removed an instruction from a published graph. `InstructionKind` remains the
 closed semantic enum generated from `src/jit/instruction.def`; the poison tag is
 not an instruction kind and is not a state ordinary passes handle. `kind()`,
 `result_class()`, typed conversion, and payload traversal all assert that the
-tag is live. Only `id()` and `is_detached()` remain meaningful on poisoned
+tag is live. Only `id()` and `is_poisoned()` remain meaningful on poisoned
 storage, for diagnostics.
 
 Instruction results and operands use distinct enum types. Ordinary operands are
@@ -400,7 +400,7 @@ allocated and unplaced -> placed in one graph -> removed from graph
 
 An unplaced instruction has a live instruction kind and a schema-valid payload,
 but is not yet a member of any graph. It may be attached at most once. After
-removal, the rewriter may poison the abandoned storage with the reserved detached
+removal, the rewriter may poison the abandoned storage with the reserved poison
 tag to catch stale references. Poisoning is not an allocation-reuse mechanism,
 not graph membership, and not a semantic IR state.
 
@@ -579,7 +579,7 @@ below. Repeated inclusion of that schema generates a dense
 `InstructionOrdinal`, the encoded `InstructionKind` enum, invariant kind
 metadata, representation-safe construction and access, generic operand
 traversal, result/operand class legality, attribute decoding, effect bounds, and
-the size and alignment constraints for encoded payloads. The `Detached` storage
+the size and alignment constraints for encoded payloads. The poison storage
 tag is not listed as a semantic instruction definition.
 
 The upper four bits of the 16-bit `InstructionKind` encode its intrinsic result
@@ -920,17 +920,17 @@ Live(fixed InstructionKind) -> removed from graph -> poisoned storage
 The graph rewriter poisons removed originals only after every block's staged
 instruction vector has committed. Result replacement and schema-generated
 reconstruction ensure no committed user retains a reference to an erased def;
-encountering such a use is a hard compiler fault. A detached instruction's
+encountering such a use is a hard compiler fault. A poisoned instruction's
 pointer-valued `ValueConstant` is no longer semantically visible. Every value
 registered with the session remains retained until session teardown, so
-detachment does not prune that monotonic vector. Poisoned storage is never
+instruction poisoning does not prune that monotonic vector. Poisoned storage is never
 republished or returned to a live kind.
 
-The ID is deliberately preserved for diagnostics. Any detached instruction
+The ID is deliberately preserved for diagnostics. Any poisoned instruction
 encountered by verification, generic traversal, typed conversion, a result
 reference, or current `UseLists` is a hard compiler bug. The diagnostic reports
 the preserved ID and does not interpret the poisoned payload. Ordinary pass
-code does not branch on detachedness as a supported case; instruction IDs and
+code does not branch on poisoning as a supported case; instruction IDs and
 views must not be reused across structural edits without proving that the
 instruction remains attached.
 

@@ -319,8 +319,8 @@ namespace cl::jit
                         rebuild_instruction_with_references(proposed, *storage_,
                                                             resolver, context);
                     require_rewrite_invariant(
-                        !normalized.is_detached(),
-                        "a detached instruction cannot be inserted");
+                        !normalized.is_poisoned(),
+                        "a poisoned instruction cannot be inserted");
                     require_rewrite_invariant(
                         !is_block_parameter_kind(normalized.kind()),
                         "block-parameter instructions cannot be inserted into "
@@ -552,8 +552,8 @@ namespace cl::jit
                         rebuild_instruction_with_references(proposed, *storage_,
                                                             resolver, context);
                     require_rewrite_invariant(
-                        !normalized.is_detached(),
-                        "a detached instruction cannot be emitted");
+                        !normalized.is_poisoned(),
+                        "a poisoned instruction cannot be emitted");
                     require_rewrite_invariant(
                         !is_block_parameter_kind(normalized.kind()),
                         "block-parameter instructions cannot be emitted into a "
@@ -723,7 +723,7 @@ namespace cl::jit
         {
             for(InstructionId removed: staged.removed_originals)
             {
-                storage_->detach_instruction(removed);
+                storage_->poison_instruction(removed);
             }
         }
         ++graph_->mutation_generation_;

@@ -608,7 +608,7 @@ After every block has been traversed:
    replacement map;
 2. it swaps every staged parameter and body vector into its block and rebuilds
    predecessor indexes when edges changed;
-3. it uses staged removal records to identify and detach original
+3. it uses staged removal records to identify and poison original
    instructions no longer present in the graph;
 4. it advances the graph mutation generation once and invalidates affected
    attached analyses;

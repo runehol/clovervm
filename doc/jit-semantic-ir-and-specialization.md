@@ -285,7 +285,7 @@ Bytecode PCs remain origins and recovery locations rather than partition
 identities.
 
 The shared anchor prevents a rewrite from leaving the type system pointing at a
-detached instruction. Verification requires every referenced partition to have
+poisoned instruction. Verification requires every referenced partition to have
 a reachable definition or realization in the current IR.
 
 ### Partitions from ordinary control flow

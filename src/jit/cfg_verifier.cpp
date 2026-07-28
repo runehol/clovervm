@@ -163,9 +163,9 @@ namespace cl::jit
             InstructionRange parameters = block->parameters();
             for(Instruction parameter: parameters)
             {
-                if(parameter.is_detached())
+                if(parameter.is_poisoned())
                 {
-                    return invalid(block_name(block) + " contains detached " +
+                    return invalid(block_name(block) + " contains poisoned " +
                                    instruction_name(parameter));
                 }
                 if(!is_block_parameter_kind(parameter.kind()))
@@ -198,9 +198,9 @@ namespace cl::jit
             for(size_t index = 0; index < instructions.size(); ++index)
             {
                 Instruction instruction = instructions[index];
-                if(instruction.is_detached())
+                if(instruction.is_poisoned())
                 {
-                    return invalid(block_name(block) + " contains detached " +
+                    return invalid(block_name(block) + " contains poisoned " +
                                    instruction_name(instruction));
                 }
                 if(is_block_parameter_kind(instruction.kind()))

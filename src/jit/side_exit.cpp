@@ -24,9 +24,9 @@ namespace cl::jit
         for(InstructionId id: instructions_)
         {
             Instruction instruction = storage.instruction(id);
-            if(instruction.is_detached())
+            if(instruction.is_poisoned())
             {
-                fatal("JIT side exit contains a detached instruction");
+                fatal("JIT side exit contains a poisoned instruction");
             }
             if(!retained.insert(id).second)
             {

@@ -42,10 +42,10 @@ namespace cl::jit
         return instruction_operands_.words(offset, count);
     }
 
-    void CompilationStorage::detach_instruction(InstructionId id)
+    void CompilationStorage::poison_instruction(InstructionId id)
     {
         assert(id.value() < instructions_.size());
-        instructions_[id.value()].detach_and_poison();
+        instructions_[id.value()].poison();
     }
 
     InstructionId CompilationStorage::next_instruction_id() const
