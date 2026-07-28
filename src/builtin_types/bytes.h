@@ -47,14 +47,40 @@ namespace cl
                   const NormalizedGeneralSlice &slice) const;
         [[nodiscard]] TValue<Bytes> concat(const Bytes *other) const;
         bool startswith(const Bytes *prefix) const;
+        bool startswith(const Bytes *prefix, size_t start, size_t end) const;
         bool endswith(const Bytes *suffix) const;
+        bool endswith(const Bytes *suffix, size_t start, size_t end) const;
         int64_t find(const Bytes *needle) const;
+        int64_t find(const Bytes *needle, size_t start, size_t end) const;
         int64_t find_byte(uint8_t needle) const;
+        int64_t find_byte(uint8_t needle, size_t start, size_t end) const;
+        int64_t rfind(const Bytes *needle) const;
+        int64_t rfind(const Bytes *needle, size_t start, size_t end) const;
+        int64_t rfind_byte(uint8_t needle) const;
+        int64_t rfind_byte(uint8_t needle, size_t start, size_t end) const;
         [[nodiscard]] Value index(const Bytes *needle) const;
+        [[nodiscard]] Value index(const Bytes *needle, size_t start,
+                                  size_t end) const;
         [[nodiscard]] Value index_byte(uint8_t needle) const;
+        [[nodiscard]] Value index_byte(uint8_t needle, size_t start,
+                                       size_t end) const;
+        [[nodiscard]] Value rindex(const Bytes *needle) const;
+        [[nodiscard]] Value rindex(const Bytes *needle, size_t start,
+                                   size_t end) const;
+        [[nodiscard]] Value rindex_byte(uint8_t needle) const;
+        [[nodiscard]] Value rindex_byte(uint8_t needle, size_t start,
+                                        size_t end) const;
         int64_t count_subsequence(const Bytes *needle) const;
+        int64_t count_subsequence(const Bytes *needle, size_t start,
+                                  size_t end) const;
         int64_t count_byte(uint8_t needle) const;
+        int64_t count_byte(uint8_t needle, size_t start, size_t end) const;
         bool contains_byte(uint8_t needle) const;
+        [[nodiscard]] TValue<Bytes> removeprefix(const Bytes *prefix) const;
+        [[nodiscard]] TValue<Bytes> removesuffix(const Bytes *suffix) const;
+        [[nodiscard]] TValue<Bytes> replace(const Bytes *old,
+                                            const Bytes *replacement,
+                                            int64_t max_count = -1) const;
 
         Member<TValue<SMI>> count;
         uint8_t data[1];

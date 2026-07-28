@@ -499,6 +499,67 @@ namespace cl
         return Expected<uint8_t>::ok(static_cast<uint8_t>(smi.extract()));
     }
 
+    static Value require_smi_argument(Value value, const wchar_t *message,
+                                      int64_t &out)
+    {
+        TValue<SMI> smi = TValue<SMI>::from_smi(0);
+        Expected<IntToSmiStatus> status = try_intlike_value_to_smi(value, &smi);
+        if(status.has_exception())
+        {
+            return Value::exception_marker();
+        }
+        if(status.value() == IntToSmiStatus::NotInt)
+        {
+            return active_thread()->set_pending_builtin_exception_string(
+                L"TypeError", message);
+        }
+        out = smi.extract();
+        return Value::None();
+    }
+
+    static size_t normalize_bytes_bound(int64_t value, int64_t length)
+    {
+        if(value < 0)
+        {
+            value += length;
+        }
+        if(value < 0)
+        {
+            return 0;
+        }
+        if(value > length)
+        {
+            return static_cast<size_t>(length);
+        }
+        return static_cast<size_t>(value);
+    }
+
+    static Value normalize_bytes_range(Value self, Value start_value,
+                                       Value end_value, size_t &start,
+                                       size_t &end)
+    {
+        int64_t length = self.get_ptr<Bytes>()->count.extract();
+        int64_t py_start = 0;
+        int64_t py_end = length;
+        if(!start_value.is_none())
+        {
+            CL_PROPAGATE_EXCEPTION(require_smi_argument(
+                start_value, L"slice indices must be integers", py_start));
+        }
+        if(!end_value.is_none())
+        {
+            CL_PROPAGATE_EXCEPTION(require_smi_argument(
+                end_value, L"slice indices must be integers", py_end));
+        }
+        start = normalize_bytes_bound(py_start, length);
+        end = normalize_bytes_bound(py_end, length);
+        if(end < start)
+        {
+            end = start;
+        }
+        return Value::None();
+    }
+
     static Value native_bytes_contains(ThreadState *thread, Value self,
                                        Value needle_value)
     {
@@ -540,69 +601,180 @@ namespace cl
     }
 
     static Value native_bytes_startswith(ThreadState *thread, Value self,
-                                         Value prefix_value)
+                                         Value prefix_value, Value start_value,
+                                         Value end_value)
     {
         CL_PROPAGATE_EXCEPTION(require_bytes_receiver(self, L"startswith"));
         CL_PROPAGATE_EXCEPTION(require_bytes_argument(
             prefix_value, L"startswith first arg must be bytes"));
-        return self.get_ptr<Bytes>()->startswith(prefix_value.get_ptr<Bytes>())
+        size_t start = 0;
+        size_t end = 0;
+        CL_PROPAGATE_EXCEPTION(
+            normalize_bytes_range(self, start_value, end_value, start, end));
+        return self.get_ptr<Bytes>()->startswith(prefix_value.get_ptr<Bytes>(),
+                                                 start, end)
                    ? Value::True()
                    : Value::False();
     }
 
     static Value native_bytes_endswith(ThreadState *thread, Value self,
-                                       Value suffix_value)
+                                       Value suffix_value, Value start_value,
+                                       Value end_value)
     {
         CL_PROPAGATE_EXCEPTION(require_bytes_receiver(self, L"endswith"));
         CL_PROPAGATE_EXCEPTION(require_bytes_argument(
             suffix_value, L"endswith first arg must be bytes"));
-        return self.get_ptr<Bytes>()->endswith(suffix_value.get_ptr<Bytes>())
+        size_t start = 0;
+        size_t end = 0;
+        CL_PROPAGATE_EXCEPTION(
+            normalize_bytes_range(self, start_value, end_value, start, end));
+        return self.get_ptr<Bytes>()->endswith(suffix_value.get_ptr<Bytes>(),
+                                               start, end)
                    ? Value::True()
                    : Value::False();
     }
 
     static Value native_bytes_find(ThreadState *thread, Value self,
-                                   Value needle_value)
+                                   Value needle_value, Value start_value,
+                                   Value end_value)
     {
         CL_PROPAGATE_EXCEPTION(require_bytes_receiver(self, L"find"));
+        size_t start = 0;
+        size_t end = 0;
+        CL_PROPAGATE_EXCEPTION(
+            normalize_bytes_range(self, start_value, end_value, start, end));
         if(is_intlike_value(needle_value))
         {
             uint8_t needle = CL_TRY(method_needle_as_byte(needle_value));
-            return Value::from_smi(self.get_ptr<Bytes>()->find_byte(needle));
+            return Value::from_smi(
+                self.get_ptr<Bytes>()->find_byte(needle, start, end));
         }
         CL_PROPAGATE_EXCEPTION(
             require_bytes_argument(needle_value, L"must be bytes, not other"));
-        return Value::from_smi(
-            self.get_ptr<Bytes>()->find(needle_value.get_ptr<Bytes>()));
+        return Value::from_smi(self.get_ptr<Bytes>()->find(
+            needle_value.get_ptr<Bytes>(), start, end));
+    }
+
+    static Value native_bytes_rfind(ThreadState *thread, Value self,
+                                    Value needle_value, Value start_value,
+                                    Value end_value)
+    {
+        CL_PROPAGATE_EXCEPTION(require_bytes_receiver(self, L"rfind"));
+        size_t start = 0;
+        size_t end = 0;
+        CL_PROPAGATE_EXCEPTION(
+            normalize_bytes_range(self, start_value, end_value, start, end));
+        if(is_intlike_value(needle_value))
+        {
+            uint8_t needle = CL_TRY(method_needle_as_byte(needle_value));
+            return Value::from_smi(
+                self.get_ptr<Bytes>()->rfind_byte(needle, start, end));
+        }
+        CL_PROPAGATE_EXCEPTION(
+            require_bytes_argument(needle_value, L"must be bytes, not other"));
+        return Value::from_smi(self.get_ptr<Bytes>()->rfind(
+            needle_value.get_ptr<Bytes>(), start, end));
     }
 
     static Value native_bytes_index(ThreadState *thread, Value self,
-                                    Value needle_value)
+                                    Value needle_value, Value start_value,
+                                    Value end_value)
     {
         CL_PROPAGATE_EXCEPTION(require_bytes_receiver(self, L"index"));
+        size_t start = 0;
+        size_t end = 0;
+        CL_PROPAGATE_EXCEPTION(
+            normalize_bytes_range(self, start_value, end_value, start, end));
         if(is_intlike_value(needle_value))
         {
             uint8_t needle = CL_TRY(method_needle_as_byte(needle_value));
-            return self.get_ptr<Bytes>()->index_byte(needle);
+            return self.get_ptr<Bytes>()->index_byte(needle, start, end);
         }
         CL_PROPAGATE_EXCEPTION(
             require_bytes_argument(needle_value, L"must be bytes, not other"));
-        return self.get_ptr<Bytes>()->index(needle_value.get_ptr<Bytes>());
+        return self.get_ptr<Bytes>()->index(needle_value.get_ptr<Bytes>(),
+                                            start, end);
     }
 
-    static Value native_bytes_count(ThreadState *thread, Value self,
-                                    Value needle_value)
+    static Value native_bytes_rindex(ThreadState *thread, Value self,
+                                     Value needle_value, Value start_value,
+                                     Value end_value)
     {
-        CL_PROPAGATE_EXCEPTION(require_bytes_receiver(self, L"count"));
+        CL_PROPAGATE_EXCEPTION(require_bytes_receiver(self, L"rindex"));
+        size_t start = 0;
+        size_t end = 0;
+        CL_PROPAGATE_EXCEPTION(
+            normalize_bytes_range(self, start_value, end_value, start, end));
         if(is_intlike_value(needle_value))
         {
             uint8_t needle = CL_TRY(method_needle_as_byte(needle_value));
-            return Value::from_smi(self.get_ptr<Bytes>()->count_byte(needle));
+            return self.get_ptr<Bytes>()->rindex_byte(needle, start, end);
+        }
+        CL_PROPAGATE_EXCEPTION(
+            require_bytes_argument(needle_value, L"must be bytes, not other"));
+        return self.get_ptr<Bytes>()->rindex(needle_value.get_ptr<Bytes>(),
+                                             start, end);
+    }
+
+    static Value native_bytes_count(ThreadState *thread, Value self,
+                                    Value needle_value, Value start_value,
+                                    Value end_value)
+    {
+        CL_PROPAGATE_EXCEPTION(require_bytes_receiver(self, L"count"));
+        size_t start = 0;
+        size_t end = 0;
+        CL_PROPAGATE_EXCEPTION(
+            normalize_bytes_range(self, start_value, end_value, start, end));
+        if(is_intlike_value(needle_value))
+        {
+            uint8_t needle = CL_TRY(method_needle_as_byte(needle_value));
+            return Value::from_smi(
+                self.get_ptr<Bytes>()->count_byte(needle, start, end));
         }
         CL_PROPAGATE_EXCEPTION(
             require_bytes_argument(needle_value, L"must be bytes, not other"));
         return Value::from_smi(self.get_ptr<Bytes>()->count_subsequence(
-            needle_value.get_ptr<Bytes>()));
+            needle_value.get_ptr<Bytes>(), start, end));
+    }
+
+    static Value native_bytes_removeprefix(ThreadState *thread, Value self,
+                                           Value prefix_value)
+    {
+        CL_PROPAGATE_EXCEPTION(require_bytes_receiver(self, L"removeprefix"));
+        CL_PROPAGATE_EXCEPTION(require_bytes_argument(
+            prefix_value, L"removeprefix first arg must be bytes"));
+        return self.get_ptr<Bytes>()
+            ->removeprefix(prefix_value.get_ptr<Bytes>())
+            .raw_value();
+    }
+
+    static Value native_bytes_removesuffix(ThreadState *thread, Value self,
+                                           Value suffix_value)
+    {
+        CL_PROPAGATE_EXCEPTION(require_bytes_receiver(self, L"removesuffix"));
+        CL_PROPAGATE_EXCEPTION(require_bytes_argument(
+            suffix_value, L"removesuffix first arg must be bytes"));
+        return self.get_ptr<Bytes>()
+            ->removesuffix(suffix_value.get_ptr<Bytes>())
+            .raw_value();
+    }
+
+    static Value native_bytes_replace(ThreadState *thread, Value self,
+                                      Value old_value, Value new_value,
+                                      Value count_value)
+    {
+        CL_PROPAGATE_EXCEPTION(require_bytes_receiver(self, L"replace"));
+        CL_PROPAGATE_EXCEPTION(
+            require_bytes_argument(old_value, L"replace old must be bytes"));
+        CL_PROPAGATE_EXCEPTION(
+            require_bytes_argument(new_value, L"replace new must be bytes"));
+        int64_t max_count = -1;
+        CL_PROPAGATE_EXCEPTION(require_smi_argument(
+            count_value, L"replace count must be an integer", max_count));
+        return self.get_ptr<Bytes>()
+            ->replace(old_value.get_ptr<Bytes>(), new_value.get_ptr<Bytes>(),
+                      max_count)
+            .raw_value();
     }
 
     Value Bytes::byte_at(ThreadState *thread, int64_t py_idx) const
@@ -660,55 +832,140 @@ namespace cl
 
     bool Bytes::startswith(const Bytes *prefix) const
     {
+        return startswith(prefix, 0, size_t(count.extract()));
+    }
+
+    bool Bytes::startswith(const Bytes *prefix, size_t start, size_t end) const
+    {
         std::span<const uint8_t> str(data, size_t(count.extract()));
         std::span<const uint8_t> prefix_view(prefix->data,
                                              size_t(prefix->count.extract()));
-        return str.size() >= prefix_view.size() &&
-               std::equal(prefix_view.begin(), prefix_view.end(), str.begin());
+        std::span<const uint8_t> range = str.subspan(start, end - start);
+        return range.size() >= prefix_view.size() &&
+               std::equal(prefix_view.begin(), prefix_view.end(),
+                          range.begin());
     }
 
     bool Bytes::endswith(const Bytes *suffix) const
     {
+        return endswith(suffix, 0, size_t(count.extract()));
+    }
+
+    bool Bytes::endswith(const Bytes *suffix, size_t start, size_t end) const
+    {
         std::span<const uint8_t> str(data, size_t(count.extract()));
         std::span<const uint8_t> suffix_view(suffix->data,
                                              size_t(suffix->count.extract()));
-        return str.size() >= suffix_view.size() &&
+        std::span<const uint8_t> range = str.subspan(start, end - start);
+        return range.size() >= suffix_view.size() &&
                std::equal(suffix_view.begin(), suffix_view.end(),
-                          str.end() - suffix_view.size());
+                          range.end() - suffix_view.size());
     }
 
     int64_t Bytes::find(const Bytes *needle) const
     {
+        return find(needle, 0, size_t(count.extract()));
+    }
+
+    int64_t Bytes::find(const Bytes *needle, size_t start, size_t end) const
+    {
         std::span<const uint8_t> str(data, size_t(count.extract()));
         std::span<const uint8_t> needle_view(needle->data,
                                              size_t(needle->count.extract()));
+        std::span<const uint8_t> range = str.subspan(start, end - start);
         if(needle_view.empty())
         {
-            return 0;
+            return static_cast<int64_t>(start);
         }
-        auto found = std::search(str.begin(), str.end(), needle_view.begin(),
-                                 needle_view.end());
-        if(found == str.end())
+        auto found = std::search(range.begin(), range.end(),
+                                 needle_view.begin(), needle_view.end());
+        if(found == range.end())
         {
             return -1;
         }
-        return static_cast<int64_t>(found - str.begin());
+        return static_cast<int64_t>(start + (found - range.begin()));
     }
 
     int64_t Bytes::find_byte(uint8_t needle) const
     {
+        return find_byte(needle, 0, size_t(count.extract()));
+    }
+
+    int64_t Bytes::find_byte(uint8_t needle, size_t start, size_t end) const
+    {
         std::span<const uint8_t> str(data, size_t(count.extract()));
-        auto found = std::find(str.begin(), str.end(), needle);
-        if(found == str.end())
+        std::span<const uint8_t> range = str.subspan(start, end - start);
+        auto found = std::find(range.begin(), range.end(), needle);
+        if(found == range.end())
         {
             return -1;
         }
-        return static_cast<int64_t>(found - str.begin());
+        return static_cast<int64_t>(start + (found - range.begin()));
+    }
+
+    int64_t Bytes::rfind(const Bytes *needle) const
+    {
+        return rfind(needle, 0, size_t(count.extract()));
+    }
+
+    int64_t Bytes::rfind(const Bytes *needle, size_t start, size_t end) const
+    {
+        std::span<const uint8_t> str(data, size_t(count.extract()));
+        std::span<const uint8_t> needle_view(needle->data,
+                                             size_t(needle->count.extract()));
+        std::span<const uint8_t> range = str.subspan(start, end - start);
+        if(needle_view.empty())
+        {
+            return static_cast<int64_t>(end);
+        }
+        if(needle_view.size() > range.size())
+        {
+            return -1;
+        }
+        size_t pos = range.size() - needle_view.size();
+        while(true)
+        {
+            if(std::equal(needle_view.begin(), needle_view.end(),
+                          range.begin() + static_cast<ptrdiff_t>(pos)))
+            {
+                return static_cast<int64_t>(start + pos);
+            }
+            if(pos == 0)
+            {
+                break;
+            }
+            --pos;
+        }
+        return -1;
+    }
+
+    int64_t Bytes::rfind_byte(uint8_t needle) const
+    {
+        return rfind_byte(needle, 0, size_t(count.extract()));
+    }
+
+    int64_t Bytes::rfind_byte(uint8_t needle, size_t start, size_t end) const
+    {
+        std::span<const uint8_t> str(data, size_t(count.extract()));
+        std::span<const uint8_t> range = str.subspan(start, end - start);
+        auto found = std::find(range.rbegin(), range.rend(), needle);
+        if(found == range.rend())
+        {
+            return -1;
+        }
+        return static_cast<int64_t>(
+            start +
+            (range.size() - 1 - static_cast<size_t>(found - range.rbegin())));
     }
 
     Value Bytes::index(const Bytes *needle) const
     {
-        int64_t found = find(needle);
+        return index(needle, 0, size_t(count.extract()));
+    }
+
+    Value Bytes::index(const Bytes *needle, size_t start, size_t end) const
+    {
+        int64_t found = find(needle, start, end);
         if(found == -1)
         {
             return active_thread()->set_pending_builtin_exception_string(
@@ -719,7 +976,44 @@ namespace cl
 
     Value Bytes::index_byte(uint8_t needle) const
     {
-        int64_t found = find_byte(needle);
+        return index_byte(needle, 0, size_t(count.extract()));
+    }
+
+    Value Bytes::index_byte(uint8_t needle, size_t start, size_t end) const
+    {
+        int64_t found = find_byte(needle, start, end);
+        if(found == -1)
+        {
+            return active_thread()->set_pending_builtin_exception_string(
+                L"ValueError", L"subsection not found");
+        }
+        return Value::from_smi(found);
+    }
+
+    Value Bytes::rindex(const Bytes *needle) const
+    {
+        return rindex(needle, 0, size_t(count.extract()));
+    }
+
+    Value Bytes::rindex(const Bytes *needle, size_t start, size_t end) const
+    {
+        int64_t found = rfind(needle, start, end);
+        if(found == -1)
+        {
+            return active_thread()->set_pending_builtin_exception_string(
+                L"ValueError", L"subsection not found");
+        }
+        return Value::from_smi(found);
+    }
+
+    Value Bytes::rindex_byte(uint8_t needle) const
+    {
+        return rindex_byte(needle, 0, size_t(count.extract()));
+    }
+
+    Value Bytes::rindex_byte(uint8_t needle, size_t start, size_t end) const
+    {
+        int64_t found = rfind_byte(needle, start, end);
         if(found == -1)
         {
             return active_thread()->set_pending_builtin_exception_string(
@@ -730,20 +1024,27 @@ namespace cl
 
     int64_t Bytes::count_subsequence(const Bytes *needle) const
     {
+        return count_subsequence(needle, 0, size_t(count.extract()));
+    }
+
+    int64_t Bytes::count_subsequence(const Bytes *needle, size_t start,
+                                     size_t end) const
+    {
         std::span<const uint8_t> str(data, size_t(count.extract()));
         std::span<const uint8_t> needle_view(needle->data,
                                              size_t(needle->count.extract()));
+        std::span<const uint8_t> range = str.subspan(start, end - start);
         if(needle_view.empty())
         {
-            return static_cast<int64_t>(str.size() + 1);
+            return static_cast<int64_t>(range.size() + 1);
         }
         int64_t result = 0;
-        auto pos = str.begin();
-        while(pos != str.end())
+        auto pos = range.begin();
+        while(pos != range.end())
         {
-            auto found = std::search(pos, str.end(), needle_view.begin(),
+            auto found = std::search(pos, range.end(), needle_view.begin(),
                                      needle_view.end());
-            if(found == str.end())
+            if(found == range.end())
             {
                 break;
             }
@@ -755,14 +1056,108 @@ namespace cl
 
     int64_t Bytes::count_byte(uint8_t needle) const
     {
+        return count_byte(needle, 0, size_t(count.extract()));
+    }
+
+    int64_t Bytes::count_byte(uint8_t needle, size_t start, size_t end) const
+    {
         std::span<const uint8_t> str(data, size_t(count.extract()));
-        return static_cast<int64_t>(std::count(str.begin(), str.end(), needle));
+        std::span<const uint8_t> range = str.subspan(start, end - start);
+        return static_cast<int64_t>(
+            std::count(range.begin(), range.end(), needle));
     }
 
     bool Bytes::contains_byte(uint8_t needle) const
     {
         std::span<const uint8_t> str(data, size_t(count.extract()));
         return std::find(str.begin(), str.end(), needle) != str.end();
+    }
+
+    TValue<Bytes> Bytes::removeprefix(const Bytes *prefix) const
+    {
+        std::span<const uint8_t> str(data, size_t(count.extract()));
+        if(startswith(prefix))
+        {
+            size_t prefix_len = size_t(prefix->count.extract());
+            return active_thread()->make_object_value<Bytes>(
+                str.subspan(prefix_len));
+        }
+        return active_thread()->make_object_value<Bytes>(str);
+    }
+
+    TValue<Bytes> Bytes::removesuffix(const Bytes *suffix) const
+    {
+        std::span<const uint8_t> str(data, size_t(count.extract()));
+        if(endswith(suffix))
+        {
+            size_t suffix_len = size_t(suffix->count.extract());
+            return active_thread()->make_object_value<Bytes>(
+                str.subspan(0, str.size() - suffix_len));
+        }
+        return active_thread()->make_object_value<Bytes>(str);
+    }
+
+    TValue<Bytes> Bytes::replace(const Bytes *old, const Bytes *replacement,
+                                 int64_t max_count) const
+    {
+        std::span<const uint8_t> str(data, size_t(count.extract()));
+        std::span<const uint8_t> old_view(old->data,
+                                          size_t(old->count.extract()));
+        std::span<const uint8_t> replacement_view(
+            replacement->data, size_t(replacement->count.extract()));
+        if(max_count == 0)
+        {
+            return active_thread()->make_object_value<Bytes>(str);
+        }
+
+        std::vector<uint8_t> result;
+        if(old_view.empty())
+        {
+            int64_t replacements = 0;
+            if(max_count < 0 || replacements < max_count)
+            {
+                result.insert(result.end(), replacement_view.begin(),
+                              replacement_view.end());
+                ++replacements;
+            }
+            for(uint8_t byte: str)
+            {
+                result.push_back(byte);
+                if(max_count < 0 || replacements < max_count)
+                {
+                    result.insert(result.end(), replacement_view.begin(),
+                                  replacement_view.end());
+                    ++replacements;
+                }
+            }
+            return active_thread()->make_object_value<Bytes>(
+                std::span<const uint8_t>(result));
+        }
+
+        auto pos = str.begin();
+        int64_t replacements = 0;
+        while(pos != str.end())
+        {
+            if(max_count >= 0 && replacements == max_count)
+            {
+                result.insert(result.end(), pos, str.end());
+                break;
+            }
+            auto found =
+                std::search(pos, str.end(), old_view.begin(), old_view.end());
+            if(found == str.end())
+            {
+                result.insert(result.end(), pos, str.end());
+                break;
+            }
+            result.insert(result.end(), pos, found);
+            result.insert(result.end(), replacement_view.begin(),
+                          replacement_view.end());
+            pos = found + old_view.size();
+            ++replacements;
+        }
+        return active_thread()->make_object_value<Bytes>(
+            std::span<const uint8_t>(result));
     }
 
     std::span<const uint8_t> bytes_view(TValue<Bytes> value)
@@ -888,6 +1283,26 @@ namespace cl
             active_thread()->make_object_value<Tuple>(1));
         bytes_new_defaults.extract()->initialize_item_unchecked(0,
                                                                 Value::None());
+        Owned<TValue<Tuple>> bytes_start_end_defaults(
+            active_thread()->make_object_value<Tuple>(2));
+        bytes_start_end_defaults.extract()->initialize_item_unchecked(
+            0, Value::None());
+        bytes_start_end_defaults.extract()->initialize_item_unchecked(
+            1, Value::None());
+        Owned<TValue<Tuple>> bytes_replace_defaults(
+            active_thread()->make_object_value<Tuple>(1));
+        bytes_replace_defaults.extract()->initialize_item_unchecked(
+            0, Value::from_smi(-1));
+        static constexpr const wchar_t *prefix_start_end_names[] = {
+            L"prefix", L"start", L"end"};
+        static constexpr const wchar_t *suffix_start_end_names[] = {
+            L"suffix", L"start", L"end"};
+        static constexpr const wchar_t *sub_start_end_names[] = {
+            L"sub", L"start", L"end"};
+        static constexpr const wchar_t *prefix_names[] = {L"prefix"};
+        static constexpr const wchar_t *suffix_names[] = {L"suffix"};
+        static constexpr const wchar_t *replace_names[] = {L"old", L"new",
+                                                           L"count"};
         BuiltinIntrinsicMethod methods[] = {
             with_defaults(builtin_intrinsic_method(L"__new__", native_bytes_new,
                                                    L"Create a bytes object."),
@@ -951,18 +1366,64 @@ namespace cl
                 builtin_intrinsic_method(L"__contains__", native_bytes_contains,
                                          L"Return whether needle is in self."),
                 resolve_trusted_bytes_contains_handler),
-            builtin_intrinsic_method(
-                L"startswith", native_bytes_startswith,
-                L"Return whether self starts with prefix."),
-            builtin_intrinsic_method(L"endswith", native_bytes_endswith,
-                                     L"Return whether self ends with suffix."),
-            builtin_intrinsic_method(L"find", native_bytes_find,
-                                     L"Return first subsequence index or -1."),
-            builtin_intrinsic_method(L"index", native_bytes_index,
-                                     L"Return first subsequence index."),
-            builtin_intrinsic_method(
-                L"count", native_bytes_count,
-                L"Return number of subsequence occurrences."),
+            with_keyword_parameter_names(
+                with_defaults(builtin_intrinsic_method(
+                                  L"startswith", native_bytes_startswith,
+                                  L"Return whether self starts with prefix."),
+                              bytes_start_end_defaults.value()),
+                prefix_start_end_names, 3, 1),
+            with_keyword_parameter_names(
+                with_defaults(builtin_intrinsic_method(
+                                  L"endswith", native_bytes_endswith,
+                                  L"Return whether self ends with suffix."),
+                              bytes_start_end_defaults.value()),
+                suffix_start_end_names, 3, 1),
+            with_keyword_parameter_names(
+                with_defaults(builtin_intrinsic_method(
+                                  L"find", native_bytes_find,
+                                  L"Return first subsequence index or -1."),
+                              bytes_start_end_defaults.value()),
+                sub_start_end_names, 3, 1),
+            with_keyword_parameter_names(
+                with_defaults(builtin_intrinsic_method(
+                                  L"rfind", native_bytes_rfind,
+                                  L"Return last subsequence index or -1."),
+                              bytes_start_end_defaults.value()),
+                sub_start_end_names, 3, 1),
+            with_keyword_parameter_names(
+                with_defaults(builtin_intrinsic_method(
+                                  L"index", native_bytes_index,
+                                  L"Return first subsequence index."),
+                              bytes_start_end_defaults.value()),
+                sub_start_end_names, 3, 1),
+            with_keyword_parameter_names(
+                with_defaults(
+                    builtin_intrinsic_method(L"rindex", native_bytes_rindex,
+                                             L"Return last subsequence index."),
+                    bytes_start_end_defaults.value()),
+                sub_start_end_names, 3, 1),
+            with_keyword_parameter_names(
+                with_defaults(builtin_intrinsic_method(
+                                  L"count", native_bytes_count,
+                                  L"Return number of subsequence occurrences."),
+                              bytes_start_end_defaults.value()),
+                sub_start_end_names, 3, 1),
+            with_keyword_parameter_names(
+                builtin_intrinsic_method(L"removeprefix",
+                                         native_bytes_removeprefix,
+                                         L"Return a copy with prefix removed."),
+                prefix_names, 1, 1),
+            with_keyword_parameter_names(
+                builtin_intrinsic_method(L"removesuffix",
+                                         native_bytes_removesuffix,
+                                         L"Return a copy with suffix removed."),
+                suffix_names, 1, 1),
+            with_keyword_parameter_names(
+                with_defaults(builtin_intrinsic_method(
+                                  L"replace", native_bytes_replace,
+                                  L"Return a copy with replacements."),
+                              bytes_replace_defaults.value()),
+                replace_names, 3, 1),
         };
         unwrap_bootstrap_expected(
             vm,
