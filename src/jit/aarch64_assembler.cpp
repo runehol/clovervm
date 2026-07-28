@@ -1,5 +1,6 @@
 #include "jit/aarch64_assembler.h"
 
+#include "jit/transition_program.h"
 #include "runtime/fatal.h"
 
 #include <cassert>
@@ -372,6 +373,13 @@ namespace cl::jit
         emitter().add_relocation_to_last_emitted(
             sizeof(uint32_t),
             AArch64Relocation(target, AArch64RelocationKind::PageOffset12));
+    }
+
+    ConstantPoolEntry AArch64MacroAssembler::add_transition_program(
+        std::span<const TransitionInstruction> program)
+    {
+        assert(!program.empty());
+        return emitter().add_data_to_constant_pool(std::as_bytes(program));
     }
 
     void AArch64MacroAssembler::str(XRegister source, XRegisterOrSP base,

@@ -8,9 +8,12 @@
 #include <cstdint>
 #include <cstring>
 #include <optional>
+#include <span>
 
 namespace cl::jit
 {
+    class TransitionInstruction;
+
     enum class GPRWidth : uint32_t
     {
         W = 0,
@@ -722,6 +725,8 @@ namespace cl::jit
                  int64_t byte_offset);
         void ldr(XRegister destination, Value value);
         void adr(XRegister destination, ConstantPoolEntry target);
+        ConstantPoolEntry
+        add_transition_program(std::span<const TransitionInstruction> program);
         void str(XRegister source, XRegisterOrSP base, int64_t byte_offset);
 
         void b(CodeTarget target, XRegister scratch = XRegister(16));

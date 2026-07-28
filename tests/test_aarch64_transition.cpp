@@ -1,13 +1,14 @@
 #include "jit/aarch64_transition.h"
 
 #include "jit/aarch64_allocation_constraints.h"
+#include "jit/aarch64_assembler.h"
 #include "jit/bytecode_state.h"
 #include "jit/compilation_session.h"
 #include "jit/graph_builder.h"
 #include "jit/register_allocator.h"
 #include "jit/side_exit_lowering.h"
 #include "jit/transition_executor.h"
-#include "jit/transition_program_emitter.h"
+#include "jit_code_cache_test_support.h"
 #include "test_helpers.h"
 
 #include <gtest/gtest.h>
@@ -22,6 +23,8 @@ namespace cl::jit
 {
     namespace
     {
+        using test_support::CacheAndPlatform;
+
         constexpr PhysicalRegister x(uint8_t number)
         {
             return PhysicalRegister(RegisterClass::GPR, number);
@@ -66,6 +69,13 @@ namespace cl::jit
                     break;
             }
             FAIL() << "allocator input unexpectedly mapped to scratch";
+        }
+
+        CodeAllocation
+        take_allocation(Result<CodeAllocation, JitCodeError> result)
+        {
+            EXPECT_TRUE(result);
+            return std::move(result).value();
         }
     }  // namespace
 
@@ -146,10 +156,23 @@ namespace cl::jit
                 locations.location_for(arguments[index])));
         }
 
-        std::vector<TransitionInstruction> program =
-            emit_side_exit_transition_program(*graph->storage(),
-                                              *graph->bytecode_state_order(),
-                                              side_exit, input_locations);
+        CacheAndPlatform fixture(16);
+        AArch64MacroAssembler assembler(AArch64ValuePoolMode::NearLiteral);
+        std::vector<TransitionInstruction> emitted_program =
+            emit_aarch64_side_exit_transition_program(
+                *graph->storage(), *graph->bytecode_state_order(), side_exit,
+                owner.side_exit_arguments(), locations);
+        ConstantPoolEntry program_entry =
+            assembler.add_transition_program(emitted_program);
+        assembler.adr(XRegister(16), program_entry);
+        CodeAllocation code =
+            take_allocation(assembler.emitter().finalize(*fixture.cache));
+        std::span<const std::byte> program_bytes = code.constant_pool();
+        ASSERT_EQ(0u, program_bytes.size() % sizeof(TransitionInstruction));
+        std::span<const TransitionInstruction> program(
+            reinterpret_cast<const TransitionInstruction *>(
+                program_bytes.data()),
+            program_bytes.size() / sizeof(TransitionInstruction));
 
         std::array<uint64_t, AArch64TransitionRegisterSlotCount>
             register_file{};
