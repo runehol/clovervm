@@ -249,7 +249,7 @@ namespace cl::jit
 
     void AArch64MacroAssembler::ldr(XRegister destination, Value value)
     {
-        ValuePoolEntry entry = emitter().add_value_to_constant_pool(value);
+        ConstantPoolEntry entry = emitter().add_value_to_constant_pool(value);
         uint32_t instructions[2] = {};
         size_t size = pool_mode_ == AArch64ValuePoolMode::NearLiteral
                           ? sizeof(uint32_t)

@@ -1596,7 +1596,7 @@ attribute on `Const`, and the compilation session retains the referenced object
 while the graph exists. Snapshots refer to the resulting `Const` definition.
 Only constants that survive to emission are submitted
 to `MachineCodeEmitter::add_value_to_constant_pool()`, which deduplicates their
-raw `Value` bit patterns and returns final `ValuePoolEntry` handles. Core never
+raw `Value` bit patterns and returns final `ConstantPoolEntry` handles. Core never
 observes those handles or pool indices.
 
 Code generation records both reference classes during emission. Verification

@@ -4,12 +4,14 @@
 #include "jit/code_cache.h"
 #include "object_model/owned.h"
 
+#include <bit>
 #include <cassert>
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
 #include <limits>
 #include <optional>
+#include <span>
 #include <unordered_map>
 #include <utility>
 #include <variant>
@@ -34,24 +36,32 @@ namespace cl::jit
         uint32_t index_;
     };
 
-    class ValuePoolEntry
+    class ConstantPoolEntry
     {
     public:
-        ValuePoolEntry() = delete;
+        ConstantPoolEntry() = delete;
 
     private:
         template <typename DirectBranch, typename Relocation>
         friend class MachineCodeEmitter;
 
-        explicit ValuePoolEntry(size_t byte_offset) : byte_offset_(byte_offset)
+        enum class Area : uint8_t
+        {
+            TaggedValues,
+            UntaggedData,
+        };
+
+        ConstantPoolEntry(Area area, size_t byte_offset)
+            : area_(area), byte_offset_(byte_offset)
         {
         }
 
+        Area area_;
         size_t byte_offset_;
     };
 
     using CodeTarget = std::variant<Label, MachineAddress>;
-    using RelocationTarget = ValuePoolEntry;
+    using RelocationTarget = ConstantPoolEntry;
 
     template <typename DirectBranch, typename Relocation>
     class MachineCodeEmitter
@@ -121,14 +131,15 @@ namespace cl::jit
             fragments_.emplace_back();
         }
 
-        ValuePoolEntry add_value_to_constant_pool(Value value)
+        ConstantPoolEntry add_value_to_constant_pool(Value value)
         {
             assert(!finalization_attempted_);
             uint64_t raw_value = uint64_t(value.as.integer);
             auto existing = value_indices_by_raw_value_.find(raw_value);
             if(existing != value_indices_by_raw_value_.end())
             {
-                return ValuePoolEntry(existing->second * sizeof(Value));
+                return ConstantPoolEntry(ConstantPoolEntry::Area::TaggedValues,
+                                         existing->second * sizeof(Value));
             }
 
             assert(values_.size() <=
@@ -136,7 +147,21 @@ namespace cl::jit
             size_t index = values_.size();
             values_.emplace_back(value);
             value_indices_by_raw_value_.emplace(raw_value, index);
-            return ValuePoolEntry(index * sizeof(Value));
+            return ConstantPoolEntry(ConstantPoolEntry::Area::TaggedValues,
+                                     index * sizeof(Value));
+        }
+
+        ConstantPoolEntry
+        add_data_to_constant_pool(std::span<const std::byte> data)
+        {
+            assert(!finalization_attempted_);
+            assert(!data.empty());
+            size_t offset = align_size(untagged_data_.size(), alignof(Value));
+            untagged_data_.resize(offset);
+            untagged_data_.insert(untagged_data_.end(), data.begin(),
+                                  data.end());
+            return ConstantPoolEntry(ConstantPoolEntry::Area::UntaggedData,
+                                     offset);
         }
 
         size_t tagged_value_count() const { return values_.size(); }
@@ -152,7 +177,9 @@ namespace cl::jit
 
             assert(values_.size() <=
                    std::numeric_limits<size_t>::max() / sizeof(Value));
-            size_t constant_pool_size = values_.size() * sizeof(Value);
+            size_t tagged_size = values_.size() * sizeof(Value);
+            size_t constant_pool_size =
+                add_sizes(tagged_size, untagged_data_.size());
             if(!cache.fits_within_span(pessimistic_size, constant_pool_size,
                                        alignof(Value), maximum_pool_span_))
             {
@@ -197,6 +224,14 @@ namespace cl::jit
         {
             assert(right <= std::numeric_limits<size_t>::max() - left);
             return left + right;
+        }
+
+        static size_t align_size(size_t value, size_t alignment)
+        {
+            assert(std::has_single_bit(alignment));
+            size_t mask = alignment - 1;
+            assert(value <= std::numeric_limits<size_t>::max() - mask);
+            return (value + mask) & ~mask;
         }
 
         size_t calculate_pessimistic_layout()
@@ -295,9 +330,20 @@ namespace cl::jit
         resolve_relocation_target(RelocationTarget target,
                                   MachineAddress pool_address) const
         {
-            assert(target.byte_offset_ < values_.size() * sizeof(Value));
-            assert(target.byte_offset_ % sizeof(Value) == 0);
-            return pool_address.offset_by(target.byte_offset_);
+            size_t tagged_size = values_.size() * sizeof(Value);
+            switch(target.area_)
+            {
+                case ConstantPoolEntry::Area::TaggedValues:
+                    assert(target.byte_offset_ < tagged_size);
+                    assert(target.byte_offset_ % sizeof(Value) == 0);
+                    return pool_address.offset_by(target.byte_offset_);
+                case ConstantPoolEntry::Area::UntaggedData:
+                    assert(target.byte_offset_ < untagged_data_.size());
+                    return pool_address.offset_by(
+                        add_sizes(tagged_size, target.byte_offset_));
+            }
+            assert(false);
+            return pool_address;
         }
 
         void encode(CodeAllocation &allocation) const
@@ -341,12 +387,19 @@ namespace cl::jit
             }
 
             std::span<std::byte> pool_bytes = allocation.constant_pool();
-            assert(pool_bytes.size() == values_.size() * sizeof(Value));
+            size_t tagged_size = values_.size() * sizeof(Value);
+            assert(pool_bytes.size() ==
+                   add_sizes(tagged_size, untagged_data_.size()));
             auto *pool = reinterpret_cast<Value *>(pool_bytes.data());
             assert(reinterpret_cast<uintptr_t>(pool) % alignof(Value) == 0);
             for(size_t index = 0; index < values_.size(); ++index)
             {
                 pool[index] = values_[index].value();
+            }
+            if(!untagged_data_.empty())
+            {
+                std::memcpy(pool_bytes.data() + tagged_size,
+                            untagged_data_.data(), untagged_data_.size());
             }
         }
 
@@ -354,6 +407,7 @@ namespace cl::jit
         std::vector<std::optional<size_t>> label_bindings_;
         std::vector<Owned<Value>> values_;
         std::unordered_map<uint64_t, size_t> value_indices_by_raw_value_;
+        std::vector<std::byte> untagged_data_;
         size_t maximum_pool_span_;
         bool finalization_attempted_ = false;
     };

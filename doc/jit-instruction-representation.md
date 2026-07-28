@@ -478,7 +478,7 @@ the session ends.
 Backend or Machine-IR lowering classifies each surviving `Const`. It may encode
 or synthesize a suitable non-pointer value as an immediate, or pass any `Value`
 to `MachineCodeEmitter::add_value_to_constant_pool()`. The emitter owns pool
-values and assigns and deduplicates final `ValuePoolEntry` offsets. Pointer-valued
+values and assigns and deduplicates final `ConstantPoolEntry` offsets. Pointer-valued
 constants must take the traced-pool path; Core itself does not express this
 split.
 Successful publication initializes the `JitCodeObject` pool and establishes its

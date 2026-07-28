@@ -279,7 +279,7 @@ namespace cl::jit
     class AArch64Relocation
     {
     public:
-        AArch64Relocation(ValuePoolEntry target, XRegister destination,
+        AArch64Relocation(ConstantPoolEntry target, XRegister destination,
                           AArch64ValuePoolMode mode)
             : target_(target), destination_(destination), mode_(mode)
         {
@@ -290,7 +290,7 @@ namespace cl::jit
                    MachineAddress target) const;
 
     private:
-        ValuePoolEntry target_;
+        ConstantPoolEntry target_;
         XRegister destination_;
         AArch64ValuePoolMode mode_;
     };

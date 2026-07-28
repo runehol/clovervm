@@ -4,6 +4,7 @@
 
 #include <gtest/gtest.h>
 
+#include <array>
 #include <cstddef>
 #include <cstdint>
 #include <optional>
@@ -76,7 +77,7 @@ namespace cl::jit
         class TestRelocation
         {
         public:
-            TestRelocation(ValuePoolEntry target,
+            TestRelocation(ConstantPoolEntry target,
                            RelocationObservation *observation)
                 : target_(target), observation_(observation)
             {
@@ -94,7 +95,7 @@ namespace cl::jit
             }
 
         private:
-            ValuePoolEntry target_;
+            ConstantPoolEntry target_;
             RelocationObservation *observation_;
         };
 
@@ -183,7 +184,7 @@ namespace cl::jit
         TestEmitter emitter(64 * 1024);
         RelocationObservation observation;
         emitter.add_value_to_constant_pool(Value::None());
-        ValuePoolEntry target =
+        ConstantPoolEntry target =
             emitter.add_value_to_constant_pool(Value::True());
         uint8_t instruction = 0;
         emitter.emit_relocatable(&instruction, sizeof(instruction),
@@ -213,11 +214,11 @@ namespace cl::jit
         RelocationObservation first_observation;
         RelocationObservation distinct_observation;
         RelocationObservation duplicate_observation;
-        ValuePoolEntry first =
+        ConstantPoolEntry first =
             emitter.add_value_to_constant_pool(Value::True());
-        ValuePoolEntry distinct =
+        ConstantPoolEntry distinct =
             emitter.add_value_to_constant_pool(Value::from_smi(1));
-        ValuePoolEntry duplicate =
+        ConstantPoolEntry duplicate =
             emitter.add_value_to_constant_pool(Value::True());
         uint8_t instructions[] = {0, 0, 0};
 
@@ -243,12 +244,66 @@ namespace cl::jit
         EXPECT_EQ(Value::from_smi(1), pool_values(allocation)[1]);
     }
 
+    TEST(MachineCodeEmitter,
+         KeepsInterleavedTaggedAndUntaggedEntriesInStablePoolAreas)
+    {
+        CacheAndPlatform fixture(16);
+        TestEmitter emitter(64 * 1024);
+        std::array<std::byte, 3> first_data = {std::byte{0x11}, std::byte{0x12},
+                                               std::byte{0x13}};
+        std::array<std::byte, 2> second_data = {std::byte{0x21},
+                                                std::byte{0x22}};
+
+        ConstantPoolEntry first = emitter.add_data_to_constant_pool(first_data);
+        ConstantPoolEntry none =
+            emitter.add_value_to_constant_pool(Value::None());
+        ConstantPoolEntry second =
+            emitter.add_data_to_constant_pool(second_data);
+        ConstantPoolEntry truth =
+            emitter.add_value_to_constant_pool(Value::True());
+
+        std::array<RelocationObservation, 4> observations;
+        uint8_t instructions[] = {0, 0, 0, 0};
+        emitter.emit_relocatable(&instructions[0], sizeof(instructions[0]),
+                                 TestRelocation(first, &observations[0]));
+        emitter.emit_relocatable(&instructions[1], sizeof(instructions[1]),
+                                 TestRelocation(none, &observations[1]));
+        emitter.emit_relocatable(&instructions[2], sizeof(instructions[2]),
+                                 TestRelocation(second, &observations[2]));
+        emitter.emit_relocatable(&instructions[3], sizeof(instructions[3]),
+                                 TestRelocation(truth, &observations[3]));
+
+        CodeAllocation allocation =
+            take_allocation(emitter.finalize(*fixture.cache));
+        std::span<std::byte> pool = allocation.constant_pool();
+        uintptr_t pool_address =
+            allocation.constant_pool_address().bits_for_indirect_target();
+
+        EXPECT_EQ(2u, emitter.tagged_value_count());
+        EXPECT_EQ(26u, pool.size());
+        EXPECT_EQ(Value::None(), pool_values(allocation)[0]);
+        EXPECT_EQ(Value::True(), pool_values(allocation)[1]);
+        EXPECT_EQ(pool_address + 16, observations[0].target);
+        EXPECT_EQ(pool_address, observations[1].target);
+        EXPECT_EQ(pool_address + 24, observations[2].target);
+        EXPECT_EQ(pool_address + 8, observations[3].target);
+        EXPECT_EQ(std::byte{0x11}, pool[16]);
+        EXPECT_EQ(std::byte{0x12}, pool[17]);
+        EXPECT_EQ(std::byte{0x13}, pool[18]);
+        for(size_t index = 19; index < 24; ++index)
+        {
+            EXPECT_EQ(std::byte{0}, pool[index]);
+        }
+        EXPECT_EQ(std::byte{0x21}, pool[24]);
+        EXPECT_EQ(std::byte{0x22}, pool[25]);
+    }
+
     TEST(MachineCodeEmitter, RejectsPoolOutsideRelocationSpanBeforeAllocation)
     {
         CacheAndPlatform fixture(16);
         TestEmitter emitter(8191);
         RelocationObservation observation;
-        ValuePoolEntry target =
+        ConstantPoolEntry target =
             emitter.add_value_to_constant_pool(Value::None());
         uint8_t instruction = 0;
         emitter.emit_relocatable(&instruction, sizeof(instruction),

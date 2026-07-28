@@ -192,7 +192,8 @@ resolve(Label) -> void
 emit_bytes(const void *, size_t) -> void
 emit_relocatable(const void *, size_t, Relocation) -> void
 emit_direct_branch(DirectBranch) -> void
-add_value_to_constant_pool(Value) -> ValuePoolEntry
+add_value_to_constant_pool(Value) -> ConstantPoolEntry
+add_data_to_constant_pool(span<const byte>) -> ConstantPoolEntry
 finalize(CodeCache &)
     -> Result<CodeAllocation, JitCodeError>
 ```
@@ -233,10 +234,12 @@ the already-offset writable location before calling a target hook; target code
 may cast that pointer only to store encoded fields. It cannot use a writable
 pointer as a machine PC.
 
-`Label` and `ValuePoolEntry` are target-independent opaque handles. A label
-contains an index into the emitter's label-binding table. A pool entry contains
-a byte offset from the beginning of the `Value` pool. Neither exposes its
-stored integer or supports arithmetic.
+`Label` and `ConstantPoolEntry` are target-independent opaque handles. A label
+contains an index into the emitter's label-binding table. A pool entry
+identifies either a byte offset within the tagged-value prefix or a byte offset
+within the untagged suffix. Neither exposes its stored fields or supports
+arithmetic. The generic emitter resolves both areas after their final sizes are
+known, so tagged and untagged additions may be interleaved during emission.
 
 The direct-branch type uses a target-specific tagged-kind representation rather
 than a virtual instruction hierarchy. Each branch reports its
@@ -280,9 +283,8 @@ The relocation type is also machine-specific and uses a compact tagged-kind
 representation. Its enclosing target-independent `RelocationEntry` supplies
 the fragment-relative instruction offset. Its payload retains an opaque
 `RelocationTarget` and the field layout needed for patching. Initially
-`RelocationTarget` is `ValuePoolEntry`; the name deliberately permits a later
-variant if another fixed-size relocation target is required. During the third
-pass, the generic emitter resolves the target and invokes the relocation with
+`RelocationTarget` is `ConstantPoolEntry`. During the third pass, the generic
+emitter resolves the target and invokes the relocation with
 the `void *` writable instruction location, corresponding `MachineAddress`
 executable instruction PC, and resolved target address. The writable location
 is used only as the destination of stores; every displacement, page calculation,
@@ -416,7 +418,7 @@ scanning a non-pointer tagged value is harmless.
 Core retains constants as `Value`s rather than assigning pool indices. During
 program-order emission, the backend submits each surviving pooled constant to
 `MachineCodeEmitter::add_value_to_constant_pool()`. The emitter deduplicates
-identical raw `Value` bit patterns and returns an opaque `ValuePoolEntry` for
+identical raw `Value` bit patterns and returns an opaque `ConstantPoolEntry` for
 the final dense slot; first submission determines the deterministic slot order.
 Its `Owned<Value>` entries keep the submitted values alive until the finalized
 code unit assumes durable ownership. Publication creates a heap `JitCodeObject`
@@ -428,16 +430,18 @@ must remain alive until that `JitCodeObject` ownership step is complete.
 
 The code cache treats the pool as opaque bytes and places it at the alignment
 requested by the emitter. The current emitter requests `alignof(Value)`,
-typically eight bytes, and emits only the tagged prefix. Untagged metadata may
-later follow that prefix without changing the cache allocation contract.
+typically eight bytes. It emits the tagged prefix followed by an untagged byte
+suffix.
 
 The target-independent `MachineCodeEmitter` owns the pool builder alongside its
-fragments. Adding a value returns a `ValuePoolEntry` containing its byte offset,
-reusing the existing entry when the raw bits are already present. Managed and
-non-pointer values may therefore be interleaved within the tagged prefix; every
-such slot has `Value` layout and is scanned uniformly. Target relocations retain
-the opaque entry but cannot inspect or perform arithmetic on it; only the
-generic emitter resolves it to a final byte address.
+fragments. Adding a value returns a `ConstantPoolEntry`, reusing the existing
+entry when the raw bits are already present. Adding untagged data copies it
+into the suffix, padding the beginning of each entry to `alignof(Value)`.
+Managed and non-pointer values may therefore be interleaved within the tagged
+prefix; every such slot has `Value` layout and is scanned uniformly. Raw
+entries are not deduplicated or scanned. Target relocations retain the opaque
+entry but cannot inspect or perform arithmetic on it; only the generic emitter
+resolves it to a final byte address.
 
 The code cache first proposes stable code and pool addresses within the required
 target reach, then commits the final size as an unpublished allocation:
@@ -480,8 +484,9 @@ constant_pool_address + constant_pool_offset
 During the third pass the relocation computes the exact fields from that fixed
 address and the instruction's actual executable PC, patches the copied template,
 and revalidates its reach. The emitter-owned values are then copied into the
-tagged prefix while the compilation-session retains remain held. Neither code
-nor pool may move relative to the other afterward.
+tagged prefix and the untagged bytes into the suffix while the
+compilation-session retains remain held. Neither code nor pool may move
+relative to the other afterward.
 
 ## Immediate materialization
 
@@ -490,9 +495,9 @@ may instead have the target macro assembler materialize the bits with
 instructions. Backend preparation chooses between these forms using the target's
 size and cost model. The selected lowering fixes the instruction sequence size;
 if it chooses a pool load, program-order emission obtains the deduplicated
-`ValuePoolEntry`. Raw integers, addresses, floating-point bit patterns,
-and other non-`Value` data remain instruction-materialized rather than entering
-the GC-scanned `Value` pool.
+`ConstantPoolEntry`. Raw integers, addresses, floating-point bit patterns, and
+other non-`Value` data may use `add_data_to_constant_pool()` when a target
+lowering needs their address; otherwise they remain instruction-materialized.
 
 On AArch64 an arbitrary 64-bit bit pattern requires at most one `MOVZ` or
 `MOVN` followed by three `MOVK` instructions. The current macro assembler uses
