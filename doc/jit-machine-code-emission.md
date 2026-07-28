@@ -408,9 +408,10 @@ resides in a traced constant-pool slot. Non-pointer tagged constants such as
 SMIs and singletons may use an instruction immediate or a synthesized immediate
 sequence, but a backend may instead place one in the pool when a load is more
 profitable. They are not required to consume pool slots. The finalized code
-unit exposes the pool base and slot count separately to the moving garbage
-collector. The collector may trace and rewrite every slot without decoding or
-modifying instruction bytes; scanning a non-pointer tagged value is harmless.
+unit exposes the opaque pool bytes and the length of their leading tagged
+`Value` segment separately to the moving garbage collector. The collector may
+trace and rewrite that prefix without decoding or modifying instruction bytes;
+scanning a non-pointer tagged value is harmless.
 
 Core retains constants as `Value`s rather than assigning pool indices. During
 program-order emission, the backend submits each surviving pooled constant to
@@ -419,26 +420,24 @@ identical raw `Value` bit patterns and returns an opaque `ValuePoolEntry` for
 the final dense slot; first submission determines the deterministic slot order.
 Its `Owned<Value>` entries keep the submitted values alive until the finalized
 code unit assumes durable ownership. Publication creates a heap `JitCodeObject`
-that retains the initialized pool slots and releases them through its
-native-layout custom deallocator. The compilation session's own `Owned<Value>`
-vector keeps pointer-valued constants alive and pinned while they remain direct
-references in Core, and the session must remain alive until that
-`JitCodeObject` ownership step is complete. Its mutable slot span is the future
-moving-collector rewriting surface.
+that retains the initialized tagged prefix and releases it through its
+native-layout custom deallocator. Bytes after that prefix are not traced. The
+compilation session's own `Owned<Value>` vector keeps pointer-valued constants
+alive and pinned while they remain direct references in Core, and the session
+must remain alive until that `JitCodeObject` ownership step is complete.
 
-The pool base is aligned to `sizeof(Value)`, typically eight bytes on a 64-bit
-target, so every slot is naturally aligned. Non-`Value` literal data may not be
-interleaved with the precisely scanned slots. A future non-GC literal pool
-requires a separate design and must justify its additional layout,
-identification, and memory-policy complexity.
+The code cache treats the pool as opaque bytes and places it at the alignment
+requested by the emitter. The current emitter requests `alignof(Value)`,
+typically eight bytes, and emits only the tagged prefix. Untagged metadata may
+later follow that prefix without changing the cache allocation contract.
 
 The target-independent `MachineCodeEmitter` owns the pool builder alongside its
 fragments. Adding a value returns a `ValuePoolEntry` containing its byte offset,
 reusing the existing entry when the raw bits are already present. Managed and
-non-pointer values may therefore be interleaved; every slot has `Value` layout
-and is scanned uniformly. Target relocations retain the opaque entry but cannot
-inspect or perform arithmetic on it; only the generic emitter resolves it to a
-final slot address.
+non-pointer values may therefore be interleaved within the tagged prefix; every
+such slot has `Value` layout and is scanned uniformly. Target relocations retain
+the opaque entry but cannot inspect or perform arithmetic on it; only the
+generic emitter resolves it to a final byte address.
 
 The code cache first proposes stable code and pool addresses within the required
 target reach, then commits the final size as an unpublished allocation:
@@ -446,7 +445,7 @@ target reach, then commits the final size as an unpublished allocation:
 ```text
 CodeAllocation
     writable code span
-    writable Value-pool span
+    writable constant-pool byte span
     target-visible pool address
 
 CodeSlice
@@ -461,9 +460,11 @@ storage. After address-dependent form selection determines the final size,
 commit returns a move-only `CodeAllocation` that owns the active platform
 code-write mode. The emitter uses the executable code address for all PC
 calculations and writes through the allocation's writable pointer. The
-code cache guarantees that neither slice moves and that the pool is aligned to
-`sizeof(Value)`, separately identifiable, and writable by the moving collector.
-Detailed placement and publication policy are defined by
+code cache guarantees that neither slice moves and that the pool has the
+requested alignment, remains separately identifiable, and remains writable.
+The backend constructs `PublishedCode` after cache publication and supplies the
+emitter-owned tagged-prefix count. Detailed placement and publication policy is
+defined by
 [JIT Code Cache and Publication](jit-code-cache.md).
 
 A constant-pool load with a form fixed by the attempt's pool mode is represented
@@ -473,14 +474,14 @@ field layout, target register information needed for validation, and opaque
 pool entry. The emitter resolves its slot address as
 
 ```text
-value_pool_address + constant_pool_offset
+constant_pool_address + constant_pool_offset
 ```
 
 During the third pass the relocation computes the exact fields from that fixed
 address and the instruction's actual executable PC, patches the copied template,
-and revalidates its reach. The emitter-owned values are then copied into their
-final slots while the compilation session retains remain held. Neither code nor
-pool may move relative to the other afterward.
+and revalidates its reach. The emitter-owned values are then copied into the
+tagged prefix while the compilation-session retains remain held. Neither code
+nor pool may move relative to the other afterward.
 
 ## Immediate materialization
 

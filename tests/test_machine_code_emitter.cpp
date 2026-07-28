@@ -109,6 +109,13 @@ namespace cl::jit
             EXPECT_TRUE(result);
             return std::move(result).value();
         }
+
+        std::span<Value> pool_values(CodeAllocation &allocation)
+        {
+            std::span<std::byte> bytes = allocation.constant_pool();
+            return {reinterpret_cast<Value *>(bytes.data()),
+                    bytes.size() / sizeof(Value)};
+        }
     }  // namespace
 
     TEST(MachineCodeEmitter, ResolvesForwardLabelsAndShrinksDirectBranches)
@@ -191,12 +198,12 @@ namespace cl::jit
                   observation.instruction_pc);
         EXPECT_NE(reinterpret_cast<uintptr_t>(observation.write_pointer),
                   observation.instruction_pc);
-        EXPECT_EQ(allocation.value_pool_address()
+        EXPECT_EQ(allocation.constant_pool_address()
                       .offset_by(sizeof(Value))
                       .bits_for_indirect_target(),
                   observation.target);
-        EXPECT_EQ(Value::None(), allocation.value_pool_values()[0]);
-        EXPECT_EQ(Value::True(), allocation.value_pool_values()[1]);
+        EXPECT_EQ(Value::None(), pool_values(allocation)[0]);
+        EXPECT_EQ(Value::True(), pool_values(allocation)[1]);
     }
 
     TEST(MachineCodeEmitter, DeduplicatesValuePoolEntriesByRawValue)
@@ -226,14 +233,14 @@ namespace cl::jit
         CodeAllocation allocation =
             take_allocation(emitter.finalize(*fixture.cache));
         uintptr_t pool_address =
-            allocation.value_pool_address().bits_for_indirect_target();
+            allocation.constant_pool_address().bits_for_indirect_target();
 
-        EXPECT_EQ(2u, allocation.value_pool_values().size());
+        EXPECT_EQ(2u, pool_values(allocation).size());
         EXPECT_EQ(pool_address, first_observation.target);
         EXPECT_EQ(pool_address + sizeof(Value), distinct_observation.target);
         EXPECT_EQ(first_observation.target, duplicate_observation.target);
-        EXPECT_EQ(Value::True(), allocation.value_pool_values()[0]);
-        EXPECT_EQ(Value::from_smi(1), allocation.value_pool_values()[1]);
+        EXPECT_EQ(Value::True(), pool_values(allocation)[0]);
+        EXPECT_EQ(Value::from_smi(1), pool_values(allocation)[1]);
     }
 
     TEST(MachineCodeEmitter, RejectsPoolOutsideRelocationSpanBeforeAllocation)

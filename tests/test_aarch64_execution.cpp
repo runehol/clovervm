@@ -33,6 +33,17 @@ namespace cl::jit
             return result;
         }
 
+        PublishedCode publish_allocation(CodeCache &cache,
+                                         CodeAllocation &allocation,
+                                         size_t tagged_value_count)
+        {
+            EXPECT_TRUE(cache.publish(allocation));
+            return PublishedCode(allocation.code, allocation.constant_pool(),
+                                 allocation.constant_pool_address(),
+                                 tagged_value_count,
+                                 allocation.encoded_code_size());
+        }
+
         LocationAssignments
         assign_program_values_to_x0(const ControlFlowGraph &graph)
         {
@@ -506,10 +517,8 @@ namespace cl::jit
         ASSERT_TRUE(finalization);
         CodeAllocation allocation = std::move(finalization).value();
 
-        Result<PublishedCode, JitCodeError> publication =
-            cache.publish(std::move(allocation));
-        ASSERT_TRUE(publication);
-        PublishedCode code = std::move(publication).value();
+        PublishedCode code =
+            publish_allocation(cache, allocation, emitter.tagged_value_count());
 
         using Function = int64_t (*)(int64_t, int64_t);
         Function function =
@@ -540,10 +549,8 @@ namespace cl::jit
         ASSERT_TRUE(finalization);
         CodeAllocation allocation = std::move(finalization).value();
 
-        Result<PublishedCode, JitCodeError> publication =
-            cache.publish(std::move(allocation));
-        ASSERT_TRUE(publication);
-        PublishedCode code = std::move(publication).value();
+        PublishedCode code =
+            publish_allocation(cache, allocation, emitter.tagged_value_count());
 
         using Function = int64_t (*)(int64_t, int64_t);
         Function function =
@@ -566,17 +573,15 @@ namespace cl::jit
         ASSERT_TRUE(finalization);
         CodeAllocation allocation = std::move(finalization).value();
 
-        Result<PublishedCode, JitCodeError> publication =
-            cache.publish(std::move(allocation));
-        ASSERT_TRUE(publication);
-        PublishedCode code = std::move(publication).value();
+        PublishedCode code =
+            publish_allocation(cache, allocation, emitter.tagged_value_count());
 
         using Function = uint64_t (*)();
         Function function =
             reinterpret_cast<Function>(code.entry().bits_for_indirect_target());
         EXPECT_EQ(static_cast<uint64_t>(Value::True().as.integer), function());
 
-        code.value_pool_values()[0] = Value::False();
+        code.tagged_values()[0] = Value::False();
         EXPECT_EQ(static_cast<uint64_t>(Value::False().as.integer), function());
     }
 
@@ -600,17 +605,15 @@ namespace cl::jit
         ASSERT_TRUE(finalization);
         CodeAllocation allocation = std::move(finalization).value();
 
-        Result<PublishedCode, JitCodeError> publication =
-            cache.publish(std::move(allocation));
-        ASSERT_TRUE(publication);
-        PublishedCode code = std::move(publication).value();
+        PublishedCode code =
+            publish_allocation(cache, allocation, emitter.tagged_value_count());
 
         using Function = uint64_t (*)();
         Function function =
             reinterpret_cast<Function>(code.entry().bits_for_indirect_target());
         EXPECT_EQ(static_cast<uint64_t>(Value::True().as.integer), function());
 
-        code.value_pool_values()[0] = Value::False();
+        code.tagged_values()[0] = Value::False();
         EXPECT_EQ(static_cast<uint64_t>(Value::False().as.integer), function());
     }
 }  // namespace cl::jit

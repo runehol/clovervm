@@ -56,7 +56,8 @@ namespace cl::jit
         }
 
         JitCodeObject *result = thread.make_internal_raw<JitCodeObject>(
-            code.code(), code.value_pool_values(), code.encoded_code_size());
+            code.code(), code.constant_pool(), code.tagged_value_count(),
+            code.encoded_code_size());
         return Result<JitCodeObject *, JitCompilationError>::ok(result);
     }
 

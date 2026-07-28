@@ -17,17 +17,27 @@ namespace cl::jit
         static constexpr NativeLayoutId native_layout =
             NativeLayoutId::JitCodeObject;
 
-        JitCodeObject(CodeSlice code, std::span<Value> pool_values,
-                      size_t encoded_code_size);
+        JitCodeObject(CodeSlice code, std::span<std::byte> constant_pool,
+                      size_t tagged_value_count, size_t encoded_code_size);
 
         const CodeSlice &code() const { return code_; }
         MachineAddress entry() const { return code_.execute_address(); }
         size_t encoded_code_size() const { return encoded_code_size_; }
 
-        std::span<Value> value_pool_values() { return value_pool_values_; }
-        std::span<const Value> value_pool_values() const
+        std::span<std::byte> constant_pool() { return constant_pool_; }
+        std::span<const std::byte> constant_pool() const
         {
-            return value_pool_values_;
+            return constant_pool_;
+        }
+        std::span<Value> tagged_values()
+        {
+            return {reinterpret_cast<Value *>(constant_pool_.data()),
+                    tagged_value_count_};
+        }
+        std::span<const Value> tagged_values() const
+        {
+            return {reinterpret_cast<const Value *>(constant_pool_.data()),
+                    tagged_value_count_};
         }
 
         static void dealloc(HeapObject *obj);
@@ -37,7 +47,8 @@ namespace cl::jit
 
     private:
         CodeSlice code_;
-        std::span<Value> value_pool_values_;
+        std::span<std::byte> constant_pool_;
+        size_t tagged_value_count_;
         size_t encoded_code_size_;
     };
 

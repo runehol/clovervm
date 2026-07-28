@@ -370,7 +370,7 @@ namespace
             }
 
             int64_t signed_pool_offset =
-                code.entry().displacement_to(code.value_pool_address());
+                code.entry().displacement_to(code.constant_pool_address());
             if(signed_pool_offset < 0)
             {
                 fmt::print(stderr,
@@ -379,7 +379,7 @@ namespace
                 return;
             }
             size_t pool_offset = static_cast<size_t>(signed_pool_offset);
-            std::span<const cl::Value> pool_values = code.value_pool_values();
+            std::span<const cl::Value> pool_values = code.tagged_values();
             if(!pool_values.empty())
             {
                 fmt::print("\nAArch64 constant pool:\n");

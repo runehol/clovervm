@@ -153,13 +153,14 @@ namespace cl::jit
 
         int64_t displacement =
             allocation.code.execute_address().displacement_to(
-                allocation.value_pool_address());
+                allocation.constant_pool_address());
         uint32_t expected =
             0x58000005 |
             ((static_cast<uint32_t>(displacement >> 2) & 0x7ffff) << 5);
         EXPECT_EQ(expected,
                   instruction_at(allocation.writable_code().data(), 0));
-        EXPECT_EQ(Value::True(), allocation.value_pool_values()[0]);
+        EXPECT_EQ(Value::True(), reinterpret_cast<Value *>(
+                                     allocation.constant_pool().data())[0]);
     }
 
     TEST(AArch64Assembler, RelocatesFarValuePoolLoad)

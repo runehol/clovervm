@@ -19,7 +19,7 @@ namespace cl::jit
 
         CodeCache cache;
         Result<CodeAllocationProposal, JitCodeError> first_proposal_result =
-            cache.propose(4, 0);
+            cache.propose(4, 0, 1);
         ASSERT_TRUE(first_proposal_result);
         CodeAllocationProposal first_proposal =
             std::move(first_proposal_result).value();
@@ -32,10 +32,10 @@ namespace cl::jit
             std::move(first_allocation_result).value();
         *reinterpret_cast<uint32_t *>(first_allocation.writable_code().data()) =
             0xd65f03c0;  // ret
-        ASSERT_TRUE(cache.publish(std::move(first_allocation)));
+        ASSERT_TRUE(cache.publish(first_allocation));
 
         Result<CodeAllocationProposal, JitCodeError> second_proposal_result =
-            cache.propose(4, 0);
+            cache.propose(4, 0, 1);
         ASSERT_TRUE(second_proposal_result);
         CodeAllocationProposal second_proposal =
             std::move(second_proposal_result).value();
@@ -94,7 +94,7 @@ namespace cl::jit
 
         CodeCache cache;
         Result<CodeAllocationProposal, JitCodeError> first_proposal_result =
-            cache.propose(4, 0);
+            cache.propose(4, 0, 1);
         ASSERT_TRUE(first_proposal_result);
         CodeAllocationProposal first_proposal =
             std::move(first_proposal_result).value();
@@ -104,7 +104,7 @@ namespace cl::jit
         CodeAllocation first = std::move(first_result).value();
 
         Result<CodeAllocationProposal, JitCodeError> second_proposal_result =
-            cache.propose(4, 0);
+            cache.propose(4, 0, 1);
         ASSERT_TRUE(second_proposal_result);
         CodeAllocationProposal second_proposal =
             std::move(second_proposal_result).value();
@@ -117,10 +117,10 @@ namespace cl::jit
             0xd65f03c0;
         *reinterpret_cast<uint32_t *>(second.writable_code().data()) =
             0xd65f03c0;
-        ASSERT_TRUE(cache.publish(std::move(first)));
+        ASSERT_TRUE(cache.publish(first));
 
         *reinterpret_cast<uint32_t *>(second.writable_code().data()) =
             0xd65f03c0;
-        ASSERT_TRUE(cache.publish(std::move(second)));
+        ASSERT_TRUE(cache.publish(second));
     }
 }  // namespace cl::jit

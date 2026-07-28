@@ -20,34 +20,51 @@ namespace cl::jit
     class PublishedCode
     {
     public:
-        PublishedCode(CodeSlice code, std::span<Value> value_pool_values,
-                      MachineAddress value_pool_address,
-                      size_t encoded_code_size)
-            : code_(code), value_pool_values_(value_pool_values),
-              value_pool_address_(value_pool_address),
+        PublishedCode(CodeSlice code, std::span<std::byte> constant_pool,
+                      MachineAddress constant_pool_address,
+                      size_t tagged_value_count, size_t encoded_code_size)
+            : code_(code), constant_pool_(constant_pool),
+              constant_pool_address_(constant_pool_address),
+              tagged_value_count_(tagged_value_count),
               encoded_code_size_(encoded_code_size)
         {
             assert(encoded_code_size != 0);
             assert(encoded_code_size <= code.capacity());
+            assert(tagged_value_count <= constant_pool.size() / sizeof(Value));
+            assert(reinterpret_cast<uintptr_t>(constant_pool.data()) %
+                       alignof(Value) ==
+                   0);
         }
 
         const CodeSlice &code() const { return code_; }
-        std::span<Value> value_pool_values() { return value_pool_values_; }
-        std::span<const Value> value_pool_values() const
+        std::span<std::byte> constant_pool() { return constant_pool_; }
+        std::span<const std::byte> constant_pool() const
         {
-            return value_pool_values_;
+            return constant_pool_;
         }
         MachineAddress entry() const { return code_.execute_address(); }
-        MachineAddress value_pool_address() const
+        MachineAddress constant_pool_address() const
         {
-            return value_pool_address_;
+            return constant_pool_address_;
+        }
+        size_t tagged_value_count() const { return tagged_value_count_; }
+        std::span<Value> tagged_values()
+        {
+            return {reinterpret_cast<Value *>(constant_pool_.data()),
+                    tagged_value_count_};
+        }
+        std::span<const Value> tagged_values() const
+        {
+            return {reinterpret_cast<const Value *>(constant_pool_.data()),
+                    tagged_value_count_};
         }
         size_t encoded_code_size() const { return encoded_code_size_; }
 
     private:
         CodeSlice code_;
-        std::span<Value> value_pool_values_;
-        MachineAddress value_pool_address_;
+        std::span<std::byte> constant_pool_;
+        MachineAddress constant_pool_address_;
+        size_t tagged_value_count_;
         size_t encoded_code_size_;
     };
 
@@ -57,7 +74,7 @@ namespace cl::jit
         CodeAllocationProposal(CodeAllocationProposal &&other) noexcept;
 
         MachineAddress code_address() const;
-        MachineAddress value_pool_address() const;
+        MachineAddress constant_pool_address() const;
 
         [[nodiscard]] Result<CodeAllocation, JitCodeError>
         commit(size_t encoded_code_size);
@@ -67,13 +84,13 @@ namespace cl::jit
 
         CodeAllocationProposal(CodeCacheSlab *slab, size_t code_offset,
                                size_t pessimistic_code_size, size_t pool_offset,
-                               size_t pool_slot_count);
+                               size_t pool_size);
 
         CodeCacheSlab *slab_;
         size_t code_offset_;
         size_t pessimistic_code_size_;
         size_t pool_offset_;
-        size_t pool_slot_count_;
+        size_t pool_size_;
     };
 
     class [[nodiscard]] CodeAllocation
@@ -86,11 +103,12 @@ namespace cl::jit
         ~CodeAllocation();
 
         std::span<std::byte> writable_code();
-        std::span<Value> value_pool_values() { return value_pool_values_; }
-        MachineAddress value_pool_address() const
+        std::span<std::byte> constant_pool() { return constant_pool_; }
+        MachineAddress constant_pool_address() const
         {
-            return value_pool_address_;
+            return constant_pool_address_;
         }
+        size_t encoded_code_size() const { return encoded_code_size_; }
 
         CodeSlice code;
 
@@ -99,15 +117,16 @@ namespace cl::jit
         friend class CodeCacheSlab;
 
         CodeAllocation(std::span<std::byte> writable_code, CodeSlice code,
-                       std::span<Value> value_pool_values,
-                       MachineAddress value_pool_address, CodeCacheSlab *slab,
-                       size_t code_offset, size_t encoded_code_size);
+                       std::span<std::byte> constant_pool,
+                       MachineAddress constant_pool_address,
+                       CodeCacheSlab *slab, size_t code_offset,
+                       size_t encoded_code_size);
 
         void end_code_write();
 
         std::span<std::byte> writable_code_;
-        std::span<Value> value_pool_values_;
-        MachineAddress value_pool_address_;
+        std::span<std::byte> constant_pool_;
+        MachineAddress constant_pool_address_;
         CodeCacheSlab *slab_;
         size_t code_offset_;
         size_t encoded_code_size_;
@@ -124,18 +143,21 @@ namespace cl::jit
         ~CodeCache();
 
         bool fits_within_span(size_t pessimistic_code_size,
-                              size_t pool_slot_count,
+                              size_t constant_pool_size,
+                              size_t constant_pool_alignment,
                               size_t maximum_span) const;
 
         [[nodiscard]] Result<CodeAllocationProposal, JitCodeError>
-        propose(size_t pessimistic_code_size, size_t pool_slot_count);
+        propose(size_t pessimistic_code_size, size_t constant_pool_size,
+                size_t constant_pool_alignment);
 
-        [[nodiscard]] Result<PublishedCode, JitCodeError>
-        publish(CodeAllocation &&allocation);
+        [[nodiscard]] Result<void, JitCodeError>
+        publish(CodeAllocation &allocation);
 
     private:
         size_t minimum_slab_size(size_t pessimistic_code_size,
-                                 size_t pool_slot_count) const;
+                                 size_t constant_pool_size,
+                                 size_t constant_pool_alignment) const;
         size_t page_size() const { return platform_memory_->page_size(); }
         size_t code_allocation_granularity() const
         {

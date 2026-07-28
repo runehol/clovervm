@@ -139,6 +139,8 @@ namespace cl::jit
             return ValuePoolEntry(index * sizeof(Value));
         }
 
+        size_t tagged_value_count() const { return values_.size(); }
+
         [[nodiscard]] Result<CodeAllocation, JitCodeError>
         finalize(CodeCache &cache)
         {
@@ -148,15 +150,18 @@ namespace cl::jit
             assert(pessimistic_size != 0);
             assert(pessimistic_size <= DirectBranch::MaximumUnitSize);
 
-            if(!cache.fits_within_span(pessimistic_size, values_.size(),
-                                       maximum_pool_span_))
+            assert(values_.size() <=
+                   std::numeric_limits<size_t>::max() / sizeof(Value));
+            size_t constant_pool_size = values_.size() * sizeof(Value);
+            if(!cache.fits_within_span(pessimistic_size, constant_pool_size,
+                                       alignof(Value), maximum_pool_span_))
             {
                 return Result<CodeAllocation, JitCodeError>::error(
                     JitCodeError::PoolOutOfRange);
             }
 
-            CodeAllocationProposal proposal =
-                CL_TRY(cache.propose(pessimistic_size, values_.size()));
+            CodeAllocationProposal proposal = CL_TRY(cache.propose(
+                pessimistic_size, constant_pool_size, alignof(Value)));
 
             size_t final_size = select_direct_branches(proposal.code_address());
             CodeAllocation allocation = CL_TRY(proposal.commit(final_size));
@@ -300,7 +305,7 @@ namespace cl::jit
             auto *write_base =
                 reinterpret_cast<uint8_t *>(allocation.writable_code().data());
             MachineAddress code_address = allocation.code.execute_address();
-            MachineAddress pool_address = allocation.value_pool_address();
+            MachineAddress pool_address = allocation.constant_pool_address();
 
             for(const Fragment &fragment: fragments_)
             {
@@ -335,8 +340,10 @@ namespace cl::jit
                 }
             }
 
-            std::span<Value> pool = allocation.value_pool_values();
-            assert(pool.size() == values_.size());
+            std::span<std::byte> pool_bytes = allocation.constant_pool();
+            assert(pool_bytes.size() == values_.size() * sizeof(Value));
+            auto *pool = reinterpret_cast<Value *>(pool_bytes.data());
+            assert(reinterpret_cast<uintptr_t>(pool) % alignof(Value) == 0);
             for(size_t index = 0; index < values_.size(); ++index)
             {
                 pool[index] = values_[index].value();

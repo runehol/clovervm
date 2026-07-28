@@ -6,14 +6,21 @@
 
 namespace cl::jit
 {
-    JitCodeObject::JitCodeObject(CodeSlice code, std::span<Value> pool_values,
+    JitCodeObject::JitCodeObject(CodeSlice code,
+                                 std::span<std::byte> constant_pool,
+                                 size_t tagged_value_count,
                                  size_t encoded_code_size)
-        : HeapObject(native_layout), code_(code),
-          value_pool_values_(pool_values), encoded_code_size_(encoded_code_size)
+        : HeapObject(native_layout), code_(code), constant_pool_(constant_pool),
+          tagged_value_count_(tagged_value_count),
+          encoded_code_size_(encoded_code_size)
     {
         assert(encoded_code_size != 0);
         assert(encoded_code_size <= code.capacity());
-        for(Value value: value_pool_values())
+        assert(tagged_value_count <= constant_pool.size() / sizeof(Value));
+        assert(reinterpret_cast<uintptr_t>(constant_pool.data()) %
+                   alignof(Value) ==
+               0);
+        for(Value value: tagged_values())
         {
             incref(value);
         }
@@ -23,7 +30,7 @@ namespace cl::jit
     {
         assert(obj->native_layout_id() == native_layout);
         JitCodeObject *jit_code = static_cast<JitCodeObject *>(obj);
-        for(Value &value: jit_code->value_pool_values())
+        for(Value &value: jit_code->tagged_values())
         {
             decref(value);
             value = Value::not_present();

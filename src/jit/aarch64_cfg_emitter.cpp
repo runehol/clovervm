@@ -96,14 +96,22 @@ namespace cl::jit
                                               result);
         }
 
-        Result<CodeAllocation, JitCodeError>
-        generate_allocation(const ControlFlowGraph &graph, CodeCache &cache,
-                            const LocationAssignments &locations,
-                            AArch64ValuePoolMode pool_mode)
+        Result<PublishedCode, JitCodeError>
+        generate_code(const ControlFlowGraph &graph, CodeCache &cache,
+                      const LocationAssignments &locations,
+                      AArch64ValuePoolMode pool_mode)
         {
             AArch64MacroAssembler assembler(pool_mode);
             generate_aarch64_assembly(graph, locations, assembler);
-            return assembler.emitter().finalize(cache);
+            CodeAllocation allocation =
+                CL_TRY(assembler.emitter().finalize(cache));
+            size_t tagged_value_count =
+                assembler.emitter().tagged_value_count();
+            CL_TRY(cache.publish(allocation));
+            return Result<PublishedCode, JitCodeError>::ok(PublishedCode(
+                allocation.code, allocation.constant_pool(),
+                allocation.constant_pool_address(), tagged_value_count,
+                allocation.encoded_code_size()));
         }
     }  // namespace
 
@@ -305,24 +313,24 @@ namespace cl::jit
                           const LocationAssignments &locations,
                           CodeCache &cache)
     {
-        Result<CodeAllocation, JitCodeError> near = generate_allocation(
+        Result<PublishedCode, JitCodeError> near = generate_code(
             graph, cache, locations, AArch64ValuePoolMode::NearLiteral);
         if(near)
         {
-            return cache.publish(std::move(near).value());
+            return near;
         }
         if(near.error() != JitCodeError::PoolOutOfRange)
         {
             return Result<PublishedCode, JitCodeError>::error(near.error());
         }
 
-        Result<CodeAllocation, JitCodeError> far = generate_allocation(
+        Result<PublishedCode, JitCodeError> far = generate_code(
             graph, cache, locations, AArch64ValuePoolMode::FarPageRelative);
         if(!far)
         {
             return Result<PublishedCode, JitCodeError>::error(far.error());
         }
-        return cache.publish(std::move(far).value());
+        return far;
     }
 
 }  // namespace cl::jit

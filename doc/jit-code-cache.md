@@ -4,14 +4,14 @@
 |---|---|
 | Document type | Design |
 | Status | Accepted |
-| Implementation | Standard `mmap` and packed macOS AArch64 `MAP_JIT` backends, heap `JitCodeObject` ownership, and one-time `CodeObject` installation are complete; moving-GC rewriting and other platform backends are deferred |
+| Implementation | Opaque aligned pool allocation, standard `mmap` and packed macOS AArch64 `MAP_JIT` backends, heap `JitCodeObject` ownership, and one-time `CodeObject` installation are complete; moving-GC rewriting and other platform backends are deferred |
 | Scope | Stable code and constant-pool allocation, PC-relative reachability, writable and executable views, publication, and initial code lifetime |
-| Owning layers | The code cache owns virtual-memory placement, page protection, writable and executable views, and storage lifetime; the machine-code emitter owns sizing and encoding against addresses supplied by the cache; `JitCodeObject` records the resulting code and `Value`-pool slices |
-| Validated against | Working tree on 2026-07-21; focused code-cache and executable AArch64 tests plus the full debug `all check` suite |
+| Owning layers | The code cache owns virtual-memory placement, page protection, writable and executable views, and storage lifetime; the machine-code emitter owns sizing, semantic pool layout, and encoding against addresses supplied by the cache; `JitCodeObject` records the resulting code, opaque pool slice, and tagged prefix |
+| Validated against | Working tree on 2026-07-28; focused code-cache and executable AArch64 tests plus the full debug `all check` suite |
 | Supersedes | The contiguous code-plus-pool placement in `doc/jit-machine-code-emission.md` |
 
-This document defines how compiled code and its GC-visible `Value` constant
-pool receive stable addresses and how completed machine code becomes executable.
+This document defines how compiled code and its opaque constant pool receive
+stable addresses and how completed machine code becomes executable.
 It complements [JIT Machine-Code Emission](jit-machine-code-emission.md), which
 defines fragment layout and target encoding, and
 [JIT Compiler and IR](jit-compiler-and-ir.md), which defines the compiled-code
@@ -32,18 +32,16 @@ CompiledCodeStorage
         executable address
         committed capacity
 
-    std::span<Value>
-        writable, non-executable pool slots
+    std::span<std::byte>
+        writable, non-executable constant pool
 ```
 
 The two slices need not occupy one mapping or adjacent addresses. The code cache
 places them within the numeric span supplied by the target. Neither slice may
-move while the compiled code can execute. The moving collector may rewrite
-pool-slot contents but does not move the pool storage itself. A unit with no
-constants has an empty pool span. An existing `JitCodeObject` therefore always
-has a code slice and a possibly empty pool span; absence of compiled code is
-represented by the containing `CodeObject`'s nullable `JitCodeObject`
-reference.
+move while the compiled code can execute. The moving collector may rewrite the
+tagged prefix identified by the owning `JitCodeObject`, but does not move the
+pool storage itself. A unit with no constants or metadata has an empty pool
+span.
 
 Code and pool storage always occupy different physical pages. A page acquires a
 permanent code or pool role before its first suballocation and never changes
@@ -52,11 +50,11 @@ code-write mechanism would technically permit mixed permissions through an
 alias. Unused space in a pool page may be shared only by other pool slices;
 unused space in a code page may never hold GC-rewritten values.
 
-The compiled code object exposes the pool base and exact slot count to garbage
-collection. Pool storage contains only `Value` slots and is aligned to
-`sizeof(Value)`. Multiple compiled functions may own packed slices within the
-same writable, non-executable pool pages. A function does not receive a whole
-pool page merely to preserve page-level protection.
+The cache accepts the pool's byte size and power-of-two alignment without
+knowing its contents. The compiled code object exposes the pool base and exact
+tagged-prefix count to garbage collection. Multiple compiled functions may own
+packed, independently aligned slices within the same writable, non-executable
+pool pages.
 
 Initial generated code is immortal. Each thread has a non-thread-safe
 `CodeCache`, but the `VirtualMachine` owns every thread's cache and all of its
@@ -103,12 +101,14 @@ sizing pass:
 ```text
 CodeCache::propose(
     pessimistic_code_size,
-    value_pool_slot_count)
+    constant_pool_size,
+    constant_pool_alignment)
         -> proposal result
 
 CodeCache::fits_within_span(
     pessimistic_code_size,
-    value_pool_slot_count,
+    constant_pool_size,
+    constant_pool_alignment,
     maximum_span) -> bool
 ```
 
@@ -156,14 +156,16 @@ After address-dependent form selection determines the final encoded size,
 `CodeAllocationProposal::commit(final_size)` asks its selected slab to advance
 both frontiers, commit any platform page roles, enter the platform code-write
 mode, and return a move-only `CodeAllocation`. The allocation contains the
-writable code pointer and pool slice plus the executable `CodeSlice`, slab
+writable code and opaque byte-pool spans plus the executable `CodeSlice`, slab
 offset, and exact encoded size needed for publication. The emitter writes no
-more than the committed code capacity or pool slot count. Destroying an
+more than the committed code capacity or requested pool byte size. Destroying an
 unpublished allocation leaves its storage consumed but restores platform
 code-write protection. After final emission,
-`CodeCache::publish(std::move(allocation))` restores code-write protection
-before performing instruction-cache synchronization and making the executable
-view callable.
+`CodeCache::publish(allocation)` restores code-write protection before
+performing instruction-cache synchronization and making the executable view
+callable. The backend then combines that published allocation with the
+emitter-owned tagged-prefix count to construct `PublishedCode`; the cache does
+not interpret the pool.
 
 Failure to allocate a slab while proposing placement abandons this JIT
 compilation and continues execution in the interpreter; it does not set Python
@@ -176,10 +178,9 @@ Failure of the platform protection transition or another fallible publication
 step returns `PublicationFailure`. The committed space remains consumed and
 execution continues in the interpreter without setting Python pending-exception
 state. This is distinct from failed final instruction revalidation, which is a
-hard compiler-invariant failure. Successful publication returns a
-`PublishedCode` value describing both stable slices and their final encoded
-size. Constructing the managed `JitCodeObject` and installing it into a
-`CodeObject` are separate operations above the code cache.
+hard compiler-invariant failure. Constructing `PublishedCode`, constructing the
+managed `JitCodeObject`, and installing it into a `CodeObject` are separate
+operations above the code cache.
 
 ## Reachability slabs
 
@@ -408,17 +409,18 @@ records the published code and pool slices as one metadata unit:
 ```text
 JitCodeObject
     CodeSlice
-    std::span<Value> value pool
+    std::span<std::byte> constant pool
+    tagged Value prefix count
     encoded code size
     MachineAddress entry derived from CodeSlice
 ```
 
-Construction retains every pointer-valued entry in the external pool, and the
-native-layout custom deallocator releases those entries. `JitCodeObject` does
-not keep a parallel `Owned<Value>` vector; the pool slots themselves are the
-durable managed references. It exposes those slots as `std::span<Value>`, which
-is also the intended surface for a future moving collector to trace and rewrite
-them without decoding instruction bytes.
+The emitter currently places a contiguous tagged `Value` segment first in the
+opaque pool and records its element count. Construction retains that prefix,
+and the native-layout custom deallocator releases it. Bytes after the prefix
+are not scanned. `JitCodeObject` exposes the prefix as `std::span<Value>` for a
+future moving collector to trace and rewrite without decoding instruction
+bytes.
 
 `CodeObject` embeds a nullable `MemberHeapPtr<JitCodeObject>`. Compilation fully
 constructs the heap object after physical code-cache publication and then
