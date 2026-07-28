@@ -3,6 +3,7 @@
 #include "jit/aarch64_allocation_constraints.h"
 #include "jit/compilation_session.h"
 #include "jit/graph_builder.h"
+#include "jit/side_exit_lowering.h"
 
 #include <gtest/gtest.h>
 
@@ -135,6 +136,78 @@ namespace cl::jit
         ASSERT_TRUE(allocation);
         EXPECT_EQ(PhysicalLocation::reg(x0),
                   allocation.value().location_for(ProgramValueRef(parameter)));
+    }
+
+    TEST(JitRegisterAllocator,
+         MaterializesSideExitArgumentsWithoutRewritingSideExitInputs)
+    {
+        CompilationSession session;
+        GraphBuilder builder(session);
+        Block *entry = builder.emplace_block();
+        ParameterInstruction parameter =
+            builder.emplace_parameter<ParameterInstruction>(entry);
+        std::array<ProgramValueRef, 1> captured = {ProgramValueRef(parameter)};
+        SnapshotInstruction snapshot =
+            builder.emplace_instruction<SnapshotInstruction>(entry, captured,
+                                                             BytecodePC{7});
+        builder.emplace_instruction<ResumeInInterpreterInstruction>(
+            entry, SnapshotRef(snapshot));
+        ControlFlowGraph *graph = builder.finalize();
+
+        SunkInstructionIds sunk = sink_snapshots(*graph);
+        auto lowering = lower_side_exits(session, *graph, sunk);
+        ASSERT_TRUE(lowering);
+        ASSERT_TRUE(std::move(lowering).value());
+
+        ASSERT_EQ(1u, entry->instructions().size());
+        ResumeInInterpreterWithSideExitInstruction owner =
+            entry->instruction_at(0)
+                .as<ResumeInInterpreterWithSideExitInstruction>();
+        SideExitId side_exit_id = owner.side_exit();
+
+        std::vector<InstructionAllocationConstraints> overrides;
+        overrides.emplace_back(parameter,
+                               std::vector<ProgramValueUseConstraint>{},
+                               ResultConstraint{AccessTiming::Late, fixed(x0)});
+        overrides.emplace_back(owner,
+                               std::vector<ProgramValueUseConstraint>{
+                                   {ResumeInInterpreterWithSideExitInstruction::
+                                        side_exit_arguments_operand_index,
+                                    AccessTiming::Late, fixed(x1)}});
+        constexpr std::array registers = {x0, x1};
+        AllocationConstraints constraints =
+            gpr_constraints(registers, std::move(overrides));
+
+        auto allocation = allocate_registers(session, *graph, constraints);
+
+        ASSERT_TRUE(allocation);
+        LocationAssignments locations = std::move(allocation).value();
+        ASSERT_EQ(2u, entry->instructions().size());
+        MovInstruction move = entry->instruction_at(0).as<MovInstruction>();
+        auto rewritten_owner =
+            entry->instruction_at(1)
+                .as<ResumeInInterpreterWithSideExitInstruction>();
+        ASSERT_EQ(1u, rewritten_owner.side_exit_arguments().size());
+        EXPECT_EQ(move.id(),
+                  rewritten_owner.side_exit_arguments()[0].instruction_id());
+        EXPECT_EQ(parameter.id(), move.source().instruction_id());
+        EXPECT_EQ(PhysicalLocation::reg(x0),
+                  locations.location_for(ProgramValueRef(parameter)));
+        EXPECT_EQ(PhysicalLocation::reg(x1),
+                  locations.location_for(ProgramValueRef(move)));
+
+        const SideExit &side_exit = graph->side_exit(side_exit_id);
+        ASSERT_EQ(1u, side_exit.inputs().size());
+        EXPECT_EQ(parameter.id(), side_exit.inputs()[0].instruction_id());
+        ASSERT_EQ(1u, side_exit.instructions().size());
+        EXPECT_EQ(snapshot.id(), side_exit.instructions()[0]);
+        SnapshotInstruction retained_snapshot =
+            graph->storage()
+                ->instruction(side_exit.instructions()[0])
+                .as<SnapshotInstruction>();
+        ASSERT_EQ(1u, retained_snapshot.captured_values().size());
+        EXPECT_EQ(parameter.id(),
+                  retained_snapshot.captured_values()[0].instruction_id());
     }
 
     TEST(JitRegisterAllocator, PreparesRepresentativeOneBlockProblem)
