@@ -350,7 +350,8 @@ CL_JIT_INSTRUCTION(Snapshot, CL_JIT_IR_LEVELS(Core),
 #define CL_JIT_ResumeInInterpreter_ATTRIBUTES(attribute)
 CL_JIT_INSTRUCTION(ResumeInInterpreter, CL_JIT_IR_LEVELS(Core),
                    CL_JIT_RESULT(None, None),
-                   CL_JIT_EXACT_EFFECTS_TWO(SideExit, ControlFlow),
+                   CL_JIT_EXACT_EFFECTS_THREE(SideExit, ControlFlow,
+                                              TerminateBlock),
                    CL_JIT_ResumeInInterpreter_OPERANDS,
                    CL_JIT_ResumeInInterpreter_ATTRIBUTES)
 #undef CL_JIT_ResumeInInterpreter_ATTRIBUTES

@@ -933,12 +933,8 @@ namespace cl::jit
             entry, std::span<const ProgramValueRef>(captured), BytecodePC{7}));
         builder.emplace_instruction<ResumeInInterpreterInstruction>(entry,
                                                                     snapshot);
-        ReturnInstruction return_instruction =
-            builder.emplace_instruction<ReturnInstruction>(entry, parameter);
         ControlFlowGraph *graph = builder.finalize();
-        AllocationConstraints constraints = allocator_test_constraints(
-            {builder.storage()->instruction(parameter.instruction_id())},
-            return_instruction);
+        AllocationConstraints constraints(gpr_definition(), {});
 
         auto prepared = prepare_register_allocation(*graph, constraints);
 

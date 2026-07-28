@@ -70,6 +70,7 @@ namespace cl::jit
                 case InstructionKind::UnconditionalBranch:
                     return 1;
                 case InstructionKind::Return:
+                case InstructionKind::ResumeInInterpreter:
                     return 0;
                 default:
                     break;

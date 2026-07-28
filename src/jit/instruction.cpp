@@ -82,6 +82,9 @@ namespace cl::jit
 #define CL_JIT_EXACT_EFFECTS_TWO(first, second)                                \
     EffectProfile::first | EffectProfile::second,                              \
         EffectProfile::first | EffectProfile::second
+#define CL_JIT_EXACT_EFFECTS_THREE(first, second, third)                       \
+    EffectProfile::first | EffectProfile::second | EffectProfile::third,       \
+        EffectProfile::first | EffectProfile::second | EffectProfile::third
 #define CL_JIT_COUNT_FIXED_OPERAND(...)                                        \
     (assert(!has_variadic_operands &&                                          \
             "fixed operands must precede the variadic range"),                 \
@@ -128,6 +131,7 @@ namespace cl::jit
 #undef CL_JIT_COUNT_SNAPSHOT_VALUES
 #undef CL_JIT_COUNT_VARIADIC_OPERAND
 #undef CL_JIT_COUNT_FIXED_OPERAND
+#undef CL_JIT_EXACT_EFFECTS_THREE
 #undef CL_JIT_EXACT_EFFECTS_TWO
 #undef CL_JIT_EFFECT_BOUNDS_MAY_TWO
 #undef CL_JIT_EFFECT_BOUNDS
@@ -173,6 +177,7 @@ namespace cl::jit
                 return {
                     instruction_.as<UnconditionalBranchInstruction>().edge()};
             case InstructionKind::Return:
+            case InstructionKind::ResumeInInterpreter:
                 return {};
             default:
                 break;

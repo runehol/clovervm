@@ -261,7 +261,7 @@ namespace cl::jit
     }
 
     TEST(JitCoreBytecodeTranslator,
-         UnsupportedSequentialInstructionSnapshotsAndPoisonsContinuation)
+         UnsupportedSequentialInstructionSnapshotsAndTerminatesBlock)
     {
         TranslatorFixture fixture;
         fixture.code_builder.emit_lda_smi(0, 7).value();
@@ -278,7 +278,7 @@ namespace cl::jit
             instructions_of_kind(entry, InstructionKind::Uninitialized);
         ASSERT_EQ(1u, snapshots.size());
         ASSERT_EQ(1u, resumes.size());
-        ASSERT_EQ(3u, uninitialized.size());
+        ASSERT_EQ(2u, uninitialized.size());
 
         SnapshotInstruction snapshot =
             snapshots.front().as<SnapshotInstruction>();
@@ -298,12 +298,10 @@ namespace cl::jit
                                      .as<ResumeInInterpreterInstruction>()
                                      .snapshot()
                                      .instruction_id());
-
-        ReturnInstruction return_instruction =
-            entry->instruction_at(entry->instructions().size() - 1)
-                .as<ReturnInstruction>();
-        EXPECT_EQ(uninitialized.back().id(),
-                  return_instruction.return_value().instruction_id());
+        EXPECT_EQ(resumes.front().id(),
+                  entry->instruction_at(entry->instructions().size() - 1).id());
+        EXPECT_TRUE(resumes.front().is_block_terminator());
+        EXPECT_TRUE(entry->block_successor_edges().empty());
     }
 
     TEST(JitCoreBytecodeTranslator,
@@ -335,7 +333,7 @@ namespace cl::jit
     }
 
     TEST(JitCoreBytecodeTranslator,
-         UnsupportedConditionalPoisonsOnlyStructuralCondition)
+         UnsupportedConditionalSnapshotsAndTerminatesBlock)
     {
         TranslatorFixture fixture;
         JumpTarget jump_target(&fixture.code_builder);
@@ -352,24 +350,14 @@ namespace cl::jit
         std::vector<Instruction> resumes =
             instructions_of_kind(entry, InstructionKind::ResumeInInterpreter);
         ASSERT_EQ(1u, resumes.size());
-        ConditionalBranchInstruction branch =
-            entry->instruction_at(entry->instructions().size() - 1)
-                .as<ConditionalBranchInstruction>();
-        EXPECT_EQ(InstructionKind::Uninitialized,
-                  graph->storage()
-                      ->instruction(branch.condition().instruction_id())
-                      .kind());
+        EXPECT_EQ(resumes.front().id(),
+                  entry->instruction_at(entry->instructions().size() - 1).id());
+        EXPECT_TRUE(resumes.front().is_block_terminator());
+        EXPECT_TRUE(entry->block_successor_edges().empty());
 
         std::vector<Instruction> constants =
             instructions_of_kind(entry, InstructionKind::Const);
         ASSERT_EQ(1u, constants.size());
-        size_t state_size = bytecode_state_size(*graph);
-        ASSERT_EQ(state_size, branch.true_edge()->arguments().size());
-        ASSERT_EQ(state_size, branch.false_edge()->arguments().size());
-        EXPECT_EQ(constants.front().id(),
-                  branch.true_edge()->arguments()[0].instruction_id());
-        EXPECT_EQ(constants.front().id(),
-                  branch.false_edge()->arguments()[0].instruction_id());
     }
 
 }  // namespace cl::jit

@@ -40,16 +40,15 @@ namespace cl::jit
             Block *block, const BytecodeBlock &bytecode_block,
             const BytecodeInstruction &instruction, State &state);
 
-        std::vector<ProgramValueRef>
-        emit_unsupported(Block *block, const BytecodeInstruction &instruction,
-                         const State &pre_instruction_state);
+        void emit_unsupported(Block *block,
+                              const BytecodeInstruction &instruction,
+                              const State &pre_instruction_state);
         SnapshotRef emit_snapshot(Block *block, BytecodePC resume_pc,
                                   const State &state);
         std::vector<ProgramValueRef>
         capture_snapshot_values(const State &state) const;
 
         ProgramValueRef emit_constant(Block *block, Value value);
-        ProgramValueRef emit_poison(Block *block);
         BlockEdge *make_state_edge(Block *source, BytecodeBlockId target,
                                    const State &state);
 

@@ -83,15 +83,29 @@ namespace cl::jit
         for(const BytecodeInstruction &instruction:
             bytecode_block.instructions())
         {
-            if(instruction.control_flow() == BytecodeControlFlow::Sequential)
+            switch(instruction.control_flow())
             {
-                translate_sequential_instruction(block, instruction, state);
-                continue;
+                case BytecodeControlFlow::Sequential:
+                    translate_sequential_instruction(block, instruction, state);
+                    break;
+
+                case BytecodeControlFlow::ConditionalJump:
+                case BytecodeControlFlow::UnconditionalJump:
+                case BytecodeControlFlow::Terminator:
+                    translate_control_instruction(block, bytecode_block,
+                                                  instruction, state);
+                    break;
+
+                case BytecodeControlFlow::Invalid:
+                    fatal("invalid decoded JIT bytecode control flow");
             }
 
-            translate_control_instruction(block, bytecode_block, instruction,
-                                          state);
-            return;
+            if(!block->instructions().empty() &&
+               block->instruction_at(block->instructions().size() - 1)
+                   .is_block_terminator())
+            {
+                return;
+            }
         }
 
         if(bytecode_block.successors().size() != 1)
@@ -164,8 +178,8 @@ namespace cl::jit
                 break;
 
             default:
-                outputs = emit_unsupported(block, instruction, state);
-                break;
+                emit_unsupported(block, instruction, state);
+                return;
         }
 
         state_tracker_.write(state, instruction.destinations(), outputs);
@@ -227,49 +241,10 @@ namespace cl::jit
                 break;
         }
 
-        std::vector<ProgramValueRef> outputs =
-            emit_unsupported(block, instruction, state);
-        state_tracker_.write(state, instruction.destinations(), outputs);
-
-        switch(instruction.control_flow())
-        {
-            case BytecodeControlFlow::UnconditionalJump:
-                {
-                    assert(bytecode_block.successors().size() == 1);
-                    BlockEdge *edge = make_state_edge(
-                        block, bytecode_block.successors().front(), state);
-                    builder_
-                        .emplace_instruction<UnconditionalBranchInstruction>(
-                            block, edge);
-                    return;
-                }
-
-            case BytecodeControlFlow::ConditionalJump:
-                {
-                    assert(bytecode_block.successors().size() == 2);
-                    BlockEdge *fallthrough = make_state_edge(
-                        block, bytecode_block.successors()[0], state);
-                    BlockEdge *jump = make_state_edge(
-                        block, bytecode_block.successors()[1], state);
-                    ProgramValueRef poison = emit_poison(block);
-                    builder_.emplace_instruction<ConditionalBranchInstruction>(
-                        block, tagged(poison), jump, fallthrough);
-                    return;
-                }
-
-            case BytecodeControlFlow::Terminator:
-                builder_.emplace_instruction<ReturnInstruction>(
-                    block, tagged(emit_poison(block)));
-                return;
-
-            case BytecodeControlFlow::Sequential:
-            case BytecodeControlFlow::Invalid:
-                break;
-        }
-        fatal("invalid decoded JIT control-flow instruction");
+        emit_unsupported(block, instruction, state);
     }
 
-    std::vector<ProgramValueRef> CoreBytecodeTranslator::emit_unsupported(
+    void CoreBytecodeTranslator::emit_unsupported(
         Block *block, const BytecodeInstruction &instruction,
         const State &pre_instruction_state)
     {
@@ -277,15 +252,6 @@ namespace cl::jit
                                              pre_instruction_state);
         builder_.emplace_instruction<ResumeInInterpreterInstruction>(block,
                                                                      snapshot);
-
-        std::vector<ProgramValueRef> outputs;
-        outputs.reserve(instruction.destinations().size());
-        if(!instruction.destinations().empty())
-        {
-            ProgramValueRef poison = emit_poison(block);
-            outputs.assign(instruction.destinations().size(), poison);
-        }
-        return outputs;
     }
 
     SnapshotRef CoreBytecodeTranslator::emit_snapshot(Block *block,
@@ -310,12 +276,6 @@ namespace cl::jit
         Value retained = builder_.retain_and_pin_value(value);
         return ProgramValueRef(
             builder_.emplace_instruction<ConstInstruction>(block, retained));
-    }
-
-    ProgramValueRef CoreBytecodeTranslator::emit_poison(Block *block)
-    {
-        return ProgramValueRef(
-            builder_.emplace_instruction<UninitializedInstruction>(block));
     }
 
     BlockEdge *CoreBytecodeTranslator::make_state_edge(Block *source,

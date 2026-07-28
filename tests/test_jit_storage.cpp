@@ -398,12 +398,14 @@ namespace cl::jit
             EffectProfile::SideExit | EffectProfile::ControlFlow;
         EXPECT_EQ(side_exit_control_flow,
                   CheckNotImplementedInstruction::MayEffects);
-        EXPECT_EQ(side_exit_control_flow,
+        constexpr EffectProfile terminating_side_exit =
+            side_exit_control_flow | EffectProfile::TerminateBlock;
+        EXPECT_EQ(terminating_side_exit,
                   ResumeInInterpreterInstruction::MustEffects);
-        EXPECT_EQ(side_exit_control_flow,
+        EXPECT_EQ(terminating_side_exit,
                   ResumeInInterpreterInstruction::MayEffects);
-        EXPECT_FALSE(has_effects(ResumeInInterpreterInstruction::MustEffects,
-                                 EffectProfile::TerminateBlock));
+        EXPECT_TRUE(has_effects(ResumeInInterpreterInstruction::MustEffects,
+                                EffectProfile::TerminateBlock));
         constexpr EffectProfile terminating_control_flow =
             EffectProfile::ControlFlow | EffectProfile::TerminateBlock;
         EXPECT_EQ(terminating_control_flow, ReturnInstruction::MustEffects);

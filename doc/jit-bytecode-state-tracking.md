@@ -368,9 +368,9 @@ There is no shared result protocol combining ordinary continuation,
 conditional edges, return, unsupported bytecode, and side exit. The concrete
 translator owns those control decisions. In particular, an unsupported
 fallthrough bytecode may emit a generic `Snapshot` plus
-`ResumeInInterpreter`. `ResumeInInterpreter` has `SideExit | ControlFlow`
-effects but is not a CFG terminator: the translator continues generating the
-rest of the decoded block, which must still end in an ordinary CFG terminator.
+`ResumeInInterpreter`. `ResumeInInterpreter` has
+`SideExit | ControlFlow | TerminateBlock` effects, and translation of that
+decoded block stops immediately.
 
 ## Complete State Capture and Snapshots
 
@@ -430,10 +430,9 @@ optional Semantic translator will own an analogous walk when it is implemented.
 The implemented Core slice covers canonical constants, symbolic state
 movement, a small pure comparison family, basic control flow, and return.
 Unsupported bytecodes capture their pre-instruction state in a Snapshot and
-emit `ResumeInInterpreter`. Because that exit is not a CFG terminator, each
-unsupported destination is then bound to an `Uninitialized` poison value so
-structural translation can continue. No generated execution reaches those
-poisoned values. Exact opcode coverage belongs to translator tests and dispatch
+emit the `ResumeInInterpreter` terminator. Blocks pre-created from the bytecode
+CFG may consequently have no predecessors; later reachability cleanup may
+remove them. Exact opcode coverage belongs to translator tests and dispatch
 code rather than this design contract.
 
 Both translators reuse `BytecodeState` and `BytecodeStateTracker`. They may also
@@ -462,10 +461,9 @@ Initial translation and CFG verification must establish:
   consuming the initial accumulator or temporary sentinel;
 - every completed target block has a valid terminator;
 - `ResumeInInterpreter` is an instruction-local
-  `SideExit | ControlFlow` operation rather than a CFG terminator, so
-  translation continues after emitting it;
-- every unsupported destination is assigned a structural `Uninitialized`
-  poison reference after `ResumeInInterpreter`;
+  `SideExit | ControlFlow | TerminateBlock` operation;
+- translation emits no ordinary continuation or successor edge after
+  `ResumeInInterpreter`;
 - instruction-local guards and side exits do not become CFG block successors.
 
 Focused tests should cover:

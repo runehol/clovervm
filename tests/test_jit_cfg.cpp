@@ -104,7 +104,7 @@ namespace cl::jit
         EXPECT_EQ(2u, graph->blocks()[1]->loop_depth());
     }
 
-    TEST(JitCfg, ResumeInInterpreterDoesNotTerminateItsBlock)
+    TEST(JitCfg, ResumeInInterpreterTerminatesItsBlock)
     {
         CompilationSession session;
         GraphBuilder builder(session);
@@ -114,14 +114,10 @@ namespace cl::jit
         ResumeInInterpreterInstruction resume =
             builder.emplace_instruction<ResumeInInterpreterInstruction>(
                 entry, snapshot);
-        builder.emplace_instruction<UninitializedInstruction>(entry);
-        builder.emplace_instruction<ReturnInstruction>(
-            entry, emplace_constant(builder, entry, Value::None()));
-
-        EXPECT_FALSE(resume.is_block_terminator());
+        EXPECT_TRUE(resume.is_block_terminator());
         ControlFlowGraph *graph = builder.finalize();
         EXPECT_TRUE(graph->is_published());
-        EXPECT_EQ(5u, entry->instructions().size());
+        EXPECT_EQ(2u, entry->instructions().size());
     }
 
     TEST(JitCfg, OwnsSideExitInputsAndRetainedInstructions)

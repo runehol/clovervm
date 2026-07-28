@@ -1100,6 +1100,13 @@ namespace cl::jit
         EffectProfile::first | EffectProfile::second,                          \
             EffectProfile::first | EffectProfile::second                       \
     }
+#define CL_JIT_EXACT_EFFECTS_THREE(first, second, third)                       \
+    InstructionEffectBounds                                                    \
+    {                                                                          \
+        EffectProfile::first | EffectProfile::second | EffectProfile::third,   \
+            EffectProfile::first | EffectProfile::second |                     \
+                EffectProfile::third                                           \
+    }
 #define CL_JIT_COUNT_FIXED_OPERAND(...) +1
 #define CL_JIT_COUNT_NO_OPERAND(...) +0
 #define CL_JIT_HAS_NO_VARIADIC(...) || false
@@ -1436,6 +1443,7 @@ namespace cl::jit
     static_assert(name##Instruction::AllowedIRLevels != IRLevelMask::None);
 #include "jit/instruction.def"
 #undef CL_JIT_INSTRUCTION
+#undef CL_JIT_EXACT_EFFECTS_THREE
 #undef CL_JIT_EXACT_EFFECTS_TWO
 #undef CL_JIT_EFFECT_BOUNDS_MAY_TWO
 #undef CL_JIT_EFFECT_BOUNDS
