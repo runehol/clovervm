@@ -212,4 +212,31 @@ namespace cl::jit
         ASSERT_EQ(3u, entry->instructions().size());
     }
 
+    TEST(JitDeadCodeElimination, RetainsSideExitArguments)
+    {
+        CompilationSession session;
+        GraphBuilder builder(session, IRLevel::Machine);
+        Block *entry = builder.emplace_block();
+        ParameterInstruction input =
+            builder.emplace_parameter<ParameterInstruction>(entry);
+        std::array<ProgramValueRef, 1> snapshot_values = {
+            ProgramValueRef(input)};
+        SnapshotInstruction snapshot =
+            builder.make_instruction<SnapshotInstruction>(snapshot_values,
+                                                          BytecodePC{7});
+        std::array<InstructionId, 1> retained = {snapshot.id()};
+        std::array<ProgramValueRef, 1> inputs = {ProgramValueRef(input)};
+        SideExitId side_exit = builder.emplace_side_exit(inputs, retained);
+        builder.emplace_instruction<ResumeInInterpreterWithSideExitInstruction>(
+            entry, inputs, side_exit);
+        ControlFlowGraph *graph = builder.finalize();
+
+        auto elimination = eliminate_dead_code(session, *graph);
+
+        ASSERT_TRUE(elimination);
+        EXPECT_FALSE(std::move(elimination).value());
+        EXPECT_FALSE(input.is_detached());
+        ASSERT_EQ(1u, entry->parameters().size());
+    }
+
 }  // namespace cl::jit

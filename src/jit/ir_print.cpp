@@ -211,6 +211,13 @@ namespace cl::jit
                 format("{}", pc);
             }
 
+            void attribute_SideExitId(std::string_view name,
+                                      SideExitId side_exit)
+            {
+                attribute_separator(name);
+                format("s{}", side_exit.value());
+            }
+
             void attribute_BlockEdge(std::string_view name, BlockEdge *edge)
             {
                 assert(edge != nullptr);

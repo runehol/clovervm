@@ -357,6 +357,20 @@ CL_JIT_INSTRUCTION(ResumeInInterpreter, CL_JIT_IR_LEVELS(Core),
 #undef CL_JIT_ResumeInInterpreter_ATTRIBUTES
 #undef CL_JIT_ResumeInInterpreter_OPERANDS
 
+#define CL_JIT_ResumeInInterpreterWithSideExit_OPERANDS(                       \
+    fixed, variadic, program_values)                                           \
+    program_values(side_exit_arguments)
+#define CL_JIT_ResumeInInterpreterWithSideExit_ATTRIBUTES(attribute)           \
+    attribute(side_exit, SideExitId)
+CL_JIT_INSTRUCTION(
+    ResumeInInterpreterWithSideExit, CL_JIT_IR_LEVELS(Machine),
+    CL_JIT_RESULT(None, None),
+    CL_JIT_EXACT_EFFECTS_THREE(SideExit, ControlFlow, TerminateBlock),
+    CL_JIT_ResumeInInterpreterWithSideExit_OPERANDS,
+    CL_JIT_ResumeInInterpreterWithSideExit_ATTRIBUTES)
+#undef CL_JIT_ResumeInInterpreterWithSideExit_ATTRIBUTES
+#undef CL_JIT_ResumeInInterpreterWithSideExit_OPERANDS
+
 #define CL_JIT_ConditionalBranch_OPERANDS(fixed, variadic, snapshot_values)   \
     fixed(condition, ProgramValue, TaggedValue)
 #define CL_JIT_ConditionalBranch_ATTRIBUTES(attribute)                        \

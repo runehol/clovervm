@@ -1,6 +1,7 @@
 #ifndef CL_JIT_INSTRUCTION_H
 #define CL_JIT_INSTRUCTION_H
 
+#include "jit/side_exit_id.h"
 #include "object_model/shape_key.h"
 #include "object_model/value.h"
 #include "util/dense_id.h"
@@ -948,6 +949,7 @@ namespace cl::jit
     using InstructionAttributeStorage_ShapeKey = uint64_t;
     using InstructionAttributeStorage_ValueConstant = uint64_t;
     using InstructionAttributeStorage_BytecodePC = uint32_t;
+    using InstructionAttributeStorage_SideExitId = uint32_t;
     using InstructionAttributeStorage_BlockEdge = uint32_t;
 
     static_assert(sizeof(uintptr_t) == sizeof(uint64_t));
@@ -1010,6 +1012,13 @@ namespace cl::jit
         return decode_instruction_attribute_storage<BytecodePC>(words);
     }
 
+    inline SideExitId
+    decode_instruction_attribute_SideExitId(const CompilationStorage *,
+                                            const uint32_t *words)
+    {
+        return SideExitId(*words);
+    }
+
     BlockEdge *
     decode_instruction_attribute_BlockEdge(const CompilationStorage *storage,
                                            const uint32_t *words);
@@ -1070,6 +1079,12 @@ namespace cl::jit
         encode_instruction_attribute_storage(words, pc);
     }
 
+    inline void encode_instruction_attribute_SideExitId(uint32_t *words,
+                                                        SideExitId side_exit)
+    {
+        *words = side_exit.value();
+    }
+
     void encode_instruction_attribute_BlockEdge(uint32_t *words,
                                                 BlockEdge *edge);
 
@@ -1126,6 +1141,7 @@ namespace cl::jit
 #define CL_JIT_ATTRIBUTE_TYPE_ShapeKey ShapeKey
 #define CL_JIT_ATTRIBUTE_TYPE_ValueConstant Value
 #define CL_JIT_ATTRIBUTE_TYPE_BytecodePC BytecodePC
+#define CL_JIT_ATTRIBUTE_TYPE_SideExitId SideExitId
 #define CL_JIT_ATTRIBUTE_TYPE_BlockEdge BlockEdge *
 #define CL_JIT_ATTRIBUTE_TYPE(attribute_class)                                 \
     CL_JIT_JOIN(CL_JIT_ATTRIBUTE_TYPE_, attribute_class)
@@ -1540,6 +1556,7 @@ namespace cl::jit
 #undef CL_JIT_DECLARE_FIXED_PARAMETER
 #undef CL_JIT_ATTRIBUTE_TYPE
 #undef CL_JIT_ATTRIBUTE_TYPE_BlockEdge
+#undef CL_JIT_ATTRIBUTE_TYPE_SideExitId
 #undef CL_JIT_ATTRIBUTE_TYPE_BytecodePC
 #undef CL_JIT_ATTRIBUTE_TYPE_ValueConstant
 #undef CL_JIT_ATTRIBUTE_TYPE_ShapeKey

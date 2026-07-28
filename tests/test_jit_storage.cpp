@@ -369,12 +369,28 @@ namespace cl::jit
                 decltype(std::declval<const ResumeInInterpreterInstruction &>()
                              .snapshot()),
                 SnapshotRef>);
+        static_assert(
+            std::is_same_v<
+                decltype(std::declval<
+                             const ResumeInInterpreterWithSideExitInstruction
+                                 &>()
+                             .side_exit_arguments()),
+                ProgramValueRefRange>);
+        static_assert(
+            std::is_same_v<
+                decltype(std::declval<
+                             const ResumeInInterpreterWithSideExitInstruction
+                                 &>()
+                             .side_exit()),
+                SideExitId>);
         EXPECT_EQ(InstructionKind::AddSMI, AddSMIInstruction::Kind);
         EXPECT_EQ(InstructionKind::Snapshot, SnapshotInstruction::Kind);
         EXPECT_EQ(InstructionKind::Uninitialized,
                   UninitializedInstruction::Kind);
         EXPECT_EQ(InstructionKind::ResumeInInterpreter,
                   ResumeInInterpreterInstruction::Kind);
+        EXPECT_EQ(InstructionKind::ResumeInInterpreterWithSideExit,
+                  ResumeInInterpreterWithSideExitInstruction::Kind);
         EXPECT_EQ(InstructionKind::ConditionalBranch,
                   ConditionalBranchInstruction::Kind);
         EXPECT_EQ(ResultClass::ProgramValue, AddSMIInstruction::Result);
@@ -416,6 +432,12 @@ namespace cl::jit
                   ResumeInInterpreterInstruction::MayEffects);
         EXPECT_TRUE(has_effects(ResumeInInterpreterInstruction::MustEffects,
                                 EffectProfile::TerminateBlock));
+        EXPECT_EQ(IRLevelMask::Machine,
+                  ResumeInInterpreterWithSideExitInstruction::AllowedIRLevels);
+        EXPECT_EQ(terminating_side_exit,
+                  ResumeInInterpreterWithSideExitInstruction::MustEffects);
+        EXPECT_TRUE(
+            ResumeInInterpreterWithSideExitInstruction::OperandsAreIndirect);
         constexpr EffectProfile terminating_control_flow =
             EffectProfile::ControlFlow | EffectProfile::TerminateBlock;
         EXPECT_EQ(terminating_control_flow, ReturnInstruction::MustEffects);

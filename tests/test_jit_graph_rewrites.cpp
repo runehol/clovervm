@@ -876,6 +876,72 @@ namespace cl::jit
         EXPECT_EQ(BytecodePC{47}, new_call.interpreter_return_pc());
     }
 
+    TEST(JitGraphRewriter, RewritesSideExitArgumentsWithoutChangingInputs)
+    {
+        CompilationSession session;
+        GraphBuilder builder(session, IRLevel::Machine);
+        Block *entry = builder.emplace_block();
+        ParameterInstruction parameter =
+            builder.emplace_parameter<ParameterInstruction>(entry);
+        std::array<ProgramValueRef, 1> snapshot_values = {
+            ProgramValueRef(parameter)};
+        SnapshotInstruction snapshot =
+            builder.make_instruction<SnapshotInstruction>(snapshot_values,
+                                                          BytecodePC{31});
+        std::array<InstructionId, 1> retained = {snapshot.id()};
+        std::array<ProgramValueRef, 1> inputs = {ProgramValueRef(parameter)};
+        SideExitId side_exit = builder.emplace_side_exit(inputs, retained);
+        ResumeInInterpreterWithSideExitInstruction old_owner =
+            builder.emplace_instruction<
+                ResumeInInterpreterWithSideExitInstruction>(entry, inputs,
+                                                            side_exit);
+        ControlFlowGraph *graph = builder.finalize();
+
+        struct Callback
+        {
+            ParameterInstruction parameter;
+            ResumeInInterpreterWithSideExitInstruction owner;
+            std::optional<MovInstruction> move;
+
+            RewriteInsertion before_instruction(RewriteContext &context,
+                                                const GraphQueries &,
+                                                const Block &,
+                                                const Instruction &instruction)
+            {
+                if(instruction.id() != owner.id())
+                {
+                    return RewriteInsertion::none();
+                }
+                move = context.make_instruction<MovInstruction>(
+                    TaggedValueRef(parameter));
+                return RewriteInsertion::insert_transfers(
+                    {*move},
+                    {{ProgramValueRef(parameter), ProgramValueRef(*move)}});
+            }
+        } callback{parameter, old_owner, {}};
+
+        GraphRewriter rewriter(session, *graph);
+        RewriteSummary summary =
+            rewriter.rewrite_instructions(InstructionTraversal(), callback);
+
+        EXPECT_TRUE(summary.instructions_changed);
+        EXPECT_TRUE(summary.terminators_changed);
+        EXPECT_FALSE(parameter.is_detached());
+        EXPECT_TRUE(old_owner.is_detached());
+        ASSERT_TRUE(callback.move.has_value());
+        ASSERT_EQ(2u, entry->instructions().size());
+        EXPECT_EQ(*callback.move, entry->instruction_at(0));
+        auto new_owner = entry->instruction_at(1)
+                             .as<ResumeInInterpreterWithSideExitInstruction>();
+        EXPECT_EQ(side_exit, new_owner.side_exit());
+        ASSERT_EQ(1u, new_owner.side_exit_arguments().size());
+        EXPECT_EQ(callback.move->id(),
+                  new_owner.side_exit_arguments()[0].instruction_id());
+        ASSERT_EQ(1u, graph->side_exit(side_exit).inputs().size());
+        EXPECT_EQ(parameter.id(),
+                  graph->side_exit(side_exit).inputs()[0].instruction_id());
+    }
+
     TEST(JitGraphRewriter, StagesSequencesAcrossTheWholeGraphBeforeCommit)
     {
         CompilationSession session;

@@ -2,7 +2,9 @@
 #include "jit/compilation_session.h"
 #include "jit/control_flow_graph.h"
 #include "jit/graph_builder.h"
+#include "jit/graph_queries.h"
 #include "jit/instruction.h"
+#include "jit/use_lists.h"
 
 #include <gtest/gtest.h>
 
@@ -125,20 +127,22 @@ namespace cl::jit
     TEST(JitCfg, OwnsSideExitInputsAndRetainedInstructions)
     {
         CompilationSession session;
-        GraphBuilder builder(session);
+        GraphBuilder builder(session, IRLevel::Machine);
         Block *entry = builder.emplace_block();
         TaggedValueRef source = emplace_constant(builder, entry, Value::True());
-        MovInstruction moved =
-            builder.emplace_instruction<MovInstruction>(entry, source);
+        MovInstruction moved = builder.make_instruction<MovInstruction>(source);
         std::array<ProgramValueRef, 1> snapshot_values = {
             ProgramValueRef(moved)};
         SnapshotInstruction snapshot =
-            builder.emplace_instruction<SnapshotInstruction>(
-                entry, snapshot_values, BytecodePC{7});
+            builder.make_instruction<SnapshotInstruction>(snapshot_values,
+                                                          BytecodePC{7});
         std::array<ProgramValueRef, 1> inputs = {source};
         std::array<InstructionId, 2> retained = {moved.id(), snapshot.id()};
         SideExitId side_exit = builder.emplace_side_exit(inputs, retained);
-        builder.emplace_instruction<ReturnInstruction>(entry, source);
+        ResumeInInterpreterWithSideExitInstruction owner =
+            builder.emplace_instruction<
+                ResumeInInterpreterWithSideExitInstruction>(entry, inputs,
+                                                            side_exit);
 
         ControlFlowGraph *graph = builder.finalize();
 
@@ -149,6 +153,107 @@ namespace cl::jit
         ASSERT_EQ(2u, stored.instructions().size());
         EXPECT_EQ(moved.id(), stored.instructions()[0]);
         EXPECT_EQ(snapshot.id(), stored.instructions()[1]);
+        EXPECT_EQ(side_exit, owner.side_exit());
+        ASSERT_EQ(1u, owner.side_exit_arguments().size());
+        EXPECT_EQ(source.instruction_id(),
+                  owner.side_exit_arguments()[0].instruction_id());
+
+        GraphQueries queries = graph->prepare_queries(GraphQuery::Uses);
+        const Uses &uses = queries.uses_of(
+            graph->storage()->instruction(source.instruction_id()));
+        ASSERT_EQ(1u, uses.n_instruction_uses());
+        EXPECT_EQ(owner.id(), uses.instruction_uses()[0].instruction);
+        EXPECT_EQ(ResumeInInterpreterWithSideExitInstruction::
+                      side_exit_arguments_operand_index,
+                  uses.instruction_uses()[0].operand_index);
+    }
+
+    TEST(JitCfg, RejectsSideExitOwnerWithInvalidId)
+    {
+        CompilationSession session;
+        GraphBuilder builder(session, IRLevel::Machine);
+        Block *entry = builder.emplace_block();
+        builder.emplace_instruction<ResumeInInterpreterWithSideExitInstruction>(
+            entry, std::span<const ProgramValueRef>{}, SideExitId(0));
+
+        expect_invalid_with(builder, "names a side exit outside its graph");
+    }
+
+    TEST(JitCfg, RejectsUnownedSideExit)
+    {
+        CompilationSession session;
+        GraphBuilder builder(session, IRLevel::Machine);
+        Block *entry = builder.emplace_block();
+        SnapshotInstruction snapshot =
+            builder.make_instruction<SnapshotInstruction>(
+                std::span<const ProgramValueRef>{}, BytecodePC{7});
+        std::array<InstructionId, 1> retained = {snapshot.id()};
+        builder.emplace_side_exit(std::span<const ProgramValueRef>{}, retained);
+        TaggedValueRef result = emplace_constant(builder, entry, Value::None());
+        builder.emplace_instruction<ReturnInstruction>(entry, result);
+
+        expect_invalid_with(builder, "does not have exactly one owner");
+    }
+
+    TEST(JitCfg, RejectsMismatchedSideExitArguments)
+    {
+        CompilationSession session;
+        GraphBuilder builder(session, IRLevel::Machine);
+        Block *entry = builder.emplace_block();
+        TaggedValueRef source = emplace_constant(builder, entry, Value::True());
+        std::array<ProgramValueRef, 1> snapshot_values = {source};
+        SnapshotInstruction snapshot =
+            builder.make_instruction<SnapshotInstruction>(snapshot_values,
+                                                          BytecodePC{7});
+        std::array<InstructionId, 1> retained = {snapshot.id()};
+        std::array<ProgramValueRef, 1> inputs = {source};
+        SideExitId side_exit = builder.emplace_side_exit(inputs, retained);
+        builder.emplace_instruction<ResumeInInterpreterWithSideExitInstruction>(
+            entry, std::span<const ProgramValueRef>{}, side_exit);
+
+        expect_invalid_with(builder, "wrong number of side-exit arguments");
+    }
+
+    TEST(JitCfg, RejectsSideExitArgumentWithWrongRepresentation)
+    {
+        CompilationSession session;
+        GraphBuilder builder(session, IRLevel::Machine);
+        Block *entry = builder.emplace_block();
+        ParameterF64Instruction argument =
+            builder.emplace_parameter<ParameterF64Instruction>(entry);
+        TaggedValueRef input = emplace_constant(builder, entry, Value::True());
+        std::array<ProgramValueRef, 1> snapshot_values = {input};
+        SnapshotInstruction snapshot =
+            builder.make_instruction<SnapshotInstruction>(snapshot_values,
+                                                          BytecodePC{7});
+        std::array<InstructionId, 1> retained = {snapshot.id()};
+        std::array<ProgramValueRef, 1> inputs = {input};
+        SideExitId side_exit = builder.emplace_side_exit(inputs, retained);
+        std::array<ProgramValueRef, 1> arguments = {ProgramValueRef(argument)};
+        builder.emplace_instruction<ResumeInInterpreterWithSideExitInstruction>(
+            entry, arguments, side_exit);
+
+        expect_invalid_with(builder, "incompatible representation");
+    }
+
+    TEST(JitCfg, RejectsSideExitWithMultipleOwners)
+    {
+        CompilationSession session;
+        GraphBuilder builder(session, IRLevel::Machine);
+        Block *entry = builder.emplace_block();
+        Block *other = builder.emplace_block();
+        SnapshotInstruction snapshot =
+            builder.make_instruction<SnapshotInstruction>(
+                std::span<const ProgramValueRef>{}, BytecodePC{7});
+        std::array<InstructionId, 1> retained = {snapshot.id()};
+        SideExitId side_exit = builder.emplace_side_exit(
+            std::span<const ProgramValueRef>{}, retained);
+        builder.emplace_instruction<ResumeInInterpreterWithSideExitInstruction>(
+            entry, std::span<const ProgramValueRef>{}, side_exit);
+        builder.emplace_instruction<ResumeInInterpreterWithSideExitInstruction>(
+            other, std::span<const ProgramValueRef>{}, side_exit);
+
+        expect_invalid_with(builder, "does not have exactly one owner");
     }
 
     TEST(JitSideExit, RejectsIncorrectInputEnvironment)
