@@ -278,9 +278,11 @@ namespace cl::jit
 
     enum class AArch64RelocationKind : uint8_t
     {
-        Literal19,
-        PageAddress21,
-        Load64PageOffset12,
+        PcRelative19Scaled4,
+        PcRelative21,
+        PageRelative21,
+        PageOffset12,
+        PageOffset12Scaled8,
     };
 
     class AArch64Relocation
@@ -575,6 +577,17 @@ namespace cl::jit
                 destination.encoding());
         }
 
+        void emit_adr_immediate_21(XRegister destination,
+                                   int64_t byte_displacement)
+        {
+            uint32_t immediate =
+                aarch64_detail::signed_immediate(byte_displacement, 21, 0);
+            uint32_t immediate_low = immediate & 3;
+            uint32_t immediate_high = immediate >> 2;
+            write_instruction(0x10000000 | (immediate_low << 29) |
+                              (immediate_high << 5) | destination.encoding());
+        }
+
         void emit_adrp_page_immediate_21(XRegister destination,
                                          int64_t page_displacement)
         {
@@ -708,6 +721,7 @@ namespace cl::jit
         void ldr(XRegister destination, XRegisterOrSP base,
                  int64_t byte_offset);
         void ldr(XRegister destination, Value value);
+        void adr(XRegister destination, ConstantPoolEntry target);
         void str(XRegister source, XRegisterOrSP base, int64_t byte_offset);
 
         void b(CodeTarget target, XRegister scratch = XRegister(16));

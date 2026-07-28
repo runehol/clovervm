@@ -174,7 +174,7 @@ namespace cl::jit
 
         switch(kind_)
         {
-            case AArch64RelocationKind::Literal19:
+            case AArch64RelocationKind::PcRelative19Scaled4:
                 {
                     constexpr uint32_t ImmediateMask = 0x7ffff << 5;
                     int64_t addend = decode_signed_scaled_immediate(
@@ -185,7 +185,25 @@ namespace cl::jit
                         (instruction & ~ImmediateMask) | (immediate << 5);
                     break;
                 }
-            case AArch64RelocationKind::PageAddress21:
+            case AArch64RelocationKind::PcRelative21:
+                {
+                    constexpr uint32_t ImmediateMask =
+                        (uint32_t{3} << 29) | (uint32_t{0x7ffff} << 5);
+                    uint32_t encoded_addend =
+                        ((instruction >> 29) & 3) |
+                        (((instruction >> 5) & 0x7ffff) << 2);
+                    int64_t addend =
+                        decode_signed_scaled_immediate(encoded_addend, 21, 0);
+                    int64_t displacement =
+                        addend + instruction_pc.displacement_to(target);
+                    uint32_t immediate =
+                        aarch64_detail::signed_immediate(displacement, 21, 0);
+                    instruction = (instruction & ~ImmediateMask) |
+                                  ((immediate & 3) << 29) |
+                                  ((immediate >> 2) << 5);
+                    break;
+                }
+            case AArch64RelocationKind::PageRelative21:
                 {
                     constexpr uint32_t ImmediateMask =
                         (uint32_t{3} << 29) | (uint32_t{0x7ffff} << 5);
@@ -204,7 +222,17 @@ namespace cl::jit
                                   ((immediate >> 2) << 5);
                     break;
                 }
-            case AArch64RelocationKind::Load64PageOffset12:
+            case AArch64RelocationKind::PageOffset12:
+                {
+                    constexpr uint32_t ImmediateMask = 0xfff << 10;
+                    uint32_t addend = (instruction & ImmediateMask) >> 10;
+                    uintptr_t byte_offset = addend + target.offset_within(12);
+                    assert(byte_offset < (1 << 12));
+                    instruction = (instruction & ~ImmediateMask) |
+                                  (static_cast<uint32_t>(byte_offset) << 10);
+                    break;
+                }
+            case AArch64RelocationKind::PageOffset12Scaled8:
                 {
                     constexpr uint32_t ImmediateMask = 0xfff << 10;
                     uint32_t addend = ((instruction & ImmediateMask) >> 10) *
@@ -307,20 +335,43 @@ namespace cl::jit
             emit_ldr_literal_immediate_19(destination, 0);
             emitter().add_relocation_to_last_emitted(
                 sizeof(uint32_t),
-                AArch64Relocation(entry, AArch64RelocationKind::Literal19));
+                AArch64Relocation(entry,
+                                  AArch64RelocationKind::PcRelative19Scaled4));
             return;
         }
 
         emit_adrp_page_immediate_21(destination, 0);
         emitter().add_relocation_to_last_emitted(
             sizeof(uint32_t),
-            AArch64Relocation(entry, AArch64RelocationKind::PageAddress21));
+            AArch64Relocation(entry, AArch64RelocationKind::PageRelative21));
         emit_load_store_unsigned_offset(LoadStoreOp::Load, destination,
                                         destination, 0);
         emitter().add_relocation_to_last_emitted(
             sizeof(uint32_t),
             AArch64Relocation(entry,
-                              AArch64RelocationKind::Load64PageOffset12));
+                              AArch64RelocationKind::PageOffset12Scaled8));
+    }
+
+    void AArch64MacroAssembler::adr(XRegister destination,
+                                    ConstantPoolEntry target)
+    {
+        if(pool_mode_ == AArch64ValuePoolMode::NearLiteral)
+        {
+            emit_adr_immediate_21(destination, 0);
+            emitter().add_relocation_to_last_emitted(
+                sizeof(uint32_t),
+                AArch64Relocation(target, AArch64RelocationKind::PcRelative21));
+            return;
+        }
+
+        emit_adrp_page_immediate_21(destination, 0);
+        emitter().add_relocation_to_last_emitted(
+            sizeof(uint32_t),
+            AArch64Relocation(target, AArch64RelocationKind::PageRelative21));
+        emit_arithmetic_imm12(ArithmeticOp::Add, destination, destination, 0);
+        emitter().add_relocation_to_last_emitted(
+            sizeof(uint32_t),
+            AArch64Relocation(target, AArch64RelocationKind::PageOffset12));
     }
 
     void AArch64MacroAssembler::str(XRegister source, XRegisterOrSP base,

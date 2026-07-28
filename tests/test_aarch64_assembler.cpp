@@ -43,7 +43,7 @@ namespace cl::jit
 
     TEST(AArch64Assembler, EncodesRepresentativeExactInstructions)
     {
-        uint32_t instructions[17] = {};
+        uint32_t instructions[18] = {};
         AArch64BufferAssembler assembler(instructions);
 
         assembler.emit_arithmetic_imm12(ArithmeticOp::Add, XRegister(5),
@@ -80,6 +80,7 @@ namespace cl::jit
         assembler.emit_conditional_select(AArch64Condition::NotEqual,
                                           WRegister(5), WRegister(6),
                                           WRegister(7));
+        assembler.emit_adr_immediate_21(XRegister(5), -4);
 
         EXPECT_EQ(0x9100a8c5, instructions[0]);
         EXPECT_EQ(0x914007ff, instructions[1]);
@@ -98,6 +99,7 @@ namespace cl::jit
         EXPECT_EQ(0x6a2700c5, instructions[14]);
         EXPECT_EQ(0x9a8700c5, instructions[15]);
         EXPECT_EQ(0x1a8710c5, instructions[16]);
+        EXPECT_EQ(0x10ffffe5, instructions[17]);
     }
 
     TEST(AArch64Assembler, EmitsOrdinaryInstructionsIntoMachineCodeEmitter)
@@ -179,6 +181,55 @@ namespace cl::jit
                   instruction_at(allocation.writable_code().data(), 1));
     }
 
+    TEST(AArch64Assembler, RelocatesNearConstantPoolAddress)
+    {
+        CacheAndPlatform fixture(16);
+        AArch64MacroAssembler assembler(AArch64ValuePoolMode::NearLiteral);
+        AArch64Emitter &emitter = assembler.emitter();
+        std::byte data[] = {std::byte{0x11}};
+        ConstantPoolEntry entry = emitter.add_data_to_constant_pool(data);
+        assembler.adr(XRegister(5), entry);
+
+        CodeAllocation allocation =
+            take_allocation(emitter.finalize(*fixture.cache));
+
+        int64_t displacement =
+            allocation.code.execute_address().displacement_to(
+                allocation.constant_pool_address());
+        uint32_t immediate = static_cast<uint32_t>(displacement) & 0x1fffff;
+        uint32_t expected =
+            0x10000005 | ((immediate & 3) << 29) | ((immediate >> 2) << 5);
+        EXPECT_EQ(expected,
+                  instruction_at(allocation.writable_code().data(), 0));
+    }
+
+    TEST(AArch64Assembler, RelocatesFarConstantPoolAddress)
+    {
+        CacheAndPlatform fixture(16);
+        AArch64MacroAssembler assembler(AArch64ValuePoolMode::FarPageRelative);
+        AArch64Emitter &emitter = assembler.emitter();
+        std::byte data[] = {std::byte{0x11}};
+        ConstantPoolEntry entry = emitter.add_data_to_constant_pool(data);
+        assembler.adr(XRegister(5), entry);
+
+        CodeAllocation allocation =
+            take_allocation(emitter.finalize(*fixture.cache));
+
+        uint32_t expected[2] = {};
+        AArch64BufferAssembler expected_assembler(expected);
+        MachineAddress instruction_pc = allocation.code.execute_address();
+        MachineAddress target = allocation.constant_pool_address();
+        expected_assembler.emit_adrp_page_immediate_21(
+            XRegister(5), instruction_pc.aligned_displacement_to(target, 12));
+        expected_assembler.emit_arithmetic_imm12(
+            ArithmeticOp::Add, XRegister(5), XRegister(5),
+            static_cast<uint16_t>(target.offset_within(12)));
+        EXPECT_EQ(expected[0],
+                  instruction_at(allocation.writable_code().data(), 0));
+        EXPECT_EQ(expected[1],
+                  instruction_at(allocation.writable_code().data(), 1));
+    }
+
     TEST(AArch64Assembler, RelocationsAddToEncodedImmediates)
     {
         AArch64MacroAssembler owner(AArch64ValuePoolMode::NearLiteral);
@@ -192,23 +243,38 @@ namespace cl::jit
 
         AArch64BufferAssembler(&instruction)
             .emit_ldr_literal_immediate_19(XRegister(5), 8);
-        AArch64Relocation(target_entry, AArch64RelocationKind::Literal19)
+        AArch64Relocation(target_entry,
+                          AArch64RelocationKind::PcRelative19Scaled4)
             .apply(&instruction, pc, target);
         EXPECT_EQ(0x58000845, instruction);
 
         AArch64BufferAssembler(&instruction)
+            .emit_adr_immediate_21(XRegister(5), 8);
+        AArch64Relocation(target_entry, AArch64RelocationKind::PcRelative21)
+            .apply(&instruction, pc, target);
+        EXPECT_EQ(0x10000845, instruction);
+
+        AArch64BufferAssembler(&instruction)
             .emit_adrp_page_immediate_21(XRegister(5), -4096);
         target = detail::MachineAddressAccess::from_bits(0x00003000);
-        AArch64Relocation(target_entry, AArch64RelocationKind::PageAddress21)
+        AArch64Relocation(target_entry, AArch64RelocationKind::PageRelative21)
             .apply(&instruction, pc, target);
         EXPECT_EQ(0xb0000005, instruction);
+
+        AArch64BufferAssembler(&instruction)
+            .emit_arithmetic_imm12(ArithmeticOp::Add, XRegister(5),
+                                   XRegister(5), 24);
+        target = detail::MachineAddressAccess::from_bits(0x00002100);
+        AArch64Relocation(target_entry, AArch64RelocationKind::PageOffset12)
+            .apply(&instruction, pc, target);
+        EXPECT_EQ(0x910460a5, instruction);
 
         AArch64BufferAssembler(&instruction)
             .emit_load_store_unsigned_offset(LoadStoreOp::Load, XRegister(5),
                                              XRegister(5), 24);
         target = detail::MachineAddressAccess::from_bits(0x00002100);
         AArch64Relocation(target_entry,
-                          AArch64RelocationKind::Load64PageOffset12)
+                          AArch64RelocationKind::PageOffset12Scaled8)
             .apply(&instruction, pc, target);
         EXPECT_EQ(0xf9408ca5, instruction);
     }
