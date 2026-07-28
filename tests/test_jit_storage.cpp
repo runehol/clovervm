@@ -275,6 +275,8 @@ namespace cl::jit
             static_cast<uint8_t>(IRLevelMask::SemanticCoreMachineTransition));
         EXPECT_TRUE(instruction_kind_is_allowed_at(InstructionKind::Return,
                                                    IRLevelMask::Core));
+        EXPECT_TRUE(instruction_kind_is_allowed_at(InstructionKind::Return,
+                                                   IRLevelMask::Machine));
         EXPECT_FALSE(instruction_kind_is_allowed_at(InstructionKind::Return,
                                                     IRLevelMask::Transition));
         EXPECT_EQ(CoreInstructionKind::Return,
@@ -283,6 +285,14 @@ namespace cl::jit
                   core_instruction_kind<ReturnInstruction>());
         EXPECT_EQ(InstructionKind::Return,
                   instruction_kind(CoreInstructionKind::Return));
+        EXPECT_EQ(MachineInstructionKind::Return,
+                  machine_instruction_kind(InstructionKind::Return));
+        EXPECT_EQ(MachineInstructionKind::Return,
+                  machine_instruction_kind<ReturnInstruction>());
+        EXPECT_FALSE(instruction_kind_is_allowed_at(InstructionKind::Snapshot,
+                                                    IRLevelMask::Machine));
+        EXPECT_FALSE(instruction_kind_is_allowed_at(
+            InstructionKind::ResumeInInterpreter, IRLevelMask::Machine));
     }
 
     TEST(JitInstructionSchema, EncodesResultsWhileKeepingDenseOrdinals)

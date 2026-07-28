@@ -68,8 +68,10 @@ namespace cl::jit
         CompilationSession session;
         GraphBuilder builder(session, IRLevel::Machine);
         Block *entry = builder.emplace_block();
-        builder.emplace_instruction<ReturnInstruction>(
-            entry, emplace_constant(builder, entry, Value::None()));
+        SnapshotRef snapshot(builder.emplace_instruction<SnapshotInstruction>(
+            entry, std::span<const ProgramValueRef>{}, BytecodePC{0}));
+        builder.emplace_instruction<ResumeInInterpreterInstruction>(entry,
+                                                                    snapshot);
 
         expect_invalid_with(builder, "is not legal in Machine IR");
     }
