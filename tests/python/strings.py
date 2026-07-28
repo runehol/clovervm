@@ -66,7 +66,16 @@ assert "abc".rpartition("=") == ("", "", "abc")
 assert "a=b".partition(sep="=") == ("a", "=", "b")
 
 assert "banana".replace("na", "NA") == "baNANA"
+assert "banana".replace("na", "NA", 1) == "baNAna"
+assert "banana".replace("na", "NA", 0) == "banana"
+assert "banana".replace("na", "NA", -2) == "baNANA"
+assert "banana".replace(old="na", new="NA", count=1) == "baNAna"
 assert "abc".replace("", "-") == "-a-b-c-"
+assert "abc".replace("", "-", 0) == "abc"
+assert "abc".replace("", "-", 1) == "-abc"
+assert "abc".replace("", "-", 2) == "-a-bc"
+assert "abc".replace("", "-", 4) == "-a-b-c-"
+assert "abc".replace("", "-", 99) == "-a-b-c-"
 
 assert "  hello  ".strip() == "hello"
 assert "xxhellox".strip(chars="x") == "hello"

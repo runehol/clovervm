@@ -141,7 +141,8 @@ namespace cl
         [[nodiscard]] TValue<String> removeprefix(const String *prefix) const;
         [[nodiscard]] TValue<String> removesuffix(const String *suffix) const;
         [[nodiscard]] TValue<String> replace(const String *old,
-                                             const String *replacement) const;
+                                             const String *replacement,
+                                             int64_t max_count = -1) const;
         [[nodiscard]] TValue<String> strip() const;
         [[nodiscard]] TValue<String> strip(const String *chars) const;
         [[nodiscard]] TValue<String> lstrip() const;

@@ -999,15 +999,20 @@ namespace cl
     }
 
     static Value native_str_replace(ThreadState *thread, Value self,
-                                    Value old_value, Value new_value)
+                                    Value old_value, Value new_value,
+                                    Value count_value)
     {
         CL_PROPAGATE_EXCEPTION(require_str_receiver(self, L"replace"));
         CL_PROPAGATE_EXCEPTION(
             require_string_argument(old_value, L"replace old must be str"));
         CL_PROPAGATE_EXCEPTION(
             require_string_argument(new_value, L"replace new must be str"));
+        int64_t max_count = -1;
+        CL_PROPAGATE_EXCEPTION(require_smi_index(
+            count_value, L"replace count must be an integer", max_count));
         return self.get_ptr<String>()
-            ->replace(old_value.get_ptr<String>(), new_value.get_ptr<String>())
+            ->replace(old_value.get_ptr<String>(), new_value.get_ptr<String>(),
+                      max_count)
             .raw_value();
     }
 
@@ -1409,29 +1414,49 @@ namespace cl
             std::wstring_view(data, size_t(count.extract())));
     }
 
-    TValue<String> String::replace(const String *old,
-                                   const String *replacement) const
+    TValue<String> String::replace(const String *old, const String *replacement,
+                                   int64_t max_count) const
     {
         std::wstring_view str(data, size_t(count.extract()));
         std::wstring_view old_view(old->data, size_t(old->count.extract()));
         std::wstring_view replacement_view(
             replacement->data, size_t(replacement->count.extract()));
 
+        if(max_count == 0)
+        {
+            return active_thread()->make_object_value<String>(str);
+        }
+
         std::wstring result;
         if(old_view.empty())
         {
-            result.append(replacement_view);
+            int64_t replacements = 0;
+            if(max_count < 0 || replacements < max_count)
+            {
+                result.append(replacement_view);
+                ++replacements;
+            }
             for(wchar_t ch: str)
             {
                 result.push_back(ch);
-                result.append(replacement_view);
+                if(max_count < 0 || replacements < max_count)
+                {
+                    result.append(replacement_view);
+                    ++replacements;
+                }
             }
             return active_thread()->make_object_value<String>(result);
         }
 
         size_t pos = 0;
+        int64_t replacements = 0;
         while(pos < str.size())
         {
+            if(max_count >= 0 && replacements == max_count)
+            {
+                result.append(str.substr(pos));
+                break;
+            }
             size_t found = str.find(old_view, pos);
             if(found == std::wstring_view::npos)
             {
@@ -1441,6 +1466,7 @@ namespace cl
             result.append(str.substr(pos, found - pos));
             result.append(replacement_view);
             pos = found + old_view.size();
+            ++replacements;
         }
         if(str.empty())
         {
@@ -1678,6 +1704,10 @@ namespace cl
                                                                 Value::None());
         str_split_defaults.extract()->initialize_item_unchecked(
             1, Value::from_smi(-1));
+        Owned<TValue<Tuple>> str_replace_defaults(
+            active_thread()->make_object_value<Tuple>(1));
+        str_replace_defaults.extract()->initialize_item_unchecked(
+            0, Value::from_smi(-1));
         static constexpr const wchar_t *prefix_start_end_names[] = {
             L"prefix", L"start", L"end"};
         static constexpr const wchar_t *suffix_start_end_names[] = {
@@ -1690,6 +1720,8 @@ namespace cl
         static constexpr const wchar_t *sep_names[] = {L"sep"};
         static constexpr const wchar_t *sep_maxsplit_names[] = {L"sep",
                                                                 L"maxsplit"};
+        static constexpr const wchar_t *replace_names[] = {L"old", L"new",
+                                                           L"count"};
         BuiltinIntrinsicMethod methods[] = {
             with_defaults(builtin_intrinsic_method(L"__new__", native_str_new,
                                                    L"Create a str object."),
@@ -1828,8 +1860,12 @@ namespace cl
                 builtin_intrinsic_method(L"rpartition", native_str_rpartition,
                                          L"Partition at last separator."),
                 sep_names, 1, 1),
-            builtin_intrinsic_method(L"replace", native_str_replace,
-                                     L"Return a copy with replacements."),
+            with_keyword_parameter_names(
+                with_defaults(builtin_intrinsic_method(
+                                  L"replace", native_str_replace,
+                                  L"Return a copy with replacements."),
+                              str_replace_defaults.value()),
+                replace_names, 3, 1),
             with_defaults(
                 with_keyword_parameter_names(
                     builtin_intrinsic_method(L"strip", native_str_strip,
