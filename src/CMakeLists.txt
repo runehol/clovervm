@@ -96,6 +96,8 @@ add_library(libclovervm_objects OBJECT
     jit/aarch64_cfg_emitter.h
     jit/aarch64_backend.cpp
     jit/aarch64_backend.h
+    jit/aarch64_transition.cpp
+    jit/aarch64_transition.h
     jit/allocation_constraints.cpp
     jit/allocation_constraints.h
     jit/physical_location.h
