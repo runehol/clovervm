@@ -4,6 +4,7 @@
 # not copy CPython test code.
 
 import contextlib
+import os
 
 
 class Resource:
@@ -47,5 +48,20 @@ assert after_suppressed == 11
 with contextlib.suppress(ValueError, TypeError):
     raise TypeError
 
+original_cwd = os.getcwd()
+with contextlib.chdir("stdlib") as value:
+    assert value is None
+    assert os.getcwd().endswith("/stdlib")
+assert os.getcwd() == original_cwd
+
+try:
+    with contextlib.chdir("stdlib"):
+        assert os.getcwd().endswith("/stdlib")
+        raise ValueError
+except ValueError:
+    pass
+assert os.getcwd() == original_cwd
+
 assert contextlib.__all__[0] == "AbstractContextManager"
-assert contextlib.__all__[3] == "suppress"
+assert contextlib.__all__[1] == "chdir"
+assert contextlib.__all__[4] == "suppress"

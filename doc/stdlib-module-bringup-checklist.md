@@ -28,7 +28,7 @@ edge cases, platform behavior, or APIs are still missing.
 | [ ] | `abc` | Abstract base classes and metaclass behavior. | Depends on metaclass and descriptor semantics. |
 | [ ] | `functools` | Decorators, wrappers, caching, partial application. | Not started / not assessed. |
 | [ ] | `itertools` | Common efficient iteration building blocks. | Depends on iterator protocol completeness and native helpers for performance. |
-| [~] | `contextlib` | Context-manager helpers used pervasively in tests and libraries. | Pure-Python module now covers `AbstractContextManager`, `closing`, `nullcontext`, and `suppress` on top of current `with` semantics. Missing generator/decorator-heavy APIs (`contextmanager`, `asynccontextmanager`, `ContextDecorator`, `ExitStack`, async helpers, redirection/chdir helpers) pending generators, async, file/stream support, and richer decorator/protocol behavior. |
+| [~] | `contextlib` | Context-manager helpers used pervasively in tests and libraries. | Pure-Python module now covers `AbstractContextManager`, `closing`, `nullcontext`, `suppress`, and `chdir` on top of current `with` semantics. Missing generator/decorator-heavy APIs (`contextmanager`, `asynccontextmanager`, `ContextDecorator`, `ExitStack`, async helpers) pending generators, async, file/stream support, and richer decorator/protocol behavior; redirection helpers still need stream support. |
 
 ## Tier 1: Import and Package Ecosystem
 
