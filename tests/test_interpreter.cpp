@@ -2599,54 +2599,6 @@ TEST(Interpreter, normalize_slice_helpers_compute_selected_length)
     EXPECT_EQ(5u, reverse_normalized.selected_sequence_length);
 }
 
-TEST(Interpreter, subscript_load_does_not_cache_negative_lookup)
-{
-    test::FileRunner file_runner(L"class Bag:\n"
-                                 L"    pass\n"
-                                 L"def get(obj, key):\n"
-                                 L"    return obj[key]\n"
-                                 L"bag = Bag()\n"
-                                 L"saw_type_error = False\n"
-                                 L"try:\n"
-                                 L"    get(bag, 0)\n"
-                                 L"except TypeError:\n"
-                                 L"    saw_type_error = True\n"
-                                 L"def replacement(self, key):\n"
-                                 L"    return key + 9\n"
-                                 L"Bag.__getitem__ = replacement\n"
-                                 L"if saw_type_error:\n"
-                                 L"    get(bag, 3)\n"
-                                 L"else:\n"
-                                 L"    0\n");
-
-    EXPECT_EQ(Value::from_smi(12), file_runner.return_value);
-}
-
-TEST(Interpreter, subscript_load_does_not_cache_raised_exception)
-{
-    test::FileRunner file_runner(L"class Bag:\n"
-                                 L"    def __init__(self):\n"
-                                 L"        self.count = 0\n"
-                                 L"    def __getitem__(self, key):\n"
-                                 L"        self.count += 1\n"
-                                 L"        if key == 1:\n"
-                                 L"            raise ValueError\n"
-                                 L"        return key + self.count * 10\n"
-                                 L"def get(obj, key):\n"
-                                 L"    return obj[key]\n"
-                                 L"bag = Bag()\n"
-                                 L"first = get(bag, 0)\n"
-                                 L"caught = 0\n"
-                                 L"try:\n"
-                                 L"    get(bag, 1)\n"
-                                 L"except ValueError:\n"
-                                 L"    caught = 1\n"
-                                 L"third = get(bag, 2)\n"
-                                 L"first * 100 + caught * 10 + third\n");
-
-    EXPECT_EQ(Value::from_smi(1042), file_runner.return_value);
-}
-
 TEST(Interpreter, subscript_load_caches_inline_key_shape)
 {
     test::VmTestContext test_context;

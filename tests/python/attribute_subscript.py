@@ -207,3 +207,51 @@ assert "abcd"[0:-1] == "abc"
 assert "abcd"[::2] == "ac"
 assert "abcd"[::-1] == "dcba"
 assert "abcd"[3:0:-1] == "dcb"
+
+
+# Failed or missing __getitem__ lookups do not poison later cached accesses.
+class InitiallyNotSubscriptable:
+    pass
+
+
+def dynamic_get(obj, key):
+    return obj[key]
+
+
+dynamic_bag = InitiallyNotSubscriptable()
+try:
+    dynamic_get(dynamic_bag, 0)
+    negative_lookup_raised = False
+except TypeError:
+    negative_lookup_raised = True
+
+
+def installed_getitem(self, key):
+    return key + 9
+
+
+InitiallyNotSubscriptable.__getitem__ = installed_getitem
+assert negative_lookup_raised
+assert dynamic_get(dynamic_bag, 3) == 12
+
+
+class RaisingThenReturningBag:
+    def __init__(self):
+        self.count = 0
+
+    def __getitem__(self, key):
+        self.count += 1
+        if key == 1:
+            raise ValueError
+        return key + self.count * 10
+
+
+raising_bag = RaisingThenReturningBag()
+assert dynamic_get(raising_bag, 0) == 10
+try:
+    dynamic_get(raising_bag, 1)
+    raised_lookup_caught = False
+except ValueError:
+    raised_lookup_caught = True
+assert raised_lookup_caught
+assert dynamic_get(raising_bag, 2) == 32
