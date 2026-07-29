@@ -533,6 +533,50 @@ namespace cl::jit
         EXPECT_EQ(x0, assignments.location_for(BundleId(1)).reg());
     }
 
+    TEST(JitRegisterAllocator, EvictsLowerWeightBundleAndRequeuesIt)
+    {
+        CompilationSession session;
+        GraphBuilder builder(session, IRLevel::Core);
+        Block *entry = builder.emplace_block();
+        ParameterInstruction parameter =
+            builder.emplace_parameter<ParameterInstruction>(entry);
+        AndSMIInstruction operation =
+            builder.emplace_instruction<AndSMIInstruction>(
+                entry, TaggedValueRef(parameter), TaggedValueRef(parameter));
+        builder.emplace_instruction<ReturnInstruction>(
+            entry, TaggedValueRef(parameter));
+        ControlFlowGraph *graph = builder.finalize();
+
+        std::vector<InstructionAllocationConstraints> overrides;
+        overrides.emplace_back(
+            operation,
+            std::vector<ProgramValueUseConstraint>{
+                {0, AccessTiming::Late,
+                 LocationRequirement::any_register(RegisterClass::GPR)},
+                {1, AccessTiming::Late,
+                 LocationRequirement::any_register(RegisterClass::GPR)}},
+            ResultConstraint{AccessTiming::Late, fixed(x0)});
+        constexpr std::array registers = {x0, x1};
+        AllocationConstraints constraints =
+            gpr_constraints(registers, std::move(overrides));
+
+        auto prepared_result = prepare_register_allocation(*graph, constraints);
+        ASSERT_TRUE(prepared_result);
+        PreparedAllocationProblem prepared = std::move(prepared_result).value();
+        ASSERT_GT(prepared.bundles()[0].allocation_priority,
+                  prepared.bundles()[1].allocation_priority);
+        ASSERT_LT(prepared.bundles()[0].spill_weight,
+                  prepared.bundles()[1].spill_weight);
+
+        auto assignment_result = assign_bundles(prepared, constraints);
+
+        ASSERT_TRUE(assignment_result);
+        RegisterAllocationResult allocation =
+            std::move(assignment_result).value();
+        EXPECT_EQ(x1, allocation.locations().location_for(BundleId(0)).reg());
+        EXPECT_EQ(x0, allocation.locations().location_for(BundleId(1)).reg());
+    }
+
     TEST(JitRegisterAllocator, FindsARegisterConflictBeforeTheInsertionPoint)
     {
         CompilationSession session;
@@ -589,6 +633,8 @@ namespace cl::jit
         auto prepared_result = prepare_register_allocation(*graph, constraints);
         ASSERT_TRUE(prepared_result);
         PreparedAllocationProblem prepared = std::move(prepared_result).value();
+        ASSERT_EQ(prepared.bundles()[0].spill_weight,
+                  prepared.bundles()[1].spill_weight);
 
         auto assignment_result = assign_bundles(prepared, constraints);
 

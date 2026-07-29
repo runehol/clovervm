@@ -188,18 +188,45 @@ namespace cl::jit
                         {
                             continue;
                         }
+                        else if(std::optional<uint64_t> cost =
+                                    eviction_cost(probe);
+                                cost.has_value() && *cost < bundle.spill_weight)
+                        {
+                            evict(probe);
+                            selected = required;
+                        }
                     }
                     else
                     {
+                        std::optional<uint64_t> lowest_eviction_cost;
+                        std::optional<PhysicalRegister> evictable;
+                        std::optional<RegisterProbe> eviction_probe;
                         for(PhysicalRegister candidate:
                             register_class(bundle.register_class)
                                 .allocation_order())
                         {
-                            if(probe_register(candidate, bundle).fits())
+                            RegisterProbe probe =
+                                probe_register(candidate, bundle);
+                            if(probe.fits())
                             {
                                 selected = PhysicalLocation::reg(candidate);
                                 break;
                             }
+                            std::optional<uint64_t> cost = eviction_cost(probe);
+                            if(cost.has_value() &&
+                               *cost < bundle.spill_weight &&
+                               (!lowest_eviction_cost.has_value() ||
+                                *cost < *lowest_eviction_cost))
+                            {
+                                lowest_eviction_cost = cost;
+                                evictable = candidate;
+                                eviction_probe = std::move(probe);
+                            }
+                        }
+                        if(!selected.has_value() && evictable.has_value())
+                        {
+                            evict(*eviction_probe);
+                            selected = PhysicalLocation::reg(*evictable);
                         }
                     }
 
@@ -342,6 +369,32 @@ namespace cl::jit
                 return result;
             }
 
+            std::optional<uint64_t>
+            eviction_cost(const RegisterProbe &probe) const
+            {
+                if(probe.conflicts_with_clobber ||
+                   probe.conflicting_bundles.empty())
+                {
+                    return std::nullopt;
+                }
+                uint64_t result = 0;
+                for(BundleId conflict: probe.conflicting_bundles)
+                {
+                    result = std::max(result,
+                                      bundles_[conflict.value()].spill_weight);
+                }
+                return result;
+            }
+
+            void evict(const RegisterProbe &probe)
+            {
+                for(BundleId conflict: probe.conflicting_bundles)
+                {
+                    unplace(conflict);
+                    enqueue(conflict);
+                }
+            }
+
             bool split_before_later_fixed_use(BundleId bundle_id,
                                               const RegisterProbe &probe)
             {
@@ -386,6 +439,24 @@ namespace cl::jit
                 enqueue(bundle_id);
                 enqueue(*right);
                 return true;
+            }
+
+            void unplace(BundleId bundle_id)
+            {
+                std::optional<PhysicalLocation> &location =
+                    location_by_bundle_[bundle_id.value()];
+                assert(location.has_value() && location->is_register());
+                RegisterOccupancy &occupancy = occupancy_[location->reg()];
+                for(const BundleFragment &fragment:
+                    bundles_[bundle_id.value()].fragments)
+                {
+                    auto found = occupancy.find(fragment.range.start);
+                    assert(found != occupancy.end() &&
+                           found->second.end == fragment.range.end &&
+                           found->second.bundle == bundle_id);
+                    occupancy.erase(found);
+                }
+                location.reset();
             }
 
             bool fits(StackLocation stack, const LiveBundle &bundle) const
