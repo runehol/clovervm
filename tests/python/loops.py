@@ -82,3 +82,42 @@ total = 0
 for x in [1, 2, 3]:
     total += x
 assert total == 6
+
+# range, iter, and next produce and exhaust builtin iterators correctly.
+range_one_arg = real_range(5)
+assert next(range_one_arg) == 0
+assert next(range_one_arg) == 1
+
+range_two_args = real_range(2, 5)
+assert next(range_two_args) == 2
+assert next(range_two_args) == 3
+
+range_three_args = real_range(2, 9, 3)
+assert next(range_three_args) == 2
+assert next(range_three_args) == 5
+assert next(range_three_args) == 8
+
+range_from_iter = iter(real_range(3))
+assert next(range_from_iter) == 0
+assert next(range_from_iter) == 1
+
+tuple_iterator = iter((4, 5))
+assert next(tuple_iterator) == 4
+assert next(tuple_iterator) == 5
+try:
+    next(tuple_iterator)
+    tuple_iterator_exhausted = False
+except StopIteration:
+    tuple_iterator_exhausted = True
+assert tuple_iterator_exhausted
+assert next(tuple_iterator, 42) == 42
+
+list_iterator = iter([4, 5])
+assert next(list_iterator) == 4
+assert next(list_iterator) == 5
+try:
+    next(list_iterator)
+    list_iterator_exhausted = False
+except StopIteration:
+    list_iterator_exhausted = True
+assert list_iterator_exhausted

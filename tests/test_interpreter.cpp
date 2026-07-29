@@ -133,33 +133,6 @@ static void expect_python_error(const wchar_t *source,
                                expected_type_name, expected_message);
 }
 
-static void expect_range_iterator(Value actual, int64_t expected_current,
-                                  int64_t expected_stop, int64_t expected_step)
-{
-    RangeIterator *iterator = CL_ASSERT_CONVERT_TO(RangeIterator, actual);
-    EXPECT_EQ(Value::from_smi(expected_current), iterator->current.raw_value());
-    EXPECT_EQ(Value::from_smi(expected_stop), iterator->stop.raw_value());
-    EXPECT_EQ(Value::from_smi(expected_step), iterator->step.raw_value());
-}
-
-static void expect_tuple_iterator(Value actual, Tuple *expected_tuple,
-                                  int64_t expected_length,
-                                  int64_t expected_index)
-{
-    TupleIterator *iterator = CL_ASSERT_CONVERT_TO(TupleIterator, actual);
-    EXPECT_EQ(Value::from_oop(expected_tuple), iterator->tuple.raw_value());
-    EXPECT_EQ(Value::from_smi(expected_length), iterator->length.raw_value());
-    EXPECT_EQ(Value::from_smi(expected_index), iterator->index.raw_value());
-}
-
-static void expect_list_iterator(Value actual, List *expected_list,
-                                 int64_t expected_index)
-{
-    ListIterator *iterator = CL_ASSERT_CONVERT_TO(ListIterator, actual);
-    EXPECT_EQ(Value::from_oop(expected_list), iterator->list.raw_value());
-    EXPECT_EQ(Value::from_smi(expected_index), iterator->index.raw_value());
-}
-
 static void expect_slice_indices_tuple(Value actual, int64_t expected_start,
                                        int64_t expected_stop,
                                        int64_t expected_step)
@@ -376,16 +349,6 @@ static Value load_global_from_module_for_test(CodeObject *code_object,
 {
     return load_module_global(code_object->get_defining_module().extract(),
                               name);
-}
-
-static Value
-load_builtin_from_module_for_test(test::VmTestContext &test_context,
-                                  const wchar_t *name)
-{
-    TValue<String> name_value =
-        test_context.vm().get_or_create_interned_string_value(name);
-    return load_module_global(
-        test_context.vm().global_builtins_module().extract(), name_value);
 }
 
 static Value make_test_function(test::VmTestContext &test_context,
@@ -6098,30 +6061,6 @@ TEST(Interpreter, float_string_methods_format_special_values)
                          dunder_repr_name, L"nan");
 }
 
-TEST(Interpreter, range_builtin_returns_range_iterator)
-{
-    test::VmTestContext test_context;
-    Value actual = test_context.run_file(L"range(5)\n");
-
-    expect_range_iterator(actual, 0, 5, 1);
-}
-
-TEST(Interpreter, range_builtin_two_arguments_returns_range_iterator)
-{
-    test::VmTestContext test_context;
-    Value actual = test_context.run_file(L"range(2, 5)\n");
-
-    expect_range_iterator(actual, 2, 5, 1);
-}
-
-TEST(Interpreter, range_builtin_three_arguments_returns_range_iterator)
-{
-    test::VmTestContext test_context;
-    Value actual = test_context.run_file(L"range(2, 9, 3)\n");
-
-    expect_range_iterator(actual, 2, 9, 3);
-}
-
 static Value run_exhausted_for_iter(test::VmTestContext &test_context,
                                     Bytecode opcode)
 {
@@ -6262,121 +6201,9 @@ TEST(Interpreter, range_builtin_rejects_wrong_arity_at_function_boundary)
                         L"wrong number of arguments");
 }
 
-TEST(Interpreter, python_defined_iter_builtin_calls_dunder_iter)
-{
-    test::VmTestContext test_context;
-    Value actual = test_context.run_file(L"iter(range(3))\n");
-
-    expect_range_iterator(actual, 0, 3, 1);
-}
-
-TEST(Interpreter, tuple_iter_returns_tuple_iterator)
-{
-    test::VmTestContext test_context;
-
-    Value iterator_value = test_context.run_file(L"iter((1, 2, 3))\n");
-    TupleIterator *iterator =
-        CL_ASSERT_CONVERT_TO(TupleIterator, iterator_value);
-    EXPECT_EQ(Value::from_smi(3), iterator->length.raw_value());
-    EXPECT_EQ(Value::from_smi(0), iterator->index.raw_value());
-    Tuple *tuple = iterator->tuple.extract();
-    ASSERT_EQ(size_t(3), tuple->size());
-    EXPECT_EQ(Value::from_smi(1), tuple->item_unchecked(0));
-    EXPECT_EQ(Value::from_smi(2), tuple->item_unchecked(1));
-    EXPECT_EQ(Value::from_smi(3), tuple->item_unchecked(2));
-}
-
-TEST(Interpreter, python_defined_next_builtin_calls_dunder_next)
-{
-    test::VmTestContext test_context;
-    Value actual = test_context.run_file(L"next(range(3))\n");
-
-    EXPECT_EQ(Value::from_smi(0), actual);
-}
-
-TEST(Interpreter, python_defined_next_builtin_returns_default_when_exhausted)
-{
-    test::VmTestContext test_context;
-    Value actual = test_context.run_file(L"next(iter(()), 42)\n");
-
-    EXPECT_EQ(Value::from_smi(42), actual);
-}
-
 TEST(Interpreter, python_defined_next_builtin_rejects_multiple_defaults)
 {
     expect_python_error(L"next(iter(()), 42, 43)\n", L"TypeError", L"");
-}
-
-TEST(Interpreter, tuple_iterator_next_returns_items_until_stop_iteration)
-{
-    test::VmTestContext test_context;
-    ThreadState::ActivationScope activation_scope(test_context.thread());
-    Value iterator_value = test_context.run_file(L"iter((4, 5))\n");
-    TupleIterator *iterator =
-        CL_ASSERT_CONVERT_TO(TupleIterator, iterator_value);
-    Tuple *tuple = iterator->tuple.extract();
-    expect_tuple_iterator(iterator_value, tuple, 2, 0);
-
-    TValue<Function> next_function = TValue<Function>::from_value_assumed(
-        load_builtin_from_module_for_test(test_context, L"next"));
-
-    Value first = test_context.thread()->call_clovervm_function(next_function,
-                                                                iterator_value);
-    EXPECT_EQ(Value::from_smi(4), first);
-    expect_tuple_iterator(iterator_value, tuple, 2, 1);
-
-    Value second = test_context.thread()->call_clovervm_function(
-        next_function, iterator_value);
-    EXPECT_EQ(Value::from_smi(5), second);
-    expect_tuple_iterator(iterator_value, tuple, 2, 2);
-
-    Value exhausted = test_context.thread()->call_clovervm_function(
-        next_function, iterator_value);
-    EXPECT_TRUE(exhausted.is_exception_marker());
-    EXPECT_TRUE(test_context.thread()->has_pending_exception());
-    test_context.thread()->clear_pending_exception();
-}
-
-TEST(Interpreter, list_iter_returns_list_iterator)
-{
-    test::VmTestContext test_context;
-    Value iterator_value = test_context.run_file(L"iter([1, 2, 3])\n");
-    ListIterator *iterator = CL_ASSERT_CONVERT_TO(ListIterator, iterator_value);
-    EXPECT_EQ(Value::from_smi(0), iterator->index.raw_value());
-    List *list = iterator->list.extract();
-    ASSERT_EQ(size_t(3), list->size());
-    EXPECT_EQ(Value::from_smi(1), list->item_unchecked(0));
-    EXPECT_EQ(Value::from_smi(2), list->item_unchecked(1));
-    EXPECT_EQ(Value::from_smi(3), list->item_unchecked(2));
-}
-
-TEST(Interpreter, list_iterator_next_returns_items_until_stop_iteration)
-{
-    test::VmTestContext test_context;
-    ThreadState::ActivationScope activation_scope(test_context.thread());
-    Value iterator_value = test_context.run_file(L"iter([4, 5])\n");
-    ListIterator *iterator = CL_ASSERT_CONVERT_TO(ListIterator, iterator_value);
-    List *list = iterator->list.extract();
-    expect_list_iterator(iterator_value, list, 0);
-
-    TValue<Function> next_function = TValue<Function>::from_value_assumed(
-        load_builtin_from_module_for_test(test_context, L"next"));
-
-    Value first = test_context.thread()->call_clovervm_function(next_function,
-                                                                iterator_value);
-    EXPECT_EQ(Value::from_smi(4), first);
-    expect_list_iterator(iterator_value, list, 1);
-
-    Value second = test_context.thread()->call_clovervm_function(
-        next_function, iterator_value);
-    EXPECT_EQ(Value::from_smi(5), second);
-    expect_list_iterator(iterator_value, list, 2);
-
-    Value exhausted = test_context.thread()->call_clovervm_function(
-        next_function, iterator_value);
-    EXPECT_TRUE(exhausted.is_exception_marker());
-    EXPECT_TRUE(test_context.thread()->has_pending_exception());
-    test_context.thread()->clear_pending_exception();
 }
 
 TEST(Interpreter, python_defined_repr_builtin_calls_dunder_repr)
