@@ -1720,21 +1720,6 @@ TEST(Interpreter, operator_add_dispatch_reflected_subclass_python_cache_hit)
     ASSERT_NE(nullptr, cache.operand_lookup_validity_cells[1]);
 }
 
-TEST(Interpreter, operator_add_dispatch_inherited_radd_does_not_preempt_add)
-{
-    test::VmTestContext test_context;
-
-    EXPECT_EQ(Value::from_smi(3),
-              test_context.run_file(L"class Base:\n"
-                                    L"    def __add__(self, other):\n"
-                                    L"        return 3\n"
-                                    L"    def __radd__(self, other):\n"
-                                    L"        return 7\n"
-                                    L"class Derived(Base):\n"
-                                    L"    pass\n"
-                                    L"Base() + Derived()\n"));
-}
-
 TEST(Interpreter, operator_add_dispatch_trusted_str_handler_cache_hit)
 {
     test::VmTestContext test_context;

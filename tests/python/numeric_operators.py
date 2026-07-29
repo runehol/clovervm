@@ -165,3 +165,19 @@ class ReflectedTernaryPower:
 
 assert pow(TernaryPower(), 3, 5) == 305
 assert pow(2, ReflectedTernaryPower(), 5) == 45
+
+
+# An inherited reflected method does not get subclass priority over __add__.
+class InheritedReflectedAddBase:
+    def __add__(self, other):
+        return 3
+
+    def __radd__(self, other):
+        return 7
+
+
+class InheritedReflectedAddDerived(InheritedReflectedAddBase):
+    pass
+
+
+assert InheritedReflectedAddBase() + InheritedReflectedAddDerived() == 3
