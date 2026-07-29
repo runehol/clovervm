@@ -31,6 +31,39 @@ namespace cl::jit
         }
     }  // namespace
 
+    TransferPoint
+    transfer_point_for_occurrence(const PreparedAllocationProblem &problem,
+                                  OccurrenceId occurrence_id)
+    {
+        const Occurrence &occurrence =
+            problem.occurrences()[occurrence_id.value()];
+        const LiveRange &source =
+            problem.live_ranges()[occurrence.live_range.value()];
+        switch(occurrence.anchor.kind())
+        {
+            case OccurrenceAnchor::Kind::InstructionOperand:
+            case OccurrenceAnchor::Kind::InstructionTemporary:
+                return TransferPoint::before_instruction(
+                    source.block->storage()->instruction(
+                        occurrence.anchor.instruction_id()));
+            case OccurrenceAnchor::Kind::InstructionResult:
+                if(is_block_parameter_kind(
+                       source.block->storage()
+                           ->instruction(occurrence.anchor.instruction_id())
+                           .kind()))
+                {
+                    return TransferPoint::block_entry(source.block);
+                }
+                return TransferPoint::before_instruction(
+                    source.block->storage()->instruction(
+                        occurrence.anchor.instruction_id()));
+            case OccurrenceAnchor::Kind::BlockEdgeArgument:
+                return TransferPoint::block_exit(
+                    occurrence.anchor.block_edge()->source());
+        }
+        fatal("invalid occurrence anchor for JIT bundle split");
+    }
+
     std::optional<BundleId>
     split_bundle(std::vector<LiveBundle> &bundles,
                  BundleTransferSchedule &transfers,

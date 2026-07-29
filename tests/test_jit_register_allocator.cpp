@@ -548,6 +548,68 @@ namespace cl::jit
                   assignment_result.error());
     }
 
+    TEST(JitRegisterAllocator, SplitsBeforeFixedUseUnderRegisterPressure)
+    {
+        CompilationSession session;
+        GraphBuilder builder(session, IRLevel::Core);
+        Block *entry = builder.emplace_block();
+        ParameterInstruction parameter =
+            builder.emplace_parameter<ParameterInstruction>(entry);
+        AndSMIInstruction operation =
+            builder.emplace_instruction<AndSMIInstruction>(
+                entry, TaggedValueRef(parameter), TaggedValueRef(parameter));
+        ReturnInstruction return_instruction =
+            builder.emplace_instruction<ReturnInstruction>(
+                entry, TaggedValueRef(operation));
+        ControlFlowGraph *graph = builder.finalize();
+
+        std::vector<InstructionAllocationConstraints> overrides;
+        overrides.emplace_back(parameter,
+                               std::vector<ProgramValueUseConstraint>{},
+                               ResultConstraint{AccessTiming::Late, fixed(x0)});
+        overrides.emplace_back(
+            operation,
+            std::vector<ProgramValueUseConstraint>{
+                {0, AccessTiming::Late,
+                 LocationRequirement::any_register(RegisterClass::GPR)},
+                {1, AccessTiming::Late,
+                 LocationRequirement::any_register(RegisterClass::GPR)}});
+        overrides.emplace_back(
+            return_instruction,
+            std::vector<ProgramValueUseConstraint>{
+                {ReturnInstruction::return_value_operand_index,
+                 AccessTiming::Early, fixed(x0)}});
+        constexpr std::array registers = {x0, x1};
+        AllocationConstraints constraints =
+            gpr_constraints(registers, std::move(overrides));
+
+        auto prepared_result = prepare_register_allocation(*graph, constraints);
+        ASSERT_TRUE(prepared_result);
+        PreparedAllocationProblem prepared = std::move(prepared_result).value();
+        auto assignment_result = assign_bundles(prepared, constraints);
+
+        ASSERT_TRUE(assignment_result);
+        RegisterAllocationResult allocation =
+            std::move(assignment_result).value();
+        ASSERT_EQ(3u, allocation.bundles().size());
+        EXPECT_EQ((LivenessRange{LivenessPosition(1), LivenessPosition(4)}),
+                  allocation.bundles()[0].fragments[0].range);
+        EXPECT_EQ((LivenessRange{LivenessPosition(3), LivenessPosition(4)}),
+                  allocation.bundles()[1].fragments[0].range);
+        EXPECT_EQ((LivenessRange{LivenessPosition(4), LivenessPosition(5)}),
+                  allocation.bundles()[2].fragments[0].range);
+        EXPECT_EQ(x0, allocation.locations().location_for(BundleId(0)).reg());
+        EXPECT_EQ(x1, allocation.locations().location_for(BundleId(1)).reg());
+        EXPECT_EQ(x0, allocation.locations().location_for(BundleId(2)).reg());
+        ASSERT_EQ(1u, allocation.transfers().sets().size());
+        const BundleTransferSet &set = allocation.transfers().sets().front();
+        EXPECT_EQ(TransferPoint::before_instruction(return_instruction),
+                  set.point);
+        ASSERT_EQ(1u, set.transfers.size());
+        EXPECT_EQ(BundleId(1), set.transfers[0].source);
+        EXPECT_EQ(BundleId(2), set.transfers[0].destination);
+    }
+
     TEST(JitRegisterAllocator, SplitsConflictingFixedRegisters)
     {
         CompilationSession session;

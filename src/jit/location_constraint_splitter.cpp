@@ -107,34 +107,6 @@ namespace cl::jit
             return result;
         }
 
-        TransferPoint transfer_point_for(const Occurrence &occurrence,
-                                         const LiveRange &source)
-        {
-            switch(occurrence.anchor.kind())
-            {
-                case OccurrenceAnchor::Kind::InstructionOperand:
-                case OccurrenceAnchor::Kind::InstructionTemporary:
-                    return TransferPoint::before_instruction(
-                        source.block->storage()->instruction(
-                            occurrence.anchor.instruction_id()));
-                case OccurrenceAnchor::Kind::InstructionResult:
-                    if(is_block_parameter_kind(
-                           source.block->storage()
-                               ->instruction(occurrence.anchor.instruction_id())
-                               .kind()))
-                    {
-                        return TransferPoint::block_entry(source.block);
-                    }
-                    return TransferPoint::before_instruction(
-                        source.block->storage()->instruction(
-                            occurrence.anchor.instruction_id()));
-                case OccurrenceAnchor::Kind::BlockEdgeArgument:
-                    return TransferPoint::block_exit(
-                        occurrence.anchor.block_edge()->source());
-            }
-            fatal("invalid occurrence anchor for JIT bundle split");
-        }
-
         class LocationConstraintSplitter
         {
         public:
@@ -186,13 +158,11 @@ namespace cl::jit
 
                         const Occurrence &occurrence =
                             problem_.occurrences()[occurrence_id.value()];
-                        const LiveRange &source =
-                            problem_
-                                .live_ranges()[occurrence.live_range.value()];
                         std::optional<BundleId> right = cl::jit::split_bundle(
                             bundles_, transfers_, problem_, current,
                             occurrence.minimum_coverage.start,
-                            transfer_point_for(occurrence, source));
+                            transfer_point_for_occurrence(problem_,
+                                                          occurrence_id));
                         if(!right.has_value())
                         {
                             return Result<void, RegisterAllocationError>::error(

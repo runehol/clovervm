@@ -130,9 +130,10 @@ namespace cl::jit
         {
         public:
             BundleAssigner(const PreparedAllocationProblem &problem,
-                           std::span<const LiveBundle> bundles,
+                           std::vector<LiveBundle> &bundles,
+                           BundleTransferSchedule &transfers,
                            const AllocationConstraints &constraints)
-                : problem_(problem), bundles_(bundles),
+                : problem_(problem), bundles_(bundles), transfers_(transfers),
                   constraints_(constraints), location_by_bundle_(bundles.size())
             {
                 for(const ClobberReservation &clobber: problem_.clobbers())
@@ -177,9 +178,15 @@ namespace cl::jit
                     }
                     else if(required.has_value())
                     {
-                        if(probe_register(required->reg(), bundle).fits())
+                        RegisterProbe probe =
+                            probe_register(required->reg(), bundle);
+                        if(probe.fits())
                         {
                             selected = required;
+                        }
+                        else if(split_before_later_fixed_use(bundle_id, probe))
+                        {
+                            continue;
                         }
                     }
                     else
@@ -227,10 +234,14 @@ namespace cl::jit
             {
                 for(size_t index = 0; index < bundles_.size(); ++index)
                 {
-                    const LiveBundle &bundle = bundles_[index];
-                    worklist_.push(
-                        {BundleId(index), bundle.allocation_priority});
+                    enqueue(BundleId(index));
                 }
+            }
+
+            void enqueue(BundleId bundle)
+            {
+                worklist_.push(
+                    {bundle, bundles_[bundle.value()].allocation_priority});
             }
 
             std::optional<PhysicalLocation>
@@ -331,6 +342,52 @@ namespace cl::jit
                 return result;
             }
 
+            bool split_before_later_fixed_use(BundleId bundle_id,
+                                              const RegisterProbe &probe)
+            {
+                assert(probe.first_conflict.has_value());
+                const LiveBundle &bundle = bundles_[bundle_id.value()];
+                std::optional<FixedConstraintId> selected;
+                std::optional<LivenessPosition> selected_boundary;
+                for(FixedConstraintId fixed_id: bundle.fixed_constraints)
+                {
+                    const FixedLocationConstraint &fixed =
+                        problem_.fixed_constraints()[fixed_id.value()];
+                    const Occurrence &occurrence =
+                        problem_.occurrences()[fixed.occurrence.value()];
+                    LivenessPosition boundary =
+                        occurrence.minimum_coverage.start;
+                    if(boundary <= *probe.first_conflict ||
+                       (selected_boundary.has_value() &&
+                        boundary >= *selected_boundary))
+                    {
+                        continue;
+                    }
+                    selected = fixed_id;
+                    selected_boundary = boundary;
+                }
+                if(!selected.has_value())
+                {
+                    return false;
+                }
+
+                OccurrenceId occurrence =
+                    problem_.fixed_constraints()[selected->value()].occurrence;
+                std::optional<BundleId> right = split_bundle(
+                    bundles_, transfers_, problem_, bundle_id,
+                    *selected_boundary,
+                    transfer_point_for_occurrence(problem_, occurrence));
+                if(!right.has_value())
+                {
+                    return false;
+                }
+                assert(right->value() == location_by_bundle_.size());
+                location_by_bundle_.push_back(std::nullopt);
+                enqueue(bundle_id);
+                enqueue(*right);
+                return true;
+            }
+
             bool fits(StackLocation stack, const LiveBundle &bundle) const
             {
                 auto found = stack_occupancy_.find(stack.frame_offset());
@@ -373,7 +430,8 @@ namespace cl::jit
             }
 
             const PreparedAllocationProblem &problem_;
-            std::span<const LiveBundle> bundles_;
+            std::vector<LiveBundle> &bundles_;
+            BundleTransferSchedule &transfers_;
             const AllocationConstraints &constraints_;
             std::vector<std::optional<PhysicalLocation>> location_by_bundle_;
             PerPhysicalRegister<RegisterOccupancy> occupancy_;
@@ -397,7 +455,8 @@ namespace cl::jit
         LocationConstraintSplit split = std::move(split_result).value();
 
         auto assignment_result =
-            BundleAssigner(problem, split.bundles, constraints).run();
+            BundleAssigner(problem, split.bundles, split.transfers, constraints)
+                .run();
         if(!assignment_result)
         {
             return propagate_failure(std::move(assignment_result));

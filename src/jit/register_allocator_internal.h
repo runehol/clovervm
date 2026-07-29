@@ -42,6 +42,10 @@ namespace cl::jit
                  const PreparedAllocationProblem &problem, BundleId bundle,
                  LivenessPosition boundary, TransferPoint transfer_point);
 
+    TransferPoint
+    transfer_point_for_occurrence(const PreparedAllocationProblem &problem,
+                                  OccurrenceId occurrence);
+
 }  // namespace cl::jit
 
 #endif  // CL_JIT_REGISTER_ALLOCATOR_INTERNAL_H
