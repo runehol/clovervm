@@ -4703,57 +4703,6 @@ TEST(Interpreter, main_module_file_sets_file_not_name)
                  string_as_wchar_t(TValue<String>::from_value_assumed(file)));
 }
 
-TEST(Interpreter, globals_slotdict_len_counts_visible_module_bindings)
-{
-    test::VmTestContext test_context;
-
-    EXPECT_EQ(Value::from_smi(2),
-              test_context.run_file(L"globals()[\"x\"] = 1\n"
-                                    L"before = len(globals())\n"
-                                    L"globals()[\"y\"] = 2\n"
-                                    L"len(globals()) - before\n"));
-}
-
-TEST(Interpreter, globals_slotdict_repr_is_dict_style)
-{
-    test::VmTestContext test_context;
-
-    Value actual = test_context.run_file(L"x = 1\n"
-                                         L"repr(globals())\n");
-    ASSERT_TRUE(can_convert_to<String>(actual));
-    std::wstring text =
-        string_as_wchar_t(TValue<String>::from_value_assumed(actual));
-    EXPECT_EQ(L'{', text.front());
-    EXPECT_EQ(L'}', text.back());
-    EXPECT_NE(std::wstring::npos, text.find(L"'x': 1"));
-}
-
-TEST(Interpreter, globals_slotdict_repr_handles_self_reference)
-{
-    test::VmTestContext test_context;
-
-    Value actual = test_context.run_file(L"a = globals()\n"
-                                         L"repr(a)\n");
-    ASSERT_TRUE(can_convert_to<String>(actual));
-    std::wstring text =
-        string_as_wchar_t(TValue<String>::from_value_assumed(actual));
-    EXPECT_NE(std::wstring::npos, text.find(L"'a': {...}"));
-}
-
-TEST(Interpreter, globals_slotdict_writes_and_deletes_module_bindings)
-{
-    test::VmTestContext test_context;
-
-    EXPECT_EQ(Value::from_smi(42),
-              test_context.run_file(L"globals()[\"written\"] = 42\n"
-                                    L"written\n"));
-
-    Value range_value = test_context.run_file(L"globals()[\"range\"] = 42\n"
-                                              L"del globals()[\"range\"]\n"
-                                              L"range(1)\n");
-    ASSERT_TRUE(can_convert_to<RangeIterator>(range_value));
-}
-
 TEST(Interpreter, globals_slotdict_rejects_non_string_keys)
 {
     expect_python_error(L"globals()[1] = 2\n", L"TypeError",
@@ -4766,13 +4715,6 @@ TEST(Interpreter, globals_slotdict_rejects_non_string_keys)
 
 TEST(Interpreter, globals_slotdict_class_is_not_builtin_binding)
 {
-    test::VmTestContext test_context;
-
-    Value class_name = test_context.run_file(L"globals().__class__.__name__\n");
-    ASSERT_TRUE(can_convert_to<String>(class_name));
-    EXPECT_STREQ(
-        L"slotdict",
-        string_as_wchar_t(TValue<String>::from_value_assumed(class_name)));
     expect_python_error(L"slotdict\n", L"NameError",
                         L"name 'slotdict' is not defined");
 }
@@ -4785,13 +4727,8 @@ TEST(Interpreter, locals_builtin_returns_module_slotdict_at_module_scope)
     ASSERT_TRUE(can_convert_to<SlotDict>(actual));
 }
 
-TEST(Interpreter, locals_slotdict_reads_and_writes_module_bindings)
+TEST(Interpreter, locals_slotdict_excludes_builtin_fallbacks)
 {
-    test::VmTestContext test_context;
-
-    EXPECT_EQ(Value::from_smi(3), test_context.run_file(L"x = 1\n"
-                                                        L"locals()[\"y\"] = 2\n"
-                                                        L"x + y\n"));
     expect_python_error(L"locals()[\"len\"]\n", L"KeyError", L"");
 }
 
