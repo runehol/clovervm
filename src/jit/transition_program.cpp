@@ -67,15 +67,15 @@ namespace cl::jit
     void TransitionProgramBuilder::append_instruction(
         TransitionInstruction instruction)
     {
-        size_t body_position = instructions_.size() - 1;
+        size_t entry_index = instructions_.size();
         if(has_implicit_output(instruction.kind()))
         {
-            if(body_position >
+            if(entry_index >
                static_cast<size_t>(std::numeric_limits<int16_t>::max()))
             {
                 fatal("transition program has too many result instructions");
             }
-            require_scratch_slot(static_cast<uint32_t>(body_position));
+            require_scratch_slot(static_cast<uint32_t>(entry_index));
         }
         if(instruction.kind() == TransitionInstructionKind::Transfer)
         {
@@ -98,11 +98,10 @@ namespace cl::jit
     }
 
     void TransitionProgramBuilder::emplace_resume_interpreter(
-        TransitionLocation accumulator, TransitionLocation thread_state,
-        BytecodePC resume_pc)
+        TransitionLocation accumulator, BytecodePC resume_pc)
     {
-        append_instruction(TransitionInstruction::resume_interpreter(
-            accumulator, thread_state, resume_pc));
+        append_instruction(
+            TransitionInstruction::resume_interpreter(accumulator, resume_pc));
     }
 
     std::vector<TransitionInstruction> TransitionProgramBuilder::finalize() &&
@@ -140,7 +139,6 @@ namespace cl::jit
         for(size_t index = 1; index < instructions.size(); ++index)
         {
             const TransitionInstruction &instruction = instructions[index];
-            size_t body_position = index - 1;
             switch(instruction.kind())
             {
                 case TransitionInstructionKind::BeginTransition:
@@ -173,12 +171,6 @@ namespace cl::jit
                     }
                 case TransitionInstructionKind::ResumeInterpreter:
                     require_initialized_scratch(
-                        instruction.interpreter_thread_state(),
-                        initialized_scratch);
-                    require_declared_scratch(
-                        instruction.interpreter_thread_state(),
-                        scratch_slot_count);
-                    require_initialized_scratch(
                         instruction.interpreter_accumulator(),
                         initialized_scratch);
                     require_declared_scratch(
@@ -195,11 +187,11 @@ namespace cl::jit
                     {
                         fatal("unsupported transition instruction");
                     }
-                    if(body_position >= scratch_slot_count)
+                    if(index >= scratch_slot_count)
                     {
                         fatal("transition result exceeds scratch header");
                     }
-                    initialized_scratch[body_position] = true;
+                    initialized_scratch[index] = true;
                     break;
             }
         }
@@ -226,12 +218,12 @@ namespace cl::jit
                     fatal("transition dump has no BeginTransition header");
                 }
                 fmt::format_to(std::back_inserter(result),
-                               "  begin_transition {{scratch_slots = {}}}\n",
+                               "  0: begin_transition "
+                               "{{scratch_slots = {}}}\n",
                                instruction.scratch_slot_count());
                 continue;
             }
 
-            size_t body_position = index - 1;
             switch(instruction.kind())
             {
                 case TransitionInstructionKind::BeginTransition:
@@ -239,23 +231,21 @@ namespace cl::jit
                 case TransitionInstructionKind::Transfer:
                     fmt::format_to(
                         std::back_inserter(result), "  {}: transfer {}, {}\n",
-                        body_position,
+                        index,
                         format_location(instruction.transfer_destination()),
                         format_location(instruction.transfer_source()));
                     break;
                 case TransitionInstructionKind::ResumeInterpreter:
                     fmt::format_to(
                         std::back_inserter(result),
-                        "  {}: resume_interpreter {}, {} "
-                        "{{resume_pc = {}}}\n",
-                        body_position,
+                        "  {}: resume_interpreter {} {{resume_pc = {}}}\n",
+                        index,
                         format_location(instruction.interpreter_accumulator()),
-                        format_location(instruction.interpreter_thread_state()),
                         instruction.resume_pc());
                     break;
                 default:
                     fmt::format_to(std::back_inserter(result),
-                                   "  {}: instruction {}\n", body_position,
+                                   "  {}: instruction {}\n", index,
                                    static_cast<uint16_t>(instruction.kind()));
                     break;
             }

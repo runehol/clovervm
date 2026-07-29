@@ -171,7 +171,6 @@ namespace cl::jit
         CompilationSession session;
         GraphBuilder builder(session, IRLevel::Core);
         Block *entry = builder.emplace_block();
-        builder.emplace_parameter<ParameterPointerInstruction>(entry);
         ParameterInstruction parameter =
             builder.emplace_parameter<ParameterInstruction>(entry);
         TaggedValueRef operand(parameter);
@@ -189,11 +188,11 @@ namespace cl::jit
         EXPECT_EQ(IRLevel::Machine, graph->ir_level());
         PublishedCode code = std::move(compilation).value();
 
-        using Function = uint64_t (*)(ThreadState *, uint64_t);
+        using Function = uint64_t (*)(uint64_t);
         Function function =
             reinterpret_cast<Function>(code.entry().bits_for_indirect_target());
         constexpr uint64_t input = 0x123456789abcdef0;
-        EXPECT_EQ(input, function(nullptr, input));
+        EXPECT_EQ(input, function(input));
     }
 
     TEST(AArch64Execution, CompilesPythonIdentityFunction)
@@ -212,7 +211,7 @@ namespace cl::jit
         ASSERT_TRUE(compilation);
         PublishedCode code = std::move(compilation).value();
 
-        using Function = uint64_t (*)(ThreadState *, uint64_t);
+        using Function = uint64_t (*)(uint64_t);
         Function function =
             reinterpret_cast<Function>(code.entry().bits_for_indirect_target());
         const Value inputs[] = {Value::None(), Value::True(),
@@ -220,8 +219,7 @@ namespace cl::jit
         for(Value input: inputs)
         {
             EXPECT_EQ(static_cast<uint64_t>(input.as.integer),
-                      function(fixture.context.thread(),
-                               static_cast<uint64_t>(input.as.integer)));
+                      function(static_cast<uint64_t>(input.as.integer)));
         }
     }
 
@@ -275,11 +273,11 @@ namespace cl::jit
         EXPECT_GT(observer.translated_instruction_count,
                   observer.optimized_instruction_count);
 
-        using Function = uint64_t (*)(ThreadState *, uint64_t);
+        using Function = uint64_t (*)(uint64_t);
         Function function = reinterpret_cast<Function>(
             code->entry().bits_for_indirect_target());
         constexpr uint64_t input = 0x123456789abcdef0;
-        EXPECT_EQ(input, function(fixture.context.thread(), input));
+        EXPECT_EQ(input, function(input));
     }
 
     TEST(AArch64Execution, CompilesPythonConstantFunction)
@@ -297,11 +295,11 @@ namespace cl::jit
         ASSERT_TRUE(compilation);
         PublishedCode code = std::move(compilation).value();
 
-        using Function = uint64_t (*)(ThreadState *);
+        using Function = uint64_t (*)();
         Function function =
             reinterpret_cast<Function>(code.entry().bits_for_indirect_target());
         EXPECT_EQ(static_cast<uint64_t>(Value::from_smi(42).as.integer),
-                  function(fixture.context.thread()));
+                  function());
     }
 
     TEST(AArch64Execution, CompilesPythonFunctionReturningSecondArgument)
@@ -319,12 +317,12 @@ namespace cl::jit
         ASSERT_TRUE(compilation);
         PublishedCode code = std::move(compilation).value();
 
-        using Function = uint64_t (*)(ThreadState *, uint64_t, uint64_t);
+        using Function = uint64_t (*)(uint64_t, uint64_t);
         Function function =
             reinterpret_cast<Function>(code.entry().bits_for_indirect_target());
         constexpr uint64_t first = 0x1111222233334444;
         constexpr uint64_t second = 0xaaaabbbbccccdddd;
-        EXPECT_EQ(second, function(fixture.context.thread(), first, second));
+        EXPECT_EQ(second, function(first, second));
     }
 
     TEST(AArch64Execution, CompilesPythonIs)
@@ -342,15 +340,15 @@ namespace cl::jit
         ASSERT_TRUE(compilation);
         PublishedCode code = std::move(compilation).value();
 
-        using Function = uint64_t (*)(ThreadState *, uint64_t, uint64_t);
+        using Function = uint64_t (*)(uint64_t, uint64_t);
         Function function =
             reinterpret_cast<Function>(code.entry().bits_for_indirect_target());
         uint64_t none = static_cast<uint64_t>(Value::None().as.integer);
         uint64_t truth = static_cast<uint64_t>(Value::True().as.integer);
         EXPECT_EQ(static_cast<uint64_t>(Value::True().as.integer),
-                  function(fixture.context.thread(), none, none));
+                  function(none, none));
         EXPECT_EQ(static_cast<uint64_t>(Value::False().as.integer),
-                  function(fixture.context.thread(), none, truth));
+                  function(none, truth));
     }
 
     TEST(AArch64Execution, CompilesPythonIsNot)
@@ -368,15 +366,15 @@ namespace cl::jit
         ASSERT_TRUE(compilation);
         PublishedCode code = std::move(compilation).value();
 
-        using Function = uint64_t (*)(ThreadState *, uint64_t, uint64_t);
+        using Function = uint64_t (*)(uint64_t, uint64_t);
         Function function =
             reinterpret_cast<Function>(code.entry().bits_for_indirect_target());
         uint64_t none = static_cast<uint64_t>(Value::None().as.integer);
         uint64_t truth = static_cast<uint64_t>(Value::True().as.integer);
         EXPECT_EQ(static_cast<uint64_t>(Value::False().as.integer),
-                  function(fixture.context.thread(), none, none));
+                  function(none, none));
         EXPECT_EQ(static_cast<uint64_t>(Value::True().as.integer),
-                  function(fixture.context.thread(), none, truth));
+                  function(none, truth));
     }
 
     TEST(AArch64Execution, EmitsInlineConstantFunctionFromCfg)

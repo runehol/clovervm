@@ -29,8 +29,6 @@ namespace cl::jit
     CoreBytecodeTranslator::State
     CoreBytecodeTranslator::make_entry_state(Block *block)
     {
-        PointerRef thread_state(
-            builder_.emplace_parameter<ParameterPointerInstruction>(block));
         std::vector<ProgramValueRef> parameters;
         parameters.reserve(state_tracker_.n_parameters());
         for(uint32_t index = 0; index < state_tracker_.n_parameters(); ++index)
@@ -44,8 +42,7 @@ namespace cl::jit
             builder_.emplace_instruction<UninitializedInstruction>(block));
         ProgramValueRef uninitialized_temporary(
             builder_.emplace_instruction<UninitializedInstruction>(block));
-        return state_tracker_.make_entry_state(thread_state, parameters,
-                                               uninitialized_local,
+        return state_tracker_.make_entry_state(parameters, uninitialized_local,
                                                uninitialized_temporary);
     }
 
@@ -57,17 +54,8 @@ namespace cl::jit
         for(size_t index = 0; index < state_tracker_.block_parameter_count();
             ++index)
         {
-            if(index == BytecodeStateOrder::ThreadStatePosition)
-            {
-                parameters.emplace_back(
-                    builder_.emplace_parameter<ParameterPointerInstruction>(
-                        block));
-            }
-            else
-            {
-                parameters.emplace_back(
-                    builder_.emplace_parameter<ParameterInstruction>(block));
-            }
+            parameters.emplace_back(
+                builder_.emplace_parameter<ParameterInstruction>(block));
         }
         return state_tracker_.make_state_from_block_parameters(parameters);
     }

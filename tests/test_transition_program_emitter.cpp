@@ -30,14 +30,6 @@ namespace cl::jit
             return result;
         }
 
-        uint64_t word_for(ThreadState *thread_state)
-        {
-            static_assert(sizeof(thread_state) == sizeof(uint64_t));
-            uint64_t result;
-            std::memcpy(&result, &thread_state, sizeof(result));
-            return result;
-        }
-
         struct EmitterFixture
         {
             EmitterFixture() : builder(session, IRLevel::Core)
@@ -51,8 +43,6 @@ namespace cl::jit
 
                 captured.emplace_back(
                     builder.make_instruction<ParameterInstruction>());
-                captured.emplace_back(
-                    builder.make_instruction<ParameterPointerInstruction>());
                 while(captured.size() < state_order->size())
                 {
                     captured.emplace_back(
@@ -82,8 +72,6 @@ namespace cl::jit
         {
             std::array<Value, 64> stack{};
             Value *frame_pointer = stack.data() + 32;
-            ThreadState *thread_state =
-                reinterpret_cast<ThreadState *>(stack.data());
         };
     }  // namespace
 
@@ -98,8 +86,6 @@ namespace cl::jit
         Value accumulator = Value::from_smi(101);
         register_file[BytecodeStateOrder::AccumulatorPosition] =
             word_for(accumulator);
-        register_file[BytecodeStateOrder::ThreadStatePosition] =
-            word_for(execution.thread_state);
         for(size_t position = 0; position < fixture.state_order->size();
             ++position)
         {
@@ -118,13 +104,12 @@ namespace cl::jit
                 *fixture.side_exit, input_locations);
 
         ASSERT_FALSE(program.empty());
-        EXPECT_EQ(2u, program.front().scratch_slot_count());
+        EXPECT_EQ(1u, program.front().scratch_slot_count());
         TransitionExecutionContext context;
         InterpreterResumeState resume = execute_transition_program(
             context, program, {register_file, execution.frame_pointer});
 
         EXPECT_EQ(accumulator, resume.accumulator);
-        EXPECT_EQ(execution.thread_state, resume.thread_state);
         EXPECT_EQ(37u, resume.resume_pc);
         for(size_t position = BytecodeStateOrder::FirstFramePosition;
             position < fixture.state_order->size(); ++position)
@@ -140,11 +125,9 @@ namespace cl::jit
     {
         EmitterFixture fixture;
         ExecutionStorage execution;
-        std::array<uint64_t, 2> register_file = {
-            word_for(Value::from_smi(71)), word_for(execution.thread_state)};
+        std::array<uint64_t, 1> register_file = {word_for(Value::from_smi(71))};
         std::vector<TransitionLocation> input_locations = {
             TransitionLocation::register_file(0),
-            TransitionLocation::register_file(1),
         };
 
         for(size_t position = BytecodeStateOrder::FirstFramePosition;
@@ -172,13 +155,12 @@ namespace cl::jit
                 *fixture.session.storage(), *fixture.state_order,
                 *fixture.side_exit, input_locations);
 
-        EXPECT_EQ(3u, program.front().scratch_slot_count());
+        EXPECT_EQ(2u, program.front().scratch_slot_count());
         TransitionExecutionContext context;
         InterpreterResumeState resume = execute_transition_program(
             context, program, {register_file, execution.frame_pointer});
 
         EXPECT_EQ(Value::from_smi(71), resume.accumulator);
-        EXPECT_EQ(execution.thread_state, resume.thread_state);
         for(size_t position = BytecodeStateOrder::FirstFramePosition;
             position < fixture.state_order->size(); ++position)
         {

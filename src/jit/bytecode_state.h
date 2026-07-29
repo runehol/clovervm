@@ -17,8 +17,7 @@ namespace cl::jit
     {
     public:
         static constexpr size_t AccumulatorPosition = 0;
-        static constexpr size_t ThreadStatePosition = 1;
-        static constexpr size_t FirstFramePosition = 2;
+        static constexpr size_t FirstFramePosition = 1;
 
         explicit BytecodeStateOrder(const CodeObject &code_object)
             : n_parameters_(code_object.function_signature.n_parameters),
@@ -127,8 +126,7 @@ namespace cl::jit
         {
         }
 
-        BytecodeState<Ref> make_entry_state(Ref thread_state,
-                                            std::span<const Ref> parameters,
+        BytecodeState<Ref> make_entry_state(std::span<const Ref> parameters,
                                             Ref uninitialized_local,
                                             Ref unavailable) const
         {
@@ -139,7 +137,6 @@ namespace cl::jit
             }
 
             std::vector<Ref> values(order_.size(), unavailable);
-            values[BytecodeStateOrder::ThreadStatePosition] = thread_state;
             for(uint32_t index = 0; index < order_.n_parameters(); ++index)
             {
                 values[BytecodeStateOrder::FirstFramePosition + index] =

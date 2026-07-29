@@ -9,11 +9,6 @@
 #include <span>
 #include <vector>
 
-namespace cl
-{
-    class ThreadState;
-}
-
 namespace cl::jit
 {
     class TransitionExecutionContext
@@ -41,7 +36,6 @@ namespace cl::jit
     struct InterpreterResumeState
     {
         Value accumulator;
-        ThreadState *thread_state;
         BytecodePC resume_pc;
     };
 

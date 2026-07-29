@@ -4,7 +4,7 @@
 |---|---|
 | Document type | Design |
 | Status | Accepted |
-| Implementation | The compact representation and executor, snapshot-only emission, AArch64 location mapping, untagged code-object publication, and AArch64 side-exit references are implemented; removing the legacy ThreadState transition operand, sunk computation, target thunks, thread-owned execution context, and interpreter handoff remain |
+| Implementation | The compact representation and executor, snapshot-only emission without a ThreadState operand, AArch64 location mapping, untagged code-object publication, and AArch64 side-exit references are implemented; sunk computation, target thunks, thread-owned execution context, and interpreter handoff remain |
 | Scope | Compact straight-line programs that transform values and machine state between execution conventions; the first consumer is JIT side exit |
 | Owning layers | Core IR owns sunk operation semantics and Snapshot state; register allocation owns physical frontier locations; transition emission owns the continuous transition program and canonical publication; each thread owns reusable transition scratch storage; target thunks own fixed machine-state saves |
 | Validated against | `tests/test_transition_program.cpp`, `tests/test_transition_executor.cpp`, `tests/test_transition_program_emitter.cpp`, and `tests/test_aarch64_transition.cpp` |

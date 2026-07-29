@@ -9,6 +9,7 @@
 
 #include <absl/container/flat_hash_map.h>
 
+#include <algorithm>
 #include <cstdint>
 #include <limits>
 #include <optional>
@@ -83,22 +84,18 @@ namespace cl::jit
                           "state order");
                 }
 
-                uint32_t first_scratch = builder_.next_scratch_slot();
-                if(first_scratch >
-                   static_cast<uint32_t>(std::numeric_limits<int16_t>::max()) -
-                       2)
+                uint32_t next_scratch =
+                    std::max(builder_.next_scratch_slot(), uint32_t{1});
+                if(next_scratch >
+                   static_cast<uint32_t>(std::numeric_limits<int16_t>::max()))
                 {
                     fatal("transition program scratch locations are not "
                           "encodable");
                 }
                 TransitionLocation accumulator_result =
-                    TransitionLocation::scratch(
-                        static_cast<int16_t>(first_scratch));
-                TransitionLocation thread_state_result =
-                    TransitionLocation::scratch(
-                        static_cast<int16_t>(first_scratch + 1));
+                    TransitionLocation::scratch(0);
                 TransitionLocation move_scratch = TransitionLocation::scratch(
-                    static_cast<int16_t>(first_scratch + 2));
+                    static_cast<int16_t>(next_scratch));
 
                 std::vector<ParallelAssignment<TransitionLocation>> assignments;
                 assignments.reserve(captured.size());
@@ -115,9 +112,6 @@ namespace cl::jit
                 append_assignment(
                     captured[BytecodeStateOrder::AccumulatorPosition],
                     accumulator_result);
-                append_assignment(
-                    captured[BytecodeStateOrder::ThreadStatePosition],
-                    thread_state_result);
                 for(size_t position = BytecodeStateOrder::FirstFramePosition;
                     position < captured.size(); ++position)
                 {
@@ -151,7 +145,6 @@ namespace cl::jit
                                               move.source_location);
                 }
                 builder_.emplace_resume_interpreter(accumulator_result,
-                                                    thread_state_result,
                                                     snapshot.resume_pc());
             }
 

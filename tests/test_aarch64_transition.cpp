@@ -44,14 +44,6 @@ namespace cl::jit
             return result;
         }
 
-        uint64_t word_for(ThreadState *thread_state)
-        {
-            static_assert(sizeof(thread_state) == sizeof(uint64_t));
-            uint64_t result;
-            std::memcpy(&result, &thread_state, sizeof(result));
-            return result;
-        }
-
         void write_transition_input(TransitionLocation location, uint64_t value,
                                     std::span<uint64_t> register_file,
                                     Value *frame_pointer)
@@ -109,8 +101,6 @@ namespace cl::jit
         GraphBuilder builder(session, IRLevel::Core);
         builder.set_bytecode_state_order(state_order);
         Block *entry = builder.emplace_block();
-        ParameterPointerInstruction thread_state =
-            builder.emplace_parameter<ParameterPointerInstruction>(entry);
         ParameterInstruction argument =
             builder.emplace_parameter<ParameterInstruction>(entry);
 
@@ -118,8 +108,6 @@ namespace cl::jit
                                               ProgramValueRef(argument));
         captured[BytecodeStateOrder::AccumulatorPosition] =
             ProgramValueRef(argument);
-        captured[BytecodeStateOrder::ThreadStatePosition] =
-            ProgramValueRef(thread_state);
         SnapshotInstruction snapshot =
             builder.emplace_instruction<SnapshotInstruction>(entry, captured,
                                                              BytecodePC{29});
@@ -171,22 +159,12 @@ namespace cl::jit
             register_file{};
         std::array<Value, 64> stack{};
         Value *frame_pointer = stack.data() + 32;
-        ThreadState *expected_thread_state =
-            reinterpret_cast<ThreadState *>(stack.data());
         Value expected_value = Value::from_smi(73);
         for(size_t index = 0; index < side_exit.inputs().size(); ++index)
         {
             InstructionId input = side_exit.inputs()[index].instruction_id();
-            uint64_t word;
-            if(input == argument.id())
-            {
-                word = word_for(expected_value);
-            }
-            else
-            {
-                ASSERT_EQ(thread_state.id(), input);
-                word = word_for(expected_thread_state);
-            }
+            ASSERT_EQ(argument.id(), input);
+            uint64_t word = word_for(expected_value);
             write_transition_input(input_locations[index], word, register_file,
                                    frame_pointer);
         }
@@ -196,7 +174,6 @@ namespace cl::jit
             execution_context, program, {register_file, frame_pointer});
 
         EXPECT_EQ(expected_value, resume.accumulator);
-        EXPECT_EQ(expected_thread_state, resume.thread_state);
         EXPECT_EQ(29u, resume.resume_pc);
         for(size_t position = BytecodeStateOrder::FirstFramePosition;
             position < state_order.size(); ++position)

@@ -4,7 +4,7 @@
 |---|---|
 | Document type | Proposed architecture contract |
 | Status | Proposed |
-| Implementation | Partial; result constraints, canonical incoming stack locations, allocation-order register sets, per-class scratch registers, and emitted side-exit transition references are implemented; entry constraints still use the legacy x0 thread convention, while the x19 migration, stack-passed arguments, managed calls, entry/exit thunks, and side-exit thunk remain |
+| Implementation | Partial; the fixed-x19 value-state migration, result constraints, canonical incoming stack locations, allocation-order register sets, per-class scratch registers, and emitted side-exit transition references are implemented; installing x19 at runtime, stack-passed arguments, managed calls, entry/exit thunks, and the side-exit thunk remain |
 | Scope | AArch64 compiled managed argument transport, call adaptation, cross-engine entry, return, and safepoint placement |
 | Owning layers | Call-site lowering owns guarded Python adaptation; the AArch64 backend owns argument and result locations; transition adapters own cross-engine reshuffling; the generic allocator and materializer implement the resulting fixed-location constraints and transfers |
 | Builds on | [CloverVM Function Calling Convention](function-calling-convention.md) |

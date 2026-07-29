@@ -62,7 +62,7 @@ namespace cl::jit
         {
             std::array<TestRef, 3> parameters = {10, 11, 12};
             return tracker.make_entry_state(
-                80, std::span<const TestRef>(parameters), 90, 99);
+                std::span<const TestRef>(parameters), 90, 99);
         }
     }  // namespace
 
@@ -86,10 +86,9 @@ namespace cl::jit
                   tracker.value_at(state, temporary(*fixture.code_object, 2)));
 
         std::span<const TestRef> values = tracker.values(state);
-        EXPECT_EQ(80u, values[BytecodeStateOrder::ThreadStatePosition]);
+        EXPECT_EQ(99u, values[4]);
         EXPECT_EQ(99u, values[5]);
-        EXPECT_EQ(99u, values[6]);
-        EXPECT_EQ(99u, values[9]);
+        EXPECT_EQ(99u, values[8]);
     }
 
     TEST(JitBytecodeState, UsesCanonicalDescendingStackOrder)
@@ -98,26 +97,26 @@ namespace cl::jit
         BytecodeStateTracker<TestRef> tracker(*fixture.code_object);
         const BytecodeStateOrder &order = tracker.order();
 
-        EXPECT_EQ(15u, order.size());
+        EXPECT_EQ(14u, order.size());
         EXPECT_EQ(fixture.code_object->encode_reg(0),
                   order.highest_frame_offset());
         EXPECT_EQ(-5, order.lowest_frame_offset());
-        EXPECT_EQ(7, order.frame_offset_at(2));
-        EXPECT_EQ(6, order.frame_offset_at(3));
-        EXPECT_EQ(-5, order.frame_offset_at(14));
+        EXPECT_EQ(7, order.frame_offset_at(1));
+        EXPECT_EQ(6, order.frame_offset_at(2));
+        EXPECT_EQ(-5, order.frame_offset_at(13));
 
         EXPECT_EQ(0u, order.position_for(BytecodeValueLocation::accumulator()));
-        EXPECT_EQ(2u, order.position_for(parameter(*fixture.code_object, 0)));
-        EXPECT_EQ(4u, order.position_for(parameter(*fixture.code_object, 2)));
-        EXPECT_EQ(5u, order.position_for_frame_offset(4));
-        EXPECT_EQ(6u,
+        EXPECT_EQ(1u, order.position_for(parameter(*fixture.code_object, 0)));
+        EXPECT_EQ(3u, order.position_for(parameter(*fixture.code_object, 2)));
+        EXPECT_EQ(4u, order.position_for_frame_offset(4));
+        EXPECT_EQ(5u,
                   order.position_for_frame_offset(FrameHeaderReturnPcOffset));
-        EXPECT_EQ(9u,
+        EXPECT_EQ(8u,
                   order.position_for_frame_offset(FrameHeaderPreviousFpOffset));
-        EXPECT_EQ(10u, order.position_for(local(*fixture.code_object, 0)));
-        EXPECT_EQ(12u, order.position_for(temporary(*fixture.code_object, 0)));
+        EXPECT_EQ(9u, order.position_for(local(*fixture.code_object, 0)));
+        EXPECT_EQ(11u, order.position_for(temporary(*fixture.code_object, 0)));
         EXPECT_DEATH((void)order.frame_offset_at(
-                         BytecodeStateOrder::ThreadStatePosition),
+                         BytecodeStateOrder::AccumulatorPosition),
                      "position is not a stack slot");
     }
 
@@ -129,10 +128,10 @@ namespace cl::jit
         const BytecodeStateOrder &order = tracker.order();
 
         EXPECT_EQ(FrameHeaderReturnPcOffset, order.highest_frame_offset());
-        EXPECT_EQ(11u, order.size());
-        EXPECT_EQ(FrameHeaderReturnPcOffset, order.frame_offset_at(2));
-        EXPECT_EQ(FrameHeaderPreviousFpOffset, order.frame_offset_at(5));
-        EXPECT_EQ(-1, order.frame_offset_at(6));
+        EXPECT_EQ(10u, order.size());
+        EXPECT_EQ(FrameHeaderReturnPcOffset, order.frame_offset_at(1));
+        EXPECT_EQ(FrameHeaderPreviousFpOffset, order.frame_offset_at(4));
+        EXPECT_EQ(-1, order.frame_offset_at(5));
     }
 
     TEST(JitBytecodeState, ReadsSourcesBeforeApplyingMultipleResults)
@@ -207,8 +206,8 @@ namespace cl::jit
     {
         StateFixture fixture;
         BytecodeStateTracker<TestRef> tracker(*fixture.code_object);
-        std::array<TestRef, 15> parameters = {1, 2,  3,  4,  5,  6,  7, 8,
-                                              9, 10, 11, 12, 13, 14, 15};
+        std::array<TestRef, 14> parameters = {1, 2, 3,  4,  5,  6,  7,
+                                              8, 9, 10, 11, 12, 13, 14};
 
         BytecodeState<TestRef> state = tracker.make_state_from_block_parameters(
             std::span<const TestRef>(parameters));
@@ -218,10 +217,10 @@ namespace cl::jit
                   (std::vector<TestRef>(arguments.begin(), arguments.end())));
         EXPECT_EQ(
             1u, tracker.value_at(state, BytecodeValueLocation::accumulator()));
-        EXPECT_EQ(5u,
+        EXPECT_EQ(4u,
                   tracker.value_at(state, parameter(*fixture.code_object, 2)));
-        EXPECT_EQ(12u, tracker.value_at(state, local(*fixture.code_object, 1)));
-        EXPECT_EQ(15u,
+        EXPECT_EQ(11u, tracker.value_at(state, local(*fixture.code_object, 1)));
+        EXPECT_EQ(14u,
                   tracker.value_at(state, temporary(*fixture.code_object, 2)));
     }
 
@@ -229,8 +228,8 @@ namespace cl::jit
     {
         StateFixture fixture;
         BytecodeStateTracker<TestRef> tracker(*fixture.code_object);
-        std::array<TestRef, 15> parameters = {1, 2,  3,  4,  5,  6,  7, 8,
-                                              9, 10, 11, 12, 13, 14, 15};
+        std::array<TestRef, 14> parameters = {1, 2, 3,  4,  5,  6,  7,
+                                              8, 9, 10, 11, 12, 13, 14};
         BytecodeState<TestRef> state = tracker.make_state_from_block_parameters(
             std::span<const TestRef>(parameters));
 
@@ -238,7 +237,7 @@ namespace cl::jit
         EXPECT_EQ((std::vector<TestRef>{1, 2, 3, 4, 5, 6, 7, 8}),
                   (std::vector<TestRef>(prefix.begin(), prefix.end())));
 
-        EXPECT_DEATH((void)tracker.prefix(state, 16), "prefix is too large");
+        EXPECT_DEATH((void)tracker.prefix(state, 15), "prefix is too large");
     }
 
     TEST(JitBytecodeState, RejectsInvalidLocationsAndArities)
@@ -249,7 +248,7 @@ namespace cl::jit
                              *fixture.code_object);
                          std::array<TestRef, 2> parameters = {1, 2};
                          (void)tracker.make_entry_state(
-                             80, std::span<const TestRef>(parameters), 90, 99);
+                             std::span<const TestRef>(parameters), 90, 99);
                      }()),
                      "wrong parameter count");
 

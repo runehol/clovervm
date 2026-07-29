@@ -45,12 +45,6 @@ namespace cl::jit
                 builder.emplace_instruction<ConstInstruction>(block, value));
         }
 
-        ParameterPointerInstruction emplace_thread_state(GraphBuilder &builder,
-                                                         Block *entry)
-        {
-            return builder.emplace_parameter<ParameterPointerInstruction>(
-                entry);
-        }
     }  // namespace
 
     TEST(AArch64AllocationConstraints,
@@ -59,8 +53,6 @@ namespace cl::jit
         CompilationSession session;
         GraphBuilder builder(session, IRLevel::Machine);
         Block *entry = builder.emplace_block();
-        ParameterPointerInstruction thread_state =
-            emplace_thread_state(builder, entry);
         ParameterInstruction first =
             builder.emplace_parameter<ParameterInstruction>(entry);
         ParameterInstruction second =
@@ -106,9 +98,8 @@ namespace cl::jit
         EXPECT_EQ(v(30), simd.scratch_registers()[0]);
         EXPECT_EQ(v(31), simd.scratch_registers()[1]);
 
-        ASSERT_EQ(5u, constraints.instruction_overrides().size());
-        std::array<Instruction, 4> parameters = {thread_state, first, second,
-                                                 third};
+        ASSERT_EQ(4u, constraints.instruction_overrides().size());
+        std::array<Instruction, 3> parameters = {first, second, third};
         for(size_t index = 0; index < parameters.size(); ++index)
         {
             const InstructionAllocationConstraints *parameter =
@@ -140,7 +131,6 @@ namespace cl::jit
         Block *entry = builder.emplace_block();
         Block *if_true = builder.emplace_block();
         Block *if_false = builder.emplace_block();
-        emplace_thread_state(builder, entry);
         ParameterInstruction condition =
             builder.emplace_parameter<ParameterInstruction>(entry);
         BlockEdge *true_edge = builder.make_block_edge(entry, if_true);
@@ -198,12 +188,9 @@ namespace cl::jit
         CompilationSession session;
         GraphBuilder builder(session, IRLevel::Machine);
         Block *entry = builder.emplace_block();
-        ParameterPointerInstruction thread_state =
-            emplace_thread_state(builder, entry);
         ParameterInstruction value =
             builder.emplace_parameter<ParameterInstruction>(entry);
-        std::array<ProgramValueRef, 2> inputs = {ProgramValueRef(thread_state),
-                                                 ProgramValueRef(value)};
+        std::array<ProgramValueRef, 1> inputs = {ProgramValueRef(value)};
         SnapshotInstruction snapshot =
             builder.make_instruction<SnapshotInstruction>(inputs,
                                                           BytecodePC{17});
@@ -238,7 +225,6 @@ namespace cl::jit
         CompilationSession session;
         GraphBuilder builder(session, IRLevel::Machine);
         Block *entry = builder.emplace_block();
-        emplace_thread_state(builder, entry);
         ParameterInstruction lhs =
             builder.emplace_parameter<ParameterInstruction>(entry);
         ParameterInstruction rhs =
@@ -275,7 +261,6 @@ namespace cl::jit
         GraphBuilder builder(session, IRLevel::Machine);
         Block *entry = builder.emplace_block();
         Block *exit = builder.emplace_block();
-        emplace_thread_state(builder, entry);
         ParameterInstruction argument =
             builder.emplace_parameter<ParameterInstruction>(entry);
         std::array<ProgramValueRef, 1> arguments = {ProgramValueRef(argument)};
@@ -305,7 +290,6 @@ namespace cl::jit
             CompilationSession session;
             GraphBuilder builder(session, IRLevel::Machine);
             Block *entry = builder.emplace_block();
-            emplace_thread_state(builder, entry);
             builder.emplace_parameter<ParameterF64Instruction>(entry);
             builder.emplace_instruction<ReturnInstruction>(
                 entry, emplace_constant(builder, entry));
@@ -319,9 +303,8 @@ namespace cl::jit
             CompilationSession session;
             GraphBuilder builder(session, IRLevel::Machine);
             Block *entry = builder.emplace_block();
-            emplace_thread_state(builder, entry);
             std::optional<ParameterInstruction> first;
-            for(size_t index = 0; index < 8; ++index)
+            for(size_t index = 0; index < 9; ++index)
             {
                 ParameterInstruction parameter =
                     builder.emplace_parameter<ParameterInstruction>(entry);
@@ -342,7 +325,6 @@ namespace cl::jit
             CompilationSession session;
             GraphBuilder builder(session, IRLevel::Machine);
             Block *entry = builder.emplace_block();
-            emplace_thread_state(builder, entry);
             TaggedValueRef parameter(
                 builder.emplace_parameter<ParameterInstruction>(entry));
             MovInstruction move =
