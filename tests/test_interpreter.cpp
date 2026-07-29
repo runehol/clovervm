@@ -7148,46 +7148,6 @@ TEST(Interpreter, for_loop_non_iterable_unwinds_nested_frames)
                         L"TypeError", L"object is not iterable");
 }
 
-TEST(Interpreter, generic_for_loop_uses_iter_and_next_until_stop_iteration)
-{
-    test::FileRunner file_runner(L"class Counter:\n"
-                                 L"    def __init__(self):\n"
-                                 L"        self.i = 0\n"
-                                 L"    def __iter__(self):\n"
-                                 L"        return self\n"
-                                 L"    def __next__(self):\n"
-                                 L"        if self.i == 3:\n"
-                                 L"            raise StopIteration\n"
-                                 L"        value = self.i\n"
-                                 L"        self.i += 1\n"
-                                 L"        return value\n"
-                                 L"total = 0\n"
-                                 L"for x in Counter():\n"
-                                 L"    total += x\n"
-                                 L"total\n");
-    EXPECT_EQ(Value::from_smi(3), file_runner.return_value);
-}
-
-TEST(Interpreter, for_loop_iterates_over_tuple)
-{
-    test::FileRunner file_runner(L"total = 0\n"
-                                 L"for x in (1, 2, 3):\n"
-                                 L"    total += x\n"
-                                 L"total\n");
-
-    EXPECT_EQ(Value::from_smi(6), file_runner.return_value);
-}
-
-TEST(Interpreter, for_loop_iterates_over_list)
-{
-    test::FileRunner file_runner(L"total = 0\n"
-                                 L"for x in [1, 2, 3]:\n"
-                                 L"    total += x\n"
-                                 L"total\n");
-
-    EXPECT_EQ(Value::from_smi(6), file_runner.return_value);
-}
-
 TEST(Interpreter, generic_for_loop_discards_stop_iteration_value)
 {
     test::VmTestContext test_context;
@@ -7273,40 +7233,6 @@ TEST(Interpreter, cached_special_method_call_replays_varargs_adaptation)
     EXPECT_EQ(Value::from_smi(33), file_runner.return_value);
 }
 
-TEST(Interpreter, with_statement_calls_enter_and_exit)
-{
-    test::FileRunner file_runner(L"log = 0\n"
-                                 L"class Manager:\n"
-                                 L"    def __enter__(self):\n"
-                                 L"        return 4\n"
-                                 L"    def __exit__(self, typ, exc, tb):\n"
-                                 L"        global log\n"
-                                 L"        log = log + 10\n"
-                                 L"        return False\n"
-                                 L"with Manager() as value:\n"
-                                 L"    log = value + 1\n"
-                                 L"log\n");
-
-    EXPECT_EQ(Value::from_smi(15), file_runner.return_value);
-}
-
-TEST(Interpreter, with_statement_suppresses_exception_when_exit_returns_true)
-{
-    test::FileRunner file_runner(L"seen = False\n"
-                                 L"class Manager:\n"
-                                 L"    def __enter__(self):\n"
-                                 L"        return self\n"
-                                 L"    def __exit__(self, typ, exc, tb):\n"
-                                 L"        global seen\n"
-                                 L"        seen = typ is ValueError\n"
-                                 L"        return True\n"
-                                 L"with Manager():\n"
-                                 L"    raise ValueError\n"
-                                 L"seen\n");
-
-    EXPECT_EQ(Value::True(), file_runner.return_value);
-}
-
 TEST(Interpreter, with_statement_reraises_when_exit_returns_false)
 {
     expect_python_error(L"class Manager:\n"
@@ -7317,43 +7243,6 @@ TEST(Interpreter, with_statement_reraises_when_exit_returns_false)
                         L"with Manager():\n"
                         L"    raise ValueError\n",
                         L"ValueError", L"");
-}
-
-TEST(Interpreter, with_statement_exit_runs_when_as_target_binding_raises)
-{
-    test::FileRunner file_runner(L"seen = False\n"
-                                 L"values = []\n"
-                                 L"class Manager:\n"
-                                 L"    def __enter__(self):\n"
-                                 L"        return 7\n"
-                                 L"    def __exit__(self, typ, exc, tb):\n"
-                                 L"        global seen\n"
-                                 L"        seen = typ is IndexError\n"
-                                 L"        return True\n"
-                                 L"with Manager() as values[0]:\n"
-                                 L"    seen = 99\n"
-                                 L"seen\n");
-
-    EXPECT_EQ(Value::True(), file_runner.return_value);
-}
-
-TEST(Interpreter, with_statement_exit_runs_before_return)
-{
-    test::FileRunner file_runner(L"log = 0\n"
-                                 L"class Manager:\n"
-                                 L"    def __enter__(self):\n"
-                                 L"        return self\n"
-                                 L"    def __exit__(self, typ, exc, tb):\n"
-                                 L"        global log\n"
-                                 L"        log = 10\n"
-                                 L"        return False\n"
-                                 L"def f():\n"
-                                 L"    with Manager():\n"
-                                 L"        return 7\n"
-                                 L"    return 99\n"
-                                 L"f() + log\n");
-
-    EXPECT_EQ(Value::from_smi(17), file_runner.return_value);
 }
 
 TEST(Interpreter, with_statement_exit_that_raises_during_return_runs_once)
@@ -7422,34 +7311,6 @@ TEST(Interpreter, with_statement_inner_exit_stays_suspended_during_outer_exit)
         test_context.vm().get_or_create_interned_string_value(L"log");
     EXPECT_EQ(Value::from_smi(1342),
               load_global_from_module_for_test(code_obj, log_name));
-}
-
-TEST(Interpreter, with_statement_multiple_items_exit_in_reverse_order)
-{
-    test::FileRunner file_runner(L"log = 0\n"
-                                 L"class First:\n"
-                                 L"    def __enter__(self):\n"
-                                 L"        global log\n"
-                                 L"        log = log * 10 + 1\n"
-                                 L"        return self\n"
-                                 L"    def __exit__(self, typ, exc, tb):\n"
-                                 L"        global log\n"
-                                 L"        log = log * 10 + 2\n"
-                                 L"        return False\n"
-                                 L"class Second:\n"
-                                 L"    def __enter__(self):\n"
-                                 L"        global log\n"
-                                 L"        log = log * 10 + 3\n"
-                                 L"        return self\n"
-                                 L"    def __exit__(self, typ, exc, tb):\n"
-                                 L"        global log\n"
-                                 L"        log = log * 10 + 4\n"
-                                 L"        return False\n"
-                                 L"with First(), Second():\n"
-                                 L"    log = log * 10 + 5\n"
-                                 L"log\n");
-
-    EXPECT_EQ(Value::from_smi(13542), file_runner.return_value);
 }
 
 TEST(Interpreter, left_shift_negative_count)

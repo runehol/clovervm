@@ -50,3 +50,35 @@ total = 0
 for x in range(4):
     total += x
 assert total == 6
+
+
+# for loops drive user-defined, tuple, and list iterators through exhaustion.
+class Counter:
+    def __init__(self):
+        self.i = 0
+
+    def __iter__(self):
+        return self
+
+    def __next__(self):
+        if self.i == 3:
+            raise StopIteration
+        value = self.i
+        self.i += 1
+        return value
+
+
+total = 0
+for x in Counter():
+    total += x
+assert total == 3
+
+total = 0
+for x in (1, 2, 3):
+    total += x
+assert total == 6
+
+total = 0
+for x in [1, 2, 3]:
+    total += x
+assert total == 6
