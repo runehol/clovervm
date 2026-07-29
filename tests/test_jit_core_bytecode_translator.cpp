@@ -159,6 +159,155 @@ namespace cl::jit
         EXPECT_EQ(constants[1].id(), is_not.rhs().instruction_id());
     }
 
+    TEST(JitCoreBytecodeTranslator, LowersAddWithAnEmptyCacheToGuardedSMIAdd)
+    {
+        TranslatorFixture fixture;
+        uint32_t add_pc;
+        {
+            CodeObjectBuilder::TemporaryReg temporaries(fixture.code_builder,
+                                                        1);
+            fixture.code_builder.emit_lda_smi(0, 19).value();
+            fixture.code_builder.emit_star(0, temporaries).value();
+            fixture.code_builder.emit_lda_smi(0, 23).value();
+            add_pc =
+                fixture.code_builder
+                    .emit_operator_reg(
+                        0, Bytecode::Add, temporaries,
+                        OperatorBytecodeFormat::WithCacheAndNotImplementedCheck)
+                    .value();
+            fixture.code_builder.emit_return(0).value();
+        }
+
+        ControlFlowGraph *graph = fixture.translate();
+        Block *entry = graph->entry_block();
+        std::vector<Instruction> snapshots =
+            instructions_of_kind(entry, InstructionKind::Snapshot);
+        std::vector<Instruction> guards =
+            instructions_of_kind(entry, InstructionKind::InlineTagGuard);
+        std::vector<Instruction> adds =
+            instructions_of_kind(entry, InstructionKind::AddSMI);
+        std::vector<Instruction> constants =
+            instructions_of_kind(entry, InstructionKind::Const);
+        ASSERT_EQ(1u, snapshots.size());
+        ASSERT_EQ(2u, guards.size());
+        ASSERT_EQ(1u, adds.size());
+        ASSERT_EQ(2u, constants.size());
+
+        SnapshotInstruction snapshot =
+            snapshots.front().as<SnapshotInstruction>();
+        EXPECT_EQ(add_pc, snapshot.resume_pc());
+        InlineTagGuardInstruction lhs =
+            guards[0].as<InlineTagGuardInstruction>();
+        InlineTagGuardInstruction rhs =
+            guards[1].as<InlineTagGuardInstruction>();
+        EXPECT_EQ(InlineValueClass::SMI, lhs.expected_class());
+        EXPECT_EQ(InlineValueClass::SMI, rhs.expected_class());
+        EXPECT_EQ(snapshot.id(), lhs.snapshot().instruction_id());
+        EXPECT_EQ(snapshot.id(), rhs.snapshot().instruction_id());
+        EXPECT_EQ(constants[0].id(), lhs.value().instruction_id());
+        EXPECT_EQ(constants[1].id(), rhs.value().instruction_id());
+
+        AddSMIInstruction add = adds.front().as<AddSMIInstruction>();
+        EXPECT_EQ(lhs.id(), add.lhs().instruction_id());
+        EXPECT_EQ(rhs.id(), add.rhs().instruction_id());
+        EXPECT_EQ(snapshot.id(), add.snapshot().instruction_id());
+        ReturnInstruction return_instruction =
+            entry->instruction_at(entry->instructions().size() - 1)
+                .as<ReturnInstruction>();
+        EXPECT_EQ(add.id(), return_instruction.return_value().instruction_id());
+    }
+
+    TEST(JitCoreBytecodeTranslator, LeavesAddWithAPopulatedCacheUnsupported)
+    {
+        TranslatorFixture fixture;
+        uint32_t add_pc;
+        {
+            CodeObjectBuilder::TemporaryReg temporaries(fixture.code_builder,
+                                                        1);
+            fixture.code_builder.emit_lda_smi(0, 19).value();
+            fixture.code_builder.emit_star(0, temporaries).value();
+            fixture.code_builder.emit_lda_smi(0, 23).value();
+            add_pc =
+                fixture.code_builder
+                    .emit_operator_reg(
+                        0, Bytecode::Add, temporaries,
+                        OperatorBytecodeFormat::WithCacheAndNotImplementedCheck)
+                    .value();
+            fixture.code_builder.emit_return(0).value();
+        }
+        CodeObject *code_object = fixture.code_builder.finalize().value();
+        ASSERT_EQ(1u, code_object->inline_caches.operator_caches.size());
+        code_object->inline_caches.operator_caches[0].populate_binary_shapes(
+            ShapeKey::from_value(Value::from_smi(19)),
+            ShapeKey::from_value(Value::from_smi(23)));
+
+        CoreBytecodeTranslator translator(*code_object, fixture.graph_builder);
+        ControlFlowGraph *graph = translator.translate();
+        Block *entry = graph->entry_block();
+        EXPECT_TRUE(instructions_of_kind(entry, InstructionKind::InlineTagGuard)
+                        .empty());
+        EXPECT_TRUE(
+            instructions_of_kind(entry, InstructionKind::AddSMI).empty());
+        std::vector<Instruction> snapshots =
+            instructions_of_kind(entry, InstructionKind::Snapshot);
+        std::vector<Instruction> resumes =
+            instructions_of_kind(entry, InstructionKind::ResumeInInterpreter);
+        ASSERT_EQ(1u, snapshots.size());
+        ASSERT_EQ(1u, resumes.size());
+        EXPECT_EQ(add_pc,
+                  snapshots.front().as<SnapshotInstruction>().resume_pc());
+        EXPECT_EQ(resumes.front().id(),
+                  entry->instruction_at(entry->instructions().size() - 1).id());
+    }
+
+    TEST(JitCoreBytecodeTranslator, LowersAddSmiWithAnEmptyCacheToGuardedSMIAdd)
+    {
+        TranslatorFixture fixture;
+        fixture.code_builder.emit_lda_smi(0, 19).value();
+        uint32_t add_pc =
+            fixture.code_builder
+                .emit_operator_smi(
+                    0, Bytecode::AddSmi, -23,
+                    OperatorBytecodeFormat::WithCacheAndNotImplementedCheck)
+                .value();
+        fixture.code_builder.emit_return(0).value();
+
+        ControlFlowGraph *graph = fixture.translate();
+        Block *entry = graph->entry_block();
+        std::vector<Instruction> snapshots =
+            instructions_of_kind(entry, InstructionKind::Snapshot);
+        std::vector<Instruction> guards =
+            instructions_of_kind(entry, InstructionKind::InlineTagGuard);
+        std::vector<Instruction> adds =
+            instructions_of_kind(entry, InstructionKind::AddSMI);
+        std::vector<Instruction> constants =
+            instructions_of_kind(entry, InstructionKind::Const);
+        ASSERT_EQ(1u, snapshots.size());
+        ASSERT_EQ(1u, guards.size());
+        ASSERT_EQ(1u, adds.size());
+        ASSERT_EQ(2u, constants.size());
+
+        SnapshotInstruction snapshot =
+            snapshots.front().as<SnapshotInstruction>();
+        EXPECT_EQ(add_pc, snapshot.resume_pc());
+        InlineTagGuardInstruction lhs =
+            guards.front().as<InlineTagGuardInstruction>();
+        EXPECT_EQ(InlineValueClass::SMI, lhs.expected_class());
+        EXPECT_EQ(snapshot.id(), lhs.snapshot().instruction_id());
+        EXPECT_EQ(constants[0].id(), lhs.value().instruction_id());
+        EXPECT_EQ(Value::from_smi(-23),
+                  constants[1].as<ConstInstruction>().constant());
+
+        AddSMIInstruction add = adds.front().as<AddSMIInstruction>();
+        EXPECT_EQ(lhs.id(), add.lhs().instruction_id());
+        EXPECT_EQ(constants[1].id(), add.rhs().instruction_id());
+        EXPECT_EQ(snapshot.id(), add.snapshot().instruction_id());
+        ReturnInstruction return_instruction =
+            entry->instruction_at(entry->instructions().size() - 1)
+                .as<ReturnInstruction>();
+        EXPECT_EQ(add.id(), return_instruction.return_value().instruction_id());
+    }
+
     TEST(JitCoreBytecodeTranslator,
          JumpIfFalseMapsFallthroughToTrueAndJumpToFalse)
     {

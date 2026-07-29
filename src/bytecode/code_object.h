@@ -325,6 +325,8 @@ namespace cl
         bool reflected_untrusted_call = false;
         bool has_self = false;
 
+        bool empty() const { return !operand_shape_keys[0].is_valid(); }
+
         ALWAYSINLINE bool matches_unary(Value operand0) const
         {
             return operand_shape_keys[0] == ShapeKey::from_value(operand0) &&

@@ -162,6 +162,63 @@ namespace cl::jit
                         block, tagged(inputs[0]), tagged(inputs[1])));
                 break;
 
+            case Bytecode::Add:
+                {
+                    const OperatorInlineCache *cache =
+                        instruction.operator_cache();
+                    assert(cache != nullptr);
+                    if(!cache->empty())
+                    {
+                        emit_unsupported(block, instruction, state);
+                        return;
+                    }
+
+                    assert(inputs.size() == 2);
+                    SnapshotRef snapshot =
+                        emit_snapshot(block, instruction.pc_offset(), state);
+                    InlineTagGuardInstruction lhs =
+                        builder_.emplace_instruction<InlineTagGuardInstruction>(
+                            block, tagged(inputs[0]), snapshot,
+                            InlineValueClass::SMI);
+                    InlineTagGuardInstruction rhs =
+                        builder_.emplace_instruction<InlineTagGuardInstruction>(
+                            block, tagged(inputs[1]), snapshot,
+                            InlineValueClass::SMI);
+                    outputs.emplace_back(
+                        builder_.emplace_instruction<AddSMIInstruction>(
+                            block, TaggedValueRef(lhs), TaggedValueRef(rhs),
+                            snapshot));
+                    break;
+                }
+
+            case Bytecode::AddSmi:
+                {
+                    const OperatorInlineCache *cache =
+                        instruction.operator_cache();
+                    assert(cache != nullptr);
+                    if(!cache->empty())
+                    {
+                        emit_unsupported(block, instruction, state);
+                        return;
+                    }
+
+                    assert(inputs.size() == 1);
+                    assert(instruction.operands().size() == 2);
+                    SnapshotRef snapshot =
+                        emit_snapshot(block, instruction.pc_offset(), state);
+                    InlineTagGuardInstruction lhs =
+                        builder_.emplace_instruction<InlineTagGuardInstruction>(
+                            block, tagged(inputs[0]), snapshot,
+                            InlineValueClass::SMI);
+                    ProgramValueRef rhs = emit_constant(
+                        block, Value::from_smi(
+                                   instruction.operands()[0].signed_value()));
+                    outputs.emplace_back(
+                        builder_.emplace_instruction<AddSMIInstruction>(
+                            block, TaggedValueRef(lhs), tagged(rhs), snapshot));
+                    break;
+                }
+
             case Bytecode::Nop:
                 break;
 
