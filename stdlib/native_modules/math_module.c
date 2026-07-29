@@ -33,6 +33,10 @@ static clover_handle math_unary(clover_context *ctx, clover_handle value,
     {
         errno = EDOM;
     }
+    if(!can_overflow && isinf(result) && isfinite(number))
+    {
+        errno = EDOM;
+    }
     if(can_overflow && isinf(result) && isfinite(number))
     {
         errno = ERANGE;
