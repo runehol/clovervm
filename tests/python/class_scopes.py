@@ -27,6 +27,21 @@ MutableClassNamespace.__dict__["y"] = 9
 assert MutableClassNamespace.y == 9
 
 
+# Assigning __class__ changes an instance to another compatible receiver shape.
+class OriginalAssignedClass:
+    pass
+
+
+class ReplacementAssignedClass:
+    marker = 42
+
+
+reassigned_instance = OriginalAssignedClass()
+reassigned_instance.__class__ = ReplacementAssignedClass
+assert reassigned_instance.__class__ is ReplacementAssignedClass
+assert reassigned_instance.marker == 42
+
+
 class InitialClassSlot:
     pass
 

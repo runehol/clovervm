@@ -4761,26 +4761,6 @@ TEST(Interpreter, slotdict_hides_virtual_special_descriptors)
                         L"KeyError", L"");
 }
 
-TEST(Interpreter, class_assignment_changes_receiver_shape_class)
-{
-    test::VmTestContext test_context;
-
-    EXPECT_EQ(Value::True(), test_context.run_file(L"class C:\n"
-                                                   L"    pass\n"
-                                                   L"class D:\n"
-                                                   L"    marker = 42\n"
-                                                   L"c = C()\n"
-                                                   L"c.__class__ = D\n"
-                                                   L"c.__class__ is D\n"));
-    EXPECT_EQ(Value::from_smi(42), test_context.run_file(L"class C:\n"
-                                                         L"    pass\n"
-                                                         L"class D:\n"
-                                                         L"    marker = 42\n"
-                                                         L"c = C()\n"
-                                                         L"c.__class__ = D\n"
-                                                         L"c.marker\n"));
-}
-
 TEST(Interpreter, class_assignment_rejects_builtin_and_class_object_receivers)
 {
     expect_python_error(L"a = []\n"
@@ -4816,17 +4796,6 @@ TEST(Interpreter, class_assignment_rejects_module_instance_category_switch)
                         L"TypeError",
                         L"__class__ assignment only supported for mutable "
                         L"types or ModuleType subclasses");
-}
-
-TEST(Interpreter, module_class_assignment_accepts_module_class)
-{
-    test::VmTestContext test_context;
-
-    EXPECT_EQ(Value::True(),
-              test_context.run_file(L"m = __builtins__\n"
-                                    L"module_class = m.__class__\n"
-                                    L"m.__class__ = module_class\n"
-                                    L"m.__class__ is module_class\n"));
 }
 
 TEST(Interpreter, builtin_container_instances_do_not_expose_dict)

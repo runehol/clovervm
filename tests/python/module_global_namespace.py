@@ -10,6 +10,12 @@ builtin_probe = 99
 assert read_value() == 11
 assert read_builtin_probe() == 31
 
+# A module accepts reassignment to its current compatible module class.
+builtins_module = __builtins__
+builtins_module_class = builtins_module.__class__
+builtins_module.__class__ = builtins_module_class
+assert builtins_module.__class__ is builtins_module_class
+
 import sys
 
 sys.local_builtin_probe = 123
