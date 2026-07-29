@@ -164,6 +164,7 @@ namespace cl::jit
                     case MachineInstructionKind::MovPointer:
                     case MachineInstructionKind::LoadStackPointer:
                     case MachineInstructionKind::StoreStackPointer:
+                    case MachineInstructionKind::InlineTagGuardWithSideExit:
                     case MachineInstructionKind::ResumeInInterpreterWithSideExit:
                         if(!input_overrides.empty())
                         {

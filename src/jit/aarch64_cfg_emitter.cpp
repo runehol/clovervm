@@ -17,6 +17,13 @@ namespace cl::jit
 {
     namespace
     {
+        struct PendingSideExit
+        {
+            Label label;
+            SideExitId side_exit;
+            ProgramValueRefRange arguments;
+        };
+
         XRegister assigned_register(const LocationAssignments &locations,
                                     ProgramValueRef value)
         {
@@ -137,6 +144,14 @@ namespace cl::jit
             assert(is_block_parameter_kind(parameter.kind()));
             (void)parameter;
         }
+
+        std::vector<PendingSideExit> pending_side_exits;
+        auto side_exit_target = [&](SideExitId side_exit,
+                                    ProgramValueRefRange arguments) {
+            Label label = assembler.emitter().make_label();
+            pending_side_exits.push_back({label, side_exit, arguments});
+            return label;
+        };
 
         for(Instruction instruction: entry->instructions())
         {
@@ -295,23 +310,42 @@ namespace cl::jit
                           "implemented");
 
                 case CL_JIT_MACHINE_INSTRUCTION_CASE(
+                    InlineTagGuardWithSideExitInstruction, guard_instruction)
+                {
+                    XRegister input =
+                        assigned_register(locations, guard_instruction.value());
+                    XRegister result =
+                        assigned_register(locations,
+                                          ProgramValueRef(instruction));
+                    assembler.mov(
+                        XRegister(16),
+                        inline_value_class_mask(
+                            guard_instruction.expected_class()));
+                    assembler.emit_logical_reg(LogicalOp::And, XRegister(16),
+                                               input, XRegister(16));
+                    assembler.mov(
+                        XRegister(17),
+                        inline_value_class_expected_bits(
+                            guard_instruction.expected_class()));
+                    assembler.cmp(XRegister(16), XRegister(17));
+                    Label target = side_exit_target(
+                        guard_instruction.side_exit(),
+                        guard_instruction.side_exit_arguments());
+                    assembler.b(AArch64Condition::NotEqual, target);
+                    if(result.encoding() != input.encoding())
+                    {
+                        assembler.mov(result, input);
+                    }
+                    break;
+                }
+
+                case CL_JIT_MACHINE_INSTRUCTION_CASE(
                     ResumeInInterpreterWithSideExitInstruction,
                     resume_instruction)
                 {
-                    assert(side_exit_thunk.bits_for_indirect_target() != 0);
-                    assert(graph.bytecode_state_order().has_value());
-                    const SideExit &side_exit =
-                        graph.side_exit(resume_instruction.side_exit());
-                    std::vector<TransitionInstruction> program =
-                        emit_aarch64_side_exit_transition_program(
-                            *graph.storage(), *graph.bytecode_state_order(),
-                            side_exit,
-                            resume_instruction.side_exit_arguments(),
-                            locations);
-                    ConstantPoolEntry entry =
-                        assembler.add_transition_program(program);
-                    assembler.adr(XRegister(16), entry);
-                    assembler.b(side_exit_thunk, XRegister(17));
+                    assembler.b(side_exit_target(
+                        resume_instruction.side_exit(),
+                        resume_instruction.side_exit_arguments()));
                     break;
                 }
 
@@ -328,6 +362,24 @@ namespace cl::jit
                     assert(false);
             }
             // clang-format on
+        }
+
+        if(!pending_side_exits.empty())
+        {
+            assert(side_exit_thunk.bits_for_indirect_target() != 0);
+            assert(graph.bytecode_state_order().has_value());
+        }
+        for(const PendingSideExit &pending: pending_side_exits)
+        {
+            assembler.emitter().resolve(pending.label);
+            const SideExit &side_exit = graph.side_exit(pending.side_exit);
+            std::vector<TransitionInstruction> program =
+                emit_aarch64_side_exit_transition_program(
+                    *graph.storage(), *graph.bytecode_state_order(), side_exit,
+                    pending.arguments, locations);
+            ConstantPoolEntry entry = assembler.add_transition_program(program);
+            assembler.adr(XRegister(16), entry);
+            assembler.b(side_exit_thunk, XRegister(17));
         }
     }
 

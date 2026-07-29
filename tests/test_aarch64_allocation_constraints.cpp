@@ -220,6 +220,45 @@ namespace cl::jit
         }
     }
 
+    TEST(AArch64AllocationConstraints,
+         ObservesInlineTagGuardSideExitArgumentsLate)
+    {
+        CompilationSession session;
+        GraphBuilder builder(session, IRLevel::Machine);
+        Block *entry = builder.emplace_block();
+        ParameterInstruction value =
+            builder.emplace_parameter<ParameterInstruction>(entry);
+        std::array<ProgramValueRef, 1> inputs = {ProgramValueRef(value)};
+        SnapshotInstruction snapshot =
+            builder.make_instruction<SnapshotInstruction>(inputs,
+                                                          BytecodePC{17});
+        std::array<InstructionId, 1> retained = {snapshot.id()};
+        SideExitId side_exit = builder.emplace_side_exit(inputs, retained);
+        InlineTagGuardWithSideExitInstruction owner =
+            builder.emplace_instruction<InlineTagGuardWithSideExitInstruction>(
+                entry, TaggedValueRef(value), inputs, InlineValueClass::SMI,
+                side_exit);
+        builder.emplace_instruction<ReturnInstruction>(entry,
+                                                       TaggedValueRef(owner));
+        ControlFlowGraph *graph = builder.finalize();
+
+        AllocationConstraints constraints =
+            make_aarch64_allocation_constraints(*graph);
+        const InstructionAllocationConstraints *owner_override =
+            find_override(constraints, owner);
+        ASSERT_NE(nullptr, owner_override);
+        ASSERT_EQ(1u, owner_override->input_overrides().size());
+        const ProgramValueUseConstraint &argument =
+            owner_override->input_overrides()[0];
+        EXPECT_EQ(InlineTagGuardWithSideExitInstruction::
+                      side_exit_arguments_operand_index,
+                  argument.operand_index);
+        EXPECT_EQ(AccessTiming::Late, argument.timing);
+        EXPECT_EQ(LocationRequirement::Kind::AnyRegister,
+                  argument.requirement.kind());
+        EXPECT_EQ(RegisterClass::GPR, argument.requirement.register_class());
+    }
+
     TEST(AArch64AllocationConstraints, GivesIdentityTestsOneGPRTemporary)
     {
         CompilationSession session;
