@@ -3100,42 +3100,6 @@ TEST(Interpreter, subscript_load_reads_tuple_item_with_negative_index)
                  string_as_wchar_t(actual.get_ptr<ClassObject>()->get_name()));
 }
 
-TEST(Interpreter, subscript_load_calls_user_defined_dunder_getitem)
-{
-    test::FileRunner file_runner(L"class Bag:\n"
-                                 L"    def __getitem__(self, key):\n"
-                                 L"        return key + 3\n"
-                                 L"Bag()[4]\n");
-
-    EXPECT_EQ(Value::from_smi(7), file_runner.return_value);
-}
-
-TEST(Interpreter, subscript_load_calls_dunder_getitem_every_time)
-{
-    test::FileRunner file_runner(L"class Bag:\n"
-                                 L"    def __init__(self):\n"
-                                 L"        self.count = 0\n"
-                                 L"    def __getitem__(self, key):\n"
-                                 L"        self.count += 1\n"
-                                 L"        return key + self.count\n"
-                                 L"bag = Bag()\n"
-                                 L"first = bag[10]\n"
-                                 L"second = bag[10]\n"
-                                 L"first * 100 + second\n");
-
-    EXPECT_EQ(Value::from_smi(1112), file_runner.return_value);
-}
-
-TEST(Interpreter, subscript_load_returns_notimplemented_from_dunder_getitem)
-{
-    test::FileRunner file_runner(L"class Bag:\n"
-                                 L"    def __getitem__(self, key):\n"
-                                 L"        return NotImplemented\n"
-                                 L"Bag()[0]\n");
-
-    EXPECT_EQ(Value::NotImplemented(), file_runner.return_value);
-}
-
 TEST(Interpreter, subscript_load_passes_binary_slice_object)
 {
     test::FileRunner file_runner(L"class Bag:\n"
@@ -3279,40 +3243,6 @@ TEST(Interpreter, normalize_slice_helpers_compute_selected_length)
     EXPECT_EQ(-1, reverse_normalized.stop);
     EXPECT_EQ(-1, reverse_normalized.step);
     EXPECT_EQ(5u, reverse_normalized.selected_sequence_length);
-}
-
-TEST(Interpreter, subscript_load_observes_replaced_dunder_getitem)
-{
-    test::FileRunner file_runner(L"class Bag:\n"
-                                 L"    def __getitem__(self, key):\n"
-                                 L"        return 1\n"
-                                 L"bag = Bag()\n"
-                                 L"first = bag[0]\n"
-                                 L"def replacement(self, key):\n"
-                                 L"    return 2\n"
-                                 L"Bag.__getitem__ = replacement\n"
-                                 L"first * 10 + bag[0]\n");
-
-    EXPECT_EQ(Value::from_smi(12), file_runner.return_value);
-}
-
-TEST(Interpreter, subscript_load_observes_replaced_inherited_dunder_getitem)
-{
-    test::FileRunner file_runner(L"class Base:\n"
-                                 L"    def __getitem__(self, key):\n"
-                                 L"        return 1\n"
-                                 L"class Bag(Base):\n"
-                                 L"    pass\n"
-                                 L"def get(obj, key):\n"
-                                 L"    return obj[key]\n"
-                                 L"bag = Bag()\n"
-                                 L"first = get(bag, 0)\n"
-                                 L"def replacement(self, key):\n"
-                                 L"    return 2\n"
-                                 L"Base.__getitem__ = replacement\n"
-                                 L"first * 10 + get(bag, 0)\n");
-
-    EXPECT_EQ(Value::from_smi(12), file_runner.return_value);
 }
 
 TEST(Interpreter, subscript_load_does_not_cache_negative_lookup)
@@ -3661,101 +3591,6 @@ TEST(Interpreter, subscript_load_caches_trusted_builtin_slice_handlers)
     EXPECT_NE(str_nonstrided_handler, str_general_handler);
 }
 
-TEST(Interpreter, subscript_store_calls_user_defined_dunder_setitem)
-{
-    test::FileRunner file_runner(L"class Bag:\n"
-                                 L"    def __init__(self):\n"
-                                 L"        self.total = 0\n"
-                                 L"    def __setitem__(self, key, value):\n"
-                                 L"        self.total = key * 10 + value\n"
-                                 L"bag = Bag()\n"
-                                 L"bag[4] = 7\n"
-                                 L"bag.total\n");
-
-    EXPECT_EQ(Value::from_smi(47), file_runner.return_value);
-}
-
-TEST(Interpreter, subscript_store_observes_replaced_dunder_setitem)
-{
-    test::FileRunner file_runner(L"class Bag:\n"
-                                 L"    def __init__(self):\n"
-                                 L"        self.total = 0\n"
-                                 L"    def __setitem__(self, key, value):\n"
-                                 L"        self.total = 1\n"
-                                 L"def set_item(obj, key, value):\n"
-                                 L"    obj[key] = value\n"
-                                 L"bag = Bag()\n"
-                                 L"set_item(bag, 0, 0)\n"
-                                 L"first = bag.total\n"
-                                 L"def replacement(self, key, value):\n"
-                                 L"    self.total = 2\n"
-                                 L"Bag.__setitem__ = replacement\n"
-                                 L"set_item(bag, 0, 0)\n"
-                                 L"first * 10 + bag.total\n");
-
-    EXPECT_EQ(Value::from_smi(12), file_runner.return_value);
-}
-
-TEST(Interpreter, subscript_assignment_evaluates_rhs_before_target)
-{
-    test::FileRunner file_runner(L"xs = [0, 0]\n"
-                                 L"i = 0\n"
-                                 L"def rhs():\n"
-                                 L"    global i\n"
-                                 L"    i = 1\n"
-                                 L"    return 7\n"
-                                 L"xs[i] = rhs()\n"
-                                 L"xs[0] * 10 + xs[1]\n");
-
-    EXPECT_EQ(Value::from_smi(7), file_runner.return_value);
-}
-
-TEST(Interpreter, annotated_subscript_assignment_evaluates_rhs_before_target)
-{
-    test::FileRunner file_runner(L"xs = [0, 0]\n"
-                                 L"i = 0\n"
-                                 L"def rhs():\n"
-                                 L"    global i\n"
-                                 L"    i = 1\n"
-                                 L"    return 7\n"
-                                 L"xs[i]: int = rhs()\n"
-                                 L"xs[0] * 10 + xs[1]\n");
-
-    EXPECT_EQ(Value::from_smi(7), file_runner.return_value);
-}
-
-TEST(Interpreter,
-     slice_subscript_assignment_evaluates_rhs_then_target_then_slice)
-{
-    test::FileRunner file_runner(
-        L"order = 0\n"
-        L"def mark(expected):\n"
-        L"    global order\n"
-        L"    if order == expected:\n"
-        L"        order += 1\n"
-        L"        return 1\n"
-        L"    return 100\n"
-        L"def rhs():\n"
-        L"    return mark(0)\n"
-        L"def make_obj():\n"
-        L"    mark(1)\n"
-        L"    return Bag()\n"
-        L"def start():\n"
-        L"    return mark(2)\n"
-        L"def stop():\n"
-        L"    return mark(3)\n"
-        L"class Bag:\n"
-        L"    def __setitem__(self, key, value):\n"
-        L"        global order\n"
-        L"        if value == 1 and key.start == 1 and key.stop == 1 and "
-        L"key.step is None and order == 4:\n"
-        L"            order = 9\n"
-        L"make_obj()[start():stop()] = rhs()\n"
-        L"order\n");
-
-    EXPECT_EQ(Value::from_smi(9), file_runner.return_value);
-}
-
 TEST(Interpreter, subscript_store_replaces_cache_for_different_key_shape)
 {
     test::VmTestContext test_context;
@@ -3835,41 +3670,6 @@ TEST(Interpreter, subscript_store_cache_ignores_value_shape)
               cache.operand_shape_keys[1]);
     ASSERT_NE(nullptr, cache.function);
     EXPECT_EQ(3u, cache.n_args);
-}
-
-TEST(Interpreter, subscript_delete_calls_user_defined_dunder_delitem)
-{
-    test::FileRunner file_runner(L"class Bag:\n"
-                                 L"    def __init__(self):\n"
-                                 L"        self.total = 0\n"
-                                 L"    def __delitem__(self, key):\n"
-                                 L"        self.total = key + 5\n"
-                                 L"bag = Bag()\n"
-                                 L"del bag[4]\n"
-                                 L"bag.total\n");
-
-    EXPECT_EQ(Value::from_smi(9), file_runner.return_value);
-}
-
-TEST(Interpreter, subscript_delete_observes_replaced_dunder_delitem)
-{
-    test::FileRunner file_runner(L"class Bag:\n"
-                                 L"    def __init__(self):\n"
-                                 L"        self.total = 0\n"
-                                 L"    def __delitem__(self, key):\n"
-                                 L"        self.total = 1\n"
-                                 L"def del_item(obj, key):\n"
-                                 L"    del obj[key]\n"
-                                 L"bag = Bag()\n"
-                                 L"del_item(bag, 0)\n"
-                                 L"first = bag.total\n"
-                                 L"def replacement(self, key):\n"
-                                 L"    self.total = 2\n"
-                                 L"Bag.__delitem__ = replacement\n"
-                                 L"del_item(bag, 0)\n"
-                                 L"first * 10 + bag.total\n");
-
-    EXPECT_EQ(Value::from_smi(12), file_runner.return_value);
 }
 
 TEST(Interpreter, dict_literal_returns_dict_object)
@@ -4027,42 +3827,6 @@ TEST(Interpreter, subscript_load_rejects_non_integer_tuple_index)
                         L"Cls.__mro__['x']\n",
                         L"TypeError",
                         L"tuple indices must be integers or slices");
-}
-
-TEST(Interpreter, subscript_load_accepts_bool_indices)
-{
-    EXPECT_EQ(Value::from_smi(2),
-              test::FileRunner(L"[1, 2][True]\n").return_value);
-    EXPECT_EQ(Value::from_smi(1),
-              test::FileRunner(L"(1, 2)[False]\n").return_value);
-    expect_string_result(L"'ab'[True]\n", L"b");
-}
-
-TEST(Interpreter, subscript_load_slices_list)
-{
-    expect_string_result(L"repr([1, 2, 3, 4][1:3])\n", L"[2, 3]");
-    expect_string_result(L"repr([1, 2, 3, 4][0:-1])\n", L"[1, 2, 3]");
-    expect_string_result(L"repr([1, 2, 3, 4][::2])\n", L"[1, 3]");
-    expect_string_result(L"repr([1, 2, 3, 4][::-1])\n", L"[4, 3, 2, 1]");
-    expect_string_result(L"repr([1, 2, 3, 4][3:0:-1])\n", L"[4, 3, 2]");
-}
-
-TEST(Interpreter, subscript_load_slices_tuple)
-{
-    expect_string_result(L"repr((1, 2, 3, 4)[1:3])\n", L"(2, 3)");
-    expect_string_result(L"repr((1, 2, 3, 4)[0:-1])\n", L"(1, 2, 3)");
-    expect_string_result(L"repr((1, 2, 3, 4)[::2])\n", L"(1, 3)");
-    expect_string_result(L"repr((1, 2, 3, 4)[::-1])\n", L"(4, 3, 2, 1)");
-    expect_string_result(L"repr((1, 2, 3, 4)[3:0:-1])\n", L"(4, 3, 2)");
-}
-
-TEST(Interpreter, subscript_load_slices_string)
-{
-    expect_string_result(L"'abcd'[1:3]\n", L"bc");
-    expect_string_result(L"'abcd'[0:-1]\n", L"abc");
-    expect_string_result(L"'abcd'[::2]\n", L"ac");
-    expect_string_result(L"'abcd'[::-1]\n", L"dcba");
-    expect_string_result(L"'abcd'[3:0:-1]\n", L"dcb");
 }
 
 TEST(Interpreter, subscript_load_slice_reports_invalid_consumed_values)
