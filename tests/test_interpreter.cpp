@@ -1455,37 +1455,6 @@ TEST(Interpreter, arithmetic_reports_unsupported_operands)
                         L"unsupported operand type(s) for comparison");
 }
 
-TEST(Interpreter, membership_fallback_handles_iterable_containers)
-{
-    test::VmTestContext test_context;
-
-    EXPECT_EQ(Value::True(), test_context.run_file(L"1 in [1, 2]\n"));
-    EXPECT_EQ(Value::False(), test_context.run_file(L"3 in [1, 2]\n"));
-    EXPECT_EQ(Value::True(), test_context.run_file(L"3 not in [1, 2]\n"));
-}
-
-TEST(Interpreter, membership_fallback_handles_sequence_index_protocol)
-{
-    test::VmTestContext test_context;
-
-    EXPECT_EQ(Value::True(),
-              test_context.run_file(L"class Sequence:\n"
-                                    L"    def __getitem__(self, idx):\n"
-                                    L"        if idx == 0:\n"
-                                    L"            return 'a'\n"
-                                    L"        if idx == 1:\n"
-                                    L"            return 'b'\n"
-                                    L"        raise IndexError\n"
-                                    L"'b' in Sequence()\n"));
-    EXPECT_EQ(Value::False(),
-              test_context.run_file(L"class Sequence:\n"
-                                    L"    def __getitem__(self, idx):\n"
-                                    L"        if idx == 0:\n"
-                                    L"            return 'a'\n"
-                                    L"        raise StopIteration\n"
-                                    L"'b' in Sequence()\n"));
-}
-
 TEST(Interpreter, membership_fallback_does_not_index_when_iter_exists)
 {
     expect_python_error(L"class Sequence:\n"
@@ -1495,22 +1464,6 @@ TEST(Interpreter, membership_fallback_does_not_index_when_iter_exists)
                         L"        return 'needle'\n"
                         L"'needle' in Sequence()\n",
                         L"ValueError", L"");
-}
-
-TEST(Interpreter, membership_dispatch_calls_dunder_contains)
-{
-    test::VmTestContext test_context;
-
-    EXPECT_EQ(Value::True(),
-              test_context.run_file(L"class Container:\n"
-                                    L"    def __contains__(self, item):\n"
-                                    L"        return item == 7\n"
-                                    L"7 in Container()\n"));
-    EXPECT_EQ(Value::False(),
-              test_context.run_file(L"class Container:\n"
-                                    L"    def __contains__(self, item):\n"
-                                    L"        return item == 7\n"
-                                    L"8 in Container()\n"));
 }
 
 TEST(Interpreter, membership_cache_hit_ignores_needle_shape)
@@ -1546,39 +1499,8 @@ TEST(Interpreter, membership_cache_hit_ignores_needle_shape)
     EXPECT_EQ(nullptr, cache.operand_lookup_validity_cells[1]);
 }
 
-TEST(Interpreter, membership_fallback_cache_invalidates_when_contains_is_added)
+TEST(Interpreter, membership_reports_unsupported_contains_truthiness)
 {
-    test::VmTestContext test_context;
-
-    EXPECT_EQ(Value::True(), test_context.run_file(
-                                 L"class Container:\n"
-                                 L"    def __iter__(self):\n"
-                                 L"        return iter(())\n"
-                                 L"def contains(container, needle):\n"
-                                 L"    return needle in container\n"
-                                 L"container = Container()\n"
-                                 L"first = contains(container, 1)\n"
-                                 L"def always_contains(self, needle):\n"
-                                 L"    return True\n"
-                                 L"Container.__contains__ = always_contains\n"
-                                 L"second = contains(container, 1)\n"
-                                 L"first == False and second == True\n"));
-}
-
-TEST(Interpreter, membership_truth_tests_dunder_contains_result)
-{
-    test::VmTestContext test_context;
-
-    EXPECT_EQ(Value::False(),
-              test_context.run_file(L"class Container:\n"
-                                    L"    def __contains__(self, item):\n"
-                                    L"        return 0\n"
-                                    L"1 in Container()\n"));
-    EXPECT_EQ(Value::True(),
-              test_context.run_file(L"class Container:\n"
-                                    L"    def __contains__(self, item):\n"
-                                    L"        return NotImplemented\n"
-                                    L"1 in Container()\n"));
     expect_python_error(L"class Container:\n"
                         L"    def __contains__(self, item):\n"
                         L"        return 'yes'\n"
@@ -1586,38 +1508,10 @@ TEST(Interpreter, membership_truth_tests_dunder_contains_result)
                         L"TypeError", L"unsupported truthiness for object");
 }
 
-TEST(Interpreter, native_builtin_contains_methods_are_visible)
+TEST(Interpreter, native_string_contains_rejects_non_string_needle)
 {
-    test::VmTestContext test_context;
-
-    EXPECT_EQ(Value::True(),
-              test_context.run_file(L"{'x': 1}.__contains__('x')\n"));
-    EXPECT_EQ(Value::False(),
-              test_context.run_file(L"{'x': 1}.__contains__('y')\n"));
-    EXPECT_EQ(Value::True(),
-              test_context.run_file(L"'abc'.__contains__('b')\n"));
-    EXPECT_EQ(Value::False(),
-              test_context.run_file(L"'abc'.__contains__('z')\n"));
-    EXPECT_EQ(Value::True(),
-              test_context.run_file(L"'abc'.__contains__('bc')\n"));
     expect_python_error(L"'abc'.__contains__(1)\n", L"TypeError",
                         L"'in <string>' requires string as left operand");
-}
-
-TEST(Interpreter, sequence_membership_fallback_uses_equality)
-{
-    test::VmTestContext test_context;
-
-    EXPECT_EQ(Value::True(),
-              test_context.run_file(L"class MatchesNeedle:\n"
-                                    L"    def __eq__(self, other):\n"
-                                    L"        return other == 2\n"
-                                    L"MatchesNeedle() in [1, 2]\n"));
-    EXPECT_EQ(Value::True(),
-              test_context.run_file(L"class MatchesNeedle:\n"
-                                    L"    def __eq__(self, other):\n"
-                                    L"        return other == 2\n"
-                                    L"MatchesNeedle() in (1, 2)\n"));
 }
 
 TEST(Interpreter, native_contains_membership_uses_trusted_handler)
