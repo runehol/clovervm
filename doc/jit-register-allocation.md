@@ -4,7 +4,7 @@
 |---|---|
 | Document type | Design |
 | Status | Accepted |
-| Implementation | Prepared allocation, deterministic constraint splitting, transfer scheduling, conflict-free register/stack assignment, and parallel-transfer materialization implemented; edge materialization remains open |
+| Implementation | Prepared allocation, deterministic constraint splitting, transfer scheduling, conflict-free register/stack assignment, and parallel-transfer materialization implemented; the x19 JIT-thread ABI migration and edge materialization remain open |
 | Scope | Allocation constraints, allocator-local numbering, liveness, bundles, backtracking allocation, live-range splitting, block-edge transfers, clobbers, spills, and post-allocation materialization |
 | Owning layers | Target preparation owns occurrence constraints and physical-transfer capabilities; the generic register allocator owns numbering, liveness, bundles, splitting, allocation, spill decisions, and bundle transfers; generic allocation materialization resolves transfers, rewrites the Core CFG, and publishes occurrence locations; publication and transition planners own canonical-state synchronization; machine-code emission only encodes the materialized graph |
 | Validated against | `tests/test_jit_allocation_constraints.cpp`, `tests/test_aarch64_allocation_constraints.cpp`, `tests/test_jit_register_allocator.cpp`, `tests/test_jit_parallel_assignment_resolver.cpp`, `tests/test_jit_allocation_materializer.cpp`, and `tests/test_aarch64_execution.cpp` |
@@ -166,9 +166,10 @@ class. Acyclic memory-to-memory transfers pass through the first available
 scratch. Block-exit and block-edge placement remain separate implementation
 slices.
 
-The Snapshot and `BytecodeStateOrder` define the accumulator, active thread,
-and canonical VM homes. A canonical frame home is not silently converted into
-an allocator-owned spill slot.
+The Snapshot and `BytecodeStateOrder` define the accumulator and canonical VM
+homes. The active thread is reserved target machine context outside allocation.
+A canonical frame home is not silently converted into an allocator-owned spill
+slot.
 
 A Core def marked sunk has no `LocationAssignment`. Its transition-only
 operation remains available to transition planning, while allocation liveness
@@ -628,10 +629,9 @@ to a target class or compatible fixed location, but it must not change
 representation semantics. Representation changes remain explicit Core
 instructions.
 
-## Initial AArch64 Bring-up Contract
+## Initial AArch64 Contract
 
-The first AArch64 constraint producer temporarily follows the platform ABI.
-This is a bring-up choice, not the final CloverVM calling convention:
+The AArch64 constraint producer follows the Clover JIT calling convention:
 
 - the enabled GPR class contains `x0` through `x15`, in that allocation order;
 - the enabled SIMD class contains caller-saved `v0` through `v7` followed by
@@ -641,12 +641,12 @@ This is a bring-up choice, not the final CloverVM calling convention:
 - the SIMD class declares `v30` and `v31` as ordered non-allocatable scratch
   registers;
 - platform-reserved `x18` is unavailable;
-- callee-saved GPRs and `v8` through `v15` remain unavailable until prologue
-  and epilogue generation preserves them;
-- the pointer entry-block parameter zero has a fixed-location result constraint
-  for `x0`;
-- tagged entry-block parameters one through seven have fixed-location result
-  constraints `x1` through `x7`;
+- `x19` is reserved machine context containing the active `ThreadState *`; it
+  is neither allocatable nor a scratch register;
+- other callee-saved GPRs and `v8` through `v15` remain unavailable until
+  prologue and epilogue generation preserves them;
+- tagged entry-block parameters zero through seven have fixed-location result
+  constraints `x0` through `x7`;
 - tagged internal block parameters use the ordinary `AnyRegister(GPR)`
   default;
 - F64 internal block parameters use the ordinary `AnyRegister(SIMD)` default;
@@ -658,13 +658,11 @@ This is a bring-up choice, not the final CloverVM calling convention:
 
 Overflow entry parameters, F64 entry parameters, calls, and instruction kinds
 without a bring-up lowering currently hard-fail instead of silently receiving
-an incomplete contract. The hidden thread value occupies
-`BytecodeStateOrder::ThreadStatePosition` but is not a Python parameter or
-canonical frame home. Later entry parameters will use fixed
+an incomplete contract. Later entry parameters will use fixed
 `IncomingParameter` locations, while overflow call preparation uses fixed
-`OutgoingCallArgument` locations. These do not create separate ABI constraint
-mechanisms: the thread and ABI registers remain ordinary fixed locations at
-exact occurrences.
+`OutgoingCallArgument` locations. These do not create a separate ABI constraint
+mechanism. The fixed JIT thread register is outside the allocator value model
+entirely.
 
 Constraint validation enforces:
 
@@ -1247,8 +1245,7 @@ first-class `BlockEdge` objects and ordered edge arguments.
 Calls are represented by ordinary allocation constraints:
 
 ```text
-hidden ThreadState *     -> early or late use in fixed x0
-managed arguments 0..6   -> early or late uses in fixed x1..x7
+managed arguments 0..7   -> early or late uses in fixed x0..x7
 managed overflow args    -> early or late uses in fixed outgoing argument slots
 native arguments         -> early or late uses in fixed platform ABI registers
 result definitions       -> early or late defs in fixed result locations
@@ -1257,9 +1254,8 @@ clobbers                 -> caller-saved register masks
 ```
 
 A managed Python call reserves the target's complete Clover argument window.
-Under the proposed AArch64 JIT convention, the active `ThreadState *` uses
-`FixedLocation(x0)`, its first seven adapted tagged arguments use
-`FixedLocation(x1)` through `FixedLocation(x7)`, and later arguments use
+Under the AArch64 JIT convention, the first eight adapted tagged arguments use
+`FixedLocation(x0)` through `FixedLocation(x7)`, and later arguments use
 `FixedLocation(OutgoingCallArgument(...))`. Moving the managed frame pointer
 reinterprets those physical cells as `IncomingParameter` locations in the
 callee. Caller and callee frame offsets use different frame coordinate systems,
@@ -1269,11 +1265,13 @@ that physical alias.
 Interpreter-to-JIT and JIT-to-interpreter call transitions are arity-specific:
 their complete contract belongs to
 [Proposed AArch64 JIT Calling Convention](aarch64-jit-calling-convention.md).
-A native call also uses fixed platform calling-convention registers. All of
-these remain ordinary fixed-location constraints and generate transfers when
-the surrounding value fragment occupies a different location. Native stack
-arguments can extend the platform-call lowering later if Clover actually
-supports them; they are not part of the managed stack-location vocabulary.
+A native call also uses fixed platform calling-convention registers. A helper
+whose first C ABI argument is `ThreadState *` adds the physical assignment
+`x19 -> x0` before its ordinary SSA argument assignments. The call lowering
+feeds that complete shuffle to the parallel-assignment machinery; it does not
+turn x19 into an SSA use or allocator bundle. Native stack arguments can extend
+the platform-call lowering later if Clover actually supports them; they are not
+part of the managed stack-location vocabulary.
 
 A value live across a call must be assigned to a non-clobbered location or split
 around the call. The target describes clobbers; the allocator decides whether to
@@ -1283,11 +1281,11 @@ An explicit call result owns its fixed return register at the late point, so
 that register is omitted from the call's clobber set:
 
 ```text
-ThreadState * -> Use Early, FixedLocation(x0)
-argument 0    -> Use Early, FixedLocation(x1)
-argument 1    -> Use Early, FixedLocation(x2)
-result        -> Def Late, FixedLocation(x0)
-clobbers      -> caller-saved registers except x0
+fixed JIT context x19 -> PhysicalAssignment(x0)
+argument 0            -> Use Early, FixedLocation(x1)
+argument 1            -> Use Early, FixedLocation(x2)
+result                -> Def Late, FixedLocation(x0)
+clobbers              -> caller-saved registers except x0
 ```
 
 The immovable Late reservation for the `x2` clobber may follow the early
@@ -1452,17 +1450,16 @@ instructions that consume them for exits or safepoints.
 After allocation, transition planning combines:
 
 ```text
-Snapshot
+SideExit retained body ending in Snapshot
     + BytecodeStateOrder
-    + sinking attachment
-    + LocationAssignments
+    + allocated owner arguments
     -> TransitionProgram
 ```
 
 `LocationAssignments` identify where each non-sunk physical frontier value
 lives at the exit position. The Snapshot identifies the required values and
-`BytecodeStateOrder` identifies the accumulator, active thread, and canonical
-frame destinations. The transition program reads the assigned locations,
+`BytecodeStateOrder` identifies the accumulator and canonical frame
+destinations. The transition program reads the assigned locations,
 evaluates explicitly eligible no-safepoint sunk instructions and
 materializations, and publishes canonical state without adding a second
 semantic state model. The initial executor interprets compact

@@ -4,7 +4,7 @@
 |---|---|
 | Document type | Design |
 | Status | Proposed |
-| Implementation | Partial; structural bytecode-to-Core translation, optimization, Core-to-Machine side-exit lowering, generic register allocation/materialization, snapshot-only transition emission and publication, and executable one-block AArch64 emission are implemented; target thunks, sunk computation, broader lowering, multi-block emission, and runtime entry remain |
+| Implementation | Partial; structural bytecode-to-Core translation, optimization, Core-to-Machine side-exit lowering, generic register allocation/materialization, snapshot-only transition emission and publication, and executable one-block AArch64 emission are implemented; the x19 JIT-thread migration, target thunks, sunk computation, broader lowering, multi-block emission, and runtime entry remain |
 | Scope | JIT pipeline, Core IR, exit state, effects, backend lowering, and compiled execution contracts |
 | Owning layers | The JIT owns IR and compiled execution; bytecode, runtime frames, object semantics, and reclamation remain authoritative contracts |
 | Validated against | The focused JIT instruction, CFG, rewrite, allocation-constraint, emitter, code-cache, and executable AArch64 tests |
@@ -216,12 +216,11 @@ Interpreted and compiled Python execution share the managed frame layout,
 canonical argument window, and Python call-adaptation semantics. The proposed
 compiled transport is defined separately in
 [Proposed AArch64 JIT Calling Convention](aarch64-jit-calling-convention.md).
-Every compiled function also receives the active `ThreadState *` as a hidden
-entry value. It is not a Python argument or canonical frame slot, but it is a
-bytecode-state and Snapshot position so side exits can recover the active
-execution context. On AArch64 it occupies `x0`, making the register prefix
-compatible with native Clover handlers while shifting the first seven Python
-arguments to `x1` through `x7`.
+The active `ThreadState *` is reserved execution context rather than an SSA
+entry value. On AArch64 it remains in fixed `x19` throughout compiled
+execution, while tagged Python arguments zero through seven use `x0` through
+`x7`. Native-helper lowering moves `x19` into platform argument register `x0`
+when calling a helper whose first C ABI argument is `ThreadState *`.
 Every frame retains both its canonical interpreted continuation and an
 executable compiled return target.
 
@@ -664,14 +663,13 @@ register without writing its canonical home.
 Bytecode block transfer and recovery use the same canonical state order defined
 by [JIT Bytecode State Tracking and
 Translation](jit-bytecode-state-tracking.md). Position zero is the global
-accumulator and position one is the active `ThreadState *`. Position two is the
-outer function's first parameter slot, or its highest frame-header slot when it
+accumulator. Position one is the outer function's first parameter slot, or its
+highest frame-header slot when it
 has no parameters. Later positions proceed through consecutive descending
 physical stack addresses:
 
 ```text
 accumulator
-thread state
 parameters
 parameter padding
 frame-header holes
@@ -704,17 +702,17 @@ Core IR captures a recoverable state with a zero-code `Snapshot` instruction:
 ```text
 %snapshot: Snapshot = Snapshot(
     resume = Add@17,
-    captured_values = [%acc, %thread, %arg0, %arg1, %padding,
+    captured_values = [%acc, %arg0, %arg1, %padding,
                        %return_pc, %return_code_object,
                        %compiled_return_pc, %previous_fp,
                        %local0, %temporary0, ...])
 ```
 
-Snapshot positions zero and one always exist and denote the accumulator and
-active thread. When the accumulator is unavailable, its position contains an
-`Uninitialized` definition rather than disappearing. Interior unavailable and
-padding positions likewise remain explicit. Only an unused trailing suffix may
-be omitted, so operand count alone determines the captured prefix.
+Snapshot position zero always exists and denotes the accumulator. When the
+accumulator is unavailable, its position contains an `Uninitialized` definition
+rather than disappearing. Interior unavailable and padding positions likewise
+remain explicit. Only an unused trailing suffix may be omitted, so operand
+count alone determines the captured prefix.
 
 Generic use and liveness traversal visits every captured position, including
 frame-header values. Verification uses the CFG ordering description to check
@@ -1646,8 +1644,8 @@ Location assignments resolve each owner argument to its register, spill, or
 canonical slot at the exit. Its position matches one immutable `SideExit`
 input, so transition emission can interpret retained operands without
 register-allocating the retained body. `BytecodeStateOrder` maps each Snapshot
-position to the accumulator or a canonical frame home, except for position one,
-which supplies the active thread pointer.
+position to the accumulator or a canonical frame home. The active thread is
+ambient JIT machine context and is not reconstructed by the transition program.
 
 The resulting compact, pointer-free `TransitionProgram` is specified in
 [JIT Transition Programs](jit-transition-program.md). It uses explicitly

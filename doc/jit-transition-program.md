@@ -4,7 +4,7 @@
 |---|---|
 | Document type | Design |
 | Status | Accepted |
-| Implementation | The compact representation and executor, snapshot-only emission, AArch64 location mapping, untagged code-object publication, and AArch64 side-exit references are implemented; sunk computation, target thunks, thread-owned execution context, and interpreter handoff remain |
+| Implementation | The compact representation and executor, snapshot-only emission, AArch64 location mapping, untagged code-object publication, and AArch64 side-exit references are implemented; removing the legacy ThreadState transition operand, sunk computation, target thunks, thread-owned execution context, and interpreter handoff remain |
 | Scope | Compact straight-line programs that transform values and machine state between execution conventions; the first consumer is JIT side exit |
 | Owning layers | Core IR owns sunk operation semantics and Snapshot state; register allocation owns physical frontier locations; transition emission owns the continuous transition program and canonical publication; each thread owns reusable transition scratch storage; target thunks own fixed machine-state saves |
 | Validated against | `tests/test_transition_program.cpp`, `tests/test_transition_executor.cpp`, `tests/test_transition_program_emitter.cpp`, and `tests/test_aarch64_transition.cpp` |
@@ -69,12 +69,13 @@ scratch
     also used for parallel-move scratch space
 ```
 
-The scratch area is not register allocated. Every dispatched body-instruction
-index names one potential 64-bit scratch slot; the `BeginTransition` header is
-not part of this index space. Eligible Core results use
-`Scratch[instruction_index]`; a `Transfer` used for staging also uses its own
-instruction index as the scratch destination. Resultless instructions that do
-not stage a value use no scratch.
+The scratch area is not register allocated. Every absolute stored-entry index
+names one potential 64-bit scratch slot, including the `BeginTransition` header
+at entry zero. Eligible Core results use `Scratch[entry_index]`. Because
+`BeginTransition` is resultless, it has no implicit producer and leaves
+`Scratch[0]` available for the terminal accumulator convention. A `Transfer`
+has an explicit destination and may write any scratch slot selected by the
+planner. Other resultless instructions use no scratch.
 
 `TransitionExecutionContext` owns a reusable `std::vector<uint64_t>` transition
 scratch buffer. A thread embeds one context for production execution, while
@@ -82,12 +83,13 @@ tests and other consumers may construct a context independently.
 `BeginTransition.scratch_slot_count` records the actual capacity required by
 the lowered program. The context grows the buffer to at least that many elements
 and does not clear it: verification ensures that every scratch source was
-initialized earlier in the current program. A program containing only direct
-resultless transfers may request zero slots. A parallel-transfer cycle requests
-the slots introduced for staging. The builder computes the count as zero when
-the program contains no scratch locations, otherwise one plus the highest
-scratch offset read or written. Resultless instructions after the final scratch
-use do not increase it.
+initialized earlier in the current program. A transition with no scratch
+locations may request zero slots; a `ResumeInterpreter` program always requests
+at least `Scratch[0]` for its accumulator. A parallel-transfer cycle requests
+the additional slots introduced for staging. The builder computes the count as
+zero when the program contains no scratch locations, otherwise one plus the
+highest scratch offset read or written. Resultless instructions after the final
+scratch use do not increase it.
 
 Transition execution is a no-safepoint region. No transition instruction may
 invoke Python, trigger GC, or otherwise enter safepoint-capable VM code. Saved
@@ -109,7 +111,6 @@ struct TransitionExecutionInput
 struct InterpreterResumeState
 {
     Value accumulator;
-    ThreadState *thread_state;
     BytecodePC resume_pc;
 };
 
@@ -122,17 +123,18 @@ InterpreterResumeState execute_transition_program(
 `Transfer` copies one raw 64-bit word so tagged and unboxed representations use
 the same path. Register-file locations are read-only; stack locations are
 relative to the supplied frame pointer; scratch locations address the context.
-`ResumeInterpreter` reconstructs the thread-state pointer and tagged
-accumulator and returns them with the bytecode continuation to the future
-side-exit adapter. This initial executor
-does not itself enter the bytecode interpreter.
+`ResumeInterpreter` reconstructs the tagged accumulator and returns it with the
+bytecode continuation to the future side-exit adapter. The active
+`ThreadState *` is fixed machine context held in the target's JIT thread
+register, not transition data. This initial executor does not itself enter the
+bytecode interpreter.
 
 ## Instruction Representation
 
 Most instructions in a transition program form a restricted straight-line
 subset of Core IR. They read operands from the register file, stack, constants,
 or earlier scratch slots. The result of an eligible Core instruction is
-implicitly `Scratch[instruction_index]`, so it needs no stored destination.
+implicitly `Scratch[absolute_entry_index]`, so it needs no stored destination.
 
 It does not contain branches. It does not model arbitrary interpreter
 bytecode. Interpreter bytecode is slot-state oriented and owns generic Python
@@ -175,8 +177,8 @@ static_assert(sizeof(TransitionLocation) == 4);
 
 Stack offsets may be signed; register-file and scratch offsets are
 non-negative. A reference to an earlier eligible Core result is
-`Scratch[instruction_index]`. A scratch source must have been initialized by an
-earlier instruction.
+`Scratch[absolute_entry_index]`. A scratch source must have been initialized by
+an earlier instruction.
 
 The initial stored instruction exposes named construction and access only for
 the three transition-specific kinds:
@@ -191,7 +193,6 @@ public:
     transfer(TransitionLocation destination, TransitionLocation source);
     static TransitionInstruction
     resume_interpreter(TransitionLocation accumulator,
-                       TransitionLocation thread_state,
                        BytecodePC resume_pc);
 
     TransitionInstructionKind kind() const;
@@ -225,9 +226,9 @@ The builder emits `BeginTransition {scratch_slot_count = 0}` before any
 position-derived result exists. Once the complete stream determines its scratch
 requirement, each append immediately patches that instruction through
 `set_scratch_slot_count()`. An instruction with an implicit result requires the
-scratch slot named by its body position. A `Transfer` with an explicit scratch
-destination requires that destination slot. The builder retains no duplicate
-scratch-count field and `finalize()` performs no sizing scan.
+scratch slot named by its absolute entry index. A `Transfer` with an explicit
+scratch destination requires that destination slot. The builder retains no
+duplicate scratch-count field and `finalize()` performs no sizing scan.
 
 Compiler-side construction follows the graph builder's ownership vocabulary:
 
@@ -241,7 +242,6 @@ public:
     void emplace_transfer(TransitionLocation destination,
                           TransitionLocation source);
     void emplace_resume_interpreter(TransitionLocation accumulator,
-                                    TransitionLocation thread_state,
                                     BytecodePC resume_pc);
 
     std::vector<TransitionInstruction> finalize() &&;
@@ -272,7 +272,7 @@ Transfer
 The source is an operand because it is read. The destination is an attribute
 because it is a write target rather than a use. Executing the instruction
 updates that location and produces no Core-style result. A `Transfer` that
-stages a value in scratch explicitly names `Scratch[instruction_index]`.
+stages a value in scratch explicitly names the planner-selected scratch slot.
 
 `ResumeInterpreter` is the initial terminal handoff instruction:
 
@@ -280,16 +280,16 @@ stages a value in scratch explicitly names `Scratch[instruction_index]`.
 ResumeInterpreter
     operands:
         accumulator : TransitionLocation
-        thread_state : TransitionLocation
     attribute:
         resume_pc : BytecodePC
 ```
 
-It has no result. It reads the reconstructed accumulator and thread-state
-pointer from its explicit sources, ends transition execution after canonical
-interpreter state has been published, and identifies the bytecode continuation.
-The initial non-inlined side-exit context supplies the owning `CodeObject`;
-representing the active code object for an inlined frame is deferred with
+It has no result. It reads the reconstructed accumulator from its explicit
+source, ends transition execution after canonical interpreter state has been
+published, and identifies the bytecode continuation. The initial non-inlined
+side-exit context supplies the active `ThreadState *` through fixed target
+machine state and the owning `CodeObject` through side-exit metadata.
+Representing the active code object for an inlined frame is deferred with
 inlining. The resume PC is part of the continuous program rather than parallel
 side-exit metadata. Future transition consumers may define different terminal
 handoff instructions.
@@ -382,20 +382,23 @@ stream. Source and destination area tags distinguish register-to-scratch,
 stack-to-scratch, scratch-to-stack, and direct stack-to-stack transfers without
 separate load and store opcodes.
 
-The logical publication step has parallel-assignment semantics. It includes
-the accumulator and thread-state outputs to fresh scratch locations alongside
-the canonical frame destinations. A source canonical home may also be a
+The logical publication step has parallel-assignment semantics. For
+`ResumeInterpreter`, side-exit emission always publishes the accumulator to
+`Scratch[0]` alongside the canonical frame destinations. Entry zero belongs to
+the resultless `BeginTransition`, so no implicit computation can occupy that
+slot. A source canonical home may also be a
 destination. Transition emission resolves the complete assignment into ordered
 `Transfer` instructions, introducing a move-scratch transfer before a write
 would clobber a value still needed later.
 
 Transition emission reuses `order_parallel_assignments<TransitionLocation>()`.
-The accumulator and thread-state result locations follow all scratch
-destinations already written by earlier computation. The cycle-scratch
-location follows those results and is counted only if the resolver emits a
-preservation `Transfer`. Unlike physical register-allocation materialization,
-transition publication needs no second legalization pass because a `Transfer`
-directly supports stack-to-stack locations.
+The fixed accumulator destination participates in the same assignment graph as
+every canonical frame destination. Cycle scratch begins at the first unused
+slot after `Scratch[0]` and every instruction-indexed result already present,
+and is counted only if the resolver emits a preservation `Transfer`. Unlike
+physical register-allocation materialization, transition publication needs no
+second legalization pass because a `Transfer` directly supports stack-to-stack
+locations.
 
 For example:
 
@@ -405,9 +408,9 @@ logical:
     home_b = home_a
 
 lowered:
-    Transfer Scratch[0], home_a
+    Transfer Scratch[move], home_a
     Transfer home_a, home_b
-    Transfer home_b, Scratch[0]
+    Transfer home_b, Scratch[move]
 ```
 
 The program does not distinguish compute scratch from transfer scratch;
@@ -531,11 +534,12 @@ Transition-program verification should check:
 - `BeginTransition` is the first entry and its scratch count covers every
   scratch location used by the program;
 - every scratch source has been initialized by an earlier instruction;
-- every implicit result targets its instruction's body position, while an
+- every implicit result targets its absolute stored-entry index, while an
   explicit `Transfer` may target any declared scratch location;
+- `Scratch[0]` has no implicit producer, and a `ResumeInterpreter` program
+  initializes it with the resumed accumulator;
 - a side-exit transition never writes its register-file image;
-- `ResumeInterpreter` reads initialized tagged accumulator and thread-state
-  pointer sources;
+- `ResumeInterpreter` reads an initialized tagged accumulator source;
 - exactly one terminal handoff is present and it is the final instruction;
 - `ResumeInterpreter.resume_pc` is valid for the owning bytecode code object.
 
@@ -572,8 +576,8 @@ The publication slice is complete through the compiled side-exit branch:
   branch to a supplied thunk address.
 
 The remaining runtime slice must settle and implement the target thunk,
-thread-owned execution context, and interpreter handoff. In particular, the
-thunk needs a durable way to recover the allocator-placed `ThreadState *`; that
-contract is intentionally unresolved and is not encoded as an ad hoc transition
-header field. General sinking and transition-local Core computation follow
-after the snapshot-only execution path closes.
+thread-owned execution context, and interpreter handoff. On AArch64 the thunk
+obtains the active `ThreadState *` from fixed `x19`; the transition program does
+not encode or reconstruct it. Register-save storage and host-stack restoration
+remain to be designed. General sinking and transition-local Core computation
+follow after the snapshot-only execution path closes.

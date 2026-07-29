@@ -4,7 +4,7 @@
 |---|---|
 | Document type | Proposed architecture contract |
 | Status | Proposed |
-| Implementation | Partial; entry constraints, result constraints, canonical incoming stack locations, allocation-order register sets, per-class scratch registers, and emitted side-exit transition references are implemented; stack-passed entry arguments, managed calls, entry/exit thunks, and the side-exit thunk remain |
+| Implementation | Partial; result constraints, canonical incoming stack locations, allocation-order register sets, per-class scratch registers, and emitted side-exit transition references are implemented; entry constraints still use the legacy x0 thread convention, while the x19 migration, stack-passed arguments, managed calls, entry/exit thunks, and side-exit thunk remain |
 | Scope | AArch64 compiled managed argument transport, call adaptation, cross-engine entry, return, and safepoint placement |
 | Owning layers | Call-site lowering owns guarded Python adaptation; the AArch64 backend owns argument and result locations; transition adapters own cross-engine reshuffling; the generic allocator and materializer implement the resulting fixed-location constraints and transfers |
 | Builds on | [CloverVM Function Calling Convention](function-calling-convention.md) |
@@ -20,35 +20,40 @@ All Python-visible parameters use `TaggedValue` at a non-inlined function
 boundary:
 
 ```text
-hidden ThreadState * -> x0
-parameter 0..6       -> x1..x7
-parameter 7..N       -> canonical parameter cells in the argument window
+active ThreadState * -> x19
+parameter 0..7       -> x0..x7
+parameter 8..N       -> canonical parameter cells in the argument window
 result               -> x0
 ```
 
-The thread pointer is compiler state, not Python parameter zero. It does not
-contribute to Python arity or the canonical parameter window. It is position
-one in `BytecodeStateOrder` and in Snapshots so side exits can recover the
-active execution context. It enters Core as a hidden `Pointer` value and may be
-moved or spilled by ordinary allocation after its fixed `x0` entry definition.
+`x19` is the fixed Clover JIT thread register. The active `ThreadState *` is
+reserved machine context alongside the managed frame pointer in `x29/fp`; it is
+not a Python argument, Core SSA value, bytecode-state position, Snapshot value,
+allocator member, or backend scratch register. Every compiled function
+preserves it simply by never writing it. Cross-engine entry installs it and
+every path back to host code restores the host's original `x19`.
+
+`x19` is callee-saved under the generic AAPCS64 and Apple arm64 conventions, so
+ordinary C and C++ helpers preserve the active thread automatically. This also
+avoids platform-specific `x18` and leaves caller-saved `x0` available for
+arguments, results, and temporary value traffic.
 
 The initial JIT relies on inlining to eliminate boxing. It does not introduce
 representation-specialized entry signatures. A later convention may add such
 entries explicitly; arity alone describes the proposed initial boundary.
 
-This register prefix deliberately matches native Clover handlers such as
-`Value handler(ThreadState *, Value, ...)`: the thread is in `x0`, the first
-seven Python values are in `x1` through `x7`, and the result returns in `x0`.
-It is not the platform ABI as a whole. Native overflow arguments use the host
-ABI stack, while compiled managed overflow arguments use Clover's canonical
-managed argument window.
+Native Clover helpers such as `Value handler(ThreadState *, Value, ...)` retain
+their platform-ABI signatures. JIT-to-native call preparation moves `x19` into
+`x0` and shifts helper arguments into `x1` onward. This loses the old accidental
+register-prefix compatibility in exchange for keeping persistent VM context
+out of the primary argument, result, and temporary register.
 
 ## Canonical Argument Window
 
 The caller reserves the target's complete ABI-padded canonical parameter
 window, including cells for parameters transported in registers. Canonical
-cells zero through six therefore exist even when they are not current at the
-call transition. Parameters beyond six are written directly to their
+cells zero through seven therefore exist even when they are not current at the
+call transition. Parameters beyond seven are written directly to their
 ordinary canonical outgoing cells.
 
 Moving the managed frame pointer reinterprets overflow cells as the callee's
@@ -84,18 +89,21 @@ The AArch64 backend describes a compiled managed call with ordinary fixed
 locations:
 
 ```text
-hidden caller thread  -> Use FixedLocation(x0)
-caller argument 0..6  -> Use FixedLocation(x1..x7)
-caller argument 7..N  -> Use FixedLocation(
+caller argument 0..7  -> Use FixedLocation(x0..x7)
+caller argument 8..N  -> Use FixedLocation(
                               OutgoingCallArgument(caller_frame_offset))
 
-hidden callee thread  -> Def FixedLocation(x0)
-callee parameter 0..6 -> Def FixedLocation(x1..x7)
-callee parameter 7..N -> Def FixedLocation(
+callee parameter 0..7 -> Def FixedLocation(x0..x7)
+callee parameter 8..N -> Def FixedLocation(
                               IncomingParameter(callee_frame_offset))
 
 return result          -> FixedLocation(x0)
 ```
+
+`x19` does not appear as an allocation constraint because it is not an
+allocated value. Managed calls inherit the active thread context. Native-helper
+lowering adds physical source `x19` to its argument shuffle when producing the
+platform-ABI `x0` thread argument.
 
 Caller-saved registers are ordinary call clobbers. The generic allocator may
 split surrounding live ranges and the generic materializer schedules the
@@ -107,8 +115,8 @@ not enter the allocator.
 Cross-engine call entry uses this internal AArch64 transition state:
 
 ```text
-x0      = active ThreadState *
-x1..x7 = first seven adapted tagged parameters
+x0..x7 = first eight adapted tagged parameters
+x19    = active ThreadState *
 x16    = target CodeObject *
 x29/fp = committed callee managed frame pointer
 ```
@@ -122,7 +130,7 @@ The JIT-to-interpreter adapter:
 
 ```text
 arity = x16->function_signature.n_parameters
-store x1..x[min(arity, 7)] into fp-relative canonical parameter cells
+store the first min(arity, 8) registers from x0..x7 into canonical cells
 publish x16 as the current CodeObject
 set the interpreter pc to x16->code.data()
 publish the managed frame frontier
@@ -134,8 +142,8 @@ The interpreter-to-JIT adapter is symmetric:
 
 ```text
 arity = x16->function_signature.n_parameters
-place the active ThreadState * in x0
-load the first min(arity, 7) parameters into x1..x7
+install the active ThreadState * in x19
+load the first min(arity, 8) parameters into x0..x7
 leave overflow parameters in their canonical cells
 switch the architectural stack pointer to managed Clover storage
 enter compiled code
@@ -172,16 +180,18 @@ address predictor:
 ```text
 interpreter-to-JIT entry-exit thunk
     save host/interpreter execution state
+    save host x19
+    install the active ThreadState * in x19
     install the compiled Clover stack pointer
-    place ThreadState * in x0
     place target CodeObject * in x16
     derive arity from the target CodeObject in x16
-    place first min(arity, 7) tagged parameters in x1..x7
+    place first min(arity, 8) tagged parameters in x0..x7
     place the committed managed frame pointer in x29/fp
     blr compiled_entry
 
 jit_return_label
     restore host/interpreter stack discipline
+    restore host x19
     consume the JIT return result
     continue in the interpreter or caller path
 ```
@@ -217,6 +227,7 @@ compiled guard failure
 
 side_exit_register_save_thunk
     save the fixed compiled register image
+    save x19 as the authoritative active ThreadState *
     save compiled fp/sp and the transition-program address from x16
     publish or record the side-exit capture for interpreter recovery
     pc = interpreter return/recovery opcode pc
@@ -240,12 +251,11 @@ register-save thunk owns only target state capture and the cold `ret xtarget`
 handoff into interpreter dispatch.
 
 The emitted side-exit sequence and transition-program address convention are
-implemented; the thunk itself is not. One contract remains deliberately open:
-ordinary allocation may place the active `ThreadState *` in any valid register
-or spill location at the exit, while the thunk needs it to reach thread-owned
-transition state. The final design must solve that boundary together with
-register saving and host-stack restoration. The transition header does not
-currently encode an allocator-chosen `ThreadState *` location.
+implemented; the thunk itself is not. Fixed `x19` gives the thunk immediate
+access to thread-owned transition state without transition metadata or
+allocator cooperation. The remaining thunk design must settle register-save
+storage and host-stack restoration. Before re-entering host code it must restore
+the host's original `x19`, just as the normal entry-thunk return path does.
 
 ## Returns
 
@@ -302,8 +312,13 @@ compiled unwinding and stack walking.
   frame even when its register-parameter cells are stale.
 - Non-inlined Python boundaries use tagged parameters; inlining is the initial
   mechanism for avoiding boxing.
-- Every compiled entry receives the active `ThreadState *` in `x0`; it is state
-  position one, but not a Python argument or canonical frame home.
+- `x19` contains the active `ThreadState *` throughout compiled execution. It
+  is reserved machine context, not an allocator-visible value.
+- `x29/fp` remains the committed managed frame pointer.
+- Compiled arguments zero through seven use `x0` through `x7`; ordinary results
+  use `x0`.
+- Cross-engine entry saves the host's `x19` before installing the Clover thread
+  register, and every normal or side-exit return to host execution restores it.
 - `x16` may carry the target `CodeObject *` only as entry/setup state; compiled
   code must rematerialize code-object identity when it needs it after entry.
 - Successful adaptation determines the callee arity before argument transport.

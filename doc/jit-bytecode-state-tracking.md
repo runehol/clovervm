@@ -4,7 +4,7 @@
 |---|---|
 | Document type | Design |
 | Status | Accepted |
-| Implementation | Partial: canonical outer-frame state ordering and CFG attachment, shared state tracking, and an executable straight-line Core translation slice with basic control flow are implemented; frame-header value definitions, broader semantic coverage, executable side exits, and Semantic translation remain |
+| Implementation | Partial: canonical outer-frame state ordering and CFG attachment, shared state tracking, and an executable straight-line Core translation slice with basic control flow are implemented; removing the legacy ThreadState state position, frame-header value definitions, broader semantic coverage, executable side exits, and Semantic translation remain |
 | Scope | Shared symbolic bytecode state, target-driven bytecode-to-IR translation, block state transfer, multiple results, and Snapshot state queries |
 | Owning layers | The bytecode decoder owns decoded locations and structural blocks; the shared JIT state layer owns opcode-blind bytecode state tracking and its canonical ordering description; each concrete translator owns traversal, IR construction, opcode semantics, and Snapshot extent |
 | Validated against | `tests/test_jit_bytecode_state.cpp`, `tests/test_jit_core_bytecode_translator.cpp`, `tests/test_jit_cfg.cpp`, and `tests/test_jit_storage.cpp` |
@@ -100,11 +100,14 @@ special state-forking subsystem.
 
 ```text
 position 0: accumulator
-position 1: active ThreadState *
-position 2: highest canonical stack slot
-position 3: next descending canonical stack slot
+position 1: highest canonical stack slot
+position 2: next descending canonical stack slot
 ...
 ```
+
+The active `ThreadState *` is execution context rather than bytecode state. On
+AArch64 compiled code receives it in the reserved `x19` JIT thread register; it
+is not a block parameter or Snapshot position.
 
 For an outer function with parameters, the highest stack slot is the first
 parameter's `CodeObject::encode_reg(0)` slot. For a zero-parameter function, it
@@ -128,9 +131,9 @@ will use an appropriate non-tagged representation, while the return
 `CodeObject` remains tagged. The exact header-producing instructions are a
 separate Core design decision.
 
-`BytecodeStateOrder` describes this mapping. Position one is distinguished
-compiler state and has no frame offset or canonical frame home. The tracker
-uses positions two onward to translate decoded `BytecodeValueLocation`s into
+`BytecodeStateOrder` describes this mapping. Position zero is the distinguished
+accumulator and has no frame offset or canonical frame home. The tracker uses
+positions one onward to translate decoded `BytecodeValueLocation`s into
 canonical stack positions. The same description is attached to a
 bytecode-derived CFG so later verification, register allocation, and recovery
 can interpret positions without consulting the mutable translation
@@ -155,17 +158,15 @@ state position i
     = Snapshot operand i, when the Snapshot includes it
 ```
 
-Position zero identifies the accumulator, position one the active thread, and
-positions two onward identify canonical frame homes. A canonical home is a
-preferred spill and frame-synchronization location rather than a claim that it
-is continuously current.
+Position zero identifies the accumulator, and positions one onward identify
+canonical frame homes. A canonical home is a preferred spill and
+frame-synchronization location rather than a claim that it is continuously
+current.
 
 ### Initial values
 
 The function-entry state is initialized differently from an ordinary block:
 
-- the active thread receives a target-created pointer entry
-  `ProgramValueRef`;
 - parameters receive target-created entry `ProgramValueRef`s;
 - locals receive a target-created `Uninitialized` reference;
 - temporaries receive a target-created `Uninitialized` reference;
@@ -395,12 +396,12 @@ concrete translator owns that semantic choice; the state tracker only supplies
 the requested state.
 
 Snapshot construction reads a prefix of the same canonical `BytecodeState`
-sequence used by block parameters and edge arguments. Positions zero and one
-are always present and denote the accumulator and active thread respectively;
-an unavailable accumulator is represented by its `Uninitialized` reference
-rather than by changing the ordering. A Snapshot may omit an unused trailing
-suffix, but it cannot omit an interior position. Its operand count therefore
-describes its extent without an arbitrary position map.
+sequence used by block parameters and edge arguments. Position zero is always
+present and denotes the accumulator; an unavailable accumulator is represented
+by its `Uninitialized` reference rather than by changing the ordering. A
+Snapshot may omit an unused trailing suffix, but it cannot omit an interior
+position. Its operand count therefore describes its extent without an
+arbitrary position map.
 
 This prefix rule includes ABI padding and frame-header positions whenever the
 Snapshot extends through them. Inlining extends the same descending stack-slot
