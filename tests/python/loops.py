@@ -121,3 +121,57 @@ try:
 except StopIteration:
     list_iterator_exhausted = True
 assert list_iterator_exhausted
+
+
+# Cached iterator calls observe method replacement and preserve varargs adaptation.
+class ReplaceableIterator:
+    def __iter__(self):
+        return self
+
+    def __next__(self):
+        raise StopIteration
+
+
+def first_or_zero(iterator):
+    for value in iterator:
+        return value
+    return 0
+
+
+replaceable_iterator = ReplaceableIterator()
+assert first_or_zero(replaceable_iterator) == 0
+
+
+def replacement_next(self):
+    return 7
+
+
+ReplaceableIterator.__next__ = replacement_next
+assert first_or_zero(replaceable_iterator) == 7
+
+
+class VarargsIterator:
+    def __init__(self):
+        self.done = False
+
+    def __iter__(*args):
+        self = args[0]
+        self.done = False
+        return self
+
+    def __next__(*args):
+        self = args[0]
+        if self.done:
+            raise StopIteration
+        self.done = True
+        return 3
+
+
+def first(iterator):
+    for value in iterator:
+        return value
+
+
+varargs_iterator = VarargsIterator()
+assert first(varargs_iterator) == 3
+assert first(varargs_iterator) == 3
