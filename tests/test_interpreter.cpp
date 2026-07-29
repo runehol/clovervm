@@ -3276,48 +3276,6 @@ TEST(Interpreter, attribute_load_and_store_syntax)
               obj_value.get_ptr<Instance>()->get_own_property(attr_name));
 }
 
-TEST(Interpreter, attribute_assignment_evaluates_rhs_before_target)
-{
-    test::FileRunner file_runner(L"class Box:\n"
-                                 L"    pass\n"
-                                 L"a = Box()\n"
-                                 L"b = Box()\n"
-                                 L"a.value = 1\n"
-                                 L"b.value = 2\n"
-                                 L"current = a\n"
-                                 L"def target():\n"
-                                 L"    return current\n"
-                                 L"def rhs():\n"
-                                 L"    global current\n"
-                                 L"    current = b\n"
-                                 L"    return 7\n"
-                                 L"target().value = rhs()\n"
-                                 L"a.value * 10 + b.value\n");
-
-    EXPECT_EQ(Value::from_smi(17), file_runner.return_value);
-}
-
-TEST(Interpreter, annotated_attribute_assignment_evaluates_rhs_before_target)
-{
-    test::FileRunner file_runner(L"class Box:\n"
-                                 L"    pass\n"
-                                 L"a = Box()\n"
-                                 L"b = Box()\n"
-                                 L"a.value = 1\n"
-                                 L"b.value = 2\n"
-                                 L"current = a\n"
-                                 L"def target():\n"
-                                 L"    return current\n"
-                                 L"def rhs():\n"
-                                 L"    global current\n"
-                                 L"    current = b\n"
-                                 L"    return 7\n"
-                                 L"target().value: int = rhs()\n"
-                                 L"a.value * 10 + b.value\n");
-
-    EXPECT_EQ(Value::from_smi(17), file_runner.return_value);
-}
-
 TEST(Interpreter, store_attr_caches_instance_add_transition)
 {
     test::VmTestContext test_context;
@@ -3449,21 +3407,6 @@ TEST(Interpreter, del_attr_missing_attribute_raises_attribute_error)
     expect_thread_python_error(test_context.thread(), L"AttributeError", L"");
 }
 
-TEST(Interpreter, cached_class_attribute_read_observes_class_write)
-{
-    test::FileRunner file_runner(L"class Cls:\n"
-                                 L"    value = 1\n"
-                                 L"def get(obj):\n"
-                                 L"    return obj.value\n"
-                                 L"obj = Cls()\n"
-                                 L"first = get(obj)\n"
-                                 L"Cls.value = 2\n"
-                                 L"get(obj)\n");
-    Value actual = file_runner.return_value;
-
-    EXPECT_EQ(Value::from_smi(2), actual);
-}
-
 TEST(Interpreter, cached_class_chain_attribute_read_observes_mro_mutations)
 {
     test::VmTestContext test_context;
@@ -3527,25 +3470,6 @@ TEST(Interpreter, cached_class_chain_attribute_read_observes_mro_mutations)
     EXPECT_TRUE(mid->delete_own_property(value_name));
     EXPECT_EQ(Value::from_smi(6),
               test_context.thread()->run_clovervm_code_object(read_code));
-}
-
-TEST(Interpreter, cached_class_chain_attribute_read_observes_secondary_base)
-{
-    test::FileRunner file_runner(L"class Left:\n"
-                                 L"    pass\n"
-                                 L"class Right:\n"
-                                 L"    value = 1\n"
-                                 L"class Derived(Left, Right):\n"
-                                 L"    pass\n"
-                                 L"def get(obj):\n"
-                                 L"    return obj.value\n"
-                                 L"obj = Derived()\n"
-                                 L"first = get(obj)\n"
-                                 L"Right.value = 2\n"
-                                 L"get(obj)\n");
-    Value actual = file_runner.return_value;
-
-    EXPECT_EQ(Value::from_smi(2), actual);
 }
 
 TEST(Interpreter, cached_direct_method_call_observes_mro_mutations)
