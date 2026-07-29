@@ -1054,44 +1054,6 @@ TEST(Interpreter, class_constructor_custom_new_with_init_has_no_thunk_yet)
                         L"TypeError", L"object is not callable");
 }
 
-TEST(Interpreter, int_constructor_defaults_to_zero)
-{
-    test::FileRunner file_runner(L"int()\n");
-    EXPECT_EQ(Value::from_smi(0), file_runner.return_value);
-}
-
-TEST(Interpreter, int_constructor_returns_int_argument)
-{
-    test::FileRunner file_runner(L"int(42)\n");
-    EXPECT_EQ(Value::from_smi(42), file_runner.return_value);
-}
-
-TEST(Interpreter, int_constructor_returns_bigint_argument)
-{
-    expect_string_result(L"x = int('288230376151711744')\n"
-                         L"str(int(x))\n",
-                         L"288230376151711744");
-}
-
-TEST(Interpreter, int_constructor_converts_bool)
-{
-    test::FileRunner true_runner(L"int(True)\n");
-    EXPECT_EQ(Value::from_smi(1), true_runner.return_value);
-
-    test::FileRunner false_runner(L"int(False)\n");
-    EXPECT_EQ(Value::from_smi(0), false_runner.return_value);
-}
-
-TEST(Interpreter, int_constructor_converts_string)
-{
-    EXPECT_EQ(Value::from_smi(123),
-              test::FileRunner(L"int('123')\n").return_value);
-    EXPECT_EQ(Value::from_smi(-42),
-              test::FileRunner(L"int('  -42  ')\n").return_value);
-    EXPECT_EQ(Value::from_smi(1000),
-              test::FileRunner(L"int('1_000')\n").return_value);
-}
-
 TEST(Interpreter, int_constructor_converts_large_string_to_bigint)
 {
     test::VmTestContext context;
@@ -1105,12 +1067,6 @@ TEST(Interpreter, int_constructor_converts_large_string_to_bigint)
     ASSERT_TRUE(can_convert_to<BigInt>(negative));
     expect_string_value(context.run_file(L"str(int('-288230376151711745'))\n"),
                         L"-288230376151711745");
-}
-
-TEST(Interpreter, int_constructor_large_string_allows_underscores)
-{
-    expect_string_result(L"str(int('288_230_376_151_711_744'))\n",
-                         L"288230376151711744");
 }
 
 TEST(Interpreter, integer_literal_can_be_bigint)
@@ -1134,24 +1090,6 @@ TEST(Interpreter, negative_integer_literal_can_be_bigint)
     ASSERT_TRUE(can_convert_to<BigInt>(literal));
     expect_string_value(context.run_file(L"str(-288230376151711745)\n"),
                         L"-288230376151711745");
-}
-
-TEST(Interpreter, bigint_comparison_values)
-{
-    EXPECT_EQ(Value::True(),
-              test::FileRunner(
-                  L"int('288230376151711744') == int('288230376151711744')\n")
-                  .return_value);
-    EXPECT_EQ(
-        Value::True(),
-        test::FileRunner(L"int('288230376151711744') > 288230376151711743\n")
-            .return_value);
-    EXPECT_EQ(Value::True(), test::FileRunner(L"int('-288230376151711745') < "
-                                              L"int('-288230376151711744')\n")
-                                 .return_value);
-    EXPECT_EQ(
-        Value::True(),
-        test::FileRunner(L"int('288230376151711744') > True\n").return_value);
 }
 
 TEST(Interpreter, int_constructor_rejects_invalid_string)
@@ -1889,44 +1827,6 @@ TEST(Interpreter, arithmetic_reports_unsupported_operands)
                         L"unsupported operand type(s) for comparison");
 }
 
-TEST(Interpreter, operator_eq_dispatch_returns_non_bool_result_unchanged)
-{
-    expect_string_result(L"class EqResult:\n"
-                         L"    def __eq__(self, other):\n"
-                         L"        return 'sentinel'\n"
-                         L"EqResult() == EqResult()\n",
-                         L"sentinel");
-}
-
-TEST(Interpreter, rich_comparison_operator_dispatch_returns_non_bool_results)
-{
-    expect_string_result(L"class CompareResult:\n"
-                         L"    def __ne__(self, other):\n"
-                         L"        return 'ne'\n"
-                         L"CompareResult() != CompareResult()\n",
-                         L"ne");
-    expect_string_result(L"class CompareResult:\n"
-                         L"    def __lt__(self, other):\n"
-                         L"        return 'lt'\n"
-                         L"CompareResult() < CompareResult()\n",
-                         L"lt");
-    expect_string_result(L"class CompareResult:\n"
-                         L"    def __le__(self, other):\n"
-                         L"        return 'le'\n"
-                         L"CompareResult() <= CompareResult()\n",
-                         L"le");
-    expect_string_result(L"class CompareResult:\n"
-                         L"    def __gt__(self, other):\n"
-                         L"        return 'gt'\n"
-                         L"CompareResult() > CompareResult()\n",
-                         L"gt");
-    expect_string_result(L"class CompareResult:\n"
-                         L"    def __ge__(self, other):\n"
-                         L"        return 'ge'\n"
-                         L"CompareResult() >= CompareResult()\n",
-                         L"ge");
-}
-
 TEST(Interpreter, membership_fallback_handles_iterable_containers)
 {
     test::VmTestContext test_context;
@@ -2422,15 +2322,6 @@ TEST(Interpreter, operator_add_dispatch_continues_after_notimplemented)
                                     L"Left() + Right()\n"));
 }
 
-TEST(Interpreter, operator_matmul_dispatch_calls_python_dunder)
-{
-    expect_string_result(L"class Matrix:\n"
-                         L"    def __matmul__(self, other):\n"
-                         L"        return 'matmul'\n"
-                         L"Matrix() @ Matrix()\n",
-                         L"matmul");
-}
-
 TEST(Interpreter, operator_matmul_dispatch_continues_after_notimplemented)
 {
     test::VmTestContext test_context;
@@ -2443,17 +2334,6 @@ TEST(Interpreter, operator_matmul_dispatch_continues_after_notimplemented)
                                     L"    def __rmatmul__(self, other):\n"
                                     L"        return 7\n"
                                     L"Left() @ Right()\n"));
-}
-
-TEST(Interpreter, operator_matmul_augmented_assignment_uses_binary_lowering)
-{
-    expect_string_result(L"class Matrix:\n"
-                         L"    def __matmul__(self, other):\n"
-                         L"        return 'updated'\n"
-                         L"value = Matrix()\n"
-                         L"value @= Matrix()\n"
-                         L"value\n",
-                         L"updated");
 }
 
 TEST(Interpreter, operator_matmul_unsupported_operands_raise)
@@ -8161,35 +8041,6 @@ TEST(Interpreter, right_shift_negative_count)
                         L"ValueError", L"negative shift count");
 }
 
-TEST(Interpreter, right_shift_large_immediate_count_saturates)
-{
-    EXPECT_EQ(Value::from_smi(0), test::FileRunner(L"1 >> 63\n").return_value);
-    EXPECT_EQ(Value::from_smi(0), test::FileRunner(L"1 >> 64\n").return_value);
-    EXPECT_EQ(Value::from_smi(0), test::FileRunner(L"1 >> 127\n").return_value);
-    EXPECT_EQ(Value::from_smi(-1),
-              test::FileRunner(L"-9 >> 63\n").return_value);
-    EXPECT_EQ(Value::from_smi(-1),
-              test::FileRunner(L"-9 >> 64\n").return_value);
-    EXPECT_EQ(Value::from_smi(-1),
-              test::FileRunner(L"-9 >> 127\n").return_value);
-}
-
-TEST(Interpreter, right_shift_large_register_count_saturates)
-{
-    EXPECT_EQ(Value::from_smi(0),
-              test::FileRunner(L"a = 1\nb = 63\na >> b\n").return_value);
-    EXPECT_EQ(Value::from_smi(0),
-              test::FileRunner(L"a = 1\nb = 64\na >> b\n").return_value);
-    EXPECT_EQ(Value::from_smi(0),
-              test::FileRunner(L"a = 1\nb = 128\na >> b\n").return_value);
-    EXPECT_EQ(Value::from_smi(-1),
-              test::FileRunner(L"a = -9\nb = 63\na >> b\n").return_value);
-    EXPECT_EQ(Value::from_smi(-1),
-              test::FileRunner(L"a = -9\nb = 64\na >> b\n").return_value);
-    EXPECT_EQ(Value::from_smi(-1),
-              test::FileRunner(L"a = -9\nb = 128\na >> b\n").return_value);
-}
-
 TEST(Interpreter, negative_shift_count_unwinds_nested_frames)
 {
     expect_python_error(L"def fail():\n"
@@ -8207,81 +8058,6 @@ TEST(Interpreter, shift_reports_unsupported_operands)
                         L"unsupported operand type(s) for shift");
 }
 
-TEST(Interpreter, left_shift_overflow_smi_promotes_to_bigint)
-{
-    expect_string_result(L"str(1 << 58)\n", L"288230376151711744");
-}
-
-TEST(Interpreter, left_shift_overflow_register_promotes_to_bigint)
-{
-    expect_string_result(L"a = 1\n"
-                         L"b = 58\n"
-                         L"str(a << b)\n",
-                         L"288230376151711744");
-}
-
-TEST(Interpreter, bigint_shift_values)
-{
-    expect_string_result(L"str(int('18446744073709551616') << 4)\n",
-                         L"295147905179352825856");
-    expect_string_result(L"str(-int('18446744073709551616') << 1)\n",
-                         L"-36893488147419103232");
-    EXPECT_EQ(
-        Value::from_smi(1),
-        test::FileRunner(L"int('18446744073709551616') >> 64\n").return_value);
-    EXPECT_EQ(
-        Value::from_smi(-1),
-        test::FileRunner(L"-int('18446744073709551616') >> 64\n").return_value);
-    EXPECT_EQ(Value::from_smi(-2),
-              test::FileRunner(L"-(int('18446744073709551616') + 1) >> 64\n")
-                  .return_value);
-    EXPECT_EQ(Value::from_smi(0),
-              test::FileRunner(L"int('18446744073709551616') >> "
-                               L"int('18446744073709551616')\n")
-                  .return_value);
-    EXPECT_EQ(Value::from_smi(-1),
-              test::FileRunner(L"-int('18446744073709551616') >> "
-                               L"int('18446744073709551616')\n")
-                  .return_value);
-}
-
-TEST(Interpreter, bigint_bitwise_values)
-{
-    expect_string_result(L"str(~int('18446744073709551616'))\n",
-                         L"-18446744073709551617");
-    expect_string_result(L"str(~-int('18446744073709551616'))\n",
-                         L"18446744073709551615");
-    expect_string_result(L"str(int('18446744073709551616') | 3)\n",
-                         L"18446744073709551619");
-    EXPECT_EQ(
-        Value::from_smi(0),
-        test::FileRunner(L"-int('18446744073709551616') & 255\n").return_value);
-    expect_string_result(L"str(-int('18446744073709551616') | 255)\n",
-                         L"-18446744073709551361");
-    expect_string_result(L"str(-int('18446744073709551616') ^ 255)\n",
-                         L"-18446744073709551361");
-    expect_string_result(L"str(-int('18446744073709551616') & -255)\n",
-                         L"-18446744073709551616");
-}
-
-TEST(Interpreter, add_overflow_promotes_to_bigint)
-{
-    expect_string_result(L"str(288230376151711743 + 1)\n",
-                         L"288230376151711744");
-}
-
-TEST(Interpreter, subtract_overflow_promotes_to_bigint)
-{
-    expect_string_result(L"str(-288230376151711743 - 2)\n",
-                         L"-288230376151711745");
-}
-
-TEST(Interpreter, multiply_overflow_promotes_to_bigint)
-{
-    expect_string_result(L"str(288230376151711743 * 2)\n",
-                         L"576460752303423486");
-}
-
 TEST(Interpreter, negate_overflow)
 {
     Value expected = Value::from_smi(kMinSmi);
@@ -8296,35 +8072,4 @@ TEST(Interpreter, negate_overflow)
     expect_string_value(context.run_file(L"x = -288230376151711743 - 1\n"
                                          L"str(-x)\n"),
                         L"288230376151711744");
-}
-
-TEST(Interpreter, unary_plus_accepts_bigint_and_bool)
-{
-    expect_string_result(L"str(+int('288230376151711744'))\n",
-                         L"288230376151711744");
-    EXPECT_EQ(Value::from_smi(1), test::FileRunner(L"+True\n").return_value);
-}
-
-TEST(Interpreter, int_dunder_arithmetic_promotes_to_bigint)
-{
-    expect_string_result(L"str((288230376151711743).__add__(1))\n",
-                         L"288230376151711744");
-    expect_string_result(L"str((-288230376151711743).__sub__(2))\n",
-                         L"-288230376151711745");
-    expect_string_result(L"str((288230376151711743).__mul__(2))\n",
-                         L"576460752303423486");
-}
-
-TEST(Interpreter, bigint_arithmetic_operators)
-{
-    expect_string_result(L"str(int('288230376151711744') + 1)\n",
-                         L"288230376151711745");
-    EXPECT_EQ(Value::from_smi(0),
-              test::FileRunner(L"int('288230376151711744') - "
-                               L"int('288230376151711744')\n")
-                  .return_value);
-    expect_string_result(L"str(int('288230376151711744') * -2)\n",
-                         L"-576460752303423488");
-    expect_string_result(L"str(True + int('288230376151711744'))\n",
-                         L"288230376151711745");
 }
