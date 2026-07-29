@@ -362,6 +362,11 @@ namespace cl::jit
         emit_arithmetic_reg(ArithmeticOp::Subs, xzr, left, right);
     }
 
+    void AArch64MacroAssembler::cmp(XRegister left, uint16_t immediate)
+    {
+        emit_arithmetic_imm12(ArithmeticOp::Subs, xzr, left, immediate);
+    }
+
     void AArch64MacroAssembler::cmp(WRegisterOrZero left, WRegisterOrZero right)
     {
         emit_arithmetic_reg(ArithmeticOp::Subs, wzr, left, right);
@@ -375,6 +380,16 @@ namespace cl::jit
     void AArch64MacroAssembler::cmn(WRegisterOrZero left, WRegisterOrZero right)
     {
         emit_arithmetic_reg(ArithmeticOp::Adds, wzr, left, right);
+    }
+
+    void AArch64MacroAssembler::tst(XRegisterOrZero left, XRegisterOrZero right)
+    {
+        emit_logical_reg(LogicalOp::Ands, xzr, left, right);
+    }
+
+    void AArch64MacroAssembler::tst(XRegisterOrZero source, uint64_t immediate)
+    {
+        emit_logical_imm(LogicalOp::Ands, xzr, source, immediate);
     }
 
     void AArch64MacroAssembler::ldr(XRegister destination, XRegisterOrSP base,

@@ -251,6 +251,56 @@ namespace cl::jit
             return static_cast<uint32_t>(
                 (static_cast<uint64_t>(displacement >> scale_shift)) & mask);
         }
+
+        inline uint16_t logical_immediate_64(uint64_t immediate)
+        {
+            assert(immediate != 0);
+            assert(immediate != UINT64_MAX);
+            for(uint32_t element_size = 2; element_size <= 64;
+                element_size *= 2)
+            {
+                uint64_t element_mask = element_size == 64
+                                            ? UINT64_MAX
+                                            : (uint64_t{1} << element_size) - 1;
+                uint64_t element = immediate & element_mask;
+                uint64_t replicated = 0;
+                for(uint32_t offset = 0; offset < 64; offset += element_size)
+                {
+                    replicated |= element << offset;
+                }
+                if(replicated != immediate)
+                {
+                    continue;
+                }
+
+                for(uint32_t one_bits = 1; one_bits < element_size; ++one_bits)
+                {
+                    uint64_t ones = (uint64_t{1} << one_bits) - 1;
+                    for(uint32_t rotation = 0; rotation < element_size;
+                        ++rotation)
+                    {
+                        uint64_t rotated =
+                            rotation == 0
+                                ? ones
+                                : ((ones >> rotation) |
+                                   (ones << (element_size - rotation))) &
+                                      element_mask;
+                        if(rotated != element)
+                        {
+                            continue;
+                        }
+
+                        uint16_t n = element_size == 64 ? 1 : 0;
+                        uint16_t imms = static_cast<uint16_t>(
+                            (-(element_size * 2) | (one_bits - 1)) & 0x3f);
+                        return static_cast<uint16_t>((n << 12) |
+                                                     (rotation << 6) | imms);
+                    }
+                }
+            }
+            assert(false);
+            return 0;
+        }
     }  // namespace aarch64_detail
 
     class AArch64Relaxation
@@ -469,6 +519,17 @@ namespace cl::jit
             emit_logical_reg(GPRWidth::X, operation, destination.encoding(),
                              source1.encoding(), source2.encoding(), invert,
                              shift, shift_amount);
+        }
+
+        void emit_logical_imm(LogicalOp operation, XRegisterOrZero destination,
+                              XRegisterOrZero source, uint64_t immediate)
+        {
+            uint16_t encoding = aarch64_detail::logical_immediate_64(immediate);
+            write_instruction(
+                0x92000000 | aarch64_detail::encoding_bits(operation) |
+                (static_cast<uint32_t>(encoding) << 10) |
+                aarch64_detail::register_field(source.encoding(), 5) |
+                destination.encoding());
         }
 
         void emit_logical_reg(LogicalOp operation, WRegisterOrZero destination,
@@ -756,9 +817,12 @@ namespace cl::jit
         void neg(XRegisterOrZero destination, XRegisterOrZero source);
         void neg(WRegisterOrZero destination, WRegisterOrZero source);
         void cmp(XRegisterOrZero left, XRegisterOrZero right);
+        void cmp(XRegister left, uint16_t immediate);
         void cmp(WRegisterOrZero left, WRegisterOrZero right);
         void cmn(XRegisterOrZero left, XRegisterOrZero right);
         void cmn(WRegisterOrZero left, WRegisterOrZero right);
+        void tst(XRegisterOrZero left, XRegisterOrZero right);
+        void tst(XRegisterOrZero source, uint64_t immediate);
         void ldr(XRegister destination, XRegisterOrSP base,
                  int64_t byte_offset);
         void ldr(XRegister destination, Value value);

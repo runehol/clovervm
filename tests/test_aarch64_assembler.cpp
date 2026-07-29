@@ -44,7 +44,7 @@ namespace cl::jit
 
     TEST(AArch64Assembler, EncodesRepresentativeExactInstructions)
     {
-        uint32_t instructions[18] = {};
+        uint32_t instructions[22] = {};
         AArch64BufferAssembler assembler(instructions);
 
         assembler.emit_arithmetic_imm12(ArithmeticOp::Add, XRegister(5),
@@ -82,6 +82,13 @@ namespace cl::jit
                                           WRegister(5), WRegister(6),
                                           WRegister(7));
         assembler.emit_adr_immediate_21(XRegister(5), -4);
+        assembler.emit_logical_imm(LogicalOp::And, XRegister(16), XRegister(0),
+                                   0x1f);
+        assembler.emit_logical_imm(LogicalOp::Ands, xzr, XRegister(0), 0x1f);
+        assembler.emit_logical_reg(LogicalOp::Ands, xzr, XRegister(0),
+                                   XRegister(16));
+        assembler.emit_arithmetic_imm12(ArithmeticOp::Subs, xzr, XRegister(16),
+                                        4);
 
         EXPECT_EQ(0x9100a8c5, instructions[0]);
         EXPECT_EQ(0x914007ff, instructions[1]);
@@ -101,6 +108,10 @@ namespace cl::jit
         EXPECT_EQ(0x9a8700c5, instructions[15]);
         EXPECT_EQ(0x1a8710c5, instructions[16]);
         EXPECT_EQ(0x10ffffe5, instructions[17]);
+        EXPECT_EQ(0x92401010, instructions[18]);
+        EXPECT_EQ(0xf240101f, instructions[19]);
+        EXPECT_EQ(0xea10001f, instructions[20]);
+        EXPECT_EQ(0xf100121f, instructions[21]);
     }
 
     TEST(AArch64Assembler, EmitsOrdinaryInstructionsIntoMachineCodeEmitter)

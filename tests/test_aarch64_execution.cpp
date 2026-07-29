@@ -182,57 +182,74 @@ namespace cl::jit
         code_object->function_signature.n_parameters = 1;
         BytecodeStateOrder state_order(*code_object);
 
-        CompilationSession session;
-        GraphBuilder builder(session, IRLevel::Machine);
-        builder.set_bytecode_state_order(state_order);
-        Block *entry = builder.emplace_block();
-        ParameterInstruction parameter =
-            builder.emplace_parameter<ParameterInstruction>(entry);
-        std::vector<ProgramValueRef> captured(state_order.size(),
-                                              ProgramValueRef(parameter));
-        SnapshotInstruction snapshot =
-            builder.make_instruction<SnapshotInstruction>(captured,
-                                                          BytecodePC{13});
-        std::array<ProgramValueRef, 1> inputs = {ProgramValueRef(parameter)};
-        std::array<InstructionId, 1> retained = {snapshot.id()};
-        SideExitId side_exit = builder.emplace_side_exit(inputs, retained);
-        InlineTagGuardWithSideExitInstruction guard =
-            builder.emplace_instruction<InlineTagGuardWithSideExitInstruction>(
-                entry, TaggedValueRef(parameter), inputs, InlineValueClass::SMI,
-                side_exit);
-        MovInstruction move = builder.emplace_instruction<MovInstruction>(
-            entry, TaggedValueRef(guard));
-        builder.emplace_instruction<ReturnInstruction>(entry,
-                                                       TaggedValueRef(move));
-        ControlFlowGraph *graph = builder.finalize();
+        auto execute_guard = [&](InlineValueClass expected_class, Value input) {
+            CompilationSession session;
+            GraphBuilder builder(session, IRLevel::Machine);
+            builder.set_bytecode_state_order(state_order);
+            Block *entry = builder.emplace_block();
+            ParameterInstruction parameter =
+                builder.emplace_parameter<ParameterInstruction>(entry);
+            std::vector<ProgramValueRef> captured(state_order.size(),
+                                                  ProgramValueRef(parameter));
+            SnapshotInstruction snapshot =
+                builder.make_instruction<SnapshotInstruction>(captured,
+                                                              BytecodePC{13});
+            std::array<ProgramValueRef, 1> inputs = {
+                ProgramValueRef(parameter)};
+            std::array<InstructionId, 1> retained = {snapshot.id()};
+            SideExitId side_exit = builder.emplace_side_exit(inputs, retained);
+            InlineTagGuardWithSideExitInstruction guard =
+                builder
+                    .emplace_instruction<InlineTagGuardWithSideExitInstruction>(
+                        entry, TaggedValueRef(parameter), inputs,
+                        expected_class, side_exit);
+            MovInstruction move = builder.emplace_instruction<MovInstruction>(
+                entry, TaggedValueRef(guard));
+            builder.emplace_instruction<ReturnInstruction>(
+                entry, TaggedValueRef(move));
+            ControlFlowGraph *graph = builder.finalize();
 
-        LocationAssignmentsBuilder assignment_builder;
-        assignment_builder.assign(ProgramValueRef(parameter),
-                                  PhysicalLocation::reg(x0));
-        assignment_builder.assign(ProgramValueRef(guard),
-                                  PhysicalLocation::reg(x1));
-        assignment_builder.assign(ProgramValueRef(move),
-                                  PhysicalLocation::reg(x0));
-        LocationAssignments locations =
-            std::move(assignment_builder).finalize();
+            LocationAssignmentsBuilder assignment_builder;
+            assignment_builder.assign(ProgramValueRef(parameter),
+                                      PhysicalLocation::reg(x0));
+            assignment_builder.assign(ProgramValueRef(guard),
+                                      PhysicalLocation::reg(x1));
+            assignment_builder.assign(ProgramValueRef(move),
+                                      PhysicalLocation::reg(x0));
+            LocationAssignments locations =
+                std::move(assignment_builder).finalize();
 
-        CodeCache cache;
-        MachineAddress side_exit_thunk =
-            detail::MachineAddressAccess::from_pointer(
-                reinterpret_cast<const void *>(&inline_tag_guard_side_exit));
-        auto emission =
-            emit_aarch64_from_cfg(*graph, locations, cache, side_exit_thunk);
-        ASSERT_TRUE(emission);
-        PublishedCode code = std::move(emission).value();
+            CodeCache cache;
+            MachineAddress side_exit_thunk =
+                detail::MachineAddressAccess::from_pointer(
+                    reinterpret_cast<const void *>(
+                        &inline_tag_guard_side_exit));
+            auto emission = emit_aarch64_from_cfg(*graph, locations, cache,
+                                                  side_exit_thunk);
+            EXPECT_TRUE(emission);
+            PublishedCode code = std::move(emission).value();
 
-        using Function = uint64_t (*)(uint64_t);
-        Function function =
-            reinterpret_cast<Function>(code.entry().bits_for_indirect_target());
+            using Function = uint64_t (*)(uint64_t);
+            Function function = reinterpret_cast<Function>(
+                code.entry().bits_for_indirect_target());
+            return function(static_cast<uint64_t>(input.as.integer));
+        };
+
         Value smi = Value::from_smi(42);
         EXPECT_EQ(static_cast<uint64_t>(smi.as.integer),
-                  function(static_cast<uint64_t>(smi.as.integer)));
+                  execute_guard(InlineValueClass::SMI, smi));
         EXPECT_EQ(static_cast<uint64_t>(Value::Ellipsis().as.integer),
-                  function(static_cast<uint64_t>(Value::True().as.integer)));
+                  execute_guard(InlineValueClass::SMI, Value::True()));
+        EXPECT_EQ(static_cast<uint64_t>(Value::True().as.integer),
+                  execute_guard(InlineValueClass::Boolean, Value::True()));
+        EXPECT_EQ(static_cast<uint64_t>(Value::Ellipsis().as.integer),
+                  execute_guard(InlineValueClass::Boolean, smi));
+        EXPECT_EQ(static_cast<uint64_t>(smi.as.integer),
+                  execute_guard(InlineValueClass::SMIOrBoolean, smi));
+        EXPECT_EQ(static_cast<uint64_t>(Value::True().as.integer),
+                  execute_guard(InlineValueClass::SMIOrBoolean, Value::True()));
+        EXPECT_EQ(static_cast<uint64_t>(Value::Ellipsis().as.integer),
+                  execute_guard(InlineValueClass::SMIOrBoolean, Value::None()));
     }
 
     TEST(AArch64Execution, CompilesAllocatedCfg)

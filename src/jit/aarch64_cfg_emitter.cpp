@@ -105,6 +105,34 @@ namespace cl::jit
                                               result);
         }
 
+        void emit_inline_tag_test(AArch64MacroAssembler &assembler,
+                                  XRegister source,
+                                  InlineValueClass expected_class)
+        {
+            switch(expected_class)
+            {
+                case InlineValueClass::SMI:
+                    assembler.tst(
+                        source, inline_value_class_mask(InlineValueClass::SMI));
+                    return;
+                case InlineValueClass::Boolean:
+                    assembler.emit_logical_imm(
+                        LogicalOp::And, XRegister(16), source,
+                        inline_value_class_mask(InlineValueClass::Boolean));
+                    assembler.cmp(XRegister(16),
+                                  inline_value_class_expected_bits(
+                                      InlineValueClass::Boolean));
+                    return;
+                case InlineValueClass::SMIOrBoolean:
+                    assembler.mov(XRegister(16),
+                                  inline_value_class_mask(
+                                      InlineValueClass::SMIOrBoolean));
+                    assembler.tst(source, XRegister(16));
+                    return;
+            }
+            assert(false);
+        }
+
         Result<PublishedCode, JitCodeError>
         generate_code(const ControlFlowGraph &graph, CodeCache &cache,
                       const LocationAssignments &locations,
@@ -317,17 +345,9 @@ namespace cl::jit
                     XRegister result =
                         assigned_register(locations,
                                           ProgramValueRef(instruction));
-                    assembler.mov(
-                        XRegister(16),
-                        inline_value_class_mask(
-                            guard_instruction.expected_class()));
-                    assembler.emit_logical_reg(LogicalOp::And, XRegister(16),
-                                               input, XRegister(16));
-                    assembler.mov(
-                        XRegister(17),
-                        inline_value_class_expected_bits(
-                            guard_instruction.expected_class()));
-                    assembler.cmp(XRegister(16), XRegister(17));
+                    emit_inline_tag_test(
+                        assembler, input,
+                        guard_instruction.expected_class());
                     Label target = side_exit_target(
                         guard_instruction.side_exit(),
                         guard_instruction.side_exit_arguments());
