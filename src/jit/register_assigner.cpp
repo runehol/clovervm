@@ -57,6 +57,26 @@ namespace cl::jit
             size_t priority;
         };
 
+        struct RegisterProbe
+        {
+            std::vector<BundleId> conflicting_bundles;
+            std::optional<LivenessPosition> first_conflict;
+            bool conflicts_with_clobber = false;
+
+            void record_conflict(LivenessPosition position)
+            {
+                if(!first_conflict.has_value() || position < *first_conflict)
+                {
+                    first_conflict = position;
+                }
+            }
+
+            bool fits() const
+            {
+                return conflicting_bundles.empty() && !conflicts_with_clobber;
+            }
+        };
+
         class BundleWorkItemCompare
         {
         public:
@@ -91,20 +111,6 @@ namespace cl::jit
             }
             ranges.erase(ranges.begin() + static_cast<ptrdiff_t>(output),
                          ranges.end());
-        }
-
-        bool ranges_overlap(const std::vector<LivenessRange> &ranges,
-                            LivenessRange candidate)
-        {
-            auto position = std::ranges::lower_bound(
-                ranges, candidate.start, {},
-                [](LivenessRange range) { return range.start; });
-            if(position != ranges.begin() &&
-               std::prev(position)->end > candidate.start)
-            {
-                return true;
-            }
-            return position != ranges.end() && position->start < candidate.end;
         }
 
         bool ranges_overlap(const RegisterOccupancy &occupancy,
@@ -171,7 +177,7 @@ namespace cl::jit
                     }
                     else if(required.has_value())
                     {
-                        if(fits(required->reg(), bundle))
+                        if(probe_register(required->reg(), bundle).fits())
                         {
                             selected = required;
                         }
@@ -182,7 +188,7 @@ namespace cl::jit
                             register_class(bundle.register_class)
                                 .allocation_order())
                         {
-                            if(fits(candidate, bundle))
+                            if(probe_register(candidate, bundle).fits())
                             {
                                 selected = PhysicalLocation::reg(candidate);
                                 break;
@@ -263,18 +269,66 @@ namespace cl::jit
                       "class");
             }
 
-            bool fits(PhysicalRegister reg, const LiveBundle &bundle) const
+            RegisterProbe probe_register(PhysicalRegister reg,
+                                         const LiveBundle &bundle) const
             {
                 assert(reg.register_class() == bundle.register_class);
+                RegisterProbe result;
                 for(const BundleFragment &fragment: bundle.fragments)
                 {
-                    if(ranges_overlap(occupancy_[reg], fragment.range) ||
-                       ranges_overlap(clobber_ranges_[reg], fragment.range))
+                    const RegisterOccupancy &occupancy = occupancy_[reg];
+                    auto assigned = occupancy.lower_bound(fragment.range.start);
+                    if(assigned != occupancy.begin())
                     {
-                        return false;
+                        auto previous = std::prev(assigned);
+                        if(previous->second.end > fragment.range.start)
+                        {
+                            result.conflicting_bundles.push_back(
+                                previous->second.bundle);
+                            result.record_conflict(fragment.range.start);
+                        }
+                    }
+                    for(; assigned != occupancy.end() &&
+                          assigned->first < fragment.range.end;
+                        ++assigned)
+                    {
+                        result.conflicting_bundles.push_back(
+                            assigned->second.bundle);
+                        LivenessPosition conflict =
+                            std::max(fragment.range.start, assigned->first);
+                        result.record_conflict(conflict);
+                    }
+
+                    const std::vector<LivenessRange> &clobbers =
+                        clobber_ranges_[reg];
+                    auto clobber = std::ranges::lower_bound(
+                        clobbers, fragment.range.start, {},
+                        [](LivenessRange range) { return range.start; });
+                    if(clobber != clobbers.begin())
+                    {
+                        LivenessRange previous = *std::prev(clobber);
+                        if(previous.end > fragment.range.start)
+                        {
+                            result.conflicts_with_clobber = true;
+                            result.record_conflict(fragment.range.start);
+                        }
+                    }
+                    for(; clobber != clobbers.end() &&
+                          clobber->start < fragment.range.end;
+                        ++clobber)
+                    {
+                        result.conflicts_with_clobber = true;
+                        LivenessPosition conflict =
+                            std::max(fragment.range.start, clobber->start);
+                        result.record_conflict(conflict);
                     }
                 }
-                return true;
+                std::ranges::sort(result.conflicting_bundles);
+                result.conflicting_bundles.erase(
+                    std::unique(result.conflicting_bundles.begin(),
+                                result.conflicting_bundles.end()),
+                    result.conflicting_bundles.end());
+                return result;
             }
 
             bool fits(StackLocation stack, const LiveBundle &bundle) const
