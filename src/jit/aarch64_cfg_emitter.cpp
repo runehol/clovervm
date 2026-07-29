@@ -187,6 +187,7 @@ namespace cl::jit
         assert(entry != nullptr);
         assert(graph.blocks()[0] == entry);
         assert(entry->predecessor_edges().empty());
+        (void)entry;
 
         BlockLabels block_labels;
         block_labels.reserve(graph.blocks().size());
@@ -196,6 +197,7 @@ namespace cl::jit
                 block_labels.emplace(block, assembler.emitter().make_label())
                     .second;
             assert(inserted);
+            (void)inserted;
         }
 
         std::vector<PendingSideExit> pending_side_exits;

@@ -341,6 +341,7 @@ namespace cl::jit
                                         set.transfers[transfer_index++];
                                     assert(transfer.source == source);
                                     assert(transfer.destination == destination);
+                                    (void)transfer;
                                     argument_indices.push_back(
                                         affinity.argument_index);
                                 }
@@ -483,6 +484,7 @@ namespace cl::jit
                     plan.block_entries.emplace(block, std::move(edge.transfers))
                         .second;
                 assert(inserted);
+                (void)inserted;
             }
             plan.edge_transfers.clear();
         }
