@@ -1556,11 +1556,11 @@ pressure aborts compilation and execution remains interpreted.
 
 The AArch64 emitter consumes the materialized graph and its
 `LocationAssignments`; the former hardcoded `x0` path has been removed.
-Executable emission still accepts only one-block graphs, but preparation,
-live-range storage, bundle fragments, assignment, and materialization use the
-general allocator model. Bring-up work must not introduce a one-block data
-model, target-specific allocator, or temporary fixed-first queue policy that
-will be discarded by the accepted allocator.
+Executable emission accepts complete multi-block graphs, binds one label per
+block, emits allocation-created edge-transfer blocks in layout order, and
+removes an unconditional branch whose target is the next block. Bring-up work
+must not introduce a target-specific allocator or temporary fixed-first queue
+policy that will be discarded by the accepted allocator.
 
 Target code defines location vocabulary, register availability, allocation
 order, instruction constraints, and legal physical-transfer capabilities. The

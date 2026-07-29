@@ -319,15 +319,15 @@ The resulting intended reuse is:
 
 ```text
 using AArch64Emitter =
-    MachineCodeEmitter<AArch64DirectBranch, AArch64Relocation>
+    MachineCodeEmitter<AArch64Relaxation, AArch64Relocation>
 using X86_64Emitter =
-    MachineCodeEmitter<X86_64DirectBranch, X86_64Relocation>
+    MachineCodeEmitter<X86_64Relaxation, X86_64Relocation>
 ```
 
 The target assemblers append their already encoded instruction bytes to the
-same generic fragment interface and construct their own relocation and direct-
-branch types. Target-specific PC bases, displacement fields, selected forms,
-scratch registers, and final encoding remain contained in those types.
+same generic fragment interface and construct their own relocation and
+relaxation types. Target-specific PC bases, displacement fields, selected
+forms, scratch registers, and final encoding remain contained in those types.
 
 A linking direct branch returns to the beginning of the following fragment. A
 non-linking direct branch has no runtime fall-through; it is used for ordinary
@@ -593,9 +593,9 @@ emitter contract and stable executable addresses.
 
 ## AArch64 conditional branches
 
-The AArch64 assembler implements exact `B.cond` immediate encoding. Symbolic
-narrow conditional branches can be added using the following short/long form
-policy without changing the generic emitter.
+The AArch64 assembler implements symbolic `B.cond` using a short/long
+relaxation. The short form reaches approximately 1 MiB in either direction; the
+long form inverts the condition over an unconditional `B`.
 
 AArch64's fixed instruction width still has several materially different
 PC-relative branch ranges. In particular, `TBZ` and `TBNZ` use a signed 14-bit

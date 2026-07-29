@@ -7,6 +7,8 @@
 #include "jit/location_assignments.h"
 #include "runtime/fatal.h"
 
+#include <absl/container/flat_hash_map.h>
+
 #include <cassert>
 #include <cstddef>
 #include <cstdint>
@@ -23,6 +25,14 @@ namespace cl::jit
             SideExitId side_exit;
             ProgramValueRefRange arguments;
         };
+
+        using BlockLabels = absl::flat_hash_map<const Block *, Label>;
+
+        Label block_label(const BlockLabels &labels, const Block *block)
+        {
+            assert(block != nullptr);
+            return labels.at(block);
+        }
 
         XRegister assigned_register(const LocationAssignments &locations,
                                     ProgramValueRef value)
@@ -133,6 +143,17 @@ namespace cl::jit
             assert(false);
         }
 
+        void emit_truthiness_branch(AArch64MacroAssembler &assembler,
+                                    XRegister condition,
+                                    AArch64Condition branch_condition,
+                                    Label target)
+        {
+            assert(branch_condition == AArch64Condition::Equal ||
+                   branch_condition == AArch64Condition::NotEqual);
+            assembler.tst(condition, value_truthy_mask);
+            assembler.b(branch_condition, target);
+        }
+
         Result<PublishedCode, JitCodeError>
         generate_code(const ControlFlowGraph &graph, CodeCache &cache,
                       const LocationAssignments &locations,
@@ -161,16 +182,20 @@ namespace cl::jit
     {
         assert(graph.is_published());
         assert(graph.ir_level() == IRLevel::Machine);
-        assert(graph.blocks().size() == 1);
 
         const Block *entry = graph.entry_block();
         assert(entry != nullptr);
         assert(graph.blocks()[0] == entry);
         assert(entry->predecessor_edges().empty());
-        for(Instruction parameter: entry->parameters())
+
+        BlockLabels block_labels;
+        block_labels.reserve(graph.blocks().size());
+        for(const Block *block: graph.blocks())
         {
-            assert(is_block_parameter_kind(parameter.kind()));
-            (void)parameter;
+            bool inserted =
+                block_labels.emplace(block, assembler.emitter().make_label())
+                    .second;
+            assert(inserted);
         }
 
         std::vector<PendingSideExit> pending_side_exits;
@@ -181,8 +206,8 @@ namespace cl::jit
             return label;
         };
 
-        for(Instruction instruction: entry->instructions())
-        {
+        auto emit_instruction = [&](Instruction instruction,
+                                    const Block *next_block) {
             // clang-format off
             CL_JIT_MACHINE_INSTRUCTION_SWITCH(instruction)
             {
@@ -224,8 +249,8 @@ namespace cl::jit
                 {
                     emit_smi_logical(
                         assembler, locations, LogicalOp::Orr,
-                        ProgramValueRef(instruction), orr_instruction.lhs(),
-                        orr_instruction.rhs());
+                        ProgramValueRef(instruction),
+                        orr_instruction.lhs(), orr_instruction.rhs());
                     break;
                 }
 
@@ -234,8 +259,8 @@ namespace cl::jit
                 {
                     emit_smi_logical(
                         assembler, locations, LogicalOp::Eor,
-                        ProgramValueRef(instruction), eor_instruction.lhs(),
-                        eor_instruction.rhs());
+                        ProgramValueRef(instruction),
+                        eor_instruction.lhs(), eor_instruction.rhs());
                     break;
                 }
 
@@ -244,7 +269,8 @@ namespace cl::jit
                 {
                     emit_identity_test(
                         assembler, locations, AArch64Condition::Equal,
-                        instruction, is_instruction.lhs(), is_instruction.rhs());
+                        instruction, is_instruction.lhs(),
+                        is_instruction.rhs());
                     break;
                 }
 
@@ -275,8 +301,9 @@ namespace cl::jit
                     assembler.mov(
                         assigned_register(locations,
                                           ProgramValueRef(instruction)),
-                        assigned_register(locations,
-                                          move_pointer_instruction.source()));
+                        assigned_register(
+                            locations,
+                            move_pointer_instruction.source()));
                     break;
                 }
 
@@ -302,7 +329,8 @@ namespace cl::jit
                                           ProgramValueRef(instruction)),
                         FramePointer,
                         stack_byte_offset(assigned_stack(
-                            locations, load_pointer_instruction.source())));
+                            locations,
+                            load_pointer_instruction.source())));
                     break;
                 }
 
@@ -320,12 +348,14 @@ namespace cl::jit
                 }
 
                 case CL_JIT_MACHINE_INSTRUCTION_CASE(
-                    StoreStackPointerInstruction, store_pointer_instruction)
+                    StoreStackPointerInstruction,
+                    store_pointer_instruction)
                 {
                     constexpr XRegister FramePointer(29);
                     assembler.str(
-                        assigned_register(locations,
-                                          store_pointer_instruction.source()),
+                        assigned_register(
+                            locations,
+                            store_pointer_instruction.source()),
                         FramePointer,
                         stack_byte_offset(assigned_stack(
                             locations, ProgramValueRef(instruction))));
@@ -344,8 +374,10 @@ namespace cl::jit
                         ArithmeticOp::Adds,
                         assigned_register(locations,
                                           ProgramValueRef(instruction)),
-                        assigned_register(locations, add_instruction.lhs()),
-                        assigned_register(locations, add_instruction.rhs()));
+                        assigned_register(locations,
+                                          add_instruction.lhs()),
+                        assigned_register(locations,
+                                          add_instruction.rhs()));
                     assembler.b(
                         AArch64Condition::Overflow,
                         side_exit_target(
@@ -355,13 +387,13 @@ namespace cl::jit
                 }
 
                 case CL_JIT_MACHINE_INSTRUCTION_CASE(
-                    InlineTagGuardWithSideExitInstruction, guard_instruction)
+                    InlineTagGuardWithSideExitInstruction,
+                    guard_instruction)
                 {
-                    XRegister input =
-                        assigned_register(locations, guard_instruction.value());
-                    XRegister result =
-                        assigned_register(locations,
-                                          ProgramValueRef(instruction));
+                    XRegister input = assigned_register(
+                        locations, guard_instruction.value());
+                    XRegister result = assigned_register(
+                        locations, ProgramValueRef(instruction));
                     emit_inline_tag_test(
                         assembler, input,
                         guard_instruction.expected_class());
@@ -372,6 +404,56 @@ namespace cl::jit
                     if(result.encoding() != input.encoding())
                     {
                         assembler.mov(result, input);
+                    }
+                    break;
+                }
+
+                case CL_JIT_MACHINE_INSTRUCTION_CASE(
+                    ConditionalBranchInstruction, branch_instruction)
+                {
+                    const Block *true_target =
+                        branch_instruction.true_edge()->target();
+                    const Block *false_target =
+                        branch_instruction.false_edge()->target();
+                    if(true_target == false_target)
+                    {
+                        if(true_target != next_block)
+                        {
+                            assembler.b(
+                                block_label(block_labels, true_target));
+                        }
+                        break;
+                    }
+                    XRegister condition = assigned_register(
+                        locations, branch_instruction.condition());
+                    if(true_target == next_block)
+                    {
+                        emit_truthiness_branch(
+                            assembler, condition,
+                            AArch64Condition::Equal,
+                            block_label(block_labels, false_target));
+                        break;
+                    }
+                    emit_truthiness_branch(
+                        assembler, condition,
+                        AArch64Condition::NotEqual,
+                        block_label(block_labels, true_target));
+                    if(false_target != next_block)
+                    {
+                        assembler.b(
+                            block_label(block_labels, false_target));
+                    }
+                    break;
+                }
+
+                case CL_JIT_MACHINE_INSTRUCTION_CASE(
+                    UnconditionalBranchInstruction, branch_instruction)
+                {
+                    const Block *target =
+                        branch_instruction.edge()->target();
+                    if(target != next_block)
+                    {
+                        assembler.b(block_label(block_labels, target));
                     }
                     break;
                 }
@@ -399,6 +481,26 @@ namespace cl::jit
                     assert(false);
             }
             // clang-format on
+        };
+
+        for(size_t block_index = 0; block_index < graph.blocks().size();
+            ++block_index)
+        {
+            const Block *block = graph.blocks()[block_index];
+            const Block *next_block = block_index + 1 == graph.blocks().size()
+                                          ? nullptr
+                                          : graph.blocks()[block_index + 1];
+            assembler.emitter().resolve(block_label(block_labels, block));
+
+            for(Instruction parameter: block->parameters())
+            {
+                assert(is_block_parameter_kind(parameter.kind()));
+                (void)parameter;
+            }
+            for(Instruction instruction: block->instructions())
+            {
+                emit_instruction(instruction, next_block);
+            }
         }
 
         if(!pending_side_exits.empty())

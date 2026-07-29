@@ -9,6 +9,7 @@
 #include "jit/jit_compiler.h"
 #include "jit/location_assignments.h"
 #include "jit/machine_address_internal.h"
+#include "jit/register_allocator.h"
 #include "test_helpers.h"
 
 #include <gtest/gtest.h>
@@ -173,6 +174,218 @@ namespace cl::jit
         {
             EXPECT_EQ(input, function(input));
         }
+    }
+
+    TEST(AArch64Execution, OmitsUnconditionalBranchToFallthroughBlock)
+    {
+        CompilationSession session;
+        GraphBuilder builder(session, IRLevel::Machine);
+        Block *entry = builder.emplace_block();
+        Block *target = builder.emplace_block();
+        ParameterInstruction input =
+            builder.emplace_parameter<ParameterInstruction>(entry);
+        std::array<ProgramValueRef, 1> arguments = {ProgramValueRef(input)};
+        BlockEdge *edge = builder.make_block_edge(entry, target, arguments);
+        builder.emplace_instruction<UnconditionalBranchInstruction>(entry,
+                                                                    edge);
+        ParameterInstruction result =
+            builder.emplace_parameter<ParameterInstruction>(target);
+        builder.emplace_instruction<ReturnInstruction>(target,
+                                                       TaggedValueRef(result));
+        ControlFlowGraph *graph = builder.finalize();
+        LocationAssignments locations = assign_program_values_to_x0(*graph);
+
+        CodeCache cache;
+        auto emission = emit_aarch64_from_cfg(*graph, locations, cache,
+                                              no_side_exit_thunk());
+
+        ASSERT_TRUE(emission);
+        PublishedCode code = std::move(emission).value();
+        EXPECT_EQ(sizeof(uint32_t), code.encoded_code_size());
+        using Function = uint64_t (*)(uint64_t);
+        Function function =
+            reinterpret_cast<Function>(code.entry().bits_for_indirect_target());
+        constexpr uint64_t input_bits = 0x123456789abcdef0;
+        EXPECT_EQ(input_bits, function(input_bits));
+    }
+
+    TEST(AArch64Execution, BranchesOnInlineTruthinessWithEitherFallthrough)
+    {
+        auto execute = [](bool true_falls_through, Value condition) {
+            CompilationSession session;
+            GraphBuilder builder(session, IRLevel::Machine);
+            Block *entry = builder.emplace_block();
+            Block *first = builder.emplace_block();
+            Block *second = builder.emplace_block();
+            Block *if_true = true_falls_through ? first : second;
+            Block *if_false = true_falls_through ? second : first;
+            ParameterInstruction input =
+                builder.emplace_parameter<ParameterInstruction>(entry);
+            BlockEdge *true_edge = builder.make_block_edge(entry, if_true);
+            BlockEdge *false_edge = builder.make_block_edge(entry, if_false);
+            builder.emplace_instruction<ConditionalBranchInstruction>(
+                entry, TaggedValueRef(input), true_edge, false_edge);
+            ConstInstruction true_result =
+                builder.emplace_instruction<ConstInstruction>(if_true,
+                                                              Value::True());
+            builder.emplace_instruction<ReturnInstruction>(
+                if_true, TaggedValueRef(true_result));
+            ConstInstruction false_result =
+                builder.emplace_instruction<ConstInstruction>(if_false,
+                                                              Value::False());
+            builder.emplace_instruction<ReturnInstruction>(
+                if_false, TaggedValueRef(false_result));
+            ControlFlowGraph *graph = builder.finalize();
+            LocationAssignments locations = assign_program_values_to_x0(*graph);
+
+            CodeCache cache;
+            auto emission = emit_aarch64_from_cfg(*graph, locations, cache,
+                                                  no_side_exit_thunk());
+            EXPECT_TRUE(emission);
+            PublishedCode code = std::move(emission).value();
+            using Function = uint64_t (*)(uint64_t);
+            Function function = reinterpret_cast<Function>(
+                code.entry().bits_for_indirect_target());
+            return function(static_cast<uint64_t>(condition.as.integer));
+        };
+
+        const Value falsy[] = {Value::None(), Value::False(),
+                               Value::from_smi(0)};
+        const Value truthy[] = {Value::True(), Value::Ellipsis(),
+                                Value::from_smi(42)};
+        for(bool true_falls_through: {false, true})
+        {
+            for(Value condition: falsy)
+            {
+                EXPECT_EQ(static_cast<uint64_t>(Value::False().as.integer),
+                          execute(true_falls_through, condition));
+            }
+            for(Value condition: truthy)
+            {
+                EXPECT_EQ(static_cast<uint64_t>(Value::True().as.integer),
+                          execute(true_falls_through, condition));
+            }
+        }
+    }
+
+    TEST(AArch64Execution, BranchesWhenNeitherSuccessorFallsThrough)
+    {
+        CompilationSession session;
+        GraphBuilder builder(session, IRLevel::Machine);
+        Block *entry = builder.emplace_block();
+        Block *join = builder.emplace_block();
+        Block *if_true = builder.emplace_block();
+        Block *if_false = builder.emplace_block();
+        ParameterInstruction condition =
+            builder.emplace_parameter<ParameterInstruction>(entry);
+        BlockEdge *true_edge = builder.make_block_edge(entry, if_true);
+        BlockEdge *false_edge = builder.make_block_edge(entry, if_false);
+        builder.emplace_instruction<ConditionalBranchInstruction>(
+            entry, TaggedValueRef(condition), true_edge, false_edge);
+        ParameterInstruction result =
+            builder.emplace_parameter<ParameterInstruction>(join);
+        builder.emplace_instruction<ReturnInstruction>(join,
+                                                       TaggedValueRef(result));
+        ConstInstruction true_result =
+            builder.emplace_instruction<ConstInstruction>(if_true,
+                                                          Value::True());
+        std::array<ProgramValueRef, 1> true_arguments = {
+            ProgramValueRef(true_result)};
+        BlockEdge *true_join =
+            builder.make_block_edge(if_true, join, true_arguments);
+        builder.emplace_instruction<UnconditionalBranchInstruction>(if_true,
+                                                                    true_join);
+        ConstInstruction false_result =
+            builder.emplace_instruction<ConstInstruction>(if_false,
+                                                          Value::False());
+        std::array<ProgramValueRef, 1> false_arguments = {
+            ProgramValueRef(false_result)};
+        BlockEdge *false_join =
+            builder.make_block_edge(if_false, join, false_arguments);
+        builder.emplace_instruction<UnconditionalBranchInstruction>(if_false,
+                                                                    false_join);
+        ControlFlowGraph *graph = builder.finalize();
+        LocationAssignments locations = assign_program_values_to_x0(*graph);
+
+        CodeCache cache;
+        auto emission = emit_aarch64_from_cfg(*graph, locations, cache,
+                                              no_side_exit_thunk());
+
+        ASSERT_TRUE(emission);
+        PublishedCode code = std::move(emission).value();
+        using Function = uint64_t (*)(uint64_t);
+        Function function =
+            reinterpret_cast<Function>(code.entry().bits_for_indirect_target());
+        EXPECT_EQ(static_cast<uint64_t>(Value::False().as.integer),
+                  function(static_cast<uint64_t>(Value::None().as.integer)));
+        EXPECT_EQ(
+            static_cast<uint64_t>(Value::True().as.integer),
+            function(static_cast<uint64_t>(Value::from_smi(42).as.integer)));
+    }
+
+    TEST(AArch64Execution, EmitsAllocationCreatedEdgeTransferBlock)
+    {
+        CompilationSession session;
+        GraphBuilder builder(session, IRLevel::Machine);
+        Block *entry = builder.emplace_block();
+        Block *target = builder.emplace_block();
+        ParameterInstruction input =
+            builder.emplace_parameter<ParameterInstruction>(entry);
+        std::array<ProgramValueRef, 1> arguments = {ProgramValueRef(input)};
+        BlockEdge *edge = builder.make_block_edge(entry, target, arguments);
+        builder.emplace_instruction<UnconditionalBranchInstruction>(entry,
+                                                                    edge);
+        ParameterInstruction target_input =
+            builder.emplace_parameter<ParameterInstruction>(target);
+        MovInstruction result = builder.emplace_instruction<MovInstruction>(
+            target, TaggedValueRef(target_input));
+        ReturnInstruction return_instruction =
+            builder.emplace_instruction<ReturnInstruction>(
+                target, TaggedValueRef(result));
+        ControlFlowGraph *graph = builder.finalize();
+
+        constexpr PhysicalRegister x16(RegisterClass::GPR, 16);
+        constexpr PhysicalRegister x17(RegisterClass::GPR, 17);
+        constexpr std::array registers = {x0, x1};
+        constexpr std::array scratch = {x16, x17};
+        auto fixed = [](PhysicalRegister reg) {
+            return LocationRequirement::fixed(PhysicalLocation::reg(reg));
+        };
+        std::vector<InstructionAllocationConstraints> overrides;
+        overrides.emplace_back(input, std::vector<ProgramValueUseConstraint>{},
+                               ResultConstraint{AccessTiming::Late, fixed(x0)});
+        overrides.emplace_back(target_input,
+                               std::vector<ProgramValueUseConstraint>{},
+                               ResultConstraint{AccessTiming::Late, fixed(x1)});
+        overrides.emplace_back(result, std::vector<ProgramValueUseConstraint>{},
+                               ResultConstraint{AccessTiming::Late, fixed(x0)});
+        overrides.emplace_back(
+            return_instruction,
+            std::vector<ProgramValueUseConstraint>{
+                {ReturnInstruction::return_value_operand_index,
+                 AccessTiming::Early, fixed(x0)}});
+        std::vector<RegisterClassDefinition> classes;
+        classes.emplace_back(RegisterClass::GPR, registers, scratch);
+        AllocationConstraints constraints(std::move(classes),
+                                          std::move(overrides));
+
+        auto locations = allocate_registers(session, *graph, constraints);
+        ASSERT_TRUE(locations);
+        ASSERT_EQ(3u, graph->blocks().size());
+        ASSERT_EQ(InstructionKind::Mov,
+                  graph->blocks()[1]->instruction_at(0).kind());
+
+        CodeCache cache;
+        auto emission = emit_aarch64_from_cfg(*graph, locations.value(), cache,
+                                              no_side_exit_thunk());
+
+        ASSERT_TRUE(emission);
+        PublishedCode code = std::move(emission).value();
+        using Function = uint64_t (*)(uint64_t);
+        Function function =
+            reinterpret_cast<Function>(code.entry().bits_for_indirect_target());
+        constexpr uint64_t input_bits = 0x123456789abcdef0;
+        EXPECT_EQ(input_bits, function(input_bits));
     }
 
     TEST(AArch64Execution, ExecutesInlineTagGuardWithColdSideExit)
