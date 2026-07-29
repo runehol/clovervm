@@ -218,6 +218,144 @@ namespace cl::jit
         EXPECT_EQ(return_instruction, entry->instruction_at(1));
     }
 
+    TEST(JitGraphRewriter, StagesAnEdgeSplitAfterItsSource)
+    {
+        CompilationSession session;
+        GraphBuilder builder(session, IRLevel::Core);
+        Block *entry = builder.emplace_block();
+        Block *target = builder.emplace_block();
+        ParameterInstruction tagged =
+            builder.emplace_parameter<ParameterInstruction>(entry);
+        ParameterF64Instruction floating =
+            builder.emplace_parameter<ParameterF64Instruction>(entry);
+        ParameterPointerInstruction pointer =
+            builder.emplace_parameter<ParameterPointerInstruction>(entry);
+        std::array<ProgramValueRef, 3> arguments = {ProgramValueRef(tagged),
+                                                    ProgramValueRef(floating),
+                                                    ProgramValueRef(pointer)};
+        BlockEdge *edge = builder.make_block_edge(entry, target, arguments);
+        UnconditionalBranchInstruction old_branch =
+            builder.emplace_instruction<UnconditionalBranchInstruction>(entry,
+                                                                        edge);
+        ParameterInstruction target_tagged =
+            builder.emplace_parameter<ParameterInstruction>(target);
+        builder.emplace_parameter<ParameterF64Instruction>(target);
+        builder.emplace_parameter<ParameterPointerInstruction>(target);
+        builder.emplace_instruction<ReturnInstruction>(
+            target, TaggedValueRef(target_tagged));
+        ControlFlowGraph *graph = builder.finalize();
+
+        GraphRewriter rewriter(session, *graph);
+        std::array requests = {
+            EdgeSplitRequest{edge, EdgeSplitPlacement::AfterSource}};
+        std::vector<Block *> splits = rewriter.stage_edge_splits(requests);
+        ASSERT_EQ(1u, splits.size());
+        Block *split = splits.front();
+
+        struct Callback
+        {
+            std::vector<const Block *> entered_blocks;
+
+            RewriteInsertion at_block_entry(RewriteContext &,
+                                            const GraphQueries &,
+                                            const Block &block)
+            {
+                entered_blocks.push_back(&block);
+                return RewriteInsertion::none();
+            }
+        } callback;
+        RewriteSummary summary =
+            rewriter.rewrite_instructions(InstructionTraversal(), callback);
+
+        EXPECT_TRUE(summary.blocks_changed);
+        EXPECT_TRUE(summary.instructions_changed);
+        EXPECT_TRUE(summary.terminators_changed);
+        EXPECT_EQ(1u, graph->mutation_generation());
+        ASSERT_EQ(3u, graph->blocks().size());
+        EXPECT_EQ(entry, graph->blocks()[0]);
+        EXPECT_EQ(split, graph->blocks()[1]);
+        EXPECT_EQ(target, graph->blocks()[2]);
+        ASSERT_EQ(3u, callback.entered_blocks.size());
+        EXPECT_EQ(entry, callback.entered_blocks[0]);
+        EXPECT_EQ(split, callback.entered_blocks[1]);
+        EXPECT_EQ(target, callback.entered_blocks[2]);
+
+        ASSERT_EQ(3u, split->parameters().size());
+        EXPECT_EQ(InstructionKind::Parameter, split->parameter_at(0).kind());
+        EXPECT_EQ(InstructionKind::ParameterF64, split->parameter_at(1).kind());
+        EXPECT_EQ(InstructionKind::ParameterPointer,
+                  split->parameter_at(2).kind());
+
+        BlockEdge *incoming = entry->block_successor_edges().front();
+        EXPECT_EQ(split, incoming->target());
+        EXPECT_EQ(arguments[0], incoming->arguments()[0]);
+        EXPECT_EQ(arguments[1], incoming->arguments()[1]);
+        EXPECT_EQ(arguments[2], incoming->arguments()[2]);
+
+        BlockEdge *outgoing = split->block_successor_edges().front();
+        EXPECT_EQ(target, outgoing->target());
+        for(size_t index = 0; index < outgoing->arguments().size(); ++index)
+        {
+            EXPECT_EQ(split->parameter_at(index).id(),
+                      outgoing->arguments()[index].instruction_id());
+        }
+        EXPECT_TRUE(old_branch.is_poisoned());
+        ASSERT_EQ(1u, split->predecessor_edges().size());
+        EXPECT_EQ(incoming, split->predecessor_edges().front());
+        ASSERT_EQ(1u, target->predecessor_edges().size());
+        EXPECT_EQ(outgoing, target->predecessor_edges().front());
+    }
+
+    TEST(JitGraphRewriter, StagesAnEdgeSplitBeforeItsTarget)
+    {
+        CompilationSession session;
+        GraphBuilder builder(session, IRLevel::Core);
+        Block *entry = builder.emplace_block();
+        Block *other = builder.emplace_block();
+        Block *target = builder.emplace_block();
+        ParameterInstruction condition =
+            builder.emplace_parameter<ParameterInstruction>(entry);
+        std::array<ProgramValueRef, 1> arguments = {ProgramValueRef(condition)};
+        BlockEdge *target_edge =
+            builder.make_block_edge(entry, target, arguments);
+        BlockEdge *other_edge =
+            builder.make_block_edge(entry, other, arguments);
+        builder.emplace_instruction<ConditionalBranchInstruction>(
+            entry, TaggedValueRef(condition), target_edge, other_edge);
+        ParameterInstruction other_parameter =
+            builder.emplace_parameter<ParameterInstruction>(other);
+        std::array<ProgramValueRef, 1> other_arguments = {
+            ProgramValueRef(other_parameter)};
+        BlockEdge *other_to_target =
+            builder.make_block_edge(other, target, other_arguments);
+        builder.emplace_instruction<UnconditionalBranchInstruction>(
+            other, other_to_target);
+        ParameterInstruction target_parameter =
+            builder.emplace_parameter<ParameterInstruction>(target);
+        builder.emplace_instruction<ReturnInstruction>(
+            target, TaggedValueRef(target_parameter));
+        ControlFlowGraph *graph = builder.finalize();
+
+        GraphRewriter rewriter(session, *graph);
+        std::array requests = {
+            EdgeSplitRequest{target_edge, EdgeSplitPlacement::BeforeTarget}};
+        Block *split = rewriter.stage_edge_splits(requests).front();
+        RewriteSummary summary = rewriter.rewrite_instructions(
+            InstructionTraversal(),
+            [](RewriteContext &, const GraphQueries &, const Block &,
+               const Instruction &) { return RewriteResult::keep(); });
+
+        EXPECT_TRUE(summary.blocks_changed);
+        ASSERT_EQ(4u, graph->blocks().size());
+        EXPECT_EQ(entry, graph->blocks()[0]);
+        EXPECT_EQ(other, graph->blocks()[1]);
+        EXPECT_EQ(split, graph->blocks()[2]);
+        EXPECT_EQ(target, graph->blocks()[3]);
+        EXPECT_EQ(split, entry->block_successor_edges()[0]->target());
+        EXPECT_EQ(other, entry->block_successor_edges()[1]->target());
+        EXPECT_EQ(target, split->block_successor_edges()[0]->target());
+    }
+
     TEST(JitGraphRewriter, DetachesInstructionWithoutPoisoningStorage)
     {
         CompilationSession session;

@@ -8,6 +8,7 @@
 #include <absl/container/flat_hash_set.h>
 
 #include <cassert>
+#include <span>
 #include <utility>
 #include <vector>
 
@@ -32,7 +33,96 @@ namespace cl::jit
                 fatal(message);
             }
         }
+    }  // namespace
 
+    std::vector<Block *>
+    GraphRewriter::stage_edge_splits(std::span<const EdgeSplitRequest> requests)
+    {
+        assert(graph_ != nullptr);
+        require_rewrite_invariant(graph_->is_published(),
+                                  "cannot split an edge in an unpublished CFG");
+
+        absl::flat_hash_set<const BlockEdge *> requested_edges;
+        for(const StagedEdgeSplit &split: staged_edge_splits_)
+        {
+            requested_edges.insert(split.original_edge);
+        }
+
+        std::vector<Block *> results;
+        results.reserve(requests.size());
+        for(const EdgeSplitRequest &request: requests)
+        {
+            BlockEdge *edge = request.edge;
+            require_rewrite_invariant(
+                edge != nullptr && graph_->owns_block(edge->source()) &&
+                    graph_->owns_block(edge->target()),
+                "edge split requires an edge belonging to the rewritten CFG");
+            require_rewrite_invariant(
+                requested_edges.insert(edge).second,
+                "one CFG edge cannot be split more than once");
+            require_rewrite_invariant(
+                request.placement != EdgeSplitPlacement::BeforeTarget ||
+                    edge->target() != graph_->entry_block(),
+                "an edge split cannot be placed before the entry block");
+
+            bool owned_by_terminator = false;
+            for(BlockEdge *successor: edge->source()->block_successor_edges())
+            {
+                owned_by_terminator |= successor == edge;
+            }
+            require_rewrite_invariant(
+                owned_by_terminator,
+                "edge split requires an executable CFG edge");
+
+            Block *block = storage_->make_block();
+            block->graph_ = graph_;
+            block->loop_depth_ = edge->source()->loop_depth();
+
+            std::vector<ProgramValueRef> outgoing_arguments;
+            outgoing_arguments.reserve(edge->arguments().size());
+            for(ProgramValueRef argument: edge->arguments())
+            {
+                Instruction value =
+                    storage_->instruction(argument.instruction_id());
+                auto make_parameter = [&]() -> Instruction {
+                    switch(value.value_representation())
+                    {
+                        case ValueRepresentation::TaggedValue:
+                            return storage_
+                                ->make_instruction<ParameterInstruction>();
+                        case ValueRepresentation::F64:
+                            return storage_
+                                ->make_instruction<ParameterF64Instruction>();
+                        case ValueRepresentation::Pointer:
+                            return storage_->make_instruction<
+                                ParameterPointerInstruction>();
+                        case ValueRepresentation::None:
+                        case ValueRepresentation::Count:
+                            fatal("edge split argument has no value "
+                                  "representation");
+                    }
+                    fatal("invalid edge split argument representation");
+                };
+                Instruction parameter = make_parameter();
+                block->parameter_ids_.push_back(parameter.id());
+                outgoing_arguments.emplace_back(parameter);
+            }
+
+            BlockEdge *outgoing = storage_->make_block_edge(
+                block, edge->target(), outgoing_arguments);
+            UnconditionalBranchInstruction terminator =
+                storage_->make_instruction<UnconditionalBranchInstruction>(
+                    outgoing);
+            block->instruction_ids_.push_back(terminator.id());
+
+            staged_edge_splits_.push_back({edge, request.placement, block});
+            results.push_back(block);
+        }
+        return results;
+    }
+
+    namespace
+    {
         struct DefReplacement
         {
             std::optional<InstructionId> def;
@@ -190,6 +280,16 @@ namespace cl::jit
             input != RewriteInput::Normalized ||
                 !has_graph_query(traversal.queries(), GraphQuery::Uses),
             "normalized rewrite input cannot be combined with use lists");
+        require_rewrite_invariant(
+            staged_edge_splits_.empty() ||
+                traversal.queries() == GraphQuery::None,
+            "staged edge splitting cannot be combined with graph queries");
+        if constexpr(HasBlockParameterCallback)
+        {
+            require_rewrite_invariant(
+                staged_edge_splits_.empty(),
+                "staged edge splitting cannot rewrite block parameters");
+        }
         assert(callback != nullptr);
         if constexpr(HasBlockEntryCallback)
         {
@@ -213,12 +313,57 @@ namespace cl::jit
         RewriteContext context(session_, storage_, graph_,
                                &allocated_instructions);
         RewriteSummary summary;
+        summary.blocks_changed = !staged_edge_splits_.empty();
         summary.ir_level_changed = graph_->ir_level() != target_ir_level_;
+
+        absl::flat_hash_map<const BlockEdge *, Block *> split_block_by_edge;
+        absl::flat_hash_map<const Block *, std::vector<Block *>>
+            splits_before_block;
+        absl::flat_hash_map<const Block *, std::vector<Block *>>
+            splits_after_block;
+        for(const StagedEdgeSplit &split: staged_edge_splits_)
+        {
+            split_block_by_edge.emplace(split.original_edge, split.block);
+            switch(split.placement)
+            {
+                case EdgeSplitPlacement::AfterSource:
+                    splits_after_block[split.original_edge->source()].push_back(
+                        split.block);
+                    break;
+                case EdgeSplitPlacement::BeforeTarget:
+                    splits_before_block[split.original_edge->target()]
+                        .push_back(split.block);
+                    break;
+            }
+        }
+
+        std::vector<Block *> rewrite_blocks;
+        rewrite_blocks.reserve(graph_->blocks_.size() +
+                               staged_edge_splits_.size());
+        for(Block *block: graph_->blocks_)
+        {
+            auto before = splits_before_block.find(block);
+            if(before != splits_before_block.end())
+            {
+                rewrite_blocks.insert(rewrite_blocks.end(),
+                                      before->second.begin(),
+                                      before->second.end());
+            }
+            rewrite_blocks.push_back(block);
+            auto after = splits_after_block.find(block);
+            if(after != splits_after_block.end())
+            {
+                rewrite_blocks.insert(rewrite_blocks.end(),
+                                      after->second.begin(),
+                                      after->second.end());
+            }
+        }
+
         ParameterRetentionMasks parameter_retention;
         if constexpr(HasBlockParameterCallback)
         {
-            parameter_retention.reserve(graph_->blocks_.size());
-            for(const Block *block: graph_->blocks_)
+            parameter_retention.reserve(rewrite_blocks.size());
+            for(const Block *block: rewrite_blocks)
             {
                 std::vector<bool> retained;
                 retained.reserve(block->parameter_ids_.size());
@@ -239,7 +384,7 @@ namespace cl::jit
 
         absl::flat_hash_set<InstructionId> staged_instruction_set;
         std::vector<StagedBlockRewrite> staged_blocks;
-        staged_blocks.reserve(graph_->blocks_.size());
+        staged_blocks.reserve(rewrite_blocks.size());
         bool edges_changed = false;
         auto record_normalization = [&](InstructionId before,
                                         InstructionId after) {
@@ -255,7 +400,7 @@ namespace cl::jit
                 "identity");
         };
 
-        for(Block *block: graph_->blocks_)
+        for(Block *block: rewrite_blocks)
         {
             assert(block != nullptr);
             StagedBlockRewrite staged{block, {}, {}, {}};
@@ -443,10 +588,19 @@ namespace cl::jit
                                 storage_->instruction(resolved));
                         }
                         BlockEdge *replacement = edge;
+                        auto split = split_block_by_edge.find(edge);
+                        if(split != split_block_by_edge.end())
+                        {
+                            changed = true;
+                        }
                         if(changed)
                         {
                             replacement = storage_->make_block_edge(
-                                edge->source(), edge->target(), arguments);
+                                edge->source(),
+                                split == split_block_by_edge.end()
+                                    ? edge->target()
+                                    : split->second,
+                                arguments);
                             edges_changed = true;
                         }
                         edge_replacements.emplace(edge, replacement);
@@ -725,8 +879,8 @@ namespace cl::jit
             staged_blocks.push_back(std::move(staged));
         }
 
-        if(!summary.block_parameters_changed && !summary.instructions_changed &&
-           !summary.ir_level_changed)
+        if(!summary.block_parameters_changed && !summary.blocks_changed &&
+           !summary.instructions_changed && !summary.ir_level_changed)
         {
             return summary;
         }
@@ -735,6 +889,10 @@ namespace cl::jit
         {
             staged.block->parameter_ids_.swap(staged.parameters);
             staged.block->instruction_ids_.swap(staged.instructions);
+        }
+        if(summary.blocks_changed)
+        {
+            graph_->blocks_.swap(rewrite_blocks);
         }
         if(edges_changed)
         {
@@ -749,6 +907,7 @@ namespace cl::jit
         }
         graph_->ir_level_ = target_ir_level_;
         ++graph_->mutation_generation_;
+        staged_edge_splits_.clear();
 
 #ifndef NDEBUG
         CfgVerificationResult verification = verify_cfg(*graph_);

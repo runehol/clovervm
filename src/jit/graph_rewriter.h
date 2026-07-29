@@ -253,10 +253,23 @@ namespace cl::jit
     struct RewriteSummary
     {
         bool block_parameters_changed = false;
+        bool blocks_changed = false;
         bool instructions_changed = false;
         bool terminators_changed = false;
         bool ir_level_changed = false;
         NormalizationRemapping normalization_remapping;
+    };
+
+    enum class EdgeSplitPlacement : uint8_t
+    {
+        AfterSource,
+        BeforeTarget,
+    };
+
+    struct EdgeSplitRequest
+    {
+        BlockEdge *edge;
+        EdgeSplitPlacement placement;
     };
 
     class GraphRewriter
@@ -270,6 +283,9 @@ namespace cl::jit
         }
 
         void set_target_ir_level(IRLevel target) { target_ir_level_ = target; }
+
+        std::vector<Block *>
+        stage_edge_splits(std::span<const EdgeSplitRequest> requests);
 
         template <typename Callback>
         RewriteSummary rewrite_instructions(InstructionTraversal traversal,
@@ -436,6 +452,14 @@ namespace cl::jit
         CompilationStorage *storage_;
         ControlFlowGraph *graph_;
         IRLevel target_ir_level_;
+
+        struct StagedEdgeSplit
+        {
+            BlockEdge *original_edge;
+            EdgeSplitPlacement placement;
+            Block *block;
+        };
+        std::vector<StagedEdgeSplit> staged_edge_splits_;
     };
 
 }  // namespace cl::jit

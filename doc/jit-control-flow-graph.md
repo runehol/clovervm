@@ -4,7 +4,7 @@
 |---|---|
 | Document type | Architecture contract |
 | Status | Accepted |
-| Implementation | Partial: graph construction and publication, fixed-representation terminators, block parameters and edge arguments, predecessor indexes, structural verification, queries, body-instruction rewriting, and topology-preserving parameter/argument compaction are implemented; cross-block dominance and general CFG-topology editing are deferred |
+| Implementation | Partial: graph construction and publication, fixed-representation terminators, block parameters and edge arguments, predecessor indexes, structural verification, queries, body-instruction rewriting, topology-preserving parameter/argument compaction, and staged edge splitting are implemented; cross-block dominance and other general CFG-topology editing are deferred |
 | Scope | Structural CFG shared by Core IR and an optional Semantic IR, including block parameters and first-class block-edge arguments |
 | Owning layers | The JIT CFG owns block order, block edges, block parameters, instruction placement, and structural verification; individual IR levels own instruction semantics and side exits |
 | Validated against | `tests/test_jit_cfg.cpp` and `tests/test_jit_graph_rewrites.cpp` |
@@ -225,8 +225,17 @@ Graph mutation must keep these views consistent. A terminator and the edge
 occurrences it names are immutable. Rewriting a definition used by an edge
 argument creates a replacement edge with normalized arguments and reconstructs
 the owning terminator; it does not mutate the old edge. The rewrite transaction
-then rebuilds predecessor indexes at commit. General redirection and adding or
-removing outgoing edges remain unimplemented because there is no CFG editor.
+then rebuilds predecessor indexes at commit.
+
+`GraphRewriter::stage_edge_splits()` is the initial topology-editing operation.
+It creates a pass-through block with one representation-matched parameter per
+original edge argument and an outgoing edge to the original target. The caller
+selects `AfterSource` or `BeforeTarget` placement explicitly. Staged blocks
+participate in the same query-free instruction rewrite and become visible only
+when that transaction commits; this lets block-entry insertions populate an
+edge-transfer block without publishing an intermediate CFG. The initial
+operation does not combine edge splitting with block-parameter compaction.
+Other redirection and adding or removing outgoing edges remain unimplemented.
 
 `GraphBuilder::make_block_edge()` checks graph membership in debug builds and
 allocates a source-owned edge without attaching it to the target. This matches
@@ -432,9 +441,9 @@ The current implementation establishes:
 - the structural verifier checks Core-kind legality, unique placement,
   same-block definition-before-use, result classes, value representations,
   terminators, edge arguments, and edge/index consistency;
-- `GraphRewriter` stages body-instruction rewrites and commits one graph
-  generation at a time without changing CFG topology, reconstructing immutable
-  edges and their owning terminators when argument definitions are normalized;
+- `GraphRewriter` stages body-instruction rewrites and edge-split blocks and
+  commits one graph generation at a time, reconstructing immutable edges and
+  their owning terminators when argument definitions are normalized;
 - use lists record edge arguments as `BlockArgumentUse` occurrences separately
   from ordinary instruction operand uses.
 
