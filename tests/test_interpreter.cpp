@@ -6147,18 +6147,6 @@ TEST(Interpreter, global_delete_does_not_delete_builtin_fallback)
                         L"NameError", L"name 'range' is not defined");
 }
 
-TEST(Interpreter, global_delete_reveals_builtin_after_shadow_delete)
-{
-    test::FileRunner file_runner(L"range = 42\n"
-                                 "del range\n"
-                                 "range(1)\n");
-    Value actual = file_runner.return_value;
-
-    ASSERT_TRUE(actual.is_ptr());
-    ASSERT_EQ(NativeLayoutId::RangeIterator,
-              actual.get_ptr<Object>()->native_layout_id());
-}
-
 TEST(Interpreter, range_builtin_requires_integer_argument)
 {
     expect_python_error(L"range(False)\n", L"TypeError",

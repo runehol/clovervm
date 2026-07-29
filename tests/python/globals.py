@@ -28,3 +28,6 @@ assert 1 == 1
 
 range = 42
 assert range == 42
+# Deleting a global shadow reveals the builtin with the same name.
+del range
+assert next(range(1)) == 0
