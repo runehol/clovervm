@@ -746,6 +746,86 @@ namespace cl::jit
                   function(none, truth));
     }
 
+    TEST(AArch64Execution, CompilesPythonIdentityConditional)
+    {
+        class Observer : public JitCompilationObserver
+        {
+        public:
+            void on_machine_ir(const ControlFlowGraph &graph) override
+            {
+                block_count = graph.blocks().size();
+                for(const Block *block: graph.blocks())
+                {
+                    for(Instruction instruction: block->instructions())
+                    {
+                        switch(instruction.kind())
+                        {
+                            case InstructionKind::Mov:
+                                ++move_count;
+                                break;
+                            case InstructionKind::UnconditionalBranch:
+                                ++machine_unconditional_branch_count;
+                                break;
+                            default:
+                                break;
+                        }
+                    }
+                }
+            }
+
+            void on_machine_code(const PublishedCode &code) override
+            {
+                const void *instructions = reinterpret_cast<const void *>(
+                    code.entry().bits_for_indirect_target());
+                size_t instruction_count =
+                    code.encoded_code_size() / sizeof(uint32_t);
+                for(size_t index = 0; index < instruction_count; ++index)
+                {
+                    uint32_t instruction = instruction_at(instructions, index);
+                    if((instruction & 0xfc000000u) == 0x14000000u)
+                    {
+                        ++emitted_unconditional_branch_count;
+                    }
+                }
+            }
+
+            size_t block_count = 0;
+            size_t move_count = 0;
+            size_t machine_unconditional_branch_count = 0;
+            size_t emitted_unconditional_branch_count = 0;
+        };
+
+        PythonBackendFixture fixture;
+        CodeObject *function_code =
+            fixture.compile_first_function(L"def choose(a, b, c, d):\n"
+                                           L"    if a is b:\n"
+                                           L"        return c\n"
+                                           L"    return d\n");
+        Observer observer;
+        auto compilation =
+            compile_jit_code(*fixture.context.thread(), *function_code,
+                             JitCompilerOptions{&observer});
+
+        ASSERT_TRUE(compilation);
+        JitCodeObject *code = std::move(compilation).value();
+        EXPECT_EQ(5u, observer.block_count);
+        EXPECT_EQ(2u, observer.move_count);
+        EXPECT_EQ(2u, observer.machine_unconditional_branch_count);
+        EXPECT_EQ(0u, observer.emitted_unconditional_branch_count);
+
+        using Function = uint64_t (*)(uint64_t, uint64_t, uint64_t, uint64_t);
+        Function function = reinterpret_cast<Function>(
+            code->entry().bits_for_indirect_target());
+        uint64_t none = static_cast<uint64_t>(Value::None().as.integer);
+        uint64_t truth = static_cast<uint64_t>(Value::True().as.integer);
+        uint64_t if_true =
+            static_cast<uint64_t>(Value::from_smi(19).as.integer);
+        uint64_t if_false =
+            static_cast<uint64_t>(Value::from_smi(23).as.integer);
+        EXPECT_EQ(if_true, function(none, none, if_true, if_false));
+        EXPECT_EQ(if_false, function(none, truth, if_true, if_false));
+    }
+
     TEST(AArch64Execution, EmitsInlineConstantFunctionFromCfg)
     {
         CompilationSession session;
