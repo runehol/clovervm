@@ -1994,6 +1994,7 @@ every recovery policy must reconstruct the same canonical interpreter state.
 
 ## Related Documents
 
+- [JIT Near-Term Implementation Roadmap](jit-near-term-roadmap.md)
 - [JIT Control-Flow Graph](jit-control-flow-graph.md)
 - [JIT Register Allocation](jit-register-allocation.md)
 - [JIT Transition Programs](jit-transition-program.md)
