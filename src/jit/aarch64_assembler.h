@@ -207,9 +207,9 @@ namespace cl::jit
         FarPageRelative,
     };
 
-    enum class AArch64BranchKind : uint8_t
+    enum class AArch64RelaxationKind : uint8_t
     {
-        Jump,
+        UnconditionalBranch,
         Call,
     };
 
@@ -258,7 +258,7 @@ namespace cl::jit
     public:
         static constexpr size_t MaximumUnitSize = 128 * 1024 * 1024;
 
-        AArch64Relaxation(CodeTarget target, AArch64BranchKind kind,
+        AArch64Relaxation(CodeTarget target, AArch64RelaxationKind kind,
                           XRegister scratch)
             : target_(target), scratch_(scratch), kind_(kind)
         {
@@ -275,7 +275,7 @@ namespace cl::jit
     private:
         CodeTarget target_;
         XRegister scratch_;
-        AArch64BranchKind kind_;
+        AArch64RelaxationKind kind_;
         std::optional<bool> direct_;
     };
 

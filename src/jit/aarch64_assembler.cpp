@@ -132,15 +132,15 @@ namespace cl::jit
         if(*direct_)
         {
             int64_t displacement = source.displacement_to(target);
-            if(kind_ == AArch64BranchKind::Call)
+            switch(kind_)
             {
-                assembler.emit_bl_immediate_26(displacement);
+                case AArch64RelaxationKind::UnconditionalBranch:
+                    assembler.emit_b_immediate_26(displacement);
+                    return;
+                case AArch64RelaxationKind::Call:
+                    assembler.emit_bl_immediate_26(displacement);
+                    return;
             }
-            else
-            {
-                assembler.emit_b_immediate_26(displacement);
-            }
-            return;
         }
 
         uintptr_t address = target.bits_for_indirect_target();
@@ -156,13 +156,14 @@ namespace cl::jit
         assembler.emit_move_wide_imm16(MoveWideOp::Movk, scratch_,
                                        static_cast<uint16_t>(address >> 48),
                                        MoveWideHalfword::Bits48);
-        if(kind_ == AArch64BranchKind::Call)
+        switch(kind_)
         {
-            assembler.emit_blr(scratch_);
-        }
-        else
-        {
-            assembler.emit_br(scratch_);
+            case AArch64RelaxationKind::UnconditionalBranch:
+                assembler.emit_br(scratch_);
+                return;
+            case AArch64RelaxationKind::Call:
+                assembler.emit_blr(scratch_);
+                return;
         }
     }
 
@@ -390,14 +391,14 @@ namespace cl::jit
 
     void AArch64MacroAssembler::b(CodeTarget target, XRegister scratch)
     {
-        emitter().emit_relaxation(
-            AArch64Relaxation(target, AArch64BranchKind::Jump, scratch));
+        emitter().emit_relaxation(AArch64Relaxation(
+            target, AArch64RelaxationKind::UnconditionalBranch, scratch));
     }
 
     void AArch64MacroAssembler::bl(CodeTarget target, XRegister scratch)
     {
         emitter().emit_relaxation(
-            AArch64Relaxation(target, AArch64BranchKind::Call, scratch));
+            AArch64Relaxation(target, AArch64RelaxationKind::Call, scratch));
     }
 
 }  // namespace cl::jit
