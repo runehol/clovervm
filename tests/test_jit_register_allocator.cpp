@@ -117,6 +117,55 @@ namespace cl::jit
         EXPECT_EQ(12u, late_def.end.value());
     }
 
+    TEST(JitRegisterAllocator, SortsLiveRangeReferencesByPosition)
+    {
+        CompilationSession session;
+        GraphBuilder builder(session, IRLevel::Core);
+        Block *entry = builder.emplace_block();
+        ParameterInstruction parameter =
+            builder.emplace_parameter<ParameterInstruction>(entry);
+        AndSMIInstruction operation =
+            builder.emplace_instruction<AndSMIInstruction>(
+                entry, TaggedValueRef(parameter), TaggedValueRef(parameter));
+        builder.emplace_instruction<ReturnInstruction>(
+            entry, TaggedValueRef(operation));
+        ControlFlowGraph *graph = builder.finalize();
+
+        std::vector<InstructionAllocationConstraints> overrides;
+        overrides.emplace_back(operation,
+                               std::vector<ProgramValueUseConstraint>{
+                                   {0, AccessTiming::Late, fixed(x0)},
+                                   {1, AccessTiming::Early, fixed(x0)}});
+        constexpr std::array registers = {x0};
+        AllocationConstraints constraints =
+            gpr_constraints(registers, std::move(overrides));
+
+        auto prepared_result = prepare_register_allocation(*graph, constraints);
+
+        ASSERT_TRUE(prepared_result);
+        PreparedAllocationProblem prepared = std::move(prepared_result).value();
+        const LiveRange &range = prepared.live_ranges().front();
+        ASSERT_EQ(3u, range.occurrences.size());
+        EXPECT_EQ(
+            LivenessPosition(1),
+            prepared.occurrences()[range.occurrences[0].value()].position);
+        EXPECT_EQ(
+            LivenessPosition(2),
+            prepared.occurrences()[range.occurrences[1].value()].position);
+        EXPECT_EQ(
+            LivenessPosition(3),
+            prepared.occurrences()[range.occurrences[2].value()].position);
+        ASSERT_EQ(2u, range.fixed_constraints.size());
+        EXPECT_EQ(
+            LivenessPosition(2),
+            prepared.fixed_constraints()[range.fixed_constraints[0].value()]
+                .position);
+        EXPECT_EQ(
+            LivenessPosition(3),
+            prepared.fixed_constraints()[range.fixed_constraints[1].value()]
+                .position);
+    }
+
     TEST(JitRegisterAllocator, AllocatesAndMaterializesGraph)
     {
         CompilationSession session;

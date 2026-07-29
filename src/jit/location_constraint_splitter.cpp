@@ -93,17 +93,8 @@ namespace cl::jit
                     }
                 }
             }
-            std::ranges::sort(result, [&](OccurrenceId lhs, OccurrenceId rhs) {
-                const Occurrence &lhs_occurrence =
-                    problem.occurrences()[lhs.value()];
-                const Occurrence &rhs_occurrence =
-                    problem.occurrences()[rhs.value()];
-                if(lhs_occurrence.position != rhs_occurrence.position)
-                {
-                    return lhs_occurrence.position < rhs_occurrence.position;
-                }
-                return lhs < rhs;
-            });
+            std::ranges::sort(result,
+                              OccurrencePositionLess(problem.occurrences()));
             return result;
         }
 

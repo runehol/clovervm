@@ -5,6 +5,7 @@
 #include <absl/container/flat_hash_map.h>
 #include <absl/container/flat_hash_set.h>
 
+#include <algorithm>
 #include <cassert>
 #include <cstddef>
 #include <utility>
@@ -148,6 +149,7 @@ namespace cl::jit
                         return propagate_failure(std::move(result));
                     }
                 }
+                sort_live_range_references();
                 require_all_overrides_consumed();
                 return Result<LiveRangeScan, RegisterAllocationError>::ok(
                     {std::move(block_ranges_), std::move(occurrences_),
@@ -156,6 +158,18 @@ namespace cl::jit
             }
 
         private:
+            void sort_live_range_references()
+            {
+                for(LiveRange &live_range: live_ranges_)
+                {
+                    std::ranges::sort(live_range.occurrences,
+                                      OccurrencePositionLess(occurrences_));
+                    std::ranges::sort(
+                        live_range.fixed_constraints,
+                        FixedConstraintPositionLess(fixed_constraints_));
+                }
+            }
+
             void linearize_blocks()
             {
                 size_t next_block_start = 0;

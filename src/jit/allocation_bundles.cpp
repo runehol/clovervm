@@ -110,7 +110,8 @@ namespace cl::jit
         {
             fatal("JIT bundle covers one occurrence more than once");
         }
-        std::ranges::sort(bundle.fixed_constraints);
+        std::ranges::sort(bundle.fixed_constraints,
+                          FixedConstraintPositionLess(fixed_constraints));
         if(bundle.allocation_priority == 0)
         {
             fatal("JIT bundle has no liveness coverage");

@@ -3,10 +3,35 @@
 
 #include "jit/register_allocator.h"
 
+#include <span>
 #include <vector>
 
 namespace cl::jit
 {
+    template <typename Id, typename Entry> class IdPositionLess
+    {
+    public:
+        explicit IdPositionLess(std::span<const Entry> entries)
+            : entries_(entries)
+        {
+        }
+
+        bool operator()(Id lhs, Id rhs) const
+        {
+            LivenessPosition lhs_position = entries_[lhs.value()].position;
+            LivenessPosition rhs_position = entries_[rhs.value()].position;
+            return lhs_position != rhs_position ? lhs_position < rhs_position
+                                                : lhs < rhs;
+        }
+
+    private:
+        std::span<const Entry> entries_;
+    };
+
+    using OccurrencePositionLess = IdPositionLess<OccurrenceId, Occurrence>;
+    using FixedConstraintPositionLess =
+        IdPositionLess<FixedConstraintId, FixedLocationConstraint>;
+
     struct LiveRangeScan
     {
         std::vector<BlockLivenessRange> block_ranges;
