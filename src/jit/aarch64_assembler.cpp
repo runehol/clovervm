@@ -114,55 +114,110 @@ namespace cl::jit
     uint32_t AArch64Relaxation::select(MachineAddress source,
                                        MachineAddress target)
     {
+        assert(mode_ == UnselectedMode);
         int64_t displacement = source.displacement_to(target);
-        direct_ = aarch64_detail::fits_signed_scaled_displacement(displacement,
-                                                                  26, 2);
-        if(*direct_)
+        switch(kind_)
         {
-            return 4;
+            case AArch64RelaxationKind::UnconditionalBranch:
+            case AArch64RelaxationKind::Call:
+                if(aarch64_detail::fits_signed_scaled_displacement(displacement,
+                                                                   26, 2))
+                {
+                    mode_ = NearMode;
+                    return 4;
+                }
+                mode_ = FarMode;
+                return 20;
+            case AArch64RelaxationKind::ConditionalBranch:
+                if(aarch64_detail::fits_signed_scaled_displacement(displacement,
+                                                                   19, 2))
+                {
+                    mode_ = NearMode;
+                    return 4;
+                }
+                assert(aarch64_detail::fits_signed_scaled_displacement(
+                    source.offset_by(4).displacement_to(target), 26, 2));
+                mode_ = FarMode;
+                return 8;
         }
-        return max_size();
+        assert(false);
+        return 0;
     }
 
     void AArch64Relaxation::encode(void *write_pointer, MachineAddress source,
                                    MachineAddress target) const
     {
-        assert(direct_.has_value());
+        assert(mode_ != UnselectedMode);
         AArch64BufferAssembler assembler(write_pointer);
-        if(*direct_)
+        int64_t displacement = source.displacement_to(target);
+        switch(mode_)
         {
-            int64_t displacement = source.displacement_to(target);
-            switch(kind_)
-            {
-                case AArch64RelaxationKind::UnconditionalBranch:
-                    assembler.emit_b_immediate_26(displacement);
-                    return;
-                case AArch64RelaxationKind::Call:
-                    assembler.emit_bl_immediate_26(displacement);
-                    return;
-            }
+            case UnselectedMode:
+                assert(false);
+                return;
+            case NearMode:
+                switch(kind_)
+                {
+                    case AArch64RelaxationKind::UnconditionalBranch:
+                        assembler.emit_b_immediate_26(displacement);
+                        return;
+                    case AArch64RelaxationKind::Call:
+                        assembler.emit_bl_immediate_26(displacement);
+                        return;
+                    case AArch64RelaxationKind::ConditionalBranch:
+                        assembler.emit_b_conditional_immediate(
+                            static_cast<AArch64Condition>(kind_data_),
+                            displacement);
+                        return;
+                }
+            case FarMode:
+                break;
+            default:
+                assert(false);
+                return;
         }
 
+        switch(kind_)
+        {
+            case AArch64RelaxationKind::UnconditionalBranch:
+            case AArch64RelaxationKind::Call:
+                break;
+            case AArch64RelaxationKind::ConditionalBranch:
+                {
+                    auto condition = static_cast<AArch64Condition>(kind_data_);
+                    auto inverse = static_cast<AArch64Condition>(
+                        static_cast<uint8_t>(condition) ^ 1);
+                    assembler.emit_b_conditional_immediate(inverse, 8);
+                    assembler.emit_b_immediate_26(
+                        source.offset_by(4).displacement_to(target));
+                    return;
+                }
+        }
+
+        XRegister scratch(kind_data_);
         uintptr_t address = target.bits_for_indirect_target();
-        assembler.emit_move_wide_imm16(MoveWideOp::Movz, scratch_,
+        assembler.emit_move_wide_imm16(MoveWideOp::Movz, scratch,
                                        static_cast<uint16_t>(address),
                                        MoveWideHalfword::Bits0);
-        assembler.emit_move_wide_imm16(MoveWideOp::Movk, scratch_,
+        assembler.emit_move_wide_imm16(MoveWideOp::Movk, scratch,
                                        static_cast<uint16_t>(address >> 16),
                                        MoveWideHalfword::Bits16);
-        assembler.emit_move_wide_imm16(MoveWideOp::Movk, scratch_,
+        assembler.emit_move_wide_imm16(MoveWideOp::Movk, scratch,
                                        static_cast<uint16_t>(address >> 32),
                                        MoveWideHalfword::Bits32);
-        assembler.emit_move_wide_imm16(MoveWideOp::Movk, scratch_,
+        assembler.emit_move_wide_imm16(MoveWideOp::Movk, scratch,
                                        static_cast<uint16_t>(address >> 48),
                                        MoveWideHalfword::Bits48);
         switch(kind_)
         {
             case AArch64RelaxationKind::UnconditionalBranch:
-                assembler.emit_br(scratch_);
+                assembler.emit_br(scratch);
                 return;
             case AArch64RelaxationKind::Call:
-                assembler.emit_blr(scratch_);
+                assembler.emit_blr(scratch);
+                return;
+            case AArch64RelaxationKind::ConditionalBranch:
+                assert(false);
                 return;
         }
     }
@@ -391,14 +446,19 @@ namespace cl::jit
 
     void AArch64MacroAssembler::b(CodeTarget target, XRegister scratch)
     {
-        emitter().emit_relaxation(AArch64Relaxation(
-            target, AArch64RelaxationKind::UnconditionalBranch, scratch));
+        emitter().emit_relaxation(
+            AArch64Relaxation::unconditional_branch(target, scratch));
+    }
+
+    void AArch64MacroAssembler::b(AArch64Condition condition, Label target)
+    {
+        emitter().emit_relaxation(
+            AArch64Relaxation::conditional_branch(target, condition));
     }
 
     void AArch64MacroAssembler::bl(CodeTarget target, XRegister scratch)
     {
-        emitter().emit_relaxation(
-            AArch64Relaxation(target, AArch64RelaxationKind::Call, scratch));
+        emitter().emit_relaxation(AArch64Relaxation::call(target, scratch));
     }
 
 }  // namespace cl::jit

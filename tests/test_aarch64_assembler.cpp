@@ -8,6 +8,7 @@
 #include <cstdint>
 #include <cstring>
 #include <type_traits>
+#include <vector>
 
 namespace cl::jit
 {
@@ -141,6 +142,46 @@ namespace cl::jit
         EXPECT_EQ(0xab0600bf, instruction_at(code, 4));
         EXPECT_EQ(0xf9400cc5, instruction_at(code, 5));
         EXPECT_EQ(0xf81f80c5, instruction_at(code, 6));
+    }
+
+    TEST(AArch64Assembler, RelaxesNearAndFarConditionalBranches)
+    {
+        {
+            CacheAndPlatform fixture(16);
+            AArch64MacroAssembler assembler(AArch64ValuePoolMode::NearLiteral);
+            Label target = assembler.emitter().make_label();
+            assembler.b(AArch64Condition::Equal, target);
+            assembler.mov(XRegister(0), XRegister(1));
+            assembler.emitter().resolve(target);
+            assembler.emit_ret();
+
+            CodeAllocation allocation =
+                take_allocation(assembler.emitter().finalize(*fixture.cache));
+            EXPECT_EQ(0x54000040u,
+                      instruction_at(allocation.writable_code().data(), 0));
+        }
+
+        {
+            constexpr size_t PaddingSize = 1024 * 1024;
+            CacheAndPlatform fixture(16, 2 * PaddingSize);
+            AArch64MacroAssembler assembler(
+                AArch64ValuePoolMode::FarPageRelative);
+            Label target = assembler.emitter().make_label();
+            assembler.b(AArch64Condition::Equal, target);
+            std::vector<std::byte> padding(PaddingSize);
+            assembler.emitter().emit_bytes(padding.data(), padding.size());
+            assembler.emitter().resolve(target);
+            assembler.emit_ret();
+
+            CodeAllocation allocation =
+                take_allocation(assembler.emitter().finalize(*fixture.cache));
+            const void *code = allocation.writable_code().data();
+            EXPECT_EQ(0x54000041u, instruction_at(code, 0));
+            uint32_t expected_branch =
+                0x14000000u |
+                (static_cast<uint32_t>((PaddingSize + 4) >> 2) & 0x3ffffffu);
+            EXPECT_EQ(expected_branch, instruction_at(code, 1));
+        }
     }
 
     TEST(AArch64Assembler, RelocatesNearValuePoolLoad)

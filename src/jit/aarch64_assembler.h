@@ -7,7 +7,6 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
-#include <optional>
 #include <span>
 
 namespace cl::jit
@@ -211,6 +210,7 @@ namespace cl::jit
     {
         UnconditionalBranch,
         Call,
+        ConditionalBranch,
     };
 
     namespace aarch64_detail
@@ -258,25 +258,63 @@ namespace cl::jit
     public:
         static constexpr size_t MaximumUnitSize = 128 * 1024 * 1024;
 
-        AArch64Relaxation(CodeTarget target, AArch64RelaxationKind kind,
-                          XRegister scratch)
-            : target_(target), scratch_(scratch), kind_(kind)
+        static AArch64Relaxation unconditional_branch(CodeTarget target,
+                                                      XRegister scratch)
         {
+            return AArch64Relaxation(target,
+                                     AArch64RelaxationKind::UnconditionalBranch,
+                                     static_cast<uint8_t>(scratch.encoding()));
+        }
+
+        static AArch64Relaxation call(CodeTarget target, XRegister scratch)
+        {
+            return AArch64Relaxation(target, AArch64RelaxationKind::Call,
+                                     static_cast<uint8_t>(scratch.encoding()));
+        }
+
+        static AArch64Relaxation conditional_branch(Label target,
+                                                    AArch64Condition condition)
+        {
+            return AArch64Relaxation(target,
+                                     AArch64RelaxationKind::ConditionalBranch,
+                                     static_cast<uint8_t>(condition));
         }
 
         const CodeTarget &target() const { return target_; }
         uint32_t min_size() const { return 4; }
-        uint32_t max_size() const { return 20; }
+        uint32_t max_size() const
+        {
+            switch(kind_)
+            {
+                case AArch64RelaxationKind::UnconditionalBranch:
+                case AArch64RelaxationKind::Call:
+                    return 20;
+                case AArch64RelaxationKind::ConditionalBranch:
+                    return 8;
+            }
+            assert(false);
+            return 0;
+        }
 
         uint32_t select(MachineAddress source, MachineAddress target);
         void encode(void *write_pointer, MachineAddress source,
                     MachineAddress target) const;
 
     private:
+        static constexpr uint8_t UnselectedMode = 0;
+        static constexpr uint8_t NearMode = 1;
+        static constexpr uint8_t FarMode = 2;
+
+        AArch64Relaxation(CodeTarget target, AArch64RelaxationKind kind,
+                          uint8_t kind_data)
+            : target_(target), kind_(kind), kind_data_(kind_data)
+        {
+        }
+
         CodeTarget target_;
-        XRegister scratch_;
         AArch64RelaxationKind kind_;
-        std::optional<bool> direct_;
+        uint8_t kind_data_;
+        uint8_t mode_ = UnselectedMode;
     };
 
     enum class AArch64RelocationKind : uint8_t
@@ -730,6 +768,7 @@ namespace cl::jit
         void str(XRegister source, XRegisterOrSP base, int64_t byte_offset);
 
         void b(CodeTarget target, XRegister scratch = XRegister(16));
+        void b(AArch64Condition condition, Label target);
         void bl(CodeTarget target, XRegister scratch = XRegister(16));
 
     private:
