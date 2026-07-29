@@ -4,7 +4,7 @@
 |---|---|
 | Document type | Design |
 | Status | Accepted |
-| Implementation | Prepared allocation, block-edge affinities and bundle coalescing, deterministic constraint splitting, transfer scheduling, conflict-free register/stack assignment, parallel-transfer materialization, and the fixed-x19 value-state migration are implemented; runtime x19 installation and edge-transfer-block materialization remain open |
+| Implementation | Prepared allocation, block-edge affinities and bundle coalescing, deterministic constraint splitting, transfer scheduling, conflict-free register/stack assignment, parallel-transfer and edge-transfer-block materialization, and the fixed-x19 value-state migration are implemented; runtime x19 installation and block-exit materialization remain open |
 | Scope | Allocation constraints, allocator-local numbering, liveness, bundles, backtracking allocation, live-range splitting, block-edge transfers, clobbers, spills, and post-allocation materialization |
 | Owning layers | Target preparation owns occurrence constraints and physical-transfer capabilities; the generic register allocator owns numbering, liveness, bundles, splitting, allocation, spill decisions, and bundle transfers; generic allocation materialization resolves transfers, rewrites the Core CFG, and publishes occurrence locations; publication and transition planners own canonical-state synchronization; machine-code emission only encodes the materialized graph |
 | Validated against | `tests/test_jit_allocation_constraints.cpp`, `tests/test_aarch64_allocation_constraints.cpp`, `tests/test_jit_register_allocator.cpp`, `tests/test_jit_parallel_assignment_resolver.cpp`, `tests/test_jit_allocation_materializer.cpp`, and `tests/test_aarch64_execution.cpp` |
@@ -159,12 +159,12 @@ problem, assigns final bundle locations, and materializes the resulting
 transfers. Backends provide constraints and consume only the rewritten graph
 plus returned `LocationAssignments`.
 
-The initial materializer accepts block-entry and before-instruction transfer
-points. It resolves register, mixed register/stack, and all-stack parallel
-cycles with the ordered scratch registers declared by the bundle's register
-class. Acyclic memory-to-memory transfers pass through the first available
-scratch. Block-exit and block-edge placement remain separate implementation
-slices.
+The materializer accepts block-entry, before-instruction, and block-edge
+transfer points. It resolves register, mixed register/stack, and all-stack
+parallel cycles with the ordered scratch registers declared by the bundle's
+register class. Acyclic memory-to-memory transfers pass through the first
+available scratch. Block-exit placement remains a separate implementation
+slice.
 
 The Snapshot and `BytecodeStateOrder` define the accumulator and canonical VM
 homes. The active thread is reserved target machine context outside allocation.
@@ -1269,10 +1269,12 @@ parallel transfers establish the successor parameter locations, and its
 outgoing edge targets the original successor. Using one representation for
 ordinary and critical edges keeps conditional-edge transfers out of the
 predecessor's unconditional instruction stream. Machine block layout may place
-the transfer block immediately before its successor and omit the final branch
+the transfer block immediately after an unconditional predecessor or
+immediately before a conditionally reached successor and omit one branch
 through fallthrough, so the dedicated CFG block does not inherently add a
-runtime jump. The semantic CFG retains first-class `BlockEdge` objects and
-ordered edge arguments until this post-allocation rewrite.
+runtime jump. Splits targeting the entry block are placed after their source so
+the entry remains first. The semantic CFG retains first-class `BlockEdge`
+objects and ordered edge arguments until this post-allocation rewrite.
 
 ## Calls, Clobbers, and Temporaries
 

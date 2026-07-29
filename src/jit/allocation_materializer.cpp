@@ -27,6 +27,15 @@ namespace cl::jit
         {
             const BundleTransferSet *original;
             OrderedParallelAssignment<PhysicalLocation> ordered;
+            std::vector<InstructionId> sources;
+        };
+
+        struct PlannedEdgeTransferSet
+        {
+            BlockEdge *edge;
+            PlannedTransferSet transfers;
+            std::vector<uint32_t> argument_indices;
+            std::vector<PhysicalLocation> parameter_locations;
         };
 
         struct MaterializationPlan
@@ -35,6 +44,7 @@ namespace cl::jit
                 block_entries;
             absl::flat_hash_map<InstructionId, PlannedTransferSet>
                 before_instructions;
+            std::vector<PlannedEdgeTransferSet> edge_transfers;
             LocationAssignmentsBuilder existing_locations;
             std::vector<std::optional<InstructionId>> initial_value_by_bundle;
         };
@@ -182,6 +192,55 @@ namespace cl::jit
                              CompilationStorage &storage)
         {
             MaterializationPlan result;
+            std::vector<std::vector<std::pair<LivenessRange, BundleId>>>
+                fragments_by_live_range(problem.live_ranges().size());
+            for(size_t index = 0; index < allocation.bundles().size(); ++index)
+            {
+                for(const BundleFragment &fragment:
+                    allocation.bundles()[index].fragments)
+                {
+                    fragments_by_live_range[fragment.source.value()].push_back(
+                        {fragment.range,
+                         BundleId(static_cast<uint32_t>(index))});
+                }
+            }
+            for(auto &fragments: fragments_by_live_range)
+            {
+                std::ranges::sort(fragments, {}, [](const auto &fragment) {
+                    return fragment.first.start;
+                });
+            }
+
+            std::vector<BundleId> bundle_by_occurrence;
+            bundle_by_occurrence.reserve(problem.occurrences().size());
+            for(const Occurrence &occurrence: problem.occurrences())
+            {
+                const auto &fragments =
+                    fragments_by_live_range[occurrence.live_range.value()];
+                auto found = std::ranges::upper_bound(
+                    fragments, occurrence.minimum_coverage.start, {},
+                    [](const auto &fragment) { return fragment.first.start; });
+                if(found == fragments.begin())
+                {
+                    fatal("JIT occurrence is covered by no materialized "
+                          "bundle");
+                }
+                --found;
+                if(!found->first.contains(occurrence.minimum_coverage))
+                {
+                    fatal("JIT occurrence is covered by no materialized "
+                          "bundle");
+                }
+                bundle_by_occurrence.push_back(found->second);
+            }
+            absl::flat_hash_map<const BlockEdge *,
+                                std::vector<const EdgeAffinity *>>
+                affinities_by_edge;
+            for(const EdgeAffinity &affinity: problem.edge_affinities())
+            {
+                affinities_by_edge[affinity.edge].push_back(&affinity);
+            }
+
             ScratchRegisters scratch_registers;
             for(const RegisterClassDefinition &definition:
                 constraints.register_classes())
@@ -223,7 +282,8 @@ namespace cl::jit
                 {
                     return propagate_failure(std::move(ordered));
                 }
-                PlannedTransferSet planned{&set, std::move(ordered).value()};
+                PlannedTransferSet planned{
+                    &set, std::move(ordered).value(), {}};
 
                 bool inserted = false;
                 switch(set.point.kind())
@@ -241,11 +301,68 @@ namespace cl::jit
                                        .second;
                         break;
                     case TransferPoint::Kind::BlockExit:
-                    case TransferPoint::Kind::BlockEdge:
                         return Result<MaterializationPlan,
                                       RegisterAllocationError>::
                             error(RegisterAllocationError::
                                       UnsupportedTransferPoint);
+                    case TransferPoint::Kind::BlockEdge:
+                        {
+                            const BlockEdge *edge = set.point.edge();
+                            std::vector<std::optional<PhysicalLocation>>
+                                parameter_locations(edge->arguments().size());
+                            std::vector<uint32_t> argument_indices;
+                            argument_indices.reserve(set.transfers.size());
+                            size_t transfer_index = 0;
+                            for(const EdgeAffinity *affinity_pointer:
+                                affinities_by_edge.at(edge))
+                            {
+                                const EdgeAffinity &affinity =
+                                    *affinity_pointer;
+                                std::optional<PhysicalLocation> &location =
+                                    parameter_locations[affinity
+                                                            .argument_index];
+                                assert(!location.has_value());
+                                BundleId source =
+                                    bundle_by_occurrence[affinity.source
+                                                             .value()];
+                                BundleId destination =
+                                    bundle_by_occurrence[affinity.destination
+                                                             .value()];
+                                location =
+                                    allocation.locations().location_for(source);
+                                if(source != destination &&
+                                   !location->aliases(
+                                       allocation.locations().location_for(
+                                           destination)))
+                                {
+                                    assert(transfer_index <
+                                           set.transfers.size());
+                                    const BundleTransfer &transfer =
+                                        set.transfers[transfer_index++];
+                                    assert(transfer.source == source);
+                                    assert(transfer.destination == destination);
+                                    argument_indices.push_back(
+                                        affinity.argument_index);
+                                }
+                            }
+                            assert(transfer_index == set.transfers.size());
+
+                            std::vector<PhysicalLocation> locations;
+                            locations.reserve(parameter_locations.size());
+                            for(std::optional<PhysicalLocation> location:
+                                parameter_locations)
+                            {
+                                assert(location.has_value());
+                                locations.push_back(*location);
+                            }
+                            result.edge_transfers.push_back(
+                                {const_cast<BlockEdge *>(edge),
+                                 std::move(planned),
+                                 std::move(argument_indices),
+                                 std::move(locations)});
+                            inserted = true;
+                            break;
+                        }
                 }
                 if(!inserted)
                 {
@@ -253,44 +370,10 @@ namespace cl::jit
                 }
             }
 
-            std::vector<std::vector<std::pair<LivenessRange, BundleId>>>
-                fragments_by_live_range(problem.live_ranges().size());
-            for(size_t index = 0; index < allocation.bundles().size(); ++index)
-            {
-                for(const BundleFragment &fragment:
-                    allocation.bundles()[index].fragments)
-                {
-                    fragments_by_live_range[fragment.source.value()].push_back(
-                        {fragment.range, BundleId(index)});
-                }
-            }
-            for(auto &fragments: fragments_by_live_range)
-            {
-                std::ranges::sort(fragments, {}, [](const auto &fragment) {
-                    return fragment.first.start;
-                });
-            }
-
             for(size_t index = 0; index < problem.occurrences().size(); ++index)
             {
                 const Occurrence &occurrence = problem.occurrences()[index];
-                const auto &fragments =
-                    fragments_by_live_range[occurrence.live_range.value()];
-                auto found = std::ranges::upper_bound(
-                    fragments, occurrence.minimum_coverage.start, {},
-                    [](const auto &fragment) { return fragment.first.start; });
-                if(found == fragments.begin())
-                {
-                    fatal("JIT occurrence is covered by no materialized "
-                          "bundle");
-                }
-                --found;
-                if(!found->first.contains(occurrence.minimum_coverage))
-                {
-                    fatal("JIT occurrence is covered by no materialized "
-                          "bundle");
-                }
-                BundleId bundle = found->second;
+                BundleId bundle = bundle_by_occurrence[index];
                 PhysicalLocation location =
                     allocation.locations().location_for(bundle);
                 switch(occurrence.anchor.kind())
@@ -350,6 +433,60 @@ namespace cl::jit
                 std::move(result));
         }
 
+        EdgeSplitPlacement edge_split_placement(const ControlFlowGraph &graph,
+                                                const BlockEdge &edge)
+        {
+            if(edge.target() == graph.entry_block() ||
+               edge.source()->block_successor_edges().size() == 1)
+            {
+                return EdgeSplitPlacement::AfterSource;
+            }
+            return EdgeSplitPlacement::BeforeTarget;
+        }
+
+        void stage_edge_transfers(MaterializationPlan &plan,
+                                  GraphRewriter &rewriter,
+                                  const ControlFlowGraph &graph)
+        {
+            std::vector<EdgeSplitRequest> requests;
+            requests.reserve(plan.edge_transfers.size());
+            for(const PlannedEdgeTransferSet &edge: plan.edge_transfers)
+            {
+                requests.push_back(
+                    {edge.edge, edge_split_placement(graph, *edge.edge)});
+            }
+            std::vector<Block *> blocks = rewriter.stage_edge_splits(requests);
+            assert(blocks.size() == plan.edge_transfers.size());
+
+            for(size_t index = 0; index < blocks.size(); ++index)
+            {
+                Block *block = blocks[index];
+                PlannedEdgeTransferSet &edge = plan.edge_transfers[index];
+                assert(block->parameters().size() ==
+                       edge.parameter_locations.size());
+                for(size_t parameter_index = 0;
+                    parameter_index < block->parameters().size();
+                    ++parameter_index)
+                {
+                    plan.existing_locations.assign(
+                        ProgramValueRef(block->parameter_at(parameter_index)),
+                        edge.parameter_locations[parameter_index]);
+                }
+
+                edge.transfers.sources.reserve(edge.argument_indices.size());
+                for(uint32_t argument_index: edge.argument_indices)
+                {
+                    edge.transfers.sources.push_back(
+                        block->parameter_at(argument_index).id());
+                }
+                bool inserted =
+                    plan.block_entries.emplace(block, std::move(edge.transfers))
+                        .second;
+                assert(inserted);
+            }
+            plan.edge_transfers.clear();
+        }
+
         class AllocationMaterializer
         {
         public:
@@ -393,24 +530,32 @@ namespace cl::jit
                                             const PlannedTransferSet &planned)
             {
                 const BundleTransferSet &set = *planned.original;
-                std::vector<InstructionId> sources;
-                sources.reserve(set.transfers.size());
-                for(const BundleTransfer &transfer: set.transfers)
+                bool uses_explicit_sources = !planned.sources.empty();
+                std::vector<InstructionId> sources = planned.sources;
+                if(!uses_explicit_sources)
                 {
-                    std::optional<InstructionId> source =
-                        current_values_[transfer.source.value()];
-                    if(!source.has_value())
+                    sources.reserve(set.transfers.size());
+                    for(const BundleTransfer &transfer: set.transfers)
                     {
-                        fatal("JIT bundle transfer has no program value");
+                        std::optional<InstructionId> source =
+                            current_values_[transfer.source.value()];
+                        if(!source.has_value())
+                        {
+                            fatal("JIT bundle transfer has no program value");
+                        }
+                        sources.push_back(*source);
                     }
-                    sources.push_back(*source);
                 }
+                assert(sources.size() == set.transfers.size());
 
                 for(size_t index: planned.ordered.aliasing_assignments)
                 {
-                    const BundleTransfer &transfer = set.transfers[index];
-                    current_values_[transfer.destination.value()] =
-                        sources[index];
+                    if(!uses_explicit_sources)
+                    {
+                        const BundleTransfer &transfer = set.transfers[index];
+                        current_values_[transfer.destination.value()] =
+                            sources[index];
+                    }
                 }
 
                 if(planned.ordered.moves.empty())
@@ -528,10 +673,13 @@ namespace cl::jit
                     if(move.original_assignment_index >= 0)
                     {
                         int transfer_index = move.original_assignment_index;
-                        const BundleTransfer &transfer =
-                            set.transfers[transfer_index];
-                        current_values_[transfer.destination.value()] =
-                            output->id();
+                        if(!uses_explicit_sources)
+                        {
+                            const BundleTransfer &transfer =
+                                set.transfers[transfer_index];
+                            current_values_[transfer.destination.value()] =
+                                output->id();
+                        }
                         outputs.emplace_back(
                             ProgramValueRef(
                                 context.instruction(sources[transfer_index])),
@@ -565,8 +713,10 @@ namespace cl::jit
             return propagate_failure(std::move(plan_result));
         }
 
-        AllocationMaterializer materializer(std::move(plan_result).value());
+        MaterializationPlan plan = std::move(plan_result).value();
         GraphRewriter rewriter(session, graph);
+        stage_edge_transfers(plan, rewriter, graph);
+        AllocationMaterializer materializer(std::move(plan));
         RewriteSummary summary =
             rewriter.rewrite_instructions(InstructionTraversal(), materializer);
         return Result<LocationAssignments, RegisterAllocationError>::ok(

@@ -185,6 +185,162 @@ namespace cl::jit
                           .reg());
     }
 
+    TEST(JitAllocationMaterializer,
+         MaterializesBlockEdgeTransferAfterUnconditionalSource)
+    {
+        CompilationSession session;
+        GraphBuilder builder(session, IRLevel::Core);
+        Block *entry = builder.emplace_block();
+        Block *exit = builder.emplace_block();
+        ParameterInstruction value =
+            builder.emplace_parameter<ParameterInstruction>(entry);
+        std::array<ProgramValueRef, 1> arguments = {ProgramValueRef(value)};
+        BlockEdge *edge = builder.make_block_edge(entry, exit, arguments);
+        UnconditionalBranchInstruction old_branch =
+            builder.emplace_instruction<UnconditionalBranchInstruction>(entry,
+                                                                        edge);
+        ParameterInstruction result =
+            builder.emplace_parameter<ParameterInstruction>(exit);
+        ReturnInstruction return_instruction =
+            builder.emplace_instruction<ReturnInstruction>(
+                exit, TaggedValueRef(result));
+        ControlFlowGraph *graph = builder.finalize();
+
+        std::vector<InstructionAllocationConstraints> overrides;
+        overrides.emplace_back(
+            value, std::vector<ProgramValueUseConstraint>{},
+            ResultConstraint{AccessTiming::Late,
+                             fixed(PhysicalLocation::reg(x0))});
+        overrides.emplace_back(
+            result, std::vector<ProgramValueUseConstraint>{},
+            ResultConstraint{AccessTiming::Late,
+                             fixed(PhysicalLocation::reg(x1))});
+        overrides.emplace_back(
+            return_instruction,
+            std::vector<ProgramValueUseConstraint>{
+                {ReturnInstruction::return_value_operand_index,
+                 AccessTiming::Early, fixed(PhysicalLocation::reg(x1))}});
+        AllocationConstraints constraints =
+            constraints_with(std::move(overrides));
+        PreparedAllocationProblem prepared({}, {}, {}, {}, {}, {}, {});
+        RegisterAllocationResult allocation =
+            allocate(*graph, constraints, prepared);
+        ASSERT_EQ(1u, allocation.transfers().sets().size());
+        ASSERT_EQ(TransferPoint::Kind::BlockEdge,
+                  allocation.transfers().sets().front().point.kind());
+
+        auto materialized = materialize_allocation(session, *graph, prepared,
+                                                   constraints, allocation);
+
+        ASSERT_TRUE(materialized);
+        ASSERT_EQ(3u, graph->blocks().size());
+        Block *split = graph->blocks()[1];
+        EXPECT_EQ(entry, graph->blocks()[0]);
+        EXPECT_EQ(exit, graph->blocks()[2]);
+        ASSERT_EQ(1u, split->parameters().size());
+        ASSERT_EQ(2u, split->instructions().size());
+        MovInstruction move = split->instruction_at(0).as<MovInstruction>();
+        EXPECT_EQ(split->parameter_at(0).id(), move.source().instruction_id());
+        EXPECT_EQ(x0, materialized.value()
+                          .location_for(ProgramValueRef(split->parameter_at(0)))
+                          .reg());
+        EXPECT_EQ(
+            x1, materialized.value().location_for(ProgramValueRef(move)).reg());
+
+        BlockEdge *incoming = entry->block_successor_edges().front();
+        EXPECT_EQ(split, incoming->target());
+        EXPECT_EQ(value.id(), incoming->arguments().front().instruction_id());
+        BlockEdge *outgoing = split->block_successor_edges().front();
+        EXPECT_EQ(exit, outgoing->target());
+        EXPECT_EQ(move.id(), outgoing->arguments().front().instruction_id());
+        EXPECT_TRUE(old_branch.is_poisoned());
+    }
+
+    TEST(JitAllocationMaterializer,
+         MaterializesBlockEdgeTransferBeforeConditionalTarget)
+    {
+        CompilationSession session;
+        GraphBuilder builder(session, IRLevel::Core);
+        Block *entry = builder.emplace_block();
+        Block *other = builder.emplace_block();
+        Block *target = builder.emplace_block();
+        ParameterInstruction condition =
+            builder.emplace_parameter<ParameterInstruction>(entry);
+        ParameterInstruction value =
+            builder.emplace_parameter<ParameterInstruction>(entry);
+        std::array<ProgramValueRef, 1> arguments = {ProgramValueRef(value)};
+        BlockEdge *target_edge =
+            builder.make_block_edge(entry, target, arguments);
+        BlockEdge *other_edge =
+            builder.make_block_edge(entry, other, arguments);
+        builder.emplace_instruction<ConditionalBranchInstruction>(
+            entry, TaggedValueRef(condition), target_edge, other_edge);
+        ParameterInstruction other_value =
+            builder.emplace_parameter<ParameterInstruction>(other);
+        ReturnInstruction other_return =
+            builder.emplace_instruction<ReturnInstruction>(
+                other, TaggedValueRef(other_value));
+        ParameterInstruction target_value =
+            builder.emplace_parameter<ParameterInstruction>(target);
+        ReturnInstruction target_return =
+            builder.emplace_instruction<ReturnInstruction>(
+                target, TaggedValueRef(target_value));
+        ControlFlowGraph *graph = builder.finalize();
+
+        std::vector<InstructionAllocationConstraints> overrides;
+        overrides.emplace_back(
+            value, std::vector<ProgramValueUseConstraint>{},
+            ResultConstraint{AccessTiming::Late,
+                             fixed(PhysicalLocation::reg(x0))});
+        overrides.emplace_back(
+            other_value, std::vector<ProgramValueUseConstraint>{},
+            ResultConstraint{AccessTiming::Late,
+                             fixed(PhysicalLocation::reg(x0))});
+        overrides.emplace_back(
+            target_value, std::vector<ProgramValueUseConstraint>{},
+            ResultConstraint{AccessTiming::Late,
+                             fixed(PhysicalLocation::reg(x1))});
+        overrides.emplace_back(
+            other_return,
+            std::vector<ProgramValueUseConstraint>{
+                {ReturnInstruction::return_value_operand_index,
+                 AccessTiming::Early, fixed(PhysicalLocation::reg(x0))}});
+        overrides.emplace_back(
+            target_return,
+            std::vector<ProgramValueUseConstraint>{
+                {ReturnInstruction::return_value_operand_index,
+                 AccessTiming::Early, fixed(PhysicalLocation::reg(x1))}});
+        AllocationConstraints constraints =
+            constraints_with(std::move(overrides));
+        PreparedAllocationProblem prepared({}, {}, {}, {}, {}, {}, {});
+        RegisterAllocationResult allocation =
+            allocate(*graph, constraints, prepared);
+        ASSERT_EQ(1u, allocation.transfers().sets().size());
+        EXPECT_EQ(target_edge,
+                  allocation.transfers().sets().front().point.edge());
+
+        auto materialized = materialize_allocation(session, *graph, prepared,
+                                                   constraints, allocation);
+
+        ASSERT_TRUE(materialized);
+        ASSERT_EQ(4u, graph->blocks().size());
+        Block *split = graph->blocks()[2];
+        EXPECT_EQ(entry, graph->blocks()[0]);
+        EXPECT_EQ(other, graph->blocks()[1]);
+        EXPECT_EQ(target, graph->blocks()[3]);
+        EXPECT_EQ(split, entry->block_successor_edges()[0]->target());
+        EXPECT_EQ(other, entry->block_successor_edges()[1]->target());
+        ASSERT_EQ(2u, split->instructions().size());
+        MovInstruction move = split->instruction_at(0).as<MovInstruction>();
+        EXPECT_EQ(split->parameter_at(0).id(), move.source().instruction_id());
+        EXPECT_EQ(target, split->block_successor_edges().front()->target());
+        EXPECT_EQ(move.id(), split->block_successor_edges()
+                                 .front()
+                                 ->arguments()
+                                 .front()
+                                 .instruction_id());
+    }
+
     TEST(JitAllocationMaterializer, InsertsSingletonStackToRegisterTransfer)
     {
         CompilationSession session;

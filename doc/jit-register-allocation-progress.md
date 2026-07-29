@@ -7,11 +7,12 @@
 | Scope | Unfinished implementation and verification work for the accepted SSA bundle allocator |
 | Design authority | [JIT Register Allocation](jit-register-allocation.md) |
 
-The prepared problem, deterministic constraint splitting, conflict-free initial
-assignment, generic materialization, worklist-driven parallel assignment
-ordering including all-stack cycles, `LocationAssignments`, and one-block
-AArch64 integration are implemented. This ledger records only unfinished work;
-the design document owns algorithms, invariants, and layer boundaries.
+The prepared problem, deterministic constraint splitting, cross-edge bundle
+coalescing, conflict-free initial assignment, generic and edge-transfer-block
+materialization, worklist-driven parallel assignment ordering including
+all-stack cycles, `LocationAssignments`, and AArch64 integration are
+implemented. This ledger records only unfinished work; the design document owns
+algorithms, invariants, and layer boundaries.
 
 ## Correctness Checking
 
@@ -22,14 +23,15 @@ the design document owns algorithms, invariants, and layer boundaries.
 
 ## Affinities and CFG Transfers
 
-- [ ] Merge non-overlapping bundles across block parameters and edge arguments.
+- [x] Merge non-overlapping bundles across block parameters and edge arguments.
 - [ ] Add affinities for explicit copies and reused inputs.
-- [ ] Preserve source `LiveRangeId`s in merged fragments and make repeated
+- [x] Preserve source `LiveRangeId`s in merged fragments and make repeated
   coalescing requests no-ops.
-- [ ] Record unresolved edge transfers when overlap or constraints prevent
+- [x] Record unresolved edge transfers when overlap or constraints prevent
   coalescing.
-- [ ] Materialize transfers at block exits and on edges, including critical
-  edges and duplicate edge arguments.
+- [x] Materialize edge transfers in dedicated CFG blocks, including critical
+  edges.
+- [ ] Materialize block-exit transfers.
 
 ## Backtracking, Splitting, and Spilling
 
