@@ -1075,23 +1075,6 @@ TEST(Interpreter, function_varargs_still_requires_positional_arguments)
                         L"TypeError", L"wrong number of arguments");
 }
 
-TEST(Interpreter, class_definition_binds_class_object)
-{
-    test::VmTestContext test_context;
-    ThreadState::ActivationScope activation_scope(test_context.thread());
-
-    CodeObject *code_obj = test_context.compile_file(L"class Cls:\n"
-                                                     L"    pass\n"
-                                                     L"Cls\n");
-
-    Value actual = test_context.thread()->run_clovervm_code_object(code_obj);
-    ASSERT_TRUE(actual.is_ptr());
-    ASSERT_EQ(NativeLayoutId::ClassObject,
-              actual.get_ptr<Object>()->native_layout_id());
-    EXPECT_STREQ(L"Cls",
-                 string_as_wchar_t(actual.get_ptr<ClassObject>()->get_name()));
-}
-
 TEST(Interpreter, class_body_assignment_becomes_class_member)
 {
     test::VmTestContext test_context;
@@ -1193,26 +1176,6 @@ TEST(Interpreter, set_name_notification_is_explicitly_unsupported)
                         L"    field = Descriptor()\n",
                         L"TypeError",
                         L"__set_name__ notifications are not implemented yet");
-}
-
-TEST(Interpreter, class_call_allocates_instance)
-{
-    test::VmTestContext test_context;
-    ThreadState::ActivationScope activation_scope(test_context.thread());
-
-    CodeObject *code_obj = test_context.compile_file(L"class Cls:\n"
-                                                     L"    pass\n"
-                                                     L"Cls()\n");
-
-    Value actual = test_context.thread()->run_clovervm_code_object(code_obj);
-    ASSERT_TRUE(actual.is_ptr());
-    ASSERT_EQ(NativeLayoutId::Instance,
-              actual.get_ptr<Object>()->native_layout_id());
-    ClassObject *actual_class =
-        actual.get_ptr<Instance>()->get_shape()->get_class();
-    ASSERT_NE(nullptr, actual_class);
-    EXPECT_EQ(NativeLayoutId::ClassObject,
-              actual_class->HeapObject::native_layout_id());
 }
 
 TEST(Interpreter, store_attr_add_own_property_initializes_instance_slots)
@@ -3813,17 +3776,6 @@ TEST(Interpreter, cached_attribute_stores_invalidate_class_chain_reads)
     EXPECT_TRUE(obj->delete_own_property(value_name));
     EXPECT_EQ(Value::from_smi(4),
               test_context.thread()->run_clovervm_code_object(read_code));
-}
-
-TEST(Interpreter, object_class_has_empty_bases_tuple)
-{
-    test::FileRunner file_runner(L"object.__bases__\n");
-    Value actual = file_runner.return_value;
-
-    ASSERT_TRUE(actual.is_ptr());
-    ASSERT_EQ(NativeLayoutId::Tuple,
-              actual.get_ptr<Object>()->native_layout_id());
-    EXPECT_TRUE(actual.get_ptr<Tuple>()->empty());
 }
 
 TEST(Interpreter, class_definition_rejects_non_class_base)

@@ -6,6 +6,17 @@ class DefaultSource:
 
 assert DefaultSource().method() == 11
 
+
+# A class definition binds a class object whose calls allocate instances of that class.
+class BoundClass:
+    pass
+
+
+assert BoundClass.__name__ == "BoundClass"
+bound_instance = BoundClass()
+assert bound_instance.__class__ is BoundClass
+
+
 class InitialClassSlot:
     pass
 

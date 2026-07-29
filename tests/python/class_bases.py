@@ -2,6 +2,10 @@ class Base:
     value = 7
 
 
+# object is the root class and therefore has no bases.
+assert len(object.__bases__) == 0
+
+
 class Derived(Base):
     pass
 
