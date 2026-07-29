@@ -6,6 +6,26 @@ def assert_items(seq, *expected):
         idx = idx + 1
 
 
+# String construction handles empty, exact-string, builtin, custom, and direct __new__ cases.
+assert "abc" == "abc"
+assert str() == ""
+
+exact_string = "hello"
+assert str(exact_string) is exact_string
+
+assert str(123) == "123"
+assert str(-123) == "-123"
+assert str(True) == "True"
+
+
+class CustomString:
+    def __str__(self):
+        return "custom"
+
+
+assert str(CustomString()) == "custom"
+assert str.__new__(str, 123) == "123"
+
 s = "clover"
 assert s[0] == "c"
 assert s[1] == "l"
