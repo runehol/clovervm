@@ -250,14 +250,11 @@ namespace cl
     static void collect_own_dir_names(std::vector<std::wstring> &names,
                                       Object *object)
     {
-        AttributeMappingEntry entry;
         Shape *shape = object->get_shape();
         for(uint32_t idx = 0; idx < shape->present_count(); ++idx)
         {
-            if(own_attribute_mapping_entry_at(object, idx, entry))
-            {
-                append_unique_dir_name(names, entry.key);
-            }
+            append_unique_dir_name(names,
+                                   shape->get_property_name(idx).raw_value());
         }
     }
 
