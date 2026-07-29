@@ -415,6 +415,28 @@ def except_as_cleanup_deletes_preexisting_binding():
 expect_name_error(except_as_cleanup_deletes_preexisting_binding)
 
 
+def except_as_cleanup_preserves_return_value():
+    try:
+        1 / 0
+    except ZeroDivisionError as exc:
+        return exc
+
+
+assert isinstance(except_as_cleanup_preserves_return_value(), ZeroDivisionError)
+
+
+def except_as_cleanup_runs_before_break():
+    for i in range(1):
+        try:
+            1 / 0
+        except ZeroDivisionError as exc:
+            break
+    return exc
+
+
+expect_name_error(except_as_cleanup_runs_before_break)
+
+
 def with_as_target_defines_local():
     with ReraisingManager() as value:
         pass

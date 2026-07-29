@@ -247,14 +247,15 @@ namespace cl
             enum class Kind
             {
                 FinallyBody,
-                WithExit
+                WithExit,
+                ExceptionHandlerBindingCleanup
             };
 
             static CleanupContext
             finally_body(int32_t body_idx,
                          ExceptionTableRangeBuilder *exception_range)
             {
-                return CleanupContext{Kind::FinallyBody, body_idx, 0, 0,
+                return CleanupContext{Kind::FinallyBody, body_idx, -1, 0, 0,
                                       exception_range};
             }
 
@@ -262,12 +263,26 @@ namespace cl
             with_exit(uint32_t source_offset, RegisterIndex manager_reg,
                       ExceptionTableRangeBuilder *exception_range)
             {
-                return CleanupContext{Kind::WithExit, -1, source_offset,
-                                      manager_reg, exception_range};
+                return CleanupContext{
+                    Kind::WithExit, -1,          -1,
+                    source_offset,  manager_reg, exception_range};
+            }
+
+            static CleanupContext exception_handler_binding_cleanup(
+                uint32_t source_offset, int32_t name_idx,
+                ExceptionTableRangeBuilder *exception_range)
+            {
+                return CleanupContext{Kind::ExceptionHandlerBindingCleanup,
+                                      -1,
+                                      name_idx,
+                                      source_offset,
+                                      0,
+                                      exception_range};
             }
 
             Kind kind;
             int32_t body_idx;
+            int32_t name_idx;
             uint32_t source_offset;
             RegisterIndex manager_reg;
             ExceptionTableRangeBuilder *exception_range;
@@ -1789,6 +1804,32 @@ namespace cl
             return Expected<void>::ok();
         }
 
+        Expected<void>
+        emit_exception_handler_binding_cleanup(uint32_t source_offset,
+                                               int32_t name_idx)
+        {
+            const NameAccessAnalysis &access = store_access(name_idx);
+            CL_TRY(code_obj->emit_lda_none(source_offset));
+            CL_TRY(emit_variable_store(source_offset, name_idx));
+            switch(access.scope)
+            {
+                case BindingScope::Local:
+                    CL_TRY(code_obj->emit_del_local(source_offset,
+                                                    access.slot_idx));
+                    break;
+                case BindingScope::Global:
+                    {
+                        uint8_t constant_idx =
+                            CL_TRY(code_obj->allocate_constant(
+                                av.constants[name_idx]));
+                        CL_TRY(code_obj->emit_del_global(source_offset,
+                                                         constant_idx));
+                    }
+                    break;
+            }
+            return Expected<void>::ok();
+        }
+
         Expected<void> emit_cleanup_body(CleanupContext ctx)
         {
             switch(ctx.kind)
@@ -1799,6 +1840,10 @@ namespace cl
                 case CleanupContext::Kind::WithExit:
                     CL_TRY(emit_context_exit_none_call(ctx.source_offset,
                                                        ctx.manager_reg));
+                    return Expected<void>::ok();
+                case CleanupContext::Kind::ExceptionHandlerBindingCleanup:
+                    CL_TRY(emit_exception_handler_binding_cleanup(
+                        ctx.source_offset, ctx.name_idx));
                     return Expected<void>::ok();
             }
             __builtin_unreachable();
@@ -2102,6 +2147,41 @@ namespace cl
             return Expected<void>::ok();
         }
 
+        Expected<void>
+        codegen_bound_exception_handler_body(uint32_t source_offset,
+                                             int32_t name_idx, int32_t body_idx)
+        {
+            JumpTarget exceptional_target(code_obj);
+            JumpTarget done_target(code_obj);
+            {
+                ExceptionTableRangeBuilder range(code_obj, exceptional_target);
+                active_cleanups.push_back(
+                    CleanupContext::exception_handler_binding_cleanup(
+                        source_offset, name_idx, &range));
+                CL_TRY(codegen_node(body_idx));
+                active_cleanups.pop_back();
+                range.close();
+            }
+
+            CL_TRY(emit_exception_handler_binding_cleanup(source_offset,
+                                                          name_idx));
+            CL_TRY(code_obj->emit_jump(source_offset, done_target));
+
+            CL_TRY(exceptional_target.resolve());
+            {
+                TemporaryReg saved_exception(*code_obj);
+                CL_TRY(code_obj->emit_drain_active_exception_into(
+                    source_offset, saved_exception));
+                CL_TRY(emit_exception_handler_binding_cleanup(source_offset,
+                                                              name_idx));
+                CL_TRY(code_obj->emit_ldar(source_offset, saved_exception));
+                CL_TRY(code_obj->emit_raise_unwind(source_offset));
+            }
+
+            CL_TRY(done_target.resolve());
+            return Expected<void>::ok();
+        }
+
         Expected<void> codegen_try_except_statement(uint32_t source_offset,
                                                     AstChildren children,
                                                     size_t end_child_offset)
@@ -2171,7 +2251,16 @@ namespace cl
                         }
                         caught_exception_regs.push_back(
                             RegisterIndex(saved_exception));
-                        CL_TRY(codegen_node(body_idx));
+                        if(binds_exception_name)
+                        {
+                            CL_TRY(codegen_bound_exception_handler_body(
+                                handler_source_offset,
+                                handler_name_idx(handler_children), body_idx));
+                        }
+                        else
+                        {
+                            CL_TRY(codegen_node(body_idx));
+                        }
                         caught_exception_regs.pop_back();
                         CL_TRY(code_obj->emit_jump(handler_source_offset,
                                                    done_target));
@@ -2181,7 +2270,9 @@ namespace cl
                         CL_TRY(emit_drain_active_exception_to_binding(
                             handler_source_offset,
                             handler_name_idx(handler_children)));
-                        CL_TRY(codegen_node(body_idx));
+                        CL_TRY(codegen_bound_exception_handler_body(
+                            handler_source_offset,
+                            handler_name_idx(handler_children), body_idx));
                         CL_TRY(code_obj->emit_jump(handler_source_offset,
                                                    done_target));
                     }
@@ -2215,7 +2306,16 @@ namespace cl
                     }
                     caught_exception_regs.push_back(
                         RegisterIndex(saved_exception));
-                    CL_TRY(codegen_node(body_idx));
+                    if(binds_exception_name)
+                    {
+                        CL_TRY(codegen_bound_exception_handler_body(
+                            handler_source_offset,
+                            handler_name_idx(handler_children), body_idx));
+                    }
+                    else
+                    {
+                        CL_TRY(codegen_node(body_idx));
+                    }
                     caught_exception_regs.pop_back();
                     CL_TRY(code_obj->emit_jump(handler_source_offset,
                                                done_target));
@@ -2225,7 +2325,9 @@ namespace cl
                     CL_TRY(emit_drain_active_exception_to_binding(
                         handler_source_offset,
                         handler_name_idx(handler_children)));
-                    CL_TRY(codegen_node(body_idx));
+                    CL_TRY(codegen_bound_exception_handler_body(
+                        handler_source_offset,
+                        handler_name_idx(handler_children), body_idx));
                     CL_TRY(code_obj->emit_jump(handler_source_offset,
                                                done_target));
                 }

@@ -1032,7 +1032,7 @@ TEST(Codegen, try_finally_emits_normal_and_exceptional_cleanup_paths)
     EXPECT_EQ(expected, actual);
 }
 
-TEST(Codegen, except_as_without_bare_raise_drains_directly_to_local)
+TEST(Codegen, except_as_without_bare_raise_drains_and_clears_local)
 {
     std::string actual = bytecode_str_from_file(L"def f():\n"
                                                 L"    try:\n"
@@ -1041,7 +1041,15 @@ TEST(Codegen, except_as_without_bare_raise_drains_directly_to_local)
                                                 L"        pass\n");
 
     EXPECT_NE(std::string::npos, actual.find("DrainActiveExceptionInto r0\n"
-                                             "   16 Jump"));
+                                             "   16 LdaNone\n"
+                                             "   17 Star0\n"
+                                             "   18 DelLocal r0"));
+    EXPECT_NE(std::string::npos, actual.find("DrainActiveExceptionInto r1\n"
+                                             "   25 LdaNone\n"
+                                             "   26 Star0\n"
+                                             "   27 DelLocal r0\n"
+                                             "   29 Ldar1\n"
+                                             "   30 RaiseUnwind"));
 }
 
 TEST(Codegen, except_as_with_bare_raise_keeps_hidden_original)
