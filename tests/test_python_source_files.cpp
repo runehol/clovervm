@@ -79,7 +79,9 @@ namespace
 TEST_P(PythonSourceFileTest, RunsSelfCheckingSource)
 {
     std::wstring source = read_source_file(GetParam().path);
-    (void)cl::test::FileRunner(source.c_str());
+    cl::test::FileRunner runner(source.c_str());
+    EXPECT_FALSE(runner.return_value.is_exception_marker())
+        << "self-checking Python source raised an exception";
 }
 
 INSTANTIATE_TEST_SUITE_P(SelfCheckingPythonFiles, PythonSourceFileTest,
