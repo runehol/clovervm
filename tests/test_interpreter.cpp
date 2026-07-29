@@ -4595,48 +4595,9 @@ TEST(Interpreter, user_defined_clover_ternary_pow_name_is_ordinary_function)
     EXPECT_EQ(Value::from_smi(123), file_runner.return_value);
 }
 
-TEST(Interpreter, globals_builtin_returns_fresh_slotdict_views)
+TEST(Interpreter, globals_slotdict_excludes_builtin_fallbacks)
 {
-    test::VmTestContext test_context;
-
-    Value actual = test_context.run_file(L"globals()\n");
-    ASSERT_TRUE(can_convert_to<SlotDict>(actual));
-}
-
-TEST(Interpreter, globals_slotdict_reads_current_module_bindings_only)
-{
-    test::VmTestContext test_context;
-
-    EXPECT_EQ(Value::from_smi(11),
-              test_context.run_file(L"x = 11\n"
-                                    L"globals()[\"x\"]\n"));
-    Value name_value = test_context.run_file(L"globals()[\"__name__\"]\n");
-    ASSERT_TRUE(can_convert_to<String>(name_value));
-    EXPECT_STREQ(
-        L"__main__",
-        string_as_wchar_t(TValue<String>::from_value_assumed(name_value)));
-    EXPECT_EQ(Value::None(),
-              test_context.run_file(L"globals()[\"__doc__\"]\n"));
-    EXPECT_EQ(Value::None(),
-              test_context.run_file(L"globals()[\"__package__\"]\n"));
-    EXPECT_EQ(Value::None(),
-              test_context.run_file(L"globals()[\"__loader__\"]\n"));
-    EXPECT_EQ(Value::None(),
-              test_context.run_file(L"globals()[\"__spec__\"]\n"));
-    Value builtins_value =
-        test_context.run_file(L"globals()[\"__builtins__\"]\n");
-    ASSERT_TRUE(can_convert_to<ModuleObject>(builtins_value));
     expect_python_error(L"globals()[\"len\"]\n", L"KeyError", L"");
-}
-
-TEST(Interpreter, main_module_is_inserted_into_sys_modules)
-{
-    test::VmTestContext test_context;
-
-    EXPECT_EQ(Value::from_smi(17),
-              test_context.run_file(L"import sys\n"
-                                    L"x = 17\n"
-                                    L"sys.modules[\"__main__\"].x\n"));
 }
 
 TEST(Interpreter, main_module_file_sets_file_not_name)
@@ -4677,14 +4638,6 @@ TEST(Interpreter, globals_slotdict_class_is_not_builtin_binding)
 {
     expect_python_error(L"slotdict\n", L"NameError",
                         L"name 'slotdict' is not defined");
-}
-
-TEST(Interpreter, locals_builtin_returns_module_slotdict_at_module_scope)
-{
-    test::VmTestContext test_context;
-
-    Value actual = test_context.run_file(L"locals()\n");
-    ASSERT_TRUE(can_convert_to<SlotDict>(actual));
 }
 
 TEST(Interpreter, locals_slotdict_excludes_builtin_fallbacks)

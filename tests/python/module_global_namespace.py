@@ -10,6 +10,16 @@ builtin_probe = 99
 assert read_value() == 11
 assert read_builtin_probe() == 31
 
+# globals exposes current module bindings and standard module metadata.
+global_read_probe = 11
+assert globals()["global_read_probe"] == 11
+assert globals()["__name__"] == "__main__"
+assert globals()["__doc__"] is None
+assert globals()["__package__"] is None
+assert globals()["__loader__"] is None
+assert globals()["__spec__"] is None
+assert globals()["__builtins__"] is __builtins__
+
 # A module accepts reassignment to its current compatible module class.
 builtins_module = __builtins__
 builtins_module_class = builtins_module.__class__
@@ -17,6 +27,10 @@ builtins_module.__class__ = builtins_module_class
 assert builtins_module.__class__ is builtins_module_class
 
 import sys
+
+# The active main module is registered in sys.modules.
+main_module_probe = 17
+assert sys.modules["__main__"].main_module_probe == 17
 
 sys.local_builtin_probe = 123
 __builtins__ = sys
@@ -55,3 +69,6 @@ locals()["locals_y"] = 2
 assert locals_x + locals_y == 3
 
 assert globals().__class__.__name__ == "slotdict"
+# globals returns fresh views, while module-scope locals returns a slotdict view.
+assert globals() is not globals()
+assert locals().__class__.__name__ == "slotdict"
