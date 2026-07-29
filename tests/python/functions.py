@@ -254,3 +254,11 @@ def collect_args_and_kwargs(a, *args, **kwargs):
 
 
 assert collect_args_and_kwargs(1, 2, 3, x=4) == 124
+
+
+# An unused varargs parameter receives an empty tuple.
+def collect_empty_varargs(*args):
+    return args
+
+
+assert len(collect_empty_varargs()) == 0

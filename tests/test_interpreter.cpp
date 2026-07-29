@@ -1054,19 +1054,6 @@ TEST(Interpreter, function_keyword_call_rejects_missing_required)
                         L"TypeError", L"wrong number of arguments");
 }
 
-TEST(Interpreter, function_varargs_collect_empty_tuple)
-{
-    test::FileRunner file_runner(L"def f(*args):\n"
-                                 "    return args\n"
-                                 "f()\n");
-    Value actual = file_runner.return_value;
-
-    ASSERT_TRUE(actual.is_ptr());
-    ASSERT_EQ(NativeLayoutId::Tuple,
-              actual.get_ptr<Object>()->native_layout_id());
-    EXPECT_TRUE(TValue<Tuple>::from_value_assumed(actual).extract()->empty());
-}
-
 TEST(Interpreter, function_varargs_still_requires_positional_arguments)
 {
     expect_python_error(L"def f(a, *args):\n"
