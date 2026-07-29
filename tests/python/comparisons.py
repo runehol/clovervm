@@ -108,3 +108,38 @@ class EqualityDerived(EqualityBase):
 
 
 assert (EqualityBase() == EqualityDerived()) == 7
+
+
+# Repeated comparisons exercise trusted cache hits and reload methods after NotImplemented.
+def repeated_eq(left, right):
+    return left == right
+
+
+assert repeated_eq(1, 1.0)
+assert repeated_eq(1, 1.0)
+
+
+def repeated_lt(left, right):
+    return left < right
+
+
+assert not repeated_lt(2, 1.0)
+assert not repeated_lt(2, 1.0)
+
+
+class ReplacingEquality:
+    count = 0
+
+    def __eq__(self, other):
+        ReplacingEquality.count += 1
+
+        def replacement(self, other):
+            ReplacingEquality.count += 100
+            return 42
+
+        ReplacingEquality.__eq__ = replacement
+        return NotImplemented
+
+
+ReplacingEquality() == ReplacingEquality()
+assert ReplacingEquality.count == 101
