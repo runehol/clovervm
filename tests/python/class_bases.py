@@ -12,6 +12,9 @@ class Derived(Base):
 
 assert Derived.value == 7
 assert Derived.__bases__[0] is Base
+# MRO tuples support both ordinary and negative tuple indexing.
+assert Derived.__mro__[0] is Derived
+assert Derived.__mro__[-1] is object
 
 
 class Plain:

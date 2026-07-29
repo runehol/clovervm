@@ -1978,34 +1978,6 @@ TEST(Interpreter, string_comparison_reports_unsupported_operands)
                         L"unsupported operand type(s) for comparison");
 }
 
-TEST(Interpreter, subscript_load_reads_tuple_item)
-{
-    test::FileRunner file_runner(L"class Cls:\n"
-                                 L"    pass\n"
-                                 L"Cls.__mro__[0]\n");
-    Value actual = file_runner.return_value;
-
-    ASSERT_TRUE(actual.is_ptr());
-    ASSERT_EQ(NativeLayoutId::ClassObject,
-              actual.get_ptr<Object>()->native_layout_id());
-    EXPECT_STREQ(L"Cls",
-                 string_as_wchar_t(actual.get_ptr<ClassObject>()->get_name()));
-}
-
-TEST(Interpreter, subscript_load_reads_tuple_item_with_negative_index)
-{
-    test::FileRunner file_runner(L"class Cls:\n"
-                                 L"    pass\n"
-                                 L"Cls.__mro__[-1]\n");
-    Value actual = file_runner.return_value;
-
-    ASSERT_TRUE(actual.is_ptr());
-    ASSERT_EQ(NativeLayoutId::ClassObject,
-              actual.get_ptr<Object>()->native_layout_id());
-    EXPECT_STREQ(L"object",
-                 string_as_wchar_t(actual.get_ptr<ClassObject>()->get_name()));
-}
-
 TEST(Interpreter, subscript_load_passes_binary_slice_object)
 {
     test::FileRunner file_runner(L"class Bag:\n"
