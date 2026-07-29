@@ -11,7 +11,7 @@ assert isinstance(errno.errorcode, dict)
 assert errno.EDOM in errno.errorcode
 assert errno.ERANGE in errno.errorcode
 
-for code in errno.errorcode:
+for code in errno.errorcode.keys():
     name = errno.errorcode[code]
     assert getattr(errno, name) == code
 

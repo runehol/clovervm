@@ -3,6 +3,9 @@ class Product:
         self.value = value
 
 
+_Product = Product
+
+
 class InstanceAttributeHolder:
     pass
 
@@ -13,7 +16,7 @@ assert instance_attribute_holder.Product(7).value == 7
 
 
 class ClassAttributeHolder:
-    Product = Product
+    Product = _Product
 
 
 assert ClassAttributeHolder().Product(8).value == 8

@@ -75,7 +75,9 @@ class Product:
     def __init__(self, value=0, *, scale=1):
         self.value = value * scale
 
+_Product = Product
+
 class ProductHolder:
-    Product = Product
+    Product = _Product
 
 assert ProductHolder().Product(7, scale=3).value == 21

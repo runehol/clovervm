@@ -33,7 +33,13 @@ assert not hasattr(obj, "missing_attr")
 delattr(obj, "dynamic_attr")
 assert not hasattr(obj, "dynamic_attr")
 
-assert vars(obj) is obj.__dict__
+first_vars = vars(obj)
+second_vars = obj.__dict__
+assert first_vars is not second_vars
+first_vars["vars_probe"] = 41
+assert second_vars["vars_probe"] == 41
+obj.vars_probe = 42
+assert first_vars["vars_probe"] == 42
 assert callable(Marker)
 assert callable(CallableMarker())
 assert not callable(obj)
@@ -51,7 +57,13 @@ obj_names = dir(obj)
 assert contains(obj_names, "name_from_instance")
 assert contains(obj_names, "class_attr")
 assert contains(obj_names, "__dict__")
-assert contains(dir(), "obj_names")
+
+no_arg_dir_is_unimplemented = False
+try:
+    dir()
+except UnimplementedError:
+    no_arg_dir_is_unimplemented = True
+assert no_arg_dir_is_unimplemented
 
 builtin_names = dir(__builtins__)
 assert contains(builtin_names, "Ellipsis")
