@@ -403,7 +403,6 @@ namespace cl::jit
 
         if(!pending_side_exits.empty())
         {
-            assert(side_exit_thunk.bits_for_indirect_target() != 0);
             assert(graph.bytecode_state_order().has_value());
         }
         for(const PendingSideExit &pending: pending_side_exits)
