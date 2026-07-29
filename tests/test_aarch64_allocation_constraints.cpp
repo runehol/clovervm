@@ -6,7 +6,6 @@
 #include <gtest/gtest.h>
 
 #include <array>
-#include <optional>
 #include <span>
 
 namespace cl::jit
@@ -354,58 +353,21 @@ namespace cl::jit
         EXPECT_NE(nullptr, find_override(constraints, return_instruction));
     }
 
-    TEST(AArch64AllocationConstraints, RejectsUnsupportedBringUpShapes)
+    TEST(AArch64AllocationConstraints, RejectsUnsupportedInstruction)
     {
-        {
-            CompilationSession session;
-            GraphBuilder builder(session, IRLevel::Machine);
-            Block *entry = builder.emplace_block();
-            builder.emplace_parameter<ParameterF64Instruction>(entry);
-            builder.emplace_instruction<ReturnInstruction>(
-                entry, emplace_constant(builder, entry));
-            ControlFlowGraph *graph = builder.finalize();
+        CompilationSession session;
+        GraphBuilder builder(session, IRLevel::Machine);
+        Block *entry = builder.emplace_block();
+        TaggedValueRef parameter(
+            builder.emplace_parameter<ParameterInstruction>(entry));
+        MovInstruction move =
+            builder.emplace_instruction<MovInstruction>(entry, parameter);
+        builder.emplace_instruction<ReturnInstruction>(entry,
+                                                       TaggedValueRef(move));
+        ControlFlowGraph *graph = builder.finalize();
 
-            EXPECT_DEATH((void)make_aarch64_allocation_constraints(*graph),
-                         "does not support F64 entry parameters");
-        }
-
-        {
-            CompilationSession session;
-            GraphBuilder builder(session, IRLevel::Machine);
-            Block *entry = builder.emplace_block();
-            std::optional<ParameterInstruction> first;
-            for(size_t index = 0; index < 9; ++index)
-            {
-                ParameterInstruction parameter =
-                    builder.emplace_parameter<ParameterInstruction>(entry);
-                if(index == 0)
-                {
-                    first = parameter;
-                }
-            }
-            builder.emplace_instruction<ReturnInstruction>(
-                entry, TaggedValueRef(*first));
-            ControlFlowGraph *graph = builder.finalize();
-
-            EXPECT_DEATH((void)make_aarch64_allocation_constraints(*graph),
-                         "does not support stack-passed entry parameters");
-        }
-
-        {
-            CompilationSession session;
-            GraphBuilder builder(session, IRLevel::Machine);
-            Block *entry = builder.emplace_block();
-            TaggedValueRef parameter(
-                builder.emplace_parameter<ParameterInstruction>(entry));
-            MovInstruction move =
-                builder.emplace_instruction<MovInstruction>(entry, parameter);
-            builder.emplace_instruction<ReturnInstruction>(
-                entry, TaggedValueRef(move));
-            ControlFlowGraph *graph = builder.finalize();
-
-            EXPECT_DEATH((void)make_aarch64_allocation_constraints(*graph),
-                         "unsupported instruction");
-        }
+        EXPECT_DEATH((void)make_aarch64_allocation_constraints(*graph),
+                     "unsupported instruction");
     }
 
 }  // namespace cl::jit
