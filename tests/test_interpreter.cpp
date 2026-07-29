@@ -4747,37 +4747,6 @@ TEST(Interpreter, dir_without_arguments_propagates_locals_error)
                         L"locals() is only implemented for module scope");
 }
 
-TEST(Interpreter, instance_dict_returns_fresh_live_slotdict_views)
-{
-    test::VmTestContext test_context;
-
-    Value actual = test_context.run_file(L"class C:\n"
-                                         L"    pass\n"
-                                         L"c = C()\n"
-                                         L"c.__dict__\n");
-    ASSERT_TRUE(can_convert_to<SlotDict>(actual));
-
-    EXPECT_EQ(Value::False(),
-              test_context.run_file(L"class C:\n"
-                                    L"    pass\n"
-                                    L"c = C()\n"
-                                    L"c.__dict__ is c.__dict__\n"));
-
-    EXPECT_EQ(Value::from_smi(42),
-              test_context.run_file(L"class C:\n"
-                                    L"    pass\n"
-                                    L"c = C()\n"
-                                    L"c.__dict__[\"x\"] = 42\n"
-                                    L"c.x\n"));
-
-    EXPECT_EQ(Value::from_smi(7),
-              test_context.run_file(L"class C:\n"
-                                    L"    pass\n"
-                                    L"c = C()\n"
-                                    L"c.x = 7\n"
-                                    L"c.__dict__[\"x\"]\n"));
-}
-
 TEST(Interpreter, slotdict_hides_virtual_special_descriptors)
 {
     expect_python_error(L"class C:\n"
@@ -4858,35 +4827,6 @@ TEST(Interpreter, module_class_assignment_accepts_module_class)
                                     L"module_class = m.__class__\n"
                                     L"m.__class__ = module_class\n"
                                     L"m.__class__ is module_class\n"));
-}
-
-TEST(Interpreter, class_dict_exposes_class_namespace_entries)
-{
-    test::VmTestContext test_context;
-
-    EXPECT_EQ(Value::from_smi(3),
-              test_context.run_file(L"class C:\n"
-                                    L"    x = 3\n"
-                                    L"C.__dict__[\"x\"]\n"));
-
-    EXPECT_EQ(Value::from_smi(9),
-              test_context.run_file(L"class C:\n"
-                                    L"    pass\n"
-                                    L"C.__dict__[\"y\"] = 9\n"
-                                    L"C.y\n"));
-}
-
-TEST(Interpreter, function_and_module_dicts_are_slotdicts)
-{
-    test::VmTestContext test_context;
-
-    Value function_dict = test_context.run_file(L"def f():\n"
-                                                L"    pass\n"
-                                                L"f.__dict__\n");
-    ASSERT_TRUE(can_convert_to<SlotDict>(function_dict));
-
-    Value module_dict = test_context.run_file(L"__builtins__.__dict__\n");
-    ASSERT_TRUE(can_convert_to<SlotDict>(module_dict));
 }
 
 TEST(Interpreter, builtin_container_instances_do_not_expose_dict)

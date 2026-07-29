@@ -17,6 +17,16 @@ bound_instance = BoundClass()
 assert bound_instance.__class__ is BoundClass
 
 
+# Class __dict__ exposes a live, writable view of its namespace.
+class MutableClassNamespace:
+    x = 3
+
+
+assert MutableClassNamespace.__dict__["x"] == 3
+MutableClassNamespace.__dict__["y"] = 9
+assert MutableClassNamespace.y == 9
+
+
 class InitialClassSlot:
     pass
 

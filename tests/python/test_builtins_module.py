@@ -33,13 +33,25 @@ assert not hasattr(obj, "missing_attr")
 delattr(obj, "dynamic_attr")
 assert not hasattr(obj, "dynamic_attr")
 
+# Instance namespace views are fresh objects backed by the same live storage.
 first_vars = vars(obj)
 second_vars = obj.__dict__
 assert first_vars is not second_vars
+assert first_vars.__class__.__name__ == "slotdict"
 first_vars["vars_probe"] = 41
 assert second_vars["vars_probe"] == 41
 obj.vars_probe = 42
 assert first_vars["vars_probe"] == 42
+
+
+# Function and module __dict__ attributes expose slotdict namespace views.
+def function_dict_probe():
+    pass
+
+
+assert function_dict_probe.__dict__.__class__.__name__ == "slotdict"
+assert __builtins__.__dict__.__class__.__name__ == "slotdict"
+
 assert callable(Marker)
 assert callable(CallableMarker())
 assert not callable(obj)
