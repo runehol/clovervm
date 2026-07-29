@@ -4991,76 +4991,6 @@ TEST(Interpreter, return_through_finally_that_raises_runs_cleanup_once)
               load_global_from_module_for_test(code_obj, result_name));
 }
 
-TEST(Interpreter, return_from_else_through_finally_runs_cleanup)
-{
-    test::VmTestContext test_context;
-    Value actual = test_context.run_file(L"result = 0\n"
-                                         L"def f():\n"
-                                         L"    global result\n"
-                                         L"    try:\n"
-                                         L"        pass\n"
-                                         L"    except NameError:\n"
-                                         L"        pass\n"
-                                         L"    else:\n"
-                                         L"        return 4\n"
-                                         L"    finally:\n"
-                                         L"        result = 5\n"
-                                         L"f() + result * 10\n");
-
-    EXPECT_EQ(Value::from_smi(54), actual);
-}
-
-TEST(Interpreter, return_from_except_through_finally_runs_cleanup)
-{
-    test::VmTestContext test_context;
-    Value actual = test_context.run_file(L"result = 0\n"
-                                         L"def f():\n"
-                                         L"    global result\n"
-                                         L"    try:\n"
-                                         L"        raise NameError\n"
-                                         L"    except NameError:\n"
-                                         L"        return 6\n"
-                                         L"    finally:\n"
-                                         L"        result = 7\n"
-                                         L"f() + result * 10\n");
-
-    EXPECT_EQ(Value::from_smi(76), actual);
-}
-
-TEST(Interpreter, return_through_nested_finally_runs_cleanup_inside_out)
-{
-    test::VmTestContext test_context;
-    Value actual =
-        test_context.run_file(L"result = 0\n"
-                              L"def f():\n"
-                              L"    global result\n"
-                              L"    try:\n"
-                              L"        try:\n"
-                              L"            return 1\n"
-                              L"        finally:\n"
-                              L"            result = result * 10 + 2\n"
-                              L"    finally:\n"
-                              L"        result = result * 10 + 3\n"
-                              L"f() + result * 10\n");
-
-    EXPECT_EQ(Value::from_smi(231), actual);
-}
-
-TEST(Interpreter, try_except_finally_runs_cleanup_after_matched_handler)
-{
-    test::VmTestContext test_context;
-    Value actual = test_context.run_file(L"result = 0\n"
-                                         L"try:\n"
-                                         L"    raise NameError\n"
-                                         L"except NameError:\n"
-                                         L"    result = 1\n"
-                                         L"finally:\n"
-                                         L"    result = result + 2\n"
-                                         L"result\n");
-
-    EXPECT_EQ(Value::from_smi(3), actual);
-}
-
 TEST(Interpreter, try_except_finally_runs_cleanup_before_unmatched_reraise)
 {
     test::VmTestContext test_context;
@@ -5105,36 +5035,6 @@ TEST(Interpreter, try_except_finally_runs_cleanup_before_handler_reraise)
               load_global_from_module_for_test(code_obj, result_name));
 }
 
-TEST(Interpreter, try_except_else_runs_on_body_success)
-{
-    test::VmTestContext test_context;
-    Value actual = test_context.run_file(L"result = 0\n"
-                                         L"try:\n"
-                                         L"    result = 1\n"
-                                         L"except NameError:\n"
-                                         L"    result = 2\n"
-                                         L"else:\n"
-                                         L"    result = result + 4\n"
-                                         L"result\n");
-
-    EXPECT_EQ(Value::from_smi(5), actual);
-}
-
-TEST(Interpreter, try_except_else_skips_on_handled_exception)
-{
-    test::VmTestContext test_context;
-    Value actual = test_context.run_file(L"result = 0\n"
-                                         L"try:\n"
-                                         L"    raise NameError\n"
-                                         L"except NameError:\n"
-                                         L"    result = 2\n"
-                                         L"else:\n"
-                                         L"    result = 99\n"
-                                         L"result\n");
-
-    EXPECT_EQ(Value::from_smi(2), actual);
-}
-
 TEST(Interpreter, try_except_else_exception_is_not_caught_by_handlers)
 {
     test::VmTestContext test_context;
@@ -5149,23 +5049,6 @@ TEST(Interpreter, try_except_else_exception_is_not_caught_by_handlers)
     Value actual = test_context.thread()->run_clovervm_code_object(code_obj);
     EXPECT_TRUE(actual.is_exception_marker());
     expect_thread_python_error(test_context.thread(), L"ValueError", L"");
-}
-
-TEST(Interpreter, try_except_else_finally_runs_cleanup_after_else)
-{
-    test::VmTestContext test_context;
-    Value actual = test_context.run_file(L"result = 0\n"
-                                         L"try:\n"
-                                         L"    result = 1\n"
-                                         L"except NameError:\n"
-                                         L"    result = 2\n"
-                                         L"else:\n"
-                                         L"    result = result + 4\n"
-                                         L"finally:\n"
-                                         L"    result = result + 8\n"
-                                         L"result\n");
-
-    EXPECT_EQ(Value::from_smi(13), actual);
 }
 
 TEST(Interpreter, try_except_else_finally_cleans_up_else_exception)

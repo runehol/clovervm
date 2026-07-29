@@ -152,6 +152,93 @@ for x in range(3):
 assert result == 3
 
 result = 0
+
+
+# else and except returns still run finally, including nested cleanup order.
+def return_from_else_runs_finally():
+    global result
+    try:
+        pass
+    except NameError:
+        pass
+    else:
+        return 4
+    finally:
+        result = 5
+
+
+assert return_from_else_runs_finally() + result * 10 == 54
+
+result = 0
+
+
+def return_from_except_runs_finally():
+    global result
+    try:
+        raise NameError
+    except NameError:
+        return 6
+    finally:
+        result = 7
+
+
+assert return_from_except_runs_finally() + result * 10 == 76
+
+result = 0
+
+
+def return_runs_nested_finally():
+    global result
+    try:
+        try:
+            return 1
+        finally:
+            result = result * 10 + 2
+    finally:
+        result = result * 10 + 3
+
+
+assert return_runs_nested_finally() + result * 10 == 231
+
+result = 0
+try:
+    raise NameError
+except NameError:
+    result = 1
+finally:
+    result += 2
+assert result == 3
+
+result = 0
+try:
+    result = 1
+except NameError:
+    result = 2
+else:
+    result += 4
+assert result == 5
+
+result = 0
+try:
+    raise NameError
+except NameError:
+    result = 2
+else:
+    result = 99
+assert result == 2
+
+result = 0
+try:
+    result = 1
+except NameError:
+    result = 2
+else:
+    result += 4
+finally:
+    result += 8
+assert result == 13
+
+result = 0
 try:
     raise NameError
 except NameError as e:
