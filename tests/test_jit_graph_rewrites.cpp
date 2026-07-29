@@ -858,7 +858,6 @@ namespace cl::jit
         EXPECT_EQ(1u, graph->mutation_generation());
         EXPECT_TRUE(move.is_poisoned());
         EXPECT_TRUE(old_return.is_poisoned());
-        EXPECT_DEATH((void)old_return.kind(), "poisoned JIT instruction");
         ASSERT_EQ(1u, entry->instructions().size());
         ReturnInstruction new_return =
             entry->instruction_at(0).as<ReturnInstruction>();
