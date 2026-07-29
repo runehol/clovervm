@@ -290,6 +290,22 @@ CL_JIT_INSTRUCTION(InlineTagGuard, CL_JIT_IR_LEVELS(Core),
 #undef CL_JIT_InlineTagGuard_ATTRIBUTES
 #undef CL_JIT_InlineTagGuard_OPERANDS
 
+#define CL_JIT_InlineTagGuardWithSideExit_OPERANDS(                           \
+    fixed, variadic, program_values)                                           \
+    fixed(value, ProgramValue, TaggedValue)                                    \
+    program_values(side_exit_arguments, SideExit)
+#define CL_JIT_InlineTagGuardWithSideExit_ATTRIBUTES(attribute)               \
+    attribute(expected_class, InlineValueClass)                                \
+    attribute(side_exit, SideExitId)
+CL_JIT_INSTRUCTION(
+    InlineTagGuardWithSideExit, CL_JIT_IR_LEVELS(Machine),
+    CL_JIT_RESULT(ProgramValue, TaggedValue),
+    CL_JIT_EFFECT_BOUNDS(None, SideExit),
+    CL_JIT_InlineTagGuardWithSideExit_OPERANDS,
+    CL_JIT_InlineTagGuardWithSideExit_ATTRIBUTES)
+#undef CL_JIT_InlineTagGuardWithSideExit_ATTRIBUTES
+#undef CL_JIT_InlineTagGuardWithSideExit_OPERANDS
+
 #define CL_JIT_Const_OPERANDS(fixed, variadic, snapshot_values)
 #define CL_JIT_Const_ATTRIBUTES(attribute)                                    \
     attribute(constant, ValueConstant)

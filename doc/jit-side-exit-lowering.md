@@ -4,7 +4,7 @@
 |---|---|
 | Document type | Design |
 | Status | Accepted |
-| Implementation | Partial; CFG-owned side exits, the first Core-to-Machine owner lowering, late side-exit arguments, allocation materialization, IR printing, and snapshot-only transition emission are implemented; general sinking analysis and sunk computation emission remain |
+| Implementation | Partial; CFG-owned side exits, terminating and inline-tag-guard Core-to-Machine owner lowering, late side-exit arguments, allocation materialization, IR printing, and snapshot-only transition emission are implemented; general sinking analysis and sunk computation emission remain |
 | Scope | Attaching sunk computation and Snapshot state to executable side-exit consumers immediately before register allocation |
 | Owning layers | Core optimization owns sinking analysis while all instructions remain in the main CFG; side-exit lowering owns per-consumer `SideExit` records and the matching argument ranges on executable owners; ordinary instruction rewriting, use lists, and register allocation own those arguments thereafter; transition emission owns deferred computation and interpreter-state publication |
 | Validated against | `tests/test_jit_side_exit_lowering.cpp`, `tests/test_jit_register_allocator.cpp`, and `tests/test_transition_program_emitter.cpp` |
@@ -424,14 +424,15 @@ Verification at the lowering and allocation boundaries must establish:
 
 ## Implementation Progress
 
-The first five implementation slices are complete:
+The structural implementation slices are complete:
 
 - CFG-owned `SideExit` records retain immutable input identities and existing
   instruction IDs;
-- the first Machine owner carries `SideExitId` plus a named heterogeneous
+- Machine side-exit owners carry `SideExitId` plus a named heterogeneous
   side-exit argument tail;
-- the backend boundary lowers direct-Snapshot exits and changes the CFG from
-  Core to Machine;
+- the backend boundary lowers direct-Snapshot exits, including terminating
+  interpreter resumes and value-producing inline tag guards, and changes the
+  CFG from Core to Machine;
 - allocation observes side-exit arguments at the owner's Late position and
   materialization rewrites those executable arguments normally;
 - snapshot-only exits emit transition transfers and `ResumeInterpreter`.
@@ -439,7 +440,9 @@ The first five implementation slices are complete:
 The remaining slice is substantive rather than structural: add sinking
 analysis, retain the reachable sunk instruction closure in original block
 order, discover its complete external frontier, and emit each eligible
-transition computation kind.
+transition computation kind. Machine constraints and target emission for
+individual nonterminal side-exit owners are added as those owners become
+executable.
 
 Call-boundary Snapshot lowering is a separate adjacent design and is not part of
 these slices.

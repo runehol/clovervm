@@ -223,19 +223,35 @@ namespace cl::jit
                                    " belongs to more than one instruction "
                                    "position");
                 }
-                if(instruction.kind() ==
-                   InstructionKind::ResumeInInterpreterWithSideExit)
+                CfgVerificationResult side_exit_verification{true, {}};
+                switch(instruction.kind())
                 {
-                    auto owner =
-                        instruction
-                            .as<ResumeInInterpreterWithSideExitInstruction>();
-                    CfgVerificationResult verification = verify_side_exit_owner(
-                        graph, instruction, owner.side_exit(),
-                        owner.side_exit_arguments(), side_exit_owner_counts);
-                    if(!verification.valid)
-                    {
-                        return verification;
-                    }
+                    case InstructionKind::InlineTagGuardWithSideExit:
+                        {
+                            auto owner = instruction.as<
+                                InlineTagGuardWithSideExitInstruction>();
+                            side_exit_verification = verify_side_exit_owner(
+                                graph, instruction, owner.side_exit(),
+                                owner.side_exit_arguments(),
+                                side_exit_owner_counts);
+                            break;
+                        }
+                    case InstructionKind::ResumeInInterpreterWithSideExit:
+                        {
+                            auto owner = instruction.as<
+                                ResumeInInterpreterWithSideExitInstruction>();
+                            side_exit_verification = verify_side_exit_owner(
+                                graph, instruction, owner.side_exit(),
+                                owner.side_exit_arguments(),
+                                side_exit_owner_counts);
+                            break;
+                        }
+                    default:
+                        break;
+                }
+                if(!side_exit_verification.valid)
+                {
+                    return side_exit_verification;
                 }
                 bool is_last = index + 1 == instructions.size();
                 if(is_last && !instruction.is_block_terminator())

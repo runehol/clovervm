@@ -144,14 +144,24 @@ namespace cl::jit
                             instruction.id(),
                             InstructionProgramPosition{block, ordinal});
                     }
-                    if(instruction.kind() ==
-                       InstructionKind::ResumeInInterpreter)
+                    switch(instruction.kind())
                     {
-                        plans.push_back(plan_side_exit(
-                            graph, *block, instruction,
-                            instruction.as<ResumeInInterpreterInstruction>()
-                                .snapshot(),
-                            sunk_instructions, positions, ordinal));
+                        case InstructionKind::InlineTagGuard:
+                            plans.push_back(plan_side_exit(
+                                graph, *block, instruction,
+                                instruction.as<InlineTagGuardInstruction>()
+                                    .snapshot(),
+                                sunk_instructions, positions, ordinal));
+                            break;
+                        case InstructionKind::ResumeInInterpreter:
+                            plans.push_back(plan_side_exit(
+                                graph, *block, instruction,
+                                instruction.as<ResumeInInterpreterInstruction>()
+                                    .snapshot(),
+                                sunk_instructions, positions, ordinal));
+                            break;
+                        default:
+                            break;
                     }
                     ++ordinal;
                 }
@@ -232,10 +242,26 @@ namespace cl::jit
                 const PlannedSideExit &plan = plans_[found->second];
                 SideExitId side_exit =
                     context.emplace_side_exit(plan.inputs, plan.retained);
-                return RewriteResult::replace(
-                    context.make_instruction<
-                        ResumeInInterpreterWithSideExitInstruction>(plan.inputs,
-                                                                    side_exit));
+                switch(instruction.kind())
+                {
+                    case InstructionKind::InlineTagGuard:
+                        {
+                            InlineTagGuardInstruction guard =
+                                instruction.as<InlineTagGuardInstruction>();
+                            return RewriteResult::replace(
+                                context.make_instruction<
+                                    InlineTagGuardWithSideExitInstruction>(
+                                    guard.value(), plan.inputs,
+                                    guard.expected_class(), side_exit));
+                        }
+                    case InstructionKind::ResumeInInterpreter:
+                        return RewriteResult::replace(
+                            context.make_instruction<
+                                ResumeInInterpreterWithSideExitInstruction>(
+                                plan.inputs, side_exit));
+                    default:
+                        fatal("unsupported planned JIT side-exit owner");
+                }
             }
 
         private:

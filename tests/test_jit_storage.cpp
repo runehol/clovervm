@@ -250,6 +250,17 @@ namespace cl::jit
                       side_exit_arguments_operand_index,
                   side_exit.side_exit_argument_start);
 
+        const InstructionKindMetadata &inline_guard = instruction_kind_metadata(
+            InstructionKind::InlineTagGuardWithSideExit);
+        EXPECT_EQ(1u, inline_guard.fixed_operand_count);
+        EXPECT_EQ(2u, inline_guard.attribute_count);
+        EXPECT_EQ(Instruction::InlineSlotCount, inline_guard.inline_slot_count);
+        EXPECT_TRUE(inline_guard.has_variadic_operands);
+        EXPECT_TRUE(inline_guard.operands_are_indirect);
+        EXPECT_EQ(InlineTagGuardWithSideExitInstruction::
+                      side_exit_arguments_operand_index,
+                  inline_guard.side_exit_argument_start);
+
         const InstructionKindMetadata &guard =
             instruction_kind_metadata(InstructionKind::ShapeGuard);
         EXPECT_EQ(2u, guard.fixed_operand_count);
@@ -386,6 +397,12 @@ namespace cl::jit
         static_assert(
             std::is_same_v<
                 decltype(std::declval<
+                             const InlineTagGuardWithSideExitInstruction &>()
+                             .side_exit_arguments()),
+                ProgramValueRefRange>);
+        static_assert(
+            std::is_same_v<
+                decltype(std::declval<
                              const ResumeInInterpreterWithSideExitInstruction
                                  &>()
                              .side_exit_arguments()),
@@ -405,6 +422,8 @@ namespace cl::jit
                   ResumeInInterpreterInstruction::Kind);
         EXPECT_EQ(InstructionKind::ResumeInInterpreterWithSideExit,
                   ResumeInInterpreterWithSideExitInstruction::Kind);
+        EXPECT_EQ(InstructionKind::InlineTagGuardWithSideExit,
+                  InlineTagGuardWithSideExitInstruction::Kind);
         EXPECT_EQ(InstructionKind::ConditionalBranch,
                   ConditionalBranchInstruction::Kind);
         EXPECT_EQ(ResultClass::ProgramValue, AddSMIInstruction::Result);
@@ -448,6 +467,8 @@ namespace cl::jit
                                 EffectProfile::TerminateBlock));
         EXPECT_EQ(IRLevelMask::Machine,
                   ResumeInInterpreterWithSideExitInstruction::AllowedIRLevels);
+        EXPECT_EQ(IRLevelMask::Machine,
+                  InlineTagGuardWithSideExitInstruction::AllowedIRLevels);
         EXPECT_EQ(terminating_side_exit,
                   ResumeInInterpreterWithSideExitInstruction::MustEffects);
         EXPECT_TRUE(
