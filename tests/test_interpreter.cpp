@@ -6206,107 +6206,19 @@ TEST(Interpreter, python_defined_next_builtin_rejects_multiple_defaults)
     expect_python_error(L"next(iter(()), 42, 43)\n", L"TypeError", L"");
 }
 
-TEST(Interpreter, python_defined_repr_builtin_calls_dunder_repr)
-{
-    test::VmTestContext test_context;
-    Value actual = test_context.run_file(L"repr(42)\n");
-
-    ASSERT_TRUE(can_convert_to<String>(actual));
-    EXPECT_STREQ(L"42",
-                 string_as_wchar_t(TValue<String>::from_value_assumed(actual)));
-}
-
-TEST(Interpreter, python_defined_repr_builtin_formats_float_literals)
-{
-    test::VmTestContext test_context;
-
-    auto expect_repr = [&](const wchar_t *source, const wchar_t *expected) {
-        Value actual = test_context.run_file(source);
-        ASSERT_TRUE(can_convert_to<String>(actual));
-        EXPECT_STREQ(expected, string_as_wchar_t(
-                                   TValue<String>::from_value_assumed(actual)));
-    };
-
-    expect_repr(L"repr(1.5)\n", L"1.5");
-    expect_repr(L"repr(1.0)\n", L"1.0");
-    expect_repr(L"repr(1e20)\n", L"1e+20");
-}
-
-TEST(Interpreter, python_defined_len_builtin_calls_dunder_len)
-{
-    test::VmTestContext test_context;
-
-    EXPECT_EQ(Value::from_smi(0), test_context.run_file(L"len(())\n"));
-    EXPECT_EQ(Value::from_smi(3), test_context.run_file(L"len((1, 2, 3))\n"));
-    EXPECT_EQ(Value::from_smi(0), test_context.run_file(L"len([])\n"));
-    EXPECT_EQ(Value::from_smi(2), test_context.run_file(L"len([1, 2])\n"));
-    EXPECT_EQ(Value::from_smi(0), test_context.run_file(L"len({})\n"));
-    EXPECT_EQ(Value::from_smi(2),
-              test_context.run_file(L"len({'a': 1, 'b': 2})\n"));
-    EXPECT_EQ(Value::from_smi(3), test_context.run_file(L"len('abc')\n"));
-}
-
 TEST(Interpreter, python_defined_len_builtin_missing_method_error)
 {
     expect_python_error(L"len(1)\n", L"TypeError", L"object has no len()");
 }
 
-TEST(Interpreter, python_defined_hash_builtin_calls_builtin_hash_methods)
+TEST(Interpreter, python_defined_hash_builtin_matches_runtime_string_hash)
 {
     test::VmTestContext test_context;
-
-    EXPECT_EQ(Value::from_smi(42), test_context.run_file(L"hash(42)\n"));
-    EXPECT_EQ(Value::from_smi(-2), test_context.run_file(L"hash(-1)\n"));
-    EXPECT_EQ(Value::from_smi(1), test_context.run_file(L"hash(True)\n"));
-    EXPECT_EQ(Value::from_smi(0), test_context.run_file(L"hash(False)\n"));
 
     TValue<String> abc =
         test_context.thread()->make_object_value<String>(L"abc");
     EXPECT_EQ(string_hash_normalized(abc).raw_value(),
               test_context.run_file(L"hash('abc')\n"));
-}
-
-TEST(Interpreter, python_defined_hash_builtin_calls_custom_dunder_hash)
-{
-    test::VmTestContext test_context;
-
-    EXPECT_EQ(Value::from_smi(123),
-              test_context.run_file(L"class C:\n"
-                                    L"    def __hash__(self):\n"
-                                    L"        return 123\n"
-                                    L"hash(C())\n"));
-}
-
-TEST(Interpreter, python_defined_hash_builtin_canonicalizes_dunder_hash_result)
-{
-    test::VmTestContext test_context;
-
-    EXPECT_EQ(Value::from_smi(-2),
-              test_context.run_file(L"class C:\n"
-                                    L"    def __hash__(self):\n"
-                                    L"        return -1\n"
-                                    L"hash(C())\n"));
-}
-
-TEST(Interpreter, python_defined_hash_builtin_reduces_large_dunder_hash_result)
-{
-    test::VmTestContext test_context;
-
-    EXPECT_EQ(Value::from_smi(1),
-              test_context.run_file(L"class C:\n"
-                                    L"    def __hash__(self):\n"
-                                    L"        return 288230376151711744\n"
-                                    L"hash(C())\n"));
-}
-
-TEST(Interpreter, python_defined_hash_builtin_reduces_large_int_without_zeroing)
-{
-    test::VmTestContext test_context;
-
-    EXPECT_EQ(Value::from_smi(69889855055785222),
-              test_context.run_file(L"hash(10**100)\n"));
-    EXPECT_EQ(Value::from_smi(122437798254428734),
-              test_context.run_file(L"hash(10**101)\n"));
 }
 
 TEST(Interpreter, python_defined_hash_builtin_rejects_non_integer_hash_result)
@@ -6431,45 +6343,6 @@ TEST(Interpreter, python_defined_print_builtin_propagates_str_errors)
                         L"        return 1\n"
                         L"print(Bad())\n",
                         L"TypeError", L"__clover_write_stdout__ expects str");
-}
-
-TEST(Interpreter, python_defined_sum_builtin_accumulates_iterable)
-{
-    test::VmTestContext test_context;
-
-    EXPECT_EQ(Value::from_smi(0), test_context.run_file(L"sum(())\n"));
-    EXPECT_EQ(Value::from_smi(6), test_context.run_file(L"sum((1, 2, 3))\n"));
-    EXPECT_EQ(Value::from_smi(16),
-              test_context.run_file(L"sum([1, 2, 3], 10)\n"));
-}
-
-TEST(Interpreter, python_defined_any_builtin_tests_iterable_truthiness)
-{
-    test::VmTestContext test_context;
-
-    EXPECT_EQ(Value::False(), test_context.run_file(L"any(())\n"));
-    EXPECT_EQ(Value::False(),
-              test_context.run_file(L"any((0, False, None))\n"));
-    EXPECT_EQ(Value::True(), test_context.run_file(L"any((0, 4, False))\n"));
-}
-
-TEST(Interpreter, python_defined_all_builtin_tests_iterable_truthiness)
-{
-    test::VmTestContext test_context;
-
-    EXPECT_EQ(Value::True(), test_context.run_file(L"all(())\n"));
-    EXPECT_EQ(Value::True(), test_context.run_file(L"all((1, True, 2))\n"));
-    EXPECT_EQ(Value::False(), test_context.run_file(L"all((1, 0, True))\n"));
-}
-
-TEST(Interpreter, python_defined_min_and_max_builtins_compare_items)
-{
-    test::VmTestContext test_context;
-
-    EXPECT_EQ(Value::from_smi(1), test_context.run_file(L"min((3, 1, 2))\n"));
-    EXPECT_EQ(Value::from_smi(1), test_context.run_file(L"min(3, 1, 2)\n"));
-    EXPECT_EQ(Value::from_smi(3), test_context.run_file(L"max([3, 1, 2])\n"));
-    EXPECT_EQ(Value::from_smi(3), test_context.run_file(L"max(3, 1, 2)\n"));
 }
 
 TEST(Interpreter, python_defined_min_and_max_builtins_report_empty_input)

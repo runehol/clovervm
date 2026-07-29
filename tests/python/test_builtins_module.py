@@ -98,3 +98,63 @@ assert not contains(builtin_names, "dict_items")
 assert not contains(builtin_names, "dict_keyiterator")
 assert not contains(builtin_names, "dict_valueiterator")
 assert not contains(builtin_names, "dict_itemiterator")
+
+# repr and len dispatch to builtin and user-visible special methods.
+assert repr(42) == "42"
+assert repr(1.5) == "1.5"
+assert repr(1.0) == "1.0"
+assert repr(1e20) == "1e+20"
+
+assert len(()) == 0
+assert len((1, 2, 3)) == 3
+assert len([]) == 0
+assert len([1, 2]) == 2
+assert len({}) == 0
+assert len({"a": 1, "b": 2}) == 2
+assert len("abc") == 3
+
+# hash dispatches to __hash__ and canonicalizes reserved and oversized results.
+assert hash(42) == 42
+assert hash(-1) == -2
+assert hash(True) == 1
+assert hash(False) == 0
+
+
+class CustomHash:
+    def __hash__(self):
+        return 123
+
+
+class MinusOneHash:
+    def __hash__(self):
+        return -1
+
+
+class LargeHash:
+    def __hash__(self):
+        return 288230376151711744
+
+
+assert hash(CustomHash()) == 123
+assert hash(MinusOneHash()) == -2
+assert hash(LargeHash()) == 1
+assert hash(10**100) == 69889855055785222
+assert hash(10**101) == 122437798254428734
+
+# sum, any, all, min, and max consume iterables with their builtin semantics.
+assert sum(()) == 0
+assert sum((1, 2, 3)) == 6
+assert sum([1, 2, 3], 10) == 16
+
+assert not any(())
+assert not any((0, False, None))
+assert any((0, 4, False))
+
+assert all(())
+assert all((1, True, 2))
+assert not all((1, 0, True))
+
+assert min((3, 1, 2)) == 1
+assert min(3, 1, 2) == 1
+assert max([3, 1, 2]) == 3
+assert max(3, 1, 2) == 3
