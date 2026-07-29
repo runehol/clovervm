@@ -2386,46 +2386,6 @@ TEST(Interpreter, string_comparison_reports_unsupported_operands)
                         L"unsupported operand type(s) for comparison");
 }
 
-TEST(Interpreter, string_dunder_comparisons_call_intrinsic_functions)
-{
-    test::VmTestContext test_context;
-
-    EXPECT_EQ(Value::True(), test_context.run_file(L"\"a\".__eq__(\"a\")\n"));
-    EXPECT_EQ(Value::False(), test_context.run_file(L"\"a\".__eq__(\"b\")\n"));
-    EXPECT_EQ(Value::False(), test_context.run_file(L"\"a\".__ne__(\"a\")\n"));
-    EXPECT_EQ(Value::True(), test_context.run_file(L"\"a\".__ne__(\"b\")\n"));
-    EXPECT_EQ(Value::True(), test_context.run_file(L"\"a\".__lt__(\"b\")\n"));
-    EXPECT_EQ(Value::False(), test_context.run_file(L"\"b\".__lt__(\"a\")\n"));
-    EXPECT_EQ(Value::True(), test_context.run_file(L"\"a\".__le__(\"a\")\n"));
-    EXPECT_EQ(Value::False(), test_context.run_file(L"\"b\".__le__(\"a\")\n"));
-    EXPECT_EQ(Value::True(), test_context.run_file(L"\"b\".__gt__(\"a\")\n"));
-    EXPECT_EQ(Value::False(), test_context.run_file(L"\"a\".__gt__(\"b\")\n"));
-    EXPECT_EQ(Value::True(), test_context.run_file(L"\"a\".__ge__(\"a\")\n"));
-    EXPECT_EQ(Value::False(), test_context.run_file(L"\"a\".__ge__(\"b\")\n"));
-    EXPECT_EQ(Value::True(), test_context.run_file(L"\"a\".__lt__(\"aa\")\n"));
-    EXPECT_EQ(Value::NotImplemented(),
-              test_context.run_file(L"\"a\".__lt__(1)\n"));
-}
-
-TEST(Interpreter, string_dunder_add_wrong_type_returns_notimplemented)
-{
-    test::VmTestContext test_context;
-
-    EXPECT_EQ(Value::NotImplemented(),
-              test_context.run_file(L"\"ab\".__add__(3)\n"));
-}
-
-TEST(Interpreter,
-     string_dunder_add_wrong_type_returns_notimplemented_from_nested_frame)
-{
-    test::VmTestContext test_context;
-
-    EXPECT_EQ(Value::NotImplemented(),
-              test_context.run_file(L"def fail():\n"
-                                    L"    return \"ab\".__add__(3)\n"
-                                    L"fail()\n"));
-}
-
 TEST(Interpreter, subscript_load_reads_tuple_item)
 {
     test::FileRunner file_runner(L"class Cls:\n"

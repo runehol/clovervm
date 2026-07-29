@@ -167,3 +167,27 @@ assert "a" >= "a"
 assert not "a" >= "b"
 assert "a" < "aa"
 assert "ab" + "cd" == "abcd"
+
+# Direct string dunder calls use intrinsic comparisons and return NotImplemented for wrong types.
+assert "a".__eq__("a")
+assert not "a".__eq__("b")
+assert not "a".__ne__("a")
+assert "a".__ne__("b")
+assert "a".__lt__("b")
+assert not "b".__lt__("a")
+assert "a".__le__("a")
+assert not "b".__le__("a")
+assert "b".__gt__("a")
+assert not "a".__gt__("b")
+assert "a".__ge__("a")
+assert not "a".__ge__("b")
+assert "a".__lt__("aa")
+assert "a".__lt__(1) is NotImplemented
+assert "ab".__add__(3) is NotImplemented
+
+
+def nested_string_add_wrong_type():
+    return "ab".__add__(3)
+
+
+assert nested_string_add_wrong_type() is NotImplemented
