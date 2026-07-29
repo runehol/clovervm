@@ -338,6 +338,23 @@ namespace cl::jit
                           "implemented");
 
                 case CL_JIT_MACHINE_INSTRUCTION_CASE(
+                    AddSMIWithSideExitInstruction, add_instruction)
+                {
+                    assembler.emit_arithmetic_reg(
+                        ArithmeticOp::Adds,
+                        assigned_register(locations,
+                                          ProgramValueRef(instruction)),
+                        assigned_register(locations, add_instruction.lhs()),
+                        assigned_register(locations, add_instruction.rhs()));
+                    assembler.b(
+                        AArch64Condition::Overflow,
+                        side_exit_target(
+                            add_instruction.side_exit(),
+                            add_instruction.side_exit_arguments()));
+                    break;
+                }
+
+                case CL_JIT_MACHINE_INSTRUCTION_CASE(
                     InlineTagGuardWithSideExitInstruction, guard_instruction)
                 {
                     XRegister input =

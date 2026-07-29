@@ -226,6 +226,16 @@ namespace cl::jit
                 CfgVerificationResult side_exit_verification{true, {}};
                 switch(instruction.kind())
                 {
+                    case InstructionKind::AddSMIWithSideExit:
+                        {
+                            auto owner =
+                                instruction.as<AddSMIWithSideExitInstruction>();
+                            side_exit_verification = verify_side_exit_owner(
+                                graph, instruction, owner.side_exit(),
+                                owner.side_exit_arguments(),
+                                side_exit_owner_counts);
+                            break;
+                        }
                     case InstructionKind::InlineTagGuardWithSideExit:
                         {
                             auto owner = instruction.as<

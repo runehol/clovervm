@@ -146,4 +146,54 @@ namespace cl::jit
         EXPECT_EQ(snapshot.id(), side_exit.instructions()[0]);
     }
 
+    TEST(JitSideExitLowering, ReplacesAddSMIAndRewritesItsResultUses)
+    {
+        CompilationSession session;
+        GraphBuilder builder(session, IRLevel::Core);
+        Block *entry = builder.emplace_block();
+        ParameterInstruction lhs =
+            builder.emplace_parameter<ParameterInstruction>(entry);
+        ParameterInstruction rhs =
+            builder.emplace_parameter<ParameterInstruction>(entry);
+        std::array<ProgramValueRef, 1> captured = {ProgramValueRef(lhs)};
+        SnapshotInstruction snapshot =
+            builder.emplace_instruction<SnapshotInstruction>(entry, captured,
+                                                             BytecodePC{37});
+        AddSMIInstruction add = builder.emplace_instruction<AddSMIInstruction>(
+            entry, TaggedValueRef(lhs), TaggedValueRef(rhs),
+            SnapshotRef(snapshot));
+        ReturnInstruction return_instruction =
+            builder.emplace_instruction<ReturnInstruction>(entry,
+                                                           TaggedValueRef(add));
+        ControlFlowGraph *graph = builder.finalize();
+
+        SunkInstructionIds sunk = sink_snapshots(*graph);
+        auto lowered = lower_side_exits(session, *graph, sunk);
+
+        ASSERT_TRUE(lowered);
+        EXPECT_TRUE(std::move(lowered).value());
+        EXPECT_EQ(IRLevel::Machine, graph->ir_level());
+        ASSERT_EQ(2u, entry->instructions().size());
+        auto owner =
+            entry->instruction_at(0).as<AddSMIWithSideExitInstruction>();
+        EXPECT_TRUE(add.is_poisoned());
+        EXPECT_FALSE(snapshot.is_poisoned());
+        EXPECT_EQ(lhs.id(), owner.lhs().instruction_id());
+        EXPECT_EQ(rhs.id(), owner.rhs().instruction_id());
+        ASSERT_EQ(1u, owner.side_exit_arguments().size());
+        EXPECT_EQ(lhs.id(), owner.side_exit_arguments()[0].instruction_id());
+
+        ReturnInstruction rewritten_return =
+            entry->instruction_at(1).as<ReturnInstruction>();
+        EXPECT_TRUE(return_instruction.is_poisoned());
+        EXPECT_EQ(owner.id(), rewritten_return.return_value().instruction_id());
+
+        ASSERT_EQ(1u, graph->side_exits().size());
+        const SideExit &side_exit = graph->side_exit(owner.side_exit());
+        ASSERT_EQ(1u, side_exit.inputs().size());
+        EXPECT_EQ(lhs.id(), side_exit.inputs()[0].instruction_id());
+        ASSERT_EQ(1u, side_exit.instructions().size());
+        EXPECT_EQ(snapshot.id(), side_exit.instructions()[0]);
+    }
+
 }  // namespace cl::jit

@@ -26,6 +26,7 @@ namespace cl::jit
     {
         constexpr PhysicalRegister x0(RegisterClass::GPR, 0);
         constexpr PhysicalRegister x1(RegisterClass::GPR, 1);
+        constexpr PhysicalRegister x2(RegisterClass::GPR, 2);
 
         MachineAddress no_side_exit_thunk()
         {
@@ -250,6 +251,75 @@ namespace cl::jit
                   execute_guard(InlineValueClass::SMIOrBoolean, Value::True()));
         EXPECT_EQ(static_cast<uint64_t>(Value::Ellipsis().as.integer),
                   execute_guard(InlineValueClass::SMIOrBoolean, Value::None()));
+    }
+
+    TEST(AArch64Execution, ExecutesAddSMIWithColdOverflowSideExit)
+    {
+        test::VmTestContext vm;
+        ThreadState::ActivationScope activation_scope(vm.thread());
+        CodeObject *code_object = vm.compile_file(L"pass\n");
+        code_object->function_signature.n_parameters = 2;
+        BytecodeStateOrder state_order(*code_object);
+
+        CompilationSession session;
+        GraphBuilder builder(session, IRLevel::Machine);
+        builder.set_bytecode_state_order(state_order);
+        Block *entry = builder.emplace_block();
+        ParameterInstruction lhs =
+            builder.emplace_parameter<ParameterInstruction>(entry);
+        ParameterInstruction rhs =
+            builder.emplace_parameter<ParameterInstruction>(entry);
+        std::vector<ProgramValueRef> captured(state_order.size(),
+                                              ProgramValueRef(lhs));
+        SnapshotInstruction snapshot =
+            builder.make_instruction<SnapshotInstruction>(captured,
+                                                          BytecodePC{17});
+        std::array<ProgramValueRef, 1> inputs = {ProgramValueRef(lhs)};
+        std::array<InstructionId, 1> retained = {snapshot.id()};
+        SideExitId side_exit = builder.emplace_side_exit(inputs, retained);
+        AddSMIWithSideExitInstruction add =
+            builder.emplace_instruction<AddSMIWithSideExitInstruction>(
+                entry, TaggedValueRef(lhs), TaggedValueRef(rhs), inputs,
+                side_exit);
+        MovInstruction move = builder.emplace_instruction<MovInstruction>(
+            entry, TaggedValueRef(add));
+        builder.emplace_instruction<ReturnInstruction>(entry,
+                                                       TaggedValueRef(move));
+        ControlFlowGraph *graph = builder.finalize();
+
+        LocationAssignmentsBuilder assignment_builder;
+        assignment_builder.assign(ProgramValueRef(lhs),
+                                  PhysicalLocation::reg(x0));
+        assignment_builder.assign(ProgramValueRef(rhs),
+                                  PhysicalLocation::reg(x1));
+        assignment_builder.assign(ProgramValueRef(add),
+                                  PhysicalLocation::reg(x2));
+        assignment_builder.assign(ProgramValueRef(move),
+                                  PhysicalLocation::reg(x0));
+        LocationAssignments locations =
+            std::move(assignment_builder).finalize();
+
+        CodeCache cache;
+        MachineAddress side_exit_thunk =
+            detail::MachineAddressAccess::from_pointer(
+                reinterpret_cast<const void *>(&inline_tag_guard_side_exit));
+        auto emission =
+            emit_aarch64_from_cfg(*graph, locations, cache, side_exit_thunk);
+        ASSERT_TRUE(emission);
+        PublishedCode code = std::move(emission).value();
+
+        using Function = uint64_t (*)(uint64_t, uint64_t);
+        Function function =
+            reinterpret_cast<Function>(code.entry().bits_for_indirect_target());
+        EXPECT_EQ(
+            static_cast<uint64_t>(Value::from_smi(42).as.integer),
+            function(static_cast<uint64_t>(Value::from_smi(19).as.integer),
+                     static_cast<uint64_t>(Value::from_smi(23).as.integer)));
+        EXPECT_EQ(
+            static_cast<uint64_t>(Value::Ellipsis().as.integer),
+            function(static_cast<uint64_t>(
+                         Value::from_smi(value_smi_max).as.integer),
+                     static_cast<uint64_t>(Value::from_smi(1).as.integer)));
     }
 
     TEST(AArch64Execution, CompilesAllocatedCfg)

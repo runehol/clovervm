@@ -146,6 +146,12 @@ namespace cl::jit
                     }
                     switch(instruction.kind())
                     {
+                        case InstructionKind::AddSMI:
+                            plans.push_back(plan_side_exit(
+                                graph, *block, instruction,
+                                instruction.as<AddSMIInstruction>().snapshot(),
+                                sunk_instructions, positions, ordinal));
+                            break;
                         case InstructionKind::InlineTagGuard:
                             plans.push_back(plan_side_exit(
                                 graph, *block, instruction,
@@ -244,6 +250,16 @@ namespace cl::jit
                     context.emplace_side_exit(plan.inputs, plan.retained);
                 switch(instruction.kind())
                 {
+                    case InstructionKind::AddSMI:
+                        {
+                            AddSMIInstruction add =
+                                instruction.as<AddSMIInstruction>();
+                            return RewriteResult::replace(
+                                context.make_instruction<
+                                    AddSMIWithSideExitInstruction>(
+                                    add.lhs(), add.rhs(), plan.inputs,
+                                    side_exit));
+                        }
                     case InstructionKind::InlineTagGuard:
                         {
                             InlineTagGuardInstruction guard =
