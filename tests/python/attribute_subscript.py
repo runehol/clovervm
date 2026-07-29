@@ -255,3 +255,21 @@ except ValueError:
     raised_lookup_caught = True
 assert raised_lookup_caught
 assert dynamic_get(raising_bag, 2) == 32
+
+# Slice repr exposes all fields, and indices normalizes bounds for a sequence length.
+assert repr(slice(1, 2, None)) == "slice(1, 2, None)"
+
+
+def assert_slice_indices(value, length, start, stop, step):
+    normalized = value.indices(length)
+    assert normalized[0] == start
+    assert normalized[1] == stop
+    assert normalized[2] == step
+
+
+assert_slice_indices(slice(None, None), 5, 0, 5, 1)
+assert_slice_indices(slice(None, None, -1), 5, 4, -1, -1)
+assert_slice_indices(slice(0, -1), 5, 0, 4, 1)
+assert_slice_indices(slice(-10, 10), 5, 0, 5, 1)
+assert_slice_indices(slice(10, -10, -2), 5, 4, -1, -2)
+assert_slice_indices(slice(1, 8, 2), 10, 1, 8, 2)

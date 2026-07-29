@@ -133,26 +133,6 @@ static void expect_python_error(const wchar_t *source,
                                expected_type_name, expected_message);
 }
 
-static void expect_slice_indices_tuple(Value actual, int64_t expected_start,
-                                       int64_t expected_stop,
-                                       int64_t expected_step)
-{
-    ASSERT_TRUE(can_convert_to<Tuple>(actual));
-    Tuple *tuple = assume_convert_to<Tuple>(actual);
-    ASSERT_EQ(3u, tuple->size());
-    EXPECT_EQ(Value::from_smi(expected_start), tuple->item_unchecked(0));
-    EXPECT_EQ(Value::from_smi(expected_stop), tuple->item_unchecked(1));
-    EXPECT_EQ(Value::from_smi(expected_step), tuple->item_unchecked(2));
-}
-
-static void expect_slice_indices(const wchar_t *source, int64_t expected_start,
-                                 int64_t expected_stop, int64_t expected_step)
-{
-    test::FileRunner file_runner(source);
-    expect_slice_indices_tuple(file_runner.return_value, expected_start,
-                               expected_stop, expected_step);
-}
-
 static void expect_string_value(Value actual, const wchar_t *expected)
 {
     ASSERT_TRUE(can_convert_to<String>(actual));
@@ -2119,26 +2099,6 @@ TEST(Interpreter, slice_constructor_rejects_keywords)
 {
     expect_python_error(L"slice(stop=5)\n", L"TypeError",
                         L"invalid keyword argument");
-}
-
-TEST(Interpreter, slice_repr_shows_all_three_fields)
-{
-    test::FileRunner file_runner(L"repr(slice(1, 2, None))\n");
-
-    ASSERT_TRUE(can_convert_to<String>(file_runner.return_value));
-    EXPECT_STREQ(L"slice(1, 2, None)",
-                 string_as_wchar_t(TValue<String>::from_value_assumed(
-                     file_runner.return_value)));
-}
-
-TEST(Interpreter, slice_indices_normalizes_smi_fields)
-{
-    expect_slice_indices(L"slice(None, None).indices(5)\n", 0, 5, 1);
-    expect_slice_indices(L"slice(None, None, -1).indices(5)\n", 4, -1, -1);
-    expect_slice_indices(L"slice(0, -1).indices(5)\n", 0, 4, 1);
-    expect_slice_indices(L"slice(-10, 10).indices(5)\n", 0, 5, 1);
-    expect_slice_indices(L"slice(10, -10, -2).indices(5)\n", 4, -1, -2);
-    expect_slice_indices(L"slice(1, 8, 2).indices(10)\n", 1, 8, 2);
 }
 
 TEST(Interpreter, slice_indices_rejects_invalid_consumed_values)
