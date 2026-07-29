@@ -101,3 +101,116 @@ AddedNewBase.__new__ = added_new
 assert AddedNewDerived(4) == 4
 del AddedNewBase.__new__
 assert AddedNewDerived().__class__ is AddedNewDerived
+
+
+# Class construction preserves keyword, default, varargs, and positional-only binding.
+class KeywordInit:
+    def __init__(self, a, b=2):
+        self.value = a + b
+
+
+assert KeywordInit(a=3).value == 5
+
+
+class KeywordOnlyInitDefault:
+    def __init__(self, *, value=7):
+        self.value = value
+
+
+assert KeywordOnlyInitDefault().value == 7
+
+
+class VarargsKeywordOnlyInitDefault:
+    def __init__(self, *items, sep=9):
+        self.value = len(items) * 10 + sep
+
+
+assert VarargsKeywordOnlyInitDefault(1, 2).value == 29
+
+
+class KwargsInit:
+    def __init__(self, a, **kwargs):
+        self.value = a * 10 + kwargs["b"]
+
+
+assert KwargsInit(3, b=4).value == 34
+
+
+class KwargsNew:
+    def __new__(cls, **kwargs):
+        return kwargs["x"]
+
+
+assert KwargsNew(x=7) == 7
+
+
+class PositionalOnlySelf:
+    def __init__(self, /, value):
+        self.value = value
+
+
+assert PositionalOnlySelf(value=8).value == 8
+
+
+class PositionalOnlyCls:
+    def __new__(cls, /, value):
+        return value
+
+
+assert PositionalOnlyCls(value=9) == 9
+
+
+class RequiredKeywordOnlyInit:
+    def __init__(self, a=1, *, b, c=3):
+        self.value = a * 100 + b * 10 + c
+
+
+assert RequiredKeywordOnlyInit(b=2).value == 123
+
+
+class SelfDefaultInit:
+    def __init__(self=0, *, value=7):
+        self.value = value
+
+
+assert SelfDefaultInit().value == 7
+
+
+class NewWithoutInit:
+    def __new__(cls):
+        return 42
+
+
+assert NewWithoutInit() == 42
+
+
+class NewReceivesClass:
+    def __new__(cls):
+        return cls is NewReceivesClass
+
+
+assert NewReceivesClass()
+
+
+class NewPositionalDefault:
+    def __new__(cls, value=7):
+        return value
+
+
+assert NewPositionalDefault() == 7
+
+
+class NewKeywordCall:
+    def __new__(cls, value=7):
+        return value
+
+
+assert NewKeywordCall(value=11) == 11
+
+
+class NewKeywordOnlyDefault:
+    def __new__(cls, *, value=7):
+        return value
+
+
+assert NewKeywordOnlyDefault() == 7

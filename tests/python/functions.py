@@ -133,3 +133,124 @@ class ConstructorVarargsDefaultHoles:
 
 assert ConstructorVarargsDefaultHoles(b=2).value == 1023
 assert ConstructorVarargsDefaultHoles(4, 5, 6, b=7).value == 4273
+
+
+# Function calls bind reordered keywords, defaults, varargs, and keyword-only arguments.
+def reordered_keywords(a, b, c):
+    return a * 100 + b * 10 + c
+
+
+assert reordered_keywords(1, c=3, b=2) == 123
+
+
+def cached_keywords(a, b):
+    return a * 10 + b
+
+
+assert cached_keywords(a=1, b=2) == 12
+assert cached_keywords(a=3, b=4) == 34
+
+
+def keyword_defaults(a, b=1, c=2, d=4):
+    return a * 1000 + b * 100 + c * 10 + d
+
+
+assert keyword_defaults(7, 8, d=9) == 7829
+
+
+def required_before_default(a, b=2):
+    return a * 10 + b
+
+
+assert required_before_default(a=3) == 32
+
+
+def keyword_call_with_varargs(a, b=2, *args):
+    return a * 10 + b + len(args)
+
+
+assert keyword_call_with_varargs(a=3) == 32
+
+
+def keyword_only_defaults(a, *, b=2, c=3):
+    return a * 100 + b * 10 + c
+
+
+assert keyword_only_defaults(4, c=5) == 425
+
+
+def varargs_before_keyword_only(*args, sep=9):
+    return len(args) * 10 + sep
+
+
+assert varargs_before_keyword_only(1, 2, sep=3) == 23
+
+
+def required_keyword_only(a=1, *, b, c=3):
+    return a * 100 + b * 10 + c
+
+
+assert required_keyword_only(b=2) == 123
+
+
+def positional_only(a, /):
+    return a
+
+
+assert positional_only(7) == 7
+
+
+def positional_only_with_keyword(a, /, b):
+    return a * 10 + b
+
+
+assert positional_only_with_keyword(3, b=4) == 34
+
+
+def positional_only_defaults(a=3, /, b=4):
+    return a * 10 + b
+
+
+assert positional_only_defaults() == 34
+
+
+def positional_only_kwargs(a, /, **kwargs):
+    return a * 10 + kwargs["a"]
+
+
+assert positional_only_kwargs(3, a=4) == 34
+
+
+def collect_empty_kwargs(**kwargs):
+    return len(kwargs)
+
+
+assert collect_empty_kwargs() == 0
+
+
+def collect_ordered_kwargs(**kwargs):
+    return str(kwargs)
+
+
+assert collect_ordered_kwargs(c=3, a=1, b=2) == "{'c': 3, 'a': 1, 'b': 2}"
+
+
+def collect_unmatched_kwargs(a, *, b=2, **kwargs):
+    return a * 1000 + b * 100 + kwargs["c"] * 10 + kwargs["d"]
+
+
+assert collect_unmatched_kwargs(1, d=4, b=3, c=2) == 1324
+
+
+def fresh_kwargs(**kwargs):
+    return kwargs
+
+
+assert fresh_kwargs() is not fresh_kwargs()
+
+
+def collect_args_and_kwargs(a, *args, **kwargs):
+    return a * 100 + len(args) * 10 + kwargs["x"]
+
+
+assert collect_args_and_kwargs(1, 2, 3, x=4) == 124

@@ -71,6 +71,15 @@ keyword_varargs_obj = KeywordMethodVarargs()
 keyword_varargs_obj.value = 2000
 assert keyword_varargs_obj.method(4, 5, 6, b=7) == 6273
 
+
+# Bound methods collect explicit keyword arguments.
+class ExplicitKeywordCollector:
+    def collect(self, **kwargs):
+        return kwargs["x"]
+
+
+assert ExplicitKeywordCollector().collect(x=7) == 7
+
 class Product:
     def __init__(self, value=0, *, scale=1):
         self.value = value * scale
