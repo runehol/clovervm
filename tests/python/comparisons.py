@@ -57,3 +57,54 @@ assert not nan > nan
 assert not nan >= nan
 assert not nan == nan
 assert nan != nan
+
+
+# Equality dispatch handles identity fallback, != inversion, double dispatch, and subclass priority.
+class NotImplementedEquality:
+    def __eq__(self, other):
+        return NotImplemented
+
+
+same_identity = NotImplementedEquality()
+different_identity = NotImplementedEquality()
+assert same_identity == same_identity
+assert not same_identity == different_identity
+
+
+class AlwaysEqual:
+    def __eq__(self, other):
+        return True
+
+
+class NeverEqual:
+    def __eq__(self, other):
+        return False
+
+
+assert not AlwaysEqual() != AlwaysEqual()
+assert NeverEqual() != NeverEqual()
+
+
+class CountEqualityCalls:
+    count = 0
+
+    def __eq__(self, other):
+        CountEqualityCalls.count += 1
+        return NotImplemented
+
+
+CountEqualityCalls() == CountEqualityCalls()
+assert CountEqualityCalls.count == 2
+
+
+class EqualityBase:
+    def __eq__(self, other):
+        return 3
+
+
+class EqualityDerived(EqualityBase):
+    def __eq__(self, other):
+        return 7
+
+
+assert (EqualityBase() == EqualityDerived()) == 7
