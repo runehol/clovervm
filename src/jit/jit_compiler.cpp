@@ -43,9 +43,9 @@ namespace cl::jit
             options.observer->on_core_ir_optimized(*graph);
         }
 
-        auto code_result =
-            compile_to_aarch64(session, *graph, thread.code_cache(),
-                               detail::MachineAddressAccess::from_bits(0));
+        auto code_result = compile_to_aarch64(
+            session, *graph, thread.code_cache(),
+            detail::MachineAddressAccess::from_bits(0), options.observer);
         if(!code_result)
         {
             return Result<JitCodeObject *, JitCompilationError>::error(

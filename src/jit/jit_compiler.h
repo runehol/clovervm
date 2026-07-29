@@ -23,6 +23,7 @@ namespace cl
             virtual void on_bytecode(const CodeObject &) {}
             virtual void on_core_ir_translated(const ControlFlowGraph &) {}
             virtual void on_core_ir_optimized(const ControlFlowGraph &) {}
+            virtual void on_machine_ir(const ControlFlowGraph &) {}
             virtual void on_machine_code(const PublishedCode &) {}
         };
 

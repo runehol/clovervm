@@ -2,6 +2,7 @@
 
 #include "jit/aarch64_allocation_constraints.h"
 #include "jit/aarch64_cfg_emitter.h"
+#include "jit/jit_compiler.h"
 #include "jit/side_exit_lowering.h"
 
 #include <cassert>
@@ -11,7 +12,8 @@ namespace cl::jit
 {
     Result<PublishedCode, AArch64CompilationError>
     compile_to_aarch64(CompilationSession &session, ControlFlowGraph &graph,
-                       CodeCache &cache, MachineAddress side_exit_thunk)
+                       CodeCache &cache, MachineAddress side_exit_thunk,
+                       JitCompilationObserver *observer)
     {
         assert(graph.ir_level() == IRLevel::Core);
         SunkInstructionIds sunk_instructions = sink_snapshots(graph);
@@ -32,6 +34,10 @@ namespace cl::jit
                 std::move(locations_result).error());
         }
         LocationAssignments locations = std::move(locations_result).value();
+        if(observer != nullptr)
+        {
+            observer->on_machine_ir(graph);
+        }
 
         auto emission =
             emit_aarch64_from_cfg(graph, locations, cache, side_exit_thunk);

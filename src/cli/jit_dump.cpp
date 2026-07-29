@@ -29,7 +29,9 @@
 #include <string>
 #include <sys/wait.h>
 #include <system_error>
+#include <type_traits>
 #include <utility>
+#include <variant>
 #include <vector>
 
 #include <spawn.h>
@@ -54,6 +56,55 @@ namespace
         std::wstring source;
         std::optional<std::wstring> filename;
     };
+
+    const char *
+    jit_compilation_error_name(const cl::jit::JitCompilationError &error)
+    {
+        return std::visit(
+            [](auto value) -> const char * {
+                using Error = decltype(value);
+                if constexpr(std::is_same_v<Error,
+                                            cl::jit::RegisterAllocationError>)
+                {
+                    switch(value)
+                    {
+                        case cl::jit::RegisterAllocationError::
+                            UnsupportedSnapshotConsumer:
+                            return "UnsupportedSnapshotConsumer";
+                        case cl::jit::RegisterAllocationError::
+                            UnsupportedSameAsInput:
+                            return "UnsupportedSameAsInput";
+                        case cl::jit::RegisterAllocationError::
+                            UnsupportedTransferPoint:
+                            return "UnsupportedTransferPoint";
+                        case cl::jit::RegisterAllocationError::
+                            RequiresConstraintFixup:
+                            return "RequiresConstraintFixup";
+                        case cl::jit::RegisterAllocationError::
+                            RequiresSplittingOrSpilling:
+                            return "RequiresSplittingOrSpilling";
+                        case cl::jit::RegisterAllocationError::
+                            InsufficientTransferScratchRegisters:
+                            return "InsufficientTransferScratchRegisters";
+                    }
+                }
+                else
+                {
+                    static_assert(std::is_same_v<Error, cl::jit::JitCodeError>);
+                    switch(value)
+                    {
+                        case cl::jit::JitCodeError::PoolOutOfRange:
+                            return "PoolOutOfRange";
+                        case cl::jit::JitCodeError::AllocationFailure:
+                            return "AllocationFailure";
+                        case cl::jit::JitCodeError::PublicationFailure:
+                            return "PublicationFailure";
+                    }
+                }
+                return "Unknown";
+            },
+            error);
+    }
 
     CommandLine parse_command_line(int argc, const char *argv[],
                                    cxxopts::Options &options)
@@ -352,6 +403,11 @@ namespace
             fmt::print("Optimized Core IR:\n{}\n", cl::jit::format_ir(graph));
         }
 
+        void on_machine_ir(const cl::jit::ControlFlowGraph &graph) override
+        {
+            fmt::print("Machine IR:\n{}\n", cl::jit::format_ir(graph));
+        }
+
         void on_machine_code(const cl::jit::PublishedCode &code) override
         {
             std::vector<uint32_t> words = machine_words(code);
@@ -464,7 +520,8 @@ int main(int argc, const char *argv[])
         cl::jit::compile_jit_code(*thread, *function, compiler_options);
     if(!code_result)
     {
-        fmt::print(stderr, "JIT compilation failed\n");
+        fmt::print(stderr, "JIT compilation failed: {}\n",
+                   jit_compilation_error_name(code_result.error()));
         return 1;
     }
     return observer.succeeded() ? 0 : 1;
