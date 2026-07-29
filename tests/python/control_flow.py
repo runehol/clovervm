@@ -7,6 +7,29 @@ def maybe_write(flag):
 
 assert maybe_write(False) == 8
 
+# Float truthiness drives assertions, branches, and loop conditions.
+assert 1.0
+assert not 0.0
+
+if 1.0:
+    float_if_result = 1
+else:
+    float_if_result = 2
+assert float_if_result == 1
+
+if 0.0:
+    float_if_result = 1
+else:
+    float_if_result = 2
+assert float_if_result == 2
+
+float_while_guard = 1.0
+float_while_count = 0
+while float_while_guard:
+    float_while_count += 1
+    float_while_guard = 0.0
+assert float_while_count == 1
+
 b = 0
 a = 100
 while a:
