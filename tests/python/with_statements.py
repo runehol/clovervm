@@ -102,3 +102,71 @@ class Second:
 with First(), Second():
     exit_order = exit_order * 10 + 5
 assert exit_order == 13542
+
+# Exceptional __exit__ methods run once while nested manager exits remain suspended.
+raising_exit_log = 0
+
+
+class RaisingExitManager:
+    def __enter__(self):
+        return self
+
+    def __exit__(self, typ, exc, tb):
+        global raising_exit_log
+        raising_exit_log += 1
+        raise ValueError
+
+
+def return_through_raising_exit():
+    with RaisingExitManager():
+        return 7
+
+
+try:
+    return_through_raising_exit()
+    raising_exit_raised = False
+except ValueError:
+    raising_exit_raised = True
+assert raising_exit_raised
+assert raising_exit_log == 1
+
+suspended_exit_log = 0
+
+
+class RaisingOuter:
+    def __enter__(self):
+        global suspended_exit_log
+        suspended_exit_log = suspended_exit_log * 10 + 1
+        return self
+
+    def __exit__(self, typ, exc, tb):
+        global suspended_exit_log
+        suspended_exit_log = suspended_exit_log * 10 + 2
+        raise ValueError
+
+
+class ReturningInner:
+    def __enter__(self):
+        global suspended_exit_log
+        suspended_exit_log = suspended_exit_log * 10 + 3
+        return self
+
+    def __exit__(self, typ, exc, tb):
+        global suspended_exit_log
+        suspended_exit_log = suspended_exit_log * 10 + 4
+        return False
+
+
+def return_through_nested_managers():
+    with RaisingOuter():
+        with ReturningInner():
+            return 7
+
+
+try:
+    return_through_nested_managers()
+    nested_exit_raised = False
+except ValueError:
+    nested_exit_raised = True
+assert nested_exit_raised
+assert suspended_exit_log == 1342
