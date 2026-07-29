@@ -3,6 +3,29 @@ assert xs[0] == 1
 assert xs[1] == 2
 assert xs[2] == 4
 
+# List literals produce lists and evaluate elements from left to right.
+assert len([]) == 0
+
+
+list_literal_order = 0
+
+
+def next_list_literal_value():
+    global list_literal_order
+    value = list_literal_order
+    list_literal_order += 1
+    return value
+
+
+ordered_list = [
+    next_list_literal_value(),
+    next_list_literal_value(),
+    next_list_literal_value(),
+]
+assert ordered_list[0] == 0
+assert ordered_list[1] == 1
+assert ordered_list[2] == 2
+
 xs = [4, 7, 9]
 assert xs[1] == 7
 assert xs.__getitem__(1) == xs[1]
