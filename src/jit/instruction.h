@@ -2,7 +2,6 @@
 #define CL_JIT_INSTRUCTION_H
 
 #include "jit/side_exit_id.h"
-#include "object_model/shape_key.h"
 #include "object_model/value.h"
 #include "util/dense_id.h"
 
@@ -954,15 +953,13 @@ namespace cl::jit
 
     using InstructionAttributeStorage_Shape = uint64_t;
     using InstructionAttributeStorage_ValidityCell = uint64_t;
-    using InstructionAttributeStorage_ShapeKey = uint64_t;
+    using InstructionAttributeStorage_InlineValueClass = uint32_t;
     using InstructionAttributeStorage_ValueConstant = uint64_t;
     using InstructionAttributeStorage_BytecodePC = uint32_t;
     using InstructionAttributeStorage_SideExitId = uint32_t;
     using InstructionAttributeStorage_BlockEdge = uint32_t;
 
     static_assert(sizeof(uintptr_t) == sizeof(uint64_t));
-    static_assert(sizeof(ShapeKey) ==
-                  sizeof(InstructionAttributeStorage_ShapeKey));
     static_assert(sizeof(Value) ==
                   sizeof(InstructionAttributeStorage_ValueConstant));
 
@@ -999,11 +996,11 @@ namespace cl::jit
         return reinterpret_cast<ValidityCell *>(static_cast<uintptr_t>(value));
     }
 
-    inline ShapeKey
-    decode_instruction_attribute_ShapeKey(const CompilationStorage *,
-                                          const uint32_t *words)
+    inline InlineValueClass
+    decode_instruction_attribute_InlineValueClass(const CompilationStorage *,
+                                                  const uint32_t *words)
     {
-        return decode_instruction_attribute_storage<ShapeKey>(words);
+        return decode_instruction_attribute_storage<InlineValueClass>(words);
     }
 
     inline Value
@@ -1069,10 +1066,11 @@ namespace cl::jit
             static_cast<uint64_t>(reinterpret_cast<uintptr_t>(validity)));
     }
 
-    inline void encode_instruction_attribute_ShapeKey(uint32_t *words,
-                                                      ShapeKey shape_key)
+    inline void
+    encode_instruction_attribute_InlineValueClass(uint32_t *words,
+                                                  InlineValueClass value_class)
     {
-        encode_instruction_attribute_storage(words, shape_key);
+        encode_instruction_attribute_storage(words, value_class);
     }
 
     inline void encode_instruction_attribute_ValueConstant(uint32_t *words,
@@ -1146,7 +1144,7 @@ namespace cl::jit
     CL_JIT_OPERAND_TYPE_INNER(operand_class, representation)
 #define CL_JIT_ATTRIBUTE_TYPE_Shape Shape *
 #define CL_JIT_ATTRIBUTE_TYPE_ValidityCell ValidityCell *
-#define CL_JIT_ATTRIBUTE_TYPE_ShapeKey ShapeKey
+#define CL_JIT_ATTRIBUTE_TYPE_InlineValueClass InlineValueClass
 #define CL_JIT_ATTRIBUTE_TYPE_ValueConstant Value
 #define CL_JIT_ATTRIBUTE_TYPE_BytecodePC BytecodePC
 #define CL_JIT_ATTRIBUTE_TYPE_SideExitId SideExitId
@@ -1567,7 +1565,7 @@ namespace cl::jit
 #undef CL_JIT_ATTRIBUTE_TYPE_SideExitId
 #undef CL_JIT_ATTRIBUTE_TYPE_BytecodePC
 #undef CL_JIT_ATTRIBUTE_TYPE_ValueConstant
-#undef CL_JIT_ATTRIBUTE_TYPE_ShapeKey
+#undef CL_JIT_ATTRIBUTE_TYPE_InlineValueClass
 #undef CL_JIT_ATTRIBUTE_TYPE_ValidityCell
 #undef CL_JIT_ATTRIBUTE_TYPE_Shape
 #undef CL_JIT_OPERAND_TYPE

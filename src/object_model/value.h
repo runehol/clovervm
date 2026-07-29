@@ -82,6 +82,29 @@ namespace cl
     static_assert((value_not_implemented & value_tag_mask) !=
                   (value_ellipsis & value_tag_mask));
 
+    enum class InlineValueClass : uint32_t
+    {
+        SMI = uint32_t(value_tag_mask),
+        Boolean =
+            (uint32_t(value_boolean_tag) << 16) | uint32_t(value_tag_mask),
+        SMIOrBoolean = uint32_t(value_not_smi_or_boolean_mask),
+    };
+
+    constexpr uint16_t inline_value_class_mask(InlineValueClass value_class)
+    {
+        return uint16_t(uint32_t(value_class));
+    }
+
+    constexpr uint16_t
+    inline_value_class_expected_bits(InlineValueClass value_class)
+    {
+        return uint16_t(uint32_t(value_class) >> 16);
+    }
+
+    static_assert(value_tag_mask <= UINT16_MAX);
+    static_assert(value_boolean_tag <= UINT16_MAX);
+    static_assert(value_not_smi_or_boolean_mask <= UINT16_MAX);
+
     enum class ValueStorageClass
     {
         Inline,

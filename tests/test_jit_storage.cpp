@@ -360,6 +360,10 @@ namespace cl::jit
                 decltype(std::declval<const ValidityCellGuardInstruction &>()
                              .validity()),
                 ValidityCell *>);
+        static_assert(std::is_same_v<
+                      decltype(std::declval<const InlineTagGuardInstruction &>()
+                                   .expected_class()),
+                      InlineValueClass>);
         static_assert(
             std::is_same_v<
                 decltype(std::declval<const PythonCallInstruction &>()
@@ -419,7 +423,7 @@ namespace cl::jit
         EXPECT_TRUE(SnapshotInstruction::OperandsAreIndirect);
         EXPECT_TRUE(ShapeGuardInstruction::OperandsAreIndirect);
         EXPECT_TRUE(ValidityCellGuardInstruction::OperandsAreIndirect);
-        EXPECT_TRUE(ShapeKeyGuardInstruction::OperandsAreIndirect);
+        EXPECT_FALSE(InlineTagGuardInstruction::OperandsAreIndirect);
         EXPECT_EQ(1u, instruction_kind_metadata(InstructionKind::UnboxF64)
                           .fixed_operand_count);
         EXPECT_FALSE(UnboxF64Instruction::OperandsAreIndirect);
@@ -475,7 +479,7 @@ namespace cl::jit
     }
 
     TEST(JitInstructionConstruction,
-         StoresWideGuardAttributesWithIndirectOperands)
+         StoresGuardAttributesInTheirSchemaSelectedLayouts)
     {
         test::VmTestContext context;
         ThreadState::ActivationScope activation_scope(context.thread());
@@ -494,18 +498,11 @@ namespace cl::jit
         ValidityCellGuardInstruction validity_guard =
             builder.make_instruction<ValidityCellGuardInstruction>(
                 value, snapshot, validity);
-        ShapeKey shape_key = ShapeKey::from_shape(shape);
-        ShapeKeyGuardInstruction shape_key_guard =
-            builder.make_instruction<ShapeKeyGuardInstruction>(value, snapshot,
-                                                               shape_key);
-
         EXPECT_EQ(shape, shape_guard.expected_shape());
         EXPECT_EQ(validity, validity_guard.validity());
-        EXPECT_EQ(shape_key, shape_key_guard.expected_shape_key());
 
         for(Instruction instruction:
-            {Instruction(shape_guard), Instruction(validity_guard),
-             Instruction(shape_key_guard)})
+            {Instruction(shape_guard), Instruction(validity_guard)})
         {
             ASSERT_TRUE(instruction.operands_are_indirect());
             ASSERT_EQ(2u, instruction.operand_count());
@@ -514,6 +511,16 @@ namespace cl::jit
             EXPECT_EQ(snapshot.instruction_id().value(),
                       instruction.operand_word(1));
         }
+
+        InlineTagGuardInstruction inline_guard =
+            builder.make_instruction<InlineTagGuardInstruction>(
+                value, snapshot, InlineValueClass::SMIOrBoolean);
+        EXPECT_EQ(InlineValueClass::SMIOrBoolean,
+                  inline_guard.expected_class());
+        EXPECT_FALSE(inline_guard.operands_are_indirect());
+        EXPECT_EQ(value.instruction_id().value(), inline_guard.operand_word(0));
+        EXPECT_EQ(snapshot.instruction_id().value(),
+                  inline_guard.operand_word(1));
     }
 
     TEST(JitInstructionTraversal, WalksProgramValueAndSnapshotReferences)

@@ -40,6 +40,27 @@ namespace cl::jit
         EXPECT_EQ(format_ir(*graph), fmt::format("{}", *graph));
     }
 
+    TEST(JitIRPrint, PrintsInlineValueClassBySemanticName)
+    {
+        CompilationSession session;
+        GraphBuilder builder(session, IRLevel::Core);
+        Block *entry = builder.emplace_block();
+        TaggedValueRef value(
+            builder.emplace_parameter<ParameterInstruction>(entry));
+        SnapshotRef snapshot(builder.emplace_instruction<SnapshotInstruction>(
+            entry, std::span<const ProgramValueRef>{}, BytecodePC{7}));
+        InlineTagGuardInstruction guard =
+            builder.emplace_instruction<InlineTagGuardInstruction>(
+                entry, value, snapshot, InlineValueClass::SMIOrBoolean);
+        builder.emplace_instruction<ReturnInstruction>(entry,
+                                                       TaggedValueRef(guard));
+        ControlFlowGraph *graph = builder.finalize();
+
+        EXPECT_EQ("%2 = inline_tag_guard %0, %1 "
+                  "{expected_class = smi_or_boolean}",
+                  format_instruction(*graph, guard));
+    }
+
     TEST(JitIRPrint, SegmentsSnapshotsAndNamesEdgeAttributes)
     {
         CompilationSession session;

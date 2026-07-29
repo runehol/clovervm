@@ -3,10 +3,10 @@
 #include "jit/compilation_storage.h"
 #include "jit/control_flow_graph.h"
 #include "jit/instruction.h"
+#include "runtime/fatal.h"
 
 #include <fmt/format.h>
 
-#include <bit>
 #include <cassert>
 #include <cctype>
 #include <cstddef>
@@ -81,12 +81,6 @@ namespace cl::jit
                 return id_for(validities_, validity);
             }
 
-            size_t shape_key_id(ShapeKey key)
-            {
-                uintptr_t bits = std::bit_cast<uintptr_t>(key);
-                return id_for(shape_keys_, bits);
-            }
-
         private:
             void add_result(Instruction instruction)
             {
@@ -109,7 +103,6 @@ namespace cl::jit
             std::unordered_map<uintptr_t, size_t> heap_values_;
             std::unordered_map<const Shape *, size_t> shapes_;
             std::unordered_map<const ValidityCell *, size_t> validities_;
-            std::unordered_map<uintptr_t, size_t> shape_keys_;
         };
 
         std::string instruction_mnemonic(std::string_view class_name)
@@ -200,10 +193,23 @@ namespace cl::jit
                 format("<validity{}>", state_.validity_id(validity));
             }
 
-            void attribute_ShapeKey(std::string_view name, ShapeKey key)
+            void attribute_InlineValueClass(std::string_view name,
+                                            InlineValueClass value_class)
             {
                 attribute_separator(name);
-                format("<shape_key{}>", state_.shape_key_id(key));
+                switch(value_class)
+                {
+                    case InlineValueClass::SMI:
+                        write("smi");
+                        return;
+                    case InlineValueClass::Boolean:
+                        write("boolean");
+                        return;
+                    case InlineValueClass::SMIOrBoolean:
+                        write("smi_or_boolean");
+                        return;
+                }
+                fatal("invalid inline value class");
             }
 
             void attribute_ValueConstant(std::string_view name, Value value)

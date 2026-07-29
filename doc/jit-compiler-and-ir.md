@@ -595,7 +595,7 @@ returns a new SSA value rather than changing the facts attached to its input:
 
 ```text
 %value: Value
-%smi: Smi = ShapeKeyCheck %value, Smi
+%smi: Smi = InlineTagGuard %value, Smi
 %result: Smi = AddSMI %smi, %other_smi
 ```
 
@@ -723,7 +723,7 @@ machine location and carries no Python type evidence. A speculative check or
 action consumes it as the failure continuation:
 
 ```text
-%lhs_smi: Smi = ShapeKeyCheck %lhs, Smi
+%lhs_smi: Smi = InlineTagGuard %lhs, Smi
     deopt %snapshot
 
 %result: Smi = AddSMI %lhs_smi, %rhs_smi
@@ -1223,8 +1223,8 @@ directly from decoded bytecode and its IC snapshot. For example:
 ```text
 Add
     -> Snapshot(entry frame state)
-    -> ShapeKeyCheck
-    -> ShapeKeyCheck
+    -> InlineTagGuard | ShapeGuard
+    -> InlineTagGuard | ShapeGuard
     -> ValidityCellCheck          # when required
     -> AddSMI | recognized operation | TrustedFunctionCall | PythonFunctionCall
 ```
@@ -1244,8 +1244,8 @@ those results, making its dependence on the successful guards an ordinary SSA
 dependency:
 
 ```text
-%lhs_smi: Smi = ShapeKeyCheck %lhs, Smi
-%rhs_smi: Smi = ShapeKeyCheck %rhs, Smi
+%lhs_smi: Smi = InlineTagGuard %lhs, Smi
+%rhs_smi: Smi = InlineTagGuard %rhs, Smi
 %result: Smi = AddSMI %lhs_smi, %rhs_smi
 ```
 
@@ -1302,7 +1302,7 @@ does not need to infer the transition from a later IC.
 receiver SSA value. Shape-changing operations produce a successor receiver:
 
 ```text
-%receiver_s0: Shape<S0> = ShapeKeyCheck %receiver, S0
+%receiver_s0: Shape<S0> = ShapeGuard %receiver, S0
 
 %receiver_s1: Shape<S1> = AddOwnProperty(
     %receiver_s0, %stored_value, location, next_shape=S1)
@@ -1348,7 +1348,7 @@ StoreExisting %self_s1, %incremented, location
 %self_after: Object = WeakenShape %self_s1
     # likely Shape<S1>, but no longer guaranteed
 
-%self_s1_again: Shape<S1> = ShapeKeyCheck %self_after, S1
+%self_s1_again: Shape<S1> = ShapeGuard %self_after, S1
 StoreExisting %self_s1_again, %multiplied, location
 ```
 
@@ -1413,11 +1413,11 @@ Relevant properties include whether an operation:
 - is pure arithmetic.
 
 Operation definitions provide precise defaults where possible.
-`ShapeKeyCheck`, for example, has a standard dependency and deoptimization
-shape. Python calls, unknown operations, and recognized trusted native handlers
-begin maximally conservative. Trusted-handler descriptors may name the selected
-operation and result shape without weakening effects; later analysis records
-effects proven absent when optimization needs that precision.
+Value and shape guards, for example, have a standard dependency and
+deoptimization shape. Python calls, unknown operations, and recognized trusted
+native handlers begin maximally conservative. Trusted-handler descriptors may
+name the selected operation and result shape without weakening effects; later
+analysis records effects proven absent when optimization needs that precision.
 
 The authoritative instruction schema declares each kind's `MustEffects` and
 `MayEffects` bounds. New instructions default to the conservative `MayEffects`

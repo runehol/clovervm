@@ -236,7 +236,7 @@ ProgramValue   -> one InstructionId word wrapped as ProgramValueRef
 Snapshot       -> one InstructionId word wrapped as SnapshotRef
 BlockEdge      -> one BlockEdgeId word resolved through CompilationStorage
 Shape          -> two words containing Shape *
-ShapeKey       -> two words containing ShapeKey
+InlineValueClass -> one word containing a packed semantic inline class
 ValidityCell   -> two words containing ValidityCell *
 BytecodePC     -> one word
 ValueConstant  -> two words containing Value
@@ -652,6 +652,12 @@ ShapeGuard
     expected_shape: attr Shape
     snapshot: Snapshot
 
+InlineTagGuard
+    result: ProgramValue(TaggedValue)
+    value: ProgramValue(TaggedValue)
+    expected_class: attr InlineValueClass
+    snapshot: Snapshot
+
 ValidityCellGuard
     result: ProgramValue(TaggedValue)
     value: ProgramValue(TaggedValue)
@@ -789,7 +795,7 @@ The generated dispatch interprets each payload word only according to the
 schema for that instruction kind. `ProgramValue` and `Snapshot` operands are
 ordinary result-reference uses for SSA, liveness, and rewriting. Attribute
 slots such as `BlockEdge`,
-`Shape`, `ShapeKey`, `ValidityCell`, bytecode PCs, and value
+`Shape`, `InlineValueClass`, `ValidityCell`, bytecode PCs, and value
 constants are immutable semantic payload; they are skipped by generic
 use discovery and result replacement. CFG maintenance, verification, printing,
 and cloning inspect attributes through generated typed accessors and
