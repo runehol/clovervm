@@ -334,6 +334,19 @@ except ValueError:
 assert else_cleanup_raised
 assert result == 2
 
+# Import exception classes have the builtin hierarchy used by except matching.
+assert ImportError.__mro__[1] is Exception
+assert ModuleNotFoundError.__mro__[1] is ImportError
+assert ModuleNotFoundError.__mro__[2] is Exception
+
+try:
+    raise ModuleNotFoundError
+except ImportError:
+    module_not_found_caught = True
+else:
+    module_not_found_caught = False
+assert module_not_found_caught
+
 result = 0
 try:
     raise NameError
