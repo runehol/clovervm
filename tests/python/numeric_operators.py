@@ -96,3 +96,72 @@ class ReflectedMatmul:
 
 
 assert NotImplementedMatmul() @ ReflectedMatmul() == 7
+
+
+# Bitwise operators dispatch to reflected and unary custom methods.
+class ReflectedBitwise:
+    def __rand__(self, other):
+        return 42
+
+    def __ror__(self, other):
+        return 43
+
+    def __rxor__(self, other):
+        return 44
+
+
+class CustomInvert:
+    def __invert__(self):
+        return 45
+
+
+assert 1 & ReflectedBitwise() == 42
+assert 1 | ReflectedBitwise() == 43
+assert 1 ^ ReflectedBitwise() == 44
+assert ~CustomInvert() == 45
+
+
+# Binary and builtin power dispatch distinguish absent, None, and explicit modulo arguments.
+class BinaryPower:
+    def __pow__(self, other):
+        return 42
+
+
+class ReflectedBinaryPower:
+    def __rpow__(self, other):
+        return 43
+
+
+class OptionalModuloPower:
+    def __pow__(self, other, modulo=None):
+        if modulo is None:
+            return 44
+        return 45
+
+
+assert BinaryPower() ** 3 == 42
+assert 2 ** ReflectedBinaryPower() == 43
+assert OptionalModuloPower() ** 3 == 44
+assert pow(BinaryPower(), 3) == 42
+
+
+class BinaryPowerThroughPow:
+    def __pow__(self, other):
+        return 43
+
+
+assert pow(BinaryPowerThroughPow(), 3, None) == 43
+
+
+class TernaryPower:
+    def __pow__(self, other, modulo):
+        return other * 100 + modulo
+
+
+class ReflectedTernaryPower:
+    def __rpow__(self, other, modulo):
+        return 45
+
+
+assert pow(TernaryPower(), 3, 5) == 305
+assert pow(2, ReflectedTernaryPower(), 5) == 45
