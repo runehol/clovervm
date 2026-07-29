@@ -614,14 +614,16 @@ Late point in that physical register's allocation map. A clobber is not a
 bundle: it has no semantic value, allocation choice, spill weight, or legal
 eviction.
 
-Every physical register written by an instruction must be represented either
-by an explicit def, including an allocated temporary, or by a clobber, but not
-both. A clobber may coincide with a fixed early use, but it may not collide with
-a fixed def or fixed late use. This is the allocator's clobber contract.
+Every allocatable physical register written by an instruction must be
+represented either by an explicit def, including an allocated temporary, or by
+a clobber, but not both. Target-declared non-allocatable scratch registers are
+outside bundle assignment and may be used by backend expansion. A clobber may
+coincide with a fixed early use, but it may not collide with a fixed def or
+fixed late use. This is the allocator's clobber contract.
 
-A potentially long branch therefore requests a GPR temporary; it does not
-needlessly clobber a predetermined register. The emitter may ignore the
-assigned temporary when the short branch form fits.
+A potentially long AArch64 branch uses the target-declared `x16` scratch. It
+does not create an allocator temporary that would consume an ordinary value
+register even when the short branch form fits.
 
 Register requirements and spill compatibility must agree with the Core
 `ValueRepresentation` of the value. A constraint may narrow that representation
@@ -651,8 +653,7 @@ The AArch64 constraint producer follows the Clover JIT calling convention:
   default;
 - F64 internal block parameters use the ordinary `AnyRegister(SIMD)` default;
 - a `Return` input has a fixed `x0` constraint;
-- conditional and unconditional branches request one `AnyRegister(GPR)`
-  temporary for a possible long form;
+- conditional and unconditional branches request no allocator temporary;
 - `Const`, SMI bitwise instructions, and the virtual `Snapshot` instruction
   need no target override.
 

@@ -123,8 +123,7 @@ namespace cl::jit
                             .reg());
     }
 
-    TEST(AArch64AllocationConstraints,
-         OmitsOrdinaryInstructionsAndConstrainsBranches)
+    TEST(AArch64AllocationConstraints, OmitsOrdinaryInstructionsAndBranches)
     {
         CompilationSession session;
         GraphBuilder builder(session, IRLevel::Machine);
@@ -170,15 +169,7 @@ namespace cl::jit
         EXPECT_EQ(nullptr, find_override(constraints, orr_instruction));
         EXPECT_EQ(nullptr, find_override(constraints, eor_instruction));
 
-        const InstructionAllocationConstraints *branch_override =
-            find_override(constraints, branch);
-        ASSERT_NE(nullptr, branch_override);
-        ASSERT_EQ(1u, branch_override->temporaries().size());
-        EXPECT_EQ(LocationRequirement::Kind::AnyRegister,
-                  branch_override->temporaries()[0].requirement.kind());
-        EXPECT_EQ(
-            RegisterClass::GPR,
-            branch_override->temporaries()[0].requirement.register_class());
+        EXPECT_EQ(nullptr, find_override(constraints, branch));
         EXPECT_NE(nullptr, find_override(constraints, true_return));
         EXPECT_NE(nullptr, find_override(constraints, false_return));
     }
@@ -359,7 +350,7 @@ namespace cl::jit
             make_aarch64_allocation_constraints(*graph);
 
         EXPECT_EQ(nullptr, find_override(constraints, parameter));
-        EXPECT_NE(nullptr, find_override(constraints, branch));
+        EXPECT_EQ(nullptr, find_override(constraints, branch));
         EXPECT_NE(nullptr, find_override(constraints, return_instruction));
     }
 

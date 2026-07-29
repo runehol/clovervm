@@ -49,9 +49,9 @@ label or absolute targets. The emitter retains these branches when their form
 depends on the final source address. A far transfer receives a caller-supplied
 general-purpose scratch register. Low-level callers without allocation context
 may use the macro assembler's AArch64 `IP0` (`x16`) default. A CFG backend
-instead passes the temporary assigned from the branch's
-`AllocationConstraints`; that temporary is reserved across every retained form
-that may need it.
+uses the target-declared, non-allocatable `IP0` scratch directly. Branch
+relaxation therefore does not create a semantic temporary or reserve an
+allocatable register.
 
 The direct assembler never silently expands an exact instruction. The macro
 assembler owns such expansion and selection. This preserves a useful boundary
@@ -302,8 +302,8 @@ external symbol.
 Each direct branch that may need a general-purpose scratch register stores
 the concrete scratch selected by its caller. Macro-assembler entry points
 default that operand to AArch64 `x16`, but the emitter has no global scratch-
-register configuration. An allocated backend supplies the register assigned to
-the branch's declared temporary. A branch whose maximum form does not need
+register configuration. An allocated backend supplies a register from the
+target's non-allocatable scratch set. A branch whose maximum form does not need
 scratch does not clobber it.
 
 The initial direct-branch set requires at most one implicit scratch at a time.

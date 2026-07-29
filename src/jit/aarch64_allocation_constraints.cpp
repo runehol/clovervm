@@ -167,6 +167,8 @@ namespace cl::jit
                     case MachineInstructionKind::StoreStackPointer:
                     case MachineInstructionKind::InlineTagGuardWithSideExit:
                     case MachineInstructionKind::ResumeInInterpreterWithSideExit:
+                    case MachineInstructionKind::ConditionalBranch:
+                    case MachineInstructionKind::UnconditionalBranch:
                         if(!input_overrides.empty())
                         {
                             overrides.emplace_back(instruction,
@@ -188,12 +190,6 @@ namespace cl::jit
                             std::move(input_overrides)));
                         break;
                     }
-
-                    case MachineInstructionKind::ConditionalBranch:
-                    case MachineInstructionKind::UnconditionalBranch:
-                        overrides.push_back(gpr_temporary_constraints(
-                            instruction, std::move(input_overrides)));
-                        break;
 
                     default:
                         unsupported_instruction(instruction.kind());
