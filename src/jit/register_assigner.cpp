@@ -77,6 +77,12 @@ namespace cl::jit
             }
         };
 
+        struct PressureSplitCandidate
+        {
+            LivenessPosition boundary;
+            uint64_t conflict_cost;
+        };
+
         class BundleWorkItemCompare
         {
         public:
@@ -195,12 +201,17 @@ namespace cl::jit
                             evict(probe);
                             selected = required;
                         }
+                        else if(split_for_pressure(bundle_id, probe))
+                        {
+                            continue;
+                        }
                     }
                     else
                     {
                         std::optional<uint64_t> lowest_eviction_cost;
                         std::optional<PhysicalRegister> evictable;
                         std::optional<RegisterProbe> eviction_probe;
+                        std::optional<PressureSplitCandidate> split_candidate;
                         for(PhysicalRegister candidate:
                             register_class(bundle.register_class)
                                 .allocation_order())
@@ -211,6 +222,20 @@ namespace cl::jit
                             {
                                 selected = PhysicalLocation::reg(candidate);
                                 break;
+                            }
+                            if(probe.first_conflict.has_value())
+                            {
+                                std::optional<LivenessPosition> boundary =
+                                    pressure_split_boundary(
+                                        bundle, *probe.first_conflict);
+                                uint64_t cost = maximum_conflict_weight(probe);
+                                if(boundary.has_value() &&
+                                   (!split_candidate.has_value() ||
+                                    cost < split_candidate->conflict_cost))
+                                {
+                                    split_candidate =
+                                        PressureSplitCandidate{*boundary, cost};
+                                }
                             }
                             std::optional<uint64_t> cost = eviction_cost(probe);
                             if(cost.has_value() &&
@@ -227,6 +252,13 @@ namespace cl::jit
                         {
                             evict(*eviction_probe);
                             selected = PhysicalLocation::reg(*evictable);
+                        }
+                        else if(!selected.has_value() &&
+                                split_candidate.has_value() &&
+                                split_at_pressure_boundary(
+                                    bundle_id, split_candidate->boundary))
+                        {
+                            continue;
                         }
                     }
 
@@ -377,6 +409,11 @@ namespace cl::jit
                 {
                     return std::nullopt;
                 }
+                return maximum_conflict_weight(probe);
+            }
+
+            uint64_t maximum_conflict_weight(const RegisterProbe &probe) const
+            {
                 uint64_t result = 0;
                 for(BundleId conflict: probe.conflicting_bundles)
                 {
@@ -384,6 +421,155 @@ namespace cl::jit
                                       bundles_[conflict.value()].spill_weight);
                 }
                 return result;
+            }
+
+            const BlockLivenessRange *
+            block_range_containing(LivenessPosition position) const
+            {
+                for(const BlockLivenessRange &block_range:
+                    problem_.block_ranges())
+                {
+                    if(position < block_range.range.start ||
+                       block_range.range.end <= position)
+                    {
+                        continue;
+                    }
+                    return &block_range;
+                }
+                return nullptr;
+            }
+
+            std::optional<LivenessPosition>
+            transfer_boundary_for_conflict(LivenessPosition position) const
+            {
+                const BlockLivenessRange *block_range =
+                    block_range_containing(position);
+                if(block_range == nullptr)
+                {
+                    return std::nullopt;
+                }
+
+                size_t offset =
+                    position.value() - block_range->range.start.value();
+                size_t exit_offset =
+                    2 + block_range->block->instructions().size() * 2;
+                if(offset < 2)
+                {
+                    offset = 2;
+                }
+                else if(offset <= exit_offset && offset % 2 != 0)
+                {
+                    --offset;
+                }
+                else if(offset > exit_offset)
+                {
+                    offset = exit_offset;
+                }
+                return LivenessPosition(block_range->range.start.value() +
+                                        offset);
+            }
+
+            std::optional<TransferPoint>
+            transfer_point_for_boundary(LivenessPosition boundary) const
+            {
+                const BlockLivenessRange *block_range =
+                    block_range_containing(boundary);
+                if(block_range == nullptr)
+                {
+                    return std::nullopt;
+                }
+
+                size_t offset =
+                    boundary.value() - block_range->range.start.value();
+                if(offset == 0)
+                {
+                    return TransferPoint::block_entry(block_range->block);
+                }
+
+                size_t instruction_count =
+                    block_range->block->instructions().size();
+                size_t exit_offset = 2 + instruction_count * 2;
+                if(offset == exit_offset)
+                {
+                    return TransferPoint::block_exit(block_range->block);
+                }
+                if(offset < 2 || exit_offset <= offset || offset % 2 != 0)
+                {
+                    return std::nullopt;
+                }
+                return TransferPoint::before_instruction(
+                    block_range->block->instruction_at((offset - 2) / 2));
+            }
+
+            std::optional<LivenessPosition>
+            pressure_split_boundary(const LiveBundle &bundle,
+                                    LivenessPosition first_conflict) const
+            {
+                assert(!bundle.fragments.empty());
+                LivenessPosition bundle_start =
+                    bundle.fragments.front().range.start;
+                LivenessPosition bundle_end = bundle.fragments.back().range.end;
+
+                std::optional<LivenessPosition> candidate =
+                    transfer_boundary_for_conflict(first_conflict);
+                if(!candidate.has_value())
+                {
+                    return std::nullopt;
+                }
+                if(*candidate <= bundle_start)
+                {
+                    candidate =
+                        transfer_boundary_for_conflict(bundle_start.next());
+                    if(candidate.has_value() &&
+                       *candidate < bundle_start.next())
+                    {
+                        candidate = LivenessPosition(candidate->value() + 2);
+                    }
+                }
+                return candidate.has_value() && *candidate < bundle_end
+                           ? candidate
+                           : std::nullopt;
+            }
+
+            bool split_for_pressure(BundleId bundle_id,
+                                    const RegisterProbe &probe)
+            {
+                if(!probe.first_conflict.has_value())
+                {
+                    return false;
+                }
+                std::optional<LivenessPosition> boundary =
+                    pressure_split_boundary(bundles_[bundle_id.value()],
+                                            *probe.first_conflict);
+                if(!boundary.has_value())
+                {
+                    return false;
+                }
+                return split_at_pressure_boundary(bundle_id, *boundary);
+            }
+
+            bool split_at_pressure_boundary(BundleId bundle_id,
+                                            LivenessPosition boundary)
+            {
+                assert(!location_by_bundle_[bundle_id.value()].has_value());
+                std::optional<TransferPoint> transfer_point =
+                    transfer_point_for_boundary(boundary);
+                if(!transfer_point.has_value())
+                {
+                    return false;
+                }
+                std::optional<BundleId> right =
+                    split_bundle(bundles_, transfers_, problem_, bundle_id,
+                                 boundary, *transfer_point);
+                if(!right.has_value())
+                {
+                    return false;
+                }
+                assert(right->value() == location_by_bundle_.size());
+                location_by_bundle_.push_back(std::nullopt);
+                enqueue(bundle_id);
+                enqueue(*right);
+                return true;
             }
 
             void evict(const RegisterProbe &probe)

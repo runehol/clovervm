@@ -705,6 +705,58 @@ namespace cl::jit
         EXPECT_EQ(BundleId(2), set.transfers[0].destination);
     }
 
+    TEST(JitRegisterAllocator, SplitsAfterFixedUseUnderRegisterPressure)
+    {
+        CompilationSession session;
+        GraphBuilder builder(session, IRLevel::Core);
+        Block *entry = builder.emplace_block();
+        ParameterInstruction parameter =
+            builder.emplace_parameter<ParameterInstruction>(entry);
+        ConstInstruction fixed_definition =
+            builder.emplace_instruction<ConstInstruction>(entry,
+                                                          Value::from_smi(1));
+        builder.emplace_instruction<ReturnInstruction>(
+            entry, TaggedValueRef(parameter));
+        ControlFlowGraph *graph = builder.finalize();
+
+        std::vector<InstructionAllocationConstraints> overrides;
+        overrides.emplace_back(parameter,
+                               std::vector<ProgramValueUseConstraint>{},
+                               ResultConstraint{AccessTiming::Late, fixed(x0)});
+        overrides.emplace_back(fixed_definition,
+                               std::vector<ProgramValueUseConstraint>{},
+                               ResultConstraint{AccessTiming::Late, fixed(x0)});
+        constexpr std::array registers = {x0, x1};
+        AllocationConstraints constraints =
+            gpr_constraints(registers, std::move(overrides));
+
+        auto prepared_result = prepare_register_allocation(*graph, constraints);
+        ASSERT_TRUE(prepared_result);
+        PreparedAllocationProblem prepared = std::move(prepared_result).value();
+        auto assignment_result = assign_bundles(prepared, constraints);
+
+        ASSERT_TRUE(assignment_result);
+        RegisterAllocationResult allocation =
+            std::move(assignment_result).value();
+        ASSERT_EQ(3u, allocation.bundles().size());
+        EXPECT_EQ((LivenessRange{LivenessPosition(1), LivenessPosition(2)}),
+                  allocation.bundles()[0].fragments[0].range);
+        EXPECT_EQ((LivenessRange{LivenessPosition(3), LivenessPosition(4)}),
+                  allocation.bundles()[1].fragments[0].range);
+        EXPECT_EQ((LivenessRange{LivenessPosition(2), LivenessPosition(5)}),
+                  allocation.bundles()[2].fragments[0].range);
+        EXPECT_EQ(x0, allocation.locations().location_for(BundleId(0)).reg());
+        EXPECT_EQ(x0, allocation.locations().location_for(BundleId(1)).reg());
+        EXPECT_EQ(x1, allocation.locations().location_for(BundleId(2)).reg());
+        ASSERT_EQ(1u, allocation.transfers().sets().size());
+        const BundleTransferSet &set = allocation.transfers().sets().front();
+        EXPECT_EQ(TransferPoint::before_instruction(fixed_definition),
+                  set.point);
+        ASSERT_EQ(1u, set.transfers.size());
+        EXPECT_EQ(BundleId(0), set.transfers[0].source);
+        EXPECT_EQ(BundleId(2), set.transfers[0].destination);
+    }
+
     TEST(JitRegisterAllocator, SplitsConflictingFixedRegisters)
     {
         CompilationSession session;
@@ -949,7 +1001,7 @@ namespace cl::jit
                           .reg());
     }
 
-    TEST(JitRegisterAllocator, RejectsAClobberedFixedRegister)
+    TEST(JitRegisterAllocator, SplitsBeforeAClobberedFixedRegister)
     {
         CompilationSession session;
         GraphBuilder builder(session, IRLevel::Core);
@@ -982,9 +1034,22 @@ namespace cl::jit
 
         auto assignment_result = assign_bundles(prepared, constraints);
 
-        ASSERT_TRUE(assignment_result.has_error());
-        EXPECT_EQ(RegisterAllocationError::RequiresSplittingOrSpilling,
-                  assignment_result.error());
+        ASSERT_TRUE(assignment_result);
+        RegisterAllocationResult allocation =
+            std::move(assignment_result).value();
+        ASSERT_EQ(2u, allocation.bundles().size());
+        EXPECT_EQ((LivenessRange{LivenessPosition(1), LivenessPosition(2)}),
+                  allocation.bundles()[0].fragments[0].range);
+        EXPECT_EQ((LivenessRange{LivenessPosition(2), LivenessPosition(5)}),
+                  allocation.bundles()[1].fragments[0].range);
+        EXPECT_EQ(x0, allocation.locations().location_for(BundleId(0)).reg());
+        EXPECT_EQ(x1, allocation.locations().location_for(BundleId(1)).reg());
+        ASSERT_EQ(1u, allocation.transfers().sets().size());
+        const BundleTransferSet &set = allocation.transfers().sets().front();
+        EXPECT_EQ(TransferPoint::before_instruction(snapshot), set.point);
+        ASSERT_EQ(1u, set.transfers.size());
+        EXPECT_EQ(BundleId(0), set.transfers[0].source);
+        EXPECT_EQ(BundleId(1), set.transfers[0].destination);
     }
 
     TEST(JitRegisterAllocator, PreparesTemporaryAndClobberReservations)

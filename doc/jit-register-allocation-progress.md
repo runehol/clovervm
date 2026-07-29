@@ -33,18 +33,24 @@ the design document owns algorithms, invariants, and layer boundaries.
 
 ## Backtracking, Splitting, and Spilling
 
-- [ ] Collect every conflicting bundle and the first conflict point while
+- [x] Collect every conflicting bundle and the first conflict point while
   probing a register.
-- [ ] Implement strictly-higher-spill-weight eviction and requeue evicted
+- [x] Implement strictly-higher-spill-weight eviction and requeue evicted
   bundles without changing their allocation priority.
-- [ ] Split copied bundle fragments without mutating immutable source live
+- [x] Split copied bundle fragments without mutating immutable source live
   ranges; repartition fixed constraints and recompute child heuristics.
 - [ ] Add remaining same-as-input and multi-location fixups.
-- [ ] Record pressure-split and fixup connectors in the transfer schedule.
+- [x] Split register-only pressure ranges before the conflicting instruction
+  and record their connectors in the transfer schedule.
+- [ ] Record remaining fixup connectors in the transfer schedule.
 - [ ] Provide allocator-owned spill slots for ordinary allocation pressure.
-- [ ] Add the reserved spill-weight tiers and a debug iteration bound required
-  by the allocator's progress argument.
-- [ ] Detect irreducible pressure and fail compilation cleanly.
+- [ ] Add per-value spill bundles and trim register-free regions around
+  pressure splits into them, recording register-to-spill and spill-to-register
+  connectors.
+- [x] Add the reserved spill-weight tiers required by the allocator's progress
+  argument.
+- [ ] Add a debug iteration bound.
+- [x] Detect irreducible pressure and fail compilation cleanly.
 
 ## Calls and Clobbers
 

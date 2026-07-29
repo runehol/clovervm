@@ -1125,6 +1125,33 @@ stores, or reloads are being placed inside hot loops. If that is material,
 prefer split points with cheaper connecting moves and hoist boundaries outside
 loops when legal. The initial allocator does not need this heuristic.
 
+Register-only pressure splitting and spill-aware pressure splitting use
+different boundaries. Without an allocator spill area, a conflict during an
+instruction is avoided by splitting at that instruction's Early boundary and
+moving the right child to another register before the instruction executes.
+Rounding a Late conflict forward to the next instruction would leave the left
+child resident in its conflicting register throughout the instruction and
+would not solve the pressure.
+
+Once ordinary spill slots exist, pressure splitting may instead trim the
+register-resident ends around a split. The left register bundle ends after its
+last required occurrence, the right register bundle begins before its first
+required occurrence, and the intervening source fragments join a spill bundle
+for that value:
+
+```text
+left register bundle -> spill bundle -> right register bundle
+```
+
+The transfer schedule records the store and reload at those boundaries. The
+spill bundle may contain several non-overlapping fragments and assigns all of
+them one allocator-owned spill slot. With this trimming, a Late conflict may be
+rounded forward to the next instruction boundary because the value occupies
+its spill slot, rather than the left child's register, across the conflicting
+instruction. Trimming cannot remove an irreducible register occurrence at the
+conflict; that occurrence must still receive a legal register or cause clean
+allocation failure.
+
 Fixed-register constraints and clobbers are ordinary pressure at their anchored
 positions. An unsplit bundle whose fixed occurrences all name one register must
 use that register. Fixed occurrences naming different registers require
