@@ -118,3 +118,25 @@ if False and boolean_rhs_must_not_run():
 else:
     boolean_shortcut_result = 4
 assert boolean_shortcut_result == 4
+
+
+# Boolean short-circuit lowering handles nested math-shaped predicates.
+def isinf(value):
+    return False
+
+
+def isnan(value):
+    return False
+
+
+def finite(value):
+    return not isinf(value) and not isnan(value)
+
+
+assert finite(1)
+
+math_shaped_result = 0
+math_shaped_value = 1
+if math_shaped_result == 0 or math_shaped_value == 0:
+    math_shaped_result = 3
+assert math_shaped_result == 3

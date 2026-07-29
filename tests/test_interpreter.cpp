@@ -2354,26 +2354,6 @@ TEST(Interpreter, operator_eq_dispatch_python_cache_installs_before_call)
     ASSERT_NE(nullptr, cache.operand_lookup_validity_cells[1]);
 }
 
-TEST(Interpreter, shortcutting_boolean_operators_compile_math_shaped_cases)
-{
-    test::VmTestContext test_context;
-
-    EXPECT_EQ(Value::True(), test_context.run_file(
-                                 L"def isinf(x):\n"
-                                 L"    return False\n"
-                                 L"def isnan(x):\n"
-                                 L"    return False\n"
-                                 L"def finite(x):\n"
-                                 L"    return not isinf(x) and not isnan(x)\n"
-                                 L"finite(1)\n"));
-    EXPECT_EQ(Value::from_smi(3),
-              test_context.run_file(L"result = 0\n"
-                                    L"value = 1\n"
-                                    L"if result == 0 or value == 0:\n"
-                                    L"    result = 3\n"
-                                    L"result\n"));
-}
-
 TEST(Interpreter, sqrt_is_not_a_builtin)
 {
     expect_python_error(L"sqrt(4)\n", L"NameError",
