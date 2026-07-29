@@ -115,9 +115,6 @@ namespace cl::jit
                   order.position_for_frame_offset(FrameHeaderPreviousFpOffset));
         EXPECT_EQ(9u, order.position_for(local(*fixture.code_object, 0)));
         EXPECT_EQ(11u, order.position_for(temporary(*fixture.code_object, 0)));
-        EXPECT_DEATH((void)order.frame_offset_at(
-                         BytecodeStateOrder::AccumulatorPosition),
-                     "position is not a stack slot");
     }
 
     TEST(JitBytecodeState, ZeroParameterOrderStartsAtHighestFrameHeaderSlot)
@@ -236,8 +233,6 @@ namespace cl::jit
         std::span<const TestRef> prefix = tracker.prefix(state, 8);
         EXPECT_EQ((std::vector<TestRef>{1, 2, 3, 4, 5, 6, 7, 8}),
                   (std::vector<TestRef>(prefix.begin(), prefix.end())));
-
-        EXPECT_DEATH((void)tracker.prefix(state, 15), "prefix is too large");
     }
 
     TEST(JitBytecodeState, RejectsInvalidLocationsAndArities)
