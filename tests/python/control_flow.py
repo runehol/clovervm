@@ -72,3 +72,26 @@ for x in range(5):
         continue
     total += x
 assert total == 8
+
+# Boolean operators return operand values and skip unneeded right-hand sides.
+assert (0 and missing) == 0
+assert (1 and 7) == 7
+assert (5 or missing) == 5
+assert (0 or 8) == 8
+
+
+def boolean_rhs_must_not_run():
+    raise ValueError
+
+
+if True or boolean_rhs_must_not_run():
+    boolean_shortcut_result = 4
+else:
+    boolean_shortcut_result = 1
+assert boolean_shortcut_result == 4
+
+if False and boolean_rhs_must_not_run():
+    boolean_shortcut_result = 1
+else:
+    boolean_shortcut_result = 4
+assert boolean_shortcut_result == 4

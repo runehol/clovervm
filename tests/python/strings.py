@@ -131,3 +131,19 @@ assert ord(chr(0)) == 0
 assert "same" == "same"
 assert "same" != "other"
 assert "same" != 4
+
+# String comparisons and concatenation return their expected values.
+assert "a" == "a"
+assert not "a" == "b"
+assert not "a" != "a"
+assert "a" != "b"
+assert "a" < "b"
+assert not "b" < "a"
+assert "a" <= "a"
+assert not "b" <= "a"
+assert "b" > "a"
+assert not "a" > "b"
+assert "a" >= "a"
+assert not "a" >= "b"
+assert "a" < "aa"
+assert "ab" + "cd" == "abcd"

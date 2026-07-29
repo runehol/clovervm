@@ -124,3 +124,43 @@ assert str(large_int + 1) == "288230376151711745"
 assert large_int - large_int == 0
 assert str(large_int * -2) == "-576460752303423488"
 assert str(True + large_int) == "288230376151711745"
+
+# Float and integer arithmetic preserve numeric values across mixed bool and int operands.
+assert 1.5 + 2.25 == 3.75
+assert 1.5 + 2 == 3.5
+assert 2 + 1.5 == 3.5
+assert 5.5 - 2.0 == 3.5
+assert 5.5 - 2 == 3.5
+assert 5 - 1.5 == 3.5
+assert 1.5 * 2.0 == 3.0
+assert 1.5 * 2 == 3.0
+assert 2 * 1.5 == 3.0
+assert 1.0 + True == 2.0
+assert True + 1.0 == 2.0
+assert -1.5 == -1.5
+assert +1.5 == 1.5
+assert not -0.0
+assert 1 + 2 == 3
+assert 5 - 2 == 3
+assert 2 * 3 == 6
+assert 1 + True == 2
+assert True + 1 == 2
+assert 1 - True == 0
+assert True - 1 == 0
+assert 1 * True == 1
+assert True * 1 == 1
+assert True + True == 2
+assert True - True == 0
+assert True * False == 0
+assert -True == -1
+assert +True == 1
+
+# Bitwise operations handle positive and negative integers.
+assert 5 & 3 == 1
+assert 4 | 1 == 5
+assert 6 ^ 3 == 5
+assert -8 | 3 == -5
+assert -8 & 3 == 0
+assert -8 ^ 3 == -5
+assert ~3 == -4
+assert ~-3 == 2

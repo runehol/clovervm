@@ -187,12 +187,6 @@ static void expect_string_value(Value actual, const wchar_t *expected)
                  string_as_wchar_t(TValue<String>::from_value_assumed(actual)));
 }
 
-static void expect_string_result(const wchar_t *source, const wchar_t *expected)
-{
-    test::FileRunner file_runner(source);
-    expect_string_value(file_runner.return_value, expected);
-}
-
 static int64_t g_next_counter = 0;
 static Value *g_native_frame_frontier_seen = nullptr;
 static Value *g_expected_clover_frame_sentinel = nullptr;
@@ -1468,60 +1462,6 @@ TEST(Interpreter, float_literal_values)
     EXPECT_FALSE(std::signbit(tiny_decimal_actual.get_ptr<Float>()->value));
 }
 
-TEST(Interpreter, float_arithmetic_values)
-{
-    test::VmTestContext test_context;
-
-    auto expect_float_result = [&](const wchar_t *source, double expected) {
-        Value actual = test_context.run_file(source);
-        ASSERT_TRUE(can_convert_to<Float>(actual));
-        EXPECT_DOUBLE_EQ(expected, actual.get_ptr<Float>()->value);
-    };
-
-    expect_float_result(L"1.5 + 2.25\n", 3.75);
-    expect_float_result(L"1.5 + 2\n", 3.5);
-    expect_float_result(L"2 + 1.5\n", 3.5);
-    expect_float_result(L"5.5 - 2.0\n", 3.5);
-    expect_float_result(L"5.5 - 2\n", 3.5);
-    expect_float_result(L"5 - 1.5\n", 3.5);
-    expect_float_result(L"1.5 * 2.0\n", 3.0);
-    expect_float_result(L"1.5 * 2\n", 3.0);
-    expect_float_result(L"2 * 1.5\n", 3.0);
-    expect_float_result(L"1.0 + True\n", 2.0);
-    expect_float_result(L"True + 1.0\n", 2.0);
-    expect_float_result(L"-1.5\n", -1.5);
-    expect_float_result(L"+1.5\n", 1.5);
-    EXPECT_EQ(Value::True(), test_context.run_file(L"assert not -0.0\n"));
-    EXPECT_EQ(Value::from_smi(3), test_context.run_file(L"1 + 2\n"));
-    EXPECT_EQ(Value::from_smi(3), test_context.run_file(L"5 - 2\n"));
-    EXPECT_EQ(Value::from_smi(6), test_context.run_file(L"2 * 3\n"));
-    EXPECT_EQ(Value::from_smi(2), test_context.run_file(L"1 + True\n"));
-    EXPECT_EQ(Value::from_smi(2), test_context.run_file(L"True + 1\n"));
-    EXPECT_EQ(Value::from_smi(0), test_context.run_file(L"1 - True\n"));
-    EXPECT_EQ(Value::from_smi(0), test_context.run_file(L"True - 1\n"));
-    EXPECT_EQ(Value::from_smi(1), test_context.run_file(L"1 * True\n"));
-    EXPECT_EQ(Value::from_smi(1), test_context.run_file(L"True * 1\n"));
-    EXPECT_EQ(Value::from_smi(2), test_context.run_file(L"True + True\n"));
-    EXPECT_EQ(Value::from_smi(0), test_context.run_file(L"True - True\n"));
-    EXPECT_EQ(Value::from_smi(0), test_context.run_file(L"True * False\n"));
-    EXPECT_EQ(Value::from_smi(-1), test_context.run_file(L"-True\n"));
-    EXPECT_EQ(Value::from_smi(1), test_context.run_file(L"+True\n"));
-}
-
-TEST(Interpreter, bitwise_integer_values)
-{
-    test::VmTestContext test_context;
-
-    EXPECT_EQ(Value::from_smi(1), test_context.run_file(L"5 & 3\n"));
-    EXPECT_EQ(Value::from_smi(5), test_context.run_file(L"4 | 1\n"));
-    EXPECT_EQ(Value::from_smi(5), test_context.run_file(L"6 ^ 3\n"));
-    EXPECT_EQ(Value::from_smi(-5), test_context.run_file(L"-8 | 3\n"));
-    EXPECT_EQ(Value::from_smi(0), test_context.run_file(L"-8 & 3\n"));
-    EXPECT_EQ(Value::from_smi(-5), test_context.run_file(L"-8 ^ 3\n"));
-    EXPECT_EQ(Value::from_smi(-4), test_context.run_file(L"~3\n"));
-    EXPECT_EQ(Value::from_smi(2), test_context.run_file(L"~-3\n"));
-}
-
 TEST(Interpreter, bitwise_dispatch_calls_custom_methods)
 {
     test::VmTestContext test_context;
@@ -1612,48 +1552,6 @@ TEST(Interpreter, builtin_pow_with_modulo_rejects_binary_only_pow)
                         L"TypeError", L"wrong number of arguments");
 }
 
-TEST(Interpreter, integer_power_values)
-{
-    test::VmTestContext test_context;
-
-    auto expect_float_result = [&](const wchar_t *source, double expected) {
-        Value actual = test_context.run_file(source);
-        ASSERT_TRUE(can_convert_to<Float>(actual));
-        EXPECT_DOUBLE_EQ(expected, actual.get_ptr<Float>()->value);
-    };
-
-    EXPECT_EQ(Value::from_smi(1024), test_context.run_file(L"2 ** 10\n"));
-    expect_string_result(L"str(2 ** 58)\n", L"288230376151711744");
-    expect_string_result(L"str(2 ** 100)\n",
-                         L"1267650600228229401496703205376");
-    expect_string_result(L"base = int('18446744073709551616')\n"
-                         L"str(base ** 2)\n",
-                         L"340282366920938463463374607431768211456");
-    EXPECT_EQ(Value::from_smi(8), test_context.run_file(L"pow(2, 3, None)\n"));
-    EXPECT_EQ(Value::from_smi(3), test_context.run_file(L"pow(2, 3, 5)\n"));
-    EXPECT_EQ(Value::from_smi(3),
-              test_context.run_file(L"(2).__pow__(3, 5)\n"));
-    EXPECT_EQ(Value::from_smi(4),
-              test_context.run_file(L"(2).__rpow__(3, 5)\n"));
-    EXPECT_EQ(Value::from_smi(3), test_context.run_file(L"pow(2, -1, 5)\n"));
-    EXPECT_EQ(Value::from_smi(-2), test_context.run_file(L"pow(2, -1, -5)\n"));
-    EXPECT_EQ(Value::from_smi(0), test_context.run_file(L"pow(2, 3, 1)\n"));
-    EXPECT_EQ(Value::from_smi(16), test_context.run_file(L"pow(2, 100, 17)\n"));
-    expect_string_result(L"base = int('18446744073709551616')\n"
-                         L"str(pow(base, 2, 97))\n",
-                         L"35");
-    expect_float_result(L"e = -3\n"
-                        L"2 ** e\n",
-                        0.125);
-    expect_float_result(L"e = -3\n"
-                        L"(-2) ** e\n",
-                        -0.125);
-    expect_float_result(L"base = int('18446744073709551616')\n"
-                        L"e = -1\n"
-                        L"base ** e\n",
-                        5.421010862427522e-20);
-}
-
 TEST(Interpreter, integer_power_errors)
 {
     expect_python_error(L"e = -1\n"
@@ -1667,22 +1565,6 @@ TEST(Interpreter, integer_power_errors)
                         L"pow() 3rd argument cannot be 0");
     expect_python_error(L"pow(2, -1, 4)\n", L"ValueError",
                         L"base is not invertible for the given modulus");
-}
-
-TEST(Interpreter, true_division_values)
-{
-    test::VmTestContext test_context;
-
-    auto expect_float_result = [&](const wchar_t *source, double expected) {
-        Value actual = test_context.run_file(source);
-        ASSERT_TRUE(can_convert_to<Float>(actual));
-        EXPECT_DOUBLE_EQ(expected, actual.get_ptr<Float>()->value);
-    };
-
-    expect_float_result(L"1 / 2\n", 0.5);
-    expect_float_result(L"1.0 / 2\n", 0.5);
-    expect_float_result(L"1 / 2.0\n", 0.5);
-    expect_float_result(L"1.0 / 2.0\n", 0.5);
 }
 
 TEST(Interpreter, true_division_reports_zero_division)
@@ -1706,42 +1588,6 @@ TEST(Interpreter, true_division_reports_unsupported_operands)
                         L"unsupported operand type(s) for /");
 }
 
-TEST(Interpreter, floor_division_values)
-{
-    test::VmTestContext test_context;
-
-    auto expect_float_result = [&](const wchar_t *source, double expected) {
-        Value actual = test_context.run_file(source);
-        ASSERT_TRUE(can_convert_to<Float>(actual));
-        EXPECT_DOUBLE_EQ(expected, actual.get_ptr<Float>()->value);
-    };
-
-    EXPECT_EQ(Value::from_smi(2), test_context.run_file(L"5 // 2\n"));
-    EXPECT_EQ(Value::from_smi(-3), test_context.run_file(L"-5 // 2\n"));
-    EXPECT_EQ(Value::from_smi(-3), test_context.run_file(L"5 // -2\n"));
-    EXPECT_EQ(Value::from_smi(2), test_context.run_file(L"-5 // -2\n"));
-    EXPECT_EQ(Value::from_smi(1), test_context.run_file(L"True // 1\n"));
-    expect_string_result(L"str(int('18446744073709551616') // 3)\n",
-                         L"6148914691236517205");
-    expect_string_result(L"str(-int('18446744073709551616') // 3)\n",
-                         L"-6148914691236517206");
-    expect_string_result(L"str(int('18446744073709551616') // -3)\n",
-                         L"-6148914691236517206");
-    expect_string_result(L"str(-int('18446744073709551616') // -3)\n",
-                         L"6148914691236517205");
-    EXPECT_EQ(Value::from_smi(1),
-              test_context.run_file(L"int('18446744073709551616') // "
-                                    L"int('18446744073709551616')\n"));
-    expect_float_result(L"5.0 // 2\n", 2.0);
-    expect_float_result(L"5 // 2.0\n", 2.0);
-    expect_float_result(L"-5.0 // 2\n", -3.0);
-    expect_float_result(L"-8.122808264515302e-272 // 7.866340851152702e98\n",
-                        -1.0);
-    expect_float_result(L"(7.866340851152702e98).__rfloordiv__("
-                        L"-8.122808264515302e-272)\n",
-                        -1.0);
-}
-
 TEST(Interpreter, floor_division_reports_errors)
 {
     expect_python_error(L"1 // 0\n", L"ZeroDivisionError", L"division by zero");
@@ -1757,43 +1603,6 @@ TEST(Interpreter, floor_division_reports_errors)
                         L"unsupported operand type(s) for //");
     expect_python_error(L"1 // \"a\"\n", L"TypeError",
                         L"unsupported operand type(s) for //");
-}
-
-TEST(Interpreter, modulo_values)
-{
-    test::VmTestContext test_context;
-
-    auto expect_float_result = [&](const wchar_t *source, double expected) {
-        Value actual = test_context.run_file(source);
-        ASSERT_TRUE(can_convert_to<Float>(actual));
-        EXPECT_DOUBLE_EQ(expected, actual.get_ptr<Float>()->value);
-    };
-
-    EXPECT_EQ(Value::from_smi(1), test_context.run_file(L"5 % 2\n"));
-    EXPECT_EQ(Value::from_smi(1), test_context.run_file(L"-5 % 2\n"));
-    EXPECT_EQ(Value::from_smi(-1), test_context.run_file(L"5 % -2\n"));
-    EXPECT_EQ(Value::from_smi(-1), test_context.run_file(L"-5 % -2\n"));
-    EXPECT_EQ(Value::from_smi(0), test_context.run_file(L"False % 1\n"));
-    EXPECT_EQ(Value::from_smi(1),
-              test_context.run_file(L"int('18446744073709551616') % 3\n"));
-    EXPECT_EQ(Value::from_smi(2),
-              test_context.run_file(L"-int('18446744073709551616') % 3\n"));
-    EXPECT_EQ(Value::from_smi(-2),
-              test_context.run_file(L"int('18446744073709551616') % -3\n"));
-    EXPECT_EQ(Value::from_smi(-1),
-              test_context.run_file(L"-int('18446744073709551616') % -3\n"));
-    EXPECT_EQ(Value::from_smi(0),
-              test_context.run_file(L"int('18446744073709551616') % "
-                                    L"int('18446744073709551616')\n"));
-    expect_float_result(L"5.0 % 2\n", 1.0);
-    expect_float_result(L"5 % 2.0\n", 1.0);
-    expect_float_result(L"-5.0 % 2\n", 1.0);
-    expect_float_result(L"5.0 % -2\n", -1.0);
-    expect_float_result(L"-8.122808264515302e-272 % 7.866340851152702e98\n",
-                        7.866340851152702e98);
-    expect_float_result(L"(7.866340851152702e98).__rmod__("
-                        L"-8.122808264515302e-272)\n",
-                        7.866340851152702e98);
 }
 
 TEST(Interpreter, modulo_reports_errors)
@@ -2726,38 +2535,6 @@ TEST(Interpreter, operator_eq_dispatch_python_cache_installs_before_call)
     ASSERT_NE(nullptr, cache.operand_lookup_validity_cells[1]);
 }
 
-TEST(Interpreter, shortcutting_boolean_operators_return_operand_values)
-{
-    test::VmTestContext test_context;
-
-    EXPECT_EQ(Value::from_smi(0), test_context.run_file(L"0 and missing\n"));
-    EXPECT_EQ(Value::from_smi(7), test_context.run_file(L"1 and 7\n"));
-    EXPECT_EQ(Value::from_smi(5), test_context.run_file(L"5 or missing\n"));
-    EXPECT_EQ(Value::from_smi(8), test_context.run_file(L"0 or 8\n"));
-}
-
-TEST(Interpreter, shortcutting_boolean_operators_skip_unneeded_operand)
-{
-    test::VmTestContext test_context;
-
-    EXPECT_EQ(Value::from_smi(4),
-              test_context.run_file(L"def fail():\n"
-                                    L"    raise ValueError\n"
-                                    L"if True or fail():\n"
-                                    L"    x = 4\n"
-                                    L"else:\n"
-                                    L"    x = 1\n"
-                                    L"x\n"));
-    EXPECT_EQ(Value::from_smi(4),
-              test_context.run_file(L"def fail():\n"
-                                    L"    raise ValueError\n"
-                                    L"if False and fail():\n"
-                                    L"    x = 1\n"
-                                    L"else:\n"
-                                    L"    x = 4\n"
-                                    L"x\n"));
-}
-
 TEST(Interpreter, shortcutting_boolean_operators_compile_math_shaped_cases)
 {
     test::VmTestContext test_context;
@@ -2784,124 +2561,10 @@ TEST(Interpreter, sqrt_is_not_a_builtin)
                         L"name 'sqrt' is not defined");
 }
 
-TEST(Interpreter, float_comparison_values)
+TEST(Interpreter, string_comparison_reports_unsupported_operands)
 {
-    test::VmTestContext test_context;
-
-    auto expect_bool_result = [&](const wchar_t *source, Value expected) {
-        EXPECT_EQ(expected, test_context.run_file(source));
-    };
-
-    expect_bool_result(L"1.0 < 2.0\n", Value::True());
-    expect_bool_result(L"2.0 < 1.0\n", Value::False());
-    expect_bool_result(L"1.0 <= 1.0\n", Value::True());
-    expect_bool_result(L"2.0 <= 1.0\n", Value::False());
-    expect_bool_result(L"2.0 > 1.0\n", Value::True());
-    expect_bool_result(L"1.0 > 2.0\n", Value::False());
-    expect_bool_result(L"2.0 >= 2.0\n", Value::True());
-    expect_bool_result(L"1.0 >= 2.0\n", Value::False());
-    expect_bool_result(L"1.0 == 1.0\n", Value::True());
-    expect_bool_result(L"1.0 == 2.0\n", Value::False());
-    expect_bool_result(L"1.0 != 2.0\n", Value::True());
-    expect_bool_result(L"1.0 != 1.0\n", Value::False());
-
-    expect_bool_result(L"1 < 2.0\n", Value::True());
-    expect_bool_result(L"2 < 1.0\n", Value::False());
-    expect_bool_result(L"1 <= 1.0\n", Value::True());
-    expect_bool_result(L"2 <= 1.0\n", Value::False());
-    expect_bool_result(L"2 > 1.0\n", Value::True());
-    expect_bool_result(L"1 > 2.0\n", Value::False());
-    expect_bool_result(L"2 >= 2.0\n", Value::True());
-    expect_bool_result(L"1 >= 2.0\n", Value::False());
-    expect_bool_result(L"1 == 1.0\n", Value::True());
-    expect_bool_result(L"1 == 2.0\n", Value::False());
-    expect_bool_result(L"1 != 2.0\n", Value::True());
-    expect_bool_result(L"1 != 1.0\n", Value::False());
-
-    expect_bool_result(L"1.0 < 2\n", Value::True());
-    expect_bool_result(L"2.0 < 1\n", Value::False());
-    expect_bool_result(L"1.0 <= 1\n", Value::True());
-    expect_bool_result(L"2.0 <= 1\n", Value::False());
-    expect_bool_result(L"2.0 > 1\n", Value::True());
-    expect_bool_result(L"1.0 > 2\n", Value::False());
-    expect_bool_result(L"2.0 >= 2\n", Value::True());
-    expect_bool_result(L"1.0 >= 2\n", Value::False());
-    expect_bool_result(L"1.0 == 1\n", Value::True());
-    expect_bool_result(L"1.0 == 2\n", Value::False());
-    expect_bool_result(L"1.0 != 2\n", Value::True());
-    expect_bool_result(L"1.0 != 1\n", Value::False());
-    expect_bool_result(L"True == 1.0\n", Value::True());
-    expect_bool_result(L"False == 0.0\n", Value::True());
-    expect_bool_result(L"True != 1.0\n", Value::False());
-    expect_bool_result(L"False != 0.0\n", Value::False());
-    expect_bool_result(L"True < 2.0\n", Value::True());
-    expect_bool_result(L"False >= 0.0\n", Value::True());
-
-    expect_bool_result(L"0.0 == -0.0\n", Value::True());
-    expect_bool_result(L"0.0 != -0.0\n", Value::False());
-    expect_bool_result(L"0.0 <= -0.0\n", Value::True());
-    expect_bool_result(L"0.0 >= -0.0\n", Value::True());
-
-    expect_bool_result(L"inf = 1e300 * 1e300\n"
-                       L"nan = inf / inf\n"
-                       L"nan < nan\n",
-                       Value::False());
-    expect_bool_result(L"inf = 1e300 * 1e300\n"
-                       L"nan = inf / inf\n"
-                       L"nan <= nan\n",
-                       Value::False());
-    expect_bool_result(L"inf = 1e300 * 1e300\n"
-                       L"nan = inf / inf\n"
-                       L"nan > nan\n",
-                       Value::False());
-    expect_bool_result(L"inf = 1e300 * 1e300\n"
-                       L"nan = inf / inf\n"
-                       L"nan >= nan\n",
-                       Value::False());
-    expect_bool_result(L"inf = 1e300 * 1e300\n"
-                       L"nan = inf / inf\n"
-                       L"nan == nan\n",
-                       Value::False());
-    expect_bool_result(L"inf = 1e300 * 1e300\n"
-                       L"nan = inf / inf\n"
-                       L"nan != nan\n",
-                       Value::True());
-}
-
-TEST(Interpreter, string_comparison_values)
-{
-    test::VmTestContext test_context;
-
-    auto expect_bool_result = [&](const wchar_t *source, Value expected) {
-        EXPECT_EQ(expected, test_context.run_file(source));
-    };
-
-    expect_bool_result(L"\"a\" == \"a\"\n", Value::True());
-    expect_bool_result(L"\"a\" == \"b\"\n", Value::False());
-    expect_bool_result(L"\"a\" != \"a\"\n", Value::False());
-    expect_bool_result(L"\"a\" != \"b\"\n", Value::True());
-    expect_bool_result(L"\"a\" < \"b\"\n", Value::True());
-    expect_bool_result(L"\"b\" < \"a\"\n", Value::False());
-    expect_bool_result(L"\"a\" <= \"a\"\n", Value::True());
-    expect_bool_result(L"\"b\" <= \"a\"\n", Value::False());
-    expect_bool_result(L"\"b\" > \"a\"\n", Value::True());
-    expect_bool_result(L"\"a\" > \"b\"\n", Value::False());
-    expect_bool_result(L"\"a\" >= \"a\"\n", Value::True());
-    expect_bool_result(L"\"a\" >= \"b\"\n", Value::False());
-    expect_bool_result(L"\"a\" < \"aa\"\n", Value::True());
-
     expect_python_error(L"\"a\" < 1\n", L"TypeError",
                         L"unsupported operand type(s) for comparison");
-}
-
-TEST(Interpreter, string_add_expression_concatenates_strings)
-{
-    test::VmTestContext test_context;
-    Value actual = test_context.run_file(L"\"ab\" + \"cd\"\n");
-
-    ASSERT_TRUE(can_convert_to<String>(actual));
-    EXPECT_STREQ(L"abcd",
-                 string_as_wchar_t(TValue<String>::from_value_assumed(actual)));
 }
 
 TEST(Interpreter, string_dunder_comparisons_call_intrinsic_functions)
