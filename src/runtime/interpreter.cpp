@@ -5695,7 +5695,7 @@ namespace cl
                                 L"UnimplementedError",
                                 L"locals() is only implemented for module "
                                 L"scope");
-                        COMPLETE();
+                        MUSTTAIL return propagate_pending_exception(ARGS);
                     }
                     ModuleObject *caller_module =
                         caller_code_object->get_defining_module().extract();

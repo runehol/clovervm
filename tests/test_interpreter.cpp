@@ -7043,6 +7043,12 @@ TEST(Interpreter, locals_builtin_is_unimplemented_in_function_scope)
                         L"locals() is only implemented for module scope");
 }
 
+TEST(Interpreter, dir_without_arguments_propagates_locals_error)
+{
+    expect_python_error(L"dir()\n", L"UnimplementedError",
+                        L"locals() is only implemented for module scope");
+}
+
 TEST(Interpreter, instance_dict_returns_fresh_live_slotdict_views)
 {
     test::VmTestContext test_context;
