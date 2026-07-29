@@ -80,7 +80,7 @@ namespace cl::jit
                 {0, AccessTiming::Early, fixed(PhysicalLocation::reg(x0))}});
         AllocationConstraints constraints =
             constraints_with(std::move(overrides));
-        PreparedAllocationProblem prepared({}, {}, {}, {}, {}, {});
+        PreparedAllocationProblem prepared({}, {}, {}, {}, {}, {}, {});
         RegisterAllocationResult allocation =
             allocate(*graph, constraints, prepared);
 
@@ -125,7 +125,7 @@ namespace cl::jit
                 {0, AccessTiming::Early, fixed(PhysicalLocation::reg(x0))}});
         AllocationConstraints constraints =
             constraints_with(std::move(overrides));
-        PreparedAllocationProblem prepared({}, {}, {}, {}, {}, {});
+        PreparedAllocationProblem prepared({}, {}, {}, {}, {}, {}, {});
         RegisterAllocationResult allocation =
             allocate(*graph, constraints, prepared);
 
@@ -168,7 +168,7 @@ namespace cl::jit
                 {0, AccessTiming::Early, fixed(PhysicalLocation::reg(x0))}});
         AllocationConstraints constraints =
             constraints_with(std::move(overrides));
-        PreparedAllocationProblem prepared({}, {}, {}, {}, {}, {});
+        PreparedAllocationProblem prepared({}, {}, {}, {}, {}, {}, {});
         RegisterAllocationResult allocation =
             allocate(*graph, constraints, prepared);
         ASSERT_TRUE(allocation.transfers().sets().empty());
@@ -209,7 +209,7 @@ namespace cl::jit
                 {0, AccessTiming::Early, fixed(PhysicalLocation::reg(x0))}});
         AllocationConstraints constraints =
             constraints_with(std::move(overrides));
-        PreparedAllocationProblem prepared({}, {}, {}, {}, {}, {});
+        PreparedAllocationProblem prepared({}, {}, {}, {}, {}, {}, {});
         RegisterAllocationResult allocation =
             allocate(*graph, constraints, prepared);
 
@@ -259,7 +259,7 @@ namespace cl::jit
                                           fixed(PhysicalLocation::reg(x0))}});
         AllocationConstraints constraints =
             constraints_with(std::move(overrides));
-        PreparedAllocationProblem prepared({}, {}, {}, {}, {}, {});
+        PreparedAllocationProblem prepared({}, {}, {}, {}, {}, {}, {});
         RegisterAllocationResult allocation =
             allocate(*graph, constraints, prepared);
 
@@ -308,7 +308,7 @@ namespace cl::jit
                                  StackLocationKind::IncomingParameter, 3)))});
         AllocationConstraints constraints =
             constraints_with(std::move(overrides));
-        PreparedAllocationProblem prepared({}, {}, {}, {}, {}, {});
+        PreparedAllocationProblem prepared({}, {}, {}, {}, {}, {}, {});
         RegisterAllocationResult allocation =
             allocate(*graph, constraints, prepared);
         ASSERT_EQ(1u, allocation.transfers().sets().size());
@@ -357,7 +357,7 @@ namespace cl::jit
                              fixed(PhysicalLocation::stack(destination))}});
         AllocationConstraints constraints =
             constraints_with(std::move(overrides));
-        PreparedAllocationProblem prepared({}, {}, {}, {}, {}, {});
+        PreparedAllocationProblem prepared({}, {}, {}, {}, {}, {}, {});
         RegisterAllocationResult allocation =
             allocate(*graph, constraints, prepared);
 
@@ -404,7 +404,7 @@ namespace cl::jit
                              fixed(PhysicalLocation::stack(destination))}});
         AllocationConstraints constraints =
             constraints_with(std::move(overrides));
-        PreparedAllocationProblem prepared({}, {}, {}, {}, {}, {});
+        PreparedAllocationProblem prepared({}, {}, {}, {}, {}, {}, {});
         RegisterAllocationResult allocation =
             allocate(*graph, constraints, prepared);
 
@@ -462,7 +462,7 @@ namespace cl::jit
                 {1, AccessTiming::Early, fixed(PhysicalLocation::reg(x0))}});
         AllocationConstraints constraints =
             constraints_with(std::move(overrides));
-        PreparedAllocationProblem prepared({}, {}, {}, {}, {}, {});
+        PreparedAllocationProblem prepared({}, {}, {}, {}, {}, {}, {});
         RegisterAllocationResult allocation =
             allocate(*graph, constraints, prepared);
 
@@ -528,7 +528,7 @@ namespace cl::jit
                                     fixed(PhysicalLocation::stack(first))}});
         AllocationConstraints constraints =
             constraints_with(std::move(overrides));
-        PreparedAllocationProblem prepared({}, {}, {}, {}, {}, {});
+        PreparedAllocationProblem prepared({}, {}, {}, {}, {}, {}, {});
         RegisterAllocationResult allocation =
             allocate(*graph, constraints, prepared);
 
@@ -607,7 +607,7 @@ namespace cl::jit
                                     fixed(PhysicalLocation::stack(first))}});
         AllocationConstraints constraints =
             constraints_with(std::move(overrides), false);
-        PreparedAllocationProblem prepared({}, {}, {}, {}, {}, {});
+        PreparedAllocationProblem prepared({}, {}, {}, {}, {}, {}, {});
         RegisterAllocationResult allocation =
             allocate(*graph, constraints, prepared);
 

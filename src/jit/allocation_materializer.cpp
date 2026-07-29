@@ -320,6 +320,7 @@ namespace cl::jit
             for(size_t index = 0; index < allocation.bundles().size(); ++index)
             {
                 std::optional<InstructionId> value;
+                bool has_multiple_values = false;
                 for(const BundleFragment &fragment:
                     allocation.bundles()[index].fragments)
                 {
@@ -334,12 +335,15 @@ namespace cl::jit
                         source.origin.program_value().instruction_id();
                     if(value.has_value() && *value != candidate)
                     {
-                        fatal("JIT materialization of merged bundle values is "
-                              "not implemented");
+                        has_multiple_values = true;
+                        break;
                     }
                     value = candidate;
                 }
-                result.initial_value_by_bundle[index] = value;
+                if(!has_multiple_values)
+                {
+                    result.initial_value_by_bundle[index] = value;
+                }
             }
 
             return Result<MaterializationPlan, RegisterAllocationError>::ok(

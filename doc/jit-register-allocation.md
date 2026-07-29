@@ -4,7 +4,7 @@
 |---|---|
 | Document type | Design |
 | Status | Accepted |
-| Implementation | Prepared allocation, deterministic constraint splitting, transfer scheduling, conflict-free register/stack assignment, parallel-transfer materialization, and the fixed-x19 value-state migration are implemented; runtime x19 installation and edge materialization remain open |
+| Implementation | Prepared allocation, block-edge affinities and bundle coalescing, deterministic constraint splitting, transfer scheduling, conflict-free register/stack assignment, parallel-transfer materialization, and the fixed-x19 value-state migration are implemented; runtime x19 installation and edge-transfer-block materialization remain open |
 | Scope | Allocation constraints, allocator-local numbering, liveness, bundles, backtracking allocation, live-range splitting, block-edge transfers, clobbers, spills, and post-allocation materialization |
 | Owning layers | Target preparation owns occurrence constraints and physical-transfer capabilities; the generic register allocator owns numbering, liveness, bundles, splitting, allocation, spill decisions, and bundle transfers; generic allocation materialization resolves transfers, rewrites the Core CFG, and publishes occurrence locations; publication and transition planners own canonical-state synchronization; machine-code emission only encodes the materialized graph |
 | Validated against | `tests/test_jit_allocation_constraints.cpp`, `tests/test_aarch64_allocation_constraints.cpp`, `tests/test_jit_register_allocator.cpp`, `tests/test_jit_parallel_assignment_resolver.cpp`, `tests/test_jit_allocation_materializer.cpp`, and `tests/test_aarch64_execution.cpp` |
@@ -61,10 +61,10 @@ constraint class.
 
 `RegisterAllocationResult` owns the final active bundle vector after
 normalization, merging, and splitting. Its vector indices are the `BundleId`
-namespace used by the location table and transfer schedule. The initial bundle
-IDs retain their prepared-problem indices; new split children are appended. The
-immutable prepared problem continues to own source live ranges, occurrences,
-and their provenance.
+namespace used by the location table and transfer schedule. Prepared bundle IDs
+are assigned after initial affinity merging; new split children are appended.
+The immutable prepared problem continues to own source live ranges,
+occurrences, and their provenance.
 
 `BundleLocationAssignments` are allocator-local facts. They map each bundle in
 the final partition to the register, allocator spill slot, canonical frame
@@ -1091,8 +1091,8 @@ The allocator runs over prepared IR:
 build ephemeral positions
 compute precise allocation liveness
 build live ranges and attach constrained occurrences
-split for incompatible location constraints and record transfers
 merge related non-overlapping ranges into bundles
+split for incompatible location constraints and record transfers
 enqueue bundles by allocation priority
 assign a fitting register, evict lower-weight bundles, or split
 spill when splitting or register allocation is no longer legal or worthwhile
@@ -1263,9 +1263,16 @@ one predecessor range and one successor range, not overlapping duplicate SSA
 definitions. Repeating the same edge transfer or proposed bundle merge is
 idempotent.
 
-Critical-edge splitting is an implementation choice made when a transfer set
-has no legal insertion point on the original edge. The semantic CFG retains
-first-class `BlockEdge` objects and ordered edge arguments.
+Every non-empty edge transfer set is materialized as a dedicated Machine IR
+transfer block. Its parameters receive the predecessor-side locations, its
+parallel transfers establish the successor parameter locations, and its
+outgoing edge targets the original successor. Using one representation for
+ordinary and critical edges keeps conditional-edge transfers out of the
+predecessor's unconditional instruction stream. Machine block layout may place
+the transfer block immediately before its successor and omit the final branch
+through fallthrough, so the dedicated CFG block does not inherently add a
+runtime jump. The semantic CFG retains first-class `BlockEdge` objects and
+ordered edge arguments until this post-allocation rewrite.
 
 ## Calls, Clobbers, and Temporaries
 

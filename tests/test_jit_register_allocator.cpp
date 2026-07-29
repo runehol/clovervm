@@ -390,6 +390,112 @@ namespace cl::jit
                   prepared.occurrences()[edge_use.value()].anchor.kind());
         EXPECT_GT(prepared.occurrences()[edge_use.value()].spill_weight,
                   10000u);
+
+        ASSERT_EQ(1u, prepared.edge_affinities().size());
+        const EdgeAffinity &affinity = prepared.edge_affinities().front();
+        EXPECT_EQ(edge, affinity.edge);
+        EXPECT_EQ(0u, affinity.argument_index);
+        EXPECT_EQ(edge_use, affinity.source);
+        EXPECT_EQ(prepared.live_ranges()[2].occurrences.front(),
+                  affinity.destination);
+
+        ASSERT_EQ(2u, prepared.bundles().size());
+        EXPECT_EQ(2u, prepared.bundles()[0].fragments.size());
+        EXPECT_EQ(LiveRangeId(0), prepared.bundles()[0].fragments[0].source);
+        EXPECT_EQ(LiveRangeId(2), prepared.bundles()[0].fragments[1].source);
+    }
+
+    TEST(JitRegisterAllocator, SchedulesUncoalescedBlockEdgeTransfer)
+    {
+        CompilationSession session;
+        GraphBuilder builder(session, IRLevel::Core);
+        Block *entry = builder.emplace_block();
+        Block *exit = builder.emplace_block();
+
+        ConstInstruction value = builder.emplace_instruction<ConstInstruction>(
+            entry, Value::from_smi(7));
+        std::array<ProgramValueRef, 1> arguments = {TaggedValueRef(value)};
+        BlockEdge *edge = builder.make_block_edge(entry, exit, arguments);
+        builder.emplace_instruction<UnconditionalBranchInstruction>(entry,
+                                                                    edge);
+        ParameterInstruction parameter =
+            builder.emplace_parameter<ParameterInstruction>(exit);
+        ReturnInstruction return_instruction =
+            builder.emplace_instruction<ReturnInstruction>(
+                exit, TaggedValueRef(parameter));
+        ControlFlowGraph *graph = builder.finalize();
+
+        std::vector<InstructionAllocationConstraints> overrides;
+        overrides.emplace_back(value, std::vector<ProgramValueUseConstraint>{},
+                               ResultConstraint{AccessTiming::Late, fixed(x0)});
+        overrides.emplace_back(parameter,
+                               std::vector<ProgramValueUseConstraint>{},
+                               ResultConstraint{AccessTiming::Late, fixed(x1)});
+        overrides.emplace_back(
+            return_instruction,
+            std::vector<ProgramValueUseConstraint>{
+                {ReturnInstruction::return_value_operand_index,
+                 AccessTiming::Early, fixed(x1)}});
+        constexpr std::array registers = {x0, x1};
+        AllocationConstraints constraints =
+            gpr_constraints(registers, std::move(overrides));
+
+        auto prepared_result = prepare_register_allocation(*graph, constraints);
+        ASSERT_TRUE(prepared_result);
+        PreparedAllocationProblem prepared = std::move(prepared_result).value();
+        ASSERT_EQ(2u, prepared.bundles().size());
+
+        auto allocation_result = assign_bundles(prepared, constraints);
+        ASSERT_TRUE(allocation_result);
+        RegisterAllocationResult allocation =
+            std::move(allocation_result).value();
+
+        ASSERT_EQ(1u, allocation.transfers().sets().size());
+        const BundleTransferSet &set = allocation.transfers().sets().front();
+        EXPECT_EQ(TransferPoint::block_edge(edge), set.point);
+        ASSERT_EQ(1u, set.transfers.size());
+        EXPECT_EQ(x0, allocation.locations()
+                          .location_for(set.transfers.front().source)
+                          .reg());
+        EXPECT_EQ(x1, allocation.locations()
+                          .location_for(set.transfers.front().destination)
+                          .reg());
+    }
+
+    TEST(JitRegisterAllocator, RepeatedEdgeAffinityMergeIsIdempotent)
+    {
+        CompilationSession session;
+        GraphBuilder builder(session, IRLevel::Core);
+        Block *entry = builder.emplace_block();
+        Block *exit = builder.emplace_block();
+
+        TaggedValueRef value =
+            emplace_constant(builder, entry, Value::from_smi(7));
+        std::array<ProgramValueRef, 1> arguments = {value};
+        BlockEdge *true_edge = builder.make_block_edge(entry, exit, arguments);
+        BlockEdge *false_edge = builder.make_block_edge(entry, exit, arguments);
+        builder.emplace_instruction<ConditionalBranchInstruction>(
+            entry, value, true_edge, false_edge);
+        ParameterInstruction parameter =
+            builder.emplace_parameter<ParameterInstruction>(exit);
+        ReturnInstruction return_instruction =
+            builder.emplace_instruction<ReturnInstruction>(
+                exit, TaggedValueRef(parameter));
+        ControlFlowGraph *graph = builder.finalize();
+
+        AllocationConstraints constraints =
+            allocator_test_constraints({}, return_instruction);
+        auto prepared_result = prepare_register_allocation(*graph, constraints);
+
+        ASSERT_TRUE(prepared_result);
+        PreparedAllocationProblem prepared = std::move(prepared_result).value();
+        ASSERT_EQ(2u, prepared.edge_affinities().size());
+        ASSERT_EQ(1u, prepared.bundles().size());
+        ASSERT_EQ(2u, prepared.bundles().front().fragments.size());
+        EXPECT_EQ(LiveRangeId(0),
+                  prepared.bundles().front().fragments[0].source);
+        EXPECT_EQ(LiveRangeId(1),
+                  prepared.bundles().front().fragments[1].source);
     }
 
     TEST(JitRegisterAllocator, AssignsRepresentativeBundles)

@@ -720,6 +720,8 @@ namespace cl::jit
         }
         BundleLocationAssignments assignments =
             std::move(assignment_result).value();
+        schedule_edge_transfers(problem, split.bundles, assignments,
+                                split.transfers);
         RegisterAllocationResult allocation(std::move(split.bundles),
                                             std::move(assignments),
                                             std::move(split.transfers));

@@ -150,14 +150,77 @@ namespace cl::jit
                     }
                 }
                 sort_live_range_references();
+                build_edge_affinities();
                 require_all_overrides_consumed();
                 return Result<LiveRangeScan, RegisterAllocationError>::ok(
                     {std::move(block_ranges_), std::move(occurrences_),
                      std::move(fixed_constraints_), std::move(live_ranges_),
-                     std::move(clobbers_)});
+                     std::move(clobbers_), std::move(edge_affinities_)});
             }
 
         private:
+            OccurrenceId result_occurrence(InstructionId instruction) const
+            {
+                LiveRangeId range = value_ranges_.at(instruction);
+                for(OccurrenceId occurrence:
+                    live_ranges_[range.value()].occurrences)
+                {
+                    const OccurrenceAnchor &anchor =
+                        occurrences_[occurrence.value()].anchor;
+                    if(anchor.kind() ==
+                           OccurrenceAnchor::Kind::InstructionResult &&
+                       anchor.instruction_id() == instruction)
+                    {
+                        return occurrence;
+                    }
+                }
+                fatal("JIT allocator result has no defining occurrence");
+            }
+
+            OccurrenceId edge_argument_occurrence(const BlockEdge *edge,
+                                                  size_t argument_index) const
+            {
+                InstructionId definition =
+                    edge->arguments()[argument_index].instruction_id();
+                LiveRangeId range = value_ranges_.at(definition);
+                for(OccurrenceId occurrence:
+                    live_ranges_[range.value()].occurrences)
+                {
+                    const OccurrenceAnchor &anchor =
+                        occurrences_[occurrence.value()].anchor;
+                    if(anchor.kind() ==
+                           OccurrenceAnchor::Kind::BlockEdgeArgument &&
+                       anchor.block_edge() == edge &&
+                       anchor.index() == argument_index)
+                    {
+                        return occurrence;
+                    }
+                }
+                fatal("JIT allocator edge argument has no occurrence");
+            }
+
+            void build_edge_affinities()
+            {
+                for(const Block *block: graph_.blocks())
+                {
+                    for(const BlockEdge *edge: block->block_successor_edges())
+                    {
+                        assert(edge->arguments().size() ==
+                               edge->target()->parameters().size());
+                        for(size_t index = 0; index < edge->arguments().size();
+                            ++index)
+                        {
+                            edge_affinities_.push_back(
+                                {edge, static_cast<uint32_t>(index),
+                                 edge_argument_occurrence(edge, index),
+                                 result_occurrence(edge->target()
+                                                       ->parameter_at(index)
+                                                       .id())});
+                        }
+                    }
+                }
+            }
+
             void sort_live_range_references()
             {
                 for(LiveRange &live_range: live_ranges_)
@@ -518,6 +581,7 @@ namespace cl::jit
             std::vector<FixedLocationConstraint> fixed_constraints_;
             std::vector<LiveRange> live_ranges_;
             std::vector<ClobberReservation> clobbers_;
+            std::vector<EdgeAffinity> edge_affinities_;
         };
     }  // namespace
 

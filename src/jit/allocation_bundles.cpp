@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <limits>
+#include <optional>
 #include <utility>
 #include <vector>
 
@@ -67,6 +68,128 @@ namespace cl::jit
                 total += weight;
             }
             return std::max<uint64_t>(1, total / bundle.allocation_priority);
+        }
+
+        std::optional<PhysicalLocation> single_fixed_location(
+            const LiveBundle &bundle,
+            const std::vector<FixedLocationConstraint> &fixed_constraints)
+        {
+            std::optional<PhysicalLocation> result;
+            for(FixedConstraintId id: bundle.fixed_constraints)
+            {
+                PhysicalLocation location =
+                    fixed_constraints[id.value()].location;
+                if(result.has_value() && !result->aliases(location))
+                {
+                    return std::nullopt;
+                }
+                result = location;
+            }
+            return result;
+        }
+
+        bool can_merge_bundles(
+            const LiveBundle &lhs, const LiveBundle &rhs,
+            const std::vector<FixedLocationConstraint> &fixed_constraints)
+        {
+            if(lhs.register_class != rhs.register_class ||
+               bundles_overlap(lhs, rhs))
+            {
+                return false;
+            }
+
+            std::optional<PhysicalLocation> lhs_fixed =
+                single_fixed_location(lhs, fixed_constraints);
+            std::optional<PhysicalLocation> rhs_fixed =
+                single_fixed_location(rhs, fixed_constraints);
+            if((!lhs.fixed_constraints.empty() && !lhs_fixed.has_value()) ||
+               (!rhs.fixed_constraints.empty() && !rhs_fixed.has_value()))
+            {
+                return false;
+            }
+            return !lhs_fixed.has_value() || !rhs_fixed.has_value() ||
+                   lhs_fixed->aliases(*rhs_fixed);
+        }
+
+        void merge_edge_affinities(
+            std::vector<LiveBundle> &bundles,
+            const std::vector<EdgeAffinity> &affinities,
+            const std::vector<Occurrence> &occurrences,
+            const std::vector<FixedLocationConstraint> &fixed_constraints,
+            const std::vector<LiveRange> &live_ranges)
+        {
+            std::vector<BundleId> parent;
+            parent.reserve(bundles.size());
+            for(size_t index = 0; index < bundles.size(); ++index)
+            {
+                parent.emplace_back(static_cast<uint32_t>(index));
+            }
+
+            auto root = [&](BundleId id) {
+                while(parent[id.value()] != id)
+                {
+                    parent[id.value()] = parent[parent[id.value()].value()];
+                    id = parent[id.value()];
+                }
+                return id;
+            };
+
+            for(const EdgeAffinity &affinity: affinities)
+            {
+                BundleId lhs = root(BundleId(
+                    occurrences[affinity.source.value()].live_range.value()));
+                BundleId rhs =
+                    root(BundleId(occurrences[affinity.destination.value()]
+                                      .live_range.value()));
+                if(lhs == rhs ||
+                   !can_merge_bundles(bundles[lhs.value()],
+                                      bundles[rhs.value()], fixed_constraints))
+                {
+                    continue;
+                }
+
+                LiveBundle &destination = bundles[lhs.value()];
+                LiveBundle &source = bundles[rhs.value()];
+                destination.fragments.insert(destination.fragments.end(),
+                                             source.fragments.begin(),
+                                             source.fragments.end());
+                std::ranges::sort(
+                    destination.fragments, [](const BundleFragment &left,
+                                              const BundleFragment &right) {
+                        return left.range.start < right.range.start;
+                    });
+                recompute_bundle_properties(destination, occurrences,
+                                            fixed_constraints, live_ranges);
+                source.fragments.clear();
+                parent[rhs.value()] = lhs;
+            }
+
+            std::erase_if(bundles, [](const LiveBundle &bundle) {
+                return bundle.fragments.empty();
+            });
+        }
+
+        BundleId
+        bundle_covering_occurrence(std::span<const LiveBundle> bundles,
+                                   const std::vector<Occurrence> &occurrences,
+                                   OccurrenceId occurrence_id)
+        {
+            const Occurrence &occurrence = occurrences[occurrence_id.value()];
+            std::optional<BundleId> result;
+            for(size_t index = 0; index < bundles.size(); ++index)
+            {
+                for(const BundleFragment &fragment: bundles[index].fragments)
+                {
+                    if(fragment.source == occurrence.live_range &&
+                       fragment.range.contains(occurrence.minimum_coverage))
+                    {
+                        assert(!result.has_value());
+                        result = BundleId(static_cast<uint32_t>(index));
+                    }
+                }
+            }
+            assert(result.has_value());
+            return *result;
         }
     }  // namespace
 
@@ -177,11 +300,36 @@ namespace cl::jit
                                         scan.fixed_constraints,
                                         scan.live_ranges);
         }
+        merge_edge_affinities(bundles, scan.edge_affinities, scan.occurrences,
+                              scan.fixed_constraints, scan.live_ranges);
 
         return PreparedAllocationProblem(
             std::move(scan.block_ranges), std::move(scan.occurrences),
             std::move(scan.fixed_constraints), std::move(scan.live_ranges),
-            std::move(bundles), std::move(scan.clobbers));
+            std::move(bundles), std::move(scan.clobbers),
+            std::move(scan.edge_affinities));
+    }
+
+    void schedule_edge_transfers(const PreparedAllocationProblem &problem,
+                                 std::span<const LiveBundle> bundles,
+                                 const BundleLocationAssignments &assignments,
+                                 BundleTransferSchedule &transfers)
+    {
+        for(const EdgeAffinity &affinity: problem.edge_affinities())
+        {
+            BundleId source = bundle_covering_occurrence(
+                bundles, problem.occurrences(), affinity.source);
+            BundleId destination = bundle_covering_occurrence(
+                bundles, problem.occurrences(), affinity.destination);
+            if(source != destination &&
+               !assignments.location_for(source).aliases(
+                   assignments.location_for(destination)))
+            {
+                transfers.add(TransferPoint::block_edge(affinity.edge),
+                              TransferPhase::Regular,
+                              BundleTransfer{source, destination});
+            }
+        }
     }
 
 }  // namespace cl::jit

@@ -342,6 +342,15 @@ namespace cl::jit
         LivenessRange range;
     };
 
+    struct EdgeAffinity
+    {
+        // Connects one predecessor edge use to its successor parameter def.
+        const BlockEdge *edge;
+        uint32_t argument_index;
+        OccurrenceId source;
+        OccurrenceId destination;
+    };
+
     class PreparedAllocationProblem
     {
     public:
@@ -350,7 +359,8 @@ namespace cl::jit
             std::vector<Occurrence> occurrences,
             std::vector<FixedLocationConstraint> fixed_constraints,
             std::vector<LiveRange> live_ranges, std::vector<LiveBundle> bundles,
-            std::vector<ClobberReservation> clobbers);
+            std::vector<ClobberReservation> clobbers,
+            std::vector<EdgeAffinity> edge_affinities);
 
         const std::vector<BlockLivenessRange> &block_ranges() const
         {
@@ -373,6 +383,10 @@ namespace cl::jit
         {
             return clobbers_;
         }
+        const std::vector<EdgeAffinity> &edge_affinities() const
+        {
+            return edge_affinities_;
+        }
 
     private:
         std::vector<BlockLivenessRange> block_ranges_;
@@ -381,6 +395,7 @@ namespace cl::jit
         std::vector<LiveRange> live_ranges_;
         std::vector<LiveBundle> bundles_;
         std::vector<ClobberReservation> clobbers_;
+        std::vector<EdgeAffinity> edge_affinities_;
     };
 
 }  // namespace cl::jit

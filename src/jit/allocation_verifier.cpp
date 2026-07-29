@@ -51,6 +51,19 @@ namespace cl::jit
                 });
             return found;
         }
+
+        bool bundle_covers_occurrence(const LiveBundle &bundle,
+                                      const PreparedAllocationProblem &problem,
+                                      OccurrenceId occurrence_id)
+        {
+            const Occurrence &occurrence =
+                problem.occurrences()[occurrence_id.value()];
+            return std::ranges::any_of(
+                bundle.fragments, [&](const BundleFragment &fragment) {
+                    return fragment.source == occurrence.live_range &&
+                           fragment.range.contains(occurrence.minimum_coverage);
+                });
+        }
     }  // namespace
 
     void verify_prepared_allocation(const PreparedAllocationProblem &problem)
@@ -316,33 +329,58 @@ namespace cl::jit
             }
         }
 
-        if(problem.bundles().size() != problem.live_ranges().size())
+        for(const LiveBundle &bundle: problem.bundles())
         {
-            fatal("initial JIT allocator problem is not singleton-bundled");
+            if(bundle.fragments.empty())
+            {
+                fatal("initial JIT allocator bundle is empty");
+            }
+            std::vector<FixedConstraintId> expected_fixed;
+            for(const BundleFragment &fragment: bundle.fragments)
+            {
+                if(fragment.source.value() >= problem.live_ranges().size() ||
+                   bundled[fragment.source.value()])
+                {
+                    fatal("JIT allocator bundle has invalid source ownership");
+                }
+                bundled[fragment.source.value()] = true;
+                const LiveRange &source =
+                    problem.live_ranges()[fragment.source.value()];
+                if(fragment.range != source.range ||
+                   bundle.register_class != source.register_class)
+                {
+                    fatal("invalid initial JIT allocator bundle");
+                }
+                expected_fixed.insert(expected_fixed.end(),
+                                      source.fixed_constraints.begin(),
+                                      source.fixed_constraints.end());
+            }
+            for(size_t index = 1; index < bundle.fragments.size(); ++index)
+            {
+                if(bundle.fragments[index - 1].range.end >
+                   bundle.fragments[index].range.start)
+                {
+                    fatal("initial JIT allocator bundle overlaps itself");
+                }
+            }
+            std::ranges::sort(expected_fixed, [&](FixedConstraintId lhs,
+                                                  FixedConstraintId rhs) {
+                LivenessPosition lhs_position =
+                    problem.fixed_constraints()[lhs.value()].position;
+                LivenessPosition rhs_position =
+                    problem.fixed_constraints()[rhs.value()].position;
+                return lhs_position != rhs_position
+                           ? lhs_position < rhs_position
+                           : lhs < rhs;
+            });
+            if(bundle.fixed_constraints != expected_fixed)
+            {
+                fatal("initial JIT allocator bundle loses fixed constraints");
+            }
         }
-        for(size_t index = 0; index < problem.bundles().size(); ++index)
+        if(std::ranges::find(bundled, false) != bundled.end())
         {
-            const LiveBundle &bundle = problem.bundles()[index];
-            if(bundle.fragments.size() != 1)
-            {
-                fatal("initial JIT allocator bundle is not a singleton");
-            }
-            const BundleFragment &fragment = bundle.fragments.front();
-            if(fragment.source.value() >= problem.live_ranges().size() ||
-               bundled[fragment.source.value()])
-            {
-                fatal("JIT allocator bundle has invalid source ownership");
-            }
-            bundled[fragment.source.value()] = true;
-            const LiveRange &source =
-                problem.live_ranges()[fragment.source.value()];
-            if(fragment.range.start != source.range.start ||
-               fragment.range.end != source.range.end ||
-               bundle.register_class != source.register_class ||
-               bundle.fixed_constraints != source.fixed_constraints)
-            {
-                fatal("invalid initial JIT allocator bundle");
-            }
+            fatal("initial JIT allocator bundles do not cover every range");
         }
 
         for(size_t index = 0; index < problem.fixed_constraints().size();
@@ -376,6 +414,36 @@ namespace cl::jit
                clobber.range.end != position->second.late.next())
             {
                 fatal("invalid JIT allocator clobber reservation");
+            }
+        }
+
+        for(const EdgeAffinity &affinity: problem.edge_affinities())
+        {
+            if(affinity.edge == nullptr ||
+               affinity.argument_index >= affinity.edge->arguments().size() ||
+               affinity.argument_index >=
+                   affinity.edge->target()->parameters().size() ||
+               affinity.source.value() >= problem.occurrences().size() ||
+               affinity.destination.value() >= problem.occurrences().size())
+            {
+                fatal("invalid JIT allocator edge affinity");
+            }
+            const Occurrence &source =
+                problem.occurrences()[affinity.source.value()];
+            const Occurrence &destination =
+                problem.occurrences()[affinity.destination.value()];
+            if(source.anchor.kind() !=
+                   OccurrenceAnchor::Kind::BlockEdgeArgument ||
+               source.anchor.block_edge() != affinity.edge ||
+               source.anchor.index() != affinity.argument_index ||
+               destination.anchor.kind() !=
+                   OccurrenceAnchor::Kind::InstructionResult ||
+               destination.anchor.instruction_id() !=
+                   affinity.edge->target()
+                       ->parameter_at(affinity.argument_index)
+                       .id())
+            {
+                fatal("JIT allocator edge affinity mismatches its CFG edge");
             }
         }
     }
@@ -567,16 +635,35 @@ namespace cl::jit
                     fatal("invalid JIT bundle transfer");
                 }
                 bool connected = false;
-                for(const BundleFragment &source:
-                    bundles[transfer.source.value()].fragments)
+                if(set.point.kind() == TransferPoint::Kind::BlockEdge)
                 {
-                    for(const BundleFragment &destination:
-                        bundles[transfer.destination.value()].fragments)
+                    for(const EdgeAffinity &affinity: problem.edge_affinities())
                     {
-                        if(source.source == destination.source &&
-                           source.range.end == destination.range.start)
+                        if(affinity.edge == set.point.edge() &&
+                           bundle_covers_occurrence(
+                               bundles[transfer.source.value()], problem,
+                               affinity.source) &&
+                           bundle_covers_occurrence(
+                               bundles[transfer.destination.value()], problem,
+                               affinity.destination))
                         {
                             connected = true;
+                        }
+                    }
+                }
+                else
+                {
+                    for(const BundleFragment &source:
+                        bundles[transfer.source.value()].fragments)
+                    {
+                        for(const BundleFragment &destination:
+                            bundles[transfer.destination.value()].fragments)
+                        {
+                            if(source.source == destination.source &&
+                               source.range.end == destination.range.start)
+                            {
+                                connected = true;
+                            }
                         }
                     }
                 }
