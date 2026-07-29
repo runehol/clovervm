@@ -19,7 +19,7 @@
 
 namespace cl::jit
 {
-    template <typename DirectBranch, typename Relocation>
+    template <typename Relaxation, typename Relocation>
     class MachineCodeEmitter;
 
     class Label
@@ -28,7 +28,7 @@ namespace cl::jit
         Label() = delete;
 
     private:
-        template <typename DirectBranch, typename Relocation>
+        template <typename Relaxation, typename Relocation>
         friend class MachineCodeEmitter;
 
         explicit Label(uint32_t index) : index_(index) {}
@@ -42,7 +42,7 @@ namespace cl::jit
         ConstantPoolEntry() = delete;
 
     private:
-        template <typename DirectBranch, typename Relocation>
+        template <typename Relaxation, typename Relocation>
         friend class MachineCodeEmitter;
 
         enum class Area : uint8_t
@@ -63,15 +63,14 @@ namespace cl::jit
     using CodeTarget = std::variant<Label, MachineAddress>;
     using RelocationTarget = ConstantPoolEntry;
 
-    template <typename DirectBranch, typename Relocation>
-    class MachineCodeEmitter
+    template <typename Relaxation, typename Relocation> class MachineCodeEmitter
     {
     public:
         explicit MachineCodeEmitter(size_t maximum_pool_span)
             : maximum_pool_span_(maximum_pool_span)
         {
             assert(maximum_pool_span != 0);
-            assert(maximum_pool_span <= DirectBranch::MaximumUnitSize);
+            assert(maximum_pool_span <= Relaxation::MaximumUnitSize);
             fragments_.emplace_back();
         }
 
@@ -122,11 +121,11 @@ namespace cl::jit
                                                         std::move(relocation));
         }
 
-        void emit_direct_branch(DirectBranch branch)
+        void emit_relaxation(Relaxation relaxation)
         {
             assert(!finalization_attempted_);
-            assert(!current_fragment().direct_branch.has_value());
-            current_fragment().direct_branch.emplace(std::move(branch));
+            assert(!current_fragment().relaxation.has_value());
+            current_fragment().relaxation.emplace(std::move(relaxation));
             fragments_.emplace_back();
         }
 
@@ -172,7 +171,7 @@ namespace cl::jit
             finalization_attempted_ = true;
             size_t pessimistic_size = calculate_pessimistic_layout();
             assert(pessimistic_size != 0);
-            assert(pessimistic_size <= DirectBranch::MaximumUnitSize);
+            assert(pessimistic_size <= Relaxation::MaximumUnitSize);
 
             assert(values_.size() <=
                    std::numeric_limits<size_t>::max() / sizeof(Value));
@@ -189,7 +188,7 @@ namespace cl::jit
             CodeAllocationProposal proposal = CL_TRY(cache.propose(
                 pessimistic_size, constant_pool_size, alignof(Value)));
 
-            size_t final_size = select_direct_branches(proposal.code_address());
+            size_t final_size = select_relaxations(proposal.code_address());
             CodeAllocation allocation = CL_TRY(proposal.commit(final_size));
             encode(allocation);
             return Result<CodeAllocation, JitCodeError>::ok(
@@ -212,7 +211,7 @@ namespace cl::jit
         {
             std::vector<uint8_t> bytes;
             std::vector<RelocationEntry> relocations;
-            std::optional<DirectBranch> direct_branch;
+            std::optional<Relaxation> relaxation;
             size_t pessimistic_start = 0;
             size_t final_start = 0;
         };
@@ -246,10 +245,10 @@ namespace cl::jit
             {
                 fragment.pessimistic_start = cursor;
                 cursor = add_sizes(cursor, fragment.bytes.size());
-                if(fragment.direct_branch)
+                if(fragment.relaxation)
                 {
-                    uint32_t maximum = fragment.direct_branch->max_size();
-                    assert(fragment.direct_branch->min_size() <= maximum);
+                    uint32_t maximum = fragment.relaxation->max_size();
+                    assert(fragment.relaxation->min_size() <= maximum);
                     cursor = add_sizes(cursor, maximum);
                 }
             }
@@ -290,36 +289,36 @@ namespace cl::jit
             return std::get<MachineAddress>(target);
         }
 
-        size_t select_direct_branches(MachineAddress code_address)
+        size_t select_relaxations(MachineAddress code_address)
         {
             size_t cursor = 0;
             for(Fragment &fragment: fragments_)
             {
                 fragment.final_start = cursor;
                 cursor = add_sizes(cursor, fragment.bytes.size());
-                if(!fragment.direct_branch)
+                if(!fragment.relaxation)
                 {
                     continue;
                 }
 
-                const CodeTarget &target = fragment.direct_branch->target();
+                const CodeTarget &target = fragment.relaxation->target();
                 uint32_t selected;
                 if(const Label *label = std::get_if<Label>(&target))
                 {
                     size_t pessimistic_branch_offset = add_sizes(
                         fragment.pessimistic_start, fragment.bytes.size());
-                    selected = fragment.direct_branch->select(
+                    selected = fragment.relaxation->select(
                         code_address.offset_by(pessimistic_branch_offset),
                         pessimistic_label_address(*label, code_address));
                 }
                 else
                 {
-                    selected = fragment.direct_branch->select(
+                    selected = fragment.relaxation->select(
                         code_address.offset_by(cursor),
                         std::get<MachineAddress>(target));
                 }
-                assert(selected >= fragment.direct_branch->min_size());
-                assert(selected <= fragment.direct_branch->max_size());
+                assert(selected >= fragment.relaxation->min_size());
+                assert(selected <= fragment.relaxation->max_size());
                 cursor = add_sizes(cursor, selected);
             }
             return cursor;
@@ -373,13 +372,13 @@ namespace cl::jit
                         code_address.offset_by(instruction_offset), target);
                 }
 
-                if(fragment.direct_branch)
+                if(fragment.relaxation)
                 {
                     size_t branch_offset =
                         add_sizes(fragment.final_start, fragment.bytes.size());
                     MachineAddress target = final_target_address(
-                        fragment.direct_branch->target(), code_address);
-                    fragment.direct_branch->encode(
+                        fragment.relaxation->target(), code_address);
+                    fragment.relaxation->encode(
                         write_base + branch_offset,
                         code_address.offset_by(branch_offset), target);
                 }

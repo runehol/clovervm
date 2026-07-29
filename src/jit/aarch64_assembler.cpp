@@ -111,8 +111,8 @@ namespace cl::jit
         }
     }  // namespace
 
-    uint32_t AArch64DirectBranch::select(MachineAddress source,
-                                         MachineAddress target)
+    uint32_t AArch64Relaxation::select(MachineAddress source,
+                                       MachineAddress target)
     {
         int64_t displacement = source.displacement_to(target);
         direct_ = aarch64_detail::fits_signed_scaled_displacement(displacement,
@@ -124,8 +124,8 @@ namespace cl::jit
         return max_size();
     }
 
-    void AArch64DirectBranch::encode(void *write_pointer, MachineAddress source,
-                                     MachineAddress target) const
+    void AArch64Relaxation::encode(void *write_pointer, MachineAddress source,
+                                   MachineAddress target) const
     {
         assert(direct_.has_value());
         AArch64BufferAssembler assembler(write_pointer);
@@ -390,14 +390,14 @@ namespace cl::jit
 
     void AArch64MacroAssembler::b(CodeTarget target, XRegister scratch)
     {
-        emitter().emit_direct_branch(
-            AArch64DirectBranch(target, AArch64BranchKind::Jump, scratch));
+        emitter().emit_relaxation(
+            AArch64Relaxation(target, AArch64BranchKind::Jump, scratch));
     }
 
     void AArch64MacroAssembler::bl(CodeTarget target, XRegister scratch)
     {
-        emitter().emit_direct_branch(
-            AArch64DirectBranch(target, AArch64BranchKind::Call, scratch));
+        emitter().emit_relaxation(
+            AArch64Relaxation(target, AArch64BranchKind::Call, scratch));
     }
 
 }  // namespace cl::jit

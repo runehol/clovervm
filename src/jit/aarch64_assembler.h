@@ -253,13 +253,13 @@ namespace cl::jit
         }
     }  // namespace aarch64_detail
 
-    class AArch64DirectBranch
+    class AArch64Relaxation
     {
     public:
         static constexpr size_t MaximumUnitSize = 128 * 1024 * 1024;
 
-        AArch64DirectBranch(CodeTarget target, AArch64BranchKind kind,
-                            XRegister scratch)
+        AArch64Relaxation(CodeTarget target, AArch64BranchKind kind,
+                          XRegister scratch)
             : target_(target), scratch_(scratch), kind_(kind)
         {
         }
@@ -306,7 +306,7 @@ namespace cl::jit
     };
 
     using AArch64Emitter =
-        MachineCodeEmitter<AArch64DirectBranch, AArch64Relocation>;
+        MachineCodeEmitter<AArch64Relaxation, AArch64Relocation>;
 
     class AArch64EmitterSink
     {
@@ -738,7 +738,7 @@ namespace cl::jit
         {
             return pool_mode == AArch64ValuePoolMode::NearLiteral
                        ? 1024 * 1024
-                       : AArch64DirectBranch::MaximumUnitSize;
+                       : AArch64Relaxation::MaximumUnitSize;
         }
 
         AArch64ValuePoolMode pool_mode_;

@@ -13,19 +13,19 @@ namespace cl::jit
 {
     namespace
     {
-        class TestDirectBranch
+        class TestRelaxation
         {
         public:
             static constexpr size_t MaximumUnitSize = 64 * 1024;
             static constexpr uint32_t MinimumSize = 1;
             static constexpr uint32_t MaximumSize = 4;
 
-            TestDirectBranch(Label target, int64_t short_range)
+            TestRelaxation(Label target, int64_t short_range)
                 : target_(target), short_range_(short_range)
             {
             }
 
-            TestDirectBranch(MachineAddress target, int64_t short_range)
+            TestRelaxation(MachineAddress target, int64_t short_range)
                 : target_(target), short_range_(short_range)
             {
             }
@@ -99,8 +99,7 @@ namespace cl::jit
             RelocationObservation *observation_;
         };
 
-        using TestEmitter =
-            MachineCodeEmitter<TestDirectBranch, TestRelocation>;
+        using TestEmitter = MachineCodeEmitter<TestRelaxation, TestRelocation>;
 
         using test_support::CacheAndPlatform;
 
@@ -119,7 +118,7 @@ namespace cl::jit
         }
     }  // namespace
 
-    TEST(MachineCodeEmitter, ResolvesForwardLabelsAndShrinksDirectBranches)
+    TEST(MachineCodeEmitter, ResolvesForwardLabelsAndShrinksRelaxations)
     {
         CacheAndPlatform fixture(16);
         TestEmitter emitter(64 * 1024);
@@ -129,7 +128,7 @@ namespace cl::jit
         uint8_t suffix = 0x30;
 
         emitter.emit_bytes(&prefix, sizeof(prefix));
-        emitter.emit_direct_branch(TestDirectBranch(target, 8));
+        emitter.emit_relaxation(TestRelaxation(target, 8));
         emitter.emit_bytes(middle, sizeof(middle));
         emitter.resolve(target);
         emitter.emit_bytes(&suffix, sizeof(suffix));
@@ -145,14 +144,14 @@ namespace cl::jit
         EXPECT_EQ(0x30, code[4]);
     }
 
-    TEST(MachineCodeEmitter, KeepsConservativelyLongForwardDirectBranch)
+    TEST(MachineCodeEmitter, KeepsConservativelyLongForwardRelaxation)
     {
         CacheAndPlatform fixture(16);
         TestEmitter emitter(64 * 1024);
         Label target = emitter.make_label();
 
-        emitter.emit_direct_branch(TestDirectBranch(target, 5));
-        emitter.emit_direct_branch(TestDirectBranch(
+        emitter.emit_relaxation(TestRelaxation(target, 5));
+        emitter.emit_relaxation(TestRelaxation(
             detail::MachineAddressAccess::from_bits(0x10000004), 1));
         emitter.resolve(target);
 
@@ -170,7 +169,7 @@ namespace cl::jit
         TestEmitter emitter(64 * 1024);
         Label target = emitter.make_label();
         emitter.resolve(target);
-        emitter.emit_direct_branch(TestDirectBranch(target, 4));
+        emitter.emit_relaxation(TestRelaxation(target, 4));
 
         CodeAllocation allocation =
             take_allocation(emitter.finalize(*fixture.cache));
