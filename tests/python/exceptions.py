@@ -238,6 +238,102 @@ finally:
     result += 8
 assert result == 13
 
+# finally cleanup runs on normal completion and before reraised or replacement exceptions.
+result = 0
+try:
+    result = 1
+finally:
+    result = 2
+assert result == 2
+
+result = 0
+try:
+    try:
+        raise ValueError
+    finally:
+        result = 2
+    cleanup_reraise_caught = False
+except ValueError:
+    cleanup_reraise_caught = True
+assert cleanup_reraise_caught
+assert result == 2
+
+result = 0
+
+
+def return_then_raise_from_finally():
+    global result
+    try:
+        return 1
+    finally:
+        result += 1
+        raise ValueError
+
+
+try:
+    return_then_raise_from_finally()
+    return_cleanup_raised = False
+except ValueError:
+    return_cleanup_raised = True
+assert return_cleanup_raised
+assert result == 1
+
+result = 0
+try:
+    try:
+        raise ValueError
+    except NameError:
+        result = 1
+    finally:
+        result = 2
+    unmatched_handler_raised = False
+except ValueError:
+    unmatched_handler_raised = True
+assert unmatched_handler_raised
+assert result == 2
+
+result = 0
+try:
+    try:
+        raise NameError
+    except NameError:
+        raise ValueError
+    finally:
+        result = 2
+    handler_reraise_caught = False
+except ValueError:
+    handler_reraise_caught = True
+assert handler_reraise_caught
+assert result == 2
+
+try:
+    try:
+        pass
+    except ValueError:
+        assert False
+    else:
+        raise ValueError
+    else_exception_escaped = False
+except ValueError:
+    else_exception_escaped = True
+assert else_exception_escaped
+
+result = 0
+try:
+    try:
+        pass
+    except NameError:
+        result = 1
+    else:
+        raise ValueError
+    finally:
+        result = 2
+    else_cleanup_raised = False
+except ValueError:
+    else_cleanup_raised = True
+assert else_cleanup_raised
+assert result == 2
+
 result = 0
 try:
     raise NameError
