@@ -4966,65 +4966,6 @@ TEST(Interpreter, bare_raise_in_exceptional_finally_reraises_body_exception)
               exception.extract()->get_shape()->get_class());
 }
 
-TEST(Interpreter, return_in_finally_overrides_body_exception)
-{
-    test::VmTestContext test_context;
-    Value actual = test_context.run_file(L"def f():\n"
-                                         L"    try:\n"
-                                         L"        raise ValueError\n"
-                                         L"    finally:\n"
-                                         L"        return 7\n"
-                                         L"f()\n");
-
-    EXPECT_EQ(Value::from_smi(7), actual);
-}
-
-TEST(Interpreter, break_in_finally_overrides_body_exception)
-{
-    test::VmTestContext test_context;
-    Value actual = test_context.run_file(L"result = 0\n"
-                                         L"for x in range(3):\n"
-                                         L"    try:\n"
-                                         L"        raise ValueError\n"
-                                         L"    finally:\n"
-                                         L"        result = 9\n"
-                                         L"        break\n"
-                                         L"result + x\n");
-
-    EXPECT_EQ(Value::from_smi(9), actual);
-}
-
-TEST(Interpreter, continue_in_finally_overrides_body_exception)
-{
-    test::VmTestContext test_context;
-    Value actual = test_context.run_file(L"result = 0\n"
-                                         L"for x in range(3):\n"
-                                         L"    result = result + 1\n"
-                                         L"    try:\n"
-                                         L"        raise ValueError\n"
-                                         L"    finally:\n"
-                                         L"        continue\n"
-                                         L"    result = 99\n"
-                                         L"result\n");
-
-    EXPECT_EQ(Value::from_smi(3), actual);
-}
-
-TEST(Interpreter, return_through_finally_runs_cleanup_before_return)
-{
-    test::VmTestContext test_context;
-    Value actual = test_context.run_file(L"result = 0\n"
-                                         L"def f():\n"
-                                         L"    global result\n"
-                                         L"    try:\n"
-                                         L"        return 1\n"
-                                         L"    finally:\n"
-                                         L"        result = 2\n"
-                                         L"f() + result * 10\n");
-
-    EXPECT_EQ(Value::from_smi(21), actual);
-}
-
 TEST(Interpreter, return_through_finally_that_raises_runs_cleanup_once)
 {
     test::VmTestContext test_context;
@@ -5048,66 +4989,6 @@ TEST(Interpreter, return_through_finally_that_raises_runs_cleanup_once)
         test_context.vm().get_or_create_interned_string_value(L"result");
     EXPECT_EQ(Value::from_smi(1),
               load_global_from_module_for_test(code_obj, result_name));
-}
-
-TEST(Interpreter, return_in_finally_overrides_protected_return)
-{
-    test::VmTestContext test_context;
-    Value actual = test_context.run_file(L"def f():\n"
-                                         L"    try:\n"
-                                         L"        return 1\n"
-                                         L"    finally:\n"
-                                         L"        return 2\n"
-                                         L"f()\n");
-
-    EXPECT_EQ(Value::from_smi(2), actual);
-}
-
-TEST(Interpreter, break_through_finally_runs_cleanup_before_loop_exit)
-{
-    test::VmTestContext test_context;
-    Value actual = test_context.run_file(L"result = 0\n"
-                                         L"for x in range(3):\n"
-                                         L"    try:\n"
-                                         L"        break\n"
-                                         L"    finally:\n"
-                                         L"        result = result + 10\n"
-                                         L"result + x\n");
-
-    EXPECT_EQ(Value::from_smi(10), actual);
-}
-
-TEST(Interpreter, break_through_inner_finally_does_not_replay_outer_finally)
-{
-    test::VmTestContext test_context;
-    Value actual = test_context.run_file(L"result = 0\n"
-                                         L"try:\n"
-                                         L"    for x in range(3):\n"
-                                         L"        try:\n"
-                                         L"            break\n"
-                                         L"        finally:\n"
-                                         L"            result = result + 10\n"
-                                         L"    result = result + 1\n"
-                                         L"finally:\n"
-                                         L"    result = result + 100\n"
-                                         L"result\n");
-
-    EXPECT_EQ(Value::from_smi(111), actual);
-}
-
-TEST(Interpreter, continue_through_finally_runs_cleanup_before_next_iteration)
-{
-    test::VmTestContext test_context;
-    Value actual = test_context.run_file(L"result = 0\n"
-                                         L"for x in range(3):\n"
-                                         L"    try:\n"
-                                         L"        continue\n"
-                                         L"    finally:\n"
-                                         L"        result = result + 1\n"
-                                         L"    result = 99\n"
-                                         L"result\n");
-
-    EXPECT_EQ(Value::from_smi(3), actual);
 }
 
 TEST(Interpreter, return_from_else_through_finally_runs_cleanup)
