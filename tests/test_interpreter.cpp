@@ -1753,45 +1753,6 @@ TEST(Interpreter, operator_add_walk_uses_reflected_fallback_for_different_types)
     EXPECT_TRUE(descriptor.cache_entry.reflected_untrusted_call);
 }
 
-TEST(Interpreter, operator_add_dispatch_calls_python_dunder_from_add_smi)
-{
-    test::VmTestContext test_context;
-
-    EXPECT_EQ(Value::from_smi(11),
-              test_context.run_file(L"class Addable:\n"
-                                    L"    def __add__(self, other):\n"
-                                    L"        return 11\n"
-                                    L"Addable() + 1\n"));
-}
-
-TEST(Interpreter, operator_add_dispatch_continues_after_notimplemented)
-{
-    test::VmTestContext test_context;
-
-    EXPECT_EQ(Value::from_smi(7),
-              test_context.run_file(L"class Left:\n"
-                                    L"    def __add__(self, other):\n"
-                                    L"        return NotImplemented\n"
-                                    L"class Right:\n"
-                                    L"    def __radd__(self, other):\n"
-                                    L"        return 7\n"
-                                    L"Left() + Right()\n"));
-}
-
-TEST(Interpreter, operator_matmul_dispatch_continues_after_notimplemented)
-{
-    test::VmTestContext test_context;
-
-    EXPECT_EQ(Value::from_smi(7),
-              test_context.run_file(L"class Left:\n"
-                                    L"    def __matmul__(self, other):\n"
-                                    L"        return NotImplemented\n"
-                                    L"class Right:\n"
-                                    L"    def __rmatmul__(self, other):\n"
-                                    L"        return 7\n"
-                                    L"Left() @ Right()\n"));
-}
-
 TEST(Interpreter, operator_matmul_unsupported_operands_raise)
 {
     expect_python_error(L"1 @ 2\n", L"TypeError",

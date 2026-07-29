@@ -61,3 +61,38 @@ assert -5.0 % 2 == 1.0
 assert 5.0 % -2 == -1.0
 assert small_negative % large_positive == large_positive
 assert large_positive.__rmod__(small_negative) == large_positive
+
+
+# Binary arithmetic dispatch calls Python methods and continues to reflected methods after NotImplemented.
+class CustomAdd:
+    def __add__(self, other):
+        return 11
+
+
+assert CustomAdd() + 1 == 11
+
+
+class NotImplementedAdd:
+    def __add__(self, other):
+        return NotImplemented
+
+
+class ReflectedAdd:
+    def __radd__(self, other):
+        return 7
+
+
+assert NotImplementedAdd() + ReflectedAdd() == 7
+
+
+class NotImplementedMatmul:
+    def __matmul__(self, other):
+        return NotImplemented
+
+
+class ReflectedMatmul:
+    def __rmatmul__(self, other):
+        return 7
+
+
+assert NotImplementedMatmul() @ ReflectedMatmul() == 7
