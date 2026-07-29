@@ -262,3 +262,32 @@ def collect_empty_varargs(*args):
 
 
 assert len(collect_empty_varargs()) == 0
+
+
+# Runtime intrinsic spellings must remain ordinary user-defined function names.
+def __clover_call_special__(obj, name, exc_type, message):
+    return 123
+
+
+assert __clover_call_special__(1, "__repr__", TypeError, "missing") == 123
+
+
+def __clover_globals__():
+    return 789
+
+
+assert __clover_globals__() == 789
+
+
+def __clover_locals__():
+    return 987
+
+
+assert __clover_locals__() == 987
+
+
+def __clover_ternary_pow__(a, b, modulo):
+    return 123
+
+
+assert __clover_ternary_pow__(2, 3, 5) == 123

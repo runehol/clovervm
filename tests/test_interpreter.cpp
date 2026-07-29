@@ -4523,16 +4523,6 @@ TEST(Interpreter, user_code_cannot_use_clover_call_special_as_intrinsic)
         L"NameError", L"name '__clover_call_special__' is not defined");
 }
 
-TEST(Interpreter, user_defined_clover_call_special_name_is_ordinary_function)
-{
-    test::FileRunner file_runner(
-        L"def __clover_call_special__(obj, name, exc_type, message):\n"
-        L"    return 123\n"
-        L"__clover_call_special__(1, \"__repr__\", TypeError, \"missing\")\n");
-
-    EXPECT_EQ(Value::from_smi(123), file_runner.return_value);
-}
-
 TEST(Interpreter, user_code_cannot_use_clover_write_stdout_as_intrinsic)
 {
     expect_python_error(L"__clover_write_stdout__(\"hello\")\n", L"NameError",
@@ -4556,43 +4546,16 @@ TEST(Interpreter, user_code_cannot_use_clover_globals_as_intrinsic)
                         L"name '__clover_globals__' is not defined");
 }
 
-TEST(Interpreter, user_defined_clover_globals_name_is_ordinary_function)
-{
-    test::FileRunner file_runner(L"def __clover_globals__():\n"
-                                 L"    return 789\n"
-                                 L"__clover_globals__()\n");
-
-    EXPECT_EQ(Value::from_smi(789), file_runner.return_value);
-}
-
 TEST(Interpreter, user_code_cannot_use_clover_locals_as_intrinsic)
 {
     expect_python_error(L"__clover_locals__()\n", L"NameError",
                         L"name '__clover_locals__' is not defined");
 }
 
-TEST(Interpreter, user_defined_clover_locals_name_is_ordinary_function)
-{
-    test::FileRunner file_runner(L"def __clover_locals__():\n"
-                                 L"    return 987\n"
-                                 L"__clover_locals__()\n");
-
-    EXPECT_EQ(Value::from_smi(987), file_runner.return_value);
-}
-
 TEST(Interpreter, user_code_cannot_use_clover_ternary_pow_as_intrinsic)
 {
     expect_python_error(L"__clover_ternary_pow__(2, 3, 5)\n", L"NameError",
                         L"name '__clover_ternary_pow__' is not defined");
-}
-
-TEST(Interpreter, user_defined_clover_ternary_pow_name_is_ordinary_function)
-{
-    test::FileRunner file_runner(L"def __clover_ternary_pow__(a, b, modulo):\n"
-                                 L"    return 123\n"
-                                 L"__clover_ternary_pow__(2, 3, 5)\n");
-
-    EXPECT_EQ(Value::from_smi(123), file_runner.return_value);
 }
 
 TEST(Interpreter, globals_slotdict_excludes_builtin_fallbacks)
