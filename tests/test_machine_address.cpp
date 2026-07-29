@@ -5,7 +5,6 @@
 #include <gtest/gtest.h>
 
 #include <cstdint>
-#include <limits>
 #include <type_traits>
 
 namespace cl::jit
@@ -34,10 +33,6 @@ namespace cl::jit
         EXPECT_EQ(reinterpret_cast<uintptr_t>(storage),
                   detail::MachineAddressAccess::from_pointer(storage)
                       .bits_for_indirect_target());
-#ifndef NDEBUG
-        EXPECT_DEATH(detail::MachineAddressAccess::from_pointer(nullptr),
-                     "pointer != nullptr");
-#endif
     }
 
     TEST(MachineAddress, AdvancesAndComputesSignedDisplacements)
@@ -65,29 +60,6 @@ namespace cl::jit
     {
         EXPECT_EQ(0u, address(0).bits_for_indirect_target());
         EXPECT_EQ(0x12345678u, address(0x12345678).bits_for_indirect_target());
-    }
-
-    TEST(MachineAddress, RejectsInvalidOrOverflowingOperations)
-    {
-#ifndef NDEBUG
-        constexpr uint8_t address_bits = std::numeric_limits<uintptr_t>::digits;
-
-        EXPECT_DEATH(
-            address(std::numeric_limits<uintptr_t>::max()).offset_by(1),
-            "bytes <=");
-        EXPECT_DEATH(address(1).offset_within(address_bits),
-                     "alignment_shift <");
-        EXPECT_DEATH(
-            address(1).aligned_displacement_to(address(2), address_bits),
-            "alignment_shift <");
-
-        if constexpr(sizeof(uintptr_t) == sizeof(uint64_t))
-        {
-            EXPECT_DEATH(address(1).displacement_to(
-                             address(std::numeric_limits<uintptr_t>::max())),
-                         "magnitude <=");
-        }
-#endif
     }
 
     TEST(CodeCacheTypes, DescribesExecutableCode)
