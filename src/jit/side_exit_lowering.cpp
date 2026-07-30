@@ -258,15 +258,15 @@ namespace cl::jit
                 {
                     case InstructionKind::AddSMI:
                         {
-                            SideExitId side_exit = context.emplace_side_exit(
-                                plan.inputs, plan.retained);
+                            const BuiltSideExitRegion &region =
+                                region_for_snapshot(context, plan);
                             AddSMIInstruction add =
                                 instruction.as<AddSMIInstruction>();
                             return RewriteResult::replace(
                                 context.make_instruction<
-                                    AddSMIWithSideExitInstruction>(
-                                    add.lhs(), add.rhs(), plan.inputs,
-                                    side_exit));
+                                    AddSMIWithSideExitRegionInstruction>(
+                                    add.lhs(), add.rhs(), region.arguments,
+                                    region.region->id()));
                         }
                     case InstructionKind::InlineTagGuard:
                         {

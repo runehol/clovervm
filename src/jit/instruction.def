@@ -180,6 +180,22 @@ CL_JIT_INSTRUCTION(
 #undef CL_JIT_AddSMIWithSideExit_ATTRIBUTES
 #undef CL_JIT_AddSMIWithSideExit_OPERANDS
 
+#define CL_JIT_AddSMIWithSideExitRegion_OPERANDS(                             \
+    fixed, variadic, program_values)                                           \
+    fixed(lhs, ProgramValue, TaggedValue)                                      \
+    fixed(rhs, ProgramValue, TaggedValue)                                      \
+    program_values(side_exit_arguments, SideExit)
+#define CL_JIT_AddSMIWithSideExitRegion_ATTRIBUTES(attribute)                  \
+    attribute(side_exit_region, SideExitRegionId)
+CL_JIT_INSTRUCTION(
+    AddSMIWithSideExitRegion, CL_JIT_IR_LEVELS(Machine),
+    CL_JIT_RESULT(ProgramValue, TaggedValue),
+    CL_JIT_EFFECT_BOUNDS(None, SideExit),
+    CL_JIT_AddSMIWithSideExitRegion_OPERANDS,
+    CL_JIT_AddSMIWithSideExitRegion_ATTRIBUTES)
+#undef CL_JIT_AddSMIWithSideExitRegion_ATTRIBUTES
+#undef CL_JIT_AddSMIWithSideExitRegion_OPERANDS
+
 #define CL_JIT_AndSMI_OPERANDS(fixed, variadic, snapshot_values)              \
     fixed(lhs, ProgramValue, TaggedValue)                                      \
     fixed(rhs, ProgramValue, TaggedValue)

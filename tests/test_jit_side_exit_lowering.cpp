@@ -179,7 +179,7 @@ namespace cl::jit
         EXPECT_EQ(IRLevel::Machine, graph->ir_level());
         ASSERT_EQ(2u, entry->instructions().size());
         auto owner =
-            entry->instruction_at(0).as<AddSMIWithSideExitInstruction>();
+            entry->instruction_at(0).as<AddSMIWithSideExitRegionInstruction>();
         EXPECT_TRUE(add.is_poisoned());
         EXPECT_FALSE(snapshot.is_poisoned());
         EXPECT_EQ(lhs.id(), owner.lhs().instruction_id());
@@ -192,12 +192,64 @@ namespace cl::jit
         EXPECT_TRUE(return_instruction.is_poisoned());
         EXPECT_EQ(owner.id(), rewritten_return.return_value().instruction_id());
 
-        ASSERT_EQ(1u, graph->side_exits().size());
-        const SideExit &side_exit = graph->side_exit(owner.side_exit());
-        ASSERT_EQ(1u, side_exit.inputs().size());
-        EXPECT_EQ(lhs.id(), side_exit.inputs()[0].instruction_id());
-        ASSERT_EQ(1u, side_exit.instructions().size());
-        EXPECT_EQ(snapshot.id(), side_exit.instructions()[0]);
+        ASSERT_EQ(0u, graph->side_exits().size());
+        const SideExitRegion &region =
+            session.storage()->side_exit_region(owner.side_exit_region());
+        ASSERT_EQ(1u, region.parameter_ids().size());
+        ASSERT_EQ(1u, region.instruction_ids().size());
+        EXPECT_NE(snapshot.id(), region.instruction_ids()[0]);
+        EXPECT_EQ(InstructionKind::Snapshot, region.instruction_at(0).kind());
+    }
+
+    TEST(JitSideExitLowering, RegionResumeCapturesReplacementAddSMIResult)
+    {
+        CompilationSession session;
+        GraphBuilder builder(session, IRLevel::Core);
+        Block *entry = builder.emplace_block();
+        ParameterInstruction lhs =
+            builder.emplace_parameter<ParameterInstruction>(entry);
+        ParameterInstruction rhs =
+            builder.emplace_parameter<ParameterInstruction>(entry);
+        std::array<ProgramValueRef, 1> add_captured = {ProgramValueRef(lhs)};
+        SnapshotInstruction add_snapshot =
+            builder.emplace_instruction<SnapshotInstruction>(
+                entry, add_captured, BytecodePC{11});
+        AddSMIInstruction add = builder.emplace_instruction<AddSMIInstruction>(
+            entry, TaggedValueRef(lhs), TaggedValueRef(rhs),
+            SnapshotRef(add_snapshot));
+        std::array<ProgramValueRef, 1> resume_captured = {ProgramValueRef(add)};
+        SnapshotInstruction resume_snapshot =
+            builder.emplace_instruction<SnapshotInstruction>(
+                entry, resume_captured, BytecodePC{13});
+        builder.emplace_instruction<ResumeInInterpreterInstruction>(
+            entry, SnapshotRef(resume_snapshot));
+        ControlFlowGraph *graph = builder.finalize();
+
+        SunkInstructionIds sunk = sink_snapshots(*graph);
+        auto lowered = lower_side_exits(session, *graph, sunk);
+
+        ASSERT_TRUE(lowered);
+        EXPECT_TRUE(std::move(lowered).value());
+        ASSERT_EQ(2u, entry->instructions().size());
+        auto lowered_add =
+            entry->instruction_at(0).as<AddSMIWithSideExitRegionInstruction>();
+        auto resume =
+            entry->instruction_at(1)
+                .as<ResumeInInterpreterWithSideExitRegionInstruction>();
+        EXPECT_TRUE(add.is_poisoned());
+        ASSERT_EQ(1u, resume.side_exit_arguments().size());
+        EXPECT_EQ(lowered_add.id(),
+                  resume.side_exit_arguments()[0].instruction_id());
+
+        const SideExitRegion &region =
+            session.storage()->side_exit_region(resume.side_exit_region());
+        ASSERT_EQ(1u, region.parameter_ids().size());
+        ASSERT_EQ(1u, region.instruction_ids().size());
+        SnapshotInstruction snapshot =
+            region.instruction_at(0).as<SnapshotInstruction>();
+        ASSERT_EQ(1u, snapshot.captured_values().size());
+        EXPECT_EQ(region.parameter_ids()[0],
+                  snapshot.captured_values()[0].instruction_id());
     }
 
 }  // namespace cl::jit
