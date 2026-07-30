@@ -6,7 +6,7 @@
 | Status | Active |
 | Scope | Prioritized work that turns the current executable AArch64 JIT slice into a broader and runtime-complete compiler |
 | Design authority | [JIT Compiler and IR](jit-compiler-and-ir.md), [JIT Register Allocation](jit-register-allocation.md), [JIT Side-Exit Lowering](jit-side-exit-lowering.md), and [JIT Transition Programs](jit-transition-program.md) |
-| Validated against | `6ce461e` (2026-07-29) |
+| Validated against | `34fe2b90` (2026-07-30) |
 
 This roadmap records implementation order rather than adding architecture. The
 owning design documents remain authoritative for IR, allocation, recovery,
@@ -42,121 +42,125 @@ fixed arguments, results, or clobbers.
 
 Near-term work follows four rules:
 
-1. Remove obvious multiplicative waste before adding many more exit sites.
+1. Remove structural and allocation-created waste that would otherwise become
+   pressure, spills, or repeated work in every widened operation.
 2. Extend allocator contracts when the desired code shape depends on location
    choice; do not repair poor allocation with emitter peepholes.
-3. Widen through operations that reuse the existing Snapshot, guard, side-exit,
+3. Make failed speculation executable before widening the speculative surface.
+4. Widen through operations that reuse the existing Snapshot, guard, side-exit,
    and overflow machinery before taking on calls or allocation.
-4. Do not widen indefinitely while failed speculation remains non-executable.
-   A short happy-path expansion phase is useful, but runtime transition closure
-   remains a required milestone.
 
 ## Implementation Sequence
 
-### 1. Intern Transition Programs and Merge Equivalent Published Programs
+### 1. Finish Same-As-Input Allocation
 
-The AArch64 CFG emitter already deduplicates cold side-exit blocks by
-`SideExitBinding` in deterministic first-use order. A later publication pass can
-still generate each pending side exit far enough to obtain its finalized
-`TransitionInstruction` sequence, then group byte-identical programs. Program
-identity must include physical input locations; a shared Snapshot or
-`SideExitRegionId` is not sufficient because register allocation may give two
-exits different executable bindings.
+The allocator now records and prioritizes same-as-input affinities, and AArch64
+guards declare them. The remaining merge rule must allow the exact source and
+result ranges named by one same-as-input affinity to overlap in one bundle while
+continuing to reject every unrelated overlap.
 
-For each equivalent group:
+The constraint certifies that physical reuse is valid. A refining guard
+preserves the input bits. A destructive arithmetic operation may overwrite its
+input only when its side-exit region can reconstruct the pre-instruction value,
+as the SMI-add recovery path does by sinking the inverse subtraction. The
+allocator does not rediscover that semantic proof.
 
-- publish one untagged transition-program payload;
-- point the already-deduplicated cold side-exit blocks at that payload;
-- emit the address-materialization and thunk branch sequence for each distinct
-  cold block.
+Apply the completed relation to refining guards and destructive `AddSMI`
+results. The existing loop with `c += a` and `a += 1` is the integration
+fixture: the three guard-result copies and the two back-edge copies should
+disappear, while unrelated interference and the final return-ABI transfer
+remain valid. Explicit-copy affinities and broader copy coalescing stay
+measurement-driven follow-up work.
 
-The current guarded binary-add example produces three identical 144-byte
-snapshot programs and three equivalent cold stubs. Interning therefore removes
-two complete programs and two stubs without changing hot code or IR identity.
+### 2. Eliminate Trivial Loop-Carried State
 
-Raw untagged constant-pool interning may live in the generic machine-code
-emitter, while cold-stub grouping remains backend CFG-emission policy.
+Add a Core CFG simplification for a block parameter whose incoming arguments
+are one dominating value plus self references. Replace the parameter with that
+value and remove its corresponding edge arguments before side-exit lowering
+and register allocation.
 
-### 2. Add Same-As-Input Allocation Constraints
+This first targets invariant interpreter-frame state. The current loop carries
+several distinct parameters that all contain the same `uninitialized` value;
+Snapshots keep them observable, so dead-code elimination cannot remove them,
+and allocation currently fans that one value out into several registers.
+Trivial-parameter elimination should remove those copies and the artificial
+pressure without changing Snapshot semantics.
 
-Implement the accepted allocator relation between an instruction result and
-one input location, including conflict handling and required fixup connectors.
-Apply it first to value-refining guards.
+General constant and `uninitialized` rematerialization in transition programs
+remains part of later Snapshot and recovery work. This slice does not require
+that larger mechanism.
 
-A successful guard produces the same runtime value as its input. Its refined
-SSA result should normally remain in that input register instead of generating
-a post-check move. This belongs in allocation because the input may remain live,
-the result may have other constraints, and later targets need the same
-contract.
+### 3. Fuse Value Tests With Branches
 
-Explicit-copy affinities and broader copy coalescing may follow, guided by
-measurements. They are not a substitute for the required same-as-input
-relation.
+Recognize the existing single-use pattern:
 
-### 3. Widen SMI Arithmetic and Bitwise Lowering
+```text
+Is or IsNot -> ConditionalBranch
+```
 
-Extend the direct Core translator and Machine lowering through operation
-families that reuse existing inline guards and side-exit state:
+and lower it to one Machine compare-and-branch terminator. AArch64 can then emit
+`cmp` followed immediately by `b.cond` without materializing tagged `True` and
+`False` or retesting the result. If the Python boolean has another use, retain
+ordinary materialization and tagged truthiness testing.
+
+Identity tests provide an existing executable fixture and establish the fusion
+shape before SMI comparisons are added.
+
+### 4. Close the Runtime Transition Loop
+
+Implement the target-specific thunks described by the
+[AArch64 JIT Calling Convention](aarch64-jit-calling-convention.md):
+
+1. Complete the interpreter-to-JIT entry and normal-return path. Install and
+   restore fixed `x19` thread state, establish the managed stack discipline,
+   invoke compiled code with the JIT convention, and return normally through
+   the entering thunk.
+2. Complete side exits. Save the compiled register image and transition-program
+   address, temporarily borrow the native stack to call the portable C++
+   transition executor, publish recovered canonical interpreter state, and
+   return through interpreter dispatch.
+
+This milestone makes guard failure, arithmetic overflow, and unsupported
+bytecode exits executable rather than merely encoded. Its managed-frame
+contract must reserve a coherent place for future allocator spill slots even
+though ordinary spilling lands later.
+
+### 5. Widen SMI Operations and Comparisons
+
+Extend the direct Core translator through operation families that reuse the
+existing inline guards, side-exit state, and Machine emission:
 
 - overflow-checked subtraction, including compact-immediate bytecode forms;
-- SMI-only bitwise operations whose successful action is total;
-- backend folding of encodable tagged SMI constants into immediate forms.
+- direct translation and guarding for the existing `AndSMI`, `OrrSMI`, and
+  `EorSMI` instructions;
+- backend folding of encodable tagged SMI constants into immediate forms;
+- ordinary SMI comparison results, connected to the established
+  compare-and-branch fusion when their result has only the branch use.
 
-Boolean-as-integer handling must remain explicit. Python's bool/bool and
-mixed bool/int operators can differ in result type, so `SMIOrBoolean` guards
-must not replace SMI guards until the lowering represents those semantics.
+Boolean-as-integer handling must remain explicit. Python's bool/bool and mixed
+bool/int operators can differ in result type, so `SMIOrBoolean` guards must not
+replace SMI guards until the lowering represents those semantics.
 
 Multiplication, shifts, division, modulo, and exponentiation remain later
 slices because their tagged arithmetic, failure cases, or result growth require
 additional lowering.
 
-### 4. Add Ordinary Spill Storage
+### 6. Add Ordinary Spill Storage
 
-Provide allocator-owned spill slots, split pressured bundles through those
-slots, trim register-free regions, and materialize the resulting transfers.
-Preserve the existing clean compilation failure for pressure that cannot yet be
-handled while the spill implementation is staged.
+Stage ordinary spilling rather than combining every spill mechanism into one
+change:
 
-This precedes substantially wider expression and call coverage. Without it,
-adding otherwise-correct lowering merely moves realistic functions toward
-avoidable allocation failure.
+1. Provide allocator-owned per-value spill slots, assign eligible
+   register-free bundles to them, and materialize the resulting loads and
+   stores.
+2. Trim register-free regions around pressure splits into spill bundles and
+   record the register-to-spill and spill-to-register connectors.
 
-The symbolic allocation checker and adversarial pressure tests in
+Preserve clean compilation failure for pressure that the completed stage cannot
+yet handle. This precedes substantially wider expression, object, and call
+coverage. The symbolic allocation checker and adversarial pressure tests in
 [JIT Register Allocation Open Work](jit-register-allocation-progress.md)
 should grow with this slice.
-
-### 5. Add SMI Comparisons and Comparison-Branch Fusion
-
-First add ordinary comparison results so Python booleans remain available when
-the program consumes them as values. Then recognize the single-use pattern:
-
-```text
-comparison -> ConditionalBranch
-```
-
-and lower it to one Machine compare-and-branch instruction. AArch64 can then
-emit `cmp` followed immediately by `b.cond` without introducing flags as an
-allocated IR value. If the Python boolean has another use, retain ordinary
-materialization and tagged truthiness testing.
-
-Identity tests use the same fusion shape and provide an existing executable
-test case.
-
-### 6. Close the Runtime Transition Loop
-
-Implement the target-specific entry/exit thunk and side-exit register-save
-thunk described by the
-[AArch64 JIT Calling Convention](aarch64-jit-calling-convention.md):
-
-- install and restore fixed `x19` thread state;
-- switch between host/interpreter and managed Clover stack disciplines;
-- save the compiled register image and transition-program address;
-- provide thread-owned transition execution storage;
-- publish recovered canonical interpreter state and resume dispatch.
-
-This milestone makes guard failure, arithmetic overflow, and unsupported
-bytecode exits executable rather than merely encoded. Broader speculative
-lowering should not outrun it by more than the preceding focused slices.
 
 ### 7. Add Shape-Guarded Known-Field Access
 
@@ -195,6 +199,14 @@ record compact per-compilation statistics for:
 - moves introduced by guards, block edges, splits, and spills;
 - allocator evictions, splits, spills, and compilation failures;
 - compilation time by major phase.
+
+Use those counts to decide when to intern transition programs. The AArch64
+emitter already deduplicates cold blocks by complete `SideExitBinding`. If
+distinct bindings still emit byte-identical finalized `TransitionInstruction`
+sequences, publish one untagged payload for the equivalent group and then merge
+any cold stubs that become identical. Program comparison must occur after
+physical input locations are bound; Snapshot or region identity alone is not
+sufficient.
 
 A small representative compilation corpus is preferable to a large set of
 tests that merely restate instruction construction. Execution tests should
