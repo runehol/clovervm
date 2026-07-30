@@ -5,6 +5,7 @@
 #include "jit/compilation_storage.h"
 #include "jit/parallel_assignment_resolver.h"
 #include "jit/side_exit.h"
+#include "jit/side_exit_region.h"
 #include "runtime/fatal.h"
 
 #include <absl/container/flat_hash_map.h>
@@ -26,28 +27,18 @@ namespace cl::jit
             SideExitTransitionEmitter(
                 const CompilationStorage &storage,
                 const BytecodeStateOrder &state_order,
-                const SideExit &side_exit,
-                std::span<const TransitionLocation> input_locations)
+                std::span<const InstructionId> instructions,
+                absl::flat_hash_map<InstructionId, TransitionLocation>
+                    value_locations)
                 : storage_(&storage), state_order_(&state_order),
-                  side_exit_(&side_exit)
+                  instructions_(instructions),
+                  value_locations_(std::move(value_locations))
             {
-                if(input_locations.size() != side_exit.inputs().size())
-                {
-                    fatal("transition program input locations do not match "
-                          "side-exit inputs");
-                }
-                for(size_t index = 0; index < side_exit.inputs().size();
-                    ++index)
-                {
-                    value_locations_.emplace(
-                        side_exit.inputs()[index].instruction_id(),
-                        input_locations[index]);
-                }
             }
 
             std::vector<TransitionInstruction> build() &&
             {
-                for(InstructionId id: side_exit_->instructions())
+                for(InstructionId id: instructions_)
                 {
                     Instruction instruction = storage_->instruction(id);
                     switch(instruction.kind())
@@ -150,11 +141,58 @@ namespace cl::jit
 
             const CompilationStorage *storage_;
             const BytecodeStateOrder *state_order_;
-            const SideExit *side_exit_;
+            std::span<const InstructionId> instructions_;
             TransitionProgramBuilder builder_;
             absl::flat_hash_map<InstructionId, TransitionLocation>
                 value_locations_;
         };
+
+        absl::flat_hash_map<InstructionId, TransitionLocation>
+        old_side_exit_value_locations(
+            const SideExit &side_exit,
+            std::span<const TransitionLocation> input_locations)
+        {
+            if(input_locations.size() != side_exit.inputs().size())
+            {
+                fatal("transition program input locations do not match "
+                      "side-exit inputs");
+            }
+            absl::flat_hash_map<InstructionId, TransitionLocation> result;
+            for(size_t index = 0; index < side_exit.inputs().size(); ++index)
+            {
+                result.emplace(side_exit.inputs()[index].instruction_id(),
+                               input_locations[index]);
+            }
+            return result;
+        }
+
+        absl::flat_hash_map<InstructionId, TransitionLocation>
+        side_exit_binding_value_locations(
+            const CompilationStorage &storage, SideExitBinding binding,
+            std::span<const TransitionLocation> argument_locations)
+        {
+            const SideExitRegion &region =
+                storage.side_exit_region(binding.region);
+            if(binding.arguments.size() != region.parameter_ids().size())
+            {
+                fatal("transition program binding arguments do not match "
+                      "side-exit region parameters");
+            }
+            if(argument_locations.size() != binding.arguments.size())
+            {
+                fatal("transition program argument locations do not match "
+                      "side-exit binding arguments");
+            }
+
+            absl::flat_hash_map<InstructionId, TransitionLocation> result;
+            for(size_t index = 0; index < region.parameter_ids().size();
+                ++index)
+            {
+                result.emplace(region.parameter_ids()[index],
+                               argument_locations[index]);
+            }
+            return result;
+        }
     }  // namespace
 
     std::vector<TransitionInstruction> emit_side_exit_transition_program(
@@ -162,8 +200,22 @@ namespace cl::jit
         const BytecodeStateOrder &state_order, const SideExit &side_exit,
         std::span<const TransitionLocation> input_locations)
     {
-        return SideExitTransitionEmitter(storage, state_order, side_exit,
-                                         input_locations)
+        return SideExitTransitionEmitter(
+                   storage, state_order, side_exit.instructions(),
+                   old_side_exit_value_locations(side_exit, input_locations))
+            .build();
+    }
+
+    std::vector<TransitionInstruction> emit_side_exit_transition_program(
+        const CompilationStorage &storage,
+        const BytecodeStateOrder &state_order, SideExitBinding binding,
+        std::span<const TransitionLocation> argument_locations)
+    {
+        const SideExitRegion &region = storage.side_exit_region(binding.region);
+        return SideExitTransitionEmitter(
+                   storage, state_order, region.instruction_ids(),
+                   side_exit_binding_value_locations(storage, binding,
+                                                     argument_locations))
             .build();
     }
 

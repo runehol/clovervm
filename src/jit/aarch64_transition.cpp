@@ -58,4 +58,22 @@ namespace cl::jit
                                                  side_exit, input_locations);
     }
 
+    std::vector<TransitionInstruction>
+    emit_aarch64_side_exit_transition_program(
+        const CompilationStorage &storage,
+        const BytecodeStateOrder &state_order, SideExitBinding binding,
+        const LocationAssignments &locations)
+    {
+        std::vector<TransitionLocation> argument_locations;
+        argument_locations.reserve(binding.arguments.size());
+        for(ProgramValueRef argument: binding.arguments)
+        {
+            argument_locations.push_back(
+                aarch64_transition_location(locations.location_for(argument)));
+        }
+
+        return emit_side_exit_transition_program(storage, state_order, binding,
+                                                 argument_locations);
+    }
+
 }  // namespace cl::jit
