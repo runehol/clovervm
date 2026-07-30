@@ -10,6 +10,7 @@
 #include <array>
 #include <cstdint>
 #include <optional>
+#include <span>
 #include <utility>
 #include <vector>
 
@@ -79,6 +80,13 @@ namespace cl::jit
             const PreparedAllocationProblem &problem)
         {
             MaterializationPointIndex result;
+            result.block_entries.reserve(problem.block_ranges().size());
+            size_t instruction_count = 0;
+            for(const BlockLivenessRange &block_range: problem.block_ranges())
+            {
+                instruction_count += block_range.block->instructions().size();
+            }
+            result.before_instructions.reserve(instruction_count);
             for(const BlockLivenessRange &block_range: problem.block_ranges())
             {
                 LivenessPosition block_start = block_range.range.start;
@@ -118,6 +126,21 @@ namespace cl::jit
                                     const RegisterAllocationResult &allocation)
         {
             TransferSourceIndex result;
+            size_t source_count = 0;
+            for(const LiveBundle &bundle: allocation.bundles())
+            {
+                for(const BundleFragment &fragment: bundle.fragments)
+                {
+                    const LiveRange &range =
+                        problem.live_ranges()[fragment.source.value()];
+                    if(range.origin.kind() ==
+                       LiveRangeOrigin::Kind::ProgramValue)
+                    {
+                        ++source_count;
+                    }
+                }
+            }
+            result.reserve(source_count);
             for(size_t bundle_index = 0;
                 bundle_index < allocation.bundles().size(); ++bundle_index)
             {
@@ -144,6 +167,12 @@ namespace cl::jit
                 }
             }
             return result;
+        }
+
+        bool needs_explicit_transfer_sources(TransferPoint point)
+        {
+            return point.kind() == TransferPoint::Kind::BlockEntry ||
+                   point.kind() == TransferPoint::Kind::BeforeInstruction;
         }
 
         std::vector<InstructionId>
@@ -370,10 +399,8 @@ namespace cl::jit
                     definition.register_class())] =
                     definition.scratch_registers();
             }
-            MaterializationPointIndex point_index =
-                build_materialization_point_index(problem);
-            TransferSourceIndex source_index =
-                build_transfer_source_index(problem, allocation);
+            std::optional<MaterializationPointIndex> point_index;
+            std::optional<TransferSourceIndex> source_index;
             for(const BundleTransferSet &set: allocation.transfers().sets())
             {
                 std::vector<ParallelAssignment<PhysicalLocation>> transfers;
@@ -408,11 +435,21 @@ namespace cl::jit
                     return propagate_failure(std::move(ordered));
                 }
                 std::vector<InstructionId> sources;
-                if(set.point.kind() == TransferPoint::Kind::BlockEntry ||
-                   set.point.kind() == TransferPoint::Kind::BeforeInstruction)
+                if(needs_explicit_transfer_sources(set.point) &&
+                   !set.transfers.empty())
                 {
-                    sources = transfer_sources_at_point(set, point_index,
-                                                        source_index);
+                    if(!point_index.has_value())
+                    {
+                        point_index =
+                            build_materialization_point_index(problem);
+                    }
+                    if(!source_index.has_value())
+                    {
+                        source_index =
+                            build_transfer_source_index(problem, allocation);
+                    }
+                    sources = transfer_sources_at_point(set, *point_index,
+                                                        *source_index);
                 }
                 PlannedTransferSet planned{&set, std::move(ordered).value(),
                                            std::move(sources)};
@@ -665,10 +702,11 @@ namespace cl::jit
             {
                 const BundleTransferSet &set = *planned.original;
                 bool uses_explicit_sources = !planned.sources.empty();
-                std::vector<InstructionId> sources = planned.sources;
+                std::span<const InstructionId> sources = planned.sources;
+                std::vector<InstructionId> current_sources;
                 if(!uses_explicit_sources)
                 {
-                    sources.reserve(set.transfers.size());
+                    current_sources.reserve(set.transfers.size());
                     for(const BundleTransfer &transfer: set.transfers)
                     {
                         std::optional<InstructionId> source =
@@ -677,8 +715,9 @@ namespace cl::jit
                         {
                             fatal("JIT bundle transfer has no program value");
                         }
-                        sources.push_back(*source);
+                        current_sources.push_back(*source);
                     }
+                    sources = current_sources;
                 }
                 assert(sources.size() == set.transfers.size());
 
