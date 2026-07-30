@@ -141,8 +141,7 @@ namespace cl::jit
         std::vector<TransitionInstruction> expected_program =
             emit_aarch64_bound_side_exit_transition_program(
                 *graph->storage(), *graph->bytecode_state_order(),
-                SideExitBinding{region, first_guard.side_exit_arguments()},
-                locations);
+                make_side_exit_binding(first_guard), locations);
 
         CacheAndPlatform fixture(16);
         MachineAddress side_exit_thunk =

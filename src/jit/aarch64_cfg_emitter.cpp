@@ -389,8 +389,7 @@ namespace cl::jit
                     assembler.b(
                         AArch64Condition::Overflow,
                         side_exit_target(
-                            {add_instruction.side_exit_region(),
-                             add_instruction.side_exit_arguments()}));
+                            make_side_exit_binding(add_instruction)));
                     break;
                 }
 
@@ -406,8 +405,7 @@ namespace cl::jit
                         assembler, input,
                         guard_instruction.expected_class());
                     Label target = side_exit_target(
-                        {guard_instruction.side_exit_region(),
-                         guard_instruction.side_exit_arguments()});
+                        make_side_exit_binding(guard_instruction));
                     assembler.b(AArch64Condition::NotEqual, target);
                     if(result.encoding() != input.encoding())
                     {
@@ -471,8 +469,7 @@ namespace cl::jit
                     resume_instruction)
                 {
                     assembler.b(side_exit_target(
-                        {resume_instruction.side_exit_region(),
-                         resume_instruction.side_exit_arguments()}));
+                        make_side_exit_binding(resume_instruction)));
                     break;
                 }
 

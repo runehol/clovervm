@@ -776,12 +776,9 @@ namespace cl::jit
                 .make_instruction<ResumeInInterpreterWithSideExitInstruction>(
                     reversed, SideExitRegionId{7});
 
-        SideExitBinding binding{owner.side_exit_region(),
-                                owner.side_exit_arguments()};
-        SideExitBinding same{owner.side_exit_region(),
-                             owner.side_exit_arguments()};
-        SideExitBinding different_order{other_owner.side_exit_region(),
-                                        other_owner.side_exit_arguments()};
+        SideExitBinding binding = make_side_exit_binding(owner);
+        SideExitBinding same = make_side_exit_binding(owner);
+        SideExitBinding different_order = make_side_exit_binding(other_owner);
         SideExitBinding different_region{SideExitRegionId{8},
                                          owner.side_exit_arguments()};
 

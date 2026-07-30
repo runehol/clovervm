@@ -15,6 +15,13 @@ namespace cl::jit
         ProgramValueRefRange arguments;
     };
 
+    template <typename InstructionT>
+    SideExitBinding make_side_exit_binding(InstructionT instruction)
+    {
+        return {instruction.side_exit_region(),
+                instruction.side_exit_arguments()};
+    }
+
     inline bool operator==(SideExitBinding lhs, SideExitBinding rhs)
     {
         if(lhs.region != rhs.region ||

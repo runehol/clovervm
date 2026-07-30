@@ -69,8 +69,7 @@ namespace cl::jit
 
             SideExitBinding binding() const
             {
-                return {side_exit_owner->side_exit_region(),
-                        side_exit_owner->side_exit_arguments()};
+                return make_side_exit_binding(*side_exit_owner);
             }
 
             test::VmTestContext context;
@@ -231,8 +230,7 @@ namespace cl::jit
                 }
                 (void)emit_side_exit_transition_program(
                     *fixture.session.storage(), *fixture.state_order,
-                    SideExitBinding{region, owner.side_exit_arguments()},
-                    locations);
+                    make_side_exit_binding(owner), locations);
             }()),
             "unsupported instruction in transition program");
     }
