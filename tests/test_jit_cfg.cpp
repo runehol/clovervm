@@ -170,6 +170,93 @@ namespace cl::jit
                   uses.instruction_uses()[0].operand_index);
     }
 
+    TEST(JitCfgVerifier, RejectsSideExitBindingWithWrongArity)
+    {
+        CompilationSession session;
+        GraphBuilder builder(session, IRLevel::Machine);
+        Block *entry = builder.emplace_block();
+        ParameterInstruction region_parameter =
+            builder.make_instruction<ParameterInstruction>();
+        std::array<ProgramValueRef, 1> snapshot_values = {
+            ProgramValueRef(region_parameter)};
+        SnapshotInstruction snapshot =
+            builder.make_instruction<SnapshotInstruction>(snapshot_values,
+                                                          BytecodePC{7});
+        std::array<InstructionId, 1> parameter_ids = {region_parameter.id()};
+        std::array<InstructionId, 1> instructions = {snapshot.id()};
+        SideExitRegion *region =
+            builder.make_side_exit_region(parameter_ids, instructions);
+        builder.emplace_instruction<ResumeInInterpreterWithSideExitInstruction>(
+            entry, std::span<const ProgramValueRef>{}, region->id());
+
+        expect_invalid_with(builder, "wrong number of side-exit arguments");
+    }
+
+    TEST(JitCfgVerifier, RejectsSideExitBindingWithWrongRepresentation)
+    {
+        CompilationSession session;
+        GraphBuilder builder(session, IRLevel::Machine);
+        Block *entry = builder.emplace_block();
+        TaggedValueRef source = emplace_constant(builder, entry, Value::True());
+        ParameterF64Instruction region_parameter =
+            builder.make_instruction<ParameterF64Instruction>();
+        std::array<ProgramValueRef, 1> snapshot_values = {
+            ProgramValueRef(region_parameter)};
+        SnapshotInstruction snapshot =
+            builder.make_instruction<SnapshotInstruction>(snapshot_values,
+                                                          BytecodePC{7});
+        std::array<InstructionId, 1> parameter_ids = {region_parameter.id()};
+        std::array<InstructionId, 1> instructions = {snapshot.id()};
+        SideExitRegion *region =
+            builder.make_side_exit_region(parameter_ids, instructions);
+        std::array<ProgramValueRef, 1> arguments = {source};
+        builder.emplace_instruction<ResumeInInterpreterWithSideExitInstruction>(
+            entry, arguments, region->id());
+
+        expect_invalid_with(builder, "incompatible representation");
+    }
+
+    TEST(JitCfgVerifier, RejectsSideExitRegionWithoutFinalSnapshot)
+    {
+        CompilationSession session;
+        GraphBuilder builder(session, IRLevel::Machine);
+        Block *entry = builder.emplace_block();
+        TaggedValueRef source = emplace_constant(builder, entry, Value::True());
+        ParameterInstruction region_parameter =
+            builder.make_instruction<ParameterInstruction>();
+        MovInstruction move = builder.make_instruction<MovInstruction>(
+            TaggedValueRef(region_parameter));
+        std::array<InstructionId, 1> parameter_ids = {region_parameter.id()};
+        std::array<InstructionId, 1> instructions = {move.id()};
+        SideExitRegion *region =
+            builder.make_side_exit_region(parameter_ids, instructions);
+        std::array<ProgramValueRef, 1> arguments = {source};
+        builder.emplace_instruction<ResumeInInterpreterWithSideExitInstruction>(
+            entry, arguments, region->id());
+
+        expect_invalid_with(builder, "does not end in a Snapshot");
+    }
+
+    TEST(JitCfgVerifier, RejectsSideExitRegionReferenceOutsideRegion)
+    {
+        CompilationSession session;
+        GraphBuilder builder(session, IRLevel::Machine);
+        Block *entry = builder.emplace_block();
+        TaggedValueRef source = emplace_constant(builder, entry, Value::True());
+        std::array<ProgramValueRef, 1> snapshot_values = {source};
+        SnapshotInstruction snapshot =
+            builder.make_instruction<SnapshotInstruction>(snapshot_values,
+                                                          BytecodePC{7});
+        std::array<InstructionId, 0> parameter_ids = {};
+        std::array<InstructionId, 1> instructions = {snapshot.id()};
+        SideExitRegion *region =
+            builder.make_side_exit_region(parameter_ids, instructions);
+        builder.emplace_instruction<ResumeInInterpreterWithSideExitInstruction>(
+            entry, std::span<const ProgramValueRef>{}, region->id());
+
+        expect_invalid_with(builder, "outside the region or before");
+    }
+
     TEST(JitCfg, ParallelEdgesCarryIndependentOrderedArguments)
     {
         CompilationSession session;

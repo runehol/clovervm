@@ -45,6 +45,11 @@ namespace cl::jit
             return "instruction i" + std::to_string(instruction.id().value());
         }
 
+        std::string side_exit_region_name(SideExitRegionId region)
+        {
+            return "side-exit region sr" + std::to_string(region.value());
+        }
+
         const char *ir_level_name(IRLevel level)
         {
             switch(level)
@@ -79,6 +84,208 @@ namespace cl::jit
             }
             assert(false);
             return 0;
+        }
+
+        bool
+        instruction_kind_is_allowed_in_side_exit_region(InstructionKind kind,
+                                                        IRLevel graph_level)
+        {
+            return kind == InstructionKind::Snapshot ||
+                   instruction_kind_is_allowed_at(kind, graph_level);
+        }
+
+        CfgVerificationResult verify_region_owner_binding(
+            const ControlFlowGraph &graph, Instruction owner,
+            SideExitRegionId region_id, ProgramValueRefRange arguments)
+        {
+            if(!graph.storage()->owns_side_exit_region(region_id))
+            {
+                return invalid(instruction_name(owner) +
+                               " names a side-exit region outside its "
+                               "compilation storage");
+            }
+
+            const SideExitRegion &region =
+                graph.storage()->side_exit_region(region_id);
+            if(arguments.size() != region.parameter_ids().size())
+            {
+                return invalid(instruction_name(owner) +
+                               " has the wrong number of side-exit "
+                               "arguments");
+            }
+            for(size_t index = 0; index < arguments.size(); ++index)
+            {
+                Instruction argument = graph.storage()->instruction(
+                    arguments[index].instruction_id());
+                Instruction parameter =
+                    graph.storage()->instruction(region.parameter_ids()[index]);
+                if(argument.value_representation() !=
+                   parameter.value_representation())
+                {
+                    return invalid(instruction_name(owner) +
+                                   " has a side-exit argument with an "
+                                   "incompatible representation");
+                }
+            }
+            return {true, {}};
+        }
+
+        CfgVerificationResult verify_side_exit_region(
+            const ControlFlowGraph &graph, const SideExitRegion &region,
+            const absl::flat_hash_set<InstructionId> &graph_instructions)
+        {
+            std::string region_name = side_exit_region_name(region.id());
+            if(region.instruction_ids().empty())
+            {
+                return invalid(region_name + " has no instructions");
+            }
+
+            absl::flat_hash_set<InstructionId> parameters;
+            for(InstructionId id: region.parameter_ids())
+            {
+                Instruction parameter = graph.storage()->instruction(id);
+                if(parameter.is_poisoned())
+                {
+                    return invalid(region_name + " contains poisoned " +
+                                   instruction_name(parameter));
+                }
+                if(!is_block_parameter_kind(parameter.kind()))
+                {
+                    return invalid(instruction_name(parameter) + " in " +
+                                   region_name +
+                                   " is not a parameter instruction");
+                }
+                if(!instruction_kind_is_allowed_at(parameter.kind(),
+                                                   graph.ir_level()))
+                {
+                    return invalid(instruction_name(parameter) +
+                                   " is not legal in " +
+                                   ir_level_name(graph.ir_level()) + " IR");
+                }
+                if(graph_instructions.contains(id))
+                {
+                    return invalid(instruction_name(parameter) + " in " +
+                                   region_name +
+                                   " also belongs to the control-flow graph");
+                }
+                if(!parameters.insert(id).second)
+                {
+                    return invalid(region_name +
+                                   " contains one parameter more than once");
+                }
+            }
+
+            absl::flat_hash_set<InstructionId> body;
+            for(InstructionId id: region.instruction_ids())
+            {
+                Instruction instruction = graph.storage()->instruction(id);
+                if(instruction.is_poisoned())
+                {
+                    return invalid(region_name + " contains poisoned " +
+                                   instruction_name(instruction));
+                }
+                if(is_block_parameter_kind(instruction.kind()))
+                {
+                    return invalid(instruction_name(instruction) + " in " +
+                                   region_name +
+                                   " is a parameter in the instruction list");
+                }
+                if(!instruction_kind_is_allowed_in_side_exit_region(
+                       instruction.kind(), graph.ir_level()))
+                {
+                    return invalid(instruction_name(instruction) +
+                                   " is not legal in " +
+                                   ir_level_name(graph.ir_level()) + " IR");
+                }
+                if(graph_instructions.contains(id))
+                {
+                    return invalid(instruction_name(instruction) + " in " +
+                                   region_name +
+                                   " also belongs to the control-flow graph");
+                }
+                if(parameters.contains(id))
+                {
+                    return invalid(instruction_name(instruction) + " in " +
+                                   region_name +
+                                   " is both a parameter and body "
+                                   "instruction");
+                }
+                if(!body.insert(id).second)
+                {
+                    return invalid(region_name +
+                                   " contains one instruction more than once");
+                }
+            }
+
+            Instruction final_instruction =
+                graph.storage()->instruction(region.instruction_ids().back());
+            if(final_instruction.kind() != InstructionKind::Snapshot)
+            {
+                return invalid(region_name + " does not end in a Snapshot");
+            }
+
+            absl::flat_hash_set<InstructionId> available = parameters;
+            for(size_t index = 0; index < region.instruction_ids().size();
+                ++index)
+            {
+                Instruction instruction = graph.storage()->instruction(
+                    region.instruction_ids()[index]);
+                if(index + 1 != region.instruction_ids().size() &&
+                   instruction.kind() == InstructionKind::Snapshot)
+                {
+                    return invalid(region_name +
+                                   " contains a Snapshot before its final "
+                                   "instruction");
+                }
+
+                std::string reference_error;
+                visit_operand_references(
+                    instruction,
+                    [&](uint32_t, OperandClass operand_class,
+                        ValueRepresentationRequirement required_representation,
+                        InstructionId definition_id) {
+                        if(!reference_error.empty())
+                        {
+                            return;
+                        }
+                        if(operand_class != OperandClass::ProgramValue)
+                        {
+                            reference_error =
+                                instruction_name(instruction) + " in " +
+                                region_name +
+                                " has a non-program-value operand";
+                            return;
+                        }
+                        Instruction def =
+                            graph.storage()->instruction(definition_id);
+                        if(!available.contains(def.id()))
+                        {
+                            reference_error = instruction_name(instruction) +
+                                              " in " + region_name +
+                                              " references " +
+                                              instruction_name(def) +
+                                              " outside the region or before "
+                                              "its definition";
+                            return;
+                        }
+                        if(!representation_matches(required_representation,
+                                                   def.value_representation()))
+                        {
+                            reference_error =
+                                instruction_name(instruction) + " in " +
+                                region_name +
+                                " has a program-value operand with an "
+                                "incompatible representation";
+                        }
+                    });
+                if(!reference_error.empty())
+                {
+                    return invalid(std::move(reference_error));
+                }
+                available.insert(instruction.id());
+            }
+
+            return {true, {}};
         }
     }  // namespace
 
@@ -119,6 +326,8 @@ namespace cl::jit
         }
 
         absl::flat_hash_set<InstructionId> instruction_set;
+        absl::flat_hash_set<SideExitRegionId> referenced_side_exit_regions;
+        std::vector<SideExitRegionId> side_exit_region_order;
         absl::flat_hash_map<const BlockEdge *, size_t> outgoing_edge_uses;
         for(const Block *block: blocks)
         {
@@ -184,6 +393,79 @@ namespace cl::jit
                     return invalid(instruction_name(instruction) +
                                    " belongs to more than one instruction "
                                    "position");
+                }
+                CfgVerificationResult side_exit_verification{true, {}};
+                switch(instruction.kind())
+                {
+                    case InstructionKind::AddSMIWithSideExit:
+                        {
+                            auto owner =
+                                instruction.as<AddSMIWithSideExitInstruction>();
+                            side_exit_verification =
+                                verify_region_owner_binding(
+                                    graph, instruction,
+                                    owner.side_exit_region(),
+                                    owner.side_exit_arguments());
+                            if(side_exit_verification.valid)
+                            {
+                                if(referenced_side_exit_regions
+                                       .insert(owner.side_exit_region())
+                                       .second)
+                                {
+                                    side_exit_region_order.push_back(
+                                        owner.side_exit_region());
+                                }
+                            }
+                            break;
+                        }
+                    case InstructionKind::InlineTagGuardWithSideExit:
+                        {
+                            auto owner = instruction.as<
+                                InlineTagGuardWithSideExitInstruction>();
+                            side_exit_verification =
+                                verify_region_owner_binding(
+                                    graph, instruction,
+                                    owner.side_exit_region(),
+                                    owner.side_exit_arguments());
+                            if(side_exit_verification.valid)
+                            {
+                                if(referenced_side_exit_regions
+                                       .insert(owner.side_exit_region())
+                                       .second)
+                                {
+                                    side_exit_region_order.push_back(
+                                        owner.side_exit_region());
+                                }
+                            }
+                            break;
+                        }
+                    case InstructionKind::ResumeInInterpreterWithSideExit:
+                        {
+                            auto owner = instruction.as<
+                                ResumeInInterpreterWithSideExitInstruction>();
+                            side_exit_verification =
+                                verify_region_owner_binding(
+                                    graph, instruction,
+                                    owner.side_exit_region(),
+                                    owner.side_exit_arguments());
+                            if(side_exit_verification.valid)
+                            {
+                                if(referenced_side_exit_regions
+                                       .insert(owner.side_exit_region())
+                                       .second)
+                                {
+                                    side_exit_region_order.push_back(
+                                        owner.side_exit_region());
+                                }
+                            }
+                            break;
+                        }
+                    default:
+                        break;
+                }
+                if(!side_exit_verification.valid)
+                {
+                    return side_exit_verification;
                 }
                 bool is_last = index + 1 == instructions.size();
                 if(is_last && !instruction.is_block_terminator())
@@ -256,6 +538,17 @@ namespace cl::jit
                                    std::to_string(incoming_count) +
                                    " times in its target predecessor index");
                 }
+            }
+        }
+
+        for(SideExitRegionId region_id: side_exit_region_order)
+        {
+            CfgVerificationResult region_verification = verify_side_exit_region(
+                graph, graph.storage()->side_exit_region(region_id),
+                instruction_set);
+            if(!region_verification.valid)
+            {
+                return region_verification;
             }
         }
 

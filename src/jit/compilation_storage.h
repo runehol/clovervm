@@ -32,6 +32,10 @@ namespace cl::jit
         Instruction instruction(InstructionId id) const;
         BlockEdge *block_edge(BlockEdgeId id) const;
         const SideExitRegion &side_exit_region(SideExitRegionId id) const;
+        bool owns_side_exit_region(SideExitRegionId id) const
+        {
+            return id.value() < side_exit_regions_.size();
+        }
 
     private:
         friend class CompilationSession;
