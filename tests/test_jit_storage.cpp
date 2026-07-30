@@ -3,10 +3,13 @@
 #include "jit/graph_builder.h"
 #include "jit/instruction.h"
 #include "jit/object_pool.h"
+#include "jit/side_exit_binding.h"
 #include "object_model/validity_cell.h"
 #include "object_model/value.h"
 #include "runtime/thread_state.h"
 #include "test_helpers.h"
+
+#include <absl/container/flat_hash_set.h>
 
 #include <gtest/gtest.h>
 
@@ -730,6 +733,48 @@ namespace cl::jit
         EXPECT_EQ(f64.instruction_id(), references[1]);
         EXPECT_EQ(truth.instruction_id(), references[2]);
         EXPECT_EQ(none.instruction_id(), references[3]);
+    }
+
+    TEST(JitSideExitBinding, ComparesAndHashesByRegionAndOrderedArguments)
+    {
+        CompilationSession session;
+        GraphBuilder builder(session, IRLevel::Machine);
+        ParameterInstruction first =
+            builder.make_instruction<ParameterInstruction>();
+        ParameterInstruction second =
+            builder.make_instruction<ParameterInstruction>();
+        std::array<ProgramValueRef, 2> arguments = {ProgramValueRef(first),
+                                                    ProgramValueRef(second)};
+        ResumeInInterpreterWithSideExitRegionInstruction owner =
+            builder.make_instruction<
+                ResumeInInterpreterWithSideExitRegionInstruction>(
+                arguments, SideExitRegionId{7});
+        std::array<ProgramValueRef, 2> reversed = {ProgramValueRef(second),
+                                                   ProgramValueRef(first)};
+        ResumeInInterpreterWithSideExitRegionInstruction other_owner =
+            builder.make_instruction<
+                ResumeInInterpreterWithSideExitRegionInstruction>(
+                reversed, SideExitRegionId{7});
+
+        SideExitBinding binding{owner.side_exit_region(),
+                                owner.side_exit_arguments()};
+        SideExitBinding same{owner.side_exit_region(),
+                             owner.side_exit_arguments()};
+        SideExitBinding different_order{other_owner.side_exit_region(),
+                                        other_owner.side_exit_arguments()};
+        SideExitBinding different_region{SideExitRegionId{8},
+                                         owner.side_exit_arguments()};
+
+        EXPECT_EQ(binding, same);
+        EXPECT_NE(binding, different_order);
+        EXPECT_NE(binding, different_region);
+
+        absl::flat_hash_set<SideExitBinding> bindings;
+        EXPECT_TRUE(bindings.insert(binding).second);
+        EXPECT_FALSE(bindings.insert(same).second);
+        EXPECT_TRUE(bindings.insert(different_order).second);
+        EXPECT_TRUE(bindings.insert(different_region).second);
+        EXPECT_EQ(3u, bindings.size());
     }
 
 }  // namespace cl::jit

@@ -4,6 +4,9 @@
 #include "jit/instruction.h"
 #include "jit/side_exit_region_id.h"
 
+#include <cstddef>
+#include <utility>
+
 namespace cl::jit
 {
     struct SideExitBinding
@@ -11,6 +14,36 @@ namespace cl::jit
         SideExitRegionId region;
         ProgramValueRefRange arguments;
     };
+
+    inline bool operator==(SideExitBinding lhs, SideExitBinding rhs)
+    {
+        if(lhs.region != rhs.region ||
+           lhs.arguments.size() != rhs.arguments.size())
+        {
+            return false;
+        }
+        for(size_t index = 0; index < lhs.arguments.size(); ++index)
+        {
+            if(lhs.arguments[index].instruction_id() !=
+               rhs.arguments[index].instruction_id())
+            {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    template <typename H> H AbslHashValue(H hash, SideExitBinding binding)
+    {
+        H result = H::combine(std::move(hash), binding.region,
+                              binding.arguments.size());
+        for(size_t index = 0; index < binding.arguments.size(); ++index)
+        {
+            result = H::combine(std::move(result),
+                                binding.arguments[index].instruction_id());
+        }
+        return result;
+    }
 
 }  // namespace cl::jit
 
