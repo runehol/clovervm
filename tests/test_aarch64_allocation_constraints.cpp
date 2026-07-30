@@ -44,6 +44,26 @@ namespace cl::jit
                 builder.emplace_instruction<ConstInstruction>(block, value));
         }
 
+        SideExitRegionId make_single_argument_region(GraphBuilder &builder,
+                                                     ProgramValueRef argument,
+                                                     BytecodePC pc)
+        {
+            EXPECT_EQ(ValueRepresentation::TaggedValue,
+                      builder.storage()
+                          ->instruction(argument.instruction_id())
+                          .value_representation());
+            ParameterInstruction parameter =
+                builder.make_instruction<ParameterInstruction>();
+            std::array<ProgramValueRef, 1> captured = {
+                ProgramValueRef(parameter)};
+            SnapshotInstruction snapshot =
+                builder.make_instruction<SnapshotInstruction>(captured, pc);
+            std::array<InstructionId, 1> parameters = {parameter.id()};
+            std::array<InstructionId, 1> instructions = {snapshot.id()};
+            return builder.make_side_exit_region(parameters, instructions)
+                ->id();
+        }
+
     }  // namespace
 
     TEST(AArch64AllocationConstraints,
@@ -180,16 +200,13 @@ namespace cl::jit
         Block *entry = builder.emplace_block();
         ParameterInstruction value =
             builder.emplace_parameter<ParameterInstruction>(entry);
-        std::array<ProgramValueRef, 1> inputs = {ProgramValueRef(value)};
-        SnapshotInstruction snapshot =
-            builder.make_instruction<SnapshotInstruction>(inputs,
-                                                          BytecodePC{17});
-        std::array<InstructionId, 1> retained = {snapshot.id()};
-        SideExitId side_exit = builder.emplace_side_exit(inputs, retained);
-        ResumeInInterpreterWithSideExitInstruction owner =
+        std::array<ProgramValueRef, 1> arguments = {ProgramValueRef(value)};
+        SideExitRegionId region = make_single_argument_region(
+            builder, ProgramValueRef(value), BytecodePC{17});
+        ResumeInInterpreterWithSideExitRegionInstruction owner =
             builder.emplace_instruction<
-                ResumeInInterpreterWithSideExitInstruction>(entry, inputs,
-                                                            side_exit);
+                ResumeInInterpreterWithSideExitRegionInstruction>(
+                entry, arguments, region);
         ControlFlowGraph *graph = builder.finalize();
 
         AllocationConstraints constraints =
@@ -197,8 +214,8 @@ namespace cl::jit
         const InstructionAllocationConstraints *owner_override =
             find_override(constraints, owner);
         ASSERT_NE(nullptr, owner_override);
-        ASSERT_EQ(inputs.size(), owner_override->input_overrides().size());
-        for(size_t index = 0; index < inputs.size(); ++index)
+        ASSERT_EQ(arguments.size(), owner_override->input_overrides().size());
+        for(size_t index = 0; index < arguments.size(); ++index)
         {
             const ProgramValueUseConstraint &input =
                 owner_override->input_overrides()[index];
@@ -218,16 +235,14 @@ namespace cl::jit
         Block *entry = builder.emplace_block();
         ParameterInstruction value =
             builder.emplace_parameter<ParameterInstruction>(entry);
-        std::array<ProgramValueRef, 1> inputs = {ProgramValueRef(value)};
-        SnapshotInstruction snapshot =
-            builder.make_instruction<SnapshotInstruction>(inputs,
-                                                          BytecodePC{17});
-        std::array<InstructionId, 1> retained = {snapshot.id()};
-        SideExitId side_exit = builder.emplace_side_exit(inputs, retained);
-        InlineTagGuardWithSideExitInstruction owner =
-            builder.emplace_instruction<InlineTagGuardWithSideExitInstruction>(
-                entry, TaggedValueRef(value), inputs, InlineValueClass::SMI,
-                side_exit);
+        std::array<ProgramValueRef, 1> arguments = {ProgramValueRef(value)};
+        SideExitRegionId region = make_single_argument_region(
+            builder, ProgramValueRef(value), BytecodePC{17});
+        InlineTagGuardWithSideExitRegionInstruction owner =
+            builder.emplace_instruction<
+                InlineTagGuardWithSideExitRegionInstruction>(
+                entry, TaggedValueRef(value), arguments, InlineValueClass::SMI,
+                region);
         builder.emplace_instruction<ReturnInstruction>(entry,
                                                        TaggedValueRef(owner));
         ControlFlowGraph *graph = builder.finalize();
@@ -240,7 +255,7 @@ namespace cl::jit
         ASSERT_EQ(1u, owner_override->input_overrides().size());
         const ProgramValueUseConstraint &argument =
             owner_override->input_overrides()[0];
-        EXPECT_EQ(InlineTagGuardWithSideExitInstruction::
+        EXPECT_EQ(InlineTagGuardWithSideExitRegionInstruction::
                       side_exit_arguments_operand_index,
                   argument.operand_index);
         EXPECT_EQ(AccessTiming::Late, argument.timing);
@@ -258,16 +273,13 @@ namespace cl::jit
             builder.emplace_parameter<ParameterInstruction>(entry);
         ParameterInstruction rhs =
             builder.emplace_parameter<ParameterInstruction>(entry);
-        std::array<ProgramValueRef, 1> inputs = {ProgramValueRef(lhs)};
-        SnapshotInstruction snapshot =
-            builder.make_instruction<SnapshotInstruction>(inputs,
-                                                          BytecodePC{19});
-        std::array<InstructionId, 1> retained = {snapshot.id()};
-        SideExitId side_exit = builder.emplace_side_exit(inputs, retained);
-        AddSMIWithSideExitInstruction owner =
-            builder.emplace_instruction<AddSMIWithSideExitInstruction>(
-                entry, TaggedValueRef(lhs), TaggedValueRef(rhs), inputs,
-                side_exit);
+        std::array<ProgramValueRef, 1> arguments = {ProgramValueRef(lhs)};
+        SideExitRegionId region = make_single_argument_region(
+            builder, ProgramValueRef(lhs), BytecodePC{19});
+        AddSMIWithSideExitRegionInstruction owner =
+            builder.emplace_instruction<AddSMIWithSideExitRegionInstruction>(
+                entry, TaggedValueRef(lhs), TaggedValueRef(rhs), arguments,
+                region);
         builder.emplace_instruction<ReturnInstruction>(entry,
                                                        TaggedValueRef(owner));
         ControlFlowGraph *graph = builder.finalize();
@@ -280,9 +292,9 @@ namespace cl::jit
         ASSERT_EQ(1u, owner_override->input_overrides().size());
         const ProgramValueUseConstraint &argument =
             owner_override->input_overrides()[0];
-        EXPECT_EQ(
-            AddSMIWithSideExitInstruction::side_exit_arguments_operand_index,
-            argument.operand_index);
+        EXPECT_EQ(AddSMIWithSideExitRegionInstruction::
+                      side_exit_arguments_operand_index,
+                  argument.operand_index);
         EXPECT_EQ(AccessTiming::Late, argument.timing);
         EXPECT_EQ(LocationRequirement::Kind::AnyRegister,
                   argument.requirement.kind());

@@ -1079,24 +1079,28 @@ namespace cl::jit
         Block *entry = builder.emplace_block();
         ParameterInstruction parameter =
             builder.emplace_parameter<ParameterInstruction>(entry);
-        std::array<ProgramValueRef, 1> snapshot_values = {
-            ProgramValueRef(parameter)};
-        SnapshotInstruction snapshot =
-            builder.make_instruction<SnapshotInstruction>(snapshot_values,
-                                                          BytecodePC{31});
-        std::array<InstructionId, 1> retained = {snapshot.id()};
         std::array<ProgramValueRef, 1> inputs = {ProgramValueRef(parameter)};
-        SideExitId side_exit = builder.emplace_side_exit(inputs, retained);
-        ResumeInInterpreterWithSideExitInstruction old_owner =
+        ParameterInstruction region_parameter =
+            builder.make_instruction<ParameterInstruction>();
+        std::array<ProgramValueRef, 1> region_values = {
+            ProgramValueRef(region_parameter)};
+        SnapshotInstruction region_snapshot =
+            builder.make_instruction<SnapshotInstruction>(region_values,
+                                                          BytecodePC{31});
+        std::array<InstructionId, 1> parameter_ids = {region_parameter.id()};
+        std::array<InstructionId, 1> instructions = {region_snapshot.id()};
+        SideExitRegionId region =
+            builder.make_side_exit_region(parameter_ids, instructions)->id();
+        ResumeInInterpreterWithSideExitRegionInstruction old_owner =
             builder.emplace_instruction<
-                ResumeInInterpreterWithSideExitInstruction>(entry, inputs,
-                                                            side_exit);
+                ResumeInInterpreterWithSideExitRegionInstruction>(entry, inputs,
+                                                                  region);
         ControlFlowGraph *graph = builder.finalize();
 
         struct Callback
         {
             ParameterInstruction parameter;
-            ResumeInInterpreterWithSideExitInstruction owner;
+            ResumeInInterpreterWithSideExitRegionInstruction owner;
             std::optional<MovInstruction> move;
 
             RewriteInsertion before_instruction(RewriteContext &context,
@@ -1127,15 +1131,14 @@ namespace cl::jit
         ASSERT_TRUE(callback.move.has_value());
         ASSERT_EQ(2u, entry->instructions().size());
         EXPECT_EQ(*callback.move, entry->instruction_at(0));
-        auto new_owner = entry->instruction_at(1)
-                             .as<ResumeInInterpreterWithSideExitInstruction>();
-        EXPECT_EQ(side_exit, new_owner.side_exit());
+        auto new_owner =
+            entry->instruction_at(1)
+                .as<ResumeInInterpreterWithSideExitRegionInstruction>();
+        EXPECT_EQ(region, new_owner.side_exit_region());
         ASSERT_EQ(1u, new_owner.side_exit_arguments().size());
         EXPECT_EQ(callback.move->id(),
                   new_owner.side_exit_arguments()[0].instruction_id());
-        ASSERT_EQ(1u, graph->side_exit(side_exit).inputs().size());
-        EXPECT_EQ(parameter.id(),
-                  graph->side_exit(side_exit).inputs()[0].instruction_id());
+        EXPECT_EQ(0u, graph->side_exits().size());
     }
 
     TEST(JitGraphRewriter, StagesSequencesAcrossTheWholeGraphBeforeCommit)

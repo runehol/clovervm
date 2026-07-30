@@ -403,20 +403,26 @@ namespace cl::jit
             Block *entry = builder.emplace_block();
             ParameterInstruction parameter =
                 builder.emplace_parameter<ParameterInstruction>(entry);
-            std::vector<ProgramValueRef> captured(state_order.size(),
-                                                  ProgramValueRef(parameter));
-            SnapshotInstruction snapshot =
-                builder.make_instruction<SnapshotInstruction>(captured,
-                                                              BytecodePC{13});
             std::array<ProgramValueRef, 1> inputs = {
                 ProgramValueRef(parameter)};
-            std::array<InstructionId, 1> retained = {snapshot.id()};
-            SideExitId side_exit = builder.emplace_side_exit(inputs, retained);
-            InlineTagGuardWithSideExitInstruction guard =
-                builder
-                    .emplace_instruction<InlineTagGuardWithSideExitInstruction>(
-                        entry, TaggedValueRef(parameter), inputs,
-                        expected_class, side_exit);
+            ParameterInstruction region_parameter =
+                builder.make_instruction<ParameterInstruction>();
+            std::vector<ProgramValueRef> region_captured(
+                state_order.size(), ProgramValueRef(region_parameter));
+            SnapshotInstruction region_snapshot =
+                builder.make_instruction<SnapshotInstruction>(region_captured,
+                                                              BytecodePC{13});
+            std::array<InstructionId, 1> parameter_ids = {
+                region_parameter.id()};
+            std::array<InstructionId, 1> instructions = {region_snapshot.id()};
+            SideExitRegionId side_exit_region =
+                builder.make_side_exit_region(parameter_ids, instructions)
+                    ->id();
+            InlineTagGuardWithSideExitRegionInstruction guard =
+                builder.emplace_instruction<
+                    InlineTagGuardWithSideExitRegionInstruction>(
+                    entry, TaggedValueRef(parameter), inputs, expected_class,
+                    side_exit_region);
             MovInstruction move = builder.emplace_instruction<MovInstruction>(
                 entry, TaggedValueRef(guard));
             builder.emplace_instruction<ReturnInstruction>(
@@ -482,18 +488,22 @@ namespace cl::jit
             builder.emplace_parameter<ParameterInstruction>(entry);
         ParameterInstruction rhs =
             builder.emplace_parameter<ParameterInstruction>(entry);
-        std::vector<ProgramValueRef> captured(state_order.size(),
-                                              ProgramValueRef(lhs));
-        SnapshotInstruction snapshot =
-            builder.make_instruction<SnapshotInstruction>(captured,
-                                                          BytecodePC{17});
         std::array<ProgramValueRef, 1> inputs = {ProgramValueRef(lhs)};
-        std::array<InstructionId, 1> retained = {snapshot.id()};
-        SideExitId side_exit = builder.emplace_side_exit(inputs, retained);
-        AddSMIWithSideExitInstruction add =
-            builder.emplace_instruction<AddSMIWithSideExitInstruction>(
+        ParameterInstruction region_parameter =
+            builder.make_instruction<ParameterInstruction>();
+        std::vector<ProgramValueRef> region_captured(
+            state_order.size(), ProgramValueRef(region_parameter));
+        SnapshotInstruction region_snapshot =
+            builder.make_instruction<SnapshotInstruction>(region_captured,
+                                                          BytecodePC{17});
+        std::array<InstructionId, 1> parameter_ids = {region_parameter.id()};
+        std::array<InstructionId, 1> instructions = {region_snapshot.id()};
+        SideExitRegionId side_exit_region =
+            builder.make_side_exit_region(parameter_ids, instructions)->id();
+        AddSMIWithSideExitRegionInstruction add =
+            builder.emplace_instruction<AddSMIWithSideExitRegionInstruction>(
                 entry, TaggedValueRef(lhs), TaggedValueRef(rhs), inputs,
-                side_exit);
+                side_exit_region);
         MovInstruction move = builder.emplace_instruction<MovInstruction>(
             entry, TaggedValueRef(add));
         builder.emplace_instruction<ReturnInstruction>(entry,

@@ -219,16 +219,21 @@ namespace cl::jit
         Block *entry = builder.emplace_block();
         ParameterInstruction input =
             builder.emplace_parameter<ParameterInstruction>(entry);
+        ParameterInstruction region_parameter =
+            builder.make_instruction<ParameterInstruction>();
         std::array<ProgramValueRef, 1> snapshot_values = {
-            ProgramValueRef(input)};
+            ProgramValueRef(region_parameter)};
         SnapshotInstruction snapshot =
             builder.make_instruction<SnapshotInstruction>(snapshot_values,
                                                           BytecodePC{7});
-        std::array<InstructionId, 1> retained = {snapshot.id()};
+        std::array<InstructionId, 1> parameter_ids = {region_parameter.id()};
+        std::array<InstructionId, 1> instructions = {snapshot.id()};
         std::array<ProgramValueRef, 1> inputs = {ProgramValueRef(input)};
-        SideExitId side_exit = builder.emplace_side_exit(inputs, retained);
-        builder.emplace_instruction<ResumeInInterpreterWithSideExitInstruction>(
-            entry, inputs, side_exit);
+        SideExitRegionId region =
+            builder.make_side_exit_region(parameter_ids, instructions)->id();
+        builder.emplace_instruction<
+            ResumeInInterpreterWithSideExitRegionInstruction>(entry, inputs,
+                                                              region);
         ControlFlowGraph *graph = builder.finalize();
 
         auto elimination = eliminate_dead_code(session, *graph);
