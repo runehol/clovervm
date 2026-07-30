@@ -3,6 +3,7 @@
 #include "jit/compilation_session.h"
 #include "jit/control_flow_graph.h"
 #include "jit/graph_rewriter.h"
+#include "jit/instruction_reconstruction.h"
 #include "jit/use_lists.h"
 #include "runtime/fatal.h"
 
@@ -370,14 +371,14 @@ namespace cl::jit
                         context_->instruction(resolve(def.instruction_id())));
                 }
 
+                BlockEdge *resolve(BlockEdge *) const
+                {
+                    fatal("side-exit region clone cannot contain block edges");
+                }
+
                 template <typename T> T resolve_attribute(T attribute) const
                 {
                     return attribute;
-                }
-
-                BlockEdge *resolve_attribute(BlockEdge *) const
-                {
-                    fatal("side-exit region clone cannot contain block edges");
                 }
 
                 std::vector<ProgramValueRef>
@@ -412,47 +413,6 @@ namespace cl::jit
                     *remapping_;
             };
 
-            Instruction
-            clone_region_instruction(RewriteContext &context,
-                                     Instruction instruction,
-                                     const RegionReferenceResolver &resolver)
-            {
-                switch(instruction.kind())
-                {
-#define CL_JIT_IR_LEVELS(...)
-#define CL_JIT_RESULT(...)
-#define CL_JIT_EFFECT_BOUNDS(...)
-#define CL_JIT_RESOLVE_FIXED(name, ...) resolver.resolve(typed.name()),
-#define CL_JIT_RESOLVE_VARIADIC(name, ...) resolver.resolve(typed.name()),
-#define CL_JIT_RESOLVE_PROGRAM_VALUES(name, role)                              \
-    resolver.resolve(typed.name()),
-#define CL_JIT_COPY_ATTRIBUTE(name, ...)                                       \
-    resolver.resolve_attribute(typed.name()),
-#define CL_JIT_INSTRUCTION(name, ir_levels, result, effects, operands,         \
-                           attributes)                                         \
-    case InstructionKind::name:                                                \
-        {                                                                      \
-            [[maybe_unused]] const name##Instruction typed =                   \
-                instruction.as<name##Instruction>();                           \
-            return context.template make_instruction<name##Instruction>(       \
-                operands(CL_JIT_RESOLVE_FIXED, CL_JIT_RESOLVE_VARIADIC,        \
-                         CL_JIT_RESOLVE_PROGRAM_VALUES)                        \
-                    attributes(CL_JIT_COPY_ATTRIBUTE)                          \
-                        InstructionConstructorEnd{});                          \
-        }
-#include "jit/instruction.def"
-#undef CL_JIT_INSTRUCTION
-#undef CL_JIT_COPY_ATTRIBUTE
-#undef CL_JIT_RESOLVE_PROGRAM_VALUES
-#undef CL_JIT_RESOLVE_VARIADIC
-#undef CL_JIT_RESOLVE_FIXED
-#undef CL_JIT_EFFECT_BOUNDS
-#undef CL_JIT_RESULT
-#undef CL_JIT_IR_LEVELS
-                }
-                fatal("invalid side-exit region instruction kind");
-            }
-
             const BuiltSideExitRegion &
             region_for_snapshot(RewriteContext &context,
                                 const PlannedSideExit &plan)
@@ -484,8 +444,9 @@ namespace cl::jit
                 {
                     Instruction instruction = context.instruction(id);
                     RegionReferenceResolver resolver(context, remapping);
-                    Instruction clone = clone_region_instruction(
-                        context, instruction, resolver);
+                    Instruction clone = rebuild_instruction_with_references(
+                        instruction, *instruction.storage(), resolver, context,
+                        InstructionRebuildMode::AlwaysClone);
                     instruction_ids.push_back(clone.id());
                     remapping.emplace(id, clone.id());
                 }

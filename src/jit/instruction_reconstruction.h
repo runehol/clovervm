@@ -15,7 +15,7 @@ namespace cl::jit
         template <typename DefResolver> class TypedReferenceResolver
         {
         public:
-            TypedReferenceResolver(CompilationStorage &storage,
+            TypedReferenceResolver(const CompilationStorage &storage,
                                    const DefResolver &resolver)
                 : storage_(&storage), resolver_(&resolver)
             {
@@ -93,15 +93,22 @@ namespace cl::jit
             }
 
         private:
-            CompilationStorage *storage_;
+            const CompilationStorage *storage_;
             const DefResolver *resolver_;
         };
     }  // namespace detail
 
+    enum class InstructionRebuildMode : uint8_t
+    {
+        ReuseIfUnchanged,
+        AlwaysClone,
+    };
+
     // Reconstructs an instruction through its schema-generated typed
     // constructor after resolving every operand definition and first-class
     // BlockEdge attribute. Other attributes are copied unchanged. The original
-    // instruction is returned when no reference changes.
+    // instruction is returned when no reference changes unless AlwaysClone is
+    // requested.
     //
     // DefResolver provides:
     //
@@ -113,27 +120,32 @@ namespace cl::jit
     //     T make_instruction(Args &&...args);
     template <typename DefResolver, typename InstructionFactory>
     Instruction rebuild_instruction_with_references(
-        Instruction &instruction, CompilationStorage &storage,
-        const DefResolver &def_resolver, InstructionFactory &factory)
+        Instruction &instruction, const CompilationStorage &storage,
+        const DefResolver &def_resolver, InstructionFactory &factory,
+        InstructionRebuildMode mode = InstructionRebuildMode::ReuseIfUnchanged)
     {
         bool changed = false;
-        visit_operand_references(
-            instruction,
-            [&](uint32_t, OperandClass, ValueRepresentationRequirement,
-                InstructionId definition_id) {
-                changed |= def_resolver.resolve(definition_id) != definition_id;
-            });
-        if(instruction.is_block_terminator())
+        if(mode == InstructionRebuildMode::ReuseIfUnchanged)
         {
-            for(BlockEdge *edge:
-                TerminatorInstruction(instruction).block_successor_edges())
+            visit_operand_references(
+                instruction,
+                [&](uint32_t, OperandClass, ValueRepresentationRequirement,
+                    InstructionId definition_id) {
+                    changed |=
+                        def_resolver.resolve(definition_id) != definition_id;
+                });
+            if(instruction.is_block_terminator())
             {
-                changed |= def_resolver.resolve(edge) != edge;
+                for(BlockEdge *edge:
+                    TerminatorInstruction(instruction).block_successor_edges())
+                {
+                    changed |= def_resolver.resolve(edge) != edge;
+                }
             }
-        }
-        if(!changed)
-        {
-            return instruction;
+            if(!changed)
+            {
+                return instruction;
+            }
         }
 
         detail::TypedReferenceResolver resolver(storage, def_resolver);
