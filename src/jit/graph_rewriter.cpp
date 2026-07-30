@@ -24,6 +24,13 @@ namespace cl::jit
         return id;
     }
 
+    SideExitRegion *RewriteContext::make_side_exit_region(
+        std::span<const InstructionId> parameter_ids,
+        std::span<const InstructionId> instruction_ids)
+    {
+        return storage_->make_side_exit_region(parameter_ids, instruction_ids);
+    }
+
     namespace
     {
         void require_rewrite_invariant(bool condition, const char *message)

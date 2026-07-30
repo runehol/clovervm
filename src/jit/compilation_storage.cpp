@@ -22,6 +22,23 @@ namespace cl::jit
         return const_cast<BlockEdge *>(&block_edges_[id.value()]);
     }
 
+    SideExitRegion *CompilationStorage::make_side_exit_region(
+        std::span<const InstructionId> parameter_ids,
+        std::span<const InstructionId> instruction_ids)
+    {
+        SideExitRegionId id = next_side_exit_region_id();
+        side_exit_regions_.emplace_back(*this, id, parameter_ids,
+                                        instruction_ids);
+        return &side_exit_regions_.back();
+    }
+
+    const SideExitRegion &
+    CompilationStorage::side_exit_region(SideExitRegionId id) const
+    {
+        assert(id.value() < side_exit_regions_.size());
+        return side_exit_regions_[id.value()];
+    }
+
     Instruction CompilationStorage::instruction(InstructionId id) const
     {
         assert(id.value() < instructions_.size());
@@ -64,6 +81,16 @@ namespace cl::jit
             fatal("too many JIT block edges");
         }
         return BlockEdgeId(static_cast<uint32_t>(block_edges_.size()));
+    }
+
+    SideExitRegionId CompilationStorage::next_side_exit_region_id() const
+    {
+        if(side_exit_regions_.size() > std::numeric_limits<uint32_t>::max())
+        {
+            fatal("too many JIT side-exit regions");
+        }
+        return SideExitRegionId(
+            static_cast<uint32_t>(side_exit_regions_.size()));
     }
 
     BlockEdge *

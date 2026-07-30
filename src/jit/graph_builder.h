@@ -4,6 +4,7 @@
 #include "jit/compilation_session.h"
 #include "jit/instruction.h"
 #include "jit/side_exit_id.h"
+#include "jit/side_exit_region_id.h"
 
 #include <cassert>
 #include <concepts>
@@ -14,6 +15,8 @@
 
 namespace cl::jit
 {
+    class SideExitRegion;
+
     template <typename T>
     concept ParameterInstructionType =
         std::same_as<T, ParameterInstruction> ||
@@ -94,6 +97,10 @@ namespace cl::jit
         SideExitId
         emplace_side_exit(std::span<const ProgramValueRef> inputs,
                           std::span<const InstructionId> instructions);
+
+        SideExitRegion *
+        make_side_exit_region(std::span<const InstructionId> parameter_ids,
+                              std::span<const InstructionId> instruction_ids);
 
         ControlFlowGraph *finalize();
 

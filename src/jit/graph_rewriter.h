@@ -21,6 +21,8 @@
 
 namespace cl::jit
 {
+    class SideExitRegion;
+
     enum class RewriteInput : uint8_t
     {
         Original,
@@ -52,6 +54,10 @@ namespace cl::jit
         SideExitId
         emplace_side_exit(std::span<const ProgramValueRef> inputs,
                           std::span<const InstructionId> instructions);
+
+        SideExitRegion *
+        make_side_exit_region(std::span<const InstructionId> parameter_ids,
+                              std::span<const InstructionId> instruction_ids);
 
     private:
         friend class GraphRewriter;

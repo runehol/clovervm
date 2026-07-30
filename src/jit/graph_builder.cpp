@@ -109,6 +109,14 @@ namespace cl::jit
         return id;
     }
 
+    SideExitRegion *GraphBuilder::make_side_exit_region(
+        std::span<const InstructionId> parameter_ids,
+        std::span<const InstructionId> instruction_ids)
+    {
+        assert_can_build();
+        return storage_->make_side_exit_region(parameter_ids, instruction_ids);
+    }
+
     ControlFlowGraph *GraphBuilder::finalize()
     {
         assert(graph_ != nullptr);

@@ -5,6 +5,7 @@
 #include "jit/instruction.h"
 #include "jit/instruction_operand_table.h"
 #include "jit/object_pool.h"
+#include "jit/side_exit_region.h"
 
 #include <span>
 
@@ -30,6 +31,7 @@ namespace cl::jit
 
         Instruction instruction(InstructionId id) const;
         BlockEdge *block_edge(BlockEdgeId id) const;
+        const SideExitRegion &side_exit_region(SideExitRegionId id) const;
 
     private:
         friend class CompilationSession;
@@ -55,6 +57,10 @@ namespace cl::jit
             side_exits_.emplace_back(*this, inputs, instructions);
             return &side_exits_.back();
         }
+
+        SideExitRegion *
+        make_side_exit_region(std::span<const InstructionId> parameter_ids,
+                              std::span<const InstructionId> instruction_ids);
 
         template <typename T, typename... Args>
         T make_instruction(Args &&...args)
@@ -87,6 +93,7 @@ namespace cl::jit
 
         InstructionId next_instruction_id() const;
         BlockEdgeId next_block_edge_id() const;
+        SideExitRegionId next_side_exit_region_id() const;
         const InstructionEntry &instruction_entry(InstructionId id) const;
         std::span<const Instruction::Slot>
         instruction_operands(uint32_t offset, size_t count) const;
@@ -96,6 +103,7 @@ namespace cl::jit
         ObjectPool<Block> blocks_;
         std::deque<BlockEdge> block_edges_;
         std::deque<SideExit> side_exits_;
+        std::deque<SideExitRegion> side_exit_regions_;
         std::vector<InstructionEntry> instructions_;
         InstructionOperandTable instruction_operands_;
     };
