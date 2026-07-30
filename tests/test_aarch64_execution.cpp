@@ -409,12 +409,12 @@ namespace cl::jit
                 builder.make_instruction<ParameterInstruction>();
             std::vector<ProgramValueRef> region_captured(
                 state_order.size(), ProgramValueRef(region_parameter));
-            SnapshotInstruction region_snapshot =
-                builder.make_instruction<SnapshotInstruction>(region_captured,
-                                                              BytecodePC{13});
+            ExitToInterpreterInstruction region_exit =
+                builder.make_instruction<ExitToInterpreterInstruction>(
+                    region_captured, BytecodePC{13});
             std::array<InstructionId, 1> parameter_ids = {
                 region_parameter.id()};
-            std::array<InstructionId, 1> instructions = {region_snapshot.id()};
+            std::array<InstructionId, 1> instructions = {region_exit.id()};
             SideExitRegionId side_exit_region =
                 builder.make_side_exit_region(parameter_ids, instructions)
                     ->id();
@@ -493,11 +493,11 @@ namespace cl::jit
             builder.make_instruction<ParameterInstruction>();
         std::vector<ProgramValueRef> region_captured(
             state_order.size(), ProgramValueRef(region_parameter));
-        SnapshotInstruction region_snapshot =
-            builder.make_instruction<SnapshotInstruction>(region_captured,
-                                                          BytecodePC{17});
+        ExitToInterpreterInstruction region_exit =
+            builder.make_instruction<ExitToInterpreterInstruction>(
+                region_captured, BytecodePC{17});
         std::array<InstructionId, 1> parameter_ids = {region_parameter.id()};
-        std::array<InstructionId, 1> instructions = {region_snapshot.id()};
+        std::array<InstructionId, 1> instructions = {region_exit.id()};
         SideExitRegionId side_exit_region =
             builder.make_side_exit_region(parameter_ids, instructions)->id();
         AddSMIWithSideExitInstruction add =

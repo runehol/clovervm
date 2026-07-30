@@ -223,11 +223,11 @@ namespace cl::jit
             builder.make_instruction<ParameterInstruction>();
         std::array<ProgramValueRef, 1> snapshot_values = {
             ProgramValueRef(region_parameter)};
-        SnapshotInstruction snapshot =
-            builder.make_instruction<SnapshotInstruction>(snapshot_values,
-                                                          BytecodePC{7});
+        ExitToInterpreterInstruction exit =
+            builder.make_instruction<ExitToInterpreterInstruction>(
+                snapshot_values, BytecodePC{7});
         std::array<InstructionId, 1> parameter_ids = {region_parameter.id()};
-        std::array<InstructionId, 1> instructions = {snapshot.id()};
+        std::array<InstructionId, 1> instructions = {exit.id()};
         std::array<ProgramValueRef, 1> inputs = {ProgramValueRef(input)};
         SideExitRegionId region =
             builder.make_side_exit_region(parameter_ids, instructions)->id();

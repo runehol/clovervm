@@ -68,7 +68,8 @@ namespace cl::jit
         EXPECT_NE(snapshot.id(), region.instruction_ids()[2]);
         EXPECT_EQ(InstructionKind::Mov, region.instruction_at(0).kind());
         EXPECT_EQ(InstructionKind::Mov, region.instruction_at(1).kind());
-        EXPECT_EQ(InstructionKind::Snapshot, region.instruction_at(2).kind());
+        EXPECT_EQ(InstructionKind::ExitToInterpreter,
+                  region.instruction_at(2).kind());
     }
 
     TEST(JitSideExitLowering, RejectsASelectedSnapshotWithAnExecutableUse)
@@ -145,7 +146,8 @@ namespace cl::jit
         ASSERT_EQ(1u, region.parameter_ids().size());
         ASSERT_EQ(1u, region.instruction_ids().size());
         EXPECT_NE(snapshot.id(), region.instruction_ids()[0]);
-        EXPECT_EQ(InstructionKind::Snapshot, region.instruction_at(0).kind());
+        EXPECT_EQ(InstructionKind::ExitToInterpreter,
+                  region.instruction_at(0).kind());
     }
 
     TEST(JitSideExitLowering, ReplacesAddSMIAndRewritesItsResultUses)
@@ -195,7 +197,8 @@ namespace cl::jit
         ASSERT_EQ(1u, region.parameter_ids().size());
         ASSERT_EQ(1u, region.instruction_ids().size());
         EXPECT_NE(snapshot.id(), region.instruction_ids()[0]);
-        EXPECT_EQ(InstructionKind::Snapshot, region.instruction_at(0).kind());
+        EXPECT_EQ(InstructionKind::ExitToInterpreter,
+                  region.instruction_at(0).kind());
     }
 
     TEST(JitSideExitLowering, RegionResumeCapturesReplacementAddSMIResult)
@@ -241,11 +244,11 @@ namespace cl::jit
             session.storage()->side_exit_region(resume.side_exit_region());
         ASSERT_EQ(1u, region.parameter_ids().size());
         ASSERT_EQ(1u, region.instruction_ids().size());
-        SnapshotInstruction snapshot =
-            region.instruction_at(0).as<SnapshotInstruction>();
-        ASSERT_EQ(1u, snapshot.captured_values().size());
+        ExitToInterpreterInstruction exit =
+            region.instruction_at(0).as<ExitToInterpreterInstruction>();
+        ASSERT_EQ(1u, exit.captured_values().size());
         EXPECT_EQ(region.parameter_ids()[0],
-                  snapshot.captured_values()[0].instruction_id());
+                  exit.captured_values()[0].instruction_id());
     }
 
 }  // namespace cl::jit

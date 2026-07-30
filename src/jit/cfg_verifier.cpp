@@ -86,14 +86,6 @@ namespace cl::jit
             return 0;
         }
 
-        bool
-        instruction_kind_is_allowed_in_side_exit_region(InstructionKind kind,
-                                                        IRLevel graph_level)
-        {
-            return kind == InstructionKind::Snapshot ||
-                   instruction_kind_is_allowed_at(kind, graph_level);
-        }
-
         CfgVerificationResult verify_region_owner_binding(
             const ControlFlowGraph &graph, Instruction owner,
             SideExitRegionId region_id, ProgramValueRefRange arguments)
@@ -190,8 +182,8 @@ namespace cl::jit
                                    region_name +
                                    " is a parameter in the instruction list");
                 }
-                if(!instruction_kind_is_allowed_in_side_exit_region(
-                       instruction.kind(), graph.ir_level()))
+                if(!instruction_kind_is_allowed_at(instruction.kind(),
+                                                   graph.ir_level()))
                 {
                     return invalid(instruction_name(instruction) +
                                    " is not legal in " +
@@ -219,9 +211,10 @@ namespace cl::jit
 
             Instruction final_instruction =
                 graph.storage()->instruction(region.instruction_ids().back());
-            if(final_instruction.kind() != InstructionKind::Snapshot)
+            if(final_instruction.kind() != InstructionKind::ExitToInterpreter)
             {
-                return invalid(region_name + " does not end in a Snapshot");
+                return invalid(region_name +
+                               " does not end in ExitToInterpreter");
             }
 
             absl::flat_hash_set<InstructionId> available = parameters;
@@ -231,11 +224,11 @@ namespace cl::jit
                 Instruction instruction = graph.storage()->instruction(
                     region.instruction_ids()[index]);
                 if(index + 1 != region.instruction_ids().size() &&
-                   instruction.kind() == InstructionKind::Snapshot)
+                   instruction.kind() == InstructionKind::ExitToInterpreter)
                 {
                     return invalid(region_name +
-                                   " contains a Snapshot before its final "
-                                   "instruction");
+                                   " contains ExitToInterpreter before its "
+                                   "final instruction");
                 }
 
                 std::string reference_error;

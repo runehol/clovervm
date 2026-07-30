@@ -47,17 +47,17 @@ namespace cl::jit
                         builder.make_instruction<ParameterInstruction>());
                 }
 
-                SnapshotInstruction snapshot =
-                    builder.make_instruction<SnapshotInstruction>(
+                ExitToInterpreterInstruction exit =
+                    builder.make_instruction<ExitToInterpreterInstruction>(
                         captured, BytecodePC{37});
-                snapshot_id = snapshot.id();
+                exit_id = exit.id();
                 std::vector<InstructionId> parameter_ids;
                 parameter_ids.reserve(captured.size());
                 for(ProgramValueRef value: captured)
                 {
                     parameter_ids.push_back(value.instruction_id());
                 }
-                std::array instructions = {snapshot.id()};
+                std::array instructions = {exit.id()};
                 SideExitRegionId region =
                     builder.make_side_exit_region(parameter_ids, instructions)
                         ->id();
@@ -79,7 +79,7 @@ namespace cl::jit
             CompilationSession session;
             GraphBuilder builder;
             std::vector<ProgramValueRef> captured;
-            std::optional<InstructionId> snapshot_id;
+            std::optional<InstructionId> exit_id;
             std::optional<ResumeInInterpreterWithSideExitInstruction>
                 side_exit_owner;
         };
@@ -208,7 +208,7 @@ namespace cl::jit
                 ConstInstruction constant =
                     fixture.builder.make_instruction<ConstInstruction>(
                         Value::None());
-                std::array instructions = {constant.id(), *fixture.snapshot_id};
+                std::array instructions = {constant.id(), *fixture.exit_id};
                 std::vector<InstructionId> parameter_ids;
                 parameter_ids.reserve(fixture.captured.size());
                 for(ProgramValueRef value: fixture.captured)

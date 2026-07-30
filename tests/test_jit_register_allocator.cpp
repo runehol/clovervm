@@ -244,14 +244,14 @@ namespace cl::jit
         EXPECT_EQ(PhysicalLocation::reg(x1),
                   locations.location_for(ProgramValueRef(move)));
 
-        SnapshotInstruction retained_snapshot =
+        ExitToInterpreterInstruction retained_exit =
             graph->storage()
                 ->side_exit_region(rewritten_owner.side_exit_region())
                 .instruction_at(0)
-                .as<SnapshotInstruction>();
-        ASSERT_EQ(1u, retained_snapshot.captured_values().size());
+                .as<ExitToInterpreterInstruction>();
+        ASSERT_EQ(1u, retained_exit.captured_values().size());
         EXPECT_NE(parameter.id(),
-                  retained_snapshot.captured_values()[0].instruction_id());
+                  retained_exit.captured_values()[0].instruction_id());
     }
 
     TEST(JitRegisterAllocator, PreparesRepresentativeOneBlockProblem)

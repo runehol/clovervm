@@ -446,9 +446,18 @@ namespace cl::jit
                 {
                     Instruction instruction = context.instruction(id);
                     RegionReferenceResolver resolver(context, remapping);
-                    Instruction clone = rebuild_instruction_with_references(
-                        instruction, *instruction.storage(), resolver, context,
-                        InstructionRebuildMode::AlwaysClone);
+                    Instruction clone =
+                        instruction.kind() == InstructionKind::Snapshot
+                            ? Instruction(context.make_instruction<
+                                          ExitToInterpreterInstruction>(
+                                  resolver.resolve(
+                                      instruction.as<SnapshotInstruction>()
+                                          .captured_values()),
+                                  instruction.as<SnapshotInstruction>()
+                                      .resume_pc()))
+                            : rebuild_instruction_with_references(
+                                  instruction, *instruction.storage(), resolver,
+                                  context, InstructionRebuildMode::AlwaysClone);
                     instruction_ids.push_back(clone.id());
                     remapping.emplace(id, clone.id());
                 }

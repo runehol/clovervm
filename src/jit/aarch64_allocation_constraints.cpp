@@ -167,6 +167,7 @@ namespace cl::jit
                     case MachineInstructionKind::StoreStackPointer:
                     case MachineInstructionKind::InlineTagGuardWithSideExit:
                     case MachineInstructionKind::ResumeInInterpreterWithSideExit:
+                    case MachineInstructionKind::ExitToInterpreter:
                     case MachineInstructionKind::ConditionalBranch:
                     case MachineInstructionKind::UnconditionalBranch:
                         if(!input_overrides.empty())

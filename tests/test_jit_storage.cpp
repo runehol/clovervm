@@ -315,6 +315,10 @@ namespace cl::jit
                   machine_instruction_kind<ReturnInstruction>());
         EXPECT_FALSE(instruction_kind_is_allowed_at(InstructionKind::Snapshot,
                                                     IRLevelMask::Machine));
+        EXPECT_TRUE(instruction_kind_is_allowed_at(
+            InstructionKind::ExitToInterpreter, IRLevelMask::Machine));
+        EXPECT_FALSE(instruction_kind_is_allowed_at(
+            InstructionKind::ExitToInterpreter, IRLevelMask::Core));
         EXPECT_FALSE(instruction_kind_is_allowed_at(
             InstructionKind::ResumeInInterpreter, IRLevelMask::Machine));
     }
@@ -329,6 +333,11 @@ namespace cl::jit
                   instruction_result_class(InstructionKind::Snapshot));
         EXPECT_EQ(ValueRepresentation::None,
                   instruction_value_representation(InstructionKind::Snapshot));
+        EXPECT_EQ(ResultClass::None,
+                  instruction_result_class(InstructionKind::ExitToInterpreter));
+        EXPECT_EQ(ValueRepresentation::None,
+                  instruction_value_representation(
+                      InstructionKind::ExitToInterpreter));
         EXPECT_EQ(ResultClass::ProgramValue,
                   instruction_result_class(InstructionKind::ParameterF64));
         EXPECT_EQ(ValueRepresentation::F64, instruction_value_representation(
@@ -389,6 +398,11 @@ namespace cl::jit
                            ProgramValueRefRange>);
         static_assert(
             std::is_same_v<
+                decltype(std::declval<const ExitToInterpreterInstruction &>()
+                             .captured_values()),
+                ProgramValueRefRange>);
+        static_assert(
+            std::is_same_v<
                 decltype(std::declval<const ConditionalBranchInstruction &>()
                              .true_edge()),
                 BlockEdge *>);
@@ -419,6 +433,8 @@ namespace cl::jit
                 SideExitRegionId>);
         EXPECT_EQ(InstructionKind::AddSMI, AddSMIInstruction::Kind);
         EXPECT_EQ(InstructionKind::Snapshot, SnapshotInstruction::Kind);
+        EXPECT_EQ(InstructionKind::ExitToInterpreter,
+                  ExitToInterpreterInstruction::Kind);
         EXPECT_EQ(InstructionKind::Uninitialized,
                   UninitializedInstruction::Kind);
         EXPECT_EQ(InstructionKind::ResumeInInterpreter,
@@ -443,6 +459,8 @@ namespace cl::jit
         EXPECT_TRUE(PythonCallInstruction::OperandsAreIndirect);
         EXPECT_TRUE(SnapshotInstruction::IsVariadic);
         EXPECT_TRUE(SnapshotInstruction::OperandsAreIndirect);
+        EXPECT_TRUE(ExitToInterpreterInstruction::IsVariadic);
+        EXPECT_TRUE(ExitToInterpreterInstruction::OperandsAreIndirect);
         EXPECT_TRUE(ShapeGuardInstruction::OperandsAreIndirect);
         EXPECT_TRUE(ValidityCellGuardInstruction::OperandsAreIndirect);
         EXPECT_FALSE(InlineTagGuardInstruction::OperandsAreIndirect);
@@ -474,6 +492,8 @@ namespace cl::jit
                   InlineTagGuardWithSideExitInstruction::AllowedIRLevels);
         EXPECT_EQ(terminating_side_exit,
                   ResumeInInterpreterWithSideExitInstruction::MustEffects);
+        EXPECT_EQ(terminating_side_exit,
+                  ExitToInterpreterInstruction::MustEffects);
         EXPECT_TRUE(
             ResumeInInterpreterWithSideExitInstruction::OperandsAreIndirect);
         constexpr EffectProfile terminating_control_flow =

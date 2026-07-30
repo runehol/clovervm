@@ -107,11 +107,11 @@ namespace cl::jit
             builder.make_instruction<ParameterInstruction>();
         std::vector<ProgramValueRef> captured(
             state_order.size(), ProgramValueRef(region_parameter));
-        SnapshotInstruction snapshot =
-            builder.make_instruction<SnapshotInstruction>(captured,
-                                                          BytecodePC{31});
+        ExitToInterpreterInstruction exit =
+            builder.make_instruction<ExitToInterpreterInstruction>(
+                captured, BytecodePC{31});
         std::array<InstructionId, 1> parameter_ids = {region_parameter.id()};
-        std::array<InstructionId, 1> instructions = {snapshot.id()};
+        std::array<InstructionId, 1> instructions = {exit.id()};
         SideExitRegionId region =
             builder.make_side_exit_region(parameter_ids, instructions)->id();
 

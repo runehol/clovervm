@@ -134,11 +134,11 @@ namespace cl::jit
             builder.make_instruction<ParameterInstruction>();
         std::array<ProgramValueRef, 1> snapshot_values = {
             ProgramValueRef(region_parameter)};
-        SnapshotInstruction snapshot =
-            builder.make_instruction<SnapshotInstruction>(snapshot_values,
-                                                          BytecodePC{7});
+        ExitToInterpreterInstruction exit =
+            builder.make_instruction<ExitToInterpreterInstruction>(
+                snapshot_values, BytecodePC{7});
         std::array<InstructionId, 1> parameter_ids = {region_parameter.id()};
-        std::array<InstructionId, 1> instructions = {snapshot.id()};
+        std::array<InstructionId, 1> instructions = {exit.id()};
         SideExitRegion *region =
             builder.make_side_exit_region(parameter_ids, instructions);
         std::array<ProgramValueRef, 1> arguments = {source};
@@ -154,7 +154,7 @@ namespace cl::jit
         ASSERT_EQ(1u, stored.parameter_ids().size());
         EXPECT_EQ(region_parameter.id(), stored.parameter_ids()[0]);
         ASSERT_EQ(1u, stored.instruction_ids().size());
-        EXPECT_EQ(snapshot.id(), stored.instruction_ids()[0]);
+        EXPECT_EQ(exit.id(), stored.instruction_ids()[0]);
         EXPECT_EQ(region->id(), owner.side_exit_region());
         ASSERT_EQ(1u, owner.side_exit_arguments().size());
         EXPECT_EQ(source.instruction_id(),
@@ -179,11 +179,11 @@ namespace cl::jit
             builder.make_instruction<ParameterInstruction>();
         std::array<ProgramValueRef, 1> snapshot_values = {
             ProgramValueRef(region_parameter)};
-        SnapshotInstruction snapshot =
-            builder.make_instruction<SnapshotInstruction>(snapshot_values,
-                                                          BytecodePC{7});
+        ExitToInterpreterInstruction exit =
+            builder.make_instruction<ExitToInterpreterInstruction>(
+                snapshot_values, BytecodePC{7});
         std::array<InstructionId, 1> parameter_ids = {region_parameter.id()};
-        std::array<InstructionId, 1> instructions = {snapshot.id()};
+        std::array<InstructionId, 1> instructions = {exit.id()};
         SideExitRegion *region =
             builder.make_side_exit_region(parameter_ids, instructions);
         builder.emplace_instruction<ResumeInInterpreterWithSideExitInstruction>(
@@ -202,11 +202,11 @@ namespace cl::jit
             builder.make_instruction<ParameterF64Instruction>();
         std::array<ProgramValueRef, 1> snapshot_values = {
             ProgramValueRef(region_parameter)};
-        SnapshotInstruction snapshot =
-            builder.make_instruction<SnapshotInstruction>(snapshot_values,
-                                                          BytecodePC{7});
+        ExitToInterpreterInstruction exit =
+            builder.make_instruction<ExitToInterpreterInstruction>(
+                snapshot_values, BytecodePC{7});
         std::array<InstructionId, 1> parameter_ids = {region_parameter.id()};
-        std::array<InstructionId, 1> instructions = {snapshot.id()};
+        std::array<InstructionId, 1> instructions = {exit.id()};
         SideExitRegion *region =
             builder.make_side_exit_region(parameter_ids, instructions);
         std::array<ProgramValueRef, 1> arguments = {source};
@@ -216,7 +216,7 @@ namespace cl::jit
         expect_invalid_with(builder, "incompatible representation");
     }
 
-    TEST(JitCfgVerifier, RejectsSideExitRegionWithoutFinalSnapshot)
+    TEST(JitCfgVerifier, RejectsSideExitRegionWithoutFinalExitToInterpreter)
     {
         CompilationSession session;
         GraphBuilder builder(session, IRLevel::Machine);
@@ -234,7 +234,7 @@ namespace cl::jit
         builder.emplace_instruction<ResumeInInterpreterWithSideExitInstruction>(
             entry, arguments, region->id());
 
-        expect_invalid_with(builder, "does not end in a Snapshot");
+        expect_invalid_with(builder, "does not end in ExitToInterpreter");
     }
 
     TEST(JitCfgVerifier, RejectsSideExitRegionReferenceOutsideRegion)
@@ -244,11 +244,11 @@ namespace cl::jit
         Block *entry = builder.emplace_block();
         TaggedValueRef source = emplace_constant(builder, entry, Value::True());
         std::array<ProgramValueRef, 1> snapshot_values = {source};
-        SnapshotInstruction snapshot =
-            builder.make_instruction<SnapshotInstruction>(snapshot_values,
-                                                          BytecodePC{7});
+        ExitToInterpreterInstruction exit =
+            builder.make_instruction<ExitToInterpreterInstruction>(
+                snapshot_values, BytecodePC{7});
         std::array<InstructionId, 0> parameter_ids = {};
-        std::array<InstructionId, 1> instructions = {snapshot.id()};
+        std::array<InstructionId, 1> instructions = {exit.id()};
         SideExitRegion *region =
             builder.make_side_exit_region(parameter_ids, instructions);
         builder.emplace_instruction<ResumeInInterpreterWithSideExitInstruction>(

@@ -56,10 +56,11 @@ namespace cl::jit
                 builder.make_instruction<ParameterInstruction>();
             std::array<ProgramValueRef, 1> captured = {
                 ProgramValueRef(parameter)};
-            SnapshotInstruction snapshot =
-                builder.make_instruction<SnapshotInstruction>(captured, pc);
+            ExitToInterpreterInstruction exit =
+                builder.make_instruction<ExitToInterpreterInstruction>(captured,
+                                                                       pc);
             std::array<InstructionId, 1> parameters = {parameter.id()};
-            std::array<InstructionId, 1> instructions = {snapshot.id()};
+            std::array<InstructionId, 1> instructions = {exit.id()};
             return builder.make_side_exit_region(parameters, instructions)
                 ->id();
         }

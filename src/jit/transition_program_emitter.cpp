@@ -42,9 +42,9 @@ namespace cl::jit
                     Instruction instruction = storage_->instruction(id);
                     switch(instruction.kind())
                     {
-                        case InstructionKind::Snapshot:
-                            append_snapshot(
-                                instruction.as<SnapshotInstruction>());
+                        case InstructionKind::ExitToInterpreter:
+                            append_exit_to_interpreter(
+                                instruction.as<ExitToInterpreterInstruction>());
                             break;
                         default:
                             fatal("unsupported instruction in transition "
@@ -65,13 +65,15 @@ namespace cl::jit
                 return found->second;
             }
 
-            void append_snapshot(SnapshotInstruction snapshot)
+            void append_exit_to_interpreter(
+                ExitToInterpreterInstruction exit_instruction)
             {
-                ProgramValueRefRange captured = snapshot.captured_values();
+                ProgramValueRefRange captured =
+                    exit_instruction.captured_values();
                 if(captured.size() != state_order_->size())
                 {
-                    fatal("transition Snapshot does not match its bytecode "
-                          "state order");
+                    fatal("transition ExitToInterpreter does not match its "
+                          "bytecode state order");
                 }
 
                 uint32_t next_scratch =
@@ -134,8 +136,8 @@ namespace cl::jit
                     builder_.emplace_transfer(move.destination,
                                               move.source_location);
                 }
-                builder_.emplace_resume_interpreter(accumulator_result,
-                                                    snapshot.resume_pc());
+                builder_.emplace_resume_interpreter(
+                    accumulator_result, exit_instruction.resume_pc());
             }
 
             const CompilationStorage *storage_;
