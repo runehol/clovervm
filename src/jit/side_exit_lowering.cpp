@@ -265,7 +265,7 @@ namespace cl::jit
                                 instruction.as<AddSMIInstruction>();
                             return RewriteResult::replace(
                                 context.make_instruction<
-                                    AddSMIWithSideExitRegionInstruction>(
+                                    AddSMIWithSideExitInstruction>(
                                     add.lhs(), add.rhs(), region.arguments,
                                     region.region->id()));
                         }
@@ -277,7 +277,7 @@ namespace cl::jit
                                 instruction.as<InlineTagGuardInstruction>();
                             return RewriteResult::replace(
                                 context.make_instruction<
-                                    InlineTagGuardWithSideExitRegionInstruction>(
+                                    InlineTagGuardWithSideExitInstruction>(
                                     guard.value(), region.arguments,
                                     guard.expected_class(),
                                     region.region->id()));
@@ -288,7 +288,7 @@ namespace cl::jit
                                 region_for_snapshot(context, plan);
                             return RewriteResult::replace(
                                 context.make_instruction<
-                                    ResumeInInterpreterWithSideExitRegionInstruction>(
+                                    ResumeInInterpreterWithSideExitInstruction>(
                                     region.arguments, region.region->id()));
                         }
                     default:

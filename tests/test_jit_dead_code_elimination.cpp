@@ -231,9 +231,8 @@ namespace cl::jit
         std::array<ProgramValueRef, 1> inputs = {ProgramValueRef(input)};
         SideExitRegionId region =
             builder.make_side_exit_region(parameter_ids, instructions)->id();
-        builder.emplace_instruction<
-            ResumeInInterpreterWithSideExitRegionInstruction>(entry, inputs,
-                                                              region);
+        builder.emplace_instruction<ResumeInInterpreterWithSideExitInstruction>(
+            entry, inputs, region);
         ControlFlowGraph *graph = builder.finalize();
 
         auto elimination = eliminate_dead_code(session, *graph);

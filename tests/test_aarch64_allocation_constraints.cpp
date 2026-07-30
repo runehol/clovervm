@@ -203,10 +203,10 @@ namespace cl::jit
         std::array<ProgramValueRef, 1> arguments = {ProgramValueRef(value)};
         SideExitRegionId region = make_single_argument_region(
             builder, ProgramValueRef(value), BytecodePC{17});
-        ResumeInInterpreterWithSideExitRegionInstruction owner =
+        ResumeInInterpreterWithSideExitInstruction owner =
             builder.emplace_instruction<
-                ResumeInInterpreterWithSideExitRegionInstruction>(
-                entry, arguments, region);
+                ResumeInInterpreterWithSideExitInstruction>(entry, arguments,
+                                                            region);
         ControlFlowGraph *graph = builder.finalize();
 
         AllocationConstraints constraints =
@@ -238,9 +238,8 @@ namespace cl::jit
         std::array<ProgramValueRef, 1> arguments = {ProgramValueRef(value)};
         SideExitRegionId region = make_single_argument_region(
             builder, ProgramValueRef(value), BytecodePC{17});
-        InlineTagGuardWithSideExitRegionInstruction owner =
-            builder.emplace_instruction<
-                InlineTagGuardWithSideExitRegionInstruction>(
+        InlineTagGuardWithSideExitInstruction owner =
+            builder.emplace_instruction<InlineTagGuardWithSideExitInstruction>(
                 entry, TaggedValueRef(value), arguments, InlineValueClass::SMI,
                 region);
         builder.emplace_instruction<ReturnInstruction>(entry,
@@ -255,7 +254,7 @@ namespace cl::jit
         ASSERT_EQ(1u, owner_override->input_overrides().size());
         const ProgramValueUseConstraint &argument =
             owner_override->input_overrides()[0];
-        EXPECT_EQ(InlineTagGuardWithSideExitRegionInstruction::
+        EXPECT_EQ(InlineTagGuardWithSideExitInstruction::
                       side_exit_arguments_operand_index,
                   argument.operand_index);
         EXPECT_EQ(AccessTiming::Late, argument.timing);
@@ -276,8 +275,8 @@ namespace cl::jit
         std::array<ProgramValueRef, 1> arguments = {ProgramValueRef(lhs)};
         SideExitRegionId region = make_single_argument_region(
             builder, ProgramValueRef(lhs), BytecodePC{19});
-        AddSMIWithSideExitRegionInstruction owner =
-            builder.emplace_instruction<AddSMIWithSideExitRegionInstruction>(
+        AddSMIWithSideExitInstruction owner =
+            builder.emplace_instruction<AddSMIWithSideExitInstruction>(
                 entry, TaggedValueRef(lhs), TaggedValueRef(rhs), arguments,
                 region);
         builder.emplace_instruction<ReturnInstruction>(entry,
@@ -292,9 +291,9 @@ namespace cl::jit
         ASSERT_EQ(1u, owner_override->input_overrides().size());
         const ProgramValueUseConstraint &argument =
             owner_override->input_overrides()[0];
-        EXPECT_EQ(AddSMIWithSideExitRegionInstruction::
-                      side_exit_arguments_operand_index,
-                  argument.operand_index);
+        EXPECT_EQ(
+            AddSMIWithSideExitInstruction::side_exit_arguments_operand_index,
+            argument.operand_index);
         EXPECT_EQ(AccessTiming::Late, argument.timing);
         EXPECT_EQ(LocationRequirement::Kind::AnyRegister,
                   argument.requirement.kind());

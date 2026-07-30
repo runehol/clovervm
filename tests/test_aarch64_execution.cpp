@@ -418,11 +418,11 @@ namespace cl::jit
             SideExitRegionId side_exit_region =
                 builder.make_side_exit_region(parameter_ids, instructions)
                     ->id();
-            InlineTagGuardWithSideExitRegionInstruction guard =
-                builder.emplace_instruction<
-                    InlineTagGuardWithSideExitRegionInstruction>(
-                    entry, TaggedValueRef(parameter), inputs, expected_class,
-                    side_exit_region);
+            InlineTagGuardWithSideExitInstruction guard =
+                builder
+                    .emplace_instruction<InlineTagGuardWithSideExitInstruction>(
+                        entry, TaggedValueRef(parameter), inputs,
+                        expected_class, side_exit_region);
             MovInstruction move = builder.emplace_instruction<MovInstruction>(
                 entry, TaggedValueRef(guard));
             builder.emplace_instruction<ReturnInstruction>(
@@ -500,8 +500,8 @@ namespace cl::jit
         std::array<InstructionId, 1> instructions = {region_snapshot.id()};
         SideExitRegionId side_exit_region =
             builder.make_side_exit_region(parameter_ids, instructions)->id();
-        AddSMIWithSideExitRegionInstruction add =
-            builder.emplace_instruction<AddSMIWithSideExitRegionInstruction>(
+        AddSMIWithSideExitInstruction add =
+            builder.emplace_instruction<AddSMIWithSideExitInstruction>(
                 entry, TaggedValueRef(lhs), TaggedValueRef(rhs), inputs,
                 side_exit_region);
         MovInstruction move = builder.emplace_instruction<MovInstruction>(

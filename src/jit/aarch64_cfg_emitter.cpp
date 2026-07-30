@@ -370,7 +370,7 @@ namespace cl::jit
                           "implemented");
 
                 case CL_JIT_MACHINE_INSTRUCTION_CASE(
-                    AddSMIWithSideExitRegionInstruction, add_instruction)
+                    AddSMIWithSideExitInstruction, add_instruction)
                 {
                     assembler.emit_arithmetic_reg(
                         ArithmeticOp::Adds,
@@ -387,7 +387,7 @@ namespace cl::jit
                 }
 
                 case CL_JIT_MACHINE_INSTRUCTION_CASE(
-                    InlineTagGuardWithSideExitRegionInstruction,
+                    InlineTagGuardWithSideExitInstruction,
                     guard_instruction)
                 {
                     XRegister input =
@@ -459,7 +459,7 @@ namespace cl::jit
                 }
 
                 case CL_JIT_MACHINE_INSTRUCTION_CASE(
-                    ResumeInInterpreterWithSideExitRegionInstruction,
+                    ResumeInInterpreterWithSideExitInstruction,
                     resume_instruction)
                 {
                     assembler.b(side_exit_region_target(

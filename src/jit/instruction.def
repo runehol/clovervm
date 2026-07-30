@@ -165,21 +165,21 @@ CL_JIT_INSTRUCTION(AddSMI, CL_JIT_IR_LEVELS(Core),
 #undef CL_JIT_AddSMI_ATTRIBUTES
 #undef CL_JIT_AddSMI_OPERANDS
 
-#define CL_JIT_AddSMIWithSideExitRegion_OPERANDS(                             \
+#define CL_JIT_AddSMIWithSideExit_OPERANDS(                                   \
     fixed, variadic, program_values)                                           \
     fixed(lhs, ProgramValue, TaggedValue)                                      \
     fixed(rhs, ProgramValue, TaggedValue)                                      \
     program_values(side_exit_arguments, SideExit)
-#define CL_JIT_AddSMIWithSideExitRegion_ATTRIBUTES(attribute)                  \
+#define CL_JIT_AddSMIWithSideExit_ATTRIBUTES(attribute)                        \
     attribute(side_exit_region, SideExitRegionId)
 CL_JIT_INSTRUCTION(
-    AddSMIWithSideExitRegion, CL_JIT_IR_LEVELS(Machine),
+    AddSMIWithSideExit, CL_JIT_IR_LEVELS(Machine),
     CL_JIT_RESULT(ProgramValue, TaggedValue),
     CL_JIT_EFFECT_BOUNDS(None, SideExit),
-    CL_JIT_AddSMIWithSideExitRegion_OPERANDS,
-    CL_JIT_AddSMIWithSideExitRegion_ATTRIBUTES)
-#undef CL_JIT_AddSMIWithSideExitRegion_ATTRIBUTES
-#undef CL_JIT_AddSMIWithSideExitRegion_OPERANDS
+    CL_JIT_AddSMIWithSideExit_OPERANDS,
+    CL_JIT_AddSMIWithSideExit_ATTRIBUTES)
+#undef CL_JIT_AddSMIWithSideExit_ATTRIBUTES
+#undef CL_JIT_AddSMIWithSideExit_OPERANDS
 
 #define CL_JIT_AndSMI_OPERANDS(fixed, variadic, snapshot_values)              \
     fixed(lhs, ProgramValue, TaggedValue)                                      \
@@ -306,21 +306,21 @@ CL_JIT_INSTRUCTION(InlineTagGuard, CL_JIT_IR_LEVELS(Core),
 #undef CL_JIT_InlineTagGuard_ATTRIBUTES
 #undef CL_JIT_InlineTagGuard_OPERANDS
 
-#define CL_JIT_InlineTagGuardWithSideExitRegion_OPERANDS(                     \
+#define CL_JIT_InlineTagGuardWithSideExit_OPERANDS(                           \
     fixed, variadic, program_values)                                           \
     fixed(value, ProgramValue, TaggedValue)                                    \
     program_values(side_exit_arguments, SideExit)
-#define CL_JIT_InlineTagGuardWithSideExitRegion_ATTRIBUTES(attribute)          \
+#define CL_JIT_InlineTagGuardWithSideExit_ATTRIBUTES(attribute)                \
     attribute(expected_class, InlineValueClass)                                \
     attribute(side_exit_region, SideExitRegionId)
 CL_JIT_INSTRUCTION(
-    InlineTagGuardWithSideExitRegion, CL_JIT_IR_LEVELS(Machine),
+    InlineTagGuardWithSideExit, CL_JIT_IR_LEVELS(Machine),
     CL_JIT_RESULT(ProgramValue, TaggedValue),
     CL_JIT_EFFECT_BOUNDS(None, SideExit),
-    CL_JIT_InlineTagGuardWithSideExitRegion_OPERANDS,
-    CL_JIT_InlineTagGuardWithSideExitRegion_ATTRIBUTES)
-#undef CL_JIT_InlineTagGuardWithSideExitRegion_ATTRIBUTES
-#undef CL_JIT_InlineTagGuardWithSideExitRegion_OPERANDS
+    CL_JIT_InlineTagGuardWithSideExit_OPERANDS,
+    CL_JIT_InlineTagGuardWithSideExit_ATTRIBUTES)
+#undef CL_JIT_InlineTagGuardWithSideExit_ATTRIBUTES
+#undef CL_JIT_InlineTagGuardWithSideExit_OPERANDS
 
 #define CL_JIT_Const_OPERANDS(fixed, variadic, snapshot_values)
 #define CL_JIT_Const_ATTRIBUTES(attribute)                                    \
@@ -390,19 +390,19 @@ CL_JIT_INSTRUCTION(ResumeInInterpreter, CL_JIT_IR_LEVELS(Core),
 #undef CL_JIT_ResumeInInterpreter_ATTRIBUTES
 #undef CL_JIT_ResumeInInterpreter_OPERANDS
 
-#define CL_JIT_ResumeInInterpreterWithSideExitRegion_OPERANDS(                 \
+#define CL_JIT_ResumeInInterpreterWithSideExit_OPERANDS(                       \
     fixed, variadic, program_values)                                           \
     program_values(side_exit_arguments, SideExit)
-#define CL_JIT_ResumeInInterpreterWithSideExitRegion_ATTRIBUTES(attribute)     \
+#define CL_JIT_ResumeInInterpreterWithSideExit_ATTRIBUTES(attribute)           \
     attribute(side_exit_region, SideExitRegionId)
 CL_JIT_INSTRUCTION(
-    ResumeInInterpreterWithSideExitRegion, CL_JIT_IR_LEVELS(Machine),
+    ResumeInInterpreterWithSideExit, CL_JIT_IR_LEVELS(Machine),
     CL_JIT_RESULT(None, None),
     CL_JIT_EXACT_EFFECTS_THREE(SideExit, ControlFlow, TerminateBlock),
-    CL_JIT_ResumeInInterpreterWithSideExitRegion_OPERANDS,
-    CL_JIT_ResumeInInterpreterWithSideExitRegion_ATTRIBUTES)
-#undef CL_JIT_ResumeInInterpreterWithSideExitRegion_ATTRIBUTES
-#undef CL_JIT_ResumeInInterpreterWithSideExitRegion_OPERANDS
+    CL_JIT_ResumeInInterpreterWithSideExit_OPERANDS,
+    CL_JIT_ResumeInInterpreterWithSideExit_ATTRIBUTES)
+#undef CL_JIT_ResumeInInterpreterWithSideExit_ATTRIBUTES
+#undef CL_JIT_ResumeInInterpreterWithSideExit_OPERANDS
 
 #define CL_JIT_ConditionalBranch_OPERANDS(fixed, variadic, snapshot_values)   \
     fixed(condition, ProgramValue, TaggedValue)

@@ -125,9 +125,9 @@ namespace cl::jit
         ASSERT_TRUE(allocation);
         LocationAssignments locations = std::move(allocation).value();
 
-        ResumeInInterpreterWithSideExitRegionInstruction owner =
+        ResumeInInterpreterWithSideExitInstruction owner =
             entry->instruction_at(entry->instructions().size() - 1)
-                .as<ResumeInInterpreterWithSideExitRegionInstruction>();
+                .as<ResumeInInterpreterWithSideExitInstruction>();
 
         std::vector<TransitionLocation> input_locations;
         ProgramValueRefRange arguments = owner.side_exit_arguments();

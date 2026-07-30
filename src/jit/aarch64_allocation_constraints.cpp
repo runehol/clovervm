@@ -158,15 +158,15 @@ namespace cl::jit
                 {
                     case MachineInstructionKind::Const:
                     case MachineInstructionKind::Uninitialized:
-                    case MachineInstructionKind::AddSMIWithSideExitRegion:
+                    case MachineInstructionKind::AddSMIWithSideExit:
                     case MachineInstructionKind::AndSMI:
                     case MachineInstructionKind::OrrSMI:
                     case MachineInstructionKind::EorSMI:
                     case MachineInstructionKind::MovPointer:
                     case MachineInstructionKind::LoadStackPointer:
                     case MachineInstructionKind::StoreStackPointer:
-                    case MachineInstructionKind::InlineTagGuardWithSideExitRegion:
-                    case MachineInstructionKind::ResumeInInterpreterWithSideExitRegion:
+                    case MachineInstructionKind::InlineTagGuardWithSideExit:
+                    case MachineInstructionKind::ResumeInInterpreterWithSideExit:
                     case MachineInstructionKind::ConditionalBranch:
                     case MachineInstructionKind::UnconditionalBranch:
                         if(!input_overrides.empty())

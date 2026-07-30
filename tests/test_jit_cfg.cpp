@@ -142,10 +142,10 @@ namespace cl::jit
         SideExitRegion *region =
             builder.make_side_exit_region(parameter_ids, instructions);
         std::array<ProgramValueRef, 1> arguments = {source};
-        ResumeInInterpreterWithSideExitRegionInstruction owner =
+        ResumeInInterpreterWithSideExitInstruction owner =
             builder.emplace_instruction<
-                ResumeInInterpreterWithSideExitRegionInstruction>(
-                entry, arguments, region->id());
+                ResumeInInterpreterWithSideExitInstruction>(entry, arguments,
+                                                            region->id());
 
         ControlFlowGraph *graph = builder.finalize();
 
@@ -165,7 +165,7 @@ namespace cl::jit
             graph->storage()->instruction(source.instruction_id()));
         ASSERT_EQ(1u, uses.n_instruction_uses());
         EXPECT_EQ(owner.id(), uses.instruction_uses()[0].instruction);
-        EXPECT_EQ(ResumeInInterpreterWithSideExitRegionInstruction::
+        EXPECT_EQ(ResumeInInterpreterWithSideExitInstruction::
                       side_exit_arguments_operand_index,
                   uses.instruction_uses()[0].operand_index);
     }

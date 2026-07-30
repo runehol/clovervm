@@ -63,8 +63,8 @@ namespace cl::jit
                         ->id();
                 side_exit_owner.emplace(
                     builder.make_instruction<
-                        ResumeInInterpreterWithSideExitRegionInstruction>(
-                        captured, region));
+                        ResumeInInterpreterWithSideExitInstruction>(captured,
+                                                                    region));
             }
 
             SideExitBinding binding() const
@@ -80,7 +80,7 @@ namespace cl::jit
             GraphBuilder builder;
             std::vector<ProgramValueRef> captured;
             std::optional<InstructionId> snapshot_id;
-            std::optional<ResumeInInterpreterWithSideExitRegionInstruction>
+            std::optional<ResumeInInterpreterWithSideExitInstruction>
                 side_exit_owner;
         };
 
@@ -219,9 +219,9 @@ namespace cl::jit
                     fixture.builder
                         .make_side_exit_region(parameter_ids, instructions)
                         ->id();
-                ResumeInInterpreterWithSideExitRegionInstruction owner =
+                ResumeInInterpreterWithSideExitInstruction owner =
                     fixture.builder.make_instruction<
-                        ResumeInInterpreterWithSideExitRegionInstruction>(
+                        ResumeInInterpreterWithSideExitInstruction>(
                         fixture.captured, region);
                 std::vector<TransitionLocation> locations;
                 for(size_t index = 0; index < fixture.captured.size(); ++index)

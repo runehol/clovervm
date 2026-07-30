@@ -248,19 +248,19 @@ namespace cl::jit
                   call.side_exit_argument_start);
 
         const InstructionKindMetadata &side_exit = instruction_kind_metadata(
-            InstructionKind::ResumeInInterpreterWithSideExitRegion);
-        EXPECT_EQ(ResumeInInterpreterWithSideExitRegionInstruction::
+            InstructionKind::ResumeInInterpreterWithSideExit);
+        EXPECT_EQ(ResumeInInterpreterWithSideExitInstruction::
                       side_exit_arguments_operand_index,
                   side_exit.side_exit_argument_start);
 
         const InstructionKindMetadata &inline_guard = instruction_kind_metadata(
-            InstructionKind::InlineTagGuardWithSideExitRegion);
+            InstructionKind::InlineTagGuardWithSideExit);
         EXPECT_EQ(1u, inline_guard.fixed_operand_count);
         EXPECT_EQ(2u, inline_guard.attribute_count);
         EXPECT_EQ(Instruction::InlineSlotCount, inline_guard.inline_slot_count);
         EXPECT_TRUE(inline_guard.has_variadic_operands);
         EXPECT_TRUE(inline_guard.operands_are_indirect);
-        EXPECT_EQ(InlineTagGuardWithSideExitRegionInstruction::
+        EXPECT_EQ(InlineTagGuardWithSideExitInstruction::
                       side_exit_arguments_operand_index,
                   inline_guard.side_exit_argument_start);
 
@@ -400,21 +400,20 @@ namespace cl::jit
         static_assert(
             std::is_same_v<
                 decltype(std::declval<
-                             const InlineTagGuardWithSideExitRegionInstruction
+                             const InlineTagGuardWithSideExitInstruction &>()
+                             .side_exit_arguments()),
+                ProgramValueRefRange>);
+        static_assert(
+            std::is_same_v<
+                decltype(std::declval<
+                             const ResumeInInterpreterWithSideExitInstruction
                                  &>()
                              .side_exit_arguments()),
                 ProgramValueRefRange>);
         static_assert(
             std::is_same_v<
                 decltype(std::declval<
-                             const ResumeInInterpreterWithSideExitRegionInstruction
-                                 &>()
-                             .side_exit_arguments()),
-                ProgramValueRefRange>);
-        static_assert(
-            std::is_same_v<
-                decltype(std::declval<
-                             const ResumeInInterpreterWithSideExitRegionInstruction
+                             const ResumeInInterpreterWithSideExitInstruction
                                  &>()
                              .side_exit_region()),
                 SideExitRegionId>);
@@ -424,10 +423,10 @@ namespace cl::jit
                   UninitializedInstruction::Kind);
         EXPECT_EQ(InstructionKind::ResumeInInterpreter,
                   ResumeInInterpreterInstruction::Kind);
-        EXPECT_EQ(InstructionKind::ResumeInInterpreterWithSideExitRegion,
-                  ResumeInInterpreterWithSideExitRegionInstruction::Kind);
-        EXPECT_EQ(InstructionKind::InlineTagGuardWithSideExitRegion,
-                  InlineTagGuardWithSideExitRegionInstruction::Kind);
+        EXPECT_EQ(InstructionKind::ResumeInInterpreterWithSideExit,
+                  ResumeInInterpreterWithSideExitInstruction::Kind);
+        EXPECT_EQ(InstructionKind::InlineTagGuardWithSideExit,
+                  InlineTagGuardWithSideExitInstruction::Kind);
         EXPECT_EQ(InstructionKind::ConditionalBranch,
                   ConditionalBranchInstruction::Kind);
         EXPECT_EQ(ResultClass::ProgramValue, AddSMIInstruction::Result);
@@ -469,16 +468,14 @@ namespace cl::jit
                   ResumeInInterpreterInstruction::MayEffects);
         EXPECT_TRUE(has_effects(ResumeInInterpreterInstruction::MustEffects,
                                 EffectProfile::TerminateBlock));
-        EXPECT_EQ(
-            IRLevelMask::Machine,
-            ResumeInInterpreterWithSideExitRegionInstruction::AllowedIRLevels);
         EXPECT_EQ(IRLevelMask::Machine,
-                  InlineTagGuardWithSideExitRegionInstruction::AllowedIRLevels);
-        EXPECT_EQ(
-            terminating_side_exit,
-            ResumeInInterpreterWithSideExitRegionInstruction::MustEffects);
-        EXPECT_TRUE(ResumeInInterpreterWithSideExitRegionInstruction::
-                        OperandsAreIndirect);
+                  ResumeInInterpreterWithSideExitInstruction::AllowedIRLevels);
+        EXPECT_EQ(IRLevelMask::Machine,
+                  InlineTagGuardWithSideExitInstruction::AllowedIRLevels);
+        EXPECT_EQ(terminating_side_exit,
+                  ResumeInInterpreterWithSideExitInstruction::MustEffects);
+        EXPECT_TRUE(
+            ResumeInInterpreterWithSideExitInstruction::OperandsAreIndirect);
         constexpr EffectProfile terminating_control_flow =
             EffectProfile::ControlFlow | EffectProfile::TerminateBlock;
         EXPECT_EQ(terminating_control_flow, ReturnInstruction::MustEffects);
@@ -748,16 +745,16 @@ namespace cl::jit
             builder.make_instruction<ParameterInstruction>();
         std::array<ProgramValueRef, 2> arguments = {ProgramValueRef(first),
                                                     ProgramValueRef(second)};
-        ResumeInInterpreterWithSideExitRegionInstruction owner =
-            builder.make_instruction<
-                ResumeInInterpreterWithSideExitRegionInstruction>(
-                arguments, SideExitRegionId{7});
+        ResumeInInterpreterWithSideExitInstruction owner =
+            builder
+                .make_instruction<ResumeInInterpreterWithSideExitInstruction>(
+                    arguments, SideExitRegionId{7});
         std::array<ProgramValueRef, 2> reversed = {ProgramValueRef(second),
                                                    ProgramValueRef(first)};
-        ResumeInInterpreterWithSideExitRegionInstruction other_owner =
-            builder.make_instruction<
-                ResumeInInterpreterWithSideExitRegionInstruction>(
-                reversed, SideExitRegionId{7});
+        ResumeInInterpreterWithSideExitInstruction other_owner =
+            builder
+                .make_instruction<ResumeInInterpreterWithSideExitInstruction>(
+                    reversed, SideExitRegionId{7});
 
         SideExitBinding binding{owner.side_exit_region(),
                                 owner.side_exit_arguments()};

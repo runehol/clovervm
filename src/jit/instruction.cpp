@@ -195,7 +195,7 @@ namespace cl::jit
                     instruction_.as<UnconditionalBranchInstruction>().edge()};
             case InstructionKind::Return:
             case InstructionKind::ResumeInInterpreter:
-            case InstructionKind::ResumeInInterpreterWithSideExitRegion:
+            case InstructionKind::ResumeInInterpreterWithSideExit:
                 return {};
             default:
                 break;

@@ -48,9 +48,8 @@ namespace cl::jit
         EXPECT_TRUE(std::move(lowered).value());
         EXPECT_EQ(IRLevel::Machine, graph->ir_level());
         ASSERT_EQ(1u, entry->instructions().size());
-        auto owner =
-            entry->instruction_at(0)
-                .as<ResumeInInterpreterWithSideExitRegionInstruction>();
+        auto owner = entry->instruction_at(0)
+                         .as<ResumeInInterpreterWithSideExitInstruction>();
         EXPECT_TRUE(old_owner.is_poisoned());
         EXPECT_FALSE(first_move.is_poisoned());
         EXPECT_FALSE(second_move.is_poisoned());
@@ -127,7 +126,7 @@ namespace cl::jit
         EXPECT_EQ(IRLevel::Machine, graph->ir_level());
         ASSERT_EQ(2u, entry->instructions().size());
         auto owner = entry->instruction_at(0)
-                         .as<InlineTagGuardWithSideExitRegionInstruction>();
+                         .as<InlineTagGuardWithSideExitInstruction>();
         EXPECT_TRUE(guard.is_poisoned());
         EXPECT_FALSE(snapshot.is_poisoned());
         EXPECT_EQ(parameter.id(), owner.value().instruction_id());
@@ -178,7 +177,7 @@ namespace cl::jit
         EXPECT_EQ(IRLevel::Machine, graph->ir_level());
         ASSERT_EQ(2u, entry->instructions().size());
         auto owner =
-            entry->instruction_at(0).as<AddSMIWithSideExitRegionInstruction>();
+            entry->instruction_at(0).as<AddSMIWithSideExitInstruction>();
         EXPECT_TRUE(add.is_poisoned());
         EXPECT_FALSE(snapshot.is_poisoned());
         EXPECT_EQ(lhs.id(), owner.lhs().instruction_id());
@@ -230,10 +229,9 @@ namespace cl::jit
         EXPECT_TRUE(std::move(lowered).value());
         ASSERT_EQ(2u, entry->instructions().size());
         auto lowered_add =
-            entry->instruction_at(0).as<AddSMIWithSideExitRegionInstruction>();
-        auto resume =
-            entry->instruction_at(1)
-                .as<ResumeInInterpreterWithSideExitRegionInstruction>();
+            entry->instruction_at(0).as<AddSMIWithSideExitInstruction>();
+        auto resume = entry->instruction_at(1)
+                          .as<ResumeInInterpreterWithSideExitInstruction>();
         EXPECT_TRUE(add.is_poisoned());
         ASSERT_EQ(1u, resume.side_exit_arguments().size());
         EXPECT_EQ(lowered_add.id(),

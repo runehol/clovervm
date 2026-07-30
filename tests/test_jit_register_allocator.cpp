@@ -209,19 +209,19 @@ namespace cl::jit
         ASSERT_TRUE(std::move(lowering).value());
 
         ASSERT_EQ(1u, entry->instructions().size());
-        ResumeInInterpreterWithSideExitRegionInstruction owner =
+        ResumeInInterpreterWithSideExitInstruction owner =
             entry->instruction_at(0)
-                .as<ResumeInInterpreterWithSideExitRegionInstruction>();
+                .as<ResumeInInterpreterWithSideExitInstruction>();
 
         std::vector<InstructionAllocationConstraints> overrides;
         overrides.emplace_back(parameter,
                                std::vector<ProgramValueUseConstraint>{},
                                ResultConstraint{AccessTiming::Late, fixed(x0)});
-        overrides.emplace_back(
-            owner, std::vector<ProgramValueUseConstraint>{
-                       {ResumeInInterpreterWithSideExitRegionInstruction::
-                            side_exit_arguments_operand_index,
-                        AccessTiming::Late, fixed(x1)}});
+        overrides.emplace_back(owner,
+                               std::vector<ProgramValueUseConstraint>{
+                                   {ResumeInInterpreterWithSideExitInstruction::
+                                        side_exit_arguments_operand_index,
+                                    AccessTiming::Late, fixed(x1)}});
         constexpr std::array registers = {x0, x1};
         AllocationConstraints constraints =
             gpr_constraints(registers, std::move(overrides));
@@ -234,7 +234,7 @@ namespace cl::jit
         MovInstruction move = entry->instruction_at(0).as<MovInstruction>();
         auto rewritten_owner =
             entry->instruction_at(1)
-                .as<ResumeInInterpreterWithSideExitRegionInstruction>();
+                .as<ResumeInInterpreterWithSideExitInstruction>();
         ASSERT_EQ(1u, rewritten_owner.side_exit_arguments().size());
         EXPECT_EQ(move.id(),
                   rewritten_owner.side_exit_arguments()[0].instruction_id());
