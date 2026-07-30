@@ -384,10 +384,14 @@ namespace cl::jit
                 bundle_by_occurrence.push_back(found->second);
             }
             absl::flat_hash_map<const BlockEdge *,
-                                std::vector<const EdgeAffinity *>>
+                                std::vector<const BundleAffinity *>>
                 affinities_by_edge;
-            for(const EdgeAffinity &affinity: problem.edge_affinities())
+            for(const BundleAffinity &affinity: problem.bundle_affinities())
             {
+                if(affinity.kind != BundleAffinityKind::BlockEdge)
+                {
+                    continue;
+                }
                 affinities_by_edge[affinity.edge].push_back(&affinity);
             }
 
@@ -482,10 +486,10 @@ namespace cl::jit
                             std::vector<uint32_t> argument_indices;
                             argument_indices.reserve(set.transfers.size());
                             size_t transfer_index = 0;
-                            for(const EdgeAffinity *affinity_pointer:
+                            for(const BundleAffinity *affinity_pointer:
                                 affinities_by_edge.at(edge))
                             {
-                                const EdgeAffinity &affinity =
+                                const BundleAffinity &affinity =
                                     *affinity_pointer;
                                 std::optional<PhysicalLocation> &location =
                                     parameter_locations[affinity

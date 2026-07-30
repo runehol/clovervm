@@ -386,8 +386,9 @@ namespace cl::jit
         EXPECT_GT(prepared.occurrences()[edge_use.value()].spill_weight,
                   10000u);
 
-        ASSERT_EQ(1u, prepared.edge_affinities().size());
-        const EdgeAffinity &affinity = prepared.edge_affinities().front();
+        ASSERT_EQ(1u, prepared.bundle_affinities().size());
+        const BundleAffinity &affinity = prepared.bundle_affinities().front();
+        EXPECT_EQ(BundleAffinityKind::BlockEdge, affinity.kind);
         EXPECT_EQ(edge, affinity.edge);
         EXPECT_EQ(0u, affinity.argument_index);
         EXPECT_EQ(edge_use, affinity.source);
@@ -457,7 +458,7 @@ namespace cl::jit
                           .reg());
     }
 
-    TEST(JitRegisterAllocator, RepeatedEdgeAffinityMergeIsIdempotent)
+    TEST(JitRegisterAllocator, RepeatedBlockEdgeAffinityMergeIsIdempotent)
     {
         CompilationSession session;
         GraphBuilder builder(session, IRLevel::Core);
@@ -484,7 +485,7 @@ namespace cl::jit
 
         ASSERT_TRUE(prepared_result);
         PreparedAllocationProblem prepared = std::move(prepared_result).value();
-        ASSERT_EQ(2u, prepared.edge_affinities().size());
+        ASSERT_EQ(2u, prepared.bundle_affinities().size());
         ASSERT_EQ(1u, prepared.bundles().size());
         ASSERT_EQ(2u, prepared.bundles().front().fragments.size());
         EXPECT_EQ(LiveRangeId(0),
@@ -1339,7 +1340,7 @@ namespace cl::jit
                   prepared.error());
     }
 
-    TEST(JitRegisterAllocator, RejectsSameAsInputUntilConstraintSplitting)
+    TEST(JitRegisterAllocator, MergesSameAsInputAffinity)
     {
         CompilationSession session;
         GraphBuilder builder(session, IRLevel::Core);
@@ -1360,11 +1361,17 @@ namespace cl::jit
         AllocationConstraints constraints(gpr_definition(),
                                           std::move(overrides));
 
-        auto prepared = prepare_register_allocation(*graph, constraints);
+        auto prepared_result = prepare_register_allocation(*graph, constraints);
 
-        ASSERT_TRUE(prepared.has_error());
-        EXPECT_EQ(RegisterAllocationError::UnsupportedSameAsInput,
-                  prepared.error());
+        ASSERT_TRUE(prepared_result);
+        PreparedAllocationProblem prepared = std::move(prepared_result).value();
+        ASSERT_EQ(1u, prepared.bundle_affinities().size());
+        const BundleAffinity &affinity = prepared.bundle_affinities().front();
+        EXPECT_EQ(BundleAffinityKind::SameAsInput, affinity.kind);
+        EXPECT_EQ(nullptr, affinity.edge);
+        EXPECT_EQ(0u, affinity.argument_index);
+        ASSERT_EQ(1u, prepared.bundles().size());
+        ASSERT_EQ(2u, prepared.bundles().front().fragments.size());
     }
 
 }  // namespace cl::jit

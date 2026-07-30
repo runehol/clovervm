@@ -7,12 +7,12 @@
 | Scope | Unfinished implementation and verification work for the accepted SSA bundle allocator |
 | Design authority | [JIT Register Allocation](jit-register-allocation.md) |
 
-The prepared problem, deterministic constraint splitting, cross-edge bundle
-coalescing, conflict-free initial assignment, generic and edge-transfer-block
-materialization, worklist-driven parallel assignment ordering including
-all-stack cycles, `LocationAssignments`, and AArch64 integration are
-implemented. This ledger records only unfinished work; the design document owns
-algorithms, invariants, and layer boundaries.
+The prepared problem, deterministic constraint splitting, cross-edge and
+non-overlapping same-as-input bundle coalescing, conflict-free initial
+assignment, generic and edge-transfer-block materialization, worklist-driven
+parallel assignment ordering including all-stack cycles, `LocationAssignments`,
+and AArch64 integration are implemented. This ledger records only unfinished
+work; the design document owns algorithms, invariants, and layer boundaries.
 
 ## Correctness Checking
 
@@ -24,7 +24,15 @@ algorithms, invariants, and layer boundaries.
 ## Affinities and CFG Transfers
 
 - [x] Merge non-overlapping bundles across block parameters and edge arguments.
-- [ ] Add affinities for explicit copies and reused inputs.
+- [x] Record and prioritize same-as-input affinities for guard results.
+- [ ] Allow the source and result ranges named by one same-as-input affinity to
+  overlap in their merged bundle while continuing to reject every unrelated
+  overlap. The instruction constraint certifies that sharing is physically
+  valid: refining guards preserve the input bits, while destructive operations
+  must make any overwritten pre-instruction value recoverable in their
+  side-exit region, such as by sinking an inverse operation.
+- [ ] Add affinities for explicit copies and remaining destructive reused
+  inputs.
 - [x] Preserve source `LiveRangeId`s in merged fragments and make repeated
   coalescing requests no-ops.
 - [x] Record unresolved edge transfers when overlap or constraints prevent
@@ -41,7 +49,7 @@ algorithms, invariants, and layer boundaries.
   bundles without changing their allocation priority.
 - [x] Split copied bundle fragments without mutating immutable source live
   ranges; repartition fixed constraints and recompute child heuristics.
-- [ ] Add remaining same-as-input and multi-location fixups.
+- [ ] Add remaining destructive reused-input and multi-location fixups.
 - [x] Split register-only pressure ranges before the conflicting instruction
   and record their connectors in the transfer schedule.
 - [ ] Record remaining fixup connectors in the transfer schedule.

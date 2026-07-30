@@ -4,7 +4,7 @@
 |---|---|
 | Document type | Design |
 | Status | Accepted |
-| Implementation | Prepared allocation, block-edge affinities and bundle coalescing, deterministic constraint splitting, transfer scheduling, conflict-free register/stack assignment, parallel-transfer and edge-transfer-block materialization, and the fixed-x19 value-state migration are implemented; runtime x19 installation and block-exit materialization remain open |
+| Implementation | Prepared allocation, block-edge and same-as-input affinities, bundle coalescing, deterministic constraint splitting, transfer scheduling, conflict-free register/stack assignment, parallel-transfer and edge-transfer-block materialization, and the fixed-x19 value-state migration are implemented; runtime x19 installation and block-exit materialization remain open |
 | Scope | Allocation constraints, allocator-local numbering, liveness, bundles, backtracking allocation, live-range splitting, block-edge transfers, clobbers, spills, and post-allocation materialization |
 | Owning layers | Target preparation owns occurrence constraints and physical-transfer capabilities; the generic register allocator owns numbering, liveness, bundles, splitting, allocation, spill decisions, and bundle transfers; generic allocation materialization resolves transfers, rewrites the Core CFG, and publishes occurrence locations; publication and transition planners own canonical-state synchronization; machine-code emission only encodes the materialized graph |
 | Validated against | `tests/test_jit_allocation_constraints.cpp`, `tests/test_aarch64_allocation_constraints.cpp`, `tests/test_jit_register_allocator.cpp`, `tests/test_jit_parallel_assignment_resolver.cpp`, `tests/test_jit_allocation_materializer.cpp`, and `tests/test_aarch64_execution.cpp` |
@@ -571,10 +571,10 @@ or per-access generation checks in the allocator.
 `LocationRequirement::AnyRegister` names a register class;
 `LocationRequirement::FixedLocation` names one register or stack location; and
 `LocationRequirement::SameAsInput` names the ProgramValue input whose assigned
-location the result must reuse. Contextual constructors reject
-`SameAsInput` for inputs and temporaries, so it remains a result-only
-requirement without a second variant-based representation. The compact
-allocator representation may encode these alternatives differently.
+location the result should reuse when bundle coalescing can prove that legal.
+Contextual constructors reject `SameAsInput` for inputs and temporaries, so it
+remains a result-only requirement without a second variant-based representation.
+The compact allocator representation may encode these alternatives differently.
 
 Most executable Core occurrences use `AnyRegister`. A stack-assigned fragment
 therefore cannot cover such an occurrence. A fixed stack occurrence followed
@@ -652,6 +652,8 @@ The AArch64 constraint producer follows the Clover JIT calling convention:
 - tagged internal block parameters use the ordinary `AnyRegister(GPR)`
   default;
 - F64 internal block parameters use the ordinary `AnyRegister(SIMD)` default;
+- `InlineTagGuardWithSideExit` results request `SameAsInput` with their checked
+  value;
 - a `Return` input has a fixed `x0` constraint;
 - conditional and unconditional branches request no allocator temporary;
 - `Const`, SMI bitwise instructions, and the virtual `Snapshot` instruction
@@ -884,7 +886,7 @@ bundles related by:
 
 - block-argument transfers;
 - explicit machine-value moves;
-- reused-input constraints;
+- same-as-input constraints;
 - other backend-declared allocation equalities.
 
 Bundle merging combines the sorted fragment lists subject to the invariant that
@@ -1070,10 +1072,12 @@ cannot solve them and a fixed-location fixup is required.
 
 If one SSA value is required in two locations at the same instruction, one
 constrained occurrence remains on the range and the other becomes a fixup
-transfer at that occurrence. A reused-input result is treated as a new range
-starting at the input phase, with a fixup transfer from the input and a
-high-priority merge opportunity between the two ranges. If they can share a
-location the transfer disappears; otherwise it remains in the schedule.
+transfer at that occurrence. A non-destructive same-as-input result, such as a
+value-refining guard, is treated as a new range with a high-priority merge
+opportunity with its input. If they cannot share a bundle, the instruction
+lowering must still produce the result in its assigned location. Destructive
+reused-input operations, where a pre-instruction copy into the output location is
+part of the instruction contract, remain a later fixup slice.
 
 This splitting preserves the invariant that a live-range fragment occupies one
 location at a liveness position. It keeps special instruction shapes at the

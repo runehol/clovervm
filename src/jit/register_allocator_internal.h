@@ -39,7 +39,7 @@ namespace cl::jit
         std::vector<FixedLocationConstraint> fixed_constraints;
         std::vector<LiveRange> live_ranges;
         std::vector<ClobberReservation> clobbers;
-        std::vector<EdgeAffinity> edge_affinities;
+        std::vector<BundleAffinity> bundle_affinities;
     };
 
     Result<LiveRangeScan, RegisterAllocationError>
@@ -48,10 +48,11 @@ namespace cl::jit
 
     PreparedAllocationProblem build_initial_bundles(LiveRangeScan scan);
 
-    void schedule_edge_transfers(const PreparedAllocationProblem &problem,
-                                 std::span<const LiveBundle> bundles,
-                                 const BundleLocationAssignments &assignments,
-                                 BundleTransferSchedule &transfers);
+    void
+    schedule_affinity_transfers(const PreparedAllocationProblem &problem,
+                                std::span<const LiveBundle> bundles,
+                                const BundleLocationAssignments &assignments,
+                                BundleTransferSchedule &transfers);
 
     void recompute_bundle_properties(
         LiveBundle &bundle, const std::vector<Occurrence> &occurrences,

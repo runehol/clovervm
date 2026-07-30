@@ -342,13 +342,36 @@ namespace cl::jit
         LivenessRange range;
     };
 
-    struct EdgeAffinity
+    enum class BundleAffinityKind : uint8_t
     {
-        // Connects one predecessor edge use to its successor parameter def.
-        const BlockEdge *edge;
-        uint32_t argument_index;
+        SameAsInput,
+        BlockEdge,
+    };
+
+    struct BundleAffinity
+    {
         OccurrenceId source;
         OccurrenceId destination;
+        const BlockEdge *edge;
+        uint32_t argument_index;
+        BundleAffinityKind kind;
+
+        static BundleAffinity same_as_input(OccurrenceId source,
+                                            OccurrenceId destination)
+        {
+            return {source, destination, nullptr, 0,
+                    BundleAffinityKind::SameAsInput};
+        }
+
+        static BundleAffinity block_edge(const BlockEdge *edge,
+                                         uint32_t argument_index,
+                                         OccurrenceId source,
+                                         OccurrenceId destination)
+        {
+            assert(edge != nullptr);
+            return {source, destination, edge, argument_index,
+                    BundleAffinityKind::BlockEdge};
+        }
     };
 
     class PreparedAllocationProblem
@@ -360,7 +383,7 @@ namespace cl::jit
             std::vector<FixedLocationConstraint> fixed_constraints,
             std::vector<LiveRange> live_ranges, std::vector<LiveBundle> bundles,
             std::vector<ClobberReservation> clobbers,
-            std::vector<EdgeAffinity> edge_affinities);
+            std::vector<BundleAffinity> bundle_affinities);
 
         const std::vector<BlockLivenessRange> &block_ranges() const
         {
@@ -383,9 +406,9 @@ namespace cl::jit
         {
             return clobbers_;
         }
-        const std::vector<EdgeAffinity> &edge_affinities() const
+        const std::vector<BundleAffinity> &bundle_affinities() const
         {
-            return edge_affinities_;
+            return bundle_affinities_;
         }
 
     private:
@@ -395,7 +418,7 @@ namespace cl::jit
         std::vector<LiveRange> live_ranges_;
         std::vector<LiveBundle> bundles_;
         std::vector<ClobberReservation> clobbers_;
-        std::vector<EdgeAffinity> edge_affinities_;
+        std::vector<BundleAffinity> bundle_affinities_;
     };
 
 }  // namespace cl::jit

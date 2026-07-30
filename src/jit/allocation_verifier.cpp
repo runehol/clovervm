@@ -417,33 +417,55 @@ namespace cl::jit
             }
         }
 
-        for(const EdgeAffinity &affinity: problem.edge_affinities())
+        for(const BundleAffinity &affinity: problem.bundle_affinities())
         {
-            if(affinity.edge == nullptr ||
-               affinity.argument_index >= affinity.edge->arguments().size() ||
-               affinity.argument_index >=
-                   affinity.edge->target()->parameters().size() ||
-               affinity.source.value() >= problem.occurrences().size() ||
+            if(affinity.source.value() >= problem.occurrences().size() ||
                affinity.destination.value() >= problem.occurrences().size())
             {
-                fatal("invalid JIT allocator edge affinity");
+                fatal("invalid JIT allocator bundle affinity");
             }
             const Occurrence &source =
                 problem.occurrences()[affinity.source.value()];
             const Occurrence &destination =
                 problem.occurrences()[affinity.destination.value()];
-            if(source.anchor.kind() !=
-                   OccurrenceAnchor::Kind::BlockEdgeArgument ||
-               source.anchor.block_edge() != affinity.edge ||
-               source.anchor.index() != affinity.argument_index ||
-               destination.anchor.kind() !=
-                   OccurrenceAnchor::Kind::InstructionResult ||
-               destination.anchor.instruction_id() !=
-                   affinity.edge->target()
-                       ->parameter_at(affinity.argument_index)
-                       .id())
+            switch(affinity.kind)
             {
-                fatal("JIT allocator edge affinity mismatches its CFG edge");
+                case BundleAffinityKind::BlockEdge:
+                    if(affinity.edge == nullptr ||
+                       affinity.argument_index >=
+                           affinity.edge->arguments().size() ||
+                       affinity.argument_index >=
+                           affinity.edge->target()->parameters().size() ||
+                       source.anchor.kind() !=
+                           OccurrenceAnchor::Kind::BlockEdgeArgument ||
+                       source.anchor.block_edge() != affinity.edge ||
+                       source.anchor.index() != affinity.argument_index ||
+                       destination.anchor.kind() !=
+                           OccurrenceAnchor::Kind::InstructionResult ||
+                       destination.anchor.instruction_id() !=
+                           affinity.edge->target()
+                               ->parameter_at(affinity.argument_index)
+                               .id())
+                    {
+                        fatal(
+                            "JIT allocator block-edge affinity mismatches its "
+                            "CFG edge");
+                    }
+                    break;
+                case BundleAffinityKind::SameAsInput:
+                    if(affinity.edge != nullptr ||
+                       affinity.argument_index != 0 ||
+                       source.anchor.kind() !=
+                           OccurrenceAnchor::Kind::InstructionOperand ||
+                       destination.anchor.kind() !=
+                           OccurrenceAnchor::Kind::InstructionResult ||
+                       source.anchor.instruction_id() !=
+                           destination.anchor.instruction_id())
+                    {
+                        fatal("JIT allocator same-as-input affinity mismatches "
+                              "its instruction");
+                    }
+                    break;
             }
         }
     }
@@ -637,9 +659,11 @@ namespace cl::jit
                 bool connected = false;
                 if(set.point.kind() == TransferPoint::Kind::BlockEdge)
                 {
-                    for(const EdgeAffinity &affinity: problem.edge_affinities())
+                    for(const BundleAffinity &affinity:
+                        problem.bundle_affinities())
                     {
-                        if(affinity.edge == set.point.edge() &&
+                        if(affinity.kind == BundleAffinityKind::BlockEdge &&
+                           affinity.edge == set.point.edge() &&
                            bundle_covers_occurrence(
                                bundles[transfer.source.value()], problem,
                                affinity.source) &&

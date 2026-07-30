@@ -8,6 +8,7 @@
 #include <algorithm>
 #include <cassert>
 #include <cstddef>
+#include <optional>
 #include <utility>
 
 namespace cl::jit
@@ -150,12 +151,12 @@ namespace cl::jit
                     }
                 }
                 sort_live_range_references();
-                build_edge_affinities();
+                build_block_edge_affinities();
                 require_all_overrides_consumed();
                 return Result<LiveRangeScan, RegisterAllocationError>::ok(
                     {std::move(block_ranges_), std::move(occurrences_),
                      std::move(fixed_constraints_), std::move(live_ranges_),
-                     std::move(clobbers_), std::move(edge_affinities_)});
+                     std::move(clobbers_), std::move(bundle_affinities_)});
             }
 
         private:
@@ -199,7 +200,7 @@ namespace cl::jit
                 fatal("JIT allocator edge argument has no occurrence");
             }
 
-            void build_edge_affinities()
+            void build_block_edge_affinities()
             {
                 for(const Block *block: graph_.blocks())
                 {
@@ -210,12 +211,13 @@ namespace cl::jit
                         for(size_t index = 0; index < edge->arguments().size();
                             ++index)
                         {
-                            edge_affinities_.push_back(
-                                {edge, static_cast<uint32_t>(index),
-                                 edge_argument_occurrence(edge, index),
-                                 result_occurrence(edge->target()
-                                                       ->parameter_at(index)
-                                                       .id())});
+                            bundle_affinities_.push_back(
+                                BundleAffinity::block_edge(
+                                    edge, static_cast<uint32_t>(index),
+                                    edge_argument_occurrence(edge, index),
+                                    result_occurrence(edge->target()
+                                                          ->parameter_at(index)
+                                                          .id())));
                         }
                     }
                 }
@@ -392,6 +394,8 @@ namespace cl::jit
                     LivenessPosition late = early.next();
                     const InstructionAllocationConstraints *override =
                         override_for(instruction.id());
+                    absl::flat_hash_map<uint32_t, OccurrenceId>
+                        input_occurrence_by_operand;
 
                     if(instruction.kind() != InstructionKind::Snapshot)
                     {
@@ -432,7 +436,7 @@ namespace cl::jit
                                         : late;
                                 LiveRangeId live_range =
                                     value_range(definition_id, block);
-                                add_occurrence(
+                                OccurrenceId occurrence = add_occurrence(
                                     live_range, position,
                                     minimum_liveness_coverage(
                                         early, OccurrenceKind::Use,
@@ -441,6 +445,8 @@ namespace cl::jit
                                     OccurrenceAnchor::instruction_operand(
                                         instruction, operand_index),
                                     constraint.requirement);
+                                input_occurrence_by_operand.emplace(
+                                    operand_index, occurrence);
                             });
                         if(has_snapshot_operand)
                         {
@@ -458,13 +464,6 @@ namespace cl::jit
                                 ? *override->result_override()
                                 : default_result_constraint(
                                       instruction.value_representation());
-                        if(result_constraint.requirement.kind() ==
-                           LocationRequirement::Kind::SameAsInput)
-                        {
-                            return Result<void, RegisterAllocationError>::error(
-                                RegisterAllocationError::
-                                    UnsupportedSameAsInput);
-                        }
                         LivenessPosition position =
                             result_constraint.timing == AccessTiming::Early
                                 ? early
@@ -475,14 +474,38 @@ namespace cl::jit
                         RegisterClass register_class =
                             register_class_for_representation(
                                 instruction.value_representation());
+                        LocationRequirement result_requirement =
+                            result_constraint.requirement;
+                        std::optional<uint32_t> same_as_input;
+                        if(result_requirement.kind() ==
+                           LocationRequirement::Kind::SameAsInput)
+                        {
+                            same_as_input = result_requirement.input_index();
+                            result_requirement =
+                                LocationRequirement::any_register(
+                                    register_class);
+                        }
                         LiveRangeId live_range = add_live_range(
                             coverage,
                             LiveRangeOrigin::program_value(instruction), block,
                             register_class);
-                        add_occurrence(
+                        OccurrenceId result_occurrence = add_occurrence(
                             live_range, position, coverage, OccurrenceKind::Def,
                             OccurrenceAnchor::instruction_result(instruction),
-                            result_constraint.requirement);
+                            result_requirement);
+                        if(same_as_input.has_value())
+                        {
+                            auto input = input_occurrence_by_operand.find(
+                                *same_as_input);
+                            if(input == input_occurrence_by_operand.end())
+                            {
+                                fatal("SameAsInput names no scanned input "
+                                      "occurrence");
+                            }
+                            bundle_affinities_.push_back(
+                                BundleAffinity::same_as_input(
+                                    input->second, result_occurrence));
+                        }
                     }
 
                     if(override != nullptr)
@@ -581,7 +604,7 @@ namespace cl::jit
             std::vector<FixedLocationConstraint> fixed_constraints_;
             std::vector<LiveRange> live_ranges_;
             std::vector<ClobberReservation> clobbers_;
-            std::vector<EdgeAffinity> edge_affinities_;
+            std::vector<BundleAffinity> bundle_affinities_;
         };
     }  // namespace
 

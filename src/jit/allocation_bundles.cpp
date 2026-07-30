@@ -111,13 +111,98 @@ namespace cl::jit
                    lhs_fixed->aliases(*rhs_fixed);
         }
 
-        void merge_edge_affinities(
+        uint8_t affinity_kind_rank(BundleAffinityKind kind)
+        {
+            switch(kind)
+            {
+                case BundleAffinityKind::SameAsInput:
+                    return 0;
+                case BundleAffinityKind::BlockEdge:
+                    return 1;
+            }
+            fatal("invalid JIT bundle affinity kind");
+        }
+
+        size_t affinity_distance(const BundleAffinity &affinity,
+                                 const std::vector<Occurrence> &occurrences)
+        {
+            size_t source =
+                occurrences[affinity.source.value()].position.value();
+            size_t destination =
+                occurrences[affinity.destination.value()].position.value();
+            return source < destination ? destination - source
+                                        : source - destination;
+        }
+
+        void sort_bundle_affinities(std::vector<BundleAffinity> &affinities,
+                                    const std::vector<Occurrence> &occurrences)
+        {
+            std::ranges::sort(affinities, [&](const BundleAffinity &lhs,
+                                              const BundleAffinity &rhs) {
+                uint8_t lhs_kind = affinity_kind_rank(lhs.kind);
+                uint8_t rhs_kind = affinity_kind_rank(rhs.kind);
+                if(lhs_kind != rhs_kind)
+                {
+                    return lhs_kind < rhs_kind;
+                }
+
+                uint64_t lhs_hotness =
+                    occurrences[lhs.source.value()].spill_weight +
+                    occurrences[lhs.destination.value()].spill_weight;
+                uint64_t rhs_hotness =
+                    occurrences[rhs.source.value()].spill_weight +
+                    occurrences[rhs.destination.value()].spill_weight;
+                if(lhs_hotness != rhs_hotness)
+                {
+                    return lhs_hotness > rhs_hotness;
+                }
+
+                size_t lhs_distance = affinity_distance(lhs, occurrences);
+                size_t rhs_distance = affinity_distance(rhs, occurrences);
+                if(lhs_distance != rhs_distance)
+                {
+                    return lhs_distance < rhs_distance;
+                }
+
+                LivenessPosition lhs_source =
+                    occurrences[lhs.source.value()].position;
+                LivenessPosition rhs_source =
+                    occurrences[rhs.source.value()].position;
+                if(lhs_source != rhs_source)
+                {
+                    return lhs_source < rhs_source;
+                }
+
+                LivenessPosition lhs_destination =
+                    occurrences[lhs.destination.value()].position;
+                LivenessPosition rhs_destination =
+                    occurrences[rhs.destination.value()].position;
+                if(lhs_destination != rhs_destination)
+                {
+                    return lhs_destination < rhs_destination;
+                }
+
+                if(lhs.argument_index != rhs.argument_index)
+                {
+                    return lhs.argument_index < rhs.argument_index;
+                }
+
+                return lhs.source != rhs.source
+                           ? lhs.source < rhs.source
+                           : lhs.destination < rhs.destination;
+            });
+        }
+
+        void merge_bundle_affinities(
             std::vector<LiveBundle> &bundles,
-            const std::vector<EdgeAffinity> &affinities,
+            const std::vector<BundleAffinity> &affinities,
             const std::vector<Occurrence> &occurrences,
             const std::vector<FixedLocationConstraint> &fixed_constraints,
             const std::vector<LiveRange> &live_ranges)
         {
+            std::vector<BundleAffinity> ordered_affinities = affinities;
+            sort_bundle_affinities(ordered_affinities, occurrences);
+
             std::vector<BundleId> parent;
             parent.reserve(bundles.size());
             for(size_t index = 0; index < bundles.size(); ++index)
@@ -134,7 +219,7 @@ namespace cl::jit
                 return id;
             };
 
-            for(const EdgeAffinity &affinity: affinities)
+            for(const BundleAffinity &affinity: ordered_affinities)
             {
                 BundleId lhs = root(BundleId(
                     occurrences[affinity.source.value()].live_range.value()));
@@ -300,23 +385,29 @@ namespace cl::jit
                                         scan.fixed_constraints,
                                         scan.live_ranges);
         }
-        merge_edge_affinities(bundles, scan.edge_affinities, scan.occurrences,
-                              scan.fixed_constraints, scan.live_ranges);
+        merge_bundle_affinities(bundles, scan.bundle_affinities,
+                                scan.occurrences, scan.fixed_constraints,
+                                scan.live_ranges);
 
         return PreparedAllocationProblem(
             std::move(scan.block_ranges), std::move(scan.occurrences),
             std::move(scan.fixed_constraints), std::move(scan.live_ranges),
             std::move(bundles), std::move(scan.clobbers),
-            std::move(scan.edge_affinities));
+            std::move(scan.bundle_affinities));
     }
 
-    void schedule_edge_transfers(const PreparedAllocationProblem &problem,
-                                 std::span<const LiveBundle> bundles,
-                                 const BundleLocationAssignments &assignments,
-                                 BundleTransferSchedule &transfers)
+    void
+    schedule_affinity_transfers(const PreparedAllocationProblem &problem,
+                                std::span<const LiveBundle> bundles,
+                                const BundleLocationAssignments &assignments,
+                                BundleTransferSchedule &transfers)
     {
-        for(const EdgeAffinity &affinity: problem.edge_affinities())
+        for(const BundleAffinity &affinity: problem.bundle_affinities())
         {
+            if(affinity.kind != BundleAffinityKind::BlockEdge)
+            {
+                continue;
+            }
             BundleId source = bundle_covering_occurrence(
                 bundles, problem.occurrences(), affinity.source);
             BundleId destination = bundle_covering_occurrence(
