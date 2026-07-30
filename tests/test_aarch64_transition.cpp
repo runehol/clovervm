@@ -87,6 +87,76 @@ namespace cl::jit
         EXPECT_EQ(64u, AArch64TransitionRegisterSlotCount);
     }
 
+    TEST(AArch64Transition, DeduplicatesSideExitBindingsDuringAArch64Emission)
+    {
+        test::VmTestContext vm;
+        CodeObject *code_object = vm.compile_file(L"pass\n");
+        code_object->function_signature.n_parameters = 1;
+        code_object->n_locals = 0;
+        code_object->n_temporaries = 0;
+        BytecodeStateOrder state_order(*code_object);
+
+        CompilationSession session;
+        GraphBuilder builder(session, IRLevel::Machine);
+        builder.set_bytecode_state_order(state_order);
+        Block *entry = builder.emplace_block();
+        ParameterInstruction argument =
+            builder.emplace_parameter<ParameterInstruction>(entry);
+
+        ParameterInstruction region_parameter =
+            builder.make_instruction<ParameterInstruction>();
+        std::vector<ProgramValueRef> captured(
+            state_order.size(), ProgramValueRef(region_parameter));
+        SnapshotInstruction snapshot =
+            builder.make_instruction<SnapshotInstruction>(captured,
+                                                          BytecodePC{31});
+        std::array<InstructionId, 1> parameter_ids = {region_parameter.id()};
+        std::array<InstructionId, 1> instructions = {snapshot.id()};
+        SideExitRegionId region =
+            builder.make_side_exit_region(parameter_ids, instructions)->id();
+
+        std::array<ProgramValueRef, 1> arguments = {ProgramValueRef(argument)};
+        InlineTagGuardWithSideExitInstruction first_guard =
+            builder.emplace_instruction<InlineTagGuardWithSideExitInstruction>(
+                entry, TaggedValueRef(argument), arguments,
+                InlineValueClass::SMI, region);
+        InlineTagGuardWithSideExitInstruction second_guard =
+            builder.emplace_instruction<InlineTagGuardWithSideExitInstruction>(
+                entry, TaggedValueRef(argument), arguments,
+                InlineValueClass::SMI, region);
+        builder.emplace_instruction<ReturnInstruction>(
+            entry, TaggedValueRef(argument));
+        ControlFlowGraph *graph = builder.finalize();
+
+        LocationAssignmentsBuilder assignment_builder;
+        assignment_builder.assign(ProgramValueRef(argument),
+                                  PhysicalLocation::reg(x(0)));
+        assignment_builder.assign(ProgramValueRef(first_guard),
+                                  PhysicalLocation::reg(x(1)));
+        assignment_builder.assign(ProgramValueRef(second_guard),
+                                  PhysicalLocation::reg(x(2)));
+        LocationAssignments locations =
+            std::move(assignment_builder).finalize();
+
+        std::vector<TransitionInstruction> expected_program =
+            emit_aarch64_side_exit_transition_program(
+                *graph->storage(), *graph->bytecode_state_order(),
+                SideExitBinding{region, first_guard.side_exit_arguments()},
+                locations);
+
+        CacheAndPlatform fixture(16);
+        MachineAddress side_exit_thunk =
+            detail::MachineAddressAccess::from_pointer(
+                reinterpret_cast<const void *>(&unused_side_exit_thunk));
+        auto emission = emit_aarch64_from_cfg(*graph, locations, *fixture.cache,
+                                              side_exit_thunk);
+        ASSERT_TRUE(emission);
+        PublishedCode code = std::move(emission).value();
+
+        EXPECT_EQ(expected_program.size() * sizeof(TransitionInstruction),
+                  code.constant_pool().size());
+    }
+
     TEST(AArch64Transition,
          EmitsAndExecutesSnapshotAfterAArch64RegisterAllocation)
     {

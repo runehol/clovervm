@@ -26,6 +26,8 @@ namespace cl::jit
         };
 
         using BlockLabels = absl::flat_hash_map<const Block *, Label>;
+        using SideExitRegionLabels =
+            absl::flat_hash_map<SideExitBinding, size_t>;
 
         Label block_label(const BlockLabels &labels, const Block *block)
         {
@@ -200,11 +202,20 @@ namespace cl::jit
         }
 
         std::vector<PendingSideExitRegion> pending_side_exit_regions;
+        SideExitRegionLabels side_exit_region_labels;
         auto side_exit_region_target = [&](SideExitRegionId side_exit_region,
                                            ProgramValueRefRange arguments) {
+            SideExitBinding binding{side_exit_region, arguments};
+            auto found = side_exit_region_labels.find(binding);
+            if(found != side_exit_region_labels.end())
+            {
+                return pending_side_exit_regions[found->second].label;
+            }
+
             Label label = assembler.emitter().make_label();
-            pending_side_exit_regions.push_back(
-                {label, SideExitBinding{side_exit_region, arguments}});
+            size_t index = pending_side_exit_regions.size();
+            pending_side_exit_regions.push_back({label, binding});
+            side_exit_region_labels.emplace(binding, index);
             return label;
         };
 
