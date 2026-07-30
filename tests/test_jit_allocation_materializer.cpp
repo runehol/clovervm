@@ -389,6 +389,82 @@ namespace cl::jit
             x0, materialized.value().location_for(ProgramValueRef(load)).reg());
     }
 
+    TEST(JitAllocationMaterializer, UsesActiveValueForSplitFromMergedBundle)
+    {
+        CompilationSession session;
+        GraphBuilder builder(session, IRLevel::Core);
+        Block *entry = builder.emplace_block();
+        Block *middle = builder.emplace_block();
+        Block *exit = builder.emplace_block();
+        ConstInstruction entry_value =
+            builder.emplace_instruction<ConstInstruction>(entry,
+                                                          Value::from_smi(0));
+        std::array<ProgramValueRef, 1> entry_arguments = {
+            ProgramValueRef(entry_value)};
+        BlockEdge *entry_edge =
+            builder.make_block_edge(entry, middle, entry_arguments);
+        builder.emplace_instruction<UnconditionalBranchInstruction>(entry,
+                                                                    entry_edge);
+        ParameterInstruction middle_value =
+            builder.emplace_parameter<ParameterInstruction>(middle);
+        std::array<ProgramValueRef, 1> middle_arguments = {
+            ProgramValueRef(middle_value)};
+        BlockEdge *middle_edge =
+            builder.make_block_edge(middle, exit, middle_arguments);
+        builder.emplace_instruction<UnconditionalBranchInstruction>(
+            middle, middle_edge);
+        ParameterInstruction exit_value =
+            builder.emplace_parameter<ParameterInstruction>(exit);
+        ReturnInstruction old_return =
+            builder.emplace_instruction<ReturnInstruction>(
+                exit, TaggedValueRef(exit_value));
+        ControlFlowGraph *graph = builder.finalize();
+
+        std::vector<InstructionAllocationConstraints> overrides;
+        overrides.emplace_back(
+            entry_value, std::vector<ProgramValueUseConstraint>{},
+            ResultConstraint{AccessTiming::Late,
+                             fixed(PhysicalLocation::reg(x1))});
+        overrides.emplace_back(
+            middle_value, std::vector<ProgramValueUseConstraint>{},
+            ResultConstraint{AccessTiming::Late,
+                             fixed(PhysicalLocation::reg(x1))});
+        overrides.emplace_back(
+            exit_value, std::vector<ProgramValueUseConstraint>{},
+            ResultConstraint{AccessTiming::Late,
+                             fixed(PhysicalLocation::reg(x1))});
+        overrides.emplace_back(
+            old_return,
+            std::vector<ProgramValueUseConstraint>{
+                {ReturnInstruction::return_value_operand_index,
+                 AccessTiming::Early, fixed(PhysicalLocation::reg(x0))}});
+        AllocationConstraints constraints =
+            constraints_with(std::move(overrides));
+        PreparedAllocationProblem prepared({}, {}, {}, {}, {}, {}, {});
+        RegisterAllocationResult allocation =
+            allocate(*graph, constraints, prepared);
+        ASSERT_EQ(1u, allocation.transfers().sets().size());
+        const BundleTransferSet &set = allocation.transfers().sets().front();
+        EXPECT_EQ(TransferPoint::before_instruction(old_return), set.point);
+
+        auto materialized = materialize_allocation(session, *graph, prepared,
+                                                   constraints, allocation);
+
+        ASSERT_TRUE(materialized);
+        ASSERT_EQ(2u, exit->instructions().size());
+        MovInstruction move = exit->instruction_at(0).as<MovInstruction>();
+        ReturnInstruction new_return =
+            exit->instruction_at(1).as<ReturnInstruction>();
+        EXPECT_EQ(exit_value.id(), move.source().instruction_id());
+        EXPECT_EQ(move.id(), new_return.return_value().instruction_id());
+        EXPECT_TRUE(old_return.is_poisoned());
+        EXPECT_EQ(x1, materialized.value()
+                          .location_for(ProgramValueRef(exit_value))
+                          .reg());
+        EXPECT_EQ(
+            x0, materialized.value().location_for(ProgramValueRef(move)).reg());
+    }
+
     TEST(JitAllocationMaterializer, MaterializesPointerTransfers)
     {
         CompilationSession session;

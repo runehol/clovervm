@@ -49,6 +49,127 @@ namespace cl::jit
             std::vector<std::optional<InstructionId>> initial_value_by_bundle;
         };
 
+        struct MaterializationPointIndex
+        {
+            absl::flat_hash_map<const Block *, LivenessPosition> block_entries;
+            absl::flat_hash_map<InstructionId, LivenessPosition>
+                before_instructions;
+        };
+
+        struct TransferSourceKey
+        {
+            BundleId bundle;
+            LivenessPosition boundary;
+
+            friend bool operator==(TransferSourceKey,
+                                   TransferSourceKey) = default;
+
+            template <typename H>
+            friend H AbslHashValue(H hash, TransferSourceKey key)
+            {
+                return H::combine(std::move(hash), key.bundle,
+                                  key.boundary.value());
+            }
+        };
+
+        using TransferSourceIndex =
+            absl::flat_hash_map<TransferSourceKey, InstructionId>;
+
+        MaterializationPointIndex build_materialization_point_index(
+            const PreparedAllocationProblem &problem)
+        {
+            MaterializationPointIndex result;
+            for(const BlockLivenessRange &block_range: problem.block_ranges())
+            {
+                LivenessPosition block_start = block_range.range.start;
+                result.block_entries.emplace(block_range.block, block_start);
+                for(size_t index = 0;
+                    index < block_range.block->instructions().size(); ++index)
+                {
+                    Instruction instruction =
+                        block_range.block->instruction_at(index);
+                    result.before_instructions.emplace(
+                        instruction.id(),
+                        LivenessPosition(block_start.value() + 2 + index * 2));
+                }
+            }
+            return result;
+        }
+
+        std::optional<LivenessPosition>
+        transfer_point_position(TransferPoint point,
+                                const MaterializationPointIndex &index)
+        {
+            switch(point.kind())
+            {
+                case TransferPoint::Kind::BlockEntry:
+                    return index.block_entries.at(point.block());
+                case TransferPoint::Kind::BeforeInstruction:
+                    return index.before_instructions.at(point.instruction_id());
+                case TransferPoint::Kind::BlockExit:
+                case TransferPoint::Kind::BlockEdge:
+                    return std::nullopt;
+            }
+            fatal("invalid JIT transfer point");
+        }
+
+        TransferSourceIndex
+        build_transfer_source_index(const PreparedAllocationProblem &problem,
+                                    const RegisterAllocationResult &allocation)
+        {
+            TransferSourceIndex result;
+            for(size_t bundle_index = 0;
+                bundle_index < allocation.bundles().size(); ++bundle_index)
+            {
+                BundleId bundle(static_cast<uint32_t>(bundle_index));
+                for(const BundleFragment &fragment:
+                    allocation.bundles()[bundle_index].fragments)
+                {
+                    const LiveRange &range =
+                        problem.live_ranges()[fragment.source.value()];
+                    if(range.origin.kind() !=
+                       LiveRangeOrigin::Kind::ProgramValue)
+                    {
+                        continue;
+                    }
+                    TransferSourceKey key{bundle, fragment.range.end};
+                    InstructionId source =
+                        range.origin.program_value().instruction_id();
+                    auto [position, inserted] = result.emplace(key, source);
+                    if(!inserted && position->second != source)
+                    {
+                        fatal("JIT bundle transfer source index has ambiguous "
+                              "source value");
+                    }
+                }
+            }
+            return result;
+        }
+
+        std::vector<InstructionId>
+        transfer_sources_at_point(const BundleTransferSet &set,
+                                  const MaterializationPointIndex &point_index,
+                                  const TransferSourceIndex &source_index)
+        {
+            std::optional<LivenessPosition> boundary =
+                transfer_point_position(set.point, point_index);
+            assert(boundary.has_value());
+
+            std::vector<InstructionId> result;
+            result.reserve(set.transfers.size());
+            for(const BundleTransfer &transfer: set.transfers)
+            {
+                auto source = source_index.find({transfer.source, *boundary});
+                if(source == source_index.end())
+                {
+                    fatal("JIT bundle transfer has no program value at its "
+                          "boundary");
+                }
+                result.push_back(source->second);
+            }
+            return result;
+        }
+
         size_t append_move(OrderedParallelAssignment<PhysicalLocation> &result,
                            OrderedMoveSource source,
                            PhysicalLocation source_location,
@@ -249,6 +370,10 @@ namespace cl::jit
                     definition.register_class())] =
                     definition.scratch_registers();
             }
+            MaterializationPointIndex point_index =
+                build_materialization_point_index(problem);
+            TransferSourceIndex source_index =
+                build_transfer_source_index(problem, allocation);
             for(const BundleTransferSet &set: allocation.transfers().sets())
             {
                 std::vector<ParallelAssignment<PhysicalLocation>> transfers;
@@ -282,8 +407,15 @@ namespace cl::jit
                 {
                     return propagate_failure(std::move(ordered));
                 }
-                PlannedTransferSet planned{
-                    &set, std::move(ordered).value(), {}};
+                std::vector<InstructionId> sources;
+                if(set.point.kind() == TransferPoint::Kind::BlockEntry ||
+                   set.point.kind() == TransferPoint::Kind::BeforeInstruction)
+                {
+                    sources = transfer_sources_at_point(set, point_index,
+                                                        source_index);
+                }
+                PlannedTransferSet planned{&set, std::move(ordered).value(),
+                                           std::move(sources)};
 
                 bool inserted = false;
                 switch(set.point.kind())
