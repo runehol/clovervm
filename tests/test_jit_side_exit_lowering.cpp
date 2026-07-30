@@ -10,6 +10,14 @@
 
 namespace cl::jit
 {
+    namespace
+    {
+        void expect_no_old_side_exits(const ControlFlowGraph &graph)
+        {
+            EXPECT_EQ(0u, graph.side_exits().size());
+        }
+    }  // namespace
+
     TEST(JitSideExitLowering,
          RetainsSunkInstructionsInProgramOrderAndBindsTheirInputs)
     {
@@ -60,7 +68,7 @@ namespace cl::jit
         EXPECT_EQ(first.id(), owner.side_exit_arguments()[0].instruction_id());
         EXPECT_EQ(second.id(), owner.side_exit_arguments()[1].instruction_id());
 
-        ASSERT_EQ(0u, graph->side_exits().size());
+        expect_no_old_side_exits(*graph);
         const SideExitRegion &region =
             session.storage()->side_exit_region(owner.side_exit_region());
         ASSERT_EQ(2u, region.parameter_ids().size());
@@ -142,7 +150,7 @@ namespace cl::jit
         EXPECT_TRUE(return_instruction.is_poisoned());
         EXPECT_EQ(owner.id(), rewritten_return.return_value().instruction_id());
 
-        ASSERT_EQ(0u, graph->side_exits().size());
+        expect_no_old_side_exits(*graph);
         const SideExitRegion &region =
             session.storage()->side_exit_region(owner.side_exit_region());
         ASSERT_EQ(1u, region.parameter_ids().size());
@@ -193,7 +201,7 @@ namespace cl::jit
         EXPECT_TRUE(return_instruction.is_poisoned());
         EXPECT_EQ(owner.id(), rewritten_return.return_value().instruction_id());
 
-        ASSERT_EQ(0u, graph->side_exits().size());
+        expect_no_old_side_exits(*graph);
         const SideExitRegion &region =
             session.storage()->side_exit_region(owner.side_exit_region());
         ASSERT_EQ(1u, region.parameter_ids().size());
@@ -238,6 +246,7 @@ namespace cl::jit
             entry->instruction_at(1)
                 .as<ResumeInInterpreterWithSideExitRegionInstruction>();
         EXPECT_TRUE(add.is_poisoned());
+        expect_no_old_side_exits(*graph);
         ASSERT_EQ(1u, resume.side_exit_arguments().size());
         EXPECT_EQ(lowered_add.id(),
                   resume.side_exit_arguments()[0].instruction_id());

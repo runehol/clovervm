@@ -33,7 +33,7 @@ namespace cl::jit
             InstructionId owner;
             InstructionId snapshot;
             std::vector<InstructionId> retained;
-            std::vector<ProgramValueRef> inputs;
+            std::vector<ProgramValueRef> arguments;
         };
 
         struct BuiltSideExitRegion
@@ -95,8 +95,8 @@ namespace cl::jit
             });
 
             absl::flat_hash_set<InstructionId> available;
-            absl::flat_hash_set<InstructionId> input_set;
-            std::vector<ProgramValueRef> inputs;
+            absl::flat_hash_set<InstructionId> argument_set;
+            std::vector<ProgramValueRef> arguments;
             for(InstructionId id: retained)
             {
                 Instruction instruction = graph.storage()->instruction(id);
@@ -115,12 +115,12 @@ namespace cl::jit
                         }
                         if(operand_class != OperandClass::ProgramValue)
                         {
-                            fatal(
-                                "JIT side exit has a non-program-value input");
+                            fatal("JIT side exit has a non-program-value "
+                                  "argument");
                         }
-                        if(input_set.insert(definition).second)
+                        if(argument_set.insert(definition).second)
                         {
-                            inputs.emplace_back(
+                            arguments.emplace_back(
                                 graph.storage()->instruction(definition));
                         }
                     });
@@ -128,7 +128,7 @@ namespace cl::jit
             }
 
             return PlannedSideExit{owner.id(), snapshot_id, std::move(retained),
-                                   std::move(inputs)};
+                                   std::move(arguments)};
         }
 
         std::vector<PlannedSideExit>
@@ -428,17 +428,18 @@ namespace cl::jit
                 std::vector<InstructionId> parameter_ids;
                 std::vector<InstructionId> instruction_ids;
                 std::vector<ProgramValueRef> arguments;
-                parameter_ids.reserve(plan.inputs.size());
+                parameter_ids.reserve(plan.arguments.size());
                 instruction_ids.reserve(plan.retained.size());
-                arguments.reserve(plan.inputs.size());
+                arguments.reserve(plan.arguments.size());
 
-                for(ProgramValueRef input: plan.inputs)
+                for(ProgramValueRef argument: plan.arguments)
                 {
                     Instruction parameter =
-                        make_region_parameter(context, input);
+                        make_region_parameter(context, argument);
                     parameter_ids.push_back(parameter.id());
-                    arguments.push_back(input);
-                    remapping.emplace(input.instruction_id(), parameter.id());
+                    arguments.push_back(argument);
+                    remapping.emplace(argument.instruction_id(),
+                                      parameter.id());
                 }
 
                 for(InstructionId id: plan.retained)
