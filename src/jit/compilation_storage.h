@@ -51,13 +51,6 @@ namespace cl::jit
         make_block_edge(Block *source, Block *target,
                         std::span<const ProgramValueRef> arguments = {});
 
-        SideExit *make_side_exit(std::span<const ProgramValueRef> inputs,
-                                 std::span<const InstructionId> instructions)
-        {
-            side_exits_.emplace_back(*this, inputs, instructions);
-            return &side_exits_.back();
-        }
-
         SideExitRegion *
         make_side_exit_region(std::span<const InstructionId> parameter_ids,
                               std::span<const InstructionId> instruction_ids);
@@ -102,7 +95,6 @@ namespace cl::jit
         ObjectPool<ControlFlowGraph> graphs_;
         ObjectPool<Block> blocks_;
         std::deque<BlockEdge> block_edges_;
-        std::deque<SideExit> side_exits_;
         std::deque<SideExitRegion> side_exit_regions_;
         std::vector<InstructionEntry> instructions_;
         InstructionOperandTable instruction_operands_;

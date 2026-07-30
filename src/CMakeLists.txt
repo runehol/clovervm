@@ -164,9 +164,6 @@ add_library(libclovervm_objects OBJECT
     jit/register_allocator_internal.h
     jit/serial.h
     jit/side_exit_binding.h
-    jit/side_exit.cpp
-    jit/side_exit.h
-    jit/side_exit_id.h
     jit/side_exit_region.cpp
     jit/side_exit_region.h
     jit/side_exit_region_id.h

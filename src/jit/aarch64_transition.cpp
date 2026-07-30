@@ -1,7 +1,6 @@
 #include "jit/aarch64_transition.h"
 
 #include "jit/location_assignments.h"
-#include "jit/side_exit.h"
 #include "jit/transition_program_emitter.h"
 #include "runtime/fatal.h"
 
@@ -36,26 +35,6 @@ namespace cl::jit
                 break;
         }
         fatal("invalid AArch64 transition register class");
-    }
-
-    std::vector<TransitionInstruction>
-    emit_aarch64_side_exit_transition_program(
-        const CompilationStorage &storage,
-        const BytecodeStateOrder &state_order, const SideExit &side_exit,
-        ProgramValueRefRange arguments, const LocationAssignments &locations)
-    {
-        assert(arguments.size() == side_exit.inputs().size());
-
-        std::vector<TransitionLocation> input_locations;
-        input_locations.reserve(arguments.size());
-        for(size_t index = 0; index < arguments.size(); ++index)
-        {
-            input_locations.push_back(aarch64_transition_location(
-                locations.location_for(arguments[index])));
-        }
-
-        return emit_side_exit_transition_program(storage, state_order,
-                                                 side_exit, input_locations);
     }
 
     std::vector<TransitionInstruction>

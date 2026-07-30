@@ -1138,7 +1138,6 @@ namespace cl::jit
         ASSERT_EQ(1u, new_owner.side_exit_arguments().size());
         EXPECT_EQ(callback.move->id(),
                   new_owner.side_exit_arguments()[0].instruction_id());
-        EXPECT_EQ(0u, graph->side_exits().size());
     }
 
     TEST(JitGraphRewriter, StagesSequencesAcrossTheWholeGraphBeforeCommit)

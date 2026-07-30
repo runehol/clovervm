@@ -3,7 +3,6 @@
 #include "jit/bytecode_state.h"
 #include "jit/compilation_session.h"
 #include "jit/graph_builder.h"
-#include "jit/side_exit.h"
 #include "jit/transition_executor.h"
 #include "test_helpers.h"
 
@@ -12,7 +11,6 @@
 #include <array>
 #include <cstdint>
 #include <cstring>
-#include <memory>
 #include <optional>
 #include <span>
 #include <utility>
@@ -53,9 +51,26 @@ namespace cl::jit
                     builder.make_instruction<SnapshotInstruction>(
                         captured, BytecodePC{37});
                 snapshot_id = snapshot.id();
+                std::vector<InstructionId> parameter_ids;
+                parameter_ids.reserve(captured.size());
+                for(ProgramValueRef value: captured)
+                {
+                    parameter_ids.push_back(value.instruction_id());
+                }
                 std::array instructions = {snapshot.id()};
-                side_exit = std::make_unique<SideExit>(*session.storage(),
-                                                       captured, instructions);
+                SideExitRegionId region =
+                    builder.make_side_exit_region(parameter_ids, instructions)
+                        ->id();
+                side_exit_owner.emplace(
+                    builder.make_instruction<
+                        ResumeInInterpreterWithSideExitRegionInstruction>(
+                        captured, region));
+            }
+
+            SideExitBinding binding() const
+            {
+                return {side_exit_owner->side_exit_region(),
+                        side_exit_owner->side_exit_arguments()};
             }
 
             test::VmTestContext context;
@@ -65,7 +80,8 @@ namespace cl::jit
             GraphBuilder builder;
             std::vector<ProgramValueRef> captured;
             std::optional<InstructionId> snapshot_id;
-            std::unique_ptr<SideExit> side_exit;
+            std::optional<ResumeInInterpreterWithSideExitRegionInstruction>
+                side_exit_owner;
         };
 
         struct ExecutionStorage
@@ -101,7 +117,7 @@ namespace cl::jit
         std::vector<TransitionInstruction> program =
             emit_side_exit_transition_program(
                 *fixture.session.storage(), *fixture.state_order,
-                *fixture.side_exit, input_locations);
+                fixture.binding(), input_locations);
 
         ASSERT_FALSE(program.empty());
         EXPECT_EQ(1u, program.front().scratch_slot_count());
@@ -153,7 +169,7 @@ namespace cl::jit
         std::vector<TransitionInstruction> program =
             emit_side_exit_transition_program(
                 *fixture.session.storage(), *fixture.state_order,
-                *fixture.side_exit, input_locations);
+                fixture.binding(), input_locations);
 
         EXPECT_EQ(2u, program.front().scratch_slot_count());
         TransitionExecutionContext context;
@@ -179,9 +195,9 @@ namespace cl::jit
                 std::array locations = {TransitionLocation::register_file(0)};
                 (void)emit_side_exit_transition_program(
                     *fixture.session.storage(), *fixture.state_order,
-                    *fixture.side_exit, locations);
+                    fixture.binding(), locations);
             },
-            "input locations do not match");
+            "argument locations do not match");
     }
 
     TEST(TransitionProgramEmitter, RejectsAnUnsupportedRetainedInstruction)
@@ -193,8 +209,20 @@ namespace cl::jit
                     fixture.builder.make_instruction<ConstInstruction>(
                         Value::None());
                 std::array instructions = {constant.id(), *fixture.snapshot_id};
-                SideExit side_exit(*fixture.session.storage(), fixture.captured,
-                                   instructions);
+                std::vector<InstructionId> parameter_ids;
+                parameter_ids.reserve(fixture.captured.size());
+                for(ProgramValueRef value: fixture.captured)
+                {
+                    parameter_ids.push_back(value.instruction_id());
+                }
+                SideExitRegionId region =
+                    fixture.builder
+                        .make_side_exit_region(parameter_ids, instructions)
+                        ->id();
+                ResumeInInterpreterWithSideExitRegionInstruction owner =
+                    fixture.builder.make_instruction<
+                        ResumeInInterpreterWithSideExitRegionInstruction>(
+                        fixture.captured, region);
                 std::vector<TransitionLocation> locations;
                 for(size_t index = 0; index < fixture.captured.size(); ++index)
                 {
@@ -202,7 +230,8 @@ namespace cl::jit
                         static_cast<int16_t>(index)));
                 }
                 (void)emit_side_exit_transition_program(
-                    *fixture.session.storage(), *fixture.state_order, side_exit,
+                    *fixture.session.storage(), *fixture.state_order,
+                    SideExitBinding{region, owner.side_exit_arguments()},
                     locations);
             }()),
             "unsupported instruction in transition program");

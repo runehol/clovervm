@@ -3,7 +3,6 @@
 
 #include "jit/compilation_session.h"
 #include "jit/instruction.h"
-#include "jit/side_exit_id.h"
 #include "jit/side_exit_region_id.h"
 
 #include <cassert>
@@ -93,10 +92,6 @@ namespace cl::jit
         BlockEdge *
         make_block_edge(Block *source, Block *target,
                         std::span<const ProgramValueRef> arguments = {});
-
-        SideExitId
-        emplace_side_exit(std::span<const ProgramValueRef> inputs,
-                          std::span<const InstructionId> instructions);
 
         SideExitRegion *
         make_side_exit_region(std::span<const InstructionId> parameter_ids,

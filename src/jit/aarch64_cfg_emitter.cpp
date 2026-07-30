@@ -19,13 +19,6 @@ namespace cl::jit
 {
     namespace
     {
-        struct PendingSideExit
-        {
-            Label label;
-            SideExitId side_exit;
-            ProgramValueRefRange arguments;
-        };
-
         struct PendingSideExitRegion
         {
             Label label;
@@ -206,14 +199,7 @@ namespace cl::jit
             (void)inserted;
         }
 
-        std::vector<PendingSideExit> pending_side_exits;
         std::vector<PendingSideExitRegion> pending_side_exit_regions;
-        auto side_exit_target = [&](SideExitId side_exit,
-                                    ProgramValueRefRange arguments) {
-            Label label = assembler.emitter().make_label();
-            pending_side_exits.push_back({label, side_exit, arguments});
-            return label;
-        };
         auto side_exit_region_target = [&](SideExitRegionId side_exit_region,
                                            ProgramValueRefRange arguments) {
             Label label = assembler.emitter().make_label();
@@ -384,25 +370,6 @@ namespace cl::jit
                           "implemented");
 
                 case CL_JIT_MACHINE_INSTRUCTION_CASE(
-                    AddSMIWithSideExitInstruction, add_instruction)
-                {
-                    assembler.emit_arithmetic_reg(
-                        ArithmeticOp::Adds,
-                        assigned_register(locations,
-                                          ProgramValueRef(instruction)),
-                        assigned_register(locations,
-                                          add_instruction.lhs()),
-                        assigned_register(locations,
-                                          add_instruction.rhs()));
-                    assembler.b(
-                        AArch64Condition::Overflow,
-                        side_exit_target(
-                            add_instruction.side_exit(),
-                            add_instruction.side_exit_arguments()));
-                    break;
-                }
-
-                case CL_JIT_MACHINE_INSTRUCTION_CASE(
                     AddSMIWithSideExitRegionInstruction, add_instruction)
                 {
                     assembler.emit_arithmetic_reg(
@@ -416,28 +383,6 @@ namespace cl::jit
                         side_exit_region_target(
                             add_instruction.side_exit_region(),
                             add_instruction.side_exit_arguments()));
-                    break;
-                }
-
-                case CL_JIT_MACHINE_INSTRUCTION_CASE(
-                    InlineTagGuardWithSideExitInstruction,
-                    guard_instruction)
-                {
-                    XRegister input = assigned_register(
-                        locations, guard_instruction.value());
-                    XRegister result = assigned_register(
-                        locations, ProgramValueRef(instruction));
-                    emit_inline_tag_test(
-                        assembler, input,
-                        guard_instruction.expected_class());
-                    Label target = side_exit_target(
-                        guard_instruction.side_exit(),
-                        guard_instruction.side_exit_arguments());
-                    assembler.b(AArch64Condition::NotEqual, target);
-                    if(result.encoding() != input.encoding())
-                    {
-                        assembler.mov(result, input);
-                    }
                     break;
                 }
 
@@ -514,16 +459,6 @@ namespace cl::jit
                 }
 
                 case CL_JIT_MACHINE_INSTRUCTION_CASE(
-                    ResumeInInterpreterWithSideExitInstruction,
-                    resume_instruction)
-                {
-                    assembler.b(side_exit_target(
-                        resume_instruction.side_exit(),
-                        resume_instruction.side_exit_arguments()));
-                    break;
-                }
-
-                case CL_JIT_MACHINE_INSTRUCTION_CASE(
                     ResumeInInterpreterWithSideExitRegionInstruction,
                     resume_instruction)
                 {
@@ -568,21 +503,9 @@ namespace cl::jit
             }
         }
 
-        if(!pending_side_exits.empty() || !pending_side_exit_regions.empty())
+        if(!pending_side_exit_regions.empty())
         {
             assert(graph.bytecode_state_order().has_value());
-        }
-        for(const PendingSideExit &pending: pending_side_exits)
-        {
-            assembler.emitter().resolve(pending.label);
-            const SideExit &side_exit = graph.side_exit(pending.side_exit);
-            std::vector<TransitionInstruction> program =
-                emit_aarch64_side_exit_transition_program(
-                    *graph.storage(), *graph.bytecode_state_order(), side_exit,
-                    pending.arguments, locations);
-            ConstantPoolEntry entry = assembler.add_transition_program(program);
-            assembler.adr(XRegister(16), entry);
-            assembler.b(side_exit_thunk, XRegister(17));
         }
         for(const PendingSideExitRegion &pending: pending_side_exit_regions)
         {

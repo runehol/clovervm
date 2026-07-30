@@ -149,7 +149,6 @@ namespace cl::jit
 
         ControlFlowGraph *graph = builder.finalize();
 
-        ASSERT_EQ(0u, graph->side_exits().size());
         const SideExitRegion &stored =
             graph->storage()->side_exit_region(region->id());
         ASSERT_EQ(1u, stored.parameter_ids().size());

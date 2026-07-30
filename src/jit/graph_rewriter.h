@@ -51,10 +51,6 @@ namespace cl::jit
             return storage_->instruction(id);
         }
 
-        SideExitId
-        emplace_side_exit(std::span<const ProgramValueRef> inputs,
-                          std::span<const InstructionId> instructions);
-
         SideExitRegion *
         make_side_exit_region(std::span<const InstructionId> parameter_ids,
                               std::span<const InstructionId> instruction_ids);
@@ -64,16 +60,14 @@ namespace cl::jit
 
         RewriteContext(
             CompilationSession *session, CompilationStorage *storage,
-            ControlFlowGraph *graph,
             absl::flat_hash_set<InstructionId> *allocated_instructions)
-            : session_(session), storage_(storage), graph_(graph),
+            : session_(session), storage_(storage),
               allocated_instructions_(allocated_instructions)
         {
         }
 
         CompilationSession *session_;
         CompilationStorage *storage_;
-        ControlFlowGraph *graph_;
         absl::flat_hash_set<InstructionId> *allocated_instructions_;
     };
 

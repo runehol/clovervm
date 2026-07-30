@@ -11,12 +11,6 @@ namespace cl::jit
 {
     class BytecodeStateOrder;
     class CompilationStorage;
-    class SideExit;
-
-    std::vector<TransitionInstruction> emit_side_exit_transition_program(
-        const CompilationStorage &storage,
-        const BytecodeStateOrder &state_order, const SideExit &side_exit,
-        std::span<const TransitionLocation> input_locations);
 
     std::vector<TransitionInstruction> emit_side_exit_transition_program(
         const CompilationStorage &storage,

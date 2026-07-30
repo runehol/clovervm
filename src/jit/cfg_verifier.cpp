@@ -45,42 +45,6 @@ namespace cl::jit
             return "instruction i" + std::to_string(instruction.id().value());
         }
 
-        CfgVerificationResult
-        verify_side_exit_owner(const ControlFlowGraph &graph,
-                               Instruction instruction, SideExitId side_exit_id,
-                               ProgramValueRefRange arguments,
-                               std::vector<size_t> &owner_counts)
-        {
-            if(side_exit_id.value() >= graph.side_exits().size())
-            {
-                return invalid(instruction_name(instruction) +
-                               " names a side exit outside its graph");
-            }
-            ++owner_counts[side_exit_id.value()];
-
-            const SideExit &side_exit = graph.side_exit(side_exit_id);
-            if(arguments.size() != side_exit.inputs().size())
-            {
-                return invalid(instruction_name(instruction) +
-                               " has the wrong number of side-exit arguments");
-            }
-            for(size_t index = 0; index < arguments.size(); ++index)
-            {
-                Instruction argument = graph.storage()->instruction(
-                    arguments[index].instruction_id());
-                Instruction input = graph.storage()->instruction(
-                    side_exit.inputs()[index].instruction_id());
-                if(argument.value_representation() !=
-                   input.value_representation())
-                {
-                    return invalid(instruction_name(instruction) +
-                                   " has a side-exit argument with an "
-                                   "incompatible representation");
-                }
-            }
-            return {true, {}};
-        }
-
         const char *ir_level_name(IRLevel level)
         {
             switch(level)
@@ -108,7 +72,6 @@ namespace cl::jit
                     return 1;
                 case InstructionKind::Return:
                 case InstructionKind::ResumeInInterpreter:
-                case InstructionKind::ResumeInInterpreterWithSideExit:
                 case InstructionKind::ResumeInInterpreterWithSideExitRegion:
                     return 0;
                 default:
@@ -157,8 +120,6 @@ namespace cl::jit
 
         absl::flat_hash_set<InstructionId> instruction_set;
         absl::flat_hash_map<const BlockEdge *, size_t> outgoing_edge_uses;
-        std::vector<size_t> side_exit_owner_counts(graph.side_exits().size(),
-                                                   0);
         for(const Block *block: blocks)
         {
             InstructionRange parameters = block->parameters();
@@ -223,46 +184,6 @@ namespace cl::jit
                     return invalid(instruction_name(instruction) +
                                    " belongs to more than one instruction "
                                    "position");
-                }
-                CfgVerificationResult side_exit_verification{true, {}};
-                switch(instruction.kind())
-                {
-                    case InstructionKind::AddSMIWithSideExit:
-                        {
-                            auto owner =
-                                instruction.as<AddSMIWithSideExitInstruction>();
-                            side_exit_verification = verify_side_exit_owner(
-                                graph, instruction, owner.side_exit(),
-                                owner.side_exit_arguments(),
-                                side_exit_owner_counts);
-                            break;
-                        }
-                    case InstructionKind::InlineTagGuardWithSideExit:
-                        {
-                            auto owner = instruction.as<
-                                InlineTagGuardWithSideExitInstruction>();
-                            side_exit_verification = verify_side_exit_owner(
-                                graph, instruction, owner.side_exit(),
-                                owner.side_exit_arguments(),
-                                side_exit_owner_counts);
-                            break;
-                        }
-                    case InstructionKind::ResumeInInterpreterWithSideExit:
-                        {
-                            auto owner = instruction.as<
-                                ResumeInInterpreterWithSideExitInstruction>();
-                            side_exit_verification = verify_side_exit_owner(
-                                graph, instruction, owner.side_exit(),
-                                owner.side_exit_arguments(),
-                                side_exit_owner_counts);
-                            break;
-                        }
-                    default:
-                        break;
-                }
-                if(!side_exit_verification.valid)
-                {
-                    return side_exit_verification;
                 }
                 bool is_last = index + 1 == instructions.size();
                 if(is_last && !instruction.is_block_terminator())
@@ -335,15 +256,6 @@ namespace cl::jit
                                    std::to_string(incoming_count) +
                                    " times in its target predecessor index");
                 }
-            }
-        }
-
-        for(size_t index = 0; index < side_exit_owner_counts.size(); ++index)
-        {
-            if(side_exit_owner_counts[index] != 1)
-            {
-                return invalid("side exit s" + std::to_string(index) +
-                               " does not have exactly one owner");
             }
         }
 

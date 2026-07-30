@@ -4,7 +4,6 @@
 #include "jit/bytecode_state.h"
 #include "jit/compilation_storage.h"
 #include "jit/parallel_assignment_resolver.h"
-#include "jit/side_exit.h"
 #include "jit/side_exit_region.h"
 #include "runtime/fatal.h"
 
@@ -148,25 +147,6 @@ namespace cl::jit
         };
 
         absl::flat_hash_map<InstructionId, TransitionLocation>
-        old_side_exit_value_locations(
-            const SideExit &side_exit,
-            std::span<const TransitionLocation> input_locations)
-        {
-            if(input_locations.size() != side_exit.inputs().size())
-            {
-                fatal("transition program input locations do not match "
-                      "side-exit inputs");
-            }
-            absl::flat_hash_map<InstructionId, TransitionLocation> result;
-            for(size_t index = 0; index < side_exit.inputs().size(); ++index)
-            {
-                result.emplace(side_exit.inputs()[index].instruction_id(),
-                               input_locations[index]);
-            }
-            return result;
-        }
-
-        absl::flat_hash_map<InstructionId, TransitionLocation>
         side_exit_binding_value_locations(
             const CompilationStorage &storage, SideExitBinding binding,
             std::span<const TransitionLocation> argument_locations)
@@ -194,17 +174,6 @@ namespace cl::jit
             return result;
         }
     }  // namespace
-
-    std::vector<TransitionInstruction> emit_side_exit_transition_program(
-        const CompilationStorage &storage,
-        const BytecodeStateOrder &state_order, const SideExit &side_exit,
-        std::span<const TransitionLocation> input_locations)
-    {
-        return SideExitTransitionEmitter(
-                   storage, state_order, side_exit.instructions(),
-                   old_side_exit_value_locations(side_exit, input_locations))
-            .build();
-    }
 
     std::vector<TransitionInstruction> emit_side_exit_transition_program(
         const CompilationStorage &storage,

@@ -5,8 +5,6 @@
 #include "jit/bytecode_state.h"
 #include "jit/instruction.h"
 #include "jit/serial.h"
-#include "jit/side_exit.h"
-#include "jit/side_exit_id.h"
 
 #include <cassert>
 #include <cstdint>
@@ -182,12 +180,6 @@ namespace cl::jit
         IRLevel ir_level() const { return ir_level_; }
         Block *entry_block() const { return entry_block_; }
         const std::vector<Block *> &blocks() const { return blocks_; }
-        std::span<SideExit *const> side_exits() const { return side_exits_; }
-        const SideExit &side_exit(SideExitId id) const
-        {
-            assert(id.value() < side_exits_.size());
-            return *side_exits_[id.value()];
-        }
         bool is_published() const { return published_; }
         uint64_t mutation_generation() const { return mutation_generation_; }
         const std::optional<BytecodeStateOrder> &bytecode_state_order() const
@@ -210,7 +202,6 @@ namespace cl::jit
         IRLevel ir_level_;
         Block *entry_block_ = nullptr;
         std::vector<Block *> blocks_;
-        std::vector<SideExit *> side_exits_;
         std::optional<BytecodeStateOrder> bytecode_state_order_;
         bool published_ = false;
         uint64_t mutation_generation_ = 0;

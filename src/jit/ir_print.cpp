@@ -41,13 +41,6 @@ namespace cl::jit
                         add_result(instruction);
                     }
                 }
-                for(const SideExit *side_exit: graph.side_exits())
-                {
-                    for(InstructionId instruction: side_exit->instructions())
-                    {
-                        add_result(graph.storage()->instruction(instruction));
-                    }
-                }
             }
 
             size_t block_id(const Block *block) const
@@ -222,13 +215,6 @@ namespace cl::jit
             {
                 attribute_separator(name);
                 format("{}", pc);
-            }
-
-            void attribute_SideExitId(std::string_view name,
-                                      SideExitId side_exit)
-            {
-                attribute_separator(name);
-                format("s{}", side_exit.value());
             }
 
             void attribute_SideExitRegionId(std::string_view name,
@@ -470,36 +456,6 @@ namespace cl::jit
             {
                 fmt::format_to(std::back_inserter(out), "  ");
                 print_instruction(out, state, instruction);
-                fmt::format_to(std::back_inserter(out), "\n");
-            }
-        }
-        for(size_t side_exit_index = 0;
-            side_exit_index < graph.side_exits().size(); ++side_exit_index)
-        {
-            const SideExit &side_exit = graph.side_exit(
-                SideExitId(static_cast<uint32_t>(side_exit_index)));
-            fmt::format_to(std::back_inserter(out),
-                           "\n"
-                           "s{} inputs(",
-                           side_exit_index);
-            for(size_t input_index = 0; input_index < side_exit.inputs().size();
-                ++input_index)
-            {
-                if(input_index != 0)
-                {
-                    fmt::format_to(std::back_inserter(out), ", ");
-                }
-                print_parameter(
-                    out, state,
-                    graph.storage()->instruction(
-                        side_exit.inputs()[input_index].instruction_id()));
-            }
-            fmt::format_to(std::back_inserter(out), "):\n");
-            for(InstructionId instruction_id: side_exit.instructions())
-            {
-                fmt::format_to(std::back_inserter(out), "  ");
-                print_instruction(out, state,
-                                  graph.storage()->instruction(instruction_id));
                 fmt::format_to(std::back_inserter(out), "\n");
             }
         }
