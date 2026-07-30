@@ -128,7 +128,7 @@ namespace cl::jit
         EXPECT_EQ(IRLevel::Machine, graph->ir_level());
         ASSERT_EQ(2u, entry->instructions().size());
         auto owner = entry->instruction_at(0)
-                         .as<InlineTagGuardWithSideExitInstruction>();
+                         .as<InlineTagGuardWithSideExitRegionInstruction>();
         EXPECT_TRUE(guard.is_poisoned());
         EXPECT_FALSE(snapshot.is_poisoned());
         EXPECT_EQ(parameter.id(), owner.value().instruction_id());
@@ -142,12 +142,13 @@ namespace cl::jit
         EXPECT_TRUE(return_instruction.is_poisoned());
         EXPECT_EQ(owner.id(), rewritten_return.return_value().instruction_id());
 
-        ASSERT_EQ(1u, graph->side_exits().size());
-        const SideExit &side_exit = graph->side_exit(owner.side_exit());
-        ASSERT_EQ(1u, side_exit.inputs().size());
-        EXPECT_EQ(parameter.id(), side_exit.inputs()[0].instruction_id());
-        ASSERT_EQ(1u, side_exit.instructions().size());
-        EXPECT_EQ(snapshot.id(), side_exit.instructions()[0]);
+        ASSERT_EQ(0u, graph->side_exits().size());
+        const SideExitRegion &region =
+            session.storage()->side_exit_region(owner.side_exit_region());
+        ASSERT_EQ(1u, region.parameter_ids().size());
+        ASSERT_EQ(1u, region.instruction_ids().size());
+        EXPECT_NE(snapshot.id(), region.instruction_ids()[0]);
+        EXPECT_EQ(InstructionKind::Snapshot, region.instruction_at(0).kind());
     }
 
     TEST(JitSideExitLowering, ReplacesAddSMIAndRewritesItsResultUses)

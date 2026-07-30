@@ -442,6 +442,28 @@ namespace cl::jit
                 }
 
                 case CL_JIT_MACHINE_INSTRUCTION_CASE(
+                    InlineTagGuardWithSideExitRegionInstruction,
+                    guard_instruction)
+                {
+                    XRegister input =
+                        assigned_register(locations, guard_instruction.value());
+                    XRegister result = assigned_register(
+                        locations, ProgramValueRef(instruction));
+                    emit_inline_tag_test(
+                        assembler, input,
+                        guard_instruction.expected_class());
+                    Label target = side_exit_region_target(
+                        guard_instruction.side_exit_region(),
+                        guard_instruction.side_exit_arguments());
+                    assembler.b(AArch64Condition::NotEqual, target);
+                    if(result.encoding() != input.encoding())
+                    {
+                        assembler.mov(result, input);
+                    }
+                    break;
+                }
+
+                case CL_JIT_MACHINE_INSTRUCTION_CASE(
                     ConditionalBranchInstruction, branch_instruction)
                 {
                     const Block *true_target =

@@ -167,6 +167,7 @@ namespace cl::jit
                     case MachineInstructionKind::LoadStackPointer:
                     case MachineInstructionKind::StoreStackPointer:
                     case MachineInstructionKind::InlineTagGuardWithSideExit:
+                    case MachineInstructionKind::InlineTagGuardWithSideExitRegion:
                     case MachineInstructionKind::ResumeInInterpreterWithSideExit:
                     case MachineInstructionKind::ResumeInInterpreterWithSideExitRegion:
                     case MachineInstructionKind::ConditionalBranch:

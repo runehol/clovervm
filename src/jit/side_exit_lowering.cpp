@@ -271,15 +271,16 @@ namespace cl::jit
                         }
                     case InstructionKind::InlineTagGuard:
                         {
-                            SideExitId side_exit = context.emplace_side_exit(
-                                plan.inputs, plan.retained);
+                            const BuiltSideExitRegion &region =
+                                region_for_snapshot(context, plan);
                             InlineTagGuardInstruction guard =
                                 instruction.as<InlineTagGuardInstruction>();
                             return RewriteResult::replace(
                                 context.make_instruction<
-                                    InlineTagGuardWithSideExitInstruction>(
-                                    guard.value(), plan.inputs,
-                                    guard.expected_class(), side_exit));
+                                    InlineTagGuardWithSideExitRegionInstruction>(
+                                    guard.value(), region.arguments,
+                                    guard.expected_class(),
+                                    region.region->id()));
                         }
                     case InstructionKind::ResumeInInterpreter:
                         {
