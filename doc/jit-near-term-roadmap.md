@@ -53,19 +53,22 @@ Near-term work follows four rules:
 
 ## Implementation Sequence
 
-### 1. Intern Transition Programs and Merge Equivalent Cold Stubs
+### 1. Intern Transition Programs and Merge Equivalent Published Programs
 
-Generate each pending side exit far enough to obtain its finalized
+The AArch64 CFG emitter already deduplicates cold side-exit blocks by
+`SideExitBinding` in deterministic first-use order. A later publication pass can
+still generate each pending side exit far enough to obtain its finalized
 `TransitionInstruction` sequence, then group byte-identical programs. Program
 identity must include physical input locations; a shared Snapshot or
-`SideExitId` is not sufficient because register allocation may give two exits
-different executable bindings.
+`SideExitRegionId` is not sufficient because register allocation may give two
+exits different executable bindings.
 
 For each equivalent group:
 
 - publish one untagged transition-program payload;
-- resolve every owning side-exit label at one cold-block boundary;
-- emit one address-materialization and thunk branch sequence.
+- point the already-deduplicated cold side-exit blocks at that payload;
+- emit the address-materialization and thunk branch sequence for each distinct
+  cold block.
 
 The current guarded binary-add example produces three identical 144-byte
 snapshot programs and three equivalent cold stubs. Interning therefore removes

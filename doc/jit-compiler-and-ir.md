@@ -4,7 +4,7 @@
 |---|---|
 | Document type | Design |
 | Status | Proposed |
-| Implementation | Partial; structural bytecode-to-Core translation, optimization, Core-to-Machine side-exit lowering, generic register allocation/materialization, snapshot-only transition emission and publication, fixed-x19 value-state conventions, and executable multi-block AArch64 emission are implemented; installing x19 at runtime, target thunks, sunk computation, broader lowering, and runtime entry remain |
+| Implementation | Partial; structural bytecode-to-Core translation, optimization, Core-to-Machine side-exit lowering, generic register allocation/materialization, `ExitToInterpreter` transition emission and publication, fixed-x19 value-state conventions, and executable multi-block AArch64 emission are implemented; installing x19 at runtime, target thunks, sunk computation, broader lowering, and runtime entry remain |
 | Scope | JIT pipeline, Core IR, exit state, effects, backend lowering, and compiled execution contracts |
 | Owning layers | The JIT owns IR and compiled execution; bytecode, runtime frames, object semantics, and reclamation remain authoritative contracts |
 | Validated against | The focused JIT instruction, CFG, rewrite, allocation-constraint, emitter, code-cache, and executable AArch64 tests |
@@ -1626,32 +1626,33 @@ A Core `Snapshot` is the authoritative logical description of
 interpreter-visible state. It already names the resume state, active logical
 frame chain, program values, and boxing or reification actions needed to leave
 compiled execution. Constants appear through ordinary `Const` defs. The
-Core-to-Machine side-exit lowering removes the Snapshot and any sunk definitions
-from executable block order while retaining their storage entries in a
-per-consumer `SideExit`. The Machine owner carries ordinary executable
-arguments corresponding to the side exit's immutable external inputs.
+Core-to-Machine side-exit lowering removes the Snapshot and any sunk
+definitions from executable block order by cloning them into a storage-owned
+`SideExitRegion`. The Machine owner carries the region ID plus ordinary
+executable arguments corresponding to the region parameters.
 
 After sinking and allocation, transition planning combines:
 
 ```text
-SideExit retained body ending in Snapshot
+SideExitRegion ending in ExitToInterpreter
     + BytecodeStateOrder
     + allocated owner arguments
     -> TransitionProgram
 ```
 
 Location assignments resolve each owner argument to its register, spill, or
-canonical slot at the exit. Its position matches one immutable `SideExit`
-input, so transition emission can interpret retained operands without
-register-allocating the retained body. `BytecodeStateOrder` maps each Snapshot
-position to the accumulator or a canonical frame home. The active thread is
-ambient JIT machine context and is not reconstructed by the transition program.
+canonical slot at the exit. Its position matches one region parameter, so
+transition emission can interpret region operands without register-allocating
+the region body. `BytecodeStateOrder` maps each `ExitToInterpreter` captured
+value to the accumulator or a canonical frame home. The active thread is ambient
+JIT machine context and is not reconstructed by the transition program.
 
 The resulting compact, pointer-free `TransitionProgram` is specified in
 [JIT Transition Programs](jit-transition-program.md). It uses explicitly
 eligible Core instruction kinds with implicit scratch results plus
-location-addressed `Transfer` instructions, and it executes the Snapshot rather
-than introducing a second logical state model.
+location-addressed `Transfer` instructions, and it executes the
+`ExitToInterpreter` recovery payload rather than introducing a second logical
+state model.
 
 Precise GC root maps are a separate future backend projection. They select all
 managed values live at a continuing safepoint, including any compiler-only
@@ -1670,20 +1671,20 @@ code policy is specified by the bring-up plan.
 
 Each Core IR failure retains an explicit non-returning exit consuming a
 `SnapshotRef` until the backend boundary. Side-exit lowering then creates a
-storage-owned `SideExit`, replaces the consumer with its Machine owner, and
-exposes the external frontier as a trailing executable argument range. Side-exit
-frame publication is transition work, not an effectful Core instruction and
-not an ordinary CFG successor.
+storage-owned `SideExitRegion`, replaces the consumer with its Machine owner,
+and exposes the external frontier as a trailing executable argument range.
+Side-exit frame publication is transition work, not an effectful Core
+instruction and not an ordinary CFG successor.
 
 Transition-program construction consumes:
 
 ```text
-SideExit:
-    immutable external inputs
-    retained instructions ending in Snapshot
+SideExitRegion:
+    parameters
+    cloned instructions ending in ExitToInterpreter
 
 Machine owner:
-    executable argument corresponding to each SideExit input
+    executable argument corresponding to each region parameter
     post-allocation argument -> register | spill | canonical slot
 ```
 

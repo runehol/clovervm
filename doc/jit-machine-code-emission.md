@@ -348,6 +348,12 @@ compiler basic block
 Code fragments describe only linear machine-code layout. They do not
 participate in SSA, dominance, loops, block parameters, or recovery semantics.
 
+Side-exit fragments are deduplicated by `SideExitBinding` during CFG emission.
+The emitter keeps a vector of pending side exits in deterministic first-use
+order and uses a hash map only as an index from binding to vector position.
+Final side-exit emission walks the vector, so output order never depends on hash
+iteration order.
+
 The backend layer above the emitter chooses compiler-block order, chooses the
 fall-through successor, inverts block conditions when useful, resolves
 parallel edge moves, and removes an unconditional branch whose target is the

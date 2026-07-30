@@ -4,9 +4,9 @@
 |---|---|
 | Document type | Design |
 | Status | Accepted |
-| Implementation | The compact representation and executor, snapshot-only emission without a ThreadState operand, AArch64 location mapping, untagged code-object publication, and AArch64 side-exit references are implemented; sunk computation, target thunks, thread-owned execution context, and interpreter handoff remain |
+| Implementation | The compact representation and executor, `ExitToInterpreter` publication emission without a ThreadState operand, AArch64 location mapping, untagged code-object publication, and AArch64 side-exit references are implemented; sunk computation, target thunks, thread-owned execution context, and interpreter handoff remain |
 | Scope | Compact straight-line programs that transform values and machine state between execution conventions; the first consumer is JIT side exit |
-| Owning layers | Core IR owns sunk operation semantics and Snapshot state; register allocation owns physical frontier locations; transition emission owns the continuous transition program and canonical publication; each thread owns reusable transition scratch storage; target thunks own fixed machine-state saves |
+| Owning layers | Core IR owns sunk operation semantics and Snapshot state before lowering; side-exit lowering owns `SideExitRegion` construction and owner bindings; register allocation owns physical frontier locations; transition emission owns the continuous transition program and canonical publication; each thread owns reusable transition scratch storage; target thunks own fixed machine-state saves |
 | Validated against | `tests/test_transition_program.cpp`, `tests/test_transition_executor.cpp`, `tests/test_transition_program_emitter.cpp`, and `tests/test_aarch64_transition.cpp` |
 | Supersedes | N/A |
 
@@ -363,12 +363,12 @@ layout. The transition program therefore needs no embedded physical-register
 object or target-specific register numbering. The side-exit register file is
 read-only. Any temporary or computed value goes to the scratch area.
 
-The Snapshot identifies the value required at each state position, and the
-CFG's `BytecodeStateOrder` maps those positions to the accumulator and canonical
-frame homes. `LocationAssignments` resolve non-sunk frontier values to registers
-and spill locations. Transition emission combines these with the sinking
-attachment; it does not ask register allocation to assign locations to sunk
-defs.
+The side-exit `ExitToInterpreter` terminator identifies the value required at
+each state position, and the CFG's `BytecodeStateOrder` maps those positions to
+the accumulator and canonical frame homes. `LocationAssignments` resolve owner
+binding arguments to registers and spill locations. Transition emission combines
+these with the region body; it does not ask register allocation to assign
+locations to region-local defs.
 
 The initial side-exit implementation supports only the outer bytecode frame.
 `BytecodeStateOrder` supplies that frame's complete position mapping. Inlining
@@ -441,17 +441,17 @@ saved-register slots, compiled-frame locations, canonical destinations, and
 their source values are encoded by `TransitionLocation` operands and
 attributes.
 
-The generic emitter consumes a Snapshot, `BytecodeStateOrder`, the side-exit
-input identities, and a parallel list of resolved `TransitionLocation` inputs.
-A backend adapter is responsible for translating the owner's post-allocation
-locations into that list. The resulting plan retains none of those compiler
-structures. It is self-contained immutable metadata owned by one compiled code
-object. Core graph identity and graph generation end at emission.
+The generic emitter consumes a `SideExitBinding`, `BytecodeStateOrder`, and a
+parallel list of resolved `TransitionLocation` inputs for the binding
+arguments. A backend adapter is responsible for translating the owner's
+post-allocation locations into that list. The resulting plan retains none of
+those compiler structures. It is self-contained immutable metadata owned by one
+compiled code object. Core graph identity and graph generation end at emission.
 
-The emitter walks the retained side-exit instruction sequence in order and
-dispatches each ordinary instruction kind. Snapshot publication is the only
-implemented case initially; other retained kinds fail at that dispatch point
-until their transition lowering is added.
+The emitter walks the side-exit region instruction sequence in order and
+dispatches each ordinary instruction kind. `ExitToInterpreter` publication is
+the only implemented terminal case initially; other region computation kinds
+fail at that dispatch point until their transition lowering is added.
 
 The selected instruction sequence begins with `BeginTransition`, contains
 schema-generated eligible Core operations and `Transfer`, and ends with one

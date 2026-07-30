@@ -1487,20 +1487,21 @@ instructions that consume them for exits or safepoints.
 After allocation, transition planning combines:
 
 ```text
-SideExit retained body ending in Snapshot
+SideExitRegion ending in ExitToInterpreter
     + BytecodeStateOrder
     + allocated owner arguments
     -> TransitionProgram
 ```
 
 `LocationAssignments` identify where each non-sunk physical frontier value
-lives at the exit position. The Snapshot identifies the required values and
-`BytecodeStateOrder` identifies the accumulator and canonical frame
-destinations. The transition program reads the assigned locations,
-evaluates explicitly eligible no-safepoint sunk instructions and
+lives at the exit position. Owner arguments bind those physical values to
+region parameters. The final `ExitToInterpreter` identifies the required
+interpreter-visible values, and `BytecodeStateOrder` identifies the accumulator
+and canonical frame destinations. The transition program reads the assigned
+locations, evaluates explicitly eligible no-safepoint sunk instructions and
 materializations, and publishes canonical state without adding a second
-semantic state model. The initial executor interprets compact
-`InstructionEntry` records directly.
+semantic state model. The initial executor interprets compact `InstructionEntry`
+records directly.
 
 Safepoint maps and transition programs may share physical location encodings,
 but they remain separate consumers. Safepoint maps need only managed roots;

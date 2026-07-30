@@ -447,8 +447,7 @@ The current implementation establishes:
 - use lists record edge arguments as `BlockArgumentUse` occurrences separately
   from ordinary instruction operand uses.
 
-Cross-block SSA dominance, side-exit verification, and CFG-topology editing
-remain deferred.
+Cross-block SSA dominance and CFG-topology editing remain deferred.
 
 ## Open Decisions After Initial Implementation
 
