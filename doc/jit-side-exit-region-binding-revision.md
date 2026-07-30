@@ -58,6 +58,12 @@ SideExitBinding
 predecessors, successors, dominance, loop membership, or normal-path execution.
 It is block-like only in storage shape: it has parameter instructions and a
 linear instruction list. Its final instruction is a cloned `Snapshot`.
+Region parameters use ordinary JIT parameter instructions. Their role is
+determined by placement: a parameter instruction in a block parameter list is a
+block parameter, while a parameter instruction in a
+`SideExitRegion::parameter_ids()` list is a side-exit-region parameter. The
+design does not introduce a separate side-exit parameter instruction unless
+implementation later shows real resistance to the placement-based rule.
 
 `SideExitBinding` is a specific executable owner use of a region. The owning
 Machine instruction carries the region ID as metadata and a parallel
@@ -100,6 +106,12 @@ value, lowering:
 - records external value to region parameter in the clone map;
 - appends the external value to the package argument environment.
 
+The exact argument order has no interpreter-state meaning. It only needs to be
+canonical and shared by every consumer of the package. First external use in
+region instruction order and schema operand order is sufficient, provided
+region construction, owner arguments, verification, and transition emission all
+use the same order.
+
 When cloning an instruction operand:
 
 - an external mainline value is rewritten to the matching region parameter;
@@ -122,6 +134,10 @@ This is intentionally a semantic/source-level deduplication point. Multiple
 side-exiting owners that use the same original Snapshot get the same region and
 the same argument environment. This preserves parameter/argument alignment and
 avoids building several equivalent regions during lowering.
+
+The Snapshot ID is sufficient as the early key because the retained side-exit
+closure is defined by the Snapshot sources. The same Snapshot instruction has
+the same source values and therefore the same sunk computation requirements.
 
 The old model allowed one retained instruction ID to appear in multiple side
 exits. The revised model should not rely on that sharing. Retained side-exit
@@ -148,6 +164,10 @@ This removes graph-wide side-exit iteration from the CFG model and makes side
 exits closer to block edges: referenced by instructions, owned by storage, and
 validated by walking the executable graph.
 
+Dead regions are harmless storage garbage. Passes that need live side exits
+should discover them from executable owner instructions rather than requiring
+region compaction or a graph-owned live registry.
+
 ## Snapshot Consumers
 
 `Snapshot` remains generic recovery/resume metadata. Not every Snapshot becomes
@@ -158,6 +178,9 @@ interpreter-visible state for successful-path call synchronization and return
 metadata. Side-exit lowering must not generate regions for these snapshots
 unless they are explicitly referenced by a non-returning side-exiting
 instruction kind.
+Call-boundary lowering is deferred. If call state needs a different shape, it
+may get a separate call-environment instruction rather than overloading
+`Snapshot` or side-exit regions.
 
 The rule is:
 
@@ -173,14 +196,18 @@ same logical argument environment at different owners. Because transition
 programs encode physical input locations, two owners of the same region may
 need different transition programs after allocation.
 
-After allocation, each owner-side use becomes a physical `SideExitBinding`:
+The late deduplication key is the logical binding:
 
 ```text
 SideExitBinding
     region_id
     argument_refs[]
-    argument_locations[]
 ```
+
+The transition emitter takes the same `SideExitBinding` structure that late
+deduplication uses. It then resolves `argument_refs[]` through
+`LocationAssignments` to obtain the physical source locations required by the
+transition program. This keeps the dedup key and emission input from drifting.
 
 Transition emission consumes the binding and the region:
 
@@ -188,17 +215,17 @@ Transition emission consumes the binding and the region:
 SideExitRegion + SideExitBinding -> TransitionProgram
 ```
 
-Late deduplication happens over the altered physical binding or over the
-generated transition bytes. Equivalent post-allocation bindings may share one
-published transition program and one cold side-exit block. Non-equivalent
-bindings must remain separate even when they refer to the same
-`SideExitRegion`.
+Equivalent bindings may share one published transition program and one cold
+side-exit block. Non-equivalent bindings must remain separate even when they
+refer to the same `SideExitRegion`.
 
 ## Invariants
 
 - `owner.side_exit_arguments().size() == region.parameter_ids().size()`.
 - `owner.side_exit_arguments[i]` satisfies the representation required by
   `region.parameter_ids[i]`.
+- Region parameters use ordinary parameter instructions; placement in the
+  region parameter list, not instruction kind alone, defines their role.
 - Every region instruction operand refers to a region parameter or an earlier
   region instruction.
 - A region instruction must not reference a mainline instruction directly.
@@ -211,3 +238,5 @@ bindings must remain separate even when they refer to the same
 - The snapshot-to-region package map is shared across one lowering rewrite so
   every owner of the same original Snapshot receives the same region and
   argument environment.
+- Late transition emission consumes the same `SideExitBinding` structure that
+  late deduplication keys on: region ID plus argument program-value refs.
