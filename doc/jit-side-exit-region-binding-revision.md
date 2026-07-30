@@ -19,6 +19,13 @@ The goal is to keep side-exit recovery state out of executable block order
 without requiring graph rewriting to normalize a second set of non-CFG operand
 references.
 
+This also retires the idea of a live detached instruction. A detached
+instruction is too easy to treat as half-placed: absent from executable block
+order, but still reachable by metadata, rewrites, verifiers, use walks, or
+later lowering. The revised model uses explicit ownership instead. A live
+instruction is placed in either a CFG block or a side-exit region. A removed
+instruction may remain only as poisoned storage for diagnostics.
+
 ## Problem
 
 The current `SideExit` model stores:
@@ -76,6 +83,10 @@ owner.side_exit_arguments[i] binds to region.parameter_ids[i]
 The region itself does not reference mainline instruction IDs. Its body operands
 may refer only to region parameters or earlier region-local cloned
 instructions.
+
+This makes region ownership the replacement for detached side-exit bodies. A
+side-exit body that must survive outside the main CFG is re-owned by a
+`SideExitRegion`; it is not a set of detached mainline instructions.
 
 ## Construction
 
@@ -160,6 +171,13 @@ references:
 - storage owns allocated side-exit regions;
 - an unreferenced region is dead metadata.
 
+There is no third live placement state for detached instructions. The graph
+rewriter may poison replaced instructions after their executable uses have been
+rewritten, but later passes must not rely on a detached instruction as a valid
+recovery value, retained side-exit body, or lowering input. If an instruction is
+still semantically needed outside the main CFG, the owning pass must clone or
+move it into an explicit non-CFG owner such as `SideExitRegion`.
+
 This removes graph-wide side-exit iteration from the CFG model and makes side
 exits closer to block edges: referenced by instructions, owned by storage, and
 validated by walking the executable graph.
@@ -229,6 +247,10 @@ refer to the same `SideExitRegion`.
 - Every region instruction operand refers to a region parameter or an earlier
   region instruction.
 - A region instruction must not reference a mainline instruction directly.
+- A live instruction is placed in exactly one owner: a CFG block or a side-exit
+  region.
+- Detached-but-live instructions are invalid; removed instructions may only be
+  observed as poisoned diagnostic storage.
 - The final region instruction is a `Snapshot`.
 - Snapshots before the final region instruction are invalid.
 - Side-exit regions have no CFG edges, block predecessors, block successors, or
