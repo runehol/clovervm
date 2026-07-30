@@ -26,6 +26,12 @@ namespace cl::jit
             ProgramValueRefRange arguments;
         };
 
+        struct PendingSideExitRegion
+        {
+            Label label;
+            SideExitBinding binding;
+        };
+
         using BlockLabels = absl::flat_hash_map<const Block *, Label>;
 
         Label block_label(const BlockLabels &labels, const Block *block)
@@ -201,10 +207,18 @@ namespace cl::jit
         }
 
         std::vector<PendingSideExit> pending_side_exits;
+        std::vector<PendingSideExitRegion> pending_side_exit_regions;
         auto side_exit_target = [&](SideExitId side_exit,
                                     ProgramValueRefRange arguments) {
             Label label = assembler.emitter().make_label();
             pending_side_exits.push_back({label, side_exit, arguments});
+            return label;
+        };
+        auto side_exit_region_target = [&](SideExitRegionId side_exit_region,
+                                           ProgramValueRefRange arguments) {
+            Label label = assembler.emitter().make_label();
+            pending_side_exit_regions.push_back(
+                {label, SideExitBinding{side_exit_region, arguments}});
             return label;
         };
 
@@ -471,6 +485,16 @@ namespace cl::jit
                 }
 
                 case CL_JIT_MACHINE_INSTRUCTION_CASE(
+                    ResumeInInterpreterWithSideExitRegionInstruction,
+                    resume_instruction)
+                {
+                    assembler.b(side_exit_region_target(
+                        resume_instruction.side_exit_region(),
+                        resume_instruction.side_exit_arguments()));
+                    break;
+                }
+
+                case CL_JIT_MACHINE_INSTRUCTION_CASE(
                     ReturnInstruction, return_instruction)
                 {
                     (void)assigned_register(
@@ -505,7 +529,7 @@ namespace cl::jit
             }
         }
 
-        if(!pending_side_exits.empty())
+        if(!pending_side_exits.empty() || !pending_side_exit_regions.empty())
         {
             assert(graph.bytecode_state_order().has_value());
         }
@@ -517,6 +541,17 @@ namespace cl::jit
                 emit_aarch64_side_exit_transition_program(
                     *graph.storage(), *graph.bytecode_state_order(), side_exit,
                     pending.arguments, locations);
+            ConstantPoolEntry entry = assembler.add_transition_program(program);
+            assembler.adr(XRegister(16), entry);
+            assembler.b(side_exit_thunk, XRegister(17));
+        }
+        for(const PendingSideExitRegion &pending: pending_side_exit_regions)
+        {
+            assembler.emitter().resolve(pending.label);
+            std::vector<TransitionInstruction> program =
+                emit_aarch64_side_exit_transition_program(
+                    *graph.storage(), *graph.bytecode_state_order(),
+                    pending.binding, locations);
             ConstantPoolEntry entry = assembler.add_transition_program(program);
             assembler.adr(XRegister(16), entry);
             assembler.b(side_exit_thunk, XRegister(17));

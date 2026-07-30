@@ -66,10 +66,10 @@ namespace cl::jit
     {
         std::vector<TransitionLocation> argument_locations;
         argument_locations.reserve(binding.arguments.size());
-        for(ProgramValueRef argument: binding.arguments)
+        for(size_t index = 0; index < binding.arguments.size(); ++index)
         {
-            argument_locations.push_back(
-                aarch64_transition_location(locations.location_for(argument)));
+            argument_locations.push_back(aarch64_transition_location(
+                locations.location_for(binding.arguments[index])));
         }
 
         return emit_side_exit_transition_program(storage, state_order, binding,

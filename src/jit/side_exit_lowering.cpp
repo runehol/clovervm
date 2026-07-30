@@ -12,6 +12,7 @@
 #include <algorithm>
 #include <cstddef>
 #include <cstdint>
+#include <optional>
 #include <span>
 #include <utility>
 #include <vector>
@@ -29,8 +30,15 @@ namespace cl::jit
         struct PlannedSideExit
         {
             InstructionId owner;
+            InstructionId snapshot;
             std::vector<InstructionId> retained;
             std::vector<ProgramValueRef> inputs;
+        };
+
+        struct BuiltSideExitRegion
+        {
+            SideExitRegion *region;
+            std::vector<ProgramValueRef> arguments;
         };
 
         using InstructionPositions =
@@ -118,7 +126,7 @@ namespace cl::jit
                 available.insert(id);
             }
 
-            return PlannedSideExit{owner.id(), std::move(retained),
+            return PlannedSideExit{owner.id(), snapshot_id, std::move(retained),
                                    std::move(inputs)};
         }
 
@@ -183,7 +191,7 @@ namespace cl::jit
                 {
                     retained.insert(id);
                 }
-                owners_for_snapshot[plan.retained.back()].insert(plan.owner);
+                owners_for_snapshot[plan.snapshot].insert(plan.owner);
             }
             if(retained != sunk_instructions)
             {
@@ -246,12 +254,12 @@ namespace cl::jit
                 }
 
                 const PlannedSideExit &plan = plans_[found->second];
-                SideExitId side_exit =
-                    context.emplace_side_exit(plan.inputs, plan.retained);
                 switch(instruction.kind())
                 {
                     case InstructionKind::AddSMI:
                         {
+                            SideExitId side_exit = context.emplace_side_exit(
+                                plan.inputs, plan.retained);
                             AddSMIInstruction add =
                                 instruction.as<AddSMIInstruction>();
                             return RewriteResult::replace(
@@ -262,6 +270,8 @@ namespace cl::jit
                         }
                     case InstructionKind::InlineTagGuard:
                         {
+                            SideExitId side_exit = context.emplace_side_exit(
+                                plan.inputs, plan.retained);
                             InlineTagGuardInstruction guard =
                                 instruction.as<InlineTagGuardInstruction>();
                             return RewriteResult::replace(
@@ -271,20 +281,248 @@ namespace cl::jit
                                     guard.expected_class(), side_exit));
                         }
                     case InstructionKind::ResumeInInterpreter:
-                        return RewriteResult::replace(
-                            context.make_instruction<
-                                ResumeInInterpreterWithSideExitInstruction>(
-                                plan.inputs, side_exit));
+                        {
+                            const BuiltSideExitRegion &region =
+                                region_for_snapshot(context, plan);
+                            return RewriteResult::replace(
+                                context.make_instruction<
+                                    ResumeInInterpreterWithSideExitRegionInstruction>(
+                                    region.arguments, region.region->id()));
+                        }
                     default:
                         fatal("unsupported planned JIT side-exit owner");
                 }
             }
 
         private:
+            Instruction make_region_parameter(RewriteContext &context,
+                                              ProgramValueRef argument)
+            {
+                Instruction value =
+                    context.instruction(argument.instruction_id());
+                switch(value.value_representation())
+                {
+                    case ValueRepresentation::TaggedValue:
+                        return context.make_instruction<ParameterInstruction>();
+                    case ValueRepresentation::F64:
+                        return context
+                            .make_instruction<ParameterF64Instruction>();
+                    case ValueRepresentation::Pointer:
+                        return context
+                            .make_instruction<ParameterPointerInstruction>();
+                    case ValueRepresentation::None:
+                    case ValueRepresentation::Count:
+                        fatal("side-exit region argument has no value "
+                              "representation");
+                }
+                fatal("invalid side-exit region argument representation");
+            }
+
+            class RegionReferenceResolver
+            {
+            public:
+                RegionReferenceResolver(
+                    RewriteContext &context,
+                    const absl::flat_hash_map<InstructionId, InstructionId>
+                        &remapping)
+                    : context_(&context), remapping_(&remapping)
+                {
+                }
+
+                InstructionId resolve(InstructionId def) const
+                {
+                    auto found = remapping_->find(def);
+                    if(found == remapping_->end())
+                    {
+                        fatal("side-exit region clone has an unresolved "
+                              "operand");
+                    }
+                    return found->second;
+                }
+
+                ProgramValueRef resolve(ProgramValueRef def) const
+                {
+                    return ProgramValueRef(
+                        context_->instruction(resolve(def.instruction_id())));
+                }
+
+                TaggedValueRef resolve(TaggedValueRef def) const
+                {
+                    return TaggedValueRef(
+                        context_->instruction(resolve(def.instruction_id())));
+                }
+
+                F64Ref resolve(F64Ref def) const
+                {
+                    return F64Ref(
+                        context_->instruction(resolve(def.instruction_id())));
+                }
+
+                PointerRef resolve(PointerRef def) const
+                {
+                    return PointerRef(
+                        context_->instruction(resolve(def.instruction_id())));
+                }
+
+                SnapshotRef resolve(SnapshotRef def) const
+                {
+                    return SnapshotRef(
+                        context_->instruction(resolve(def.instruction_id())));
+                }
+
+                template <typename T> T resolve_attribute(T attribute) const
+                {
+                    return attribute;
+                }
+
+                BlockEdge *resolve_attribute(BlockEdge *) const
+                {
+                    fatal("side-exit region clone cannot contain block edges");
+                }
+
+                std::vector<ProgramValueRef>
+                resolve(ProgramValueRefRange defs) const
+                {
+                    std::vector<ProgramValueRef> result;
+                    result.reserve(defs.size());
+                    for(size_t index = 0; index < defs.size(); ++index)
+                    {
+                        result.push_back(resolve(defs[index]));
+                    }
+                    return result;
+                }
+
+                template <ValueRepresentation Representation>
+                auto
+                resolve(RepresentedValueRefRange<Representation> defs) const
+                {
+                    using Reference = decltype(defs[size_t{0}]);
+                    std::vector<Reference> result;
+                    result.reserve(defs.size());
+                    for(size_t index = 0; index < defs.size(); ++index)
+                    {
+                        result.push_back(resolve(defs[index]));
+                    }
+                    return result;
+                }
+
+            private:
+                RewriteContext *context_;
+                const absl::flat_hash_map<InstructionId, InstructionId>
+                    *remapping_;
+            };
+
+            Instruction
+            clone_region_instruction(RewriteContext &context,
+                                     Instruction instruction,
+                                     const RegionReferenceResolver &resolver)
+            {
+                switch(instruction.kind())
+                {
+#define CL_JIT_IR_LEVELS(...)
+#define CL_JIT_RESULT(...)
+#define CL_JIT_EFFECT_BOUNDS(...)
+#define CL_JIT_RESOLVE_FIXED(name, ...) resolver.resolve(typed.name()),
+#define CL_JIT_RESOLVE_VARIADIC(name, ...) resolver.resolve(typed.name()),
+#define CL_JIT_RESOLVE_PROGRAM_VALUES(name, role)                              \
+    resolver.resolve(typed.name()),
+#define CL_JIT_COPY_ATTRIBUTE(name, ...)                                       \
+    resolver.resolve_attribute(typed.name()),
+#define CL_JIT_INSTRUCTION(name, ir_levels, result, effects, operands,         \
+                           attributes)                                         \
+    case InstructionKind::name:                                                \
+        {                                                                      \
+            [[maybe_unused]] const name##Instruction typed =                   \
+                instruction.as<name##Instruction>();                           \
+            return context.template make_instruction<name##Instruction>(       \
+                operands(CL_JIT_RESOLVE_FIXED, CL_JIT_RESOLVE_VARIADIC,        \
+                         CL_JIT_RESOLVE_PROGRAM_VALUES)                        \
+                    attributes(CL_JIT_COPY_ATTRIBUTE)                          \
+                        InstructionConstructorEnd{});                          \
+        }
+#include "jit/instruction.def"
+#undef CL_JIT_INSTRUCTION
+#undef CL_JIT_COPY_ATTRIBUTE
+#undef CL_JIT_RESOLVE_PROGRAM_VALUES
+#undef CL_JIT_RESOLVE_VARIADIC
+#undef CL_JIT_RESOLVE_FIXED
+#undef CL_JIT_EFFECT_BOUNDS
+#undef CL_JIT_RESULT
+#undef CL_JIT_IR_LEVELS
+                }
+                fatal("invalid side-exit region instruction kind");
+            }
+
+            const BuiltSideExitRegion &
+            region_for_snapshot(RewriteContext &context,
+                                const PlannedSideExit &plan)
+            {
+                auto found = region_by_snapshot_.find(plan.snapshot);
+                if(found != region_by_snapshot_.end())
+                {
+                    return found->second;
+                }
+
+                absl::flat_hash_map<InstructionId, InstructionId> remapping;
+                std::vector<InstructionId> parameter_ids;
+                std::vector<InstructionId> instruction_ids;
+                std::vector<ProgramValueRef> arguments;
+                parameter_ids.reserve(plan.inputs.size());
+                instruction_ids.reserve(plan.retained.size());
+                arguments.reserve(plan.inputs.size());
+
+                for(ProgramValueRef input: plan.inputs)
+                {
+                    Instruction parameter =
+                        make_region_parameter(context, input);
+                    parameter_ids.push_back(parameter.id());
+                    arguments.push_back(input);
+                    remapping.emplace(input.instruction_id(), parameter.id());
+                }
+
+                for(InstructionId id: plan.retained)
+                {
+                    Instruction instruction = context.instruction(id);
+                    RegionReferenceResolver resolver(context, remapping);
+                    Instruction clone = clone_region_instruction(
+                        context, instruction, resolver);
+                    instruction_ids.push_back(clone.id());
+                    remapping.emplace(id, clone.id());
+                }
+
+                SideExitRegion *region = context.make_side_exit_region(
+                    parameter_ids, instruction_ids);
+                auto [position, inserted] = region_by_snapshot_.emplace(
+                    plan.snapshot,
+                    BuiltSideExitRegion{region, std::move(arguments)});
+                assert(inserted);
+                return position->second;
+            }
+
             std::span<const PlannedSideExit> plans_;
             const SunkInstructionIds *sunk_instructions_;
             absl::flat_hash_map<InstructionId, size_t> plan_by_owner_;
+            absl::flat_hash_map<InstructionId, BuiltSideExitRegion>
+                region_by_snapshot_;
         };
+
+        std::optional<SnapshotRef>
+        side_exit_snapshot_for(Instruction instruction)
+        {
+            switch(instruction.kind())
+            {
+                case InstructionKind::AddSMI:
+                    return instruction.as<AddSMIInstruction>().snapshot();
+                case InstructionKind::InlineTagGuard:
+                    return instruction.as<InlineTagGuardInstruction>()
+                        .snapshot();
+                case InstructionKind::ResumeInInterpreter:
+                    return instruction.as<ResumeInInterpreterInstruction>()
+                        .snapshot();
+                default:
+                    return std::nullopt;
+            }
+        }
     }  // namespace
 
     SunkInstructionIds sink_snapshots(const ControlFlowGraph &graph)
@@ -294,9 +532,11 @@ namespace cl::jit
         {
             for(Instruction instruction: block->instructions())
             {
-                if(instruction.kind() == InstructionKind::Snapshot)
+                std::optional<SnapshotRef> snapshot =
+                    side_exit_snapshot_for(instruction);
+                if(snapshot)
                 {
-                    result.insert(instruction.id());
+                    result.insert(snapshot->instruction_id());
                 }
             }
         }

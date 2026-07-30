@@ -196,6 +196,7 @@ namespace cl::jit
             case InstructionKind::Return:
             case InstructionKind::ResumeInInterpreter:
             case InstructionKind::ResumeInInterpreterWithSideExit:
+            case InstructionKind::ResumeInInterpreterWithSideExitRegion:
                 return {};
             default:
                 break;

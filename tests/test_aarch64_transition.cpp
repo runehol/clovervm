@@ -125,12 +125,9 @@ namespace cl::jit
         ASSERT_TRUE(allocation);
         LocationAssignments locations = std::move(allocation).value();
 
-        ResumeInInterpreterWithSideExitInstruction owner =
+        ResumeInInterpreterWithSideExitRegionInstruction owner =
             entry->instruction_at(entry->instructions().size() - 1)
-                .as<ResumeInInterpreterWithSideExitInstruction>();
-        const SideExit &side_exit = graph->side_exit(owner.side_exit());
-        ASSERT_EQ(side_exit.inputs().size(),
-                  owner.side_exit_arguments().size());
+                .as<ResumeInInterpreterWithSideExitRegionInstruction>();
 
         std::vector<TransitionLocation> input_locations;
         ProgramValueRefRange arguments = owner.side_exit_arguments();
@@ -160,9 +157,9 @@ namespace cl::jit
         std::array<Value, 64> stack{};
         Value *frame_pointer = stack.data() + 32;
         Value expected_value = Value::from_smi(73);
-        for(size_t index = 0; index < side_exit.inputs().size(); ++index)
+        for(size_t index = 0; index < arguments.size(); ++index)
         {
-            InstructionId input = side_exit.inputs()[index].instruction_id();
+            InstructionId input = arguments[index].instruction_id();
             ASSERT_EQ(argument.id(), input);
             uint64_t word = word_for(expected_value);
             write_transition_input(input_locations[index], word, register_file,

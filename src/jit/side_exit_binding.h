@@ -4,14 +4,12 @@
 #include "jit/instruction.h"
 #include "jit/side_exit_region_id.h"
 
-#include <span>
-
 namespace cl::jit
 {
     struct SideExitBinding
     {
         SideExitRegionId region;
-        std::span<const ProgramValueRef> arguments;
+        ProgramValueRefRange arguments;
     };
 
 }  // namespace cl::jit

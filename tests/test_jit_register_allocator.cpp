@@ -209,20 +209,19 @@ namespace cl::jit
         ASSERT_TRUE(std::move(lowering).value());
 
         ASSERT_EQ(1u, entry->instructions().size());
-        ResumeInInterpreterWithSideExitInstruction owner =
+        ResumeInInterpreterWithSideExitRegionInstruction owner =
             entry->instruction_at(0)
-                .as<ResumeInInterpreterWithSideExitInstruction>();
-        SideExitId side_exit_id = owner.side_exit();
+                .as<ResumeInInterpreterWithSideExitRegionInstruction>();
 
         std::vector<InstructionAllocationConstraints> overrides;
         overrides.emplace_back(parameter,
                                std::vector<ProgramValueUseConstraint>{},
                                ResultConstraint{AccessTiming::Late, fixed(x0)});
-        overrides.emplace_back(owner,
-                               std::vector<ProgramValueUseConstraint>{
-                                   {ResumeInInterpreterWithSideExitInstruction::
-                                        side_exit_arguments_operand_index,
-                                    AccessTiming::Late, fixed(x1)}});
+        overrides.emplace_back(
+            owner, std::vector<ProgramValueUseConstraint>{
+                       {ResumeInInterpreterWithSideExitRegionInstruction::
+                            side_exit_arguments_operand_index,
+                        AccessTiming::Late, fixed(x1)}});
         constexpr std::array registers = {x0, x1};
         AllocationConstraints constraints =
             gpr_constraints(registers, std::move(overrides));
@@ -235,7 +234,7 @@ namespace cl::jit
         MovInstruction move = entry->instruction_at(0).as<MovInstruction>();
         auto rewritten_owner =
             entry->instruction_at(1)
-                .as<ResumeInInterpreterWithSideExitInstruction>();
+                .as<ResumeInInterpreterWithSideExitRegionInstruction>();
         ASSERT_EQ(1u, rewritten_owner.side_exit_arguments().size());
         EXPECT_EQ(move.id(),
                   rewritten_owner.side_exit_arguments()[0].instruction_id());
@@ -245,17 +244,13 @@ namespace cl::jit
         EXPECT_EQ(PhysicalLocation::reg(x1),
                   locations.location_for(ProgramValueRef(move)));
 
-        const SideExit &side_exit = graph->side_exit(side_exit_id);
-        ASSERT_EQ(1u, side_exit.inputs().size());
-        EXPECT_EQ(parameter.id(), side_exit.inputs()[0].instruction_id());
-        ASSERT_EQ(1u, side_exit.instructions().size());
-        EXPECT_EQ(snapshot.id(), side_exit.instructions()[0]);
         SnapshotInstruction retained_snapshot =
             graph->storage()
-                ->instruction(side_exit.instructions()[0])
+                ->side_exit_region(rewritten_owner.side_exit_region())
+                .instruction_at(0)
                 .as<SnapshotInstruction>();
         ASSERT_EQ(1u, retained_snapshot.captured_values().size());
-        EXPECT_EQ(parameter.id(),
+        EXPECT_NE(parameter.id(),
                   retained_snapshot.captured_values()[0].instruction_id());
     }
 

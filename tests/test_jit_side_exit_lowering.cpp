@@ -48,8 +48,9 @@ namespace cl::jit
         EXPECT_TRUE(std::move(lowered).value());
         EXPECT_EQ(IRLevel::Machine, graph->ir_level());
         ASSERT_EQ(1u, entry->instructions().size());
-        auto owner = entry->instruction_at(0)
-                         .as<ResumeInInterpreterWithSideExitInstruction>();
+        auto owner =
+            entry->instruction_at(0)
+                .as<ResumeInInterpreterWithSideExitRegionInstruction>();
         EXPECT_TRUE(old_owner.is_poisoned());
         EXPECT_FALSE(first_move.is_poisoned());
         EXPECT_FALSE(second_move.is_poisoned());
@@ -59,15 +60,17 @@ namespace cl::jit
         EXPECT_EQ(first.id(), owner.side_exit_arguments()[0].instruction_id());
         EXPECT_EQ(second.id(), owner.side_exit_arguments()[1].instruction_id());
 
-        ASSERT_EQ(1u, graph->side_exits().size());
-        const SideExit &side_exit = graph->side_exit(owner.side_exit());
-        ASSERT_EQ(2u, side_exit.inputs().size());
-        EXPECT_EQ(first.id(), side_exit.inputs()[0].instruction_id());
-        EXPECT_EQ(second.id(), side_exit.inputs()[1].instruction_id());
-        ASSERT_EQ(3u, side_exit.instructions().size());
-        EXPECT_EQ(first_move.id(), side_exit.instructions()[0]);
-        EXPECT_EQ(second_move.id(), side_exit.instructions()[1]);
-        EXPECT_EQ(snapshot.id(), side_exit.instructions()[2]);
+        ASSERT_EQ(0u, graph->side_exits().size());
+        const SideExitRegion &region =
+            session.storage()->side_exit_region(owner.side_exit_region());
+        ASSERT_EQ(2u, region.parameter_ids().size());
+        ASSERT_EQ(3u, region.instruction_ids().size());
+        EXPECT_NE(first_move.id(), region.instruction_ids()[0]);
+        EXPECT_NE(second_move.id(), region.instruction_ids()[1]);
+        EXPECT_NE(snapshot.id(), region.instruction_ids()[2]);
+        EXPECT_EQ(InstructionKind::Mov, region.instruction_at(0).kind());
+        EXPECT_EQ(InstructionKind::Mov, region.instruction_at(1).kind());
+        EXPECT_EQ(InstructionKind::Snapshot, region.instruction_at(2).kind());
     }
 
     TEST(JitSideExitLowering, RejectsASelectedSnapshotWithAnExecutableUse)
@@ -90,7 +93,8 @@ namespace cl::jit
                     entry, TaggedValueRef(parameter));
                 ControlFlowGraph *graph = builder.finalize();
 
-                SunkInstructionIds sunk = sink_snapshots(*graph);
+                SunkInstructionIds sunk;
+                sunk.insert(snapshot.id());
                 (void)lower_side_exits(session, *graph, sunk);
             }()),
             "not retained by a side exit");
