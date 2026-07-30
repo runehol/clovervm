@@ -25,7 +25,7 @@ namespace cl::jit
     TransitionLocation aarch64_transition_location(PhysicalLocation location);
 
     std::vector<TransitionInstruction>
-    emit_aarch64_side_exit_transition_program(
+    emit_aarch64_bound_side_exit_transition_program(
         const CompilationStorage &storage,
         const BytecodeStateOrder &state_order, SideExitBinding binding,
         const LocationAssignments &locations);

@@ -139,7 +139,7 @@ namespace cl::jit
             std::move(assignment_builder).finalize();
 
         std::vector<TransitionInstruction> expected_program =
-            emit_aarch64_side_exit_transition_program(
+            emit_aarch64_bound_side_exit_transition_program(
                 *graph->storage(), *graph->bytecode_state_order(),
                 SideExitBinding{region, first_guard.side_exit_arguments()},
                 locations);

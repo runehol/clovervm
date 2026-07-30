@@ -38,7 +38,7 @@ namespace cl::jit
     }
 
     std::vector<TransitionInstruction>
-    emit_aarch64_side_exit_transition_program(
+    emit_aarch64_bound_side_exit_transition_program(
         const CompilationStorage &storage,
         const BytecodeStateOrder &state_order, SideExitBinding binding,
         const LocationAssignments &locations)

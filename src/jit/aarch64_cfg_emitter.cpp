@@ -19,15 +19,14 @@ namespace cl::jit
 {
     namespace
     {
-        struct PendingSideExitRegion
+        struct PendingSideExit
         {
             Label label;
             SideExitBinding binding;
         };
 
         using BlockLabels = absl::flat_hash_map<const Block *, Label>;
-        using SideExitRegionLabels =
-            absl::flat_hash_map<SideExitBinding, size_t>;
+        using SideExitLabels = absl::flat_hash_map<SideExitBinding, size_t>;
 
         Label block_label(const BlockLabels &labels, const Block *block)
         {
@@ -201,21 +200,19 @@ namespace cl::jit
             (void)inserted;
         }
 
-        std::vector<PendingSideExitRegion> pending_side_exit_regions;
-        SideExitRegionLabels side_exit_region_labels;
-        auto side_exit_region_target = [&](SideExitRegionId side_exit_region,
-                                           ProgramValueRefRange arguments) {
-            SideExitBinding binding{side_exit_region, arguments};
-            auto found = side_exit_region_labels.find(binding);
-            if(found != side_exit_region_labels.end())
+        std::vector<PendingSideExit> pending_side_exits;
+        SideExitLabels side_exit_labels;
+        auto side_exit_target = [&](SideExitBinding binding) {
+            auto found = side_exit_labels.find(binding);
+            if(found != side_exit_labels.end())
             {
-                return pending_side_exit_regions[found->second].label;
+                return pending_side_exits[found->second].label;
             }
 
             Label label = assembler.emitter().make_label();
-            size_t index = pending_side_exit_regions.size();
-            pending_side_exit_regions.push_back({label, binding});
-            side_exit_region_labels.emplace(binding, index);
+            size_t index = pending_side_exits.size();
+            pending_side_exits.push_back({label, binding});
+            side_exit_labels.emplace(binding, index);
             return label;
         };
 
@@ -391,9 +388,9 @@ namespace cl::jit
                         assigned_register(locations, add_instruction.rhs()));
                     assembler.b(
                         AArch64Condition::Overflow,
-                        side_exit_region_target(
-                            add_instruction.side_exit_region(),
-                            add_instruction.side_exit_arguments()));
+                        side_exit_target(
+                            {add_instruction.side_exit_region(),
+                             add_instruction.side_exit_arguments()}));
                     break;
                 }
 
@@ -408,9 +405,9 @@ namespace cl::jit
                     emit_inline_tag_test(
                         assembler, input,
                         guard_instruction.expected_class());
-                    Label target = side_exit_region_target(
-                        guard_instruction.side_exit_region(),
-                        guard_instruction.side_exit_arguments());
+                    Label target = side_exit_target(
+                        {guard_instruction.side_exit_region(),
+                         guard_instruction.side_exit_arguments()});
                     assembler.b(AArch64Condition::NotEqual, target);
                     if(result.encoding() != input.encoding())
                     {
@@ -473,9 +470,9 @@ namespace cl::jit
                     ResumeInInterpreterWithSideExitInstruction,
                     resume_instruction)
                 {
-                    assembler.b(side_exit_region_target(
-                        resume_instruction.side_exit_region(),
-                        resume_instruction.side_exit_arguments()));
+                    assembler.b(side_exit_target(
+                        {resume_instruction.side_exit_region(),
+                         resume_instruction.side_exit_arguments()}));
                     break;
                 }
 
@@ -514,15 +511,15 @@ namespace cl::jit
             }
         }
 
-        if(!pending_side_exit_regions.empty())
+        if(!pending_side_exits.empty())
         {
             assert(graph.bytecode_state_order().has_value());
         }
-        for(const PendingSideExitRegion &pending: pending_side_exit_regions)
+        for(const PendingSideExit &pending: pending_side_exits)
         {
             assembler.emitter().resolve(pending.label);
             std::vector<TransitionInstruction> program =
-                emit_aarch64_side_exit_transition_program(
+                emit_aarch64_bound_side_exit_transition_program(
                     *graph.storage(), *graph.bytecode_state_order(),
                     pending.binding, locations);
             ConstantPoolEntry entry = assembler.add_transition_program(program);
