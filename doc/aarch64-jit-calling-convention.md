@@ -4,7 +4,7 @@
 |---|---|
 | Document type | Architecture contract |
 | Status | Accepted |
-| Implementation | Partial; fixed `x19` and `x20`, managed-frame-relative stack access and return, result constraints, canonical incoming stack locations, allocation-order register sets, per-class scratch registers, emitted side-exit transition references, and standalone interpreter/JIT entry thunks are implemented; interpreter call integration, stack-passed arguments, managed calls, and the side-exit thunk remain |
+| Implementation | Partial; fixed `x19` and `x20`, managed-frame-relative stack access and return, result constraints, canonical incoming stack locations, allocation-order register sets, per-class scratch registers, emitted side-exit transition references, the unhandled-side-exit diagnostic target, and standalone interpreter/JIT entry thunks are implemented; interpreter call integration, stack-passed arguments, managed calls, and the side-exit thunk remain |
 | Scope | AArch64 compiled managed argument transport, call adaptation, cross-engine entry, return, and safepoint placement |
 | Owning layers | Call-site lowering owns guarded Python adaptation; the AArch64 backend owns argument and result locations; transition adapters own cross-engine reshuffling; the generic allocator and materializer implement the resulting fixed-location constraints and transfers |
 | Builds on | [CloverVM Function Calling Convention](function-calling-convention.md) |
@@ -266,9 +266,9 @@ chain of later returns.
 The native stack is already valid at a side exit. After the thunk captures all
 caller-saved generated state and publishes the managed frame and roots, it may
 call portable C++ transition code using the platform ABI. The initial runtime
-does not yet use that path: published code targets an intentional trap stub
-until register capture, recovery, and interpreted return through the compiled
-frame are implemented together.
+does not yet use that path: published code targets a non-returning C++ wrapper
+that reports an unhandled side exit and aborts until register capture, recovery,
+and interpreted return through the compiled frame are implemented together.
 
 The sketch above records the required balanced return into interpreter
 dispatch, not a settled placement for transition-program execution. That

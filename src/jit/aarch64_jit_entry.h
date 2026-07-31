@@ -20,6 +20,8 @@ namespace cl
 
         MachineAddress select_aarch64_jit_entry_thunk(uint32_t logical_arity);
 
+        MachineAddress aarch64_jit_unhandled_side_exit_target();
+
         [[nodiscard]] Value enter_aarch64_jit(ThreadState &thread,
                                               Value *callee_fp,
                                               CodeObject &code_object,

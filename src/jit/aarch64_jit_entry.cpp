@@ -10,6 +10,11 @@
 
 namespace cl::jit
 {
+    extern "C" [[noreturn]] void cl_aarch64_jit_unhandled_side_exit()
+    {
+        fatal("JIT entered a side exit without a handler");
+    }
+
     static_assert(FrameHeaderCompiledReturnPcOffset * sizeof(Value) == 8);
     static_assert(FrameHeaderSizeAboveFp * sizeof(Value) == 32);
 
@@ -62,6 +67,17 @@ namespace cl::jit
                 return thunk_address(&cl_aarch64_enter_jit_8);
         }
         fatal("invalid AArch64 JIT entry arity");
+#else
+        return detail::MachineAddressAccess::from_bits(0);
+#endif
+    }
+
+    MachineAddress aarch64_jit_unhandled_side_exit_target()
+    {
+#if defined(__aarch64__)
+        return detail::MachineAddressAccess::from_pointer(
+            reinterpret_cast<const void *>(
+                &cl_aarch64_jit_unhandled_side_exit));
 #else
         return detail::MachineAddressAccess::from_bits(0);
 #endif

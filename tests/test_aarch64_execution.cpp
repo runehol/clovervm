@@ -945,6 +945,25 @@ namespace cl::jit
                                      *code, {lhs, rhs}));
     }
 
+    TEST(AArch64Execution, PublishedJitReportsUnhandledSideExit)
+    {
+        PythonBackendFixture fixture;
+        CodeObject *function_code =
+            fixture.compile_first_function(L"def add(lhs, rhs):\n"
+                                           L"    return lhs + rhs\n");
+        auto compilation =
+            compile_jit_code(*fixture.context.thread(), *function_code);
+        ASSERT_TRUE(compilation);
+        JitCodeObject *code = std::move(compilation).value();
+
+        uint64_t none = static_cast<uint64_t>(Value::None().as.integer);
+        uint64_t smi = static_cast<uint64_t>(Value::from_smi(1).as.integer);
+        EXPECT_DEATH((void)execute_jit_object(*fixture.context.thread(),
+                                              *function_code, *code,
+                                              {none, smi}),
+                     "JIT entered a side exit without a handler");
+    }
+
     TEST(AArch64Execution, CompilesPythonIdentityConditional)
     {
         class Observer : public JitCompilationObserver

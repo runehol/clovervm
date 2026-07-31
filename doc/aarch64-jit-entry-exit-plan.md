@@ -156,9 +156,9 @@ policy.
 ## Side-Exit Bootstrap
 
 The happy-path milestone does not implement recovery. Every published function
-must nevertheless receive a valid side-exit target. The first target is an
-intentional AArch64 trap stub, never address zero. Taking a guard or overflow
-exit therefore fails immediately and diagnostically.
+must nevertheless receive a valid side-exit target. The first target is a
+non-returning C++ diagnostic wrapper, never address zero. Taking a guard or
+overflow exit therefore reports the missing handler and aborts immediately.
 
 The later side-exit thunk can capture the compiled register image while native
 `sp` is already valid, then call portable C++ transition code. Completing that
@@ -198,11 +198,12 @@ header cell before `ret`. Update direct execution tests to use the standalone
 adapter and an installed managed frame rather than relying on an accidental
 C-function-compatible entry.
 
-### 4. Add The Trap Side-Exit Target
+### 4. Add The Unhandled Side-Exit Target (Complete)
 
-Publish one intentional trap stub and pass its real address into compilation
-for normal-path runtime fixtures. Add no recovery state or graceful fallback in
-this slice.
+Publish one non-returning C++ diagnostic target and pass its real address into
+compilation for normal-path runtime fixtures. The target reports that JIT code
+entered a side exit without an installed handler and then aborts. Add no
+recovery state or graceful fallback in this slice.
 
 ### 5. Enter JIT Code From `CallPositional`
 
@@ -261,7 +262,7 @@ The transition is complete when:
 - compiled return restores the previous managed frame before `ret`;
 - zero-through-eight fixed tagged parameters enter in `x0` through `x7`;
 - interpreted fixed-arity calls can invoke manually published JIT code;
-- all unimplemented exits target the intentional trap stub;
+- all unimplemented exits target the unhandled-side-exit diagnostic wrapper;
 - iterative Fibonacci executes correctly through that interpreter call path;
 - debug tests pass and the generated call handler and Fibonacci loop are
   inspected for avoidable transition overhead.
