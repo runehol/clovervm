@@ -403,7 +403,6 @@ RewriteResult::keep();
 RewriteResult::keep_with_prefix(sequence);
 RewriteResult::keep_with_suffix(sequence);
 RewriteResult::erase();
-RewriteResult::detach();
 RewriteResult::replace(instruction);
 RewriteResult::replace(sequence, ProgramValueRef result);
 RewriteResult::replace(sequence, SnapshotRef result);
@@ -420,16 +419,14 @@ Their meanings are:
 | `keep_with_prefix(sequence)` | The sequence, then the normalized instruction | The normalized instruction, when it has a result |
 | `keep_with_suffix(sequence)` | The normalized instruction, then the sequence | The normalized instruction, when it has a result |
 | `erase()` | None | Erased |
-| `detach()` | None | Removed from executable dataflow |
 | `replace(new)` | `new` | `new` when the original has a result; otherwise none |
 | `replace(sequence, result)` | The sequence in order | `result` |
 | `replace_without_result(sequence)` | The sequence in order | None |
 | `replace_with_def(def)` | None | `def` |
 
-`erase()` poisons the removed instruction after commit. `detach()` removes the
-instruction from block order and executable dataflow while preserving its
-storage entry for auxiliary compiler-owned structures. Neither operation
-provides a replacement definition, so a surviving executable use is invalid.
+`erase()` removes the instruction from block order and poisons the removed
+instruction after commit. It does not provide a replacement definition, so a
+surviving executable use is invalid.
 
 The insertion helpers retain the current instruction without requiring the pass
 to clone it. Their supplied instructions are normalized in sequence order like
@@ -616,7 +613,7 @@ After every block has been traversed:
 2. it swaps every staged parameter and body vector into its block and rebuilds
    predecessor indexes when edges changed;
 3. it uses staged removal records to identify and poison erased or replaced
-   originals; detached originals remain live in instruction storage;
+   originals;
 4. it commits the rewriter's target IR level, which defaults to the graph's
    existing level;
 5. it advances the graph mutation generation once and invalidates affected

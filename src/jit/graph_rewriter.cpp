@@ -627,7 +627,6 @@ namespace cl::jit
                 std::optional<InstructionId> proposed_replacement;
                 bool replacement_is_existing_def = false;
                 bool definition_removed = false;
-                bool detached = false;
 
                 switch(result.kind_)
                 {
@@ -659,13 +658,6 @@ namespace cl::jit
                         break;
                     case RewriteResult::Kind::Erase:
                         definition_removed = true;
-                        break;
-                    case RewriteResult::Kind::Detach:
-                        require_rewrite_invariant(
-                            input == RewriteInput::Original,
-                            "detach requires original rewrite input");
-                        definition_removed = true;
-                        detached = true;
                         break;
                     case RewriteResult::Kind::Replace:
                         proposed_instructions = std::move(result.instructions_);
@@ -814,7 +806,7 @@ namespace cl::jit
                     original_retained |=
                         staged.instructions[index] == original.id();
                 }
-                if(!original_retained && !detached)
+                if(!original_retained)
                 {
                     staged.removed_originals.push_back(original.id());
                 }

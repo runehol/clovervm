@@ -356,39 +356,6 @@ namespace cl::jit
         EXPECT_EQ(target, split->block_successor_edges()[0]->target());
     }
 
-    TEST(JitGraphRewriter, DetachesInstructionWithoutPoisoningStorage)
-    {
-        CompilationSession session;
-        GraphBuilder builder(session, IRLevel::Core);
-        Block *entry = builder.emplace_block();
-        ConstInstruction detached =
-            builder.emplace_instruction<ConstInstruction>(entry, Value::True());
-        ConstInstruction result =
-            builder.emplace_instruction<ConstInstruction>(entry, Value::None());
-        builder.emplace_instruction<ReturnInstruction>(entry,
-                                                       TaggedValueRef(result));
-        ControlFlowGraph *graph = builder.finalize();
-
-        GraphRewriter rewriter(session, *graph);
-        RewriteSummary summary = rewriter.rewrite_instructions(
-            InstructionTraversal(),
-            [&](RewriteContext &, const GraphQueries &, const Block &,
-                const Instruction &instruction) {
-                return instruction.id() == detached.id()
-                           ? RewriteResult::detach()
-                           : RewriteResult::keep();
-            });
-
-        EXPECT_TRUE(summary.instructions_changed);
-        EXPECT_FALSE(summary.terminators_changed);
-        EXPECT_FALSE(summary.ir_level_changed);
-        EXPECT_FALSE(detached.is_poisoned());
-        EXPECT_EQ(InstructionKind::Const, detached.kind());
-        ASSERT_EQ(2u, entry->instructions().size());
-        EXPECT_EQ(result, entry->instruction_at(0));
-        EXPECT_EQ(1u, graph->mutation_generation());
-    }
-
     TEST(JitGraphRewriter, CommitsTargetIrLevelWithRewrite)
     {
         CompilationSession session;

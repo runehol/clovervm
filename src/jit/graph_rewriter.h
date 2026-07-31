@@ -168,8 +168,6 @@ namespace cl::jit
 
         static RewriteResult erase() { return RewriteResult(Kind::Erase); }
 
-        static RewriteResult detach() { return RewriteResult(Kind::Detach); }
-
         static RewriteResult keep_with_prefix(InstructionSequence instructions)
         {
             return RewriteResult(Kind::KeepWithPrefix, std::move(instructions));
@@ -228,7 +226,6 @@ namespace cl::jit
             KeepWithPrefix,
             KeepWithSuffix,
             Erase,
-            Detach,
             Replace,
             ReplaceWithoutResult,
             ReplaceWithDef,

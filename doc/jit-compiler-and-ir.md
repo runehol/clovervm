@@ -1021,10 +1021,11 @@ constructs nor stores machine-code pool indices.
 
 Instruction allocation itself does not inspect attributes or acquire managed
 ownership. Cloning an existing pointer constant into another session registers
-it with that destination session before construction. Detachment leaves the
-retain in place until session teardown. In the current collector the ownership
-retain is also the compilation pin. A future moving collector must not relocate
-these entries while instruction payloads may contain their addresses.
+it with that destination session before construction. Removed instructions do
+not release retained constants early; the retain stays in place until session
+teardown. In the current collector the ownership retain is also the compilation
+pin. A future moving collector must not relocate these entries while instruction
+payloads may contain their addresses.
 
 Compiler allocation uses native compilation arenas and buffers. Managed
 allocation may cross an allocation limit and request a future safepoint, but it

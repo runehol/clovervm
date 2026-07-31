@@ -245,7 +245,7 @@ namespace cl::jit
             {
                 if(sunk_instructions_->contains(instruction.id()))
                 {
-                    return RewriteResult::detach();
+                    return RewriteResult::erase();
                 }
 
                 auto found = plan_by_owner_.find(instruction.id());

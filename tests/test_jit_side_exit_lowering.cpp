@@ -11,7 +11,7 @@
 namespace cl::jit
 {
     TEST(JitSideExitLowering,
-         RetainsSunkInstructionsInProgramOrderAndBindsTheirInputs)
+         ClonesSunkInstructionsInProgramOrderAndBindsTheirInputs)
     {
         CompilationSession session;
         GraphBuilder builder(session, IRLevel::Core);
@@ -51,9 +51,9 @@ namespace cl::jit
         auto owner = entry->instruction_at(0)
                          .as<ResumeInInterpreterWithSideExitInstruction>();
         EXPECT_TRUE(old_owner.is_poisoned());
-        EXPECT_FALSE(first_move.is_poisoned());
-        EXPECT_FALSE(second_move.is_poisoned());
-        EXPECT_FALSE(snapshot.is_poisoned());
+        EXPECT_TRUE(first_move.is_poisoned());
+        EXPECT_TRUE(second_move.is_poisoned());
+        EXPECT_TRUE(snapshot.is_poisoned());
 
         ASSERT_EQ(2u, owner.side_exit_arguments().size());
         EXPECT_EQ(first.id(), owner.side_exit_arguments()[0].instruction_id());
@@ -129,7 +129,7 @@ namespace cl::jit
         auto owner = entry->instruction_at(0)
                          .as<InlineTagGuardWithSideExitInstruction>();
         EXPECT_TRUE(guard.is_poisoned());
-        EXPECT_FALSE(snapshot.is_poisoned());
+        EXPECT_TRUE(snapshot.is_poisoned());
         EXPECT_EQ(parameter.id(), owner.value().instruction_id());
         EXPECT_EQ(InlineValueClass::SMIOrBoolean, owner.expected_class());
         ASSERT_EQ(1u, owner.side_exit_arguments().size());
@@ -181,7 +181,7 @@ namespace cl::jit
         auto owner =
             entry->instruction_at(0).as<AddSMIWithSideExitInstruction>();
         EXPECT_TRUE(add.is_poisoned());
-        EXPECT_FALSE(snapshot.is_poisoned());
+        EXPECT_TRUE(snapshot.is_poisoned());
         EXPECT_EQ(lhs.id(), owner.lhs().instruction_id());
         EXPECT_EQ(rhs.id(), owner.rhs().instruction_id());
         ASSERT_EQ(1u, owner.side_exit_arguments().size());
