@@ -49,6 +49,20 @@ include(cmake/CloverNativeModules.cmake)
 
 option(CLOVERVM_BUILD_BENCHMARK
        "Build the benchmark binary as part of the default target" ON)
+option(CLOVERVM_ENABLE_JIT
+       "Enable JIT compilation during ordinary program execution" OFF)
+
+if(CLOVERVM_ENABLE_JIT AND
+   NOT CMAKE_SYSTEM_PROCESSOR MATCHES "^(arm64|aarch64|ARM64)$")
+    message(FATAL_ERROR
+            "CLOVERVM_ENABLE_JIT requires a native AArch64 target")
+endif()
+
+if(CLOVERVM_ENABLE_JIT)
+    set(CL_JIT_TIERING_ENABLED 1)
+else()
+    set(CL_JIT_TIERING_ENABLED 0)
+endif()
 
 add_subdirectory(src)
 add_subdirectory(stdlib)
