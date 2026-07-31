@@ -36,7 +36,7 @@ CloverVM uses two distinct stack roles:
 The interpreter, native implementations, and generated Python code all retain
 the native architectural stack. The interpreter accesses Clover frames through
 an explicit pointer; generated AArch64 code keeps the current Clover frame in
-fixed register `x20`, alongside the fixed `ThreadState *` in `x19`. Native
+fixed register `x21`, alongside the fixed `ThreadState *` in `x25`. Native
 calls require ABI adaptation and root publication, but no stack switch.
 
 Only VM-controlled frame contents belong on the Clover stack. Arbitrary native

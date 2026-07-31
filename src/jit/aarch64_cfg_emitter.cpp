@@ -522,6 +522,13 @@ namespace cl::jit
                 {
                     (void)assigned_register(
                         locations, return_instruction.return_value());
+                    assembler.ldr(AArch64InterpreterPcRegister,
+                                  AArch64ManagedFramePointerRegister,
+                                  FrameHeaderReturnPcOffset * sizeof(Value));
+                    assembler.ldr(AArch64CodeObjectRegister,
+                                  AArch64ManagedFramePointerRegister,
+                                  FrameHeaderReturnCodeObjectOffset *
+                                      sizeof(Value));
                     assembler.ldr(AArch64ManagedFramePointerRegister,
                                   AArch64ManagedFramePointerRegister,
                                   FrameHeaderPreviousFpOffset * sizeof(Value));

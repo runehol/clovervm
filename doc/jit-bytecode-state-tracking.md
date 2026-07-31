@@ -106,7 +106,7 @@ position 2: next descending canonical stack slot
 ```
 
 The active `ThreadState *` is execution context rather than bytecode state. On
-AArch64 compiled code receives it in the reserved `x19` JIT thread register; it
+AArch64 compiled code receives it in the reserved `x25` JIT thread register; it
 is not a block parameter or Snapshot position.
 
 For an outer function with parameters, the highest stack slot is the first

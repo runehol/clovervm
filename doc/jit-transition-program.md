@@ -585,7 +585,7 @@ The publication slice is complete through the compiled side-exit branch:
 
 The remaining runtime slice must settle and implement the target thunk,
 thread-owned execution context, and interpreter handoff. On AArch64 the thunk
-obtains the active `ThreadState *` from fixed `x19`; the transition program does
+obtains the active `ThreadState *` from fixed `x25`; the transition program does
 not encode or reconstruct it. Register-save storage and host-stack restoration
 remain to be designed. General sinking and transition-local Core computation
 follow after the snapshot-only execution path closes.

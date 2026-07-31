@@ -110,11 +110,14 @@ namespace cl::jit
                 fp[frame_offset].as.integer = static_cast<int64_t>(bits);
             }
 
-            AArch64JitEntryThunk thunk = reinterpret_cast<AArch64JitEntryThunk>(
-                select_aarch64_jit_entry_thunk(arity)
-                    .bits_for_indirect_target());
-            Value result = thunk(nullptr, fp, nullptr,
-                                 code.entry().bits_for_indirect_target());
+            AArch64StandaloneJitEntryThunk thunk =
+                reinterpret_cast<AArch64StandaloneJitEntryThunk>(
+                    select_aarch64_standalone_jit_entry_thunk(arity)
+                        .bits_for_indirect_target());
+            Value result = thunk(Value::not_present(), fp, nullptr,
+                                 reinterpret_cast<void *>(
+                                     code.entry().bits_for_indirect_target()),
+                                 nullptr, nullptr);
             return static_cast<uint64_t>(result.as.integer);
         }
 
@@ -138,7 +141,8 @@ namespace cl::jit
                     static_cast<int64_t>(bits);
             }
 
-            Value result = enter_aarch64_jit(thread, fp, code_object, jit_code);
+            Value result = enter_aarch64_jit_from_native(thread, fp,
+                                                         code_object, jit_code);
             return static_cast<uint64_t>(result.as.integer);
         }
 
@@ -255,7 +259,7 @@ namespace cl::jit
 
         ASSERT_TRUE(emission);
         PublishedCode code = std::move(emission).value();
-        EXPECT_EQ(2 * sizeof(uint32_t), code.encoded_code_size());
+        EXPECT_EQ(4 * sizeof(uint32_t), code.encoded_code_size());
         constexpr uint64_t input_bits = 0x123456789abcdef0;
         EXPECT_EQ(input_bits, execute_published_jit(code, {input_bits}));
     }
@@ -1139,8 +1143,8 @@ namespace cl::jit
                 expected = parameter;
             }
 
-            Value result = enter_aarch64_jit(*fixture.context.thread(), fp,
-                                             *code_object, *jit_code);
+            Value result = enter_aarch64_jit_from_native(
+                *fixture.context.thread(), fp, *code_object, *jit_code);
             EXPECT_EQ(expected, result) << "arity " << arity;
         }
     }
@@ -1221,11 +1225,13 @@ namespace cl::jit
         ASSERT_TRUE(finalization);
         CodeAllocation allocation = std::move(finalization).value();
         const void *code = allocation.writable_code().data();
-        EXPECT_EQ(0xf9401281, instruction_at(code, 0));
-        EXPECT_EQ(0xf81f8281, instruction_at(code, 1));
-        EXPECT_EQ(0xf85f8280, instruction_at(code, 2));
-        EXPECT_EQ(0xf9400294, instruction_at(code, 3));
-        EXPECT_EQ(0xd65f03c0, instruction_at(code, 4));
+        EXPECT_EQ(0xf94012a1, instruction_at(code, 0));
+        EXPECT_EQ(0xf81f82a1, instruction_at(code, 1));
+        EXPECT_EQ(0xf85f82a0, instruction_at(code, 2));
+        EXPECT_EQ(0xf9400eb6, instruction_at(code, 3));
+        EXPECT_EQ(0xf9400ab8, instruction_at(code, 4));
+        EXPECT_EQ(0xf94002b5, instruction_at(code, 5));
+        EXPECT_EQ(0xd65f03c0, instruction_at(code, 6));
     }
 
     TEST(AArch64Execution, EmitsAndSmiFromCfg)

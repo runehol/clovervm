@@ -4,7 +4,7 @@
 |---|---|
 | Document type | Design |
 | Status | Proposed |
-| Implementation | Partial; structural bytecode-to-Core translation, optimization, Core-to-Machine side-exit lowering, forwarding definitions, generic register allocation/materialization, `ExitToInterpreter` transition emission and publication, fixed-`x19`/`x20` AArch64 context, executable multi-block AArch64 emission, interpreter/JIT entry thunks, and synchronous runtime tiering are implemented; side-exit runtime entry, sunk computation, and broader lowering remain |
+| Implementation | Partial; structural bytecode-to-Core translation, optimization, Core-to-Machine side-exit lowering, forwarding definitions, generic register allocation/materialization, `ExitToInterpreter` transition emission and publication, interpreter-aligned AArch64 context registers, executable multi-block AArch64 emission, interpreter/JIT entry thunks, and synchronous runtime tiering are implemented; side-exit runtime entry, sunk computation, and broader lowering remain |
 | Scope | JIT pipeline, Core IR, exit state, effects, backend lowering, and compiled execution contracts |
 | Owning layers | The JIT owns IR and compiled execution; bytecode, runtime frames, object semantics, and reclamation remain authoritative contracts |
 | Validated against | The focused JIT instruction, CFG, rewrite, allocation-constraint, emitter, code-cache, and executable AArch64 tests |
@@ -219,10 +219,10 @@ canonical argument window, and Python call-adaptation semantics. The compiled
 transport is defined separately in
 [AArch64 JIT Calling Convention](aarch64-jit-calling-convention.md).
 The active `ThreadState *` is reserved execution context rather than an SSA
-entry value. On AArch64 it remains in fixed `x19` throughout compiled
-execution, the current managed frame remains in fixed `x20`, and native `sp`
+entry value. On AArch64 it remains in fixed `x25` throughout compiled
+execution, the current managed frame remains in fixed `x21`, and native `sp`
 and `x29` retain their platform meanings. Tagged Python arguments zero through
-seven use `x0` through `x7`. Native-helper lowering moves `x19` into platform
+seven use `x0` through `x7`. Native-helper lowering moves `x25` into platform
 argument register `x0` when calling a helper whose first C ABI argument is
 `ThreadState *`.
 Every frame retains both its canonical interpreted continuation and an

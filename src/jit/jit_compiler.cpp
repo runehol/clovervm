@@ -59,7 +59,7 @@ namespace cl::jit
 
         JitCodeObject *result = thread.make_internal_raw<JitCodeObject>(
             code.code(),
-            select_aarch64_jit_entry_thunk(
+            select_aarch64_interpreter_tail_jit_entry_thunk(
                 code_object.function_signature.n_parameters),
             code.constant_pool(), code.tagged_value_count(),
             code.encoded_code_size());

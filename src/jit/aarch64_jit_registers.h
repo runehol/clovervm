@@ -5,8 +5,10 @@
 
 namespace cl::jit
 {
-    inline constexpr XRegister AArch64ThreadStateRegister{19};
-    inline constexpr XRegister AArch64ManagedFramePointerRegister{20};
+    inline constexpr XRegister AArch64ManagedFramePointerRegister{21};
+    inline constexpr XRegister AArch64InterpreterPcRegister{22};
+    inline constexpr XRegister AArch64CodeObjectRegister{24};
+    inline constexpr XRegister AArch64ThreadStateRegister{25};
 
 }  // namespace cl::jit
 

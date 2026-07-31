@@ -16,7 +16,7 @@ namespace cl::jit
 {
     namespace
     {
-        MachineAddress no_interpreter_entry_thunk()
+        MachineAddress no_interpreter_tail_entry_thunk()
         {
             return detail::MachineAddressAccess::from_bits(0);
         }
@@ -58,7 +58,7 @@ namespace cl::jit
         PublishedCode published =
             publish_test_code(thread->code_cache(), retained.value());
         JitCodeObject *jit_code = thread->make_internal_raw<JitCodeObject>(
-            published.code(), no_interpreter_entry_thunk(),
+            published.code(), no_interpreter_tail_entry_thunk(),
             published.constant_pool(), published.tagged_value_count(),
             published.encoded_code_size());
 
@@ -84,7 +84,7 @@ namespace cl::jit
         PublishedCode published =
             publish_test_code(thread->code_cache(), Value::None());
         JitCodeObject *jit_code = thread->make_internal_raw<JitCodeObject>(
-            published.code(), no_interpreter_entry_thunk(),
+            published.code(), no_interpreter_tail_entry_thunk(),
             published.constant_pool(), published.tagged_value_count(),
             published.encoded_code_size());
 
@@ -138,7 +138,7 @@ namespace cl::jit
         ASSERT_TRUE(thread->code_cache().publish(allocation));
 
         JitCodeObject *jit_code = thread->make_internal_raw<JitCodeObject>(
-            allocation.code, no_interpreter_entry_thunk(),
+            allocation.code, no_interpreter_tail_entry_thunk(),
             allocation.constant_pool(), 1, allocation.encoded_code_size());
 
         EXPECT_EQ(2, string->refcount);

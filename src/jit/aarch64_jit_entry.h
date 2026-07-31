@@ -3,6 +3,7 @@
 
 #include "jit/machine_address.h"
 #include "object_model/value.h"
+#include "util/compiler.h"
 
 #include <cstdint>
 
@@ -15,17 +16,22 @@ namespace cl
     {
         class JitCodeObject;
 
-        using AArch64JitEntryThunk = Value (*)(ThreadState *, Value *,
-                                               CodeObject *, uintptr_t);
+        using AArch64StandaloneJitEntryThunk =
+            Value(PRESERVE_NONE *)(Value, Value *, const uint8_t *, void *,
+                                   CodeObject *, ThreadState *);
 
-        MachineAddress select_aarch64_jit_entry_thunk(uint32_t logical_arity);
+        MachineAddress
+        select_aarch64_interpreter_tail_jit_entry_thunk(uint32_t logical_arity);
+
+        MachineAddress
+        select_aarch64_standalone_jit_entry_thunk(uint32_t logical_arity);
 
         MachineAddress aarch64_jit_unhandled_side_exit_target();
 
-        [[nodiscard]] Value enter_aarch64_jit(ThreadState &thread,
-                                              Value *callee_fp,
-                                              CodeObject &code_object,
-                                              JitCodeObject &jit_code);
+        [[nodiscard]] Value
+        enter_aarch64_jit_from_native(ThreadState &thread, Value *callee_fp,
+                                      CodeObject &code_object,
+                                      JitCodeObject &jit_code);
 
     }  // namespace jit
 }  // namespace cl

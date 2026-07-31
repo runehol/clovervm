@@ -61,7 +61,7 @@ rationale that remains clear from those sources.
 | D-0009 | Pool managed pointer constants and legalize non-pointer constants late | Accepted |
 | D-0010 | Use indexed compact JIT instruction storage | Accepted |
 | D-0011 | Use compact transition programs across execution boundaries | Accepted |
-| D-0012 | Retain the native stack and address managed frames through `x20` | Accepted |
+| D-0012 | Retain the native stack and use interpreter-aligned JIT context registers | Accepted |
 
 ## D-0001: Compile Whole Functions Rather Than Hot Traces
 
@@ -871,7 +871,7 @@ handoff leaves this region.
 - `doc/jit-compiler-and-ir.md`
 - `doc/jit-register-allocation.md`
 
-## D-0012: Retain The Native Stack And Address Managed Frames Through `x20`
+## D-0012: Retain The Native Stack And Use Interpreter-Aligned JIT Context Registers
 
 **Date:** 2026-07-31
 **Status:** Accepted
@@ -881,19 +881,26 @@ handoff leaves this region.
 ### Decision
 
 Generated AArch64 code retains native `sp` and `x29` throughout execution.
-Fixed callee-saved `x19` contains the active `ThreadState *`, and fixed
-callee-saved `x20` contains the current Clover managed frame pointer. Managed
+Fixed callee-saved `x25` contains the active `ThreadState *`, and fixed
+callee-saved `x21` contains the current Clover managed frame pointer. Fixed
+`x22` and `x24` contain the interpreter PC and owning `CodeObject *`. Managed
 frame state, spills, and outgoing managed call windows remain in Clover storage
-and are addressed through `x20`; managed values are not placed on the native
+and are addressed through `x21`; managed values are not placed on the native
 stack.
 
-Native code enters generated Python only through an adapter that saves the
-host's `x19` and `x20`, installs the JIT context, loads register parameters,
-and calls the generated entry with `blr`. An ordinary generated return restores
-the previous managed frame pointer into `x20` and uses `ret`, balancing that
-call. Native helpers preserve `x19` and `x20` through the platform ABI. Root
+The `preserve_none` interpreter already carries the same state in
+`x21`/`x22`/`x24`/`x25`. Its call handler repurposes `x23` from dispatch to the
+compiled entry address and tail-calls an arity-selected thunk. The thunk loads
+register parameters and calls the generated entry with `blr`. An ordinary
+generated return restores the caller's `x21`/`x22`/`x24` state and uses `ret`,
+balancing that call. Native helpers preserve the fixed context through the
+platform ABI. Root
 publication remains explicit because the native stack is not scanned for
 managed values.
+
+The standalone native execution harness also uses the six-argument
+`preserve_none` entry state. Its C++ caller therefore preserves any required
+host state, and the assembly thunk saves only x30 across the generated call.
 
 ### Context
 
@@ -906,8 +913,8 @@ must use the adapter.
 
 ### Consequences
 
-- `x19` and `x20` are unavailable to register allocation;
-- all managed `StackLocation`s use the `x20` frame coordinate on AArch64;
+- `x21`, `x22`, `x24`, and `x25` are unavailable to register allocation;
+- all managed `StackLocation`s use the `x21` frame coordinate on AArch64;
 - native `sp` and `x29` retain their platform ABI meanings;
 - JIT-to-JIT and JIT-to-native calls can use ordinary AArch64 call mechanics;
 - interpreter-to-JIT entry and host return require a target-specific adapter;
@@ -917,7 +924,7 @@ must use the adapter.
 
 - a generated interpreter changes the cost or ownership of stack transitions;
 - mixed native and managed stack walking is implemented and measured;
-- another target cannot afford two fixed callee-saved context registers.
+- another target cannot afford the fixed context-register set.
 
 ### References
 
