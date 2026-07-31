@@ -145,6 +145,12 @@ namespace cl::jit
             return BlockParameterRewrite(Kind::Erase);
         }
 
+        static BlockParameterRewrite replace_with(ProgramValueRef parameter)
+        {
+            return BlockParameterRewrite(Kind::ReplaceWithParameter,
+                                         parameter.instruction_id());
+        }
+
     private:
         friend class GraphRewriter;
 
@@ -152,11 +158,17 @@ namespace cl::jit
         {
             Keep,
             Erase,
+            ReplaceWithParameter,
         };
 
-        explicit BlockParameterRewrite(Kind kind) : kind_(kind) {}
+        explicit BlockParameterRewrite(
+            Kind kind, std::optional<InstructionId> replacement = std::nullopt)
+            : kind_(kind), replacement_(replacement)
+        {
+        }
 
         Kind kind_;
+        std::optional<InstructionId> replacement_;
     };
 
     class RewriteResult

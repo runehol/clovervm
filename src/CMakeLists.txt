@@ -124,6 +124,8 @@ add_library(libclovervm_objects OBJECT
     jit/core_ir_optimization.h
     jit/dead_code_elimination.cpp
     jit/dead_code_elimination.h
+    jit/equivalent_block_parameters.cpp
+    jit/equivalent_block_parameters.h
     jit/graph_builder.cpp
     jit/graph_builder.h
     jit/graph_queries.cpp

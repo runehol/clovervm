@@ -576,8 +576,8 @@ SSA identities:
   SSA identities;
 - only genuine defs, refinements, shape-state successors, and non-trivial
   block parameters introduce identities;
-- a block parameter whose incoming arguments are all the same value can be
-  eliminated.
+- block parameters that carry the same external value plus their own
+  self-references can be collapsed to one representative parameter.
 
 For example:
 

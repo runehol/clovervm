@@ -21,7 +21,8 @@ small but meaningful language subset:
 
 - constants, value movement, identity tests, branches, joins, and returns;
 - guarded SMI addition with overflow side exits;
-- Core optimization through global dead-code elimination;
+- Core optimization through global dead-code elimination and equivalent block
+  parameter collapse;
 - Core-to-Machine side-exit lowering with late executable bindings;
 - block-local forwarding definitions for refining guards, eliminating their
   result copies without weakening SSA identity or recovery state;
@@ -62,25 +63,15 @@ their own lowering and recovery proof; the roadmap does not assume that an
 overwritten input can generally be reconstructed by applying an inverse
 operation on a side exit.
 
-### 1. Eliminate Trivial Loop-Carried State
+Equivalent loop-carried state is now collapsed before side-exit lowering and
+register allocation. Parameters whose incoming arguments are one common
+external value plus self references share one representative block parameter;
+the redundant parameters and edge arguments are removed. The representative
+continues to import the value across the block boundary, preserving
+block-local SSA. General constant and `uninitialized` rematerialization in
+transition programs remains later Snapshot and recovery work.
 
-Add a Core CFG simplification for a block parameter whose incoming arguments
-are one dominating value plus self references. Replace the parameter with that
-value and remove its corresponding edge arguments before side-exit lowering
-and register allocation.
-
-This first targets invariant interpreter-frame state. The current loop carries
-several distinct parameters that all contain the same `uninitialized` value;
-Snapshots keep them observable, so dead-code elimination cannot remove them,
-and allocation currently fans that one value out into several registers.
-Trivial-parameter elimination should remove those copies and the artificial
-pressure without changing Snapshot semantics.
-
-General constant and `uninitialized` rematerialization in transition programs
-remains part of later Snapshot and recovery work. This slice does not require
-that larger mechanism.
-
-### 2. Fuse Value Tests With Branches
+### 1. Fuse Value Tests With Branches
 
 Recognize the existing single-use pattern:
 
@@ -96,7 +87,7 @@ ordinary materialization and tagged truthiness testing.
 Identity tests provide an existing executable fixture and establish the fusion
 shape before SMI comparisons are added.
 
-### 3. Close the Runtime Transition Loop
+### 2. Close the Runtime Transition Loop
 
 Implement the target-specific thunks described by the
 [AArch64 JIT Calling Convention](aarch64-jit-calling-convention.md):
@@ -115,7 +106,7 @@ bytecode exits executable rather than merely encoded. Its managed-frame
 contract must reserve a coherent place for future allocator spill slots even
 though ordinary spilling lands later.
 
-### 4. Widen SMI Operations and Comparisons
+### 3. Widen SMI Operations and Comparisons
 
 Extend the direct Core translator through operation families that reuse the
 existing inline guards, side-exit state, and Machine emission:
@@ -135,7 +126,7 @@ Multiplication, shifts, division, modulo, and exponentiation remain later
 slices because their tagged arithmetic, failure cases, or result growth require
 additional lowering.
 
-### 5. Add Ordinary Spill Storage
+### 4. Add Ordinary Spill Storage
 
 Stage ordinary spilling rather than combining every spill mechanism into one
 change:
@@ -152,7 +143,7 @@ coverage. The symbolic allocation checker and adversarial pressure tests in
 [JIT Register Allocation Open Work](jit-register-allocation-progress.md)
 should grow with this slice.
 
-### 6. Add Shape-Guarded Known-Field Access
+### 5. Add Shape-Guarded Known-Field Access
 
 Introduce Machine side-exit forms and AArch64 emission for shape and validity
 guards, followed by known-offset field loads. This is the first high-leverage
@@ -162,7 +153,7 @@ Guard commoning and motion may begin here, once repeated shape checks exist in
 real generated programs. Keep shape and validity checks independently
 optimizable as required by their separate Core instructions.
 
-### 7. Approach Calls, F64, and General Sinking
+### 6. Approach Calls, F64, and General Sinking
 
 Calls require fixed argument and result locations, clobber validation, x19-to-C
 ABI adaptation, call-boundary interpreter-state synchronization, and safepoint

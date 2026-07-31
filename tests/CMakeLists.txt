@@ -35,6 +35,7 @@ target_sources(test_clovervm PRIVATE
 	test_jit_cfg.cpp
 	test_jit_core_bytecode_translator.cpp
 	test_jit_dead_code_elimination.cpp
+	test_jit_equivalent_block_parameters.cpp
 	test_jit_graph_rewrites.cpp
 	test_jit_code_object.cpp
 	test_jit_ir_print.cpp

@@ -1,6 +1,7 @@
 #include "jit/core_ir_optimization.h"
 
 #include "jit/dead_code_elimination.h"
+#include "jit/equivalent_block_parameters.h"
 
 #include <array>
 #include <utility>
@@ -12,6 +13,8 @@ namespace cl::jit
     {
         static constexpr std::array passes = {
             CoreIRPass{"dead-code-elimination", eliminate_dead_code},
+            CoreIRPass{"equivalent-block-parameters",
+                       collapse_equivalent_block_parameters},
         };
         bool changed = false;
         for(const CoreIRPass &pass: passes)
