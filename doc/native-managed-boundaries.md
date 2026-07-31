@@ -4,7 +4,7 @@
 |---|---|
 | Document type | Architecture contract |
 | Status | Accepted |
-| Implementation | Interpreter/native boundary implemented; JIT stack-transition extension proposed |
+| Implementation | Interpreter/native boundary implemented; JIT split-stack extension accepted but not yet implemented |
 | Scope | Contracts for managed-to-native calls and native re-entry into managed execution |
 | Owning layers | Managed frames, interpreter, runtime calls, native APIs, exceptions, and root publication |
 | Validated against | `ad0a158` (2026-07-18) |
@@ -33,13 +33,11 @@ CloverVM uses two distinct stack roles:
 - the **native machine stack** stores the C++ interpreter implementation,
   runtime helpers, native builtin calls, extension code, and host ABI state.
 
-The interpreter itself runs on the native stack while accessing Clover frames
-through an explicit managed frame pointer. Native implementations also run on
-the native stack. During JIT bring-up, generated Python code uses the Clover
-stack as its architectural managed stack but crosses to the native stack before
-calling any C or C++ target. Applying this rule even to certified leaf targets
-keeps re-entry into the hand-written interpreter uniform; selected native calls
-may remain on a future mixed stack only after that runtime exists.
+The interpreter, native implementations, and generated Python code all retain
+the native architectural stack. The interpreter accesses Clover frames through
+an explicit pointer; generated AArch64 code keeps the current Clover frame in
+fixed register `x20`, alongside the fixed `ThreadState *` in `x19`. Native
+calls require ABI adaptation and root publication, but no stack switch.
 
 Only VM-controlled frame contents belong on the Clover stack. Arbitrary native
 frames contain return addresses, spills, untagged integers, temporary pointers,
@@ -155,20 +153,21 @@ scan record. Safepoint publication remains responsible for describing the live
 stack extent and any live accumulator or out-of-frame values required by the
 memory manager.
 
-An initial JIT stack-transition record logically preserves:
+An initial JIT boundary activation logically preserves:
 
 ```text
-previous transition record
-managed SP and FP
-host SP
+previous boundary activation
+managed frame pointer
+host values of the fixed JIT context registers
 published managed frontier
 continuation for the suspended side
 ```
 
-Its physical encoding is private to the boundary implementation. The record
-remains active until the native activation returns, allowing native code to
-re-enter interpreted or compiled Python and create a nested transition without
-losing either enclosing stack position.
+Its physical encoding is private to the boundary implementation. The activation
+remains live until generated execution returns, allowing native code to re-enter
+managed execution and later restore the immediately enclosing context rather
+than a process-global default. The native stack itself nests normally
+throughout.
 
 Completed boundary frames are not traceback history and must not remain live as
 roots. Traceback state is recorded separately from the active frame chain.
@@ -209,10 +208,11 @@ managed entry links to the frontier it observed, and each return restores that
 frontier before control resumes in its native caller. Re-entry must not replace,
 detach, or hide the still-live managed frames below it.
 
-During dual-stack JIT bring-up, the corresponding transition records also form
-a strict stack. `managed A -> native f -> managed B -> native g -> managed C`
-alternates architectural stack positions, and each return restores the SP, FP,
-frontier, and continuation recorded by the immediately enclosing transition.
+During split-stack JIT bring-up, the corresponding boundary activations also
+form a strict stack. `managed A -> native f -> managed B -> native g -> managed
+C` retains one native architectural stack while each entry installs, and each
+return restores, the fixed JIT context registers, managed frontier, and
+continuation belonging to the immediately enclosing activation.
 
 The same nesting rule applies to pending exceptions and roots: an inner
 boundary may propagate or explicitly handle its own failure, but it must not
@@ -232,13 +232,17 @@ published after return.
 - The Clover C API owns external extension-handle representation and lifetime;
   VM-internal boundary code should depend only on its public contract.
 
-This separation keeps Python-visible semantics out of stack-transition helpers
-and keeps low-level native call mechanics out of object and module code.
+This separation keeps Python-visible semantics out of boundary adapters and
+keeps low-level native call mechanics out of object and module code.
 
 ## Required Invariants
 
 - Native C and C++ code executes on the native machine stack.
+- Generated managed code also retains the native architectural stack while
+  addressing Clover storage through its fixed managed-frame register.
 - Only VM-managed frame/register state is stored on the Clover stack.
+- Managed values, JIT spills, and outgoing managed call windows are never
+  placed on the native stack or discovered there as roots.
 - Every managed-to-native transition publishes a walkable live managed frame
   chain before native code can safepoint or re-enter managed execution.
 - Every native-to-managed transition links to the current frontier and restores

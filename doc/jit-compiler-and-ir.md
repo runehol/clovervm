@@ -4,7 +4,7 @@
 |---|---|
 | Document type | Design |
 | Status | Proposed |
-| Implementation | Partial; structural bytecode-to-Core translation, optimization, Core-to-Machine side-exit lowering, forwarding definitions, generic register allocation/materialization, `ExitToInterpreter` transition emission and publication, fixed-x19 value-state conventions, and executable multi-block AArch64 emission are implemented; installing x19 at runtime, target thunks, sunk computation, broader lowering, and runtime entry remain |
+| Implementation | Partial; structural bytecode-to-Core translation, optimization, Core-to-Machine side-exit lowering, forwarding definitions, generic register allocation/materialization, `ExitToInterpreter` transition emission and publication, fixed-`x19` value-state conventions, and executable multi-block AArch64 emission are implemented; fixed `x20`, runtime context installation, target thunks, sunk computation, broader lowering, and runtime entry remain |
 | Scope | JIT pipeline, Core IR, exit state, effects, backend lowering, and compiled execution contracts |
 | Owning layers | The JIT owns IR and compiled execution; bytecode, runtime frames, object semantics, and reclamation remain authoritative contracts |
 | Validated against | The focused JIT instruction, CFG, rewrite, allocation-constraint, emitter, code-cache, and executable AArch64 tests |
@@ -147,9 +147,11 @@ metadata format.
 
 The first implementation uses canonical frame publication for root discovery
 and generated recovery code for interpreter reconstruction. Generated Python
-executes on the existing Clover stack, while the hand-written interpreter and
-all C or C++ targets execute on the host stack through reentrant transition
-thunks. These are staging policies rather than permanent runtime invariants.
+accesses the existing Clover stack through a fixed managed-frame register while
+retaining the native architectural stack. The hand-written interpreter and all
+C or C++ targets use that same native stack. Reentrant adapters install and
+restore generated-code context; they do not switch stacks. These are staging
+policies rather than permanent runtime invariants.
 
 The durable IR contract is that Snapshots, managed-value liveness, and
 post-allocation locations contain enough information to generate both exact
@@ -213,21 +215,23 @@ Snapshot and replay point, not merely the same successful-path computation.
 ### Calls and runtime boundaries
 
 Interpreted and compiled Python execution share the managed frame layout,
-canonical argument window, and Python call-adaptation semantics. The proposed
-compiled transport is defined separately in
-[Proposed AArch64 JIT Calling Convention](aarch64-jit-calling-convention.md).
+canonical argument window, and Python call-adaptation semantics. The compiled
+transport is defined separately in
+[AArch64 JIT Calling Convention](aarch64-jit-calling-convention.md).
 The active `ThreadState *` is reserved execution context rather than an SSA
 entry value. On AArch64 it remains in fixed `x19` throughout compiled
-execution, while tagged Python arguments zero through seven use `x0` through
-`x7`. Native-helper lowering moves `x19` into platform argument register `x0`
-when calling a helper whose first C ABI argument is `ThreadState *`.
+execution, the current managed frame remains in fixed `x20`, and native `sp`
+and `x29` retain their platform meanings. Tagged Python arguments zero through
+seven use `x0` through `x7`. Native-helper lowering moves `x19` into platform
+argument register `x0` when calling a helper whose first C ABI argument is
+`ThreadState *`.
 Every frame retains both its canonical interpreted continuation and an
 executable compiled return target.
 
 The exact frame header, target return sequences, post-return stack position,
 and interpreter-return thunk are defined by the
-[Function Calling Convention](function-calling-convention.md). Host-stack
-switching, re-entry, native result transport, and root publication across C or
+[Function Calling Convention](function-calling-convention.md). Native-stack
+discipline, re-entry, native result transport, and root publication across C or
 C++ calls are defined by
 [Native/Managed Boundary Contracts](native-managed-boundaries.md).
 

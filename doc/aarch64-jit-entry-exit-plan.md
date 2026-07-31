@@ -3,10 +3,10 @@
 | Field | Value |
 |---|---|
 | Document type | Implementation transition plan |
-| Status | Proposed |
+| Status | Active |
 | Scope | Interpreter-to-JIT entry and ordinary JIT return on AArch64 |
 | Target milestone | Execute a manually published iterative Fibonacci function through an ordinary interpreted call |
-| Design authority to update | [CloverVM Function Calling Convention](function-calling-convention.md), [Native/Managed Boundary Contracts](native-managed-boundaries.md), [JIT Compiler and IR](jit-compiler-and-ir.md), [AArch64 JIT Calling Convention](aarch64-jit-calling-convention.md), and [JIT Register Allocation](jit-register-allocation.md) |
+| Design authority | [CloverVM Function Calling Convention](function-calling-convention.md), [Native/Managed Boundary Contracts](native-managed-boundaries.md), [JIT Compiler and IR](jit-compiler-and-ir.md), [AArch64 JIT Calling Convention](aarch64-jit-calling-convention.md), and [JIT Register Allocation](jit-register-allocation.md) |
 
 This plan brings up the successful interpreter-to-JIT call path without first
 solving side exits, generated calls, tiering, or a generated interpreter. It
@@ -14,9 +14,8 @@ replaces the proposed bring-up stack switch with a split-stack arrangement:
 native execution keeps the architectural stack, while generated code addresses
 Clover-managed frames through a dedicated register.
 
-The first implementation slice must update the owning architecture documents.
-Until then, this plan records the agreed replacement direction for their
-existing `sp`-switching and `x29`-managed-frame wording.
+The owning architecture documents adopt this contract. The slices below
+sequence its implementation without making this plan a competing authority.
 
 ## Transitional Register Contract
 
@@ -86,13 +85,16 @@ The runtime-facing API is typed and target-specific:
     JitCodeObject &jit_code);
 ```
 
-The C++ wrapper derives logical arity from `code_object` and obtains the entry
-address from `jit_code`. Arity is ephemeral private-adapter input, not duplicated
-persistent metadata and not supplied by the interpreter call site. The initial
-compiler and adapter support zero through eight tagged parameters.
+The C++ wrapper obtains both the compiled entry address and the selected
+interpreter-entry thunk from `jit_code`. When the JIT code is published, the
+authoritative logical arity in `code_object` is passed to a target selector
+function that returns one process-wide thunk for padded register arity `0`,
+`2`, `4`, `6`, or `8`; `JitCodeObject` caches that thunk address. Arity is not
+supplied or decoded on each entry. The initial compiler and adapter support zero
+through eight tagged parameters.
 
-The wrapper calls a private AArch64 assembly thunk using a small internal
-platform ABI. The assembly thunk:
+The wrapper calls the selected private AArch64 assembly thunk using a small
+internal platform ABI. Each assembly thunk:
 
 ```text
 save host x19, x20, x29, and x30 on the native stack
@@ -100,7 +102,7 @@ install ThreadState * in x19
 install callee_fp in x20
 place CodeObject * in x16 for the controlled entry handoff
 store jit_return_label in callee_fp[1]
-load p0..p7 from their canonical x20-relative cells as required by arity
+load its fixed parameter pairs from canonical x20-relative cells with ldp
 blr jit_code.entry()
 
 jit_return_label:
@@ -109,8 +111,10 @@ jit_return_label:
     return to the interpreted call handler
 ```
 
-The thunk never installs Clover storage in `sp`. It has one process-wide static
-implementation rather than one generated copy per `CodeCache`.
+The thunk never installs Clover storage in `sp`. The five variants are static
+process-wide code rather than generated copies in each `CodeCache`. Logical
+odd and even arities share a variant because the extra loaded cell is canonical
+parameter padding.
 
 ## Interpreter Call Path
 
@@ -164,7 +168,7 @@ That work is explicitly outside this plan's successful-return milestone.
 
 ## Implementation Slices
 
-### 1. Publish The Split-Stack Contract
+### 1. Publish The Split-Stack Contract (Complete)
 
 Update every owning design document to assign `x20` as the managed frame
 register, retain native `sp` and `x29`, remove architectural stack switching,
@@ -184,10 +188,11 @@ C-function-compatible entry.
 
 ### 3. Add The Standalone Entry/Exit Adapter
 
-Add the typed C++ wrapper and the static AArch64 assembly thunk. Verify zero,
-one, and eight register parameters, tagged return through `x0`, installed
-`x19`, installed `x20`, unchanged native stack discipline, and restoration of
-the host's callee-saved registers.
+Add the typed C++ wrapper, the static `0`/`2`/`4`/`6`/`8` AArch64 assembly
+thunks, publication-time selection, and the cached `JitCodeObject` thunk
+address. Verify zero through eight logical arities, pair padding, tagged return
+through `x0`, installed `x19`, installed `x20`, unchanged native stack
+discipline, and restoration of the host's callee-saved registers.
 
 ### 4. Add The Trap Side-Exit Target
 

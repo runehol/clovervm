@@ -4,7 +4,7 @@
 |---|---|
 | Document type | Architecture contract |
 | Status | Accepted |
-| Implementation | Interpreter convention implemented; proposed JIT convention specified separately |
+| Implementation | Interpreter convention implemented; accepted JIT extension not yet implemented |
 | Scope | Managed frame layout, call argument windows, entry, return, and interpreter dispatch state |
 | Owning layers | `CodeObject` owns frame metadata; codegen owns call-window construction; the interpreter owns managed entry and return; native boundaries and the JIT consume the contract |
 | Validated against | `df8fe91` (2026-07-18) |
@@ -27,11 +27,12 @@ CloverVM uses register/accumulator bytecode over managed frame slots:
   machine stack while accessing the separate Clover stack explicitly.
 
 The Clover stack is not a C or C++ ABI stack. During JIT bring-up, generated
-Python code may temporarily use it as the architectural stack for managed call
-and return instructions, but arbitrary native frames must never be placed on
-it. Generated code switches to the host stack before entering the hand-written
-interpreter or any C or C++ target. Native/managed transition rules are defined
-separately in [Native/Managed Boundary Contracts](native-managed-boundaries.md).
+Python code retains the native architectural stack and addresses Clover storage
+through a fixed managed-frame register. On AArch64 that register is `x20`;
+`sp` and `x29` retain their platform ABI meanings. Arbitrary native frames and
+managed values therefore remain on their respective stacks without a stack
+switch. Native/managed transition rules are defined separately in
+[Native/Managed Boundary Contracts](native-managed-boundaries.md).
 
 ## Logical Registers
 
@@ -67,10 +68,11 @@ The slots have distinct roles:
 - `fp[0]` links the active managed frame chain;
 - `fp[2]` and `fp[3]` restore interpreter execution after an interpreted
   callee returns;
-- `fp[1]` holds an executable compiled return target. For generated managed
-  calls it is the architectural return address consumed by the target's return
-  sequence; an interpreted caller installs the interpreter-return thunk. It is
-  not general-purpose native ABI storage.
+- `fp[1]` holds an executable compiled return continuation. The active call
+  normally carries the same continuation in the hardware link register; the
+  header cell keeps it durable across interpreter transitions and future
+  non-leaf generated calls. An interpreted caller installs the
+  interpreter-return thunk. It is not general-purpose native ABI storage.
 
 Frame payload pointers stored in header slots use the runtime's documented
 frame-payload encoding. Code that scans ordinary managed `Value` slots must not
@@ -193,7 +195,9 @@ An ordinary managed return carries its result in the accumulator. It restores:
 - the caller's interpreter code object from `fp[2]`;
 - the caller's interpreter program counter from `fp[3]`.
 
-Generated managed returns consume the architectural return target in `fp[1]`.
+Generated managed returns restore the previous managed frame pointer from
+`fp[0]` and return through the active hardware link register. The durable
+continuation in `fp[1]` supports paths that must reconstruct that link state.
 Native boundary returns additionally restore the thread's published Clover
 frame frontier as described in the boundary document.
 
@@ -234,13 +238,19 @@ only VM-controlled managed state:
 - locals and temporaries;
 - call argument windows;
 
-The initial JIT preserves this split. Generated Python code installs the
-architectural SP in Clover storage, claims managed frame space before writing
-durable state, and uses the compiled-return-PC header slot as its architectural
-return address. Before entering the interpreter, runtime, extension, or another
-C or C++ target, a transition thunk publishes the managed frontier and switches
-to the host stack. Nested re-entry records both stack positions so returns
-restore the immediately enclosing execution state.
+The initial JIT preserves this split without changing the architectural stack
+pointer. Generated Python code addresses managed frame state, spills, and call
+windows through a fixed managed-frame register while `sp` and the platform
+frame pointer continue to describe the native activation. The compiled-return
+header slot remains the durable managed continuation while the hardware link
+register carries the active call and return.
+
+Before entering the interpreter, runtime, extension, or another C or C++
+target, generated code must publish the managed frontier and all required
+roots. Native adapters install and restore the fixed thread and managed-frame
+registers around generated execution; they do not switch stacks. Nested
+re-entry links a new managed activation to the published frontier while nesting
+normally on the native stack.
 
 This arrangement lets the existing reclaimer continue scanning canonical
 Clover storage while treating the host stack as opaque. Managed stack scanning
@@ -268,12 +278,13 @@ calling convention used to bring up the JIT.
 - Public calls use `Function` entry semantics; direct code-object entry is an
   internal pre-adapted operation.
 - Method receiver binding changes argument contents, not frame layout.
-- During JIT bring-up, C, C++, extension, and hand-written interpreter execution
-  remains on the host stack and opaque to managed root scanning; transition or
-  handle records publish every managed value needed there.
-- Generated managed code moves the architectural stack pointer before storing
-  durable managed frame state in Clover storage; it does not use a host ABI red
-  zone there.
+- During JIT bring-up, generated code, C, C++, extensions, and the hand-written
+  interpreter retain the native architectural stack, which remains opaque to
+  managed root scanning; transition or handle records publish every managed
+  value needed across a native boundary.
+- Generated managed code addresses durable frame state through the fixed
+  managed-frame register and never places managed values, spills, or outgoing
+  managed call windows on the native stack.
 - Safepoint scanning distinguishes live managed values from padding and frame
   payload metadata.
 - Changes to header layout, register encoding, alignment, or entry/return shape
@@ -284,13 +295,14 @@ calling convention used to bring up the JIT.
 
 - [Function Call Adaptation](function-call-adaptation.md) owns Python signature
   binding, defaults, keyword calls, `*args`, and `**kwargs` policy.
-- [Native/Managed Boundary Contracts](native-managed-boundaries.md) owns stack
-  transitions, frame-frontier publication, and native result conventions.
+- [Native/Managed Boundary Contracts](native-managed-boundaries.md) owns
+  boundary activations, frame-frontier publication, and native result
+  conventions.
 - [Exception Transport And Protocols](exception-transport-and-protocols.md) owns
   managed unwinding and exception-marker adaptation.
 - [Refcounting and Reclamation](refcounting-and-reclamation.md) owns live-stack
   publication and root scanning.
 - [JIT Compiler and IR](jit-compiler-and-ir.md) owns compiled entry, return, and
   deoptimization requirements built on this frame contract.
-- [Proposed AArch64 JIT Calling Convention](aarch64-jit-calling-convention.md)
-  defines the proposed register-argument extension for compiled managed code.
+- [AArch64 JIT Calling Convention](aarch64-jit-calling-convention.md) defines
+  the register and transition contract for compiled managed code.

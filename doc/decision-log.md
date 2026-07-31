@@ -57,9 +57,11 @@ rationale that remains clear from those sources.
 | D-0005 | Use tagged `Value` as the initial JIT representation | Accepted |
 | D-0006 | Use ordered list-based SSA rather than a sea of nodes | Accepted |
 | D-0007 | Separate stable embedded metadata from movable compiled constants | Superseded |
-| D-0008 | Preserve separate managed and host stacks during JIT bring-up | Accepted |
+| D-0008 | Preserve separate managed and host stacks during JIT bring-up | Superseded |
 | D-0009 | Pool managed pointer constants and legalize non-pointer constants late | Accepted |
 | D-0010 | Use indexed compact JIT instruction storage | Accepted |
+| D-0011 | Use compact transition programs across execution boundaries | Accepted |
+| D-0012 | Retain the native stack and address managed frames through `x20` | Accepted |
 
 ## D-0001: Compile Whole Functions Rather Than Hot Traces
 
@@ -532,7 +534,7 @@ whose stable identity materially simplifies both the JIT and collector.
 ## D-0008: Preserve Separate Managed and Host Stacks During JIT Bring-up
 
 **Date:** 2026-07-19
-**Status:** Accepted
+**Status:** Superseded by D-0012
 **Scope:** JIT entry, native calls, interpreter transitions, and reclamation
 **Commitment:** Initial cross-subsystem execution policy
 
@@ -865,3 +867,58 @@ handoff leaves this region.
 - `doc/jit-transition-program.md`
 - `doc/jit-compiler-and-ir.md`
 - `doc/jit-register-allocation.md`
+
+## D-0012: Retain The Native Stack And Address Managed Frames Through `x20`
+
+**Date:** 2026-07-31
+**Status:** Accepted
+**Scope:** AArch64 JIT entry, return, native calls, and managed frame access
+**Commitment:** Initial runtime calling convention
+
+### Decision
+
+Generated AArch64 code retains native `sp` and `x29` throughout execution.
+Fixed callee-saved `x19` contains the active `ThreadState *`, and fixed
+callee-saved `x20` contains the current Clover managed frame pointer. Managed
+frame state, spills, and outgoing managed call windows remain in Clover storage
+and are addressed through `x20`; managed values are not placed on the native
+stack.
+
+Native code enters generated Python only through an adapter that saves the
+host's `x19` and `x20`, installs the JIT context, loads register parameters,
+and calls the generated entry with `blr`. An ordinary generated return restores
+the previous managed frame pointer into `x20` and uses `ret`, balancing that
+call. Native helpers preserve `x19` and `x20` through the platform ABI. Root
+publication remains explicit because the native stack is not scanned for
+managed values.
+
+### Context
+
+This supersedes D-0008's proposed architectural stack switch. Keeping native
+`sp` active avoids two stack switches around every interpreter or native call,
+retains normal platform call and return behavior, and still preserves the
+separate Clover storage already understood by the interpreter and reclaimer.
+Generated Python entry is consequently not a public C ABI entry; native callers
+must use the adapter.
+
+### Consequences
+
+- `x19` and `x20` are unavailable to register allocation;
+- all managed `StackLocation`s use the `x20` frame coordinate on AArch64;
+- native `sp` and `x29` retain their platform ABI meanings;
+- JIT-to-JIT and JIT-to-native calls can use ordinary AArch64 call mechanics;
+- interpreter-to-JIT entry and host return require a target-specific adapter;
+- safepoints still publish every live managed root explicitly.
+
+### Revisit When
+
+- a generated interpreter changes the cost or ownership of stack transitions;
+- mixed native and managed stack walking is implemented and measured;
+- another target cannot afford two fixed callee-saved context registers.
+
+### References
+
+- `doc/aarch64-jit-calling-convention.md`
+- `doc/aarch64-jit-entry-exit-plan.md`
+- `doc/function-calling-convention.md`
+- `doc/native-managed-boundaries.md`

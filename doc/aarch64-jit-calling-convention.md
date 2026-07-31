@@ -1,15 +1,15 @@
-# Proposed AArch64 JIT Calling Convention
+# AArch64 JIT Calling Convention
 
 | Field | Value |
 |---|---|
-| Document type | Proposed architecture contract |
-| Status | Proposed |
-| Implementation | Partial; the fixed-x19 value-state migration, result constraints, canonical incoming stack locations, allocation-order register sets, per-class scratch registers, and emitted side-exit transition references are implemented; installing x19 at runtime, stack-passed arguments, managed calls, entry/exit thunks, and the side-exit thunk remain |
+| Document type | Architecture contract |
+| Status | Accepted |
+| Implementation | Partial; fixed `x19`, result constraints, canonical incoming stack locations, allocation-order register sets, per-class scratch registers, and emitted side-exit transition references are implemented; fixed `x20`, runtime entry, stack-passed arguments, managed calls, entry/exit thunks, and the side-exit thunk remain |
 | Scope | AArch64 compiled managed argument transport, call adaptation, cross-engine entry, return, and safepoint placement |
 | Owning layers | Call-site lowering owns guarded Python adaptation; the AArch64 backend owns argument and result locations; transition adapters own cross-engine reshuffling; the generic allocator and materializer implement the resulting fixed-location constraints and transfers |
 | Builds on | [CloverVM Function Calling Convention](function-calling-convention.md) |
 
-This document proposes the initial calling convention between compiled
+This document defines the initial calling convention between compiled
 AArch64 Python functions. It changes physical argument transport without
 changing CloverVM's canonical managed frame layout, Python call semantics, or
 interpreter-visible parameter homes.
@@ -21,22 +21,33 @@ boundary:
 
 ```text
 active ThreadState * -> x19
+managed frame pointer -> x20
+native stack pointer  -> sp
+native frame pointer  -> x29
 parameter 0..7       -> x0..x7
 parameter 8..N       -> canonical parameter cells in the argument window
 result               -> x0
 ```
 
 `x19` is the fixed Clover JIT thread register. The active `ThreadState *` is
-reserved machine context alongside the managed frame pointer in `x29/fp`; it is
+reserved machine context alongside the managed frame pointer in `x20`; it is
 not a Python argument, Core SSA value, bytecode-state position, Snapshot value,
 allocator member, or backend scratch register. Every compiled function
 preserves it simply by never writing it. Cross-engine entry installs it and
 every path back to host code restores the host's original `x19`.
 
-`x19` is callee-saved under the generic AAPCS64 and Apple arm64 conventions, so
-ordinary C and C++ helpers preserve the active thread automatically. This also
-avoids platform-specific `x18` and leaves caller-saved `x0` available for
-arguments, results, and temporary value traffic.
+`x20` is the fixed Clover JIT managed-frame register. It is also reserved
+machine context rather than an allocated value. Generated frame state, spills,
+and outgoing managed argument windows use `x20`-relative addressing. Native
+`sp` and `x29` retain their platform ABI meanings, and generated code never
+places managed values on the native stack. Cross-engine entry saves and
+installs `x20`, and ordinary generated return restores the caller's `x20` from
+the managed frame header before returning.
+
+`x19` and `x20` are callee-saved under the generic AAPCS64 and Apple arm64
+conventions, so ordinary C and C++ helpers preserve the active JIT context
+automatically. This also avoids platform-specific `x18` and leaves caller-saved
+`x0` available for arguments, results, and temporary value traffic.
 
 The initial JIT relies on inlining to eliminate boxing. It does not introduce
 representation-specialized entry signatures. A later convention may add such
@@ -117,8 +128,10 @@ Cross-engine call entry uses this internal AArch64 transition state:
 ```text
 x0..x7 = first eight adapted tagged parameters
 x19    = active ThreadState *
+x20    = committed callee managed frame pointer
 x16    = target CodeObject *
-x29/fp = committed callee managed frame pointer
+sp     = native platform stack pointer
+x29    = native platform frame pointer
 ```
 
 Overflow parameters are already current in the callee's canonical parameter
@@ -126,34 +139,38 @@ cells. The target `CodeObject` is the authoritative source of logical arity,
 padded arity, bytecode entry, and frame metadata. The transition does not carry
 arity as a separate value.
 
+When JIT code is published, a target helper uses that authoritative arity to
+select one process-wide interpreter-entry thunk from the padded register-arity
+family `0`, `2`, `4`, `6`, and `8`. `JitCodeObject` caches only the selected
+thunk address. Logical odd and even arities therefore share the same
+pair-loading thunk. Entry does not inspect arity or compute parameter offsets
+at runtime.
+
 The JIT-to-interpreter adapter:
 
 ```text
-arity = x16->function_signature.n_parameters
 store the first min(arity, 8) registers from x0..x7 into canonical cells
 publish x16 as the current CodeObject
 set the interpreter pc to x16->code.data()
 publish the managed frame frontier
-switch to the host stack
 enter interpreter dispatch
 ```
 
 The interpreter-to-JIT adapter is symmetric:
 
 ```text
-arity = x16->function_signature.n_parameters
 install the active ThreadState * in x19
-load the first min(arity, 8) parameters into x0..x7
+install the committed managed frame pointer in x20
+load the selected fixed pairs of parameters into x0..x7
 leave overflow parameters in their canonical cells
-switch the architectural stack pointer to managed Clover storage
+leave sp and x29 in native platform state
 enter compiled code
 ```
 
-Call adaptation remains arity-dependent in both engine directions, but the
-shared transition adapter derives that arity from `x16` rather than requiring
-an arity-specialized entry address or a second metadata input. A compiled call
-site may still emit its known register-to-canonical stores directly when doing
-so produces better code.
+Call adaptation remains arity-dependent in both engine directions. The
+interpreter-to-JIT direction resolves that dependency once, when publication
+selects the cached pair-loading thunk. A compiled call site may emit its known
+register-to-canonical stores directly when doing so produces better code.
 
 `x16` is interprocedural scratch at this controlled Clover boundary. It is an
 entry/setup carrier for the target `CodeObject *`, not a durable code-identity
@@ -171,45 +188,47 @@ source. It must not treat `x16` as a persistent self pointer.
 
 ## Entry And Exit Thunks
 
-Cross-engine transitions use a target-specific interpreter/JIT entry-exit
-thunk. This thunk owns the durable transition between host/interpreter stack
-discipline and compiled Clover stack discipline. Compiled code is entered with
-a real AArch64 call so ordinary successful returns use the hardware return
-address predictor:
+Cross-engine transitions use a small target-specific family of interpreter/JIT
+entry-exit thunks. Each thunk installs the fixed generated-code context while
+retaining the native stack discipline, then loads a fixed number of parameter
+pairs with `ldp`. Compiled code is entered with a real AArch64 call so ordinary
+successful returns use the hardware return-address predictor:
 
 ```text
 interpreter-to-JIT entry-exit thunk
     save host/interpreter execution state
-    save host x19
+    save host x19 and x20
     install the active ThreadState * in x19
-    install the compiled Clover stack pointer
+    install the committed managed frame pointer in x20
+    retain native sp and x29
     place target CodeObject * in x16
-    derive arity from the target CodeObject in x16
-    place first min(arity, 8) tagged parameters in x0..x7
-    place the committed managed frame pointer in x29/fp
+    load the thunk's fixed parameter pairs into x0..x7
     blr compiled_entry
 
 jit_return_label
-    restore host/interpreter stack discipline
-    restore host x19
+    restore host x19 and x20
     consume the JIT return result
     continue in the interpreter or caller path
 ```
 
-A normal compiled Python return places the tagged result in `x0` and executes
-`ret` through the link register established by the entry thunk's
+A normal compiled Python return places the tagged result in `x0`, restores the
+caller's managed frame pointer, and executes `ret` through the link register
+established by the entry thunk's
 `blr compiled_entry`. The hot call/return pair is therefore balanced:
 
 ```text
 compiled normal return
     x0 = tagged result
+    x20 = decode managed frame pointer from [x20 + previous_fp_offset]
     ret
 ```
 
-The entry-exit thunk is the only ordinary caller of compiled code from the
-hand-written interpreter. It must be able to distinguish an ordinary compiled
-result from any later explicit JIT-exit state, but successful returns stay on
-the single-result path above.
+Generated Python functions are not public C ABI entry points. The entry-exit
+thunk is the only ordinary caller of compiled code from native or hand-written
+interpreter code. Compiled functions may call other compiled functions and
+platform-ABI native helpers under this convention. The thunk must be able to
+distinguish an ordinary compiled result from any later explicit JIT-exit state,
+but successful returns stay on the single-result path above.
 
 ## Side-Exit Register-Save Thunk
 
@@ -228,7 +247,8 @@ compiled guard failure
 side_exit_register_save_thunk
     save the fixed compiled register image
     save x19 as the authoritative active ThreadState *
-    save compiled fp/sp and the transition-program address from x16
+    save x20 as the authoritative managed frame pointer
+    save the transition-program address from x16
     publish or record the side-exit capture for interpreter recovery
     pc = interpreter return/recovery opcode pc
     ldr xtarget, [dispatch_table, pc]
@@ -243,19 +263,24 @@ stale return-stack entry, so the interpreter continues in its usual
 threaded-dispatch regime instead of carrying a polluted return predictor into a
 chain of later returns.
 
-The side-exit thunk must not call C++ transition code while still using the
-compiled stack as an ordinary platform stack. Portable transition execution, if
-needed for a side exit, belongs behind the interpreter re-entry path or another
-thunk that has first restored host-stack discipline. The side-exit
-register-save thunk owns only target state capture and the cold `ret xtarget`
-handoff into interpreter dispatch.
+The native stack is already valid at a side exit. After the thunk captures all
+caller-saved generated state and publishes the managed frame and roots, it may
+call portable C++ transition code using the platform ABI. The initial runtime
+does not yet use that path: published code targets an intentional trap stub
+until register capture, recovery, and interpreted return through the compiled
+frame are implemented together.
+
+The sketch above records the required balanced return into interpreter
+dispatch, not a settled placement for transition-program execution. That
+placement remains part of the deferred side-exit thunk design.
 
 The emitted side-exit sequence and transition-program address convention are
 implemented; the thunk itself is not. Fixed `x19` gives the thunk immediate
 access to thread-owned transition state without transition metadata or
-allocator cooperation. The remaining thunk design must settle register-save
-storage and host-stack restoration. Before re-entering host code it must restore
-the host's original `x19`, just as the normal entry-thunk return path does.
+allocator cooperation, while fixed `x20` identifies the active managed frame.
+The remaining thunk design must settle register-save storage and the final
+interpreter return adapter. Before re-entering host code it must restore the
+host's original `x19` and `x20`, just as the normal entry-thunk return path does.
 
 ## Returns
 
@@ -314,25 +339,35 @@ compiled unwinding and stack walking.
   mechanism for avoiding boxing.
 - `x19` contains the active `ThreadState *` throughout compiled execution. It
   is reserved machine context, not an allocator-visible value.
-- `x29/fp` remains the committed managed frame pointer.
+- `x20` contains the current managed frame pointer throughout compiled
+  execution. It is reserved machine context, not an allocator-visible value.
+- `sp` and `x29` retain their native platform meanings throughout generated
+  execution; no managed values, spills, or outgoing managed argument windows
+  are placed on the native stack.
 - Compiled arguments zero through seven use `x0` through `x7`; ordinary results
   use `x0`.
-- Cross-engine entry saves the host's `x19` before installing the Clover thread
-  register, and every normal or side-exit return to host execution restores it.
+- Cross-engine entry saves the host's `x19` and `x20` before installing the
+  Clover context, and every normal or side-exit return to host execution
+  restores both.
 - `x16` may carry the target `CodeObject *` only as entry/setup state; compiled
   code must rematerialize code-object identity when it needs it after entry.
 - Successful adaptation determines the callee arity before argument transport.
-- Call transitions are specialized by arity in both engine directions.
+- Interpreter-to-JIT publication selects a `0`, `2`, `4`, `6`, or `8`
+  pair-loading entry thunk from the target `CodeObject` arity and caches its
+  address in `JitCodeObject`; entry does not decode arity.
 - Return transitions do not depend on arity.
 - Overflow arguments already in canonical cells are not copied merely because
   execution changes engine.
 - The interpreter/JIT entry-exit thunk enters compiled code with a real call;
-  ordinary successful compiled returns use `ret` back to that thunk.
+  ordinary successful compiled returns restore the previous `x20` and use
+  `ret` back to that thunk.
+- Generated Python functions are not directly callable through the public C
+  ABI; native code enters them through the adapter.
 - Side exits branch to a side-exit register-save thunk, capture compiled state,
   and enter interpreter dispatch with `ldr xtarget, [dispatch_table, pc]` plus
   `ret xtarget` rather than a plain branch.
-- The side-exit register-save thunk must not call C++ while using the compiled
-  stack as an ordinary platform stack.
+- A side-exit thunk may call C++ only after capturing generated register state
+  and publishing the managed frame and roots required by the native call.
 - Side exits before call commitment reconstruct the original bytecode call
   state rather than the adapted JIT argument vector.
 - Safepoints discover every live root regardless of whether its canonical home

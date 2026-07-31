@@ -4,7 +4,7 @@
 |---|---|
 | Document type | Design |
 | Status | Accepted |
-| Implementation | Prepared allocation, forwarding definitions, block-edge and same-as-input affinities, bundle coalescing, deterministic constraint splitting, transfer scheduling, conflict-free register/stack assignment, parallel-transfer and edge-transfer-block materialization, and the fixed-x19 value-state migration are implemented; runtime x19 installation and block-exit materialization remain open |
+| Implementation | Prepared allocation, forwarding definitions, block-edge and same-as-input affinities, bundle coalescing, deterministic constraint splitting, transfer scheduling, conflict-free register/stack assignment, parallel-transfer and edge-transfer-block materialization, and the fixed-`x19` value-state migration are implemented; fixed `x20`, runtime context installation, and block-exit materialization remain open |
 | Scope | Allocation constraints, allocator-local numbering, liveness, bundles, backtracking allocation, live-range splitting, block-edge transfers, clobbers, spills, and post-allocation materialization |
 | Owning layers | Target preparation owns occurrence constraints and physical-transfer capabilities; the generic register allocator owns numbering, liveness, bundles, splitting, allocation, spill decisions, and bundle transfers; generic allocation materialization resolves transfers, rewrites the Core CFG, and publishes occurrence locations; publication and transition planners own canonical-state synchronization; machine-code emission only encodes the materialized graph |
 | Validated against | `tests/test_jit_allocation_constraints.cpp`, `tests/test_aarch64_allocation_constraints.cpp`, `tests/test_jit_register_allocator.cpp`, `tests/test_jit_parallel_assignment_resolver.cpp`, `tests/test_jit_allocation_materializer.cpp`, and `tests/test_aarch64_execution.cpp` |
@@ -365,14 +365,13 @@ extent, and safepoint scanning must either describe live spill slots precisely
 or ensure every scanned spill cell contains a safe tagged value.
 
 The semantic kind lets a target select an addressing mode without changing
-storage identity. For example, AArch64 may access incoming parameters and
-ordinary frame state relative to `fp`, but prepare an outgoing argument window
-with `sp`-relative stores. Moving the managed frame pointer then reinterprets
-those same physical cells as the callee's `IncomingParameter` slots. The
-logical frame offset continues to name each cell across that transition; the
-kind selects how the particular access is emitted. This does not require
-literal one-at-a-time pushes: a call lowering may claim the complete outgoing
-window and use paired or individual stores.
+storage identity. Under the initial AArch64 convention, every managed
+`StackLocation` kind is addressed relative to fixed managed-frame register
+`x20`; the kind selects the frame coordinate and offset calculation rather
+than a different architectural base register. Moving `x20` then reinterprets
+the caller's outgoing cells as the callee's `IncomingParameter` slots. Native
+stack arguments, when supported, belong to platform-call lowering and are not
+represented by managed `StackLocation`s.
 
 The value representation attached to the occurrence or transfer determines
 the width, register class, and stack access required for every kind.
@@ -658,6 +657,10 @@ The AArch64 constraint producer follows the Clover JIT calling convention:
 - platform-reserved `x18` is unavailable;
 - `x19` is reserved machine context containing the active `ThreadState *`; it
   is neither allocatable nor a scratch register;
+- `x20` is reserved machine context containing the current managed frame
+  pointer; it is neither allocatable nor a scratch register;
+- `sp` and `x29` retain their native platform meanings and are unavailable to
+  ordinary allocation;
 - other callee-saved GPRs and `v8` through `v15` remain unavailable until
   prologue and epilogue generation preserves them;
 - tagged entry-block parameters zero through seven have fixed-location result
@@ -1378,16 +1381,19 @@ callee. Caller and callee frame offsets use different frame coordinate systems,
 so the frame-transition layout rather than numeric offset equality establishes
 that physical alias.
 
-Interpreter-to-JIT and JIT-to-interpreter call transitions are arity-specific:
-their complete contract belongs to
-[Proposed AArch64 JIT Calling Convention](aarch64-jit-calling-convention.md).
+Interpreter-to-JIT and JIT-to-interpreter call adaptation is arity-dependent;
+shared adapters derive the arity from the target `CodeObject`. Their complete
+contract belongs to
+[AArch64 JIT Calling Convention](aarch64-jit-calling-convention.md).
 A native call also uses fixed platform calling-convention registers. A helper
 whose first C ABI argument is `ThreadState *` adds the physical assignment
 `x19 -> x0` before its ordinary SSA argument assignments. The call lowering
 feeds that complete shuffle to the parallel-assignment machinery; it does not
-turn x19 into an SSA use or allocator bundle. Native stack arguments can extend
-the platform-call lowering later if Clover actually supports them; they are not
-part of the managed stack-location vocabulary.
+turn x19 into an SSA use or allocator bundle. Fixed `x20` remains implicit
+callee-saved context. Native stack arguments can extend the platform-call
+lowering later if Clover actually supports them; they are not part of the
+managed stack-location vocabulary. Every live managed root required across the
+native call must be published independently of native stack contents.
 
 A value live across a call must be assigned to a non-clobbered location or split
 around the call. The target describes clobbers; the allocator decides whether to
