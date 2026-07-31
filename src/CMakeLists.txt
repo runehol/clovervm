@@ -96,6 +96,8 @@ add_library(libclovervm_objects OBJECT
     jit/aarch64_cfg_emitter.h
     jit/aarch64_backend.cpp
     jit/aarch64_backend.h
+    jit/aarch64_jit_entry.cpp
+    jit/aarch64_jit_entry.h
     jit/aarch64_transition.cpp
     jit/aarch64_transition.h
     jit/allocation_constraints.cpp
@@ -293,6 +295,10 @@ if(APPLE AND CMAKE_SYSTEM_PROCESSOR MATCHES "^(arm64|aarch64|ARM64)$")
     target_sources(libclovervm_objects PRIVATE
         jit/map_jit_code_memory.cpp
         jit/map_jit_code_memory.h)
+endif()
+
+if(CMAKE_SYSTEM_PROCESSOR MATCHES "^(arm64|aarch64|ARM64)$")
+    target_sources(libclovervm_objects PRIVATE jit/aarch64_jit_entry.S)
 endif()
 
 add_library(libclovervm SHARED)

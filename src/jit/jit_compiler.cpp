@@ -2,6 +2,7 @@
 
 #include "bytecode/code_object.h"
 #include "jit/aarch64_backend.h"
+#include "jit/aarch64_jit_entry.h"
 #include "jit/compilation_session.h"
 #include "jit/core_bytecode_translator.h"
 #include "jit/core_ir_optimization.h"
@@ -58,7 +59,10 @@ namespace cl::jit
         }
 
         JitCodeObject *result = thread.make_internal_raw<JitCodeObject>(
-            code.code(), code.constant_pool(), code.tagged_value_count(),
+            code.code(),
+            select_aarch64_jit_entry_thunk(
+                code_object.function_signature.n_parameters),
+            code.constant_pool(), code.tagged_value_count(),
             code.encoded_code_size());
         return Result<JitCodeObject *, JitCompilationError>::ok(result);
     }

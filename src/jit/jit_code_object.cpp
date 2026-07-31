@@ -7,10 +7,13 @@
 namespace cl::jit
 {
     JitCodeObject::JitCodeObject(CodeSlice code,
+                                 MachineAddress interpreter_entry_thunk,
                                  std::span<std::byte> constant_pool,
                                  size_t tagged_value_count,
                                  size_t encoded_code_size)
-        : HeapObject(native_layout), code_(code), constant_pool_(constant_pool),
+        : HeapObject(native_layout), code_(code),
+          interpreter_entry_thunk_(interpreter_entry_thunk),
+          constant_pool_(constant_pool),
           tagged_value_count_(tagged_value_count),
           encoded_code_size_(encoded_code_size)
     {

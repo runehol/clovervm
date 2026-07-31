@@ -17,11 +17,16 @@ namespace cl::jit
         static constexpr NativeLayoutId native_layout =
             NativeLayoutId::JitCodeObject;
 
-        JitCodeObject(CodeSlice code, std::span<std::byte> constant_pool,
+        JitCodeObject(CodeSlice code, MachineAddress interpreter_entry_thunk,
+                      std::span<std::byte> constant_pool,
                       size_t tagged_value_count, size_t encoded_code_size);
 
         const CodeSlice &code() const { return code_; }
         MachineAddress entry() const { return code_.execute_address(); }
+        MachineAddress interpreter_entry_thunk() const
+        {
+            return interpreter_entry_thunk_;
+        }
         size_t encoded_code_size() const { return encoded_code_size_; }
 
         std::span<std::byte> constant_pool() { return constant_pool_; }
@@ -47,6 +52,7 @@ namespace cl::jit
 
     private:
         CodeSlice code_;
+        MachineAddress interpreter_entry_thunk_;
         std::span<std::byte> constant_pool_;
         size_t tagged_value_count_;
         size_t encoded_code_size_;

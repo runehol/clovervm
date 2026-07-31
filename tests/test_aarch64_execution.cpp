@@ -1,6 +1,7 @@
 #include "jit/aarch64_assembler.h"
 #include "jit/aarch64_backend.h"
 #include "jit/aarch64_cfg_emitter.h"
+#include "jit/aarch64_jit_entry.h"
 #include "jit/bytecode_state.h"
 #include "jit/compilation_session.h"
 #include "jit/core_bytecode_translator.h"
@@ -18,6 +19,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
+#include <string>
 #include <utility>
 #include <vector>
 
@@ -1031,6 +1033,52 @@ namespace cl::jit
         Function function =
             reinterpret_cast<Function>(code.entry().bits_for_indirect_target());
         EXPECT_EQ(static_cast<uint64_t>(expected.as.integer), function());
+    }
+
+    TEST(AArch64Execution, EntersJitThroughCachedArityThunk)
+    {
+        PythonBackendFixture fixture;
+
+        for(uint32_t arity = 0; arity <= 8; ++arity)
+        {
+            std::wstring source = L"def f(";
+            for(uint32_t index = 0; index < arity; ++index)
+            {
+                if(index != 0)
+                {
+                    source += L", ";
+                }
+                source += L"p" + std::to_wstring(index);
+            }
+            source += L"): return ";
+            source += arity == 0 ? L"17\n"
+                                 : L"p" + std::to_wstring(arity - 1) + L"\n";
+
+            CodeObject *code_object =
+                fixture.compile_first_function(source.c_str());
+            auto compilation =
+                compile_jit_code(*fixture.context.thread(), *code_object);
+            ASSERT_TRUE(compilation) << "arity " << arity;
+            JitCodeObject *jit_code = std::move(compilation).value();
+
+            std::array<Value, 16> frame;
+            frame.fill(Value::None());
+            Value *fp = frame.data();
+            fp[FrameHeaderPreviousFpOffset] =
+                encode_frame_payload_ptr(static_cast<Value *>(nullptr));
+
+            Value expected = Value::from_smi(17);
+            for(uint32_t index = 0; index < arity; ++index)
+            {
+                Value parameter = Value::from_smi(100 + index);
+                fp[code_object->encode_reg(index)] = parameter;
+                expected = parameter;
+            }
+
+            Value result = enter_aarch64_jit(*fixture.context.thread(), fp,
+                                             *code_object, *jit_code);
+            EXPECT_EQ(expected, result) << "arity " << arity;
+        }
     }
 
     TEST(AArch64Execution, EmitsMoveBetweenAssignedRegisters)

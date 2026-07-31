@@ -1,6 +1,7 @@
 #include "bytecode/code_object.h"
 #include "jit/code_cache.h"
 #include "jit/jit_code_object.h"
+#include "jit/machine_address_internal.h"
 #include "object_model/owned.h"
 #include "runtime/thread_state.h"
 #include "test_helpers.h"
@@ -14,6 +15,11 @@ namespace cl::jit
 {
     namespace
     {
+        MachineAddress no_interpreter_entry_thunk()
+        {
+            return detail::MachineAddressAccess::from_bits(0);
+        }
+
         PublishedCode publish_test_code(CodeCache &cache, Value pool_value)
         {
             Result<CodeAllocationProposal, JitCodeError> proposal_result =
@@ -51,8 +57,9 @@ namespace cl::jit
         PublishedCode published =
             publish_test_code(thread->code_cache(), retained.value());
         JitCodeObject *jit_code = thread->make_internal_raw<JitCodeObject>(
-            published.code(), published.constant_pool(),
-            published.tagged_value_count(), published.encoded_code_size());
+            published.code(), no_interpreter_entry_thunk(),
+            published.constant_pool(), published.tagged_value_count(),
+            published.encoded_code_size());
 
         EXPECT_EQ(2, string->refcount);
         ASSERT_EQ(1u, jit_code->tagged_values().size());
@@ -76,8 +83,9 @@ namespace cl::jit
         PublishedCode published =
             publish_test_code(thread->code_cache(), Value::None());
         JitCodeObject *jit_code = thread->make_internal_raw<JitCodeObject>(
-            published.code(), published.constant_pool(),
-            published.tagged_value_count(), published.encoded_code_size());
+            published.code(), no_interpreter_entry_thunk(),
+            published.constant_pool(), published.tagged_value_count(),
+            published.encoded_code_size());
 
         EXPECT_FALSE(code_object->has_jit_code());
         EXPECT_EQ(0, jit_code->refcount);
@@ -115,8 +123,8 @@ namespace cl::jit
         ASSERT_TRUE(thread->code_cache().publish(allocation));
 
         JitCodeObject *jit_code = thread->make_internal_raw<JitCodeObject>(
-            allocation.code, allocation.constant_pool(), 1,
-            allocation.encoded_code_size());
+            allocation.code, no_interpreter_entry_thunk(),
+            allocation.constant_pool(), 1, allocation.encoded_code_size());
 
         EXPECT_EQ(2, string->refcount);
         incref_heap_ptr(jit_code);

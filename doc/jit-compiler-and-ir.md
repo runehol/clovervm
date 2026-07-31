@@ -4,7 +4,7 @@
 |---|---|
 | Document type | Design |
 | Status | Proposed |
-| Implementation | Partial; structural bytecode-to-Core translation, optimization, Core-to-Machine side-exit lowering, forwarding definitions, generic register allocation/materialization, `ExitToInterpreter` transition emission and publication, fixed-`x19` value-state conventions, and executable multi-block AArch64 emission are implemented; fixed `x20`, runtime context installation, target thunks, sunk computation, broader lowering, and runtime entry remain |
+| Implementation | Partial; structural bytecode-to-Core translation, optimization, Core-to-Machine side-exit lowering, forwarding definitions, generic register allocation/materialization, `ExitToInterpreter` transition emission and publication, fixed-`x19` value-state conventions, executable multi-block AArch64 emission, and standalone AArch64 entry thunks are implemented; fixed `x20` emission, interpreter integration, side-exit runtime entry, sunk computation, and broader lowering remain |
 | Scope | JIT pipeline, Core IR, exit state, effects, backend lowering, and compiled execution contracts |
 | Owning layers | The JIT owns IR and compiled execution; bytecode, runtime frames, object semantics, and reclamation remain authoritative contracts |
 | Validated against | The focused JIT instruction, CFG, rewrite, allocation-constraint, emitter, code-cache, and executable AArch64 tests |

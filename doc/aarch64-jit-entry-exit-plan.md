@@ -174,7 +174,19 @@ Update every owning design document to assign `x20` as the managed frame
 register, retain native `sp` and `x29`, remove architectural stack switching,
 and state the limited adapter-based native compatibility precisely.
 
-### 2. Move Managed Addressing To `x20`
+### 2. Add The Standalone Entry/Exit Adapter (Complete)
+
+Add the typed C++ wrapper, the static `0`/`2`/`4`/`6`/`8` AArch64 assembly
+thunks, publication-time selection, and the cached `JitCodeObject` thunk
+address. Verify zero through eight logical arities, pair padding, tagged return
+through `x0`, installed `x19`, installed `x20`, unchanged native stack
+discipline, and restoration of the host's callee-saved registers.
+
+Compile-only non-AArch64 hosts store a zero thunk address. They may continue to
+produce and inspect AArch64 code, but the runtime entry wrapper is available
+only on AArch64 hosts.
+
+### 3. Move Managed Addressing To `x20`
 
 Introduce shared constexpr AArch64 thread and managed-frame register encodings.
 Use them in allocation constraints, stack-transfer emission, return emission,
@@ -182,17 +194,9 @@ transition binding, and diagnostics. Remove local AArch64 managed-frame
 register literals.
 
 Change ordinary generated return to restore `x20` from the previous-frame
-header cell before `ret`. Update direct execution tests so runtime-shaped code
-enters through an installed managed frame rather than relying on an accidental
+header cell before `ret`. Update direct execution tests to use the standalone
+adapter and an installed managed frame rather than relying on an accidental
 C-function-compatible entry.
-
-### 3. Add The Standalone Entry/Exit Adapter
-
-Add the typed C++ wrapper, the static `0`/`2`/`4`/`6`/`8` AArch64 assembly
-thunks, publication-time selection, and the cached `JitCodeObject` thunk
-address. Verify zero through eight logical arities, pair padding, tagged return
-through `x0`, installed `x19`, installed `x20`, unchanged native stack
-discipline, and restoration of the host's callee-saved registers.
 
 ### 4. Add The Trap Side-Exit Target
 
