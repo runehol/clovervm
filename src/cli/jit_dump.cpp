@@ -419,12 +419,6 @@ namespace
                 return;
             }
 
-            fmt::print("AArch64 machine code:\n");
-            for(uint32_t word: words)
-            {
-                fmt::print("  {:08x}\n", word);
-            }
-
             int64_t signed_pool_offset =
                 code.entry().displacement_to(code.constant_pool_address());
             if(signed_pool_offset < 0)
@@ -438,7 +432,7 @@ namespace
             std::span<const cl::Value> pool_values = code.tagged_values();
             if(!pool_values.empty())
             {
-                fmt::print("\nAArch64 constant pool:\n");
+                fmt::print("AArch64 constant pool:\n");
                 for(size_t index = 0; index < pool_values.size(); ++index)
                 {
                     fmt::print(
@@ -446,8 +440,9 @@ namespace
                         pool_offset + index * sizeof(cl::Value), index,
                         static_cast<uint64_t>(pool_values[index].as.integer));
                 }
+                fmt::print("\n");
             }
-            fmt::print("\nAArch64 disassembly:\n");
+            fmt::print("AArch64 disassembly:\n");
             succeeded_ = print_disassembly(words, pool_values, pool_offset,
                                            *command_line_);
         }
