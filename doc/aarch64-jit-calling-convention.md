@@ -4,7 +4,7 @@
 |---|---|
 | Document type | Architecture contract |
 | Status | Accepted |
-| Implementation | Partial; fixed `x19` and `x20`, managed-frame-relative stack access and return, result constraints, canonical incoming stack locations, allocation-order register sets, per-class scratch registers, emitted side-exit transition references, the unhandled-side-exit diagnostic target, and standalone interpreter/JIT entry thunks are implemented; interpreter call integration, stack-passed arguments, managed calls, and the side-exit thunk remain |
+| Implementation | Partial; fixed `x19` and `x20`, managed-frame-relative stack access and return, result constraints, canonical incoming stack locations, allocation-order register sets, per-class scratch registers, emitted side-exit transition references, the unhandled-side-exit diagnostic target, interpreter/JIT entry thunks, and interpreter call integration are implemented; stack-passed arguments, managed calls, and the side-exit thunk remain |
 | Scope | AArch64 compiled managed argument transport, call adaptation, cross-engine entry, return, and safepoint placement |
 | Owning layers | Call-site lowering owns guarded Python adaptation; the AArch64 backend owns argument and result locations; transition adapters own cross-engine reshuffling; the generic allocator and materializer implement the resulting fixed-location constraints and transfers |
 | Builds on | [CloverVM Function Calling Convention](function-calling-convention.md) |

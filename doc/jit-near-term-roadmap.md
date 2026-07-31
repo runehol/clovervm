@@ -6,7 +6,7 @@
 | Status | Active |
 | Scope | Prioritized work that turns the current executable AArch64 JIT slice into a broader and runtime-complete compiler |
 | Design authority | [JIT Compiler and IR](jit-compiler-and-ir.md), [JIT Register Allocation](jit-register-allocation.md), [JIT Side-Exit Lowering](jit-side-exit-lowering.md), and [JIT Transition Programs](jit-transition-program.md) |
-| Validated against | `bd6b270d` (2026-07-31) |
+| Validated against | `53d8ee1f` (2026-07-31) |
 
 This roadmap records implementation order rather than adding architecture. The
 owning design documents remain authoritative for IR, allocation, recovery,
@@ -46,20 +46,13 @@ shape before SMI comparisons are added. The optimization should remove the
 intermediate boolean from Machine IR so allocation does not model a value that
 emission will never materialize.
 
-### 2. Close the Runtime Transition Loop
+### 2. Complete Side Exits
 
-Implement the target-specific thunks described by the
-[AArch64 JIT Calling Convention](aarch64-jit-calling-convention.md), following
-the staged [AArch64 JIT Entry And Exit Transition Plan](aarch64-jit-entry-exit-plan.md):
-
-1. Complete the interpreter-to-JIT entry and normal-return path. Install and
-   restore fixed `x19` thread state, establish the managed stack discipline,
-   invoke compiled code with the JIT convention, and return normally through
-   the entering thunk.
-2. Complete side exits. Save the compiled register image and transition-program
-   address, temporarily borrow the native stack to call the portable C++
-   transition executor, publish recovered canonical interpreter state, and
-   return through interpreter dispatch.
+Implement the remaining target-specific thunk described by the
+[AArch64 JIT Calling Convention](aarch64-jit-calling-convention.md). Save the
+compiled register image and transition-program address, temporarily borrow the
+native stack to call the portable C++ transition executor, publish recovered
+canonical interpreter state, and return through interpreter dispatch.
 
 This milestone makes guard failure, arithmetic overflow, and unsupported
 bytecode exits executable rather than merely encoded. Its managed-frame

@@ -254,7 +254,7 @@ Detailed docs:
 
 ## Open Design Questions
 
-- Exact JIT tiering strategy.
+- Long-term adaptive and asynchronous JIT tiering strategy.
 - Final cycle-collection and reclamation story.
 - Python C API compatibility scope.
 - Descriptor, metaclass, and import/module completeness.

@@ -4,7 +4,7 @@
 |---|---|
 | Document type | Design |
 | Status | Proposed |
-| Implementation | Partial; structural bytecode-to-Core translation, optimization, Core-to-Machine side-exit lowering, forwarding definitions, generic register allocation/materialization, `ExitToInterpreter` transition emission and publication, fixed-`x19`/`x20` AArch64 context, executable multi-block AArch64 emission, and standalone AArch64 entry thunks are implemented; interpreter integration, side-exit runtime entry, sunk computation, and broader lowering remain |
+| Implementation | Partial; structural bytecode-to-Core translation, optimization, Core-to-Machine side-exit lowering, forwarding definitions, generic register allocation/materialization, `ExitToInterpreter` transition emission and publication, fixed-`x19`/`x20` AArch64 context, executable multi-block AArch64 emission, interpreter/JIT entry thunks, and synchronous runtime tiering are implemented; side-exit runtime entry, sunk computation, and broader lowering remain |
 | Scope | JIT pipeline, Core IR, exit state, effects, backend lowering, and compiled execution contracts |
 | Owning layers | The JIT owns IR and compiled execution; bytecode, runtime frames, object semantics, and reclamation remain authoritative contracts |
 | Validated against | The focused JIT instruction, CFG, rewrite, allocation-constraint, emitter, code-cache, and executable AArch64 tests |
@@ -297,6 +297,36 @@ request exact logical frames and bytecode PCs without a failed speculation.
 Such requests use the same Snapshot and recovery model. The initial set of
 unsupported operations and observability fallbacks belongs to compiler dispatch
 code and focused tests, not this architecture document.
+
+## Runtime Tiering And Publication
+
+Ordinary runtime tiering is a compile-time policy selected by
+`CLOVERVM_ENABLE_JIT`. It is off by default and may be enabled only for a native
+AArch64 target with the runtime entry adapter. This policy is separate from the
+availability of the compiler itself: other builds may still compile and inspect
+AArch64 code explicitly.
+
+Each `CodeObject` owns a nullable published `JitCodeObject` and a saturating
+countdown initialized to 100 adapted Python calls. After call adaptation has
+constructed the ordinary callee frame, the shared function-entry path follows
+this order:
+
+1. If JIT code is already published, enter it through the target-specific
+   adapter.
+2. Otherwise decrement the nonzero countdown. A transition from one to zero
+   synchronously invokes compilation exactly once.
+3. Successful compilation publishes the `JitCodeObject` and enters it for the
+   triggering call. Failed compilation leaves the countdown at zero and the
+   call enters the interpreter.
+4. Every other call enters the interpreter normally.
+
+Positional, keyword, default, variadic, and method adaptation all converge on
+this decision after producing the same canonical callee frame. Tiering
+therefore does not add separate dispatch policy to individual call opcodes or
+inline caches. Publication is deliberately non-atomic under the current
+single-threaded execution contract, and synchronous compilation needs no
+distinct compiling state. Asynchronous compilation, recompilation, invalidation,
+and a broader eligibility policy remain future tiering work.
 
 ## Compiler Pipeline and Phase Ownership
 

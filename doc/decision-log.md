@@ -919,6 +919,5 @@ must use the adapter.
 ### References
 
 - `doc/aarch64-jit-calling-convention.md`
-- `doc/aarch64-jit-entry-exit-plan.md`
 - `doc/function-calling-convention.md`
 - `doc/native-managed-boundaries.md`
