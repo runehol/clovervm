@@ -16,9 +16,13 @@
 // Attribute callbacks receive:
 //   name, attribute class
 //
+// Result declarations receive:
+//   result class, representation, definition kind
+//
 // Result class and representation are encoded in the upper bits of the
-// generated InstructionKind. A separately generated dense ordinal indexes
-// compact metadata tables.
+// generated InstructionKind. Definition kind is stored in the compact
+// instruction metadata. A separately generated dense ordinal indexes that
+// metadata.
 //
 // Every operand is a reference to an instruction result. ProgramValue operands
 // additionally require the declared representation. Constants enter ordinary
@@ -33,7 +37,7 @@
 #define CL_JIT_Parameter_OPERANDS(fixed, variadic, snapshot_values)
 #define CL_JIT_Parameter_ATTRIBUTES(attribute)
 CL_JIT_INSTRUCTION(Parameter, CL_JIT_IR_LEVELS(CoreMachine),
-                   CL_JIT_RESULT(ProgramValue, TaggedValue),
+                   CL_JIT_RESULT(ProgramValue, TaggedValue, Def),
                    CL_JIT_EFFECT_BOUNDS(None, None),
                    CL_JIT_Parameter_OPERANDS, CL_JIT_Parameter_ATTRIBUTES)
 #undef CL_JIT_Parameter_ATTRIBUTES
@@ -42,7 +46,7 @@ CL_JIT_INSTRUCTION(Parameter, CL_JIT_IR_LEVELS(CoreMachine),
 #define CL_JIT_ParameterF64_OPERANDS(fixed, variadic, snapshot_values)
 #define CL_JIT_ParameterF64_ATTRIBUTES(attribute)
 CL_JIT_INSTRUCTION(ParameterF64, CL_JIT_IR_LEVELS(CoreMachine),
-                   CL_JIT_RESULT(ProgramValue, F64),
+                   CL_JIT_RESULT(ProgramValue, F64, Def),
                    CL_JIT_EFFECT_BOUNDS(None, None),
                    CL_JIT_ParameterF64_OPERANDS,
                    CL_JIT_ParameterF64_ATTRIBUTES)
@@ -52,7 +56,7 @@ CL_JIT_INSTRUCTION(ParameterF64, CL_JIT_IR_LEVELS(CoreMachine),
 #define CL_JIT_ParameterPointer_OPERANDS(fixed, variadic, snapshot_values)
 #define CL_JIT_ParameterPointer_ATTRIBUTES(attribute)
 CL_JIT_INSTRUCTION(ParameterPointer, CL_JIT_IR_LEVELS(CoreMachine),
-                   CL_JIT_RESULT(ProgramValue, Pointer),
+                   CL_JIT_RESULT(ProgramValue, Pointer, Def),
                    CL_JIT_EFFECT_BOUNDS(None, None),
                    CL_JIT_ParameterPointer_OPERANDS,
                    CL_JIT_ParameterPointer_ATTRIBUTES)
@@ -63,7 +67,7 @@ CL_JIT_INSTRUCTION(ParameterPointer, CL_JIT_IR_LEVELS(CoreMachine),
     fixed(source, ProgramValue, TaggedValue)
 #define CL_JIT_Mov_ATTRIBUTES(attribute)
 CL_JIT_INSTRUCTION(Mov, CL_JIT_IR_LEVELS(CoreMachine),
-                   CL_JIT_RESULT(ProgramValue, TaggedValue),
+                   CL_JIT_RESULT(ProgramValue, TaggedValue, Def),
                    CL_JIT_EFFECT_BOUNDS(None, None), CL_JIT_Mov_OPERANDS,
                    CL_JIT_Mov_ATTRIBUTES)
 #undef CL_JIT_Mov_ATTRIBUTES
@@ -73,7 +77,7 @@ CL_JIT_INSTRUCTION(Mov, CL_JIT_IR_LEVELS(CoreMachine),
     fixed(source, ProgramValue, F64)
 #define CL_JIT_MovF64_ATTRIBUTES(attribute)
 CL_JIT_INSTRUCTION(MovF64, CL_JIT_IR_LEVELS(CoreMachine),
-                   CL_JIT_RESULT(ProgramValue, F64),
+                   CL_JIT_RESULT(ProgramValue, F64, Def),
                    CL_JIT_EFFECT_BOUNDS(None, None), CL_JIT_MovF64_OPERANDS,
                    CL_JIT_MovF64_ATTRIBUTES)
 #undef CL_JIT_MovF64_ATTRIBUTES
@@ -83,7 +87,7 @@ CL_JIT_INSTRUCTION(MovF64, CL_JIT_IR_LEVELS(CoreMachine),
     fixed(source, ProgramValue, Pointer)
 #define CL_JIT_MovPointer_ATTRIBUTES(attribute)
 CL_JIT_INSTRUCTION(MovPointer, CL_JIT_IR_LEVELS(CoreMachine),
-                   CL_JIT_RESULT(ProgramValue, Pointer),
+                   CL_JIT_RESULT(ProgramValue, Pointer, Def),
                    CL_JIT_EFFECT_BOUNDS(None, None),
                    CL_JIT_MovPointer_OPERANDS,
                    CL_JIT_MovPointer_ATTRIBUTES)
@@ -94,7 +98,7 @@ CL_JIT_INSTRUCTION(MovPointer, CL_JIT_IR_LEVELS(CoreMachine),
     fixed(source, ProgramValue, TaggedValue)
 #define CL_JIT_LoadStack_ATTRIBUTES(attribute)
 CL_JIT_INSTRUCTION(LoadStack, CL_JIT_IR_LEVELS(CoreMachine),
-                   CL_JIT_RESULT(ProgramValue, TaggedValue),
+                   CL_JIT_RESULT(ProgramValue, TaggedValue, Def),
                    CL_JIT_EFFECT_BOUNDS(None, None), CL_JIT_LoadStack_OPERANDS,
                    CL_JIT_LoadStack_ATTRIBUTES)
 #undef CL_JIT_LoadStack_ATTRIBUTES
@@ -104,7 +108,7 @@ CL_JIT_INSTRUCTION(LoadStack, CL_JIT_IR_LEVELS(CoreMachine),
     fixed(source, ProgramValue, F64)
 #define CL_JIT_LoadStackF64_ATTRIBUTES(attribute)
 CL_JIT_INSTRUCTION(LoadStackF64, CL_JIT_IR_LEVELS(CoreMachine),
-                   CL_JIT_RESULT(ProgramValue, F64),
+                   CL_JIT_RESULT(ProgramValue, F64, Def),
                    CL_JIT_EFFECT_BOUNDS(None, None),
                    CL_JIT_LoadStackF64_OPERANDS, CL_JIT_LoadStackF64_ATTRIBUTES)
 #undef CL_JIT_LoadStackF64_ATTRIBUTES
@@ -114,7 +118,7 @@ CL_JIT_INSTRUCTION(LoadStackF64, CL_JIT_IR_LEVELS(CoreMachine),
     fixed(source, ProgramValue, Pointer)
 #define CL_JIT_LoadStackPointer_ATTRIBUTES(attribute)
 CL_JIT_INSTRUCTION(LoadStackPointer, CL_JIT_IR_LEVELS(CoreMachine),
-                   CL_JIT_RESULT(ProgramValue, Pointer),
+                   CL_JIT_RESULT(ProgramValue, Pointer, Def),
                    CL_JIT_EFFECT_BOUNDS(None, None),
                    CL_JIT_LoadStackPointer_OPERANDS,
                    CL_JIT_LoadStackPointer_ATTRIBUTES)
@@ -125,7 +129,7 @@ CL_JIT_INSTRUCTION(LoadStackPointer, CL_JIT_IR_LEVELS(CoreMachine),
     fixed(source, ProgramValue, TaggedValue)
 #define CL_JIT_StoreStack_ATTRIBUTES(attribute)
 CL_JIT_INSTRUCTION(StoreStack, CL_JIT_IR_LEVELS(CoreMachine),
-                   CL_JIT_RESULT(ProgramValue, TaggedValue),
+                   CL_JIT_RESULT(ProgramValue, TaggedValue, Def),
                    CL_JIT_EFFECT_BOUNDS(None, None), CL_JIT_StoreStack_OPERANDS,
                    CL_JIT_StoreStack_ATTRIBUTES)
 #undef CL_JIT_StoreStack_ATTRIBUTES
@@ -135,7 +139,7 @@ CL_JIT_INSTRUCTION(StoreStack, CL_JIT_IR_LEVELS(CoreMachine),
     fixed(source, ProgramValue, F64)
 #define CL_JIT_StoreStackF64_ATTRIBUTES(attribute)
 CL_JIT_INSTRUCTION(StoreStackF64, CL_JIT_IR_LEVELS(CoreMachine),
-                   CL_JIT_RESULT(ProgramValue, F64),
+                   CL_JIT_RESULT(ProgramValue, F64, Def),
                    CL_JIT_EFFECT_BOUNDS(None, None),
                    CL_JIT_StoreStackF64_OPERANDS,
                    CL_JIT_StoreStackF64_ATTRIBUTES)
@@ -146,7 +150,7 @@ CL_JIT_INSTRUCTION(StoreStackF64, CL_JIT_IR_LEVELS(CoreMachine),
     fixed(source, ProgramValue, Pointer)
 #define CL_JIT_StoreStackPointer_ATTRIBUTES(attribute)
 CL_JIT_INSTRUCTION(StoreStackPointer, CL_JIT_IR_LEVELS(CoreMachine),
-                   CL_JIT_RESULT(ProgramValue, Pointer),
+                   CL_JIT_RESULT(ProgramValue, Pointer, Def),
                    CL_JIT_EFFECT_BOUNDS(None, None),
                    CL_JIT_StoreStackPointer_OPERANDS,
                    CL_JIT_StoreStackPointer_ATTRIBUTES)
@@ -159,7 +163,7 @@ CL_JIT_INSTRUCTION(StoreStackPointer, CL_JIT_IR_LEVELS(CoreMachine),
     fixed(snapshot, Snapshot, None)
 #define CL_JIT_AddSMI_ATTRIBUTES(attribute)
 CL_JIT_INSTRUCTION(AddSMI, CL_JIT_IR_LEVELS(Core),
-                   CL_JIT_RESULT(ProgramValue, TaggedValue),
+                   CL_JIT_RESULT(ProgramValue, TaggedValue, Def),
                    CL_JIT_EFFECT_BOUNDS(None, SideExit),
                    CL_JIT_AddSMI_OPERANDS, CL_JIT_AddSMI_ATTRIBUTES)
 #undef CL_JIT_AddSMI_ATTRIBUTES
@@ -174,7 +178,7 @@ CL_JIT_INSTRUCTION(AddSMI, CL_JIT_IR_LEVELS(Core),
     attribute(side_exit_region, SideExitRegionId)
 CL_JIT_INSTRUCTION(
     AddSMIWithSideExit, CL_JIT_IR_LEVELS(Machine),
-    CL_JIT_RESULT(ProgramValue, TaggedValue),
+    CL_JIT_RESULT(ProgramValue, TaggedValue, Def),
     CL_JIT_EFFECT_BOUNDS(None, SideExit),
     CL_JIT_AddSMIWithSideExit_OPERANDS,
     CL_JIT_AddSMIWithSideExit_ATTRIBUTES)
@@ -186,7 +190,7 @@ CL_JIT_INSTRUCTION(
     fixed(rhs, ProgramValue, TaggedValue)
 #define CL_JIT_AndSMI_ATTRIBUTES(attribute)
 CL_JIT_INSTRUCTION(AndSMI, CL_JIT_IR_LEVELS(CoreMachine),
-                   CL_JIT_RESULT(ProgramValue, TaggedValue),
+                   CL_JIT_RESULT(ProgramValue, TaggedValue, Def),
                    CL_JIT_EFFECT_BOUNDS(None, None),
                    CL_JIT_AndSMI_OPERANDS, CL_JIT_AndSMI_ATTRIBUTES)
 #undef CL_JIT_AndSMI_ATTRIBUTES
@@ -197,7 +201,7 @@ CL_JIT_INSTRUCTION(AndSMI, CL_JIT_IR_LEVELS(CoreMachine),
     fixed(rhs, ProgramValue, TaggedValue)
 #define CL_JIT_OrrSMI_ATTRIBUTES(attribute)
 CL_JIT_INSTRUCTION(OrrSMI, CL_JIT_IR_LEVELS(CoreMachine),
-                   CL_JIT_RESULT(ProgramValue, TaggedValue),
+                   CL_JIT_RESULT(ProgramValue, TaggedValue, Def),
                    CL_JIT_EFFECT_BOUNDS(None, None),
                    CL_JIT_OrrSMI_OPERANDS, CL_JIT_OrrSMI_ATTRIBUTES)
 #undef CL_JIT_OrrSMI_ATTRIBUTES
@@ -208,7 +212,7 @@ CL_JIT_INSTRUCTION(OrrSMI, CL_JIT_IR_LEVELS(CoreMachine),
     fixed(rhs, ProgramValue, TaggedValue)
 #define CL_JIT_EorSMI_ATTRIBUTES(attribute)
 CL_JIT_INSTRUCTION(EorSMI, CL_JIT_IR_LEVELS(CoreMachine),
-                   CL_JIT_RESULT(ProgramValue, TaggedValue),
+                   CL_JIT_RESULT(ProgramValue, TaggedValue, Def),
                    CL_JIT_EFFECT_BOUNDS(None, None),
                    CL_JIT_EorSMI_OPERANDS, CL_JIT_EorSMI_ATTRIBUTES)
 #undef CL_JIT_EorSMI_ATTRIBUTES
@@ -219,7 +223,7 @@ CL_JIT_INSTRUCTION(EorSMI, CL_JIT_IR_LEVELS(CoreMachine),
     fixed(rhs, ProgramValue, TaggedValue)
 #define CL_JIT_Is_ATTRIBUTES(attribute)
 CL_JIT_INSTRUCTION(Is, CL_JIT_IR_LEVELS(CoreMachine),
-                   CL_JIT_RESULT(ProgramValue, TaggedValue),
+                   CL_JIT_RESULT(ProgramValue, TaggedValue, Def),
                    CL_JIT_EFFECT_BOUNDS(None, None), CL_JIT_Is_OPERANDS,
                    CL_JIT_Is_ATTRIBUTES)
 #undef CL_JIT_Is_ATTRIBUTES
@@ -230,7 +234,7 @@ CL_JIT_INSTRUCTION(Is, CL_JIT_IR_LEVELS(CoreMachine),
     fixed(rhs, ProgramValue, TaggedValue)
 #define CL_JIT_IsNot_ATTRIBUTES(attribute)
 CL_JIT_INSTRUCTION(IsNot, CL_JIT_IR_LEVELS(CoreMachine),
-                   CL_JIT_RESULT(ProgramValue, TaggedValue),
+                   CL_JIT_RESULT(ProgramValue, TaggedValue, Def),
                    CL_JIT_EFFECT_BOUNDS(None, None), CL_JIT_IsNot_OPERANDS,
                    CL_JIT_IsNot_ATTRIBUTES)
 #undef CL_JIT_IsNot_ATTRIBUTES
@@ -241,7 +245,7 @@ CL_JIT_INSTRUCTION(IsNot, CL_JIT_IR_LEVELS(CoreMachine),
     fixed(rhs, ProgramValue, F64)
 #define CL_JIT_AddF64_ATTRIBUTES(attribute)
 CL_JIT_INSTRUCTION(AddF64, CL_JIT_IR_LEVELS(CoreMachine),
-                   CL_JIT_RESULT(ProgramValue, F64),
+                   CL_JIT_RESULT(ProgramValue, F64, Def),
                    CL_JIT_EFFECT_BOUNDS(None, None), CL_JIT_AddF64_OPERANDS,
                    CL_JIT_AddF64_ATTRIBUTES)
 #undef CL_JIT_AddF64_ATTRIBUTES
@@ -251,7 +255,7 @@ CL_JIT_INSTRUCTION(AddF64, CL_JIT_IR_LEVELS(CoreMachine),
     fixed(source, ProgramValue, F64)
 #define CL_JIT_BoxF64_ATTRIBUTES(attribute)
 CL_JIT_INSTRUCTION(BoxF64, CL_JIT_IR_LEVELS(CoreMachine),
-                   CL_JIT_RESULT(ProgramValue, TaggedValue),
+                   CL_JIT_RESULT(ProgramValue, TaggedValue, Def),
                    CL_JIT_EFFECT_BOUNDS(Allocate, Allocate),
                    CL_JIT_BoxF64_OPERANDS, CL_JIT_BoxF64_ATTRIBUTES)
 #undef CL_JIT_BoxF64_ATTRIBUTES
@@ -261,7 +265,7 @@ CL_JIT_INSTRUCTION(BoxF64, CL_JIT_IR_LEVELS(CoreMachine),
     fixed(source, ProgramValue, TaggedValue)
 #define CL_JIT_UnboxF64_ATTRIBUTES(attribute)
 CL_JIT_INSTRUCTION(UnboxF64, CL_JIT_IR_LEVELS(CoreMachine),
-                   CL_JIT_RESULT(ProgramValue, F64),
+                   CL_JIT_RESULT(ProgramValue, F64, Def),
                    CL_JIT_EFFECT_BOUNDS(None, None),
                    CL_JIT_UnboxF64_OPERANDS, CL_JIT_UnboxF64_ATTRIBUTES)
 #undef CL_JIT_UnboxF64_ATTRIBUTES
@@ -273,7 +277,7 @@ CL_JIT_INSTRUCTION(UnboxF64, CL_JIT_IR_LEVELS(CoreMachine),
 #define CL_JIT_ShapeGuard_ATTRIBUTES(attribute)                               \
     attribute(expected_shape, Shape)
 CL_JIT_INSTRUCTION(ShapeGuard, CL_JIT_IR_LEVELS(Core),
-                   CL_JIT_RESULT(ProgramValue, TaggedValue),
+                   CL_JIT_RESULT(ProgramValue, TaggedValue, Def),
                    CL_JIT_EFFECT_BOUNDS(None, SideExit),
                    CL_JIT_ShapeGuard_OPERANDS,
                    CL_JIT_ShapeGuard_ATTRIBUTES)
@@ -286,7 +290,7 @@ CL_JIT_INSTRUCTION(ShapeGuard, CL_JIT_IR_LEVELS(Core),
 #define CL_JIT_ValidityCellGuard_ATTRIBUTES(attribute)                        \
     attribute(validity, ValidityCell)
 CL_JIT_INSTRUCTION(ValidityCellGuard, CL_JIT_IR_LEVELS(Core),
-                   CL_JIT_RESULT(ProgramValue, TaggedValue),
+                   CL_JIT_RESULT(ProgramValue, TaggedValue, Def),
                    CL_JIT_EFFECT_BOUNDS(None, SideExit),
                    CL_JIT_ValidityCellGuard_OPERANDS,
                    CL_JIT_ValidityCellGuard_ATTRIBUTES)
@@ -299,7 +303,7 @@ CL_JIT_INSTRUCTION(ValidityCellGuard, CL_JIT_IR_LEVELS(Core),
 #define CL_JIT_InlineTagGuard_ATTRIBUTES(attribute)                           \
     attribute(expected_class, InlineValueClass)
 CL_JIT_INSTRUCTION(InlineTagGuard, CL_JIT_IR_LEVELS(Core),
-                   CL_JIT_RESULT(ProgramValue, TaggedValue),
+                   CL_JIT_RESULT(ProgramValue, TaggedValue, Def),
                    CL_JIT_EFFECT_BOUNDS(None, SideExit),
                    CL_JIT_InlineTagGuard_OPERANDS,
                    CL_JIT_InlineTagGuard_ATTRIBUTES)
@@ -315,7 +319,7 @@ CL_JIT_INSTRUCTION(InlineTagGuard, CL_JIT_IR_LEVELS(Core),
     attribute(side_exit_region, SideExitRegionId)
 CL_JIT_INSTRUCTION(
     InlineTagGuardWithSideExit, CL_JIT_IR_LEVELS(Machine),
-    CL_JIT_RESULT(ProgramValue, TaggedValue),
+    CL_JIT_RESULT(ProgramValue, TaggedValue, Def),
     CL_JIT_EFFECT_BOUNDS(None, SideExit),
     CL_JIT_InlineTagGuardWithSideExit_OPERANDS,
     CL_JIT_InlineTagGuardWithSideExit_ATTRIBUTES)
@@ -326,7 +330,7 @@ CL_JIT_INSTRUCTION(
 #define CL_JIT_Const_ATTRIBUTES(attribute)                                    \
     attribute(constant, ValueConstant)
 CL_JIT_INSTRUCTION(Const, CL_JIT_IR_LEVELS(CoreMachine),
-                   CL_JIT_RESULT(ProgramValue, TaggedValue),
+                   CL_JIT_RESULT(ProgramValue, TaggedValue, Def),
                    CL_JIT_EFFECT_BOUNDS(None, None),
                    CL_JIT_Const_OPERANDS, CL_JIT_Const_ATTRIBUTES)
 #undef CL_JIT_Const_ATTRIBUTES
@@ -335,7 +339,7 @@ CL_JIT_INSTRUCTION(Const, CL_JIT_IR_LEVELS(CoreMachine),
 #define CL_JIT_Uninitialized_OPERANDS(fixed, variadic, snapshot_values)
 #define CL_JIT_Uninitialized_ATTRIBUTES(attribute)
 CL_JIT_INSTRUCTION(Uninitialized, CL_JIT_IR_LEVELS(CoreMachine),
-                   CL_JIT_RESULT(ProgramValue, TaggedValue),
+                   CL_JIT_RESULT(ProgramValue, TaggedValue, Def),
                    CL_JIT_EFFECT_BOUNDS(None, None),
                    CL_JIT_Uninitialized_OPERANDS,
                    CL_JIT_Uninitialized_ATTRIBUTES)
@@ -349,7 +353,7 @@ CL_JIT_INSTRUCTION(Uninitialized, CL_JIT_IR_LEVELS(CoreMachine),
 #define CL_JIT_PythonCall_ATTRIBUTES(attribute)                               \
     attribute(interpreter_return_pc, BytecodePC)
 CL_JIT_INSTRUCTION(PythonCall, CL_JIT_IR_LEVELS(Core),
-                   CL_JIT_RESULT(ProgramValue, TaggedValue),
+                   CL_JIT_RESULT(ProgramValue, TaggedValue, Def),
                    CL_JIT_EFFECT_BOUNDS(CallPython, CallPython),
                    CL_JIT_PythonCall_OPERANDS,
                    CL_JIT_PythonCall_ATTRIBUTES)
@@ -361,7 +365,7 @@ CL_JIT_INSTRUCTION(PythonCall, CL_JIT_IR_LEVELS(Core),
     fixed(snapshot, Snapshot, None)
 #define CL_JIT_CheckNotImplemented_ATTRIBUTES(attribute)
 CL_JIT_INSTRUCTION(CheckNotImplemented, CL_JIT_IR_LEVELS(Core),
-                   CL_JIT_RESULT(ProgramValue, TaggedValue),
+                   CL_JIT_RESULT(ProgramValue, TaggedValue, Def),
                    CL_JIT_EFFECT_BOUNDS_MAY_TWO(None, SideExit, ControlFlow),
                    CL_JIT_CheckNotImplemented_OPERANDS,
                    CL_JIT_CheckNotImplemented_ATTRIBUTES)
@@ -372,7 +376,7 @@ CL_JIT_INSTRUCTION(CheckNotImplemented, CL_JIT_IR_LEVELS(Core),
     program_values(captured_values, Snapshot)
 #define CL_JIT_Snapshot_ATTRIBUTES(attribute) attribute(resume_pc, BytecodePC)
 CL_JIT_INSTRUCTION(Snapshot, CL_JIT_IR_LEVELS(Core),
-                   CL_JIT_RESULT(Snapshot, None),
+                   CL_JIT_RESULT(Snapshot, None, NoDef),
                    CL_JIT_EFFECT_BOUNDS(None, None), CL_JIT_Snapshot_OPERANDS,
                    CL_JIT_Snapshot_ATTRIBUTES)
 #undef CL_JIT_Snapshot_ATTRIBUTES
@@ -384,7 +388,7 @@ CL_JIT_INSTRUCTION(Snapshot, CL_JIT_IR_LEVELS(Core),
     attribute(resume_pc, BytecodePC)
 CL_JIT_INSTRUCTION(
     ExitToInterpreter, CL_JIT_IR_LEVELS(Machine),
-    CL_JIT_RESULT(None, None),
+    CL_JIT_RESULT(None, None, NoDef),
     CL_JIT_EXACT_EFFECTS_THREE(SideExit, ControlFlow, TerminateBlock),
     CL_JIT_ExitToInterpreter_OPERANDS,
     CL_JIT_ExitToInterpreter_ATTRIBUTES)
@@ -395,7 +399,7 @@ CL_JIT_INSTRUCTION(
     fixed(snapshot, Snapshot, None)
 #define CL_JIT_ResumeInInterpreter_ATTRIBUTES(attribute)
 CL_JIT_INSTRUCTION(ResumeInInterpreter, CL_JIT_IR_LEVELS(Core),
-                   CL_JIT_RESULT(None, None),
+                   CL_JIT_RESULT(None, None, NoDef),
                    CL_JIT_EXACT_EFFECTS_THREE(SideExit, ControlFlow,
                                               TerminateBlock),
                    CL_JIT_ResumeInInterpreter_OPERANDS,
@@ -410,7 +414,7 @@ CL_JIT_INSTRUCTION(ResumeInInterpreter, CL_JIT_IR_LEVELS(Core),
     attribute(side_exit_region, SideExitRegionId)
 CL_JIT_INSTRUCTION(
     ResumeInInterpreterWithSideExit, CL_JIT_IR_LEVELS(Machine),
-    CL_JIT_RESULT(None, None),
+    CL_JIT_RESULT(None, None, NoDef),
     CL_JIT_EXACT_EFFECTS_THREE(SideExit, ControlFlow, TerminateBlock),
     CL_JIT_ResumeInInterpreterWithSideExit_OPERANDS,
     CL_JIT_ResumeInInterpreterWithSideExit_ATTRIBUTES)
@@ -423,7 +427,7 @@ CL_JIT_INSTRUCTION(
     attribute(true_edge, BlockEdge)                                            \
     attribute(false_edge, BlockEdge)
 CL_JIT_INSTRUCTION(ConditionalBranch, CL_JIT_IR_LEVELS(CoreMachine),
-                   CL_JIT_RESULT(None, None),
+                   CL_JIT_RESULT(None, None, NoDef),
                    CL_JIT_EXACT_EFFECTS_TWO(ControlFlow, TerminateBlock),
                    CL_JIT_ConditionalBranch_OPERANDS,
                    CL_JIT_ConditionalBranch_ATTRIBUTES)
@@ -434,7 +438,7 @@ CL_JIT_INSTRUCTION(ConditionalBranch, CL_JIT_IR_LEVELS(CoreMachine),
 #define CL_JIT_UnconditionalBranch_ATTRIBUTES(attribute)                     \
     attribute(edge, BlockEdge)
 CL_JIT_INSTRUCTION(UnconditionalBranch, CL_JIT_IR_LEVELS(CoreMachine),
-                   CL_JIT_RESULT(None, None),
+                   CL_JIT_RESULT(None, None, NoDef),
                    CL_JIT_EXACT_EFFECTS_TWO(ControlFlow, TerminateBlock),
                    CL_JIT_UnconditionalBranch_OPERANDS,
                    CL_JIT_UnconditionalBranch_ATTRIBUTES)
@@ -445,7 +449,7 @@ CL_JIT_INSTRUCTION(UnconditionalBranch, CL_JIT_IR_LEVELS(CoreMachine),
     fixed(return_value, ProgramValue, TaggedValue)
 #define CL_JIT_Return_ATTRIBUTES(attribute)
 CL_JIT_INSTRUCTION(Return, CL_JIT_IR_LEVELS(CoreMachine),
-                   CL_JIT_RESULT(None, None),
+                   CL_JIT_RESULT(None, None, NoDef),
                    CL_JIT_EXACT_EFFECTS_TWO(ControlFlow, TerminateBlock),
                    CL_JIT_Return_OPERANDS, CL_JIT_Return_ATTRIBUTES)
 #undef CL_JIT_Return_ATTRIBUTES

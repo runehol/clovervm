@@ -182,6 +182,8 @@ namespace cl::jit
                     return "use";
                 case OccurrenceKind::Def:
                     return "def";
+                case OccurrenceKind::ForwardingDef:
+                    return "forwarding-def";
                 case OccurrenceKind::Temporary:
                     return "temporary";
             }

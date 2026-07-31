@@ -51,14 +51,16 @@ namespace cl::jit
     namespace
     {
         InstructionKindMetadata make_instruction_kind_metadata(
-            IRLevelMask allowed_ir_levels, EffectProfile must_effects,
-            EffectProfile may_effects, uint32_t side_exit_argument_start,
-            uint8_t fixed_operand_count, uint8_t attribute_count,
-            uint8_t inline_slot_count, bool has_variadic_operands,
-            bool operands_are_indirect)
+            IRLevelMask allowed_ir_levels, InstructionResultInfo result,
+            EffectProfile must_effects, EffectProfile may_effects,
+            uint32_t side_exit_argument_start, uint8_t fixed_operand_count,
+            uint8_t attribute_count, uint8_t inline_slot_count,
+            bool has_variadic_operands, bool operands_are_indirect)
         {
             assert(inline_slot_count <= Instruction::InlineSlotCount);
             assert(has_effects(may_effects, must_effects));
+            assert((result.result_class == ResultClass::ProgramValue) ==
+                   (result.definition_kind != ResultDefinitionKind::NoDef));
             assert(!has_effects(must_effects, EffectProfile::TerminateBlock) ||
                    has_effects(must_effects, EffectProfile::ControlFlow));
             assert(!has_effects(may_effects, EffectProfile::TerminateBlock) ||
@@ -67,10 +69,15 @@ namespace cl::jit
                        InstructionKindMetadata::NoSideExitArguments ||
                    (has_variadic_operands &&
                     side_exit_argument_start == fixed_operand_count));
-            return {allowed_ir_levels,    must_effects,
-                    may_effects,          side_exit_argument_start,
-                    fixed_operand_count,  attribute_count,
-                    inline_slot_count,    has_variadic_operands,
+            return {allowed_ir_levels,
+                    must_effects,
+                    may_effects,
+                    result.definition_kind,
+                    side_exit_argument_start,
+                    fixed_operand_count,
+                    attribute_count,
+                    inline_slot_count,
+                    has_variadic_operands,
                     operands_are_indirect};
         }
 
@@ -79,7 +86,10 @@ namespace cl::jit
             switch(kind)
             {
 #define CL_JIT_IR_LEVELS(set) IRLevelMask::set
-#define CL_JIT_RESULT(...)
+#define CL_JIT_RESULT(result_class, representation, definition_kind)           \
+    InstructionResultInfo{ResultClass::result_class,                           \
+                          ValueRepresentation::representation,                 \
+                          ResultDefinitionKind::definition_kind}
 #define CL_JIT_EFFECT_BOUNDS(must_effects, may_effects)                        \
     EffectProfile::must_effects, EffectProfile::may_effects
 #define CL_JIT_EFFECT_BOUNDS_MAY_TWO(must_effects, may_first, may_second)      \
@@ -135,7 +145,7 @@ namespace cl::jit
                     ? Instruction::InlineSlotCount                             \
                     : fixed_operand_count + attribute_word_count;              \
             return make_instruction_kind_metadata(                             \
-                ir_levels, effects, side_exit_argument_start,                  \
+                ir_levels, result, effects, side_exit_argument_start,          \
                 fixed_operand_count, attribute_count, inline_slot_count,       \
                 has_variadic_operands, operands_are_indirect);                 \
         }

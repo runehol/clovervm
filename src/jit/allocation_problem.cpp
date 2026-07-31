@@ -32,6 +32,7 @@ namespace cl::jit
                                                ? instruction_late
                                                : next_instruction_early};
             case OccurrenceKind::Def:
+            case OccurrenceKind::ForwardingDef:
                 return {timing == AccessTiming::Early ? instruction_early
                                                       : instruction_late,
                         next_instruction_early};

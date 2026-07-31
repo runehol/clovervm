@@ -181,10 +181,18 @@ namespace cl::jit
         return static_cast<IRLevelMask>(level);
     }
 
+    enum class ResultDefinitionKind : uint8_t
+    {
+        NoDef,
+        Def,
+        ForwardingDef,
+    };
+
     struct InstructionResultInfo
     {
         ResultClass result_class;
         ValueRepresentation representation;
+        ResultDefinitionKind definition_kind;
     };
 
     struct InstructionEffectBounds
@@ -231,7 +239,7 @@ namespace cl::jit
 
     enum class InstructionKind : uint16_t
     {
-#define CL_JIT_RESULT(result_class, representation)                            \
+#define CL_JIT_RESULT(result_class, representation, definition_kind)           \
     ResultClass::result_class, ValueRepresentation::representation
 #define CL_JIT_INSTRUCTION(name, ir_levels, result, effects, operands,         \
                            attributes)                                         \
@@ -429,6 +437,7 @@ namespace cl::jit
         IRLevelMask allowed_ir_levels;
         EffectProfile must_effects;
         EffectProfile may_effects;
+        ResultDefinitionKind result_definition_kind;
         uint32_t side_exit_argument_start;
         uint8_t fixed_operand_count;
         uint8_t attribute_count;
@@ -1156,10 +1165,11 @@ namespace cl::jit
 #define CL_JIT_DECLARE_VARIADIC_INDEX(name, operand_class, representation) name,
 #define CL_JIT_DECLARE_PROGRAM_VALUES_INDEX(name, role) name,
 #define CL_JIT_IR_LEVELS(set) IRLevelMask::set
-#define CL_JIT_RESULT(result_class, representation)                            \
+#define CL_JIT_RESULT(result_class, representation, definition_kind)           \
     InstructionResultInfo                                                      \
     {                                                                          \
-        ResultClass::result_class, ValueRepresentation::representation         \
+        ResultClass::result_class, ValueRepresentation::representation,        \
+            ResultDefinitionKind::definition_kind                              \
     }
 #define CL_JIT_EFFECT_BOUNDS(must_effects, may_effects)                        \
     InstructionEffectBounds                                                    \

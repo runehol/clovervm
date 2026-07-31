@@ -70,6 +70,7 @@ namespace cl::jit
     {
         Use,
         Def,
+        ForwardingDef,
         Temporary,
     };
 
