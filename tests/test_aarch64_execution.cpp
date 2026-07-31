@@ -472,6 +472,127 @@ namespace cl::jit
                   execute_guard(InlineValueClass::SMIOrBoolean, Value::None()));
     }
 
+    TEST(AArch64Execution, CombinesAdjacentInlineTagGuardsWithSameSideExit)
+    {
+        test::VmTestContext vm;
+        ThreadState::ActivationScope activation_scope(vm.thread());
+        CodeObject *code_object = vm.compile_file(L"pass\n");
+        code_object->function_signature.n_parameters = 2;
+        BytecodeStateOrder state_order(*code_object);
+        CodeCache cache;
+
+        auto make_guarded_function = [&](InlineValueClass expected_class) {
+            CompilationSession session;
+            GraphBuilder builder(session, IRLevel::Machine);
+            builder.set_bytecode_state_order(state_order);
+            Block *entry = builder.emplace_block();
+            ParameterInstruction lhs =
+                builder.emplace_parameter<ParameterInstruction>(entry);
+            ParameterInstruction rhs =
+                builder.emplace_parameter<ParameterInstruction>(entry);
+            std::array<ProgramValueRef, 1> side_exit_arguments = {
+                ProgramValueRef(lhs)};
+            ParameterInstruction region_parameter =
+                builder.make_instruction<ParameterInstruction>();
+            std::vector<ProgramValueRef> region_captured(
+                state_order.size(), ProgramValueRef(region_parameter));
+            ExitToInterpreterInstruction region_exit =
+                builder.make_instruction<ExitToInterpreterInstruction>(
+                    region_captured, BytecodePC{19});
+            std::array<InstructionId, 1> parameter_ids = {
+                region_parameter.id()};
+            std::array<InstructionId, 1> instructions = {region_exit.id()};
+            SideExitRegionId side_exit_region =
+                builder.make_side_exit_region(parameter_ids, instructions)
+                    ->id();
+            InlineTagGuardWithSideExitInstruction lhs_guard =
+                builder
+                    .emplace_instruction<InlineTagGuardWithSideExitInstruction>(
+                        entry, TaggedValueRef(lhs), side_exit_arguments,
+                        expected_class, side_exit_region);
+            InlineTagGuardWithSideExitInstruction rhs_guard =
+                builder
+                    .emplace_instruction<InlineTagGuardWithSideExitInstruction>(
+                        entry, TaggedValueRef(rhs), side_exit_arguments,
+                        expected_class, side_exit_region);
+            builder.emplace_instruction<ReturnInstruction>(
+                entry, TaggedValueRef(lhs_guard));
+            ControlFlowGraph *graph = builder.finalize();
+
+            LocationAssignmentsBuilder assignment_builder;
+            assignment_builder.assign(ProgramValueRef(lhs),
+                                      PhysicalLocation::reg(x0));
+            assignment_builder.assign(ProgramValueRef(rhs),
+                                      PhysicalLocation::reg(x1));
+            assignment_builder.assign(ProgramValueRef(lhs_guard),
+                                      PhysicalLocation::reg(x0));
+            assignment_builder.assign(ProgramValueRef(rhs_guard),
+                                      PhysicalLocation::reg(x1));
+            LocationAssignments locations =
+                std::move(assignment_builder).finalize();
+
+            MachineAddress side_exit_thunk =
+                detail::MachineAddressAccess::from_pointer(
+                    reinterpret_cast<const void *>(
+                        &inline_tag_guard_side_exit));
+            auto emission = emit_aarch64_from_cfg(*graph, locations, cache,
+                                                  side_exit_thunk);
+            EXPECT_TRUE(emission);
+            return std::move(emission).value();
+        };
+
+        auto execute_pair = [&](InlineValueClass expected_class, Value lhs,
+                                Value rhs) {
+            PublishedCode code = make_guarded_function(expected_class);
+            size_t conditional_branch_count = 0;
+            const void *instructions = reinterpret_cast<const void *>(
+                code.entry().bits_for_indirect_target());
+            size_t instruction_count =
+                code.encoded_code_size() / sizeof(uint32_t);
+            for(size_t index = 0; index < instruction_count; ++index)
+            {
+                if((instruction_at(instructions, index) & 0xff000010u) ==
+                   0x54000000u)
+                {
+                    ++conditional_branch_count;
+                }
+            }
+            EXPECT_EQ(1u, conditional_branch_count);
+
+            using Function = uint64_t (*)(uint64_t, uint64_t);
+            Function function = reinterpret_cast<Function>(
+                code.entry().bits_for_indirect_target());
+            return function(static_cast<uint64_t>(lhs.as.integer),
+                            static_cast<uint64_t>(rhs.as.integer));
+        };
+
+        Value smi = Value::from_smi(42);
+        EXPECT_EQ(static_cast<uint64_t>(smi.as.integer),
+                  execute_pair(InlineValueClass::SMI, smi, smi));
+        EXPECT_EQ(static_cast<uint64_t>(Value::Ellipsis().as.integer),
+                  execute_pair(InlineValueClass::SMI, Value::True(), smi));
+        EXPECT_EQ(static_cast<uint64_t>(Value::Ellipsis().as.integer),
+                  execute_pair(InlineValueClass::SMI, smi, Value::True()));
+
+        EXPECT_EQ(static_cast<uint64_t>(Value::True().as.integer),
+                  execute_pair(InlineValueClass::Boolean, Value::True(),
+                               Value::False()));
+        EXPECT_EQ(static_cast<uint64_t>(Value::Ellipsis().as.integer),
+                  execute_pair(InlineValueClass::Boolean, smi, Value::False()));
+        EXPECT_EQ(static_cast<uint64_t>(Value::Ellipsis().as.integer),
+                  execute_pair(InlineValueClass::Boolean, Value::False(), smi));
+
+        EXPECT_EQ(
+            static_cast<uint64_t>(smi.as.integer),
+            execute_pair(InlineValueClass::SMIOrBoolean, smi, Value::True()));
+        EXPECT_EQ(
+            static_cast<uint64_t>(Value::Ellipsis().as.integer),
+            execute_pair(InlineValueClass::SMIOrBoolean, Value::None(), smi));
+        EXPECT_EQ(
+            static_cast<uint64_t>(Value::Ellipsis().as.integer),
+            execute_pair(InlineValueClass::SMIOrBoolean, smi, Value::None()));
+    }
+
     TEST(AArch64Execution, ExecutesAddSMIWithColdOverflowSideExit)
     {
         test::VmTestContext vm;

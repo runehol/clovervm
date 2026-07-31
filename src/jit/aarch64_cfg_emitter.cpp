@@ -12,6 +12,7 @@
 #include <cassert>
 #include <cstddef>
 #include <cstdint>
+#include <optional>
 #include <utility>
 #include <vector>
 
@@ -27,6 +28,12 @@ namespace cl::jit
 
         using BlockLabels = absl::flat_hash_map<const Block *, Label>;
         using SideExitLabels = absl::flat_hash_map<SideExitBinding, size_t>;
+
+        enum class ConsumedInstructionCount : size_t
+        {
+            One = 1,
+            Two = 2,
+        };
 
         Label block_label(const BlockLabels &labels, const Block *block)
         {
@@ -143,6 +150,52 @@ namespace cl::jit
             assert(false);
         }
 
+        void emit_combined_inline_tag_test(AArch64MacroAssembler &assembler,
+                                           XRegister lhs, XRegister rhs,
+                                           InlineValueClass expected_class)
+        {
+            if(lhs.encoding() == rhs.encoding())
+            {
+                emit_inline_tag_test(assembler, lhs, expected_class);
+                return;
+            }
+
+            constexpr XRegister Scratch0(16);
+            constexpr XRegister Scratch1(17);
+            switch(expected_class)
+            {
+                case InlineValueClass::SMI:
+                    assembler.emit_logical_reg(LogicalOp::Orr, Scratch0, lhs,
+                                               rhs);
+                    assembler.tst(Scratch0, inline_value_class_mask(
+                                                InlineValueClass::SMI));
+                    return;
+                case InlineValueClass::Boolean:
+                    {
+                        uint64_t expected = inline_value_class_expected_bits(
+                            InlineValueClass::Boolean);
+                        assembler.emit_logical_imm(LogicalOp::Eor, Scratch0,
+                                                   lhs, expected);
+                        assembler.emit_logical_imm(LogicalOp::Eor, Scratch1,
+                                                   rhs, expected);
+                        assembler.emit_logical_reg(LogicalOp::Orr, Scratch0,
+                                                   Scratch0, Scratch1);
+                        assembler.tst(Scratch0, inline_value_class_mask(
+                                                    InlineValueClass::Boolean));
+                        return;
+                    }
+                case InlineValueClass::SMIOrBoolean:
+                    assembler.emit_logical_reg(LogicalOp::Orr, Scratch0, lhs,
+                                               rhs);
+                    assembler.mov(Scratch1,
+                                  inline_value_class_mask(
+                                      InlineValueClass::SMIOrBoolean));
+                    assembler.tst(Scratch0, Scratch1);
+                    return;
+            }
+            assert(false);
+        }
+
         void emit_truthiness_branch(AArch64MacroAssembler &assembler,
                                     XRegister condition,
                                     AArch64Condition branch_condition,
@@ -216,8 +269,8 @@ namespace cl::jit
             return label;
         };
 
-        auto emit_instruction = [&](Instruction instruction,
-                                    const Block *next_block) {
+        auto emit_single_instruction = [&](Instruction instruction,
+                                           const Block *next_block) {
             // clang-format off
             CL_JIT_MACHINE_INSTRUCTION_SWITCH(instruction)
             {
@@ -482,6 +535,39 @@ namespace cl::jit
             // clang-format on
         };
 
+        auto emit_instruction = [&](Instruction instruction,
+                                    std::optional<Instruction> next_instruction,
+                                    const Block *next_block) {
+            if(instruction.kind() ==
+                   InstructionKind::InlineTagGuardWithSideExit &&
+               next_instruction.has_value() &&
+               next_instruction->kind() ==
+                   InstructionKind::InlineTagGuardWithSideExit)
+            {
+                InlineTagGuardWithSideExitInstruction guard =
+                    instruction.as<InlineTagGuardWithSideExitInstruction>();
+                InlineTagGuardWithSideExitInstruction next_guard =
+                    next_instruction
+                        ->as<InlineTagGuardWithSideExitInstruction>();
+                if(guard.expected_class() == next_guard.expected_class() &&
+                   make_side_exit_binding(guard) ==
+                       make_side_exit_binding(next_guard))
+                {
+                    emit_combined_inline_tag_test(
+                        assembler, assigned_register(locations, guard.value()),
+                        assigned_register(locations, next_guard.value()),
+                        guard.expected_class());
+                    assembler.b(
+                        AArch64Condition::NotEqual,
+                        side_exit_target(make_side_exit_binding(guard)));
+                    return ConsumedInstructionCount::Two;
+                }
+            }
+
+            emit_single_instruction(instruction, next_block);
+            return ConsumedInstructionCount::One;
+        };
+
         for(size_t block_index = 0; block_index < graph.blocks().size();
             ++block_index)
         {
@@ -496,9 +582,20 @@ namespace cl::jit
                 assert(is_block_parameter_kind(parameter.kind()));
                 (void)parameter;
             }
-            for(Instruction instruction: block->instructions())
+            InstructionRange instructions = block->instructions();
+            for(size_t instruction_index = 0;
+                instruction_index < instructions.size();)
             {
-                emit_instruction(instruction, next_block);
+                Instruction instruction =
+                    block->instruction_at(instruction_index);
+                std::optional<Instruction> next_instruction;
+                if(instruction_index + 1 < instructions.size())
+                {
+                    next_instruction =
+                        block->instruction_at(instruction_index + 1);
+                }
+                instruction_index += static_cast<size_t>(emit_instruction(
+                    instruction, next_instruction, next_block));
             }
         }
 
