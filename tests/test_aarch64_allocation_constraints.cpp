@@ -252,13 +252,7 @@ namespace cl::jit
         const InstructionAllocationConstraints *owner_override =
             find_override(constraints, owner);
         ASSERT_NE(nullptr, owner_override);
-        ASSERT_TRUE(owner_override->result_override().has_value());
-        EXPECT_EQ(AccessTiming::Late,
-                  owner_override->result_override()->timing);
-        EXPECT_EQ(LocationRequirement::Kind::SameAsInput,
-                  owner_override->result_override()->requirement.kind());
-        EXPECT_EQ(InlineTagGuardWithSideExitInstruction::value_operand_index,
-                  owner_override->result_override()->requirement.input_index());
+        EXPECT_FALSE(owner_override->result_override().has_value());
         ASSERT_EQ(1u, owner_override->input_overrides().size());
         const ProgramValueUseConstraint &argument =
             owner_override->input_overrides()[0];

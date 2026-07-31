@@ -433,7 +433,7 @@ namespace cl::jit
             assignment_builder.assign(ProgramValueRef(parameter),
                                       PhysicalLocation::reg(x0));
             assignment_builder.assign(ProgramValueRef(guard),
-                                      PhysicalLocation::reg(x1));
+                                      PhysicalLocation::reg(x0));
             assignment_builder.assign(ProgramValueRef(move),
                                       PhysicalLocation::reg(x0));
             LocationAssignments locations =
@@ -754,6 +754,57 @@ namespace cl::jit
                   function(none, none));
         EXPECT_EQ(static_cast<uint64_t>(Value::True().as.integer),
                   function(none, truth));
+    }
+
+    TEST(AArch64Execution, CompilesGuardedSMIAdditionWithoutGuardCopies)
+    {
+        class Observer : public JitCompilationObserver
+        {
+        public:
+            void on_machine_ir(const ControlFlowGraph &graph) override
+            {
+                for(const Block *block: graph.blocks())
+                {
+                    for(Instruction instruction: block->instructions())
+                    {
+                        if(instruction.kind() == InstructionKind::Mov)
+                        {
+                            ++move_count;
+                        }
+                        else if(instruction.kind() ==
+                                InstructionKind::InlineTagGuardWithSideExit)
+                        {
+                            ++inline_tag_guard_count;
+                        }
+                    }
+                }
+            }
+
+            size_t move_count = 0;
+            size_t inline_tag_guard_count = 0;
+        };
+
+        PythonBackendFixture fixture;
+        CodeObject *function_code =
+            fixture.compile_first_function(L"def add(lhs, rhs):\n"
+                                           L"    return lhs + rhs\n");
+        Observer observer;
+        auto compilation =
+            compile_jit_code(*fixture.context.thread(), *function_code,
+                             JitCompilerOptions{&observer});
+
+        ASSERT_TRUE(compilation);
+        JitCodeObject *code = std::move(compilation).value();
+        EXPECT_EQ(2u, observer.inline_tag_guard_count);
+        EXPECT_EQ(1u, observer.move_count);
+
+        using Function = uint64_t (*)(uint64_t, uint64_t);
+        Function function = reinterpret_cast<Function>(
+            code->entry().bits_for_indirect_target());
+        uint64_t lhs = static_cast<uint64_t>(Value::from_smi(19).as.integer);
+        uint64_t rhs = static_cast<uint64_t>(Value::from_smi(23).as.integer);
+        EXPECT_EQ(static_cast<uint64_t>(Value::from_smi(42).as.integer),
+                  function(lhs, rhs));
     }
 
     TEST(AArch64Execution, CompilesPythonIdentityConditional)

@@ -277,7 +277,7 @@ CL_JIT_INSTRUCTION(UnboxF64, CL_JIT_IR_LEVELS(CoreMachine),
 #define CL_JIT_ShapeGuard_ATTRIBUTES(attribute)                               \
     attribute(expected_shape, Shape)
 CL_JIT_INSTRUCTION(ShapeGuard, CL_JIT_IR_LEVELS(Core),
-                   CL_JIT_RESULT(ProgramValue, TaggedValue, Def),
+                   CL_JIT_RESULT(ProgramValue, TaggedValue, ForwardingDef),
                    CL_JIT_EFFECT_BOUNDS(None, SideExit),
                    CL_JIT_ShapeGuard_OPERANDS,
                    CL_JIT_ShapeGuard_ATTRIBUTES)
@@ -290,7 +290,7 @@ CL_JIT_INSTRUCTION(ShapeGuard, CL_JIT_IR_LEVELS(Core),
 #define CL_JIT_ValidityCellGuard_ATTRIBUTES(attribute)                        \
     attribute(validity, ValidityCell)
 CL_JIT_INSTRUCTION(ValidityCellGuard, CL_JIT_IR_LEVELS(Core),
-                   CL_JIT_RESULT(ProgramValue, TaggedValue, Def),
+                   CL_JIT_RESULT(ProgramValue, TaggedValue, ForwardingDef),
                    CL_JIT_EFFECT_BOUNDS(None, SideExit),
                    CL_JIT_ValidityCellGuard_OPERANDS,
                    CL_JIT_ValidityCellGuard_ATTRIBUTES)
@@ -303,7 +303,7 @@ CL_JIT_INSTRUCTION(ValidityCellGuard, CL_JIT_IR_LEVELS(Core),
 #define CL_JIT_InlineTagGuard_ATTRIBUTES(attribute)                           \
     attribute(expected_class, InlineValueClass)
 CL_JIT_INSTRUCTION(InlineTagGuard, CL_JIT_IR_LEVELS(Core),
-                   CL_JIT_RESULT(ProgramValue, TaggedValue, Def),
+                   CL_JIT_RESULT(ProgramValue, TaggedValue, ForwardingDef),
                    CL_JIT_EFFECT_BOUNDS(None, SideExit),
                    CL_JIT_InlineTagGuard_OPERANDS,
                    CL_JIT_InlineTagGuard_ATTRIBUTES)
@@ -319,7 +319,7 @@ CL_JIT_INSTRUCTION(InlineTagGuard, CL_JIT_IR_LEVELS(Core),
     attribute(side_exit_region, SideExitRegionId)
 CL_JIT_INSTRUCTION(
     InlineTagGuardWithSideExit, CL_JIT_IR_LEVELS(Machine),
-    CL_JIT_RESULT(ProgramValue, TaggedValue, Def),
+    CL_JIT_RESULT(ProgramValue, TaggedValue, ForwardingDef),
     CL_JIT_EFFECT_BOUNDS(None, SideExit),
     CL_JIT_InlineTagGuardWithSideExit_OPERANDS,
     CL_JIT_InlineTagGuardWithSideExit_ATTRIBUTES)
@@ -365,7 +365,7 @@ CL_JIT_INSTRUCTION(PythonCall, CL_JIT_IR_LEVELS(Core),
     fixed(snapshot, Snapshot, None)
 #define CL_JIT_CheckNotImplemented_ATTRIBUTES(attribute)
 CL_JIT_INSTRUCTION(CheckNotImplemented, CL_JIT_IR_LEVELS(Core),
-                   CL_JIT_RESULT(ProgramValue, TaggedValue, Def),
+                   CL_JIT_RESULT(ProgramValue, TaggedValue, ForwardingDef),
                    CL_JIT_EFFECT_BOUNDS_MAY_TWO(None, SideExit, ControlFlow),
                    CL_JIT_CheckNotImplemented_OPERANDS,
                    CL_JIT_CheckNotImplemented_ATTRIBUTES)

@@ -92,18 +92,6 @@ namespace cl::jit
                     LocationRequirement::any_register(RegisterClass::GPR))});
         }
 
-        InstructionAllocationConstraints inline_tag_guard_constraints(
-            InlineTagGuardWithSideExitInstruction instruction,
-            std::vector<ProgramValueUseConstraint> input_overrides)
-        {
-            return InstructionAllocationConstraints(
-                instruction, std::move(input_overrides),
-                ResultConstraint{AccessTiming::Late,
-                                 LocationRequirement::same_as_input(
-                                     InlineTagGuardWithSideExitInstruction::
-                                         value_operand_index)});
-        }
-
         std::vector<ProgramValueUseConstraint>
         side_exit_argument_constraints(Instruction instruction)
         {
@@ -177,6 +165,7 @@ namespace cl::jit
                     case MachineInstructionKind::MovPointer:
                     case MachineInstructionKind::LoadStackPointer:
                     case MachineInstructionKind::StoreStackPointer:
+                    case MachineInstructionKind::InlineTagGuardWithSideExit:
                     case MachineInstructionKind::ResumeInInterpreterWithSideExit:
                     case MachineInstructionKind::ExitToInterpreter:
                     case MachineInstructionKind::ConditionalBranch:
@@ -192,13 +181,6 @@ namespace cl::jit
                     case MachineInstructionKind::IsNot:
                         overrides.push_back(gpr_temporary_constraints(
                             instruction, std::move(input_overrides)));
-                        break;
-
-                    case CL_JIT_MACHINE_INSTRUCTION_CASE(
-                        InlineTagGuardWithSideExitInstruction,
-                        guard_instruction)
-                        overrides.push_back(inline_tag_guard_constraints(
-                            guard_instruction, std::move(input_overrides)));
                         break;
 
                     case CL_JIT_MACHINE_INSTRUCTION_CASE(

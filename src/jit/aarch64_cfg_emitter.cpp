@@ -399,18 +399,12 @@ namespace cl::jit
                 {
                     XRegister input =
                         assigned_register(locations, guard_instruction.value());
-                    XRegister result = assigned_register(
-                        locations, ProgramValueRef(instruction));
                     emit_inline_tag_test(
                         assembler, input,
                         guard_instruction.expected_class());
                     Label target = side_exit_target(
                         make_side_exit_binding(guard_instruction));
                     assembler.b(AArch64Condition::NotEqual, target);
-                    if(result.encoding() != input.encoding())
-                    {
-                        assembler.mov(result, input);
-                    }
                     break;
                 }
 
