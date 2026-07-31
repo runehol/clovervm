@@ -7,12 +7,13 @@
 | Scope | Unfinished implementation and verification work for the accepted SSA bundle allocator |
 | Design authority | [JIT Register Allocation](jit-register-allocation.md) |
 
-The prepared problem, deterministic constraint splitting, cross-edge and
-non-overlapping same-as-input bundle coalescing, conflict-free initial
-assignment, generic and edge-transfer-block materialization, worklist-driven
-parallel assignment ordering including all-stack cycles, `LocationAssignments`,
-and AArch64 integration are implemented. This ledger records only unfinished
-work; the design document owns algorithms, invariants, and layer boundaries.
+The prepared problem, forwarding definitions, deterministic constraint
+splitting, cross-edge and non-overlapping same-as-input bundle coalescing,
+conflict-free initial assignment, generic and edge-transfer-block
+materialization, worklist-driven parallel assignment ordering including
+all-stack cycles, `LocationAssignments`, and AArch64 integration are
+implemented. This ledger records only unfinished work; the design document owns
+algorithms, invariants, and layer boundaries.
 
 ## Correctness Checking
 
@@ -24,15 +25,11 @@ work; the design document owns algorithms, invariants, and layer boundaries.
 ## Affinities and CFG Transfers
 
 - [x] Merge non-overlapping bundles across block parameters and edge arguments.
-- [x] Record and prioritize same-as-input affinities for guard results.
-- [ ] Allow the source and result ranges named by one same-as-input affinity to
-  overlap in their merged bundle while continuing to reject every unrelated
-  overlap. The instruction constraint certifies that sharing is physically
-  valid: refining guards preserve the input bits, while destructive operations
-  must make any overwritten pre-instruction value recoverable in their
-  side-exit region, such as by sinking an inverse operation.
-- [ ] Add affinities for explicit copies and remaining destructive reused
-  inputs.
+- [x] Form one block-local live range for operand 0 and each forwarding result,
+  including refining guards, without a result affinity or result move.
+- [ ] Add affinities and fixups for explicit copies and destructive reused
+  inputs. Each destructive instruction must separately establish that
+  overwriting the input is compatible with its side-exit recovery contract.
 - [x] Preserve source `LiveRangeId`s in merged fragments and make repeated
   coalescing requests no-ops.
 - [x] Record unresolved edge transfers when overlap or constraints prevent

@@ -4,7 +4,7 @@
 |---|---|
 | Document type | Design |
 | Status | Accepted |
-| Implementation | Prepared allocation, block-edge and same-as-input affinities, bundle coalescing, deterministic constraint splitting, transfer scheduling, conflict-free register/stack assignment, parallel-transfer and edge-transfer-block materialization, and the fixed-x19 value-state migration are implemented; runtime x19 installation and block-exit materialization remain open |
+| Implementation | Prepared allocation, forwarding definitions, block-edge and same-as-input affinities, bundle coalescing, deterministic constraint splitting, transfer scheduling, conflict-free register/stack assignment, parallel-transfer and edge-transfer-block materialization, and the fixed-x19 value-state migration are implemented; runtime x19 installation and block-exit materialization remain open |
 | Scope | Allocation constraints, allocator-local numbering, liveness, bundles, backtracking allocation, live-range splitting, block-edge transfers, clobbers, spills, and post-allocation materialization |
 | Owning layers | Target preparation owns occurrence constraints and physical-transfer capabilities; the generic register allocator owns numbering, liveness, bundles, splitting, allocation, spill decisions, and bundle transfers; generic allocation materialization resolves transfers, rewrites the Core CFG, and publishes occurrence locations; publication and transition planners own canonical-state synchronization; machine-code emission only encodes the materialized graph |
 | Validated against | `tests/test_jit_allocation_constraints.cpp`, `tests/test_aarch64_allocation_constraints.cpp`, `tests/test_jit_register_allocator.cpp`, `tests/test_jit_parallel_assignment_resolver.cpp`, `tests/test_jit_allocation_materializer.cpp`, and `tests/test_aarch64_execution.cpp` |
@@ -405,12 +405,13 @@ remain instruction-anchored. Block-edge argument transfers and affinities are
 derived generically from first-class `BlockEdge` objects rather than supplied
 as target constraints.
 
-The anchor determines the SSA value and whether the occurrence is a use or a
-definition:
+The anchor determines the SSA value and whether the occurrence is a use,
+materializing definition, or forwarding definition:
 
 ```text
 Instruction input      -> use of that input's ProgramValueRef
-Instruction result     -> definition of that result's ProgramValueRef
+Ordinary result        -> definition of that result's ProgramValueRef
+Forwarding result      -> forwarding definition of operand 0's bits
 Block edge argument    -> use at the source edge
 Block parameter        -> definition at target block entry
 Instruction temporary  -> non-SSA value occupying both timing phases
@@ -420,14 +421,15 @@ Instruction clobber    -> physical register mask
 Access kind and access timing are independent:
 
 ```text
-access kind     Use | Def
+access kind     Use | Def | ForwardingDef
 access timing   Early | Late
 ```
 
 Ordinary inputs are early uses and ordinary results are late defs. The
-separation permits a selected multi-instruction lowering to expose a late use,
-an early def, or a temporary spanning both phases without lowering completely
-to Machine IR. A deferred emitter choice is legal only when every possible
+result of a forwarding instruction is a late forwarding def. The separation
+permits a selected multi-instruction lowering to expose a late use, an early
+def, or a temporary spanning both phases without lowering completely to
+Machine IR. A deferred emitter choice is legal only when every possible
 encoding obeys the prepared timing, temporary, and clobber contract.
 
 A temporary spanning the selected sequence is conceptually an early def and a
@@ -445,9 +447,10 @@ The common layer derives ordinary location requirements directly from Core
 TaggedValue input  -> Use Early, AnyRegister(GPR)
 F64 input          -> Use Early, AnyRegister(SIMD)
 Pointer input      -> Use Early, AnyRegister(GPR)
-TaggedValue result -> Def Late, AnyRegister(GPR)
-F64 result         -> Def Late, AnyRegister(SIMD)
-Pointer result     -> Def Late, AnyRegister(GPR)
+ordinary TaggedValue result -> Def Late, AnyRegister(GPR)
+ordinary F64 result         -> Def Late, AnyRegister(SIMD)
+ordinary Pointer result     -> Def Late, AnyRegister(GPR)
+forwarding result           -> ForwardingDef Late, operand 0's live range
 Snapshot operand   -> captured values used Late
 ```
 
@@ -456,6 +459,13 @@ ordinary inputs and an ordinary result needs no target-authored constraint
 object. Parameters, returns, calls, reused-input operations, multi-instruction
 lowerings, and instructions needing temporaries or clobbers provide only their
 exceptional requirements.
+
+A forwarding definition has no independent result constraint or result
+affinity. Instruction-kind metadata declares that the result preserves fixed
+ProgramValue operand 0's bits on normal continuation. Operand 0 and the result
+must have the same representation. Target constraints describe only operand
+uses, temporaries, and clobbers; an explicit result override on a forwarding
+instruction is invalid.
 
 The structural constraint representation is:
 
@@ -571,7 +581,10 @@ or per-access generation checks in the allocator.
 `LocationRequirement::AnyRegister` names a register class;
 `LocationRequirement::FixedLocation` names one register or stack location; and
 `LocationRequirement::SameAsInput` names the ProgramValue input whose assigned
-location the result should reuse when bundle coalescing can prove that legal.
+location an independently materialized result should reuse when bundle
+coalescing can prove that legal. It is reserved for genuinely destructive
+two-address operations, not values that merely forward an input's unchanged
+bits.
 Contextual constructors reject `SameAsInput` for inputs and temporaries, so it
 remains a result-only requirement without a second variant-based representation.
 The compact allocator representation may encode these alternatives differently.
@@ -652,8 +665,8 @@ The AArch64 constraint producer follows the Clover JIT calling convention:
 - tagged internal block parameters use the ordinary `AnyRegister(GPR)`
   default;
 - F64 internal block parameters use the ordinary `AnyRegister(SIMD)` default;
-- `InlineTagGuardWithSideExit` results request `SameAsInput` with their checked
-  value;
+- `InlineTagGuardWithSideExit` is a forwarding definition and has no result
+  override;
 - a `Return` input has a fixed `x0` constraint;
 - conditional and unconditional branches request no allocator temporary;
 - `Const`, SMI bitwise instructions, and the virtual `Snapshot` instruction
@@ -672,6 +685,7 @@ Constraint validation enforces:
 - each input override names one allocatable ProgramValue operand, and no
   occurrence has two overrides;
 - a result override occurs only on a ProgramValue-producing instruction;
+- a forwarding definition has no result override;
 - `SameAsInput` names a valid ProgramValue input and occurs only on a result;
 - fixed locations and `AnyRegister` classes are compatible with the
   occurrence's `ValueRepresentation`;
@@ -714,8 +728,8 @@ phase 1: Late
 does not determine timing. This lets a fixed-register call argument use and a
 fixed-register call result definition share the same physical register at
 different liveness positions of the same instruction. It also makes
-same-as-input and destructive-operation lowering explicit without treating two
-SSA values as one value.
+destructive-operation lowering explicit without conflating a target constraint
+with forwarding SSA identity.
 
 Block entry and block exit each provide use and definition phases. This gives
 block parameters and edge arguments stable allocation positions without making
@@ -778,6 +792,7 @@ access kind:
 | Late use | `[instruction.Early, next_instruction.Early)` |
 | Early def | `[instruction.Early, next_instruction.Early)` |
 | Late def | `[instruction.Late, next_instruction.Early)` |
+| Late forwarding def | `[instruction.Late, next_instruction.Early)` |
 
 Early defs and Late uses occupy a location throughout the complete
 instruction. The live-range scanner computes this table directly; it must not
@@ -789,22 +804,29 @@ corresponding block-exit liveness position.
 ## Live Ranges and Bundles
 
 A live range is an immutable allocator-local record of one contiguous region
-where a Core SSA value or anonymous target temporary needs storage. Ordinary
+where one physical bit identity or anonymous target temporary needs storage.
+It normally contains one Core SSA definition. A block-local chain of forwarding
+definitions shares one live range because every definition in the chain has
+exactly the same runtime bits. The definitions remain semantically distinct
+and retain their own result occurrences and `ProgramValueRef`s.
+
 SSA values do not flow directly between blocks. An edge argument is a use at
 the predecessor exit and its corresponding block parameter is a distinct
-definition at the successor entry. Consequently, each live range is local to
-one block even though preparation handles the complete multi-block CFG.
+definition at the successor entry. Forwarding identity therefore stops at a
+block boundary. Each live range remains local to one block even though
+preparation handles the complete multi-block CFG.
 
 A dead definition still receives the minimum half-open liveness range required
 by the table above. Preparation does not special-case dead `Uninitialized` or
 other definitions out of the allocation model.
 
 The live range retains its stable ID, original `LivenessRange`, origin, and
-ordered occurrence IDs. A ProgramValue origin records its `ProgramValueRef`; an
-anonymous temporary origin records its instruction and temporary index. Its
-register class is derived once from the ProgramValue representation or
-temporary declaration. Observing incompatible register classes for one live
-range is a compiler invariant failure.
+ordered occurrence IDs. A ProgramValue origin records the materializing
+`ProgramValueRef` that first supplies the bits; later forwarding definitions do
+not replace or multiply it. An anonymous temporary origin records its
+instruction and temporary index. The register class is derived once from the
+ProgramValue representation or temporary declaration. Observing incompatible
+register classes for one live range is a compiler invariant failure.
 
 The initial allocator-local shape is conceptually:
 
@@ -817,6 +839,14 @@ struct Occurrence
     OccurrenceKind kind;
     OccurrenceAnchor anchor;
     uint64_t spill_weight;
+};
+
+enum class OccurrenceKind
+{
+    Use,
+    Def,
+    ForwardingDef,
+    Temporary,
 };
 
 struct FixedLocationConstraint
@@ -842,6 +872,53 @@ occurrence's kind and timing. Legal bundle splitting must not cut through it.
 `OccurrenceAnchor` retains the instruction operand or result, block parameter,
 edge argument, or temporary identity needed by diagnostics and final lowering.
 It does not make ephemeral integer positions durable.
+
+Allocator preparation temporarily maintains a many-to-one mapping:
+
+```text
+ProgramValue InstructionId -> LiveRangeId
+```
+
+For an ordinary result it creates a new live range and a `Def` occurrence. For
+a forwarding result it scans fixed operand 0 as an ordinary use, maps the
+result to operand 0's existing block-local live range, and appends a Late
+`ForwardingDef` result occurrence. The Early operand use and Late forwarding
+definition provide continuous minimum coverage through the instruction,
+including its clobber position. Chained forwarding definitions repeat this
+operation on the same range.
+
+This mapping is preparation-local and is discarded with the scanner. Durable
+uses, Snapshots, side-exit bindings, diagnostics, and final location
+publication continue to name semantic `ProgramValueRef`s. Allocation
+verification reconstructs the relation from result occurrences when it needs
+to prove that each semantic definition belongs to the expected live range.
+
+The allocator may transfer the shared bits before a forwarding instruction to
+prepare the location required by later result uses. This advances only physical
+availability; SSA def-use and dominance still prohibit semantic uses of the
+result before its definition. A transfer may instead occur after the
+instruction or at a later consumer when that better fits pressure and
+constraints. The forwarding instruction is not itself a mandatory split point.
+
+Operand 0's bits must survive the complete target expansion of a forwarding
+instruction. The shared range therefore conflicts with every declared clobber
+that can destroy the bits between the operand use and forwarding definition,
+including a register overwritten only temporarily by a multi-instruction
+lowering. A target may omit such a clobber only when its lowering restores the
+register before every possible side exit and before the forwarding result
+becomes available.
+
+Snapshots and side-exit bindings retain their original semantic references.
+One exit may capture an unrefined value while mainline uses consume a later
+forwarding result. Both references resolve through the shared range at their
+allocation positions, but semantic refinement never changes the recovery
+value's identity.
+
+Materialization publishes a location for every semantic ProgramValue result
+occurrence, including each forwarding result, rather than treating the live
+range origin as its only definition. Allocator-created transfer source recovery
+may remain origin-based because that origin is the block-local value that first
+materialized the unchanged bits.
 
 A bundle is the allocator's unit of assignment: a set of non-overlapping
 fragments that should receive one location. A bundle does not merely contain
@@ -1072,12 +1149,10 @@ cannot solve them and a fixed-location fixup is required.
 
 If one SSA value is required in two locations at the same instruction, one
 constrained occurrence remains on the range and the other becomes a fixup
-transfer at that occurrence. A non-destructive same-as-input result, such as a
-value-refining guard, is treated as a new range with a high-priority merge
-opportunity with its input. If they cannot share a bundle, the instruction
-lowering must still produce the result in its assigned location. Destructive
-reused-input operations, where a pre-instruction copy into the output location is
-part of the instruction contract, remain a later fixup slice.
+transfer at that occurrence. Forwarding definitions do not create this shape:
+their source and result are already occurrences on one live range. Destructive
+reused-input operations, where a pre-instruction copy into the output location
+is part of the instruction contract, remain a later fixup slice.
 
 This splitting preserves the invariant that a live-range fragment occupies one
 location at a liveness position. It keeps special instruction shapes at the
@@ -1446,7 +1521,7 @@ Machine-value liveness, allocation continuity, and interpreter state are
 separate:
 
 ```text
-live range                 where one SSA value needs physical storage
+live range                 where one block-local physical bit identity needs storage
 bundle                     ranges that prefer one allocation
 interpreter-location map   canonical VM homes naming the value over time
 ```
@@ -1520,6 +1595,14 @@ levels:
   its allocatable inputs, outputs, temporaries, and clobbers;
 - every constraint anchor resolves to a live prepared Core occurrence with a
   compatible `ValueRepresentation`, access kind, and early/late timing;
+- every forwarding instruction has fixed ProgramValue operand 0 with the same
+  representation as its result, and both definitions map to one block-local
+  live range;
+- every forwarding result has one Late `ForwardingDef` occurrence, continuous
+  coverage through the instruction's clobber position, and no independent
+  result override;
+- every ordinary ProgramValue result has a materializing `Def` occurrence, and
+  no forwarding identity crosses a block parameter;
 - every post-allocation assignment satisfies the relevant constraint at its
   occurrence position, including fixed locations, clobbers, reuse constraints,
   split transfers, and block-edge parallel-transfer sets;

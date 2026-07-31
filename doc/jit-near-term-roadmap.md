@@ -6,7 +6,7 @@
 | Status | Active |
 | Scope | Prioritized work that turns the current executable AArch64 JIT slice into a broader and runtime-complete compiler |
 | Design authority | [JIT Compiler and IR](jit-compiler-and-ir.md), [JIT Register Allocation](jit-register-allocation.md), [JIT Side-Exit Lowering](jit-side-exit-lowering.md), and [JIT Transition Programs](jit-transition-program.md) |
-| Validated against | `34fe2b90` (2026-07-30) |
+| Validated against | `347cc046` (2026-07-31) |
 
 This roadmap records implementation order rather than adding architecture. The
 owning design documents remain authoritative for IR, allocation, recovery,
@@ -23,6 +23,8 @@ small but meaningful language subset:
 - guarded SMI addition with overflow side exits;
 - Core optimization through global dead-code elimination;
 - Core-to-Machine side-exit lowering with late executable bindings;
+- block-local forwarding definitions for refining guards, eliminating their
+  result copies without weakening SSA identity or recovery state;
 - whole-CFG register allocation with bundle merging, eviction, splitting, and
   allocation-created edge-transfer blocks;
 - multi-block AArch64 layout, fallthrough removal, branch relaxation, cold
@@ -52,27 +54,15 @@ Near-term work follows four rules:
 
 ## Implementation Sequence
 
-### 1. Finish Same-As-Input Allocation
+Refining guards now use forwarding definitions rather than same-as-input
+affinities. Their input and result SSA identities share one block-local live
+range, and AArch64 emits no guard-result copy. `SameAsInput` remains available
+for genuinely destructive two-address operations. Such operations require
+their own lowering and recovery proof; the roadmap does not assume that an
+overwritten input can generally be reconstructed by applying an inverse
+operation on a side exit.
 
-The allocator now records and prioritizes same-as-input affinities, and AArch64
-guards declare them. The remaining merge rule must allow the exact source and
-result ranges named by one same-as-input affinity to overlap in one bundle while
-continuing to reject every unrelated overlap.
-
-The constraint certifies that physical reuse is valid. A refining guard
-preserves the input bits. A destructive arithmetic operation may overwrite its
-input only when its side-exit region can reconstruct the pre-instruction value,
-as the SMI-add recovery path does by sinking the inverse subtraction. The
-allocator does not rediscover that semantic proof.
-
-Apply the completed relation to refining guards and destructive `AddSMI`
-results. The existing loop with `c += a` and `a += 1` is the integration
-fixture: the three guard-result copies and the two back-edge copies should
-disappear, while unrelated interference and the final return-ABI transfer
-remain valid. Explicit-copy affinities and broader copy coalescing stay
-measurement-driven follow-up work.
-
-### 2. Eliminate Trivial Loop-Carried State
+### 1. Eliminate Trivial Loop-Carried State
 
 Add a Core CFG simplification for a block parameter whose incoming arguments
 are one dominating value plus self references. Replace the parameter with that
@@ -90,7 +80,7 @@ General constant and `uninitialized` rematerialization in transition programs
 remains part of later Snapshot and recovery work. This slice does not require
 that larger mechanism.
 
-### 3. Fuse Value Tests With Branches
+### 2. Fuse Value Tests With Branches
 
 Recognize the existing single-use pattern:
 
@@ -106,7 +96,7 @@ ordinary materialization and tagged truthiness testing.
 Identity tests provide an existing executable fixture and establish the fusion
 shape before SMI comparisons are added.
 
-### 4. Close the Runtime Transition Loop
+### 3. Close the Runtime Transition Loop
 
 Implement the target-specific thunks described by the
 [AArch64 JIT Calling Convention](aarch64-jit-calling-convention.md):
@@ -125,7 +115,7 @@ bytecode exits executable rather than merely encoded. Its managed-frame
 contract must reserve a coherent place for future allocator spill slots even
 though ordinary spilling lands later.
 
-### 5. Widen SMI Operations and Comparisons
+### 4. Widen SMI Operations and Comparisons
 
 Extend the direct Core translator through operation families that reuse the
 existing inline guards, side-exit state, and Machine emission:
@@ -145,7 +135,7 @@ Multiplication, shifts, division, modulo, and exponentiation remain later
 slices because their tagged arithmetic, failure cases, or result growth require
 additional lowering.
 
-### 6. Add Ordinary Spill Storage
+### 5. Add Ordinary Spill Storage
 
 Stage ordinary spilling rather than combining every spill mechanism into one
 change:
@@ -162,7 +152,7 @@ coverage. The symbolic allocation checker and adversarial pressure tests in
 [JIT Register Allocation Open Work](jit-register-allocation-progress.md)
 should grow with this slice.
 
-### 7. Add Shape-Guarded Known-Field Access
+### 6. Add Shape-Guarded Known-Field Access
 
 Introduce Machine side-exit forms and AArch64 emission for shape and validity
 guards, followed by known-offset field loads. This is the first high-leverage
@@ -172,7 +162,7 @@ Guard commoning and motion may begin here, once repeated shape checks exist in
 real generated programs. Keep shape and validity checks independently
 optimizable as required by their separate Core instructions.
 
-### 8. Approach Calls, F64, and General Sinking
+### 7. Approach Calls, F64, and General Sinking
 
 Calls require fixed argument and result locations, clobber validation, x19-to-C
 ABI adaptation, call-boundary interpreter-state synchronization, and safepoint

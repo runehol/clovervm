@@ -4,7 +4,7 @@
 |---|---|
 | Document type | Design |
 | Status | Proposed |
-| Implementation | Partial; structural bytecode-to-Core translation, optimization, Core-to-Machine side-exit lowering, generic register allocation/materialization, `ExitToInterpreter` transition emission and publication, fixed-x19 value-state conventions, and executable multi-block AArch64 emission are implemented; installing x19 at runtime, target thunks, sunk computation, broader lowering, and runtime entry remain |
+| Implementation | Partial; structural bytecode-to-Core translation, optimization, Core-to-Machine side-exit lowering, forwarding definitions, generic register allocation/materialization, `ExitToInterpreter` transition emission and publication, fixed-x19 value-state conventions, and executable multi-block AArch64 emission are implemented; installing x19 at runtime, target thunks, sunk computation, broader lowering, and runtime entry remain |
 | Scope | JIT pipeline, Core IR, exit state, effects, backend lowering, and compiled execution contracts |
 | Owning layers | The JIT owns IR and compiled execution; bytecode, runtime frames, object semantics, and reclamation remain authoritative contracts |
 | Validated against | The focused JIT instruction, CFG, rewrite, allocation-constraint, emitter, code-cache, and executable AArch64 tests |
@@ -606,9 +606,13 @@ types, such as `Smi | Float`. This uses the same SSA mechanism for facts
 established by explicit guards and facts established by visible CFG branches.
 
 This refinement is not a machine copy and does not require a new register.
-Backend coalescing should normally give the input and refined result the same
-location when they have the same representation and their live ranges permit
-it.
+Instructions whose normal result has exactly operand 0's runtime bits declare a
+**forwarding definition**. Operand 0 and the result remain distinct SSA
+identities, but allocator preparation maps them to one block-local live range.
+The result becomes semantically available only after the instruction even when
+the allocator prepares its physical location earlier. Forwarding identity
+stops at block boundaries: a block parameter always begins a distinct live
+range and ordinary edge coalescing decides whether a transfer is needed.
 
 Canonical slots belong to logical frame states, not SSA values. One
 `ProgramValueRef` may supply several logical slots or inlined frames, while one
@@ -890,6 +894,32 @@ ResultClass::None
 ResultClass::ProgramValue
 ResultClass::Snapshot
 ```
+
+Program-value instruction kinds also declare how they supply their result:
+
+```text
+ResultDefinitionKind::Def
+ResultDefinitionKind::ForwardingDef
+```
+
+`Def` physically creates the result bits. `ForwardingDef` creates a new SSA
+identity whose bits on normal continuation are exactly those of fixed
+ProgramValue operand 0. The source and result must have the same
+`ValueRepresentation`, and the instruction emits no independent result write.
+The contract does not imply purity: a forwarding instruction may guard, side
+exit, mutate state, or otherwise carry effects. Core and Machine instruction
+kinds declare forwarding independently so lowering cannot silently lose the
+property.
+
+The implemented forwarding instruction kinds are:
+
+```text
+Core:    ShapeGuard, ValidityCellGuard, InlineTagGuard, CheckNotImplemented
+Machine: InlineTagGuardWithSideExit
+```
+
+Future operations such as a receiver-returning `SetExisting` may use the same
+contract when fixed operand 0 is the returned receiver.
 
 Operand slots use a separate `OperandClass` enum. `OperandClass::ProgramValue`
 and `OperandClass::Snapshot` intentionally have the same numeric values as their
@@ -1564,9 +1594,10 @@ state, even though the narrowed value has one fixed static type. The verifier
 rejects a shape-sensitive use of a superseded mutable receiver version or one
 whose observation has been invalidated through a possible alias.
 
-Validity-cell checks do not refine a Python value. They remain value-less guard
-operations whose reuse is governed by dominance, effect dependencies, and
-their bailout state.
+Validity-cell checks do not refine the Python type of their operand. They still
+produce a forwarding SSA version of that operand so dominance orders
+post-check uses after the successful check. Their reuse is governed by
+dominance, effect dependencies, and bailout state.
 
 ## Backend Lowering and Value Representation
 
