@@ -49,7 +49,8 @@ emission will never materialize.
 ### 2. Close the Runtime Transition Loop
 
 Implement the target-specific thunks described by the
-[AArch64 JIT Calling Convention](aarch64-jit-calling-convention.md):
+[AArch64 JIT Calling Convention](aarch64-jit-calling-convention.md), following
+the staged [AArch64 JIT Entry And Exit Transition Plan](aarch64-jit-entry-exit-plan.md):
 
 1. Complete the interpreter-to-JIT entry and normal-return path. Install and
    restore fixed `x19` thread state, establish the managed stack discipline,
