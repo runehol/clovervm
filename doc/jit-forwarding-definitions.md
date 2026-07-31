@@ -4,7 +4,7 @@
 |---|---|
 | Document type | Design revision and transition plan |
 | Status | Accepted |
-| Implementation | Slices 1 and 2 complete: result-definition metadata and dormant allocator vocabulary are implemented, allocation verification derives semantic value membership from result occurrences, and location publication uses result anchors; no instruction kind is marked forwarding yet |
+| Implementation | Slices 1 through 3 complete: result-definition metadata and dormant allocator vocabulary are implemented, allocation verification derives semantic value membership from result occurrences, location publication uses result anchors, and the scanner can form block-local forwarding live ranges; no instruction kind is marked forwarding yet |
 | Scope | Representing block-local SSA definitions that preserve operand 0's runtime bits without creating a second allocator live range |
 | Owning layers | Instruction kinds declare forwarding definitions; allocator preparation forms shared live ranges; target constraints describe instruction execution requirements; register allocation chooses locations and transfers |
 | Design authority after integration | [JIT Compiler and IR](jit-compiler-and-ir.md) and [JIT Register Allocation](jit-register-allocation.md) |

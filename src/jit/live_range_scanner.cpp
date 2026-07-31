@@ -263,6 +263,18 @@ namespace cl::jit
                 return found->second;
             }
 
+            void map_program_value(InstructionId definition,
+                                   LiveRangeId live_range)
+            {
+                auto [position, inserted] =
+                    value_ranges_.emplace(definition, live_range);
+                (void)position;
+                if(!inserted)
+                {
+                    fatal("duplicate JIT allocator ProgramValue definition");
+                }
+            }
+
             LiveRangeId add_live_range(LivenessRange range,
                                        LiveRangeOrigin origin,
                                        const Block &block,
@@ -274,13 +286,8 @@ namespace cl::jit
                 if(live_ranges_.back().origin.kind() ==
                    LiveRangeOrigin::Kind::ProgramValue)
                 {
-                    auto [position, inserted] = value_ranges_.emplace(
+                    map_program_value(
                         live_ranges_.back().origin.instruction_id(), id);
-                    (void)position;
-                    if(!inserted)
-                    {
-                        fatal("duplicate JIT allocator ProgramValue origin");
-                    }
                 }
                 return id;
             }
@@ -396,6 +403,7 @@ namespace cl::jit
                         override_for(instruction.id());
                     absl::flat_hash_map<uint32_t, OccurrenceId>
                         input_occurrence_by_operand;
+                    std::optional<InstructionId> operand_zero_definition;
 
                     if(instruction.kind() != InstructionKind::Snapshot)
                     {
@@ -410,6 +418,10 @@ namespace cl::jit
                                 {
                                     has_snapshot_operand = true;
                                     return;
+                                }
+                                if(operand_index == 0)
+                                {
+                                    operand_zero_definition = definition_id;
                                 }
 
                                 ValueRepresentation representation =
@@ -458,53 +470,107 @@ namespace cl::jit
 
                     if(instruction.result_class() == ResultClass::ProgramValue)
                     {
-                        ResultConstraint result_constraint =
-                            override != nullptr &&
-                                    override->result_override().has_value()
-                                ? *override->result_override()
-                                : default_result_constraint(
-                                      instruction.value_representation());
-                        LivenessPosition position =
-                            result_constraint.timing == AccessTiming::Early
-                                ? early
-                                : late;
-                        LivenessRange coverage = minimum_liveness_coverage(
-                            early, OccurrenceKind::Def,
-                            result_constraint.timing);
-                        RegisterClass register_class =
-                            register_class_for_representation(
-                                instruction.value_representation());
-                        LocationRequirement result_requirement =
-                            result_constraint.requirement;
-                        std::optional<uint32_t> same_as_input;
-                        if(result_requirement.kind() ==
-                           LocationRequirement::Kind::SameAsInput)
+                        ResultDefinitionKind definition_kind =
+                            instruction_kind_metadata(instruction.kind())
+                                .result_definition_kind;
+                        if(definition_kind ==
+                           ResultDefinitionKind::ForwardingDef)
                         {
-                            same_as_input = result_requirement.input_index();
-                            result_requirement =
-                                LocationRequirement::any_register(
-                                    register_class);
-                        }
-                        LiveRangeId live_range = add_live_range(
-                            coverage,
-                            LiveRangeOrigin::program_value(instruction), block,
-                            register_class);
-                        OccurrenceId result_occurrence = add_occurrence(
-                            live_range, position, coverage, OccurrenceKind::Def,
-                            OccurrenceAnchor::instruction_result(instruction),
-                            result_requirement);
-                        if(same_as_input.has_value())
-                        {
-                            auto input = input_occurrence_by_operand.find(
-                                *same_as_input);
-                            if(input == input_occurrence_by_operand.end())
+                            const InstructionKindMetadata &metadata =
+                                instruction_kind_metadata(instruction.kind());
+                            auto source_occurrence =
+                                input_occurrence_by_operand.find(0);
+                            if(metadata.fixed_operand_count == 0 ||
+                               !operand_zero_definition.has_value() ||
+                               source_occurrence ==
+                                   input_occurrence_by_operand.end())
                             {
-                                fatal("SameAsInput names no scanned input "
-                                      "occurrence");
+                                fatal("JIT forwarding definition has no fixed "
+                                      "ProgramValue operand 0");
                             }
-                            bundle_affinities_.push_back(
-                                BundleAffinity::same_as_input(
-                                    input->second, result_occurrence));
+                            Instruction source = graph_.storage()->instruction(
+                                *operand_zero_definition);
+                            if(source.value_representation() !=
+                               instruction.value_representation())
+                            {
+                                fatal("JIT forwarding definition changes "
+                                      "value representation");
+                            }
+
+                            LiveRangeId live_range =
+                                occurrences_[source_occurrence->second.value()]
+                                    .live_range;
+                            map_program_value(instruction.id(), live_range);
+                            LivenessRange coverage = minimum_liveness_coverage(
+                                early, OccurrenceKind::ForwardingDef,
+                                AccessTiming::Late);
+                            add_occurrence(live_range, late, coverage,
+                                           OccurrenceKind::ForwardingDef,
+                                           OccurrenceAnchor::instruction_result(
+                                               instruction),
+                                           LocationRequirement::any_register(
+                                               live_ranges_[live_range.value()]
+                                                   .register_class));
+                        }
+                        else
+                        {
+                            if(definition_kind != ResultDefinitionKind::Def)
+                            {
+                                fatal("JIT ProgramValue result has no "
+                                      "definition");
+                            }
+
+                            ResultConstraint result_constraint =
+                                override != nullptr &&
+                                        override->result_override().has_value()
+                                    ? *override->result_override()
+                                    : default_result_constraint(
+                                          instruction.value_representation());
+                            LivenessPosition position =
+                                result_constraint.timing == AccessTiming::Early
+                                    ? early
+                                    : late;
+                            LivenessRange coverage = minimum_liveness_coverage(
+                                early, OccurrenceKind::Def,
+                                result_constraint.timing);
+                            RegisterClass register_class =
+                                register_class_for_representation(
+                                    instruction.value_representation());
+                            LocationRequirement result_requirement =
+                                result_constraint.requirement;
+                            std::optional<uint32_t> same_as_input;
+                            if(result_requirement.kind() ==
+                               LocationRequirement::Kind::SameAsInput)
+                            {
+                                same_as_input =
+                                    result_requirement.input_index();
+                                result_requirement =
+                                    LocationRequirement::any_register(
+                                        register_class);
+                            }
+                            LiveRangeId live_range = add_live_range(
+                                coverage,
+                                LiveRangeOrigin::program_value(instruction),
+                                block, register_class);
+                            OccurrenceId result_occurrence = add_occurrence(
+                                live_range, position, coverage,
+                                OccurrenceKind::Def,
+                                OccurrenceAnchor::instruction_result(
+                                    instruction),
+                                result_requirement);
+                            if(same_as_input.has_value())
+                            {
+                                auto input = input_occurrence_by_operand.find(
+                                    *same_as_input);
+                                if(input == input_occurrence_by_operand.end())
+                                {
+                                    fatal("SameAsInput names no scanned input "
+                                          "occurrence");
+                                }
+                                bundle_affinities_.push_back(
+                                    BundleAffinity::same_as_input(
+                                        input->second, result_occurrence));
+                            }
                         }
                     }
 

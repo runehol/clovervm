@@ -178,6 +178,14 @@ namespace cl::jit
                 operands.push_back({operand_class, representation, false});
             });
 
+        if(instruction_kind_metadata(instruction.kind())
+               .result_definition_kind == ResultDefinitionKind::ForwardingDef)
+        {
+            require_constraint(
+                !result_override_.has_value(),
+                "JIT forwarding definition has a result override");
+        }
+
         for(const ProgramValueUseConstraint &input: input_overrides_)
         {
             require_constraint(input.operand_index < operands.size(),

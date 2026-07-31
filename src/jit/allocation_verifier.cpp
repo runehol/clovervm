@@ -13,6 +13,9 @@ namespace cl::jit
 {
     namespace
     {
+        using ProgramValueRangeMap =
+            absl::flat_hash_map<InstructionId, LiveRangeId>;
+
         struct InstructionPosition
         {
             const Block *block;
@@ -50,6 +53,31 @@ namespace cl::jit
                     }
                 });
             return result;
+        }
+
+        bool forwarding_definition_matches_source(
+            Instruction instruction, LiveRangeId live_range,
+            const ProgramValueRangeMap &program_value_ranges)
+        {
+            const InstructionKindMetadata &metadata =
+                instruction_kind_metadata(instruction.kind());
+            if(metadata.fixed_operand_count == 0)
+            {
+                return false;
+            }
+            std::optional<InstructionId> source =
+                instruction_operand_definition(instruction, 0);
+            if(!source.has_value())
+            {
+                return false;
+            }
+            auto source_range = program_value_ranges.find(*source);
+            return source_range != program_value_ranges.end() &&
+                   source_range->second == live_range &&
+                   instruction.storage()
+                           ->instruction(*source)
+                           .value_representation() ==
+                       instruction.value_representation();
         }
 
         bool bundle_covers_occurrence(const LiveBundle &bundle,
@@ -120,7 +148,7 @@ namespace cl::jit
             expected_block_start = block_range.range.end;
         }
 
-        absl::flat_hash_map<InstructionId, LiveRangeId> program_value_ranges;
+        ProgramValueRangeMap program_value_ranges;
         for(const Occurrence &occurrence: problem.occurrences())
         {
             if(occurrence.anchor.kind() !=
@@ -214,7 +242,10 @@ namespace cl::jit
                                       occurrence.kind ==
                                           OccurrenceKind::ForwardingDef &&
                                       live_range.origin.kind() ==
-                                          LiveRangeOrigin::Kind::ProgramValue;
+                                          LiveRangeOrigin::Kind::ProgramValue &&
+                                      forwarding_definition_matches_source(
+                                          definition, occurrence.live_range,
+                                          program_value_ranges);
                         if(!valid_definition || occurrence.position != expected)
                         {
                             fatal("invalid JIT allocator result occurrence");
