@@ -554,11 +554,10 @@ namespace cl::jit
                 {
                     case OccurrenceAnchor::Kind::InstructionResult:
                         {
-                            const LiveRange &range =
-                                problem.live_ranges()[occurrence.live_range
-                                                          .value()];
                             result.existing_locations.assign(
-                                range.origin.program_value(), location);
+                                ProgramValueRef(storage.instruction(
+                                    occurrence.anchor.instruction_id())),
+                                location);
                             break;
                         }
                     case OccurrenceAnchor::Kind::InstructionTemporary:

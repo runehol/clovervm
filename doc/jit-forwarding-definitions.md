@@ -4,7 +4,7 @@
 |---|---|
 | Document type | Design revision and transition plan |
 | Status | Accepted |
-| Implementation | Slice 1 complete: result-definition metadata and dormant allocator vocabulary are implemented; no instruction kind is marked forwarding yet |
+| Implementation | Slices 1 and 2 complete: result-definition metadata and dormant allocator vocabulary are implemented, allocation verification derives semantic value membership from result occurrences, and location publication uses result anchors; no instruction kind is marked forwarding yet |
 | Scope | Representing block-local SSA definitions that preserve operand 0's runtime bits without creating a second allocator live range |
 | Owning layers | Instruction kinds declare forwarding definitions; allocator preparation forms shared live ranges; target constraints describe instruction execution requirements; register allocation chooses locations and transfers |
 | Design authority after integration | [JIT Compiler and IR](jit-compiler-and-ir.md) and [JIT Register Allocation](jit-register-allocation.md) |
@@ -255,14 +255,19 @@ The migration keeps the current allocator functional after each slice.
 
 ### Slice 2: Remove Single-Origin Assumptions
 
-- Retain the ProgramValue-to-live-range mapping as an allocator product where
-  later stages need it.
-- Generalize allocation verification from origin equality to membership in the
-  ProgramValue-to-live-range mapping.
+- Keep the ProgramValue-to-live-range mapping private to live-range scanning and
+  discard it when scanning finishes.
+- Reconstruct a temporary definition-to-live-range map from result occurrences
+  inside allocation verification, use it to validate operand and edge
+  occurrences, and then discard it.
 - Publish result locations from result occurrence anchors rather than always
   from the live-range origin.
-- Audit transfer source recovery and side-exit location lookup for the same
-  single-origin assumption.
+- Keep transfer source recovery origin-based: the origin remains the
+  block-local semantic value that initially supplied the unchanged bits and is
+  a legal source for allocator-created moves.
+- Let side-exit location lookup continue through ordinary semantic
+  `ProgramValueRef` assignments; every result occurrence now publishes its own
+  location.
 
 No graph should yet contain a forwarding definition, so this slice changes
 representation capability without changing generated code.

@@ -5,6 +5,7 @@
 #include <absl/container/flat_hash_map.h>
 
 #include <algorithm>
+#include <optional>
 #include <unordered_set>
 #include <vector>
 
@@ -33,23 +34,22 @@ namespace cl::jit
             return false;
         }
 
-        bool instruction_operand_matches(Instruction instruction,
-                                         size_t operand_index,
-                                         InstructionId definition)
+        std::optional<InstructionId>
+        instruction_operand_definition(Instruction instruction,
+                                       size_t operand_index)
         {
-            bool found = false;
+            std::optional<InstructionId> result;
             visit_operand_references(
                 instruction, [&](uint32_t index, OperandClass operand_class,
                                  ValueRepresentationRequirement,
                                  InstructionId operand_definition) {
                     if(operand_class != OperandClass::Snapshot &&
-                       index == operand_index &&
-                       operand_definition == definition)
+                       index == operand_index)
                     {
-                        found = true;
+                        result = operand_definition;
                     }
                 });
-            return found;
+            return result;
         }
 
         bool bundle_covers_occurrence(const LiveBundle &bundle,
@@ -120,6 +120,24 @@ namespace cl::jit
             expected_block_start = block_range.range.end;
         }
 
+        absl::flat_hash_map<InstructionId, LiveRangeId> program_value_ranges;
+        for(const Occurrence &occurrence: problem.occurrences())
+        {
+            if(occurrence.anchor.kind() !=
+               OccurrenceAnchor::Kind::InstructionResult)
+            {
+                continue;
+            }
+            if(occurrence.live_range.value() >= problem.live_ranges().size() ||
+               !program_value_ranges
+                    .emplace(occurrence.anchor.instruction_id(),
+                             occurrence.live_range)
+                    .second)
+            {
+                fatal("invalid JIT allocator result range mapping");
+            }
+        }
+
         for(size_t index = 0; index < problem.occurrences().size(); ++index)
         {
             const Occurrence &occurrence = problem.occurrences()[index];
@@ -171,18 +189,33 @@ namespace cl::jit
                                     : AccessTiming::Late;
                             if(occurrence.minimum_coverage !=
                                minimum_liveness_coverage(position->second.early,
-                                                         OccurrenceKind::Def,
+                                                         occurrence.kind,
                                                          timing))
                             {
                                 fatal("JIT allocator result has insufficient "
                                       "liveness coverage");
                             }
                         }
-                        if(occurrence.kind != OccurrenceKind::Def ||
-                           live_range.origin.kind() !=
-                               LiveRangeOrigin::Kind::ProgramValue ||
-                           live_range.origin.instruction_id() != instruction ||
-                           occurrence.position != expected)
+                        Instruction definition =
+                            live_range.block->storage()->instruction(
+                                instruction);
+                        ResultDefinitionKind definition_kind =
+                            instruction_kind_metadata(definition.kind())
+                                .result_definition_kind;
+                        bool valid_definition =
+                            definition_kind == ResultDefinitionKind::Def
+                                ? occurrence.kind == OccurrenceKind::Def &&
+                                      live_range.origin.kind() ==
+                                          LiveRangeOrigin::Kind::ProgramValue &&
+                                      live_range.origin.instruction_id() ==
+                                          instruction
+                                : definition_kind ==
+                                          ResultDefinitionKind::ForwardingDef &&
+                                      occurrence.kind ==
+                                          OccurrenceKind::ForwardingDef &&
+                                      live_range.origin.kind() ==
+                                          LiveRangeOrigin::Kind::ProgramValue;
+                        if(!valid_definition || occurrence.position != expected)
                         {
                             fatal("invalid JIT allocator result occurrence");
                         }
@@ -193,6 +226,15 @@ namespace cl::jit
                         InstructionId instruction =
                             occurrence.anchor.instruction_id();
                         auto position = instruction_positions.find(instruction);
+                        std::optional<InstructionId> definition =
+                            instruction_operand_definition(
+                                live_range.block->storage()->instruction(
+                                    instruction),
+                                occurrence.anchor.index());
+                        auto definition_range =
+                            definition.has_value()
+                                ? program_value_ranges.find(*definition)
+                                : program_value_ranges.end();
                         if(position == instruction_positions.end() ||
                            position->second.block != live_range.block ||
                            (occurrence.position != position->second.early &&
@@ -200,11 +242,8 @@ namespace cl::jit
                            occurrence.kind != OccurrenceKind::Use ||
                            live_range.origin.kind() !=
                                LiveRangeOrigin::Kind::ProgramValue ||
-                           !instruction_operand_matches(
-                               live_range.block->storage()->instruction(
-                                   instruction),
-                               occurrence.anchor.index(),
-                               live_range.origin.instruction_id()))
+                           definition_range == program_value_ranges.end() ||
+                           definition_range->second != occurrence.live_range)
                         {
                             fatal("invalid JIT allocator operand occurrence");
                         }
@@ -227,6 +266,13 @@ namespace cl::jit
                         const BlockEdge *edge = occurrence.anchor.block_edge();
                         size_t argument_index = occurrence.anchor.index();
                         auto range = block_ranges.find(live_range.block);
+                        auto definition_range =
+                            edge != nullptr &&
+                                    argument_index < edge->arguments().size()
+                                ? program_value_ranges.find(
+                                      edge->arguments()[argument_index]
+                                          .instruction_id())
+                                : program_value_ranges.end();
                         if(edge == nullptr ||
                            edge->source() != live_range.block ||
                            argument_index >= edge->arguments().size() ||
@@ -236,8 +282,8 @@ namespace cl::jit
                            occurrence.kind != OccurrenceKind::Use ||
                            live_range.origin.kind() !=
                                LiveRangeOrigin::Kind::ProgramValue ||
-                           edge->arguments()[argument_index].instruction_id() !=
-                               live_range.origin.instruction_id() ||
+                           definition_range == program_value_ranges.end() ||
+                           definition_range->second != occurrence.live_range ||
                            occurrence.minimum_coverage !=
                                LivenessRange{occurrence.position,
                                              occurrence.position.next()})
