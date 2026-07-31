@@ -6,40 +6,13 @@
 | Status | Active |
 | Scope | Prioritized work that turns the current executable AArch64 JIT slice into a broader and runtime-complete compiler |
 | Design authority | [JIT Compiler and IR](jit-compiler-and-ir.md), [JIT Register Allocation](jit-register-allocation.md), [JIT Side-Exit Lowering](jit-side-exit-lowering.md), and [JIT Transition Programs](jit-transition-program.md) |
-| Validated against | `347cc046` (2026-07-31) |
+| Validated against | `bd6b270d` (2026-07-31) |
 
 This roadmap records implementation order rather than adding architecture. The
 owning design documents remain authoritative for IR, allocation, recovery,
 calling conventions, and publication. Exact opcode coverage remains an
 implementation fact; the slices below identify semantic families and the
 infrastructure they exercise rather than maintaining an opcode ledger.
-
-## Current Vertical Boundary
-
-The direct bytecode-to-Core path now produces executable AArch64 code for a
-small but meaningful language subset:
-
-- constants, value movement, identity tests, branches, joins, and returns;
-- guarded SMI addition with overflow side exits;
-- Core optimization through global dead-code elimination and equivalent block
-  parameter collapse;
-- Core-to-Machine side-exit lowering with late executable bindings;
-- block-local forwarding definitions for refining guards, eliminating their
-  result copies without weakening SSA identity or recovery state;
-- whole-CFG register allocation with bundle merging, eviction, splitting, and
-  allocation-created edge-transfer blocks;
-- multi-block AArch64 layout, fallthrough removal, branch relaxation, cold
-  side-exit blocks, constant-pool publication, and transition-program
-  references.
-
-This is no longer a single-block or fixed-register bring-up backend. The
-allocator and emitter can support broader lowering without being replaced.
-
-The runtime path is not complete. Successful paths can be executed directly in
-tests, but guard failure cannot safely return to the interpreter until the
-entry/exit and side-exit thunks are implemented. Ordinary allocation pressure
-also cannot spill into compiler-owned slots, and managed calls do not yet model
-fixed arguments, results, or clobbers.
 
 ## Ordering Principles
 
@@ -55,22 +28,6 @@ Near-term work follows four rules:
 
 ## Implementation Sequence
 
-Refining guards now use forwarding definitions rather than same-as-input
-affinities. Their input and result SSA identities share one block-local live
-range, and AArch64 emits no guard-result copy. `SameAsInput` remains available
-for genuinely destructive two-address operations. Such operations require
-their own lowering and recovery proof; the roadmap does not assume that an
-overwritten input can generally be reconstructed by applying an inverse
-operation on a side exit.
-
-Equivalent loop-carried state is now collapsed before side-exit lowering and
-register allocation. Parameters whose incoming arguments are one common
-external value plus self references share one representative block parameter;
-the redundant parameters and edge arguments are removed. The representative
-continues to import the value across the block boundary, preserving
-block-local SSA. General constant and `uninitialized` rematerialization in
-transition programs remains later Snapshot and recovery work.
-
 ### 1. Fuse Value Tests With Branches
 
 Recognize the existing single-use pattern:
@@ -84,8 +41,10 @@ and lower it to one Machine compare-and-branch terminator. AArch64 can then emit
 `False` or retesting the result. If the Python boolean has another use, retain
 ordinary materialization and tagged truthiness testing.
 
-Identity tests provide an existing executable fixture and establish the fusion
-shape before SMI comparisons are added.
+Identity tests provide the first executable fixture and establish the fusion
+shape before SMI comparisons are added. The optimization should remove the
+intermediate boolean from Machine IR so allocation does not model a value that
+emission will never materialize.
 
 ### 2. Close the Runtime Transition Loop
 
@@ -181,12 +140,11 @@ record compact per-compilation statistics for:
 - allocator evictions, splits, spills, and compilation failures;
 - compilation time by major phase.
 
-Use those counts to decide when to intern transition programs. The AArch64
-emitter already deduplicates cold blocks by complete `SideExitBinding`. If
-distinct bindings still emit byte-identical finalized `TransitionInstruction`
-sequences, publish one untagged payload for the equivalent group and then merge
-any cold stubs that become identical. Program comparison must occur after
-physical input locations are bound; Snapshot or region identity alone is not
+Use those counts to decide when to intern transition programs. If distinct
+bindings emit byte-identical finalized `TransitionInstruction` sequences,
+publish one untagged payload for the equivalent group and then merge any cold
+stubs that become identical. Program comparison must occur after physical
+input locations are bound; Snapshot or region identity alone is not
 sufficient.
 
 A small representative compilation corpus is preferable to a large set of
