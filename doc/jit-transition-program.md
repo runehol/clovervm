@@ -111,23 +111,27 @@ struct TransitionExecutionInput
 struct InterpreterResumeState
 {
     Value accumulator;
-    BytecodePC resume_pc;
+    CodeObject *code_object;
+    BytecodePCOffset resume_pc_offset;
 };
 
 InterpreterResumeState execute_transition_program(
     TransitionExecutionContext &context,
-    std::span<const TransitionInstruction> instructions,
+    const TransitionInstruction *program,
     TransitionExecutionInput input);
 ```
 
 `Transfer` copies one raw 64-bit word so tagged and unboxed representations use
 the same path. Register-file locations are read-only; stack locations are
 relative to the supplied frame pointer; scratch locations address the context.
-`ResumeInterpreter` reconstructs the tagged accumulator and returns it with the
-bytecode continuation to the future side-exit adapter. The active
+`ResumeInterpreter` reads the tagged accumulator from the fixed `Scratch[0]`
+handoff slot and returns it with the borrowed owning `CodeObject *` and bytecode
+continuation to the future side-exit adapter. The active
 `ThreadState *` is fixed machine context held in the target's JIT thread
 register, not transition data. This initial executor does not itself enter the
-bytecode interpreter.
+bytecode interpreter. Runtime execution begins at the `BeginTransition` header
+and advances until the self-terminating `ResumeInterpreter`; compiler-side
+verification and formatting retain bounded spans.
 
 ## Instruction Representation
 
@@ -191,9 +195,8 @@ public:
     begin_transition(uint32_t scratch_slot_count);
     static TransitionInstruction
     transfer(TransitionLocation destination, TransitionLocation source);
-    static TransitionInstruction
-    resume_interpreter(TransitionLocation accumulator,
-                       BytecodePC resume_pc);
+    static TransitionInstruction resume_interpreter(
+        CodeObject *code_object, BytecodePCOffset resume_pc_offset);
 
     TransitionInstructionKind kind() const;
 
@@ -241,8 +244,8 @@ public:
     void append_instruction(TransitionInstruction instruction);
     void emplace_transfer(TransitionLocation destination,
                           TransitionLocation source);
-    void emplace_resume_interpreter(TransitionLocation accumulator,
-                                    BytecodePC resume_pc);
+    void emplace_resume_interpreter(CodeObject *code_object,
+                                    BytecodePCOffset resume_pc_offset);
 
     std::vector<TransitionInstruction> finalize() &&;
 
@@ -278,21 +281,24 @@ stages a value in scratch explicitly names the planner-selected scratch slot.
 
 ```text
 ResumeInterpreter
-    operands:
-        accumulator : TransitionLocation
     attribute:
-        resume_pc : BytecodePC
+        code_object : borrowed CodeObject *
+        resume_pc_offset : BytecodePCOffset
 ```
 
-It has no result. It reads the reconstructed accumulator from its explicit
-source, ends transition execution after canonical interpreter state has been
-published, and identifies the bytecode continuation. The initial non-inlined
-side-exit context supplies the active `ThreadState *` through fixed target
-machine state and the owning `CodeObject` through side-exit metadata.
+It has no result. The resumed accumulator is always `Scratch[0]`, which side-exit
+publication initializes before the terminal. The terminal ends execution after
+canonical interpreter state has been published and identifies both the owning
+bytecode `CodeObject` and continuation. The code-object pointer is borrowed: the
+source `CodeObject` owns the published `JitCodeObject`, resides in a non-moving
+pool, and therefore outlives every executable transition program embedded in
+that JIT code. The program adds no reverse retain under the current refcounted
+collector. `resume_pc_offset` is relative to `code_object->code.data()`; only the
+interpreter-reentry boundary resolves it to a `const uint8_t *`. The active
+`ThreadState *` remains fixed target machine state.
 Representing the active code object for an inlined frame is deferred with
-inlining. The resume PC is part of the continuous program rather than parallel
-side-exit metadata. Future transition consumers may define different terminal
-handoff instructions.
+inlining. Future transition consumers may define different terminal handoff
+instructions.
 
 Constants are not a fourth mutable storage area. Scalar constants remain inline
 attributes where the schema permits. Pointer-shaped tagged values are addressed
@@ -431,10 +437,11 @@ The compiled caller materializes the address of the first entry from its
 constant pool.
 `BeginTransition` supplies the scratch requirement, and the terminal handoff
 ends execution. No separate program record, instruction count, completion
-record, `std::vector`, or process-local pointer is retained. The enclosing
-code-object metadata allocation provides the outer bounds used by verification.
-A compiler-side builder may use ordinary growable containers before
-publication.
+record, or `std::vector` is retained. `ResumeInterpreter` contains the one
+process-local pointer: a borrowed pointer to the stable, owning bytecode
+`CodeObject`. The enclosing code-object metadata allocation provides the outer
+bounds used by compiler-side verification. A compiler-side builder may use
+ordinary growable containers before publication.
 
 The fixed saved-register layout belongs to the target thunk, while
 saved-register slots, compiled-frame locations, canonical destinations, and
@@ -539,9 +546,10 @@ Transition-program verification should check:
 - `Scratch[0]` has no implicit producer, and a `ResumeInterpreter` program
   initializes it with the resumed accumulator;
 - a side-exit transition never writes its register-file image;
-- `ResumeInterpreter` reads an initialized tagged accumulator source;
+- `ResumeInterpreter` reads an initialized tagged accumulator from `Scratch[0]`;
 - exactly one terminal handoff is present and it is the final instruction;
-- `ResumeInterpreter.resume_pc` is valid for the owning bytecode code object.
+- `ResumeInterpreter.resume_pc_offset` is valid relative to the owning bytecode
+  code object's bytecode base.
 
 These checks belong near transition emission and allocation-boundary
 verification. A malformed transition program is a compiler bug, not a

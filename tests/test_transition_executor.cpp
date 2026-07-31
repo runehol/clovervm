@@ -1,4 +1,5 @@
 #include "jit/transition_executor.h"
+#include "test_helpers.h"
 
 #include <gtest/gtest.h>
 
@@ -31,6 +32,8 @@ namespace cl::jit
 
     TEST(TransitionExecutor, TransfersThroughScratchAndReturnsResumeState)
     {
+        test::VmTestContext vm;
+        CodeObject *code_object = vm.compile_file(L"");
         Value expected = Value::from_smi(123);
         std::array<Value, 8> stack = {};
         Value *frame_pointer = stack.data() + 4;
@@ -41,21 +44,27 @@ namespace cl::jit
                                  TransitionLocation::register_file(1));
         builder.emplace_transfer(TransitionLocation::stack(-2),
                                  TransitionLocation::scratch(0));
-        builder.emplace_resume_interpreter(TransitionLocation::stack(-2), 41);
+        builder.emplace_resume_interpreter(code_object, 0);
         std::vector<TransitionInstruction> instructions =
             std::move(builder).finalize();
 
         TransitionExecutionContext context;
         InterpreterResumeState result = execute_transition_program(
-            context, instructions, {register_file, frame_pointer});
+            context, instructions.data(), {register_file, frame_pointer});
 
         EXPECT_EQ(expected, result.accumulator);
-        EXPECT_EQ(41u, result.resume_pc);
+        EXPECT_EQ(code_object, result.code_object);
+        EXPECT_EQ(0u, result.resume_pc_offset);
+        EXPECT_EQ(code_object->code.data(),
+                  result.code_object->interpreted_pc_for_offset(
+                      result.resume_pc_offset));
         EXPECT_EQ(word_for(expected), stack_word(frame_pointer - 2));
     }
 
     TEST(TransitionExecutor, PreservesArbitraryTransferBits)
     {
+        test::VmTestContext vm;
+        CodeObject *code_object = vm.compile_file(L"");
         constexpr uint64_t Bits = 0xfedcba9876543210;
         Value accumulator = Value::from_smi(1);
         std::array<Value, 8> stack = {};
@@ -65,16 +74,18 @@ namespace cl::jit
         TransitionProgramBuilder builder;
         builder.emplace_transfer(TransitionLocation::stack(1),
                                  TransitionLocation::register_file(0));
-        builder.emplace_resume_interpreter(TransitionLocation::register_file(1),
-                                           9);
+        builder.emplace_transfer(TransitionLocation::scratch(0),
+                                 TransitionLocation::register_file(1));
+        builder.emplace_resume_interpreter(code_object, 0);
         std::vector<TransitionInstruction> instructions =
             std::move(builder).finalize();
 
         TransitionExecutionContext context;
         InterpreterResumeState result = execute_transition_program(
-            context, instructions, {register_file, frame_pointer});
+            context, instructions.data(), {register_file, frame_pointer});
 
         EXPECT_EQ(accumulator, result.accumulator);
+        EXPECT_EQ(code_object, result.code_object);
         EXPECT_EQ(Bits, stack_word(frame_pointer + 1));
     }
 
@@ -94,13 +105,14 @@ namespace cl::jit
 
     TEST(TransitionProgramVerifier, RejectsRegisterFileDestination)
     {
+        test::VmTestContext vm;
+        CodeObject *code_object = vm.compile_file(L"");
         EXPECT_DEATH(
             {
                 TransitionProgramBuilder builder;
                 builder.emplace_transfer(TransitionLocation::register_file(0),
                                          TransitionLocation::stack(-1));
-                builder.emplace_resume_interpreter(
-                    TransitionLocation::stack(-1), 3);
+                builder.emplace_resume_interpreter(code_object, 0);
                 (void)std::move(builder).finalize();
             },
             "writes its register file");

@@ -787,12 +787,14 @@ scratch storage. An eligible Core instruction's result is implicitly
 `BeginTransition` header. The resultless header carries the actual scratch-slot
 requirement. `Transfer` has one source operand and one destination attribute,
 both encoded as `TransitionLocation`; it updates that location and has
-`ResultClass::None`. The resultless terminal
-`ResumeInterpreter` reads the reconstructed accumulator from an explicit
-`TransitionLocation`, carries an inline `BytecodePC`, ends transition execution,
-and identifies the interpreter continuation. The initial non-inlined side-exit
-context supplies the owning `CodeObject`. Pointer-shaped tagged constants are
-loaded through the compiled code object's constant pool.
+`ResultClass::None`. The resultless terminal `ResumeInterpreter` reads the
+reconstructed accumulator from the fixed `Scratch[0]` handoff slot, carries a
+borrowed stable `CodeObject *` and inline `BytecodePCOffset`, ends transition
+execution, and identifies the interpreter continuation as an offset relative to
+the code object's bytecode base. The source `CodeObject`
+owns the published `JitCodeObject`, so the terminal back-reference does not add
+a retain under the current refcounted collector. Pointer-shaped tagged
+constants are loaded through the compiled code object's constant pool.
 
 `instruction.def` explicitly declares transition-program eligibility. Generated
 checks reject eligible kinds with snapshots, block edges, shape or validity-cell
@@ -806,9 +808,10 @@ semantics remain explicit executor code rather than a generated interpreter.
 
 Published programs are self-delimiting sequences in immutable code-object
 metadata. A caller refers by offset to `BeginTransition`; the final handoff ends
-execution. They do not own `std::vector`s or contain process-local pointers.
-Each thread owns a reusable `std::vector<uint64_t>` scratch buffer and grows it
-to `BeginTransition.scratch_slot_count` before dispatch.
+execution. They do not own `std::vector`s. The only process-local pointer is the
+terminal's borrowed source `CodeObject *`. Each thread owns a reusable
+`std::vector<uint64_t>` scratch buffer and grows it to
+`BeginTransition.scratch_slot_count` before dispatch.
 
 ### Context
 

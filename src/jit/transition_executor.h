@@ -36,13 +36,14 @@ namespace cl::jit
     struct InterpreterResumeState
     {
         Value accumulator;
-        BytecodePC resume_pc;
+        CodeObject *code_object;
+        BytecodePCOffset resume_pc_offset;
     };
 
-    InterpreterResumeState execute_transition_program(
-        TransitionExecutionContext &context,
-        std::span<const TransitionInstruction> instructions,
-        TransitionExecutionInput input);
+    InterpreterResumeState
+    execute_transition_program(TransitionExecutionContext &context,
+                               const TransitionInstruction *program,
+                               TransitionExecutionInput input);
 
 }  // namespace cl::jit
 

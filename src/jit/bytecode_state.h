@@ -20,7 +20,8 @@ namespace cl::jit
         static constexpr size_t FirstFramePosition = 1;
 
         explicit BytecodeStateOrder(const CodeObject &code_object)
-            : n_parameters_(code_object.function_signature.n_parameters),
+            : code_object_(&code_object),
+              n_parameters_(code_object.function_signature.n_parameters),
               n_locals_(code_object.n_locals),
               n_temporaries_(code_object.n_temporaries),
               highest_frame_offset_(n_parameters_ == 0
@@ -31,6 +32,11 @@ namespace cl::jit
         }
 
         size_t size() const { return FirstFramePosition + frame_slot_count(); }
+
+        CodeObject *code_object() const
+        {
+            return const_cast<CodeObject *>(code_object_);
+        }
 
         size_t frame_slot_count() const
         {
@@ -85,6 +91,7 @@ namespace cl::jit
         uint32_t n_temporaries() const { return n_temporaries_; }
 
     private:
+        const CodeObject *code_object_;
         uint32_t n_parameters_;
         uint32_t n_locals_;
         uint32_t n_temporaries_;

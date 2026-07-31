@@ -98,10 +98,11 @@ namespace cl::jit
     }
 
     void TransitionProgramBuilder::emplace_resume_interpreter(
-        TransitionLocation accumulator, BytecodePC resume_pc)
+        CodeObject *code_object, BytecodePCOffset resume_pc_offset)
     {
-        append_instruction(
-            TransitionInstruction::resume_interpreter(accumulator, resume_pc));
+        require_scratch_slot(0);
+        append_instruction(TransitionInstruction::resume_interpreter(
+            code_object, resume_pc_offset));
     }
 
     std::vector<TransitionInstruction> TransitionProgramBuilder::finalize() &&
@@ -170,12 +171,13 @@ namespace cl::jit
                         break;
                     }
                 case TransitionInstructionKind::ResumeInterpreter:
-                    require_initialized_scratch(
-                        instruction.interpreter_accumulator(),
-                        initialized_scratch);
-                    require_declared_scratch(
-                        instruction.interpreter_accumulator(),
-                        scratch_slot_count);
+                    require_initialized_scratch(TransitionLocation::scratch(0),
+                                                initialized_scratch);
+                    if(instruction.interpreter_code_object() == nullptr)
+                    {
+                        fatal("transition interpreter terminal has no code "
+                              "object");
+                    }
                     if(index + 1 != instructions.size())
                     {
                         fatal("transition terminal is not the final "
@@ -238,10 +240,9 @@ namespace cl::jit
                 case TransitionInstructionKind::ResumeInterpreter:
                     fmt::format_to(
                         std::back_inserter(result),
-                        "  {}: resume_interpreter {} {{resume_pc = {}}}\n",
-                        index,
-                        format_location(instruction.interpreter_accumulator()),
-                        instruction.resume_pc());
+                        "  {}: resume_interpreter "
+                        "{{code_object = <embedded>, resume_pc_offset = {}}}\n",
+                        index, instruction.resume_pc_offset());
                     break;
                 default:
                     fmt::format_to(std::back_inserter(result),

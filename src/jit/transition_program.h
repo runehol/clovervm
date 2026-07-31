@@ -12,6 +12,11 @@
 #include <utility>
 #include <vector>
 
+namespace cl
+{
+    class CodeObject;
+}
+
 namespace cl::jit
 {
     enum class TransitionLocationArea : uint8_t
@@ -90,12 +95,15 @@ namespace cl::jit
         }
 
         static TransitionInstruction
-        resume_interpreter(TransitionLocation accumulator, BytecodePC resume_pc)
+        resume_interpreter(CodeObject *code_object,
+                           BytecodePCOffset resume_pc_offset)
         {
+            assert(code_object != nullptr);
             TransitionInstruction result(
                 TransitionInstructionKind::ResumeInterpreter);
-            result.set_location(0, accumulator);
-            result.slots_[1] = resume_pc;
+            static_assert(sizeof(code_object) == sizeof(uint64_t));
+            std::memcpy(&result.slots_[0], &code_object, sizeof(code_object));
+            result.slots_[2] = resume_pc_offset;
             return result;
         }
 
@@ -125,16 +133,19 @@ namespace cl::jit
             return location(0);
         }
 
-        TransitionLocation interpreter_accumulator() const
+        CodeObject *interpreter_code_object() const
         {
             assert(kind_ == TransitionInstructionKind::ResumeInterpreter);
-            return location(0);
+            CodeObject *result = nullptr;
+            static_assert(sizeof(result) == sizeof(uint64_t));
+            std::memcpy(&result, &slots_[0], sizeof(result));
+            return result;
         }
 
-        BytecodePC resume_pc() const
+        BytecodePCOffset resume_pc_offset() const
         {
             assert(kind_ == TransitionInstructionKind::ResumeInterpreter);
-            return slots_[1];
+            return slots_[2];
         }
 
     private:
@@ -181,8 +192,8 @@ namespace cl::jit
 
         void emplace_transfer(TransitionLocation destination,
                               TransitionLocation source);
-        void emplace_resume_interpreter(TransitionLocation accumulator,
-                                        BytecodePC resume_pc);
+        void emplace_resume_interpreter(CodeObject *code_object,
+                                        BytecodePCOffset resume_pc_offset);
 
         std::vector<TransitionInstruction> finalize() &&;
 

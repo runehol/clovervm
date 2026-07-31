@@ -109,7 +109,7 @@ namespace cl::jit
             state_order.size(), ProgramValueRef(region_parameter));
         ExitToInterpreterInstruction exit =
             builder.make_instruction<ExitToInterpreterInstruction>(
-                captured, BytecodePC{31});
+                captured, BytecodePCOffset{31});
         std::array<InstructionId, 1> parameter_ids = {region_parameter.id()};
         std::array<InstructionId, 1> instructions = {exit.id()};
         SideExitRegionId region =
@@ -178,8 +178,8 @@ namespace cl::jit
         captured[BytecodeStateOrder::AccumulatorPosition] =
             ProgramValueRef(argument);
         SnapshotInstruction snapshot =
-            builder.emplace_instruction<SnapshotInstruction>(entry, captured,
-                                                             BytecodePC{29});
+            builder.emplace_instruction<SnapshotInstruction>(
+                entry, captured, BytecodePCOffset{0});
         builder.emplace_instruction<ResumeInInterpreterInstruction>(
             entry, SnapshotRef(snapshot));
         ControlFlowGraph *graph = builder.finalize();
@@ -237,10 +237,11 @@ namespace cl::jit
 
         TransitionExecutionContext execution_context;
         InterpreterResumeState resume = execute_transition_program(
-            execution_context, program, {register_file, frame_pointer});
+            execution_context, program.data(), {register_file, frame_pointer});
 
         EXPECT_EQ(expected_value, resume.accumulator);
-        EXPECT_EQ(29u, resume.resume_pc);
+        EXPECT_EQ(code_object, resume.code_object);
+        EXPECT_EQ(0u, resume.resume_pc_offset);
         for(size_t position = BytecodeStateOrder::FirstFramePosition;
             position < state_order.size(); ++position)
         {

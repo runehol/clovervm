@@ -1714,12 +1714,14 @@ the region body. `BytecodeStateOrder` maps each `ExitToInterpreter` captured
 value to the accumulator or a canonical frame home. The active thread is ambient
 JIT machine context and is not reconstructed by the transition program.
 
-The resulting compact, pointer-free `TransitionProgram` is specified in
+The resulting compact `TransitionProgram` is specified in
 [JIT Transition Programs](jit-transition-program.md). It uses explicitly
 eligible Core instruction kinds with implicit scratch results plus
 location-addressed `Transfer` instructions, and it executes the
 `ExitToInterpreter` recovery payload rather than introducing a second logical
-state model.
+state model. Its only embedded runtime pointer is the terminal's borrowed,
+stable source `CodeObject *`; transition computation and transfer records remain
+pointer-free.
 
 Precise GC root maps are a separate future backend projection. They select all
 managed values live at a continuing safepoint, including any compiler-only

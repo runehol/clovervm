@@ -83,39 +83,38 @@ namespace cl::jit
         }
     }  // namespace
 
-    InterpreterResumeState execute_transition_program(
-        TransitionExecutionContext &context,
-        std::span<const TransitionInstruction> instructions,
-        TransitionExecutionInput input)
+    InterpreterResumeState
+    execute_transition_program(TransitionExecutionContext &context,
+                               const TransitionInstruction *program,
+                               TransitionExecutionInput input)
     {
-        assert(!instructions.empty());
-        assert(instructions.front().kind() ==
-               TransitionInstructionKind::BeginTransition);
+        assert(program != nullptr);
+        assert(program->kind() == TransitionInstructionKind::BeginTransition);
         assert(input.frame_pointer != nullptr);
 
         std::span<uint64_t> scratch =
-            context.ensure_scratch(instructions.front().scratch_slot_count());
-        for(size_t index = 1; index < instructions.size(); ++index)
+            context.ensure_scratch(program->scratch_slot_count());
+        assert(!scratch.empty());
+        for(const TransitionInstruction *instruction = program + 1;;
+            ++instruction)
         {
-            const TransitionInstruction &instruction = instructions[index];
-            switch(instruction.kind())
+            switch(instruction->kind())
             {
                 case TransitionInstructionKind::BeginTransition:
                     fatal("transition executor encountered a second header");
                 case TransitionInstructionKind::Transfer:
                     {
                         uint64_t value = read_location(
-                            instruction.transfer_source(), input, scratch);
-                        write_location(instruction.transfer_destination(),
+                            instruction->transfer_source(), input, scratch);
+                        write_location(instruction->transfer_destination(),
                                        value, input, scratch);
                         break;
                     }
                 case TransitionInstructionKind::ResumeInterpreter:
                     return {
-                        value_from_word(
-                            read_location(instruction.interpreter_accumulator(),
-                                          input, scratch)),
-                        instruction.resume_pc(),
+                        value_from_word(scratch[0]),
+                        instruction->interpreter_code_object(),
+                        instruction->resume_pc_offset(),
                     };
                 default:
                     fatal("unsupported transition instruction");

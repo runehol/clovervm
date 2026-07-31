@@ -137,7 +137,7 @@ namespace cl::jit
                                               move.source_location);
                 }
                 builder_.emplace_resume_interpreter(
-                    accumulator_result,
+                    state_order_->code_object(),
                     exit_instruction.resume_pc_offset());
             }
 

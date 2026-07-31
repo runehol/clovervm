@@ -49,7 +49,7 @@ namespace cl::jit
 
                 ExitToInterpreterInstruction exit =
                     builder.make_instruction<ExitToInterpreterInstruction>(
-                        captured, BytecodePC{37});
+                        captured, BytecodePCOffset{0});
                 exit_id = exit.id();
                 std::vector<InstructionId> parameter_ids;
                 parameter_ids.reserve(captured.size());
@@ -122,10 +122,11 @@ namespace cl::jit
         EXPECT_EQ(1u, program.front().scratch_slot_count());
         TransitionExecutionContext context;
         InterpreterResumeState resume = execute_transition_program(
-            context, program, {register_file, execution.frame_pointer});
+            context, program.data(), {register_file, execution.frame_pointer});
 
         EXPECT_EQ(accumulator, resume.accumulator);
-        EXPECT_EQ(37u, resume.resume_pc);
+        EXPECT_EQ(fixture.code_object, resume.code_object);
+        EXPECT_EQ(0u, resume.resume_pc_offset);
         for(size_t position = BytecodeStateOrder::FirstFramePosition;
             position < fixture.state_order->size(); ++position)
         {
@@ -173,9 +174,10 @@ namespace cl::jit
         EXPECT_EQ(2u, program.front().scratch_slot_count());
         TransitionExecutionContext context;
         InterpreterResumeState resume = execute_transition_program(
-            context, program, {register_file, execution.frame_pointer});
+            context, program.data(), {register_file, execution.frame_pointer});
 
         EXPECT_EQ(Value::from_smi(71), resume.accumulator);
+        EXPECT_EQ(fixture.code_object, resume.code_object);
         for(size_t position = BytecodeStateOrder::FirstFramePosition;
             position < fixture.state_order->size(); ++position)
         {
