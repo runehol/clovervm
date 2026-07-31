@@ -3,9 +3,12 @@
 
 #include "build_config.h"
 
+#include <cstdint>
+
 namespace cl::jit
 {
     inline constexpr bool JitTieringEnabled = CL_JIT_TIERING_ENABLED != 0;
+    inline constexpr uint32_t InitialJitTieringBudget = 100;
 
 }  // namespace cl::jit
 

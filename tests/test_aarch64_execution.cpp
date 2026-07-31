@@ -1,3 +1,4 @@
+#include "builtin_types/tuple.h"
 #include "jit/aarch64_assembler.h"
 #include "jit/aarch64_backend.h"
 #include "jit/aarch64_cfg_emitter.h"
@@ -8,6 +9,7 @@
 #include "jit/graph_builder.h"
 #include "jit/jit_code_object.h"
 #include "jit/jit_compiler.h"
+#include "jit/jit_config.h"
 #include "jit/location_assignments.h"
 #include "jit/machine_address_internal.h"
 #include "jit/register_allocator.h"
@@ -754,6 +756,35 @@ namespace cl::jit
                       execute_published_jit(
                           code, {static_cast<uint64_t>(input.as.integer)}));
         }
+    }
+
+    TEST(AArch64Execution, InterpreterCallsPublishedTierAfterArgumentAdaptation)
+    {
+        if constexpr(!JitTieringEnabled)
+        {
+            GTEST_SKIP() << "runtime JIT tiering is disabled";
+        }
+
+        PythonBackendFixture fixture;
+        std::wstring source = L"def collect(*args, **kwargs):\n"
+                              L"    return args\n"
+                              L"for index in range(" +
+                              std::to_wstring(InitialJitTieringBudget) +
+                              L"):\n"
+                              L"    collect(value=index)\n"
+                              L"collect(42)\n";
+        CodeObject *module_code = fixture.context.compile_file(source.c_str());
+        CodeObject *function_code =
+            module_code->constant_table[0].value().get_ptr<CodeObject>();
+
+        EXPECT_EQ(2u, function_code->function_signature.n_parameters);
+        Value result =
+            fixture.context.thread()->run_clovervm_code_object(module_code);
+        ASSERT_TRUE(can_convert_to<Tuple>(result));
+        Tuple *arguments = assume_convert_to<Tuple>(result);
+        ASSERT_EQ(1u, arguments->size());
+        EXPECT_EQ(Value::from_smi(42), arguments->item_unchecked(0));
+        EXPECT_TRUE(function_code->has_jit_code());
     }
 
     TEST(AArch64Execution, CompilesBytecodeThroughJitCompiler)

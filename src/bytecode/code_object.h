@@ -5,6 +5,7 @@
 #include "bytecode/bytecode.h"
 #include "compiler/scope.h"
 #include "import_system/module_global_cache.h"
+#include "jit/jit_config.h"
 #include "object_model/attribute_cache.h"
 #include "object_model/builtin_class_registry.h"
 #include "object_model/owned.h"
@@ -597,6 +598,7 @@ namespace cl
         Member<Optional<TValue<String>>> docstring;
         const CompilationUnit *compilation_unit;
         MemberHeapPtr<jit::JitCodeObject> jit_code;
+        uint32_t jit_tiering_budget = jit::InitialJitTieringBudget;
 
         FunctionSignature function_signature;
         FunctionKeywordRemap function_keyword_remap;
@@ -646,6 +648,15 @@ namespace cl
         bool has_jit_code() const { return jit_code != nullptr; }
         jit::JitCodeObject *get_jit_code() const { return jit_code.extract(); }
         void publish_jit_code(jit::JitCodeObject *object);
+
+        bool consume_jit_tiering_budget()
+        {
+            if(jit_tiering_budget == 0)
+            {
+                return false;
+            }
+            return jit_tiering_budget-- == 1;
+        }
 
         int8_t encode_reg(uint32_t reg) const
         {

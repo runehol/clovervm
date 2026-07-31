@@ -1,6 +1,7 @@
 #include "bytecode/code_object.h"
 #include "jit/code_cache.h"
 #include "jit/jit_code_object.h"
+#include "jit/jit_config.h"
 #include "jit/machine_address_internal.h"
 #include "object_model/owned.h"
 #include "runtime/thread_state.h"
@@ -95,6 +96,20 @@ namespace cl::jit
         EXPECT_TRUE(code_object->has_jit_code());
         EXPECT_EQ(jit_code, code_object->get_jit_code());
         EXPECT_EQ(1, jit_code->refcount);
+    }
+
+    TEST(JitCodeObject, TieringBudgetTriggersOnlyOnTransitionToZero)
+    {
+        test::VmTestContext context;
+        CodeObject *code_object = context.compile_file(L"pass");
+
+        for(uint32_t remaining = InitialJitTieringBudget; remaining > 1;
+            --remaining)
+        {
+            EXPECT_FALSE(code_object->consume_jit_tiering_budget());
+        }
+        EXPECT_TRUE(code_object->consume_jit_tiering_budget());
+        EXPECT_FALSE(code_object->consume_jit_tiering_budget());
     }
 
     TEST(JitCodeObject, RetainsAndReleasesOnlyTheTaggedPoolPrefix)
