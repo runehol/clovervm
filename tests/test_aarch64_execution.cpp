@@ -456,7 +456,7 @@ namespace cl::jit
                 state_order.size(), ProgramValueRef(region_parameter));
             ExitToInterpreterInstruction region_exit =
                 builder.make_instruction<ExitToInterpreterInstruction>(
-                    region_captured, BytecodePC{13});
+                    region_captured, BytecodePCOffset{13});
             std::array<InstructionId, 1> parameter_ids = {
                 region_parameter.id()};
             std::array<InstructionId, 1> instructions = {region_exit.id()};
@@ -541,7 +541,7 @@ namespace cl::jit
                 state_order.size(), ProgramValueRef(region_parameter));
             ExitToInterpreterInstruction region_exit =
                 builder.make_instruction<ExitToInterpreterInstruction>(
-                    region_captured, BytecodePC{19});
+                    region_captured, BytecodePCOffset{19});
             std::array<InstructionId, 1> parameter_ids = {
                 region_parameter.id()};
             std::array<InstructionId, 1> instructions = {region_exit.id()};
@@ -657,7 +657,7 @@ namespace cl::jit
             state_order.size(), ProgramValueRef(region_parameter));
         ExitToInterpreterInstruction region_exit =
             builder.make_instruction<ExitToInterpreterInstruction>(
-                region_captured, BytecodePC{17});
+                region_captured, BytecodePCOffset{17});
         std::array<InstructionId, 1> parameter_ids = {region_parameter.id()};
         std::array<InstructionId, 1> instructions = {region_exit.id()};
         SideExitRegionId side_exit_region =

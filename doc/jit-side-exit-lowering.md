@@ -112,7 +112,7 @@ check ... side_exit_arguments(%4, %7) {side_exit_region = r0}
 
 r0 parameters(%p0, %p1):
     %x = BoxF64 %p0
-    ExitToInterpreter %x, %p1 {resume_pc = 12}
+    ExitToInterpreter %x, %p1 {resume_pc_offset = 12}
 ```
 
 The parameter and argument order has no interpreter-state meaning. It only
@@ -299,7 +299,7 @@ check ... side_exit_arguments(%1) {side_exit_region = r0}
 
 r0 parameters(%p0):
     %2 = BoxF64 %p0
-    ExitToInterpreter ..., %2 {resume_pc = 12}
+    ExitToInterpreter ..., %2 {resume_pc_offset = 12}
 ```
 
 The region continues to name parameter `%p0`. The owner's parallel side-exit

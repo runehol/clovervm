@@ -299,13 +299,13 @@ namespace cl::jit
                                                                      snapshot);
     }
 
-    SnapshotRef CoreBytecodeTranslator::emit_snapshot(Block *block,
-                                                      BytecodePC resume_pc,
-                                                      const State &state)
+    SnapshotRef CoreBytecodeTranslator::emit_snapshot(
+        Block *block, BytecodePCOffset resume_pc_offset, const State &state)
     {
         std::vector<ProgramValueRef> captured = capture_snapshot_values(state);
         return SnapshotRef(builder_.emplace_instruction<SnapshotInstruction>(
-            block, std::span<const ProgramValueRef>(captured), resume_pc));
+            block, std::span<const ProgramValueRef>(captured),
+            resume_pc_offset));
     }
 
     std::vector<ProgramValueRef>

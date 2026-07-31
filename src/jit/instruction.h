@@ -958,13 +958,14 @@ namespace cl::jit
         uint32_t size_;
     };
 
-    using BytecodePC = uint32_t;
+    using BytecodePC = uint64_t;
+    using BytecodePCOffset = uint32_t;
 
     using InstructionAttributeStorage_Shape = uint64_t;
     using InstructionAttributeStorage_ValidityCell = uint64_t;
     using InstructionAttributeStorage_InlineValueClass = uint32_t;
     using InstructionAttributeStorage_ValueConstant = uint64_t;
-    using InstructionAttributeStorage_BytecodePC = uint32_t;
+    using InstructionAttributeStorage_BytecodePCOffset = uint32_t;
     using InstructionAttributeStorage_SideExitRegionId = uint32_t;
     using InstructionAttributeStorage_BlockEdge = uint32_t;
 
@@ -1019,11 +1020,11 @@ namespace cl::jit
         return decode_instruction_attribute_storage<Value>(words);
     }
 
-    inline BytecodePC
-    decode_instruction_attribute_BytecodePC(const CompilationStorage *,
-                                            const uint32_t *words)
+    inline BytecodePCOffset
+    decode_instruction_attribute_BytecodePCOffset(const CompilationStorage *,
+                                                  const uint32_t *words)
     {
-        return decode_instruction_attribute_storage<BytecodePC>(words);
+        return decode_instruction_attribute_storage<BytecodePCOffset>(words);
     }
 
     inline SideExitRegionId
@@ -1088,10 +1089,11 @@ namespace cl::jit
         encode_instruction_attribute_storage(words, value);
     }
 
-    inline void encode_instruction_attribute_BytecodePC(uint32_t *words,
-                                                        BytecodePC pc)
+    inline void
+    encode_instruction_attribute_BytecodePCOffset(uint32_t *words,
+                                                  BytecodePCOffset pc_offset)
     {
-        encode_instruction_attribute_storage(words, pc);
+        encode_instruction_attribute_storage(words, pc_offset);
     }
 
     inline void
@@ -1156,7 +1158,7 @@ namespace cl::jit
 #define CL_JIT_ATTRIBUTE_TYPE_ValidityCell ValidityCell *
 #define CL_JIT_ATTRIBUTE_TYPE_InlineValueClass InlineValueClass
 #define CL_JIT_ATTRIBUTE_TYPE_ValueConstant Value
-#define CL_JIT_ATTRIBUTE_TYPE_BytecodePC BytecodePC
+#define CL_JIT_ATTRIBUTE_TYPE_BytecodePCOffset BytecodePCOffset
 #define CL_JIT_ATTRIBUTE_TYPE_SideExitRegionId SideExitRegionId
 #define CL_JIT_ATTRIBUTE_TYPE_BlockEdge BlockEdge *
 #define CL_JIT_ATTRIBUTE_TYPE(attribute_class)                                 \
@@ -1574,7 +1576,7 @@ namespace cl::jit
 #undef CL_JIT_ATTRIBUTE_TYPE
 #undef CL_JIT_ATTRIBUTE_TYPE_BlockEdge
 #undef CL_JIT_ATTRIBUTE_TYPE_SideExitRegionId
-#undef CL_JIT_ATTRIBUTE_TYPE_BytecodePC
+#undef CL_JIT_ATTRIBUTE_TYPE_BytecodePCOffset
 #undef CL_JIT_ATTRIBUTE_TYPE_ValueConstant
 #undef CL_JIT_ATTRIBUTE_TYPE_InlineValueClass
 #undef CL_JIT_ATTRIBUTE_TYPE_ValidityCell

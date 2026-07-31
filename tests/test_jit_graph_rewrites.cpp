@@ -78,7 +78,7 @@ namespace cl::jit
         SnapshotInstruction snapshot =
             builder.emplace_instruction<SnapshotInstruction>(
                 entry, std::span<const ProgramValueRef>(captured_values),
-                BytecodePC{17});
+                BytecodePCOffset{17});
         AddSMIInstruction add = builder.emplace_instruction<AddSMIInstruction>(
             entry, TaggedValueRef(parameter), TaggedValueRef(parameter),
             SnapshotRef(snapshot));
@@ -995,13 +995,14 @@ namespace cl::jit
         SnapshotInstruction snapshot =
             builder.emplace_instruction<SnapshotInstruction>(
                 entry, std::span<const ProgramValueRef>(captured),
-                BytecodePC{31});
+                BytecodePCOffset{31});
         std::array<TaggedValueRef, 2> arguments = {TaggedValueRef(parameter),
                                                    TaggedValueRef(callable)};
         PythonCallInstruction call =
             builder.emplace_instruction<PythonCallInstruction>(
                 entry, TaggedValueRef(callable), SnapshotRef(snapshot),
-                std::span<const TaggedValueRef>(arguments), BytecodePC{47});
+                std::span<const TaggedValueRef>(arguments),
+                BytecodePCOffset{47});
         builder.emplace_instruction<ReturnInstruction>(entry,
                                                        TaggedValueRef(call));
         ControlFlowGraph *graph = builder.finalize();
@@ -1036,7 +1037,8 @@ namespace cl::jit
         EXPECT_EQ(parameter.id(), new_call.arguments()[0].instruction_id());
         EXPECT_EQ(new_callable.id(), new_call.arguments()[1].instruction_id());
         EXPECT_EQ(new_snapshot.id(), new_call.snapshot().instruction_id());
-        EXPECT_EQ(BytecodePC{47}, new_call.interpreter_return_pc());
+        EXPECT_EQ(BytecodePCOffset{47},
+                  new_call.interpreter_return_pc_offset());
     }
 
     TEST(JitGraphRewriter, RewritesSideExitArgumentsWithoutChangingInputs)
@@ -1053,7 +1055,7 @@ namespace cl::jit
             ProgramValueRef(region_parameter)};
         ExitToInterpreterInstruction region_exit =
             builder.make_instruction<ExitToInterpreterInstruction>(
-                region_values, BytecodePC{31});
+                region_values, BytecodePCOffset{31});
         std::array<InstructionId, 1> parameter_ids = {region_parameter.id()};
         std::array<InstructionId, 1> instructions = {region_exit.id()};
         SideExitRegionId region =

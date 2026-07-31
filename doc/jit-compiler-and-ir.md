@@ -260,7 +260,8 @@ Such a call is followed by an explicit `CheckNotImplemented` Core instruction.
 The check consumes the call result and forwards the same tagged value on the
 successful path. If the result is the `NotImplemented` singleton, compiled code
 exits through its own Snapshot to the paired continuation bytecode. That
-Snapshot's `resume_pc` is the check's continuation pc, and Snapshot position
+Snapshot's `resume_pc_offset` is the check's continuation PC offset, and
+Snapshot position
 zero records the call result required in the accumulator by the interpreter
 continuation. The check
 therefore does not rely on the preceding call's installed return pc or on the

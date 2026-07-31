@@ -31,7 +31,7 @@ namespace cl::jit
         std::array<ProgramValueRef, 2> captured = {ProgramValueRef(first),
                                                    ProgramValueRef(second)};
         builder.emplace_instruction<SnapshotInstruction>(loop, captured,
-                                                         BytecodePC{7});
+                                                         BytecodePCOffset{7});
         std::array<ProgramValueRef, 2> backedge_arguments = {
             ProgramValueRef(first), ProgramValueRef(second)};
         builder.emplace_instruction<UnconditionalBranchInstruction>(

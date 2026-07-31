@@ -29,8 +29,8 @@ namespace cl::jit
                                                    ProgramValueRef(first_move),
                                                    ProgramValueRef(second)};
         SnapshotInstruction snapshot =
-            builder.emplace_instruction<SnapshotInstruction>(entry, captured,
-                                                             BytecodePC{17});
+            builder.emplace_instruction<SnapshotInstruction>(
+                entry, captured, BytecodePCOffset{17});
         ResumeInInterpreterInstruction old_owner =
             builder.emplace_instruction<ResumeInInterpreterInstruction>(
                 entry, SnapshotRef(snapshot));
@@ -85,7 +85,7 @@ namespace cl::jit
                     ProgramValueRef(parameter)};
                 SnapshotInstruction snapshot =
                     builder.emplace_instruction<SnapshotInstruction>(
-                        entry, captured, BytecodePC{23});
+                        entry, captured, BytecodePCOffset{23});
                 builder.emplace_instruction<CheckNotImplementedInstruction>(
                     entry, TaggedValueRef(parameter), SnapshotRef(snapshot));
                 builder.emplace_instruction<ReturnInstruction>(
@@ -108,8 +108,8 @@ namespace cl::jit
             builder.emplace_parameter<ParameterInstruction>(entry);
         std::array<ProgramValueRef, 1> captured = {ProgramValueRef(parameter)};
         SnapshotInstruction snapshot =
-            builder.emplace_instruction<SnapshotInstruction>(entry, captured,
-                                                             BytecodePC{31});
+            builder.emplace_instruction<SnapshotInstruction>(
+                entry, captured, BytecodePCOffset{31});
         InlineTagGuardInstruction guard =
             builder.emplace_instruction<InlineTagGuardInstruction>(
                 entry, TaggedValueRef(parameter), SnapshotRef(snapshot),
@@ -161,8 +161,8 @@ namespace cl::jit
             builder.emplace_parameter<ParameterInstruction>(entry);
         std::array<ProgramValueRef, 1> captured = {ProgramValueRef(lhs)};
         SnapshotInstruction snapshot =
-            builder.emplace_instruction<SnapshotInstruction>(entry, captured,
-                                                             BytecodePC{37});
+            builder.emplace_instruction<SnapshotInstruction>(
+                entry, captured, BytecodePCOffset{37});
         AddSMIInstruction add = builder.emplace_instruction<AddSMIInstruction>(
             entry, TaggedValueRef(lhs), TaggedValueRef(rhs),
             SnapshotRef(snapshot));
@@ -213,14 +213,14 @@ namespace cl::jit
         std::array<ProgramValueRef, 1> add_captured = {ProgramValueRef(lhs)};
         SnapshotInstruction add_snapshot =
             builder.emplace_instruction<SnapshotInstruction>(
-                entry, add_captured, BytecodePC{11});
+                entry, add_captured, BytecodePCOffset{11});
         AddSMIInstruction add = builder.emplace_instruction<AddSMIInstruction>(
             entry, TaggedValueRef(lhs), TaggedValueRef(rhs),
             SnapshotRef(add_snapshot));
         std::array<ProgramValueRef, 1> resume_captured = {ProgramValueRef(add)};
         SnapshotInstruction resume_snapshot =
             builder.emplace_instruction<SnapshotInstruction>(
-                entry, resume_captured, BytecodePC{13});
+                entry, resume_captured, BytecodePCOffset{13});
         builder.emplace_instruction<ResumeInInterpreterInstruction>(
             entry, SnapshotRef(resume_snapshot));
         ControlFlowGraph *graph = builder.finalize();

@@ -211,10 +211,11 @@ namespace cl::jit
                 print_value(value);
             }
 
-            void attribute_BytecodePC(std::string_view name, BytecodePC pc)
+            void attribute_BytecodePCOffset(std::string_view name,
+                                            BytecodePCOffset pc_offset)
             {
                 attribute_separator(name);
-                format("{}", pc);
+                format("{}", pc_offset);
             }
 
             void attribute_SideExitRegionId(std::string_view name,

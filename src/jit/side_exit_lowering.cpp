@@ -454,7 +454,7 @@ namespace cl::jit
                                       instruction.as<SnapshotInstruction>()
                                           .captured_values()),
                                   instruction.as<SnapshotInstruction>()
-                                      .resume_pc()))
+                                      .resume_pc_offset()))
                             : rebuild_instruction_with_references(
                                   instruction, *instruction.storage(), resolver,
                                   context, InstructionRebuildMode::AlwaysClone);

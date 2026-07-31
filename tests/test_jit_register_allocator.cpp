@@ -197,8 +197,8 @@ namespace cl::jit
             builder.emplace_parameter<ParameterInstruction>(entry);
         std::array<ProgramValueRef, 1> captured = {ProgramValueRef(parameter)};
         SnapshotInstruction snapshot =
-            builder.emplace_instruction<SnapshotInstruction>(entry, captured,
-                                                             BytecodePC{7});
+            builder.emplace_instruction<SnapshotInstruction>(
+                entry, captured, BytecodePCOffset{7});
         builder.emplace_instruction<ResumeInInterpreterInstruction>(
             entry, SnapshotRef(snapshot));
         ControlFlowGraph *graph = builder.finalize();
@@ -1076,8 +1076,8 @@ namespace cl::jit
             builder.emplace_parameter<ParameterInstruction>(entry));
         std::span<const ProgramValueRef> captured;
         SnapshotInstruction snapshot =
-            builder.emplace_instruction<SnapshotInstruction>(entry, captured,
-                                                             BytecodePC{7});
+            builder.emplace_instruction<SnapshotInstruction>(
+                entry, captured, BytecodePCOffset{7});
         builder.emplace_instruction<ReturnInstruction>(entry, parameter);
         ControlFlowGraph *graph = builder.finalize();
 
@@ -1112,8 +1112,8 @@ namespace cl::jit
             builder.emplace_parameter<ParameterInstruction>(entry);
         std::span<const ProgramValueRef> captured;
         SnapshotInstruction snapshot =
-            builder.emplace_instruction<SnapshotInstruction>(entry, captured,
-                                                             BytecodePC{7});
+            builder.emplace_instruction<SnapshotInstruction>(
+                entry, captured, BytecodePCOffset{7});
         builder.emplace_instruction<ReturnInstruction>(
             entry, TaggedValueRef(parameter));
         ControlFlowGraph *graph = builder.finalize();
@@ -1327,7 +1327,8 @@ namespace cl::jit
             builder.emplace_parameter<ParameterInstruction>(entry));
         std::array<ProgramValueRef, 1> captured = {parameter};
         SnapshotRef snapshot(builder.emplace_instruction<SnapshotInstruction>(
-            entry, std::span<const ProgramValueRef>(captured), BytecodePC{7}));
+            entry, std::span<const ProgramValueRef>(captured),
+            BytecodePCOffset{7}));
         builder.emplace_instruction<ResumeInInterpreterInstruction>(entry,
                                                                     snapshot);
         ControlFlowGraph *graph = builder.finalize();

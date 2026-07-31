@@ -351,7 +351,7 @@ CL_JIT_INSTRUCTION(Uninitialized, CL_JIT_IR_LEVELS(CoreMachine),
     fixed(snapshot, Snapshot, None)                                            \
     variadic(arguments, ProgramValue, TaggedValue)
 #define CL_JIT_PythonCall_ATTRIBUTES(attribute)                               \
-    attribute(interpreter_return_pc, BytecodePC)
+    attribute(interpreter_return_pc_offset, BytecodePCOffset)
 CL_JIT_INSTRUCTION(PythonCall, CL_JIT_IR_LEVELS(Core),
                    CL_JIT_RESULT(ProgramValue, TaggedValue, Def),
                    CL_JIT_EFFECT_BOUNDS(CallPython, CallPython),
@@ -374,7 +374,8 @@ CL_JIT_INSTRUCTION(CheckNotImplemented, CL_JIT_IR_LEVELS(Core),
 
 #define CL_JIT_Snapshot_OPERANDS(fixed, variadic, program_values)              \
     program_values(captured_values, Snapshot)
-#define CL_JIT_Snapshot_ATTRIBUTES(attribute) attribute(resume_pc, BytecodePC)
+#define CL_JIT_Snapshot_ATTRIBUTES(attribute)                                 \
+    attribute(resume_pc_offset, BytecodePCOffset)
 CL_JIT_INSTRUCTION(Snapshot, CL_JIT_IR_LEVELS(Core),
                    CL_JIT_RESULT(Snapshot, None, NoDef),
                    CL_JIT_EFFECT_BOUNDS(None, None), CL_JIT_Snapshot_OPERANDS,
@@ -385,7 +386,7 @@ CL_JIT_INSTRUCTION(Snapshot, CL_JIT_IR_LEVELS(Core),
 #define CL_JIT_ExitToInterpreter_OPERANDS(fixed, variadic, program_values)     \
     program_values(captured_values, Snapshot)
 #define CL_JIT_ExitToInterpreter_ATTRIBUTES(attribute)                         \
-    attribute(resume_pc, BytecodePC)
+    attribute(resume_pc_offset, BytecodePCOffset)
 CL_JIT_INSTRUCTION(
     ExitToInterpreter, CL_JIT_IR_LEVELS(Machine),
     CL_JIT_RESULT(None, None, NoDef),

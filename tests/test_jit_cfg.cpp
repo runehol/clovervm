@@ -71,7 +71,7 @@ namespace cl::jit
         GraphBuilder builder(session, IRLevel::Machine);
         Block *entry = builder.emplace_block();
         SnapshotRef snapshot(builder.emplace_instruction<SnapshotInstruction>(
-            entry, std::span<const ProgramValueRef>{}, BytecodePC{0}));
+            entry, std::span<const ProgramValueRef>{}, BytecodePCOffset{0}));
         builder.emplace_instruction<ResumeInInterpreterInstruction>(entry,
                                                                     snapshot);
 
@@ -114,7 +114,7 @@ namespace cl::jit
         GraphBuilder builder(session, IRLevel::Core);
         Block *entry = builder.emplace_block();
         SnapshotRef snapshot(builder.emplace_instruction<SnapshotInstruction>(
-            entry, std::span<const ProgramValueRef>{}, BytecodePC{7}));
+            entry, std::span<const ProgramValueRef>{}, BytecodePCOffset{7}));
         ResumeInInterpreterInstruction resume =
             builder.emplace_instruction<ResumeInInterpreterInstruction>(
                 entry, snapshot);
@@ -136,7 +136,7 @@ namespace cl::jit
             ProgramValueRef(region_parameter)};
         ExitToInterpreterInstruction exit =
             builder.make_instruction<ExitToInterpreterInstruction>(
-                snapshot_values, BytecodePC{7});
+                snapshot_values, BytecodePCOffset{7});
         std::array<InstructionId, 1> parameter_ids = {region_parameter.id()};
         std::array<InstructionId, 1> instructions = {exit.id()};
         SideExitRegion *region =
@@ -181,7 +181,7 @@ namespace cl::jit
             ProgramValueRef(region_parameter)};
         ExitToInterpreterInstruction exit =
             builder.make_instruction<ExitToInterpreterInstruction>(
-                snapshot_values, BytecodePC{7});
+                snapshot_values, BytecodePCOffset{7});
         std::array<InstructionId, 1> parameter_ids = {region_parameter.id()};
         std::array<InstructionId, 1> instructions = {exit.id()};
         SideExitRegion *region =
@@ -204,7 +204,7 @@ namespace cl::jit
             ProgramValueRef(region_parameter)};
         ExitToInterpreterInstruction exit =
             builder.make_instruction<ExitToInterpreterInstruction>(
-                snapshot_values, BytecodePC{7});
+                snapshot_values, BytecodePCOffset{7});
         std::array<InstructionId, 1> parameter_ids = {region_parameter.id()};
         std::array<InstructionId, 1> instructions = {exit.id()};
         SideExitRegion *region =
@@ -246,7 +246,7 @@ namespace cl::jit
         std::array<ProgramValueRef, 1> snapshot_values = {source};
         ExitToInterpreterInstruction exit =
             builder.make_instruction<ExitToInterpreterInstruction>(
-                snapshot_values, BytecodePC{7});
+                snapshot_values, BytecodePCOffset{7});
         std::array<InstructionId, 0> parameter_ids = {};
         std::array<InstructionId, 1> instructions = {exit.id()};
         SideExitRegion *region =

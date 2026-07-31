@@ -195,7 +195,7 @@ namespace cl::jit
 
         SnapshotInstruction snapshot =
             snapshots.front().as<SnapshotInstruction>();
-        EXPECT_EQ(add_pc, snapshot.resume_pc());
+        EXPECT_EQ(add_pc, snapshot.resume_pc_offset());
         InlineTagGuardInstruction lhs =
             guards[0].as<InlineTagGuardInstruction>();
         InlineTagGuardInstruction rhs =
@@ -254,8 +254,9 @@ namespace cl::jit
             instructions_of_kind(entry, InstructionKind::ResumeInInterpreter);
         ASSERT_EQ(1u, snapshots.size());
         ASSERT_EQ(1u, resumes.size());
-        EXPECT_EQ(add_pc,
-                  snapshots.front().as<SnapshotInstruction>().resume_pc());
+        EXPECT_EQ(
+            add_pc,
+            snapshots.front().as<SnapshotInstruction>().resume_pc_offset());
         EXPECT_EQ(resumes.front().id(),
                   entry->instruction_at(entry->instructions().size() - 1).id());
     }
@@ -289,7 +290,7 @@ namespace cl::jit
 
         SnapshotInstruction snapshot =
             snapshots.front().as<SnapshotInstruction>();
-        EXPECT_EQ(add_pc, snapshot.resume_pc());
+        EXPECT_EQ(add_pc, snapshot.resume_pc_offset());
         InlineTagGuardInstruction lhs =
             guards.front().as<InlineTagGuardInstruction>();
         EXPECT_EQ(InlineValueClass::SMI, lhs.expected_class());
@@ -431,7 +432,7 @@ namespace cl::jit
 
         SnapshotInstruction snapshot =
             snapshots.front().as<SnapshotInstruction>();
-        EXPECT_EQ(2u, snapshot.resume_pc());
+        EXPECT_EQ(2u, snapshot.resume_pc_offset());
         ASSERT_EQ(bytecode_state_size(*graph),
                   snapshot.captured_values().size());
         std::vector<Instruction> constants =

@@ -26,7 +26,7 @@ namespace cl::jit
         SnapshotRef make_empty_snapshot(GraphBuilder &builder)
         {
             return SnapshotRef(builder.make_instruction<SnapshotInstruction>(
-                std::span<const ProgramValueRef>{}, BytecodePC{11}));
+                std::span<const ProgramValueRef>{}, BytecodePCOffset{11}));
         }
     }  // namespace
 
@@ -239,7 +239,7 @@ namespace cl::jit
         PythonCallInstruction call =
             builder.make_instruction<PythonCallInstruction>(
                 callable, snapshot, std::span<const TaggedValueRef>(arguments),
-                BytecodePC{19});
+                BytecodePCOffset{19});
 
         InstructionAllocationConstraints constraints(
             call,
@@ -259,7 +259,8 @@ namespace cl::jit
         std::array<ProgramValueRef, 2> captures = {tagged, f64};
         SnapshotInstruction snapshot =
             builder.make_instruction<SnapshotInstruction>(
-                std::span<const ProgramValueRef>(captures), BytecodePC{23});
+                std::span<const ProgramValueRef>(captures),
+                BytecodePCOffset{23});
 
         InstructionAllocationConstraints constraints(snapshot);
 

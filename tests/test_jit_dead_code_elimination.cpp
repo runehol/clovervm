@@ -115,8 +115,8 @@ namespace cl::jit
             builder.emplace_parameter<ParameterInstruction>(entry);
         std::array<ProgramValueRef, 1> captured = {ProgramValueRef(parameter)};
         SnapshotInstruction snapshot =
-            builder.emplace_instruction<SnapshotInstruction>(entry, captured,
-                                                             BytecodePC{7});
+            builder.emplace_instruction<SnapshotInstruction>(
+                entry, captured, BytecodePCOffset{7});
         AddSMIInstruction unused_add =
             builder.emplace_instruction<AddSMIInstruction>(
                 entry, TaggedValueRef(parameter), TaggedValueRef(parameter),
@@ -168,7 +168,7 @@ namespace cl::jit
             builder.emplace_parameter<ParameterInstruction>(entry);
         SnapshotInstruction snapshot =
             builder.emplace_instruction<SnapshotInstruction>(
-                entry, std::span<const ProgramValueRef>{}, BytecodePC{7});
+                entry, std::span<const ProgramValueRef>{}, BytecodePCOffset{7});
         CheckNotImplementedInstruction check =
             builder.emplace_instruction<CheckNotImplementedInstruction>(
                 entry, TaggedValueRef(parameter), SnapshotRef(snapshot));
@@ -194,11 +194,11 @@ namespace cl::jit
             builder.emplace_parameter<ParameterInstruction>(entry);
         SnapshotInstruction snapshot =
             builder.emplace_instruction<SnapshotInstruction>(
-                entry, std::span<const ProgramValueRef>{}, BytecodePC{7});
+                entry, std::span<const ProgramValueRef>{}, BytecodePCOffset{7});
         PythonCallInstruction unused_call =
             builder.emplace_instruction<PythonCallInstruction>(
                 entry, TaggedValueRef(parameter), SnapshotRef(snapshot),
-                std::span<const TaggedValueRef>{}, BytecodePC{7});
+                std::span<const TaggedValueRef>{}, BytecodePCOffset{7});
         builder.emplace_instruction<ReturnInstruction>(
             entry, TaggedValueRef(parameter));
         ControlFlowGraph *graph = builder.finalize();
@@ -225,7 +225,7 @@ namespace cl::jit
             ProgramValueRef(region_parameter)};
         ExitToInterpreterInstruction exit =
             builder.make_instruction<ExitToInterpreterInstruction>(
-                snapshot_values, BytecodePC{7});
+                snapshot_values, BytecodePCOffset{7});
         std::array<InstructionId, 1> parameter_ids = {region_parameter.id()};
         std::array<InstructionId, 1> instructions = {exit.id()};
         std::array<ProgramValueRef, 1> inputs = {ProgramValueRef(input)};

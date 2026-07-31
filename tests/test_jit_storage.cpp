@@ -179,7 +179,7 @@ namespace cl::jit
             builder.make_instruction<ParameterInstruction>();
         SnapshotInstruction snapshot =
             builder.make_instruction<SnapshotInstruction>(
-                std::span<const ProgramValueRef>{}, BytecodePC{17});
+                std::span<const ProgramValueRef>{}, BytecodePCOffset{17});
         AddSMIInstruction add = builder.make_instruction<AddSMIInstruction>(
             TaggedValueRef(lhs), TaggedValueRef(rhs), SnapshotRef(snapshot));
         ConstInstruction constant =
@@ -215,7 +215,7 @@ namespace cl::jit
         EXPECT_EQ(lhs.id(), add.lhs().instruction_id());
         EXPECT_EQ(rhs.id(), add.rhs().instruction_id());
         EXPECT_EQ(snapshot.id(), add.snapshot().instruction_id());
-        EXPECT_EQ(BytecodePC{17}, snapshot.resume_pc());
+        EXPECT_EQ(BytecodePCOffset{17}, snapshot.resume_pc_offset());
         EXPECT_TRUE(snapshot.captured_values().empty());
         EXPECT_EQ(lhs.id(), lhs_reference.instruction_id());
         EXPECT_EQ(snapshot.id(), snapshot_reference.instruction_id());
@@ -535,7 +535,7 @@ namespace cl::jit
         GraphBuilder builder(session, IRLevel::Core);
         TaggedValueRef value(builder.make_instruction<ParameterInstruction>());
         SnapshotRef snapshot(builder.make_instruction<SnapshotInstruction>(
-            std::span<const ProgramValueRef>{}, BytecodePC{17}));
+            std::span<const ProgramValueRef>{}, BytecodePCOffset{17}));
         ShapeGuardInstruction shape_guard =
             builder.make_instruction<ShapeGuardInstruction>(value, snapshot,
                                                             shape);
@@ -575,7 +575,7 @@ namespace cl::jit
         TaggedValueRef rhs(
             builder.make_instruction<ConstInstruction>(Value::from_smi(3)));
         SnapshotRef snapshot(builder.make_instruction<SnapshotInstruction>(
-            std::span<const ProgramValueRef>{}, BytecodePC{17}));
+            std::span<const ProgramValueRef>{}, BytecodePCOffset{17}));
         AddSMIInstruction add =
             builder.make_instruction<AddSMIInstruction>(lhs, rhs, snapshot);
 
@@ -620,22 +620,23 @@ namespace cl::jit
         TaggedValueRef none(
             builder.make_instruction<ConstInstruction>(Value::None()));
         SnapshotRef snapshot(builder.make_instruction<SnapshotInstruction>(
-            std::span<const ProgramValueRef>{}, BytecodePC{23}));
+            std::span<const ProgramValueRef>{}, BytecodePCOffset{23}));
         std::array<TaggedValueRef, 3> arguments = {first, none, second};
         PythonCallInstruction call =
             builder.make_instruction<PythonCallInstruction>(
                 callable, snapshot, std::span<const TaggedValueRef>(arguments),
-                BytecodePC{23});
+                BytecodePCOffset{23});
         auto retained_arguments = call.arguments();
         PythonCallInstruction call_without_arguments =
             builder.make_instruction<PythonCallInstruction>(
                 callable, snapshot, std::span<const TaggedValueRef>{},
-                BytecodePC{41});
+                BytecodePCOffset{41});
         std::array<ProgramValueRef, 1> captured = {first};
         for(size_t index = 0; index < 1024; ++index)
         {
             builder.make_instruction<SnapshotInstruction>(
-                std::span<const ProgramValueRef>(captured), BytecodePC{51});
+                std::span<const ProgramValueRef>(captured),
+                BytecodePCOffset{51});
         }
 
         EXPECT_EQ(5u, call.operand_count());
@@ -657,7 +658,7 @@ namespace cl::jit
                   retained_arguments[1].instruction_id());
         EXPECT_EQ(second.instruction_id(),
                   retained_arguments[2].instruction_id());
-        EXPECT_EQ(23u, call.interpreter_return_pc());
+        EXPECT_EQ(23u, call.interpreter_return_pc_offset());
         Instruction snapshot_instruction =
             builder.storage()->instruction(snapshot.instruction_id());
         EXPECT_EQ(0u, snapshot_instruction.operand_count());
@@ -703,12 +704,12 @@ namespace cl::jit
 
         EXPECT_EQ(4u, SnapshotInstruction::n_indirect_slots_for(
                           std::span<const ProgramValueRef>(captured_values),
-                          BytecodePC{91}));
+                          BytecodePCOffset{91}));
 
         SnapshotInstruction snapshot =
             builder.make_instruction<SnapshotInstruction>(
                 std::span<const ProgramValueRef>(captured_values),
-                BytecodePC{91});
+                BytecodePCOffset{91});
 
         ASSERT_EQ(4u, snapshot.operand_count());
         ASSERT_TRUE(snapshot.operands_are_indirect());
@@ -736,7 +737,7 @@ namespace cl::jit
                   pointer_move.source().instruction_id());
         EXPECT_EQ(pointer, PointerRef(pointer_parameter));
         EXPECT_EQ(F64Ref(f64), F64Ref(f64));
-        EXPECT_EQ(91u, snapshot.resume_pc());
+        EXPECT_EQ(91u, snapshot.resume_pc_offset());
 
         std::vector<InstructionId> references;
         visit_operand_references(

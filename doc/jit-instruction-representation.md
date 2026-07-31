@@ -238,7 +238,7 @@ BlockEdge      -> one BlockEdgeId word resolved through CompilationStorage
 Shape          -> two words containing Shape *
 InlineValueClass -> one word containing a packed semantic inline class
 ValidityCell   -> two words containing ValidityCell *
-BytecodePC     -> one word
+BytecodePCOffset     -> one word
 ValueConstant  -> two words containing Value
 ```
 
@@ -666,7 +666,7 @@ PythonCall
     callable: ProgramValue(TaggedValue)
     arguments[]: ProgramValue(TaggedValue)
     snapshot: Snapshot
-    interpreter_return_pc: attr BytecodePC
+    interpreter_return_pc_offset: attr BytecodePCOffset
 
 CheckNotImplemented
     result: ProgramValue(TaggedValue)
@@ -694,7 +694,7 @@ ParameterF64
 Snapshot
     result: Snapshot
     captured_values[]: snapshot operand ProgramValue(TaggedValue)
-    resume_pc: attr BytecodePC
+    resume_pc_offset: attr BytecodePCOffset
 
 ConditionalBranch
     result: None
@@ -1178,7 +1178,7 @@ and golden tests:
 graph {
 bb0(%0):
   %1 = const {constant = 7}
-  %2 = snapshot [%0, %1] {resume_pc = 17}
+  %2 = snapshot [%0, %1] {resume_pc_offset = 17}
   cond_br %0 {true_edge = bb1(%1), false_edge = bb1(%0)}
 
 bb1(%3):
@@ -1197,7 +1197,7 @@ Fixed operands are positional. A trailing variadic operand range is enclosed in
 brackets so fixed and variadic fields remain visually distinct:
 
 ```text
-%4 = python_call %0, %2, [%1, %3] {interpreter_return_pc = 24}
+%4 = python_call %0, %2, [%1, %3] {interpreter_return_pc_offset = 24}
 ```
 
 Attributes follow the operands in a curly-brace dictionary. Attribute names and

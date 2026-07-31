@@ -43,7 +43,8 @@ namespace cl::jit
         void emit_unsupported(Block *block,
                               const BytecodeInstruction &instruction,
                               const State &pre_instruction_state);
-        SnapshotRef emit_snapshot(Block *block, BytecodePC resume_pc,
+        SnapshotRef emit_snapshot(Block *block,
+                                  BytecodePCOffset resume_pc_offset,
                                   const State &state);
         std::vector<ProgramValueRef>
         capture_snapshot_values(const State &state) const;

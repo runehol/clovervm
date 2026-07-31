@@ -46,7 +46,7 @@ namespace cl::jit
 
         SideExitRegionId make_single_argument_region(GraphBuilder &builder,
                                                      ProgramValueRef argument,
-                                                     BytecodePC pc)
+                                                     BytecodePCOffset pc)
         {
             EXPECT_EQ(ValueRepresentation::TaggedValue,
                       builder.storage()
@@ -203,7 +203,7 @@ namespace cl::jit
             builder.emplace_parameter<ParameterInstruction>(entry);
         std::array<ProgramValueRef, 1> arguments = {ProgramValueRef(value)};
         SideExitRegionId region = make_single_argument_region(
-            builder, ProgramValueRef(value), BytecodePC{17});
+            builder, ProgramValueRef(value), BytecodePCOffset{17});
         ResumeInInterpreterWithSideExitInstruction owner =
             builder.emplace_instruction<
                 ResumeInInterpreterWithSideExitInstruction>(entry, arguments,
@@ -238,7 +238,7 @@ namespace cl::jit
             builder.emplace_parameter<ParameterInstruction>(entry);
         std::array<ProgramValueRef, 1> arguments = {ProgramValueRef(value)};
         SideExitRegionId region = make_single_argument_region(
-            builder, ProgramValueRef(value), BytecodePC{17});
+            builder, ProgramValueRef(value), BytecodePCOffset{17});
         InlineTagGuardWithSideExitInstruction owner =
             builder.emplace_instruction<InlineTagGuardWithSideExitInstruction>(
                 entry, TaggedValueRef(value), arguments, InlineValueClass::SMI,
@@ -276,7 +276,7 @@ namespace cl::jit
             builder.emplace_parameter<ParameterInstruction>(entry);
         std::array<ProgramValueRef, 1> arguments = {ProgramValueRef(lhs)};
         SideExitRegionId region = make_single_argument_region(
-            builder, ProgramValueRef(lhs), BytecodePC{19});
+            builder, ProgramValueRef(lhs), BytecodePCOffset{19});
         AddSMIWithSideExitInstruction owner =
             builder.emplace_instruction<AddSMIWithSideExitInstruction>(
                 entry, TaggedValueRef(lhs), TaggedValueRef(rhs), arguments,

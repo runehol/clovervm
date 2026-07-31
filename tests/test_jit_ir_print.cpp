@@ -48,7 +48,7 @@ namespace cl::jit
         TaggedValueRef value(
             builder.emplace_parameter<ParameterInstruction>(entry));
         SnapshotRef snapshot(builder.emplace_instruction<SnapshotInstruction>(
-            entry, std::span<const ProgramValueRef>{}, BytecodePC{7}));
+            entry, std::span<const ProgramValueRef>{}, BytecodePCOffset{7}));
         InlineTagGuardInstruction guard =
             builder.emplace_instruction<InlineTagGuardInstruction>(
                 entry, value, snapshot, InlineValueClass::SMIOrBoolean);
@@ -75,7 +75,8 @@ namespace cl::jit
             entry, Value::from_smi(1)));
         std::array<ProgramValueRef, 2> captured = {condition, value};
         SnapshotRef snapshot(builder.emplace_instruction<SnapshotInstruction>(
-            entry, std::span<const ProgramValueRef>(captured), BytecodePC{7}));
+            entry, std::span<const ProgramValueRef>(captured),
+            BytecodePCOffset{7}));
         (void)snapshot;
 
         TaggedValueRef parameter(
@@ -95,7 +96,7 @@ namespace cl::jit
                   "bb0:\n"
                   "  %0 = const {constant = true}\n"
                   "  %1 = const {constant = 1}\n"
-                  "  %2 = snapshot [%0, %1] {resume_pc = 7}\n"
+                  "  %2 = snapshot [%0, %1] {resume_pc_offset = 7}\n"
                   "  cond_br %0 {true_edge = bb1(%1), false_edge = bb1(%0)}\n"
                   "\n"
                   "bb1(%3) {loop_depth = 2}:\n"
@@ -121,11 +122,12 @@ namespace cl::jit
 
         std::array<ProgramValueRef, 2> captured = {callable, argument};
         SnapshotRef snapshot(builder.emplace_instruction<SnapshotInstruction>(
-            entry, std::span<const ProgramValueRef>(captured), BytecodePC{9}));
+            entry, std::span<const ProgramValueRef>(captured),
+            BytecodePCOffset{9}));
         std::array<TaggedValueRef, 1> arguments = {argument};
         builder.emplace_instruction<PythonCallInstruction>(
             entry, callable, snapshot,
-            std::span<const TaggedValueRef>(arguments), BytecodePC{11});
+            std::span<const TaggedValueRef>(arguments), BytecodePCOffset{11});
         F64Ref sum(
             builder.emplace_instruction<AddF64Instruction>(entry, f64, f64));
         TaggedValueRef boxed(
@@ -135,9 +137,9 @@ namespace cl::jit
 
         EXPECT_EQ("graph {\n"
                   "bb0(%0, %1, %2: f64, %3: ptr):\n"
-                  "  %4 = snapshot [%0, %1] {resume_pc = 9}\n"
+                  "  %4 = snapshot [%0, %1] {resume_pc_offset = 9}\n"
                   "  %5 = python_call %0, %4, [%1] "
-                  "{interpreter_return_pc = 11}\n"
+                  "{interpreter_return_pc_offset = 11}\n"
                   "  %6 = add_f64 %2, %2\n"
                   "  %7 = box_f64 %6\n"
                   "  return %7\n"
