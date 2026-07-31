@@ -1,6 +1,7 @@
 #include "jit/aarch64_cfg_emitter.h"
 
 #include "jit/aarch64_assembler.h"
+#include "jit/aarch64_jit_registers.h"
 #include "jit/aarch64_transition.h"
 #include "jit/control_flow_graph.h"
 #include "jit/instruction.h"
@@ -373,11 +374,10 @@ namespace cl::jit
                 case CL_JIT_MACHINE_INSTRUCTION_CASE(
                     LoadStackInstruction, load_instruction)
                 {
-                    constexpr XRegister FramePointer(29);
                     assembler.ldr(
                         assigned_register(locations,
                                           ProgramValueRef(instruction)),
-                        FramePointer,
+                        AArch64ManagedFramePointerRegister,
                         stack_byte_offset(assigned_stack(
                             locations, load_instruction.source())));
                     break;
@@ -386,11 +386,10 @@ namespace cl::jit
                 case CL_JIT_MACHINE_INSTRUCTION_CASE(
                     LoadStackPointerInstruction, load_pointer_instruction)
                 {
-                    constexpr XRegister FramePointer(29);
                     assembler.ldr(
                         assigned_register(locations,
                                           ProgramValueRef(instruction)),
-                        FramePointer,
+                        AArch64ManagedFramePointerRegister,
                         stack_byte_offset(assigned_stack(
                             locations,
                             load_pointer_instruction.source())));
@@ -400,11 +399,10 @@ namespace cl::jit
                 case CL_JIT_MACHINE_INSTRUCTION_CASE(
                     StoreStackInstruction, store_instruction)
                 {
-                    constexpr XRegister FramePointer(29);
                     assembler.str(
                         assigned_register(locations,
                                           store_instruction.source()),
-                        FramePointer,
+                        AArch64ManagedFramePointerRegister,
                         stack_byte_offset(assigned_stack(
                             locations, ProgramValueRef(instruction))));
                     break;
@@ -414,12 +412,11 @@ namespace cl::jit
                     StoreStackPointerInstruction,
                     store_pointer_instruction)
                 {
-                    constexpr XRegister FramePointer(29);
                     assembler.str(
                         assigned_register(
                             locations,
                             store_pointer_instruction.source()),
-                        FramePointer,
+                        AArch64ManagedFramePointerRegister,
                         stack_byte_offset(assigned_stack(
                             locations, ProgramValueRef(instruction))));
                     break;
@@ -525,6 +522,9 @@ namespace cl::jit
                 {
                     (void)assigned_register(
                         locations, return_instruction.return_value());
+                    assembler.ldr(AArch64ManagedFramePointerRegister,
+                                  AArch64ManagedFramePointerRegister,
+                                  FrameHeaderPreviousFpOffset * sizeof(Value));
                     assembler.emit_ret();
                     break;
                 }

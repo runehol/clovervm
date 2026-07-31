@@ -16,9 +16,11 @@
 #include <gtest/gtest.h>
 
 #include <array>
+#include <cassert>
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
+#include <initializer_list>
 #include <string>
 #include <utility>
 #include <vector>
@@ -85,6 +87,59 @@ namespace cl::jit
             return std::move(locations).finalize();
         }
 
+        uint64_t
+        execute_published_jit(const PublishedCode &code,
+                              std::initializer_list<uint64_t> argument_bits)
+        {
+            std::array<Value, 128> frame;
+            frame.fill(Value::None());
+            Value *fp = frame.data() + frame.size() / 2;
+            fp[FrameHeaderPreviousFpOffset] =
+                encode_frame_payload_ptr(static_cast<Value *>(nullptr));
+
+            uint32_t arity = static_cast<uint32_t>(argument_bits.size());
+            uint32_t padded_arity = round_up_to_abi_alignment(arity);
+            size_t index = 0;
+            for(uint64_t bits: argument_bits)
+            {
+                int32_t frame_offset = int32_t(padded_arity) - 1 +
+                                       FrameHeaderSizeAboveFp -
+                                       int32_t(index++);
+                fp[frame_offset].as.integer = static_cast<int64_t>(bits);
+            }
+
+            AArch64JitEntryThunk thunk = reinterpret_cast<AArch64JitEntryThunk>(
+                select_aarch64_jit_entry_thunk(arity)
+                    .bits_for_indirect_target());
+            Value result = thunk(nullptr, fp, nullptr,
+                                 code.entry().bits_for_indirect_target());
+            return static_cast<uint64_t>(result.as.integer);
+        }
+
+        uint64_t
+        execute_jit_object(ThreadState &thread, CodeObject &code_object,
+                           JitCodeObject &jit_code,
+                           std::initializer_list<uint64_t> argument_bits)
+        {
+            assert(argument_bits.size() ==
+                   code_object.function_signature.n_parameters);
+            std::array<Value, 128> frame;
+            frame.fill(Value::None());
+            Value *fp = frame.data() + frame.size() / 2;
+            fp[FrameHeaderPreviousFpOffset] =
+                encode_frame_payload_ptr(static_cast<Value *>(nullptr));
+
+            uint32_t index = 0;
+            for(uint64_t bits: argument_bits)
+            {
+                fp[code_object.encode_reg(index++)].as.integer =
+                    static_cast<int64_t>(bits);
+            }
+
+            Value result = enter_aarch64_jit(thread, fp, code_object, jit_code);
+            return static_cast<uint64_t>(result.as.integer);
+        }
+
         struct PythonBackendFixture
         {
             PythonBackendFixture() : activation_scope(context.thread()) {}
@@ -139,10 +194,8 @@ namespace cl::jit
             }
             PublishedCode code = std::move(emission).value();
 
-            using Function = uint64_t (*)(uint64_t);
-            Function function = reinterpret_cast<Function>(
-                code.entry().bits_for_indirect_target());
-            return function(static_cast<uint64_t>(input.as.integer));
+            return execute_published_jit(
+                code, {static_cast<uint64_t>(input.as.integer)});
         }
     }  // namespace
 
@@ -164,9 +217,6 @@ namespace cl::jit
         ASSERT_TRUE(emission);
         PublishedCode code = std::move(emission).value();
 
-        using Function = uint64_t (*)(uint64_t);
-        Function function =
-            reinterpret_cast<Function>(code.entry().bits_for_indirect_target());
         const uint64_t inputs[] = {
             static_cast<uint64_t>(Value::None().as.integer),
             static_cast<uint64_t>(Value::True().as.integer),
@@ -174,7 +224,7 @@ namespace cl::jit
         };
         for(uint64_t input: inputs)
         {
-            EXPECT_EQ(input, function(input));
+            EXPECT_EQ(input, execute_published_jit(code, {input}));
         }
     }
 
@@ -203,12 +253,9 @@ namespace cl::jit
 
         ASSERT_TRUE(emission);
         PublishedCode code = std::move(emission).value();
-        EXPECT_EQ(sizeof(uint32_t), code.encoded_code_size());
-        using Function = uint64_t (*)(uint64_t);
-        Function function =
-            reinterpret_cast<Function>(code.entry().bits_for_indirect_target());
+        EXPECT_EQ(2 * sizeof(uint32_t), code.encoded_code_size());
         constexpr uint64_t input_bits = 0x123456789abcdef0;
-        EXPECT_EQ(input_bits, function(input_bits));
+        EXPECT_EQ(input_bits, execute_published_jit(code, {input_bits}));
     }
 
     TEST(AArch64Execution, BranchesOnInlineTruthinessWithEitherFallthrough)
@@ -245,10 +292,8 @@ namespace cl::jit
                                                   no_side_exit_thunk());
             EXPECT_TRUE(emission);
             PublishedCode code = std::move(emission).value();
-            using Function = uint64_t (*)(uint64_t);
-            Function function = reinterpret_cast<Function>(
-                code.entry().bits_for_indirect_target());
-            return function(static_cast<uint64_t>(condition.as.integer));
+            return execute_published_jit(
+                code, {static_cast<uint64_t>(condition.as.integer)});
         };
 
         const Value falsy[] = {Value::None(), Value::False(),
@@ -315,14 +360,13 @@ namespace cl::jit
 
         ASSERT_TRUE(emission);
         PublishedCode code = std::move(emission).value();
-        using Function = uint64_t (*)(uint64_t);
-        Function function =
-            reinterpret_cast<Function>(code.entry().bits_for_indirect_target());
         EXPECT_EQ(static_cast<uint64_t>(Value::False().as.integer),
-                  function(static_cast<uint64_t>(Value::None().as.integer)));
+                  execute_published_jit(
+                      code, {static_cast<uint64_t>(Value::None().as.integer)}));
         EXPECT_EQ(
             static_cast<uint64_t>(Value::True().as.integer),
-            function(static_cast<uint64_t>(Value::from_smi(42).as.integer)));
+            execute_published_jit(
+                code, {static_cast<uint64_t>(Value::from_smi(42).as.integer)}));
     }
 
     TEST(AArch64Execution, EmitsAllocationCreatedEdgeTransferBlock)
@@ -383,11 +427,8 @@ namespace cl::jit
 
         ASSERT_TRUE(emission);
         PublishedCode code = std::move(emission).value();
-        using Function = uint64_t (*)(uint64_t);
-        Function function =
-            reinterpret_cast<Function>(code.entry().bits_for_indirect_target());
         constexpr uint64_t input_bits = 0x123456789abcdef0;
-        EXPECT_EQ(input_bits, function(input_bits));
+        EXPECT_EQ(input_bits, execute_published_jit(code, {input_bits}));
     }
 
     TEST(AArch64Execution, ExecutesInlineTagGuardWithColdSideExit)
@@ -451,10 +492,8 @@ namespace cl::jit
             EXPECT_TRUE(emission);
             PublishedCode code = std::move(emission).value();
 
-            using Function = uint64_t (*)(uint64_t);
-            Function function = reinterpret_cast<Function>(
-                code.entry().bits_for_indirect_target());
-            return function(static_cast<uint64_t>(input.as.integer));
+            return execute_published_jit(
+                code, {static_cast<uint64_t>(input.as.integer)});
         };
 
         Value smi = Value::from_smi(42);
@@ -561,11 +600,9 @@ namespace cl::jit
             }
             EXPECT_EQ(1u, conditional_branch_count);
 
-            using Function = uint64_t (*)(uint64_t, uint64_t);
-            Function function = reinterpret_cast<Function>(
-                code.entry().bits_for_indirect_target());
-            return function(static_cast<uint64_t>(lhs.as.integer),
-                            static_cast<uint64_t>(rhs.as.integer));
+            return execute_published_jit(
+                code, {static_cast<uint64_t>(lhs.as.integer),
+                       static_cast<uint64_t>(rhs.as.integer)});
         };
 
         Value smi = Value::from_smi(42);
@@ -654,18 +691,17 @@ namespace cl::jit
         ASSERT_TRUE(emission);
         PublishedCode code = std::move(emission).value();
 
-        using Function = uint64_t (*)(uint64_t, uint64_t);
-        Function function =
-            reinterpret_cast<Function>(code.entry().bits_for_indirect_target());
         EXPECT_EQ(
             static_cast<uint64_t>(Value::from_smi(42).as.integer),
-            function(static_cast<uint64_t>(Value::from_smi(19).as.integer),
-                     static_cast<uint64_t>(Value::from_smi(23).as.integer)));
+            execute_published_jit(
+                code, {static_cast<uint64_t>(Value::from_smi(19).as.integer),
+                       static_cast<uint64_t>(Value::from_smi(23).as.integer)}));
         EXPECT_EQ(
             static_cast<uint64_t>(Value::Ellipsis().as.integer),
-            function(static_cast<uint64_t>(
-                         Value::from_smi(value_smi_max).as.integer),
-                     static_cast<uint64_t>(Value::from_smi(1).as.integer)));
+            execute_published_jit(
+                code, {static_cast<uint64_t>(
+                           Value::from_smi(value_smi_max).as.integer),
+                       static_cast<uint64_t>(Value::from_smi(1).as.integer)}));
     }
 
     TEST(AArch64Execution, CompilesAllocatedCfg)
@@ -690,11 +726,8 @@ namespace cl::jit
         EXPECT_EQ(IRLevel::Machine, graph->ir_level());
         PublishedCode code = std::move(compilation).value();
 
-        using Function = uint64_t (*)(uint64_t);
-        Function function =
-            reinterpret_cast<Function>(code.entry().bits_for_indirect_target());
         constexpr uint64_t input = 0x123456789abcdef0;
-        EXPECT_EQ(input, function(input));
+        EXPECT_EQ(input, execute_published_jit(code, {input}));
     }
 
     TEST(AArch64Execution, CompilesPythonIdentityFunction)
@@ -713,15 +746,13 @@ namespace cl::jit
         ASSERT_TRUE(compilation);
         PublishedCode code = std::move(compilation).value();
 
-        using Function = uint64_t (*)(uint64_t);
-        Function function =
-            reinterpret_cast<Function>(code.entry().bits_for_indirect_target());
         const Value inputs[] = {Value::None(), Value::True(),
                                 Value::from_smi(42)};
         for(Value input: inputs)
         {
             EXPECT_EQ(static_cast<uint64_t>(input.as.integer),
-                      function(static_cast<uint64_t>(input.as.integer)));
+                      execute_published_jit(
+                          code, {static_cast<uint64_t>(input.as.integer)}));
         }
     }
 
@@ -775,11 +806,9 @@ namespace cl::jit
         EXPECT_GT(observer.translated_instruction_count,
                   observer.optimized_instruction_count);
 
-        using Function = uint64_t (*)(uint64_t);
-        Function function = reinterpret_cast<Function>(
-            code->entry().bits_for_indirect_target());
         constexpr uint64_t input = 0x123456789abcdef0;
-        EXPECT_EQ(input, function(input));
+        EXPECT_EQ(input, execute_jit_object(*fixture.context.thread(),
+                                            *function_code, *code, {input}));
     }
 
     TEST(AArch64Execution, CompilesPythonConstantFunction)
@@ -797,11 +826,8 @@ namespace cl::jit
         ASSERT_TRUE(compilation);
         PublishedCode code = std::move(compilation).value();
 
-        using Function = uint64_t (*)();
-        Function function =
-            reinterpret_cast<Function>(code.entry().bits_for_indirect_target());
         EXPECT_EQ(static_cast<uint64_t>(Value::from_smi(42).as.integer),
-                  function());
+                  execute_published_jit(code, {}));
     }
 
     TEST(AArch64Execution, CompilesPythonFunctionReturningSecondArgument)
@@ -819,12 +845,9 @@ namespace cl::jit
         ASSERT_TRUE(compilation);
         PublishedCode code = std::move(compilation).value();
 
-        using Function = uint64_t (*)(uint64_t, uint64_t);
-        Function function =
-            reinterpret_cast<Function>(code.entry().bits_for_indirect_target());
         constexpr uint64_t first = 0x1111222233334444;
         constexpr uint64_t second = 0xaaaabbbbccccdddd;
-        EXPECT_EQ(second, function(first, second));
+        EXPECT_EQ(second, execute_published_jit(code, {first, second}));
     }
 
     TEST(AArch64Execution, CompilesPythonIs)
@@ -842,15 +865,12 @@ namespace cl::jit
         ASSERT_TRUE(compilation);
         PublishedCode code = std::move(compilation).value();
 
-        using Function = uint64_t (*)(uint64_t, uint64_t);
-        Function function =
-            reinterpret_cast<Function>(code.entry().bits_for_indirect_target());
         uint64_t none = static_cast<uint64_t>(Value::None().as.integer);
         uint64_t truth = static_cast<uint64_t>(Value::True().as.integer);
         EXPECT_EQ(static_cast<uint64_t>(Value::True().as.integer),
-                  function(none, none));
+                  execute_published_jit(code, {none, none}));
         EXPECT_EQ(static_cast<uint64_t>(Value::False().as.integer),
-                  function(none, truth));
+                  execute_published_jit(code, {none, truth}));
     }
 
     TEST(AArch64Execution, CompilesPythonIsNot)
@@ -868,15 +888,12 @@ namespace cl::jit
         ASSERT_TRUE(compilation);
         PublishedCode code = std::move(compilation).value();
 
-        using Function = uint64_t (*)(uint64_t, uint64_t);
-        Function function =
-            reinterpret_cast<Function>(code.entry().bits_for_indirect_target());
         uint64_t none = static_cast<uint64_t>(Value::None().as.integer);
         uint64_t truth = static_cast<uint64_t>(Value::True().as.integer);
         EXPECT_EQ(static_cast<uint64_t>(Value::False().as.integer),
-                  function(none, none));
+                  execute_published_jit(code, {none, none}));
         EXPECT_EQ(static_cast<uint64_t>(Value::True().as.integer),
-                  function(none, truth));
+                  execute_published_jit(code, {none, truth}));
     }
 
     TEST(AArch64Execution, CompilesGuardedSMIAdditionWithoutGuardCopies)
@@ -921,13 +938,11 @@ namespace cl::jit
         EXPECT_EQ(2u, observer.inline_tag_guard_count);
         EXPECT_EQ(1u, observer.move_count);
 
-        using Function = uint64_t (*)(uint64_t, uint64_t);
-        Function function = reinterpret_cast<Function>(
-            code->entry().bits_for_indirect_target());
         uint64_t lhs = static_cast<uint64_t>(Value::from_smi(19).as.integer);
         uint64_t rhs = static_cast<uint64_t>(Value::from_smi(23).as.integer);
         EXPECT_EQ(static_cast<uint64_t>(Value::from_smi(42).as.integer),
-                  function(lhs, rhs));
+                  execute_jit_object(*fixture.context.thread(), *function_code,
+                                     *code, {lhs, rhs}));
     }
 
     TEST(AArch64Execution, CompilesPythonIdentityConditional)
@@ -997,17 +1012,18 @@ namespace cl::jit
         EXPECT_EQ(2u, observer.machine_unconditional_branch_count);
         EXPECT_EQ(0u, observer.emitted_unconditional_branch_count);
 
-        using Function = uint64_t (*)(uint64_t, uint64_t, uint64_t, uint64_t);
-        Function function = reinterpret_cast<Function>(
-            code->entry().bits_for_indirect_target());
         uint64_t none = static_cast<uint64_t>(Value::None().as.integer);
         uint64_t truth = static_cast<uint64_t>(Value::True().as.integer);
         uint64_t if_true =
             static_cast<uint64_t>(Value::from_smi(19).as.integer);
         uint64_t if_false =
             static_cast<uint64_t>(Value::from_smi(23).as.integer);
-        EXPECT_EQ(if_true, function(none, none, if_true, if_false));
-        EXPECT_EQ(if_false, function(none, truth, if_true, if_false));
+        EXPECT_EQ(if_true,
+                  execute_jit_object(*fixture.context.thread(), *function_code,
+                                     *code, {none, none, if_true, if_false}));
+        EXPECT_EQ(if_false,
+                  execute_jit_object(*fixture.context.thread(), *function_code,
+                                     *code, {none, truth, if_true, if_false}));
     }
 
     TEST(AArch64Execution, EmitsInlineConstantFunctionFromCfg)
@@ -1029,10 +1045,8 @@ namespace cl::jit
         ASSERT_TRUE(emission);
         PublishedCode code = std::move(emission).value();
 
-        using Function = uint64_t (*)();
-        Function function =
-            reinterpret_cast<Function>(code.entry().bits_for_indirect_target());
-        EXPECT_EQ(static_cast<uint64_t>(expected.as.integer), function());
+        EXPECT_EQ(static_cast<uint64_t>(expected.as.integer),
+                  execute_published_jit(code, {}));
     }
 
     TEST(AArch64Execution, EntersJitThroughCachedArityThunk)
@@ -1111,14 +1125,11 @@ namespace cl::jit
         ASSERT_TRUE(emission);
         PublishedCode code = std::move(emission).value();
 
-        using Function = uint64_t (*)(uint64_t);
-        Function function =
-            reinterpret_cast<Function>(code.entry().bits_for_indirect_target());
         constexpr uint64_t input = 0x123456789abcdef0;
-        EXPECT_EQ(input, function(input));
+        EXPECT_EQ(input, execute_published_jit(code, {input}));
     }
 
-    TEST(AArch64Execution, EmitsFPRelativeStackTransfers)
+    TEST(AArch64Execution, EmitsManagedFrameRelativeStackTransfers)
     {
         CompilationSession session;
         GraphBuilder builder(session, IRLevel::Machine);
@@ -1160,10 +1171,11 @@ namespace cl::jit
         ASSERT_TRUE(finalization);
         CodeAllocation allocation = std::move(finalization).value();
         const void *code = allocation.writable_code().data();
-        EXPECT_EQ(0xf94013a1, instruction_at(code, 0));
-        EXPECT_EQ(0xf81f83a1, instruction_at(code, 1));
-        EXPECT_EQ(0xf85f83a0, instruction_at(code, 2));
-        EXPECT_EQ(0xd65f03c0, instruction_at(code, 3));
+        EXPECT_EQ(0xf9401281, instruction_at(code, 0));
+        EXPECT_EQ(0xf81f8281, instruction_at(code, 1));
+        EXPECT_EQ(0xf85f8280, instruction_at(code, 2));
+        EXPECT_EQ(0xf9400294, instruction_at(code, 3));
+        EXPECT_EQ(0xd65f03c0, instruction_at(code, 4));
     }
 
     TEST(AArch64Execution, EmitsAndSmiFromCfg)

@@ -186,12 +186,12 @@ Compile-only non-AArch64 hosts store a zero thunk address. They may continue to
 produce and inspect AArch64 code, but the runtime entry wrapper is available
 only on AArch64 hosts.
 
-### 3. Move Managed Addressing To `x20`
+### 3. Move Managed Addressing To `x20` (Complete)
 
 Introduce shared constexpr AArch64 thread and managed-frame register encodings.
-Use them in allocation constraints, stack-transfer emission, return emission,
-transition binding, and diagnostics. Remove local AArch64 managed-frame
-register literals.
+Use them wherever C++ target code names those registers. Allocation constraints
+and transition programs remain expressed in physical registers and frame
+offsets respectively; they do not acquire a separate managed-frame value.
 
 Change ordinary generated return to restore `x20` from the previous-frame
 header cell before `ret`. Update direct execution tests to use the standalone
