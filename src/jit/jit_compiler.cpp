@@ -45,7 +45,7 @@ namespace cl::jit
 
         auto code_result = compile_to_aarch64(
             session, *graph, thread.code_cache(),
-            aarch64_jit_unhandled_side_exit_target(), options.observer);
+            aarch64_jit_side_exit_target(), options.observer);
         if(!code_result)
         {
             return Result<JitCodeObject *, JitCompilationError>::error(

@@ -837,16 +837,25 @@ namespace cl::jit
                                                     Value::from_smi(23)));
     }
 
-    TEST(AArch64Execution, PublishedJitReportsUnhandledSideExit)
+    TEST(AArch64Execution, ResumesInterpreterForStringAdditionSideExit)
     {
         PythonJitExecutionFixture fixture;
         fixture.execute_module(L"def add(lhs, rhs):\n"
                                L"    return lhs + rhs\n");
         ASSERT_TRUE(fixture.jit_compile(L"add"));
 
-        EXPECT_DEATH(
-            (void)fixture.call(L"add", Value::None(), Value::from_smi(1)),
-            "JIT entered a side exit without a handler");
+        EXPECT_EQ(Value::from_smi(42), fixture.call(L"add", Value::from_smi(19),
+                                                    Value::from_smi(23)));
+
+        Owned<TValue<String>> lhs(string_value(L"hello "));
+        Owned<TValue<String>> rhs(string_value(L"world"));
+        Value result = fixture.call(L"add", lhs.value().raw_value(),
+                                    rhs.value().raw_value());
+
+        ASSERT_TRUE(can_convert_to<String>(result));
+        EXPECT_STREQ(
+            L"hello world",
+            string_as_wchar_t(TValue<String>::from_value_assumed(result)));
     }
 
     TEST(AArch64Execution, CompilesPythonIdentityConditional)
