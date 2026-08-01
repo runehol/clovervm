@@ -5,6 +5,7 @@
 #include <memory>
 #include <vector>
 
+#include "jit/transition_executor.h"
 #include "memory/thread_local_heap.h"
 #include "object_model/owned.h"
 #include "object_model/shape.h"
@@ -362,6 +363,17 @@ namespace cl
             assert(code_cache_ != nullptr);
             return *code_cache_;
         }
+        jit::TransitionExecutionContext &transition_execution_context()
+        {
+            return transition_execution_context_;
+        }
+        const jit::TransitionExecutionContext &
+        transition_execution_context() const
+        {
+            return transition_execution_context_;
+        }
+
+        static constexpr size_t transition_execution_context_offset();
 
     private:
         ThreadState(VirtualMachine *_machine, jit::CodeCache *_code_cache);
@@ -385,6 +397,7 @@ namespace cl
             const std::vector<std::unique_ptr<ThreadState>> &threads);
 #endif
 
+        jit::TransitionExecutionContext transition_execution_context_;
         VirtualMachine *machine;
         jit::CodeCache *code_cache_;
         bool *safepoint_requested_ptr;
@@ -411,6 +424,14 @@ namespace cl
 
         static thread_local ThreadState *current_thread;
     };
+
+    constexpr size_t ThreadState::transition_execution_context_offset()
+    {
+        return offsetof(ThreadState, transition_execution_context_);
+    }
+
+    static_assert(std::is_standard_layout_v<ThreadState>);
+    static_assert(ThreadState::transition_execution_context_offset() == 0);
 
     inline ThreadState *active_thread() { return ThreadState::get_active(); }
 
