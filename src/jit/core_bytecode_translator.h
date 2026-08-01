@@ -51,6 +51,11 @@ namespace cl::jit
             Block *block, const BytecodeInstruction &instruction,
             std::span<const ProgramValueRef> inputs, const State &state,
             std::vector<ProgramValueRef> &outputs);
+        bool lower_binary_arithmetic(
+            Block *block, const BytecodeInstruction &instruction,
+            BinaryArithmeticSMIWithSnapshotSubkind subkind,
+            std::span<const ProgramValueRef> inputs, const State &state,
+            std::vector<ProgramValueRef> &outputs);
         bool lower_binary_logical(Block *block,
                                   const BytecodeInstruction &instruction,
                                   BinaryLogicalSMISubkind subkind,

@@ -194,61 +194,15 @@ namespace cl::jit
                 break;
 
             case Bytecode::Add:
-                {
-                    const OperatorInlineCache *cache =
-                        instruction.operator_cache();
-                    assert(cache != nullptr);
-                    if(!cache->empty())
-                    {
-                        emit_unsupported(block, instruction, state);
-                        return;
-                    }
-
-                    assert(inputs.size() == 2);
-                    SnapshotRef snapshot =
-                        emit_snapshot(block, instruction.pc_offset(), state);
-                    InlineTagGuardInstruction lhs =
-                        builder_.emplace_instruction<InlineTagGuardInstruction>(
-                            block, tagged(inputs[0]), snapshot,
-                            InlineValueClass::SMI);
-                    InlineTagGuardInstruction rhs =
-                        builder_.emplace_instruction<InlineTagGuardInstruction>(
-                            block, tagged(inputs[1]), snapshot,
-                            InlineValueClass::SMI);
-                    outputs.emplace_back(
-                        builder_.emplace_instruction<AddSMIInstruction>(
-                            block, TaggedValueRef(lhs), TaggedValueRef(rhs),
-                            snapshot));
-                    break;
-                }
-
             case Bytecode::AddSmi:
+                if(!lower_binary_arithmetic(
+                       block, instruction,
+                       BinaryArithmeticSMIWithSnapshotSubkind::AddSMI, inputs,
+                       state, outputs))
                 {
-                    const OperatorInlineCache *cache =
-                        instruction.operator_cache();
-                    assert(cache != nullptr);
-                    if(!cache->empty())
-                    {
-                        emit_unsupported(block, instruction, state);
-                        return;
-                    }
-
-                    assert(inputs.size() == 1);
-                    assert(instruction.operands().size() == 2);
-                    SnapshotRef snapshot =
-                        emit_snapshot(block, instruction.pc_offset(), state);
-                    InlineTagGuardInstruction lhs =
-                        builder_.emplace_instruction<InlineTagGuardInstruction>(
-                            block, tagged(inputs[0]), snapshot,
-                            InlineValueClass::SMI);
-                    ProgramValueRef rhs = emit_constant(
-                        block, Value::from_smi(
-                                   instruction.operands()[0].signed_value()));
-                    outputs.emplace_back(
-                        builder_.emplace_instruction<AddSMIInstruction>(
-                            block, TaggedValueRef(lhs), tagged(rhs), snapshot));
-                    break;
+                    return;
                 }
+                break;
 
             case Bytecode::And:
             case Bytecode::AndSmi:
@@ -303,6 +257,50 @@ namespace cl::jit
         assert(!cache->empty());
         emit_unsupported(block, instruction, state);
         return false;
+    }
+
+    bool CoreBytecodeTranslator::lower_binary_arithmetic(
+        Block *block, const BytecodeInstruction &instruction,
+        BinaryArithmeticSMIWithSnapshotSubkind subkind,
+        std::span<const ProgramValueRef> inputs, const State &state,
+        std::vector<ProgramValueRef> &outputs)
+    {
+        const OperatorInlineCache *cache = instruction.operator_cache();
+        assert(cache != nullptr);
+        if(!cache->empty())
+        {
+            return lower_non_fastpathed_operator(block, instruction, inputs,
+                                                 state, outputs);
+        }
+
+        assert(inputs.size() == 1 || inputs.size() == 2);
+        const bool has_immediate_rhs = inputs.size() == 1;
+        if(has_immediate_rhs)
+        {
+            assert(instruction.operands().size() == 2);
+        }
+
+        SnapshotRef snapshot =
+            emit_snapshot(block, instruction.pc_offset(), state);
+        InlineTagGuardInstruction lhs =
+            builder_.emplace_instruction<InlineTagGuardInstruction>(
+                block, tagged(inputs[0]), snapshot, InlineValueClass::SMI);
+        TaggedValueRef rhs = [&] {
+            if(has_immediate_rhs)
+            {
+                return tagged(emit_constant(
+                    block,
+                    Value::from_smi(instruction.operands()[0].signed_value())));
+            }
+            return TaggedValueRef(
+                builder_.emplace_instruction<InlineTagGuardInstruction>(
+                    block, tagged(inputs[1]), snapshot, InlineValueClass::SMI));
+        }();
+
+        outputs.emplace_back(builder_.emplace_instruction<
+                             BinaryArithmeticSMIWithSnapshotInstruction>(
+            block, subkind, TaggedValueRef(lhs), rhs, snapshot));
+        return true;
     }
 
     bool CoreBytecodeTranslator::lower_binary_logical(
