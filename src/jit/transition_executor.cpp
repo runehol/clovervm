@@ -34,8 +34,9 @@ namespace cl::jit
             return result;
         }
 
-        uint64_t read_location(TransitionLocation location,
-                               TransitionExecutionInput input,
+        uint64_t read_location(std::span<const uint64_t> register_file,
+                               TransitionLocation location,
+                               Value *frame_pointer,
                                std::span<uint64_t> scratch)
         {
             switch(location.area())
@@ -43,12 +44,11 @@ namespace cl::jit
                 case TransitionLocationArea::RegisterFile:
                     {
                         size_t offset = static_cast<size_t>(location.offset());
-                        assert(offset < input.register_file.size());
-                        return input.register_file[offset];
+                        assert(offset < register_file.size());
+                        return register_file[offset];
                     }
                 case TransitionLocationArea::Stack:
-                    return load_stack_word(input.frame_pointer,
-                                           location.offset());
+                    return load_stack_word(frame_pointer, location.offset());
                 case TransitionLocationArea::Scratch:
                     {
                         size_t offset = static_cast<size_t>(location.offset());
@@ -60,16 +60,14 @@ namespace cl::jit
         }
 
         void write_location(TransitionLocation location, uint64_t value,
-                            TransitionExecutionInput input,
-                            std::span<uint64_t> scratch)
+                            Value *frame_pointer, std::span<uint64_t> scratch)
         {
             switch(location.area())
             {
                 case TransitionLocationArea::RegisterFile:
                     fatal("transition program writes its register file");
                 case TransitionLocationArea::Stack:
-                    store_stack_word(input.frame_pointer, location.offset(),
-                                     value);
+                    store_stack_word(frame_pointer, location.offset(), value);
                     return;
                 case TransitionLocationArea::Scratch:
                     {
@@ -86,14 +84,15 @@ namespace cl::jit
     InterpreterResumeState
     execute_transition_program(TransitionExecutionContext &context,
                                const TransitionInstruction *program,
-                               TransitionExecutionInput input)
+                               Value *frame_pointer)
     {
         assert(program != nullptr);
         assert(program->kind() == TransitionInstructionKind::BeginTransition);
-        assert(input.frame_pointer != nullptr);
+        assert(frame_pointer != nullptr);
 
         std::span<uint64_t> scratch =
             context.ensure_scratch(program->scratch_slot_count());
+        std::span<const uint64_t> register_file = context.register_file();
         assert(!scratch.empty());
         for(const TransitionInstruction *instruction = program + 1;;
             ++instruction)
@@ -105,9 +104,10 @@ namespace cl::jit
                 case TransitionInstructionKind::Transfer:
                     {
                         uint64_t value = read_location(
-                            instruction->transfer_source(), input, scratch);
+                            register_file, instruction->transfer_source(),
+                            frame_pointer, scratch);
                         write_location(instruction->transfer_destination(),
-                                       value, input, scratch);
+                                       value, frame_pointer, scratch);
                         break;
                     }
                 case TransitionInstructionKind::ResumeInterpreter:

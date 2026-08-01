@@ -48,12 +48,6 @@ namespace cl::jit
     static_assert(std::is_standard_layout_v<TransitionExecutionContext>);
     static_assert(TransitionExecutionContext::register_file_offset() == 0);
 
-    struct TransitionExecutionInput
-    {
-        std::span<const uint64_t> register_file;
-        Value *frame_pointer;
-    };
-
     struct InterpreterResumeState
     {
         Value accumulator;
@@ -64,7 +58,7 @@ namespace cl::jit
     InterpreterResumeState
     execute_transition_program(TransitionExecutionContext &context,
                                const TransitionInstruction *program,
-                               TransitionExecutionInput input);
+                               Value *frame_pointer);
 
 }  // namespace cl::jit
 

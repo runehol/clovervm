@@ -14,6 +14,7 @@
 
 #include <gtest/gtest.h>
 
+#include <algorithm>
 #include <array>
 #include <cstdint>
 #include <cstring>
@@ -236,8 +237,10 @@ namespace cl::jit
         }
 
         TransitionExecutionContext execution_context;
+        std::ranges::copy(register_file,
+                          execution_context.register_file().begin());
         InterpreterResumeState resume = execute_transition_program(
-            execution_context, program.data(), {register_file, frame_pointer});
+            execution_context, program.data(), frame_pointer);
 
         EXPECT_EQ(expected_value, resume.accumulator);
         EXPECT_EQ(code_object, resume.code_object);

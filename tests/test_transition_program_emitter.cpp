@@ -8,6 +8,7 @@
 
 #include <gtest/gtest.h>
 
+#include <algorithm>
 #include <array>
 #include <cstdint>
 #include <cstring>
@@ -121,8 +122,9 @@ namespace cl::jit
         ASSERT_FALSE(program.empty());
         EXPECT_EQ(1u, program.front().scratch_slot_count());
         TransitionExecutionContext context;
+        std::ranges::copy(register_file, context.register_file().begin());
         InterpreterResumeState resume = execute_transition_program(
-            context, program.data(), {register_file, execution.frame_pointer});
+            context, program.data(), execution.frame_pointer);
 
         EXPECT_EQ(accumulator, resume.accumulator);
         EXPECT_EQ(fixture.code_object, resume.code_object);
@@ -173,8 +175,9 @@ namespace cl::jit
 
         EXPECT_EQ(2u, program.front().scratch_slot_count());
         TransitionExecutionContext context;
+        std::ranges::copy(register_file, context.register_file().begin());
         InterpreterResumeState resume = execute_transition_program(
-            context, program.data(), {register_file, execution.frame_pointer});
+            context, program.data(), execution.frame_pointer);
 
         EXPECT_EQ(Value::from_smi(71), resume.accumulator);
         EXPECT_EQ(fixture.code_object, resume.code_object);

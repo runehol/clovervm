@@ -37,8 +37,6 @@ namespace cl::jit
         Value expected = Value::from_smi(123);
         std::array<Value, 8> stack = {};
         Value *frame_pointer = stack.data() + 4;
-        std::array<uint64_t, 2> register_file = {0, word_for(expected)};
-
         TransitionProgramBuilder builder;
         builder.emplace_transfer(TransitionLocation::scratch(0),
                                  TransitionLocation::register_file(1));
@@ -49,8 +47,9 @@ namespace cl::jit
             std::move(builder).finalize();
 
         TransitionExecutionContext context;
+        context.register_file()[1] = word_for(expected);
         InterpreterResumeState result = execute_transition_program(
-            context, instructions.data(), {register_file, frame_pointer});
+            context, instructions.data(), frame_pointer);
 
         EXPECT_EQ(expected, result.accumulator);
         EXPECT_EQ(code_object, result.code_object);
@@ -69,8 +68,6 @@ namespace cl::jit
         Value accumulator = Value::from_smi(1);
         std::array<Value, 8> stack = {};
         Value *frame_pointer = stack.data() + 4;
-        std::array<uint64_t, 2> register_file = {Bits, word_for(accumulator)};
-
         TransitionProgramBuilder builder;
         builder.emplace_transfer(TransitionLocation::stack(1),
                                  TransitionLocation::register_file(0));
@@ -81,8 +78,10 @@ namespace cl::jit
             std::move(builder).finalize();
 
         TransitionExecutionContext context;
+        context.register_file()[0] = Bits;
+        context.register_file()[1] = word_for(accumulator);
         InterpreterResumeState result = execute_transition_program(
-            context, instructions.data(), {register_file, frame_pointer});
+            context, instructions.data(), frame_pointer);
 
         EXPECT_EQ(accumulator, result.accumulator);
         EXPECT_EQ(code_object, result.code_object);

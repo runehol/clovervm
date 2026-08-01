@@ -1,6 +1,7 @@
 #include "jit/aarch64_transition.h"
 
 #include "jit/location_assignments.h"
+#include "jit/transition_executor.h"
 #include "jit/transition_program_emitter.h"
 #include "runtime/fatal.h"
 
@@ -10,6 +11,9 @@
 
 namespace cl::jit
 {
+    static_assert(AArch64TransitionRegisterSlotCount ==
+                  TransitionExecutionContext::RegisterFileSlotCount);
+
     TransitionLocation aarch64_transition_location(PhysicalLocation location)
     {
         if(location.is_stack())
