@@ -44,7 +44,7 @@ namespace cl::jit
                 emplace_constant(builder, entry, Value::True()), true_edge,
                 false_edge);
         builder.append_instruction(entry, branch_instruction);
-        builder.emplace_instruction<ReturnInstruction>(
+        builder.emplace_instruction<BareReturnInstruction>(
             join, emplace_constant(builder, join, Value::None()));
 
         TerminatorInstruction::BlockSuccessorEdges successors =
@@ -91,7 +91,7 @@ namespace cl::jit
         Instruction branch_instruction =
             builder.make_instruction<UnconditionalBranchInstruction>(edge);
         Instruction return_instruction =
-            builder.make_instruction<ReturnInstruction>(
+            builder.make_instruction<BareReturnInstruction>(
                 emplace_constant(builder, exit, Value::None()));
         builder.append_instruction(entry, branch_instruction);
         builder.append_instruction(exit, return_instruction);
@@ -101,7 +101,7 @@ namespace cl::jit
         ASSERT_EQ(1u, successors.size());
         EXPECT_EQ(edge, successors[0]);
         EXPECT_TRUE(exit->block_successor_edges().empty());
-        EXPECT_EQ(InstructionKind::Return, return_instruction.kind());
+        EXPECT_EQ(InstructionKind::BareReturn, return_instruction.kind());
         ControlFlowGraph *graph = builder.finalize();
         EXPECT_TRUE(graph->is_published());
         EXPECT_EQ(0u, graph->blocks()[0]->loop_depth());
@@ -277,7 +277,7 @@ namespace cl::jit
             entry, true_value, true_edge, false_edge);
         ParameterInstruction parameter =
             builder.emplace_parameter<ParameterInstruction>(join);
-        builder.emplace_instruction<ReturnInstruction>(
+        builder.emplace_instruction<BareReturnInstruction>(
             join, TaggedValueRef(parameter));
 
         ControlFlowGraph *graph = builder.finalize();
@@ -303,8 +303,8 @@ namespace cl::jit
             builder.emplace_parameter<ParameterF64Instruction>(entry);
         ParameterPointerInstruction pointer_parameter =
             builder.emplace_parameter<ParameterPointerInstruction>(entry);
-        ReturnInstruction return_instruction =
-            builder.make_instruction<ReturnInstruction>(
+        BareReturnInstruction return_instruction =
+            builder.make_instruction<BareReturnInstruction>(
                 TaggedValueRef(tagged_parameter));
 
         builder.append_instruction(entry, return_instruction);
@@ -334,7 +334,7 @@ namespace cl::jit
                                                                     edge);
         ParameterInstruction parameter =
             builder.emplace_parameter<ParameterInstruction>(exit);
-        builder.emplace_instruction<ReturnInstruction>(
+        builder.emplace_instruction<BareReturnInstruction>(
             exit, emplace_constant(builder, exit, Value::None()));
 
         ControlFlowGraph *graph = builder.finalize();
@@ -354,7 +354,7 @@ namespace cl::jit
         builder.emplace_instruction<UnconditionalBranchInstruction>(entry,
                                                                     edge);
         builder.emplace_parameter<ParameterInstruction>(exit);
-        builder.emplace_instruction<ReturnInstruction>(
+        builder.emplace_instruction<BareReturnInstruction>(
             exit, emplace_constant(builder, exit, Value::None()));
 
         expect_invalid_with(builder, "supplies 0 arguments for 1 target");
@@ -374,7 +374,7 @@ namespace cl::jit
         builder.emplace_instruction<UnconditionalBranchInstruction>(entry,
                                                                     edge);
         builder.emplace_parameter<ParameterInstruction>(exit);
-        builder.emplace_instruction<ReturnInstruction>(
+        builder.emplace_instruction<BareReturnInstruction>(
             exit, emplace_constant(builder, exit, Value::None()));
 
         expect_invalid_with(builder, "incompatible value representation");
@@ -394,7 +394,7 @@ namespace cl::jit
             entry, exit, std::span<const ProgramValueRef>(arguments));
         builder.emplace_instruction<UnconditionalBranchInstruction>(entry,
                                                                     edge);
-        builder.emplace_instruction<ReturnInstruction>(
+        builder.emplace_instruction<BareReturnInstruction>(
             exit, TaggedValueRef(unavailable));
 
         expect_invalid_with(builder, "outside its source block or after");
@@ -427,9 +427,9 @@ namespace cl::jit
         Block *entry = builder.emplace_block();
         TaggedValueRef none = emplace_constant(builder, entry, Value::None());
         builder.append_instruction(
-            entry, builder.make_instruction<ReturnInstruction>(none));
+            entry, builder.make_instruction<BareReturnInstruction>(none));
         builder.append_instruction(
-            entry, builder.make_instruction<ReturnInstruction>(none));
+            entry, builder.make_instruction<BareReturnInstruction>(none));
 
         expect_invalid_with(builder,
                             "block terminator before its final instruction");
@@ -447,7 +447,7 @@ namespace cl::jit
             builder.make_instruction<ConditionalBranchInstruction>(
                 emplace_constant(builder, entry, Value::True()), edge, edge));
         builder.append_instruction(
-            exit, builder.make_instruction<ReturnInstruction>(
+            exit, builder.make_instruction<BareReturnInstruction>(
                       emplace_constant(builder, exit, Value::None())));
 
         expect_invalid_with(builder, "reuses one block edge");
@@ -463,13 +463,13 @@ namespace cl::jit
         BlockEdge *edge = builder.make_block_edge(declared_source, target);
         builder.append_instruction(
             declared_source,
-            builder.make_instruction<ReturnInstruction>(
+            builder.make_instruction<BareReturnInstruction>(
                 emplace_constant(builder, declared_source, Value::None())));
         builder.append_instruction(
             actual_source,
             builder.make_instruction<UnconditionalBranchInstruction>(edge));
         builder.append_instruction(
-            target, builder.make_instruction<ReturnInstruction>(
+            target, builder.make_instruction<BareReturnInstruction>(
                         emplace_constant(builder, target, Value::None())));
 
         expect_invalid_with(builder, "as its source but is referenced by");
@@ -482,9 +482,9 @@ namespace cl::jit
         Block *entry = builder.emplace_block();
         ParameterInstruction unplaced =
             builder.make_instruction<ParameterInstruction>();
-        builder.append_instruction(entry,
-                                   builder.make_instruction<ReturnInstruction>(
-                                       TaggedValueRef(unplaced)));
+        builder.append_instruction(
+            entry, builder.make_instruction<BareReturnInstruction>(
+                       TaggedValueRef(unplaced)));
 
         expect_invalid_with(builder,
                             "outside its block or before its definition");
@@ -503,9 +503,9 @@ namespace cl::jit
         builder.append_instruction(
             entry,
             builder.make_instruction<UnconditionalBranchInstruction>(edge));
-        builder.append_instruction(exit,
-                                   builder.make_instruction<ReturnInstruction>(
-                                       TaggedValueRef(parameter)));
+        builder.append_instruction(
+            exit, builder.make_instruction<BareReturnInstruction>(
+                      TaggedValueRef(parameter)));
 
         expect_invalid_with(builder,
                             "outside its block or before its definition");
@@ -518,7 +518,7 @@ namespace cl::jit
         Block *first_entry = first_builder.emplace_block();
         first_builder.append_instruction(
             first_entry,
-            first_builder.make_instruction<ReturnInstruction>(
+            first_builder.make_instruction<BareReturnInstruction>(
                 emplace_constant(first_builder, first_entry, Value::None())));
         ControlFlowGraph *first_graph = first_builder.finalize();
 
@@ -526,7 +526,7 @@ namespace cl::jit
         Block *second_entry = second_builder.emplace_block();
         second_builder.append_instruction(
             second_entry,
-            second_builder.make_instruction<ReturnInstruction>(
+            second_builder.make_instruction<BareReturnInstruction>(
                 emplace_constant(second_builder, second_entry, Value::None())));
         ControlFlowGraph *second_graph = second_builder.finalize();
 

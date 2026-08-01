@@ -24,14 +24,14 @@ namespace cl::jit
             entry, Value::from_smi(7)));
         TaggedValueRef result(builder.emplace_instruction<AndSMIInstruction>(
             entry, parameter, constant));
-        builder.emplace_instruction<ReturnInstruction>(entry, result);
+        builder.emplace_instruction<BareReturnInstruction>(entry, result);
         ControlFlowGraph *graph = builder.finalize();
 
         EXPECT_EQ("graph {\n"
                   "bb0(%0):\n"
                   "  %1 = const {constant = 7}\n"
                   "  %2 = and_smi %0, %1\n"
-                  "  return %2\n"
+                  "  bare_return %2\n"
                   "}\n",
                   format_ir(*graph));
         EXPECT_EQ("%2 = and_smi %0, %1",
@@ -52,8 +52,8 @@ namespace cl::jit
         InlineTagGuardInstruction guard =
             builder.emplace_instruction<InlineTagGuardInstruction>(
                 entry, value, snapshot, InlineValueClass::SMIOrBoolean);
-        builder.emplace_instruction<ReturnInstruction>(entry,
-                                                       TaggedValueRef(guard));
+        builder.emplace_instruction<BareReturnInstruction>(
+            entry, TaggedValueRef(guard));
         ControlFlowGraph *graph = builder.finalize();
 
         EXPECT_EQ("%2 = inline_tag_guard %0, %1 "
@@ -89,7 +89,7 @@ namespace cl::jit
             entry, join, std::span<const ProgramValueRef>(false_arguments));
         builder.emplace_instruction<ConditionalBranchInstruction>(
             entry, condition, true_edge, false_edge);
-        builder.emplace_instruction<ReturnInstruction>(join, parameter);
+        builder.emplace_instruction<BareReturnInstruction>(join, parameter);
         ControlFlowGraph *graph = builder.finalize();
 
         EXPECT_EQ("graph {\n"
@@ -100,7 +100,7 @@ namespace cl::jit
                   "  cond_br %0 {true_edge = bb1(%1), false_edge = bb1(%0)}\n"
                   "\n"
                   "bb1(%3) {loop_depth = 2}:\n"
-                  "  return %3\n"
+                  "  bare_return %3\n"
                   "}\n",
                   format_ir(*graph));
     }
@@ -132,7 +132,7 @@ namespace cl::jit
             builder.emplace_instruction<AddF64Instruction>(entry, f64, f64));
         TaggedValueRef boxed(
             builder.emplace_instruction<BoxF64Instruction>(entry, sum));
-        builder.emplace_instruction<ReturnInstruction>(entry, boxed);
+        builder.emplace_instruction<BareReturnInstruction>(entry, boxed);
         ControlFlowGraph *graph = builder.finalize();
 
         EXPECT_EQ("graph {\n"
@@ -142,7 +142,7 @@ namespace cl::jit
                   "{interpreter_return_pc_offset = 11}\n"
                   "  %6 = add_f64 %2, %2\n"
                   "  %7 = box_f64 %6\n"
-                  "  return %7\n"
+                  "  bare_return %7\n"
                   "}\n",
                   format_ir(*graph));
     }
@@ -161,13 +161,13 @@ namespace cl::jit
         Block *entry = builder.emplace_block();
         TaggedValueRef none(builder.emplace_instruction<ConstInstruction>(
             entry, Value::None()));
-        builder.emplace_instruction<ReturnInstruction>(entry, none);
+        builder.emplace_instruction<BareReturnInstruction>(entry, none);
         ControlFlowGraph *graph = builder.finalize();
 
         EXPECT_EQ("graph state(acc, thread, fp[3..-3]) {\n"
                   "bb0:\n"
                   "  %0 = const {constant = none}\n"
-                  "  return %0\n"
+                  "  bare_return %0\n"
                   "}\n",
                   format_ir(*graph));
     }

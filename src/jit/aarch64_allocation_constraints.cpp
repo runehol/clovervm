@@ -113,6 +113,18 @@ namespace cl::jit
                                                     std::move(input_overrides));
         }
 
+        InstructionAllocationConstraints bare_return_constraints(
+            BareReturnInstruction instruction,
+            std::vector<ProgramValueUseConstraint> input_overrides)
+        {
+            input_overrides.emplace_back(
+                BareReturnInstruction::return_value_operand_index,
+                AccessTiming::Early,
+                LocationRequirement::fixed(PhysicalLocation::reg(gpr(0))));
+            return InstructionAllocationConstraints(instruction,
+                                                    std::move(input_overrides));
+        }
+
         InstructionAllocationConstraints gpr_temporary_constraints(
             Instruction instruction,
             std::vector<ProgramValueUseConstraint> input_overrides)
@@ -213,6 +225,15 @@ namespace cl::jit
                         ReturnInstruction, return_instruction)
                     {
                         overrides.push_back(return_constraints(
+                            return_instruction,
+                            std::move(input_overrides)));
+                        break;
+                    }
+
+                    case CL_JIT_MACHINE_INSTRUCTION_CASE(
+                        BareReturnInstruction, return_instruction)
+                    {
+                        overrides.push_back(bare_return_constraints(
                             return_instruction,
                             std::move(input_overrides)));
                         break;

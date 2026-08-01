@@ -76,6 +76,7 @@ namespace cl::jit
                 case InstructionKind::UnconditionalBranch:
                     return 1;
                 case InstructionKind::Return:
+                case InstructionKind::BareReturn:
                 case InstructionKind::ResumeInInterpreter:
                 case InstructionKind::ResumeInInterpreterWithSideExit:
                     return 0;

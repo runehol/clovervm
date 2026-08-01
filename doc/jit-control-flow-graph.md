@@ -310,7 +310,7 @@ to whether an instruction terminates its block:
 | Guard with deoptimization | Yes | 0 | 1 | No |
 | Conditional branch | No | 2 | 0 | Yes |
 | Unconditional branch | No | 1 | 0 | Yes |
-| Return | No | 0 | 0 | Yes |
+| Return or bare return | No | 0 | 0 | Yes |
 | Unconditional deoptimization | No | 0 | 1 | Yes |
 
 Block edges participate in block arguments, RPO, dominance, loops, and backend

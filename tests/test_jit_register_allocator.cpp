@@ -58,7 +58,7 @@ namespace cl::jit
 
         AllocationConstraints allocator_test_constraints(
             std::initializer_list<Instruction> entry_parameters,
-            ReturnInstruction return_instruction,
+            BareReturnInstruction return_instruction,
             std::optional<Instruction> instruction_with_temporary =
                 std::nullopt)
         {
@@ -76,7 +76,7 @@ namespace cl::jit
             overrides.emplace_back(
                 return_instruction,
                 std::vector<ProgramValueUseConstraint>{
-                    {ReturnInstruction::return_value_operand_index,
+                    {BareReturnInstruction::return_value_operand_index,
                      AccessTiming::Early, fixed(x0)}});
             if(instruction_with_temporary.has_value())
             {
@@ -127,7 +127,7 @@ namespace cl::jit
         AndSMIInstruction operation =
             builder.emplace_instruction<AndSMIInstruction>(
                 entry, TaggedValueRef(parameter), TaggedValueRef(parameter));
-        builder.emplace_instruction<ReturnInstruction>(
+        builder.emplace_instruction<BareReturnInstruction>(
             entry, TaggedValueRef(operation));
         ControlFlowGraph *graph = builder.finalize();
 
@@ -173,8 +173,8 @@ namespace cl::jit
         Block *entry = builder.emplace_block();
         ParameterInstruction parameter =
             builder.emplace_parameter<ParameterInstruction>(entry);
-        ReturnInstruction return_instruction =
-            builder.emplace_instruction<ReturnInstruction>(
+        BareReturnInstruction return_instruction =
+            builder.emplace_instruction<BareReturnInstruction>(
                 entry, TaggedValueRef(parameter));
         ControlFlowGraph *graph = builder.finalize();
         AllocationConstraints constraints =
@@ -265,8 +265,8 @@ namespace cl::jit
             builder.emplace_parameter<ParameterInstruction>(entry));
         TaggedValueRef result(
             builder.emplace_instruction<AndSMIInstruction>(entry, lhs, rhs));
-        ReturnInstruction return_instruction =
-            builder.emplace_instruction<ReturnInstruction>(entry, result);
+        BareReturnInstruction return_instruction =
+            builder.emplace_instruction<BareReturnInstruction>(entry, result);
         ControlFlowGraph *graph = builder.finalize();
 
         AllocationConstraints constraints = allocator_test_constraints(
@@ -348,8 +348,8 @@ namespace cl::jit
                                                                         edge);
         TaggedValueRef parameter(
             builder.emplace_parameter<ParameterInstruction>(exit));
-        ReturnInstruction return_instruction =
-            builder.emplace_instruction<ReturnInstruction>(exit, parameter);
+        BareReturnInstruction return_instruction =
+            builder.emplace_instruction<BareReturnInstruction>(exit, parameter);
         ControlFlowGraph *graph = builder.finalize();
 
         AllocationConstraints constraints =
@@ -416,8 +416,8 @@ namespace cl::jit
                                                                     edge);
         ParameterInstruction parameter =
             builder.emplace_parameter<ParameterInstruction>(exit);
-        ReturnInstruction return_instruction =
-            builder.emplace_instruction<ReturnInstruction>(
+        BareReturnInstruction return_instruction =
+            builder.emplace_instruction<BareReturnInstruction>(
                 exit, TaggedValueRef(parameter));
         ControlFlowGraph *graph = builder.finalize();
 
@@ -430,7 +430,7 @@ namespace cl::jit
         overrides.emplace_back(
             return_instruction,
             std::vector<ProgramValueUseConstraint>{
-                {ReturnInstruction::return_value_operand_index,
+                {BareReturnInstruction::return_value_operand_index,
                  AccessTiming::Early, fixed(x1)}});
         constexpr std::array registers = {x0, x1};
         AllocationConstraints constraints =
@@ -474,8 +474,8 @@ namespace cl::jit
             entry, value, true_edge, false_edge);
         ParameterInstruction parameter =
             builder.emplace_parameter<ParameterInstruction>(exit);
-        ReturnInstruction return_instruction =
-            builder.emplace_instruction<ReturnInstruction>(
+        BareReturnInstruction return_instruction =
+            builder.emplace_instruction<BareReturnInstruction>(
                 exit, TaggedValueRef(parameter));
         ControlFlowGraph *graph = builder.finalize();
 
@@ -505,8 +505,8 @@ namespace cl::jit
             builder.emplace_parameter<ParameterInstruction>(entry));
         TaggedValueRef result(
             builder.emplace_instruction<AndSMIInstruction>(entry, lhs, rhs));
-        ReturnInstruction return_instruction =
-            builder.emplace_instruction<ReturnInstruction>(entry, result);
+        BareReturnInstruction return_instruction =
+            builder.emplace_instruction<BareReturnInstruction>(entry, result);
         ControlFlowGraph *graph = builder.finalize();
 
         AllocationConstraints constraints = allocator_test_constraints(
@@ -579,7 +579,7 @@ namespace cl::jit
             builder.emplace_parameter<ParameterInstruction>(entry));
         TaggedValueRef result(
             builder.emplace_instruction<AndSMIInstruction>(entry, lhs, rhs));
-        builder.emplace_instruction<ReturnInstruction>(entry, result);
+        builder.emplace_instruction<BareReturnInstruction>(entry, result);
         ControlFlowGraph *graph = builder.finalize();
 
         constexpr std::array registers = {x0, x1};
@@ -614,7 +614,7 @@ namespace cl::jit
         {
             builder.emplace_instruction<UninitializedInstruction>(entry);
         }
-        builder.emplace_instruction<ReturnInstruction>(entry, long_lived);
+        builder.emplace_instruction<BareReturnInstruction>(entry, long_lived);
         ControlFlowGraph *graph = builder.finalize();
 
         constexpr std::array registers = {x0, x1};
@@ -645,7 +645,7 @@ namespace cl::jit
         AndSMIInstruction operation =
             builder.emplace_instruction<AndSMIInstruction>(
                 entry, TaggedValueRef(parameter), TaggedValueRef(parameter));
-        builder.emplace_instruction<ReturnInstruction>(
+        builder.emplace_instruction<BareReturnInstruction>(
             entry, TaggedValueRef(parameter));
         ControlFlowGraph *graph = builder.finalize();
 
@@ -693,7 +693,7 @@ namespace cl::jit
         {
             builder.emplace_instruction<UninitializedInstruction>(entry);
         }
-        builder.emplace_instruction<ReturnInstruction>(entry, long_lived);
+        builder.emplace_instruction<BareReturnInstruction>(entry, long_lived);
         ControlFlowGraph *graph = builder.finalize();
 
         constexpr std::array registers = {x0, x1};
@@ -727,7 +727,7 @@ namespace cl::jit
             builder.emplace_parameter<ParameterInstruction>(entry));
         TaggedValueRef result(
             builder.emplace_instruction<AndSMIInstruction>(entry, lhs, rhs));
-        builder.emplace_instruction<ReturnInstruction>(entry, result);
+        builder.emplace_instruction<BareReturnInstruction>(entry, result);
         ControlFlowGraph *graph = builder.finalize();
 
         constexpr std::array registers = {x0};
@@ -755,8 +755,8 @@ namespace cl::jit
         AndSMIInstruction operation =
             builder.emplace_instruction<AndSMIInstruction>(
                 entry, TaggedValueRef(parameter), TaggedValueRef(parameter));
-        ReturnInstruction return_instruction =
-            builder.emplace_instruction<ReturnInstruction>(
+        BareReturnInstruction return_instruction =
+            builder.emplace_instruction<BareReturnInstruction>(
                 entry, TaggedValueRef(operation));
         ControlFlowGraph *graph = builder.finalize();
 
@@ -774,7 +774,7 @@ namespace cl::jit
         overrides.emplace_back(
             return_instruction,
             std::vector<ProgramValueUseConstraint>{
-                {ReturnInstruction::return_value_operand_index,
+                {BareReturnInstruction::return_value_operand_index,
                  AccessTiming::Early, fixed(x0)}});
         constexpr std::array registers = {x0, x1};
         AllocationConstraints constraints =
@@ -817,7 +817,7 @@ namespace cl::jit
         ConstInstruction fixed_definition =
             builder.emplace_instruction<ConstInstruction>(entry,
                                                           Value::from_smi(1));
-        builder.emplace_instruction<ReturnInstruction>(
+        builder.emplace_instruction<BareReturnInstruction>(
             entry, TaggedValueRef(parameter));
         ControlFlowGraph *graph = builder.finalize();
 
@@ -866,8 +866,8 @@ namespace cl::jit
         Block *entry = builder.emplace_block();
         ParameterInstruction parameter =
             builder.emplace_parameter<ParameterInstruction>(entry);
-        ReturnInstruction return_instruction =
-            builder.emplace_instruction<ReturnInstruction>(
+        BareReturnInstruction return_instruction =
+            builder.emplace_instruction<BareReturnInstruction>(
                 entry, TaggedValueRef(parameter));
         ControlFlowGraph *graph = builder.finalize();
 
@@ -878,7 +878,7 @@ namespace cl::jit
         overrides.emplace_back(
             return_instruction,
             std::vector<ProgramValueUseConstraint>{
-                {ReturnInstruction::return_value_operand_index,
+                {BareReturnInstruction::return_value_operand_index,
                  AccessTiming::Early, fixed(x1)}});
         constexpr std::array registers = {x0, x1};
         AllocationConstraints constraints =
@@ -916,8 +916,8 @@ namespace cl::jit
         Block *entry = builder.emplace_block();
         ParameterInstruction parameter =
             builder.emplace_parameter<ParameterInstruction>(entry);
-        ReturnInstruction return_instruction =
-            builder.emplace_instruction<ReturnInstruction>(
+        BareReturnInstruction return_instruction =
+            builder.emplace_instruction<BareReturnInstruction>(
                 entry, TaggedValueRef(parameter));
         ControlFlowGraph *graph = builder.finalize();
 
@@ -931,7 +931,7 @@ namespace cl::jit
         overrides.emplace_back(
             return_instruction,
             std::vector<ProgramValueUseConstraint>{
-                {ReturnInstruction::return_value_operand_index,
+                {BareReturnInstruction::return_value_operand_index,
                  AccessTiming::Early, fixed(x0)}});
         constexpr std::array registers = {x0, x1};
         AllocationConstraints constraints =
@@ -1063,7 +1063,7 @@ namespace cl::jit
         AndSMIInstruction operation =
             builder.emplace_instruction<AndSMIInstruction>(
                 entry, TaggedValueRef(lhs), TaggedValueRef(rhs));
-        builder.emplace_instruction<ReturnInstruction>(
+        builder.emplace_instruction<BareReturnInstruction>(
             entry, TaggedValueRef(operation));
         ControlFlowGraph *graph = builder.finalize();
 
@@ -1122,7 +1122,7 @@ namespace cl::jit
         AndSMIInstruction operation =
             builder.emplace_instruction<AndSMIInstruction>(
                 entry, TaggedValueRef(parameter), TaggedValueRef(parameter));
-        builder.emplace_instruction<ReturnInstruction>(
+        builder.emplace_instruction<BareReturnInstruction>(
             entry, TaggedValueRef(operation));
         ControlFlowGraph *graph = builder.finalize();
 
@@ -1156,7 +1156,7 @@ namespace cl::jit
         SnapshotInstruction snapshot =
             builder.emplace_instruction<SnapshotInstruction>(
                 entry, captured, BytecodePCOffset{7});
-        builder.emplace_instruction<ReturnInstruction>(entry, parameter);
+        builder.emplace_instruction<BareReturnInstruction>(entry, parameter);
         ControlFlowGraph *graph = builder.finalize();
 
         RegisterSet clobbers;
@@ -1192,7 +1192,7 @@ namespace cl::jit
         SnapshotInstruction snapshot =
             builder.emplace_instruction<SnapshotInstruction>(
                 entry, captured, BytecodePCOffset{7});
-        builder.emplace_instruction<ReturnInstruction>(
+        builder.emplace_instruction<BareReturnInstruction>(
             entry, TaggedValueRef(parameter));
         ControlFlowGraph *graph = builder.finalize();
 
@@ -1241,7 +1241,7 @@ namespace cl::jit
             builder.emplace_parameter<ParameterInstruction>(entry));
         TaggedValueRef result(builder.emplace_instruction<AndSMIInstruction>(
             entry, parameter, parameter));
-        builder.emplace_instruction<ReturnInstruction>(entry, result);
+        builder.emplace_instruction<BareReturnInstruction>(entry, result);
         ControlFlowGraph *graph = builder.finalize();
 
         RegisterSet clobbers;
@@ -1285,8 +1285,8 @@ namespace cl::jit
             builder.emplace_parameter<ParameterInstruction>(entry);
         builder.emplace_instruction<UninitializedInstruction>(entry);
         TaggedValueRef result = emplace_constant(builder, entry, Value::None());
-        ReturnInstruction return_instruction =
-            builder.emplace_instruction<ReturnInstruction>(entry, result);
+        BareReturnInstruction return_instruction =
+            builder.emplace_instruction<BareReturnInstruction>(entry, result);
         ControlFlowGraph *graph = builder.finalize();
         AllocationConstraints constraints =
             allocator_test_constraints({parameter}, return_instruction);
@@ -1313,7 +1313,7 @@ namespace cl::jit
         Instruction early_definition =
             builder.emplace_instruction<UninitializedInstruction>(entry);
         TaggedValueRef result = emplace_constant(builder, entry, Value::None());
-        builder.emplace_instruction<ReturnInstruction>(entry, result);
+        builder.emplace_instruction<BareReturnInstruction>(entry, result);
         ControlFlowGraph *graph = builder.finalize();
 
         std::vector<InstructionAllocationConstraints> overrides;
@@ -1348,8 +1348,9 @@ namespace cl::jit
         {
             builder.emplace_instruction<UninitializedInstruction>(entry);
         }
-        ReturnInstruction return_instruction =
-            builder.emplace_instruction<ReturnInstruction>(entry, parameter);
+        BareReturnInstruction return_instruction =
+            builder.emplace_instruction<BareReturnInstruction>(entry,
+                                                               parameter);
         ControlFlowGraph *graph = builder.finalize();
         AllocationConstraints constraints = allocator_test_constraints(
             {builder.storage()->instruction(parameter.instruction_id())},
@@ -1374,7 +1375,7 @@ namespace cl::jit
             entry, parameter, parameter));
         TaggedValueRef boxed(
             builder.emplace_instruction<BoxF64Instruction>(entry, sum));
-        builder.emplace_instruction<ReturnInstruction>(entry, boxed);
+        builder.emplace_instruction<BareReturnInstruction>(entry, boxed);
         ControlFlowGraph *graph = builder.finalize();
 
         constexpr std::array gprs = {x0, x1, x2};
@@ -1428,8 +1429,8 @@ namespace cl::jit
             builder.emplace_parameter<ParameterInstruction>(entry));
         MovInstruction move =
             builder.emplace_instruction<MovInstruction>(entry, parameter);
-        builder.emplace_instruction<ReturnInstruction>(entry,
-                                                       TaggedValueRef(move));
+        builder.emplace_instruction<BareReturnInstruction>(
+            entry, TaggedValueRef(move));
         ControlFlowGraph *graph = builder.finalize();
 
         std::vector<InstructionAllocationConstraints> overrides;

@@ -536,6 +536,15 @@ namespace cl::jit
                     break;
                 }
 
+                case CL_JIT_MACHINE_INSTRUCTION_CASE(
+                    BareReturnInstruction, return_instruction)
+                {
+                    (void)assigned_register(
+                        locations, return_instruction.return_value());
+                    assembler.emit_ret();
+                    break;
+                }
+
                 default:
                     assert(false);
             }

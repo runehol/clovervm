@@ -23,8 +23,8 @@ namespace cl::jit
                                                         TaggedValueRef(unused));
         ConstInstruction result =
             builder.emplace_instruction<ConstInstruction>(entry, Value::True());
-        builder.emplace_instruction<ReturnInstruction>(entry,
-                                                       TaggedValueRef(result));
+        builder.emplace_instruction<BareReturnInstruction>(
+            entry, TaggedValueRef(result));
         ControlFlowGraph *graph = builder.finalize();
 
         auto elimination = eliminate_dead_code(session, *graph);
@@ -33,7 +33,7 @@ namespace cl::jit
         EXPECT_TRUE(std::move(elimination).value());
         ASSERT_EQ(2u, entry->instructions().size());
         EXPECT_EQ(result, entry->instruction_at(0));
-        EXPECT_EQ(InstructionKind::Return, entry->instruction_at(1).kind());
+        EXPECT_EQ(InstructionKind::BareReturn, entry->instruction_at(1).kind());
         EXPECT_TRUE(unused.is_poisoned());
         EXPECT_TRUE(unused_copy.is_poisoned());
     }
@@ -52,7 +52,7 @@ namespace cl::jit
                                                                     edge);
         ParameterInstruction parameter =
             builder.emplace_parameter<ParameterInstruction>(exit);
-        builder.emplace_instruction<ReturnInstruction>(
+        builder.emplace_instruction<BareReturnInstruction>(
             exit, TaggedValueRef(parameter));
         ControlFlowGraph *graph = builder.finalize();
 
@@ -85,7 +85,7 @@ namespace cl::jit
             builder.emplace_parameter<ParameterInstruction>(exit);
         ParameterInstruction live_parameter =
             builder.emplace_parameter<ParameterInstruction>(exit);
-        builder.emplace_instruction<ReturnInstruction>(
+        builder.emplace_instruction<BareReturnInstruction>(
             exit, TaggedValueRef(live_parameter));
         ControlFlowGraph *graph = builder.finalize();
 
@@ -121,7 +121,7 @@ namespace cl::jit
             builder.emplace_instruction<AddSMIInstruction>(
                 entry, TaggedValueRef(parameter), TaggedValueRef(parameter),
                 SnapshotRef(snapshot));
-        builder.emplace_instruction<ReturnInstruction>(
+        builder.emplace_instruction<BareReturnInstruction>(
             entry, TaggedValueRef(parameter));
         ControlFlowGraph *graph = builder.finalize();
 
@@ -132,7 +132,7 @@ namespace cl::jit
         EXPECT_TRUE(snapshot.is_poisoned());
         EXPECT_TRUE(unused_add.is_poisoned());
         ASSERT_EQ(1u, entry->instructions().size());
-        EXPECT_EQ(InstructionKind::Return, entry->instruction_at(0).kind());
+        EXPECT_EQ(InstructionKind::BareReturn, entry->instruction_at(0).kind());
     }
 
     TEST(JitDeadCodeElimination, EliminatesUnusedAllocations)
@@ -147,8 +147,8 @@ namespace cl::jit
         BoxF64Instruction unused_box =
             builder.emplace_instruction<BoxF64Instruction>(entry,
                                                            F64Ref(value));
-        builder.emplace_instruction<ReturnInstruction>(entry,
-                                                       TaggedValueRef(result));
+        builder.emplace_instruction<BareReturnInstruction>(
+            entry, TaggedValueRef(result));
         ControlFlowGraph *graph = builder.finalize();
 
         auto elimination = eliminate_dead_code(session, *graph);
@@ -172,7 +172,7 @@ namespace cl::jit
         CheckNotImplementedInstruction check =
             builder.emplace_instruction<CheckNotImplementedInstruction>(
                 entry, TaggedValueRef(parameter), SnapshotRef(snapshot));
-        builder.emplace_instruction<ReturnInstruction>(
+        builder.emplace_instruction<BareReturnInstruction>(
             entry, TaggedValueRef(parameter));
         ControlFlowGraph *graph = builder.finalize();
 
@@ -199,7 +199,7 @@ namespace cl::jit
             builder.emplace_instruction<PythonCallInstruction>(
                 entry, TaggedValueRef(parameter), SnapshotRef(snapshot),
                 std::span<const TaggedValueRef>{}, BytecodePCOffset{7});
-        builder.emplace_instruction<ReturnInstruction>(
+        builder.emplace_instruction<BareReturnInstruction>(
             entry, TaggedValueRef(parameter));
         ControlFlowGraph *graph = builder.finalize();
 

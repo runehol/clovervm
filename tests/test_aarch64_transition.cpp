@@ -125,7 +125,7 @@ namespace cl::jit
             builder.emplace_instruction<InlineTagGuardWithSideExitInstruction>(
                 entry, TaggedValueRef(argument), arguments,
                 InlineValueClass::SMI, region);
-        builder.emplace_instruction<ReturnInstruction>(
+        builder.emplace_instruction<BareReturnInstruction>(
             entry, TaggedValueRef(argument));
         ControlFlowGraph *graph = builder.finalize();
 

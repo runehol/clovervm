@@ -81,8 +81,8 @@ namespace cl::jit
             builder.emplace_parameter<ParameterInstruction>(entry);
         ParameterInstruction third =
             builder.emplace_parameter<ParameterInstruction>(entry);
-        ReturnInstruction return_instruction =
-            builder.emplace_instruction<ReturnInstruction>(
+        BareReturnInstruction return_instruction =
+            builder.emplace_instruction<BareReturnInstruction>(
                 entry, TaggedValueRef(third));
         ControlFlowGraph *graph = builder.finalize();
 
@@ -138,7 +138,7 @@ namespace cl::jit
             find_override(constraints, return_instruction);
         ASSERT_NE(nullptr, return_override);
         ASSERT_EQ(1u, return_override->input_overrides().size());
-        EXPECT_EQ(ReturnInstruction::return_value_operand_index,
+        EXPECT_EQ(BareReturnInstruction::return_value_operand_index,
                   return_override->input_overrides()[0].operand_index);
         EXPECT_EQ(x(0), return_override->input_overrides()[0]
                             .requirement.fixed_location()
@@ -164,7 +164,7 @@ namespace cl::jit
             builder.emplace_parameter<ParameterInstruction>(entry),
             builder.emplace_parameter<ParameterPointerInstruction>(entry),
         };
-        builder.emplace_instruction<ReturnInstruction>(
+        builder.emplace_instruction<BareReturnInstruction>(
             entry, TaggedValueRef(argument));
         ControlFlowGraph *graph = builder.finalize();
 
@@ -217,11 +217,11 @@ namespace cl::jit
         ConditionalBranchInstruction branch =
             builder.emplace_instruction<ConditionalBranchInstruction>(
                 entry, TaggedValueRef(condition), true_edge, false_edge);
-        ReturnInstruction true_return =
-            builder.emplace_instruction<ReturnInstruction>(
+        BareReturnInstruction true_return =
+            builder.emplace_instruction<BareReturnInstruction>(
                 if_true, emplace_constant(builder, if_true, Value::True()));
-        ReturnInstruction false_return =
-            builder.emplace_instruction<ReturnInstruction>(
+        BareReturnInstruction false_return =
+            builder.emplace_instruction<BareReturnInstruction>(
                 if_false, emplace_constant(builder, if_false, Value::False()));
         ControlFlowGraph *graph = builder.finalize();
 
@@ -291,8 +291,8 @@ namespace cl::jit
             builder.emplace_instruction<InlineTagGuardWithSideExitInstruction>(
                 entry, TaggedValueRef(value), arguments, InlineValueClass::SMI,
                 region);
-        builder.emplace_instruction<ReturnInstruction>(entry,
-                                                       TaggedValueRef(owner));
+        builder.emplace_instruction<BareReturnInstruction>(
+            entry, TaggedValueRef(owner));
         ControlFlowGraph *graph = builder.finalize();
 
         AllocationConstraints constraints =
@@ -328,8 +328,8 @@ namespace cl::jit
             builder.emplace_instruction<AddSMIWithSideExitInstruction>(
                 entry, TaggedValueRef(lhs), TaggedValueRef(rhs), arguments,
                 region);
-        builder.emplace_instruction<ReturnInstruction>(entry,
-                                                       TaggedValueRef(owner));
+        builder.emplace_instruction<BareReturnInstruction>(
+            entry, TaggedValueRef(owner));
         ControlFlowGraph *graph = builder.finalize();
 
         AllocationConstraints constraints =
@@ -361,8 +361,8 @@ namespace cl::jit
             entry, TaggedValueRef(lhs), TaggedValueRef(rhs));
         IsNotInstruction is_not = builder.emplace_instruction<IsNotInstruction>(
             entry, TaggedValueRef(lhs), TaggedValueRef(rhs));
-        builder.emplace_instruction<ReturnInstruction>(entry,
-                                                       TaggedValueRef(is_not));
+        builder.emplace_instruction<BareReturnInstruction>(
+            entry, TaggedValueRef(is_not));
         ControlFlowGraph *graph = builder.finalize();
 
         AllocationConstraints constraints =
@@ -399,8 +399,8 @@ namespace cl::jit
                                                                         edge);
         ParameterInstruction parameter =
             builder.emplace_parameter<ParameterInstruction>(exit);
-        ReturnInstruction return_instruction =
-            builder.emplace_instruction<ReturnInstruction>(
+        BareReturnInstruction return_instruction =
+            builder.emplace_instruction<BareReturnInstruction>(
                 exit, TaggedValueRef(parameter));
         ControlFlowGraph *graph = builder.finalize();
 
@@ -421,8 +421,8 @@ namespace cl::jit
             builder.emplace_parameter<ParameterInstruction>(entry));
         MovInstruction move =
             builder.emplace_instruction<MovInstruction>(entry, parameter);
-        builder.emplace_instruction<ReturnInstruction>(entry,
-                                                       TaggedValueRef(move));
+        builder.emplace_instruction<BareReturnInstruction>(
+            entry, TaggedValueRef(move));
         ControlFlowGraph *graph = builder.finalize();
 
         EXPECT_DEATH((void)make_aarch64_allocation_constraints(*graph),

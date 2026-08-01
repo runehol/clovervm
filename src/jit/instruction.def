@@ -446,6 +446,17 @@ CL_JIT_INSTRUCTION(UnconditionalBranch, CL_JIT_IR_LEVELS(CoreMachine),
 #undef CL_JIT_UnconditionalBranch_ATTRIBUTES
 #undef CL_JIT_UnconditionalBranch_OPERANDS
 
+#define CL_JIT_BareReturn_OPERANDS(fixed, variadic, snapshot_values)          \
+    fixed(return_value, ProgramValue, TaggedValue)
+#define CL_JIT_BareReturn_ATTRIBUTES(attribute)
+CL_JIT_INSTRUCTION(BareReturn, CL_JIT_IR_LEVELS(CoreMachine),
+                   CL_JIT_RESULT(None, None, NoDef),
+                   CL_JIT_EXACT_EFFECTS_TWO(ControlFlow, TerminateBlock),
+                   CL_JIT_BareReturn_OPERANDS,
+                   CL_JIT_BareReturn_ATTRIBUTES)
+#undef CL_JIT_BareReturn_ATTRIBUTES
+#undef CL_JIT_BareReturn_OPERANDS
+
 #define CL_JIT_Return_OPERANDS(fixed, variadic, snapshot_values)              \
     fixed(return_value, ProgramValue, TaggedValue)
 #define CL_JIT_Return_ATTRIBUTES(attribute)

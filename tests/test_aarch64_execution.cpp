@@ -200,8 +200,8 @@ namespace cl::jit
                                                                     edge);
         ParameterInstruction result =
             builder.emplace_parameter<ParameterInstruction>(target);
-        builder.emplace_instruction<ReturnInstruction>(target,
-                                                       TaggedValueRef(result));
+        builder.emplace_instruction<BareReturnInstruction>(
+            target, TaggedValueRef(result));
         ControlFlowGraph *graph = builder.finalize();
         LocationAssignments locations = assign_program_values_to_x0(*graph);
 
@@ -211,7 +211,7 @@ namespace cl::jit
 
         ASSERT_TRUE(emission);
         PublishedCode code = std::move(emission).value();
-        EXPECT_EQ(4 * sizeof(uint32_t), code.encoded_code_size());
+        EXPECT_EQ(sizeof(uint32_t), code.encoded_code_size());
         constexpr uint64_t input_bits = 0x123456789abcdef0;
         EXPECT_EQ(input_bits, execute_published_jit(code, {input_bits}));
     }
@@ -235,12 +235,12 @@ namespace cl::jit
             ConstInstruction true_result =
                 builder.emplace_instruction<ConstInstruction>(if_true,
                                                               Value::True());
-            builder.emplace_instruction<ReturnInstruction>(
+            builder.emplace_instruction<BareReturnInstruction>(
                 if_true, TaggedValueRef(true_result));
             ConstInstruction false_result =
                 builder.emplace_instruction<ConstInstruction>(if_false,
                                                               Value::False());
-            builder.emplace_instruction<ReturnInstruction>(
+            builder.emplace_instruction<BareReturnInstruction>(
                 if_false, TaggedValueRef(false_result));
             ControlFlowGraph *graph = builder.finalize();
             LocationAssignments locations = assign_program_values_to_x0(*graph);
@@ -289,8 +289,8 @@ namespace cl::jit
             entry, TaggedValueRef(condition), true_edge, false_edge);
         ParameterInstruction result =
             builder.emplace_parameter<ParameterInstruction>(join);
-        builder.emplace_instruction<ReturnInstruction>(join,
-                                                       TaggedValueRef(result));
+        builder.emplace_instruction<BareReturnInstruction>(
+            join, TaggedValueRef(result));
         ConstInstruction true_result =
             builder.emplace_instruction<ConstInstruction>(if_true,
                                                           Value::True());
@@ -343,8 +343,8 @@ namespace cl::jit
             builder.emplace_parameter<ParameterInstruction>(target);
         MovInstruction result = builder.emplace_instruction<MovInstruction>(
             target, TaggedValueRef(target_input));
-        ReturnInstruction return_instruction =
-            builder.emplace_instruction<ReturnInstruction>(
+        BareReturnInstruction return_instruction =
+            builder.emplace_instruction<BareReturnInstruction>(
                 target, TaggedValueRef(result));
         ControlFlowGraph *graph = builder.finalize();
 
@@ -366,7 +366,7 @@ namespace cl::jit
         overrides.emplace_back(
             return_instruction,
             std::vector<ProgramValueUseConstraint>{
-                {ReturnInstruction::return_value_operand_index,
+                {BareReturnInstruction::return_value_operand_index,
                  AccessTiming::Early, fixed(x0)}});
         std::vector<RegisterClassDefinition> classes;
         classes.emplace_back(RegisterClass::GPR, registers, scratch);
@@ -426,7 +426,7 @@ namespace cl::jit
                         expected_class, side_exit_region);
             MovInstruction move = builder.emplace_instruction<MovInstruction>(
                 entry, TaggedValueRef(guard));
-            builder.emplace_instruction<ReturnInstruction>(
+            builder.emplace_instruction<BareReturnInstruction>(
                 entry, TaggedValueRef(move));
             ControlFlowGraph *graph = builder.finalize();
 
@@ -514,7 +514,7 @@ namespace cl::jit
                     .emplace_instruction<InlineTagGuardWithSideExitInstruction>(
                         entry, TaggedValueRef(rhs), side_exit_arguments,
                         expected_class, side_exit_region);
-            builder.emplace_instruction<ReturnInstruction>(
+            builder.emplace_instruction<BareReturnInstruction>(
                 entry, TaggedValueRef(lhs_guard));
             ControlFlowGraph *graph = builder.finalize();
 
@@ -624,8 +624,8 @@ namespace cl::jit
                 side_exit_region);
         MovInstruction move = builder.emplace_instruction<MovInstruction>(
             entry, TaggedValueRef(add));
-        builder.emplace_instruction<ReturnInstruction>(entry,
-                                                       TaggedValueRef(move));
+        builder.emplace_instruction<BareReturnInstruction>(
+            entry, TaggedValueRef(move));
         ControlFlowGraph *graph = builder.finalize();
 
         LocationAssignmentsBuilder assignment_builder;
@@ -971,8 +971,8 @@ namespace cl::jit
         LoadStackInstruction reload =
             builder.emplace_instruction<LoadStackInstruction>(
                 entry, TaggedValueRef(store));
-        builder.emplace_instruction<ReturnInstruction>(entry,
-                                                       TaggedValueRef(reload));
+        builder.emplace_instruction<BareReturnInstruction>(
+            entry, TaggedValueRef(reload));
         ControlFlowGraph *graph = builder.finalize();
 
         LocationAssignmentsBuilder location_builder;
@@ -1000,10 +1000,7 @@ namespace cl::jit
         EXPECT_EQ(0xf94012a1, instruction_at(code, 0));
         EXPECT_EQ(0xf81f82a1, instruction_at(code, 1));
         EXPECT_EQ(0xf85f82a0, instruction_at(code, 2));
-        EXPECT_EQ(0xf9400eb6, instruction_at(code, 3));
-        EXPECT_EQ(0xf9400ab8, instruction_at(code, 4));
-        EXPECT_EQ(0xf94002b5, instruction_at(code, 5));
-        EXPECT_EQ(0xd65f03c0, instruction_at(code, 6));
+        EXPECT_EQ(0xd65f03c0, instruction_at(code, 3));
     }
 
     TEST(AArch64Execution, CallsGeneratedLeafFunction)

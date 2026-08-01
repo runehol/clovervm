@@ -88,7 +88,7 @@ namespace cl::jit
                         entry, captured, BytecodePCOffset{23});
                 builder.emplace_instruction<CheckNotImplementedInstruction>(
                     entry, TaggedValueRef(parameter), SnapshotRef(snapshot));
-                builder.emplace_instruction<ReturnInstruction>(
+                builder.emplace_instruction<BareReturnInstruction>(
                     entry, TaggedValueRef(parameter));
                 ControlFlowGraph *graph = builder.finalize();
 
@@ -114,8 +114,8 @@ namespace cl::jit
             builder.emplace_instruction<InlineTagGuardInstruction>(
                 entry, TaggedValueRef(parameter), SnapshotRef(snapshot),
                 InlineValueClass::SMIOrBoolean);
-        ReturnInstruction return_instruction =
-            builder.emplace_instruction<ReturnInstruction>(
+        BareReturnInstruction return_instruction =
+            builder.emplace_instruction<BareReturnInstruction>(
                 entry, TaggedValueRef(guard));
         ControlFlowGraph *graph = builder.finalize();
 
@@ -136,8 +136,8 @@ namespace cl::jit
         EXPECT_EQ(parameter.id(),
                   owner.side_exit_arguments()[0].instruction_id());
 
-        ReturnInstruction rewritten_return =
-            entry->instruction_at(1).as<ReturnInstruction>();
+        BareReturnInstruction rewritten_return =
+            entry->instruction_at(1).as<BareReturnInstruction>();
         EXPECT_TRUE(return_instruction.is_poisoned());
         EXPECT_EQ(owner.id(), rewritten_return.return_value().instruction_id());
 
@@ -166,9 +166,9 @@ namespace cl::jit
         AddSMIInstruction add = builder.emplace_instruction<AddSMIInstruction>(
             entry, TaggedValueRef(lhs), TaggedValueRef(rhs),
             SnapshotRef(snapshot));
-        ReturnInstruction return_instruction =
-            builder.emplace_instruction<ReturnInstruction>(entry,
-                                                           TaggedValueRef(add));
+        BareReturnInstruction return_instruction =
+            builder.emplace_instruction<BareReturnInstruction>(
+                entry, TaggedValueRef(add));
         ControlFlowGraph *graph = builder.finalize();
 
         SunkInstructionIds sunk = sink_snapshots(*graph);
@@ -187,8 +187,8 @@ namespace cl::jit
         ASSERT_EQ(1u, owner.side_exit_arguments().size());
         EXPECT_EQ(lhs.id(), owner.side_exit_arguments()[0].instruction_id());
 
-        ReturnInstruction rewritten_return =
-            entry->instruction_at(1).as<ReturnInstruction>();
+        BareReturnInstruction rewritten_return =
+            entry->instruction_at(1).as<BareReturnInstruction>();
         EXPECT_TRUE(return_instruction.is_poisoned());
         EXPECT_EQ(owner.id(), rewritten_return.return_value().instruction_id());
 

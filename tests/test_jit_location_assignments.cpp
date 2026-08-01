@@ -14,8 +14,8 @@ namespace cl::jit
             builder.emplace_parameter<ParameterInstruction>(entry);
         MovInstruction move = builder.emplace_instruction<MovInstruction>(
             entry, TaggedValueRef(parameter));
-        builder.emplace_instruction<ReturnInstruction>(entry,
-                                                       TaggedValueRef(move));
+        builder.emplace_instruction<BareReturnInstruction>(
+            entry, TaggedValueRef(move));
         builder.finalize();
 
         PhysicalRegister x0(RegisterClass::GPR, 0);
@@ -45,8 +45,8 @@ namespace cl::jit
             entry, TaggedValueRef(parameter));
         MovInstruction after = builder.emplace_instruction<MovInstruction>(
             entry, TaggedValueRef(parameter));
-        builder.emplace_instruction<ReturnInstruction>(entry,
-                                                       TaggedValueRef(after));
+        builder.emplace_instruction<BareReturnInstruction>(
+            entry, TaggedValueRef(after));
         builder.finalize();
 
         PhysicalRegister x0(RegisterClass::GPR, 0);

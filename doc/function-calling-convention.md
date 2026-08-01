@@ -201,6 +201,11 @@ continuation in `fp[1]` supports paths that must reconstruct that link state.
 Native boundary returns additionally restore the thread's published Clover
 frame frontier as described in the boundary document.
 
+JIT IR represents this distinction explicitly. `Return` performs the managed
+frame restoration above. `BareReturn` carries only a result and performs no
+managed-frame restoration; it is used by code whose surrounding ABI already
+owns that state.
+
 Exception propagation may leave a frame through unwind machinery rather than
 ordinary return, but it must preserve the same frame-chain and caller-state
 invariants. `Value::exception_marker()` is a boundary/protocol result, not an

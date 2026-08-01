@@ -111,8 +111,8 @@ namespace cl::jit
         Block *entry = builder.emplace_block();
         ConstInstruction none =
             builder.emplace_instruction<ConstInstruction>(entry, Value::None());
-        builder.emplace_instruction<ReturnInstruction>(entry,
-                                                       TaggedValueRef(none));
+        builder.emplace_instruction<BareReturnInstruction>(
+            entry, TaggedValueRef(none));
 
         ControlFlowGraph *graph = builder.finalize();
 
@@ -148,7 +148,7 @@ namespace cl::jit
             ConstInstruction constant =
                 builder.emplace_instruction<ConstInstruction>(
                     entry, retained_existing);
-            builder.emplace_instruction<ReturnInstruction>(
+            builder.emplace_instruction<BareReturnInstruction>(
                 entry, TaggedValueRef(constant));
             builder.finalize();
 
@@ -305,14 +305,14 @@ namespace cl::jit
                                                     IRLevelMask::Transition));
         EXPECT_EQ(CoreInstructionKind::Return,
                   core_instruction_kind(InstructionKind::Return));
-        EXPECT_EQ(CoreInstructionKind::Return,
-                  core_instruction_kind<ReturnInstruction>());
+        EXPECT_EQ(CoreInstructionKind::BareReturn,
+                  core_instruction_kind<BareReturnInstruction>());
         EXPECT_EQ(InstructionKind::Return,
                   instruction_kind(CoreInstructionKind::Return));
         EXPECT_EQ(MachineInstructionKind::Return,
                   machine_instruction_kind(InstructionKind::Return));
-        EXPECT_EQ(MachineInstructionKind::Return,
-                  machine_instruction_kind<ReturnInstruction>());
+        EXPECT_EQ(MachineInstructionKind::BareReturn,
+                  machine_instruction_kind<BareReturnInstruction>());
         EXPECT_FALSE(instruction_kind_is_allowed_at(InstructionKind::Snapshot,
                                                     IRLevelMask::Machine));
         EXPECT_TRUE(instruction_kind_is_allowed_at(
@@ -498,8 +498,8 @@ namespace cl::jit
             ResumeInInterpreterWithSideExitInstruction::OperandsAreIndirect);
         constexpr EffectProfile terminating_control_flow =
             EffectProfile::ControlFlow | EffectProfile::TerminateBlock;
-        EXPECT_EQ(terminating_control_flow, ReturnInstruction::MustEffects);
-        EXPECT_EQ(terminating_control_flow, ReturnInstruction::MayEffects);
+        EXPECT_EQ(terminating_control_flow, BareReturnInstruction::MustEffects);
+        EXPECT_EQ(terminating_control_flow, BareReturnInstruction::MayEffects);
     }
 
     TEST(JitInstructionConstruction, EncodesFixedAttributes)

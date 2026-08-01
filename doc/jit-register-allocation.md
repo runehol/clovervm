@@ -682,7 +682,7 @@ The AArch64 constraint producer follows the Clover JIT calling convention:
 - F64 internal block parameters use the ordinary `AnyRegister(SIMD)` default;
 - `InlineTagGuardWithSideExit` is a forwarding definition and has no result
   override;
-- a `Return` input has a fixed `x0` constraint;
+- `Return` and `BareReturn` inputs have fixed `x0` constraints;
 - conditional and unconditional branches request no allocator temporary;
 - `Const`, SMI bitwise instructions, and the virtual `Snapshot` instruction
   need no target override.
