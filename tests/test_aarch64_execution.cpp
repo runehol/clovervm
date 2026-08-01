@@ -751,6 +751,78 @@ namespace cl::jit
                        static_cast<uint64_t>(Value::from_smi(1).as.integer)}));
     }
 
+    TEST(AArch64Execution, ExecutesSubSMIWithColdOverflowSideExit)
+    {
+        test::VmTestContext vm;
+        ThreadState::ActivationScope activation_scope(vm.thread());
+        CodeObject *code_object = vm.compile_file(L"pass\n");
+        code_object->function_signature.n_parameters = 2;
+        BytecodeStateOrder state_order(*code_object);
+
+        CompilationSession session;
+        GraphBuilder builder(session, IRLevel::Machine);
+        builder.set_bytecode_state_order(state_order);
+        Block *entry = builder.emplace_block();
+        ParameterInstruction lhs =
+            builder.emplace_parameter<ParameterInstruction>(entry);
+        ParameterInstruction rhs =
+            builder.emplace_parameter<ParameterInstruction>(entry);
+        std::array<ProgramValueRef, 1> inputs = {ProgramValueRef(lhs)};
+        ParameterInstruction region_parameter =
+            builder.make_instruction<ParameterInstruction>();
+        std::vector<ProgramValueRef> region_captured(
+            state_order.size(), ProgramValueRef(region_parameter));
+        ExitToInterpreterInstruction region_exit =
+            builder.make_instruction<ExitToInterpreterInstruction>(
+                region_captured, BytecodePCOffset{17});
+        std::array<InstructionId, 1> parameter_ids = {region_parameter.id()};
+        std::array<InstructionId, 1> instructions = {region_exit.id()};
+        SideExitRegionId side_exit_region =
+            builder.make_side_exit_region(parameter_ids, instructions)->id();
+        SubSMIWithSideExitInstruction sub =
+            builder.emplace_instruction<SubSMIWithSideExitInstruction>(
+                entry, TaggedValueRef(lhs), TaggedValueRef(rhs), inputs,
+                side_exit_region);
+        MovInstruction move = builder.emplace_instruction<MovInstruction>(
+            entry, TaggedValueRef(sub));
+        builder.emplace_instruction<BareReturnInstruction>(
+            entry, TaggedValueRef(move));
+        ControlFlowGraph *graph = builder.finalize();
+
+        LocationAssignmentsBuilder assignment_builder;
+        assignment_builder.assign(ProgramValueRef(lhs),
+                                  PhysicalLocation::reg(x0));
+        assignment_builder.assign(ProgramValueRef(rhs),
+                                  PhysicalLocation::reg(x1));
+        assignment_builder.assign(ProgramValueRef(sub),
+                                  PhysicalLocation::reg(x2));
+        assignment_builder.assign(ProgramValueRef(move),
+                                  PhysicalLocation::reg(x0));
+        LocationAssignments locations =
+            std::move(assignment_builder).finalize();
+
+        CodeCache cache;
+        MachineAddress side_exit_thunk =
+            detail::MachineAddressAccess::from_pointer(
+                reinterpret_cast<const void *>(&inline_tag_guard_side_exit));
+        auto emission =
+            emit_aarch64_from_cfg(*graph, locations, cache, side_exit_thunk);
+        ASSERT_TRUE(emission);
+        PublishedCode code = std::move(emission).value();
+
+        EXPECT_EQ(
+            static_cast<uint64_t>(Value::from_smi(19).as.integer),
+            execute_published_jit(
+                code, {static_cast<uint64_t>(Value::from_smi(42).as.integer),
+                       static_cast<uint64_t>(Value::from_smi(23).as.integer)}));
+        EXPECT_EQ(
+            static_cast<uint64_t>(Value::Ellipsis().as.integer),
+            execute_published_jit(
+                code, {static_cast<uint64_t>(
+                           Value::from_smi(value_smi_min).as.integer),
+                       static_cast<uint64_t>(Value::from_smi(1).as.integer)}));
+    }
+
     TEST(AArch64Execution, CompilesPythonIdentityFunction)
     {
         PythonJitExecutionFixture fixture;

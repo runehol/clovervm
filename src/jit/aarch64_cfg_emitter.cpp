@@ -479,6 +479,22 @@ namespace cl::jit
                 }
 
                 case CL_JIT_MACHINE_INSTRUCTION_CASE(
+                    SubSMIWithSideExitInstruction, sub_instruction)
+                {
+                    assembler.emit_arithmetic_reg(
+                        ArithmeticOp::Subs,
+                        assigned_register(locations,
+                                          ProgramValueRef(instruction)),
+                        assigned_register(locations, sub_instruction.lhs()),
+                        assigned_register(locations, sub_instruction.rhs()));
+                    assembler.b(
+                        AArch64Condition::Overflow,
+                        side_exit_target(
+                            make_side_exit_binding(sub_instruction)));
+                    break;
+                }
+
+                case CL_JIT_MACHINE_INSTRUCTION_CASE(
                     InlineTagGuardWithSideExitInstruction,
                     guard_instruction)
                 {

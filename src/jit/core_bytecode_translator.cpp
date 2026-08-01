@@ -204,6 +204,17 @@ namespace cl::jit
                 }
                 break;
 
+            case Bytecode::Sub:
+            case Bytecode::SubSmi:
+                if(!lower_binary_arithmetic(
+                       block, instruction,
+                       BinaryArithmeticSMIWithSnapshotSubkind::SubSMI, inputs,
+                       state, outputs))
+                {
+                    return;
+                }
+                break;
+
             case Bytecode::And:
             case Bytecode::AndSmi:
                 if(!lower_binary_logical(block, instruction,
@@ -252,9 +263,8 @@ namespace cl::jit
     {
         (void)inputs;
         (void)outputs;
-        const OperatorInlineCache *cache = instruction.operator_cache();
-        assert(cache != nullptr);
-        assert(!cache->empty());
+        assert(instruction.operator_cache() != nullptr);
+        assert(!instruction.operator_cache()->empty());
         emit_unsupported(block, instruction, state);
         return false;
     }

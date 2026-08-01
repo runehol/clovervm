@@ -310,6 +310,48 @@ namespace cl::jit
     }
 
     TEST(JitCoreBytecodeTranslator,
+         LowersSubAndSubSmiThroughBinaryArithmeticFamily)
+    {
+        TranslatorFixture fixture;
+        {
+            CodeObjectBuilder::TemporaryReg temporary(fixture.code_builder, 1);
+            fixture.code_builder.emit_lda_smi(0, 19).value();
+            fixture.code_builder.emit_star(0, temporary).value();
+            fixture.code_builder.emit_lda_smi(0, 23).value();
+            fixture.code_builder
+                .emit_operator_reg(
+                    0, Bytecode::Sub, temporary,
+                    OperatorBytecodeFormat::WithCacheAndNotImplementedCheck)
+                .value();
+            fixture.code_builder
+                .emit_operator_smi(
+                    0, Bytecode::SubSmi, -3,
+                    OperatorBytecodeFormat::WithCacheAndNotImplementedCheck)
+                .value();
+            fixture.code_builder.emit_return(0).value();
+        }
+
+        ControlFlowGraph *graph = fixture.translate();
+        Block *entry = graph->entry_block();
+        std::vector<Instruction> subtracts =
+            instructions_of_kind(entry, InstructionKind::SubSMI);
+        ASSERT_EQ(2u, subtracts.size());
+        EXPECT_EQ(BinaryArithmeticSMIWithSnapshotSubkind::SubSMI,
+                  subtracts[0]
+                      .as<BinaryArithmeticSMIWithSnapshotInstruction>()
+                      .subkind());
+        EXPECT_EQ(BinaryArithmeticSMIWithSnapshotSubkind::SubSMI,
+                  subtracts[1]
+                      .as<BinaryArithmeticSMIWithSnapshotInstruction>()
+                      .subkind());
+        EXPECT_EQ(
+            2u, instructions_of_kind(entry, InstructionKind::Snapshot).size());
+        EXPECT_EQ(3u,
+                  instructions_of_kind(entry, InstructionKind::InlineTagGuard)
+                      .size());
+    }
+
+    TEST(JitCoreBytecodeTranslator,
          LowersBinaryLogicalBytecodesThroughTheirSMIFamily)
     {
         TranslatorFixture fixture;

@@ -45,6 +45,24 @@ namespace cl::jit
         using InstructionPositions =
             absl::flat_hash_map<InstructionId, InstructionProgramPosition>;
 
+        BinaryArithmeticSMIWithSideExitSubkind machine_arithmetic_subkind(
+            BinaryArithmeticSMIWithSnapshotSubkind subkind)
+        {
+            switch(subkind)
+            {
+                case BinaryArithmeticSMIWithSnapshotSubkind::AddSMI:
+                    return BinaryArithmeticSMIWithSideExitSubkind::
+                        AddSMIWithSideExit;
+                case BinaryArithmeticSMIWithSnapshotSubkind::SubSMI:
+                    return BinaryArithmeticSMIWithSideExitSubkind::
+                        SubSMIWithSideExit;
+                case BinaryArithmeticSMIWithSnapshotSubkind::MulSMI:
+                    return BinaryArithmeticSMIWithSideExitSubkind::
+                        MulSMIWithSideExit;
+            }
+            __builtin_unreachable();
+        }
+
         PlannedSideExit
         plan_side_exit(const ControlFlowGraph &graph, const Block &block,
                        const Instruction &owner, SnapshotRef snapshot,
@@ -153,14 +171,18 @@ namespace cl::jit
                             instruction.id(),
                             InstructionProgramPosition{block, ordinal});
                     }
+                    if(instruction_family_kind(instruction.kind()) ==
+                       InstructionFamilyKind::BinaryArithmeticSMIWithSnapshot)
+                    {
+                        plans.push_back(plan_side_exit(
+                            graph, *block, instruction,
+                            instruction
+                                .as<BinaryArithmeticSMIWithSnapshotInstruction>()
+                                .snapshot(),
+                            sunk_instructions, positions, ordinal));
+                    }
                     switch(instruction.kind())
                     {
-                        case InstructionKind::AddSMI:
-                            plans.push_back(plan_side_exit(
-                                graph, *block, instruction,
-                                instruction.as<AddSMIInstruction>().snapshot(),
-                                sunk_instructions, positions, ordinal));
-                            break;
                         case InstructionKind::InlineTagGuard:
                             plans.push_back(plan_side_exit(
                                 graph, *block, instruction,
@@ -255,20 +277,23 @@ namespace cl::jit
                 }
 
                 const PlannedSideExit &plan = plans_[found->second];
+                if(instruction_family_kind(instruction.kind()) ==
+                   InstructionFamilyKind::BinaryArithmeticSMIWithSnapshot)
+                {
+                    const BuiltSideExitRegion &region =
+                        region_for_snapshot(context, plan);
+                    auto arithmetic =
+                        instruction
+                            .as<BinaryArithmeticSMIWithSnapshotInstruction>();
+                    return RewriteResult::replace(
+                        context.make_instruction<
+                            BinaryArithmeticSMIWithSideExitInstruction>(
+                            machine_arithmetic_subkind(arithmetic.subkind()),
+                            arithmetic.lhs(), arithmetic.rhs(),
+                            region.arguments, region.region->id()));
+                }
                 switch(instruction.kind())
                 {
-                    case InstructionKind::AddSMI:
-                        {
-                            const BuiltSideExitRegion &region =
-                                region_for_snapshot(context, plan);
-                            AddSMIInstruction add =
-                                instruction.as<AddSMIInstruction>();
-                            return RewriteResult::replace(
-                                context.make_instruction<
-                                    AddSMIWithSideExitInstruction>(
-                                    add.lhs(), add.rhs(), region.arguments,
-                                    region.region->id()));
-                        }
                     case InstructionKind::InlineTagGuard:
                         {
                             const BuiltSideExitRegion &region =
@@ -481,10 +506,15 @@ namespace cl::jit
         std::optional<SnapshotRef>
         side_exit_snapshot_for(Instruction instruction)
         {
+            if(instruction_family_kind(instruction.kind()) ==
+               InstructionFamilyKind::BinaryArithmeticSMIWithSnapshot)
+            {
+                return instruction
+                    .as<BinaryArithmeticSMIWithSnapshotInstruction>()
+                    .snapshot();
+            }
             switch(instruction.kind())
             {
-                case InstructionKind::AddSMI:
-                    return instruction.as<AddSMIInstruction>().snapshot();
                 case InstructionKind::InlineTagGuard:
                     return instruction.as<InlineTagGuardInstruction>()
                         .snapshot();

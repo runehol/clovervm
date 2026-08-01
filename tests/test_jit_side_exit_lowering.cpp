@@ -201,6 +201,55 @@ namespace cl::jit
                   region.instruction_at(0).kind());
     }
 
+    TEST(JitSideExitLowering, PreservesBinaryArithmeticSubkinds)
+    {
+        CompilationSession session;
+        GraphBuilder builder(session, IRLevel::Core);
+        Block *entry = builder.emplace_block();
+        ParameterInstruction lhs =
+            builder.emplace_parameter<ParameterInstruction>(entry);
+        ParameterInstruction rhs =
+            builder.emplace_parameter<ParameterInstruction>(entry);
+        std::array<BinaryArithmeticSMIWithSnapshotSubkind, 3> core_subkinds = {
+            BinaryArithmeticSMIWithSnapshotSubkind::AddSMI,
+            BinaryArithmeticSMIWithSnapshotSubkind::SubSMI,
+            BinaryArithmeticSMIWithSnapshotSubkind::MulSMI};
+        std::array<BinaryArithmeticSMIWithSideExitSubkind, 3> machine_subkinds =
+            {BinaryArithmeticSMIWithSideExitSubkind::AddSMIWithSideExit,
+             BinaryArithmeticSMIWithSideExitSubkind::SubSMIWithSideExit,
+             BinaryArithmeticSMIWithSideExitSubkind::MulSMIWithSideExit};
+        std::array<ProgramValueRef, 1> captured = {ProgramValueRef(lhs)};
+        Instruction result = lhs;
+        for(size_t index = 0; index < core_subkinds.size(); ++index)
+        {
+            SnapshotInstruction snapshot =
+                builder.emplace_instruction<SnapshotInstruction>(
+                    entry, captured,
+                    BytecodePCOffset{static_cast<uint32_t>(10 + index)});
+            result = builder.emplace_instruction<
+                BinaryArithmeticSMIWithSnapshotInstruction>(
+                entry, core_subkinds[index], TaggedValueRef(lhs),
+                TaggedValueRef(rhs), SnapshotRef(snapshot));
+        }
+        builder.emplace_instruction<BareReturnInstruction>(
+            entry, TaggedValueRef(result));
+        ControlFlowGraph *graph = builder.finalize();
+
+        SunkInstructionIds sunk = sink_snapshots(*graph);
+        auto lowered = lower_side_exits(session, *graph, sunk);
+
+        ASSERT_TRUE(lowered);
+        EXPECT_TRUE(std::move(lowered).value());
+        ASSERT_EQ(4u, entry->instructions().size());
+        for(size_t index = 0; index < machine_subkinds.size(); ++index)
+        {
+            EXPECT_EQ(machine_subkinds[index],
+                      entry->instruction_at(index)
+                          .as<BinaryArithmeticSMIWithSideExitInstruction>()
+                          .subkind());
+        }
+    }
+
     TEST(JitSideExitLowering, RegionResumeCapturesReplacementAddSMIResult)
     {
         CompilationSession session;

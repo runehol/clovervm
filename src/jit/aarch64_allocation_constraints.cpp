@@ -208,6 +208,8 @@ namespace cl::jit
                     case MachineInstructionKind::Const:
                     case MachineInstructionKind::Uninitialized:
                     case MachineInstructionKind::AddSMIWithSideExit:
+                    case MachineInstructionKind::SubSMIWithSideExit:
+                    case MachineInstructionKind::MulSMIWithSideExit:
                     case MachineInstructionKind::AndSMI:
                     case MachineInstructionKind::OrrSMI:
                     case MachineInstructionKind::EorSMI:

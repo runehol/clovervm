@@ -171,7 +171,9 @@ CL_JIT_INSTRUCTION(StoreStackPointer, CL_JIT_IR_LEVELS(CoreMachine),
     fixed(snapshot, Snapshot, None)
 #define CL_JIT_BinaryArithmeticSMIWithSnapshot_ATTRIBUTES(attribute)
 #define CL_JIT_BinaryArithmeticSMIWithSnapshot_SUBKINDS(each, ...)            \
-    each(AddSMI, __VA_ARGS__)
+    each(AddSMI, __VA_ARGS__)                                                  \
+    each(SubSMI, __VA_ARGS__)                                                  \
+    each(MulSMI, __VA_ARGS__)
 CL_JIT_INSTRUCTION_FAMILY(
     BinaryArithmeticSMIWithSnapshot, CL_JIT_IR_LEVELS(Core),
     CL_JIT_RESULT(ProgramValue, TaggedValue, Def),
@@ -191,7 +193,9 @@ CL_JIT_INSTRUCTION_FAMILY(
 #define CL_JIT_BinaryArithmeticSMIWithSideExit_ATTRIBUTES(attribute)           \
     attribute(side_exit_region, SideExitRegionId)
 #define CL_JIT_BinaryArithmeticSMIWithSideExit_SUBKINDS(each, ...)            \
-    each(AddSMIWithSideExit, __VA_ARGS__)
+    each(AddSMIWithSideExit, __VA_ARGS__)                                      \
+    each(SubSMIWithSideExit, __VA_ARGS__)                                      \
+    each(MulSMIWithSideExit, __VA_ARGS__)
 CL_JIT_INSTRUCTION_FAMILY(
     BinaryArithmeticSMIWithSideExit, CL_JIT_IR_LEVELS(Machine),
     CL_JIT_RESULT(ProgramValue, TaggedValue, Def),
