@@ -324,7 +324,7 @@ namespace cl::jit
             InstructionKind::ResumeInInterpreter, IRLevelMask::Machine));
     }
 
-    TEST(JitInstructionSchema, EncodesResultsAndDenseSingletonFamilies)
+    TEST(JitInstructionSchema, EncodesResultsAndDenseFamilies)
     {
         EXPECT_EQ(ResultClass::None,
                   instruction_result_class(InstructionKind::Return));
@@ -348,13 +348,50 @@ namespace cl::jit
                   instruction_family_kind(InstructionKind::Parameter));
         EXPECT_EQ(InstructionFamilyKind::ParameterF64,
                   instruction_family_kind(InstructionKind::ParameterF64));
+        EXPECT_EQ(InstructionFamilyKind::IsComparison,
+                  instruction_family_kind(InstructionKind::Is));
+        EXPECT_EQ(InstructionFamilyKind::IsComparison,
+                  instruction_family_kind(InstructionKind::IsNot));
         EXPECT_EQ(0u, instruction_subkind(InstructionKind::Parameter));
         EXPECT_EQ(0u, instruction_subkind(InstructionKind::ParameterF64));
+        EXPECT_EQ(static_cast<uint8_t>(IsComparisonSubkind::Is),
+                  instruction_subkind(InstructionKind::Is));
+        EXPECT_EQ(static_cast<uint8_t>(IsComparisonSubkind::IsNot),
+                  instruction_subkind(InstructionKind::IsNot));
         EXPECT_EQ(
             &instruction_family_metadata(InstructionFamilyKind::Parameter),
             &instruction_kind_metadata(InstructionKind::Parameter));
         EXPECT_EQ(&instruction_kind_metadata(InstructionKind::Parameter) + 1,
                   &instruction_kind_metadata(InstructionKind::ParameterF64));
+        EXPECT_EQ(&instruction_kind_metadata(InstructionKind::Is),
+                  &instruction_kind_metadata(InstructionKind::IsNot));
+    }
+
+    TEST(JitInstructionSchema, ConstructsConcreteMembersThroughFamilySchema)
+    {
+        static_assert(
+            std::is_base_of_v<IsComparisonInstruction, IsInstruction>);
+        static_assert(
+            std::is_base_of_v<IsComparisonInstruction, IsNotInstruction>);
+        static_assert(sizeof(IsComparisonInstruction) == sizeof(Instruction));
+
+        CompilationSession session;
+        GraphBuilder builder(session, IRLevel::Core);
+        ParameterInstruction lhs =
+            builder.make_instruction<ParameterInstruction>();
+        ParameterInstruction rhs =
+            builder.make_instruction<ParameterInstruction>();
+        IsInstruction is = builder.make_instruction<IsInstruction>(
+            TaggedValueRef(lhs), TaggedValueRef(rhs));
+        IsNotInstruction is_not = builder.make_instruction<IsNotInstruction>(
+            TaggedValueRef(lhs), TaggedValueRef(rhs));
+
+        EXPECT_EQ(IsComparisonSubkind::Is,
+                  Instruction(is).as<IsComparisonInstruction>().subkind());
+        EXPECT_EQ(IsComparisonSubkind::IsNot,
+                  Instruction(is_not).as<IsComparisonInstruction>().subkind());
+        EXPECT_EQ(lhs.id(), is.lhs().instruction_id());
+        EXPECT_EQ(rhs.id(), is_not.rhs().instruction_id());
     }
 
     TEST(JitInstructionSchema, GeneratesConcreteTypedInstructionClasses)

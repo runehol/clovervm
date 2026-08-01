@@ -203,13 +203,50 @@ namespace cl::jit
 
     enum class InstructionFamilyKind : uint8_t
     {
+#define CL_JIT_INSTRUCTION_FAMILY(name, ir_levels, result, effects, operands,  \
+                                  attributes, subkinds)                        \
+    name,
 #define CL_JIT_INSTRUCTION(name, ir_levels, result, effects, operands,         \
                            attributes)                                         \
     name,
 #include "jit/instruction.def"
 #undef CL_JIT_INSTRUCTION
+#undef CL_JIT_INSTRUCTION_FAMILY
         Count,
     };
+
+#define CL_JIT_RESULT(result_class, representation, definition_kind)           \
+    InstructionResultInfo                                                      \
+    {                                                                          \
+        ResultClass::result_class, ValueRepresentation::representation,        \
+            ResultDefinitionKind::definition_kind                              \
+    }
+#define CL_JIT_INSTRUCTION_FAMILY(name, ir_levels, result, effects, operands,  \
+                                  attributes, subkinds)                        \
+    inline constexpr InstructionResultInfo name##InstructionResult = result;
+#define CL_JIT_INSTRUCTION(name, ir_levels, result, effects, operands,         \
+                           attributes)                                         \
+    inline constexpr InstructionResultInfo name##InstructionResult = result;
+#include "jit/instruction.def"
+#undef CL_JIT_INSTRUCTION
+#undef CL_JIT_INSTRUCTION_FAMILY
+#undef CL_JIT_RESULT
+
+#define CL_JIT_DECLARE_SUBKIND(subkind, family, ...) subkind,
+#define CL_JIT_INSTRUCTION_FAMILY(name, ir_levels, result, effects, operands,  \
+                                  attributes, subkinds)                        \
+    enum class name##Subkind : uint8_t{                                        \
+        subkinds(CL_JIT_DECLARE_SUBKIND, name) Count,                          \
+    };                                                                         \
+    static_assert(static_cast<uint8_t>(name##Subkind::Count) <= 16);
+#define CL_JIT_INSTRUCTION(name, ir_levels, result, effects, operands,         \
+                           attributes)                                         \
+    CL_JIT_INSTRUCTION_FAMILY(name, ir_levels, result, effects, operands,      \
+                              attributes, CL_JIT_SINGLETON_SUBKINDS)
+#include "jit/instruction.def"
+#undef CL_JIT_INSTRUCTION
+#undef CL_JIT_INSTRUCTION_FAMILY
+#undef CL_JIT_DECLARE_SUBKIND
 
     static constexpr uint16_t InstructionFamilyMask = 0x00ff;
     static constexpr uint16_t InstructionSubkindMask = 0x0f00;
@@ -252,14 +289,23 @@ namespace cl::jit
 
     enum class InstructionKind : uint16_t
     {
-#define CL_JIT_RESULT(result_class, representation, definition_kind)           \
-    ResultClass::result_class, ValueRepresentation::representation
+#define CL_JIT_DECLARE_INSTRUCTION_KIND(subkind, family, ...)                  \
+    subkind = encode_instruction_kind(                                         \
+        InstructionFamilyKind::family,                                         \
+        static_cast<uint8_t>(family##Subkind::subkind),                        \
+        family##InstructionResult.result_class,                                \
+        family##InstructionResult.representation),
+#define CL_JIT_INSTRUCTION_FAMILY(name, ir_levels, result, effects, operands,  \
+                                  attributes, subkinds)                        \
+    subkinds(CL_JIT_DECLARE_INSTRUCTION_KIND, name)
 #define CL_JIT_INSTRUCTION(name, ir_levels, result, effects, operands,         \
                            attributes)                                         \
-    name = encode_instruction_kind(InstructionFamilyKind::name, 0, result),
+    CL_JIT_INSTRUCTION_FAMILY(name, ir_levels, result, effects, operands,      \
+                              attributes, CL_JIT_SINGLETON_SUBKINDS)
 #include "jit/instruction.def"
 #undef CL_JIT_INSTRUCTION
-#undef CL_JIT_RESULT
+#undef CL_JIT_INSTRUCTION_FAMILY
+#undef CL_JIT_DECLARE_INSTRUCTION_KIND
     };
 
     // clang-format off
@@ -290,10 +336,16 @@ namespace cl::jit
 #define CL_JIT_LEVEL_KIND_MEMBER(name, level)                                 \
     CL_JIT_LEVEL_KIND_JOIN(CL_JIT_LEVEL_KIND_MEMBER_, level)(name)
 #define CL_JIT_IR_LEVELS(set) set
+#define CL_JIT_LEVEL_FAMILY_SUBKIND(subkind, family, ir_levels)               \
+    CL_JIT_IR_LEVEL_MEMBERS(                                                   \
+        ir_levels, CL_JIT_LEVEL_KIND_MEMBER, subkind)
+#define CL_JIT_INSTRUCTION_FAMILY(name, ir_levels, result, effects, operands, \
+                                  attributes, subkinds)                        \
+    subkinds(CL_JIT_LEVEL_FAMILY_SUBKIND, name, ir_levels)
 #define CL_JIT_INSTRUCTION(name, ir_levels, result, effects, operands,        \
                            attributes)                                        \
-    CL_JIT_IR_LEVEL_MEMBERS(                                                   \
-        ir_levels, CL_JIT_LEVEL_KIND_MEMBER, name)
+    CL_JIT_INSTRUCTION_FAMILY(name, ir_levels, result, effects, operands,     \
+                              attributes, CL_JIT_SINGLETON_SUBKINDS)
 
 #define CL_JIT_LEVEL_KIND_MEMBER_Semantic(name)                               \
     name = static_cast<uint16_t>(InstructionKind::name),
@@ -360,6 +412,8 @@ namespace cl::jit
 #undef CL_JIT_LEVEL_KIND_MEMBER_Semantic
 
 #undef CL_JIT_INSTRUCTION
+#undef CL_JIT_INSTRUCTION_FAMILY
+#undef CL_JIT_LEVEL_FAMILY_SUBKIND
 #undef CL_JIT_IR_LEVELS
 #undef CL_JIT_LEVEL_KIND_MEMBER
 #undef CL_JIT_IR_LEVEL_MEMBERS_SemanticCoreMachineTransition
@@ -441,12 +495,20 @@ namespace cl::jit
     {
         switch(kind)
         {
+#define CL_JIT_VALID_INSTRUCTION_SUBKIND(subkind, family, ...)                 \
+    case InstructionKind::subkind:                                             \
+        return true;
+#define CL_JIT_INSTRUCTION_FAMILY(name, ir_levels, result, effects, operands,  \
+                                  attributes, subkinds)                        \
+    subkinds(CL_JIT_VALID_INSTRUCTION_SUBKIND, name)
 #define CL_JIT_INSTRUCTION(name, ir_levels, result, effects, operands,         \
                            attributes)                                         \
-    case InstructionKind::name:                                                \
-        return true;
+    CL_JIT_INSTRUCTION_FAMILY(name, ir_levels, result, effects, operands,      \
+                              attributes, CL_JIT_SINGLETON_SUBKINDS)
 #include "jit/instruction.def"
 #undef CL_JIT_INSTRUCTION
+#undef CL_JIT_INSTRUCTION_FAMILY
+#undef CL_JIT_VALID_INSTRUCTION_SUBKIND
         }
         return false;
     }
@@ -671,12 +733,21 @@ namespace cl::jit
     static_assert(std::is_trivially_destructible_v<InstructionEntry>);
 #define CL_JIT_INSTRUCTION(name, ir_levels, result, effects, operands,         \
                            attributes)                                         \
+    CL_JIT_INSTRUCTION_FAMILY(name, ir_levels, result, effects, operands,      \
+                              attributes, CL_JIT_SINGLETON_SUBKINDS)
+#define CL_JIT_STATIC_ASSERT_SUBKIND(subkind, family, result)                  \
     static_assert(                                                             \
-        instruction_kind_has_valid_result_encoding(InstructionKind::name));    \
-    static_assert(instruction_family_kind(InstructionKind::name) ==            \
-                  InstructionFamilyKind::name);                                \
-    static_assert(instruction_subkind(InstructionKind::name) == 0);
+        instruction_kind_has_valid_result_encoding(InstructionKind::subkind)); \
+    static_assert(instruction_family_kind(InstructionKind::subkind) ==         \
+                  InstructionFamilyKind::family);                              \
+    static_assert(instruction_subkind(InstructionKind::subkind) ==             \
+                  static_cast<uint8_t>(family##Subkind::subkind));
+#define CL_JIT_INSTRUCTION_FAMILY(name, ir_levels, result, effects, operands,  \
+                                  attributes, subkinds)                        \
+    subkinds(CL_JIT_STATIC_ASSERT_SUBKIND, name, result)
 #include "jit/instruction.def"
+#undef CL_JIT_INSTRUCTION_FAMILY
+#undef CL_JIT_STATIC_ASSERT_SUBKIND
 #undef CL_JIT_INSTRUCTION
     static_assert(!is_valid_instruction_kind(
         static_cast<InstructionKind>(InstructionEntry::PoisonedStorageTag)));
@@ -701,10 +772,10 @@ namespace cl::jit
         bool is_poisoned() const;
         InstructionKind kind() const;
 
-        template <typename ConcreteInstruction> ConcreteInstruction as() const
+        template <typename TypedInstruction> TypedInstruction as() const
         {
-            assert(kind() == ConcreteInstruction::Kind);
-            return ConcreteInstruction(storage_, id_);
+            assert(TypedInstruction::accepts_kind(kind()));
+            return TypedInstruction(storage_, id_);
         }
 
         ResultClass result_class() const
@@ -1193,35 +1264,23 @@ namespace cl::jit
 #define CL_JIT_DECLARE_PROGRAM_VALUES_INDEX(name, role) name,
 #define CL_JIT_IR_LEVELS(set) IRLevelMask::set
 #define CL_JIT_RESULT(result_class, representation, definition_kind)           \
-    InstructionResultInfo                                                      \
-    {                                                                          \
-        ResultClass::result_class, ValueRepresentation::representation,        \
-            ResultDefinitionKind::definition_kind                              \
-    }
-#define CL_JIT_EFFECT_BOUNDS(must_effects, may_effects)                        \
-    InstructionEffectBounds                                                    \
-    {                                                                          \
-        EffectProfile::must_effects, EffectProfile::may_effects                \
-    }
-#define CL_JIT_EFFECT_BOUNDS_MAY_TWO(must_effects, may_first, may_second)      \
-    InstructionEffectBounds                                                    \
-    {                                                                          \
-        EffectProfile::must_effects,                                            \
-            EffectProfile::may_first | EffectProfile::may_second               \
-    }
-#define CL_JIT_EXACT_EFFECTS_TWO(first, second)                                \
-    InstructionEffectBounds                                                    \
-    {                                                                          \
-        EffectProfile::first | EffectProfile::second,                          \
-            EffectProfile::first | EffectProfile::second                       \
-    }
-#define CL_JIT_EXACT_EFFECTS_THREE(first, second, third)                       \
-    InstructionEffectBounds                                                    \
-    {                                                                          \
+    (InstructionResultInfo{ResultClass::result_class,                          \
+                           ValueRepresentation::representation,                \
+                           ResultDefinitionKind::definition_kind})
+#define CL_JIT_EFFECT_BOUNDS(must_effects, may_effects)                         \
+    (InstructionEffectBounds{EffectProfile::must_effects,                      \
+                             EffectProfile::may_effects})
+#define CL_JIT_EFFECT_BOUNDS_MAY_TWO(must_effects, may_first, may_second)       \
+    (InstructionEffectBounds{EffectProfile::must_effects,                      \
+                             EffectProfile::may_first |                        \
+                                 EffectProfile::may_second})
+#define CL_JIT_EXACT_EFFECTS_TWO(first, second)                                 \
+    (InstructionEffectBounds{EffectProfile::first | EffectProfile::second,     \
+                             EffectProfile::first | EffectProfile::second})
+#define CL_JIT_EXACT_EFFECTS_THREE(first, second, third)                        \
+    (InstructionEffectBounds{                                                  \
         EffectProfile::first | EffectProfile::second | EffectProfile::third,   \
-            EffectProfile::first | EffectProfile::second |                     \
-                EffectProfile::third                                           \
-    }
+        EffectProfile::first | EffectProfile::second | EffectProfile::third})
 #define CL_JIT_COUNT_FIXED_OPERAND(...) +1
 #define CL_JIT_COUNT_NO_OPERAND(...) +0
 #define CL_JIT_HAS_NO_VARIADIC(...) || false
@@ -1320,9 +1379,22 @@ namespace cl::jit
             inline_words_at<index,                                             \
                             InstructionAttributeStorage_##attribute_class>());  \
     }
-#define CL_JIT_INSTRUCTION(name, ir_levels, result, effects, operands,         \
-                           attributes)                                         \
-    class name##Instruction final : public Instruction                         \
+#define CL_JIT_DECLARE_SINGLETON_IDENTITY(name)                               \
+    static constexpr name##Subkind Subkind = name##Subkind::name;             \
+    static constexpr InstructionKind Kind = InstructionKind::name;            \
+    static constexpr bool accepts_kind(InstructionKind kind)                  \
+    {                                                                          \
+        return kind == Kind;                                                   \
+    }
+#define CL_JIT_DECLARE_FAMILY_IDENTITY(name)                                  \
+    static constexpr bool accepts_kind(InstructionKind kind)                  \
+    {                                                                          \
+        return instruction_family_kind(kind) == FamilyKind;                    \
+    }
+#define CL_JIT_DECLARE_INSTRUCTION_FAMILY(                                    \
+    name, ir_levels, result, effects, operands, attributes, class_modifier,   \
+    identity)                                                                  \
+    class name##Instruction class_modifier : public Instruction                \
     {                                                                          \
     private:                                                                   \
         enum class OperandIndex : size_t                                       \
@@ -1358,7 +1430,10 @@ namespace cl::jit
         }();                                                                   \
                                                                                \
     public:                                                                    \
-        static constexpr InstructionKind Kind = InstructionKind::name;         \
+        using Family = name##Instruction;                                      \
+        static constexpr InstructionFamilyKind FamilyKind =                    \
+            InstructionFamilyKind::name;                                      \
+        identity(name)                                                         \
         static constexpr ResultClass Result = (result).result_class;           \
         static constexpr ValueRepresentation Representation =                  \
             (result).representation;                                           \
@@ -1371,6 +1446,13 @@ namespace cl::jit
             IsVariadic ||                                                      \
             FixedOperandCount + AttributeWordCount > InlineSlotCount ||        \
             !DirectAttributesAligned;                                          \
+                                                                               \
+        name##Subkind subkind() const                                          \
+        {                                                                      \
+            assert(accepts_kind(Instruction::kind()));                         \
+            return static_cast<name##Subkind>(                                 \
+                instruction_subkind(Instruction::kind()));                     \
+        }                                                                      \
                                                                                \
         template <bool Indirect = OperandsAreIndirect>                         \
         requires(Indirect)                                                     \
@@ -1499,16 +1581,26 @@ namespace cl::jit
             return inline_slots;                                               \
         }                                                                      \
                                                                                \
-        friend class CompilationStorage;                                       \
-        friend class Instruction;                                              \
+    protected:                                                                 \
         name##Instruction(const CompilationStorage *storage, InstructionId id) \
             : Instruction(storage, id)                                         \
         {                                                                      \
         }                                                                      \
                                                                                \
+    private:                                                                   \
+        friend class CompilationStorage;                                       \
+        friend class Instruction;                                              \
+        static constexpr InstructionKind encoded_kind(name##Subkind subkind)  \
+        {                                                                      \
+            return static_cast<InstructionKind>(encode_instruction_kind(       \
+                FamilyKind, static_cast<uint8_t>(subkind), Result,             \
+                Representation));                                              \
+        }                                                                      \
+                                                                               \
         template <bool Indirect = OperandsAreIndirect>                         \
         requires(!Indirect)                                                    \
         static InstructionEntry make_entry(                                    \
+            name##Subkind subkind,                                             \
             operands(CL_JIT_DECLARE_FIXED_PARAMETER,                           \
                      CL_JIT_DECLARE_VARIADIC_PARAMETER,                        \
                      CL_JIT_DECLARE_PROGRAM_VALUES_PARAMETER)                  \
@@ -1516,7 +1608,8 @@ namespace cl::jit
                     InstructionConstructorEnd = {})                            \
         {                                                                      \
             return make_instruction_entry(                                    \
-                Kind, static_cast<uint16_t>(FixedOperandCount), false,         \
+                encoded_kind(subkind),                                         \
+                static_cast<uint16_t>(FixedOperandCount), false,               \
                 fixed_inline_slots(                                            \
                     operands(CL_JIT_PASS_ARGUMENT, CL_JIT_PASS_ARGUMENT,       \
                              CL_JIT_PASS_ARGUMENT)                             \
@@ -1526,6 +1619,7 @@ namespace cl::jit
         template <bool Indirect = OperandsAreIndirect>                         \
         requires(Indirect)                                                     \
         static InstructionEntry make_entry(                                    \
+            name##Subkind subkind,                                             \
             uint32_t indirect_offset,                                          \
             std::span<Slot> indirect_slots,                                    \
             operands(CL_JIT_DECLARE_FIXED_PARAMETER,                           \
@@ -1535,7 +1629,7 @@ namespace cl::jit
                     InstructionConstructorEnd = {})                            \
         {                                                                      \
             return make_instruction_entry(                                    \
-                Kind,                                                          \
+                encoded_kind(subkind),                                         \
                 operand_count_for(                                             \
                     operands(CL_JIT_PASS_ARGUMENT, CL_JIT_PASS_ARGUMENT,       \
                              CL_JIT_PASS_ARGUMENT)                             \
@@ -1551,13 +1645,59 @@ namespace cl::jit
     static_assert(sizeof(name##Instruction) == sizeof(Instruction));           \
     static_assert(std::is_base_of_v<Instruction, name##Instruction>);          \
     static_assert(std::is_trivially_destructible_v<name##Instruction>);        \
-    static_assert(name##Instruction::Result ==                                 \
-                  instruction_result_class(name##Instruction::Kind));          \
-    static_assert(name##Instruction::Representation ==                         \
-                  instruction_value_representation(name##Instruction::Kind));  \
     static_assert(name##Instruction::AllowedIRLevels != IRLevelMask::None);
+#define CL_JIT_DECLARE_CONCRETE_SUBKIND(subkind, family, ...)                  \
+    class subkind##Instruction final : public family##Instruction              \
+    {                                                                          \
+    public:                                                                    \
+        using Family = family##Instruction;                                    \
+        static constexpr family##Subkind Subkind =                             \
+            family##Subkind::subkind;                                          \
+        static constexpr InstructionKind Kind = InstructionKind::subkind;     \
+        static constexpr bool accepts_kind(InstructionKind kind)              \
+        {                                                                      \
+            return kind == Kind;                                               \
+        }                                                                      \
+                                                                               \
+    private:                                                                   \
+        friend class CompilationStorage;                                       \
+        friend class Instruction;                                              \
+        subkind##Instruction(const CompilationStorage *storage,                \
+                             InstructionId id)                                 \
+            : family##Instruction(storage, id)                                 \
+        {                                                                      \
+        }                                                                      \
+    };                                                                         \
+    static_assert(sizeof(subkind##Instruction) == sizeof(Instruction));        \
+    static_assert(                                                             \
+        std::is_base_of_v<family##Instruction, subkind##Instruction>);         \
+    static_assert(std::is_trivially_destructible_v<subkind##Instruction>);
+#define CL_JIT_ASSERT_CONCRETE_SUBKIND(subkind, family, ...)                   \
+    static_assert(family##Instruction::Result ==                               \
+                  instruction_result_class(InstructionKind::subkind));         \
+    static_assert(family##Instruction::Representation ==                       \
+                  instruction_value_representation(InstructionKind::subkind));
+#define CL_JIT_INSTRUCTION_FAMILY(name, ir_levels, result, effects, operands, \
+                                  attributes, subkinds)                        \
+    CL_JIT_DECLARE_INSTRUCTION_FAMILY(                                         \
+        name, ir_levels, result, effects, operands, attributes, ,              \
+        CL_JIT_DECLARE_FAMILY_IDENTITY)                                        \
+    subkinds(CL_JIT_DECLARE_CONCRETE_SUBKIND, name)                            \
+    subkinds(CL_JIT_ASSERT_CONCRETE_SUBKIND, name)
+#define CL_JIT_INSTRUCTION(name, ir_levels, result, effects, operands,         \
+                           attributes)                                         \
+    CL_JIT_DECLARE_INSTRUCTION_FAMILY(                                         \
+        name, ir_levels, result, effects, operands, attributes, final,         \
+        CL_JIT_DECLARE_SINGLETON_IDENTITY)                                     \
+    CL_JIT_SINGLETON_SUBKINDS(CL_JIT_ASSERT_CONCRETE_SUBKIND, name)
 #include "jit/instruction.def"
 #undef CL_JIT_INSTRUCTION
+#undef CL_JIT_INSTRUCTION_FAMILY
+#undef CL_JIT_ASSERT_CONCRETE_SUBKIND
+#undef CL_JIT_DECLARE_CONCRETE_SUBKIND
+#undef CL_JIT_DECLARE_INSTRUCTION_FAMILY
+#undef CL_JIT_DECLARE_FAMILY_IDENTITY
+#undef CL_JIT_DECLARE_SINGLETON_IDENTITY
 #undef CL_JIT_EXACT_EFFECTS_THREE
 #undef CL_JIT_EXACT_EFFECTS_TWO
 #undef CL_JIT_EFFECT_BOUNDS_MAY_TWO
@@ -1756,15 +1896,22 @@ namespace cl::jit
                                 ValueRepresentationRequirement::Any);          \
         }                                                                      \
     }());
-#define CL_JIT_INSTRUCTION(name, ir_levels, result, effects, operands,         \
-                           attributes)                                         \
-    case InstructionKind::name:                                                \
+#define CL_JIT_VISIT_INSTRUCTION_SUBKIND(subkind, family, operands)            \
+    case InstructionKind::subkind:                                             \
         operands(CL_JIT_VISIT_FIXED_OPERAND, CL_JIT_VISIT_VARIADIC_OPERAND,    \
                  CL_JIT_VISIT_PROGRAM_VALUES)                                  \
             assert(operand_index == instruction.operand_count());              \
         return;
+#define CL_JIT_INSTRUCTION_FAMILY(name, ir_levels, result, effects, operands,  \
+                                  attributes, subkinds)                        \
+    subkinds(CL_JIT_VISIT_INSTRUCTION_SUBKIND, name, operands)
+#define CL_JIT_INSTRUCTION(name, ir_levels, result, effects, operands,         \
+                           attributes)                                         \
+    CL_JIT_VISIT_INSTRUCTION_SUBKIND(name, name, operands)
 #include "jit/instruction.def"
 #undef CL_JIT_INSTRUCTION
+#undef CL_JIT_INSTRUCTION_FAMILY
+#undef CL_JIT_VISIT_INSTRUCTION_SUBKIND
 #undef CL_JIT_VISIT_PROGRAM_VALUES
 #undef CL_JIT_VISIT_VARIADIC_OPERAND
 #undef CL_JIT_VISIT_FIXED_OPERAND

@@ -10,6 +10,11 @@
 // CL_JIT_INSTRUCTION arguments:
 //   name, IR levels, result, effect bounds, operand-list, attribute-list
 //
+// CL_JIT_INSTRUCTION_FAMILY additionally accepts a final subkind-list macro.
+// A subkind-list macro accepts a callback followed by callback context and
+// invokes the callback once as (subkind name, context...) for every concrete
+// instruction kind in declaration order.
+//
 // Fixed and variadic operand callbacks receive:
 //   name, operand class, representation
 //
@@ -21,8 +26,7 @@
 //
 // Result class and representation are encoded in the upper bits of the
 // generated InstructionKind. Definition kind is stored in the compact
-// instruction metadata. A separately generated dense ordinal indexes that
-// metadata.
+// family metadata indexed by the low instruction-family bits.
 //
 // Every operand is a reference to an instruction result. ProgramValue operands
 // additionally require the declared representation. Constants enter ordinary
@@ -33,6 +37,9 @@
 // slot. Its attributes begin at slot zero. A variadic range follows every fixed
 // operand, so fixed operands retain kind-constant indices within the indirect
 // sequence.
+
+#define CL_JIT_SINGLETON_SUBKINDS(each, family, ...)                          \
+    each(family, family, __VA_ARGS__)
 
 #define CL_JIT_Parameter_OPERANDS(fixed, variadic, snapshot_values)
 #define CL_JIT_Parameter_ATTRIBUTES(attribute)
@@ -218,27 +225,21 @@ CL_JIT_INSTRUCTION(EorSMI, CL_JIT_IR_LEVELS(CoreMachine),
 #undef CL_JIT_EorSMI_ATTRIBUTES
 #undef CL_JIT_EorSMI_OPERANDS
 
-#define CL_JIT_Is_OPERANDS(fixed, variadic, snapshot_values)                  \
+#define CL_JIT_IsComparison_OPERANDS(fixed, variadic, snapshot_values)        \
     fixed(lhs, ProgramValue, TaggedValue)                                      \
     fixed(rhs, ProgramValue, TaggedValue)
-#define CL_JIT_Is_ATTRIBUTES(attribute)
-CL_JIT_INSTRUCTION(Is, CL_JIT_IR_LEVELS(CoreMachine),
-                   CL_JIT_RESULT(ProgramValue, TaggedValue, Def),
-                   CL_JIT_EFFECT_BOUNDS(None, None), CL_JIT_Is_OPERANDS,
-                   CL_JIT_Is_ATTRIBUTES)
-#undef CL_JIT_Is_ATTRIBUTES
-#undef CL_JIT_Is_OPERANDS
-
-#define CL_JIT_IsNot_OPERANDS(fixed, variadic, snapshot_values)               \
-    fixed(lhs, ProgramValue, TaggedValue)                                      \
-    fixed(rhs, ProgramValue, TaggedValue)
-#define CL_JIT_IsNot_ATTRIBUTES(attribute)
-CL_JIT_INSTRUCTION(IsNot, CL_JIT_IR_LEVELS(CoreMachine),
-                   CL_JIT_RESULT(ProgramValue, TaggedValue, Def),
-                   CL_JIT_EFFECT_BOUNDS(None, None), CL_JIT_IsNot_OPERANDS,
-                   CL_JIT_IsNot_ATTRIBUTES)
-#undef CL_JIT_IsNot_ATTRIBUTES
-#undef CL_JIT_IsNot_OPERANDS
+#define CL_JIT_IsComparison_ATTRIBUTES(attribute)
+#define CL_JIT_IsComparison_SUBKINDS(each, ...)                               \
+    each(Is, __VA_ARGS__)                                                      \
+    each(IsNot, __VA_ARGS__)
+CL_JIT_INSTRUCTION_FAMILY(
+    IsComparison, CL_JIT_IR_LEVELS(CoreMachine),
+    CL_JIT_RESULT(ProgramValue, TaggedValue, Def),
+    CL_JIT_EFFECT_BOUNDS(None, None), CL_JIT_IsComparison_OPERANDS,
+    CL_JIT_IsComparison_ATTRIBUTES, CL_JIT_IsComparison_SUBKINDS)
+#undef CL_JIT_IsComparison_SUBKINDS
+#undef CL_JIT_IsComparison_ATTRIBUTES
+#undef CL_JIT_IsComparison_OPERANDS
 
 #define CL_JIT_AddF64_OPERANDS(fixed, variadic, snapshot_values)              \
     fixed(lhs, ProgramValue, F64)                                              \
@@ -469,3 +470,5 @@ CL_JIT_INSTRUCTION(Return, CL_JIT_IR_LEVELS(CoreMachine),
                    CL_JIT_Return_OPERANDS, CL_JIT_Return_ATTRIBUTES)
 #undef CL_JIT_Return_ATTRIBUTES
 #undef CL_JIT_Return_OPERANDS
+
+#undef CL_JIT_SINGLETON_SUBKINDS

@@ -64,6 +64,7 @@ namespace cl::jit
         {
             static_assert(std::is_base_of_v<Instruction, T>);
             static_assert(sizeof(T) == sizeof(Instruction));
+            using Family = typename T::Family;
 
             InstructionId id = next_instruction_id();
             if constexpr(T::OperandsAreIndirect)
@@ -71,14 +72,14 @@ namespace cl::jit
                 size_t n_indirect_slots = T::n_indirect_slots_for(args...);
                 InstructionOperandTable::Allocation indirect =
                     instruction_operands_.allocate(n_indirect_slots);
-                instructions_.push_back(
-                    T::make_entry(indirect.offset, indirect.words,
-                                  std::forward<Args>(args)...));
+                instructions_.push_back(Family::make_entry(
+                    T::Subkind, indirect.offset, indirect.words,
+                    std::forward<Args>(args)...));
             }
             else
             {
-                instructions_.push_back(
-                    T::make_entry(std::forward<Args>(args)...));
+                instructions_.push_back(Family::make_entry(
+                    T::Subkind, std::forward<Args>(args)...));
             }
             return T(this, id);
         }

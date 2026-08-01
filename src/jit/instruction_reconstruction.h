@@ -160,20 +160,27 @@ namespace cl::jit
     resolver.resolve(typed.name()),
 #define CL_JIT_COPY_ATTRIBUTE(name, ...)                                       \
     resolver.resolve_attribute(typed.name()),
-#define CL_JIT_INSTRUCTION(name, ir_levels, result, effects, operands,         \
-                           attributes)                                         \
-    case InstructionKind::name:                                                \
+#define CL_JIT_RECONSTRUCT_SUBKIND(subkind, family, operands, attributes)      \
+    case InstructionKind::subkind:                                             \
         {                                                                      \
-            [[maybe_unused]] const name##Instruction typed =                   \
-                instruction.as<name##Instruction>();                           \
-            return factory.template make_instruction<name##Instruction>(       \
+            [[maybe_unused]] const subkind##Instruction typed =                \
+                instruction.as<subkind##Instruction>();                        \
+            return factory.template make_instruction<subkind##Instruction>(    \
                 operands(CL_JIT_RESOLVE_FIXED, CL_JIT_RESOLVE_VARIADIC,        \
                          CL_JIT_RESOLVE_PROGRAM_VALUES)                        \
                     attributes(CL_JIT_COPY_ATTRIBUTE)                          \
                         InstructionConstructorEnd{});                          \
         }
+#define CL_JIT_INSTRUCTION_FAMILY(name, ir_levels, result, effects, operands,  \
+                                  attributes, subkinds)                        \
+    subkinds(CL_JIT_RECONSTRUCT_SUBKIND, name, operands, attributes)
+#define CL_JIT_INSTRUCTION(name, ir_levels, result, effects, operands,         \
+                           attributes)                                         \
+    CL_JIT_RECONSTRUCT_SUBKIND(name, name, operands, attributes)
 #include "jit/instruction.def"
 #undef CL_JIT_INSTRUCTION
+#undef CL_JIT_INSTRUCTION_FAMILY
+#undef CL_JIT_RECONSTRUCT_SUBKIND
 #undef CL_JIT_COPY_ATTRIBUTE
 #undef CL_JIT_RESOLVE_PROGRAM_VALUES
 #undef CL_JIT_RESOLVE_VARIADIC

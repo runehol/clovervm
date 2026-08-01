@@ -82,26 +82,29 @@ namespace cl::jit
         }
 
         InstructionFamilyMetadata
-        metadata_for_singleton_family(InstructionKind kind)
+        metadata_for_family(InstructionFamilyKind family)
         {
-            switch(kind)
+            switch(family)
             {
 #define CL_JIT_IR_LEVELS(set) IRLevelMask::set
 #define CL_JIT_RESULT(result_class, representation, definition_kind)           \
-    InstructionResultInfo{ResultClass::result_class,                           \
-                          ValueRepresentation::representation,                 \
-                          ResultDefinitionKind::definition_kind}
+    (InstructionResultInfo{ResultClass::result_class,                          \
+                           ValueRepresentation::representation,                \
+                           ResultDefinitionKind::definition_kind})
 #define CL_JIT_EFFECT_BOUNDS(must_effects, may_effects)                        \
-    EffectProfile::must_effects, EffectProfile::may_effects
+    (InstructionEffectBounds{EffectProfile::must_effects,                      \
+                             EffectProfile::may_effects})
 #define CL_JIT_EFFECT_BOUNDS_MAY_TWO(must_effects, may_first, may_second)      \
-    EffectProfile::must_effects,                                               \
-        EffectProfile::may_first | EffectProfile::may_second
+    (InstructionEffectBounds{EffectProfile::must_effects,                      \
+                             EffectProfile::may_first |                        \
+                                 EffectProfile::may_second})
 #define CL_JIT_EXACT_EFFECTS_TWO(first, second)                                \
-    EffectProfile::first | EffectProfile::second,                              \
-        EffectProfile::first | EffectProfile::second
+    (InstructionEffectBounds{EffectProfile::first | EffectProfile::second,     \
+                             EffectProfile::first | EffectProfile::second})
 #define CL_JIT_EXACT_EFFECTS_THREE(first, second, third)                       \
-    EffectProfile::first | EffectProfile::second | EffectProfile::third,       \
-        EffectProfile::first | EffectProfile::second | EffectProfile::third
+    (InstructionEffectBounds{                                                  \
+        EffectProfile::first | EffectProfile::second | EffectProfile::third,   \
+        EffectProfile::first | EffectProfile::second | EffectProfile::third})
 #define CL_JIT_COUNT_FIXED_OPERAND(...)                                        \
     (assert(!has_variadic_operands &&                                          \
             "fixed operands must precede the variadic range"),                 \
@@ -124,9 +127,9 @@ namespace cl::jit
     attribute_word_count +=                                                    \
         sizeof(InstructionAttributeStorage_##attribute_class) /                \
         sizeof(Instruction::Slot);
-#define CL_JIT_INSTRUCTION(name, ir_levels, result, effects, operands,         \
-                           attributes)                                         \
-    case InstructionKind::name:                                                \
+#define CL_JIT_INSTRUCTION_FAMILY(name, ir_levels, result, effects, operands,  \
+                                  attributes, subkinds)                        \
+    case InstructionFamilyKind::name:                                          \
         {                                                                      \
             uint8_t fixed_operand_count = 0;                                   \
             uint8_t attribute_count = 0;                                       \
@@ -146,12 +149,20 @@ namespace cl::jit
                     ? Instruction::InlineSlotCount                             \
                     : fixed_operand_count + attribute_word_count;              \
             return make_instruction_family_metadata(                           \
-                ir_levels, result, effects, side_exit_argument_start,          \
+                ir_levels, result, (effects).must_effects,                     \
+                (effects).may_effects, side_exit_argument_start,               \
                 fixed_operand_count, attribute_count, inline_slot_count,       \
                 has_variadic_operands, operands_are_indirect);                 \
         }
+#define CL_JIT_INSTRUCTION(name, ir_levels, result, effects, operands,         \
+                           attributes)                                         \
+    CL_JIT_INSTRUCTION_FAMILY(name, ir_levels, result, effects, operands,      \
+                              attributes, CL_JIT_SINGLETON_SUBKINDS)
 #include "jit/instruction.def"
 #undef CL_JIT_INSTRUCTION
+#undef CL_JIT_INSTRUCTION_FAMILY
+                case InstructionFamilyKind::Count:
+                    break;
 #undef CL_JIT_COUNT_ATTRIBUTE_WORDS
 #undef CL_JIT_COUNT_ATTRIBUTE
 #undef CL_JIT_COUNT_PROGRAM_VALUES_SideExit
@@ -173,11 +184,15 @@ namespace cl::jit
         const std::array<InstructionFamilyMetadata,
                          static_cast<size_t>(InstructionFamilyKind::Count)>
             family_metadata = {{
+#define CL_JIT_INSTRUCTION_FAMILY(name, ir_levels, result, effects, operands,  \
+                                  attributes, subkinds)                        \
+    metadata_for_family(InstructionFamilyKind::name),
 #define CL_JIT_INSTRUCTION(name, ir_levels, result, effects, operands,         \
                            attributes)                                         \
-    metadata_for_singleton_family(InstructionKind::name),
+    metadata_for_family(InstructionFamilyKind::name),
 #include "jit/instruction.def"
 #undef CL_JIT_INSTRUCTION
+#undef CL_JIT_INSTRUCTION_FAMILY
             }};
     }  // namespace
 

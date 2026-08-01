@@ -357,21 +357,28 @@ namespace cl::jit
     printer.variadic_operand(concrete.name());
 #define CL_IR_PRINT_ATTRIBUTE(name, attribute_class)                           \
     printer.attribute_##attribute_class(#name, concrete.name());
-#define CL_JIT_INSTRUCTION(name, ir_levels, result, effects, operands,         \
-                           attributes)                                         \
-    case InstructionKind::name:                                                \
+#define CL_IR_PRINT_SUBKIND(subkind, family, operands, attributes)             \
+    case InstructionKind::subkind:                                             \
         {                                                                      \
-            const name##Instruction &concrete =                                \
-                instruction.as<name##Instruction>();                           \
+            const subkind##Instruction &concrete =                             \
+                instruction.as<subkind##Instruction>();                        \
             (void)concrete;                                                    \
-            OperationPrinter printer(out, state, instruction, #name);          \
+            OperationPrinter printer(out, state, instruction, #subkind);       \
             operands(CL_IR_PRINT_FIXED, CL_IR_PRINT_VARIADIC,                  \
                      CL_IR_PRINT_PROGRAM_VALUES)                               \
                 attributes(CL_IR_PRINT_ATTRIBUTE) printer.finish();            \
             return;                                                            \
         }
+#define CL_JIT_INSTRUCTION_FAMILY(name, ir_levels, result, effects, operands,  \
+                                  attributes, subkinds)                        \
+    subkinds(CL_IR_PRINT_SUBKIND, name, operands, attributes)
+#define CL_JIT_INSTRUCTION(name, ir_levels, result, effects, operands,         \
+                           attributes)                                         \
+    CL_IR_PRINT_SUBKIND(name, name, operands, attributes)
 #include "jit/instruction.def"
 #undef CL_JIT_INSTRUCTION
+#undef CL_JIT_INSTRUCTION_FAMILY
+#undef CL_IR_PRINT_SUBKIND
 #undef CL_IR_PRINT_ATTRIBUTE
 #undef CL_IR_PRINT_PROGRAM_VALUES
 #undef CL_IR_PRINT_VARIADIC
