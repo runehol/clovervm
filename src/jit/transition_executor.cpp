@@ -1,5 +1,6 @@
 #include "jit/transition_executor.h"
 
+#include "bytecode/code_object.h"
 #include "runtime/fatal.h"
 
 #include <cassert>
@@ -81,18 +82,19 @@ namespace cl::jit
         }
     }  // namespace
 
-    InterpreterResumeState
-    execute_transition_program(TransitionExecutionContext &context,
-                               const TransitionInstruction *program,
-                               Value *frame_pointer)
+    extern "C" const InterpreterResumeState *
+    cl_execute_transition_program(TransitionExecutionContext *context,
+                                  const TransitionInstruction *program,
+                                  Value *frame_pointer)
     {
+        assert(context != nullptr);
         assert(program != nullptr);
         assert(program->kind() == TransitionInstructionKind::BeginTransition);
         assert(frame_pointer != nullptr);
 
         std::span<uint64_t> scratch =
-            context.ensure_scratch(program->scratch_slot_count());
-        std::span<const uint64_t> register_file = context.register_file();
+            context->ensure_scratch(program->scratch_slot_count());
+        std::span<const uint64_t> register_file = context->register_file();
         assert(!scratch.empty());
         for(const TransitionInstruction *instruction = program + 1;;
             ++instruction)
@@ -111,11 +113,17 @@ namespace cl::jit
                         break;
                     }
                 case TransitionInstructionKind::ResumeInterpreter:
-                    return {
-                        value_from_word(scratch[0]),
-                        instruction->interpreter_code_object(),
-                        instruction->resume_pc_offset(),
-                    };
+                    {
+                        CodeObject *code_object =
+                            instruction->interpreter_code_object();
+                        context->interpreter_resume_state_ = {
+                            value_from_word(scratch[0]),
+                            code_object->interpreted_pc_for_offset(
+                                instruction->resume_pc_offset()),
+                            code_object,
+                        };
+                        return &context->interpreter_resume_state_;
+                    }
                 default:
                     fatal("unsupported transition instruction");
             }

@@ -239,12 +239,12 @@ namespace cl::jit
         TransitionExecutionContext execution_context;
         std::ranges::copy(register_file,
                           execution_context.register_file().begin());
-        InterpreterResumeState resume = execute_transition_program(
-            execution_context, program.data(), frame_pointer);
+        const InterpreterResumeState *resume = cl_execute_transition_program(
+            &execution_context, program.data(), frame_pointer);
 
-        EXPECT_EQ(expected_value, resume.accumulator);
-        EXPECT_EQ(code_object, resume.code_object);
-        EXPECT_EQ(0u, resume.resume_pc_offset);
+        EXPECT_EQ(expected_value, resume->accumulator);
+        EXPECT_EQ(code_object, resume->code_object);
+        EXPECT_EQ(code_object->code.data(), resume->pc);
         for(size_t position = BytecodeStateOrder::FirstFramePosition;
             position < state_order.size(); ++position)
         {

@@ -4,7 +4,7 @@
 |---|---|
 | Document type | Design |
 | Status | Accepted |
-| Implementation | The compact representation and executor, `ExitToInterpreter` publication emission without a ThreadState operand, AArch64 location mapping, untagged code-object publication, and AArch64 side-exit references are implemented; sunk computation, target thunks, thread-owned execution context, and interpreter handoff remain |
+| Implementation | The compact representation and executor, thread-owned execution context and register image, `ExitToInterpreter` publication emission without a ThreadState operand, AArch64 location mapping, untagged code-object publication, and AArch64 side-exit references are implemented; sunk computation, target thunks, and interpreter handoff remain |
 | Scope | Compact straight-line programs that transform values and machine state between execution conventions; the first consumer is JIT side exit |
 | Owning layers | Core IR owns sunk operation semantics and Snapshot state before lowering; side-exit lowering owns `SideExitRegion` construction and owner bindings; register allocation owns physical frontier locations; transition emission owns the continuous transition program and canonical publication; each thread owns reusable transition scratch storage; target thunks own fixed machine-state saves |
 | Validated against | `tests/test_transition_program.cpp`, `tests/test_transition_executor.cpp`, `tests/test_transition_program_emitter.cpp`, and `tests/test_aarch64_transition.cpp` |
@@ -77,9 +77,10 @@ at entry zero. Eligible Core results use `Scratch[entry_index]`. Because
 has an explicit destination and may write any scratch slot selected by the
 planner. Other resultless instructions use no scratch.
 
-`TransitionExecutionContext` owns a reusable `std::vector<uint64_t>` transition
-scratch buffer. A thread embeds one context for production execution, while
-tests and other consumers may construct a context independently.
+`TransitionExecutionContext` owns the fixed register image, a reusable
+`std::vector<uint64_t>` transition scratch buffer, and the final interpreter
+resume state. A thread embeds one context for production execution, while tests
+and other consumers may construct a context independently.
 `BeginTransition.scratch_slot_count` records the actual capacity required by
 the lowered program. The context grows the buffer to at least that many elements
 and does not clear it: verification ensures that every scratch source was
@@ -102,31 +103,27 @@ safepoint.
 Initial execution is a direct switch interpreter:
 
 ```cpp
-struct TransitionExecutionInput
-{
-    std::span<const uint64_t> register_file;
-    Value *frame_pointer;
-};
-
 struct InterpreterResumeState
 {
     Value accumulator;
+    const uint8_t *pc;
     CodeObject *code_object;
-    BytecodePCOffset resume_pc_offset;
 };
 
-InterpreterResumeState execute_transition_program(
-    TransitionExecutionContext &context,
+extern "C" const InterpreterResumeState *cl_execute_transition_program(
+    TransitionExecutionContext *context,
     const TransitionInstruction *program,
-    TransitionExecutionInput input);
+    Value *frame_pointer);
 ```
 
 `Transfer` copies one raw 64-bit word so tagged and unboxed representations use
 the same path. Register-file locations are read-only; stack locations are
 relative to the supplied frame pointer; scratch locations address the context.
 `ResumeInterpreter` reads the tagged accumulator from the fixed `Scratch[0]`
-handoff slot and returns it with the borrowed owning `CodeObject *` and bytecode
-continuation to the future side-exit adapter. The active
+handoff slot, resolves its bytecode offset through the program-provided
+`CodeObject *`, and publishes all three values in the context-owned resume
+state. Execution returns a stable pointer to that state for the target thunk.
+The active
 `ThreadState *` is fixed machine context held in the target's JIT thread
 register, not transition data. This initial executor does not itself enter the
 bytecode interpreter. Runtime execution begins at the `BeginTransition` header
@@ -569,8 +566,8 @@ The representation and standalone execution slices are complete:
 The second slice builds and executes standalone programs:
 
 - build, verify, and format self-delimiting transition sequences;
-- add a reusable execution context with scratch storage sized by
-  `BeginTransition`;
+- add a reusable thread-owned execution context with a fixed register image,
+  context-owned resume state, and scratch storage sized by `BeginTransition`;
 - interpret the three transition-only kinds without safepointing.
 
 The publication slice is complete through the compiled side-exit branch:
@@ -583,9 +580,8 @@ The publication slice is complete through the compiled side-exit branch:
 - materialize its address through AArch64 near/far constant-pool relocation and
   branch to a supplied thunk address.
 
-The remaining runtime slice must settle and implement the target thunk,
-thread-owned execution context, and interpreter handoff. On AArch64 the thunk
+The remaining runtime slice must implement the target thunk and interpreter
+handoff. On AArch64 the thunk
 obtains the active `ThreadState *` from fixed `x25`; the transition program does
-not encode or reconstruct it. Register-save storage and host-stack restoration
-remain to be designed. General sinking and transition-local Core computation
-follow after the snapshot-only execution path closes.
+not encode or reconstruct it. General sinking and transition-local Core
+computation follow after the snapshot-only execution path closes.

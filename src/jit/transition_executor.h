@@ -13,6 +13,26 @@
 
 namespace cl::jit
 {
+    struct InterpreterResumeState
+    {
+        Value accumulator;
+        const uint8_t *pc;
+        CodeObject *code_object;
+    };
+
+    static_assert(std::is_standard_layout_v<InterpreterResumeState>);
+    static_assert(offsetof(InterpreterResumeState, accumulator) == 0);
+    static_assert(offsetof(InterpreterResumeState, pc) == 8);
+    static_assert(offsetof(InterpreterResumeState, code_object) == 16);
+    static_assert(sizeof(InterpreterResumeState) == 24);
+
+    class TransitionExecutionContext;
+
+    extern "C" const InterpreterResumeState *
+    cl_execute_transition_program(TransitionExecutionContext *context,
+                                  const TransitionInstruction *program,
+                                  Value *frame_pointer);
+
     class alignas(16) TransitionExecutionContext
     {
     public:
@@ -36,7 +56,12 @@ namespace cl::jit
         static constexpr size_t register_file_offset();
 
     private:
+        friend const InterpreterResumeState *
+        cl_execute_transition_program(TransitionExecutionContext *,
+                                      const TransitionInstruction *, Value *);
+
         std::array<uint64_t, RegisterFileSlotCount> register_file_{};
+        InterpreterResumeState interpreter_resume_state_{};
         std::vector<uint64_t> scratch_;
     };
 
@@ -47,18 +72,6 @@ namespace cl::jit
 
     static_assert(std::is_standard_layout_v<TransitionExecutionContext>);
     static_assert(TransitionExecutionContext::register_file_offset() == 0);
-
-    struct InterpreterResumeState
-    {
-        Value accumulator;
-        CodeObject *code_object;
-        BytecodePCOffset resume_pc_offset;
-    };
-
-    InterpreterResumeState
-    execute_transition_program(TransitionExecutionContext &context,
-                               const TransitionInstruction *program,
-                               Value *frame_pointer);
 
 }  // namespace cl::jit
 

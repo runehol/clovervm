@@ -123,12 +123,12 @@ namespace cl::jit
         EXPECT_EQ(1u, program.front().scratch_slot_count());
         TransitionExecutionContext context;
         std::ranges::copy(register_file, context.register_file().begin());
-        InterpreterResumeState resume = execute_transition_program(
-            context, program.data(), execution.frame_pointer);
+        const InterpreterResumeState *resume = cl_execute_transition_program(
+            &context, program.data(), execution.frame_pointer);
 
-        EXPECT_EQ(accumulator, resume.accumulator);
-        EXPECT_EQ(fixture.code_object, resume.code_object);
-        EXPECT_EQ(0u, resume.resume_pc_offset);
+        EXPECT_EQ(accumulator, resume->accumulator);
+        EXPECT_EQ(fixture.code_object, resume->code_object);
+        EXPECT_EQ(fixture.code_object->code.data(), resume->pc);
         for(size_t position = BytecodeStateOrder::FirstFramePosition;
             position < fixture.state_order->size(); ++position)
         {
@@ -176,11 +176,11 @@ namespace cl::jit
         EXPECT_EQ(2u, program.front().scratch_slot_count());
         TransitionExecutionContext context;
         std::ranges::copy(register_file, context.register_file().begin());
-        InterpreterResumeState resume = execute_transition_program(
-            context, program.data(), execution.frame_pointer);
+        const InterpreterResumeState *resume = cl_execute_transition_program(
+            &context, program.data(), execution.frame_pointer);
 
-        EXPECT_EQ(Value::from_smi(71), resume.accumulator);
-        EXPECT_EQ(fixture.code_object, resume.code_object);
+        EXPECT_EQ(Value::from_smi(71), resume->accumulator);
+        EXPECT_EQ(fixture.code_object, resume->code_object);
         for(size_t position = BytecodeStateOrder::FirstFramePosition;
             position < fixture.state_order->size(); ++position)
         {

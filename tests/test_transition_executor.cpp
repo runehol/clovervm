@@ -48,15 +48,12 @@ namespace cl::jit
 
         TransitionExecutionContext context;
         context.register_file()[1] = word_for(expected);
-        InterpreterResumeState result = execute_transition_program(
-            context, instructions.data(), frame_pointer);
+        const InterpreterResumeState *result = cl_execute_transition_program(
+            &context, instructions.data(), frame_pointer);
 
-        EXPECT_EQ(expected, result.accumulator);
-        EXPECT_EQ(code_object, result.code_object);
-        EXPECT_EQ(0u, result.resume_pc_offset);
-        EXPECT_EQ(code_object->code.data(),
-                  result.code_object->interpreted_pc_for_offset(
-                      result.resume_pc_offset));
+        EXPECT_EQ(expected, result->accumulator);
+        EXPECT_EQ(code_object->code.data(), result->pc);
+        EXPECT_EQ(code_object, result->code_object);
         EXPECT_EQ(word_for(expected), stack_word(frame_pointer - 2));
     }
 
@@ -80,11 +77,11 @@ namespace cl::jit
         TransitionExecutionContext context;
         context.register_file()[0] = Bits;
         context.register_file()[1] = word_for(accumulator);
-        InterpreterResumeState result = execute_transition_program(
-            context, instructions.data(), frame_pointer);
+        const InterpreterResumeState *result = cl_execute_transition_program(
+            &context, instructions.data(), frame_pointer);
 
-        EXPECT_EQ(accumulator, result.accumulator);
-        EXPECT_EQ(code_object, result.code_object);
+        EXPECT_EQ(accumulator, result->accumulator);
+        EXPECT_EQ(code_object, result->code_object);
         EXPECT_EQ(Bits, stack_word(frame_pointer + 1));
     }
 
