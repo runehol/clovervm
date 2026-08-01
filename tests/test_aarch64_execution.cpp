@@ -14,6 +14,7 @@
 #include "jit/machine_address_internal.h"
 #include "jit/register_allocator.h"
 #include "object_model/function.h"
+#include "runtime/runtime_helpers.h"
 #include "test_helpers.h"
 
 #include <gtest/gtest.h>
@@ -122,55 +123,65 @@ namespace cl::jit
             return static_cast<uint64_t>(result.as.integer);
         }
 
-        uint64_t
-        execute_jit_object(ThreadState &thread, CodeObject &code_object,
-                           JitCodeObject &jit_code,
-                           std::initializer_list<uint64_t> argument_bits)
+        class PythonJitExecutionFixture
         {
-            assert(argument_bits.size() ==
-                   code_object.function_signature.n_parameters);
-            std::array<Value, 128> frame;
-            frame.fill(Value::None());
-            Value *fp = frame.data() + frame.size() / 2;
-            fp[FrameHeaderPreviousFpOffset] =
-                encode_frame_payload_ptr(static_cast<Value *>(nullptr));
-
-            uint32_t index = 0;
-            for(uint64_t bits: argument_bits)
+        public:
+            PythonJitExecutionFixture() : activation_scope_(context_.thread())
             {
-                fp[code_object.encode_reg(index++)].as.integer =
-                    static_cast<int64_t>(bits);
             }
 
-            Value result = enter_aarch64_jit_from_native(thread, fp,
-                                                         code_object, jit_code);
-            return static_cast<uint64_t>(result.as.integer);
-        }
-
-        struct PythonBackendFixture
-        {
-            PythonBackendFixture() : activation_scope(context.thread()) {}
-
-            CodeObject *compile_first_function(const wchar_t *source)
+            void execute_module(const wchar_t *source)
             {
-                CodeObject *module_code = context.compile_file(source);
-                return module_code->constant_table[0]
-                    .value()
-                    .get_ptr<CodeObject>();
+                CodeObject *code = context_.compile_file(source);
+                module_ = code->get_defining_module().extract();
+                (void)context_.thread()->run_clovervm_code_object(code);
             }
 
-            ControlFlowGraph *
-            translate_first_function(const wchar_t *source,
-                                     CompilationSession &session)
+            Result<void, JitCompilationError>
+            jit_compile(const wchar_t *function_name,
+                        const JitCompilerOptions &options = {})
             {
-                CodeObject *function_code = compile_first_function(source);
-                GraphBuilder builder(session, IRLevel::Core);
-                CoreBytecodeTranslator translator(*function_code, builder);
-                return translator.translate();
+                TValue<Function> target = function(function_name);
+                CodeObject *code = target.extract()->code_object.extract();
+                auto compilation =
+                    compile_jit_code(*context_.thread(), *code, options);
+                if(!compilation)
+                {
+                    return Result<void, JitCompilationError>::error(
+                        std::move(compilation).error());
+                }
+                code->publish_jit_code(std::move(compilation).value());
+                return Result<void, JitCompilationError>::ok();
             }
 
-            test::VmTestContext context;
-            ThreadState::ActivationScope activation_scope;
+            template <typename... Args>
+            Value call(const wchar_t *function_name, Args... args)
+            {
+                return context_.thread()->call_clovervm_function(
+                    function(function_name), args...);
+            }
+
+            bool is_jit_compiled(const wchar_t *function_name) const
+            {
+                return function(function_name)
+                    .extract()
+                    ->code_object.extract()
+                    ->has_jit_code();
+            }
+
+        private:
+            TValue<Function> function(const wchar_t *name) const
+            {
+                assert(module_ != nullptr);
+                Value value = module_->get_own_property(interned_string(name));
+                assert(can_convert_to<Function>(value));
+                return TValue<Function>::from_oop(
+                    assume_convert_to<Function>(value));
+            }
+
+            test::VmTestContext context_;
+            ThreadState::ActivationScope activation_scope_;
+            ModuleObject *module_ = nullptr;
         };
 
         template <typename LogicalInstruction>
@@ -739,27 +750,17 @@ namespace cl::jit
 
     TEST(AArch64Execution, CompilesPythonIdentityFunction)
     {
-        PythonBackendFixture fixture;
-        CompilationSession session;
-        ControlFlowGraph *graph =
-            fixture.translate_first_function(L"def identity(value):\n"
-                                             L"    copy = value\n"
-                                             L"    return copy\n",
-                                             session);
-
-        CodeCache cache;
-        auto compilation =
-            compile_to_aarch64(session, *graph, cache, no_side_exit_thunk());
-        ASSERT_TRUE(compilation);
-        PublishedCode code = std::move(compilation).value();
+        PythonJitExecutionFixture fixture;
+        fixture.execute_module(L"def identity(value):\n"
+                               L"    copy = value\n"
+                               L"    return copy\n");
+        ASSERT_TRUE(fixture.jit_compile(L"identity"));
 
         const Value inputs[] = {Value::None(), Value::True(),
                                 Value::from_smi(42)};
         for(Value input: inputs)
         {
-            EXPECT_EQ(static_cast<uint64_t>(input.as.integer),
-                      execute_published_jit(
-                          code, {static_cast<uint64_t>(input.as.integer)}));
+            EXPECT_EQ(input, fixture.call(L"identity", input));
         }
     }
 
@@ -770,26 +771,20 @@ namespace cl::jit
             GTEST_SKIP() << "runtime JIT tiering is disabled";
         }
 
-        PythonBackendFixture fixture;
+        PythonJitExecutionFixture fixture;
         std::wstring source = L"def collect(*args, **kwargs):\n"
                               L"    return args\n"
                               L"for index in range(" +
                               std::to_wstring(InitialJitTieringBudget) +
                               L"):\n"
-                              L"    collect(value=index)\n"
-                              L"collect(42)\n";
-        CodeObject *module_code = fixture.context.compile_file(source.c_str());
-        CodeObject *function_code =
-            module_code->constant_table[0].value().get_ptr<CodeObject>();
-
-        EXPECT_EQ(2u, function_code->function_signature.n_parameters);
-        Value result =
-            fixture.context.thread()->run_clovervm_code_object(module_code);
+                              L"    collect(value=index)\n";
+        fixture.execute_module(source.c_str());
+        Value result = fixture.call(L"collect", Value::from_smi(42));
         ASSERT_TRUE(can_convert_to<Tuple>(result));
         Tuple *arguments = assume_convert_to<Tuple>(result);
         ASSERT_EQ(1u, arguments->size());
         EXPECT_EQ(Value::from_smi(42), arguments->item_unchecked(0));
-        EXPECT_TRUE(function_code->has_jit_code());
+        EXPECT_TRUE(fixture.is_jit_compiled(L"collect"));
     }
 
     TEST(AArch64Execution, CompilesBytecodeThroughJitCompiler)
@@ -825,122 +820,67 @@ namespace cl::jit
             size_t optimized_instruction_count = 0;
         };
 
-        PythonBackendFixture fixture;
-        CodeObject *compiled_code_object =
-            fixture.compile_first_function(L"def identity(value):\n"
-                                           L"    unused = None\n"
-                                           L"    return value\n");
+        PythonJitExecutionFixture fixture;
+        fixture.execute_module(L"def identity(value):\n"
+                               L"    unused = None\n"
+                               L"    return value\n");
         Observer observer;
-        auto compilation =
-            compile_jit_code(*fixture.context.thread(), *compiled_code_object,
-                             JitCompilerOptions{&observer});
-
-        ASSERT_TRUE(compilation);
-        JitCodeObject *code = std::move(compilation).value();
+        ASSERT_TRUE(
+            fixture.jit_compile(L"identity", JitCompilerOptions{&observer}));
         EXPECT_TRUE(observer.saw_bytecode);
         EXPECT_TRUE(observer.saw_machine_code);
         EXPECT_GT(observer.translated_instruction_count,
                   observer.optimized_instruction_count);
 
-        // Publish onto a same-arity function with different interpreted
-        // behavior so the result proves that the interpreter selected the
-        // explicitly published JIT entry.
-        CodeObject *called_code_object =
-            fixture.compile_first_function(L"def interpreted_body(value):\n"
-                                           L"    return None\n");
-        called_code_object->publish_jit_code(code);
-        ThreadState *thread = fixture.context.thread();
-        Owned<TValue<Function>> function(thread->make_object_value<Function>(
-            TValue<CodeObject>::from_oop(called_code_object),
-            Optional<TValue<String>>::none()));
         Value input = Value::from_smi(42);
-        EXPECT_EQ(input,
-                  thread->call_clovervm_function(function.value(), input));
+        EXPECT_EQ(input, fixture.call(L"identity", input));
     }
 
     TEST(AArch64Execution, CompilesPythonConstantFunction)
     {
-        PythonBackendFixture fixture;
-        CompilationSession session;
-        ControlFlowGraph *graph =
-            fixture.translate_first_function(L"def answer():\n"
-                                             L"    return 42\n",
-                                             session);
-
-        CodeCache cache;
-        auto compilation =
-            compile_to_aarch64(session, *graph, cache, no_side_exit_thunk());
-        ASSERT_TRUE(compilation);
-        PublishedCode code = std::move(compilation).value();
-
-        EXPECT_EQ(static_cast<uint64_t>(Value::from_smi(42).as.integer),
-                  execute_published_jit(code, {}));
+        PythonJitExecutionFixture fixture;
+        fixture.execute_module(L"def answer():\n"
+                               L"    return 42\n");
+        ASSERT_TRUE(fixture.jit_compile(L"answer"));
+        EXPECT_EQ(Value::from_smi(42), fixture.call(L"answer"));
     }
 
     TEST(AArch64Execution, CompilesPythonFunctionReturningSecondArgument)
     {
-        PythonBackendFixture fixture;
-        CompilationSession session;
-        ControlFlowGraph *graph =
-            fixture.translate_first_function(L"def second(first, second):\n"
-                                             L"    return second\n",
-                                             session);
+        PythonJitExecutionFixture fixture;
+        fixture.execute_module(L"def second(first, second):\n"
+                               L"    return second\n");
+        ASSERT_TRUE(fixture.jit_compile(L"second"));
 
-        CodeCache cache;
-        auto compilation =
-            compile_to_aarch64(session, *graph, cache, no_side_exit_thunk());
-        ASSERT_TRUE(compilation);
-        PublishedCode code = std::move(compilation).value();
-
-        constexpr uint64_t first = 0x1111222233334444;
-        constexpr uint64_t second = 0xaaaabbbbccccdddd;
-        EXPECT_EQ(second, execute_published_jit(code, {first, second}));
+        Value first = Value::from_smi(19);
+        Value second = Value::from_smi(23);
+        EXPECT_EQ(second, fixture.call(L"second", first, second));
     }
 
     TEST(AArch64Execution, CompilesPythonIs)
     {
-        PythonBackendFixture fixture;
-        CompilationSession session;
-        ControlFlowGraph *graph =
-            fixture.translate_first_function(L"def is_same(lhs, rhs):\n"
-                                             L"    return lhs is rhs\n",
-                                             session);
+        PythonJitExecutionFixture fixture;
+        fixture.execute_module(L"def is_same(lhs, rhs):\n"
+                               L"    return lhs is rhs\n");
+        ASSERT_TRUE(fixture.jit_compile(L"is_same"));
 
-        CodeCache cache;
-        auto compilation =
-            compile_to_aarch64(session, *graph, cache, no_side_exit_thunk());
-        ASSERT_TRUE(compilation);
-        PublishedCode code = std::move(compilation).value();
-
-        uint64_t none = static_cast<uint64_t>(Value::None().as.integer);
-        uint64_t truth = static_cast<uint64_t>(Value::True().as.integer);
-        EXPECT_EQ(static_cast<uint64_t>(Value::True().as.integer),
-                  execute_published_jit(code, {none, none}));
-        EXPECT_EQ(static_cast<uint64_t>(Value::False().as.integer),
-                  execute_published_jit(code, {none, truth}));
+        EXPECT_EQ(Value::True(),
+                  fixture.call(L"is_same", Value::None(), Value::None()));
+        EXPECT_EQ(Value::False(),
+                  fixture.call(L"is_same", Value::None(), Value::True()));
     }
 
     TEST(AArch64Execution, CompilesPythonIsNot)
     {
-        PythonBackendFixture fixture;
-        CompilationSession session;
-        ControlFlowGraph *graph =
-            fixture.translate_first_function(L"def is_distinct(lhs, rhs):\n"
-                                             L"    return lhs is not rhs\n",
-                                             session);
+        PythonJitExecutionFixture fixture;
+        fixture.execute_module(L"def is_distinct(lhs, rhs):\n"
+                               L"    return lhs is not rhs\n");
+        ASSERT_TRUE(fixture.jit_compile(L"is_distinct"));
 
-        CodeCache cache;
-        auto compilation =
-            compile_to_aarch64(session, *graph, cache, no_side_exit_thunk());
-        ASSERT_TRUE(compilation);
-        PublishedCode code = std::move(compilation).value();
-
-        uint64_t none = static_cast<uint64_t>(Value::None().as.integer);
-        uint64_t truth = static_cast<uint64_t>(Value::True().as.integer);
-        EXPECT_EQ(static_cast<uint64_t>(Value::False().as.integer),
-                  execute_published_jit(code, {none, none}));
-        EXPECT_EQ(static_cast<uint64_t>(Value::True().as.integer),
-                  execute_published_jit(code, {none, truth}));
+        EXPECT_EQ(Value::False(),
+                  fixture.call(L"is_distinct", Value::None(), Value::None()));
+        EXPECT_EQ(Value::True(),
+                  fixture.call(L"is_distinct", Value::None(), Value::True()));
     }
 
     TEST(AArch64Execution, CompilesGuardedSMIAdditionWithoutGuardCopies)
@@ -971,44 +911,28 @@ namespace cl::jit
             size_t inline_tag_guard_count = 0;
         };
 
-        PythonBackendFixture fixture;
-        CodeObject *function_code =
-            fixture.compile_first_function(L"def add(lhs, rhs):\n"
-                                           L"    return lhs + rhs\n");
+        PythonJitExecutionFixture fixture;
+        fixture.execute_module(L"def add(lhs, rhs):\n"
+                               L"    return lhs + rhs\n");
         Observer observer;
-        auto compilation =
-            compile_jit_code(*fixture.context.thread(), *function_code,
-                             JitCompilerOptions{&observer});
-
-        ASSERT_TRUE(compilation);
-        JitCodeObject *code = std::move(compilation).value();
+        ASSERT_TRUE(fixture.jit_compile(L"add", JitCompilerOptions{&observer}));
         EXPECT_EQ(2u, observer.inline_tag_guard_count);
         EXPECT_EQ(1u, observer.move_count);
 
-        uint64_t lhs = static_cast<uint64_t>(Value::from_smi(19).as.integer);
-        uint64_t rhs = static_cast<uint64_t>(Value::from_smi(23).as.integer);
-        EXPECT_EQ(static_cast<uint64_t>(Value::from_smi(42).as.integer),
-                  execute_jit_object(*fixture.context.thread(), *function_code,
-                                     *code, {lhs, rhs}));
+        EXPECT_EQ(Value::from_smi(42), fixture.call(L"add", Value::from_smi(19),
+                                                    Value::from_smi(23)));
     }
 
     TEST(AArch64Execution, PublishedJitReportsUnhandledSideExit)
     {
-        PythonBackendFixture fixture;
-        CodeObject *function_code =
-            fixture.compile_first_function(L"def add(lhs, rhs):\n"
-                                           L"    return lhs + rhs\n");
-        auto compilation =
-            compile_jit_code(*fixture.context.thread(), *function_code);
-        ASSERT_TRUE(compilation);
-        JitCodeObject *code = std::move(compilation).value();
+        PythonJitExecutionFixture fixture;
+        fixture.execute_module(L"def add(lhs, rhs):\n"
+                               L"    return lhs + rhs\n");
+        ASSERT_TRUE(fixture.jit_compile(L"add"));
 
-        uint64_t none = static_cast<uint64_t>(Value::None().as.integer);
-        uint64_t smi = static_cast<uint64_t>(Value::from_smi(1).as.integer);
-        EXPECT_DEATH((void)execute_jit_object(*fixture.context.thread(),
-                                              *function_code, *code,
-                                              {none, smi}),
-                     "JIT entered a side exit without a handler");
+        EXPECT_DEATH(
+            (void)fixture.call(L"add", Value::None(), Value::from_smi(1)),
+            "JIT entered a side exit without a handler");
     }
 
     TEST(AArch64Execution, CompilesPythonIdentityConditional)
@@ -1060,36 +984,25 @@ namespace cl::jit
             size_t emitted_unconditional_branch_count = 0;
         };
 
-        PythonBackendFixture fixture;
-        CodeObject *function_code =
-            fixture.compile_first_function(L"def choose(a, b, c, d):\n"
-                                           L"    if a is b:\n"
-                                           L"        return c\n"
-                                           L"    return d\n");
+        PythonJitExecutionFixture fixture;
+        fixture.execute_module(L"def choose(a, b, c, d):\n"
+                               L"    if a is b:\n"
+                               L"        return c\n"
+                               L"    return d\n");
         Observer observer;
-        auto compilation =
-            compile_jit_code(*fixture.context.thread(), *function_code,
-                             JitCompilerOptions{&observer});
-
-        ASSERT_TRUE(compilation);
-        JitCodeObject *code = std::move(compilation).value();
+        ASSERT_TRUE(
+            fixture.jit_compile(L"choose", JitCompilerOptions{&observer}));
         EXPECT_EQ(5u, observer.block_count);
         EXPECT_EQ(2u, observer.move_count);
         EXPECT_EQ(2u, observer.machine_unconditional_branch_count);
         EXPECT_EQ(0u, observer.emitted_unconditional_branch_count);
 
-        uint64_t none = static_cast<uint64_t>(Value::None().as.integer);
-        uint64_t truth = static_cast<uint64_t>(Value::True().as.integer);
-        uint64_t if_true =
-            static_cast<uint64_t>(Value::from_smi(19).as.integer);
-        uint64_t if_false =
-            static_cast<uint64_t>(Value::from_smi(23).as.integer);
-        EXPECT_EQ(if_true,
-                  execute_jit_object(*fixture.context.thread(), *function_code,
-                                     *code, {none, none, if_true, if_false}));
-        EXPECT_EQ(if_false,
-                  execute_jit_object(*fixture.context.thread(), *function_code,
-                                     *code, {none, truth, if_true, if_false}));
+        Value if_true = Value::from_smi(19);
+        Value if_false = Value::from_smi(23);
+        EXPECT_EQ(if_true, fixture.call(L"choose", Value::None(), Value::None(),
+                                        if_true, if_false));
+        EXPECT_EQ(if_false, fixture.call(L"choose", Value::None(),
+                                         Value::True(), if_true, if_false));
     }
 
     TEST(AArch64Execution, EmitsInlineConstantFunctionFromCfg)
@@ -1117,10 +1030,9 @@ namespace cl::jit
 
     TEST(AArch64Execution, EntersJitThroughCachedArityThunk)
     {
-        PythonBackendFixture fixture;
-
         for(uint32_t arity = 0; arity <= 8; ++arity)
         {
+            PythonJitExecutionFixture fixture;
             std::wstring source = L"def f(";
             for(uint32_t index = 0; index < arity; ++index)
             {
@@ -1133,31 +1045,22 @@ namespace cl::jit
             source += L"): return ";
             source += arity == 0 ? L"17\n"
                                  : L"p" + std::to_wstring(arity - 1) + L"\n";
-
-            CodeObject *code_object =
-                fixture.compile_first_function(source.c_str());
-            auto compilation =
-                compile_jit_code(*fixture.context.thread(), *code_object);
-            ASSERT_TRUE(compilation) << "arity " << arity;
-            JitCodeObject *jit_code = std::move(compilation).value();
-
-            std::array<Value, 16> frame;
-            frame.fill(Value::None());
-            Value *fp = frame.data();
-            fp[FrameHeaderPreviousFpOffset] =
-                encode_frame_payload_ptr(static_cast<Value *>(nullptr));
-
+            source += L"def invoke(): return f(";
             Value expected = Value::from_smi(17);
             for(uint32_t index = 0; index < arity; ++index)
             {
-                Value parameter = Value::from_smi(100 + index);
-                fp[code_object->encode_reg(index)] = parameter;
-                expected = parameter;
+                if(index != 0)
+                {
+                    source += L", ";
+                }
+                source += std::to_wstring(100 + index);
+                expected = Value::from_smi(100 + index);
             }
+            source += L")\n";
 
-            Value result = enter_aarch64_jit_from_native(
-                *fixture.context.thread(), fp, *code_object, *jit_code);
-            EXPECT_EQ(expected, result) << "arity " << arity;
+            fixture.execute_module(source.c_str());
+            ASSERT_TRUE(fixture.jit_compile(L"f")) << "arity " << arity;
+            EXPECT_EQ(expected, fixture.call(L"invoke")) << "arity " << arity;
         }
     }
 
