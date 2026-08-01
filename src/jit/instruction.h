@@ -232,13 +232,15 @@ namespace cl::jit
 #undef CL_JIT_INSTRUCTION_FAMILY
 #undef CL_JIT_RESULT
 
-#define CL_JIT_DECLARE_SUBKIND(subkind, family, ...) subkind,
+#define CL_JIT_DECLARE_SUBKIND_INDEX(subkind, family, ...) subkind,
+#define CL_JIT_COUNT_SUBKIND(subkind, family, ...) +1
+    namespace detail
+    {
 #define CL_JIT_INSTRUCTION_FAMILY(name, ir_levels, result, effects, operands,  \
                                   attributes, subkinds)                        \
-    enum class name##Subkind : uint8_t{                                        \
-        subkinds(CL_JIT_DECLARE_SUBKIND, name) Count,                          \
-    };                                                                         \
-    static_assert(static_cast<uint8_t>(name##Subkind::Count) <= 16);
+    enum class name##SubkindIndex : uint8_t{                                   \
+        subkinds(CL_JIT_DECLARE_SUBKIND_INDEX, name)};                         \
+    static_assert(0 subkinds(CL_JIT_COUNT_SUBKIND, name) <= 16);
 #define CL_JIT_INSTRUCTION(name, ir_levels, result, effects, operands,         \
                            attributes)                                         \
     CL_JIT_INSTRUCTION_FAMILY(name, ir_levels, result, effects, operands,      \
@@ -246,7 +248,9 @@ namespace cl::jit
 #include "jit/instruction.def"
 #undef CL_JIT_INSTRUCTION
 #undef CL_JIT_INSTRUCTION_FAMILY
-#undef CL_JIT_DECLARE_SUBKIND
+#undef CL_JIT_COUNT_SUBKIND
+#undef CL_JIT_DECLARE_SUBKIND_INDEX
+    }  // namespace detail
 
     static constexpr uint16_t InstructionFamilyMask = 0x00ff;
     static constexpr uint16_t InstructionSubkindMask = 0x0f00;
@@ -292,7 +296,7 @@ namespace cl::jit
 #define CL_JIT_DECLARE_INSTRUCTION_KIND(subkind, family, ...)                  \
     subkind = encode_instruction_kind(                                         \
         InstructionFamilyKind::family,                                         \
-        static_cast<uint8_t>(family##Subkind::subkind),                        \
+        static_cast<uint8_t>(detail::family##SubkindIndex::subkind),           \
         family##InstructionResult.result_class,                                \
         family##InstructionResult.representation),
 #define CL_JIT_INSTRUCTION_FAMILY(name, ir_levels, result, effects, operands,  \
@@ -307,6 +311,21 @@ namespace cl::jit
 #undef CL_JIT_INSTRUCTION_FAMILY
 #undef CL_JIT_DECLARE_INSTRUCTION_KIND
     };
+
+#define CL_JIT_DECLARE_MIRRORED_SUBKIND(subkind, family, ...)                  \
+    subkind = static_cast<uint16_t>(InstructionKind::subkind),
+#define CL_JIT_INSTRUCTION_FAMILY(name, ir_levels, result, effects, operands,  \
+                                  attributes, subkinds)                        \
+    enum class name##Subkind : uint16_t{                                       \
+        subkinds(CL_JIT_DECLARE_MIRRORED_SUBKIND, name)};
+#define CL_JIT_INSTRUCTION(name, ir_levels, result, effects, operands,         \
+                           attributes)                                         \
+    CL_JIT_INSTRUCTION_FAMILY(name, ir_levels, result, effects, operands,      \
+                              attributes, CL_JIT_SINGLETON_SUBKINDS)
+#include "jit/instruction.def"
+#undef CL_JIT_INSTRUCTION
+#undef CL_JIT_INSTRUCTION_FAMILY
+#undef CL_JIT_DECLARE_MIRRORED_SUBKIND
 
     // clang-format off
 #define CL_JIT_LEVEL_KIND_JOIN_INNER(first, second) first##second
@@ -740,8 +759,11 @@ namespace cl::jit
         instruction_kind_has_valid_result_encoding(InstructionKind::subkind)); \
     static_assert(instruction_family_kind(InstructionKind::subkind) ==         \
                   InstructionFamilyKind::family);                              \
-    static_assert(instruction_subkind(InstructionKind::subkind) ==             \
-                  static_cast<uint8_t>(family##Subkind::subkind));
+    static_assert(                                                             \
+        instruction_subkind(InstructionKind::subkind) ==                       \
+        static_cast<uint8_t>(detail::family##SubkindIndex::subkind));          \
+    static_assert(static_cast<uint16_t>(family##Subkind::subkind) ==           \
+                  static_cast<uint16_t>(InstructionKind::subkind));
 #define CL_JIT_INSTRUCTION_FAMILY(name, ir_levels, result, effects, operands,  \
                                   attributes, subkinds)                        \
     subkinds(CL_JIT_STATIC_ASSERT_SUBKIND, name, result)
@@ -1451,7 +1473,7 @@ namespace cl::jit
         {                                                                      \
             assert(accepts_kind(Instruction::kind()));                         \
             return static_cast<name##Subkind>(                                 \
-                instruction_subkind(Instruction::kind()));                     \
+                static_cast<uint16_t>(Instruction::kind()));                   \
         }                                                                      \
                                                                                \
         template <bool Indirect = OperandsAreIndirect>                         \
@@ -1592,9 +1614,10 @@ namespace cl::jit
         friend class Instruction;                                              \
         static constexpr InstructionKind encoded_kind(name##Subkind subkind)  \
         {                                                                      \
-            return static_cast<InstructionKind>(encode_instruction_kind(       \
-                FamilyKind, static_cast<uint8_t>(subkind), Result,             \
-                Representation));                                              \
+            InstructionKind kind = static_cast<InstructionKind>(              \
+                static_cast<uint16_t>(subkind));                               \
+            assert(accepts_kind(kind));                                        \
+            return kind;                                                       \
         }                                                                      \
                                                                                \
         template <bool Indirect = OperandsAreIndirect>                         \

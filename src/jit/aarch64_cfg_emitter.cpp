@@ -107,12 +107,18 @@ namespace cl::jit
         AArch64Condition
         emit_is_comparison(AArch64MacroAssembler &assembler,
                            const LocationAssignments &locations,
-                           AArch64Condition true_condition, ProgramValueRef lhs,
-                           ProgramValueRef rhs)
+                           IsComparisonInstruction comparison)
         {
-            assembler.cmp(assigned_register(locations, lhs),
-                          assigned_register(locations, rhs));
-            return true_condition;
+            assembler.cmp(assigned_register(locations, comparison.lhs()),
+                          assigned_register(locations, comparison.rhs()));
+            switch(comparison.subkind())
+            {
+                case IsComparisonSubkind::Is:
+                    return AArch64Condition::Equal;
+                case IsComparisonSubkind::IsNot:
+                    return AArch64Condition::NotEqual;
+            }
+            fatal("invalid JIT is-comparison subkind");
         }
 
         void
@@ -373,23 +379,13 @@ namespace cl::jit
                     break;
                 }
 
-                case CL_JIT_MACHINE_INSTRUCTION_CASE(
-                    IsInstruction, is_instruction)
+                case MachineInstructionKind::Is:
+                case MachineInstructionKind::IsNot:
                 {
+                    IsComparisonInstruction comparison =
+                        instruction.as<IsComparisonInstruction>();
                     AArch64Condition true_condition = emit_is_comparison(
-                        assembler, locations, AArch64Condition::Equal,
-                        is_instruction.lhs(), is_instruction.rhs());
-                    emit_tagged_boolean_from_flags(
-                        assembler, locations, true_condition, instruction);
-                    break;
-                }
-
-                case CL_JIT_MACHINE_INSTRUCTION_CASE(
-                    IsNotInstruction, is_not_instruction)
-                {
-                    AArch64Condition true_condition = emit_is_comparison(
-                        assembler, locations, AArch64Condition::NotEqual,
-                        is_not_instruction.lhs(), is_not_instruction.rhs());
+                        assembler, locations, comparison);
                     emit_tagged_boolean_from_flags(
                         assembler, locations, true_condition, instruction);
                     break;
@@ -612,38 +608,13 @@ namespace cl::jit
                     next_instruction->as<ConditionalBranchInstruction>();
                 if(branch.condition().instruction_id() == instruction.id())
                 {
-                    bool matched = false;
-                    AArch64Condition true_condition = AArch64Condition::Equal;
-                    switch(instruction.kind())
+                    if(IsComparisonInstruction::accepts_kind(
+                           instruction.kind()))
                     {
-                        case InstructionKind::Is:
-                            {
-                                IsInstruction comparison =
-                                    instruction.as<IsInstruction>();
-                                true_condition = emit_is_comparison(
-                                    assembler, locations,
-                                    AArch64Condition::Equal, comparison.lhs(),
-                                    comparison.rhs());
-                                matched = true;
-                                break;
-                            }
-                        case InstructionKind::IsNot:
-                            {
-                                IsNotInstruction comparison =
-                                    instruction.as<IsNotInstruction>();
-                                true_condition = emit_is_comparison(
-                                    assembler, locations,
-                                    AArch64Condition::NotEqual,
-                                    comparison.lhs(), comparison.rhs());
-                                matched = true;
-                                break;
-                            }
-                        default:
-                            break;
-                    }
-
-                    if(matched)
-                    {
+                        IsComparisonInstruction comparison =
+                            instruction.as<IsComparisonInstruction>();
+                        AArch64Condition true_condition = emit_is_comparison(
+                            assembler, locations, comparison);
                         if(branch_edges_use_value(branch, instruction.id()))
                         {
                             emit_tagged_boolean_from_flags(assembler, locations,

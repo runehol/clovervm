@@ -354,10 +354,10 @@ namespace cl::jit
                   instruction_family_kind(InstructionKind::IsNot));
         EXPECT_EQ(0u, instruction_subkind(InstructionKind::Parameter));
         EXPECT_EQ(0u, instruction_subkind(InstructionKind::ParameterF64));
-        EXPECT_EQ(static_cast<uint8_t>(IsComparisonSubkind::Is),
-                  instruction_subkind(InstructionKind::Is));
-        EXPECT_EQ(static_cast<uint8_t>(IsComparisonSubkind::IsNot),
-                  instruction_subkind(InstructionKind::IsNot));
+        EXPECT_EQ(static_cast<uint16_t>(InstructionKind::Is),
+                  static_cast<uint16_t>(IsComparisonSubkind::Is));
+        EXPECT_EQ(static_cast<uint16_t>(InstructionKind::IsNot),
+                  static_cast<uint16_t>(IsComparisonSubkind::IsNot));
         EXPECT_EQ(
             &instruction_family_metadata(InstructionFamilyKind::Parameter),
             &instruction_kind_metadata(InstructionKind::Parameter));

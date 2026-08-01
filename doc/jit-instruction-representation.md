@@ -598,9 +598,14 @@ dense instruction family kind:
 ```
 
 The encoded bits remain part of the kind for equality and exhaustive switches;
-they are not independently mutable properties. Masks decode `ResultClass` and
-`ValueRepresentation` without a kind switch or metadata lookup. The low eight
-bits index the compact family metadata table directly. A family owns its IR
+they are not independently mutable properties. The four-bit subkind field uses
+a family-local ordinal internally, but the public family-specific subkind enum
+mirrors the complete encoded `InstructionKind` values rather than exposing
+those ordinals. Thus `IsComparisonSubkind::IsNot` has the same underlying value
+as `InstructionKind::IsNot`, while retaining a family-specific enum type for
+exhaustive switches. Masks decode `ResultClass` and `ValueRepresentation`
+without a kind switch or metadata lookup. The low eight bits index the compact
+family metadata table directly. A family owns its IR
 membership, definition kind, effect bounds, operand and attribute schema, and
 physical layout. Every subkind in a family therefore has exactly the same
 result type, operands, attributes, effects, and IR membership; only operation
