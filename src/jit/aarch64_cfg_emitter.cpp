@@ -197,15 +197,32 @@ namespace cl::jit
             assert(false);
         }
 
-        void emit_truthiness_branch(AArch64MacroAssembler &assembler,
-                                    XRegister condition,
-                                    AArch64Condition branch_condition,
-                                    Label target)
+        void emit_branch_from_flags(AArch64MacroAssembler &assembler,
+                                    AArch64Condition true_condition,
+                                    const Block *true_target,
+                                    const Block *false_target,
+                                    const Block *next_block,
+                                    const BlockLabels &block_labels)
         {
-            assert(branch_condition == AArch64Condition::Equal ||
-                   branch_condition == AArch64Condition::NotEqual);
-            assembler.tst(condition, value_truthy_mask);
-            assembler.b(branch_condition, target);
+            if(true_target == false_target)
+            {
+                if(true_target != next_block)
+                {
+                    assembler.b(block_label(block_labels, true_target));
+                }
+                return;
+            }
+            if(true_target == next_block)
+            {
+                assembler.b(invert_condition(true_condition),
+                            block_label(block_labels, false_target));
+                return;
+            }
+            assembler.b(true_condition, block_label(block_labels, true_target));
+            if(false_target != next_block)
+            {
+                assembler.b(block_label(block_labels, false_target));
+            }
         }
 
         Result<PublishedCode, JitCodeError>
@@ -465,34 +482,15 @@ namespace cl::jit
                         branch_instruction.true_edge()->target();
                     const Block *false_target =
                         branch_instruction.false_edge()->target();
-                    if(true_target == false_target)
+                    if(true_target != false_target)
                     {
-                        if(true_target != next_block)
-                        {
-                            assembler.b(
-                                block_label(block_labels, true_target));
-                        }
-                        break;
+                        XRegister condition = assigned_register(
+                            locations, branch_instruction.condition());
+                        assembler.tst(condition, value_truthy_mask);
                     }
-                    XRegister condition = assigned_register(
-                        locations, branch_instruction.condition());
-                    if(true_target == next_block)
-                    {
-                        emit_truthiness_branch(
-                            assembler, condition,
-                            AArch64Condition::Equal,
-                            block_label(block_labels, false_target));
-                        break;
-                    }
-                    emit_truthiness_branch(
-                        assembler, condition,
-                        AArch64Condition::NotEqual,
-                        block_label(block_labels, true_target));
-                    if(false_target != next_block)
-                    {
-                        assembler.b(
-                            block_label(block_labels, false_target));
-                    }
+                    emit_branch_from_flags(
+                        assembler, AArch64Condition::NotEqual, true_target,
+                        false_target, next_block, block_labels);
                     break;
                 }
 

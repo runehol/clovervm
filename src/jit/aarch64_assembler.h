@@ -200,6 +200,27 @@ namespace cl::jit
         SignedLessOrEqual = 13,
     };
 
+    constexpr AArch64Condition invert_condition(AArch64Condition condition)
+    {
+        return static_cast<AArch64Condition>(static_cast<uint8_t>(condition) ^
+                                             1u);
+    }
+
+    static_assert(invert_condition(AArch64Condition::Equal) ==
+                  AArch64Condition::NotEqual);
+    static_assert(invert_condition(AArch64Condition::CarrySet) ==
+                  AArch64Condition::CarryClear);
+    static_assert(invert_condition(AArch64Condition::Negative) ==
+                  AArch64Condition::PositiveOrZero);
+    static_assert(invert_condition(AArch64Condition::Overflow) ==
+                  AArch64Condition::NoOverflow);
+    static_assert(invert_condition(AArch64Condition::UnsignedHigher) ==
+                  AArch64Condition::UnsignedLowerOrSame);
+    static_assert(invert_condition(AArch64Condition::SignedGreaterOrEqual) ==
+                  AArch64Condition::SignedLess);
+    static_assert(invert_condition(AArch64Condition::SignedGreater) ==
+                  AArch64Condition::SignedLessOrEqual);
+
     enum class AArch64ValuePoolMode : uint8_t
     {
         NearLiteral,
