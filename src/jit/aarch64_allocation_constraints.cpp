@@ -6,6 +6,7 @@
 
 #include <array>
 #include <cassert>
+#include <optional>
 #include <span>
 #include <utility>
 #include <vector>
@@ -48,10 +49,40 @@ namespace cl::jit
                   "bring-up");
         }
 
-        InstructionAllocationConstraints
-        entry_parameter_constraints(Instruction parameter,
-                                    size_t parameter_index)
+        InstructionAllocationConstraints entry_parameter_constraints(
+            Instruction parameter, size_t parameter_index,
+            const std::optional<BytecodeStateOrder> &bytecode_state_order)
         {
+            if(bytecode_state_order.has_value() &&
+               parameter_index >= bytecode_state_order->n_parameters())
+            {
+                size_t frame_header_index =
+                    parameter_index - bytecode_state_order->n_parameters();
+                if(frame_header_index >= FrameHeaderSize)
+                {
+                    fatal("AArch64 bytecode entry has an unexpected "
+                          "parameter");
+                }
+
+                int32_t frame_offset =
+                    FrameHeaderPreviousFpOffset + int32_t(frame_header_index);
+                bool pointer = frame_header_value_is_pointer(frame_offset);
+                if((pointer &&
+                    parameter.kind() != InstructionKind::ParameterPointer) ||
+                   (!pointer && parameter.kind() != InstructionKind::Parameter))
+                {
+                    fatal("AArch64 bytecode frame-header parameter has the "
+                          "wrong representation");
+                }
+                return InstructionAllocationConstraints(
+                    parameter, {},
+                    ResultConstraint{
+                        AccessTiming::Late,
+                        LocationRequirement::fixed(PhysicalLocation::stack(
+                            StackLocation(StackLocationKind::LocalOrTemporary,
+                                          frame_offset)))});
+            }
+
             if(parameter.kind() != InstructionKind::Parameter)
             {
                 fatal("AArch64 allocation constraint bring-up does not "
@@ -142,7 +173,8 @@ namespace cl::jit
         for(size_t index = 0; index < entry->parameters().size(); ++index)
         {
             overrides.push_back(
-                entry_parameter_constraints(entry->parameter_at(index), index));
+                entry_parameter_constraints(entry->parameter_at(index), index,
+                                            graph.bytecode_state_order()));
         }
 
         for(const Block *block: graph.blocks())

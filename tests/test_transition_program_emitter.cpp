@@ -139,6 +139,36 @@ namespace cl::jit
         }
     }
 
+    TEST(TransitionProgramEmitter, OmitsCanonicalFrameLocationTransfers)
+    {
+        EmitterFixture fixture;
+        std::vector<TransitionLocation> input_locations = {
+            TransitionLocation::register_file(0)};
+        for(size_t position = BytecodeStateOrder::FirstFramePosition;
+            position < fixture.state_order->size(); ++position)
+        {
+            input_locations.push_back(
+                TransitionLocation::stack(static_cast<int16_t>(
+                    fixture.state_order->frame_offset_at(position))));
+        }
+
+        std::vector<TransitionInstruction> program =
+            emit_side_exit_transition_program(
+                *fixture.session.storage(), *fixture.state_order,
+                fixture.binding(), input_locations);
+
+        ASSERT_EQ(3u, program.size());
+        EXPECT_EQ(TransitionInstructionKind::BeginTransition,
+                  program[0].kind());
+        EXPECT_EQ(TransitionInstructionKind::Transfer, program[1].kind());
+        EXPECT_EQ(TransitionLocation::scratch(0),
+                  program[1].transfer_destination());
+        EXPECT_EQ(TransitionLocation::register_file(0),
+                  program[1].transfer_source());
+        EXPECT_EQ(TransitionInstructionKind::ResumeInterpreter,
+                  program[2].kind());
+    }
+
     TEST(TransitionProgramEmitter, UsesMoveScratchForAFrameCycle)
     {
         EmitterFixture fixture;

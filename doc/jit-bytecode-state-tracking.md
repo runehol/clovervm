@@ -4,7 +4,7 @@
 |---|---|
 | Document type | Design |
 | Status | Accepted |
-| Implementation | Partial: canonical outer-frame state ordering without ThreadState, CFG attachment, shared state tracking, and an executable straight-line Core translation slice with basic control flow are implemented; frame-header value definitions, broader semantic coverage, executable side exits, and Semantic translation remain |
+| Implementation | Partial: canonical outer-frame state ordering without ThreadState, typed frame-header entry definitions, CFG attachment, shared state tracking, and an executable straight-line Core translation slice with basic control flow are implemented; broader semantic coverage, executable side exits, and Semantic translation remain |
 | Scope | Shared symbolic bytecode state, target-driven bytecode-to-IR translation, block state transfer, multiple results, and Snapshot state queries |
 | Owning layers | The bytecode decoder owns decoded locations and structural blocks; the shared JIT state layer owns opcode-blind bytecode state tracking and its canonical ordering description; each concrete translator owns traversal, IR construction, opcode semantics, and Snapshot extent |
 | Validated against | `tests/test_jit_bytecode_state.cpp`, `tests/test_jit_core_bytecode_translator.cpp`, `tests/test_jit_cfg.cpp`, and `tests/test_jit_storage.cpp` |
@@ -125,11 +125,10 @@ locals
 temporaries
 ```
 
-Padding and frame-header slots are real state positions. In the completed Core
-model every position contains a `ProgramValueRef`; raw FP and PC header values
-will use an appropriate non-tagged representation, while the return
-`CodeObject` remains tagged. The exact header-producing instructions are a
-separate Core design decision.
+Padding and frame-header slots are real state positions. Every position contains
+a `ProgramValueRef`. Raw FP and PC header values use the pointer representation,
+while the return `CodeObject` remains tagged. Function entry defines those four
+values as parameters fixed to their existing canonical stack positions.
 
 `BytecodeStateOrder` describes this mapping. Position zero is the distinguished
 accumulator and has no frame offset or canonical frame home. The tracker uses
@@ -173,8 +172,8 @@ The function-entry state is initialized differently from an ordinary block:
 - the accumulator receives the same `Uninitialized` reference as an
   uninitialized temporary.
 - ABI padding positions receive an unavailable reference;
-- frame-header positions will receive definitions of their actual entry
-  contents.
+- frame-header positions receive typed parameter definitions of their actual
+  entry contents.
 
 Every tracked location therefore contains a `ProgramValueRef`, including the
 initial accumulator and semantically uninitialized locals and temporaries.
@@ -188,11 +187,13 @@ reference through the same semantic-location interface as every other value;
 the recovery layer decides whether to encode that sentinel structurally or
 materialize it.
 
-The current structural Core translator provisionally initializes outer
-frame-header positions with the unavailable entry reference. This permits the
-canonical state-order refactor to land independently; Snapshots are not
-executable recovery records until the header value representations and entry
-definitions replace those placeholders.
+The structural Core translator appends four frame-header parameters after the
+ordinary function parameters. Previous FP, compiled return PC, and interpreter
+return PC are pointer values; the return `CodeObject` is tagged. Target
+constraints place them at exact stack offsets `fp[0]` through `fp[3]` using the
+ordinary stack-location model. Non-entry block parameters preserve the same
+representations. No special frame-header stack-location category or reserved
+allocator area is required.
 
 An ordinary non-entry block begins with eager target block parameters in
 the tracker's canonical order. The register allocator may merge their live

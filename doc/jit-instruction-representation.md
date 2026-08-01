@@ -290,9 +290,9 @@ struct InstructionOperandTable::Allocation
 Snapshot is a representation-erased positional variadic range. A value-bearing
 position stores one `ProgramValueRef` word, and the referenced def kind
 supplies its concrete representation. This includes frame-header positions:
-raw PC and FP contents require a non-tagged program-value representation, while
-the return code object is tagged. The exact non-tagged representation remains
-deferred. No position uses a nullable or structural escape encoding.
+raw PC and FP contents use the pointer program-value representation, while the
+return code object is tagged. No position uses a nullable or structural escape
+encoding.
 
 Each generated variadic class exposes hidden construction machinery
 `n_indirect_slots_for(constructor arguments...)`. Compilation storage uses it

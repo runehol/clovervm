@@ -1,7 +1,9 @@
 #include "jit/aarch64_allocation_constraints.h"
 
+#include "jit/bytecode_state.h"
 #include "jit/compilation_session.h"
 #include "jit/graph_builder.h"
+#include "test_helpers.h"
 
 #include <gtest/gtest.h>
 
@@ -141,6 +143,53 @@ namespace cl::jit
         EXPECT_EQ(x(0), return_override->input_overrides()[0]
                             .requirement.fixed_location()
                             .reg());
+    }
+
+    TEST(AArch64AllocationConstraints,
+         FixesBytecodeFrameHeaderParametersToTheirStackLocations)
+    {
+        test::VmTestContext context;
+        CodeObject *code_object = context.compile_file(L"pass\n");
+        code_object->function_signature.n_parameters = 1;
+
+        CompilationSession session;
+        GraphBuilder builder(session, IRLevel::Machine);
+        builder.set_bytecode_state_order(BytecodeStateOrder(*code_object));
+        Block *entry = builder.emplace_block();
+        ParameterInstruction argument =
+            builder.emplace_parameter<ParameterInstruction>(entry);
+        std::array<Instruction, FrameHeaderSize> frame_header = {
+            builder.emplace_parameter<ParameterPointerInstruction>(entry),
+            builder.emplace_parameter<ParameterPointerInstruction>(entry),
+            builder.emplace_parameter<ParameterInstruction>(entry),
+            builder.emplace_parameter<ParameterPointerInstruction>(entry),
+        };
+        builder.emplace_instruction<ReturnInstruction>(
+            entry, TaggedValueRef(argument));
+        ControlFlowGraph *graph = builder.finalize();
+
+        AllocationConstraints constraints =
+            make_aarch64_allocation_constraints(*graph);
+
+        const InstructionAllocationConstraints *argument_constraints =
+            find_override(constraints, argument);
+        ASSERT_NE(nullptr, argument_constraints);
+        ASSERT_TRUE(argument_constraints->result_override().has_value());
+        EXPECT_EQ(x(0), argument_constraints->result_override()
+                            ->requirement.fixed_location()
+                            .reg());
+
+        for(size_t index = 0; index < frame_header.size(); ++index)
+        {
+            const InstructionAllocationConstraints *header_constraints =
+                find_override(constraints, frame_header[index]);
+            ASSERT_NE(nullptr, header_constraints);
+            ASSERT_TRUE(header_constraints->result_override().has_value());
+            PhysicalLocation location = header_constraints->result_override()
+                                            ->requirement.fixed_location();
+            ASSERT_TRUE(location.is_stack());
+            EXPECT_EQ(int32_t(index), location.stack().frame_offset());
+        }
     }
 
     TEST(AArch64AllocationConstraints, OmitsOrdinaryInstructionsAndBranches)

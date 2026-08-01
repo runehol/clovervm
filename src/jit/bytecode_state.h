@@ -5,6 +5,7 @@
 #include "bytecode/code_object.h"
 #include "runtime/fatal.h"
 
+#include <cassert>
 #include <cstddef>
 #include <cstdint>
 #include <span>
@@ -13,6 +14,13 @@
 
 namespace cl::jit
 {
+    inline bool frame_header_value_is_pointer(int32_t frame_offset)
+    {
+        assert(frame_offset >= FrameHeaderPreviousFpOffset);
+        assert(frame_offset <= FrameHeaderReturnPcOffset);
+        return frame_offset != FrameHeaderReturnCodeObjectOffset;
+    }
+
     class BytecodeStateOrder
     {
     public:
@@ -134,6 +142,7 @@ namespace cl::jit
         }
 
         BytecodeState<Ref> make_entry_state(std::span<const Ref> parameters,
+                                            std::span<const Ref> frame_header,
                                             Ref uninitialized_local,
                                             Ref unavailable) const
         {
@@ -142,12 +151,24 @@ namespace cl::jit
                 fatal("JIT bytecode entry state has the wrong parameter "
                       "count");
             }
+            if(frame_header.size() != FrameHeaderSize)
+            {
+                fatal("JIT bytecode entry state has the wrong frame-header "
+                      "size");
+            }
 
             std::vector<Ref> values(order_.size(), unavailable);
             for(uint32_t index = 0; index < order_.n_parameters(); ++index)
             {
                 values[BytecodeStateOrder::FirstFramePosition + index] =
                     parameters[index];
+            }
+            for(int32_t frame_offset = FrameHeaderPreviousFpOffset;
+                frame_offset <= FrameHeaderReturnPcOffset; ++frame_offset)
+            {
+                values[order_.position_for_frame_offset(frame_offset)] =
+                    frame_header[size_t(frame_offset -
+                                        FrameHeaderPreviousFpOffset)];
             }
             for(uint32_t index = 0; index < order_.n_locals(); ++index)
             {

@@ -5,6 +5,7 @@
 #include "jit/bytecode_state.h"
 #include "jit/graph_builder.h"
 
+#include <cstddef>
 #include <vector>
 
 namespace cl::jit
@@ -32,6 +33,8 @@ namespace cl::jit
 
         State make_entry_state(Block *block);
         State make_block_entry_state(Block *block);
+        ProgramValueRef emplace_state_parameter(Block *block,
+                                                size_t state_position);
 
         void translate_block(const BytecodeBlock &bytecode_block);
         void translate_sequential_instruction(

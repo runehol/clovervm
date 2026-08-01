@@ -349,6 +349,32 @@ namespace cl::jit
         EXPECT_EQ(
             InstructionKind::Parameter,
             jump->parameter_at(BytecodeStateOrder::AccumulatorPosition).kind());
+
+        const BytecodeStateOrder &state_order =
+            graph->bytecode_state_order().value();
+        for(Block *successor: {fallthrough, jump})
+        {
+            EXPECT_EQ(InstructionKind::ParameterPointer,
+                      successor
+                          ->parameter_at(state_order.position_for_frame_offset(
+                              FrameHeaderPreviousFpOffset))
+                          .kind());
+            EXPECT_EQ(InstructionKind::ParameterPointer,
+                      successor
+                          ->parameter_at(state_order.position_for_frame_offset(
+                              FrameHeaderCompiledReturnPcOffset))
+                          .kind());
+            EXPECT_EQ(InstructionKind::Parameter,
+                      successor
+                          ->parameter_at(state_order.position_for_frame_offset(
+                              FrameHeaderReturnCodeObjectOffset))
+                          .kind());
+            EXPECT_EQ(InstructionKind::ParameterPointer,
+                      successor
+                          ->parameter_at(state_order.position_for_frame_offset(
+                              FrameHeaderReturnPcOffset))
+                          .kind());
+        }
     }
 
     TEST(JitCoreBytecodeTranslator,
@@ -462,9 +488,16 @@ namespace cl::jit
 
         ControlFlowGraph *graph = fixture.translate();
         Block *entry = graph->entry_block();
-        ASSERT_EQ(1u, entry->parameters().size());
+        ASSERT_EQ(1u + FrameHeaderSize, entry->parameters().size());
         Instruction parameter = entry->parameter_at(0);
         EXPECT_EQ(InstructionKind::Parameter, parameter.kind());
+        EXPECT_EQ(InstructionKind::ParameterPointer,
+                  entry->parameter_at(1).kind());
+        EXPECT_EQ(InstructionKind::ParameterPointer,
+                  entry->parameter_at(2).kind());
+        EXPECT_EQ(InstructionKind::Parameter, entry->parameter_at(3).kind());
+        EXPECT_EQ(InstructionKind::ParameterPointer,
+                  entry->parameter_at(4).kind());
         std::vector<Instruction> snapshots =
             instructions_of_kind(entry, InstructionKind::Snapshot);
         ASSERT_EQ(1u, snapshots.size());
@@ -473,6 +506,19 @@ namespace cl::jit
         ASSERT_EQ(bytecode_state_size(*graph), captured.size());
         EXPECT_EQ(parameter.id(), captured[0].instruction_id());
         EXPECT_EQ(parameter.id(), captured[1].instruction_id());
+        const BytecodeStateOrder &state_order =
+            graph->bytecode_state_order().value();
+        for(int32_t frame_offset = FrameHeaderPreviousFpOffset;
+            frame_offset <= FrameHeaderReturnPcOffset; ++frame_offset)
+        {
+            EXPECT_EQ(
+                entry
+                    ->parameter_at(
+                        1 + size_t(frame_offset - FrameHeaderPreviousFpOffset))
+                    .id(),
+                captured[state_order.position_for_frame_offset(frame_offset)]
+                    .instruction_id());
+        }
     }
 
     TEST(JitCoreBytecodeTranslator,

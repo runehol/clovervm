@@ -38,11 +38,22 @@ namespace cl::jit
                 builder_.emplace_parameter<ParameterInstruction>(block));
         }
 
+        std::vector<ProgramValueRef> frame_header;
+        frame_header.reserve(FrameHeaderSize);
+        for(int32_t frame_offset = FrameHeaderPreviousFpOffset;
+            frame_offset <= FrameHeaderReturnPcOffset; ++frame_offset)
+        {
+            frame_header.push_back(emplace_state_parameter(
+                block, state_tracker_.order().position_for_frame_offset(
+                           frame_offset)));
+        }
+
         ProgramValueRef uninitialized_local(
             builder_.emplace_instruction<UninitializedInstruction>(block));
         ProgramValueRef uninitialized_temporary(
             builder_.emplace_instruction<UninitializedInstruction>(block));
-        return state_tracker_.make_entry_state(parameters, uninitialized_local,
+        return state_tracker_.make_entry_state(parameters, frame_header,
+                                               uninitialized_local,
                                                uninitialized_temporary);
     }
 
@@ -54,10 +65,30 @@ namespace cl::jit
         for(size_t index = 0; index < state_tracker_.block_parameter_count();
             ++index)
         {
-            parameters.emplace_back(
-                builder_.emplace_parameter<ParameterInstruction>(block));
+            parameters.push_back(emplace_state_parameter(block, index));
         }
         return state_tracker_.make_state_from_block_parameters(parameters);
+    }
+
+    ProgramValueRef
+    CoreBytecodeTranslator::emplace_state_parameter(Block *block,
+                                                    size_t state_position)
+    {
+        const BytecodeStateOrder &order = state_tracker_.order();
+        if(state_position >= BytecodeStateOrder::FirstFramePosition)
+        {
+            int32_t frame_offset = order.frame_offset_at(state_position);
+            if(frame_offset >= FrameHeaderPreviousFpOffset &&
+               frame_offset <= FrameHeaderReturnPcOffset &&
+               frame_header_value_is_pointer(frame_offset))
+            {
+                return ProgramValueRef(
+                    builder_.emplace_parameter<ParameterPointerInstruction>(
+                        block));
+            }
+        }
+        return ProgramValueRef(
+            builder_.emplace_parameter<ParameterInstruction>(block));
     }
 
     void

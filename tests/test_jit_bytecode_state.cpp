@@ -61,8 +61,11 @@ namespace cl::jit
         make_entry_state(const BytecodeStateTracker<TestRef> &tracker)
         {
             std::array<TestRef, 3> parameters = {10, 11, 12};
+            std::array<TestRef, FrameHeaderSize> frame_header = {20, 21, 22,
+                                                                 23};
             return tracker.make_entry_state(
-                std::span<const TestRef>(parameters), 90, 99);
+                std::span<const TestRef>(parameters),
+                std::span<const TestRef>(frame_header), 90, 99);
         }
     }  // namespace
 
@@ -87,8 +90,8 @@ namespace cl::jit
 
         std::span<const TestRef> values = tracker.values(state);
         EXPECT_EQ(99u, values[4]);
-        EXPECT_EQ(99u, values[5]);
-        EXPECT_EQ(99u, values[8]);
+        EXPECT_EQ(23u, values[5]);
+        EXPECT_EQ(20u, values[8]);
     }
 
     TEST(JitBytecodeState, UsesCanonicalDescendingStackOrder)
@@ -237,15 +240,30 @@ namespace cl::jit
 
     TEST(JitBytecodeState, RejectsInvalidLocationsAndArities)
     {
+        EXPECT_DEATH(
+            ([] {
+                StateFixture fixture;
+                BytecodeStateTracker<TestRef> tracker(*fixture.code_object);
+                std::array<TestRef, 2> parameters = {1, 2};
+                std::array<TestRef, FrameHeaderSize> frame_header = {20, 21, 22,
+                                                                     23};
+                (void)tracker.make_entry_state(
+                    std::span<const TestRef>(parameters),
+                    std::span<const TestRef>(frame_header), 90, 99);
+            }()),
+            "wrong parameter count");
+
         EXPECT_DEATH(([] {
                          StateFixture fixture;
                          BytecodeStateTracker<TestRef> tracker(
                              *fixture.code_object);
-                         std::array<TestRef, 2> parameters = {1, 2};
+                         std::array<TestRef, 3> parameters = {1, 2, 3};
+                         std::array<TestRef, 3> frame_header = {20, 21, 22};
                          (void)tracker.make_entry_state(
-                             std::span<const TestRef>(parameters), 90, 99);
+                             std::span<const TestRef>(parameters),
+                             std::span<const TestRef>(frame_header), 90, 99);
                      }()),
-                     "wrong parameter count");
+                     "wrong frame-header size");
 
         EXPECT_DEATH(
             ([] {
