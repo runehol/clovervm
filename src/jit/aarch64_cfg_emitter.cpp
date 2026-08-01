@@ -93,26 +93,24 @@ namespace cl::jit
             return static_cast<int64_t>(stack.frame_offset()) * sizeof(Value);
         }
 
-        LogicalOp logical_operation(BinaryLogicalSMISubkind subkind)
+        void emit_binary_logical_smi(AArch64MacroAssembler &assembler,
+                                     const LocationAssignments &locations,
+                                     BinaryLogicalSMIInstruction logical)
         {
-            switch(subkind)
-            {
-                case BinaryLogicalSMISubkind::AndSMI:
-                    return LogicalOp::And;
-                case BinaryLogicalSMISubkind::OrrSMI:
-                    return LogicalOp::Orr;
-                case BinaryLogicalSMISubkind::EorSMI:
-                    return LogicalOp::Eor;
-            }
-            fatal("invalid JIT binary logical SMI subkind");
-        }
-
-        void emit_smi_logical(AArch64MacroAssembler &assembler,
-                              const LocationAssignments &locations,
-                              BinaryLogicalSMIInstruction logical)
-        {
+            LogicalOp operation = [&] {
+                switch(logical.subkind())
+                {
+                    case BinaryLogicalSMISubkind::AndSMI:
+                        return LogicalOp::And;
+                    case BinaryLogicalSMISubkind::OrrSMI:
+                        return LogicalOp::Orr;
+                    case BinaryLogicalSMISubkind::EorSMI:
+                        return LogicalOp::Eor;
+                }
+                __builtin_unreachable();
+            }();
             assembler.emit_logical_reg(
-                logical_operation(logical.subkind()),
+                operation,
                 assigned_register(locations, ProgramValueRef(logical)),
                 assigned_register(locations, logical.lhs()),
                 assigned_register(locations, logical.rhs()));
@@ -132,7 +130,7 @@ namespace cl::jit
                 case IsComparisonSubkind::IsNot:
                     return AArch64Condition::NotEqual;
             }
-            fatal("invalid JIT is-comparison subkind");
+            __builtin_unreachable();
         }
 
         void
@@ -367,7 +365,7 @@ namespace cl::jit
                 case MachineInstructionKind::OrrSMI:
                 case MachineInstructionKind::EorSMI:
                 {
-                    emit_smi_logical(
+                    emit_binary_logical_smi(
                         assembler, locations,
                         instruction.as<BinaryLogicalSMIInstruction>());
                     break;
