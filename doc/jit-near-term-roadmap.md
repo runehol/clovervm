@@ -6,7 +6,7 @@
 | Status | Active |
 | Scope | Prioritized work that turns the current executable AArch64 JIT slice into a broader and runtime-complete compiler |
 | Design authority | [JIT Compiler and IR](jit-compiler-and-ir.md), [JIT Register Allocation](jit-register-allocation.md), [JIT Side-Exit Lowering](jit-side-exit-lowering.md), and [JIT Transition Programs](jit-transition-program.md) |
-| Validated against | `53d8ee1f` (2026-07-31) |
+| Validated against | `b2fe5ecb` (2026-08-01) |
 
 This roadmap records implementation order rather than adding architecture. The
 owning design documents remain authoritative for IR, allocation, recovery,
@@ -22,7 +22,8 @@ Near-term work follows four rules:
    pressure, spills, or repeated work in every widened operation.
 2. Extend allocator contracts when the desired code shape depends on location
    choice; do not repair poor allocation with emitter peepholes.
-3. Make failed speculation executable before widening the speculative surface.
+3. Keep safepoint and recovery correctness current as compiled execution
+   becomes longer-lived.
 4. Widen through operations that reuse the existing Snapshot, guard, side-exit,
    and overflow machinery before taking on calls or allocation.
 
@@ -46,18 +47,18 @@ shape before SMI comparisons are added. The optimization should remove the
 intermediate boolean from Machine IR so allocation does not model a value that
 emission will never materialize.
 
-### 2. Complete Side Exits
+### 2. Poll Safepoints on Loop Backedges
 
-Implement the remaining target-specific thunk described by the
-[AArch64 JIT Calling Convention](aarch64-jit-calling-convention.md). Save the
-compiled register image and transition-program address, temporarily borrow the
-native stack to call the portable C++ transition executor, publish recovered
-canonical interpreter state, and return through interpreter dispatch.
+Add a cheap safepoint poll to compiled loop backedges. The unrequested path
+must stay in generated code without publishing frame state or calling a helper.
+When a poll is requested, take an ordinary side exit at the committed state for
+the target bytecode block and let interpreter reentry perform safepoint handling
+before dispatch.
 
-This milestone makes guard failure, arithmetic overflow, and unsupported
-bytecode exits executable rather than merely encoded. Its managed-frame
-contract must reserve a coherent place for future allocator spill slots even
-though ordinary spilling lands later.
+Cover a loop with live loop-carried values and request a safepoint while it is
+executing compiled code. The test must prove both that roots are published and
+that execution resumes at the backedge target without replaying loop-body
+effects.
 
 ### 3. Widen SMI Operations and Comparisons
 
@@ -100,7 +101,7 @@ should grow with this slice.
 
 Introduce Machine side-exit forms and AArch64 emission for shape and validity
 guards, followed by known-offset field loads. This is the first high-leverage
-object-oriented slice and should reuse the completed runtime exit path.
+object-oriented slice and should reuse the established runtime exit path.
 
 Guard commoning and motion may begin here, once repeated shape checks exist in
 real generated programs. Keep shape and validity checks independently
@@ -108,9 +109,18 @@ optimizable as required by their separate Core instructions.
 
 ### 6. Approach Calls, F64, and General Sinking
 
-Calls require fixed argument and result locations, clobber validation, x19-to-C
-ABI adaptation, call-boundary interpreter-state synchronization, and safepoint
-policy. They should not be introduced as emitter-only sequences.
+Calls require managed frame-header construction, stack-passed argument support,
+fixed argument and result locations, clobber validation, `x25`-to-`x0` native
+helper adaptation, call-boundary interpreter-state synchronization, and
+safepoint policy. Managed return must restore the caller frame state; calls
+should not be introduced as emitter-only sequences.
+
+For JIT-to-JIT calls, move ownership of return-address and return-`CodeObject`
+spilling from the caller to the callee. The caller should transport that return
+context in the compiled calling convention; the callee materializes canonical
+frame-header cells only when its own calls, safepoints, exits, or register
+pressure require them. A leaf function can then keep the return context in
+registers and return without frame-header stores.
 
 F64 support requires SIMD stack transfers, float guards, boxing allocation, and
 recovery computation. General transition sinking becomes valuable with boxing
