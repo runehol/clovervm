@@ -354,6 +354,9 @@ namespace cl::jit
             graph->bytecode_state_order().value();
         for(Block *successor: {fallthrough, jump})
         {
+            ReturnInstruction return_instruction =
+                successor->instruction_at(successor->instructions().size() - 1)
+                    .as<ReturnInstruction>();
             EXPECT_EQ(InstructionKind::ParameterPointer,
                       successor
                           ->parameter_at(state_order.position_for_frame_offset(
@@ -374,6 +377,22 @@ namespace cl::jit
                           ->parameter_at(state_order.position_for_frame_offset(
                               FrameHeaderReturnPcOffset))
                           .kind());
+            EXPECT_EQ(
+                successor
+                    ->parameter_at(state_order.position_for_frame_offset(
+                        FrameHeaderPreviousFpOffset))
+                    .id(),
+                return_instruction.previous_frame_pointer().instruction_id());
+            EXPECT_EQ(successor
+                          ->parameter_at(state_order.position_for_frame_offset(
+                              FrameHeaderReturnCodeObjectOffset))
+                          .id(),
+                      return_instruction.return_code_object().instruction_id());
+            EXPECT_EQ(successor
+                          ->parameter_at(state_order.position_for_frame_offset(
+                              FrameHeaderReturnPcOffset))
+                          .id(),
+                      return_instruction.return_pc().instruction_id());
         }
     }
 

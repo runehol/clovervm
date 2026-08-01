@@ -62,6 +62,12 @@ namespace cl::jit
                 builder_.storage()->instruction(value.instruction_id()));
         }
 
+        PointerRef pointer(ProgramValueRef value) const
+        {
+            return PointerRef(
+                builder_.storage()->instruction(value.instruction_id()));
+        }
+
         const CodeObject &code_object_;
         GraphBuilder &builder_;
         BytecodeDecoder decoder_;

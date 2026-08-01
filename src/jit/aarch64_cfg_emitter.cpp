@@ -520,18 +520,41 @@ namespace cl::jit
                 case CL_JIT_MACHINE_INSTRUCTION_CASE(
                     ReturnInstruction, return_instruction)
                 {
-                    (void)assigned_register(
-                        locations, return_instruction.return_value());
-                    assembler.ldr(AArch64InterpreterPcRegister,
-                                  AArch64ManagedFramePointerRegister,
-                                  FrameHeaderReturnPcOffset * sizeof(Value));
-                    assembler.ldr(AArch64CodeObjectRegister,
-                                  AArch64ManagedFramePointerRegister,
-                                  FrameHeaderReturnCodeObjectOffset *
-                                      sizeof(Value));
-                    assembler.ldr(AArch64ManagedFramePointerRegister,
-                                  AArch64ManagedFramePointerRegister,
-                                  FrameHeaderPreviousFpOffset * sizeof(Value));
+                    assert(assigned_register(
+                               locations, return_instruction.return_value())
+                               .encoding() == 0);
+                    assert(assigned_register(
+                               locations,
+                               return_instruction.return_code_object())
+                               .encoding() ==
+                           AArch64CodeObjectRegister.encoding());
+                    assert(assigned_register(locations,
+                                             return_instruction.return_pc())
+                               .encoding() ==
+                           AArch64InterpreterPcRegister.encoding());
+
+                    PhysicalLocation previous_frame_pointer =
+                        locations.location_for(
+                            return_instruction.previous_frame_pointer());
+                    if(previous_frame_pointer.is_register())
+                    {
+                        XRegister source = assigned_register(
+                            locations,
+                            return_instruction.previous_frame_pointer());
+                        if(source.encoding() !=
+                           AArch64ManagedFramePointerRegister.encoding())
+                        {
+                            assembler.mov(AArch64ManagedFramePointerRegister,
+                                          source);
+                        }
+                    }
+                    else
+                    {
+                        assembler.ldr(
+                            AArch64ManagedFramePointerRegister,
+                            AArch64ManagedFramePointerRegister,
+                            stack_byte_offset(previous_frame_pointer.stack()));
+                    }
                     assembler.emit_ret();
                     break;
                 }

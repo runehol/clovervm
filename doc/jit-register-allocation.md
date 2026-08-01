@@ -689,7 +689,9 @@ The AArch64 constraint producer follows the Clover JIT calling convention:
   `AnyLocation` default;
 - `InlineTagGuardWithSideExit` is a forwarding definition and has no result
   override;
-- `Return` and `BareReturn` inputs have fixed `x0` constraints;
+- `BareReturn` fixes its result in `x0`. Managed `Return` additionally fixes
+  its return PC in `x22` and return `CodeObject` in `x24`, while accepting its
+  previous frame pointer in any location;
 - conditional and unconditional branches request no allocator temporary;
 - `Const`, SMI bitwise instructions, and the virtual `Snapshot` instruction
   need no target override.

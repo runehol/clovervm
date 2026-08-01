@@ -458,7 +458,10 @@ CL_JIT_INSTRUCTION(BareReturn, CL_JIT_IR_LEVELS(CoreMachine),
 #undef CL_JIT_BareReturn_OPERANDS
 
 #define CL_JIT_Return_OPERANDS(fixed, variadic, snapshot_values)              \
-    fixed(return_value, ProgramValue, TaggedValue)
+    fixed(return_value, ProgramValue, TaggedValue)                            \
+    fixed(previous_frame_pointer, ProgramValue, Pointer)                      \
+    fixed(return_code_object, ProgramValue, TaggedValue)                      \
+    fixed(return_pc, ProgramValue, Pointer)
 #define CL_JIT_Return_ATTRIBUTES(attribute)
 CL_JIT_INSTRUCTION(Return, CL_JIT_IR_LEVELS(CoreMachine),
                    CL_JIT_RESULT(None, None, NoDef),

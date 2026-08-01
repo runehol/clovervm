@@ -114,7 +114,11 @@ callee parameter 0..7 -> Def FixedLocation(x0..x7)
 callee parameter 8..N -> Def FixedLocation(
                               IncomingParameter(callee_frame_offset))
 
-return result          -> FixedLocation(x0)
+bare return result      -> FixedLocation(x0)
+managed return result   -> FixedLocation(x0)
+managed return PC       -> FixedLocation(x22)
+managed return CodeObject -> FixedLocation(x24)
+managed previous fp     -> AnyLocation
 ```
 
 `x25` does not appear as an allocation constraint because it is not an
@@ -292,10 +296,15 @@ compiled frame.
 
 ## Returns
 
-Return transitions are arity-independent in both directions. A compiled return
-places its one ordinary result in `x0`; an interpreter return carries the same
-result in the accumulator. The return continuation recorded in the managed
-frame header selects the required direction-specific adapter.
+Return transitions are arity-independent in both directions. A compiled
+managed `Return` consumes its result, previous frame pointer, return
+`CodeObject`, and return PC as explicit IR operands. Allocation places the
+result in `x0`, the PC in `x22`, and the `CodeObject` in `x24`. The previous
+frame pointer may remain in a register or canonical stack slot; emission
+installs it in `x21` only after every other frame-relative input has been
+materialized. An interpreter return carries the same result in the accumulator.
+The return continuation recorded in the managed frame header selects the
+required direction-specific adapter.
 
 Exception propagation uses the existing managed frame and pending-exception
 contracts rather than the ordinary result path.

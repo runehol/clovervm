@@ -110,6 +110,16 @@ namespace cl::jit
                 ReturnInstruction::return_value_operand_index,
                 AccessTiming::Early,
                 LocationRequirement::fixed(PhysicalLocation::reg(gpr(0))));
+            input_overrides.emplace_back(
+                ReturnInstruction::previous_frame_pointer_operand_index,
+                AccessTiming::Early, LocationRequirement::any_location());
+            input_overrides.emplace_back(
+                ReturnInstruction::return_code_object_operand_index,
+                AccessTiming::Early,
+                LocationRequirement::fixed(PhysicalLocation::reg(gpr(24))));
+            input_overrides.emplace_back(
+                ReturnInstruction::return_pc_operand_index, AccessTiming::Early,
+                LocationRequirement::fixed(PhysicalLocation::reg(gpr(22))));
             return InstructionAllocationConstraints(instruction,
                                                     std::move(input_overrides));
         }

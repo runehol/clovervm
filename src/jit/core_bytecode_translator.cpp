@@ -273,7 +273,16 @@ namespace cl::jit
             case Bytecode::Return:
                 assert(inputs.size() == 1);
                 builder_.emplace_instruction<ReturnInstruction>(
-                    block, tagged(inputs.front()));
+                    block, tagged(inputs.front()),
+                    pointer(state_tracker_.value_at(
+                        state, BytecodeValueLocation::stack_slot(
+                                   FrameHeaderPreviousFpOffset))),
+                    tagged(state_tracker_.value_at(
+                        state, BytecodeValueLocation::stack_slot(
+                                   FrameHeaderReturnCodeObjectOffset))),
+                    pointer(state_tracker_.value_at(
+                        state, BytecodeValueLocation::stack_slot(
+                                   FrameHeaderReturnPcOffset))));
                 return;
 
             case Bytecode::Jump:

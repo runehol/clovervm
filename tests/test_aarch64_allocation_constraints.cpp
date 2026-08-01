@@ -175,8 +175,10 @@ namespace cl::jit
             builder.emplace_parameter<ParameterInstruction>(entry),
             builder.emplace_parameter<ParameterPointerInstruction>(entry),
         };
-        builder.emplace_instruction<BareReturnInstruction>(
-            entry, TaggedValueRef(argument));
+        ReturnInstruction return_instruction =
+            builder.emplace_instruction<ReturnInstruction>(
+                entry, TaggedValueRef(argument), PointerRef(frame_header[0]),
+                TaggedValueRef(frame_header[2]), PointerRef(frame_header[3]));
         ControlFlowGraph *graph = builder.finalize();
 
         AllocationConstraints constraints =
@@ -201,6 +203,30 @@ namespace cl::jit
             ASSERT_TRUE(location.is_stack());
             EXPECT_EQ(int32_t(index), location.stack().frame_offset());
         }
+
+        const InstructionAllocationConstraints *return_constraints =
+            find_override(constraints, return_instruction);
+        ASSERT_NE(nullptr, return_constraints);
+        ASSERT_EQ(4u, return_constraints->input_overrides().size());
+        EXPECT_EQ(ReturnInstruction::return_value_operand_index,
+                  return_constraints->input_overrides()[0].operand_index);
+        EXPECT_EQ(x(0), return_constraints->input_overrides()[0]
+                            .requirement.fixed_location()
+                            .reg());
+        EXPECT_EQ(ReturnInstruction::previous_frame_pointer_operand_index,
+                  return_constraints->input_overrides()[1].operand_index);
+        EXPECT_EQ(LocationRequirement::Kind::AnyLocation,
+                  return_constraints->input_overrides()[1].requirement.kind());
+        EXPECT_EQ(ReturnInstruction::return_code_object_operand_index,
+                  return_constraints->input_overrides()[2].operand_index);
+        EXPECT_EQ(x(24), return_constraints->input_overrides()[2]
+                             .requirement.fixed_location()
+                             .reg());
+        EXPECT_EQ(ReturnInstruction::return_pc_operand_index,
+                  return_constraints->input_overrides()[3].operand_index);
+        EXPECT_EQ(x(22), return_constraints->input_overrides()[3]
+                             .requirement.fixed_location()
+                             .reg());
     }
 
     TEST(AArch64AllocationConstraints, OmitsOrdinaryInstructionsAndBranches)
