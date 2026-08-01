@@ -23,11 +23,16 @@ namespace cl::jit
     public:
         enum class Kind : uint8_t
         {
+            AnyLocation,
             AnyRegister,
             FixedLocation,
             SameAsInput,
         };
 
+        static LocationRequirement any_location()
+        {
+            return LocationRequirement(std::monostate{});
+        }
         static LocationRequirement any_register(RegisterClass register_class)
         {
             return LocationRequirement(register_class);
@@ -46,10 +51,12 @@ namespace cl::jit
             switch(payload_.index())
             {
                 case 0:
-                    return Kind::AnyRegister;
+                    return Kind::AnyLocation;
                 case 1:
-                    return Kind::FixedLocation;
+                    return Kind::AnyRegister;
                 case 2:
+                    return Kind::FixedLocation;
+                case 3:
                     return Kind::SameAsInput;
             }
             fatal("invalid JIT location requirement");
@@ -81,6 +88,9 @@ namespace cl::jit
         }
 
     private:
+        explicit LocationRequirement(std::monostate payload) : payload_(payload)
+        {
+        }
         explicit LocationRequirement(RegisterClass register_class)
             : payload_(register_class)
         {
@@ -98,7 +108,8 @@ namespace cl::jit
         {
         }
 
-        std::variant<RegisterClass, PhysicalLocation, uint32_t> payload_;
+        std::variant<std::monostate, RegisterClass, PhysicalLocation, uint32_t>
+            payload_;
     };
 
     struct ProgramValueUseConstraint

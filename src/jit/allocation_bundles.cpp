@@ -30,8 +30,13 @@ namespace cl::jit
         }
 
         uint64_t occurrence_spill_weight(uint32_t loop_depth,
-                                         OccurrenceKind kind, bool fixed)
+                                         OccurrenceKind kind, bool fixed,
+                                         bool register_required)
         {
+            if(!fixed && !register_required)
+            {
+                return 0;
+            }
             uint32_t capped_depth = std::min(loop_depth, uint32_t{10});
             uint64_t hot = uint64_t{1000} << (2 * capped_depth);
             uint64_t definition =
@@ -366,7 +371,8 @@ namespace cl::jit
                 occurrence.spill_weight = occurrence_spill_weight(
                     live_range.block->loop_depth(), occurrence.kind,
                     occurrence_is_fixed(live_range, occurrence_id,
-                                        scan.fixed_constraints));
+                                        scan.fixed_constraints),
+                    occurrence.register_required);
             }
         }
 

@@ -626,6 +626,7 @@ namespace cl::jit
                             problem.occurrences()[occurrence_id.value()];
                         if(fragment.range.contains(
                                occurrence.minimum_coverage) &&
+                           occurrence.register_required &&
                            !occurrence_is_fixed(source, occurrence_id,
                                                 problem.fixed_constraints()))
                         {

@@ -152,6 +152,7 @@ namespace cl::jit
         LiveRangeId live_range;
         OccurrenceKind kind;
         OccurrenceAnchor anchor;
+        bool register_required;
         uint64_t spill_weight;
     };
 

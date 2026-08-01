@@ -271,9 +271,8 @@ namespace cl::jit
                 owner_override->input_overrides()[index];
             EXPECT_EQ(index, input.operand_index);
             EXPECT_EQ(AccessTiming::Late, input.timing);
-            EXPECT_EQ(LocationRequirement::Kind::AnyRegister,
+            EXPECT_EQ(LocationRequirement::Kind::AnyLocation,
                       input.requirement.kind());
-            EXPECT_EQ(RegisterClass::GPR, input.requirement.register_class());
         }
     }
 
@@ -309,9 +308,8 @@ namespace cl::jit
                       side_exit_arguments_operand_index,
                   argument.operand_index);
         EXPECT_EQ(AccessTiming::Late, argument.timing);
-        EXPECT_EQ(LocationRequirement::Kind::AnyRegister,
+        EXPECT_EQ(LocationRequirement::Kind::AnyLocation,
                   argument.requirement.kind());
-        EXPECT_EQ(RegisterClass::GPR, argument.requirement.register_class());
     }
 
     TEST(AArch64AllocationConstraints, ObservesAddSMISideExitArgumentsLate)
@@ -346,9 +344,8 @@ namespace cl::jit
             AddSMIWithSideExitInstruction::side_exit_arguments_operand_index,
             argument.operand_index);
         EXPECT_EQ(AccessTiming::Late, argument.timing);
-        EXPECT_EQ(LocationRequirement::Kind::AnyRegister,
+        EXPECT_EQ(LocationRequirement::Kind::AnyLocation,
                   argument.requirement.kind());
-        EXPECT_EQ(RegisterClass::GPR, argument.requirement.register_class());
     }
 
     TEST(AArch64AllocationConstraints, GivesIdentityTestsOneGPRTemporary)

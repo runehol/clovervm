@@ -136,7 +136,7 @@ namespace cl::jit
             visit_operand_references(
                 instruction,
                 [&](uint32_t operand_index, OperandClass operand_class,
-                    ValueRepresentationRequirement, InstructionId definition) {
+                    ValueRepresentationRequirement, InstructionId) {
                     if(operand_index < first_argument)
                     {
                         return;
@@ -146,14 +146,8 @@ namespace cl::jit
                         fatal("AArch64 side-exit argument is not a program "
                               "value");
                     }
-                    ValueRepresentation representation =
-                        instruction.storage()
-                            ->instruction(definition)
-                            .value_representation();
-                    result.emplace_back(
-                        operand_index, AccessTiming::Late,
-                        LocationRequirement::any_register(
-                            register_class_for_representation(representation)));
+                    result.emplace_back(operand_index, AccessTiming::Late,
+                                        LocationRequirement::any_location());
                 });
             return result;
         }

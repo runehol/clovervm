@@ -25,6 +25,8 @@ namespace cl::jit
         {
             switch(requirement.kind())
             {
+                case LocationRequirement::Kind::AnyLocation:
+                    break;
                 case LocationRequirement::Kind::AnyRegister:
                     return requirement.register_class();
                 case LocationRequirement::Kind::FixedLocation:
@@ -38,6 +40,22 @@ namespace cl::jit
                         }
                         return location.reg().register_class();
                     }
+                case LocationRequirement::Kind::SameAsInput:
+                    break;
+            }
+            fatal("unresolved SameAsInput in JIT allocator preparation");
+        }
+
+        bool requirement_requires_register(LocationRequirement requirement)
+        {
+            switch(requirement.kind())
+            {
+                case LocationRequirement::Kind::AnyLocation:
+                    return false;
+                case LocationRequirement::Kind::AnyRegister:
+                    return true;
+                case LocationRequirement::Kind::FixedLocation:
+                    return requirement.fixed_location().is_register();
                 case LocationRequirement::Kind::SameAsInput:
                     break;
             }
@@ -83,6 +101,10 @@ namespace cl::jit
                     fatal("JIT allocator occurrence has incompatible register "
                           "classes");
                 }
+                return;
+            }
+            if(requirement.kind() == LocationRequirement::Kind::AnyLocation)
+            {
                 return;
             }
 
@@ -310,8 +332,9 @@ namespace cl::jit
 
                 OccurrenceId occurrence_id(
                     static_cast<uint32_t>(occurrences_.size()));
-                occurrences_.push_back({position, coverage, live_range_id, kind,
-                                        std::move(anchor), 0});
+                occurrences_.push_back(
+                    {position, coverage, live_range_id, kind, std::move(anchor),
+                     requirement_requires_register(requirement), 0});
                 live_range.occurrences.push_back(occurrence_id);
                 if(coverage.end > live_range.range.end)
                 {

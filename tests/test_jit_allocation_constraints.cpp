@@ -155,8 +155,11 @@ namespace cl::jit
         EXPECT_EQ(2, locations.at(outgoing));
     }
 
-    TEST(JitLocationRequirement, RepresentsAnyFixedAndSameAsInput)
+    TEST(JitLocationRequirement, RepresentsAnyLocationFixedAndSameAsInput)
     {
+        LocationRequirement any_location = LocationRequirement::any_location();
+        EXPECT_EQ(LocationRequirement::Kind::AnyLocation, any_location.kind());
+
         LocationRequirement any =
             LocationRequirement::any_register(RegisterClass::SIMD);
         EXPECT_EQ(LocationRequirement::Kind::AnyRegister, any.kind());
@@ -193,12 +196,25 @@ namespace cl::jit
                 StackLocation(StackLocationKind::LocalOrTemporary, -2)));
 
         InstructionAllocationConstraints constraints(
-            move, {{0, AccessTiming::Early, outgoing}},
+            move,
+            {{0, AccessTiming::Early, LocationRequirement::any_location()}},
             ResultConstraint{AccessTiming::Late, local});
         constraints.validate(*session.storage());
 
         EXPECT_DEATH((void)TemporaryConstraint(outgoing),
                      "temporary requires a register location");
+        EXPECT_DEATH(
+            (void)TemporaryConstraint(LocationRequirement::any_location()),
+            "temporary cannot accept any location");
+        EXPECT_DEATH(
+            {
+                InstructionAllocationConstraints invalid(
+                    move, {},
+                    ResultConstraint{AccessTiming::Late,
+                                     LocationRequirement::any_location()});
+                invalid.validate(*session.storage());
+            },
+            "result cannot accept any location");
     }
 
     TEST(JitAllocationConstraints, ValidatesFixedInstructionShape)

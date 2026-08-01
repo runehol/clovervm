@@ -450,7 +450,7 @@ ordinary TaggedValue result -> Def Late, AnyRegister(GPR)
 ordinary F64 result         -> Def Late, AnyRegister(SIMD)
 ordinary Pointer result     -> Def Late, AnyRegister(GPR)
 forwarding result           -> ForwardingDef Late, operand 0's live range
-Snapshot operand   -> captured values used Late
+side-exit argument          -> Use Late, AnyLocation
 ```
 
 Target constraints are sparse overrides of these defaults. An instruction with
@@ -480,11 +480,13 @@ class LocationRequirement
 public:
     enum class Kind : uint8_t
     {
+        AnyLocation,
         AnyRegister,
         FixedLocation,
         SameAsInput,
     };
 
+    static LocationRequirement any_location();
     static LocationRequirement any_register(RegisterClass register_class);
     static LocationRequirement fixed(PhysicalLocation location);
     static LocationRequirement same_as_input(uint32_t operand_index);
@@ -577,7 +579,9 @@ allocation finishes; rewriting the graph first invalidates the product and
 requires rebuilding it. This phase contract avoids permanent placement metadata
 or per-access generation checks in the allocator.
 
-`LocationRequirement::AnyRegister` names a register class;
+`LocationRequirement::AnyLocation` accepts the value's assigned register or
+stack location without requesting a transfer; `LocationRequirement::AnyRegister`
+names a register class;
 `LocationRequirement::FixedLocation` names one register or stack location; and
 `LocationRequirement::SameAsInput` names the ProgramValue input whose assigned
 location an independently materialized result should reuse when bundle
@@ -586,6 +590,8 @@ two-address operations, not values that merely forward an input's unchanged
 bits.
 Contextual constructors reject `SameAsInput` for inputs and temporaries, so it
 remains a result-only requirement without a second variant-based representation.
+`AnyLocation` is input-only: results and temporaries must identify where code
+generation can produce them.
 The compact allocator representation may encode these alternatives differently.
 
 Most executable Core occurrences use `AnyRegister`. A stack-assigned fragment
@@ -606,6 +612,12 @@ and shortens register pressure. A fixed register and `AnyRegister` of the same
 class remain compatible; the unsplit bundle may simply use that register.
 Different fixed registers, or a fixed stack location and a register-only
 occurrence, require splitting or an explicit fixup.
+
+An `AnyLocation` occurrence participates fully in liveness but adds no register
+requirement to this compatibility calculation. Side-exit argument tails use
+this requirement because transition-program construction consumes their final
+location assignments directly. A value already in a canonical stack position
+therefore remains in that position instead of being loaded solely for the exit.
 
 The allocator does not allocate a `SnapshotRef`. At each executable instruction
 that consumes one, allocator preparation expands the captured
@@ -1059,10 +1071,11 @@ relatively empty. Fixed-location constraints do not receive a separate priority
 boost.
 
 Ordinary `AnyRegister(register_class)` requirements are implicit in each live
-range's register class and are not copied into allocator occurrences. The
-allocator retains every ordinary use and def occurrence for liveness,
-constraint-driven splitting, spill weight, diagnostics, and later rewriting,
-but only nondefault fixed-location constraints need sparse requirement records.
+range's register class. Each occurrence retains whether it requires a register
+so `AnyLocation` remains distinguishable during constraint-driven splitting.
+The allocator retains every ordinary use and def occurrence for liveness,
+spill weight, diagnostics, and later rewriting, but only nondefault
+fixed-location constraints need sparse requirement records.
 A fixed constraint records its liveness position, allocation location, source
 live range, and occurrence ID. Incompatible register classes, a fixed register
 from the wrong class, or a stack location incompatible with the value
@@ -1082,10 +1095,14 @@ such a bundle.
 Each constrained occurrence contributes an initial spill weight:
 
 ```text
+AnyLocation use          = 0
 hot contribution          = 1000 * 4^min(loop_depth, 10)
 definition contribution   = 2000 for a def, otherwise 0
 requirement contribution  = 1000 for AnyRegister, 2000 for FixedLocation
 ```
+
+An `AnyLocation` use has zero spill weight because observing allocator metadata
+does not make a register assignment more profitable.
 
 The ordinary `AnyRegister` contribution is implied by an unconstrained
 occurrence; it does not require a stored allocator constraint. A sparse fixed

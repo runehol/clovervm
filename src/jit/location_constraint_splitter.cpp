@@ -138,17 +138,18 @@ namespace cl::jit
                     {
                         std::optional<PhysicalLocation> fixed =
                             fixed_location_for(problem_, occurrence_id);
+                        const Occurrence &occurrence =
+                            problem_.occurrences()[occurrence_id.value()];
                         bool compatible =
                             fixed.has_value()
                                 ? domain.add_fixed(*fixed)
-                                : domain.add_register_requirement();
+                                : !occurrence.register_required ||
+                                      domain.add_register_requirement();
                         if(compatible)
                         {
                             continue;
                         }
 
-                        const Occurrence &occurrence =
-                            problem_.occurrences()[occurrence_id.value()];
                         std::optional<BundleId> right = cl::jit::split_bundle(
                             bundles_, transfers_, problem_, current,
                             occurrence.minimum_coverage.start,

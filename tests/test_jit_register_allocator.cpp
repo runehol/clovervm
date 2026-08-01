@@ -973,6 +973,84 @@ namespace cl::jit
                   allocation.transfers().sets()[0].point);
     }
 
+    TEST(JitRegisterAllocator,
+         LocationIndependentSideExitUseStaysInFixedStackLocation)
+    {
+        CompilationSession session;
+        GraphBuilder builder(session, IRLevel::Machine);
+        Block *entry = builder.emplace_block();
+        ParameterInstruction parameter =
+            builder.emplace_parameter<ParameterInstruction>(entry);
+
+        ParameterInstruction region_parameter =
+            builder.make_instruction<ParameterInstruction>();
+        std::array<ProgramValueRef, 1> captured = {
+            ProgramValueRef(region_parameter)};
+        ExitToInterpreterInstruction exit =
+            builder.make_instruction<ExitToInterpreterInstruction>(
+                captured, BytecodePCOffset{9});
+        std::array<InstructionId, 1> region_parameters = {
+            region_parameter.id()};
+        std::array<InstructionId, 1> region_instructions = {exit.id()};
+        SideExitRegionId region =
+            builder
+                .make_side_exit_region(region_parameters, region_instructions)
+                ->id();
+        std::array<ProgramValueRef, 1> arguments = {ProgramValueRef(parameter)};
+        ResumeInInterpreterWithSideExitInstruction owner =
+            builder.emplace_instruction<
+                ResumeInInterpreterWithSideExitInstruction>(entry, arguments,
+                                                            region);
+        ControlFlowGraph *graph = builder.finalize();
+
+        LocationRequirement incoming =
+            LocationRequirement::fixed(PhysicalLocation::stack(
+                StackLocation(StackLocationKind::IncomingParameter, 4)));
+        std::vector<InstructionAllocationConstraints> overrides;
+        overrides.emplace_back(parameter,
+                               std::vector<ProgramValueUseConstraint>{},
+                               ResultConstraint{AccessTiming::Late, incoming});
+        overrides.emplace_back(
+            owner,
+            std::vector<ProgramValueUseConstraint>{
+                {ResumeInInterpreterWithSideExitInstruction::
+                     side_exit_arguments_operand_index,
+                 AccessTiming::Late, LocationRequirement::any_location()}});
+        constexpr std::array registers = {x0, x1};
+        AllocationConstraints constraints =
+            gpr_constraints(registers, std::move(overrides));
+
+        auto prepared_result = prepare_register_allocation(*graph, constraints);
+        ASSERT_TRUE(prepared_result);
+        PreparedAllocationProblem prepared = std::move(prepared_result).value();
+
+        bool found_side_exit_use = false;
+        for(const Occurrence &occurrence: prepared.occurrences())
+        {
+            if(occurrence.anchor.kind() !=
+                   OccurrenceAnchor::Kind::InstructionOperand ||
+               occurrence.anchor.instruction_id() != owner.id())
+            {
+                continue;
+            }
+            found_side_exit_use = true;
+            EXPECT_FALSE(occurrence.register_required);
+            EXPECT_EQ(0u, occurrence.spill_weight);
+        }
+        EXPECT_TRUE(found_side_exit_use);
+
+        auto assignment_result = assign_bundles(prepared, constraints);
+        ASSERT_TRUE(assignment_result);
+        RegisterAllocationResult allocation =
+            std::move(assignment_result).value();
+        ASSERT_EQ(1u, allocation.bundles().size());
+        PhysicalLocation location =
+            allocation.locations().location_for(BundleId(0));
+        ASSERT_TRUE(location.is_stack());
+        EXPECT_EQ(4, location.stack().frame_offset());
+        EXPECT_TRUE(allocation.transfers().sets().empty());
+    }
+
     TEST(JitRegisterAllocator, GroupsSamePointSplitTransfersInParallel)
     {
         CompilationSession session;

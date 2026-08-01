@@ -25,6 +25,8 @@ namespace cl::jit
         {
             switch(requirement.kind())
             {
+                case LocationRequirement::Kind::AnyLocation:
+                    return true;
                 case LocationRequirement::Kind::AnyRegister:
                     return requirement.register_class() == expected_class;
                 case LocationRequirement::Kind::FixedLocation:
@@ -69,6 +71,9 @@ namespace cl::jit
     TemporaryConstraint::TemporaryConstraint(LocationRequirement requirement)
         : requirement(requirement)
     {
+        require_constraint(requirement.kind() !=
+                               LocationRequirement::Kind::AnyLocation,
+                           "a JIT temporary cannot accept any location");
         require_constraint(
             requirement.kind() != LocationRequirement::Kind::SameAsInput,
             "a JIT temporary cannot have a SameAsInput location requirement");
@@ -214,6 +219,9 @@ namespace cl::jit
                 "non-ProgramValue JIT instruction cannot have a result "
                 "override");
             LocationRequirement requirement = result_override_->requirement;
+            require_constraint(requirement.kind() !=
+                                   LocationRequirement::Kind::AnyLocation,
+                               "a JIT result cannot accept any location");
             RegisterClass result_class = register_class_for_representation(
                 instruction.value_representation());
             require_constraint(
