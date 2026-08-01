@@ -134,6 +134,12 @@ namespace cl::jit
         Ands = 3u << 29,
     };
 
+    enum class MultiplyHighOp : uint32_t
+    {
+        Smulh = 0,
+        Umulh = 1u << 23,
+    };
+
     enum class LoadStoreOp : uint32_t
     {
         Store = 0,
@@ -565,6 +571,31 @@ namespace cl::jit
                              shift, shift_amount);
         }
 
+        void emit_multiply_add(XRegisterOrZero destination,
+                               XRegisterOrZero multiplicand1,
+                               XRegisterOrZero multiplicand2,
+                               XRegisterOrZero addend)
+        {
+            write_instruction(
+                0x9b000000 |
+                aarch64_detail::register_field(multiplicand2.encoding(), 16) |
+                aarch64_detail::register_field(addend.encoding(), 10) |
+                aarch64_detail::register_field(multiplicand1.encoding(), 5) |
+                destination.encoding());
+        }
+
+        void emit_multiply_high(MultiplyHighOp operation,
+                                XRegisterOrZero destination,
+                                XRegisterOrZero multiplicand1,
+                                XRegisterOrZero multiplicand2)
+        {
+            write_instruction(
+                0x9b407c00 | aarch64_detail::encoding_bits(operation) |
+                aarch64_detail::register_field(multiplicand2.encoding(), 16) |
+                aarch64_detail::register_field(multiplicand1.encoding(), 5) |
+                destination.encoding());
+        }
+
         void emit_conditional_select(AArch64Condition condition,
                                      XRegisterOrZero destination,
                                      XRegisterOrZero when_true,
@@ -837,6 +868,14 @@ namespace cl::jit
         void mvn(WRegisterOrZero destination, WRegisterOrZero source);
         void neg(XRegisterOrZero destination, XRegisterOrZero source);
         void neg(WRegisterOrZero destination, WRegisterOrZero source);
+        void madd(XRegisterOrZero destination, XRegisterOrZero multiplicand1,
+                  XRegisterOrZero multiplicand2, XRegisterOrZero addend);
+        void mul(XRegisterOrZero destination, XRegisterOrZero multiplicand1,
+                 XRegisterOrZero multiplicand2);
+        void smulh(XRegisterOrZero destination, XRegisterOrZero multiplicand1,
+                   XRegisterOrZero multiplicand2);
+        void umulh(XRegisterOrZero destination, XRegisterOrZero multiplicand1,
+                   XRegisterOrZero multiplicand2);
         void cmp(XRegisterOrZero left, XRegisterOrZero right);
         void cmp(XRegister left, uint16_t immediate);
         void cmp(WRegisterOrZero left, WRegisterOrZero right);

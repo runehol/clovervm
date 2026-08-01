@@ -357,6 +357,37 @@ namespace cl::jit
         emit_arithmetic_reg(ArithmeticOp::Sub, destination, wzr, source);
     }
 
+    void AArch64MacroAssembler::madd(XRegisterOrZero destination,
+                                     XRegisterOrZero multiplicand1,
+                                     XRegisterOrZero multiplicand2,
+                                     XRegisterOrZero addend)
+    {
+        emit_multiply_add(destination, multiplicand1, multiplicand2, addend);
+    }
+
+    void AArch64MacroAssembler::mul(XRegisterOrZero destination,
+                                    XRegisterOrZero multiplicand1,
+                                    XRegisterOrZero multiplicand2)
+    {
+        emit_multiply_add(destination, multiplicand1, multiplicand2, xzr);
+    }
+
+    void AArch64MacroAssembler::smulh(XRegisterOrZero destination,
+                                      XRegisterOrZero multiplicand1,
+                                      XRegisterOrZero multiplicand2)
+    {
+        emit_multiply_high(MultiplyHighOp::Smulh, destination, multiplicand1,
+                           multiplicand2);
+    }
+
+    void AArch64MacroAssembler::umulh(XRegisterOrZero destination,
+                                      XRegisterOrZero multiplicand1,
+                                      XRegisterOrZero multiplicand2)
+    {
+        emit_multiply_high(MultiplyHighOp::Umulh, destination, multiplicand1,
+                           multiplicand2);
+    }
+
     void AArch64MacroAssembler::cmp(XRegisterOrZero left, XRegisterOrZero right)
     {
         emit_arithmetic_reg(ArithmeticOp::Subs, xzr, left, right);
