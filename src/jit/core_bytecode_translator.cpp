@@ -256,6 +256,64 @@ namespace cl::jit
                 }
                 break;
 
+            case Bytecode::TestEqual:
+                if(!lower_binary_comparison(
+                       block, instruction, BinaryComparisonSMISubkind::EqualSMI,
+                       inputs, state, outputs))
+                {
+                    return;
+                }
+                break;
+
+            case Bytecode::TestNotEqual:
+                if(!lower_binary_comparison(
+                       block, instruction,
+                       BinaryComparisonSMISubkind::NotEqualSMI, inputs, state,
+                       outputs))
+                {
+                    return;
+                }
+                break;
+
+            case Bytecode::TestLess:
+                if(!lower_binary_comparison(block, instruction,
+                                            BinaryComparisonSMISubkind::LessSMI,
+                                            inputs, state, outputs))
+                {
+                    return;
+                }
+                break;
+
+            case Bytecode::TestLessEqual:
+                if(!lower_binary_comparison(
+                       block, instruction,
+                       BinaryComparisonSMISubkind::LessEqualSMI, inputs, state,
+                       outputs))
+                {
+                    return;
+                }
+                break;
+
+            case Bytecode::TestGreater:
+                if(!lower_binary_comparison(
+                       block, instruction,
+                       BinaryComparisonSMISubkind::GreaterSMI, inputs, state,
+                       outputs))
+                {
+                    return;
+                }
+                break;
+
+            case Bytecode::TestGreaterEqual:
+                if(!lower_binary_comparison(
+                       block, instruction,
+                       BinaryComparisonSMISubkind::GreaterEqualSMI, inputs,
+                       state, outputs))
+                {
+                    return;
+                }
+                break;
+
             case Bytecode::Nop:
                 break;
 
@@ -365,6 +423,35 @@ namespace cl::jit
         outputs.emplace_back(
             builder_.emplace_instruction<BinaryLogicalSMIInstruction>(
                 block, subkind, TaggedValueRef(lhs), rhs));
+        return true;
+    }
+
+    bool CoreBytecodeTranslator::lower_binary_comparison(
+        Block *block, const BytecodeInstruction &instruction,
+        BinaryComparisonSMISubkind subkind,
+        std::span<const ProgramValueRef> inputs, const State &state,
+        std::vector<ProgramValueRef> &outputs)
+    {
+        const OperatorInlineCache *cache = instruction.operator_cache();
+        assert(cache != nullptr);
+        if(!cache->empty())
+        {
+            return lower_non_fastpathed_operator(block, instruction, inputs,
+                                                 state, outputs);
+        }
+
+        assert(inputs.size() == 2);
+        SnapshotRef snapshot =
+            emit_snapshot(block, instruction.pc_offset(), state);
+        InlineTagGuardInstruction lhs =
+            builder_.emplace_instruction<InlineTagGuardInstruction>(
+                block, tagged(inputs[0]), snapshot, InlineValueClass::SMI);
+        InlineTagGuardInstruction rhs =
+            builder_.emplace_instruction<InlineTagGuardInstruction>(
+                block, tagged(inputs[1]), snapshot, InlineValueClass::SMI);
+        outputs.emplace_back(
+            builder_.emplace_instruction<BinaryComparisonSMIInstruction>(
+                block, subkind, TaggedValueRef(lhs), TaggedValueRef(rhs)));
         return true;
     }
 

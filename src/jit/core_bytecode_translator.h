@@ -62,6 +62,12 @@ namespace cl::jit
                                   std::span<const ProgramValueRef> inputs,
                                   const State &state,
                                   std::vector<ProgramValueRef> &outputs);
+        bool lower_binary_comparison(Block *block,
+                                     const BytecodeInstruction &instruction,
+                                     BinaryComparisonSMISubkind subkind,
+                                     std::span<const ProgramValueRef> inputs,
+                                     const State &state,
+                                     std::vector<ProgramValueRef> &outputs);
         SnapshotRef emit_snapshot(Block *block,
                                   BytecodePCOffset resume_pc_offset,
                                   const State &state);

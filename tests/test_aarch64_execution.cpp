@@ -1066,6 +1066,41 @@ namespace cl::jit
                   fixture.call(L"is_distinct", Value::None(), Value::True()));
     }
 
+    TEST(AArch64Execution, CompilesAllPythonSMIComparisons)
+    {
+        PythonJitExecutionFixture fixture;
+        fixture.execute_module(
+            L"def equal(lhs, rhs): return lhs == rhs\n"
+            L"def not_equal(lhs, rhs): return lhs != rhs\n"
+            L"def less(lhs, rhs): return lhs < rhs\n"
+            L"def less_equal(lhs, rhs): return lhs <= rhs\n"
+            L"def greater(lhs, rhs): return lhs > rhs\n"
+            L"def greater_equal(lhs, rhs): return lhs >= rhs\n");
+        for(const wchar_t *name: {L"equal", L"not_equal", L"less",
+                                  L"less_equal", L"greater", L"greater_equal"})
+        {
+            ASSERT_TRUE(fixture.jit_compile(name)) << name;
+        }
+
+        Value small = Value::from_smi(-3);
+        Value large = Value::from_smi(5);
+        EXPECT_EQ(Value::False(), fixture.call(L"equal", small, large));
+        EXPECT_EQ(Value::True(), fixture.call(L"equal", large, large));
+        EXPECT_EQ(Value::True(), fixture.call(L"not_equal", small, large));
+        EXPECT_EQ(Value::False(), fixture.call(L"not_equal", large, large));
+        EXPECT_EQ(Value::True(), fixture.call(L"less", small, large));
+        EXPECT_EQ(Value::False(), fixture.call(L"less", large, small));
+        EXPECT_EQ(Value::True(), fixture.call(L"less_equal", small, large));
+        EXPECT_EQ(Value::True(), fixture.call(L"less_equal", large, large));
+        EXPECT_EQ(Value::True(), fixture.call(L"greater", large, small));
+        EXPECT_EQ(Value::False(), fixture.call(L"greater", small, large));
+        EXPECT_EQ(Value::True(), fixture.call(L"greater_equal", large, small));
+        EXPECT_EQ(Value::True(), fixture.call(L"greater_equal", large, large));
+
+        EXPECT_EQ(Value::True(),
+                  fixture.call(L"equal", Value::True(), Value::from_smi(1)));
+    }
+
     TEST(AArch64Execution, CompilesGuardedSMIAdditionWithoutGuardCopies)
     {
         class Observer : public JitCompilationObserver

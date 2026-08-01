@@ -464,6 +464,63 @@ namespace cl::jit
     }
 
     TEST(JitCoreBytecodeTranslator,
+         LowersComparisonBytecodesThroughTheirSMIFamily)
+    {
+        TranslatorFixture fixture;
+        const std::array bytecodes = {
+            Bytecode::TestEqual,   Bytecode::TestNotEqual,
+            Bytecode::TestLess,    Bytecode::TestLessEqual,
+            Bytecode::TestGreater, Bytecode::TestGreaterEqual,
+        };
+        const std::array expected_subkinds = {
+            BinaryComparisonSMISubkind::EqualSMI,
+            BinaryComparisonSMISubkind::NotEqualSMI,
+            BinaryComparisonSMISubkind::LessSMI,
+            BinaryComparisonSMISubkind::LessEqualSMI,
+            BinaryComparisonSMISubkind::GreaterSMI,
+            BinaryComparisonSMISubkind::GreaterEqualSMI,
+        };
+        {
+            CodeObjectBuilder::TemporaryReg temporary(fixture.code_builder, 1);
+            fixture.code_builder.emit_lda_smi(0, 13).value();
+            fixture.code_builder.emit_star(0, temporary).value();
+            fixture.code_builder.emit_lda_smi(0, 7).value();
+            for(Bytecode opcode: bytecodes)
+            {
+                fixture.code_builder
+                    .emit_operator_reg(
+                        0, opcode, temporary,
+                        OperatorBytecodeFormat::WithCacheAndNotImplementedCheck)
+                    .value();
+            }
+            fixture.code_builder.emit_return(0).value();
+        }
+
+        ControlFlowGraph *graph = fixture.translate();
+        Block *entry = graph->entry_block();
+        std::vector<BinaryComparisonSMISubkind> actual_subkinds;
+        for(Instruction instruction: entry->instructions())
+        {
+            if(BinaryComparisonSMIInstruction::accepts_kind(instruction.kind()))
+            {
+                actual_subkinds.push_back(
+                    instruction.as<BinaryComparisonSMIInstruction>().subkind());
+            }
+        }
+        EXPECT_EQ(
+            std::vector(expected_subkinds.begin(), expected_subkinds.end()),
+            actual_subkinds);
+        EXPECT_EQ(
+            6u, instructions_of_kind(entry, InstructionKind::Snapshot).size());
+        EXPECT_EQ(12u,
+                  instructions_of_kind(entry, InstructionKind::InlineTagGuard)
+                      .size());
+        EXPECT_TRUE(
+            instructions_of_kind(entry, InstructionKind::ResumeInInterpreter)
+                .empty());
+    }
+
+    TEST(JitCoreBytecodeTranslator,
          JumpIfFalseMapsFallthroughToTrueAndJumpToFalse)
     {
         TranslatorFixture fixture;

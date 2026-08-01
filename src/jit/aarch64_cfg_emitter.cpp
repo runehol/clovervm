@@ -133,6 +133,31 @@ namespace cl::jit
             __builtin_unreachable();
         }
 
+        AArch64Condition
+        emit_binary_comparison_smi(AArch64MacroAssembler &assembler,
+                                   const LocationAssignments &locations,
+                                   BinaryComparisonSMIInstruction comparison)
+        {
+            assembler.cmp(assigned_register(locations, comparison.lhs()),
+                          assigned_register(locations, comparison.rhs()));
+            switch(comparison.subkind())
+            {
+                case BinaryComparisonSMISubkind::EqualSMI:
+                    return AArch64Condition::Equal;
+                case BinaryComparisonSMISubkind::NotEqualSMI:
+                    return AArch64Condition::NotEqual;
+                case BinaryComparisonSMISubkind::LessSMI:
+                    return AArch64Condition::SignedLess;
+                case BinaryComparisonSMISubkind::LessEqualSMI:
+                    return AArch64Condition::SignedLessOrEqual;
+                case BinaryComparisonSMISubkind::GreaterSMI:
+                    return AArch64Condition::SignedGreater;
+                case BinaryComparisonSMISubkind::GreaterEqualSMI:
+                    return AArch64Condition::SignedGreaterOrEqual;
+            }
+            __builtin_unreachable();
+        }
+
         void
         emit_tagged_boolean_from_flags(AArch64MacroAssembler &assembler,
                                        const LocationAssignments &locations,
@@ -378,6 +403,23 @@ namespace cl::jit
                         instruction.as<IsComparisonInstruction>();
                     AArch64Condition true_condition = emit_is_comparison(
                         assembler, locations, comparison);
+                    emit_tagged_boolean_from_flags(
+                        assembler, locations, true_condition, instruction);
+                    break;
+                }
+
+                case MachineInstructionKind::EqualSMI:
+                case MachineInstructionKind::NotEqualSMI:
+                case MachineInstructionKind::LessSMI:
+                case MachineInstructionKind::LessEqualSMI:
+                case MachineInstructionKind::GreaterSMI:
+                case MachineInstructionKind::GreaterEqualSMI:
+                {
+                    BinaryComparisonSMIInstruction comparison =
+                        instruction.as<BinaryComparisonSMIInstruction>();
+                    AArch64Condition true_condition =
+                        emit_binary_comparison_smi(assembler, locations,
+                                                   comparison);
                     emit_tagged_boolean_from_flags(
                         assembler, locations, true_condition, instruction);
                     break;
@@ -642,20 +684,33 @@ namespace cl::jit
                     next_instruction->as<ConditionalBranchInstruction>();
                 if(branch.condition().instruction_id() == instruction.id())
                 {
+                    std::optional<AArch64Condition> true_condition;
                     if(IsComparisonInstruction::accepts_kind(
                            instruction.kind()))
                     {
                         IsComparisonInstruction comparison =
                             instruction.as<IsComparisonInstruction>();
-                        AArch64Condition true_condition = emit_is_comparison(
+                        true_condition = emit_is_comparison(
                             assembler, locations, comparison);
+                    }
+                    else if(BinaryComparisonSMIInstruction::accepts_kind(
+                                instruction.kind()))
+                    {
+                        BinaryComparisonSMIInstruction comparison =
+                            instruction.as<BinaryComparisonSMIInstruction>();
+                        true_condition = emit_binary_comparison_smi(
+                            assembler, locations, comparison);
+                    }
+
+                    if(true_condition.has_value())
+                    {
                         if(branch_edges_use_value(branch, instruction.id()))
                         {
                             emit_tagged_boolean_from_flags(assembler, locations,
-                                                           true_condition,
+                                                           *true_condition,
                                                            instruction);
                         }
-                        emit_branch_from_flags(assembler, true_condition,
+                        emit_branch_from_flags(assembler, *true_condition,
                                                branch.true_edge()->target(),
                                                branch.false_edge()->target(),
                                                next_block, block_labels);

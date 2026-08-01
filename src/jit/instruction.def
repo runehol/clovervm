@@ -224,6 +224,26 @@ CL_JIT_INSTRUCTION_FAMILY(
 #undef CL_JIT_BinaryLogicalSMI_ATTRIBUTES
 #undef CL_JIT_BinaryLogicalSMI_OPERANDS
 
+#define CL_JIT_BinaryComparisonSMI_OPERANDS(fixed, variadic, snapshot_values) \
+    fixed(lhs, ProgramValue, TaggedValue)                                      \
+    fixed(rhs, ProgramValue, TaggedValue)
+#define CL_JIT_BinaryComparisonSMI_ATTRIBUTES(attribute)
+#define CL_JIT_BinaryComparisonSMI_SUBKINDS(each, ...)                        \
+    each(EqualSMI, __VA_ARGS__)                                                \
+    each(NotEqualSMI, __VA_ARGS__)                                             \
+    each(LessSMI, __VA_ARGS__)                                                 \
+    each(LessEqualSMI, __VA_ARGS__)                                            \
+    each(GreaterSMI, __VA_ARGS__)                                              \
+    each(GreaterEqualSMI, __VA_ARGS__)
+CL_JIT_INSTRUCTION_FAMILY(
+    BinaryComparisonSMI, CL_JIT_IR_LEVELS(CoreMachine),
+    CL_JIT_RESULT(ProgramValue, TaggedValue, Def),
+    CL_JIT_EFFECT_BOUNDS(None, None), CL_JIT_BinaryComparisonSMI_OPERANDS,
+    CL_JIT_BinaryComparisonSMI_ATTRIBUTES, CL_JIT_BinaryComparisonSMI_SUBKINDS)
+#undef CL_JIT_BinaryComparisonSMI_SUBKINDS
+#undef CL_JIT_BinaryComparisonSMI_ATTRIBUTES
+#undef CL_JIT_BinaryComparisonSMI_OPERANDS
+
 #define CL_JIT_IsComparison_OPERANDS(fixed, variadic, snapshot_values)        \
     fixed(lhs, ProgramValue, TaggedValue)                                      \
     fixed(rhs, ProgramValue, TaggedValue)

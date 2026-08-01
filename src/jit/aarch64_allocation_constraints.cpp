@@ -244,6 +244,12 @@ namespace cl::jit
 
                     case MachineInstructionKind::Is:
                     case MachineInstructionKind::IsNot:
+                    case MachineInstructionKind::EqualSMI:
+                    case MachineInstructionKind::NotEqualSMI:
+                    case MachineInstructionKind::LessSMI:
+                    case MachineInstructionKind::LessEqualSMI:
+                    case MachineInstructionKind::GreaterSMI:
+                    case MachineInstructionKind::GreaterEqualSMI:
                         overrides.push_back(gpr_temporary_constraints(
                             instruction, std::move(input_overrides)));
                         break;
