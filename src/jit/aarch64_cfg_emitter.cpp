@@ -234,6 +234,25 @@ namespace cl::jit
             }
         }
 
+        bool edge_uses_value(const BlockEdge &edge, InstructionId value)
+        {
+            for(ProgramValueRef argument: edge.arguments())
+            {
+                if(argument.instruction_id() == value)
+                {
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        bool branch_edges_use_value(ConditionalBranchInstruction branch,
+                                    InstructionId value)
+        {
+            return edge_uses_value(*branch.true_edge(), value) ||
+                   edge_uses_value(*branch.false_edge(), value);
+        }
+
         Result<PublishedCode, JitCodeError>
         generate_code(const ControlFlowGraph &graph, CodeCache &cache,
                       const LocationAssignments &locations,
@@ -586,6 +605,60 @@ namespace cl::jit
         auto emit_instruction = [&](Instruction instruction,
                                     std::optional<Instruction> next_instruction,
                                     const Block *next_block) {
+            if(next_instruction.has_value() &&
+               next_instruction->kind() == InstructionKind::ConditionalBranch)
+            {
+                ConditionalBranchInstruction branch =
+                    next_instruction->as<ConditionalBranchInstruction>();
+                if(branch.condition().instruction_id() == instruction.id())
+                {
+                    bool matched = false;
+                    AArch64Condition true_condition = AArch64Condition::Equal;
+                    switch(instruction.kind())
+                    {
+                        case InstructionKind::Is:
+                            {
+                                IsInstruction comparison =
+                                    instruction.as<IsInstruction>();
+                                true_condition = emit_is_comparison(
+                                    assembler, locations,
+                                    AArch64Condition::Equal, comparison.lhs(),
+                                    comparison.rhs());
+                                matched = true;
+                                break;
+                            }
+                        case InstructionKind::IsNot:
+                            {
+                                IsNotInstruction comparison =
+                                    instruction.as<IsNotInstruction>();
+                                true_condition = emit_is_comparison(
+                                    assembler, locations,
+                                    AArch64Condition::NotEqual,
+                                    comparison.lhs(), comparison.rhs());
+                                matched = true;
+                                break;
+                            }
+                        default:
+                            break;
+                    }
+
+                    if(matched)
+                    {
+                        if(branch_edges_use_value(branch, instruction.id()))
+                        {
+                            emit_tagged_boolean_from_flags(assembler, locations,
+                                                           true_condition,
+                                                           instruction);
+                        }
+                        emit_branch_from_flags(assembler, true_condition,
+                                               branch.true_edge()->target(),
+                                               branch.false_edge()->target(),
+                                               next_block, block_labels);
+                        return ConsumedInstructionCount::Two;
+                    }
+                }
+            }
+
             if(instruction.kind() ==
                    InstructionKind::InlineTagGuardWithSideExit &&
                next_instruction.has_value() &&

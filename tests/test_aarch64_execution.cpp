@@ -78,6 +78,23 @@ namespace cl::jit
             return result;
         }
 
+        size_t first_conditional_branch_index(const PublishedCode &code)
+        {
+            const void *instructions = reinterpret_cast<const void *>(
+                code.entry().bits_for_indirect_target());
+            size_t instruction_count =
+                code.encoded_code_size() / sizeof(uint32_t);
+            for(size_t index = 0; index < instruction_count; ++index)
+            {
+                if((instruction_at(instructions, index) & 0xff000010u) ==
+                   0x54000000u)
+                {
+                    return index;
+                }
+            }
+            return instruction_count;
+        }
+
         PublishedCode publish_allocation(CodeCache &cache,
                                          CodeAllocation &allocation,
                                          size_t tagged_value_count)
@@ -938,6 +955,7 @@ namespace cl::jit
 
             void on_machine_code(const PublishedCode &code) override
             {
+                first_conditional_branch = first_conditional_branch_index(code);
                 const void *instructions = reinterpret_cast<const void *>(
                     code.entry().bits_for_indirect_target());
                 size_t instruction_count =
@@ -956,6 +974,7 @@ namespace cl::jit
             size_t move_count = 0;
             size_t machine_unconditional_branch_count = 0;
             size_t emitted_unconditional_branch_count = 0;
+            size_t first_conditional_branch = 0;
         };
 
         PythonJitExecutionFixture fixture;
@@ -970,6 +989,7 @@ namespace cl::jit
         EXPECT_EQ(2u, observer.move_count);
         EXPECT_EQ(2u, observer.machine_unconditional_branch_count);
         EXPECT_EQ(0u, observer.emitted_unconditional_branch_count);
+        EXPECT_EQ(1u, observer.first_conditional_branch);
 
         Value if_true = Value::from_smi(19);
         Value if_false = Value::from_smi(23);
@@ -977,6 +997,37 @@ namespace cl::jit
                                         if_true, if_false));
         EXPECT_EQ(if_false, fixture.call(L"choose", Value::None(),
                                          Value::True(), if_true, if_false));
+    }
+
+    TEST(AArch64Execution, MaterializesFusedIsComparisonUsedByEdge)
+    {
+        class Observer : public JitCompilationObserver
+        {
+        public:
+            void on_machine_code(const PublishedCode &code) override
+            {
+                first_conditional_branch = first_conditional_branch_index(code);
+            }
+
+            size_t first_conditional_branch = 0;
+        };
+
+        PythonJitExecutionFixture fixture;
+        fixture.execute_module(L"def choose(a, b, c):\n"
+                               L"    distinct = a is not b\n"
+                               L"    if distinct:\n"
+                               L"        return distinct\n"
+                               L"    return c\n");
+        Observer observer;
+        ASSERT_TRUE(
+            fixture.jit_compile(L"choose", JitCompilerOptions{&observer}));
+        EXPECT_EQ(4u, observer.first_conditional_branch);
+
+        Value fallback = Value::from_smi(23);
+        EXPECT_EQ(fallback, fixture.call(L"choose", Value::None(),
+                                         Value::None(), fallback));
+        EXPECT_EQ(Value::True(), fixture.call(L"choose", Value::None(),
+                                              Value::True(), fallback));
     }
 
     TEST(AArch64Execution, EntersJitThroughCachedArityThunk)
