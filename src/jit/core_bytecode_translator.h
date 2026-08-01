@@ -6,6 +6,7 @@
 #include "jit/graph_builder.h"
 
 #include <cstddef>
+#include <span>
 #include <vector>
 
 namespace cl::jit
@@ -46,6 +47,16 @@ namespace cl::jit
         void emit_unsupported(Block *block,
                               const BytecodeInstruction &instruction,
                               const State &pre_instruction_state);
+        bool lower_non_fastpathed_operator(
+            Block *block, const BytecodeInstruction &instruction,
+            std::span<const ProgramValueRef> inputs, const State &state,
+            std::vector<ProgramValueRef> &outputs);
+        bool lower_binary_logical(Block *block,
+                                  const BytecodeInstruction &instruction,
+                                  BinaryLogicalSMISubkind subkind,
+                                  std::span<const ProgramValueRef> inputs,
+                                  const State &state,
+                                  std::vector<ProgramValueRef> &outputs);
         SnapshotRef emit_snapshot(Block *block,
                                   BytecodePCOffset resume_pc_offset,
                                   const State &state);

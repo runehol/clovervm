@@ -60,6 +60,32 @@ namespace cl::jit
                               std::span<const InstructionId> instruction_ids);
 
         template <typename T, typename... Args>
+        requires(!requires { T::Subkind; })
+        T make_instruction(typename T::SubkindType subkind, Args &&...args)
+        {
+            static_assert(std::is_base_of_v<Instruction, T>);
+            static_assert(sizeof(T) == sizeof(Instruction));
+
+            InstructionId id = next_instruction_id();
+            if constexpr(T::OperandsAreIndirect)
+            {
+                size_t n_indirect_slots = T::n_indirect_slots_for(args...);
+                InstructionOperandTable::Allocation indirect =
+                    instruction_operands_.allocate(n_indirect_slots);
+                instructions_.push_back(
+                    T::make_entry(subkind, indirect.offset, indirect.words,
+                                  std::forward<Args>(args)...));
+            }
+            else
+            {
+                instructions_.push_back(
+                    T::make_entry(subkind, std::forward<Args>(args)...));
+            }
+            return T(this, id);
+        }
+
+        template <typename T, typename... Args>
+        requires requires { T::Subkind; }
         T make_instruction(Args &&...args)
         {
             static_assert(std::is_base_of_v<Instruction, T>);

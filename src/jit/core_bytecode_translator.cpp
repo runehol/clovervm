@@ -250,6 +250,36 @@ namespace cl::jit
                     break;
                 }
 
+            case Bytecode::And:
+            case Bytecode::AndSmi:
+                if(!lower_binary_logical(block, instruction,
+                                         BinaryLogicalSMISubkind::AndSMI,
+                                         inputs, state, outputs))
+                {
+                    return;
+                }
+                break;
+
+            case Bytecode::Or:
+            case Bytecode::OrSmi:
+                if(!lower_binary_logical(block, instruction,
+                                         BinaryLogicalSMISubkind::OrrSMI,
+                                         inputs, state, outputs))
+                {
+                    return;
+                }
+                break;
+
+            case Bytecode::Xor:
+            case Bytecode::XorSmi:
+                if(!lower_binary_logical(block, instruction,
+                                         BinaryLogicalSMISubkind::EorSMI,
+                                         inputs, state, outputs))
+                {
+                    return;
+                }
+                break;
+
             case Bytecode::Nop:
                 break;
 
@@ -259,6 +289,64 @@ namespace cl::jit
         }
 
         state_tracker_.write(state, instruction.destinations(), outputs);
+    }
+
+    bool CoreBytecodeTranslator::lower_non_fastpathed_operator(
+        Block *block, const BytecodeInstruction &instruction,
+        std::span<const ProgramValueRef> inputs, const State &state,
+        std::vector<ProgramValueRef> &outputs)
+    {
+        (void)inputs;
+        (void)outputs;
+        const OperatorInlineCache *cache = instruction.operator_cache();
+        assert(cache != nullptr);
+        assert(!cache->empty());
+        emit_unsupported(block, instruction, state);
+        return false;
+    }
+
+    bool CoreBytecodeTranslator::lower_binary_logical(
+        Block *block, const BytecodeInstruction &instruction,
+        BinaryLogicalSMISubkind subkind,
+        std::span<const ProgramValueRef> inputs, const State &state,
+        std::vector<ProgramValueRef> &outputs)
+    {
+        const OperatorInlineCache *cache = instruction.operator_cache();
+        assert(cache != nullptr);
+        if(!cache->empty())
+        {
+            return lower_non_fastpathed_operator(block, instruction, inputs,
+                                                 state, outputs);
+        }
+
+        assert(inputs.size() == 1 || inputs.size() == 2);
+        bool has_immediate_rhs = inputs.size() == 1;
+        if(has_immediate_rhs)
+        {
+            assert(instruction.operands().size() == 2);
+        }
+
+        SnapshotRef snapshot =
+            emit_snapshot(block, instruction.pc_offset(), state);
+        InlineTagGuardInstruction lhs =
+            builder_.emplace_instruction<InlineTagGuardInstruction>(
+                block, tagged(inputs[0]), snapshot, InlineValueClass::SMI);
+        TaggedValueRef rhs = [&] {
+            if(has_immediate_rhs)
+            {
+                return tagged(emit_constant(
+                    block,
+                    Value::from_smi(instruction.operands()[0].signed_value())));
+            }
+            return TaggedValueRef(
+                builder_.emplace_instruction<InlineTagGuardInstruction>(
+                    block, tagged(inputs[1]), snapshot, InlineValueClass::SMI));
+        }();
+
+        outputs.emplace_back(
+            builder_.emplace_instruction<BinaryLogicalSMIInstruction>(
+                block, subkind, TaggedValueRef(lhs), rhs));
+        return true;
     }
 
     void CoreBytecodeTranslator::translate_control_instruction(

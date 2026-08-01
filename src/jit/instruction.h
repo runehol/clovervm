@@ -1453,6 +1453,7 @@ namespace cl::jit
                                                                                \
     public:                                                                    \
         using Family = name##Instruction;                                      \
+        using SubkindType = name##Subkind;                                     \
         static constexpr InstructionFamilyKind FamilyKind =                    \
             InstructionFamilyKind::name;                                      \
         identity(name)                                                         \

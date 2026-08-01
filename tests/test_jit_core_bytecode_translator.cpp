@@ -310,6 +310,97 @@ namespace cl::jit
     }
 
     TEST(JitCoreBytecodeTranslator,
+         LowersBinaryLogicalBytecodesThroughTheirSMIFamily)
+    {
+        TranslatorFixture fixture;
+        {
+            CodeObjectBuilder::TemporaryReg temporary(fixture.code_builder, 1);
+            fixture.code_builder.emit_lda_smi(0, 13).value();
+            fixture.code_builder.emit_star(0, temporary).value();
+            fixture.code_builder.emit_lda_smi(0, 7).value();
+            for(Bytecode opcode: {Bytecode::And, Bytecode::Or, Bytecode::Xor})
+            {
+                fixture.code_builder
+                    .emit_operator_reg(
+                        0, opcode, temporary,
+                        OperatorBytecodeFormat::WithCacheAndNotImplementedCheck)
+                    .value();
+            }
+            for(Bytecode opcode:
+                {Bytecode::AndSmi, Bytecode::OrSmi, Bytecode::XorSmi})
+            {
+                fixture.code_builder
+                    .emit_operator_smi(
+                        0, opcode, 3,
+                        OperatorBytecodeFormat::WithCacheAndNotImplementedCheck)
+                    .value();
+            }
+            fixture.code_builder.emit_return(0).value();
+        }
+
+        ControlFlowGraph *graph = fixture.translate();
+        Block *entry = graph->entry_block();
+        EXPECT_EQ(2u,
+                  instructions_of_kind(entry, InstructionKind::AndSMI).size());
+        EXPECT_EQ(2u,
+                  instructions_of_kind(entry, InstructionKind::OrrSMI).size());
+        EXPECT_EQ(2u,
+                  instructions_of_kind(entry, InstructionKind::EorSMI).size());
+        EXPECT_EQ(
+            6u, instructions_of_kind(entry, InstructionKind::Snapshot).size());
+        EXPECT_EQ(9u,
+                  instructions_of_kind(entry, InstructionKind::InlineTagGuard)
+                      .size());
+        EXPECT_TRUE(
+            instructions_of_kind(entry, InstructionKind::ResumeInInterpreter)
+                .empty());
+    }
+
+    TEST(JitCoreBytecodeTranslator,
+         PopulatedLogicalOperatorCacheExitsToInterpreter)
+    {
+        TranslatorFixture fixture;
+        uint32_t operator_pc;
+        {
+            CodeObjectBuilder::TemporaryReg temporary(fixture.code_builder, 1);
+            fixture.code_builder.emit_lda_smi(0, 13).value();
+            fixture.code_builder.emit_star(0, temporary).value();
+            fixture.code_builder.emit_lda_smi(0, 7).value();
+            operator_pc =
+                fixture.code_builder
+                    .emit_operator_reg(
+                        0, Bytecode::And, temporary,
+                        OperatorBytecodeFormat::WithCacheAndNotImplementedCheck)
+                    .value();
+            fixture.code_builder.emit_return(0).value();
+        }
+        CodeObject *code_object = fixture.code_builder.finalize().value();
+        ASSERT_EQ(1u, code_object->inline_caches.operator_caches.size());
+        code_object->inline_caches.operator_caches[0].populate_binary_shapes(
+            ShapeKey::from_value(Value::from_smi(13)),
+            ShapeKey::from_value(Value::from_smi(7)));
+
+        CoreBytecodeTranslator translator(*code_object, fixture.graph_builder);
+        ControlFlowGraph *graph = translator.translate();
+        Block *entry = graph->entry_block();
+        std::vector<Instruction> snapshots =
+            instructions_of_kind(entry, InstructionKind::Snapshot);
+        std::vector<Instruction> resumes =
+            instructions_of_kind(entry, InstructionKind::ResumeInInterpreter);
+        ASSERT_EQ(1u, snapshots.size());
+        ASSERT_EQ(1u, resumes.size());
+        EXPECT_EQ(
+            operator_pc,
+            snapshots.front().as<SnapshotInstruction>().resume_pc_offset());
+        EXPECT_EQ(resumes.front().id(),
+                  entry->instruction_at(entry->instructions().size() - 1).id());
+        EXPECT_TRUE(instructions_of_kind(entry, InstructionKind::InlineTagGuard)
+                        .empty());
+        EXPECT_TRUE(
+            instructions_of_kind(entry, InstructionKind::AndSMI).empty());
+    }
+
+    TEST(JitCoreBytecodeTranslator,
          JumpIfFalseMapsFallthroughToTrueAndJumpToFalse)
     {
         TranslatorFixture fixture;
