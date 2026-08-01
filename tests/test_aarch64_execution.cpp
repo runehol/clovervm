@@ -13,6 +13,7 @@
 #include "jit/location_assignments.h"
 #include "jit/machine_address_internal.h"
 #include "jit/register_allocator.h"
+#include "object_model/function.h"
 #include "test_helpers.h"
 
 #include <gtest/gtest.h>
@@ -825,13 +826,13 @@ namespace cl::jit
         };
 
         PythonBackendFixture fixture;
-        CodeObject *function_code =
+        CodeObject *compiled_code_object =
             fixture.compile_first_function(L"def identity(value):\n"
                                            L"    unused = None\n"
                                            L"    return value\n");
         Observer observer;
         auto compilation =
-            compile_jit_code(*fixture.context.thread(), *function_code,
+            compile_jit_code(*fixture.context.thread(), *compiled_code_object,
                              JitCompilerOptions{&observer});
 
         ASSERT_TRUE(compilation);
@@ -841,9 +842,20 @@ namespace cl::jit
         EXPECT_GT(observer.translated_instruction_count,
                   observer.optimized_instruction_count);
 
-        constexpr uint64_t input = 0x123456789abcdef0;
-        EXPECT_EQ(input, execute_jit_object(*fixture.context.thread(),
-                                            *function_code, *code, {input}));
+        // Publish onto a same-arity function with different interpreted
+        // behavior so the result proves that the interpreter selected the
+        // explicitly published JIT entry.
+        CodeObject *called_code_object =
+            fixture.compile_first_function(L"def interpreted_body(value):\n"
+                                           L"    return None\n");
+        called_code_object->publish_jit_code(code);
+        ThreadState *thread = fixture.context.thread();
+        Owned<TValue<Function>> function(thread->make_object_value<Function>(
+            TValue<CodeObject>::from_oop(called_code_object),
+            Optional<TValue<String>>::none()));
+        Value input = Value::from_smi(42);
+        EXPECT_EQ(input,
+                  thread->call_clovervm_function(function.value(), input));
     }
 
     TEST(AArch64Execution, CompilesPythonConstantFunction)

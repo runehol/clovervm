@@ -1169,14 +1169,13 @@ namespace cl
     static ALWAYSINLINE jit::JitCodeObject *
     select_jit_code(ThreadState *thread, CodeObject *code_object)
     {
-        if constexpr(!jit::JitTieringEnabled)
-        {
-            return nullptr;
-        }
-
         if(jit::JitCodeObject *jit_code = code_object->get_jit_code())
         {
             return jit_code;
+        }
+        if constexpr(!jit::JitTieringEnabled)
+        {
+            return nullptr;
         }
         if(!code_object->consume_jit_tiering_budget())
         {
