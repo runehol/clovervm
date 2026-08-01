@@ -1046,12 +1046,13 @@ namespace cl
             {
                 MUSTTAIL return zero_division_error(ARGS);
             }
-            if(unlikely(left_int == value_smi_min && right_int == -1))
+            int64_t quotient = floor_div_smi_values(left_int, right_int);
+            // The only out-of-range SMI quotient is value_smi_min / -1.
+            if(unlikely(quotient == -value_smi_min))
             {
                 MUSTTAIL return op_floordiv_dispatch(ARGS);
             }
-            accumulator =
-                Value::from_smi(floor_div_smi_values(left_int, right_int));
+            accumulator = Value::from_smi(quotient);
             COMPLETE();
         }
 
@@ -1072,12 +1073,13 @@ namespace cl
             {
                 MUSTTAIL return zero_division_error(ARGS);
             }
-            if(unlikely(left_int == value_smi_min && right_int == -1))
+            int64_t quotient = floor_div_smi_values(left_int, right_int);
+            // The only out-of-range SMI quotient is value_smi_min / -1.
+            if(unlikely(quotient == -value_smi_min))
             {
                 MUSTTAIL return op_floordiv_smi_dispatch(ARGS);
             }
-            accumulator =
-                Value::from_smi(floor_div_smi_values(left_int, right_int));
+            accumulator = Value::from_smi(quotient);
             COMPLETE();
         }
 
