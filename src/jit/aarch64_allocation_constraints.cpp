@@ -151,7 +151,7 @@ namespace cl::jit
         {
             std::vector<ProgramValueUseConstraint> result;
             uint32_t first_argument = instruction.side_exit_argument_start();
-            if(first_argument == InstructionKindMetadata::NoSideExitArguments)
+            if(first_argument == InstructionFamilyMetadata::NoSideExitArguments)
             {
                 return result;
             }

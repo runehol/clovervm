@@ -74,9 +74,12 @@ namespace cl::jit
         static_assert(
             std::is_same_v<std::underlying_type_t<TransitionInstructionKind>,
                            std::underlying_type_t<InstructionKind>>);
-        EXPECT_LE(
-            static_cast<uint16_t>(InstructionOrdinal::Count),
-            static_cast<uint16_t>(TransitionInstructionKind::BeginTransition));
+        EXPECT_LE(static_cast<uint16_t>(InstructionFamilyKind::Count),
+                  static_cast<uint16_t>(ReservedInstructionFamily));
+        EXPECT_EQ(
+            ReservedInstructionFamily,
+            static_cast<uint16_t>(TransitionInstructionKind::BeginTransition) &
+                InstructionFamilyMask);
     }
 
     TEST(TransitionProgramBuilder, KeepsScratchCountCurrentWhileAppending)

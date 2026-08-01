@@ -59,7 +59,7 @@ namespace cl::jit
             Instruction instruction, LiveRangeId live_range,
             const ProgramValueRangeMap &program_value_ranges)
         {
-            const InstructionKindMetadata &metadata =
+            const InstructionFamilyMetadata &metadata =
                 instruction_kind_metadata(instruction.kind());
             if(metadata.fixed_operand_count == 0)
             {

@@ -506,7 +506,7 @@ namespace cl::jit
                         if(definition_kind ==
                            ResultDefinitionKind::ForwardingDef)
                         {
-                            const InstructionKindMetadata &metadata =
+                            const InstructionFamilyMetadata &metadata =
                                 instruction_kind_metadata(instruction.kind());
                             auto source_occurrence =
                                 input_occurrence_by_operand.find(0);

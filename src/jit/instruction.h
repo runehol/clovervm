@@ -201,7 +201,7 @@ namespace cl::jit
         EffectProfile may_effects;
     };
 
-    enum class InstructionOrdinal : uint16_t
+    enum class InstructionFamilyKind : uint8_t
     {
 #define CL_JIT_INSTRUCTION(name, ir_levels, result, effects, operands,         \
                            attributes)                                         \
@@ -211,26 +211,39 @@ namespace cl::jit
         Count,
     };
 
-    static constexpr uint16_t InstructionOrdinalMask = 0x0fff;
+    static constexpr uint16_t InstructionFamilyMask = 0x00ff;
+    static constexpr uint16_t InstructionSubkindMask = 0x0f00;
     static constexpr uint16_t InstructionRepresentationMask = 0x3000;
     static constexpr uint16_t InstructionResultClassMask = 0xc000;
+    static constexpr unsigned InstructionSubkindShift = 8;
     static constexpr unsigned InstructionRepresentationShift = 12;
     static constexpr unsigned InstructionResultClassShift = 14;
+    static constexpr uint8_t ReservedInstructionFamily = UINT8_MAX;
 
     static_assert(static_cast<uint16_t>(ResultClass::Count) <= 4);
     static_assert(static_cast<uint16_t>(ValueRepresentation::Count) <= 4);
-    static_assert((InstructionOrdinalMask & InstructionRepresentationMask) ==
+    static_assert(static_cast<uint16_t>(InstructionFamilyKind::Count) <=
+                  ReservedInstructionFamily);
+    static_assert((InstructionFamilyMask & InstructionSubkindMask) == 0);
+    static_assert((InstructionFamilyMask & InstructionRepresentationMask) == 0);
+    static_assert((InstructionFamilyMask & InstructionResultClassMask) == 0);
+    static_assert((InstructionSubkindMask & InstructionRepresentationMask) ==
                   0);
-    static_assert((InstructionOrdinalMask & InstructionResultClassMask) == 0);
+    static_assert((InstructionSubkindMask & InstructionResultClassMask) == 0);
     static_assert((InstructionRepresentationMask &
                    InstructionResultClassMask) == 0);
+    static_assert((InstructionFamilyMask | InstructionSubkindMask |
+                   InstructionRepresentationMask |
+                   InstructionResultClassMask) == UINT16_MAX);
 
     constexpr uint16_t
-    encode_instruction_kind(InstructionOrdinal ordinal,
+    encode_instruction_kind(InstructionFamilyKind family, uint8_t subkind,
                             ResultClass result_class,
                             ValueRepresentation representation)
     {
-        return static_cast<uint16_t>(ordinal) |
+        assert(subkind < 16);
+        return static_cast<uint16_t>(family) |
+               (static_cast<uint16_t>(subkind) << InstructionSubkindShift) |
                (static_cast<uint16_t>(representation)
                 << InstructionRepresentationShift) |
                (static_cast<uint16_t>(result_class)
@@ -243,7 +256,7 @@ namespace cl::jit
     ResultClass::result_class, ValueRepresentation::representation
 #define CL_JIT_INSTRUCTION(name, ir_levels, result, effects, operands,         \
                            attributes)                                         \
-    name = encode_instruction_kind(InstructionOrdinal::name, result),
+    name = encode_instruction_kind(InstructionFamilyKind::name, 0, result),
 #include "jit/instruction.def"
 #undef CL_JIT_INSTRUCTION
 #undef CL_JIT_RESULT
@@ -334,13 +347,13 @@ namespace cl::jit
 #include "jit/instruction.def"
         // These kinds use TransitionInstruction's handwritten payload rather
         // than the graph instruction schema.
-        BeginTransition = InstructionOrdinalMask - 2,
-        Transfer = InstructionOrdinalMask - 1,
-        ResumeInterpreter = InstructionOrdinalMask,
+        BeginTransition =
+            (13u << InstructionSubkindShift) | ReservedInstructionFamily,
+        Transfer =
+            (14u << InstructionSubkindShift) | ReservedInstructionFamily,
+        ResumeInterpreter =
+            (15u << InstructionSubkindShift) | ReservedInstructionFamily,
     };
-    static_assert(static_cast<uint16_t>(InstructionOrdinal::Count) <=
-                  static_cast<uint16_t>(
-                      TransitionInstructionKind::BeginTransition));
 #undef CL_JIT_LEVEL_KIND_MEMBER_Transition
 #undef CL_JIT_LEVEL_KIND_MEMBER_Machine
 #undef CL_JIT_LEVEL_KIND_MEMBER_Core
@@ -363,10 +376,18 @@ namespace cl::jit
 #undef CL_JIT_LEVEL_KIND_JOIN_INNER
     // clang-format on
 
-    constexpr InstructionOrdinal instruction_ordinal(InstructionKind kind)
+    constexpr InstructionFamilyKind
+    instruction_family_kind(InstructionKind kind)
     {
-        return static_cast<InstructionOrdinal>(static_cast<uint16_t>(kind) &
-                                               InstructionOrdinalMask);
+        return static_cast<InstructionFamilyKind>(static_cast<uint16_t>(kind) &
+                                                  InstructionFamilyMask);
+    }
+
+    constexpr uint8_t instruction_subkind(InstructionKind kind)
+    {
+        return static_cast<uint8_t>(
+            (static_cast<uint16_t>(kind) & InstructionSubkindMask) >>
+            InstructionSubkindShift);
     }
 
     constexpr bool is_block_parameter_kind(InstructionKind kind)
@@ -430,7 +451,7 @@ namespace cl::jit
         return false;
     }
 
-    struct InstructionKindMetadata
+    struct InstructionFamilyMetadata
     {
         static constexpr uint32_t NoSideExitArguments = UINT32_MAX;
 
@@ -446,7 +467,10 @@ namespace cl::jit
         bool operands_are_indirect;
     };
 
-    const InstructionKindMetadata &
+    const InstructionFamilyMetadata &
+    instruction_family_metadata(InstructionFamilyKind family);
+
+    const InstructionFamilyMetadata &
     instruction_kind_metadata(InstructionKind kind);
 
     constexpr bool ir_levels_include(IRLevelMask levels, IRLevelMask level)
@@ -645,12 +669,13 @@ namespace cl::jit
     static_assert(alignof(InstructionEntry) == 16);
     static_assert(std::is_standard_layout_v<InstructionEntry>);
     static_assert(std::is_trivially_destructible_v<InstructionEntry>);
-    static_assert(static_cast<uint16_t>(InstructionOrdinal::Count) <=
-                  InstructionOrdinalMask + 1);
 #define CL_JIT_INSTRUCTION(name, ir_levels, result, effects, operands,         \
                            attributes)                                         \
     static_assert(                                                             \
-        instruction_kind_has_valid_result_encoding(InstructionKind::name));
+        instruction_kind_has_valid_result_encoding(InstructionKind::name));    \
+    static_assert(instruction_family_kind(InstructionKind::name) ==            \
+                  InstructionFamilyKind::name);                                \
+    static_assert(instruction_subkind(InstructionKind::name) == 0);
 #include "jit/instruction.def"
 #undef CL_JIT_INSTRUCTION
     static_assert(!is_valid_instruction_kind(
@@ -1646,7 +1671,7 @@ namespace cl::jit
     void visit_operand_references(const Instruction &instruction,
                                   Visitor &&visitor)
     {
-        const InstructionKindMetadata &metadata =
+        const InstructionFamilyMetadata &metadata =
             instruction_kind_metadata(instruction.kind());
         assert(instruction.operands_are_indirect() ==
                metadata.operands_are_indirect);

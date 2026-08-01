@@ -223,7 +223,7 @@ namespace cl::jit
 
     TEST(JitInstructionSchema, GeneratesIntrinsicMetadata)
     {
-        const InstructionKindMetadata &add =
+        const InstructionFamilyMetadata &add =
             instruction_kind_metadata(InstructionKind::AddSMI);
         EXPECT_EQ(ResultClass::ProgramValue,
                   instruction_result_class(InstructionKind::AddSMI));
@@ -234,27 +234,28 @@ namespace cl::jit
         EXPECT_EQ(3u, add.inline_slot_count);
         EXPECT_FALSE(add.has_variadic_operands);
         EXPECT_FALSE(add.operands_are_indirect);
-        EXPECT_EQ(InstructionKindMetadata::NoSideExitArguments,
+        EXPECT_EQ(InstructionFamilyMetadata::NoSideExitArguments,
                   add.side_exit_argument_start);
 
-        const InstructionKindMetadata &call =
+        const InstructionFamilyMetadata &call =
             instruction_kind_metadata(InstructionKind::PythonCall);
         EXPECT_EQ(2u, call.fixed_operand_count);
         EXPECT_EQ(1u, call.attribute_count);
         EXPECT_EQ(Instruction::InlineSlotCount, call.inline_slot_count);
         EXPECT_TRUE(call.has_variadic_operands);
         EXPECT_TRUE(call.operands_are_indirect);
-        EXPECT_EQ(InstructionKindMetadata::NoSideExitArguments,
+        EXPECT_EQ(InstructionFamilyMetadata::NoSideExitArguments,
                   call.side_exit_argument_start);
 
-        const InstructionKindMetadata &side_exit = instruction_kind_metadata(
+        const InstructionFamilyMetadata &side_exit = instruction_kind_metadata(
             InstructionKind::ResumeInInterpreterWithSideExit);
         EXPECT_EQ(ResumeInInterpreterWithSideExitInstruction::
                       side_exit_arguments_operand_index,
                   side_exit.side_exit_argument_start);
 
-        const InstructionKindMetadata &inline_guard = instruction_kind_metadata(
-            InstructionKind::InlineTagGuardWithSideExit);
+        const InstructionFamilyMetadata &inline_guard =
+            instruction_kind_metadata(
+                InstructionKind::InlineTagGuardWithSideExit);
         EXPECT_EQ(1u, inline_guard.fixed_operand_count);
         EXPECT_EQ(2u, inline_guard.attribute_count);
         EXPECT_EQ(Instruction::InlineSlotCount, inline_guard.inline_slot_count);
@@ -264,7 +265,7 @@ namespace cl::jit
                       side_exit_arguments_operand_index,
                   inline_guard.side_exit_argument_start);
 
-        const InstructionKindMetadata &guard =
+        const InstructionFamilyMetadata &guard =
             instruction_kind_metadata(InstructionKind::ShapeGuard);
         EXPECT_EQ(2u, guard.fixed_operand_count);
         EXPECT_EQ(1u, guard.attribute_count);
@@ -323,7 +324,7 @@ namespace cl::jit
             InstructionKind::ResumeInInterpreter, IRLevelMask::Machine));
     }
 
-    TEST(JitInstructionSchema, EncodesResultsWhileKeepingDenseOrdinals)
+    TEST(JitInstructionSchema, EncodesResultsAndDenseSingletonFamilies)
     {
         EXPECT_EQ(ResultClass::None,
                   instruction_result_class(InstructionKind::Return));
@@ -343,10 +344,15 @@ namespace cl::jit
         EXPECT_EQ(ValueRepresentation::F64, instruction_value_representation(
                                                 InstructionKind::ParameterF64));
 
-        EXPECT_EQ(0u, static_cast<uint16_t>(
-                          instruction_ordinal(InstructionKind::Parameter)));
-        EXPECT_EQ(1u, static_cast<uint16_t>(
-                          instruction_ordinal(InstructionKind::ParameterF64)));
+        EXPECT_EQ(InstructionFamilyKind::Parameter,
+                  instruction_family_kind(InstructionKind::Parameter));
+        EXPECT_EQ(InstructionFamilyKind::ParameterF64,
+                  instruction_family_kind(InstructionKind::ParameterF64));
+        EXPECT_EQ(0u, instruction_subkind(InstructionKind::Parameter));
+        EXPECT_EQ(0u, instruction_subkind(InstructionKind::ParameterF64));
+        EXPECT_EQ(
+            &instruction_family_metadata(InstructionFamilyKind::Parameter),
+            &instruction_kind_metadata(InstructionKind::Parameter));
         EXPECT_EQ(&instruction_kind_metadata(InstructionKind::Parameter) + 1,
                   &instruction_kind_metadata(InstructionKind::ParameterF64));
     }

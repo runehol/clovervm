@@ -566,46 +566,49 @@ infrastructure deliberately retains the erased form.
 ## Concrete Typed Instructions
 
 `src/jit/instruction.def` is the authoritative schema for the closed set of
-live instruction kinds. Each definition names the instruction kind and typed
-view, the IR level or levels in which it is legal, its intrinsic
-`ResultClass`, its `MustEffects` lower bound and `MayEffects` upper bound, its
-payload shape, every fixed or variable operand slot with its `OperandClass`,
-and every immutable payload attribute with its schema attribute class. Every ordinary
-operand is a typed instruction-result reference. Every attribute declared for a
-kind is present; the schema has no optional-attribute mechanism. Core
+live instruction families and their concrete subkinds. Each family definition
+names its typed view and ordered subkinds, the IR level or levels in which it is
+legal, its intrinsic `ResultClass`, its `MustEffects` lower bound and
+`MayEffects` upper bound, its payload shape, every fixed or variable operand
+slot with its `OperandClass`, and every immutable payload attribute with its
+schema attribute class. Every ordinary operand is a typed instruction-result
+reference. Every attribute declared for a family is present; the schema has no
+optional-attribute mechanism. Core
 program-value results and operands additionally declare fixed representation
 constraints. The sole
 exception is Snapshot's representation-erased captured-value operand described
-below. Repeated inclusion of that schema generates a dense
-`InstructionOrdinal`, the encoded `InstructionKind` enum, invariant kind
-metadata, representation-safe construction and access, generic operand
+below. Repeated inclusion of that schema generates dense
+`InstructionFamilyKind` values, family-specific subkinds, the encoded
+`InstructionKind` enum, invariant family metadata, representation-safe
+construction and access, generic operand
 traversal, result/operand class legality, attribute decoding, effect bounds, and
 the size and alignment constraints for encoded payloads. The poison storage
 tag is not listed as a semantic instruction definition.
 
 The upper four bits of the 16-bit `InstructionKind` encode its intrinsic result
-class and representation as two numerically aligned two-bit fields. The lower
-12 bits contain its dense generated ordinal:
+class and representation as two numerically aligned two-bit fields. The next
+four bits encode a family-specific subkind, and the low eight bits encode the
+dense instruction family kind:
 
 ```text
-15        14 13        12 11                       0
-+-----------+------------+--------------------------+
-|ResultClass| ValueRep   | instruction ordinal      |
-+-----------+------------+--------------------------+
+15        14 13        12 11         8 7                         0
++-----------+------------+-------------+--------------------------+
+|ResultClass| ValueRep   | subkind     | instruction family kind  |
++-----------+------------+-------------+--------------------------+
 ```
 
 The encoded bits remain part of the kind for equality and exhaustive switches;
 they are not independently mutable properties. Masks decode `ResultClass` and
-`ValueRepresentation` without a kind switch or metadata lookup. Schema
-generation rejects `None` or `Snapshot` results with a non-`None`
-representation and rejects `ProgramValue` results without a concrete
-representation.
-
-Because full kind values are consequently sparse, they do not directly index
-metadata. The same schema pass generates a dense `InstructionOrdinal`, and the
-low 12 bits index the compact metadata table. Thus metadata lookup pays one mask
-without introducing holes or duplicating result information in the table. The
-12-bit ordinal permits up to 4,096 instruction kinds.
+`ValueRepresentation` without a kind switch or metadata lookup. The low eight
+bits index the compact family metadata table directly. A family owns its IR
+membership, definition kind, effect bounds, operand and attribute schema, and
+physical layout. Every subkind in a family therefore has exactly the same
+result type, operands, attributes, effects, and IR membership; only operation
+identity varies. Schema generation rejects `None` or `Snapshot` results with a
+non-`None` representation and rejects `ProgramValue` results without a concrete
+representation. It also rejects more than 16 subkinds in one family. Family
+kind `0xff` is reserved for handwritten transition-program kinds and poisoned
+storage, leaving up to 255 generated instruction families.
 
 The schema owns facts that must remain synchronized for every instruction
 kind. It may generate storage decoding and straightforward typed-accessor
@@ -837,34 +840,49 @@ representation is valid for the corresponding position in the CFG's canonical
 ordering description. Recovery reaches through any sunk conversion rather than
 interpreting a type-erased Snapshot operand.
 
-Each concrete instruction form is a fieldless value-view subclass of
-`Instruction`. Compilation storage always stores an `InstructionEntry`;
-requesting a concrete kind constructs the entry through the generated schema
-and returns the corresponding view. Because subclasses add neither fields nor
-virtual dispatch, every concrete view has the same two-word representation as
-`Instruction` while providing kind-specific read-only accessors:
+Each instruction family is a fieldless value-view subclass of `Instruction`,
+and each concrete subkind is a fieldless final subclass of its family view.
+Compilation storage always stores an `InstructionEntry`; requesting a concrete
+kind constructs the entry through the generated family schema and returns the
+corresponding concrete view. Because these subclasses add neither fields nor
+virtual dispatch, every family and concrete view has the same two-word
+representation as `Instruction` while providing family-typed read-only
+accessors:
 
 ```cpp
-class AddF64Instruction final : public Instruction
+class BinaryF64Instruction : public Instruction
 {
 public:
-    static constexpr InstructionKind Kind = InstructionKind::AddF64;
+    static constexpr InstructionFamilyKind FamilyKind =
+        InstructionFamilyKind::BinaryF64;
     static constexpr ResultClass Result = ResultClass::ProgramValue;
     static constexpr ValueRepresentation Representation =
         ValueRepresentation::F64;
     static constexpr EffectProfile MustEffects = EffectProfile::None;
     static constexpr EffectProfile MayEffects = EffectProfile::None;
-    static constexpr IRLevelMask AllowedIRLevels = IRLevelMask::Core;
+    static constexpr IRLevelMask AllowedIRLevels = IRLevelMask::CoreMachine;
     static constexpr bool IsVariadic = false;
 
     F64Ref lhs() const;
     F64Ref rhs() const;
+
+    BinaryF64Subkind subkind() const;
+
+protected:
+    BinaryF64Instruction(const CompilationStorage *storage, InstructionId id);
+};
+
+class AddF64Instruction final : public BinaryF64Instruction
+{
+public:
+    static constexpr InstructionKind Kind = InstructionKind::AddF64;
 
 private:
     friend class CompilationStorage;
     AddF64Instruction(const CompilationStorage *storage, InstructionId id);
 };
 
+static_assert(sizeof(BinaryF64Instruction) == sizeof(Instruction));
 static_assert(sizeof(AddF64Instruction) == sizeof(Instruction));
 ```
 
@@ -882,18 +900,19 @@ instruction object. Ordinary code holds `Instruction` by value for
 heterogeneous IR structure and requests a kind-checked concrete view when it
 needs typed access.
 
-There is one semantic `InstructionKind` enum generated from
-`src/jit/instruction.def`; the generated `InstructionOrdinal` exists only for
-compact table indexing. Each concrete subclass declares its own
-`static constexpr Kind`, and schema-generated validation requires it to match
-the view mapping in the definition. Checked conversion uses the type itself as
-the source of the expected kind:
+There is one semantic `InstructionKind` enum and one dense
+`InstructionFamilyKind` enum generated from `src/jit/instruction.def`. Family
+metadata is indexed by `InstructionFamilyKind`; there is no separate dense
+concrete-instruction ordinal. Each concrete subclass declares its exact
+`static constexpr Kind`, while each family declares its
+`static constexpr FamilyKind`. Checked conversion uses the requested view to
+validate either exact-kind or family membership:
 
 ```cpp
 template<typename TypedInstruction>
 TypedInstruction Instruction::as() const
 {
-    assert(kind() == TypedInstruction::Kind);
+    assert(TypedInstruction::accepts_kind(kind()));
     return TypedInstruction(storage_, id_);
 }
 ```

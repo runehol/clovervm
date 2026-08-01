@@ -50,7 +50,7 @@ namespace cl::jit
 
     namespace
     {
-        InstructionKindMetadata make_instruction_kind_metadata(
+        InstructionFamilyMetadata make_instruction_family_metadata(
             IRLevelMask allowed_ir_levels, InstructionResultInfo result,
             EffectProfile must_effects, EffectProfile may_effects,
             uint32_t side_exit_argument_start, uint8_t fixed_operand_count,
@@ -66,7 +66,7 @@ namespace cl::jit
             assert(!has_effects(may_effects, EffectProfile::TerminateBlock) ||
                    has_effects(may_effects, EffectProfile::ControlFlow));
             assert(side_exit_argument_start ==
-                       InstructionKindMetadata::NoSideExitArguments ||
+                       InstructionFamilyMetadata::NoSideExitArguments ||
                    (has_variadic_operands &&
                     side_exit_argument_start == fixed_operand_count));
             return {allowed_ir_levels,
@@ -81,7 +81,8 @@ namespace cl::jit
                     operands_are_indirect};
         }
 
-        InstructionKindMetadata metadata_for(InstructionKind kind)
+        InstructionFamilyMetadata
+        metadata_for_singleton_family(InstructionKind kind)
         {
             switch(kind)
             {
@@ -133,7 +134,7 @@ namespace cl::jit
             uint8_t inline_slot_count = 0;                                     \
             bool has_variadic_operands = false;                                \
             uint32_t side_exit_argument_start =                                \
-                InstructionKindMetadata::NoSideExitArguments;                  \
+                InstructionFamilyMetadata::NoSideExitArguments;                \
             operands(CL_JIT_COUNT_FIXED_OPERAND,                               \
                      CL_JIT_COUNT_VARIADIC_OPERAND,                            \
                      CL_JIT_COUNT_PROGRAM_VALUES)                              \
@@ -144,7 +145,7 @@ namespace cl::jit
                 operands_are_indirect                                          \
                     ? Instruction::InlineSlotCount                             \
                     : fixed_operand_count + attribute_word_count;              \
-            return make_instruction_kind_metadata(                             \
+            return make_instruction_family_metadata(                           \
                 ir_levels, result, effects, side_exit_argument_start,          \
                 fixed_operand_count, attribute_count, inline_slot_count,       \
                 has_variadic_operands, operands_are_indirect);                 \
@@ -169,24 +170,30 @@ namespace cl::jit
             return {};
         }
 
-        const std::array<InstructionKindMetadata,
-                         static_cast<size_t>(InstructionOrdinal::Count)>
-            instruction_metadata = {{
+        const std::array<InstructionFamilyMetadata,
+                         static_cast<size_t>(InstructionFamilyKind::Count)>
+            family_metadata = {{
 #define CL_JIT_INSTRUCTION(name, ir_levels, result, effects, operands,         \
                            attributes)                                         \
-    metadata_for(InstructionKind::name),
+    metadata_for_singleton_family(InstructionKind::name),
 #include "jit/instruction.def"
 #undef CL_JIT_INSTRUCTION
             }};
     }  // namespace
 
-    const InstructionKindMetadata &
+    const InstructionFamilyMetadata &
+    instruction_family_metadata(InstructionFamilyKind family)
+    {
+        size_t index = static_cast<size_t>(family);
+        assert(index < family_metadata.size());
+        return family_metadata[index];
+    }
+
+    const InstructionFamilyMetadata &
     instruction_kind_metadata(InstructionKind kind)
     {
         assert(is_valid_instruction_kind(kind));
-        size_t index = static_cast<size_t>(instruction_ordinal(kind));
-        assert(index < instruction_metadata.size());
-        return instruction_metadata[index];
+        return instruction_family_metadata(instruction_family_kind(kind));
     }
 
     TerminatorInstruction::BlockSuccessorEdges
