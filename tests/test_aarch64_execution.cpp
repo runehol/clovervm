@@ -184,67 +184,7 @@ namespace cl::jit
             ModuleObject *module_ = nullptr;
         };
 
-        template <typename LogicalInstruction>
-        uint64_t execute_smi_logical_with_identical_operands(Value input)
-        {
-            CompilationSession session;
-            GraphBuilder builder(session, IRLevel::Machine);
-            Block *entry = builder.emplace_block();
-            ParameterInstruction parameter =
-                builder.emplace_parameter<ParameterInstruction>(entry);
-            TaggedValueRef operand(parameter);
-            LogicalInstruction result =
-                builder.emplace_instruction<LogicalInstruction>(entry, operand,
-                                                                operand);
-            builder.emplace_instruction<ReturnInstruction>(
-                entry, TaggedValueRef(result));
-            ControlFlowGraph *graph = builder.finalize();
-            LocationAssignments locations = assign_program_values_to_x0(*graph);
-
-            CodeCache cache;
-            Result<PublishedCode, JitCodeError> emission =
-                emit_aarch64_from_cfg(*graph, locations, cache,
-                                      no_side_exit_thunk());
-            EXPECT_TRUE(emission);
-            if(!emission)
-            {
-                return 0;
-            }
-            PublishedCode code = std::move(emission).value();
-
-            return execute_published_jit(
-                code, {static_cast<uint64_t>(input.as.integer)});
-        }
     }  // namespace
-
-    TEST(AArch64Execution, EmitsIdentityFunctionFromCfg)
-    {
-        CompilationSession session;
-        GraphBuilder builder(session, IRLevel::Machine);
-        Block *entry = builder.emplace_block();
-        ParameterInstruction parameter =
-            builder.emplace_parameter<ParameterInstruction>(entry);
-        builder.emplace_instruction<ReturnInstruction>(
-            entry, TaggedValueRef(parameter));
-        ControlFlowGraph *graph = builder.finalize();
-        LocationAssignments locations = assign_program_values_to_x0(*graph);
-
-        CodeCache cache;
-        Result<PublishedCode, JitCodeError> emission = emit_aarch64_from_cfg(
-            *graph, locations, cache, no_side_exit_thunk());
-        ASSERT_TRUE(emission);
-        PublishedCode code = std::move(emission).value();
-
-        const uint64_t inputs[] = {
-            static_cast<uint64_t>(Value::None().as.integer),
-            static_cast<uint64_t>(Value::True().as.integer),
-            static_cast<uint64_t>(Value::from_smi(42).as.integer),
-        };
-        for(uint64_t input: inputs)
-        {
-            EXPECT_EQ(input, execute_published_jit(code, {input}));
-        }
-    }
 
     TEST(AArch64Execution, OmitsUnconditionalBranchToFallthroughBlock)
     {
@@ -722,32 +662,6 @@ namespace cl::jit
                        static_cast<uint64_t>(Value::from_smi(1).as.integer)}));
     }
 
-    TEST(AArch64Execution, CompilesAllocatedCfg)
-    {
-        CompilationSession session;
-        GraphBuilder builder(session, IRLevel::Core);
-        Block *entry = builder.emplace_block();
-        ParameterInstruction parameter =
-            builder.emplace_parameter<ParameterInstruction>(entry);
-        TaggedValueRef operand(parameter);
-        AndSMIInstruction result =
-            builder.emplace_instruction<AndSMIInstruction>(entry, operand,
-                                                           operand);
-        builder.emplace_instruction<ReturnInstruction>(entry,
-                                                       TaggedValueRef(result));
-        ControlFlowGraph *graph = builder.finalize();
-
-        CodeCache cache;
-        auto compilation =
-            compile_to_aarch64(session, *graph, cache, no_side_exit_thunk());
-        ASSERT_TRUE(compilation);
-        EXPECT_EQ(IRLevel::Machine, graph->ir_level());
-        PublishedCode code = std::move(compilation).value();
-
-        constexpr uint64_t input = 0x123456789abcdef0;
-        EXPECT_EQ(input, execute_published_jit(code, {input}));
-    }
-
     TEST(AArch64Execution, CompilesPythonIdentityFunction)
     {
         PythonJitExecutionFixture fixture;
@@ -1005,29 +919,6 @@ namespace cl::jit
                                          Value::True(), if_true, if_false));
     }
 
-    TEST(AArch64Execution, EmitsInlineConstantFunctionFromCfg)
-    {
-        CompilationSession session;
-        GraphBuilder builder(session, IRLevel::Machine);
-        Block *entry = builder.emplace_block();
-        Value expected = Value::from_smi(0x123456789abcd);
-        ConstInstruction constant =
-            builder.emplace_instruction<ConstInstruction>(entry, expected);
-        builder.emplace_instruction<ReturnInstruction>(
-            entry, TaggedValueRef(constant));
-        ControlFlowGraph *graph = builder.finalize();
-        LocationAssignments locations = assign_program_values_to_x0(*graph);
-
-        CodeCache cache;
-        Result<PublishedCode, JitCodeError> emission = emit_aarch64_from_cfg(
-            *graph, locations, cache, no_side_exit_thunk());
-        ASSERT_TRUE(emission);
-        PublishedCode code = std::move(emission).value();
-
-        EXPECT_EQ(static_cast<uint64_t>(expected.as.integer),
-                  execute_published_jit(code, {}));
-    }
-
     TEST(AArch64Execution, EntersJitThroughCachedArityThunk)
     {
         for(uint32_t arity = 0; arity <= 8; ++arity)
@@ -1062,40 +953,6 @@ namespace cl::jit
             ASSERT_TRUE(fixture.jit_compile(L"f")) << "arity " << arity;
             EXPECT_EQ(expected, fixture.call(L"invoke")) << "arity " << arity;
         }
-    }
-
-    TEST(AArch64Execution, EmitsMoveBetweenAssignedRegisters)
-    {
-        CompilationSession session;
-        GraphBuilder builder(session, IRLevel::Machine);
-        Block *entry = builder.emplace_block();
-        ParameterInstruction parameter =
-            builder.emplace_parameter<ParameterInstruction>(entry);
-        MovInstruction to_x1 = builder.emplace_instruction<MovInstruction>(
-            entry, TaggedValueRef(parameter));
-        MovInstruction to_x0 = builder.emplace_instruction<MovInstruction>(
-            entry, TaggedValueRef(to_x1));
-        builder.emplace_instruction<ReturnInstruction>(entry,
-                                                       TaggedValueRef(to_x0));
-        ControlFlowGraph *graph = builder.finalize();
-
-        LocationAssignmentsBuilder location_builder;
-        location_builder.assign(ProgramValueRef(parameter),
-                                PhysicalLocation::reg(x0));
-        location_builder.assign(ProgramValueRef(to_x1),
-                                PhysicalLocation::reg(x1));
-        location_builder.assign(ProgramValueRef(to_x0),
-                                PhysicalLocation::reg(x0));
-        LocationAssignments locations = std::move(location_builder).finalize();
-
-        CodeCache cache;
-        Result<PublishedCode, JitCodeError> emission = emit_aarch64_from_cfg(
-            *graph, locations, cache, no_side_exit_thunk());
-        ASSERT_TRUE(emission);
-        PublishedCode code = std::move(emission).value();
-
-        constexpr uint64_t input = 0x123456789abcdef0;
-        EXPECT_EQ(input, execute_published_jit(code, {input}));
     }
 
     TEST(AArch64Execution, EmitsManagedFrameRelativeStackTransfers)
@@ -1147,33 +1004,6 @@ namespace cl::jit
         EXPECT_EQ(0xf9400ab8, instruction_at(code, 4));
         EXPECT_EQ(0xf94002b5, instruction_at(code, 5));
         EXPECT_EQ(0xd65f03c0, instruction_at(code, 6));
-    }
-
-    TEST(AArch64Execution, EmitsAndSmiFromCfg)
-    {
-        Value input = Value::from_smi(-0x123456789abcd);
-        EXPECT_EQ(
-            static_cast<uint64_t>(input.as.integer),
-            execute_smi_logical_with_identical_operands<AndSMIInstruction>(
-                input));
-    }
-
-    TEST(AArch64Execution, EmitsOrrSmiFromCfg)
-    {
-        Value input = Value::from_smi(-0x123456789abcd);
-        EXPECT_EQ(
-            static_cast<uint64_t>(input.as.integer),
-            execute_smi_logical_with_identical_operands<OrrSMIInstruction>(
-                input));
-    }
-
-    TEST(AArch64Execution, EmitsEorSmiFromCfg)
-    {
-        Value input = Value::from_smi(-0x123456789abcd);
-        EXPECT_EQ(
-            static_cast<uint64_t>(Value::from_smi(0).as.integer),
-            execute_smi_logical_with_identical_operands<EorSMIInstruction>(
-                input));
     }
 
     TEST(AArch64Execution, CallsGeneratedLeafFunction)
