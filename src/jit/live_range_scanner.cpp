@@ -386,12 +386,19 @@ namespace cl::jit
                         fatal("JIT block parameters cannot have temporaries or "
                               "clobbers");
                     }
-                    ResultConstraint result_constraint =
+                    bool has_result_override =
                         override != nullptr &&
-                                override->result_override().has_value()
+                        override->result_override().has_value();
+                    ResultConstraint result_constraint =
+                        has_result_override
                             ? *override->result_override()
                             : default_result_constraint(
                                   parameter.value_representation());
+                    if(&block != graph_.entry_block() && !has_result_override)
+                    {
+                        result_constraint.requirement =
+                            LocationRequirement::any_location();
+                    }
                     if(result_constraint.requirement.kind() ==
                        LocationRequirement::Kind::SameAsInput)
                     {
@@ -657,16 +664,12 @@ namespace cl::jit
                     {
                         LiveRangeId live_range = value_range(
                             arguments[argument_index].instruction_id(), block);
-                        LocationRequirement requirement =
-                            LocationRequirement::any_register(
-                                live_ranges_[live_range.value()]
-                                    .register_class);
                         add_occurrence(live_range, exit_before,
                                        {exit_before, exit_before.next()},
                                        OccurrenceKind::Use,
                                        OccurrenceAnchor::block_edge_argument(
                                            edge, argument_index),
-                                       requirement);
+                                       LocationRequirement::any_location());
                     }
                 }
                 return Result<void, RegisterAllocationError>::ok();

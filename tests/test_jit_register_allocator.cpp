@@ -383,8 +383,17 @@ namespace cl::jit
                   prepared.occurrences()[edge_use.value()].position.value());
         EXPECT_EQ(OccurrenceAnchor::Kind::BlockEdgeArgument,
                   prepared.occurrences()[edge_use.value()].anchor.kind());
-        EXPECT_GT(prepared.occurrences()[edge_use.value()].spill_weight,
-                  10000u);
+        EXPECT_FALSE(
+            prepared.occurrences()[edge_use.value()].register_required);
+        EXPECT_EQ(0u, prepared.occurrences()[edge_use.value()].spill_weight);
+
+        OccurrenceId parameter_definition =
+            prepared.live_ranges()[2].occurrences.front();
+        EXPECT_FALSE(prepared.occurrences()[parameter_definition.value()]
+                         .register_required);
+        EXPECT_EQ(
+            0u,
+            prepared.occurrences()[parameter_definition.value()].spill_weight);
 
         ASSERT_EQ(1u, prepared.bundle_affinities().size());
         const BundleAffinity &affinity = prepared.bundle_affinities().front();
@@ -392,8 +401,7 @@ namespace cl::jit
         EXPECT_EQ(edge, affinity.edge);
         EXPECT_EQ(0u, affinity.argument_index);
         EXPECT_EQ(edge_use, affinity.source);
-        EXPECT_EQ(prepared.live_ranges()[2].occurrences.front(),
-                  affinity.destination);
+        EXPECT_EQ(parameter_definition, affinity.destination);
 
         ASSERT_EQ(2u, prepared.bundles().size());
         EXPECT_EQ(2u, prepared.bundles()[0].fragments.size());

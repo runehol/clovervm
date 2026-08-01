@@ -451,6 +451,8 @@ ordinary F64 result         -> Def Late, AnyRegister(SIMD)
 ordinary Pointer result     -> Def Late, AnyRegister(GPR)
 forwarding result           -> ForwardingDef Late, operand 0's live range
 side-exit argument          -> Use Late, AnyLocation
+block-edge argument         -> Use at block exit, AnyLocation
+internal block parameter    -> Def at block entry, AnyLocation
 ```
 
 Target constraints are sparse overrides of these defaults. An instruction with
@@ -590,8 +592,10 @@ two-address operations, not values that merely forward an input's unchanged
 bits.
 Contextual constructors reject `SameAsInput` for inputs and temporaries, so it
 remains a result-only requirement without a second variant-based representation.
-`AnyLocation` is input-only: results and temporaries must identify where code
-generation can produce them.
+`AnyLocation` is ordinarily input-only: executable results and temporaries must
+identify where code generation can produce them. An internal block parameter
+is the structural exception. Its incoming edge transfer establishes its
+location, so its block-entry definition is also location-neutral.
 The compact allocator representation may encode these alternatives differently.
 
 Most executable Core occurrences use `AnyRegister`. A stack-assigned fragment
@@ -681,9 +685,8 @@ The AArch64 constraint producer follows the Clover JIT calling convention:
   preserves them;
 - tagged entry-block parameters zero through seven have fixed-location result
   constraints `x0` through `x7`;
-- tagged internal block parameters use the ordinary `AnyRegister(GPR)`
-  default;
-- F64 internal block parameters use the ordinary `AnyRegister(SIMD)` default;
+- internal block parameters of every representation use the generic
+  `AnyLocation` default;
 - `InlineTagGuardWithSideExit` is a forwarding definition and has no result
   override;
 - `Return` and `BareReturn` inputs have fixed `x0` constraints;
@@ -714,10 +717,11 @@ Constraint validation enforces:
   late uses, or fixed temporaries, including the fixed register obtained after
   resolving `SameAsInput`.
 
-Parameter instructions use the same default result constraint, with target
-overrides for ABI-fixed entry parameters. Their placement in a block's
-parameter list anchors the def at block entry rather than at an executable
-instruction phase.
+Entry parameters use the ordinary default result constraint unless the target
+provides an ABI-fixed override. Internal block parameters default to
+`AnyLocation`; their incoming edge transfers establish their physical
+locations. Placement in a block's parameter list anchors either kind of def at
+block entry rather than at an executable instruction phase.
 
 Instruction records may retain a narrower packed operand count, but traversal,
 constraint APIs, and operand-index arithmetic use `uint32_t`. Widening at the
@@ -758,6 +762,11 @@ integer positions durable:
 predecessor block exit use   -> edge arguments are live here
 successor block entry def    -> block parameters are defined here
 ```
+
+Both structural occurrences use `AnyLocation`. They keep a value in its
+existing register or stack assignment unless a real use in either block
+requires a register or fixed location. Explicit target constraints on a block
+parameter still override this default.
 
 Allocator numbering, liveness, live ranges, bundles, and partial assignments are
 local scratch state. The allocator does not publish or incrementally maintain a
