@@ -30,7 +30,8 @@ namespace cl::jit
         constexpr std::array GPRAllocationOrder = {
             gpr(0),  gpr(1),  gpr(2),  gpr(3),  gpr(4),  gpr(5),
             gpr(6),  gpr(7),  gpr(8),  gpr(9),  gpr(10), gpr(11),
-            gpr(12), gpr(13), gpr(14), gpr(15),
+            gpr(12), gpr(13), gpr(14), gpr(15), gpr(19), gpr(20),
+            gpr(22), gpr(23), gpr(24), gpr(26), gpr(27), gpr(28),
         };
         constexpr std::array GPRScratchRegisters = {gpr(16), gpr(17)};
 

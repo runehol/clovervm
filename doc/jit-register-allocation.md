@@ -4,7 +4,7 @@
 |---|---|
 | Document type | Design |
 | Status | Accepted |
-| Implementation | Prepared allocation, forwarding definitions, block-edge and same-as-input affinities, bundle coalescing, deterministic constraint splitting, transfer scheduling, conflict-free register/stack assignment, parallel-transfer and edge-transfer-block materialization, and the AArch64 fixed-`x19`/`x20` context convention are implemented; block-exit materialization remains open |
+| Implementation | Prepared allocation, forwarding definitions, block-edge and same-as-input affinities, bundle coalescing, deterministic constraint splitting, transfer scheduling, conflict-free register/stack assignment, parallel-transfer and edge-transfer-block materialization, and the AArch64 fixed-`x21`/`x25` context convention are implemented; block-exit materialization remains open |
 | Scope | Allocation constraints, allocator-local numbering, liveness, bundles, backtracking allocation, live-range splitting, block-edge transfers, clobbers, spills, and post-allocation materialization |
 | Owning layers | Target preparation owns occurrence constraints and physical-transfer capabilities; the generic register allocator owns numbering, liveness, bundles, splitting, allocation, spill decisions, and bundle transfers; generic allocation materialization resolves transfers, rewrites the Core CFG, and publishes occurrence locations; publication and transition planners own canonical-state synchronization; machine-code emission only encodes the materialized graph |
 | Validated against | `tests/test_jit_allocation_constraints.cpp`, `tests/test_aarch64_allocation_constraints.cpp`, `tests/test_jit_register_allocator.cpp`, `tests/test_jit_parallel_assignment_resolver.cpp`, `tests/test_jit_allocation_materializer.cpp`, and `tests/test_aarch64_execution.cpp` |
@@ -367,8 +367,8 @@ or ensure every scanned spill cell contains a safe tagged value.
 The semantic kind lets a target select an addressing mode without changing
 storage identity. Under the initial AArch64 convention, every managed
 `StackLocation` kind is addressed relative to fixed managed-frame register
-`x20`; the kind selects the frame coordinate and offset calculation rather
-than a different architectural base register. Moving `x20` then reinterprets
+`x21`; the kind selects the frame coordinate and offset calculation rather
+than a different architectural base register. Moving `x21` then reinterprets
 the caller's outgoing cells as the callee's `IncomingParameter` slots. Native
 stack arguments, when supported, belong to platform-call lowering and are not
 represented by managed `StackLocation`s.
@@ -659,7 +659,8 @@ instructions.
 
 The AArch64 constraint producer follows the Clover JIT calling convention:
 
-- the enabled GPR class contains `x0` through `x15`, in that allocation order;
+- the enabled GPR class contains `x0` through `x15`, followed by `x19`, `x20`,
+  `x22`, `x23`, `x24`, and `x26` through `x28`;
 - the enabled SIMD class contains caller-saved `v0` through `v7` followed by
   `v16` through `v29`;
 - the GPR class declares `x16` and `x17` as ordered non-allocatable scratch
@@ -667,14 +668,17 @@ The AArch64 constraint producer follows the Clover JIT calling convention:
 - the SIMD class declares `v30` and `v31` as ordered non-allocatable scratch
   registers;
 - platform-reserved `x18` is unavailable;
-- `x19` is reserved machine context containing the active `ThreadState *`; it
-  is neither allocatable nor a scratch register;
-- `x20` is reserved machine context containing the current managed frame
+- `x21` is reserved machine context containing the current managed frame
   pointer; it is neither allocatable nor a scratch register;
+- `x25` is reserved machine context containing the active `ThreadState *`; it
+  is neither allocatable nor a scratch register;
 - `sp` and `x29` retain their native platform meanings and are unavailable to
   ordinary allocation;
-- other callee-saved GPRs and `v8` through `v15` remain unavailable until
-  prologue and epilogue generation preserves them;
+- `x19`, `x20`, `x22`, `x23`, `x24`, and `x26` through `x28` are ordinary
+  allocatable GPRs. Platform-ABI calls preserve them, and the side-exit thunk
+  captures them before calling portable recovery code;
+- `v8` through `v15` remain unavailable until prologue and epilogue generation
+  preserves them;
 - tagged entry-block parameters zero through seven have fixed-location result
   constraints `x0` through `x7`;
 - tagged internal block parameters use the ordinary `AnyRegister(GPR)`
@@ -1404,9 +1408,9 @@ contract belongs to
 [AArch64 JIT Calling Convention](aarch64-jit-calling-convention.md).
 A native call also uses fixed platform calling-convention registers. A helper
 whose first C ABI argument is `ThreadState *` adds the physical assignment
-`x19 -> x0` before its ordinary SSA argument assignments. The call lowering
+`x25 -> x0` before its ordinary SSA argument assignments. The call lowering
 feeds that complete shuffle to the parallel-assignment machinery; it does not
-turn x19 into an SSA use or allocator bundle. Fixed `x20` remains implicit
+turn x25 into an SSA use or allocator bundle. Fixed `x21` remains implicit
 callee-saved context. Native stack arguments can extend the platform-call
 lowering later if Clover actually supports them; they are not part of the
 managed stack-location vocabulary. Every live managed root required across the
@@ -1420,7 +1424,7 @@ An explicit call result owns its fixed return register at the late point, so
 that register is omitted from the call's clobber set:
 
 ```text
-fixed JIT context x19 -> PhysicalAssignment(x0)
+fixed JIT context x25 -> PhysicalAssignment(x0)
 argument 0            -> Use Early, FixedLocation(x1)
 argument 1            -> Use Early, FixedLocation(x2)
 result                -> Def Late, FixedLocation(x0)

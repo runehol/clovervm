@@ -4,7 +4,7 @@
 |---|---|
 | Document type | Architecture contract |
 | Status | Accepted |
-| Implementation | Partial; interpreter-aligned fixed context registers, managed-frame-relative stack access and return, result constraints, canonical incoming stack locations, allocation-order register sets, per-class scratch registers, emitted side-exit transition references, the unhandled-side-exit diagnostic target, tail-called interpreter/JIT entry thunks, and interpreter call integration are implemented; stack-passed arguments, managed calls, and the side-exit thunk remain |
+| Implementation | Partial; interpreter-aligned fixed context registers, managed-frame-relative stack access and return, result constraints, canonical incoming stack locations, allocation-order register sets, per-class scratch registers, emitted side-exit transition references, side-exit register capture and transition execution, tail-called interpreter/JIT entry thunks, and interpreter call integration are implemented; stack-passed arguments, managed calls, and complete end-to-end side-exit validation remain |
 | Scope | AArch64 compiled managed argument transport, call adaptation, cross-engine entry, return, and safepoint placement |
 | Owning layers | Call-site lowering owns guarded Python adaptation; the AArch64 backend owns argument and result locations; transition adapters own cross-engine reshuffling; the generic allocator and materializer implement the resulting fixed-location constraints and transfers |
 | Builds on | [CloverVM Function Calling Convention](function-calling-convention.md) |
@@ -46,12 +46,14 @@ places managed values on the native stack. Ordinary generated return restores
 the caller's `x21` from
 the managed frame header before returning.
 
-`x22` and `x24` hold the interpreter PC and owning `CodeObject *` that become
-authoritative at interpreter boundaries. Together, `x21`, `x22`, `x24`, and
-`x25` match the registers Clang assigns to the corresponding interpreter state
-under the `preserve_none` dispatch convention. They are callee-saved under the
-generic AAPCS64 and Apple arm64 conventions, so ordinary C and C++ helpers
-preserve the active JIT context automatically.
+`x22` and `x24` hold the interpreter PC and owning `CodeObject *` at
+interpreter boundaries. Together, `x21`, `x22`, `x24`, and `x25` match the
+registers Clang assigns to the corresponding interpreter state under the
+`preserve_none` dispatch convention. Only `x21` and `x25` retain those meanings
+throughout compiled execution. The allocator may reuse `x22` and `x24`, then
+return and side-exit lowering restore their boundary values. Ordinary C and C++
+helpers preserve these callee-saved registers under the generic AAPCS64 and
+Apple arm64 conventions.
 
 The initial JIT relies on inlining to eliminate boxing. It does not introduce
 representation-specialized entry signatures. A later convention may add such
@@ -120,6 +122,11 @@ allocated value. Managed calls inherit the active thread context. Native-helper
 lowering adds physical source `x25` to its argument shuffle when producing the
 platform-ABI `x0` thread argument.
 
+The ordinary GPR allocation set is `x0` through `x15`, followed by `x19`,
+`x20`, `x22`, `x23`, `x24`, and `x26` through `x28`. Registers `x16` and `x17`
+are backend scratch; `x18` is platform-reserved; `x21` and `x25` are fixed JIT
+context; and `x29`, `x30`, and `sp` keep their architectural roles.
+
 Caller-saved registers are ordinary call clobbers. The generic allocator may
 split surrounding live ranges and the generic materializer schedules the
 required register shuffles and overflow stores. Python adaptation semantics do
@@ -157,8 +164,8 @@ The JIT-to-interpreter adapter:
 
 ```text
 store the first min(arity, 8) registers from x0..x7 into canonical cells
-retain x24 as the current CodeObject
-retain x22 as the interpreter pc
+install x24 as the current CodeObject
+install x22 as the interpreter pc
 publish the managed frame frontier
 enter interpreter dispatch
 ```
@@ -168,7 +175,7 @@ The interpreter-to-JIT adapter is symmetric:
 ```text
 retain the active ThreadState * in x25
 retain the committed managed frame pointer in x21
-retain the interpreter PC in x22 and target CodeObject * in x24
+install the interpreter PC in x22 and target CodeObject * in x24
 load the selected fixed pairs of parameters into x0..x7
 leave overflow parameters in their canonical cells
 leave sp and x29 in native platform state
@@ -257,7 +264,7 @@ compiled guard failure
     b side_exit_register_save_thunk
 
 side_exit_register_save_thunk
-    save the fixed compiled register image
+    save every allocator-visible compiled register in its architectural slot
     save x25 as the authoritative active ThreadState *
     save x21 as the authoritative managed frame pointer
     save the transition-program address from x16
@@ -274,20 +281,14 @@ therefore balances the original call just like an ordinary compiled return.
 The entry-exit thunk moves x0 to the interpreter accumulator and tail-branches
 to interpreter reentry, which reconstructs dispatch from `ThreadState`.
 
-The native stack is already valid at a side exit. After the thunk captures all
-caller-saved generated state and publishes the managed frame and roots, it may
-call portable C++ transition code using the platform ABI. The initial runtime
-does not yet use that path: published code targets a non-returning C++ wrapper
-that reports an unhandled side exit and aborts until register capture, recovery,
-and interpreted return through the compiled frame are implemented together.
-
-The emitted side-exit sequence and transition-program address convention are
-implemented; the thunk itself is not. Fixed `x25` gives the thunk immediate
-access to thread-owned transition state without transition metadata or
-allocator cooperation, while fixed `x21` identifies the active managed frame.
-The remaining thunk design must settle register-save storage and return the
-same x0/x21/x22/x24/x25 JIT exit state to the entry-exit thunk as an ordinary
-compiled return.
+The native stack is already valid at a side exit. The thunk captures every
+allocator-visible register before calling the portable C++ transition executor
+through the platform ABI. Its register image uses architectural register
+numbers, so transition operands do not depend on the allocation order. Fixed
+`x25` gives the thunk immediate access to thread-owned transition state, while
+fixed `x21` identifies the active managed frame. The executor returns recovered
+interpreter state, which the thunk installs before tail reentry through the
+compiled frame.
 
 ## Returns
 

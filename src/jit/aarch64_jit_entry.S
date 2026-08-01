@@ -183,6 +183,11 @@ CL_ASM_SYMBOL(cl_aarch64_jit_side_exit):
     stp x10, x11, [x25, #80]
     stp x12, x13, [x25, #96]
     stp x14, x15, [x25, #112]
+    stp x19, x20, [x25, #152]
+    stp x22, x23, [x25, #176]
+    str x24, [x25, #192]
+    stp x26, x27, [x25, #208]
+    str x28, [x25, #224]
 
     // Save the low 64 bits of every allocator-visible SIMD register into the
     // architectural-number-indexed second half of the register file.
