@@ -47,6 +47,27 @@ namespace cl::jit
             return static_cast<uint64_t>(Value::Ellipsis().as.integer);
         }
 
+        struct JitReturnSafepointObservation
+        {
+            Value target = Value::not_present();
+            bool observed = false;
+        };
+
+        void observe_jit_return_safepoint(
+            void *context, ThreadState *, Value accumulator, Value *,
+            CodeObject *, uint32_t, const SafepointScanRecord &scan_record)
+        {
+            auto *observation =
+                static_cast<JitReturnSafepointObservation *>(context);
+            if(accumulator != observation->target)
+            {
+                return;
+            }
+            observation->observed = true;
+            EXPECT_EQ(observation->target,
+                      scan_record.accumulator_or_not_present);
+        }
+
         uint32_t instruction_at(const void *code, size_t index)
         {
             uint32_t result;
@@ -168,6 +189,10 @@ namespace cl::jit
                     ->code_object.extract()
                     ->has_jit_code();
             }
+
+            ThreadState *thread() { return context_.thread(); }
+
+            void request_safepoint() { context_.vm().request_safepoint(); }
 
         private:
             TValue<Function> function(const wchar_t *name) const
@@ -676,6 +701,32 @@ namespace cl::jit
         {
             EXPECT_EQ(input, fixture.call(L"identity", input));
         }
+    }
+
+    TEST(AArch64Execution, RootsJitReturnValueAtInterpreterReentrySafepoint)
+    {
+        JitReturnSafepointObservation observation;
+        PythonJitExecutionFixture fixture;
+        fixture.execute_module(L"def identity(value):\n"
+                               L"    return value\n");
+        ASSERT_TRUE(fixture.jit_compile(L"identity"));
+
+        TValue<String> target =
+            fixture.thread()->make_object_value<String>(L"JIT return value");
+        void *target_address = target.raw_value().as.ptr;
+        GlobalHeap &heap =
+            fixture.thread()->get_machine()->get_refcounted_global_heap();
+        ASSERT_TRUE(heap.has_slab_for_address_for_testing(target_address));
+        observation.target = target.raw_value();
+        fixture.thread()->get_machine()->set_safepoint_callback_for_testing(
+            observe_jit_return_safepoint, &observation);
+        fixture.request_safepoint();
+
+        Value result = fixture.call(L"identity", target.raw_value());
+
+        EXPECT_EQ(target.raw_value(), result);
+        EXPECT_TRUE(observation.observed);
+        EXPECT_TRUE(heap.has_slab_for_address_for_testing(target_address));
     }
 
     TEST(AArch64Execution, InterpreterCallsPublishedTierAfterArgumentAdaptation)

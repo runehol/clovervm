@@ -6495,7 +6495,7 @@ namespace cl
         dispatch = reinterpret_cast<void *>(active_dispatch_table);
         if(unlikely(thread->safepoint_requested()))
         {
-            MUSTTAIL return op_committed_safepoint_slow(ARGS);
+            MUSTTAIL return op_committed_safepoint_with_accumulator_slow(ARGS);
         }
 
         DispatchTableEntry dispatch_fun = active_dispatch_table->table[*pc];
