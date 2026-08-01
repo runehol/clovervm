@@ -209,7 +209,6 @@ namespace cl::jit
                     case MachineInstructionKind::Uninitialized:
                     case MachineInstructionKind::AddSMIWithSideExit:
                     case MachineInstructionKind::SubSMIWithSideExit:
-                    case MachineInstructionKind::MulSMIWithSideExit:
                     case MachineInstructionKind::AndSMI:
                     case MachineInstructionKind::OrrSMI:
                     case MachineInstructionKind::EorSMI:
@@ -226,6 +225,21 @@ namespace cl::jit
                             overrides.emplace_back(instruction,
                                                    std::move(input_overrides));
                         }
+                        break;
+
+                    case MachineInstructionKind::MulSMIWithSideExit:
+                        input_overrides.emplace_back(
+                            MulSMIWithSideExitInstruction::lhs_operand_index,
+                            AccessTiming::Late,
+                            LocationRequirement::any_register(
+                                RegisterClass::GPR));
+                        input_overrides.emplace_back(
+                            MulSMIWithSideExitInstruction::rhs_operand_index,
+                            AccessTiming::Late,
+                            LocationRequirement::any_register(
+                                RegisterClass::GPR));
+                        overrides.push_back(gpr_temporary_constraints(
+                            instruction, std::move(input_overrides)));
                         break;
 
                     case MachineInstructionKind::Is:

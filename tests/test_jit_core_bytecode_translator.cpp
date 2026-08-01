@@ -310,7 +310,7 @@ namespace cl::jit
     }
 
     TEST(JitCoreBytecodeTranslator,
-         LowersSubAndSubSmiThroughBinaryArithmeticFamily)
+         LowersSubAndMulThroughBinaryArithmeticFamily)
     {
         TranslatorFixture fixture;
         {
@@ -326,6 +326,16 @@ namespace cl::jit
             fixture.code_builder
                 .emit_operator_smi(
                     0, Bytecode::SubSmi, -3,
+                    OperatorBytecodeFormat::WithCacheAndNotImplementedCheck)
+                .value();
+            fixture.code_builder
+                .emit_operator_reg(
+                    0, Bytecode::Mul, temporary,
+                    OperatorBytecodeFormat::WithCacheAndNotImplementedCheck)
+                .value();
+            fixture.code_builder
+                .emit_operator_smi(
+                    0, Bytecode::MulSmi, -3,
                     OperatorBytecodeFormat::WithCacheAndNotImplementedCheck)
                 .value();
             fixture.code_builder.emit_return(0).value();
@@ -344,9 +354,20 @@ namespace cl::jit
                   subtracts[1]
                       .as<BinaryArithmeticSMIWithSnapshotInstruction>()
                       .subkind());
+        std::vector<Instruction> multiplies =
+            instructions_of_kind(entry, InstructionKind::MulSMI);
+        ASSERT_EQ(2u, multiplies.size());
+        EXPECT_EQ(BinaryArithmeticSMIWithSnapshotSubkind::MulSMI,
+                  multiplies[0]
+                      .as<BinaryArithmeticSMIWithSnapshotInstruction>()
+                      .subkind());
+        EXPECT_EQ(BinaryArithmeticSMIWithSnapshotSubkind::MulSMI,
+                  multiplies[1]
+                      .as<BinaryArithmeticSMIWithSnapshotInstruction>()
+                      .subkind());
         EXPECT_EQ(
-            2u, instructions_of_kind(entry, InstructionKind::Snapshot).size());
-        EXPECT_EQ(3u,
+            4u, instructions_of_kind(entry, InstructionKind::Snapshot).size());
+        EXPECT_EQ(6u,
                   instructions_of_kind(entry, InstructionKind::InlineTagGuard)
                       .size());
     }

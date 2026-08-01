@@ -495,6 +495,32 @@ namespace cl::jit
                 }
 
                 case CL_JIT_MACHINE_INSTRUCTION_CASE(
+                    MulSMIWithSideExitInstruction, mul_instruction)
+                {
+                    XRegister result = assigned_register(
+                        locations, ProgramValueRef(mul_instruction));
+                    XRegister lhs =
+                        assigned_register(locations, mul_instruction.lhs());
+                    XRegister temporary =
+                        assigned_temporary(locations, mul_instruction, 0);
+
+                    assembler.asr(temporary,
+                                  assigned_register(locations,
+                                                    mul_instruction.rhs()),
+                                  5);
+                    assembler.mul(result, lhs, temporary);
+                    assembler.smulh(temporary, lhs, temporary);
+                    assembler.emit_arithmetic_reg(
+                        ArithmeticOp::Subs, xzr, temporary, result,
+                        ArithmeticShift::Asr, 63);
+                    assembler.b(
+                        AArch64Condition::NotEqual,
+                        side_exit_target(
+                            make_side_exit_binding(mul_instruction)));
+                    break;
+                }
+
+                case CL_JIT_MACHINE_INSTRUCTION_CASE(
                     InlineTagGuardWithSideExitInstruction,
                     guard_instruction)
                 {

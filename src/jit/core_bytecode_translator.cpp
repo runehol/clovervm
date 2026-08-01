@@ -215,6 +215,17 @@ namespace cl::jit
                 }
                 break;
 
+            case Bytecode::Mul:
+            case Bytecode::MulSmi:
+                if(!lower_binary_arithmetic(
+                       block, instruction,
+                       BinaryArithmeticSMIWithSnapshotSubkind::MulSMI, inputs,
+                       state, outputs))
+                {
+                    return;
+                }
+                break;
+
             case Bytecode::And:
             case Bytecode::AndSmi:
                 if(!lower_binary_logical(block, instruction,

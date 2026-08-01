@@ -596,6 +596,19 @@ namespace cl::jit
                 destination.encoding());
         }
 
+        void emit_signed_bitfield_move(XRegisterOrZero destination,
+                                       XRegisterOrZero source, uint8_t rotate,
+                                       uint8_t source_high_bit)
+        {
+            assert(rotate < 64);
+            assert(source_high_bit < 64);
+            write_instruction(
+                0x93400000 | (static_cast<uint32_t>(rotate) << 16) |
+                (static_cast<uint32_t>(source_high_bit) << 10) |
+                aarch64_detail::register_field(source.encoding(), 5) |
+                destination.encoding());
+        }
+
         void emit_conditional_select(AArch64Condition condition,
                                      XRegisterOrZero destination,
                                      XRegisterOrZero when_true,
@@ -876,6 +889,8 @@ namespace cl::jit
                    XRegisterOrZero multiplicand2);
         void umulh(XRegisterOrZero destination, XRegisterOrZero multiplicand1,
                    XRegisterOrZero multiplicand2);
+        void asr(XRegisterOrZero destination, XRegisterOrZero source,
+                 uint8_t shift_amount);
         void cmp(XRegisterOrZero left, XRegisterOrZero right);
         void cmp(XRegister left, uint16_t immediate);
         void cmp(WRegisterOrZero left, WRegisterOrZero right);

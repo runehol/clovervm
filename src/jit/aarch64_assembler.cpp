@@ -388,6 +388,14 @@ namespace cl::jit
                            multiplicand2);
     }
 
+    void AArch64MacroAssembler::asr(XRegisterOrZero destination,
+                                    XRegisterOrZero source,
+                                    uint8_t shift_amount)
+    {
+        assert(shift_amount < 64);
+        emit_signed_bitfield_move(destination, source, shift_amount, 63);
+    }
+
     void AArch64MacroAssembler::cmp(XRegisterOrZero left, XRegisterOrZero right)
     {
         emit_arithmetic_reg(ArithmeticOp::Subs, xzr, left, right);
