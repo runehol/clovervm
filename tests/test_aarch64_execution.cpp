@@ -258,6 +258,53 @@ namespace cl::jit
         EXPECT_EQ(input_bits, execute_published_jit(code, {input_bits}));
     }
 
+    TEST(AArch64Execution, ExecutesBinaryLogicalSMIFamily)
+    {
+        auto execute = []<typename Operation>(Value lhs, Value rhs) {
+            CompilationSession session;
+            GraphBuilder builder(session, IRLevel::Machine);
+            Block *entry = builder.emplace_block();
+            ParameterInstruction lhs_parameter =
+                builder.emplace_parameter<ParameterInstruction>(entry);
+            ParameterInstruction rhs_parameter =
+                builder.emplace_parameter<ParameterInstruction>(entry);
+            Operation result = builder.emplace_instruction<Operation>(
+                entry, TaggedValueRef(lhs_parameter),
+                TaggedValueRef(rhs_parameter));
+            builder.emplace_instruction<BareReturnInstruction>(
+                entry, TaggedValueRef(result));
+            ControlFlowGraph *graph = builder.finalize();
+
+            LocationAssignmentsBuilder location_builder;
+            location_builder.assign(ProgramValueRef(lhs_parameter),
+                                    PhysicalLocation::reg(x0));
+            location_builder.assign(ProgramValueRef(rhs_parameter),
+                                    PhysicalLocation::reg(x1));
+            location_builder.assign(ProgramValueRef(result),
+                                    PhysicalLocation::reg(x0));
+            LocationAssignments locations =
+                std::move(location_builder).finalize();
+
+            CodeCache cache;
+            auto emission = emit_aarch64_from_cfg(*graph, locations, cache,
+                                                  no_side_exit_thunk());
+            EXPECT_TRUE(emission);
+            PublishedCode code = std::move(emission).value();
+            return execute_published_jit(
+                code, {static_cast<uint64_t>(lhs.as.integer),
+                       static_cast<uint64_t>(rhs.as.integer)});
+        };
+
+        Value lhs = Value::from_smi(6);
+        Value rhs = Value::from_smi(3);
+        EXPECT_EQ(static_cast<uint64_t>(Value::from_smi(2).as.integer),
+                  execute.operator()<AndSMIInstruction>(lhs, rhs));
+        EXPECT_EQ(static_cast<uint64_t>(Value::from_smi(7).as.integer),
+                  execute.operator()<OrrSMIInstruction>(lhs, rhs));
+        EXPECT_EQ(static_cast<uint64_t>(Value::from_smi(5).as.integer),
+                  execute.operator()<EorSMIInstruction>(lhs, rhs));
+    }
+
     TEST(AArch64Execution, BranchesOnInlineTruthinessWithEitherFallthrough)
     {
         auto execute = [](bool true_falls_through, Value condition) {

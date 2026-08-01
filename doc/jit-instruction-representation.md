@@ -631,13 +631,20 @@ AddF64
     lhs: ProgramValue(F64)
     rhs: ProgramValue(F64)
 
-AddSMI
+BinaryArithmeticSMIWithSnapshot (currently AddSMI)
     result: ProgramValue(TaggedValue)
     lhs: ProgramValue(TaggedValue)
     rhs: ProgramValue(TaggedValue)
     snapshot: Snapshot
 
-AndSMI, OrrSMI, EorSMI
+BinaryArithmeticSMIWithSideExit (currently AddSMIWithSideExit)
+    result: ProgramValue(TaggedValue)
+    lhs: ProgramValue(TaggedValue)
+    rhs: ProgramValue(TaggedValue)
+    side_exit_arguments[]: ProgramValue(AnyRepresentation)
+    side_exit_region: attr SideExitRegionId
+
+BinaryLogicalSMI (AndSMI, OrrSMI, EorSMI)
     result: ProgramValue(TaggedValue)
     lhs: ProgramValue(TaggedValue)
     rhs: ProgramValue(TaggedValue)

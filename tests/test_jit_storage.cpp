@@ -352,12 +352,24 @@ namespace cl::jit
                   instruction_family_kind(InstructionKind::Is));
         EXPECT_EQ(InstructionFamilyKind::IsComparison,
                   instruction_family_kind(InstructionKind::IsNot));
+        EXPECT_EQ(InstructionFamilyKind::BinaryLogicalSMI,
+                  instruction_family_kind(InstructionKind::AndSMI));
+        EXPECT_EQ(InstructionFamilyKind::BinaryLogicalSMI,
+                  instruction_family_kind(InstructionKind::OrrSMI));
+        EXPECT_EQ(InstructionFamilyKind::BinaryLogicalSMI,
+                  instruction_family_kind(InstructionKind::EorSMI));
+        EXPECT_EQ(InstructionFamilyKind::BinaryArithmeticSMIWithSnapshot,
+                  instruction_family_kind(InstructionKind::AddSMI));
+        EXPECT_EQ(InstructionFamilyKind::BinaryArithmeticSMIWithSideExit,
+                  instruction_family_kind(InstructionKind::AddSMIWithSideExit));
         EXPECT_EQ(0u, instruction_subkind(InstructionKind::Parameter));
         EXPECT_EQ(0u, instruction_subkind(InstructionKind::ParameterF64));
         EXPECT_EQ(static_cast<uint16_t>(InstructionKind::Is),
                   static_cast<uint16_t>(IsComparisonSubkind::Is));
         EXPECT_EQ(static_cast<uint16_t>(InstructionKind::IsNot),
                   static_cast<uint16_t>(IsComparisonSubkind::IsNot));
+        EXPECT_EQ(static_cast<uint16_t>(InstructionKind::EorSMI),
+                  static_cast<uint16_t>(BinaryLogicalSMISubkind::EorSMI));
         EXPECT_EQ(
             &instruction_family_metadata(InstructionFamilyKind::Parameter),
             &instruction_kind_metadata(InstructionKind::Parameter));
@@ -373,6 +385,14 @@ namespace cl::jit
             std::is_base_of_v<IsComparisonInstruction, IsInstruction>);
         static_assert(
             std::is_base_of_v<IsComparisonInstruction, IsNotInstruction>);
+        static_assert(
+            std::is_base_of_v<BinaryLogicalSMIInstruction, AndSMIInstruction>);
+        static_assert(
+            std::is_base_of_v<BinaryArithmeticSMIWithSnapshotInstruction,
+                              AddSMIInstruction>);
+        static_assert(
+            std::is_base_of_v<BinaryArithmeticSMIWithSideExitInstruction,
+                              AddSMIWithSideExitInstruction>);
         static_assert(sizeof(IsComparisonInstruction) == sizeof(Instruction));
 
         CompilationSession session;

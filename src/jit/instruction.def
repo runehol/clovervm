@@ -164,66 +164,61 @@ CL_JIT_INSTRUCTION(StoreStackPointer, CL_JIT_IR_LEVELS(CoreMachine),
 #undef CL_JIT_StoreStackPointer_ATTRIBUTES
 #undef CL_JIT_StoreStackPointer_OPERANDS
 
-#define CL_JIT_AddSMI_OPERANDS(fixed, variadic, snapshot_values)              \
+#define CL_JIT_BinaryArithmeticSMIWithSnapshot_OPERANDS(                      \
+    fixed, variadic, snapshot_values)                                         \
     fixed(lhs, ProgramValue, TaggedValue)                                      \
     fixed(rhs, ProgramValue, TaggedValue)                                      \
     fixed(snapshot, Snapshot, None)
-#define CL_JIT_AddSMI_ATTRIBUTES(attribute)
-CL_JIT_INSTRUCTION(AddSMI, CL_JIT_IR_LEVELS(Core),
-                   CL_JIT_RESULT(ProgramValue, TaggedValue, Def),
-                   CL_JIT_EFFECT_BOUNDS(None, SideExit),
-                   CL_JIT_AddSMI_OPERANDS, CL_JIT_AddSMI_ATTRIBUTES)
-#undef CL_JIT_AddSMI_ATTRIBUTES
-#undef CL_JIT_AddSMI_OPERANDS
+#define CL_JIT_BinaryArithmeticSMIWithSnapshot_ATTRIBUTES(attribute)
+#define CL_JIT_BinaryArithmeticSMIWithSnapshot_SUBKINDS(each, ...)            \
+    each(AddSMI, __VA_ARGS__)
+CL_JIT_INSTRUCTION_FAMILY(
+    BinaryArithmeticSMIWithSnapshot, CL_JIT_IR_LEVELS(Core),
+    CL_JIT_RESULT(ProgramValue, TaggedValue, Def),
+    CL_JIT_EFFECT_BOUNDS(None, SideExit),
+    CL_JIT_BinaryArithmeticSMIWithSnapshot_OPERANDS,
+    CL_JIT_BinaryArithmeticSMIWithSnapshot_ATTRIBUTES,
+    CL_JIT_BinaryArithmeticSMIWithSnapshot_SUBKINDS)
+#undef CL_JIT_BinaryArithmeticSMIWithSnapshot_SUBKINDS
+#undef CL_JIT_BinaryArithmeticSMIWithSnapshot_ATTRIBUTES
+#undef CL_JIT_BinaryArithmeticSMIWithSnapshot_OPERANDS
 
-#define CL_JIT_AddSMIWithSideExit_OPERANDS(                                   \
+#define CL_JIT_BinaryArithmeticSMIWithSideExit_OPERANDS(                      \
     fixed, variadic, program_values)                                           \
     fixed(lhs, ProgramValue, TaggedValue)                                      \
     fixed(rhs, ProgramValue, TaggedValue)                                      \
     program_values(side_exit_arguments, SideExit)
-#define CL_JIT_AddSMIWithSideExit_ATTRIBUTES(attribute)                        \
+#define CL_JIT_BinaryArithmeticSMIWithSideExit_ATTRIBUTES(attribute)           \
     attribute(side_exit_region, SideExitRegionId)
-CL_JIT_INSTRUCTION(
-    AddSMIWithSideExit, CL_JIT_IR_LEVELS(Machine),
+#define CL_JIT_BinaryArithmeticSMIWithSideExit_SUBKINDS(each, ...)            \
+    each(AddSMIWithSideExit, __VA_ARGS__)
+CL_JIT_INSTRUCTION_FAMILY(
+    BinaryArithmeticSMIWithSideExit, CL_JIT_IR_LEVELS(Machine),
     CL_JIT_RESULT(ProgramValue, TaggedValue, Def),
     CL_JIT_EFFECT_BOUNDS(None, SideExit),
-    CL_JIT_AddSMIWithSideExit_OPERANDS,
-    CL_JIT_AddSMIWithSideExit_ATTRIBUTES)
-#undef CL_JIT_AddSMIWithSideExit_ATTRIBUTES
-#undef CL_JIT_AddSMIWithSideExit_OPERANDS
+    CL_JIT_BinaryArithmeticSMIWithSideExit_OPERANDS,
+    CL_JIT_BinaryArithmeticSMIWithSideExit_ATTRIBUTES,
+    CL_JIT_BinaryArithmeticSMIWithSideExit_SUBKINDS)
+#undef CL_JIT_BinaryArithmeticSMIWithSideExit_SUBKINDS
+#undef CL_JIT_BinaryArithmeticSMIWithSideExit_ATTRIBUTES
+#undef CL_JIT_BinaryArithmeticSMIWithSideExit_OPERANDS
 
-#define CL_JIT_AndSMI_OPERANDS(fixed, variadic, snapshot_values)              \
+#define CL_JIT_BinaryLogicalSMI_OPERANDS(fixed, variadic, snapshot_values)     \
     fixed(lhs, ProgramValue, TaggedValue)                                      \
     fixed(rhs, ProgramValue, TaggedValue)
-#define CL_JIT_AndSMI_ATTRIBUTES(attribute)
-CL_JIT_INSTRUCTION(AndSMI, CL_JIT_IR_LEVELS(CoreMachine),
-                   CL_JIT_RESULT(ProgramValue, TaggedValue, Def),
-                   CL_JIT_EFFECT_BOUNDS(None, None),
-                   CL_JIT_AndSMI_OPERANDS, CL_JIT_AndSMI_ATTRIBUTES)
-#undef CL_JIT_AndSMI_ATTRIBUTES
-#undef CL_JIT_AndSMI_OPERANDS
-
-#define CL_JIT_OrrSMI_OPERANDS(fixed, variadic, snapshot_values)              \
-    fixed(lhs, ProgramValue, TaggedValue)                                      \
-    fixed(rhs, ProgramValue, TaggedValue)
-#define CL_JIT_OrrSMI_ATTRIBUTES(attribute)
-CL_JIT_INSTRUCTION(OrrSMI, CL_JIT_IR_LEVELS(CoreMachine),
-                   CL_JIT_RESULT(ProgramValue, TaggedValue, Def),
-                   CL_JIT_EFFECT_BOUNDS(None, None),
-                   CL_JIT_OrrSMI_OPERANDS, CL_JIT_OrrSMI_ATTRIBUTES)
-#undef CL_JIT_OrrSMI_ATTRIBUTES
-#undef CL_JIT_OrrSMI_OPERANDS
-
-#define CL_JIT_EorSMI_OPERANDS(fixed, variadic, snapshot_values)              \
-    fixed(lhs, ProgramValue, TaggedValue)                                      \
-    fixed(rhs, ProgramValue, TaggedValue)
-#define CL_JIT_EorSMI_ATTRIBUTES(attribute)
-CL_JIT_INSTRUCTION(EorSMI, CL_JIT_IR_LEVELS(CoreMachine),
-                   CL_JIT_RESULT(ProgramValue, TaggedValue, Def),
-                   CL_JIT_EFFECT_BOUNDS(None, None),
-                   CL_JIT_EorSMI_OPERANDS, CL_JIT_EorSMI_ATTRIBUTES)
-#undef CL_JIT_EorSMI_ATTRIBUTES
-#undef CL_JIT_EorSMI_OPERANDS
+#define CL_JIT_BinaryLogicalSMI_ATTRIBUTES(attribute)
+#define CL_JIT_BinaryLogicalSMI_SUBKINDS(each, ...)                           \
+    each(AndSMI, __VA_ARGS__)                                                  \
+    each(OrrSMI, __VA_ARGS__)                                                  \
+    each(EorSMI, __VA_ARGS__)
+CL_JIT_INSTRUCTION_FAMILY(
+    BinaryLogicalSMI, CL_JIT_IR_LEVELS(CoreMachine),
+    CL_JIT_RESULT(ProgramValue, TaggedValue, Def),
+    CL_JIT_EFFECT_BOUNDS(None, None), CL_JIT_BinaryLogicalSMI_OPERANDS,
+    CL_JIT_BinaryLogicalSMI_ATTRIBUTES, CL_JIT_BinaryLogicalSMI_SUBKINDS)
+#undef CL_JIT_BinaryLogicalSMI_SUBKINDS
+#undef CL_JIT_BinaryLogicalSMI_ATTRIBUTES
+#undef CL_JIT_BinaryLogicalSMI_OPERANDS
 
 #define CL_JIT_IsComparison_OPERANDS(fixed, variadic, snapshot_values)        \
     fixed(lhs, ProgramValue, TaggedValue)                                      \

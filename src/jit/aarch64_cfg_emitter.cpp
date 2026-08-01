@@ -93,15 +93,29 @@ namespace cl::jit
             return static_cast<int64_t>(stack.frame_offset()) * sizeof(Value);
         }
 
+        LogicalOp logical_operation(BinaryLogicalSMISubkind subkind)
+        {
+            switch(subkind)
+            {
+                case BinaryLogicalSMISubkind::AndSMI:
+                    return LogicalOp::And;
+                case BinaryLogicalSMISubkind::OrrSMI:
+                    return LogicalOp::Orr;
+                case BinaryLogicalSMISubkind::EorSMI:
+                    return LogicalOp::Eor;
+            }
+            fatal("invalid JIT binary logical SMI subkind");
+        }
+
         void emit_smi_logical(AArch64MacroAssembler &assembler,
                               const LocationAssignments &locations,
-                              LogicalOp operation, ProgramValueRef result,
-                              ProgramValueRef lhs, ProgramValueRef rhs)
+                              BinaryLogicalSMIInstruction logical)
         {
-            assembler.emit_logical_reg(operation,
-                                       assigned_register(locations, result),
-                                       assigned_register(locations, lhs),
-                                       assigned_register(locations, rhs));
+            assembler.emit_logical_reg(
+                logical_operation(logical.subkind()),
+                assigned_register(locations, ProgramValueRef(logical)),
+                assigned_register(locations, logical.lhs()),
+                assigned_register(locations, logical.rhs()));
         }
 
         AArch64Condition
@@ -349,33 +363,13 @@ namespace cl::jit
                     break;
                 }
 
-                case CL_JIT_MACHINE_INSTRUCTION_CASE(
-                    AndSMIInstruction, and_instruction)
+                case MachineInstructionKind::AndSMI:
+                case MachineInstructionKind::OrrSMI:
+                case MachineInstructionKind::EorSMI:
                 {
                     emit_smi_logical(
-                        assembler, locations, LogicalOp::And,
-                        ProgramValueRef(instruction), and_instruction.lhs(),
-                        and_instruction.rhs());
-                    break;
-                }
-
-                case CL_JIT_MACHINE_INSTRUCTION_CASE(
-                    OrrSMIInstruction, orr_instruction)
-                {
-                    emit_smi_logical(
-                        assembler, locations, LogicalOp::Orr,
-                        ProgramValueRef(instruction),
-                        orr_instruction.lhs(), orr_instruction.rhs());
-                    break;
-                }
-
-                case CL_JIT_MACHINE_INSTRUCTION_CASE(
-                    EorSMIInstruction, eor_instruction)
-                {
-                    emit_smi_logical(
-                        assembler, locations, LogicalOp::Eor,
-                        ProgramValueRef(instruction),
-                        eor_instruction.lhs(), eor_instruction.rhs());
+                        assembler, locations,
+                        instruction.as<BinaryLogicalSMIInstruction>());
                     break;
                 }
 
