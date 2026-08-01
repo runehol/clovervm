@@ -104,22 +104,31 @@ namespace cl::jit
                                        assigned_register(locations, rhs));
         }
 
-        void emit_identity_test(AArch64MacroAssembler &assembler,
-                                const LocationAssignments &locations,
-                                AArch64Condition condition,
-                                Instruction instruction, ProgramValueRef lhs,
-                                ProgramValueRef rhs)
+        AArch64Condition
+        emit_is_comparison(AArch64MacroAssembler &assembler,
+                           const LocationAssignments &locations,
+                           AArch64Condition true_condition, ProgramValueRef lhs,
+                           ProgramValueRef rhs)
+        {
+            assembler.cmp(assigned_register(locations, lhs),
+                          assigned_register(locations, rhs));
+            return true_condition;
+        }
+
+        void
+        emit_tagged_boolean_from_flags(AArch64MacroAssembler &assembler,
+                                       const LocationAssignments &locations,
+                                       AArch64Condition true_condition,
+                                       Instruction instruction)
         {
             XRegister result =
                 assigned_register(locations, ProgramValueRef(instruction));
             XRegister temporary = assigned_temporary(locations, instruction, 0);
-            assembler.cmp(assigned_register(locations, lhs),
-                          assigned_register(locations, rhs));
             assembler.mov(result,
                           static_cast<uint64_t>(Value::False().as.integer));
             assembler.mov(temporary,
                           static_cast<uint64_t>(Value::True().as.integer));
-            assembler.emit_conditional_select(condition, result, temporary,
+            assembler.emit_conditional_select(true_condition, result, temporary,
                                               result);
         }
 
@@ -348,20 +357,22 @@ namespace cl::jit
                 case CL_JIT_MACHINE_INSTRUCTION_CASE(
                     IsInstruction, is_instruction)
                 {
-                    emit_identity_test(
+                    AArch64Condition true_condition = emit_is_comparison(
                         assembler, locations, AArch64Condition::Equal,
-                        instruction, is_instruction.lhs(),
-                        is_instruction.rhs());
+                        is_instruction.lhs(), is_instruction.rhs());
+                    emit_tagged_boolean_from_flags(
+                        assembler, locations, true_condition, instruction);
                     break;
                 }
 
                 case CL_JIT_MACHINE_INSTRUCTION_CASE(
                     IsNotInstruction, is_not_instruction)
                 {
-                    emit_identity_test(
+                    AArch64Condition true_condition = emit_is_comparison(
                         assembler, locations, AArch64Condition::NotEqual,
-                        instruction, is_not_instruction.lhs(),
-                        is_not_instruction.rhs());
+                        is_not_instruction.lhs(), is_not_instruction.rhs());
+                    emit_tagged_boolean_from_flags(
+                        assembler, locations, true_condition, instruction);
                     break;
                 }
 
