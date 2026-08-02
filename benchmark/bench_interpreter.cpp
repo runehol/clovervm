@@ -37,6 +37,9 @@ namespace
             {"benchmark/recursive_fib.py",
              {benchmark_cpp::recursive_fib_run,
               benchmark_cpp::recursive_fib_items}},
+            {"benchmark/iterative_fib.py",
+             {benchmark_cpp::iterative_fib_run,
+              benchmark_cpp::iterative_fib_items}},
             {"benchmark/str_constructor_int.py",
              {benchmark_cpp::str_constructor_int_run,
               benchmark_cpp::str_constructor_int_items}},
@@ -600,6 +603,16 @@ static void BM_RecursiveFibonacci(benchmark::State &state)
 BENCHMARK_TEMPLATE(BM_RecursiveFibonacci, CloverProgram)
     ->Name("BM_RecursiveFibonacci")
     ->Arg(25);
+
+template <typename Program>
+static void BM_IterativeFibonacci(benchmark::State &state)
+{
+    run_benchmark_case<Program>(state, "benchmark/iterative_fib.py",
+                                state.range(0));
+}
+BENCHMARK_TEMPLATE(BM_IterativeFibonacci, CloverProgram)
+    ->Name("BM_IterativeFibonacci")
+    ->Arg(100000);
 
 template <typename Program> static void BM_WhileLoop(benchmark::State &state)
 {

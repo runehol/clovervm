@@ -43,6 +43,7 @@ add_executable(bench_clovervm
     instance_attribute_write.cpp
     int_constructor_int.cpp
     int_constructor_string.cpp
+    iterative_fib.cpp
     method_call.cpp
     method_call_class_attribute_write.cpp
     method_keyword_call.cpp
