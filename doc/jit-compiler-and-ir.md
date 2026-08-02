@@ -1619,6 +1619,10 @@ replacement: a later guard can be removed when an equivalent earlier guard
 result dominates all rewritten uses and no intervening effect invalidates the
 observed property.
 
+Low-tag fact propagation, cheaply encodable tag tests, block-parameter fact
+merging, and the pointer fact used by shape guards are specified in
+[JIT Tagged-Value Facts and Guards](jit-tagged-value-facts.md).
+
 The retained guard keeps its own bytecode bailout location. Equivalent guards
 in sibling blocks do not dominate one another. Hoisting them is a separate CFG
 transformation that must choose a legal bailout state and prove that replaying
