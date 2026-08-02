@@ -6,7 +6,7 @@
 | Status | Active |
 | Scope | Prioritized work that turns the current executable AArch64 JIT slice into a broader and runtime-complete compiler |
 | Design authority | [JIT Compiler and IR](jit-compiler-and-ir.md), [JIT Register Allocation](jit-register-allocation.md), [JIT Side-Exit Lowering](jit-side-exit-lowering.md), and [JIT Transition Programs](jit-transition-program.md) |
-| Validated against | `b2fe5ecb` (2026-08-01) |
+| Validated against | `b847eed0` (2026-08-02) |
 
 This roadmap records implementation order rather than adding architecture. The
 owning design documents remain authoritative for IR, allocation, recovery,
@@ -18,36 +18,18 @@ infrastructure they exercise rather than maintaining an opcode ledger.
 
 Near-term work follows four rules:
 
-1. Remove structural and allocation-created waste that would otherwise become
-   pressure, spills, or repeated work in every widened operation.
-2. Extend allocator contracts when the desired code shape depends on location
-   choice; do not repair poor allocation with emitter peepholes.
-3. Keep safepoint and recovery correctness current as compiled execution
+1. Keep safepoint and recovery correctness current as compiled execution
    becomes longer-lived.
+2. Add pressure handling before substantially widening expression, object, and
+   call coverage.
+3. Extend allocator contracts when the desired code shape depends on location
+   choice; do not repair poor allocation with emitter peepholes.
 4. Widen through operations that reuse the existing Snapshot, guard, side-exit,
-   and overflow machinery before taking on calls or allocation.
+   tagged-fact, and overflow machinery before adding new semantic machinery.
 
 ## Implementation Sequence
 
-### 1. Fuse Value Tests With Branches
-
-Recognize the existing single-use pattern:
-
-```text
-Is or IsNot -> ConditionalBranch
-```
-
-and lower it to one Machine compare-and-branch terminator. AArch64 can then emit
-`cmp` followed immediately by `b.cond` without materializing tagged `True` and
-`False` or retesting the result. If the Python boolean has another use, retain
-ordinary materialization and tagged truthiness testing.
-
-Identity tests provide the first executable fixture and establish the fusion
-shape before SMI comparisons are added. The optimization should remove the
-intermediate boolean from Machine IR so allocation does not model a value that
-emission will never materialize.
-
-### 2. Poll Safepoints on Loop Backedges
+### 1. Poll Safepoints on Loop Backedges
 
 Add a cheap safepoint poll to compiled loop backedges. The unrequested path
 must stay in generated code without publishing frame state or calling a helper.
@@ -60,27 +42,7 @@ executing compiled code. The test must prove both that roots are published and
 that execution resumes at the backedge target without replaying loop-body
 effects.
 
-### 3. Widen SMI Operations and Comparisons
-
-Extend the direct Core translator through operation families that reuse the
-existing inline guards, side-exit state, and Machine emission:
-
-- overflow-checked subtraction, including compact-immediate bytecode forms;
-- direct translation and guarding for the existing `AndSMI`, `OrrSMI`, and
-  `EorSMI` instructions;
-- backend folding of encodable tagged SMI constants into immediate forms;
-- ordinary SMI comparison results, connected to the established
-  compare-and-branch fusion when their result has only the branch use.
-
-Boolean-as-integer handling must remain explicit. Python's bool/bool and mixed
-bool/int operators can differ in result type, so `SMIOrBoolean` guards must not
-replace SMI guards until the lowering represents those semantics.
-
-Multiplication, shifts, division, modulo, and exponentiation remain later
-slices because their tagged arithmetic, failure cases, or result growth require
-additional lowering.
-
-### 4. Add Ordinary Spill Storage
+### 2. Add Ordinary Spill Storage
 
 Stage ordinary spilling rather than combining every spill mechanism into one
 change:
@@ -97,7 +59,26 @@ coverage. The symbolic allocation checker and adversarial pressure tests in
 [JIT Register Allocation Open Work](jit-register-allocation-progress.md)
 should grow with this slice.
 
-### 5. Add Shape-Guarded Known-Field Access
+### 3. Complete the Direct Operator Slice
+
+Extend the direct Core path through the remaining common operators whose fast
+paths fit the existing guard and side-exit model. Floor division and modulo are
+the next arithmetic pair: both need explicit zero and signed-overflow handling,
+and floor semantics must be preserved when operand signs differ. Shifts follow
+once their negative-count, large-count, and result-growth cases have a precise
+fallback contract. Add unary operators where they exercise the same machinery.
+
+Keep boolean-as-integer behavior explicit. Python's bool/bool and mixed bool/int
+operators can differ in result type, so broader guards must not silently change
+the operation selected or its result type. Exponentiation remains later because
+its common cases quickly cross into allocation and arbitrary-precision results.
+
+This slice should extend the existing instruction families and common lowering
+functions rather than introducing one-off instructions. Preserve comparison and
+branch fusion, tagged-fact propagation, and redundant-guard elimination as the
+operator set grows.
+
+### 4. Add Shape-Guarded Known-Field Access
 
 Introduce Machine side-exit forms and AArch64 emission for shape and validity
 guards, followed by known-offset field loads. This is the first high-leverage
@@ -107,7 +88,7 @@ Guard commoning and motion may begin here, once repeated shape checks exist in
 real generated programs. Keep shape and validity checks independently
 optimizable as required by their separate Core instructions.
 
-### 6. Approach Calls, F64, and General Sinking
+### 5. Establish the First Call Slice
 
 Calls require managed frame-header construction, stack-passed argument support,
 fixed argument and result locations, clobber validation, `x25`-to-`x0` native
@@ -121,6 +102,13 @@ context in the compiled calling convention; the callee materializes canonical
 frame-header cells only when its own calls, safepoints, exits, or register
 pressure require them. A leaf function can then keep the return context in
 registers and return without frame-header stores.
+
+Start with one fixed-arity call path and its return path. Keep adaptation and
+fallback behavior in the runtime layers that already own them; the initial JIT
+slice should make the calling-convention, frame-publication, exception-marker,
+and safepoint boundaries executable before broadening call target kinds.
+
+### 6. Add F64 Recovery and General Sinking
 
 F64 support requires SIMD stack transfers, float guards, boxing allocation, and
 recovery computation. General transition sinking becomes valuable with boxing
@@ -143,6 +131,12 @@ record compact per-compilation statistics for:
 - moves introduced by guards, block edges, splits, and spills;
 - allocator evictions, splits, spills, and compilation failures;
 - compilation time by major phase.
+
+Use iterative Fibonacci as the narrow loop-code baseline. It currently checks
+the combined quality of loop-carried allocation, guard elimination, fused
+comparison branches, and overflow side exits. Preserve its emitted-code shape
+and compare it with both CPython and the barrier-protected C++ reference, but do
+not optimize specifically for that one loop.
 
 Use those counts to decide when to intern transition programs. If distinct
 bindings emit byte-identical finalized `TransitionInstruction` sequences,
