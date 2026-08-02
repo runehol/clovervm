@@ -51,13 +51,13 @@ namespace cl::jit
             entry, std::span<const ProgramValueRef>{}, BytecodePCOffset{7}));
         InlineTagGuardInstruction guard =
             builder.emplace_instruction<InlineTagGuardInstruction>(
-                entry, value, snapshot, InlineValueClass::SMIOrBoolean);
+                entry, value, snapshot, InlineValueClass::AnyInline);
         builder.emplace_instruction<BareReturnInstruction>(
             entry, TaggedValueRef(guard));
         ControlFlowGraph *graph = builder.finalize();
 
         EXPECT_EQ("%2 = inline_tag_guard %0, %1 "
-                  "{expected_class = smi_or_boolean}",
+                  "{expected_class = any_inline}",
                   format_instruction(*graph, guard));
     }
 

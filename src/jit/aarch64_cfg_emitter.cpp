@@ -181,6 +181,10 @@ namespace cl::jit
         {
             switch(expected_class)
             {
+                case InlineValueClass::AnyInline:
+                    assembler.tst(source, inline_value_class_mask(
+                                              InlineValueClass::AnyInline));
+                    return;
                 case InlineValueClass::SMI:
                     assembler.tst(
                         source, inline_value_class_mask(InlineValueClass::SMI));
@@ -217,6 +221,12 @@ namespace cl::jit
             constexpr XRegister Scratch1(17);
             switch(expected_class)
             {
+                case InlineValueClass::AnyInline:
+                    assembler.emit_logical_reg(LogicalOp::Orr, Scratch0, lhs,
+                                               rhs);
+                    assembler.tst(Scratch0, inline_value_class_mask(
+                                                InlineValueClass::AnyInline));
+                    return;
                 case InlineValueClass::SMI:
                     assembler.emit_logical_reg(LogicalOp::Orr, Scratch0, lhs,
                                                rhs);

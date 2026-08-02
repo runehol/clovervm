@@ -82,8 +82,11 @@ namespace cl
     static_assert((value_not_implemented & value_tag_mask) !=
                   (value_ellipsis & value_tag_mask));
 
+    // The low 16 bits hold the mask and the high 16 bits hold the bits to
+    // compare with after applying that mask.
     enum class InlineValueClass : uint32_t
     {
+        AnyInline = uint32_t(value_ptr_mask),
         SMI = uint32_t(value_tag_mask),
         Boolean =
             (uint32_t(value_boolean_tag) << 16) | uint32_t(value_tag_mask),
@@ -102,6 +105,7 @@ namespace cl
     }
 
     static_assert(value_tag_mask <= UINT16_MAX);
+    static_assert(value_ptr_mask <= UINT16_MAX);
     static_assert(value_boolean_tag <= UINT16_MAX);
     static_assert(value_not_smi_or_boolean_mask <= UINT16_MAX);
 

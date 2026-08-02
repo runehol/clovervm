@@ -545,6 +545,13 @@ namespace cl::jit
         };
 
         Value smi = Value::from_smi(42);
+        Value pointer = Value::from_oop(code_object);
+        EXPECT_EQ(static_cast<uint64_t>(smi.as.integer),
+                  execute_guard(InlineValueClass::AnyInline, smi));
+        EXPECT_EQ(static_cast<uint64_t>(Value::None().as.integer),
+                  execute_guard(InlineValueClass::AnyInline, Value::None()));
+        EXPECT_EQ(static_cast<uint64_t>(Value::Ellipsis().as.integer),
+                  execute_guard(InlineValueClass::AnyInline, pointer));
         EXPECT_EQ(static_cast<uint64_t>(smi.as.integer),
                   execute_guard(InlineValueClass::SMI, smi));
         EXPECT_EQ(static_cast<uint64_t>(Value::Ellipsis().as.integer),
@@ -654,6 +661,14 @@ namespace cl::jit
         };
 
         Value smi = Value::from_smi(42);
+        Value pointer = Value::from_oop(code_object);
+        EXPECT_EQ(
+            static_cast<uint64_t>(smi.as.integer),
+            execute_pair(InlineValueClass::AnyInline, smi, Value::None()));
+        EXPECT_EQ(static_cast<uint64_t>(Value::Ellipsis().as.integer),
+                  execute_pair(InlineValueClass::AnyInline, pointer, smi));
+        EXPECT_EQ(static_cast<uint64_t>(Value::Ellipsis().as.integer),
+                  execute_pair(InlineValueClass::AnyInline, smi, pointer));
         EXPECT_EQ(static_cast<uint64_t>(smi.as.integer),
                   execute_pair(InlineValueClass::SMI, smi, smi));
         EXPECT_EQ(static_cast<uint64_t>(Value::Ellipsis().as.integer),

@@ -192,6 +192,9 @@ namespace cl::jit
                 attribute_separator(name);
                 switch(value_class)
                 {
+                    case InlineValueClass::AnyInline:
+                        write("any_inline");
+                        return;
                     case InlineValueClass::SMI:
                         write("smi");
                         return;

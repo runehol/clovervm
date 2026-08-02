@@ -345,6 +345,10 @@ TEST(Value, InlineSingletonsHaveDistinctLowTags)
 
 TEST(Value, EncodesInlineValueClassesAsMaskAndExpectedBits)
 {
+    EXPECT_EQ(value_ptr_mask,
+              inline_value_class_mask(InlineValueClass::AnyInline));
+    EXPECT_EQ(0u,
+              inline_value_class_expected_bits(InlineValueClass::AnyInline));
     EXPECT_EQ(value_tag_mask, inline_value_class_mask(InlineValueClass::SMI));
     EXPECT_EQ(0u, inline_value_class_expected_bits(InlineValueClass::SMI));
     EXPECT_EQ(value_tag_mask,
