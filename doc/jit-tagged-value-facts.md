@@ -56,11 +56,20 @@ universe.
 class TaggedValueSet
 {
 public:
+    static constexpr TaggedValueSet never();
     static constexpr TaggedValueSet unknown();
-    static constexpr TaggedValueSet impossible();
-    static constexpr TaggedValueSet singleton(uint8_t tag);
 
-    constexpr bool is_impossible() const;
+    static constexpr TaggedValueSet pointer();
+    static constexpr TaggedValueSet from_inline_tag(uint8_t tag);
+    static constexpr TaggedValueSet from_shape_key(ShapeKey key);
+
+    static constexpr TaggedValueSet smi();
+    static constexpr TaggedValueSet boolean();
+    static constexpr TaggedValueSet smi_or_boolean();
+
+    static constexpr TaggedValueSet from_class(TaggedValueClass value_class);
+
+    constexpr bool is_never() const;
     constexpr bool is_subset_of(TaggedValueSet other) const;
     constexpr bool is_disjoint_from(TaggedValueSet other) const;
 
@@ -70,8 +79,6 @@ public:
     constexpr uint32_t bits() const;
 
 private:
-    friend class TaggedValueTest;
-
     explicit constexpr TaggedValueSet(uint32_t bits);
 
     uint32_t bits_;
@@ -85,7 +92,7 @@ refinement on one path:       lhs & rhs
 merge of alternative paths:  lhs | rhs
 proved membership:            facts is a subset of accepted tags
 proved rejection:             facts and accepted tags are disjoint
-impossible or unreachable:    empty set
+never or unreachable:         empty set
 unknown:                      every valid tag
 ```
 
@@ -93,35 +100,86 @@ This representation preserves facts that known-zero and known-one masks
 cannot. Interned and refcounted pointers merge to the set `{0x08, 0x10}` even
 though neither pointer-tag bit is individually known to be one.
 
-## Cheap Instruction Tests
-
-IR guards do not accept `TaggedValueSet`. They accept a `TaggedValueTest`, which
-can be constructed only in one of the supported cheap forms:
+The valid-tag universe is derived from the existing `Value` encoding constants,
+not repeated as a second tag enumeration. A helper maps each existing encoded
+value or pointer tag to `1 << (value & value_tag_mask)`, and
+`valid_tagged_value_set_bits` combines those bits. `unknown()` returns that
+bitset; invalid low-tag patterns are never introduced into the lattice.
 
 ```cpp
-enum class TaggedValueTestKind : uint8_t
+constexpr uint32_t tagged_value_set_bit(uint64_t encoded_value)
+{
+    return uint32_t{1}
+           << uint32_t(encoded_value & value_tag_mask);
+}
+
+constexpr uint32_t valid_tagged_value_set_bits =
+    tagged_value_set_bit(0) |
+    tagged_value_set_bit(value_none) |
+    tagged_value_set_bit(value_not_present) |
+    tagged_value_set_bit(value_exception) |
+    tagged_value_set_bit(value_boolean_tag) |
+    tagged_value_set_bit(value_not_implemented) |
+    tagged_value_set_bit(value_ellipsis) |
+    tagged_value_set_bit(value_interned_ptr_tag) |
+    tagged_value_set_bit(value_refcounted_ptr_tag);
+```
+
+The construction API reflects the sources of facts:
+
+- `pointer()` contains the interned and refcounted pointer tags;
+- `from_inline_tag()` validates a concrete five-bit inline tag and selects its
+  single bit;
+- `from_shape_key()` selects the concrete tag for an inline key and returns
+  `pointer()` for a shape key;
+- `smi()` and `boolean()` select their concrete tags, while
+  `smi_or_boolean()` merges those sets;
+- `from_class()` converts a restricted guard class into the arbitrary set it
+  accepts.
+
+`ShapeKey` therefore exposes read-only `is_inline()` and `inline_tag()` queries.
+The conversion does not need access to the concrete `Shape *`. A promise of an
+exact lifetime-stable shape belongs to `TaggedValueFacts`, not
+`TaggedValueSet`: it combines `pointer()` with separate exact-shape identity.
+
+Additional named set constructors are added only when instruction semantics
+need them. Exact constants can use `from_inline_tag()`; there is no separate
+public singleton abstraction.
+
+## Cheap Instruction Classes
+
+IR guards do not accept `TaggedValueSet`. They accept a `TaggedValueClass`, a
+restricted and cheaply encodable description of the values admitted by the
+guard:
+
+```cpp
+enum class TaggedValueClassKind : uint8_t
 {
     MaskedEqual,
     MaskedNonZero,
 };
 
-class TaggedValueTest
+class TaggedValueClass
 {
 public:
-    static constexpr TaggedValueTest
+    static constexpr TaggedValueClass
     masked_equal(uint8_t mask, uint8_t expected);
 
-    static constexpr TaggedValueTest masked_nonzero(uint8_t mask);
+    static constexpr TaggedValueClass masked_nonzero(uint8_t mask);
 
-    constexpr TaggedValueTestKind kind() const;
+    static constexpr TaggedValueClass smi();
+    static constexpr TaggedValueClass boolean();
+    static constexpr TaggedValueClass smi_or_boolean();
+    static constexpr TaggedValueClass any_inline();
+    static constexpr TaggedValueClass pointer();
+
+    constexpr TaggedValueClassKind kind() const;
     constexpr uint8_t mask() const;
     constexpr uint8_t expected() const;
     constexpr uint32_t encoded() const;
 
-    constexpr TaggedValueSet accepted_tags() const;
-
 private:
-    explicit constexpr TaggedValueTest(uint32_t encoded);
+    explicit constexpr TaggedValueClass(uint32_t encoded);
 
     uint32_t encoded_;
 };
@@ -132,7 +190,7 @@ The packed representation occupies one instruction word:
 ```text
 bits  0..7   mask
 bits  8..15  expected bits
-bits 16..23  TaggedValueTestKind
+bits 16..23  TaggedValueClassKind
 bits 24..31  reserved and zero
 ```
 
@@ -141,7 +199,7 @@ implicit expected value of zero. Masks and expected values are currently
 restricted to `value_tag_mask`, although the byte-sized fields leave room for
 a wider tag encoding.
 
-The named tests are:
+The named classes are:
 
 ```text
 SMI          MaskedEqual(value_tag_mask, 0)
@@ -156,42 +214,62 @@ tagged-value property and must not be confused with the JIT's untagged
 `ValueRepresentation::Pointer`.
 
 Construction through these factories is the validity check. An instruction
-constructor takes an already valid `TaggedValueTest`; it does not perform
+constructor takes an already valid `TaggedValueClass`; it does not perform
 expensive semantic validation and cannot be passed an arbitrary tag set.
 
-## Test-to-Set Conversion
+## Class-to-Set Conversion
 
 Fact propagation needs only one conversion direction:
 
 ```cpp
-constexpr TaggedValueSet TaggedValueTest::accepted_tags() const
+constexpr TaggedValueSet
+TaggedValueSet::from_class(TaggedValueClass value_class)
 {
-    uint32_t accepted = 0;
-    for(uint8_t tag: valid_tag_values)
+    if(value_class.kind() == TaggedValueClassKind::MaskedEqual &&
+       value_class.mask() == value_tag_mask)
     {
-        bool matches;
-        switch(kind())
+        uint32_t bit = uint32_t{1} << value_class.expected();
+        return TaggedValueSet(bit & valid_tagged_value_set_bits);
+    }
+
+    uint32_t accepted = 0;
+    for(uint8_t tag = 0; tag <= value_tag_mask; ++tag)
+    {
+        uint32_t bit = uint32_t{1} << tag;
+        if((valid_tagged_value_set_bits & bit) == 0)
         {
-            case TaggedValueTestKind::MaskedEqual:
-                matches = (tag & mask()) == expected();
+            continue;
+        }
+
+        bool matches;
+        switch(value_class.kind())
+        {
+            case TaggedValueClassKind::MaskedEqual:
+                matches = (tag & value_class.mask()) ==
+                          value_class.expected();
                 break;
-            case TaggedValueTestKind::MaskedNonZero:
-                matches = (tag & mask()) != 0;
+            case TaggedValueClassKind::MaskedNonZero:
+                matches = (tag & value_class.mask()) != 0;
                 break;
         }
         if(matches)
         {
-            accepted |= uint32_t{1} << tag;
+            accepted |= bit;
         }
     }
     return TaggedValueSet(accepted);
 }
 ```
 
+The full-mask equality shortcut handles exact inline classes without scanning
+the tag universe. It intersects with the valid-tag bitset, so an exact class
+for an invalid pattern produces `never()`. Other classes use the bounded
+32-pattern loop.
+
 There is no initial conversion from an arbitrary `TaggedValueSet` to a guard
-test. The optimizer removes proved tests but does not narrow or synthesize new
-ones. If a later optimization demonstrates a need for test synthesis, it can
-add an explicitly costed selector without changing the fact lattice.
+class. The optimizer removes proved guards but does not narrow or synthesize
+new classes. If a later optimization demonstrates a need for class synthesis,
+it can add an explicitly costed selector without changing the fact lattice.
 
 ## Tagged-Value Facts
 
@@ -214,7 +292,7 @@ Instruction results establish facts as follows:
 - SMI arithmetic and logical operations produce the SMI set;
 - identity and ordinary comparison operations produce the Boolean set;
 - a successful tagged-value guard intersects its input facts with the guard's
-  accepted tag set;
+  class converted through `TaggedValueSet::from_class()`;
 - forwarding definitions and semantic moves propagate their source facts;
 - unknown parameters and unknown Python results begin with the full valid tag
   universe.
@@ -263,11 +341,11 @@ lattice and can never justify guard removal.
 ## Redundant Guard Elimination
 
 A tagged-value guard is redundant when its input facts are a subset of the
-test's accepted tags:
+guard class's accepted tags:
 
 ```cpp
 if(input_facts.possible_tags().is_subset_of(
-       guard.test().accepted_tags()))
+       TaggedValueSet::from_class(guard.value_class())))
 {
     return RewriteResult::replace_with_def(guard.value());
 }
@@ -315,18 +393,18 @@ b.eq side_exit    // Pointer failed
 ```
 
 The low-byte mask and expected fields also permit compact x86-64 tag tests.
-Target emitters select their own instruction sequence from the semantic test;
+Target emitters select their own instruction sequence from the semantic class;
 the IR does not encode a target opcode.
 
 Adjacent guard combination is initially restricted to compatible
-`MaskedEqual` tests. The existing OR-based combination does not prove that two
-independent `MaskedNonZero` tests both succeeded.
+`MaskedEqual` classes. The existing OR-based combination does not prove that
+two independent `MaskedNonZero` classes both succeeded.
 
 ## Implementation Order
 
-1. Add `TaggedValueSet` and `TaggedValueTest`, including named tests and
-   constexpr test-to-set conversion.
-2. Replace `InlineValueClass` instruction attributes with `TaggedValueTest` and
+1. Add `TaggedValueSet` and `TaggedValueClass`, including the fact-source
+   constructors and constexpr class-to-set conversion.
+2. Replace `InlineValueClass` instruction attributes with `TaggedValueClass` and
    update printing, side-exit lowering, and AArch64 emission without changing
    behavior.
 3. Add fixed-point tag-fact propagation and redundant tagged-value-guard
@@ -334,7 +412,7 @@ independent `MaskedNonZero` tests both succeeded.
 4. Guard `JumpIfTrue` and `JumpIfFalse` with `AnyInline`, passing the guarded
    result to `ConditionalBranch`.
 5. Make the pointer portion of shape guarding explicit and eliminable using the
-   `Pointer` test when shape-guard lowering is implemented.
+   `Pointer` class when shape-guard lowering is implemented.
 
 The initial implementation does not synthesize narrowed guards, optimize
 always-failing guards, retain likely shapes, or preserve exact shapes across
