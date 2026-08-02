@@ -251,12 +251,16 @@ namespace
     {
     public:
         CloverProgram(const char *relative_path, int64_t n)
-            : thread_(vm_.get_default_thread()),
-              code_(thread_
-                        ->compile(make_clover_source(relative_path, n).c_str(),
-                                  StartRule::File)
-                        .value())
+            : thread_(vm_.get_default_thread())
         {
+            Expected<CodeObject *> compilation = thread_->compile(
+                make_clover_source(relative_path, n).c_str(), StartRule::File);
+            if(compilation.has_exception())
+            {
+                throw std::runtime_error(
+                    "failed to compile Clover benchmark source");
+            }
+            code_ = compilation.value();
         }
 
         int64_t run()
@@ -273,7 +277,7 @@ namespace
     private:
         VirtualMachine vm_;
         ThreadState *thread_;
-        CodeObject *code_;
+        CodeObject *code_ = nullptr;
     };
 
     class CppProgram
