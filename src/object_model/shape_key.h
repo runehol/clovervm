@@ -31,7 +31,16 @@ namespace cl
             return ShapeKey(reinterpret_cast<uintptr_t>(shape));
         }
 
-        bool is_valid() const { return bits != invalid_bits; }
+        constexpr bool is_valid() const { return bits != invalid_bits; }
+        constexpr bool is_inline() const
+        {
+            return (bits & value_ptr_mask) == 0;
+        }
+        constexpr uintptr_t inline_tag() const
+        {
+            assert(is_inline());
+            return bits;
+        }
 
         bool operator==(ShapeKey other) const { return bits == other.bits; }
         bool operator!=(ShapeKey other) const { return bits != other.bits; }
@@ -40,14 +49,6 @@ namespace cl
         static constexpr uintptr_t invalid_bits = UINTPTR_MAX;
 
         explicit constexpr ShapeKey(uintptr_t _bits) : bits(_bits) {}
-
-        bool is_inline() const { return (bits & value_ptr_mask) == 0; }
-
-        uintptr_t inline_tag() const
-        {
-            assert(is_inline());
-            return bits;
-        }
 
         Shape *shape() const
         {
