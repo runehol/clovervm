@@ -8,6 +8,7 @@ namespace benchmark_cpp
         for(int64_t x = 0; x < n; ++x)
         {
             acc += x;
+            preserve_benchmark_loop_value(acc);
         }
         return acc;
     }

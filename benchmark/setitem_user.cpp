@@ -45,6 +45,7 @@ namespace benchmark_cpp
             {
                 idx = 0;
             }
+            preserve_benchmark_loop_value(values);
         }
         return values.a + values.b + values.c + values.d;
     }

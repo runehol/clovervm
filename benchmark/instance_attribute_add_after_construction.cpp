@@ -16,6 +16,7 @@ namespace benchmark_cpp
             PairAfterConstruction obj;
             obj.left = i;
             obj.right = i + 1;
+            preserve_benchmark_loop_value(obj);
             acc += obj.left + obj.right;
         }
         return acc;

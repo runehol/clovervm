@@ -16,6 +16,7 @@ namespace benchmark_cpp
         for(int64_t i = 0; i < n; ++i)
         {
             Pair obj(i, i + 1);
+            preserve_benchmark_loop_value(obj);
             acc += obj.left + obj.right;
         }
         return acc;

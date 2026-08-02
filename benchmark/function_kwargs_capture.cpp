@@ -19,6 +19,7 @@ namespace benchmark_cpp
         for(int64_t i = 0; i < n; ++i)
         {
             acc += count_kwargs(i, 3, 2);
+            preserve_benchmark_loop_value(acc);
         }
         return acc;
     }

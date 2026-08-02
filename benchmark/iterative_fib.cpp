@@ -14,6 +14,7 @@ namespace benchmark_cpp
                 int64_t next_value = a + b;
                 a = b;
                 b = next_value;
+                preserve_benchmark_loop_value(b);
                 ++i;
             }
             return a;
@@ -26,6 +27,7 @@ namespace benchmark_cpp
         for(int64_t i = 0; i < n; ++i)
         {
             accumulator ^= fibonacci_value(80);
+            preserve_benchmark_loop_value(accumulator);
         }
         return accumulator;
     }

@@ -17,6 +17,7 @@ namespace benchmark_cpp
         for(int64_t i = 0; i < n; ++i)
         {
             obj.value = i;
+            preserve_benchmark_loop_value(obj);
             acc += obj.value;
         }
         return acc;

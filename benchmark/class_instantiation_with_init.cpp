@@ -18,7 +18,7 @@ namespace benchmark_cpp
         for(int64_t i = 0; i < n; ++i)
         {
             Point obj(i);
-            (void)obj;
+            preserve_benchmark_loop_value(obj);
             acc += 1;
         }
         return acc;

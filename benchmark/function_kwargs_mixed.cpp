@@ -17,6 +17,7 @@ namespace benchmark_cpp
         for(int64_t i = 0; i < n; ++i)
         {
             acc += add_kwargs_mixed(i, 3, 2, 5, 7);
+            preserve_benchmark_loop_value(acc);
         }
         return acc;
     }

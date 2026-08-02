@@ -10,6 +10,7 @@ namespace benchmark_cpp
         for(int64_t i = 0; i < n; ++i)
         {
             std::string value = std::to_string(i);
+            preserve_benchmark_loop_value(value);
             acc += static_cast<int64_t>(value.size());
         }
         return acc;

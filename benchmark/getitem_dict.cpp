@@ -12,10 +12,12 @@ namespace benchmark_cpp
             acc += 31;
             acc += 37;
             acc += 41;
+            preserve_benchmark_loop_value(acc);
         }
         for(; i < n; ++i)
         {
             acc += 29;
+            preserve_benchmark_loop_value(acc);
         }
         return acc;
     }

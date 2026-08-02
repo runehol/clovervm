@@ -18,6 +18,7 @@ namespace benchmark_cpp
             {
                 acc -= 1;
             }
+            preserve_benchmark_loop_value(acc);
             counter += 1;
         }
         return acc;

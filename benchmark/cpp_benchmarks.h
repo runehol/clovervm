@@ -1,10 +1,34 @@
 #ifndef CLOVERVM_BENCHMARK_CPP_BENCHMARKS_H
 #define CLOVERVM_BENCHMARK_CPP_BENCHMARKS_H
 
+#if !defined(__clang__) && !defined(__GNUC__)
+#include <benchmark/benchmark.h>
+#endif
+
 #include <cstdint>
+#include <type_traits>
 
 namespace benchmark_cpp
 {
+    template <typename T>
+    inline void preserve_benchmark_loop_value(const T &value)
+    {
+#if defined(__clang__) || defined(__GNUC__)
+        // Input-only operands retain the loop without clobbering its values.
+        if constexpr(std::is_integral_v<T> || std::is_enum_v<T> ||
+                     std::is_pointer_v<T>)
+        {
+            asm volatile("" : : "r"(value));
+        }
+        else
+        {
+            asm volatile("" : : "m"(value));
+        }
+#else
+        benchmark::DoNotOptimize(value);
+#endif
+    }
+
     int64_t recursive_fib_run(int64_t n);
     int64_t recursive_fib_items(int64_t n);
 

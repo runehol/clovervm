@@ -9,6 +9,7 @@ namespace benchmark_cpp
         while(counter < n)
         {
             acc += counter;
+            preserve_benchmark_loop_value(acc);
             counter += 1;
         }
         return acc;

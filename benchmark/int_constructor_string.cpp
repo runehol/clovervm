@@ -11,6 +11,7 @@ namespace benchmark_cpp
         for(int64_t i = 0; i < n; ++i)
         {
             acc += std::strtoll(value, nullptr, 10);
+            preserve_benchmark_loop_value(acc);
         }
         return acc;
     }

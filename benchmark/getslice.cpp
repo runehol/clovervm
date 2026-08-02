@@ -13,6 +13,7 @@ namespace benchmark_cpp
         for(int64_t i = 0; i < n; ++i)
         {
             std::vector<int64_t> slice(values.begin() + 1, values.begin() + 5);
+            preserve_benchmark_loop_value(slice);
             acc += slice[0] + static_cast<int64_t>(slice.size());
         }
         return acc;
@@ -31,6 +32,7 @@ namespace benchmark_cpp
             {
                 slice.push_back(values[static_cast<size_t>(idx)]);
             }
+            preserve_benchmark_loop_value(slice);
             acc += slice[0] + static_cast<int64_t>(slice.size());
         }
         return acc;
@@ -46,6 +48,7 @@ namespace benchmark_cpp
         {
             std::array<int64_t, 4> slice = {values[1], values[2], values[3],
                                             values[4]};
+            preserve_benchmark_loop_value(slice);
             acc += slice[0] + static_cast<int64_t>(slice.size());
         }
         return acc;
@@ -61,6 +64,7 @@ namespace benchmark_cpp
         {
             std::array<int64_t, 4> slice = {values[7], values[5], values[3],
                                             values[1]};
+            preserve_benchmark_loop_value(slice);
             acc += slice[0] + static_cast<int64_t>(slice.size());
         }
         return acc;
@@ -75,6 +79,7 @@ namespace benchmark_cpp
         for(int64_t i = 0; i < n; ++i)
         {
             std::wstring slice = values.substr(1, 4);
+            preserve_benchmark_loop_value(slice);
             acc += static_cast<int64_t>(slice.size());
         }
         return acc;
@@ -93,6 +98,7 @@ namespace benchmark_cpp
             {
                 slice.push_back(values[static_cast<size_t>(idx)]);
             }
+            preserve_benchmark_loop_value(slice);
             acc += static_cast<int64_t>(slice.size());
         }
         return acc;

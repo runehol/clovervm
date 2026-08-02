@@ -17,6 +17,7 @@ namespace benchmark_cpp
         for(int64_t i = 0; i < n; ++i)
         {
             acc += Pair::left + Pair::right;
+            preserve_benchmark_loop_value(acc);
         }
         return acc;
     }

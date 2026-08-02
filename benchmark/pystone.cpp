@@ -299,6 +299,7 @@ namespace benchmark_cpp
             (void)int_loc2_float;
             int_loc1 = pystone_proc2(ctx, int_loc1);
             (void)int_loc1;
+            preserve_benchmark_loop_value(ctx);
         }
 
         return pystone_checksum(ctx);

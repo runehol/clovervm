@@ -12,10 +12,12 @@ namespace benchmark_cpp
             values[1] = i + 1;
             values[2] = i + 2;
             values[3] = i + 3;
+            preserve_benchmark_loop_value(values);
         }
         for(; i < n; ++i)
         {
             values[0] = i;
+            preserve_benchmark_loop_value(values);
         }
         return values[0] + values[1] + values[2] + values[3];
     }

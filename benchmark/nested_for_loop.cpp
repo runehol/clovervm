@@ -15,6 +15,7 @@ namespace benchmark_cpp
             for(int64_t y = 0; y < kInnerIterations; ++y)
             {
                 total += x * y;
+                preserve_benchmark_loop_value(total);
             }
         }
         return total;

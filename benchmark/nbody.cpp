@@ -127,6 +127,7 @@ namespace benchmark_cpp
         for(int64_t i = 0; i < n; ++i)
         {
             advance(bodies, 0.01);
+            preserve_benchmark_loop_value(bodies);
         }
 
         double final_energy = energy(bodies);

@@ -9,6 +9,7 @@ namespace benchmark_cpp
         for(int64_t i = 0; i < n; ++i)
         {
             int64_t converted = value;
+            preserve_benchmark_loop_value(converted);
             acc += converted;
         }
         return acc;

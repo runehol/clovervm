@@ -15,6 +15,7 @@ namespace benchmark_cpp
             {
                 idx = 0;
             }
+            preserve_benchmark_loop_value(acc);
         }
         return acc;
     }

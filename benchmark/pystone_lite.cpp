@@ -125,6 +125,8 @@ namespace benchmark_cpp
             total += ctx.ptr_glb.int_comp;
             total += ctx.ptr_glb.ptr_comp->int_comp;
             total += ctx.int_glob;
+            preserve_benchmark_loop_value(total);
+            preserve_benchmark_loop_value(ctx);
         }
 
         return total + ctx.ptr_glb.enum_comp + ctx.ptr_glb.int_comp +

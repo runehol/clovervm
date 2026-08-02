@@ -24,6 +24,7 @@ namespace benchmark_cpp
         {
             obj.value = &a;
             obj.value = &b;
+            preserve_benchmark_loop_value(obj);
             acc += i;
         }
         return acc;

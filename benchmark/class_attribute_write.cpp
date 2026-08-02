@@ -19,6 +19,7 @@ namespace benchmark_cpp
         {
             Counter::value = i;
             acc += Counter::value;
+            preserve_benchmark_loop_value(acc);
         }
         return acc;
     }

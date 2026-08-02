@@ -101,6 +101,8 @@ namespace benchmark_cpp
             {
                 seed = 3;
             }
+            preserve_benchmark_loop_value(total);
+            preserve_benchmark_loop_value(ctx);
             ++i;
         }
 
