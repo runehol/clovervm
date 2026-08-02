@@ -7,6 +7,7 @@
 #include "runtime/thread_state.h"
 #include "runtime/virtual_machine.h"
 #include <chrono>
+#include <cmath>
 #include <cstdint>
 #include <cstdio>
 #include <fstream>
@@ -546,6 +547,18 @@ namespace
         return throughput;
     }
 
+    double round_to_n_significant_digits(double value, uint32_t n)
+    {
+        if(value == 0.0)
+        {
+            return value;
+        }
+        double scale =
+            std::pow(10.0, static_cast<double>(n - 1) -
+                               std::floor(std::log10(std::abs(value))));
+        return std::round(value * scale) / scale;
+    }
+
     void set_comparison_counters(benchmark::State &state,
                                  const char *relative_path, int64_t n,
                                  int64_t expected, int64_t items_per_iteration)
@@ -553,14 +566,16 @@ namespace
         double clover_items_per_second =
             measure_items_per_second<CloverProgram>(relative_path, n, expected,
                                                     items_per_iteration);
-        state.counters["vs_cpython"] =
+        state.counters["vs_cpython"] = round_to_n_significant_digits(
             clover_items_per_second /
-            measure_python_items_per_second(relative_path, n, expected,
-                                            items_per_iteration);
-        state.counters["vs_cpp"] =
+                measure_python_items_per_second(relative_path, n, expected,
+                                                items_per_iteration),
+            3);
+        state.counters["vs_cpp"] = round_to_n_significant_digits(
             clover_items_per_second /
-            measure_items_per_second<CppProgram>(relative_path, n, expected,
-                                                 items_per_iteration);
+                measure_items_per_second<CppProgram>(relative_path, n, expected,
+                                                     items_per_iteration),
+            3);
     }
 
     template <typename Program>
