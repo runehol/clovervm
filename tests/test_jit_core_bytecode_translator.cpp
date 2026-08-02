@@ -3,6 +3,7 @@
 #include "bytecode/code_object_builder.h"
 #include "jit/compilation_session.h"
 #include "jit/control_flow_graph.h"
+#include "jit/core_ir_optimization.h"
 #include "jit/instruction.h"
 #include "test_helpers.h"
 
@@ -307,6 +308,39 @@ namespace cl::jit
             entry->instruction_at(entry->instructions().size() - 1)
                 .as<ReturnInstruction>();
         EXPECT_EQ(add.id(), return_instruction.return_value().instruction_id());
+    }
+
+    TEST(JitCoreBytecodeTranslator,
+         ReusesGuardedDefinitionForAliasedOperatorInputs)
+    {
+        TranslatorFixture fixture;
+        fixture.code_builder.n_parameters() = 1;
+        fixture.code_builder.n_positional_parameters() = 1;
+        fixture.code_builder.emit_ldar(0, 0).value();
+        fixture.code_builder
+            .emit_operator_reg(
+                0, Bytecode::Add, 0,
+                OperatorBytecodeFormat::WithCacheAndNotImplementedCheck)
+            .value();
+        fixture.code_builder.emit_return(0).value();
+
+        ControlFlowGraph *graph = fixture.translate();
+        Block *entry = graph->entry_block();
+        std::vector<Instruction> guards =
+            instructions_of_kind(entry, InstructionKind::InlineTagGuard);
+        ASSERT_EQ(2u, guards.size());
+        InlineTagGuardInstruction first =
+            guards[0].as<InlineTagGuardInstruction>();
+        InlineTagGuardInstruction second =
+            guards[1].as<InlineTagGuardInstruction>();
+        EXPECT_EQ(first.id(), second.value().instruction_id());
+
+        auto optimization = optimize_core_ir(fixture.session, *graph);
+
+        ASSERT_TRUE(optimization);
+        EXPECT_TRUE(std::move(optimization).value());
+        EXPECT_FALSE(first.is_poisoned());
+        EXPECT_TRUE(second.is_poisoned());
     }
 
     TEST(JitCoreBytecodeTranslator,

@@ -183,6 +183,24 @@ namespace cl::jit
             10u, tracker.value_at(state, BytecodeValueLocation::accumulator()));
     }
 
+    TEST(JitBytecodeState, ReplacesEveryOccurrenceOfAValue)
+    {
+        StateFixture fixture;
+        BytecodeStateTracker<TestRef> tracker(*fixture.code_object);
+        BytecodeState<TestRef> state = make_entry_state(tracker);
+
+        tracker.replace_value(state, 99, 77);
+
+        EXPECT_EQ(
+            77u, tracker.value_at(state, BytecodeValueLocation::accumulator()));
+        EXPECT_EQ(77u,
+                  tracker.value_at(state, temporary(*fixture.code_object, 0)));
+        EXPECT_EQ(77u,
+                  tracker.value_at(state, temporary(*fixture.code_object, 2)));
+        EXPECT_EQ(10u,
+                  tracker.value_at(state, parameter(*fixture.code_object, 0)));
+    }
+
     TEST(JitBytecodeState, CopiesStatesIndependently)
     {
         StateFixture fixture;

@@ -227,6 +227,19 @@ namespace cl::jit
             }
         }
 
+        void replace_value(BytecodeState<Ref> &state, Ref original,
+                           Ref replacement) const
+        {
+            require_compatible_state(state);
+            for(Ref &value: state.values_)
+            {
+                if(value == original)
+                {
+                    value = replacement;
+                }
+            }
+        }
+
         std::span<const Ref> values(const BytecodeState<Ref> &state) const
         {
             require_compatible_state(state);

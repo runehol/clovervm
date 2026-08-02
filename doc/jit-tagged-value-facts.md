@@ -297,6 +297,15 @@ begin unknown. Loop facts monotonically widen until stable.
 Tag facts describe immutable bits of an SSA value. Calls, aliasing, and object
 mutation do not invalidate them.
 
+When the translator emits a forwarding guard, it first captures the guard's
+pre-operation Snapshot and then replaces every occurrence of the original
+definition in the current bytecode state with the guarded definition. Later
+uses and outgoing block arguments therefore carry the refined SSA value. If
+the same definition occurs at multiple source locations, each later guard
+reads the already-refined definition and becomes eligible for redundant-guard
+elimination. Ordinary bytecode destination writes are applied after these
+state refinements.
+
 ## Shape Facts
 
 Exact shape facts are more fragile than tag facts because aliases may mutate an

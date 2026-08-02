@@ -2,7 +2,6 @@
 
 #include "runtime/fatal.h"
 
-#include <array>
 #include <cassert>
 #include <cstddef>
 #include <cstdint>
@@ -342,7 +341,7 @@ namespace cl::jit
     bool CoreBytecodeTranslator::lower_binary_arithmetic(
         Block *block, const BytecodeInstruction &instruction,
         BinaryArithmeticSMIWithSnapshotSubkind subkind,
-        std::span<const ProgramValueRef> inputs, const State &state,
+        std::span<const ProgramValueRef> inputs, State &state,
         std::vector<ProgramValueRef> &outputs)
     {
         const OperatorInlineCache *cache = instruction.operator_cache();
@@ -362,9 +361,9 @@ namespace cl::jit
 
         SnapshotRef snapshot =
             emit_snapshot(block, instruction.pc_offset(), state);
-        InlineTagGuardInstruction lhs =
-            builder_.emplace_instruction<InlineTagGuardInstruction>(
-                block, tagged(inputs[0]), snapshot, TaggedValueClass::smi());
+        InlineTagGuardInstruction lhs = emit_inline_tag_guard(
+            block, state_tracker_.value_at(state, instruction.sources()[0]),
+            snapshot, TaggedValueClass::smi(), state);
         TaggedValueRef rhs = [&] {
             if(has_immediate_rhs)
             {
@@ -372,10 +371,9 @@ namespace cl::jit
                     block,
                     Value::from_smi(instruction.operands()[0].signed_value())));
             }
-            return TaggedValueRef(
-                builder_.emplace_instruction<InlineTagGuardInstruction>(
-                    block, tagged(inputs[1]), snapshot,
-                    TaggedValueClass::smi()));
+            return TaggedValueRef(emit_inline_tag_guard(
+                block, state_tracker_.value_at(state, instruction.sources()[1]),
+                snapshot, TaggedValueClass::smi(), state));
         }();
 
         outputs.emplace_back(builder_.emplace_instruction<
@@ -387,7 +385,7 @@ namespace cl::jit
     bool CoreBytecodeTranslator::lower_binary_logical(
         Block *block, const BytecodeInstruction &instruction,
         BinaryLogicalSMISubkind subkind,
-        std::span<const ProgramValueRef> inputs, const State &state,
+        std::span<const ProgramValueRef> inputs, State &state,
         std::vector<ProgramValueRef> &outputs)
     {
         const OperatorInlineCache *cache = instruction.operator_cache();
@@ -407,9 +405,9 @@ namespace cl::jit
 
         SnapshotRef snapshot =
             emit_snapshot(block, instruction.pc_offset(), state);
-        InlineTagGuardInstruction lhs =
-            builder_.emplace_instruction<InlineTagGuardInstruction>(
-                block, tagged(inputs[0]), snapshot, TaggedValueClass::smi());
+        InlineTagGuardInstruction lhs = emit_inline_tag_guard(
+            block, state_tracker_.value_at(state, instruction.sources()[0]),
+            snapshot, TaggedValueClass::smi(), state);
         TaggedValueRef rhs = [&] {
             if(has_immediate_rhs)
             {
@@ -417,10 +415,9 @@ namespace cl::jit
                     block,
                     Value::from_smi(instruction.operands()[0].signed_value())));
             }
-            return TaggedValueRef(
-                builder_.emplace_instruction<InlineTagGuardInstruction>(
-                    block, tagged(inputs[1]), snapshot,
-                    TaggedValueClass::smi()));
+            return TaggedValueRef(emit_inline_tag_guard(
+                block, state_tracker_.value_at(state, instruction.sources()[1]),
+                snapshot, TaggedValueClass::smi(), state));
         }();
 
         outputs.emplace_back(
@@ -432,7 +429,7 @@ namespace cl::jit
     bool CoreBytecodeTranslator::lower_binary_comparison(
         Block *block, const BytecodeInstruction &instruction,
         BinaryComparisonSMISubkind subkind,
-        std::span<const ProgramValueRef> inputs, const State &state,
+        std::span<const ProgramValueRef> inputs, State &state,
         std::vector<ProgramValueRef> &outputs)
     {
         const OperatorInlineCache *cache = instruction.operator_cache();
@@ -446,16 +443,27 @@ namespace cl::jit
         assert(inputs.size() == 2);
         SnapshotRef snapshot =
             emit_snapshot(block, instruction.pc_offset(), state);
-        InlineTagGuardInstruction lhs =
-            builder_.emplace_instruction<InlineTagGuardInstruction>(
-                block, tagged(inputs[0]), snapshot, TaggedValueClass::smi());
-        InlineTagGuardInstruction rhs =
-            builder_.emplace_instruction<InlineTagGuardInstruction>(
-                block, tagged(inputs[1]), snapshot, TaggedValueClass::smi());
+        InlineTagGuardInstruction lhs = emit_inline_tag_guard(
+            block, state_tracker_.value_at(state, instruction.sources()[0]),
+            snapshot, TaggedValueClass::smi(), state);
+        InlineTagGuardInstruction rhs = emit_inline_tag_guard(
+            block, state_tracker_.value_at(state, instruction.sources()[1]),
+            snapshot, TaggedValueClass::smi(), state);
         outputs.emplace_back(
             builder_.emplace_instruction<BinaryComparisonSMIInstruction>(
                 block, subkind, TaggedValueRef(lhs), TaggedValueRef(rhs)));
         return true;
+    }
+
+    InlineTagGuardInstruction CoreBytecodeTranslator::emit_inline_tag_guard(
+        Block *block, ProgramValueRef value, SnapshotRef snapshot,
+        TaggedValueClass expected_class, State &state)
+    {
+        InlineTagGuardInstruction guard =
+            builder_.emplace_instruction<InlineTagGuardInstruction>(
+                block, tagged(value), snapshot, expected_class);
+        state_tracker_.replace_value(state, value, ProgramValueRef(guard));
+        return guard;
     }
 
     void CoreBytecodeTranslator::translate_control_instruction(
@@ -501,15 +509,9 @@ namespace cl::jit
 
                     SnapshotRef snapshot =
                         emit_snapshot(block, instruction.pc_offset(), state);
-                    InlineTagGuardInstruction condition =
-                        builder_.emplace_instruction<InlineTagGuardInstruction>(
-                            block, tagged(inputs.front()), snapshot,
-                            TaggedValueClass::any_inline());
-                    std::array<BytecodeValueLocation, 1> locations = {
-                        BytecodeValueLocation::accumulator()};
-                    std::array<ProgramValueRef, 1> values = {
-                        ProgramValueRef(condition)};
-                    state_tracker_.write(state, locations, values);
+                    InlineTagGuardInstruction condition = emit_inline_tag_guard(
+                        block, inputs.front(), snapshot,
+                        TaggedValueClass::any_inline(), state);
 
                     bool jump_if_true =
                         instruction.semantic_opcode() == Bytecode::JumpIfTrue;

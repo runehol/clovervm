@@ -54,20 +54,24 @@ namespace cl::jit
         bool lower_binary_arithmetic(
             Block *block, const BytecodeInstruction &instruction,
             BinaryArithmeticSMIWithSnapshotSubkind subkind,
-            std::span<const ProgramValueRef> inputs, const State &state,
+            std::span<const ProgramValueRef> inputs, State &state,
             std::vector<ProgramValueRef> &outputs);
         bool lower_binary_logical(Block *block,
                                   const BytecodeInstruction &instruction,
                                   BinaryLogicalSMISubkind subkind,
                                   std::span<const ProgramValueRef> inputs,
-                                  const State &state,
+                                  State &state,
                                   std::vector<ProgramValueRef> &outputs);
         bool lower_binary_comparison(Block *block,
                                      const BytecodeInstruction &instruction,
                                      BinaryComparisonSMISubkind subkind,
                                      std::span<const ProgramValueRef> inputs,
-                                     const State &state,
+                                     State &state,
                                      std::vector<ProgramValueRef> &outputs);
+        InlineTagGuardInstruction
+        emit_inline_tag_guard(Block *block, ProgramValueRef value,
+                              SnapshotRef snapshot,
+                              TaggedValueClass expected_class, State &state);
         SnapshotRef emit_snapshot(Block *block,
                                   BytecodePCOffset resume_pc_offset,
                                   const State &state);
