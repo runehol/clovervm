@@ -101,9 +101,11 @@ TrustedHandlerCall {
 ```
 
 The argument count is initially one through three and determines the trusted
-handler ABI. The handler is a non-GC native code address stored as an
-instruction attribute. There is no callable operand, Snapshot operand,
-interpreter return PC, or exceptional successor.
+handler ABI. The handler is a non-GC native code address stored in the
+compilation-owned function-pointer attribute pool; the instruction carries its
+32-bit pool index while its typed accessor exposes `TrustedHandlerTarget`.
+There is no callable operand, Snapshot operand, interpreter return PC, or
+exceptional successor.
 
 The CFG verifier checks that the argument count is supported and that the
 target is non-null. JIT eligibility is established before constructing the

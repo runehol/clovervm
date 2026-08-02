@@ -1,5 +1,7 @@
 #include "jit/compilation_storage.h"
 
+#include "object_model/shape.h"
+#include "object_model/validity_cell.h"
 #include "runtime/fatal.h"
 
 #include <cassert>
@@ -7,6 +9,77 @@
 
 namespace cl::jit
 {
+    InstructionOperandAllocation
+    allocate_instruction_operands(CompilationStorage &storage, size_t count)
+    {
+        InstructionOperandTable::Allocation allocation =
+            storage.instruction_operands_.allocate(count);
+        return {allocation.offset, allocation.words};
+    }
+
+    uint32_t store_instruction_value_attribute(CompilationStorage &storage,
+                                               Value value)
+    {
+        return storage.instruction_values_.append(value);
+    }
+
+    Value load_instruction_value_attribute(const CompilationStorage &storage,
+                                           uint32_t index)
+    {
+        return storage.instruction_values_.at(index);
+    }
+
+    uint32_t
+    store_instruction_heap_object_attribute(CompilationStorage &storage,
+                                            HeapObject *object)
+    {
+        assert(object != nullptr);
+        return storage.instruction_heap_objects_.append(object);
+    }
+
+    HeapObject *
+    load_instruction_heap_object_attribute(const CompilationStorage &storage,
+                                           uint32_t index)
+    {
+        return storage.instruction_heap_objects_.at(index);
+    }
+
+    Shape *decode_instruction_attribute_Shape(const CompilationStorage *storage,
+                                              const uint32_t *words)
+    {
+        return static_cast<Shape *>(load_instruction_heap_object_attribute(
+            *storage, decode_instruction_attribute_storage<uint32_t>(words)));
+    }
+
+    ValidityCell *
+    decode_instruction_attribute_ValidityCell(const CompilationStorage *storage,
+                                              const uint32_t *words)
+    {
+        return static_cast<ValidityCell *>(
+            load_instruction_heap_object_attribute(
+                *storage,
+                decode_instruction_attribute_storage<uint32_t>(words)));
+    }
+
+    void encode_instruction_attribute_Shape(CompilationStorage *storage,
+                                            uint32_t *words, Shape *shape)
+    {
+        assert(shape != nullptr);
+        encode_instruction_attribute_storage(
+            words, store_instruction_heap_object_attribute(
+                       *storage, static_cast<HeapObject *>(shape)));
+    }
+
+    void encode_instruction_attribute_ValidityCell(CompilationStorage *storage,
+                                                   uint32_t *words,
+                                                   ValidityCell *validity)
+    {
+        assert(validity != nullptr);
+        encode_instruction_attribute_storage(
+            words, store_instruction_heap_object_attribute(
+                       *storage, static_cast<HeapObject *>(validity)));
+    }
+
     BlockEdge *CompilationStorage::make_block_edge(
         Block *source, Block *target,
         std::span<const ProgramValueRef> arguments)
@@ -101,7 +174,8 @@ namespace cl::jit
         return storage->block_edge(BlockEdgeId(*words));
     }
 
-    void encode_instruction_attribute_BlockEdge(uint32_t *words,
+    void encode_instruction_attribute_BlockEdge(CompilationStorage *,
+                                                uint32_t *words,
                                                 BlockEdge *edge)
     {
         assert(edge != nullptr);

@@ -86,8 +86,10 @@ static_assert(alignof(InstructionEntry) == 16);
 
 The high bit of `operand_storage_` records indirect operands. The remaining 15
 bits hold the total logical operand count. `kind_` stores the encoded
-`InstructionKind`. The slots precede the header so slots zero and one form the
-one 8-byte-aligned position available to a 64-bit inline attribute.
+`InstructionKind`. Instruction attributes occupy one or more kind-constant
+slots. Managed values and heap-object pointers use 32-bit indices into
+compilation-owned attribute pools rather than storing their 64-bit payloads
+directly.
 
 `Instruction` is the general typed view:
 
@@ -235,16 +237,16 @@ width and C++ interpretation of every payload:
 ProgramValue   -> one InstructionId word wrapped as ProgramValueRef
 Snapshot       -> one InstructionId word wrapped as SnapshotRef
 BlockEdge      -> one BlockEdgeId word resolved through CompilationStorage
-Shape          -> two words containing Shape *
-InlineValueClass -> one word containing a packed semantic inline class
-ValidityCell   -> two words containing ValidityCell *
+Shape          -> one heap-object-pool index resolved as Shape *
+TaggedValueClass -> one word containing a packed semantic tagged-value class
+ValidityCell   -> one heap-object-pool index resolved as ValidityCell *
 BytecodePCOffset     -> one word
-ValueConstant  -> two words containing Value
+ValueConstant  -> one value-pool index resolved as Value
 ```
 
-`ValueConstant` is the schema classification of that attribute, not a pool
-handle or a second runtime wrapper; its typed accessor and constructor use
-`Value` directly.
+`ValueConstant` is the schema classification of that attribute, not a second
+runtime wrapper. Its typed accessor and constructor use `Value` directly; the
+generated storage layer translates transparently through the value pool.
 
 `ValueConstant` may contain either a non-pointer tagged value or a managed
 pointer. Every managed constant placed in a graph is retained by the compilation
@@ -253,11 +255,15 @@ existing constant is registered with `retain_and_pin_value()` when graph
 construction encounters it. A compiler-created value is registered with the
 same operation immediately after creation.
 
-All attributes are inline and have kind-constant offsets. Attribute layout is
-partly schema-authored: a 64-bit attribute must begin at an aligned slot.
-Generated accessors assert the required offset and width at compile time. Wide
-values are encoded and decoded with `memcpy`, avoiding object-lifetime and
-aliasing violations.
+Every instruction stores its attribute words inline at kind-constant offsets.
+The payloads of pooled attributes live in separate compilation-owned tables.
+The schema selects the table and typed interpretation; instruction clients do
+not observe the stored index.
+
+Compilation storage keeps value and internal heap-object attributes in distinct
+pools. Native function-pointer attributes use a third pool when the first
+call-bearing instruction lands. Function pointers are never represented as
+managed `Value`s or `HeapObject *`s.
 
 For direct operands, fixed operands occupy the leading slots and attributes
 follow them. The complete layout must fit in three slots and satisfy every
@@ -294,11 +300,13 @@ raw PC and FP contents use the pointer program-value representation, while the
 return code object is tagged. No position uses a nullable or structural escape
 encoding.
 
-Each generated variadic class exposes hidden construction machinery
-`n_indirect_slots_for(constructor arguments...)`. Compilation storage uses it
-to allocate the physical operand-table span before appending the entry. It is
-deliberately separate from `operand_count()`: the former sizes storage, while
-the latter counts logical operands.
+Each generated family owns its complete physical construction. Its hidden
+`make_entry(CompilationStorage &, constructor arguments...)` selects direct or
+indirect operand layout, allocates the physical operand-table span when needed,
+and translates typed attributes to pool indices before returning the completed
+entry. `CompilationStorage` assigns the instruction ID and appends that entry.
+The hidden `n_indirect_slots_for(...)` remains separate from `operand_count()`:
+the former sizes storage, while the latter counts logical operands.
 
 The 15-bit count is an explicit representation limit. Generated construction
 asserts that an instruction fits it; exceeding the limit is a compiler logic
@@ -318,11 +326,11 @@ operand-range view retains the instruction view, logical offset, and count; it
 resolves the current table span when accessed, so later operand-table vector
 growth cannot leave a dangling span.
 
-`InstructionEntry` is trivially destructible and movable. Runtime pointers in
-attributes are borrowed from objects whose lifetimes cover compilation.
-Normally destroyed storage tables, CFG pools, retained values, and scoped
-resources are owned by `CompilationStorage` or the enclosing
-`CompilationSession`.
+`InstructionEntry` is trivially destructible and movable. The value and
+heap-object attribute pools store borrowed payloads whose lifetimes cover
+compilation; they do not change the existing retention policy. Normally
+destroyed storage tables, CFG pools, retained values, and scoped resources are
+owned by `CompilationStorage` or the enclosing `CompilationSession`.
 
 ### Construction, Placement, and Publication
 
@@ -1255,20 +1263,19 @@ adding a new attribute class requires one explicit formatting rule.
 
 The implementation validates the explicitly 8-byte-aligned 16-byte entry, three
 32-bit inline slots, schema-generated kind metadata, typed CFG terminators,
-explicit constant defs, direct and indirect operand walking, wide-attribute
-alignment, and the PythonCall and Snapshot variadic ranges. Direct layouts
-store operands before attributes. Indirect layouts store attributes from slot
-zero, their operand-table offset in slot two, and every operand in the table.
-The current generic traversal visits every stored Snapshot capture as a result
-reference.
+explicit constant defs, direct and indirect operand walking, pooled attributes,
+and the PythonCall and Snapshot variadic ranges. Direct layouts store operands
+before attributes. Indirect layouts store attributes from slot zero, their
+operand-table offset in slot two, and every operand in the table. The current
+generic traversal visits every stored Snapshot capture as a result reference.
 
 Compilation storage appends the `InstructionEntry` produced by the generated
-typed factory and returns the corresponding instruction view. Indirect
-construction asks the concrete class for `n_indirect_slots_for(...)`, allocates
-that operand-table range, writes it, and records the returned offset. Tests
-force both instruction-vector and operand-table reallocation while IDs, views,
-and operand-range views remain live. A later measurement slice should report
-entry and operand-table use for realistic translated functions.
+typed factory and returns the corresponding instruction view. The factory uses
+the supplied storage to allocate and populate indirect operands and pooled
+attributes. Tests force instruction-vector, operand-table, and attribute-pool
+reallocation while IDs, views, operand-range views, and typed attributes remain
+live. A later measurement slice should report entry and side-table use for
+realistic translated functions.
 The current Snapshot constructor accepts `ProgramValueRef`s for every captured
 position. Adding the eventual non-tagged header representation and verifying
 each prefix against the CFG's canonical ordering description remain part of

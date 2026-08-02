@@ -3,6 +3,7 @@
 
 #include "jit/control_flow_graph.h"
 #include "jit/instruction.h"
+#include "jit/instruction_attribute_pool.h"
 #include "jit/instruction_operand_table.h"
 #include "jit/object_pool.h"
 #include "jit/side_exit_region.h"
@@ -43,6 +44,20 @@ namespace cl::jit
         friend class GraphRewriter;
         friend class Instruction;
         friend class RewriteContext;
+        friend InstructionOperandAllocation
+        allocate_instruction_operands(CompilationStorage &storage,
+                                      size_t count);
+        friend uint32_t
+        store_instruction_value_attribute(CompilationStorage &storage,
+                                          Value value);
+        friend Value
+        load_instruction_value_attribute(const CompilationStorage &storage,
+                                         uint32_t index);
+        friend uint32_t
+        store_instruction_heap_object_attribute(CompilationStorage &storage,
+                                                HeapObject *object);
+        friend HeapObject *load_instruction_heap_object_attribute(
+            const CompilationStorage &storage, uint32_t index);
 
         CompilationStorage() = default;
 
@@ -67,20 +82,8 @@ namespace cl::jit
             static_assert(sizeof(T) == sizeof(Instruction));
 
             InstructionId id = next_instruction_id();
-            if constexpr(T::OperandsAreIndirect)
-            {
-                size_t n_indirect_slots = T::n_indirect_slots_for(args...);
-                InstructionOperandTable::Allocation indirect =
-                    instruction_operands_.allocate(n_indirect_slots);
-                instructions_.push_back(
-                    T::make_entry(subkind, indirect.offset, indirect.words,
-                                  std::forward<Args>(args)...));
-            }
-            else
-            {
-                instructions_.push_back(
-                    T::make_entry(subkind, std::forward<Args>(args)...));
-            }
+            instructions_.push_back(
+                T::make_entry(*this, subkind, std::forward<Args>(args)...));
             return T(this, id);
         }
 
@@ -93,20 +96,8 @@ namespace cl::jit
             using Family = typename T::Family;
 
             InstructionId id = next_instruction_id();
-            if constexpr(T::OperandsAreIndirect)
-            {
-                size_t n_indirect_slots = T::n_indirect_slots_for(args...);
-                InstructionOperandTable::Allocation indirect =
-                    instruction_operands_.allocate(n_indirect_slots);
-                instructions_.push_back(Family::make_entry(
-                    T::Subkind, indirect.offset, indirect.words,
-                    std::forward<Args>(args)...));
-            }
-            else
-            {
-                instructions_.push_back(Family::make_entry(
-                    T::Subkind, std::forward<Args>(args)...));
-            }
+            instructions_.push_back(Family::make_entry(
+                *this, T::Subkind, std::forward<Args>(args)...));
             return T(this, id);
         }
 
@@ -129,6 +120,8 @@ namespace cl::jit
         std::deque<SideExitRegion> side_exit_regions_;
         std::vector<InstructionEntry> instructions_;
         InstructionOperandTable instruction_operands_;
+        InstructionAttributePool<Value> instruction_values_;
+        InstructionAttributePool<HeapObject *> instruction_heap_objects_;
     };
 
 }  // namespace cl::jit

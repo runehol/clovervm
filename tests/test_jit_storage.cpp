@@ -271,7 +271,7 @@ namespace cl::jit
         EXPECT_EQ(1u, guard.attribute_count);
         EXPECT_EQ(Instruction::InlineSlotCount, guard.inline_slot_count);
         EXPECT_FALSE(guard.has_variadic_operands);
-        EXPECT_TRUE(guard.operands_are_indirect);
+        EXPECT_FALSE(guard.operands_are_indirect);
     }
 
     TEST(JitInstructionSchema, GeneratesKindsForEachIRLevel)
@@ -524,8 +524,8 @@ namespace cl::jit
         EXPECT_TRUE(SnapshotInstruction::OperandsAreIndirect);
         EXPECT_TRUE(ExitToInterpreterInstruction::IsVariadic);
         EXPECT_TRUE(ExitToInterpreterInstruction::OperandsAreIndirect);
-        EXPECT_TRUE(ShapeGuardInstruction::OperandsAreIndirect);
-        EXPECT_TRUE(ValidityCellGuardInstruction::OperandsAreIndirect);
+        EXPECT_FALSE(ShapeGuardInstruction::OperandsAreIndirect);
+        EXPECT_FALSE(ValidityCellGuardInstruction::OperandsAreIndirect);
         EXPECT_FALSE(InlineTagGuardInstruction::OperandsAreIndirect);
         EXPECT_EQ(1u, instruction_kind_metadata(InstructionKind::UnboxF64)
                           .fixed_operand_count);
@@ -585,8 +585,7 @@ namespace cl::jit
         EXPECT_FALSE(uninitialized.operands_are_indirect());
     }
 
-    TEST(JitInstructionConstruction,
-         StoresGuardAttributesInTheirSchemaSelectedLayouts)
+    TEST(JitInstructionConstruction, ResolvesPooledAttributesAfterStorageGrowth)
     {
         test::VmTestContext context;
         ThreadState::ActivationScope activation_scope(context.thread());
@@ -597,6 +596,8 @@ namespace cl::jit
         CompilationSession session;
         GraphBuilder builder(session, IRLevel::Core);
         TaggedValueRef value(builder.make_instruction<ParameterInstruction>());
+        ConstInstruction constant =
+            builder.make_instruction<ConstInstruction>(Value::True());
         SnapshotRef snapshot(builder.make_instruction<SnapshotInstruction>(
             std::span<const ProgramValueRef>{}, BytecodePCOffset{17}));
         ShapeGuardInstruction shape_guard =
@@ -605,13 +606,27 @@ namespace cl::jit
         ValidityCellGuardInstruction validity_guard =
             builder.make_instruction<ValidityCellGuardInstruction>(
                 value, snapshot, validity);
+
+        std::array<ProgramValueRef, 1> captured = {value};
+        for(size_t index = 0; index < 1024; ++index)
+        {
+            builder.make_instruction<ConstInstruction>(
+                Value::from_smi(static_cast<int64_t>(index)));
+            builder.make_instruction<ShapeGuardInstruction>(value, snapshot,
+                                                            shape);
+            builder.make_instruction<SnapshotInstruction>(
+                std::span<const ProgramValueRef>(captured),
+                BytecodePCOffset{17});
+        }
+
+        EXPECT_EQ(Value::True(), constant.constant());
         EXPECT_EQ(shape, shape_guard.expected_shape());
         EXPECT_EQ(validity, validity_guard.validity());
 
         for(Instruction instruction:
             {Instruction(shape_guard), Instruction(validity_guard)})
         {
-            ASSERT_TRUE(instruction.operands_are_indirect());
+            ASSERT_FALSE(instruction.operands_are_indirect());
             ASSERT_EQ(2u, instruction.operand_count());
             EXPECT_EQ(value.instruction_id().value(),
                       instruction.operand_word(0));

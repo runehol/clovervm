@@ -1045,22 +1045,22 @@ explicit yield points between completed phases may be added later if
 measurements require them. Arbitrary safepoints in the middle of an editor or
 rewrite transaction are not supported.
 
-Managed constants remain direct `ValueConstant` attributes on Core `Const`
-instructions. Because instruction payloads are not GC-scannable relocation
-slots, the compilation session retains every pointer constant embedded in a
-graph. Graph construction calls `retain_and_pin_value()` when it encounters an
-existing constant. A transformation creating a managed constant calls the same
-operation immediately; the rewrite context exposes it directly. Each call
-appends an `Owned<Value>` entry to the monotonic session vector. Core neither
-constructs nor stores machine-code pool indices.
+Managed constants remain `ValueConstant` attributes on Core `Const`
+instructions. Their physical instruction word is an index into the
+compilation-owned value-attribute pool; this is distinct from the emitted
+machine-code constant pool. The compilation session retains every pointer
+constant embedded in a graph. Graph construction calls `retain_and_pin_value()`
+when it encounters an existing constant. A transformation creating a managed
+constant calls the same operation immediately; the rewrite context exposes it
+directly. Each call appends an `Owned<Value>` entry to the monotonic session
+vector. Core neither constructs nor observes machine-code pool indices.
 
-Instruction allocation itself does not inspect attributes or acquire managed
-ownership. Cloning an existing pointer constant into another session registers
-it with that destination session before construction. Removed instructions do
-not release retained constants early; the retain stays in place until session
+Instruction allocation pools attributes but does not acquire managed ownership.
+Cloning an existing pointer constant into another session registers it with
+that destination session before construction. Removed instructions do not
+release retained constants early; the retain stays in place until session
 teardown. In the current collector the ownership retain is also the compilation
-pin. A future moving collector must not relocate these entries while instruction
-payloads may contain their addresses.
+pin. A future moving collector can scan and rewrite the typed attribute pools.
 
 Compiler allocation uses native compilation arenas and buffers. Managed
 allocation may cross an allocation limit and request a future safepoint, but it
