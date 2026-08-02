@@ -538,10 +538,26 @@ namespace cl::jit
         Block *entry = graph->blocks()[0];
         Block *fallthrough = graph->blocks()[1];
         Block *jump = graph->blocks()[2];
+        std::vector<Instruction> snapshots =
+            instructions_of_kind(entry, InstructionKind::Snapshot);
+        std::vector<Instruction> guards =
+            instructions_of_kind(entry, InstructionKind::InlineTagGuard);
+        ASSERT_EQ(1u, snapshots.size());
+        ASSERT_EQ(1u, guards.size());
+        SnapshotInstruction snapshot =
+            snapshots.front().as<SnapshotInstruction>();
+        InlineTagGuardInstruction guard =
+            guards.front().as<InlineTagGuardInstruction>();
         ConditionalBranchInstruction branch =
             entry->instruction_at(entry->instructions().size() - 1)
                 .as<ConditionalBranchInstruction>();
 
+        EXPECT_EQ(1u, snapshot.resume_pc_offset());
+        EXPECT_EQ(TaggedValueClass::any_inline(), guard.expected_class());
+        EXPECT_EQ(snapshot.id(), guard.snapshot().instruction_id());
+        EXPECT_EQ(snapshot.captured_values()[0].instruction_id(),
+                  guard.value().instruction_id());
+        EXPECT_EQ(guard.id(), branch.condition().instruction_id());
         EXPECT_EQ(fallthrough, branch.true_edge()->target());
         EXPECT_EQ(jump, branch.false_edge()->target());
         size_t state_size = bytecode_state_size(*graph);

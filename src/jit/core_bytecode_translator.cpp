@@ -2,6 +2,7 @@
 
 #include "runtime/fatal.h"
 
+#include <array>
 #include <cassert>
 #include <cstddef>
 #include <cstdint>
@@ -493,28 +494,36 @@ namespace cl::jit
                 }
 
             case Bytecode::JumpIfTrue:
-                {
-                    assert(inputs.size() == 1);
-                    assert(bytecode_block.successors().size() == 2);
-                    BlockEdge *false_edge = make_state_edge(
-                        block, bytecode_block.successors()[0], state);
-                    BlockEdge *true_edge = make_state_edge(
-                        block, bytecode_block.successors()[1], state);
-                    builder_.emplace_instruction<ConditionalBranchInstruction>(
-                        block, tagged(inputs.front()), true_edge, false_edge);
-                    return;
-                }
-
             case Bytecode::JumpIfFalse:
                 {
                     assert(inputs.size() == 1);
                     assert(bytecode_block.successors().size() == 2);
+
+                    SnapshotRef snapshot =
+                        emit_snapshot(block, instruction.pc_offset(), state);
+                    InlineTagGuardInstruction condition =
+                        builder_.emplace_instruction<InlineTagGuardInstruction>(
+                            block, tagged(inputs.front()), snapshot,
+                            TaggedValueClass::any_inline());
+                    std::array<BytecodeValueLocation, 1> locations = {
+                        BytecodeValueLocation::accumulator()};
+                    std::array<ProgramValueRef, 1> values = {
+                        ProgramValueRef(condition)};
+                    state_tracker_.write(state, locations, values);
+
+                    bool jump_if_true =
+                        instruction.semantic_opcode() == Bytecode::JumpIfTrue;
+                    size_t true_successor = jump_if_true ? 1 : 0;
+                    size_t false_successor = jump_if_true ? 0 : 1;
                     BlockEdge *true_edge = make_state_edge(
-                        block, bytecode_block.successors()[0], state);
+                        block, bytecode_block.successors()[true_successor],
+                        state);
                     BlockEdge *false_edge = make_state_edge(
-                        block, bytecode_block.successors()[1], state);
+                        block, bytecode_block.successors()[false_successor],
+                        state);
                     builder_.emplace_instruction<ConditionalBranchInstruction>(
-                        block, tagged(inputs.front()), true_edge, false_edge);
+                        block, TaggedValueRef(condition), true_edge,
+                        false_edge);
                     return;
                 }
 
