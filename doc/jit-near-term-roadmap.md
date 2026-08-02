@@ -90,11 +90,13 @@ optimizable as required by their separate Core instructions.
 
 ### 5. Establish the First Call Slice
 
-Calls require managed frame-header construction, stack-passed argument support,
-fixed argument and result locations, clobber validation, `x25`-to-`x0` native
-helper adaptation, call-boundary interpreter-state synchronization, and
-safepoint policy. Managed return must restore the caller frame state; calls
-should not be introduced as emitter-only sequences.
+Start with guarded calls to trusted native handlers certified `NoCallPython`,
+`NoSafepoint`, and `NoRaise`, following the staged
+[JIT Trusted Handler Call Plan](jit-trusted-handler-call-plan.md). This pulls
+forward executable shape and validity guards, native call clobbers,
+`x25`-to-`x0` thread adaptation, and callee-owned preservation of `x30` in the
+reserved compiled-return frame slot without requiring canonical root
+publication or exception handoff.
 
 For JIT-to-JIT calls, move ownership of return-address and return-`CodeObject`
 spilling from the caller to the callee. The caller should transport that return
@@ -103,10 +105,11 @@ frame-header cells only when its own calls, safepoints, exits, or register
 pressure require them. A leaf function can then keep the return context in
 registers and return without frame-header stores.
 
-Start with one fixed-arity call path and its return path. Keep adaptation and
-fallback behavior in the runtime layers that already own them; the initial JIT
-slice should make the calling-convention, frame-publication, exception-marker,
-and safepoint boundaries executable before broadening call target kinds.
+General calls still require managed frame-header construction, stack-passed
+arguments, interpreter-state synchronization, safepoint publication, exception
+dispatch, and adaptation owned by the runtime call layer. Those boundaries
+remain later work rather than being inferred from the restricted trusted-call
+path.
 
 ### 6. Add F64 Recovery and General Sinking
 
