@@ -9,11 +9,14 @@ namespace cl::jit
 {
     class Uses;
     class UseLists;
+    class TaggedValueFactAnalysis;
+    class TaggedValueSet;
 
     enum class GraphQuery : uint8_t
     {
         None = 0,
         Uses = 1 << 0,
+        TaggedValueFacts = 1 << 1,
     };
 
     constexpr GraphQuery operator|(GraphQuery lhs, GraphQuery rhs)
@@ -33,19 +36,24 @@ namespace cl::jit
     public:
         const ControlFlowGraph &graph() const;
         const Uses &uses_of(const Instruction &def) const;
+        const TaggedValueSet &
+        tagged_value_facts_of(ProgramValueRef value) const;
 
     private:
         friend class ControlFlowGraph;
 
         GraphQueries(const ControlFlowGraph *graph, GraphQuery requested,
-                     const UseLists *use_lists)
-            : graph_(graph), requested_(requested), use_lists_(use_lists)
+                     const UseLists *use_lists,
+                     const TaggedValueFactAnalysis *tagged_value_facts)
+            : graph_(graph), requested_(requested), use_lists_(use_lists),
+              tagged_value_facts_(tagged_value_facts)
         {
         }
 
         const ControlFlowGraph *graph_;
         GraphQuery requested_;
         const UseLists *use_lists_;
+        const TaggedValueFactAnalysis *tagged_value_facts_;
     };
 
 }  // namespace cl::jit

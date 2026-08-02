@@ -138,9 +138,9 @@ The construction API reflects the sources of facts:
   accepts.
 
 `ShapeKey` therefore exposes read-only `is_inline()` and `inline_tag()` queries.
-The conversion does not need access to the concrete `Shape *`. A promise of an
-exact lifetime-stable shape belongs to `TaggedValueFacts`, not
-`TaggedValueSet`: it combines `pointer()` with separate exact-shape identity.
+The conversion does not need access to the concrete `Shape *`. A future
+promise of an exact lifetime-stable shape extends `TaggedValueSet` itself: the
+set then combines `pointer()` with optional exact-shape identity.
 
 Additional named set constructors are added only when instruction semantics
 need them. Exact constants can use `from_inline_tag()`; there is no separate
@@ -271,20 +271,12 @@ class. The optimizer removes proved guards but does not narrow or synthesize
 new classes. If a later optimization demonstrates a need for class synthesis,
 it can add an explicitly costed selector without changing the fact lattice.
 
-## Tagged-Value Facts
+## Tagged-Value Analysis
 
-The first analysis fact is the possible tag set:
-
-```cpp
-class TaggedValueFacts
-{
-public:
-    TaggedValueSet possible_tags() const;
-
-private:
-    TaggedValueSet possible_tags_ = TaggedValueSet::unknown();
-};
-```
+The analysis maps each tagged program value directly to a `TaggedValueSet`.
+There is no separate fact wrapper around the set. When exact shape propagation
+is added, the optional exact shape becomes another component of
+`TaggedValueSet` and its lattice operations.
 
 Instruction results establish facts as follows:
 
@@ -344,7 +336,7 @@ A tagged-value guard is redundant when its input facts are a subset of the
 guard class's accepted tags:
 
 ```cpp
-if(input_facts.possible_tags().is_subset_of(
+if(input_facts.is_subset_of(
        TaggedValueSet::from_class(guard.value_class())))
 {
     return RewriteResult::replace_with_def(guard.value());

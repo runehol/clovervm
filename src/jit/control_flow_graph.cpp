@@ -2,6 +2,7 @@
 
 #include "jit/compilation_storage.h"
 #include "jit/graph_queries.h"
+#include "jit/tagged_value_fact_analysis.h"
 #include "jit/use_lists.h"
 
 #include <cassert>
@@ -95,6 +96,7 @@ namespace cl::jit
         assert(is_published());
 
         const UseLists *prepared_use_lists = nullptr;
+        const TaggedValueFactAnalysis *prepared_tagged_value_facts = nullptr;
         if(has_graph_query(queries, GraphQuery::Uses))
         {
             if(use_lists_ == nullptr ||
@@ -105,7 +107,20 @@ namespace cl::jit
             prepared_use_lists = use_lists_.get();
         }
 
-        return GraphQueries(this, queries, prepared_use_lists);
+        if(has_graph_query(queries, GraphQuery::TaggedValueFacts))
+        {
+            if(tagged_value_fact_analysis_ == nullptr ||
+               tagged_value_fact_analysis_->graph_generation() !=
+                   mutation_generation_)
+            {
+                tagged_value_fact_analysis_.reset(
+                    new TaggedValueFactAnalysis(*this));
+            }
+            prepared_tagged_value_facts = tagged_value_fact_analysis_.get();
+        }
+
+        return GraphQueries(this, queries, prepared_use_lists,
+                            prepared_tagged_value_facts);
     }
 
 }  // namespace cl::jit

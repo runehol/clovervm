@@ -23,6 +23,7 @@ namespace cl::jit
     class GraphRewriter;
     class RewriteContext;
     class BlockEdge;
+    class TaggedValueFactAnalysis;
     class UseLists;
     enum class GraphQuery : uint8_t;
 
@@ -205,6 +206,8 @@ namespace cl::jit
         std::optional<BytecodeStateOrder> bytecode_state_order_;
         bool published_ = false;
         uint64_t mutation_generation_ = 0;
+        mutable std::unique_ptr<TaggedValueFactAnalysis>
+            tagged_value_fact_analysis_;
         mutable std::unique_ptr<UseLists> use_lists_;
     };
 

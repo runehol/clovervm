@@ -1,8 +1,17 @@
+#include "jit/compilation_session.h"
+#include "jit/core_ir_optimization.h"
+#include "jit/graph_builder.h"
+#include "jit/graph_queries.h"
 #include "jit/tagged_value_facts.h"
+#include "jit/tagged_value_guard_elimination.h"
 #include "object_model/class_object.h"
 #include "test_helpers.h"
 
 #include <gtest/gtest.h>
+
+#include <array>
+#include <span>
+#include <utility>
 
 namespace cl::jit
 {
@@ -69,6 +78,100 @@ namespace cl::jit
             context.vm().float_class()->get_instance_root_shape());
         EXPECT_EQ(TaggedValueSet::pointer(),
                   TaggedValueSet::from_shape_key(float_shape));
+    }
+
+    TEST(JitTaggedValueFactAnalysis, ConvergesLoopParameterFacts)
+    {
+        CompilationSession session;
+        GraphBuilder builder(session, IRLevel::Core);
+        Block *entry = builder.emplace_block();
+        Block *loop = builder.emplace_block();
+
+        ConstInstruction smi = builder.emplace_instruction<ConstInstruction>(
+            entry, Value::from_smi(1));
+        std::array<ProgramValueRef, 1> entry_arguments = {ProgramValueRef(smi)};
+        builder.emplace_instruction<UnconditionalBranchInstruction>(
+            entry, builder.make_block_edge(entry, loop, entry_arguments));
+
+        ParameterInstruction parameter =
+            builder.emplace_parameter<ParameterInstruction>(loop);
+        IsInstruction comparison = builder.emplace_instruction<IsInstruction>(
+            loop, TaggedValueRef(parameter), TaggedValueRef(parameter));
+        std::array<ProgramValueRef, 1> backedge_arguments = {
+            ProgramValueRef(comparison)};
+        builder.emplace_instruction<UnconditionalBranchInstruction>(
+            loop, builder.make_block_edge(loop, loop, backedge_arguments));
+        ControlFlowGraph *graph = builder.finalize();
+
+        GraphQueries queries =
+            graph->prepare_queries(GraphQuery::TaggedValueFacts);
+        EXPECT_EQ(TaggedValueSet::smi_or_boolean(),
+                  queries.tagged_value_facts_of(ProgramValueRef(parameter)));
+        EXPECT_EQ(TaggedValueSet::boolean(),
+                  queries.tagged_value_facts_of(ProgramValueRef(comparison)));
+    }
+
+    TEST(JitTaggedValueGuardElimination,
+         RemovesGuardProvedByComparisonAndDeadSnapshot)
+    {
+        CompilationSession session;
+        GraphBuilder builder(session, IRLevel::Core);
+        Block *entry = builder.emplace_block();
+        ParameterInstruction lhs =
+            builder.emplace_parameter<ParameterInstruction>(entry);
+        ParameterInstruction rhs =
+            builder.emplace_parameter<ParameterInstruction>(entry);
+        IsInstruction comparison = builder.emplace_instruction<IsInstruction>(
+            entry, TaggedValueRef(lhs), TaggedValueRef(rhs));
+        SnapshotInstruction snapshot =
+            builder.emplace_instruction<SnapshotInstruction>(
+                entry, std::span<const ProgramValueRef>{}, BytecodePCOffset{7});
+        InlineTagGuardInstruction guard =
+            builder.emplace_instruction<InlineTagGuardInstruction>(
+                entry, TaggedValueRef(comparison), SnapshotRef(snapshot),
+                TaggedValueClass::any_inline());
+        builder.emplace_instruction<BareReturnInstruction>(
+            entry, TaggedValueRef(guard));
+        ControlFlowGraph *graph = builder.finalize();
+
+        auto optimization = optimize_core_ir(session, *graph);
+
+        ASSERT_TRUE(optimization);
+        EXPECT_TRUE(std::move(optimization).value());
+        EXPECT_TRUE(guard.is_poisoned());
+        EXPECT_TRUE(snapshot.is_poisoned());
+        ASSERT_EQ(2u, entry->instructions().size());
+        EXPECT_EQ(comparison.id(), entry->instruction_at(0).id());
+        EXPECT_EQ(comparison.id(), entry->instruction_at(1)
+                                       .as<BareReturnInstruction>()
+                                       .return_value()
+                                       .instruction_id());
+    }
+
+    TEST(JitTaggedValueGuardElimination, RetainsGuardForUnknownParameter)
+    {
+        CompilationSession session;
+        GraphBuilder builder(session, IRLevel::Core);
+        Block *entry = builder.emplace_block();
+        ParameterInstruction parameter =
+            builder.emplace_parameter<ParameterInstruction>(entry);
+        SnapshotInstruction snapshot =
+            builder.emplace_instruction<SnapshotInstruction>(
+                entry, std::span<const ProgramValueRef>{}, BytecodePCOffset{7});
+        InlineTagGuardInstruction guard =
+            builder.emplace_instruction<InlineTagGuardInstruction>(
+                entry, TaggedValueRef(parameter), SnapshotRef(snapshot),
+                TaggedValueClass::smi());
+        builder.emplace_instruction<BareReturnInstruction>(
+            entry, TaggedValueRef(guard));
+        ControlFlowGraph *graph = builder.finalize();
+
+        auto elimination =
+            eliminate_redundant_tagged_value_guards(session, *graph);
+
+        ASSERT_TRUE(elimination);
+        EXPECT_FALSE(std::move(elimination).value());
+        EXPECT_FALSE(guard.is_poisoned());
     }
 
 }  // namespace cl::jit
