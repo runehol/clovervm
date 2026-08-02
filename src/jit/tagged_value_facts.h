@@ -36,6 +36,23 @@ namespace cl::jit
                 (uint32_t(TaggedValueClassKind::MaskedNonZero) << 16));
         }
 
+        static constexpr TaggedValueClass from_encoded(uint32_t encoded)
+        {
+            assert((encoded & 0xff000000) == 0);
+            uint8_t mask = uint8_t(encoded);
+            uint8_t expected = uint8_t(encoded >> 8);
+            switch(TaggedValueClassKind((encoded >> 16) & 0xff))
+            {
+                case TaggedValueClassKind::MaskedEqual:
+                    return masked_equal(mask, expected);
+                case TaggedValueClassKind::MaskedNonZero:
+                    assert(expected == 0);
+                    return masked_nonzero(mask);
+            }
+            assert(false);
+            __builtin_unreachable();
+        }
+
         static constexpr TaggedValueClass smi()
         {
             return masked_equal(uint8_t(value_tag_mask), 0);

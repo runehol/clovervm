@@ -2,6 +2,7 @@
 #define CL_JIT_INSTRUCTION_H
 
 #include "jit/side_exit_region_id.h"
+#include "jit/tagged_value_facts.h"
 #include "object_model/value.h"
 #include "util/dense_id.h"
 
@@ -1081,7 +1082,7 @@ namespace cl::jit
 
     using InstructionAttributeStorage_Shape = uint64_t;
     using InstructionAttributeStorage_ValidityCell = uint64_t;
-    using InstructionAttributeStorage_InlineValueClass = uint32_t;
+    using InstructionAttributeStorage_TaggedValueClass = uint32_t;
     using InstructionAttributeStorage_ValueConstant = uint64_t;
     using InstructionAttributeStorage_BytecodePCOffset = uint32_t;
     using InstructionAttributeStorage_SideExitRegionId = uint32_t;
@@ -1124,11 +1125,12 @@ namespace cl::jit
         return reinterpret_cast<ValidityCell *>(static_cast<uintptr_t>(value));
     }
 
-    inline InlineValueClass
-    decode_instruction_attribute_InlineValueClass(const CompilationStorage *,
+    inline TaggedValueClass
+    decode_instruction_attribute_TaggedValueClass(const CompilationStorage *,
                                                   const uint32_t *words)
     {
-        return decode_instruction_attribute_storage<InlineValueClass>(words);
+        return TaggedValueClass::from_encoded(
+            decode_instruction_attribute_storage<uint32_t>(words));
     }
 
     inline Value
@@ -1195,10 +1197,10 @@ namespace cl::jit
     }
 
     inline void
-    encode_instruction_attribute_InlineValueClass(uint32_t *words,
-                                                  InlineValueClass value_class)
+    encode_instruction_attribute_TaggedValueClass(uint32_t *words,
+                                                  TaggedValueClass value_class)
     {
-        encode_instruction_attribute_storage(words, value_class);
+        encode_instruction_attribute_storage(words, value_class.encoded());
     }
 
     inline void encode_instruction_attribute_ValueConstant(uint32_t *words,
@@ -1274,7 +1276,7 @@ namespace cl::jit
     CL_JIT_OPERAND_TYPE_INNER(operand_class, representation)
 #define CL_JIT_ATTRIBUTE_TYPE_Shape Shape *
 #define CL_JIT_ATTRIBUTE_TYPE_ValidityCell ValidityCell *
-#define CL_JIT_ATTRIBUTE_TYPE_InlineValueClass InlineValueClass
+#define CL_JIT_ATTRIBUTE_TYPE_TaggedValueClass TaggedValueClass
 #define CL_JIT_ATTRIBUTE_TYPE_ValueConstant Value
 #define CL_JIT_ATTRIBUTE_TYPE_BytecodePCOffset BytecodePCOffset
 #define CL_JIT_ATTRIBUTE_TYPE_SideExitRegionId SideExitRegionId
@@ -1767,7 +1769,7 @@ namespace cl::jit
 #undef CL_JIT_ATTRIBUTE_TYPE_SideExitRegionId
 #undef CL_JIT_ATTRIBUTE_TYPE_BytecodePCOffset
 #undef CL_JIT_ATTRIBUTE_TYPE_ValueConstant
-#undef CL_JIT_ATTRIBUTE_TYPE_InlineValueClass
+#undef CL_JIT_ATTRIBUTE_TYPE_TaggedValueClass
 #undef CL_JIT_ATTRIBUTE_TYPE_ValidityCell
 #undef CL_JIT_ATTRIBUTE_TYPE_Shape
 #undef CL_JIT_OPERAND_TYPE

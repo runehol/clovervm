@@ -175,88 +175,100 @@ namespace cl::jit
                                               result);
         }
 
-        void emit_inline_tag_test(AArch64MacroAssembler &assembler,
-                                  XRegister source,
-                                  InlineValueClass expected_class)
+        void emit_tagged_value_mask_test(AArch64MacroAssembler &assembler,
+                                         XRegister source, uint8_t mask,
+                                         XRegister scratch)
         {
-            switch(expected_class)
+            if(aarch64_detail::try_logical_immediate_64(mask).has_value())
             {
-                case InlineValueClass::AnyInline:
-                    assembler.tst(source, inline_value_class_mask(
-                                              InlineValueClass::AnyInline));
-                    return;
-                case InlineValueClass::SMI:
-                    assembler.tst(
-                        source, inline_value_class_mask(InlineValueClass::SMI));
-                    return;
-                case InlineValueClass::Boolean:
-                    assembler.emit_logical_imm(
-                        LogicalOp::And, XRegister(16), source,
-                        inline_value_class_mask(InlineValueClass::Boolean));
-                    assembler.cmp(XRegister(16),
-                                  inline_value_class_expected_bits(
-                                      InlineValueClass::Boolean));
-                    return;
-                case InlineValueClass::SMIOrBoolean:
-                    assembler.mov(XRegister(16),
-                                  inline_value_class_mask(
-                                      InlineValueClass::SMIOrBoolean));
-                    assembler.tst(source, XRegister(16));
-                    return;
-            }
-            assert(false);
-        }
-
-        void emit_combined_inline_tag_test(AArch64MacroAssembler &assembler,
-                                           XRegister lhs, XRegister rhs,
-                                           InlineValueClass expected_class)
-        {
-            if(lhs.encoding() == rhs.encoding())
-            {
-                emit_inline_tag_test(assembler, lhs, expected_class);
+                assembler.tst(source, mask);
                 return;
             }
+            assembler.mov(scratch, mask);
+            assembler.tst(source, scratch);
+        }
 
+        AArch64Condition emit_tagged_value_class_check(
+            AArch64MacroAssembler &assembler, XRegister source,
+            TaggedValueClass expected_class, XRegister scratch)
+        {
+            switch(expected_class.kind())
+            {
+                case TaggedValueClassKind::MaskedEqual:
+                    if(expected_class.expected() == 0)
+                    {
+                        emit_tagged_value_mask_test(
+                            assembler, source, expected_class.mask(), scratch);
+                    }
+                    else
+                    {
+                        if(aarch64_detail::try_logical_immediate_64(
+                               expected_class.mask())
+                               .has_value())
+                        {
+                            assembler.emit_logical_imm(LogicalOp::And, scratch,
+                                                       source,
+                                                       expected_class.mask());
+                        }
+                        else
+                        {
+                            assembler.mov(scratch, expected_class.mask());
+                            assembler.emit_logical_reg(LogicalOp::And, scratch,
+                                                       source, scratch);
+                        }
+                        assembler.cmp(scratch, expected_class.expected());
+                    }
+                    return AArch64Condition::Equal;
+                case TaggedValueClassKind::MaskedNonZero:
+                    emit_tagged_value_mask_test(assembler, source,
+                                                expected_class.mask(), scratch);
+                    return AArch64Condition::NotEqual;
+            }
+            __builtin_unreachable();
+        }
+
+        AArch64Condition
+        emit_combined_tagged_value_class_check(AArch64MacroAssembler &assembler,
+                                               XRegister lhs, XRegister rhs,
+                                               TaggedValueClass expected_class)
+        {
             constexpr XRegister Scratch0(16);
             constexpr XRegister Scratch1(17);
-            switch(expected_class)
+            assert(expected_class.kind() == TaggedValueClassKind::MaskedEqual);
+            if(lhs.encoding() == rhs.encoding())
             {
-                case InlineValueClass::AnyInline:
-                    assembler.emit_logical_reg(LogicalOp::Orr, Scratch0, lhs,
-                                               rhs);
-                    assembler.tst(Scratch0, inline_value_class_mask(
-                                                InlineValueClass::AnyInline));
-                    return;
-                case InlineValueClass::SMI:
-                    assembler.emit_logical_reg(LogicalOp::Orr, Scratch0, lhs,
-                                               rhs);
-                    assembler.tst(Scratch0, inline_value_class_mask(
-                                                InlineValueClass::SMI));
-                    return;
-                case InlineValueClass::Boolean:
-                    {
-                        uint64_t expected = inline_value_class_expected_bits(
-                            InlineValueClass::Boolean);
-                        assembler.emit_logical_imm(LogicalOp::Eor, Scratch0,
-                                                   lhs, expected);
-                        assembler.emit_logical_imm(LogicalOp::Eor, Scratch1,
-                                                   rhs, expected);
-                        assembler.emit_logical_reg(LogicalOp::Orr, Scratch0,
-                                                   Scratch0, Scratch1);
-                        assembler.tst(Scratch0, inline_value_class_mask(
-                                                    InlineValueClass::Boolean));
-                        return;
-                    }
-                case InlineValueClass::SMIOrBoolean:
-                    assembler.emit_logical_reg(LogicalOp::Orr, Scratch0, lhs,
-                                               rhs);
-                    assembler.mov(Scratch1,
-                                  inline_value_class_mask(
-                                      InlineValueClass::SMIOrBoolean));
-                    assembler.tst(Scratch0, Scratch1);
-                    return;
+                return emit_tagged_value_class_check(assembler, lhs,
+                                                     expected_class, Scratch0);
             }
-            assert(false);
+
+            if(expected_class.expected() == 0)
+            {
+                assembler.emit_logical_reg(LogicalOp::Orr, Scratch0, lhs, rhs);
+            }
+            else if(aarch64_detail::try_logical_immediate_64(
+                        expected_class.expected())
+                        .has_value())
+            {
+                assembler.emit_logical_imm(LogicalOp::Eor, Scratch0, lhs,
+                                           expected_class.expected());
+                assembler.emit_logical_imm(LogicalOp::Eor, Scratch1, rhs,
+                                           expected_class.expected());
+                assembler.emit_logical_reg(LogicalOp::Orr, Scratch0, Scratch0,
+                                           Scratch1);
+            }
+            else
+            {
+                assembler.mov(Scratch0, expected_class.expected());
+                assembler.emit_logical_reg(LogicalOp::Eor, Scratch1, lhs,
+                                           Scratch0);
+                assembler.emit_logical_reg(LogicalOp::Eor, Scratch0, rhs,
+                                           Scratch0);
+                assembler.emit_logical_reg(LogicalOp::Orr, Scratch0, Scratch1,
+                                           Scratch0);
+            }
+            emit_tagged_value_mask_test(assembler, Scratch0,
+                                        expected_class.mask(), Scratch1);
+            return AArch64Condition::Equal;
         }
 
         void emit_branch_from_flags(AArch64MacroAssembler &assembler,
@@ -578,12 +590,13 @@ namespace cl::jit
                 {
                     XRegister input =
                         assigned_register(locations, guard_instruction.value());
-                    emit_inline_tag_test(
-                        assembler, input,
-                        guard_instruction.expected_class());
+                    AArch64Condition success_condition =
+                        emit_tagged_value_class_check(
+                            assembler, input,
+                            guard_instruction.expected_class(), XRegister(16));
                     Label target = side_exit_target(
                         make_side_exit_binding(guard_instruction));
-                    assembler.b(AArch64Condition::NotEqual, target);
+                    assembler.b(invert_condition(success_condition), target);
                     break;
                 }
 
@@ -740,16 +753,20 @@ namespace cl::jit
                 InlineTagGuardWithSideExitInstruction next_guard =
                     next_instruction
                         ->as<InlineTagGuardWithSideExitInstruction>();
-                if(guard.expected_class() == next_guard.expected_class() &&
+                if(guard.expected_class().kind() ==
+                       TaggedValueClassKind::MaskedEqual &&
+                   guard.expected_class() == next_guard.expected_class() &&
                    make_side_exit_binding(guard) ==
                        make_side_exit_binding(next_guard))
                 {
-                    emit_combined_inline_tag_test(
-                        assembler, assigned_register(locations, guard.value()),
-                        assigned_register(locations, next_guard.value()),
-                        guard.expected_class());
+                    AArch64Condition success_condition =
+                        emit_combined_tagged_value_class_check(
+                            assembler,
+                            assigned_register(locations, guard.value()),
+                            assigned_register(locations, next_guard.value()),
+                            guard.expected_class());
                     assembler.b(
-                        AArch64Condition::NotEqual,
+                        invert_condition(success_condition),
                         side_exit_target(make_side_exit_binding(guard)));
                     return ConsumedInstructionCount::Two;
                 }

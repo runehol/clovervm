@@ -326,8 +326,8 @@ namespace cl::jit
             builder, ProgramValueRef(value), BytecodePCOffset{17});
         InlineTagGuardWithSideExitInstruction owner =
             builder.emplace_instruction<InlineTagGuardWithSideExitInstruction>(
-                entry, TaggedValueRef(value), arguments, InlineValueClass::SMI,
-                region);
+                entry, TaggedValueRef(value), arguments,
+                TaggedValueClass::smi(), region);
         builder.emplace_instruction<BareReturnInstruction>(
             entry, TaggedValueRef(owner));
         ControlFlowGraph *graph = builder.finalize();

@@ -186,26 +186,46 @@ namespace cl::jit
                 format("<validity{}>", state_.validity_id(validity));
             }
 
-            void attribute_InlineValueClass(std::string_view name,
-                                            InlineValueClass value_class)
+            void attribute_TaggedValueClass(std::string_view name,
+                                            TaggedValueClass value_class)
             {
                 attribute_separator(name);
-                switch(value_class)
+                if(value_class == TaggedValueClass::any_inline())
                 {
-                    case InlineValueClass::AnyInline:
-                        write("any_inline");
+                    write("any_inline");
+                    return;
+                }
+                if(value_class == TaggedValueClass::pointer())
+                {
+                    write("pointer");
+                    return;
+                }
+                if(value_class == TaggedValueClass::smi())
+                {
+                    write("smi");
+                    return;
+                }
+                if(value_class == TaggedValueClass::boolean())
+                {
+                    write("boolean");
+                    return;
+                }
+                if(value_class == TaggedValueClass::smi_or_boolean())
+                {
+                    write("smi_or_boolean");
+                    return;
+                }
+                switch(value_class.kind())
+                {
+                    case TaggedValueClassKind::MaskedEqual:
+                        format("masked_equal(mask={:#x}, expected={:#x})",
+                               value_class.mask(), value_class.expected());
                         return;
-                    case InlineValueClass::SMI:
-                        write("smi");
-                        return;
-                    case InlineValueClass::Boolean:
-                        write("boolean");
-                        return;
-                    case InlineValueClass::SMIOrBoolean:
-                        write("smi_or_boolean");
+                    case TaggedValueClassKind::MaskedNonZero:
+                        format("masked_nonzero(mask={:#x})",
+                               value_class.mask());
                         return;
                 }
-                fatal("invalid inline value class");
             }
 
             void attribute_ValueConstant(std::string_view name, Value value)

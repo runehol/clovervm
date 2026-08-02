@@ -449,7 +449,7 @@ namespace cl::jit
         static_assert(std::is_same_v<
                       decltype(std::declval<const InlineTagGuardInstruction &>()
                                    .expected_class()),
-                      InlineValueClass>);
+                      TaggedValueClass>);
         static_assert(
             std::is_same_v<
                 decltype(std::declval<const PythonCallInstruction &>()
@@ -621,8 +621,8 @@ namespace cl::jit
 
         InlineTagGuardInstruction inline_guard =
             builder.make_instruction<InlineTagGuardInstruction>(
-                value, snapshot, InlineValueClass::SMIOrBoolean);
-        EXPECT_EQ(InlineValueClass::SMIOrBoolean,
+                value, snapshot, TaggedValueClass::smi_or_boolean());
+        EXPECT_EQ(TaggedValueClass::smi_or_boolean(),
                   inline_guard.expected_class());
         EXPECT_FALSE(inline_guard.operands_are_indirect());
         EXPECT_EQ(value.instruction_id().value(), inline_guard.operand_word(0));

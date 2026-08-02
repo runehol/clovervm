@@ -40,7 +40,7 @@ namespace cl::jit
         EXPECT_EQ(format_ir(*graph), fmt::format("{}", *graph));
     }
 
-    TEST(JitIRPrint, PrintsInlineValueClassBySemanticName)
+    TEST(JitIRPrint, PrintsTaggedValueClassBySemanticName)
     {
         CompilationSession session;
         GraphBuilder builder(session, IRLevel::Core);
@@ -51,14 +51,21 @@ namespace cl::jit
             entry, std::span<const ProgramValueRef>{}, BytecodePCOffset{7}));
         InlineTagGuardInstruction guard =
             builder.emplace_instruction<InlineTagGuardInstruction>(
-                entry, value, snapshot, InlineValueClass::AnyInline);
+                entry, value, snapshot, TaggedValueClass::any_inline());
+        InlineTagGuardInstruction general_guard =
+            builder.emplace_instruction<InlineTagGuardInstruction>(
+                entry, TaggedValueRef(guard), snapshot,
+                TaggedValueClass::masked_nonzero(uint8_t(value_boolean_tag)));
         builder.emplace_instruction<BareReturnInstruction>(
-            entry, TaggedValueRef(guard));
+            entry, TaggedValueRef(general_guard));
         ControlFlowGraph *graph = builder.finalize();
 
         EXPECT_EQ("%2 = inline_tag_guard %0, %1 "
                   "{expected_class = any_inline}",
                   format_instruction(*graph, guard));
+        EXPECT_EQ("%3 = inline_tag_guard %2, %1 "
+                  "{expected_class = masked_nonzero(mask=0x4)}",
+                  format_instruction(*graph, general_guard));
     }
 
     TEST(JitIRPrint, SegmentsSnapshotsAndNamesEdgeAttributes)

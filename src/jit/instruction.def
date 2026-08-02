@@ -321,7 +321,7 @@ CL_JIT_INSTRUCTION(ValidityCellGuard, CL_JIT_IR_LEVELS(Core),
     fixed(value, ProgramValue, TaggedValue)                                    \
     fixed(snapshot, Snapshot, None)
 #define CL_JIT_InlineTagGuard_ATTRIBUTES(attribute)                           \
-    attribute(expected_class, InlineValueClass)
+    attribute(expected_class, TaggedValueClass)
 CL_JIT_INSTRUCTION(InlineTagGuard, CL_JIT_IR_LEVELS(Core),
                    CL_JIT_RESULT(ProgramValue, TaggedValue, ForwardingDef),
                    CL_JIT_EFFECT_BOUNDS(None, SideExit),
@@ -335,7 +335,7 @@ CL_JIT_INSTRUCTION(InlineTagGuard, CL_JIT_IR_LEVELS(Core),
     fixed(value, ProgramValue, TaggedValue)                                    \
     program_values(side_exit_arguments, SideExit)
 #define CL_JIT_InlineTagGuardWithSideExit_ATTRIBUTES(attribute)                \
-    attribute(expected_class, InlineValueClass)                                \
+    attribute(expected_class, TaggedValueClass)                                \
     attribute(side_exit_region, SideExitRegionId)
 CL_JIT_INSTRUCTION(
     InlineTagGuardWithSideExit, CL_JIT_IR_LEVELS(Machine),

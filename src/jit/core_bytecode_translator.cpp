@@ -363,7 +363,7 @@ namespace cl::jit
             emit_snapshot(block, instruction.pc_offset(), state);
         InlineTagGuardInstruction lhs =
             builder_.emplace_instruction<InlineTagGuardInstruction>(
-                block, tagged(inputs[0]), snapshot, InlineValueClass::SMI);
+                block, tagged(inputs[0]), snapshot, TaggedValueClass::smi());
         TaggedValueRef rhs = [&] {
             if(has_immediate_rhs)
             {
@@ -373,7 +373,8 @@ namespace cl::jit
             }
             return TaggedValueRef(
                 builder_.emplace_instruction<InlineTagGuardInstruction>(
-                    block, tagged(inputs[1]), snapshot, InlineValueClass::SMI));
+                    block, tagged(inputs[1]), snapshot,
+                    TaggedValueClass::smi()));
         }();
 
         outputs.emplace_back(builder_.emplace_instruction<
@@ -407,7 +408,7 @@ namespace cl::jit
             emit_snapshot(block, instruction.pc_offset(), state);
         InlineTagGuardInstruction lhs =
             builder_.emplace_instruction<InlineTagGuardInstruction>(
-                block, tagged(inputs[0]), snapshot, InlineValueClass::SMI);
+                block, tagged(inputs[0]), snapshot, TaggedValueClass::smi());
         TaggedValueRef rhs = [&] {
             if(has_immediate_rhs)
             {
@@ -417,7 +418,8 @@ namespace cl::jit
             }
             return TaggedValueRef(
                 builder_.emplace_instruction<InlineTagGuardInstruction>(
-                    block, tagged(inputs[1]), snapshot, InlineValueClass::SMI));
+                    block, tagged(inputs[1]), snapshot,
+                    TaggedValueClass::smi()));
         }();
 
         outputs.emplace_back(
@@ -445,10 +447,10 @@ namespace cl::jit
             emit_snapshot(block, instruction.pc_offset(), state);
         InlineTagGuardInstruction lhs =
             builder_.emplace_instruction<InlineTagGuardInstruction>(
-                block, tagged(inputs[0]), snapshot, InlineValueClass::SMI);
+                block, tagged(inputs[0]), snapshot, TaggedValueClass::smi());
         InlineTagGuardInstruction rhs =
             builder_.emplace_instruction<InlineTagGuardInstruction>(
-                block, tagged(inputs[1]), snapshot, InlineValueClass::SMI);
+                block, tagged(inputs[1]), snapshot, TaggedValueClass::smi());
         outputs.emplace_back(
             builder_.emplace_instruction<BinaryComparisonSMIInstruction>(
                 block, subkind, TaggedValueRef(lhs), TaggedValueRef(rhs)));

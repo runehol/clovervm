@@ -120,11 +120,11 @@ namespace cl::jit
         InlineTagGuardWithSideExitInstruction first_guard =
             builder.emplace_instruction<InlineTagGuardWithSideExitInstruction>(
                 entry, TaggedValueRef(argument), arguments,
-                InlineValueClass::SMI, region);
+                TaggedValueClass::smi(), region);
         InlineTagGuardWithSideExitInstruction second_guard =
             builder.emplace_instruction<InlineTagGuardWithSideExitInstruction>(
                 entry, TaggedValueRef(argument), arguments,
-                InlineValueClass::SMI, region);
+                TaggedValueClass::smi(), region);
         builder.emplace_instruction<BareReturnInstruction>(
             entry, TaggedValueRef(argument));
         ControlFlowGraph *graph = builder.finalize();

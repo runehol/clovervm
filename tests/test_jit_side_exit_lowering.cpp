@@ -113,7 +113,7 @@ namespace cl::jit
         InlineTagGuardInstruction guard =
             builder.emplace_instruction<InlineTagGuardInstruction>(
                 entry, TaggedValueRef(parameter), SnapshotRef(snapshot),
-                InlineValueClass::SMIOrBoolean);
+                TaggedValueClass::smi_or_boolean());
         BareReturnInstruction return_instruction =
             builder.emplace_instruction<BareReturnInstruction>(
                 entry, TaggedValueRef(guard));
@@ -131,7 +131,7 @@ namespace cl::jit
         EXPECT_TRUE(guard.is_poisoned());
         EXPECT_TRUE(snapshot.is_poisoned());
         EXPECT_EQ(parameter.id(), owner.value().instruction_id());
-        EXPECT_EQ(InlineValueClass::SMIOrBoolean, owner.expected_class());
+        EXPECT_EQ(TaggedValueClass::smi_or_boolean(), owner.expected_class());
         ASSERT_EQ(1u, owner.side_exit_arguments().size());
         EXPECT_EQ(parameter.id(),
                   owner.side_exit_arguments()[0].instruction_id());

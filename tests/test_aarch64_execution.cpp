@@ -487,7 +487,7 @@ namespace cl::jit
         code_object->function_signature.n_parameters = 1;
         BytecodeStateOrder state_order(*code_object);
 
-        auto execute_guard = [&](InlineValueClass expected_class, Value input) {
+        auto execute_guard = [&](TaggedValueClass expected_class, Value input) {
             CompilationSession session;
             GraphBuilder builder(session, IRLevel::Machine);
             builder.set_bytecode_state_order(state_order);
@@ -547,25 +547,31 @@ namespace cl::jit
         Value smi = Value::from_smi(42);
         Value pointer = Value::from_oop(code_object);
         EXPECT_EQ(static_cast<uint64_t>(smi.as.integer),
-                  execute_guard(InlineValueClass::AnyInline, smi));
+                  execute_guard(TaggedValueClass::any_inline(), smi));
         EXPECT_EQ(static_cast<uint64_t>(Value::None().as.integer),
-                  execute_guard(InlineValueClass::AnyInline, Value::None()));
+                  execute_guard(TaggedValueClass::any_inline(), Value::None()));
         EXPECT_EQ(static_cast<uint64_t>(Value::Ellipsis().as.integer),
-                  execute_guard(InlineValueClass::AnyInline, pointer));
+                  execute_guard(TaggedValueClass::any_inline(), pointer));
         EXPECT_EQ(static_cast<uint64_t>(smi.as.integer),
-                  execute_guard(InlineValueClass::SMI, smi));
+                  execute_guard(TaggedValueClass::smi(), smi));
         EXPECT_EQ(static_cast<uint64_t>(Value::Ellipsis().as.integer),
-                  execute_guard(InlineValueClass::SMI, Value::True()));
+                  execute_guard(TaggedValueClass::smi(), Value::True()));
         EXPECT_EQ(static_cast<uint64_t>(Value::True().as.integer),
-                  execute_guard(InlineValueClass::Boolean, Value::True()));
+                  execute_guard(TaggedValueClass::boolean(), Value::True()));
         EXPECT_EQ(static_cast<uint64_t>(Value::Ellipsis().as.integer),
-                  execute_guard(InlineValueClass::Boolean, smi));
+                  execute_guard(TaggedValueClass::boolean(), smi));
         EXPECT_EQ(static_cast<uint64_t>(smi.as.integer),
-                  execute_guard(InlineValueClass::SMIOrBoolean, smi));
-        EXPECT_EQ(static_cast<uint64_t>(Value::True().as.integer),
-                  execute_guard(InlineValueClass::SMIOrBoolean, Value::True()));
+                  execute_guard(TaggedValueClass::smi_or_boolean(), smi));
+        EXPECT_EQ(
+            static_cast<uint64_t>(Value::True().as.integer),
+            execute_guard(TaggedValueClass::smi_or_boolean(), Value::True()));
+        EXPECT_EQ(
+            static_cast<uint64_t>(Value::Ellipsis().as.integer),
+            execute_guard(TaggedValueClass::smi_or_boolean(), Value::None()));
+        EXPECT_EQ(static_cast<uint64_t>(pointer.as.integer),
+                  execute_guard(TaggedValueClass::pointer(), pointer));
         EXPECT_EQ(static_cast<uint64_t>(Value::Ellipsis().as.integer),
-                  execute_guard(InlineValueClass::SMIOrBoolean, Value::None()));
+                  execute_guard(TaggedValueClass::pointer(), smi));
     }
 
     TEST(AArch64Execution, CombinesAdjacentInlineTagGuardsWithSameSideExit)
@@ -577,7 +583,7 @@ namespace cl::jit
         BytecodeStateOrder state_order(*code_object);
         CodeCache cache;
 
-        auto make_guarded_function = [&](InlineValueClass expected_class) {
+        auto make_guarded_function = [&](TaggedValueClass expected_class) {
             CompilationSession session;
             GraphBuilder builder(session, IRLevel::Machine);
             builder.set_bytecode_state_order(state_order);
@@ -637,7 +643,7 @@ namespace cl::jit
             return std::move(emission).value();
         };
 
-        auto execute_pair = [&](InlineValueClass expected_class, Value lhs,
+        auto execute_pair = [&](TaggedValueClass expected_class, Value lhs,
                                 Value rhs) {
             PublishedCode code = make_guarded_function(expected_class);
             size_t conditional_branch_count = 0;
@@ -664,35 +670,37 @@ namespace cl::jit
         Value pointer = Value::from_oop(code_object);
         EXPECT_EQ(
             static_cast<uint64_t>(smi.as.integer),
-            execute_pair(InlineValueClass::AnyInline, smi, Value::None()));
+            execute_pair(TaggedValueClass::any_inline(), smi, Value::None()));
         EXPECT_EQ(static_cast<uint64_t>(Value::Ellipsis().as.integer),
-                  execute_pair(InlineValueClass::AnyInline, pointer, smi));
+                  execute_pair(TaggedValueClass::any_inline(), pointer, smi));
         EXPECT_EQ(static_cast<uint64_t>(Value::Ellipsis().as.integer),
-                  execute_pair(InlineValueClass::AnyInline, smi, pointer));
+                  execute_pair(TaggedValueClass::any_inline(), smi, pointer));
         EXPECT_EQ(static_cast<uint64_t>(smi.as.integer),
-                  execute_pair(InlineValueClass::SMI, smi, smi));
+                  execute_pair(TaggedValueClass::smi(), smi, smi));
         EXPECT_EQ(static_cast<uint64_t>(Value::Ellipsis().as.integer),
-                  execute_pair(InlineValueClass::SMI, Value::True(), smi));
+                  execute_pair(TaggedValueClass::smi(), Value::True(), smi));
         EXPECT_EQ(static_cast<uint64_t>(Value::Ellipsis().as.integer),
-                  execute_pair(InlineValueClass::SMI, smi, Value::True()));
+                  execute_pair(TaggedValueClass::smi(), smi, Value::True()));
 
         EXPECT_EQ(static_cast<uint64_t>(Value::True().as.integer),
-                  execute_pair(InlineValueClass::Boolean, Value::True(),
+                  execute_pair(TaggedValueClass::boolean(), Value::True(),
                                Value::False()));
-        EXPECT_EQ(static_cast<uint64_t>(Value::Ellipsis().as.integer),
-                  execute_pair(InlineValueClass::Boolean, smi, Value::False()));
-        EXPECT_EQ(static_cast<uint64_t>(Value::Ellipsis().as.integer),
-                  execute_pair(InlineValueClass::Boolean, Value::False(), smi));
+        EXPECT_EQ(
+            static_cast<uint64_t>(Value::Ellipsis().as.integer),
+            execute_pair(TaggedValueClass::boolean(), smi, Value::False()));
+        EXPECT_EQ(
+            static_cast<uint64_t>(Value::Ellipsis().as.integer),
+            execute_pair(TaggedValueClass::boolean(), Value::False(), smi));
 
-        EXPECT_EQ(
-            static_cast<uint64_t>(smi.as.integer),
-            execute_pair(InlineValueClass::SMIOrBoolean, smi, Value::True()));
-        EXPECT_EQ(
-            static_cast<uint64_t>(Value::Ellipsis().as.integer),
-            execute_pair(InlineValueClass::SMIOrBoolean, Value::None(), smi));
-        EXPECT_EQ(
-            static_cast<uint64_t>(Value::Ellipsis().as.integer),
-            execute_pair(InlineValueClass::SMIOrBoolean, smi, Value::None()));
+        EXPECT_EQ(static_cast<uint64_t>(smi.as.integer),
+                  execute_pair(TaggedValueClass::smi_or_boolean(), smi,
+                               Value::True()));
+        EXPECT_EQ(static_cast<uint64_t>(Value::Ellipsis().as.integer),
+                  execute_pair(TaggedValueClass::smi_or_boolean(),
+                               Value::None(), smi));
+        EXPECT_EQ(static_cast<uint64_t>(Value::Ellipsis().as.integer),
+                  execute_pair(TaggedValueClass::smi_or_boolean(), smi,
+                               Value::None()));
     }
 
     TEST(AArch64Execution, ExecutesAddSMIWithColdOverflowSideExit)

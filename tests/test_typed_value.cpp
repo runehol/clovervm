@@ -343,24 +343,6 @@ TEST(Value, InlineSingletonsHaveDistinctLowTags)
               Value::Ellipsis().as.integer & value_tag_mask);
 }
 
-TEST(Value, EncodesInlineValueClassesAsMaskAndExpectedBits)
-{
-    EXPECT_EQ(value_ptr_mask,
-              inline_value_class_mask(InlineValueClass::AnyInline));
-    EXPECT_EQ(0u,
-              inline_value_class_expected_bits(InlineValueClass::AnyInline));
-    EXPECT_EQ(value_tag_mask, inline_value_class_mask(InlineValueClass::SMI));
-    EXPECT_EQ(0u, inline_value_class_expected_bits(InlineValueClass::SMI));
-    EXPECT_EQ(value_tag_mask,
-              inline_value_class_mask(InlineValueClass::Boolean));
-    EXPECT_EQ(value_boolean_tag,
-              inline_value_class_expected_bits(InlineValueClass::Boolean));
-    EXPECT_EQ(value_not_smi_or_boolean_mask,
-              inline_value_class_mask(InlineValueClass::SMIOrBoolean));
-    EXPECT_EQ(0u,
-              inline_value_class_expected_bits(InlineValueClass::SMIOrBoolean));
-}
-
 TEST(TValue, CustomCheckedConstructionReturnsExpectedSuccess)
 {
     Expected<TValue<SMI>> smi = TValue<SMI>::from_value_or_raise(

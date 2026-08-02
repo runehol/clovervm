@@ -200,8 +200,8 @@ namespace cl::jit
             guards[0].as<InlineTagGuardInstruction>();
         InlineTagGuardInstruction rhs =
             guards[1].as<InlineTagGuardInstruction>();
-        EXPECT_EQ(InlineValueClass::SMI, lhs.expected_class());
-        EXPECT_EQ(InlineValueClass::SMI, rhs.expected_class());
+        EXPECT_EQ(TaggedValueClass::smi(), lhs.expected_class());
+        EXPECT_EQ(TaggedValueClass::smi(), rhs.expected_class());
         EXPECT_EQ(snapshot.id(), lhs.snapshot().instruction_id());
         EXPECT_EQ(snapshot.id(), rhs.snapshot().instruction_id());
         EXPECT_EQ(constants[0].id(), lhs.value().instruction_id());
@@ -293,7 +293,7 @@ namespace cl::jit
         EXPECT_EQ(add_pc, snapshot.resume_pc_offset());
         InlineTagGuardInstruction lhs =
             guards.front().as<InlineTagGuardInstruction>();
-        EXPECT_EQ(InlineValueClass::SMI, lhs.expected_class());
+        EXPECT_EQ(TaggedValueClass::smi(), lhs.expected_class());
         EXPECT_EQ(snapshot.id(), lhs.snapshot().instruction_id());
         EXPECT_EQ(constants[0].id(), lhs.value().instruction_id());
         EXPECT_EQ(Value::from_smi(-23),

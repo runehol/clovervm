@@ -7,6 +7,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
+#include <optional>
 #include <span>
 
 namespace cl::jit
@@ -279,10 +280,13 @@ namespace cl::jit
                 (static_cast<uint64_t>(displacement >> scale_shift)) & mask);
         }
 
-        inline uint16_t logical_immediate_64(uint64_t immediate)
+        inline std::optional<uint16_t>
+        try_logical_immediate_64(uint64_t immediate)
         {
-            assert(immediate != 0);
-            assert(immediate != UINT64_MAX);
+            if(immediate == 0 || immediate == UINT64_MAX)
+            {
+                return std::nullopt;
+            }
             for(uint32_t element_size = 2; element_size <= 64;
                 element_size *= 2)
             {
@@ -325,8 +329,15 @@ namespace cl::jit
                     }
                 }
             }
-            assert(false);
-            return 0;
+            return std::nullopt;
+        }
+
+        inline uint16_t logical_immediate_64(uint64_t immediate)
+        {
+            std::optional<uint16_t> encoding =
+                try_logical_immediate_64(immediate);
+            assert(encoding.has_value());
+            return *encoding;
         }
     }  // namespace aarch64_detail
 

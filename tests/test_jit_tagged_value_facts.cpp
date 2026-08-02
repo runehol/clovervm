@@ -17,6 +17,8 @@ namespace cl::jit
         EXPECT_EQ(TaggedValueClassKind::MaskedNonZero, pointer.kind());
         EXPECT_EQ(value_ptr_mask, pointer.mask());
         EXPECT_EQ(0u, pointer.expected());
+        EXPECT_EQ(boolean, TaggedValueClass::from_encoded(boolean.encoded()));
+        EXPECT_EQ(pointer, TaggedValueClass::from_encoded(pointer.encoded()));
     }
 
     TEST(JitTaggedValueSet, ConstructsAndCombinesFacts)
