@@ -389,74 +389,56 @@ namespace cl::jit
                                    "position");
                 }
                 CfgVerificationResult side_exit_verification{true, {}};
-                switch(instruction.kind())
+                auto verify_side_exit_owner = [&](auto owner) {
+                    side_exit_verification = verify_region_owner_binding(
+                        graph, instruction, owner.side_exit_region(),
+                        owner.side_exit_arguments());
+                    if(side_exit_verification.valid &&
+                       referenced_side_exit_regions
+                           .insert(owner.side_exit_region())
+                           .second)
+                    {
+                        side_exit_region_order.push_back(
+                            owner.side_exit_region());
+                    }
+                };
+                // clang-format off
+                CL_JIT_INSTRUCTION_SWITCH(instruction)
                 {
-                    case InstructionKind::AddSMIWithSideExit:
-                        {
-                            auto owner =
-                                instruction.as<AddSMIWithSideExitInstruction>();
-                            side_exit_verification =
-                                verify_region_owner_binding(
-                                    graph, instruction,
-                                    owner.side_exit_region(),
-                                    owner.side_exit_arguments());
-                            if(side_exit_verification.valid)
-                            {
-                                if(referenced_side_exit_regions
-                                       .insert(owner.side_exit_region())
-                                       .second)
-                                {
-                                    side_exit_region_order.push_back(
-                                        owner.side_exit_region());
-                                }
-                            }
-                            break;
-                        }
-                    case InstructionKind::InlineTagGuardWithSideExit:
-                        {
-                            auto owner = instruction.as<
-                                InlineTagGuardWithSideExitInstruction>();
-                            side_exit_verification =
-                                verify_region_owner_binding(
-                                    graph, instruction,
-                                    owner.side_exit_region(),
-                                    owner.side_exit_arguments());
-                            if(side_exit_verification.valid)
-                            {
-                                if(referenced_side_exit_regions
-                                       .insert(owner.side_exit_region())
-                                       .second)
-                                {
-                                    side_exit_region_order.push_back(
-                                        owner.side_exit_region());
-                                }
-                            }
-                            break;
-                        }
-                    case InstructionKind::ResumeInInterpreterWithSideExit:
-                        {
-                            auto owner = instruction.as<
-                                ResumeInInterpreterWithSideExitInstruction>();
-                            side_exit_verification =
-                                verify_region_owner_binding(
-                                    graph, instruction,
-                                    owner.side_exit_region(),
-                                    owner.side_exit_arguments());
-                            if(side_exit_verification.valid)
-                            {
-                                if(referenced_side_exit_regions
-                                       .insert(owner.side_exit_region())
-                                       .second)
-                                {
-                                    side_exit_region_order.push_back(
-                                        owner.side_exit_region());
-                                }
-                            }
-                            break;
-                        }
+                    CL_JIT_INSTRUCTION_FAMILY_CASE(
+                        BinaryArithmeticSMIWithSideExit, owner)
+                    {
+                        verify_side_exit_owner(owner);
+                        break;
+                    }
+                    CL_JIT_INSTRUCTION_FAMILY_CASE(
+                        ShapeGuardWithSideExit, owner)
+                    {
+                        verify_side_exit_owner(owner);
+                        break;
+                    }
+                    case CL_JIT_INSTRUCTION_CASE(
+                        ValidityCellGuardWithSideExitInstruction, owner)
+                    {
+                        verify_side_exit_owner(owner);
+                        break;
+                    }
+                    case CL_JIT_INSTRUCTION_CASE(
+                        InlineTagGuardWithSideExitInstruction, owner)
+                    {
+                        verify_side_exit_owner(owner);
+                        break;
+                    }
+                    case CL_JIT_INSTRUCTION_CASE(
+                        ResumeInInterpreterWithSideExitInstruction, owner)
+                    {
+                        verify_side_exit_owner(owner);
+                        break;
+                    }
                     default:
                         break;
                 }
+                // clang-format on
                 if(!side_exit_verification.valid)
                 {
                     return side_exit_verification;

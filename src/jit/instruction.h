@@ -605,6 +605,17 @@ namespace cl::jit
         }
     }  // namespace instruction_detail
 
+    template <typename ConcreteInstruction>
+    consteval InstructionKind instruction_kind()
+    {
+        return ConcreteInstruction::Kind;
+    }
+
+    constexpr InstructionKind instruction_kind(InstructionKind kind)
+    {
+        return kind;
+    }
+
     inline SemanticInstructionKind
     semantic_instruction_kind(InstructionKind kind)
     {
@@ -1799,6 +1810,13 @@ namespace cl::jit
     {                                                                          \
     }                                                                          \
     else
+
+#define CL_JIT_INSTRUCTION_SWITCH(instruction)                                \
+    CL_JIT_LEVEL_INSTRUCTION_SWITCH(instruction, instruction_kind)
+#define CL_JIT_INSTRUCTION_CASE(Type, variable)                               \
+    CL_JIT_LEVEL_INSTRUCTION_CASE(Type, variable, instruction_kind)
+#define CL_JIT_INSTRUCTION_FAMILY_CASE(family, variable)                      \
+    CL_JIT_LEVEL_INSTRUCTION_FAMILY_CASE(family, variable, instruction_kind)
 
 #define CL_JIT_SEMANTIC_INSTRUCTION_SWITCH(instruction)                        \
     CL_JIT_LEVEL_INSTRUCTION_SWITCH(instruction, semantic_instruction_kind)

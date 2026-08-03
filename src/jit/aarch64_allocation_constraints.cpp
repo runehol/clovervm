@@ -209,14 +209,9 @@ namespace cl::jit
                     case MachineInstructionKind::Uninitialized:
                     case MachineInstructionKind::AddSMIWithSideExit:
                     case MachineInstructionKind::SubSMIWithSideExit:
-                    case MachineInstructionKind::AndSMI:
-                    case MachineInstructionKind::OrrSMI:
-                    case MachineInstructionKind::EorSMI:
                     case MachineInstructionKind::MovPointer:
                     case MachineInstructionKind::LoadStackPointer:
                     case MachineInstructionKind::StoreStackPointer:
-                    case MachineInstructionKind::PointerAndShapeGuardWithSideExit:
-                    case MachineInstructionKind::ShapeOnlyGuardWithSideExit:
                     case MachineInstructionKind::ValidityCellGuardWithSideExit:
                     case MachineInstructionKind::InlineTagGuardWithSideExit:
                     case MachineInstructionKind::ResumeInInterpreterWithSideExit:
@@ -229,6 +224,30 @@ namespace cl::jit
                                                    std::move(input_overrides));
                         }
                         break;
+
+                    CL_JIT_MACHINE_INSTRUCTION_FAMILY_CASE(
+                        BinaryLogicalSMI, logical_instruction)
+                    {
+                        if(!input_overrides.empty())
+                        {
+                            overrides.emplace_back(
+                                logical_instruction,
+                                std::move(input_overrides));
+                        }
+                        break;
+                    }
+
+                    CL_JIT_MACHINE_INSTRUCTION_FAMILY_CASE(
+                        ShapeGuardWithSideExit, guard_instruction)
+                    {
+                        if(!input_overrides.empty())
+                        {
+                            overrides.emplace_back(
+                                guard_instruction,
+                                std::move(input_overrides));
+                        }
+                        break;
+                    }
 
                     case MachineInstructionKind::MulSMIWithSideExit:
                         input_overrides.emplace_back(
@@ -245,17 +264,21 @@ namespace cl::jit
                             instruction, std::move(input_overrides)));
                         break;
 
-                    case MachineInstructionKind::Is:
-                    case MachineInstructionKind::IsNot:
-                    case MachineInstructionKind::EqualSMI:
-                    case MachineInstructionKind::NotEqualSMI:
-                    case MachineInstructionKind::LessSMI:
-                    case MachineInstructionKind::LessEqualSMI:
-                    case MachineInstructionKind::GreaterSMI:
-                    case MachineInstructionKind::GreaterEqualSMI:
+                    CL_JIT_MACHINE_INSTRUCTION_FAMILY_CASE(
+                        IsComparison, comparison)
+                    {
                         overrides.push_back(gpr_temporary_constraints(
-                            instruction, std::move(input_overrides)));
+                            comparison, std::move(input_overrides)));
                         break;
+                    }
+
+                    CL_JIT_MACHINE_INSTRUCTION_FAMILY_CASE(
+                        BinaryComparisonSMI, comparison)
+                    {
+                        overrides.push_back(gpr_temporary_constraints(
+                            comparison, std::move(input_overrides)));
+                        break;
+                    }
 
                     case CL_JIT_MACHINE_INSTRUCTION_CASE(
                         ReturnInstruction, return_instruction)
