@@ -88,12 +88,15 @@ namespace cl::jit
             }
         }
 
+        template <GPRWidth Width>
         void emit_load_store(AArch64EmitterAssembler &assembler,
-                             LoadStoreOp operation, XRegister value,
+                             LoadStoreOp operation, GPRRegister<Width> value,
                              XRegisterOrSP base, int64_t byte_offset)
         {
-            constexpr int64_t MaximumScaledByteOffset = 4095 * 8;
-            if(byte_offset >= 0 && byte_offset % 8 == 0 &&
+            constexpr int64_t RegisterBytes =
+                Width == GPRWidth::X ? int64_t{8} : int64_t{4};
+            constexpr int64_t MaximumScaledByteOffset = 4095 * RegisterBytes;
+            if(byte_offset >= 0 && byte_offset % RegisterBytes == 0 &&
                byte_offset <= MaximumScaledByteOffset)
             {
                 assembler.emit_load_store_unsigned_offset(
@@ -438,9 +441,29 @@ namespace cl::jit
                         byte_offset);
     }
 
+    void AArch64MacroAssembler::ldr(WRegister destination, XRegisterOrSP base,
+                                    int64_t byte_offset)
+    {
+        emit_load_store(*this, LoadStoreOp::Load, destination, base,
+                        byte_offset);
+    }
+
     void AArch64MacroAssembler::ldr(XRegister destination, Value value)
     {
         ConstantPoolEntry entry = emitter().add_value_to_constant_pool(value);
+        ldr(destination, entry);
+    }
+
+    void AArch64MacroAssembler::ldr(XRegister destination, HeapObject *object)
+    {
+        ConstantPoolEntry entry =
+            emitter().add_heap_object_to_constant_pool(object);
+        ldr(destination, entry);
+    }
+
+    void AArch64MacroAssembler::ldr(XRegister destination,
+                                    ConstantPoolEntry entry)
+    {
         if(pool_mode_ == AArch64ValuePoolMode::NearLiteral)
         {
             emit_ldr_literal_immediate_19(destination, 0);

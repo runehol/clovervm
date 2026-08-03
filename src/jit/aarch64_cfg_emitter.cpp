@@ -6,6 +6,9 @@
 #include "jit/control_flow_graph.h"
 #include "jit/instruction.h"
 #include "jit/location_assignments.h"
+#include "object_model/object.h"
+#include "object_model/shape.h"
+#include "object_model/validity_cell.h"
 #include "runtime/fatal.h"
 
 #include <absl/container/flat_hash_map.h>
@@ -581,6 +584,40 @@ namespace cl::jit
                         AArch64Condition::NotEqual,
                         side_exit_target(
                             make_side_exit_binding(mul_instruction)));
+                    break;
+                }
+
+                case CL_JIT_MACHINE_INSTRUCTION_CASE(
+                    ShapeGuardWithSideExitInstruction, guard_instruction)
+                {
+                    XRegister input =
+                        assigned_register(locations, guard_instruction.object());
+                    Label target = side_exit_target(
+                        make_side_exit_binding(guard_instruction));
+                    assembler.tst(input, value_ptr_mask);
+                    assembler.b(AArch64Condition::Equal, target);
+                    assembler.ldr(XRegister(16), input,
+                                  CL_OFFSETOF(Object, shape));
+                    assembler.ldr(XRegister(17),
+                                  guard_instruction.expected_shape());
+                    assembler.cmp(XRegister(16), XRegister(17));
+                    assembler.b(AArch64Condition::NotEqual, target);
+                    break;
+                }
+
+                case CL_JIT_MACHINE_INSTRUCTION_CASE(
+                    ValidityCellGuardWithSideExitInstruction,
+                    guard_instruction)
+                {
+                    assembler.ldr(XRegister(16),
+                                  guard_instruction.validity());
+                    assembler.ldr(WRegister(16), XRegister(16),
+                                  ValidityCell::valid_offset());
+                    assembler.tst(XRegister(16), 1);
+                    assembler.b(
+                        AArch64Condition::Equal,
+                        side_exit_target(
+                            make_side_exit_binding(guard_instruction)));
                     break;
                 }
 

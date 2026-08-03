@@ -149,6 +149,15 @@ namespace cl::jit
                                      index * sizeof(Value));
         }
 
+        ConstantPoolEntry add_heap_object_to_constant_pool(HeapObject *object)
+        {
+            assert(object != nullptr);
+            Value value;
+            value.as.ptr = object;
+            assert(value.is_ptr());
+            return add_value_to_constant_pool(value);
+        }
+
         ConstantPoolEntry
         add_data_to_constant_pool(std::span<const std::byte> data)
         {

@@ -911,7 +911,10 @@ namespace cl::jit
         void tst(XRegisterOrZero source, uint64_t immediate);
         void ldr(XRegister destination, XRegisterOrSP base,
                  int64_t byte_offset);
+        void ldr(WRegister destination, XRegisterOrSP base,
+                 int64_t byte_offset);
         void ldr(XRegister destination, Value value);
+        void ldr(XRegister destination, HeapObject *object);
         void adr(XRegister destination, ConstantPoolEntry target);
         ConstantPoolEntry
         add_transition_program(std::span<const TransitionInstruction> program);
@@ -922,6 +925,8 @@ namespace cl::jit
         void bl(CodeTarget target, XRegister scratch = XRegister(16));
 
     private:
+        void ldr(XRegister destination, ConstantPoolEntry entry);
+
         static constexpr size_t
         maximum_pool_span(AArch64ValuePoolMode pool_mode)
         {

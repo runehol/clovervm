@@ -304,6 +304,22 @@ CL_JIT_INSTRUCTION(ShapeGuard, CL_JIT_IR_LEVELS(Core),
 #undef CL_JIT_ShapeGuard_ATTRIBUTES
 #undef CL_JIT_ShapeGuard_OPERANDS
 
+#define CL_JIT_ShapeGuardWithSideExit_OPERANDS(                              \
+    fixed, variadic, program_values)                                           \
+    fixed(object, ProgramValue, TaggedValue)                                   \
+    program_values(side_exit_arguments, SideExit)
+#define CL_JIT_ShapeGuardWithSideExit_ATTRIBUTES(attribute)                   \
+    attribute(expected_shape, Shape)                                           \
+    attribute(side_exit_region, SideExitRegionId)
+CL_JIT_INSTRUCTION(
+    ShapeGuardWithSideExit, CL_JIT_IR_LEVELS(Machine),
+    CL_JIT_RESULT(ProgramValue, TaggedValue, ForwardingDef),
+    CL_JIT_EFFECT_BOUNDS(None, SideExit),
+    CL_JIT_ShapeGuardWithSideExit_OPERANDS,
+    CL_JIT_ShapeGuardWithSideExit_ATTRIBUTES)
+#undef CL_JIT_ShapeGuardWithSideExit_ATTRIBUTES
+#undef CL_JIT_ShapeGuardWithSideExit_OPERANDS
+
 #define CL_JIT_ValidityCellGuard_OPERANDS(fixed, variadic, snapshot_values)    \
     fixed(value, ProgramValue, TaggedValue)                                    \
     fixed(snapshot, Snapshot, None)
@@ -316,6 +332,22 @@ CL_JIT_INSTRUCTION(ValidityCellGuard, CL_JIT_IR_LEVELS(Core),
                    CL_JIT_ValidityCellGuard_ATTRIBUTES)
 #undef CL_JIT_ValidityCellGuard_ATTRIBUTES
 #undef CL_JIT_ValidityCellGuard_OPERANDS
+
+#define CL_JIT_ValidityCellGuardWithSideExit_OPERANDS(                        \
+    fixed, variadic, program_values)                                           \
+    fixed(value, ProgramValue, TaggedValue)                                    \
+    program_values(side_exit_arguments, SideExit)
+#define CL_JIT_ValidityCellGuardWithSideExit_ATTRIBUTES(attribute)             \
+    attribute(validity, ValidityCell)                                          \
+    attribute(side_exit_region, SideExitRegionId)
+CL_JIT_INSTRUCTION(
+    ValidityCellGuardWithSideExit, CL_JIT_IR_LEVELS(Machine),
+    CL_JIT_RESULT(ProgramValue, TaggedValue, ForwardingDef),
+    CL_JIT_EFFECT_BOUNDS(None, SideExit),
+    CL_JIT_ValidityCellGuardWithSideExit_OPERANDS,
+    CL_JIT_ValidityCellGuardWithSideExit_ATTRIBUTES)
+#undef CL_JIT_ValidityCellGuardWithSideExit_ATTRIBUTES
+#undef CL_JIT_ValidityCellGuardWithSideExit_OPERANDS
 
 #define CL_JIT_InlineTagGuard_OPERANDS(fixed, variadic, snapshot_values)      \
     fixed(value, ProgramValue, TaggedValue)                                    \

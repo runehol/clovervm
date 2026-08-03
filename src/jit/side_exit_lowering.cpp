@@ -183,6 +183,20 @@ namespace cl::jit
                     }
                     switch(instruction.kind())
                     {
+                        case InstructionKind::ShapeGuard:
+                            plans.push_back(plan_side_exit(
+                                graph, *block, instruction,
+                                instruction.as<ShapeGuardInstruction>()
+                                    .snapshot(),
+                                sunk_instructions, positions, ordinal));
+                            break;
+                        case InstructionKind::ValidityCellGuard:
+                            plans.push_back(plan_side_exit(
+                                graph, *block, instruction,
+                                instruction.as<ValidityCellGuardInstruction>()
+                                    .snapshot(),
+                                sunk_instructions, positions, ordinal));
+                            break;
                         case InstructionKind::InlineTagGuard:
                             plans.push_back(plan_side_exit(
                                 graph, *block, instruction,
@@ -294,6 +308,31 @@ namespace cl::jit
                 }
                 switch(instruction.kind())
                 {
+                    case InstructionKind::ShapeGuard:
+                        {
+                            const BuiltSideExitRegion &region =
+                                region_for_snapshot(context, plan);
+                            ShapeGuardInstruction guard =
+                                instruction.as<ShapeGuardInstruction>();
+                            return RewriteResult::replace(
+                                context.make_instruction<
+                                    ShapeGuardWithSideExitInstruction>(
+                                    guard.object(), region.arguments,
+                                    guard.expected_shape(),
+                                    region.region->id()));
+                        }
+                    case InstructionKind::ValidityCellGuard:
+                        {
+                            const BuiltSideExitRegion &region =
+                                region_for_snapshot(context, plan);
+                            ValidityCellGuardInstruction guard =
+                                instruction.as<ValidityCellGuardInstruction>();
+                            return RewriteResult::replace(
+                                context.make_instruction<
+                                    ValidityCellGuardWithSideExitInstruction>(
+                                    guard.value(), region.arguments,
+                                    guard.validity(), region.region->id()));
+                        }
                     case InstructionKind::InlineTagGuard:
                         {
                             const BuiltSideExitRegion &region =
@@ -515,6 +554,11 @@ namespace cl::jit
             }
             switch(instruction.kind())
             {
+                case InstructionKind::ShapeGuard:
+                    return instruction.as<ShapeGuardInstruction>().snapshot();
+                case InstructionKind::ValidityCellGuard:
+                    return instruction.as<ValidityCellGuardInstruction>()
+                        .snapshot();
                 case InstructionKind::InlineTagGuard:
                     return instruction.as<InlineTagGuardInstruction>()
                         .snapshot();

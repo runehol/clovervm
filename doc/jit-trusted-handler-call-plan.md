@@ -73,20 +73,12 @@ Complete the existing Core guard path before introducing calls:
 5. Preserve their forwarding definitions so successful guards continue to
    narrow and replace the guarded value in bytecode state.
 
-Add one frontend helper that emits the guard represented by an IC `ShapeKey`:
-
-- an inline shape key becomes an exact inline-tag guard;
-- an object shape key becomes an exact `ShapeGuard`;
-- the corresponding non-null lookup validity cell adds a
-  `ValidityCellGuard`.
-
 All guards consume the same pre-operation Snapshot. Any failed guard resumes
 at the original bytecode without having performed the operation.
 
-Verification should cover one inline key, one object shape, one invalidated
-validity cell, and successful forwarding into a later use. Tests should verify
-observable lowering and execution rather than duplicating instruction
-accessors.
+Verification should cover one object shape, one invalidated validity cell, and
+successful forwarding into a later use. Tests should verify observable
+lowering and execution rather than duplicating instruction accessors.
 
 ## Slice 2: Trusted Handler Call Representation
 
@@ -184,7 +176,10 @@ ordinary cached trusted-handler case:
 2. Query VM registration for the cached handler and arity.
 3. If it is not eligible, emit the existing unsupported interpreter exit.
 4. Emit one pre-operation Snapshot.
-5. Emit the cached shape and validity guards in cache-match order.
+5. Emit the cached shape and validity guards in cache-match order through one
+   frontend helper for an IC `ShapeKey`: an inline key becomes an exact
+   inline-tag guard, an object key becomes an exact `ShapeGuard`, and a
+   corresponding non-null lookup validity cell adds a `ValidityCellGuard`.
 6. Emit `TrustedHandlerCall` with the guarded semantic arguments.
 7. Write its normal tagged result into bytecode state.
 

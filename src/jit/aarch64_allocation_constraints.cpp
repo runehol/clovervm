@@ -215,6 +215,8 @@ namespace cl::jit
                     case MachineInstructionKind::MovPointer:
                     case MachineInstructionKind::LoadStackPointer:
                     case MachineInstructionKind::StoreStackPointer:
+                    case MachineInstructionKind::ShapeGuardWithSideExit:
+                    case MachineInstructionKind::ValidityCellGuardWithSideExit:
                     case MachineInstructionKind::InlineTagGuardWithSideExit:
                     case MachineInstructionKind::ResumeInInterpreterWithSideExit:
                     case MachineInstructionKind::ExitToInterpreter:

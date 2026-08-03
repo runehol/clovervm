@@ -2,6 +2,8 @@
 
 #include "jit/compilation_session.h"
 #include "jit/graph_builder.h"
+#include "object_model/validity_cell.h"
+#include "test_helpers.h"
 
 #include <gtest/gtest.h>
 
@@ -148,6 +150,60 @@ namespace cl::jit
         EXPECT_NE(snapshot.id(), region.instruction_ids()[0]);
         EXPECT_EQ(InstructionKind::ExitToInterpreter,
                   region.instruction_at(0).kind());
+    }
+
+    TEST(JitSideExitLowering, ReplacesShapeAndValidityGuards)
+    {
+        test::VmTestContext vm;
+        ThreadState::ActivationScope activation_scope(vm.thread());
+        Shape *shape = vm.vm().str_instance_root_shape();
+        ValidityCell *validity = vm.thread()->make_internal_raw<ValidityCell>();
+
+        CompilationSession session;
+        GraphBuilder builder(session, IRLevel::Core);
+        Block *entry = builder.emplace_block();
+        ParameterInstruction parameter =
+            builder.emplace_parameter<ParameterInstruction>(entry);
+        std::array<ProgramValueRef, 1> captured = {ProgramValueRef(parameter)};
+        SnapshotInstruction snapshot =
+            builder.emplace_instruction<SnapshotInstruction>(
+                entry, captured, BytecodePCOffset{37});
+        ShapeGuardInstruction shape_guard =
+            builder.emplace_instruction<ShapeGuardInstruction>(
+                entry, TaggedValueRef(parameter), SnapshotRef(snapshot), shape);
+        ValidityCellGuardInstruction validity_guard =
+            builder.emplace_instruction<ValidityCellGuardInstruction>(
+                entry, TaggedValueRef(shape_guard), SnapshotRef(snapshot),
+                validity);
+        BareReturnInstruction return_instruction =
+            builder.emplace_instruction<BareReturnInstruction>(
+                entry, TaggedValueRef(validity_guard));
+        ControlFlowGraph *graph = builder.finalize();
+
+        SunkInstructionIds sunk = sink_snapshots(*graph);
+        auto lowered = lower_side_exits(session, *graph, sunk);
+
+        ASSERT_TRUE(lowered);
+        EXPECT_TRUE(std::move(lowered).value());
+        ASSERT_EQ(3u, entry->instructions().size());
+        ShapeGuardWithSideExitInstruction lowered_shape =
+            entry->instruction_at(0).as<ShapeGuardWithSideExitInstruction>();
+        ValidityCellGuardWithSideExitInstruction lowered_validity =
+            entry->instruction_at(1)
+                .as<ValidityCellGuardWithSideExitInstruction>();
+        EXPECT_EQ(shape, lowered_shape.expected_shape());
+        EXPECT_EQ(validity, lowered_validity.validity());
+        EXPECT_EQ(lowered_shape.id(),
+                  lowered_validity.value().instruction_id());
+        EXPECT_EQ(lowered_shape.side_exit_region(),
+                  lowered_validity.side_exit_region());
+        EXPECT_EQ(lowered_validity.id(), entry->instruction_at(2)
+                                             .as<BareReturnInstruction>()
+                                             .return_value()
+                                             .instruction_id());
+        EXPECT_TRUE(shape_guard.is_poisoned());
+        EXPECT_TRUE(validity_guard.is_poisoned());
+        EXPECT_TRUE(return_instruction.is_poisoned());
     }
 
     TEST(JitSideExitLowering, ReplacesAddSMIAndRewritesItsResultUses)
