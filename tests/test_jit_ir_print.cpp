@@ -13,6 +13,14 @@
 
 namespace cl::jit
 {
+    namespace
+    {
+        Value test_trusted_unary_handler(ThreadState *, Value value)
+        {
+            return value;
+        }
+    }  // namespace
+
     TEST(JitIRPrint, PrintsDenseValuesAndPositionalOperands)
     {
         CompilationSession session;
@@ -66,6 +74,28 @@ namespace cl::jit
         EXPECT_EQ("%3 = inline_tag_guard %2, %1 "
                   "{expected_class = masked_nonzero(mask=0x4)}",
                   format_instruction(*graph, general_guard));
+    }
+
+    TEST(JitIRPrint, HidesTrustedHandlerAddresses)
+    {
+        CompilationSession session;
+        GraphBuilder builder(session, IRLevel::Core);
+        Block *entry = builder.emplace_block();
+        TaggedValueRef value(
+            builder.emplace_parameter<ParameterInstruction>(entry));
+        std::array<TaggedValueRef, 1> arguments = {value};
+        TrustedHandlerCallInstruction call =
+            builder.emplace_instruction<TrustedHandlerCallInstruction>(
+                entry, arguments,
+                reinterpret_cast<TrustedHandlerTarget>(
+                    test_trusted_unary_handler));
+        builder.emplace_instruction<BareReturnInstruction>(
+            entry, TaggedValueRef(call));
+        ControlFlowGraph *graph = builder.finalize();
+
+        EXPECT_EQ("%1 = trusted_handler_call [%0] "
+                  "{handler = <trusted_handler>}",
+                  format_instruction(*graph, call));
     }
 
     TEST(JitIRPrint, SegmentsSnapshotsAndNamesEdgeAttributes)

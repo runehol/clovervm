@@ -34,6 +34,17 @@ namespace cl::jit
 
     namespace
     {
+        Value test_trusted_unary_handler(ThreadState *, Value value)
+        {
+            return value;
+        }
+
+        TrustedHandlerTarget test_trusted_handler_target()
+        {
+            return reinterpret_cast<TrustedHandlerTarget>(
+                test_trusted_unary_handler);
+        }
+
         class DirectTestObject
         {
         public:
@@ -607,6 +618,11 @@ namespace cl::jit
         ValidityCellGuardInstruction validity_guard =
             builder.make_instruction<ValidityCellGuardInstruction>(
                 value, snapshot, validity);
+        std::array<TaggedValueRef, 1> handler_arguments = {value};
+        TrustedHandlerCallInstruction handler_call =
+            builder.make_instruction<TrustedHandlerCallInstruction>(
+                std::span<const TaggedValueRef>(handler_arguments),
+                test_trusted_handler_target());
 
         std::array<ProgramValueRef, 1> captured = {value};
         for(size_t index = 0; index < 1024; ++index)
@@ -619,11 +635,22 @@ namespace cl::jit
             builder.make_instruction<SnapshotInstruction>(
                 std::span<const ProgramValueRef>(captured),
                 BytecodePCOffset{17});
+            builder.make_instruction<TrustedHandlerCallInstruction>(
+                std::span<const TaggedValueRef>(handler_arguments),
+                test_trusted_handler_target());
         }
 
         EXPECT_EQ(Value::True(), constant.constant());
         EXPECT_EQ(shape, shape_guard.expected_shape());
         EXPECT_EQ(validity, validity_guard.validity());
+        EXPECT_EQ(test_trusted_handler_target(), handler_call.handler());
+        ASSERT_EQ(1u, handler_call.arguments().size());
+        EXPECT_EQ(value.instruction_id(),
+                  handler_call.arguments()[0].instruction_id());
+        EXPECT_EQ(EffectProfile::None,
+                  TrustedHandlerCallInstruction::MustEffects);
+        EXPECT_EQ(EffectProfile::CallPython,
+                  TrustedHandlerCallInstruction::MayEffects);
 
         for(Instruction instruction:
             {Instruction(shape_guard), Instruction(validity_guard)})

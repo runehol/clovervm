@@ -13,6 +13,7 @@
 #include "object_model/typed_value.h"
 #include "object_model/value.h"
 #include "object_model/vm_array.h"
+#include "runtime/trusted_handler.h"
 #include <algorithm>
 #include <cassert>
 #include <clovervm/native_module.h>
@@ -138,18 +139,6 @@ namespace cl
     using IntrinsicFunction7 = Value (*)(ThreadState *, Value, Value, Value,
                                          Value, Value, Value, Value);
 
-    using UnaryHandler = Value (*)(ThreadState *, Value);
-    using BinaryHandler = Value (*)(ThreadState *, Value, Value);
-    using TernaryHandler = Value (*)(ThreadState *, Value, Value, Value);
-
-    enum class TrustedHandlerArity : uint8_t
-    {
-        None,
-        Unary,
-        Binary,
-        Ternary,
-    };
-
     enum class TrustedResolutionKind
     {
         NoTrustedHandlerCallUntrusted,
@@ -220,9 +209,7 @@ namespace cl
 
     union TrustedHandler
     {
-        using RawHandler = void (*)();
-
-        RawHandler raw;
+        TrustedHandlerTarget raw;
         UnaryHandler unary;
         BinaryHandler binary;
         TernaryHandler ternary;
@@ -232,6 +219,22 @@ namespace cl
         bool is_null() const { return raw == nullptr; }
 
         static TrustedHandler none() { return TrustedHandler(); }
+
+        TrustedHandlerTarget target(TrustedHandlerArity arity) const
+        {
+            switch(arity)
+            {
+                case TrustedHandlerArity::Unary:
+                    return reinterpret_cast<TrustedHandlerTarget>(unary);
+                case TrustedHandlerArity::Binary:
+                    return reinterpret_cast<TrustedHandlerTarget>(binary);
+                case TrustedHandlerArity::Ternary:
+                    return reinterpret_cast<TrustedHandlerTarget>(ternary);
+                case TrustedHandlerArity::None:
+                    return nullptr;
+            }
+            __builtin_unreachable();
+        }
 
         static TrustedHandler from_resolution(TrustedResolution resolution)
         {

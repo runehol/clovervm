@@ -4,6 +4,7 @@
 #include "jit/side_exit_region_id.h"
 #include "jit/tagged_value_facts.h"
 #include "object_model/value.h"
+#include "runtime/trusted_handler.h"
 #include "util/dense_id.h"
 
 #include <absl/container/inlined_vector.h>
@@ -48,6 +49,11 @@ namespace cl::jit
     HeapObject *
     load_instruction_heap_object_attribute(const CompilationStorage &storage,
                                            uint32_t index);
+    uint32_t
+    store_instruction_function_pointer_attribute(CompilationStorage &storage,
+                                                 TrustedHandlerTarget target);
+    TrustedHandlerTarget load_instruction_function_pointer_attribute(
+        const CompilationStorage &storage, uint32_t index);
 
     using InstructionId = DenseId<Instruction>;
 
@@ -1117,6 +1123,7 @@ namespace cl::jit
     using InstructionAttributeStorage_BytecodePCOffset = uint32_t;
     using InstructionAttributeStorage_SideExitRegionId = uint32_t;
     using InstructionAttributeStorage_BlockEdge = uint32_t;
+    using InstructionAttributeStorage_TrustedHandlerTarget = uint32_t;
 
     template <typename Storage>
     Storage decode_instruction_attribute_storage(const uint32_t *words)
@@ -1175,6 +1182,14 @@ namespace cl::jit
     decode_instruction_attribute_BlockEdge(const CompilationStorage *storage,
                                            const uint32_t *words);
 
+    inline TrustedHandlerTarget
+    decode_instruction_attribute_TrustedHandlerTarget(
+        const CompilationStorage *storage, const uint32_t *words)
+    {
+        return load_instruction_function_pointer_attribute(
+            *storage, decode_instruction_attribute_storage<uint32_t>(words));
+    }
+
     inline uint32_t encode_instruction_operand(TaggedValueRef reference)
     {
         return reference.instruction_id().value();
@@ -1231,6 +1246,16 @@ namespace cl::jit
                                                 uint32_t *words,
                                                 BlockEdge *edge);
 
+    inline void encode_instruction_attribute_TrustedHandlerTarget(
+        CompilationStorage *storage, uint32_t *words,
+        TrustedHandlerTarget target)
+    {
+        assert(target != nullptr);
+        encode_instruction_attribute_storage(
+            words,
+            store_instruction_function_pointer_attribute(*storage, target));
+    }
+
     struct InstructionConstructorEnd
     {
     };
@@ -1283,6 +1308,7 @@ namespace cl::jit
 #define CL_JIT_ATTRIBUTE_TYPE_BytecodePCOffset BytecodePCOffset
 #define CL_JIT_ATTRIBUTE_TYPE_SideExitRegionId SideExitRegionId
 #define CL_JIT_ATTRIBUTE_TYPE_BlockEdge BlockEdge *
+#define CL_JIT_ATTRIBUTE_TYPE_TrustedHandlerTarget TrustedHandlerTarget
 #define CL_JIT_ATTRIBUTE_TYPE(attribute_class)                                 \
     CL_JIT_JOIN(CL_JIT_ATTRIBUTE_TYPE_, attribute_class)
 #define CL_JIT_DECLARE_OPERAND_INDEX(name, operand_class, representation) name,
@@ -1766,6 +1792,7 @@ namespace cl::jit
 #undef CL_JIT_DECLARE_FIXED_PARAMETER
 #undef CL_JIT_ATTRIBUTE_TYPE
 #undef CL_JIT_ATTRIBUTE_TYPE_BlockEdge
+#undef CL_JIT_ATTRIBUTE_TYPE_TrustedHandlerTarget
 #undef CL_JIT_ATTRIBUTE_TYPE_SideExitRegionId
 #undef CL_JIT_ATTRIBUTE_TYPE_BytecodePCOffset
 #undef CL_JIT_ATTRIBUTE_TYPE_ValueConstant

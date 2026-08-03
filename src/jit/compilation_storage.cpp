@@ -44,6 +44,19 @@ namespace cl::jit
         return storage.instruction_heap_objects_.at(index);
     }
 
+    uint32_t
+    store_instruction_function_pointer_attribute(CompilationStorage &storage,
+                                                 TrustedHandlerTarget target)
+    {
+        return storage.instruction_function_pointers_.append(target);
+    }
+
+    TrustedHandlerTarget load_instruction_function_pointer_attribute(
+        const CompilationStorage &storage, uint32_t index)
+    {
+        return storage.instruction_function_pointers_.at(index);
+    }
+
     Shape *decode_instruction_attribute_Shape(const CompilationStorage *storage,
                                               const uint32_t *words)
     {

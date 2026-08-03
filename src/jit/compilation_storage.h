@@ -58,6 +58,10 @@ namespace cl::jit
                                                 HeapObject *object);
         friend HeapObject *load_instruction_heap_object_attribute(
             const CompilationStorage &storage, uint32_t index);
+        friend uint32_t store_instruction_function_pointer_attribute(
+            CompilationStorage &storage, TrustedHandlerTarget target);
+        friend TrustedHandlerTarget load_instruction_function_pointer_attribute(
+            const CompilationStorage &storage, uint32_t index);
 
         CompilationStorage() = default;
 
@@ -122,6 +126,8 @@ namespace cl::jit
         InstructionOperandTable instruction_operands_;
         InstructionAttributePool<Value> instruction_values_;
         InstructionAttributePool<HeapObject *> instruction_heap_objects_;
+        InstructionAttributePool<TrustedHandlerTarget>
+            instruction_function_pointers_;
     };
 
 }  // namespace cl::jit

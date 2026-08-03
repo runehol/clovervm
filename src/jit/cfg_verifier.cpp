@@ -443,6 +443,17 @@ namespace cl::jit
                 {
                     return side_exit_verification;
                 }
+                if(instruction.kind() == InstructionKind::TrustedHandlerCall)
+                {
+                    TrustedHandlerCallInstruction call =
+                        instruction.as<TrustedHandlerCallInstruction>();
+                    if(call.arguments().empty() || call.arguments().size() > 3)
+                    {
+                        return invalid(instruction_name(instruction) +
+                                       " has an unsupported trusted-handler "
+                                       "arity");
+                    }
+                }
                 bool is_last = index + 1 == instructions.size();
                 if(is_last && !instruction.is_block_terminator())
                 {

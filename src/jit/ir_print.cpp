@@ -270,6 +270,13 @@ namespace cl::jit
                 }
             }
 
+            void attribute_TrustedHandlerTarget(std::string_view name,
+                                                TrustedHandlerTarget)
+            {
+                attribute_separator(name);
+                write("<trusted_handler>");
+            }
+
             void finish()
             {
                 if(has_attributes_)

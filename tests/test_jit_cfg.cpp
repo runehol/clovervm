@@ -16,6 +16,17 @@ namespace cl::jit
 {
     namespace
     {
+        Value test_trusted_unary_handler(ThreadState *, Value value)
+        {
+            return value;
+        }
+
+        TrustedHandlerTarget test_trusted_handler_target()
+        {
+            return reinterpret_cast<TrustedHandlerTarget>(
+                test_trusted_unary_handler);
+        }
+
         TaggedValueRef emplace_constant(GraphBuilder &builder, Block *block,
                                         Value value)
         {
@@ -26,6 +37,23 @@ namespace cl::jit
         void expect_invalid_with(GraphBuilder &builder, const std::string &text)
         {
             EXPECT_DEATH(builder.finalize(), text);
+        }
+
+        void expect_invalid_trusted_handler_arity(size_t arity)
+        {
+            CompilationSession session;
+            GraphBuilder builder(session, IRLevel::Core);
+            Block *entry = builder.emplace_block();
+            TaggedValueRef value =
+                emplace_constant(builder, entry, Value::True());
+            std::vector<TaggedValueRef> arguments(arity, value);
+            TrustedHandlerCallInstruction call =
+                builder.emplace_instruction<TrustedHandlerCallInstruction>(
+                    entry, arguments, test_trusted_handler_target());
+            builder.emplace_instruction<BareReturnInstruction>(
+                entry, TaggedValueRef(call));
+
+            expect_invalid_with(builder, "unsupported trusted-handler arity");
         }
     }  // namespace
 
@@ -122,6 +150,12 @@ namespace cl::jit
         ControlFlowGraph *graph = builder.finalize();
         EXPECT_TRUE(graph->is_published());
         EXPECT_EQ(2u, entry->instructions().size());
+    }
+
+    TEST(JitCfgVerifier, RejectsUnsupportedTrustedHandlerCallArities)
+    {
+        expect_invalid_trusted_handler_arity(0);
+        expect_invalid_trusted_handler_arity(4);
     }
 
     TEST(JitCfg, OwnsSideExitRegionAndBindingArguments)

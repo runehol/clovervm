@@ -400,6 +400,18 @@ CL_JIT_INSTRUCTION(Uninitialized, CL_JIT_IR_LEVELS(CoreMachine),
 #undef CL_JIT_Uninitialized_ATTRIBUTES
 #undef CL_JIT_Uninitialized_OPERANDS
 
+#define CL_JIT_TrustedHandlerCall_OPERANDS(fixed, variadic, snapshot_values)  \
+    variadic(arguments, ProgramValue, TaggedValue)
+#define CL_JIT_TrustedHandlerCall_ATTRIBUTES(attribute)                       \
+    attribute(handler, TrustedHandlerTarget)
+CL_JIT_INSTRUCTION(TrustedHandlerCall, CL_JIT_IR_LEVELS(CoreMachine),
+                   CL_JIT_RESULT(ProgramValue, TaggedValue, Def),
+                   CL_JIT_EFFECT_BOUNDS(None, CallPython),
+                   CL_JIT_TrustedHandlerCall_OPERANDS,
+                   CL_JIT_TrustedHandlerCall_ATTRIBUTES)
+#undef CL_JIT_TrustedHandlerCall_ATTRIBUTES
+#undef CL_JIT_TrustedHandlerCall_OPERANDS
+
 #define CL_JIT_PythonCall_OPERANDS(fixed, variadic, snapshot_values)          \
     fixed(callable, ProgramValue, TaggedValue)                                 \
     fixed(snapshot, Snapshot, None)                                            \
