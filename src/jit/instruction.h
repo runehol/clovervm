@@ -1226,11 +1226,9 @@ namespace cl::jit
 
     // Representative simplified expansion of the schema-generated classes:
     //
-    // class ShapeGuardInstruction final : public Instruction
+    // class ShapeGuardInstruction : public Instruction
     // {
     // public:
-    //     static constexpr InstructionKind Kind =
-    //         InstructionKind::ShapeGuard;
     //     static constexpr ResultClass Result = ResultClass::ProgramValue;
     //     static constexpr ValueRepresentation Representation =
     //         ValueRepresentation::TaggedValue;
@@ -1244,11 +1242,11 @@ namespace cl::jit
     //     TaggedValueRef object() const;
     //     SnapshotRef snapshot() const;
     //     Shape *expected_shape() const;
+    //     ShapeGuardSubkind subkind() const;
     //
-    // private:
-    //     friend class CompilationStorage;
-    //     ShapeGuardInstruction(InstructionId id, TaggedValueRef object,
-    //                           SnapshotRef snapshot, Shape *expected_shape);
+    // protected:
+    //     ShapeGuardInstruction(InstructionEntry *entry,
+    //                           const CompilationStorage *storage);
     // };
     //
     // Each family factory receives CompilationStorage, allocates indirect

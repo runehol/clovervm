@@ -266,7 +266,7 @@ namespace cl::jit
                   inline_guard.side_exit_argument_start);
 
         const InstructionFamilyMetadata &guard =
-            instruction_kind_metadata(InstructionKind::ShapeGuard);
+            instruction_kind_metadata(InstructionKind::PointerAndShapeGuard);
         EXPECT_EQ(2u, guard.fixed_operand_count);
         EXPECT_EQ(1u, guard.attribute_count);
         EXPECT_EQ(Instruction::InlineSlotCount, guard.inline_slot_count);
@@ -601,8 +601,9 @@ namespace cl::jit
         SnapshotRef snapshot(builder.make_instruction<SnapshotInstruction>(
             std::span<const ProgramValueRef>{}, BytecodePCOffset{17}));
         ShapeGuardInstruction shape_guard =
-            builder.make_instruction<ShapeGuardInstruction>(value, snapshot,
-                                                            shape);
+            builder.make_instruction<ShapeGuardInstruction>(
+                ShapeGuardSubkind::PointerAndShapeGuard, value, snapshot,
+                shape);
         ValidityCellGuardInstruction validity_guard =
             builder.make_instruction<ValidityCellGuardInstruction>(
                 value, snapshot, validity);
@@ -612,8 +613,9 @@ namespace cl::jit
         {
             builder.make_instruction<ConstInstruction>(
                 Value::from_smi(static_cast<int64_t>(index)));
-            builder.make_instruction<ShapeGuardInstruction>(value, snapshot,
-                                                            shape);
+            builder.make_instruction<ShapeGuardInstruction>(
+                ShapeGuardSubkind::PointerAndShapeGuard, value, snapshot,
+                shape);
             builder.make_instruction<SnapshotInstruction>(
                 std::span<const ProgramValueRef>(captured),
                 BytecodePCOffset{17});

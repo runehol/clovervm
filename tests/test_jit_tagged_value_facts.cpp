@@ -3,7 +3,7 @@
 #include "jit/graph_builder.h"
 #include "jit/graph_queries.h"
 #include "jit/tagged_value_facts.h"
-#include "jit/tagged_value_guard_elimination.h"
+#include "jit/tagged_value_guard_simplification.h"
 #include "object_model/class_object.h"
 #include "test_helpers.h"
 
@@ -111,7 +111,7 @@ namespace cl::jit
                   queries.tagged_value_facts_of(ProgramValueRef(comparison)));
     }
 
-    TEST(JitTaggedValueGuardElimination,
+    TEST(JitTaggedValueGuardSimplification,
          RemovesGuardProvedByComparisonAndDeadSnapshot)
     {
         CompilationSession session;
@@ -148,7 +148,7 @@ namespace cl::jit
                                        .instruction_id());
     }
 
-    TEST(JitTaggedValueGuardElimination, RetainsGuardForUnknownParameter)
+    TEST(JitTaggedValueGuardSimplification, RetainsGuardForUnknownParameter)
     {
         CompilationSession session;
         GraphBuilder builder(session, IRLevel::Core);
@@ -166,12 +166,60 @@ namespace cl::jit
             entry, TaggedValueRef(guard));
         ControlFlowGraph *graph = builder.finalize();
 
-        auto elimination =
-            eliminate_redundant_tagged_value_guards(session, *graph);
+        auto simplification = simplify_tagged_value_guards(session, *graph);
 
-        ASSERT_TRUE(elimination);
-        EXPECT_FALSE(std::move(elimination).value());
+        ASSERT_TRUE(simplification);
+        EXPECT_FALSE(std::move(simplification).value());
         EXPECT_FALSE(guard.is_poisoned());
+    }
+
+    TEST(JitTaggedValueGuardSimplification,
+         WeakensShapeGuardOnlyForProvenPointer)
+    {
+        test::VmTestContext vm;
+        ThreadState::ActivationScope activation_scope(vm.thread());
+        Shape *shape = vm.vm().str_instance_root_shape();
+
+        CompilationSession session;
+        GraphBuilder builder(session, IRLevel::Core);
+        Block *entry = builder.emplace_block();
+        ParameterInstruction parameter =
+            builder.emplace_parameter<ParameterInstruction>(entry);
+        SnapshotInstruction snapshot =
+            builder.emplace_instruction<SnapshotInstruction>(
+                entry, std::span<const ProgramValueRef>{}, BytecodePCOffset{7});
+        PointerAndShapeGuardInstruction unknown_guard =
+            builder.emplace_instruction<PointerAndShapeGuardInstruction>(
+                entry, TaggedValueRef(parameter), SnapshotRef(snapshot), shape);
+        InlineTagGuardInstruction pointer_guard =
+            builder.emplace_instruction<InlineTagGuardInstruction>(
+                entry, TaggedValueRef(parameter), SnapshotRef(snapshot),
+                TaggedValueClass::pointer());
+        PointerAndShapeGuardInstruction proven_guard =
+            builder.emplace_instruction<PointerAndShapeGuardInstruction>(
+                entry, TaggedValueRef(pointer_guard), SnapshotRef(snapshot),
+                shape);
+        builder.emplace_instruction<BareReturnInstruction>(
+            entry, TaggedValueRef(proven_guard));
+        ControlFlowGraph *graph = builder.finalize();
+
+        auto simplification = simplify_tagged_value_guards(session, *graph);
+
+        ASSERT_TRUE(simplification);
+        EXPECT_TRUE(std::move(simplification).value());
+        EXPECT_FALSE(unknown_guard.is_poisoned());
+        EXPECT_TRUE(proven_guard.is_poisoned());
+        ASSERT_EQ(5u, entry->instructions().size());
+        EXPECT_EQ(InstructionKind::PointerAndShapeGuard,
+                  entry->instruction_at(1).kind());
+        ShapeGuardInstruction weakened =
+            entry->instruction_at(3).as<ShapeGuardInstruction>();
+        EXPECT_EQ(ShapeGuardSubkind::ShapeOnlyGuard, weakened.subkind());
+        EXPECT_EQ(pointer_guard.id(), weakened.object().instruction_id());
+        EXPECT_EQ(weakened.id(), entry->instruction_at(4)
+                                     .as<BareReturnInstruction>()
+                                     .return_value()
+                                     .instruction_id());
     }
 
 }  // namespace cl::jit

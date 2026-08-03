@@ -2,7 +2,7 @@
 
 #include "jit/dead_code_elimination.h"
 #include "jit/equivalent_block_parameters.h"
-#include "jit/tagged_value_guard_elimination.h"
+#include "jit/tagged_value_guard_simplification.h"
 
 #include <array>
 #include <utility>
@@ -13,8 +13,8 @@ namespace cl::jit
     optimize_core_ir(CompilationSession &session, ControlFlowGraph &graph)
     {
         static constexpr std::array passes = {
-            CoreIRPass{"tagged-value-guard-elimination",
-                       eliminate_redundant_tagged_value_guards},
+            CoreIRPass{"tagged-value-guard-simplification",
+                       simplify_tagged_value_guards},
             CoreIRPass{"dead-code-elimination", eliminate_dead_code},
             CoreIRPass{"equivalent-block-parameters",
                        collapse_equivalent_block_parameters},

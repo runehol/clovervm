@@ -131,8 +131,8 @@ add_library(libclovervm_objects OBJECT
     jit/equivalent_block_parameters.h
     jit/tagged_value_fact_analysis.cpp
     jit/tagged_value_fact_analysis.h
-    jit/tagged_value_guard_elimination.cpp
-    jit/tagged_value_guard_elimination.h
+    jit/tagged_value_guard_simplification.cpp
+    jit/tagged_value_guard_simplification.h
     jit/graph_builder.cpp
     jit/graph_builder.h
     jit/graph_queries.cpp

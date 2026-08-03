@@ -587,15 +587,26 @@ namespace cl::jit
                     break;
                 }
 
-                case CL_JIT_MACHINE_INSTRUCTION_CASE(
-                    ShapeGuardWithSideExitInstruction, guard_instruction)
+                case MachineInstructionKind::PointerAndShapeGuardWithSideExit:
+                case MachineInstructionKind::ShapeOnlyGuardWithSideExit:
                 {
+                    ShapeGuardWithSideExitInstruction guard_instruction =
+                        instruction.as<ShapeGuardWithSideExitInstruction>();
                     XRegister input =
                         assigned_register(locations, guard_instruction.object());
                     Label target = side_exit_target(
                         make_side_exit_binding(guard_instruction));
-                    assembler.tst(input, value_ptr_mask);
-                    assembler.b(AArch64Condition::Equal, target);
+                    switch(guard_instruction.subkind())
+                    {
+                        case ShapeGuardWithSideExitSubkind::
+                            PointerAndShapeGuardWithSideExit:
+                            assembler.tst(input, value_ptr_mask);
+                            assembler.b(AArch64Condition::Equal, target);
+                            break;
+                        case ShapeGuardWithSideExitSubkind::
+                            ShapeOnlyGuardWithSideExit:
+                            break;
+                    }
                     assembler.ldr(XRegister(16), input,
                                   CL_OFFSETOF(Object, shape));
                     assembler.ldr(XRegister(17),

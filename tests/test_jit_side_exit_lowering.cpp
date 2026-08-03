@@ -168,12 +168,16 @@ namespace cl::jit
         SnapshotInstruction snapshot =
             builder.emplace_instruction<SnapshotInstruction>(
                 entry, captured, BytecodePCOffset{37});
-        ShapeGuardInstruction shape_guard =
-            builder.emplace_instruction<ShapeGuardInstruction>(
+        ShapeGuardInstruction pointer_and_shape_guard =
+            builder.emplace_instruction<PointerAndShapeGuardInstruction>(
                 entry, TaggedValueRef(parameter), SnapshotRef(snapshot), shape);
+        ShapeGuardInstruction shape_only_guard =
+            builder.emplace_instruction<ShapeOnlyGuardInstruction>(
+                entry, TaggedValueRef(pointer_and_shape_guard),
+                SnapshotRef(snapshot), shape);
         ValidityCellGuardInstruction validity_guard =
             builder.emplace_instruction<ValidityCellGuardInstruction>(
-                entry, TaggedValueRef(shape_guard), SnapshotRef(snapshot),
+                entry, TaggedValueRef(shape_only_guard), SnapshotRef(snapshot),
                 validity);
         BareReturnInstruction return_instruction =
             builder.emplace_instruction<BareReturnInstruction>(
@@ -185,23 +189,35 @@ namespace cl::jit
 
         ASSERT_TRUE(lowered);
         EXPECT_TRUE(std::move(lowered).value());
-        ASSERT_EQ(3u, entry->instructions().size());
-        ShapeGuardWithSideExitInstruction lowered_shape =
+        ASSERT_EQ(4u, entry->instructions().size());
+        ShapeGuardWithSideExitInstruction lowered_pointer_and_shape =
             entry->instruction_at(0).as<ShapeGuardWithSideExitInstruction>();
+        ShapeGuardWithSideExitInstruction lowered_shape_only =
+            entry->instruction_at(1).as<ShapeGuardWithSideExitInstruction>();
         ValidityCellGuardWithSideExitInstruction lowered_validity =
-            entry->instruction_at(1)
+            entry->instruction_at(2)
                 .as<ValidityCellGuardWithSideExitInstruction>();
-        EXPECT_EQ(shape, lowered_shape.expected_shape());
+        EXPECT_EQ(shape, lowered_pointer_and_shape.expected_shape());
+        EXPECT_EQ(
+            ShapeGuardWithSideExitSubkind::PointerAndShapeGuardWithSideExit,
+            lowered_pointer_and_shape.subkind());
+        EXPECT_EQ(ShapeGuardWithSideExitSubkind::ShapeOnlyGuardWithSideExit,
+                  lowered_shape_only.subkind());
+        EXPECT_EQ(lowered_pointer_and_shape.id(),
+                  lowered_shape_only.object().instruction_id());
         EXPECT_EQ(validity, lowered_validity.validity());
-        EXPECT_EQ(lowered_shape.id(),
+        EXPECT_EQ(lowered_shape_only.id(),
                   lowered_validity.value().instruction_id());
-        EXPECT_EQ(lowered_shape.side_exit_region(),
+        EXPECT_EQ(lowered_pointer_and_shape.side_exit_region(),
+                  lowered_shape_only.side_exit_region());
+        EXPECT_EQ(lowered_shape_only.side_exit_region(),
                   lowered_validity.side_exit_region());
-        EXPECT_EQ(lowered_validity.id(), entry->instruction_at(2)
+        EXPECT_EQ(lowered_validity.id(), entry->instruction_at(3)
                                              .as<BareReturnInstruction>()
                                              .return_value()
                                              .instruction_id());
-        EXPECT_TRUE(shape_guard.is_poisoned());
+        EXPECT_TRUE(pointer_and_shape_guard.is_poisoned());
+        EXPECT_TRUE(shape_only_guard.is_poisoned());
         EXPECT_TRUE(validity_guard.is_poisoned());
         EXPECT_TRUE(return_instruction.is_poisoned());
     }

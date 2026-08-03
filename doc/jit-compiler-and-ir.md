@@ -950,7 +950,8 @@ The implemented forwarding instruction kinds are:
 
 ```text
 Core:    ShapeGuard, ValidityCellGuard, InlineTagGuard, CheckNotImplemented
-Machine: InlineTagGuardWithSideExit
+Machine: ShapeGuardWithSideExit, ValidityCellGuardWithSideExit,
+         InlineTagGuardWithSideExit
 ```
 
 Future operations such as a receiver-returning `SetExisting` may use the same

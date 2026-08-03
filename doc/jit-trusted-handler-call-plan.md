@@ -65,10 +65,13 @@ Unary and ternary handlers use `x1`, or `x1` through `x3`, respectively.
 
 Complete the existing Core guard path before introducing calls:
 
-1. Add Machine side-exit forms for `ShapeGuard` and `ValidityCellGuard`.
+1. Add Machine side-exit forms for the `ShapeGuard` family and
+   `ValidityCellGuard`.
 2. Lower them through the existing Snapshot-to-side-exit-region machinery.
 3. Emit an AArch64 pointer check followed by the object-shape comparison for
-   `ShapeGuard`; a non-pointer must exit before any shape load.
+   `PointerAndShapeGuard`; a non-pointer must exit before any shape load.
+   Tagged-value fact simplification may weaken it to `ShapeOnlyGuard` when the
+   input is already proven to be a pointer.
 4. Emit AArch64 validity-state comparison for `ValidityCellGuard`.
 5. Preserve their forwarding definitions so successful guards continue to
    narrow and replace the guarded value in bytecode state.
@@ -178,8 +181,9 @@ ordinary cached trusted-handler case:
 4. Emit one pre-operation Snapshot.
 5. Emit the cached shape and validity guards in cache-match order through one
    frontend helper for an IC `ShapeKey`: an inline key becomes an exact
-   inline-tag guard, an object key becomes an exact `ShapeGuard`, and a
-   corresponding non-null lookup validity cell adds a `ValidityCellGuard`.
+   inline-tag guard, an object key becomes an exact
+   `PointerAndShapeGuard`, and a corresponding non-null lookup validity cell
+   adds a `ValidityCellGuard`.
 6. Emit `TrustedHandlerCall` with the guarded semantic arguments.
 7. Write its normal tagged result into bytecode state.
 

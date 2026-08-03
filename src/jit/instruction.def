@@ -296,11 +296,15 @@ CL_JIT_INSTRUCTION(UnboxF64, CL_JIT_IR_LEVELS(CoreMachine),
     fixed(snapshot, Snapshot, None)
 #define CL_JIT_ShapeGuard_ATTRIBUTES(attribute)                               \
     attribute(expected_shape, Shape)
-CL_JIT_INSTRUCTION(ShapeGuard, CL_JIT_IR_LEVELS(Core),
-                   CL_JIT_RESULT(ProgramValue, TaggedValue, ForwardingDef),
-                   CL_JIT_EFFECT_BOUNDS(None, SideExit),
-                   CL_JIT_ShapeGuard_OPERANDS,
-                   CL_JIT_ShapeGuard_ATTRIBUTES)
+#define CL_JIT_ShapeGuard_SUBKINDS(each, ...)                                 \
+    each(PointerAndShapeGuard, __VA_ARGS__)                                    \
+    each(ShapeOnlyGuard, __VA_ARGS__)
+CL_JIT_INSTRUCTION_FAMILY(
+    ShapeGuard, CL_JIT_IR_LEVELS(Core),
+    CL_JIT_RESULT(ProgramValue, TaggedValue, ForwardingDef),
+    CL_JIT_EFFECT_BOUNDS(None, SideExit), CL_JIT_ShapeGuard_OPERANDS,
+    CL_JIT_ShapeGuard_ATTRIBUTES, CL_JIT_ShapeGuard_SUBKINDS)
+#undef CL_JIT_ShapeGuard_SUBKINDS
 #undef CL_JIT_ShapeGuard_ATTRIBUTES
 #undef CL_JIT_ShapeGuard_OPERANDS
 
@@ -311,12 +315,17 @@ CL_JIT_INSTRUCTION(ShapeGuard, CL_JIT_IR_LEVELS(Core),
 #define CL_JIT_ShapeGuardWithSideExit_ATTRIBUTES(attribute)                   \
     attribute(expected_shape, Shape)                                           \
     attribute(side_exit_region, SideExitRegionId)
-CL_JIT_INSTRUCTION(
+#define CL_JIT_ShapeGuardWithSideExit_SUBKINDS(each, ...)                     \
+    each(PointerAndShapeGuardWithSideExit, __VA_ARGS__)                        \
+    each(ShapeOnlyGuardWithSideExit, __VA_ARGS__)
+CL_JIT_INSTRUCTION_FAMILY(
     ShapeGuardWithSideExit, CL_JIT_IR_LEVELS(Machine),
     CL_JIT_RESULT(ProgramValue, TaggedValue, ForwardingDef),
     CL_JIT_EFFECT_BOUNDS(None, SideExit),
     CL_JIT_ShapeGuardWithSideExit_OPERANDS,
-    CL_JIT_ShapeGuardWithSideExit_ATTRIBUTES)
+    CL_JIT_ShapeGuardWithSideExit_ATTRIBUTES,
+    CL_JIT_ShapeGuardWithSideExit_SUBKINDS)
+#undef CL_JIT_ShapeGuardWithSideExit_SUBKINDS
 #undef CL_JIT_ShapeGuardWithSideExit_ATTRIBUTES
 #undef CL_JIT_ShapeGuardWithSideExit_OPERANDS
 

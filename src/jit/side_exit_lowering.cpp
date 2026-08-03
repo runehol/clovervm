@@ -63,6 +63,21 @@ namespace cl::jit
             __builtin_unreachable();
         }
 
+        ShapeGuardWithSideExitSubkind
+        machine_shape_guard_subkind(ShapeGuardSubkind subkind)
+        {
+            switch(subkind)
+            {
+                case ShapeGuardSubkind::PointerAndShapeGuard:
+                    return ShapeGuardWithSideExitSubkind::
+                        PointerAndShapeGuardWithSideExit;
+                case ShapeGuardSubkind::ShapeOnlyGuard:
+                    return ShapeGuardWithSideExitSubkind::
+                        ShapeOnlyGuardWithSideExit;
+            }
+            __builtin_unreachable();
+        }
+
         PlannedSideExit
         plan_side_exit(const ControlFlowGraph &graph, const Block &block,
                        const Instruction &owner, SnapshotRef snapshot,
@@ -181,15 +196,16 @@ namespace cl::jit
                                 .snapshot(),
                             sunk_instructions, positions, ordinal));
                     }
+                    if(instruction_family_kind(instruction.kind()) ==
+                       InstructionFamilyKind::ShapeGuard)
+                    {
+                        plans.push_back(plan_side_exit(
+                            graph, *block, instruction,
+                            instruction.as<ShapeGuardInstruction>().snapshot(),
+                            sunk_instructions, positions, ordinal));
+                    }
                     switch(instruction.kind())
                     {
-                        case InstructionKind::ShapeGuard:
-                            plans.push_back(plan_side_exit(
-                                graph, *block, instruction,
-                                instruction.as<ShapeGuardInstruction>()
-                                    .snapshot(),
-                                sunk_instructions, positions, ordinal));
-                            break;
                         case InstructionKind::ValidityCellGuard:
                             plans.push_back(plan_side_exit(
                                 graph, *block, instruction,
@@ -306,21 +322,22 @@ namespace cl::jit
                             arithmetic.lhs(), arithmetic.rhs(),
                             region.arguments, region.region->id()));
                 }
+                if(instruction_family_kind(instruction.kind()) ==
+                   InstructionFamilyKind::ShapeGuard)
+                {
+                    const BuiltSideExitRegion &region =
+                        region_for_snapshot(context, plan);
+                    ShapeGuardInstruction guard =
+                        instruction.as<ShapeGuardInstruction>();
+                    return RewriteResult::replace(
+                        context.make_instruction<
+                            ShapeGuardWithSideExitInstruction>(
+                            machine_shape_guard_subkind(guard.subkind()),
+                            guard.object(), region.arguments,
+                            guard.expected_shape(), region.region->id()));
+                }
                 switch(instruction.kind())
                 {
-                    case InstructionKind::ShapeGuard:
-                        {
-                            const BuiltSideExitRegion &region =
-                                region_for_snapshot(context, plan);
-                            ShapeGuardInstruction guard =
-                                instruction.as<ShapeGuardInstruction>();
-                            return RewriteResult::replace(
-                                context.make_instruction<
-                                    ShapeGuardWithSideExitInstruction>(
-                                    guard.object(), region.arguments,
-                                    guard.expected_shape(),
-                                    region.region->id()));
-                        }
                     case InstructionKind::ValidityCellGuard:
                         {
                             const BuiltSideExitRegion &region =
@@ -552,10 +569,13 @@ namespace cl::jit
                     .as<BinaryArithmeticSMIWithSnapshotInstruction>()
                     .snapshot();
             }
+            if(instruction_family_kind(instruction.kind()) ==
+               InstructionFamilyKind::ShapeGuard)
+            {
+                return instruction.as<ShapeGuardInstruction>().snapshot();
+            }
             switch(instruction.kind())
             {
-                case InstructionKind::ShapeGuard:
-                    return instruction.as<ShapeGuardInstruction>().snapshot();
                 case InstructionKind::ValidityCellGuard:
                     return instruction.as<ValidityCellGuardInstruction>()
                         .snapshot();

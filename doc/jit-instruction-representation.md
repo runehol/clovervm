@@ -666,16 +666,29 @@ UnboxF64
     result: ProgramValue(F64)
     source: ProgramValue(TaggedValue)
 
-ShapeGuard
+ShapeGuard (PointerAndShapeGuard, ShapeOnlyGuard)
     result: ProgramValue(TaggedValue)
     object: ProgramValue(TaggedValue)
     expected_shape: attr Shape
     snapshot: Snapshot
 
+PointerAndShapeGuard first proves that object is a pointer before loading its
+shape. ShapeOnlyGuard requires pointer-ness to have already been proven and
+performs only the shape comparison. Tagged-value guard simplification may
+weaken the former into the latter.
+
+ShapeGuardWithSideExit (PointerAndShapeGuardWithSideExit,
+                        ShapeOnlyGuardWithSideExit)
+    result: ProgramValue(TaggedValue)
+    object: ProgramValue(TaggedValue)
+    side_exit_arguments[]: ProgramValue(AnyRepresentation)
+    expected_shape: attr Shape
+    side_exit_region: attr SideExitRegionId
+
 InlineTagGuard
     result: ProgramValue(TaggedValue)
     value: ProgramValue(TaggedValue)
-    expected_class: attr InlineValueClass
+    expected_class: attr TaggedValueClass
     snapshot: Snapshot
 
 ValidityCellGuard
