@@ -411,21 +411,17 @@ namespace cl::jit
                     break;
                 }
 
-                case MachineInstructionKind::AndSMI:
-                case MachineInstructionKind::OrrSMI:
-                case MachineInstructionKind::EorSMI:
+                CL_JIT_MACHINE_INSTRUCTION_FAMILY_CASE(
+                    BinaryLogicalSMI, logical_instruction)
                 {
-                    emit_binary_logical_smi(
-                        assembler, locations,
-                        instruction.as<BinaryLogicalSMIInstruction>());
+                    emit_binary_logical_smi(assembler, locations,
+                                            logical_instruction);
                     break;
                 }
 
-                case MachineInstructionKind::Is:
-                case MachineInstructionKind::IsNot:
+                CL_JIT_MACHINE_INSTRUCTION_FAMILY_CASE(
+                    IsComparison, comparison)
                 {
-                    IsComparisonInstruction comparison =
-                        instruction.as<IsComparisonInstruction>();
                     AArch64Condition true_condition = emit_is_comparison(
                         assembler, locations, comparison);
                     emit_tagged_boolean_from_flags(
@@ -433,15 +429,9 @@ namespace cl::jit
                     break;
                 }
 
-                case MachineInstructionKind::EqualSMI:
-                case MachineInstructionKind::NotEqualSMI:
-                case MachineInstructionKind::LessSMI:
-                case MachineInstructionKind::LessEqualSMI:
-                case MachineInstructionKind::GreaterSMI:
-                case MachineInstructionKind::GreaterEqualSMI:
+                CL_JIT_MACHINE_INSTRUCTION_FAMILY_CASE(
+                    BinaryComparisonSMI, comparison)
                 {
-                    BinaryComparisonSMIInstruction comparison =
-                        instruction.as<BinaryComparisonSMIInstruction>();
                     AArch64Condition true_condition =
                         emit_binary_comparison_smi(assembler, locations,
                                                    comparison);
@@ -587,11 +577,9 @@ namespace cl::jit
                     break;
                 }
 
-                case MachineInstructionKind::PointerAndShapeGuardWithSideExit:
-                case MachineInstructionKind::ShapeOnlyGuardWithSideExit:
+                CL_JIT_MACHINE_INSTRUCTION_FAMILY_CASE(
+                    ShapeGuardWithSideExit, guard_instruction)
                 {
-                    ShapeGuardWithSideExitInstruction guard_instruction =
-                        instruction.as<ShapeGuardWithSideExitInstruction>();
                     XRegister input =
                         assigned_register(locations, guard_instruction.object());
                     Label target = side_exit_target(

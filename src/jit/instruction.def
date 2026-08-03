@@ -181,7 +181,6 @@ CL_JIT_INSTRUCTION_FAMILY(
     CL_JIT_BinaryArithmeticSMIWithSnapshot_OPERANDS,
     CL_JIT_BinaryArithmeticSMIWithSnapshot_ATTRIBUTES,
     CL_JIT_BinaryArithmeticSMIWithSnapshot_SUBKINDS)
-#undef CL_JIT_BinaryArithmeticSMIWithSnapshot_SUBKINDS
 #undef CL_JIT_BinaryArithmeticSMIWithSnapshot_ATTRIBUTES
 #undef CL_JIT_BinaryArithmeticSMIWithSnapshot_OPERANDS
 
@@ -203,7 +202,6 @@ CL_JIT_INSTRUCTION_FAMILY(
     CL_JIT_BinaryArithmeticSMIWithSideExit_OPERANDS,
     CL_JIT_BinaryArithmeticSMIWithSideExit_ATTRIBUTES,
     CL_JIT_BinaryArithmeticSMIWithSideExit_SUBKINDS)
-#undef CL_JIT_BinaryArithmeticSMIWithSideExit_SUBKINDS
 #undef CL_JIT_BinaryArithmeticSMIWithSideExit_ATTRIBUTES
 #undef CL_JIT_BinaryArithmeticSMIWithSideExit_OPERANDS
 
@@ -220,7 +218,6 @@ CL_JIT_INSTRUCTION_FAMILY(
     CL_JIT_RESULT(ProgramValue, TaggedValue, Def),
     CL_JIT_EFFECT_BOUNDS(None, None), CL_JIT_BinaryLogicalSMI_OPERANDS,
     CL_JIT_BinaryLogicalSMI_ATTRIBUTES, CL_JIT_BinaryLogicalSMI_SUBKINDS)
-#undef CL_JIT_BinaryLogicalSMI_SUBKINDS
 #undef CL_JIT_BinaryLogicalSMI_ATTRIBUTES
 #undef CL_JIT_BinaryLogicalSMI_OPERANDS
 
@@ -240,7 +237,6 @@ CL_JIT_INSTRUCTION_FAMILY(
     CL_JIT_RESULT(ProgramValue, TaggedValue, Def),
     CL_JIT_EFFECT_BOUNDS(None, None), CL_JIT_BinaryComparisonSMI_OPERANDS,
     CL_JIT_BinaryComparisonSMI_ATTRIBUTES, CL_JIT_BinaryComparisonSMI_SUBKINDS)
-#undef CL_JIT_BinaryComparisonSMI_SUBKINDS
 #undef CL_JIT_BinaryComparisonSMI_ATTRIBUTES
 #undef CL_JIT_BinaryComparisonSMI_OPERANDS
 
@@ -256,7 +252,6 @@ CL_JIT_INSTRUCTION_FAMILY(
     CL_JIT_RESULT(ProgramValue, TaggedValue, Def),
     CL_JIT_EFFECT_BOUNDS(None, None), CL_JIT_IsComparison_OPERANDS,
     CL_JIT_IsComparison_ATTRIBUTES, CL_JIT_IsComparison_SUBKINDS)
-#undef CL_JIT_IsComparison_SUBKINDS
 #undef CL_JIT_IsComparison_ATTRIBUTES
 #undef CL_JIT_IsComparison_OPERANDS
 
@@ -304,7 +299,6 @@ CL_JIT_INSTRUCTION_FAMILY(
     CL_JIT_RESULT(ProgramValue, TaggedValue, ForwardingDef),
     CL_JIT_EFFECT_BOUNDS(None, SideExit), CL_JIT_ShapeGuard_OPERANDS,
     CL_JIT_ShapeGuard_ATTRIBUTES, CL_JIT_ShapeGuard_SUBKINDS)
-#undef CL_JIT_ShapeGuard_SUBKINDS
 #undef CL_JIT_ShapeGuard_ATTRIBUTES
 #undef CL_JIT_ShapeGuard_OPERANDS
 
@@ -325,7 +319,6 @@ CL_JIT_INSTRUCTION_FAMILY(
     CL_JIT_ShapeGuardWithSideExit_OPERANDS,
     CL_JIT_ShapeGuardWithSideExit_ATTRIBUTES,
     CL_JIT_ShapeGuardWithSideExit_SUBKINDS)
-#undef CL_JIT_ShapeGuardWithSideExit_SUBKINDS
 #undef CL_JIT_ShapeGuardWithSideExit_ATTRIBUTES
 #undef CL_JIT_ShapeGuardWithSideExit_OPERANDS
 

@@ -1786,21 +1786,44 @@ namespace cl::jit
     }                                                                          \
     else
 
+#define CL_JIT_LEVEL_INSTRUCTION_FAMILY_CASE_MEMBER(subkind, convert_kind)     \
+    case convert_kind<subkind##Instruction>():
+
+#define CL_JIT_LEVEL_INSTRUCTION_FAMILY_CASE(                                 \
+    family, variable, convert_kind)                                            \
+    CL_JIT_##family##_SUBKINDS(                                                \
+        CL_JIT_LEVEL_INSTRUCTION_FAMILY_CASE_MEMBER, convert_kind)             \
+    if(const family##Instruction variable =                                   \
+           cl_jit_instruction_switch_value.as<family##Instruction>();         \
+       false)                                                                  \
+    {                                                                          \
+    }                                                                          \
+    else
+
 #define CL_JIT_SEMANTIC_INSTRUCTION_SWITCH(instruction)                        \
     CL_JIT_LEVEL_INSTRUCTION_SWITCH(instruction, semantic_instruction_kind)
 #define CL_JIT_SEMANTIC_INSTRUCTION_CASE(Type, variable)                       \
     CL_JIT_LEVEL_INSTRUCTION_CASE(                                             \
         Type, variable, semantic_instruction_kind)
+#define CL_JIT_SEMANTIC_INSTRUCTION_FAMILY_CASE(family, variable)              \
+    CL_JIT_LEVEL_INSTRUCTION_FAMILY_CASE(                                      \
+        family, variable, semantic_instruction_kind)
 
 #define CL_JIT_CORE_INSTRUCTION_SWITCH(instruction)                            \
     CL_JIT_LEVEL_INSTRUCTION_SWITCH(instruction, core_instruction_kind)
 #define CL_JIT_CORE_INSTRUCTION_CASE(Type, variable)                           \
     CL_JIT_LEVEL_INSTRUCTION_CASE(Type, variable, core_instruction_kind)
+#define CL_JIT_CORE_INSTRUCTION_FAMILY_CASE(family, variable)                  \
+    CL_JIT_LEVEL_INSTRUCTION_FAMILY_CASE(                                      \
+        family, variable, core_instruction_kind)
 
 #define CL_JIT_MACHINE_INSTRUCTION_SWITCH(instruction)                         \
     CL_JIT_LEVEL_INSTRUCTION_SWITCH(instruction, machine_instruction_kind)
 #define CL_JIT_MACHINE_INSTRUCTION_CASE(Type, variable)                        \
     CL_JIT_LEVEL_INSTRUCTION_CASE(Type, variable, machine_instruction_kind)
+#define CL_JIT_MACHINE_INSTRUCTION_FAMILY_CASE(family, variable)               \
+    CL_JIT_LEVEL_INSTRUCTION_FAMILY_CASE(                                      \
+        family, variable, machine_instruction_kind)
 
     // clang-format on
 
