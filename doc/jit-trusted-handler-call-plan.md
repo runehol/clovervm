@@ -4,8 +4,9 @@
 |---|---|
 | Document type | Implementation plan |
 | Status | Active |
+| Implementation | Cache guards, call IR, handler metadata and registry, typed resolver installation, and float handler declarations are implemented; AArch64 calls and frontend integration remain |
 | Scope | Guarded calls from compiled AArch64 code to non-raising trusted native handlers |
-| Design authority | [JIT Compiler and IR](jit-compiler-and-ir.md), [AArch64 JIT Calling Convention](aarch64-jit-calling-convention.md), [Fast Operator Dispatch](fast-operator-dispatch.md), and [Function Specialization](function-specialization.md) |
+| Design authority | [JIT Compiler and IR](jit-compiler-and-ir.md), [AArch64 JIT Calling Convention](aarch64-jit-calling-convention.md), [Trusted Handler Declarations](trusted-handler-declarations.md), [Fast Operator Dispatch](fast-operator-dispatch.md), and [Function Specialization](function-specialization.md) |
 
 ## Objective
 
@@ -31,6 +32,39 @@ ordinary replayable side-exit path. Once the call begins, it must return a
 normal tagged `Value`. It cannot return `exception_marker`, enter managed code,
 or require canonical frame or root publication.
 
+Allocation is not itself disqualifying. Registered effects deliberately treat
+`Allocate`, `Safepoint`, `Raise`, and `CallPython` as independent facts. A
+handler that allocates without safepointing, raising, or calling Python remains
+eligible for this initial boundary.
+
+## Implemented Foundation
+
+The following pieces are already present and are no longer staging work:
+
+- `PointerAndShapeGuard`, `ShapeOnlyGuard`, and `ValidityCellGuard` lower to
+  executable Machine side-exit forms on AArch64;
+- tagged-value facts weaken pointer-and-shape guards when pointerness is known;
+- `TrustedHandlerCall` is a Core-and-Machine instruction with one through three
+  tagged arguments and a pooled `TrustedHandlerTarget` attribute;
+- CFG verification rejects unsupported call arities;
+- the VM registry is keyed by erased native target and returns typed arity,
+  effects, and semantic identity as metadata;
+- typed handler definitions and resolver installation register every handler
+  before publishing the resolver function pointer;
+- every float unary and binary trusted handler is registered through this path.
+
+The float conversion also establishes the intended division of authority. An
+inline cache stores the concrete handler target selected by runtime resolution
+and the shape and validity facts that made it applicable. Registry metadata
+describes that exact target. The JIT does not rerun the resolver, infer the
+target from the bytecode opcode, or copy effects and semantics into the IR.
+
+Type-adapted dunder methods may generate several concrete trusted targets from
+one semantic C++ operation. Their shape keys determine the operand adaptation;
+their registered semantic identity determines the operation. The initial
+opaque native call needs only the target and effects. A later semantic expansion
+uses both sources of information.
+
 ## End State
 
 A compiled cached binary operation has this shape:
@@ -45,9 +79,11 @@ guard method-lookup validity cells
 continue with %result
 ```
 
-`TrustedHandlerCall` represents the selected semantic target. It does not
-perform method lookup, reflected-operator selection, argument adaptation, or
-inline-cache miss handling.
+`TrustedHandlerCall` represents the selected concrete target. It does not
+perform method lookup, reflected-operator selection, operand reordering,
+selection among type adaptations, or inline-cache miss handling. A generated
+type-adapted handler may itself convert its already-guarded `Value` arguments to
+the natural C++ types consumed by its shared semantic operation.
 
 On AArch64, a binary call lowers to:
 
@@ -61,62 +97,7 @@ bl handler
 
 Unary and ternary handlers use `x1`, or `x1` through `x3`, respectively.
 
-## Slice 1: Executable Cache Guards
-
-Complete the existing Core guard path before introducing calls:
-
-1. Add Machine side-exit forms for the `ShapeGuard` family and
-   `ValidityCellGuard`.
-2. Lower them through the existing Snapshot-to-side-exit-region machinery.
-3. Emit an AArch64 pointer check followed by the object-shape comparison for
-   `PointerAndShapeGuard`; a non-pointer must exit before any shape load.
-   Tagged-value fact simplification may weaken it to `ShapeOnlyGuard` when the
-   input is already proven to be a pointer.
-4. Emit AArch64 validity-state comparison for `ValidityCellGuard`.
-5. Preserve their forwarding definitions so successful guards continue to
-   narrow and replace the guarded value in bytecode state.
-
-All guards consume the same pre-operation Snapshot. Any failed guard resumes
-at the original bytecode without having performed the operation.
-
-Verification should cover one object shape, one invalidated validity cell, and
-successful forwarding into a later use. Tests should verify observable
-lowering and execution rather than duplicating instruction accessors.
-
-## Slice 2: Trusted Handler Call Representation
-
-Add one Core-and-Machine instruction:
-
-```text
-TrustedHandlerCall {
-    arguments: ProgramValueRef[]
-    handler: TrustedHandlerTarget
-}
-    -> ProgramValue(TaggedValue)
-```
-
-The argument count is initially one through three and determines the trusted
-handler ABI. The handler is a non-GC native code address stored in the
-compilation-owned function-pointer attribute pool; the instruction carries its
-32-bit pool index while its typed accessor exposes `TrustedHandlerTarget`.
-There is no callable operand, Snapshot operand, interpreter return PC, or
-exceptional successor.
-
-The CFG verifier checks that the argument count is supported and that the
-target is non-null. JIT eligibility is established before constructing the
-instruction; the IR does not copy runtime registration metadata into every
-call.
-
-Add explicit VM-owned registration for the initial eligible handler set. The
-registry is populated during builtin setup and queried by handler pointer plus
-arity during compilation. Unregistered handlers continue to lower to
-`ResumeInInterpreter`. Do not enlarge `OperatorInlineCache` for JIT-only
-metadata.
-
-This slice may initially construct the instruction only in focused CFG tests;
-frontend selection lands after the backend path is executable.
-
-## Slice 3: AArch64 Call Constraints And Return Preservation
+## Remaining Slice 1: AArch64 Calls And Return Preservation
 
 Describe the platform ABI directly in allocation constraints. For a binary
 handler:
@@ -169,23 +150,33 @@ Verification should include:
 - unary, binary, and ternary argument placement;
 - a far handler address using the existing call relaxation.
 
-## Slice 4: Operator Frontend Integration
+This slice begins with manually constructed Machine graphs. It must make the
+backend path executable before the bytecode frontend can select it.
+
+## Remaining Slice 2: Operator Frontend Integration
 
 Extend `CoreBytecodeTranslator::lower_non_fastpathed_operator()` for one
 ordinary cached trusted-handler case:
 
-1. Read the `OperatorInlineCache` and determine the opcode's trusted-handler
-   arity and semantic operand order.
-2. Query VM registration for the cached handler and arity.
-3. If it is not eligible, emit the existing unsupported interpreter exit.
-4. Emit one pre-operation Snapshot.
-5. Emit the cached shape and validity guards in cache-match order through one
+1. Read the `OperatorInlineCache` and determine the trusted-handler ABI from the
+   bytecode operation and semantic argument vector.
+2. Reject caches with no trusted target. Erase the cached target using that
+   expected arity and query the VM registry by target alone.
+3. Require the returned metadata arity to equal the expected arity. Reject
+   unregistered targets and targets declaring `Safepoint`, `Raise`, or
+   `CallPython`; `Allocate` alone remains eligible.
+4. If the cache is not eligible, emit the existing unsupported interpreter
+   exit.
+5. Emit one pre-operation Snapshot.
+6. Emit the cached shape and validity guards in cache-match order through one
    frontend helper for an IC `ShapeKey`: an inline key becomes an exact
    inline-tag guard, an object key becomes an exact
    `PointerAndShapeGuard`, and a corresponding non-null lookup validity cell
    adds a `ValidityCellGuard`.
-6. Emit `TrustedHandlerCall` with the guarded semantic arguments.
-7. Write its normal tagged result into bytecode state.
+7. Emit `TrustedHandlerCall` with the guarded arguments in the same canonical
+   operand order used by interpreter cache replay. Reflected behavior is already
+   encoded by the concrete cached target; the frontend must not swap operands.
+8. Write its normal tagged result into bytecode state.
 
 Start with a non-immediate binary opcode whose handler is non-raising and does
 not allocate through a safepoint. A float comparison is a useful end-to-end
@@ -196,6 +187,24 @@ After that fixture works, reuse the same path for eligible unary and ternary
 operator caches and for the interpreter's cached trusted special-method call.
 Immediate bytecode forms and generalized function adaptation are separate
 frontend extensions.
+
+## Remaining Slice 3: Semantic Expansion
+
+The opaque call is the first consumer of registered metadata. After that works,
+recognized float semantics may replace eligible `TrustedHandlerCall`
+instructions with explicit guards, conversions, unboxed operations, and result
+boxing. The cache shape keys select the exact type adaptation; registered
+semantics select the operation. Neither source is sufficient by itself.
+
+This expansion is not required for the native call boundary. It should land
+only after the required F64 Core operations exist and should then reuse tagged
+value facts, box/unbox simplification, snapshot recovery, and dead-code
+elimination to sink unnecessary boxes into side exits.
+
+Broader builtin migration is also independent. Float already supplies
+registered non-raising candidates for the first end-to-end call. Bigint and
+other families may adopt typed declarations after their non-uniform adaptation
+and `NotImplemented` behavior have been reviewed.
 
 ## Completion Criteria
 
@@ -208,7 +217,7 @@ The initial plan is complete when:
 - native caller-saved clobbers do not corrupt live compiled values;
 - `x30` is preserved through `fp[1]` without changing native `sp`;
 - leaf generated functions retain their current code shape;
-- unsupported, raising, allocating-at-safepoint, and Python-calling handlers
+- unsupported, raising, safepointing, and Python-calling handlers
   remain interpreter paths.
 
 ## Deferred Work
@@ -216,8 +225,8 @@ The initial plan is complete when:
 - exception-marker results and compiled exception-table dispatch;
 - safepoint-capable handlers and canonical root publication;
 - handlers that re-enter Python;
-- precise per-handler effect analysis;
+- precise optimizer memory-effect analysis beyond call-boundary capabilities;
 - general Python call adaptation and JIT-to-JIT calls;
-- generalized function-specialization caches and semantic identities;
+- generalized function-specialization caches;
 - shrink-wrapped return-continuation stores;
-- recovery after a committed native call.
+- exceptional recovery after a native call has begun.
