@@ -3,7 +3,9 @@
 
 #include "object_model/value.h"
 
+#include <cstddef>
 #include <cstdint>
+#include <tuple>
 
 namespace cl
 {
@@ -217,6 +219,20 @@ namespace cl
         static TrustedResolution resolution()
         {
             return TrustedResolution::call_registered(Target);
+        }
+    };
+
+    template <typename... HandlerDefinitions> class TrustedHandlerResolverBase
+    {
+    protected:
+        template <size_t Index>
+        using Handler =
+            std::tuple_element_t<Index, std::tuple<HandlerDefinitions...>>;
+
+    public:
+        static void register_handlers(VirtualMachine &vm)
+        {
+            (HandlerDefinitions::register_with(vm), ...);
         }
     };
 

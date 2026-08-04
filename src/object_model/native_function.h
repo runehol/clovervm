@@ -67,6 +67,19 @@ namespace cl
     with_trusted_handler_resolver(BuiltinIntrinsicMethod method,
                                   TrustedHandlerResolver resolver);
 
+    template <typename Resolver>
+    BuiltinIntrinsicMethod
+    with_trusted_handler_resolver(VirtualMachine *vm,
+                                  BuiltinIntrinsicMethod method)
+    {
+        static_assert(std::is_same_v<decltype(&Resolver::resolve),
+                                     TrustedHandlerResolver>);
+        assert(vm != nullptr);
+        Resolver::register_handlers(*vm);
+        method.trusted_handler_resolver = &Resolver::resolve;
+        return method;
+    }
+
     Expected<TValue<Function>>
     make_intrinsic_function(VirtualMachine *vm, IntrinsicFunction0 function,
                             Optional<TValue<Tuple>> default_parameters =

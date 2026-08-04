@@ -372,6 +372,10 @@ namespace cl
     {
         static constexpr const wchar_t *receiver_error =
             L"float.__neg__ expects a float receiver";
+        static constexpr TrustedHandlerEffects trusted_effects =
+            TrustedHandlerEffects::Allocate;
+        static constexpr TrustedHandlerSemantics trusted_semantics =
+            TrustedHandlerSemantics::Neg;
 
         Value operator()(ThreadState *thread, double value) const
         {
@@ -383,6 +387,10 @@ namespace cl
     {
         static constexpr const wchar_t *receiver_error =
             L"float.__pos__ expects a float receiver";
+        static constexpr TrustedHandlerEffects trusted_effects =
+            TrustedHandlerEffects::Allocate;
+        static constexpr TrustedHandlerSemantics trusted_semantics =
+            TrustedHandlerSemantics::Pos;
 
         Value operator()(ThreadState *thread, double value) const
         {
@@ -506,26 +514,42 @@ namespace cl
     }
 
     template <typename Operator>
-    static TrustedResolution resolve_trusted_float_unary_handler(
-        VirtualMachine *vm, ShapeKey operand0_key, ShapeKey operand1_key,
-        TrustedHandlerOperandOrder order, TrustedHandlerArity requested_arity)
-    {
-        (void)operand1_key;
-        (void)order;
+    using FloatUnaryHandlerDefinition =
+        TrustedHandlerDefinition<trusted_float_unary_operator<Operator>,
+                                 Operator::trusted_effects,
+                                 Operator::trusted_semantics>;
 
-        if(requested_arity != TrustedHandlerArity::Unary)
+    template <typename Operator>
+    class FloatUnaryResolver final : public TrustedHandlerResolverBase<
+                                         FloatUnaryHandlerDefinition<Operator>>
+    {
+        using Base =
+            TrustedHandlerResolverBase<FloatUnaryHandlerDefinition<Operator>>;
+        using Handler = typename Base::template Handler<0>;
+
+    public:
+        static TrustedResolution resolve(VirtualMachine *vm,
+                                         ShapeKey operand0_key,
+                                         ShapeKey operand1_key,
+                                         TrustedHandlerOperandOrder order,
+                                         TrustedHandlerArity requested_arity)
         {
+            (void)operand1_key;
+            (void)order;
+
+            if(requested_arity != TrustedHandlerArity::Unary)
+            {
+                return TrustedResolution::no_trusted_handler_call_untrusted();
+            }
+            ShapeKey float_key = ShapeKey::from_shape(
+                vm->float_class()->get_instance_root_shape());
+            if(operand0_key == float_key)
+            {
+                return Handler::resolution();
+            }
             return TrustedResolution::no_trusted_handler_call_untrusted();
         }
-        ShapeKey float_key =
-            ShapeKey::from_shape(vm->float_class()->get_instance_root_shape());
-        if(operand0_key == float_key)
-        {
-            return TrustedResolution::call_trusted(
-                trusted_float_unary_operator<Operator>);
-        }
-        return TrustedResolution::no_trusted_handler_call_untrusted();
-    }
+    };
 
     BuiltinClassDefinition make_float_class(VirtualMachine *vm)
     {
@@ -662,16 +686,16 @@ namespace cl
                     L"Return self >= value."),
                 resolve_trusted_float_binary_resolver<FloatGeOperator,
                                                       FloatLeOperator>),
-            with_trusted_handler_resolver(
+            with_trusted_handler_resolver<FloatUnaryResolver<FloatNegOperator>>(
+                vm,
                 builtin_intrinsic_method(
                     L"__neg__", native_float_unary_operator<FloatNegOperator>,
-                    L"Return -self."),
-                resolve_trusted_float_unary_handler<FloatNegOperator>),
-            with_trusted_handler_resolver(
+                    L"Return -self.")),
+            with_trusted_handler_resolver<FloatUnaryResolver<FloatPosOperator>>(
+                vm,
                 builtin_intrinsic_method(
                     L"__pos__", native_float_unary_operator<FloatPosOperator>,
-                    L"Return +self."),
-                resolve_trusted_float_unary_handler<FloatPosOperator>),
+                    L"Return +self.")),
         };
         unwrap_bootstrap_expected(
             vm,

@@ -659,6 +659,16 @@ namespace cl
         CL_DECLARE_STATIC_OBJECT_SIZE(CodeObject);
     };
 
+    template <typename Resolver>
+    void install_trusted_handler_resolver(VirtualMachine &vm,
+                                          CodeObject &code_object)
+    {
+        static_assert(std::is_same_v<decltype(&Resolver::resolve),
+                                     TrustedHandlerResolver>);
+        Resolver::register_handlers(vm);
+        code_object.trusted_handler_resolver = &Resolver::resolve;
+    }
+
     BuiltinClassDefinition make_code_object_class(VirtualMachine *vm);
 
 }  // namespace cl
