@@ -1,0 +1,588 @@
+# Trusted Handler Declarations
+
+| Field | Value |
+|---|---|
+| Document type | Design proposal |
+| Status | Proposed |
+| Implementation | Not started |
+| Scope | Authoritative declaration, registration, and resolution of trusted native handlers |
+| Owning layers | Builtin implementations own handler bodies and declarations; the VM owns the registry; code objects retain resolver function pointers; the JIT consumes registered metadata |
+| Related documents | [JIT Trusted Handler Call Plan](jit-trusted-handler-call-plan.md), [Function Specialization](function-specialization.md) |
+
+## Objective
+
+Every trusted handler needs one authoritative declaration containing its typed
+function target, effects, and semantic identity. That declaration must drive
+both VM registration and resolver results. Resolver execution must not lock or
+query the registry, and a code object must continue to retain an ordinary
+resolver function pointer rather than per-resolver runtime state.
+
+The declaration mechanism must establish these invariants:
+
+- handler arity follows from the C++ function type;
+- effects are declared beside the handler body or semantic operator;
+- known semantics identify the semantic operation independently of the guarded
+  operand domains recorded by the inline cache;
+- a resolver can return only handlers in its declared sequence;
+- installing a resolver registers its complete sequence before publishing the
+  resolver function pointer;
+- the same native target may be shared by several resolvers;
+- conflicting declarations for one target are fatal;
+- JIT compilation may query metadata without adding work to runtime
+  resolution.
+
+## Effects
+
+Trusted-handler effects describe the body that will actually execute. They are
+independent facts. In particular:
+
+```text
+Allocate does not imply Safepoint.
+Safepoint does not imply Allocate.
+```
+
+The initial vocabulary needs to distinguish at least allocation, safepoints,
+raising, and calls into Python. A safepoint permits reclamation; reclamation does
+not need a separate capability bit. No safepoint implication should be encoded
+merely as a consequence of declaring `Allocate`.
+
+Effects describe execution under the trusted-entry preconditions established
+by the resolver result and reproduced as call-site guards. They do not describe
+what an unchecked C++ call with arbitrary `Value` arguments might do. This
+distinction matters for handlers whose implementation retains a defensive
+general fallback: the fallback is outside the trusted invocation contract when
+the resolver requires guards that make it unreachable.
+
+Effects remain attached to each concrete native target. One resolver may select
+handlers with materially different effects, and two adaptations of one semantic
+operation may differ if an adapter itself adds behavior. Reusing effects from a
+semantic operator is valid only when every participating adapter adds no effects
+of its own.
+
+The first direct JIT call accepts only handlers proven not to raise, safepoint,
+or call Python. That eligibility is derived from registered effects rather than
+stored as an independent allow-list bit. Precise optimization effects may extend
+the metadata later without changing handler identity or resolver installation.
+
+The initial registry metadata is therefore a call-boundary capability summary,
+not a complete memory-effect model. Trusted calls retain the conservative JIT
+effect envelope: handlers may read or mutate Python-visible state unless later
+metadata proves otherwise.
+
+## Semantic Identity
+
+`TrustedHandlerSemantics` identifies the operation performed by a trusted
+target:
+
+```cpp
+enum class TrustedHandlerSemantics
+{
+    Generic,
+
+    Add,
+    Sub,
+    RSub,
+    Mul,
+    TrueDiv,
+    RTrueDiv,
+    FloorDiv,
+    RFloorDiv,
+    Mod,
+    RMod,
+    Equal,
+    NotEqual,
+    Less,
+    LessEqual,
+    Greater,
+    GreaterEqual,
+    Neg,
+    Pos,
+};
+```
+
+`Generic` declares no recognized semantics. It is the default for handlers that
+remain opaque native calls.
+
+Every other enumerator names one type-independent semantic operation. Normal and
+reflected operations are distinct only when their mapping from canonical
+arguments differs: `Add` can cover equivalent normal and reflected addition,
+while subtraction requires both `Sub` and `RSub`. The operand domains are not
+duplicated into this enum. Inline-cache shape keys distinguish integer addition,
+float/float addition, and mixed float/SMI-or-Boolean addition.
+
+The inline cache remains the source of guards proving that a cached target is
+applicable and of operand-domain facts needed to choose conversions. Semantic
+identity tells the JIT which operation the already-selected target performs. A
+recognized lowering combines the operation with the guarded shape keys and
+accepts only combinations for which it has an exact expansion.
+
+Semantic identity is registered with the concrete handler rather than derived
+from the bytecode opcode. The opcode names the protocol operation that initiated
+dispatch; normal/reflected search may select a target with different canonical
+operand behavior. Ordinary function specializations may also have no operator
+opcode from which to recover identity.
+
+Semantic identity neither implies effects nor replaces them. Two targets may
+share effects while having different semantics, and a known semantic lowering
+must preserve the registered effect and exception contract.
+
+## Handler Definition
+
+A handler definition is a class template over a typed function pointer, its
+effects, and its semantic identity:
+
+```cpp
+template<auto Target, TrustedHandlerEffects Effects,
+         TrustedHandlerSemantics Semantics = TrustedHandlerSemantics::Generic>
+class TrustedHandlerDefinition
+{
+public:
+    static_assert(is_trusted_handler_function_v<decltype(Target)>);
+
+    static constexpr auto target = Target;
+    static constexpr TrustedHandlerArity arity =
+        trusted_handler_arity(Target);
+    static constexpr TrustedHandlerEffects effects = Effects;
+    static constexpr TrustedHandlerSemantics semantics = Semantics;
+
+    static void register_with(VirtualMachine &vm)
+    {
+        vm.register_trusted_handler(Target, Effects, Semantics);
+    }
+
+    static TrustedResolution resolution()
+    {
+        return TrustedResolution::call_registered(Target);
+    }
+};
+```
+
+`Target` may be a namespace function, static function, or concrete function
+template specialization. C++17 already permits function pointers as non-type
+template parameters and permits `auto` non-type parameters; C++20 additionally
+allows concepts to constrain the accepted signatures.
+
+The accepted signatures are exactly the existing unary, binary, and ternary
+trusted-handler ABIs. `trusted_handler_arity()` derives arity from the pointer
+type. Callers do not supply arity separately.
+
+The raw `TrustedResolution::call_trusted(function_pointer)` construction path
+is retired after migration. Resolver code obtains a successful resolution only
+through a declared handler type. This makes membership in the resolver's
+sequence visible in its source.
+
+## Resolver Sequence
+
+The common resolver base is templated on its complete ordered handler sequence:
+
+```cpp
+template<typename... HandlerDefinitions>
+class TrustedHandlerResolverBase
+{
+protected:
+    template<size_t Index>
+    using Handler = std::tuple_element_t<
+        Index, std::tuple<HandlerDefinitions...>>;
+
+public:
+    static void register_handlers(VirtualMachine &vm)
+    {
+        (HandlerDefinitions::register_with(vm), ...);
+    }
+};
+```
+
+A concrete resolver assigns semantic names to sequence positions and implements
+resolution as a static method. The names make selection readable without
+repeating targets or metadata:
+
+```cpp
+using NormalFloatFloat = Handler<0>;
+using NormalFloatSMIOrBool = Handler<1>;
+using NormalSMIOrBoolFloat = Handler<2>;
+```
+
+Positional aliases are deliberately local to the concrete resolver. Reordering
+the declaration sequence requires updating those aliases, but the function
+target and effects remain written only once.
+
+## Resolver Installation
+
+Resolver installation is templated on the concrete resolver type:
+
+```cpp
+template<typename Resolver>
+BuiltinIntrinsicMethod with_trusted_handler_resolver(
+    VirtualMachine *vm, BuiltinIntrinsicMethod method)
+{
+    static_assert(std::is_same_v<decltype(&Resolver::resolve),
+                                 TrustedHandlerResolver>);
+
+    Resolver::register_handlers(*vm);
+    method.trusted_handler_resolver = &Resolver::resolve;
+    return method;
+}
+```
+
+Registration therefore occurs during builtin installation. Runtime resolution
+remains one indirect call through the function pointer already stored on the
+code object. It performs no registry lookup, mutex acquisition, context load,
+or handler registration.
+
+Direct setup APIs accepting arbitrary `TrustedHandlerResolver` pointers should
+be removed after migration. Custom function builders such as the dictionary
+builders use the same operation through a code-object overload:
+
+```cpp
+template<typename Resolver>
+void install_trusted_handler_resolver(VirtualMachine &vm,
+                                      CodeObject &code_object)
+{
+    static_assert(std::is_same_v<decltype(&Resolver::resolve),
+                                 TrustedHandlerResolver>);
+
+    Resolver::register_handlers(vm);
+    code_object.trusted_handler_resolver = &Resolver::resolve;
+}
+```
+
+The builtin-method helper delegates to this primitive or performs the same
+operation while constructing its method descriptor. Neither path accepts an
+arbitrary resolver pointer.
+
+## VM Registry
+
+The VM registry is keyed only by the erased native target. Arity and effects are
+metadata:
+
+```cpp
+struct TrustedHandlerMetadata
+{
+    TrustedHandlerArity arity;
+    TrustedHandlerEffects effects;
+    TrustedHandlerSemantics semantics;
+};
+```
+
+Typed `register_trusted_handler()` overloads infer arity, erase the target, lock
+the registry, and insert its metadata. Registering the same target with
+identical metadata is idempotent. Registering it with different arity or
+effects or semantics is an invariant failure.
+
+Registry reads and writes take the registry mutex. Reads return metadata by
+value rather than returning a map entry after releasing the lock. Resolver
+execution does not read the registry. JIT compilation reads it when inspecting
+a cached trusted target, where mutex cost is outside the runtime operator path.
+
+Shared mixed-type handlers need no special treatment. If two installed
+resolvers declare the same target with identical metadata, both installation
+paths converge on the same registry entry.
+
+## General And Trusted Adapters
+
+Some builtin families can generate their checked general handler and their
+trusted handlers from one semantic operation. This composition is encouraged
+where it removes duplicated semantics, but it is not a requirement of handler
+declaration or registration.
+
+The dependency runs from shared semantics to both adapter kinds:
+
+```text
+semantic operation
+    -> general adapter: checks, conversion, errors, NotImplemented
+    -> trusted adapters: assume resolver-established guards, then convert
+```
+
+A general adapter cannot be reconstructed from a trusted function pointer. The
+pointer does not encode accepted operand classes, receiver-error behavior,
+`NotImplemented` behavior, reflected ordering, or argument conversion policy.
+`TrustedHandlerDefinition` consequently remains the universal declaration of
+one concrete trusted target. An optional family-specific layer may expose both
+the general adapter and several declared trusted adapters.
+
+Float binary operators are the initial example. List operations may select
+several trusted targets from one general operation, while dictionary general
+handlers are generated bytecode rather than C++ adapter templates. Neither must
+be forced through the float-family abstraction.
+
+## Float Resolver Family
+
+The float implementation already separates semantic operations from operand
+adaptation. For each binary `Operator`, three trusted function-template
+specializations exist:
+
+```text
+trusted_float_float_operator<Operator>
+trusted_float_intlike_operator<Operator>
+trusted_intlike_float_operator<Operator>
+```
+
+All three execute the same semantic operator and therefore inherit its effects
+and registered semantics. The inline-cache shape keys distinguish their operand
+adaptations. The operator keeps the shared metadata beside its body:
+
+```cpp
+struct FloatEqOperator
+{
+    static constexpr TrustedHandlerEffects trusted_effects =
+        TrustedHandlerEffects::None;
+    static constexpr TrustedHandlerSemantics trusted_semantics =
+        TrustedHandlerSemantics::Equal;
+
+    Value operator()(ThreadState *, double left, double right) const;
+};
+
+struct FloatAddOperator
+{
+    static constexpr TrustedHandlerEffects trusted_effects =
+        TrustedHandlerEffects::Allocate;
+    static constexpr TrustedHandlerSemantics trusted_semantics =
+        TrustedHandlerSemantics::Add;
+
+    Value operator()(ThreadState *, double left, double right) const;
+};
+```
+
+`FloatAddOperator` does not acquire `Safepoint` merely because it allocates. A
+division operator declares `Raise` because its body can produce a zero-division
+exception. Each body must be reviewed for the effects it actually has.
+
+The binary resolver declares normal and reflected adaptations in one sequence:
+
+```cpp
+template<typename NormalOperator, typename ReflectedOperator>
+class FloatBinaryResolver final
+    : public TrustedHandlerResolverBase<
+          TrustedHandlerDefinition<
+              &trusted_float_float_operator<NormalOperator>,
+              NormalOperator::trusted_effects,
+              NormalOperator::trusted_semantics>,
+          TrustedHandlerDefinition<
+              &trusted_float_intlike_operator<NormalOperator>,
+              NormalOperator::trusted_effects,
+              NormalOperator::trusted_semantics>,
+          TrustedHandlerDefinition<
+              &trusted_intlike_float_operator<NormalOperator>,
+              NormalOperator::trusted_effects,
+              NormalOperator::trusted_semantics>,
+          TrustedHandlerDefinition<
+              &trusted_float_float_operator<ReflectedOperator>,
+              ReflectedOperator::trusted_effects,
+              ReflectedOperator::trusted_semantics>,
+          TrustedHandlerDefinition<
+              &trusted_float_intlike_operator<ReflectedOperator>,
+              ReflectedOperator::trusted_effects,
+              ReflectedOperator::trusted_semantics>,
+          TrustedHandlerDefinition<
+              &trusted_intlike_float_operator<ReflectedOperator>,
+              ReflectedOperator::trusted_effects,
+              ReflectedOperator::trusted_semantics>>
+{
+    using NormalFloatFloat = Handler<0>;
+    using NormalFloatSMIOrBool = Handler<1>;
+    using NormalSMIOrBoolFloat = Handler<2>;
+    using ReflectedFloatFloat = Handler<3>;
+    using ReflectedFloatSMIOrBool = Handler<4>;
+    using ReflectedSMIOrBoolFloat = Handler<5>;
+
+public:
+    static TrustedResolution resolve(
+        VirtualMachine *, ShapeKey, ShapeKey,
+        TrustedHandlerOperandOrder, TrustedHandlerArity);
+};
+```
+
+The static `resolve()` method retains the current shape and operand-order
+branching but returns `NormalFloatFloat::resolution()` and the corresponding
+named alternatives. It never repeats a function pointer.
+
+The semantic constant shown on each operator may be supplied directly or through
+a small float-family metadata base. It remains an explicit declaration; only
+the operand adaptation is derived from guarded inline-cache shape keys.
+
+Unary float resolution is the same pattern with one handler definition. If the
+normal and reflected operators are identical, their targets may occur twice in
+the sequence; idempotent registration is preferable to deduplication template
+machinery.
+
+Installation remains concise:
+
+```cpp
+with_trusted_handler_resolver<
+    FloatBinaryResolver<FloatLtOperator, FloatGtOperator>>(
+        vm,
+        builtin_intrinsic_method(
+            L"__lt__", native_float_binary_operator<FloatLtOperator>,
+            L"Return self < value."));
+```
+
+## Compile-Time Exception Strings
+
+Raw string literals cannot directly serve as pointer-valued template arguments
+with the required identity. C++20 structural non-type template parameters can
+instead copy a literal into a fixed-string value:
+
+```cpp
+template<size_t Size>
+struct FixedWideString
+{
+    wchar_t value[Size];
+
+    consteval FixedWideString(const wchar_t (&source)[Size])
+    {
+        for(size_t index = 0; index < Size; ++index)
+        {
+            value[index] = source[index];
+        }
+    }
+
+    constexpr const wchar_t *c_str() const { return value; }
+};
+```
+
+Common operator metadata can then carry both effects and receiver errors:
+
+```cpp
+template<TrustedHandlerEffects Effects, FixedWideString ReceiverError>
+struct FloatOperatorMetadata
+{
+    static constexpr TrustedHandlerEffects trusted_effects = Effects;
+    static constexpr auto receiver_error = ReceiverError;
+};
+
+struct FloatAddOperator
+    : FloatOperatorMetadata<
+          TrustedHandlerEffects::Allocate,
+          L"float.__add__ expects a float receiver">
+{
+    static constexpr TrustedHandlerSemantics trusted_semantics =
+        TrustedHandlerSemantics::Add;
+
+    Value operator()(ThreadState *, double, double) const;
+};
+```
+
+The existing native wrapper reads `Operator::receiver_error.c_str()`. This
+removes repeated externally named string arrays and does not require macros.
+
+## Recognized JIT Expansion
+
+The initial JIT consumer may emit an opaque `TrustedHandlerCall` after checking
+registered effects. Known semantics additionally permit a later Core pass to
+replace that call with the exact guarded operation sequence. For example,
+`Add` plus float/SMI-or-Boolean inline-cache shapes expands to a float
+unbox, inline-integer conversion, floating-point addition, and result boxing.
+
+This enables a deliberate optimization chain:
+
+```text
+registered known semantics
+    -> explicit guards, conversions, operation, and boxing
+    -> tagged-value facts eliminate redundant guards
+    -> unbox(box(value)) simplifies to value
+    -> boxes used only by snapshots become side-exit recovery actions
+    -> dead mainline boxes are eliminated
+```
+
+Snapshots may already capture program values of non-tagged representations, so
+recovery can box those values on the side-exit path. Boxing remains on the main
+path where a normal return, opaque call, store, or other tagged consumer requires
+it.
+
+Semantic expansion consumes both sources of information without conflating
+them: registered semantics selects the operation, while IC-derived guards select
+and prove the operand adaptation. `Generic` handlers, unsupported shape
+combinations, and known handlers whose expansion is not yet implemented remain
+ordinary native calls.
+
+## Implementation Plan
+
+### Slice 1: Metadata And Signature Types
+
+Add `TrustedHandlerSemantics`, the independent call-boundary effect vocabulary,
+and compile-time traits for the existing unary, binary, and ternary
+trusted-handler function types. `Generic` is the default semantic identity.
+Derive arity from the unerased target and provide the one canonical target
+erasure. Do not add a registry or change resolver behavior in this slice.
+
+Verify the traits with compile-time assertions for all three accepted ABIs and
+reject unrelated function signatures.
+
+### Slice 2: Handler Definitions And VM Registry
+
+Add `TrustedHandlerDefinition`, `TrustedHandlerMetadata`, and the VM-owned
+registry keyed by erased target. Registration infers arity from the typed
+target, accepts effects and semantics, is idempotent for identical metadata, and
+fails on a conflicting declaration. Registry reads return metadata by value
+under the mutex.
+
+Keep the registry disconnected from resolvers and JIT lowering in this slice.
+
+### Slice 3: Typed Resolver Installation
+
+Add `TrustedHandlerResolverBase`, the templated builtin-method installation
+helper, and the templated code-object installation helper. Convert one small
+float resolver family completely so its successful results come only from
+named `Handler<N>` aliases and installation registers every declared target.
+
+This is the first end-to-end structural proof. Runtime resolution must remain a
+single call through the static resolver pointer with no registry access.
+
+### Slice 4: Float Family Conversion
+
+Convert the remaining float unary and binary resolvers. Add the optional shared
+general/trusted adapter-family convenience only where it makes the existing
+float pattern clearer; it must build on `TrustedHandlerDefinition`, not enlarge
+its responsibilities.
+
+Review effects per concrete adapter. Reuse operator-owned effects only where
+the adapter contributes no additional effects. Give every float semantic
+operation an explicit non-`Generic` identity shared by its trusted operand
+adapters.
+
+### Slice 5: First JIT Consumer
+
+Make JIT frontend lowering query registry metadata for the cached native target.
+Construct `TrustedHandlerCall` only when the target is registered, arity agrees,
+and the call-boundary effects satisfy the current non-raising,
+non-safepointing, non-Python-calling contract. Exercise the converted float
+family as the first complete compiled-call source. Unregistered and ineligible
+handlers retain the interpreter path.
+
+This slice proves the registry serves its intended consumer before broader
+builtin migration.
+
+### Slice 6: Known-Semantics Expansion
+
+After the required unboxed float operations and conversions exist in Core IR,
+add a pass that replaces eligible float `TrustedHandlerCall` instructions with
+the sequence selected by their registered semantics. Follow with local
+box/unbox simplification and rely on snapshot recovery plus dead-code
+elimination to sink unnecessary boxes out of the main path.
+
+This is not a prerequisite for the first native trusted-handler call. Landing
+the identity metadata first prevents the JIT from later reconstructing semantic
+selection from inline-cache shapes.
+
+### Slice 7: Remaining Builtins And Generated Code Objects
+
+Convert integer/bigint, list, dictionary, tuple, string, and other resolver
+families. Preserve non-handler outcomes such as known `NotImplemented` and
+untrusted fallback. Permit one resolver sequence to contain targets of different
+arities when its static resolver branches on requested arity.
+
+Dictionary generated code objects must use the typed code-object installer.
+List and dictionary mutations remain conservatively effectful; exact guarded
+fast paths may declare narrower call-boundary capabilities than their defensive
+unchecked C++ fallback would suggest.
+
+### Slice 8: Retire Raw APIs
+
+Remove successful raw `call_trusted(function_pointer)` construction and raw
+resolver-pointer installation. Search all code-object construction and builtin
+installation paths to establish that every published resolver registered its
+complete target sequence first.
+
+A material need for resolver state, runtime registration, duplicated target
+lists, or metadata that varies for the same target under different trusted
+entry contracts invalidates this proposal and returns to design review.
