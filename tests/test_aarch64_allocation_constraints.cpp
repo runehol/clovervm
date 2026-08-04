@@ -3,6 +3,8 @@
 #include "jit/bytecode_state.h"
 #include "jit/compilation_session.h"
 #include "jit/graph_builder.h"
+#include "jit/register_allocator.h"
+#include "runtime/trusted_handler.h"
 #include "test_helpers.h"
 
 #include <gtest/gtest.h>
@@ -65,6 +67,21 @@ namespace cl::jit
             std::array<InstructionId, 1> instructions = {exit.id()};
             return builder.make_side_exit_region(parameters, instructions)
                 ->id();
+        }
+
+        Value trusted_unary_handler(ThreadState *, Value value)
+        {
+            return value;
+        }
+
+        Value trusted_binary_handler(ThreadState *, Value left, Value)
+        {
+            return left;
+        }
+
+        Value trusted_ternary_handler(ThreadState *, Value first, Value, Value)
+        {
+            return first;
         }
 
     }  // namespace
@@ -227,6 +244,89 @@ namespace cl::jit
         EXPECT_EQ(x(22), return_constraints->input_overrides()[3]
                              .requirement.fixed_location()
                              .reg());
+    }
+
+    TEST(AArch64AllocationConstraints,
+         ConstrainsTrustedHandlerNativeCallBoundary)
+    {
+        CompilationSession session;
+        GraphBuilder builder(session, IRLevel::Machine);
+        Block *entry = builder.emplace_block();
+        std::array<TaggedValueRef, 3> arguments = {
+            emplace_constant(builder, entry, Value::from_smi(1)),
+            emplace_constant(builder, entry, Value::from_smi(2)),
+            emplace_constant(builder, entry, Value::from_smi(3)),
+        };
+        std::array<TrustedHandlerTarget, 3> targets = {
+            erase_trusted_handler_target(trusted_unary_handler),
+            erase_trusted_handler_target(trusted_binary_handler),
+            erase_trusted_handler_target(trusted_ternary_handler),
+        };
+        std::array<TrustedHandlerCallInstruction, 3> calls = {
+            builder.emplace_instruction<TrustedHandlerCallInstruction>(
+                entry, std::span(arguments).first<1>(), targets[0]),
+            builder.emplace_instruction<TrustedHandlerCallInstruction>(
+                entry, std::span(arguments).first<2>(), targets[1]),
+            builder.emplace_instruction<TrustedHandlerCallInstruction>(
+                entry, std::span(arguments).first<3>(), targets[2]),
+        };
+        builder.emplace_instruction<BareReturnInstruction>(
+            entry, TaggedValueRef(calls.back()));
+        ControlFlowGraph *graph = builder.finalize();
+
+        AllocationConstraints constraints =
+            make_aarch64_allocation_constraints(*graph);
+        ASSERT_TRUE(prepare_register_allocation(*graph, constraints));
+
+        for(size_t call_index = 0; call_index < calls.size(); ++call_index)
+        {
+            const InstructionAllocationConstraints *call =
+                find_override(constraints, calls[call_index]);
+            ASSERT_NE(nullptr, call);
+            ASSERT_EQ(call_index + 1, call->input_overrides().size());
+            for(size_t argument_index = 0; argument_index <= call_index;
+                ++argument_index)
+            {
+                const ProgramValueUseConstraint &argument =
+                    call->input_overrides()[argument_index];
+                EXPECT_EQ(
+                    TrustedHandlerCallInstruction::arguments_operand_index +
+                        argument_index,
+                    argument.operand_index);
+                EXPECT_EQ(AccessTiming::Early, argument.timing);
+                EXPECT_EQ(x(static_cast<uint8_t>(argument_index + 1)),
+                          argument.requirement.fixed_location().reg());
+            }
+
+            ASSERT_TRUE(call->result_override().has_value());
+            EXPECT_EQ(AccessTiming::Late, call->result_override()->timing);
+            EXPECT_EQ(
+                x(0),
+                call->result_override()->requirement.fixed_location().reg());
+
+            const RegisterSet &clobbers = call->clobbers();
+            EXPECT_EQ(37u, clobbers.size());
+            EXPECT_FALSE(clobbers.contains(x(0)));
+            for(uint8_t number = 1; number <= 15; ++number)
+            {
+                EXPECT_TRUE(clobbers.contains(x(number)));
+            }
+            for(uint8_t number: {19, 20, 22, 23, 24, 26, 27, 28})
+            {
+                EXPECT_FALSE(clobbers.contains(x(number)));
+            }
+            for(uint8_t number = 0; number <= 7; ++number)
+            {
+                EXPECT_TRUE(clobbers.contains(v(number)));
+            }
+            for(uint8_t number = 16; number <= 29; ++number)
+            {
+                EXPECT_TRUE(clobbers.contains(v(number)));
+            }
+            EXPECT_FALSE(clobbers.contains(v(8)));
+            EXPECT_FALSE(clobbers.contains(v(30)));
+            EXPECT_FALSE(clobbers.contains(v(31)));
+        }
     }
 
     TEST(AArch64AllocationConstraints, OmitsOrdinaryInstructionsAndBranches)

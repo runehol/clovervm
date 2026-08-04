@@ -136,6 +136,42 @@ namespace cl::jit
                                                     std::move(input_overrides));
         }
 
+        RegisterSet trusted_handler_call_clobbers()
+        {
+            RegisterSet result;
+            for(uint8_t number = 1; number <= 15; ++number)
+            {
+                result.insert(gpr(number));
+            }
+            for(PhysicalRegister reg: SIMDAllocationOrder)
+            {
+                result.insert(reg);
+            }
+            return result;
+        }
+
+        InstructionAllocationConstraints trusted_handler_call_constraints(
+            TrustedHandlerCallInstruction instruction,
+            std::vector<ProgramValueUseConstraint> input_overrides)
+        {
+            for(uint32_t index = 0; index < instruction.arguments().size();
+                ++index)
+            {
+                input_overrides.emplace_back(
+                    TrustedHandlerCallInstruction::arguments_operand_index +
+                        index,
+                    AccessTiming::Early,
+                    LocationRequirement::fixed(PhysicalLocation::reg(
+                        gpr(static_cast<uint8_t>(index + 1)))));
+            }
+            return InstructionAllocationConstraints(
+                instruction, std::move(input_overrides),
+                ResultConstraint{
+                    AccessTiming::Late,
+                    LocationRequirement::fixed(PhysicalLocation::reg(gpr(0)))},
+                {}, trusted_handler_call_clobbers());
+        }
+
         InstructionAllocationConstraints gpr_temporary_constraints(
             Instruction instruction,
             std::vector<ProgramValueUseConstraint> input_overrides)
@@ -295,6 +331,14 @@ namespace cl::jit
                         overrides.push_back(bare_return_constraints(
                             return_instruction,
                             std::move(input_overrides)));
+                        break;
+                    }
+
+                    case CL_JIT_MACHINE_INSTRUCTION_CASE(
+                        TrustedHandlerCallInstruction, call_instruction)
+                    {
+                        overrides.push_back(trusted_handler_call_constraints(
+                            call_instruction, std::move(input_overrides)));
                         break;
                     }
 
