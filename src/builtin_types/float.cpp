@@ -92,39 +92,16 @@ namespace cl
         return left == right ? Value::True() : Value::False();
     }
 
-    struct FloatNeOperator
+    static Value float_not_equal(ThreadState *thread, double left, double right)
     {
-        static constexpr const wchar_t *receiver_error =
-            L"float.__ne__ expects a float receiver";
+        (void)thread;
+        return left != right ? Value::True() : Value::False();
+    }
 
-        Value operator()(ThreadState *thread, double left, double right) const
-        {
-            (void)thread;
-            return left != right ? Value::True() : Value::False();
-        }
-    };
-
-    struct FloatAddOperator
+    static Value float_add(ThreadState *thread, double left, double right)
     {
-        static constexpr const wchar_t *receiver_error =
-            L"float.__add__ expects a float receiver";
-
-        Value operator()(ThreadState *thread, double left, double right) const
-        {
-            return thread->make_object_value<Float>(left + right).raw_value();
-        }
-    };
-
-    struct FloatRAddOperator
-    {
-        static constexpr const wchar_t *receiver_error =
-            L"float.__radd__ expects a float receiver";
-
-        Value operator()(ThreadState *thread, double left, double right) const
-        {
-            return FloatAddOperator{}(thread, left, right);
-        }
-    };
+        return thread->make_object_value<Float>(left + right).raw_value();
+    }
 
     static Value float_subtract(ThreadState *thread, double left, double right)
     {
@@ -137,27 +114,10 @@ namespace cl
         return thread->make_object_value<Float>(right - left).raw_value();
     }
 
-    struct FloatMulOperator
+    static Value float_multiply(ThreadState *thread, double left, double right)
     {
-        static constexpr const wchar_t *receiver_error =
-            L"float.__mul__ expects a float receiver";
-
-        Value operator()(ThreadState *thread, double left, double right) const
-        {
-            return thread->make_object_value<Float>(left * right).raw_value();
-        }
-    };
-
-    struct FloatRMulOperator
-    {
-        static constexpr const wchar_t *receiver_error =
-            L"float.__rmul__ expects a float receiver";
-
-        Value operator()(ThreadState *thread, double left, double right) const
-        {
-            return FloatMulOperator{}(thread, left, right);
-        }
-    };
+        return thread->make_object_value<Float>(left * right).raw_value();
+    }
 
     static Value float_zero_division_error(ThreadState *thread)
     {
@@ -205,69 +165,49 @@ namespace cl
         return {floored_quotient, remainder};
     }
 
-    struct FloatTrueDivOperator
+    static Value float_true_divide(ThreadState *thread, double left,
+                                   double right)
     {
-        static constexpr const wchar_t *receiver_error =
-            L"float.__truediv__ expects a float receiver";
-
-        Value operator()(ThreadState *thread, double left, double right) const
+        if(unlikely(right == 0.0))
         {
-            if(unlikely(right == 0.0))
-            {
-                return float_zero_division_error(thread);
-            }
-            return thread->make_object_value<Float>(left / right).raw_value();
+            return float_zero_division_error(thread);
         }
-    };
+        return thread->make_object_value<Float>(left / right).raw_value();
+    }
 
-    struct FloatRTrueDivOperator
+    static Value float_reverse_true_divide(ThreadState *thread, double left,
+                                           double right)
     {
-        static constexpr const wchar_t *receiver_error =
-            L"float.__rtruediv__ expects a float receiver";
-
-        Value operator()(ThreadState *thread, double left, double right) const
+        if(unlikely(left == 0.0))
         {
-            if(unlikely(left == 0.0))
-            {
-                return float_zero_division_error(thread);
-            }
-            return thread->make_object_value<Float>(right / left).raw_value();
+            return float_zero_division_error(thread);
         }
-    };
+        return thread->make_object_value<Float>(right / left).raw_value();
+    }
 
-    struct FloatFloorDivOperator
+    static Value float_floor_divide(ThreadState *thread, double left,
+                                    double right)
     {
-        static constexpr const wchar_t *receiver_error =
-            L"float.__floordiv__ expects a float receiver";
-
-        Value operator()(ThreadState *thread, double left, double right) const
+        if(unlikely(right == 0.0))
         {
-            if(unlikely(right == 0.0))
-            {
-                return float_zero_division_error(thread);
-            }
-            return thread
-                ->make_object_value<Float>(float_divmod(left, right).quotient)
-                .raw_value();
+            return float_zero_division_error(thread);
         }
-    };
+        return thread
+            ->make_object_value<Float>(float_divmod(left, right).quotient)
+            .raw_value();
+    }
 
-    struct FloatRFloorDivOperator
+    static Value float_reverse_floor_divide(ThreadState *thread, double left,
+                                            double right)
     {
-        static constexpr const wchar_t *receiver_error =
-            L"float.__rfloordiv__ expects a float receiver";
-
-        Value operator()(ThreadState *thread, double left, double right) const
+        if(unlikely(left == 0.0))
         {
-            if(unlikely(left == 0.0))
-            {
-                return float_zero_division_error(thread);
-            }
-            return thread
-                ->make_object_value<Float>(float_divmod(right, left).quotient)
-                .raw_value();
+            return float_zero_division_error(thread);
         }
-    };
+        return thread
+            ->make_object_value<Float>(float_divmod(right, left).quotient)
+            .raw_value();
+    }
 
     static Value float_modulo_result(ThreadState *thread, double left,
                                      double right)
@@ -282,75 +222,42 @@ namespace cl
             .raw_value();
     }
 
-    struct FloatModOperator
+    static Value float_modulo(ThreadState *thread, double left, double right)
     {
-        static constexpr const wchar_t *receiver_error =
-            L"float.__mod__ expects a float receiver";
+        return float_modulo_result(thread, left, right);
+    }
 
-        Value operator()(ThreadState *thread, double left, double right) const
-        {
-            return float_modulo_result(thread, left, right);
-        }
-    };
-
-    struct FloatRModOperator
+    static Value float_reverse_modulo(ThreadState *thread, double left,
+                                      double right)
     {
-        static constexpr const wchar_t *receiver_error =
-            L"float.__rmod__ expects a float receiver";
+        return float_modulo_result(thread, right, left);
+    }
 
-        Value operator()(ThreadState *thread, double left, double right) const
-        {
-            return float_modulo_result(thread, right, left);
-        }
-    };
-
-    struct FloatLtOperator
+    static Value float_less(ThreadState *thread, double left, double right)
     {
-        static constexpr const wchar_t *receiver_error =
-            L"float.__lt__ expects a float receiver";
+        (void)thread;
+        return left < right ? Value::True() : Value::False();
+    }
 
-        Value operator()(ThreadState *thread, double left, double right) const
-        {
-            (void)thread;
-            return left < right ? Value::True() : Value::False();
-        }
-    };
-
-    struct FloatLeOperator
+    static Value float_less_equal(ThreadState *thread, double left,
+                                  double right)
     {
-        static constexpr const wchar_t *receiver_error =
-            L"float.__le__ expects a float receiver";
+        (void)thread;
+        return left <= right ? Value::True() : Value::False();
+    }
 
-        Value operator()(ThreadState *thread, double left, double right) const
-        {
-            (void)thread;
-            return left <= right ? Value::True() : Value::False();
-        }
-    };
-
-    struct FloatGtOperator
+    static Value float_greater(ThreadState *thread, double left, double right)
     {
-        static constexpr const wchar_t *receiver_error =
-            L"float.__gt__ expects a float receiver";
+        (void)thread;
+        return left > right ? Value::True() : Value::False();
+    }
 
-        Value operator()(ThreadState *thread, double left, double right) const
-        {
-            (void)thread;
-            return left > right ? Value::True() : Value::False();
-        }
-    };
-
-    struct FloatGeOperator
+    static Value float_greater_equal(ThreadState *thread, double left,
+                                     double right)
     {
-        static constexpr const wchar_t *receiver_error =
-            L"float.__ge__ expects a float receiver";
-
-        Value operator()(ThreadState *thread, double left, double right) const
-        {
-            (void)thread;
-            return left >= right ? Value::True() : Value::False();
-        }
-    };
+        (void)thread;
+        return left >= right ? Value::True() : Value::False();
+    }
 
     struct FloatNegOperator
     {
@@ -474,52 +381,6 @@ namespace cl
     }
 
     template <typename Operator>
-    static Value native_float_binary_operator(ThreadState *thread, Value self,
-                                              Value other)
-    {
-        if(!can_convert_to<Float>(self))
-        {
-            return thread->set_pending_builtin_exception_string(
-                L"TypeError", Operator::receiver_error);
-        }
-
-        double right;
-        if(!try_get_float_or_smi_or_bool(other, &right))
-        {
-            return Value::NotImplemented();
-        }
-        double left = self.get_ptr<Float>()->value;
-        return Operator{}(thread, left, right);
-    }
-
-    template <typename Operator>
-    static Value trusted_float_float_operator(ThreadState *thread,
-                                              Value left_value,
-                                              Value right_value)
-    {
-        return Operator{}(thread, left_value.get_ptr<Float>()->value,
-                          right_value.get_ptr<Float>()->value);
-    }
-
-    template <typename Operator>
-    static Value trusted_float_intlike_operator(ThreadState *thread,
-                                                Value left_value,
-                                                Value right_value)
-    {
-        return Operator{}(thread, left_value.get_ptr<Float>()->value,
-                          smi_or_bool_as_double(right_value));
-    }
-
-    template <typename Operator>
-    static Value trusted_intlike_float_operator(ThreadState *thread,
-                                                Value left_value,
-                                                Value right_value)
-    {
-        return Operator{}(thread, smi_or_bool_as_double(left_value),
-                          right_value.get_ptr<Float>()->value);
-    }
-
-    template <typename Operator>
     static Value trusted_float_unary_operator(ThreadState *thread, Value value)
     {
         return Operator{}(thread, value.get_ptr<Float>()->value);
@@ -601,6 +462,32 @@ namespace cl
     using FloatEqResolver =
         FloatBinaryResolver<FloatEqHandlers, FloatEqHandlers>;
 
+    using FloatNeOperation =
+        FloatBinaryOperation<float_not_equal,
+                             L"float.__ne__ expects a float receiver">;
+    using FloatNeHandlers =
+        FloatNeOperation::Handlers<TrustedHandlerEffects::None,
+                                   TrustedHandlerSemantics::NotEqual>;
+    using FloatNeResolver =
+        FloatBinaryResolver<FloatNeHandlers, FloatNeHandlers>;
+
+    using FloatAddOperation =
+        FloatBinaryOperation<float_add,
+                             L"float.__add__ expects a float receiver">;
+    using FloatRAddOperation =
+        FloatBinaryOperation<float_add,
+                             L"float.__radd__ expects a float receiver">;
+    using FloatAddHandlers =
+        FloatAddOperation::Handlers<TrustedHandlerEffects::Allocate,
+                                    TrustedHandlerSemantics::Add>;
+    using FloatRAddHandlers =
+        FloatRAddOperation::Handlers<TrustedHandlerEffects::Allocate,
+                                     TrustedHandlerSemantics::Add>;
+    using FloatAddResolver =
+        FloatBinaryResolver<FloatAddHandlers, FloatAddHandlers>;
+    using FloatRAddResolver =
+        FloatBinaryResolver<FloatRAddHandlers, FloatAddHandlers>;
+
     using FloatSubOperation =
         FloatBinaryOperation<float_subtract,
                              L"float.__sub__ expects a float receiver">;
@@ -618,50 +505,109 @@ namespace cl
     using FloatRSubResolver =
         FloatBinaryResolver<FloatRSubHandlers, FloatSubHandlers>;
 
-    template <typename Operator>
-    static TrustedResolution resolve_trusted_float_binary_handler(
-        VirtualMachine *vm, ShapeKey operand0_key, ShapeKey operand1_key)
-    {
-        ShapeKey float_key =
-            ShapeKey::from_shape(vm->float_class()->get_instance_root_shape());
-        if(operand0_key == float_key)
-        {
-            if(operand1_key == float_key)
-            {
-                return TrustedResolution::call_trusted(
-                    trusted_float_float_operator<Operator>);
-            }
-            if(is_smi_or_bool_shape_key(operand1_key))
-            {
-                return TrustedResolution::call_trusted(
-                    trusted_float_intlike_operator<Operator>);
-            }
-        }
-        if(is_smi_or_bool_shape_key(operand0_key) && operand1_key == float_key)
-        {
-            return TrustedResolution::call_trusted(
-                trusted_intlike_float_operator<Operator>);
-        }
-        return TrustedResolution::no_trusted_handler_call_untrusted();
-    }
+    using FloatMulOperation =
+        FloatBinaryOperation<float_multiply,
+                             L"float.__mul__ expects a float receiver">;
+    using FloatRMulOperation =
+        FloatBinaryOperation<float_multiply,
+                             L"float.__rmul__ expects a float receiver">;
+    using FloatMulHandlers =
+        FloatMulOperation::Handlers<TrustedHandlerEffects::Allocate,
+                                    TrustedHandlerSemantics::Mul>;
+    using FloatRMulHandlers =
+        FloatRMulOperation::Handlers<TrustedHandlerEffects::Allocate,
+                                     TrustedHandlerSemantics::Mul>;
+    using FloatMulResolver =
+        FloatBinaryResolver<FloatMulHandlers, FloatMulHandlers>;
+    using FloatRMulResolver =
+        FloatBinaryResolver<FloatRMulHandlers, FloatMulHandlers>;
 
-    template <typename NormalOperator, typename ReflectedOperator>
-    static TrustedResolution resolve_trusted_float_binary_resolver(
-        VirtualMachine *vm, ShapeKey operand0_key, ShapeKey operand1_key,
-        TrustedHandlerOperandOrder order, TrustedHandlerArity requested_arity)
-    {
-        if(requested_arity != TrustedHandlerArity::Binary)
-        {
-            return TrustedResolution::no_trusted_handler_call_untrusted();
-        }
-        if(order == TrustedHandlerOperandOrder::Reflected)
-        {
-            return resolve_trusted_float_binary_handler<ReflectedOperator>(
-                vm, operand0_key, operand1_key);
-        }
-        return resolve_trusted_float_binary_handler<NormalOperator>(
-            vm, operand0_key, operand1_key);
-    }
+    static constexpr TrustedHandlerEffects FloatRaisingBinaryEffects =
+        TrustedHandlerEffects::Allocate | TrustedHandlerEffects::Raise;
+
+    using FloatTrueDivOperation =
+        FloatBinaryOperation<float_true_divide,
+                             L"float.__truediv__ expects a float receiver">;
+    using FloatRTrueDivOperation =
+        FloatBinaryOperation<float_reverse_true_divide,
+                             L"float.__rtruediv__ expects a float receiver">;
+    using FloatTrueDivHandlers =
+        FloatTrueDivOperation::Handlers<FloatRaisingBinaryEffects,
+                                        TrustedHandlerSemantics::TrueDiv>;
+    using FloatRTrueDivHandlers =
+        FloatRTrueDivOperation::Handlers<FloatRaisingBinaryEffects,
+                                         TrustedHandlerSemantics::RTrueDiv>;
+    using FloatTrueDivResolver =
+        FloatBinaryResolver<FloatTrueDivHandlers, FloatRTrueDivHandlers>;
+    using FloatRTrueDivResolver =
+        FloatBinaryResolver<FloatRTrueDivHandlers, FloatTrueDivHandlers>;
+
+    using FloatFloorDivOperation =
+        FloatBinaryOperation<float_floor_divide,
+                             L"float.__floordiv__ expects a float receiver">;
+    using FloatRFloorDivOperation =
+        FloatBinaryOperation<float_reverse_floor_divide,
+                             L"float.__rfloordiv__ expects a float receiver">;
+    using FloatFloorDivHandlers =
+        FloatFloorDivOperation::Handlers<FloatRaisingBinaryEffects,
+                                         TrustedHandlerSemantics::FloorDiv>;
+    using FloatRFloorDivHandlers =
+        FloatRFloorDivOperation::Handlers<FloatRaisingBinaryEffects,
+                                          TrustedHandlerSemantics::RFloorDiv>;
+    using FloatFloorDivResolver =
+        FloatBinaryResolver<FloatFloorDivHandlers, FloatRFloorDivHandlers>;
+    using FloatRFloorDivResolver =
+        FloatBinaryResolver<FloatRFloorDivHandlers, FloatFloorDivHandlers>;
+
+    using FloatModOperation =
+        FloatBinaryOperation<float_modulo,
+                             L"float.__mod__ expects a float receiver">;
+    using FloatRModOperation =
+        FloatBinaryOperation<float_reverse_modulo,
+                             L"float.__rmod__ expects a float receiver">;
+    using FloatModHandlers =
+        FloatModOperation::Handlers<FloatRaisingBinaryEffects,
+                                    TrustedHandlerSemantics::Mod>;
+    using FloatRModHandlers =
+        FloatRModOperation::Handlers<FloatRaisingBinaryEffects,
+                                     TrustedHandlerSemantics::RMod>;
+    using FloatModResolver =
+        FloatBinaryResolver<FloatModHandlers, FloatRModHandlers>;
+    using FloatRModResolver =
+        FloatBinaryResolver<FloatRModHandlers, FloatModHandlers>;
+
+    using FloatLtOperation =
+        FloatBinaryOperation<float_less,
+                             L"float.__lt__ expects a float receiver">;
+    using FloatLeOperation =
+        FloatBinaryOperation<float_less_equal,
+                             L"float.__le__ expects a float receiver">;
+    using FloatGtOperation =
+        FloatBinaryOperation<float_greater,
+                             L"float.__gt__ expects a float receiver">;
+    using FloatGeOperation =
+        FloatBinaryOperation<float_greater_equal,
+                             L"float.__ge__ expects a float receiver">;
+    using FloatLtHandlers =
+        FloatLtOperation::Handlers<TrustedHandlerEffects::None,
+                                   TrustedHandlerSemantics::Less>;
+    using FloatLeHandlers =
+        FloatLeOperation::Handlers<TrustedHandlerEffects::None,
+                                   TrustedHandlerSemantics::LessEqual>;
+    using FloatGtHandlers =
+        FloatGtOperation::Handlers<TrustedHandlerEffects::None,
+                                   TrustedHandlerSemantics::Greater>;
+    using FloatGeHandlers =
+        FloatGeOperation::Handlers<TrustedHandlerEffects::None,
+                                   TrustedHandlerSemantics::GreaterEqual>;
+    using FloatLtResolver =
+        FloatBinaryResolver<FloatLtHandlers, FloatGtHandlers>;
+    using FloatLeResolver =
+        FloatBinaryResolver<FloatLeHandlers, FloatGeHandlers>;
+    using FloatGtResolver =
+        FloatBinaryResolver<FloatGtHandlers, FloatLtHandlers>;
+    using FloatGeResolver =
+        FloatBinaryResolver<FloatGeHandlers, FloatLeHandlers>;
 
     template <typename Operator, TrustedHandlerEffects Effects,
               TrustedHandlerSemantics Semantics>
@@ -732,25 +678,18 @@ namespace cl
                 vm,
                 builtin_intrinsic_method(L"__eq__", FloatEqOperation::native,
                                          L"Return self == value.")),
-            with_trusted_handler_resolver(
-                builtin_intrinsic_method(
-                    L"__ne__", native_float_binary_operator<FloatNeOperator>,
-                    L"Return self != value."),
-                resolve_trusted_float_binary_resolver<FloatNeOperator,
-                                                      FloatNeOperator>),
-            with_trusted_handler_resolver(
-                builtin_intrinsic_method(
-                    L"__add__", native_float_binary_operator<FloatAddOperator>,
-                    L"Return self + value."),
-                resolve_trusted_float_binary_resolver<FloatAddOperator,
-                                                      FloatAddOperator>),
-            with_trusted_handler_resolver(
-                builtin_intrinsic_method(
-                    L"__radd__",
-                    native_float_binary_operator<FloatRAddOperator>,
-                    L"Return value + self."),
-                resolve_trusted_float_binary_resolver<FloatRAddOperator,
-                                                      FloatAddOperator>),
+            with_trusted_handler_resolver<FloatNeResolver>(
+                vm,
+                builtin_intrinsic_method(L"__ne__", FloatNeOperation::native,
+                                         L"Return self != value.")),
+            with_trusted_handler_resolver<FloatAddResolver>(
+                vm,
+                builtin_intrinsic_method(L"__add__", FloatAddOperation::native,
+                                         L"Return self + value.")),
+            with_trusted_handler_resolver<FloatRAddResolver>(
+                vm, builtin_intrinsic_method(L"__radd__",
+                                             FloatRAddOperation::native,
+                                             L"Return value + self.")),
             with_trusted_handler_resolver<FloatSubResolver>(
                 vm,
                 builtin_intrinsic_method(L"__sub__", FloatSubOperation::native,
@@ -759,84 +698,54 @@ namespace cl
                 vm, builtin_intrinsic_method(L"__rsub__",
                                              FloatRSubOperation::native,
                                              L"Return value - self.")),
-            with_trusted_handler_resolver(
-                builtin_intrinsic_method(
-                    L"__mul__", native_float_binary_operator<FloatMulOperator>,
-                    L"Return self * value."),
-                resolve_trusted_float_binary_resolver<FloatMulOperator,
-                                                      FloatMulOperator>),
-            with_trusted_handler_resolver(
-                builtin_intrinsic_method(
-                    L"__rmul__",
-                    native_float_binary_operator<FloatRMulOperator>,
-                    L"Return value * self."),
-                resolve_trusted_float_binary_resolver<FloatRMulOperator,
-                                                      FloatMulOperator>),
-            with_trusted_handler_resolver(
-                builtin_intrinsic_method(
-                    L"__truediv__",
-                    native_float_binary_operator<FloatTrueDivOperator>,
-                    L"Return self / value."),
-                resolve_trusted_float_binary_resolver<FloatTrueDivOperator,
-                                                      FloatRTrueDivOperator>),
-            with_trusted_handler_resolver(
-                builtin_intrinsic_method(
-                    L"__rtruediv__",
-                    native_float_binary_operator<FloatRTrueDivOperator>,
-                    L"Return value / self."),
-                resolve_trusted_float_binary_resolver<FloatRTrueDivOperator,
-                                                      FloatTrueDivOperator>),
-            with_trusted_handler_resolver(
-                builtin_intrinsic_method(
-                    L"__floordiv__",
-                    native_float_binary_operator<FloatFloorDivOperator>,
-                    L"Return self // value."),
-                resolve_trusted_float_binary_resolver<FloatFloorDivOperator,
-                                                      FloatRFloorDivOperator>),
-            with_trusted_handler_resolver(
-                builtin_intrinsic_method(
-                    L"__rfloordiv__",
-                    native_float_binary_operator<FloatRFloorDivOperator>,
-                    L"Return value // self."),
-                resolve_trusted_float_binary_resolver<FloatRFloorDivOperator,
-                                                      FloatFloorDivOperator>),
-            with_trusted_handler_resolver(
-                builtin_intrinsic_method(
-                    L"__mod__", native_float_binary_operator<FloatModOperator>,
-                    L"Return self % value."),
-                resolve_trusted_float_binary_resolver<FloatModOperator,
-                                                      FloatRModOperator>),
-            with_trusted_handler_resolver(
-                builtin_intrinsic_method(
-                    L"__rmod__",
-                    native_float_binary_operator<FloatRModOperator>,
-                    L"Return value % self."),
-                resolve_trusted_float_binary_resolver<FloatRModOperator,
-                                                      FloatModOperator>),
-            with_trusted_handler_resolver(
-                builtin_intrinsic_method(
-                    L"__lt__", native_float_binary_operator<FloatLtOperator>,
-                    L"Return self < value."),
-                resolve_trusted_float_binary_resolver<FloatLtOperator,
-                                                      FloatGtOperator>),
-            with_trusted_handler_resolver(
-                builtin_intrinsic_method(
-                    L"__le__", native_float_binary_operator<FloatLeOperator>,
-                    L"Return self <= value."),
-                resolve_trusted_float_binary_resolver<FloatLeOperator,
-                                                      FloatGeOperator>),
-            with_trusted_handler_resolver(
-                builtin_intrinsic_method(
-                    L"__gt__", native_float_binary_operator<FloatGtOperator>,
-                    L"Return self > value."),
-                resolve_trusted_float_binary_resolver<FloatGtOperator,
-                                                      FloatLtOperator>),
-            with_trusted_handler_resolver(
-                builtin_intrinsic_method(
-                    L"__ge__", native_float_binary_operator<FloatGeOperator>,
-                    L"Return self >= value."),
-                resolve_trusted_float_binary_resolver<FloatGeOperator,
-                                                      FloatLeOperator>),
+            with_trusted_handler_resolver<FloatMulResolver>(
+                vm,
+                builtin_intrinsic_method(L"__mul__", FloatMulOperation::native,
+                                         L"Return self * value.")),
+            with_trusted_handler_resolver<FloatRMulResolver>(
+                vm, builtin_intrinsic_method(L"__rmul__",
+                                             FloatRMulOperation::native,
+                                             L"Return value * self.")),
+            with_trusted_handler_resolver<FloatTrueDivResolver>(
+                vm, builtin_intrinsic_method(L"__truediv__",
+                                             FloatTrueDivOperation::native,
+                                             L"Return self / value.")),
+            with_trusted_handler_resolver<FloatRTrueDivResolver>(
+                vm, builtin_intrinsic_method(L"__rtruediv__",
+                                             FloatRTrueDivOperation::native,
+                                             L"Return value / self.")),
+            with_trusted_handler_resolver<FloatFloorDivResolver>(
+                vm, builtin_intrinsic_method(L"__floordiv__",
+                                             FloatFloorDivOperation::native,
+                                             L"Return self // value.")),
+            with_trusted_handler_resolver<FloatRFloorDivResolver>(
+                vm, builtin_intrinsic_method(L"__rfloordiv__",
+                                             FloatRFloorDivOperation::native,
+                                             L"Return value // self.")),
+            with_trusted_handler_resolver<FloatModResolver>(
+                vm,
+                builtin_intrinsic_method(L"__mod__", FloatModOperation::native,
+                                         L"Return self % value.")),
+            with_trusted_handler_resolver<FloatRModResolver>(
+                vm, builtin_intrinsic_method(L"__rmod__",
+                                             FloatRModOperation::native,
+                                             L"Return value % self.")),
+            with_trusted_handler_resolver<FloatLtResolver>(
+                vm,
+                builtin_intrinsic_method(L"__lt__", FloatLtOperation::native,
+                                         L"Return self < value.")),
+            with_trusted_handler_resolver<FloatLeResolver>(
+                vm,
+                builtin_intrinsic_method(L"__le__", FloatLeOperation::native,
+                                         L"Return self <= value.")),
+            with_trusted_handler_resolver<FloatGtResolver>(
+                vm,
+                builtin_intrinsic_method(L"__gt__", FloatGtOperation::native,
+                                         L"Return self > value.")),
+            with_trusted_handler_resolver<FloatGeResolver>(
+                vm,
+                builtin_intrinsic_method(L"__ge__", FloatGeOperation::native,
+                                         L"Return self >= value.")),
             with_trusted_handler_resolver<FloatUnaryResolver<FloatNegHandler>>(
                 vm,
                 builtin_intrinsic_method(
