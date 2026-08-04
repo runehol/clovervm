@@ -87,8 +87,7 @@ namespace cl::jit
         TrustedHandlerCallInstruction call =
             builder.emplace_instruction<TrustedHandlerCallInstruction>(
                 entry, arguments,
-                reinterpret_cast<TrustedHandlerTarget>(
-                    test_trusted_unary_handler));
+                erase_trusted_handler_target(test_trusted_unary_handler));
         builder.emplace_instruction<BareReturnInstruction>(
             entry, TaggedValueRef(call));
         ControlFlowGraph *graph = builder.finalize();

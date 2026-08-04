@@ -23,8 +23,7 @@ namespace cl::jit
 
         TrustedHandlerTarget test_trusted_handler_target()
         {
-            return reinterpret_cast<TrustedHandlerTarget>(
-                test_trusted_unary_handler);
+            return erase_trusted_handler_target(test_trusted_unary_handler);
         }
 
         TaggedValueRef emplace_constant(GraphBuilder &builder, Block *block,

@@ -225,11 +225,11 @@ namespace cl
             switch(arity)
             {
                 case TrustedHandlerArity::Unary:
-                    return reinterpret_cast<TrustedHandlerTarget>(unary);
+                    return erase_trusted_handler_target(unary);
                 case TrustedHandlerArity::Binary:
-                    return reinterpret_cast<TrustedHandlerTarget>(binary);
+                    return erase_trusted_handler_target(binary);
                 case TrustedHandlerArity::Ternary:
-                    return reinterpret_cast<TrustedHandlerTarget>(ternary);
+                    return erase_trusted_handler_target(ternary);
                 case TrustedHandlerArity::None:
                     return nullptr;
             }

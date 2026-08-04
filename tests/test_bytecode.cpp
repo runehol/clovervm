@@ -14,6 +14,22 @@ using namespace cl;
 
 namespace
 {
+    using UnsupportedHandler = Value (*)(ThreadState *);
+    using QuaternaryHandler = Value (*)(ThreadState *, Value, Value, Value,
+                                        Value);
+
+    static_assert(is_trusted_handler_function_v<UnaryHandler>);
+    static_assert(is_trusted_handler_function_v<BinaryHandler>);
+    static_assert(is_trusted_handler_function_v<TernaryHandler>);
+    static_assert(!is_trusted_handler_function_v<UnsupportedHandler>);
+    static_assert(!is_trusted_handler_function_v<QuaternaryHandler>);
+    static_assert(trusted_handler_arity(static_cast<UnaryHandler>(nullptr)) ==
+                  TrustedHandlerArity::Unary);
+    static_assert(trusted_handler_arity(static_cast<BinaryHandler>(nullptr)) ==
+                  TrustedHandlerArity::Binary);
+    static_assert(trusted_handler_arity(static_cast<TernaryHandler>(nullptr)) ==
+                  TrustedHandlerArity::Ternary);
+
     BytecodeInstruction find_instruction(const CodeObject &code_object,
                                          Bytecode encoded_opcode)
     {
