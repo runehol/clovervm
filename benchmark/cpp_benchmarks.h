@@ -35,6 +35,9 @@ namespace benchmark_cpp
     int64_t iterative_fib_run(int64_t n);
     int64_t iterative_fib_items(int64_t n);
 
+    int64_t mandelbrot_run(int64_t n);
+    int64_t mandelbrot_items(int64_t n);
+
     int64_t str_constructor_int_run(int64_t n);
     int64_t str_constructor_int_items(int64_t n);
 

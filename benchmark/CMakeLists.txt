@@ -44,6 +44,7 @@ add_executable(bench_clovervm
     int_constructor_int.cpp
     int_constructor_string.cpp
     iterative_fib.cpp
+    mandelbrot.cpp
     method_call.cpp
     method_call_class_attribute_write.cpp
     method_keyword_call.cpp

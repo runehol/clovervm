@@ -41,6 +41,8 @@ namespace
             {"benchmark/iterative_fib.py",
              {benchmark_cpp::iterative_fib_run,
               benchmark_cpp::iterative_fib_items}},
+            {"benchmark/mandelbrot.py",
+             {benchmark_cpp::mandelbrot_run, benchmark_cpp::mandelbrot_items}},
             {"benchmark/str_constructor_int.py",
              {benchmark_cpp::str_constructor_int_run,
               benchmark_cpp::str_constructor_int_items}},
@@ -636,6 +638,15 @@ static void BM_IterativeFibonacci(benchmark::State &state)
 BENCHMARK_TEMPLATE(BM_IterativeFibonacci, CloverProgram)
     ->Name("BM_IterativeFibonacci")
     ->Arg(100000);
+
+template <typename Program> static void BM_Mandelbrot(benchmark::State &state)
+{
+    run_benchmark_case<Program>(state, "benchmark/mandelbrot.py",
+                                state.range(0));
+}
+BENCHMARK_TEMPLATE(BM_Mandelbrot, CloverProgram)
+    ->Name("BM_Mandelbrot")
+    ->Arg(100);
 
 template <typename Program> static void BM_WhileLoop(benchmark::State &state)
 {
