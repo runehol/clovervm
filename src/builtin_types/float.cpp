@@ -126,27 +126,16 @@ namespace cl
         }
     };
 
-    struct FloatSubOperator
+    static Value float_subtract(ThreadState *thread, double left, double right)
     {
-        static constexpr const wchar_t *receiver_error =
-            L"float.__sub__ expects a float receiver";
+        return thread->make_object_value<Float>(left - right).raw_value();
+    }
 
-        Value operator()(ThreadState *thread, double left, double right) const
-        {
-            return thread->make_object_value<Float>(left - right).raw_value();
-        }
-    };
-
-    struct FloatRSubOperator
+    static Value float_reverse_subtract(ThreadState *thread, double left,
+                                        double right)
     {
-        static constexpr const wchar_t *receiver_error =
-            L"float.__rsub__ expects a float receiver";
-
-        Value operator()(ThreadState *thread, double left, double right) const
-        {
-            return thread->make_object_value<Float>(right - left).raw_value();
-        }
-    };
+        return thread->make_object_value<Float>(right - left).raw_value();
+    }
 
     struct FloatMulOperator
     {
@@ -612,6 +601,23 @@ namespace cl
     using FloatEqResolver =
         FloatBinaryResolver<FloatEqHandlers, FloatEqHandlers>;
 
+    using FloatSubOperation =
+        FloatBinaryOperation<float_subtract,
+                             L"float.__sub__ expects a float receiver">;
+    using FloatRSubOperation =
+        FloatBinaryOperation<float_reverse_subtract,
+                             L"float.__rsub__ expects a float receiver">;
+    using FloatSubHandlers =
+        FloatSubOperation::Handlers<TrustedHandlerEffects::Allocate,
+                                    TrustedHandlerSemantics::Sub>;
+    using FloatRSubHandlers =
+        FloatRSubOperation::Handlers<TrustedHandlerEffects::Allocate,
+                                     TrustedHandlerSemantics::RSub>;
+    using FloatSubResolver =
+        FloatBinaryResolver<FloatSubHandlers, FloatRSubHandlers>;
+    using FloatRSubResolver =
+        FloatBinaryResolver<FloatRSubHandlers, FloatSubHandlers>;
+
     template <typename Operator>
     static TrustedResolution resolve_trusted_float_binary_handler(
         VirtualMachine *vm, ShapeKey operand0_key, ShapeKey operand1_key)
@@ -745,19 +751,14 @@ namespace cl
                     L"Return value + self."),
                 resolve_trusted_float_binary_resolver<FloatRAddOperator,
                                                       FloatAddOperator>),
-            with_trusted_handler_resolver(
-                builtin_intrinsic_method(
-                    L"__sub__", native_float_binary_operator<FloatSubOperator>,
-                    L"Return self - value."),
-                resolve_trusted_float_binary_resolver<FloatSubOperator,
-                                                      FloatRSubOperator>),
-            with_trusted_handler_resolver(
-                builtin_intrinsic_method(
-                    L"__rsub__",
-                    native_float_binary_operator<FloatRSubOperator>,
-                    L"Return value - self."),
-                resolve_trusted_float_binary_resolver<FloatRSubOperator,
-                                                      FloatSubOperator>),
+            with_trusted_handler_resolver<FloatSubResolver>(
+                vm,
+                builtin_intrinsic_method(L"__sub__", FloatSubOperation::native,
+                                         L"Return self - value.")),
+            with_trusted_handler_resolver<FloatRSubResolver>(
+                vm, builtin_intrinsic_method(L"__rsub__",
+                                             FloatRSubOperation::native,
+                                             L"Return value - self.")),
             with_trusted_handler_resolver(
                 builtin_intrinsic_method(
                     L"__mul__", native_float_binary_operator<FloatMulOperator>,
