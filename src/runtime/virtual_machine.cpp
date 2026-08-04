@@ -52,6 +52,30 @@
 
 namespace cl
 {
+    void VirtualMachine::register_trusted_handler_metadata(
+        TrustedHandlerTarget target, TrustedHandlerMetadata metadata)
+    {
+        std::lock_guard<std::mutex> lock(trusted_handler_registry_mutex_);
+        auto [entry, inserted] =
+            trusted_handler_registry_.emplace(target, metadata);
+        if(!inserted && entry->second != metadata)
+        {
+            fatal("conflicting trusted handler registration");
+        }
+    }
+
+    std::optional<TrustedHandlerMetadata>
+    VirtualMachine::trusted_handler_metadata(TrustedHandlerTarget target) const
+    {
+        std::lock_guard<std::mutex> lock(trusted_handler_registry_mutex_);
+        auto entry = trusted_handler_registry_.find(target);
+        if(entry == trusted_handler_registry_.end())
+        {
+            return std::nullopt;
+        }
+        return entry->second;
+    }
+
     static std::wstring vm_string_to_wstring(TValue<String> string)
     {
         String *str = string.extract();

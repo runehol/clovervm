@@ -7,8 +7,12 @@
 #include <cstdint>
 #include <cstdio>
 #include <memory>
+#include <mutex>
+#include <optional>
 #include <utility>
 #include <vector>
+
+#include <absl/container/flat_hash_map.h>
 
 #include "api/clover_entry.h"
 #include "builtin_types/intern_store.h"
@@ -21,6 +25,7 @@
 #include "object_model/typed_value.h"
 #include "object_model/value.h"
 #include "runtime/operator_dispatch.h"
+#include "runtime/trusted_handler.h"
 
 namespace cl
 {
@@ -52,6 +57,21 @@ namespace cl
 
         ThreadState *make_new_thread();
         void run_heap_reclamation();
+
+        template <TrustedHandlerFunction Target>
+        void register_trusted_handler(Target target,
+                                      TrustedHandlerEffects effects,
+                                      TrustedHandlerSemantics semantics =
+                                          TrustedHandlerSemantics::Generic)
+        {
+            assert(target != nullptr);
+            register_trusted_handler_metadata(
+                erase_trusted_handler_target(target),
+                {trusted_handler_arity(target), effects, semantics});
+        }
+
+        std::optional<TrustedHandlerMetadata>
+        trusted_handler_metadata(TrustedHandlerTarget target) const;
 
         bool *safepoint_requested_ptr() { return &safepoint_requested_; }
         void request_safepoint() { safepoint_requested_ = true; }
@@ -364,6 +384,9 @@ namespace cl
 
         jit::CodeCache *make_code_cache();
 
+        void register_trusted_handler_metadata(TrustedHandlerTarget target,
+                                               TrustedHandlerMetadata metadata);
+
         static constexpr size_t NativeLayoutCount =
             static_cast<size_t>(NativeLayoutId::Count);
 
@@ -412,6 +435,9 @@ namespace cl
         std::array<OperatorDispatchTable,
                    static_cast<size_t>(OperatorDispatchTableId::Count)>
             operator_dispatch_tables_ = {};
+        mutable std::mutex trusted_handler_registry_mutex_;
+        absl::flat_hash_map<TrustedHandlerTarget, TrustedHandlerMetadata>
+            trusted_handler_registry_;
         Shape *smi_shape_ = nullptr;
         Shape *bool_shape_ = nullptr;
         Shape *none_shape_ = nullptr;
@@ -442,6 +468,14 @@ namespace cl
         void *safepoint_callback_context_for_testing_ = nullptr;
         FILE *stdout_file_ = stdout;
     };
+
+    template <auto Target, TrustedHandlerEffects Effects,
+              TrustedHandlerSemantics Semantics>
+    void TrustedHandlerDefinition<Target, Effects, Semantics>::register_with(
+        VirtualMachine &vm)
+    {
+        vm.register_trusted_handler(Target, Effects, Semantics);
+    }
 
     [[noreturn]] void fatal_bootstrap_python_exception(ThreadState *thread,
                                                        const char *context);

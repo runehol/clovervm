@@ -61,6 +61,7 @@ target_sources(test_clovervm PRIVATE
 	test_scope.cpp
 	test_heap_reclamation.cpp
 	test_thread_state.cpp
+	test_trusted_handler.cpp
 	test_owned.cpp
 	test_typed_value.cpp
 	test_unicode.cpp

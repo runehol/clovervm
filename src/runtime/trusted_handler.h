@@ -8,6 +8,7 @@
 namespace cl
 {
     class ThreadState;
+    class VirtualMachine;
 
     using UnaryHandler = Value (*)(ThreadState *, Value);
     using BinaryHandler = Value (*)(ThreadState *, Value, Value);
@@ -69,6 +70,15 @@ namespace cl
         Pos,
     };
 
+    struct TrustedHandlerMetadata
+    {
+        TrustedHandlerArity arity;
+        TrustedHandlerEffects effects;
+        TrustedHandlerSemantics semantics;
+
+        bool operator==(const TrustedHandlerMetadata &) const = default;
+    };
+
     template <typename Target> struct TrustedHandlerFunctionTraits
     {
         static constexpr bool supported = false;
@@ -112,6 +122,103 @@ namespace cl
     {
         return reinterpret_cast<TrustedHandlerTarget>(target);
     }
+
+    enum class TrustedResolutionKind
+    {
+        NoTrustedHandlerCallUntrusted,
+        TrustedHandler,
+        KnownNotImplementedSkipMethod,
+    };
+
+    struct TrustedResolution
+    {
+        TrustedResolutionKind kind =
+            TrustedResolutionKind::NoTrustedHandlerCallUntrusted;
+        TrustedHandlerArity arity = TrustedHandlerArity::None;
+
+        union
+        {
+            UnaryHandler unary;
+            BinaryHandler binary;
+            TernaryHandler ternary;
+        };
+
+        TrustedResolution() : unary(nullptr) {}
+
+        static TrustedResolution no_trusted_handler_call_untrusted()
+        {
+            return TrustedResolution();
+        }
+
+        static TrustedResolution call_trusted(UnaryHandler handler)
+        {
+            TrustedResolution resolution;
+            resolution.kind = TrustedResolutionKind::TrustedHandler;
+            resolution.arity = TrustedHandlerArity::Unary;
+            resolution.unary = handler;
+            return resolution;
+        }
+
+        static TrustedResolution call_trusted(BinaryHandler handler)
+        {
+            TrustedResolution resolution;
+            resolution.kind = TrustedResolutionKind::TrustedHandler;
+            resolution.arity = TrustedHandlerArity::Binary;
+            resolution.binary = handler;
+            return resolution;
+        }
+
+        static TrustedResolution call_trusted(TernaryHandler handler)
+        {
+            TrustedResolution resolution;
+            resolution.kind = TrustedResolutionKind::TrustedHandler;
+            resolution.arity = TrustedHandlerArity::Ternary;
+            resolution.ternary = handler;
+            return resolution;
+        }
+
+        template <TrustedHandlerFunction Target>
+        static TrustedResolution call_registered(Target handler)
+        {
+            return call_trusted(handler);
+        }
+
+        static TrustedResolution known_not_implemented_skip_method()
+        {
+            TrustedResolution resolution;
+            resolution.kind =
+                TrustedResolutionKind::KnownNotImplementedSkipMethod;
+            return resolution;
+        }
+
+        bool has_trusted_handler() const
+        {
+            return kind == TrustedResolutionKind::TrustedHandler;
+        }
+    };
+
+    template <auto Target, TrustedHandlerEffects Effects,
+              TrustedHandlerSemantics Semantics =
+                  TrustedHandlerSemantics::Generic>
+    class TrustedHandlerDefinition
+    {
+        static_assert(is_trusted_handler_function_v<decltype(Target)>);
+        static_assert(Target != nullptr);
+
+    public:
+        static constexpr auto target = Target;
+        static constexpr TrustedHandlerArity arity =
+            trusted_handler_arity(Target);
+        static constexpr TrustedHandlerEffects effects = Effects;
+        static constexpr TrustedHandlerSemantics semantics = Semantics;
+
+        static void register_with(VirtualMachine &vm);
+
+        static TrustedResolution resolution()
+        {
+            return TrustedResolution::call_registered(Target);
+        }
+    };
 
 }  // namespace cl
 
