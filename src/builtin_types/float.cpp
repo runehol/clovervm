@@ -6,6 +6,7 @@
 #include "object_model/shape_key.h"
 #include "runtime/thread_state.h"
 #include "runtime/virtual_machine.h"
+#include "util/fixed_wide_string.h"
 #include <cmath>
 #include <fmt/format.h>
 #include <iterator>
@@ -85,17 +86,11 @@ namespace cl
         return static_cast<double>(integer_value.get_smi());
     }
 
-    struct FloatEqOperator
+    static Value float_equal(ThreadState *thread, double left, double right)
     {
-        static constexpr const wchar_t *receiver_error =
-            L"float.__eq__ expects a float receiver";
-
-        Value operator()(ThreadState *thread, double left, double right) const
-        {
-            (void)thread;
-            return left == right ? Value::True() : Value::False();
-        }
-    };
+        (void)thread;
+        return left == right ? Value::True() : Value::False();
+    }
 
     struct FloatNeOperator
     {
@@ -390,6 +385,93 @@ namespace cl
         }
     };
 
+    using FloatBinaryFunction = Value (*)(ThreadState *, double, double);
+
+    template <typename Operation, TrustedHandlerEffects Effects,
+              TrustedHandlerSemantics Semantics>
+    struct UniformFloatBinaryHandlers;
+
+    template <FloatBinaryFunction Function, FixedWideString ReceiverError>
+    struct FloatBinaryOperation
+    {
+        using Self = FloatBinaryOperation<Function, ReceiverError>;
+
+        static constexpr auto function = Function;
+
+        static Value native(ThreadState *thread, Value self, Value other)
+        {
+            if(!can_convert_to<Float>(self))
+            {
+                return thread->set_pending_builtin_exception_string(
+                    L"TypeError", ReceiverError.c_str());
+            }
+
+            double right;
+            if(!try_get_float_or_smi_or_bool(other, &right))
+            {
+                return Value::NotImplemented();
+            }
+            return Function(thread, self.get_ptr<Float>()->value, right);
+        }
+
+        template <TrustedHandlerEffects Effects,
+                  TrustedHandlerSemantics Semantics>
+        using Handlers = UniformFloatBinaryHandlers<Self, Effects, Semantics>;
+    };
+
+    enum class FloatBinaryAdaptation
+    {
+        FloatFloat,
+        FloatIntlike,
+        IntlikeFloat,
+    };
+
+    template <FloatBinaryFunction Function, FloatBinaryAdaptation Adaptation>
+    static Value trusted_adapted_float_binary_operation(ThreadState *thread,
+                                                        Value left, Value right)
+    {
+        if constexpr(Adaptation == FloatBinaryAdaptation::FloatFloat)
+        {
+            return Function(thread, left.get_ptr<Float>()->value,
+                            right.get_ptr<Float>()->value);
+        }
+        else if constexpr(Adaptation == FloatBinaryAdaptation::FloatIntlike)
+        {
+            return Function(thread, left.get_ptr<Float>()->value,
+                            smi_or_bool_as_double(right));
+        }
+        else
+        {
+            static_assert(Adaptation == FloatBinaryAdaptation::IntlikeFloat);
+            return Function(thread, smi_or_bool_as_double(left),
+                            right.get_ptr<Float>()->value);
+        }
+    }
+
+    template <typename Operation, FloatBinaryAdaptation Adaptation,
+              TrustedHandlerEffects Effects, TrustedHandlerSemantics Semantics>
+    struct FloatBinaryHandler
+        : TrustedHandlerDefinition<trusted_adapted_float_binary_operation<
+                                       Operation::function, Adaptation>,
+                                   Effects, Semantics>
+    {
+    };
+
+    template <typename Operation, TrustedHandlerEffects Effects,
+              TrustedHandlerSemantics Semantics>
+    struct UniformFloatBinaryHandlers
+    {
+        using FloatFloat =
+            FloatBinaryHandler<Operation, FloatBinaryAdaptation::FloatFloat,
+                               Effects, Semantics>;
+        using FloatIntlike =
+            FloatBinaryHandler<Operation, FloatBinaryAdaptation::FloatIntlike,
+                               Effects, Semantics>;
+        using IntlikeFloat =
+            FloatBinaryHandler<Operation, FloatBinaryAdaptation::IntlikeFloat,
+                               Effects, Semantics>;
+    };
+
     template <typename Operator>
     static Value native_float_unary_operator(ThreadState *thread, Value self)
     {
@@ -459,6 +541,76 @@ namespace cl
         return key == ShapeKey::from_value(Value::from_smi(0)) ||
                key == ShapeKey::from_value(Value::False());
     }
+
+    template <typename NormalHandlers, typename ReflectedHandlers>
+    class FloatBinaryResolver final
+        : public TrustedHandlerResolverBase<
+              typename NormalHandlers::FloatFloat,
+              typename NormalHandlers::FloatIntlike,
+              typename NormalHandlers::IntlikeFloat,
+              typename ReflectedHandlers::FloatFloat,
+              typename ReflectedHandlers::FloatIntlike,
+              typename ReflectedHandlers::IntlikeFloat>
+    {
+        template <typename Handlers>
+        static TrustedResolution resolve_handlers(VirtualMachine *vm,
+                                                  ShapeKey operand0_key,
+                                                  ShapeKey operand1_key)
+        {
+            using FloatFloat = typename Handlers::FloatFloat;
+            using FloatIntlike = typename Handlers::FloatIntlike;
+            using IntlikeFloat = typename Handlers::IntlikeFloat;
+
+            ShapeKey float_key = ShapeKey::from_shape(
+                vm->float_class()->get_instance_root_shape());
+            if(operand0_key == float_key)
+            {
+                if(operand1_key == float_key)
+                {
+                    return FloatFloat::resolution();
+                }
+                if(is_smi_or_bool_shape_key(operand1_key))
+                {
+                    return FloatIntlike::resolution();
+                }
+            }
+            if(is_smi_or_bool_shape_key(operand0_key) &&
+               operand1_key == float_key)
+            {
+                return IntlikeFloat::resolution();
+            }
+            return TrustedResolution::no_trusted_handler_call_untrusted();
+        }
+
+    public:
+        static TrustedResolution resolve(VirtualMachine *vm,
+                                         ShapeKey operand0_key,
+                                         ShapeKey operand1_key,
+                                         TrustedHandlerOperandOrder order,
+                                         TrustedHandlerArity requested_arity)
+        {
+            if(requested_arity != TrustedHandlerArity::Binary)
+            {
+                return TrustedResolution::no_trusted_handler_call_untrusted();
+            }
+            if(order == TrustedHandlerOperandOrder::Reflected)
+            {
+                return resolve_handlers<ReflectedHandlers>(vm, operand0_key,
+                                                           operand1_key);
+            }
+            return resolve_handlers<NormalHandlers>(vm, operand0_key,
+                                                    operand1_key);
+        }
+    };
+
+    using FloatEqOperation =
+        FloatBinaryOperation<float_equal,
+                             L"float.__eq__ expects a float receiver">;
+    using FloatEqHandlers =
+        FloatEqOperation::Handlers<TrustedHandlerEffects::None,
+                                   TrustedHandlerSemantics::Equal>;
+    using FloatEqResolver =
+        FloatBinaryResolver<FloatEqHandlers, FloatEqHandlers>;
 
     template <typename Operator>
     static TrustedResolution resolve_trusted_float_binary_handler(
@@ -570,12 +722,10 @@ namespace cl
                                      L"Return str(self)."),
             builtin_intrinsic_method(L"__repr__", native_float_repr,
                                      L"Return repr(self)."),
-            with_trusted_handler_resolver(
-                builtin_intrinsic_method(
-                    L"__eq__", native_float_binary_operator<FloatEqOperator>,
-                    L"Return self == value."),
-                resolve_trusted_float_binary_resolver<FloatEqOperator,
-                                                      FloatEqOperator>),
+            with_trusted_handler_resolver<FloatEqResolver>(
+                vm,
+                builtin_intrinsic_method(L"__eq__", FloatEqOperation::native,
+                                         L"Return self == value.")),
             with_trusted_handler_resolver(
                 builtin_intrinsic_method(
                     L"__ne__", native_float_binary_operator<FloatNeOperator>,
