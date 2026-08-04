@@ -1,5 +1,6 @@
 #include "runtime/trusted_handler.h"
 #include "runtime/virtual_machine.h"
+#include "util/fixed_wide_string.h"
 
 #include <gtest/gtest.h>
 
@@ -7,6 +8,15 @@ using namespace cl;
 
 namespace
 {
+    template <FixedWideString String> struct FixedWideStringProbe
+    {
+        static constexpr auto value = String;
+    };
+
+    static_assert(FixedWideStringProbe<L"dunder method">::value.size() == 13);
+    static_assert(FixedWideStringProbe<L"dunder method">::value.c_str()[6] ==
+                  L' ');
+
     Value test_binary_handler(ThreadState *, Value, Value)
     {
         return Value::None();
