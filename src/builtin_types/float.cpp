@@ -372,10 +372,6 @@ namespace cl
     {
         static constexpr const wchar_t *receiver_error =
             L"float.__neg__ expects a float receiver";
-        static constexpr TrustedHandlerEffects trusted_effects =
-            TrustedHandlerEffects::Allocate;
-        static constexpr TrustedHandlerSemantics trusted_semantics =
-            TrustedHandlerSemantics::Neg;
 
         Value operator()(ThreadState *thread, double value) const
         {
@@ -387,10 +383,6 @@ namespace cl
     {
         static constexpr const wchar_t *receiver_error =
             L"float.__pos__ expects a float receiver";
-        static constexpr TrustedHandlerEffects trusted_effects =
-            TrustedHandlerEffects::Allocate;
-        static constexpr TrustedHandlerSemantics trusted_semantics =
-            TrustedHandlerSemantics::Pos;
 
         Value operator()(ThreadState *thread, double value) const
         {
@@ -513,18 +505,26 @@ namespace cl
             vm, operand0_key, operand1_key);
     }
 
-    template <typename Operator>
-    using FloatUnaryHandlerDefinition =
-        TrustedHandlerDefinition<trusted_float_unary_operator<Operator>,
-                                 Operator::trusted_effects,
-                                 Operator::trusted_semantics>;
-
-    template <typename Operator>
-    class FloatUnaryResolver final : public TrustedHandlerResolverBase<
-                                         FloatUnaryHandlerDefinition<Operator>>
+    template <typename Operator, TrustedHandlerEffects Effects,
+              TrustedHandlerSemantics Semantics>
+    struct FloatUnaryHandler
+        : TrustedHandlerDefinition<trusted_float_unary_operator<Operator>,
+                                   Effects, Semantics>
     {
-        using Base =
-            TrustedHandlerResolverBase<FloatUnaryHandlerDefinition<Operator>>;
+    };
+
+    using FloatNegHandler =
+        FloatUnaryHandler<FloatNegOperator, TrustedHandlerEffects::Allocate,
+                          TrustedHandlerSemantics::Neg>;
+    using FloatPosHandler =
+        FloatUnaryHandler<FloatPosOperator, TrustedHandlerEffects::Allocate,
+                          TrustedHandlerSemantics::Pos>;
+
+    template <typename HandlerDefinition>
+    class FloatUnaryResolver final
+        : public TrustedHandlerResolverBase<HandlerDefinition>
+    {
+        using Base = TrustedHandlerResolverBase<HandlerDefinition>;
         using Handler = typename Base::template Handler<0>;
 
     public:
@@ -686,12 +686,12 @@ namespace cl
                     L"Return self >= value."),
                 resolve_trusted_float_binary_resolver<FloatGeOperator,
                                                       FloatLeOperator>),
-            with_trusted_handler_resolver<FloatUnaryResolver<FloatNegOperator>>(
+            with_trusted_handler_resolver<FloatUnaryResolver<FloatNegHandler>>(
                 vm,
                 builtin_intrinsic_method(
                     L"__neg__", native_float_unary_operator<FloatNegOperator>,
                     L"Return -self.")),
-            with_trusted_handler_resolver<FloatUnaryResolver<FloatPosOperator>>(
+            with_trusted_handler_resolver<FloatUnaryResolver<FloatPosHandler>>(
                 vm,
                 builtin_intrinsic_method(
                     L"__pos__", native_float_unary_operator<FloatPosOperator>,

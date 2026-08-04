@@ -317,66 +317,63 @@ trusted_float_intlike_operator<Operator>
 trusted_intlike_float_operator<Operator>
 ```
 
-All three execute the same semantic operator and therefore inherit its effects
-and registered semantics. The inline-cache shape keys distinguish their operand
-adaptations. The operator keeps the shared metadata beside its body:
+All three execute the same semantic operator, but they remain distinct concrete
+handler targets. Effects and registered semantics belong to those handler
+types, not to the reusable operator. This matters outside floats: adaptations
+of one operation, such as list indexing by an integer or by a slice, may have
+different allocation and raising behavior.
+
+The operator therefore contains only the reusable semantic body and metadata
+needed by the checked general adapter:
 
 ```cpp
 struct FloatEqOperator
 {
-    static constexpr TrustedHandlerEffects trusted_effects =
-        TrustedHandlerEffects::None;
-    static constexpr TrustedHandlerSemantics trusted_semantics =
-        TrustedHandlerSemantics::Equal;
-
     Value operator()(ThreadState *, double left, double right) const;
 };
 
 struct FloatAddOperator
 {
-    static constexpr TrustedHandlerEffects trusted_effects =
-        TrustedHandlerEffects::Allocate;
-    static constexpr TrustedHandlerSemantics trusted_semantics =
-        TrustedHandlerSemantics::Add;
-
     Value operator()(ThreadState *, double left, double right) const;
 };
 ```
 
-`FloatAddOperator` does not acquire `Safepoint` merely because it allocates. A
-division operator declares `Raise` because its body can produce a zero-division
-exception. Each body must be reviewed for the effects it actually has.
+Float-specific handler templates bind an operator to one concrete operand
+adaptation and inherit its authoritative declaration:
+
+```cpp
+template<typename Operator, TrustedHandlerEffects Effects,
+         TrustedHandlerSemantics Semantics>
+struct FloatFloatHandler
+    : TrustedHandlerDefinition<
+          trusted_float_float_operator<Operator>, Effects, Semantics>
+{};
+
+using FloatFloatAddHandler =
+    FloatFloatHandler<FloatAddOperator,
+                      TrustedHandlerEffects::Allocate,
+                      TrustedHandlerSemantics::Add>;
+```
+
+The equivalent float/intlike and intlike/float templates produce separate
+handler types and declarations. Repeating equal effects is intentional: each
+native target has an independently reviewable contract. `Allocate` still does
+not imply `Safepoint`, and division handlers additionally declare `Raise`.
 
 The binary resolver declares normal and reflected adaptations in one sequence:
 
 ```cpp
-template<typename NormalOperator, typename ReflectedOperator>
+template<typename NormalFloatFloatHandler,
+         typename NormalFloatIntlikeHandler,
+         typename NormalIntlikeFloatHandler,
+         typename ReflectedFloatFloatHandler,
+         typename ReflectedFloatIntlikeHandler,
+         typename ReflectedIntlikeFloatHandler>
 class FloatBinaryResolver final
     : public TrustedHandlerResolverBase<
-          TrustedHandlerDefinition<
-              &trusted_float_float_operator<NormalOperator>,
-              NormalOperator::trusted_effects,
-              NormalOperator::trusted_semantics>,
-          TrustedHandlerDefinition<
-              &trusted_float_intlike_operator<NormalOperator>,
-              NormalOperator::trusted_effects,
-              NormalOperator::trusted_semantics>,
-          TrustedHandlerDefinition<
-              &trusted_intlike_float_operator<NormalOperator>,
-              NormalOperator::trusted_effects,
-              NormalOperator::trusted_semantics>,
-          TrustedHandlerDefinition<
-              &trusted_float_float_operator<ReflectedOperator>,
-              ReflectedOperator::trusted_effects,
-              ReflectedOperator::trusted_semantics>,
-          TrustedHandlerDefinition<
-              &trusted_float_intlike_operator<ReflectedOperator>,
-              ReflectedOperator::trusted_effects,
-              ReflectedOperator::trusted_semantics>,
-          TrustedHandlerDefinition<
-              &trusted_intlike_float_operator<ReflectedOperator>,
-              ReflectedOperator::trusted_effects,
-              ReflectedOperator::trusted_semantics>>
+          NormalFloatFloatHandler, NormalFloatIntlikeHandler,
+          NormalIntlikeFloatHandler, ReflectedFloatFloatHandler,
+          ReflectedFloatIntlikeHandler, ReflectedIntlikeFloatHandler>
 {
     using NormalFloatFloat = Handler<0>;
     using NormalFloatSMIOrBool = Handler<1>;
@@ -396,20 +393,30 @@ The static `resolve()` method retains the current shape and operand-order
 branching but returns `NormalFloatFloat::resolution()` and the corresponding
 named alternatives. It never repeats a function pointer.
 
-The semantic constant shown on each operator may be supplied directly or through
-a small float-family metadata base. It remains an explicit declaration; only
-the operand adaptation is derived from guarded inline-cache shape keys.
-
 Unary float resolution is the same pattern with one handler definition. If the
 normal and reflected operators are identical, their targets may occur twice in
 the sequence; idempotent registration is preferable to deduplication template
 machinery.
 
-Installation remains concise:
+Installation names the concrete handler sequence once and then installs its
+resolver:
 
 ```cpp
-with_trusted_handler_resolver<
-    FloatBinaryResolver<FloatLtOperator, FloatGtOperator>>(
+using FloatLtResolver = FloatBinaryResolver<
+    FloatFloatHandler<FloatLtOperator, TrustedHandlerEffects::None,
+                      TrustedHandlerSemantics::Less>,
+    FloatIntlikeHandler<FloatLtOperator, TrustedHandlerEffects::None,
+                        TrustedHandlerSemantics::Less>,
+    IntlikeFloatHandler<FloatLtOperator, TrustedHandlerEffects::None,
+                        TrustedHandlerSemantics::Less>,
+    FloatFloatHandler<FloatGtOperator, TrustedHandlerEffects::None,
+                      TrustedHandlerSemantics::Greater>,
+    FloatIntlikeHandler<FloatGtOperator, TrustedHandlerEffects::None,
+                        TrustedHandlerSemantics::Greater>,
+    IntlikeFloatHandler<FloatGtOperator, TrustedHandlerEffects::None,
+                        TrustedHandlerSemantics::Greater>>;
+
+with_trusted_handler_resolver<FloatLtResolver>(
         vm,
         builtin_intrinsic_method(
             L"__lt__", native_float_binary_operator<FloatLtOperator>,
@@ -440,24 +447,19 @@ struct FixedWideString
 };
 ```
 
-Common operator metadata can then carry both effects and receiver errors:
+Common operator metadata can carry checked-adapter details such as receiver
+errors without acquiring trusted-handler effects:
 
 ```cpp
-template<TrustedHandlerEffects Effects, FixedWideString ReceiverError>
+template<FixedWideString ReceiverError>
 struct FloatOperatorMetadata
 {
-    static constexpr TrustedHandlerEffects trusted_effects = Effects;
     static constexpr auto receiver_error = ReceiverError;
 };
 
 struct FloatAddOperator
-    : FloatOperatorMetadata<
-          TrustedHandlerEffects::Allocate,
-          L"float.__add__ expects a float receiver">
+    : FloatOperatorMetadata<L"float.__add__ expects a float receiver">
 {
-    static constexpr TrustedHandlerSemantics trusted_semantics =
-        TrustedHandlerSemantics::Add;
-
     Value operator()(ThreadState *, double, double) const;
 };
 ```
@@ -535,10 +537,10 @@ general/trusted adapter-family convenience only where it makes the existing
 float pattern clearer; it must build on `TrustedHandlerDefinition`, not enlarge
 its responsibilities.
 
-Review effects per concrete adapter. Reuse operator-owned effects only where
-the adapter contributes no additional effects. Give every float semantic
-operation an explicit non-`Generic` identity shared by its trusted operand
-adapters.
+Declare effects and semantics on every concrete adapted handler. Give every
+float semantic operation an explicit non-`Generic` identity, repeated across
+its trusted operand adapters where appropriate. Do not derive either field from
+the reusable operator type.
 
 ### Slice 5: First JIT Consumer
 
