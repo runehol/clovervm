@@ -45,7 +45,9 @@ architectural context
        +-------- repeat until coherent ----+
     -> explicit decisions, invariants, open questions, and validation plan
     -> milestone implementation plan
-       +-> reviewable step -> agent-assisted implementation
+       +-> reviewable step -> implementation-readiness review
+       |       -> compact API and class sketch -> engineer-agent agreement
+       |       -> agent-assisted implementation
        |       -> deterministic checks -> focused review -> coherent commit -+
        |                                                                    |
        +-------------- adjust plan and repeat until complete ---------------+
@@ -72,6 +74,17 @@ production changes. Work through it incrementally, reviewing and committing
 coherent steps rather than accumulating one large implementation. Implementation
 may expose facts the design missed; revise the document and plan rather than
 allowing the code to become an unrecorded design decision.
+
+Before coding each planned step, conduct an implementation-readiness review.
+The agent presents a compact sketch of the main API, type, and class changes,
+including the important responsibilities, ownership relationships, and call
+flow. The sketch is not another comprehensive design report; it translates the
+accepted design into a concrete implementation destination so the engineer and
+agent can confirm that they mean the same thing before code makes disagreement
+expensive. If the sketch exposes an unresolved design choice, return that choice
+to the design authority. Once the sketch is agreed, implement toward it; if the
+work requires a material departure, stop and repeat the readiness review rather
+than quietly changing direction.
 
 The appropriate degree of autonomy varies by task. Size is a poor proxy for how
 safely work can proceed without guidance; the important variables are:
@@ -202,8 +215,8 @@ modes move.
 
 - Move taste and judgment earlier, not merely faster.
 - Iterate working design documents through explicit adversarial review.
-- Derive milestone plans from coherent designs and implement them in reviewable,
-  validated steps.
+- Derive milestone plans from coherent designs, align on a compact API and class
+  sketch before each step, and implement in reviewable, validated increments.
 - Grant more autonomy as discretion falls, independent validation strengthens,
   and mistakes become cheaper to reverse.
 - Use bounded experiments and measurements to resolve hinge assumptions, and
