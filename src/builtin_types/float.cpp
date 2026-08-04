@@ -259,27 +259,15 @@ namespace cl
         return left >= right ? Value::True() : Value::False();
     }
 
-    struct FloatNegOperator
+    static Value float_negate(ThreadState *thread, double value)
     {
-        static constexpr const wchar_t *receiver_error =
-            L"float.__neg__ expects a float receiver";
+        return thread->make_object_value<Float>(-value).raw_value();
+    }
 
-        Value operator()(ThreadState *thread, double value) const
-        {
-            return thread->make_object_value<Float>(-value).raw_value();
-        }
-    };
-
-    struct FloatPosOperator
+    static Value float_positive(ThreadState *thread, double value)
     {
-        static constexpr const wchar_t *receiver_error =
-            L"float.__pos__ expects a float receiver";
-
-        Value operator()(ThreadState *thread, double value) const
-        {
-            return thread->make_object_value<Float>(value).raw_value();
-        }
-    };
+        return thread->make_object_value<Float>(value).raw_value();
+    }
 
     using FloatBinaryFunction = Value (*)(ThreadState *, double, double);
 
@@ -368,23 +356,49 @@ namespace cl
                                Effects, Semantics>;
     };
 
-    template <typename Operator>
-    static Value native_float_unary_operator(ThreadState *thread, Value self)
+    using FloatUnaryFunction = Value (*)(ThreadState *, double);
+
+    template <typename Operation, TrustedHandlerEffects Effects,
+              TrustedHandlerSemantics Semantics>
+    struct FloatUnaryHandler;
+
+    template <FloatUnaryFunction Function, FixedWideString ReceiverError>
+    struct FloatUnaryOperation
     {
-        if(!can_convert_to<Float>(self))
+        using Self = FloatUnaryOperation<Function, ReceiverError>;
+
+        static constexpr auto function = Function;
+
+        static Value native(ThreadState *thread, Value self)
         {
-            return thread->set_pending_builtin_exception_string(
-                L"TypeError", Operator::receiver_error);
+            if(!can_convert_to<Float>(self))
+            {
+                return thread->set_pending_builtin_exception_string(
+                    L"TypeError", ReceiverError.c_str());
+            }
+            return Function(thread, self.get_ptr<Float>()->value);
         }
 
-        return Operator{}(thread, self.get_ptr<Float>()->value);
+        template <TrustedHandlerEffects Effects,
+                  TrustedHandlerSemantics Semantics>
+        using Handler = FloatUnaryHandler<Self, Effects, Semantics>;
+    };
+
+    template <FloatUnaryFunction Function>
+    static Value trusted_adapted_float_unary_operation(ThreadState *thread,
+                                                       Value value)
+    {
+        return Function(thread, value.get_ptr<Float>()->value);
     }
 
-    template <typename Operator>
-    static Value trusted_float_unary_operator(ThreadState *thread, Value value)
+    template <typename Operation, TrustedHandlerEffects Effects,
+              TrustedHandlerSemantics Semantics>
+    struct FloatUnaryHandler
+        : TrustedHandlerDefinition<
+              trusted_adapted_float_unary_operation<Operation::function>,
+              Effects, Semantics>
     {
-        return Operator{}(thread, value.get_ptr<Float>()->value);
-    }
+    };
 
     static bool is_smi_or_bool_shape_key(ShapeKey key)
     {
@@ -609,20 +623,18 @@ namespace cl
     using FloatGeResolver =
         FloatBinaryResolver<FloatGeHandlers, FloatLeHandlers>;
 
-    template <typename Operator, TrustedHandlerEffects Effects,
-              TrustedHandlerSemantics Semantics>
-    struct FloatUnaryHandler
-        : TrustedHandlerDefinition<trusted_float_unary_operator<Operator>,
-                                   Effects, Semantics>
-    {
-    };
-
+    using FloatNegOperation =
+        FloatUnaryOperation<float_negate,
+                            L"float.__neg__ expects a float receiver">;
+    using FloatPosOperation =
+        FloatUnaryOperation<float_positive,
+                            L"float.__pos__ expects a float receiver">;
     using FloatNegHandler =
-        FloatUnaryHandler<FloatNegOperator, TrustedHandlerEffects::Allocate,
-                          TrustedHandlerSemantics::Neg>;
+        FloatNegOperation::Handler<TrustedHandlerEffects::Allocate,
+                                   TrustedHandlerSemantics::Neg>;
     using FloatPosHandler =
-        FloatUnaryHandler<FloatPosOperator, TrustedHandlerEffects::Allocate,
-                          TrustedHandlerSemantics::Pos>;
+        FloatPosOperation::Handler<TrustedHandlerEffects::Allocate,
+                                   TrustedHandlerSemantics::Pos>;
 
     template <typename HandlerDefinition>
     class FloatUnaryResolver final
@@ -654,6 +666,9 @@ namespace cl
             return TrustedResolution::no_trusted_handler_call_untrusted();
         }
     };
+
+    using FloatNegResolver = FloatUnaryResolver<FloatNegHandler>;
+    using FloatPosResolver = FloatUnaryResolver<FloatPosHandler>;
 
     BuiltinClassDefinition make_float_class(VirtualMachine *vm)
     {
@@ -746,16 +761,14 @@ namespace cl
                 vm,
                 builtin_intrinsic_method(L"__ge__", FloatGeOperation::native,
                                          L"Return self >= value.")),
-            with_trusted_handler_resolver<FloatUnaryResolver<FloatNegHandler>>(
+            with_trusted_handler_resolver<FloatNegResolver>(
                 vm,
-                builtin_intrinsic_method(
-                    L"__neg__", native_float_unary_operator<FloatNegOperator>,
-                    L"Return -self.")),
-            with_trusted_handler_resolver<FloatUnaryResolver<FloatPosHandler>>(
+                builtin_intrinsic_method(L"__neg__", FloatNegOperation::native,
+                                         L"Return -self.")),
+            with_trusted_handler_resolver<FloatPosResolver>(
                 vm,
-                builtin_intrinsic_method(
-                    L"__pos__", native_float_unary_operator<FloatPosOperator>,
-                    L"Return +self.")),
+                builtin_intrinsic_method(L"__pos__", FloatPosOperation::native,
+                                         L"Return +self.")),
         };
         unwrap_bootstrap_expected(
             vm,
