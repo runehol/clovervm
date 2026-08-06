@@ -1,11 +1,13 @@
 #include "jit/aarch64_cfg_emitter.h"
 
+#include "bytecode/code_object.h"
 #include "jit/aarch64_assembler.h"
 #include "jit/aarch64_jit_registers.h"
 #include "jit/aarch64_transition.h"
 #include "jit/control_flow_graph.h"
 #include "jit/instruction.h"
 #include "jit/location_assignments.h"
+#include "jit/machine_address_internal.h"
 #include "object_model/object.h"
 #include "object_model/shape.h"
 #include "object_model/validity_cell.h"
@@ -94,6 +96,13 @@ namespace cl::jit
         {
             static_assert(sizeof(Value) == 8);
             return static_cast<int64_t>(stack.frame_offset()) * sizeof(Value);
+        }
+
+        MachineAddress trusted_handler_address(TrustedHandlerTarget handler)
+        {
+            assert(handler != nullptr);
+            return detail::MachineAddressAccess::from_pointer(
+                reinterpret_cast<const void *>(handler));
         }
 
         void emit_binary_logical_smi(AArch64MacroAssembler &assembler,
@@ -518,6 +527,38 @@ namespace cl::jit
                 case MachineInstructionKind::StoreStackF64:
                     fatal("AArch64 F64 stack transfer emission is not "
                           "implemented");
+
+                case MachineInstructionKind::SaveLinkRegisterToFrame:
+                    assembler.str(
+                        XRegister(30), AArch64ManagedFramePointerRegister,
+                        FrameHeaderCompiledReturnPcOffset * sizeof(Value));
+                    break;
+
+                case MachineInstructionKind::RestoreLinkRegisterFromFrame:
+                    assembler.ldr(
+                        XRegister(30), AArch64ManagedFramePointerRegister,
+                        FrameHeaderCompiledReturnPcOffset * sizeof(Value));
+                    break;
+
+                case CL_JIT_MACHINE_INSTRUCTION_CASE(
+                    TrustedHandlerCallInstruction, call_instruction)
+                {
+                    assert(assigned_register(
+                               locations, ProgramValueRef(call_instruction))
+                               .encoding() == 0);
+                    for(size_t index = 0;
+                        index < call_instruction.arguments().size(); ++index)
+                    {
+                        assert(assigned_register(
+                                   locations,
+                                   call_instruction.arguments()[index])
+                                   .encoding() == index + 1);
+                    }
+                    assembler.mov(XRegister(0), AArch64ThreadStateRegister);
+                    assembler.bl(
+                        trusted_handler_address(call_instruction.handler()));
+                    break;
+                }
 
                 case CL_JIT_MACHINE_INSTRUCTION_CASE(
                     AddSMIWithSideExitInstruction, add_instruction)

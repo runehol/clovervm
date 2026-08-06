@@ -1,8 +1,10 @@
 #include "builtin_types/tuple.h"
+#include "jit/aarch64_allocation_constraints.h"
 #include "jit/aarch64_assembler.h"
 #include "jit/aarch64_backend.h"
 #include "jit/aarch64_cfg_emitter.h"
 #include "jit/aarch64_jit_entry.h"
+#include "jit/aarch64_link_register_preservation.h"
 #include "jit/bytecode_state.h"
 #include "jit/compilation_session.h"
 #include "jit/core_bytecode_translator.h"
@@ -38,6 +40,18 @@ namespace cl::jit
         constexpr PhysicalRegister x1(RegisterClass::GPR, 1);
         constexpr PhysicalRegister x2(RegisterClass::GPR, 2);
         constexpr PhysicalRegister x3(RegisterClass::GPR, 3);
+
+        thread_local ThreadState *expected_trusted_handler_thread = nullptr;
+
+        Value test_trusted_binary_handler(ThreadState *thread, Value lhs,
+                                          Value rhs)
+        {
+            if(thread != expected_trusted_handler_thread)
+            {
+                return Value::not_present();
+            }
+            return Value::from_smi(lhs.get_smi() + rhs.get_smi());
+        }
 
         MachineAddress no_side_exit_thunk()
         {
@@ -133,7 +147,8 @@ namespace cl::jit
 
         uint64_t
         execute_published_jit(const PublishedCode &code,
-                              std::initializer_list<uint64_t> argument_bits)
+                              std::initializer_list<uint64_t> argument_bits,
+                              ThreadState *thread = nullptr)
         {
             std::array<Value, 128> frame;
             frame.fill(Value::None());
@@ -159,7 +174,7 @@ namespace cl::jit
             Value result = thunk(Value::not_present(), fp, nullptr,
                                  reinterpret_cast<void *>(
                                      code.entry().bits_for_indirect_target()),
-                                 nullptr, nullptr);
+                                 nullptr, thread);
             return static_cast<uint64_t>(result.as.integer);
         }
 
@@ -1530,6 +1545,81 @@ namespace cl::jit
         EXPECT_EQ(0xf81f82a1, instruction_at(code, 1));
         EXPECT_EQ(0xf85f82a0, instruction_at(code, 2));
         EXPECT_EQ(0xd65f03c0, instruction_at(code, 3));
+    }
+
+    TEST(AArch64Execution, EmitsManagedFrameLinkRegisterPreservation)
+    {
+        CompilationSession session;
+        GraphBuilder builder(session, IRLevel::Machine);
+        Block *entry = builder.emplace_block();
+        ParameterInstruction result =
+            builder.emplace_parameter<ParameterInstruction>(entry);
+        builder.emplace_instruction<SaveLinkRegisterToFrameInstruction>(entry);
+        builder.emplace_instruction<RestoreLinkRegisterFromFrameInstruction>(
+            entry);
+        builder.emplace_instruction<BareReturnInstruction>(
+            entry, TaggedValueRef(result));
+        ControlFlowGraph *graph = builder.finalize();
+        LocationAssignments locations = assign_program_values_to_x0(*graph);
+        AArch64MacroAssembler assembler(AArch64ValuePoolMode::NearLiteral);
+
+        generate_aarch64_assembly(*graph, locations, assembler,
+                                  no_side_exit_thunk());
+        CodeCache cache;
+        Result<CodeAllocation, JitCodeError> finalization =
+            assembler.emitter().finalize(cache);
+        ASSERT_TRUE(finalization);
+        CodeAllocation allocation = std::move(finalization).value();
+        const void *code = allocation.writable_code().data();
+        EXPECT_EQ(0xf90006beu, instruction_at(code, 0));
+        EXPECT_EQ(0xf94006beu, instruction_at(code, 1));
+        EXPECT_EQ(0xd65f03c0u, instruction_at(code, 2));
+    }
+
+    TEST(AArch64Execution, CallsTrustedHandlerFromAllocatedMachineIR)
+    {
+        test::VmTestContext context;
+        ThreadState::ActivationScope activation_scope(context.thread());
+        CompilationSession session;
+        GraphBuilder builder(session, IRLevel::Machine);
+        Block *entry = builder.emplace_block();
+        ParameterInstruction lhs =
+            builder.emplace_parameter<ParameterInstruction>(entry);
+        ParameterInstruction rhs =
+            builder.emplace_parameter<ParameterInstruction>(entry);
+        std::array<TaggedValueRef, 2> arguments = {TaggedValueRef(lhs),
+                                                   TaggedValueRef(rhs)};
+        TrustedHandlerCallInstruction call =
+            builder.emplace_instruction<TrustedHandlerCallInstruction>(
+                entry, std::span<const TaggedValueRef>(arguments),
+                erase_trusted_handler_target(test_trusted_binary_handler));
+        builder.emplace_instruction<BareReturnInstruction>(
+            entry, TaggedValueRef(call));
+        ControlFlowGraph *graph = builder.finalize();
+
+        insert_aarch64_link_register_preservation(session, *graph);
+        AllocationConstraints constraints =
+            make_aarch64_allocation_constraints(*graph);
+        auto allocation = allocate_registers(session, *graph, constraints);
+        ASSERT_TRUE(allocation);
+
+        CodeCache cache;
+        auto emission =
+            emit_aarch64_from_cfg(*graph, allocation.value().locations(), cache,
+                                  no_side_exit_thunk());
+        ASSERT_TRUE(emission);
+        PublishedCode code = std::move(emission).value();
+
+        expected_trusted_handler_thread = context.thread();
+        Value lhs_value = Value::from_smi(19);
+        Value rhs_value = Value::from_smi(23);
+        EXPECT_EQ(
+            static_cast<uint64_t>(Value::from_smi(42).as.integer),
+            execute_published_jit(code,
+                                  {static_cast<uint64_t>(lhs_value.as.integer),
+                                   static_cast<uint64_t>(rhs_value.as.integer)},
+                                  context.thread()));
+        expected_trusted_handler_thread = nullptr;
     }
 
     TEST(AArch64Execution, CallsGeneratedLeafFunction)

@@ -4,6 +4,21 @@
 
 namespace cl::jit
 {
+    namespace
+    {
+        InstructionId
+        resolve_normalized_id(InstructionId id,
+                              const NormalizationRemapping &normalization)
+        {
+            for(auto found = normalization.find(id);
+                found != normalization.end(); found = normalization.find(id))
+            {
+                id = found->second;
+            }
+            return id;
+        }
+    }  // namespace
+
     LocationAssignments LocationAssignmentsBuilder::finalize(
         const NormalizationRemapping &normalization) &&
     {
@@ -11,10 +26,8 @@ namespace cl::jit
         program_values.reserve(program_values_.size());
         for(const auto &[id, location]: program_values_)
         {
-            auto normalized = normalization.find(id);
             program_values.insert_or_assign(
-                normalized == normalization.end() ? id : normalized->second,
-                location);
+                resolve_normalized_id(id, normalization), location);
         }
 
         LocationAssignments::TemporaryMap temporaries;
@@ -23,9 +36,7 @@ namespace cl::jit
         {
             temporaries.insert_or_assign(
                 LocationAssignments::TemporaryKey{
-                    normalization.contains(temporary.first)
-                        ? normalization.at(temporary.first)
-                        : temporary.first,
+                    resolve_normalized_id(temporary.first, normalization),
                     temporary.second},
                 location);
         }

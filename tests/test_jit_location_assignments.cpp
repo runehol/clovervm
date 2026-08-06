@@ -43,6 +43,9 @@ namespace cl::jit
             builder.emplace_parameter<ParameterInstruction>(entry);
         MovInstruction before = builder.emplace_instruction<MovInstruction>(
             entry, TaggedValueRef(parameter));
+        MovInstruction intermediate =
+            builder.emplace_instruction<MovInstruction>(
+                entry, TaggedValueRef(parameter));
         MovInstruction after = builder.emplace_instruction<MovInstruction>(
             entry, TaggedValueRef(parameter));
         builder.emplace_instruction<BareReturnInstruction>(
@@ -54,15 +57,20 @@ namespace cl::jit
         LocationAssignmentsBuilder locations;
         locations.assign(ProgramValueRef(before), PhysicalLocation::reg(x0));
         locations.assign(before, 0, PhysicalLocation::reg(x1));
-        NormalizationRemapping normalization = {{before.id(), after.id()}};
+        NormalizationRemapping normalization = {
+            {before.id(), intermediate.id()},
+            {intermediate.id(), after.id()},
+        };
 
         LocationAssignments result =
             std::move(locations).finalize(normalization);
 
         EXPECT_FALSE(result.contains(ProgramValueRef(before)));
+        EXPECT_FALSE(result.contains(ProgramValueRef(intermediate)));
         EXPECT_TRUE(result.contains(ProgramValueRef(after)));
         EXPECT_EQ(x0, result.location_for(ProgramValueRef(after)).reg());
         EXPECT_FALSE(result.contains(before, 0));
+        EXPECT_FALSE(result.contains(intermediate, 0));
         EXPECT_TRUE(result.contains(after, 0));
         EXPECT_EQ(x1, result.location_for(after, 0).reg());
     }

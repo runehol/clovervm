@@ -4,7 +4,7 @@
 |---|---|
 | Document type | Implementation plan |
 | Status | Active |
-| Implementation | Cache guards, call IR, handler metadata and registry, typed resolver installation, float handler declarations, AArch64 call allocation constraints, fixed operand-copy materialization, concrete call-local managed-frame spills, and explicit link-register preservation IR are implemented; emission and frontend integration remain |
+| Implementation | Cache guards, call IR, handler metadata and registry, typed resolver installation, float handler declarations, AArch64 call allocation constraints and emission, fixed operand-copy materialization, concrete call-local managed-frame spills, and explicit link-register preservation are implemented; frontend integration remains |
 | Scope | Guarded calls from compiled AArch64 code to non-raising trusted native handlers |
 | Design authority | [JIT Compiler and IR](jit-compiler-and-ir.md), [AArch64 JIT Calling Convention](aarch64-jit-calling-convention.md), [Trusted Handler Declarations](trusted-handler-declarations.md), [Fast Operator Dispatch](fast-operator-dispatch.md), and [Function Specialization](function-specialization.md) |
 
@@ -98,7 +98,7 @@ bl handler
 
 Unary and ternary handlers use `x1`, or `x1` through `x3`, respectively.
 
-## Remaining Slice 1: AArch64 Calls And Return Preservation
+## Implemented Slice 1: AArch64 Calls And Return Preservation
 
 Describe the platform ABI directly in allocation constraints. For a binary
 handler:
@@ -208,8 +208,8 @@ Verification should include:
 - unary, binary, and ternary argument placement;
 - a far handler address using the existing call relaxation.
 
-This slice begins with manually constructed Machine graphs. It must make the
-backend path executable before the bytecode frontend can select it.
+This slice is covered by manually constructed Machine graphs. The backend path
+is executable before the bytecode frontend selects it.
 
 ## Remaining Slice 2: Operator Frontend Integration
 

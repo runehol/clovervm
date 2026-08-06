@@ -929,7 +929,15 @@ namespace cl::jit
             {
                 assert(pending_fixed_operand_copies_ == nullptr);
                 assert(!pending_fixed_operand_replacements_.has_value());
-                return std::move(locations_).finalize(normalization);
+                NormalizationRemapping location_remapping = normalization;
+                for(const auto &[before, after]: materialization_replacements_)
+                {
+                    bool inserted =
+                        location_remapping.emplace(before, after).second;
+                    assert(inserted);
+                    (void)inserted;
+                }
+                return std::move(locations_).finalize(location_remapping);
             }
 
         private:
@@ -1267,6 +1275,15 @@ namespace cl::jit
                     original, *instruction.storage(), resolver, context,
                     InstructionRebuildMode::AlwaysClone);
                 prefix.push_back(replacement);
+                if(replacement.result_class() != ResultClass::None)
+                {
+                    bool inserted =
+                        materialization_replacements_
+                            .emplace(original.id(), replacement.id())
+                            .second;
+                    assert(inserted);
+                    (void)inserted;
+                }
                 switch(replacement.result_class())
                 {
                     case ResultClass::None:
@@ -1313,6 +1330,7 @@ namespace cl::jit
                 nullptr;
             std::optional<PendingFixedOperandReplacements>
                 pending_fixed_operand_replacements_;
+            NormalizationRemapping materialization_replacements_;
             LocationAssignmentsBuilder locations_;
             std::vector<std::optional<InstructionId>> current_values_;
         };
