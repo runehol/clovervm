@@ -4,7 +4,7 @@
 |---|---|
 | Document type | Implementation plan |
 | Status | Active |
-| Implementation | Cache guards, call IR, handler metadata and registry, typed resolver installation, and float handler declarations are implemented; AArch64 calls and frontend integration remain |
+| Implementation | Cache guards, call IR, handler metadata and registry, typed resolver installation, float handler declarations, and AArch64 call allocation constraints are implemented; call-local spills, emission, and frontend integration remain |
 | Scope | Guarded calls from compiled AArch64 code to non-raising trusted native handlers |
 | Design authority | [JIT Compiler and IR](jit-compiler-and-ir.md), [AArch64 JIT Calling Convention](aarch64-jit-calling-convention.md), [Trusted Handler Declarations](trusted-handler-declarations.md), [Fast Operator Dispatch](fast-operator-dispatch.md), and [Function Specialization](function-specialization.md) |
 
@@ -111,9 +111,28 @@ result    -> late fixed x0
 The emitter copies fixed JIT context register `x25` to native argument register
 `x0` after allocator-created argument transfers. The instruction reserves the
 native caller-saved allocation registers as clobbers. The fixed result owns
-`x0`; it is not also represented as an undefined clobber. Existing allocation
-machinery moves live-across values into callee-saved registers. Until ordinary
-spilling is available, unsatisfied pressure remains a clean compilation
+`x0`; it is not also represented as an undefined clobber.
+
+Ordinary pressure splitting cannot preserve an argument that is both fixed in
+`x1` through `x3` at the instruction's Early point and live after the call's
+Late clobber. The bootstrap implementation uses allocator-owned managed-frame
+spill slots instead. Such a value moves to a spill slot before the call, a
+fixed-use fixup copies it from that slot to its argument register, and a later
+use reloads it after the call. The fixed argument register is an ephemeral ABI
+copy rather than the authoritative location of the complete live range.
+
+These initial spills are deliberately call-local. Their ranges begin before
+the argument shuffle and end immediately after the non-raising,
+non-safepointing call. No safepoint, side exit, exception path, or Python
+reentry may observe the spill interval. The slots may therefore hold any
+machine representation without being interpreter-visible roots. Calls with
+non-overlapping spill intervals may reuse slots. The finalized
+`JitCodeObject` records the additional managed-frame extent so the storage
+cannot overlap another managed frame.
+
+This slice does not search Snapshot uses for compatible canonical frame homes
+and does not implement general spilling. Values outside this call-local shape
+remain subject to the existing register-only allocator and clean compilation
 failure.
 
 A graph containing `TrustedHandlerCall` is non-leaf. Before emitting blocks,
@@ -146,7 +165,9 @@ Verification should include:
 
 - a leaf graph retaining its current prologue-free code shape;
 - a call graph storing and reloading `x30` through `fp[1]`;
-- a value live across the call being assigned away from caller-saved clobbers;
+- a fixed argument live after the call surviving through a call-local managed
+  spill slot and fixed-use argument copy;
+- non-overlapping calls reusing compatible spill slots;
 - unary, binary, and ternary argument placement;
 - a far handler address using the existing call relaxation.
 
@@ -228,5 +249,8 @@ The initial plan is complete when:
 - precise optimizer memory-effect analysis beyond call-boundary capabilities;
 - general Python call adaptation and JIT-to-JIT calls;
 - generalized function-specialization caches;
+- general spilling outside trusted-handler call boundaries;
+- canonical-home selection for spill slots using later Snapshot demands;
+- safepoint-visible spill root maps and frame-aware stack scanning;
 - shrink-wrapped return-continuation stores;
 - exceptional recovery after a native call has begun.
