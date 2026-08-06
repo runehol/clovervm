@@ -27,18 +27,26 @@ namespace cl::jit
 
         struct PlannedTransferSet
         {
-            const BundleTransferSet *original;
+            std::vector<BundleTransfer> transfers;
             OrderedParallelAssignment<PhysicalLocation> ordered;
             std::vector<InstructionId> sources;
             std::vector<uint32_t> fixed_operand_indices;
         };
 
-        struct PlannedEdgeTransferSet
+        struct PlannedEdgeTransferSequence
         {
             BlockEdge *edge;
-            PlannedTransferSet transfers;
-            std::vector<uint32_t> argument_indices;
+            std::vector<PlannedTransferSet> phases;
             std::vector<PhysicalLocation> parameter_locations;
+            std::vector<BundleId> parameter_bundles;
+            std::vector<BundleId> outgoing_bundles;
+        };
+
+        struct PlannedEdgeTransferEntry
+        {
+            std::vector<PlannedTransferSet> phases;
+            std::vector<BundleId> parameter_bundles;
+            std::vector<BundleId> outgoing_bundles;
         };
 
         struct PlannedFixedOperandCopySet
@@ -61,7 +69,9 @@ namespace cl::jit
                 before_instructions;
             absl::flat_hash_map<InstructionId, PlannedFixedOperandCopySet>
                 fixed_operand_copies;
-            std::vector<PlannedEdgeTransferSet> edge_transfers;
+            std::vector<PlannedEdgeTransferSequence> edge_transfers;
+            absl::flat_hash_map<const Block *, PlannedEdgeTransferEntry>
+                edge_entries;
             LocationAssignmentsBuilder existing_locations;
             std::vector<std::optional<InstructionId>> initial_value_by_bundle;
         };
@@ -454,13 +464,20 @@ namespace cl::jit
             absl::flat_hash_map<const BlockEdge *,
                                 std::vector<const BundleAffinity *>>
                 affinities_by_edge;
+            std::vector<const BlockEdge *> edge_order;
             for(const BundleAffinity &affinity: problem.bundle_affinities())
             {
                 if(affinity.kind != BundleAffinityKind::BlockEdge)
                 {
                     continue;
                 }
-                affinities_by_edge[affinity.edge].push_back(&affinity);
+                auto [position, inserted] = affinities_by_edge.try_emplace(
+                    affinity.edge, std::vector<const BundleAffinity *>{});
+                if(inserted)
+                {
+                    edge_order.push_back(affinity.edge);
+                }
+                position->second.push_back(&affinity);
             }
 
             ScratchRegisters scratch_registers;
@@ -525,8 +542,35 @@ namespace cl::jit
             }
             std::optional<MaterializationPointIndex> point_index;
             std::optional<TransferSourceIndex> source_index;
+            absl::flat_hash_map<const Block *, const BundleTransferSet *>
+                block_exit_transfers;
+            absl::flat_hash_map<const BlockEdge *, const BundleTransferSet *>
+                block_edge_transfers;
             for(const BundleTransferSet &set: allocation.transfers().sets())
             {
+                if(set.point.kind() == TransferPoint::Kind::BlockExit)
+                {
+                    bool inserted =
+                        block_exit_transfers.emplace(set.point.block(), &set)
+                            .second;
+                    if(!inserted)
+                    {
+                        fatal("duplicate JIT block-exit transfer point");
+                    }
+                    continue;
+                }
+                if(set.point.kind() == TransferPoint::Kind::BlockEdge)
+                {
+                    bool inserted =
+                        block_edge_transfers.emplace(set.point.edge(), &set)
+                            .second;
+                    if(!inserted)
+                    {
+                        fatal("duplicate JIT block-edge transfer point");
+                    }
+                    continue;
+                }
+
                 std::vector<ParallelAssignment<PhysicalLocation>> transfers;
                 transfers.reserve(set.transfers.size());
                 for(const BundleTransfer &transfer: set.transfers)
@@ -621,9 +665,9 @@ namespace cl::jit
                     sources = transfer_sources_at_point(set, *point_index,
                                                         *source_index);
                 }
-                PlannedTransferSet planned{&set, std::move(ordered).value(),
-                                           std::move(sources),
-                                           std::move(fixed_operand_indices)};
+                PlannedTransferSet planned{
+                    set.transfers, std::move(ordered).value(),
+                    std::move(sources), std::move(fixed_operand_indices)};
 
                 bool inserted = false;
                 switch(set.point.kind())
@@ -641,73 +685,224 @@ namespace cl::jit
                                        .second;
                         break;
                     case TransferPoint::Kind::BlockExit:
-                        return Result<MaterializationPlan,
-                                      RegisterAllocationError>::
-                            error(RegisterAllocationError::
-                                      UnsupportedTransferPoint);
                     case TransferPoint::Kind::BlockEdge:
-                        {
-                            const BlockEdge *edge = set.point.edge();
-                            std::vector<std::optional<PhysicalLocation>>
-                                parameter_locations(edge->arguments().size());
-                            std::vector<uint32_t> argument_indices;
-                            argument_indices.reserve(set.transfers.size());
-                            size_t transfer_index = 0;
-                            for(const BundleAffinity *affinity_pointer:
-                                affinities_by_edge.at(edge))
-                            {
-                                const BundleAffinity &affinity =
-                                    *affinity_pointer;
-                                std::optional<PhysicalLocation> &location =
-                                    parameter_locations[affinity
-                                                            .argument_index];
-                                assert(!location.has_value());
-                                BundleId source =
-                                    bundle_by_occurrence[affinity.source
-                                                             .value()];
-                                BundleId destination =
-                                    bundle_by_occurrence[affinity.destination
-                                                             .value()];
-                                location =
-                                    locations.physical_location_for(source);
-                                if(source != destination &&
-                                   !location->aliases(
-                                       locations.physical_location_for(
-                                           destination)))
-                                {
-                                    assert(transfer_index <
-                                           set.transfers.size());
-                                    const BundleTransfer &transfer =
-                                        set.transfers[transfer_index++];
-                                    assert(transfer.source == source);
-                                    assert(transfer.destination == destination);
-                                    (void)transfer;
-                                    argument_indices.push_back(
-                                        affinity.argument_index);
-                                }
-                            }
-                            assert(transfer_index == set.transfers.size());
-
-                            std::vector<PhysicalLocation> locations;
-                            locations.reserve(parameter_locations.size());
-                            for(std::optional<PhysicalLocation> location:
-                                parameter_locations)
-                            {
-                                assert(location.has_value());
-                                locations.push_back(*location);
-                            }
-                            result.edge_transfers.push_back(
-                                {const_cast<BlockEdge *>(edge),
-                                 std::move(planned),
-                                 std::move(argument_indices),
-                                 std::move(locations)});
-                            inserted = true;
-                            break;
-                        }
+                        fatal("edge transfer reached ordinary materialization "
+                              "planning");
                 }
                 if(!inserted)
                 {
                     fatal("duplicate JIT materialization transfer point");
+                }
+            }
+
+            absl::flat_hash_map<const BundleTransferSet *, std::vector<bool>>
+                used_block_exit_transfers;
+            for(const auto &[block, set]: block_exit_transfers)
+            {
+                (void)block;
+                used_block_exit_transfers.emplace(
+                    set, std::vector<bool>(set->transfers.size(), false));
+            }
+
+            auto plan_transfer_phase =
+                [&](std::vector<BundleTransfer> phase_transfers)
+                -> Result<PlannedTransferSet, RegisterAllocationError> {
+                std::vector<ParallelAssignment<PhysicalLocation>> assignments;
+                assignments.reserve(phase_transfers.size());
+                for(const BundleTransfer &transfer: phase_transfers)
+                {
+                    if(transfer.source.value() >= allocation.bundles().size() ||
+                       transfer.destination.value() >=
+                           allocation.bundles().size())
+                    {
+                        fatal("materialization transfer names no bundle");
+                    }
+                    RegisterClass register_class =
+                        allocation.bundles()[transfer.source.value()]
+                            .register_class;
+                    if(allocation.bundles()[transfer.destination.value()]
+                           .register_class != register_class)
+                    {
+                        fatal("materialization transfer crosses register "
+                              "classes");
+                    }
+                    assignments.push_back(
+                        {locations.physical_location_for(transfer.source),
+                         locations.physical_location_for(transfer.destination),
+                         register_class});
+                }
+                auto ordered =
+                    plan_physical_assignments(assignments, scratch_registers);
+                if(!ordered)
+                {
+                    return propagate_failure(std::move(ordered));
+                }
+                return Result<PlannedTransferSet, RegisterAllocationError>::ok(
+                    {std::move(phase_transfers),
+                     std::move(ordered).value(),
+                     {},
+                     {}});
+            };
+
+            for(const BlockEdge *edge: edge_order)
+            {
+                const std::vector<const BundleAffinity *> &affinities =
+                    affinities_by_edge.at(edge);
+                auto block_exit = block_exit_transfers.find(edge->source());
+                const BundleTransferSet *exit_set =
+                    block_exit == block_exit_transfers.end()
+                        ? nullptr
+                        : block_exit->second;
+                const BundleTransferSet *edge_set = nullptr;
+                auto existing_edge = block_edge_transfers.find(edge);
+                if(existing_edge != block_edge_transfers.end())
+                {
+                    edge_set = existing_edge->second;
+                }
+
+                std::vector<std::optional<size_t>> exit_transfer_by_argument(
+                    edge->arguments().size());
+                bool has_block_exit_transfer = false;
+                if(exit_set != nullptr)
+                {
+                    for(const BundleAffinity *affinity: affinities)
+                    {
+                        BundleId source =
+                            bundle_by_occurrence[affinity->source.value()];
+                        for(size_t index = 0;
+                            index < exit_set->transfers.size(); ++index)
+                        {
+                            if(exit_set->transfers[index].destination == source)
+                            {
+                                exit_transfer_by_argument
+                                    [affinity->argument_index] = index;
+                                used_block_exit_transfers.at(exit_set)[index] =
+                                    true;
+                                has_block_exit_transfer = true;
+                                break;
+                            }
+                        }
+                    }
+                }
+                if(!has_block_exit_transfer && edge_set == nullptr)
+                {
+                    continue;
+                }
+
+                std::vector<BundleTransfer> exit_phase;
+                if(has_block_exit_transfer)
+                {
+                    const std::vector<bool> &used =
+                        used_block_exit_transfers.at(exit_set);
+                    for(size_t index = 0; index < used.size(); ++index)
+                    {
+                        bool used_on_edge = false;
+                        for(std::optional<size_t> argument_transfer:
+                            exit_transfer_by_argument)
+                        {
+                            used_on_edge |= argument_transfer == index;
+                        }
+                        if(used_on_edge)
+                        {
+                            exit_phase.push_back(exit_set->transfers[index]);
+                        }
+                    }
+                }
+
+                std::vector<BundleTransfer> edge_phase;
+                edge_phase.reserve(affinities.size());
+                std::vector<std::optional<PhysicalLocation>>
+                    parameter_locations(edge->arguments().size());
+                std::vector<std::optional<BundleId>> parameter_bundles(
+                    edge->arguments().size());
+                std::vector<std::optional<BundleId>> outgoing_bundles(
+                    edge->arguments().size());
+                [[maybe_unused]] size_t scheduled_edge_transfer = 0;
+                for(const BundleAffinity *affinity: affinities)
+                {
+                    uint32_t argument_index = affinity->argument_index;
+                    BundleId source =
+                        bundle_by_occurrence[affinity->source.value()];
+                    BundleId destination =
+                        bundle_by_occurrence[affinity->destination.value()];
+                    BundleId parameter_bundle = source;
+                    if(exit_transfer_by_argument[argument_index].has_value())
+                    {
+                        parameter_bundle =
+                            exit_set
+                                ->transfers
+                                    [*exit_transfer_by_argument[argument_index]]
+                                .source;
+                    }
+                    assert(!parameter_locations[argument_index].has_value());
+                    parameter_locations[argument_index] =
+                        locations.physical_location_for(parameter_bundle);
+                    parameter_bundles[argument_index] = parameter_bundle;
+                    outgoing_bundles[argument_index] = destination;
+                    edge_phase.push_back({source, destination});
+
+                    PhysicalLocation source_location =
+                        locations.physical_location_for(source);
+                    if(source != destination &&
+                       !source_location.aliases(
+                           locations.physical_location_for(destination)))
+                    {
+                        assert(edge_set != nullptr);
+                        assert(scheduled_edge_transfer <
+                               edge_set->transfers.size());
+                        assert(edge_set->transfers[scheduled_edge_transfer]
+                                   .source == source);
+                        assert(edge_set->transfers[scheduled_edge_transfer]
+                                   .destination == destination);
+                        ++scheduled_edge_transfer;
+                    }
+                }
+                assert(edge_set == nullptr ||
+                       scheduled_edge_transfer == edge_set->transfers.size());
+
+                PlannedEdgeTransferSequence sequence;
+                sequence.edge = const_cast<BlockEdge *>(edge);
+                if(!exit_phase.empty())
+                {
+                    auto planned = plan_transfer_phase(std::move(exit_phase));
+                    if(!planned)
+                    {
+                        return propagate_failure(std::move(planned));
+                    }
+                    sequence.phases.push_back(std::move(planned).value());
+                }
+                auto planned_edge = plan_transfer_phase(std::move(edge_phase));
+                if(!planned_edge)
+                {
+                    return propagate_failure(std::move(planned_edge));
+                }
+                sequence.phases.push_back(std::move(planned_edge).value());
+                sequence.parameter_locations.reserve(
+                    parameter_locations.size());
+                sequence.parameter_bundles.reserve(parameter_bundles.size());
+                sequence.outgoing_bundles.reserve(outgoing_bundles.size());
+                for(size_t index = 0; index < parameter_locations.size();
+                    ++index)
+                {
+                    assert(parameter_locations[index].has_value());
+                    assert(parameter_bundles[index].has_value());
+                    assert(outgoing_bundles[index].has_value());
+                    sequence.parameter_locations.push_back(
+                        *parameter_locations[index]);
+                    sequence.parameter_bundles.push_back(
+                        *parameter_bundles[index]);
+                    sequence.outgoing_bundles.push_back(
+                        *outgoing_bundles[index]);
+                }
+                result.edge_transfers.push_back(std::move(sequence));
+            }
+
+            for(const auto &[set, used]: used_block_exit_transfers)
+            {
+                (void)set;
+                if(std::ranges::find(used, false) != used.end())
+                {
+                    fatal("JIT block-exit transfer reaches no outgoing edge");
                 }
             }
 
@@ -814,7 +1009,7 @@ namespace cl::jit
         {
             std::vector<EdgeSplitRequest> requests;
             requests.reserve(plan.edge_transfers.size());
-            for(const PlannedEdgeTransferSet &edge: plan.edge_transfers)
+            for(const PlannedEdgeTransferSequence &edge: plan.edge_transfers)
             {
                 requests.push_back(
                     {edge.edge, edge_split_placement(graph, *edge.edge)});
@@ -825,7 +1020,7 @@ namespace cl::jit
             for(size_t index = 0; index < blocks.size(); ++index)
             {
                 Block *block = blocks[index];
-                PlannedEdgeTransferSet &edge = plan.edge_transfers[index];
+                PlannedEdgeTransferSequence &edge = plan.edge_transfers[index];
                 assert(block->parameters().size() ==
                        edge.parameter_locations.size());
                 for(size_t parameter_index = 0;
@@ -837,14 +1032,13 @@ namespace cl::jit
                         edge.parameter_locations[parameter_index]);
                 }
 
-                edge.transfers.sources.reserve(edge.argument_indices.size());
-                for(uint32_t argument_index: edge.argument_indices)
-                {
-                    edge.transfers.sources.push_back(
-                        block->parameter_at(argument_index).id());
-                }
                 bool inserted =
-                    plan.block_entries.emplace(block, std::move(edge.transfers))
+                    plan.edge_entries
+                        .emplace(block,
+                                 PlannedEdgeTransferEntry{
+                                     std::move(edge.phases),
+                                     std::move(edge.parameter_bundles),
+                                     std::move(edge.outgoing_bundles)})
                         .second;
                 assert(inserted);
                 (void)inserted;
@@ -859,6 +1053,7 @@ namespace cl::jit
                 : block_entries_(std::move(plan.block_entries)),
                   before_instructions_(std::move(plan.before_instructions)),
                   fixed_operand_copies_(std::move(plan.fixed_operand_copies)),
+                  edge_entries_(std::move(plan.edge_entries)),
                   locations_(std::move(plan.existing_locations)),
                   current_values_(std::move(plan.initial_value_by_bundle))
             {
@@ -868,6 +1063,11 @@ namespace cl::jit
                                             const GraphQueries &,
                                             const Block &block)
             {
+                auto edge = edge_entries_.find(&block);
+                if(edge != edge_entries_.end())
+                {
+                    return emit_edge_transfers(context, block, edge->second);
+                }
                 auto found = block_entries_.find(&block);
                 return found == block_entries_.end()
                            ? RewriteInsertion::none()
@@ -1103,14 +1303,13 @@ namespace cl::jit
             RewriteInsertion emit_transfers(RewriteContext &context,
                                             const PlannedTransferSet &planned)
             {
-                const BundleTransferSet &set = *planned.original;
                 bool uses_explicit_sources = !planned.sources.empty();
                 std::span<const InstructionId> sources = planned.sources;
                 std::vector<InstructionId> current_sources;
                 if(!uses_explicit_sources)
                 {
-                    current_sources.reserve(set.transfers.size());
-                    for(const BundleTransfer &transfer: set.transfers)
+                    current_sources.reserve(planned.transfers.size());
+                    for(const BundleTransfer &transfer: planned.transfers)
                     {
                         std::optional<InstructionId> source =
                             current_values_[transfer.source.value()];
@@ -1122,15 +1321,16 @@ namespace cl::jit
                     }
                     sources = current_sources;
                 }
-                assert(sources.size() == set.transfers.size());
+                assert(sources.size() == planned.transfers.size());
                 EmittedParallelAssignment emitted =
                     emit_parallel_assignment(context, planned.ordered, sources);
                 RewriteInsertion::TransferOutputs outputs;
                 if(!uses_explicit_sources)
                 {
-                    for(size_t index = 0; index < set.transfers.size(); ++index)
+                    for(size_t index = 0; index < planned.transfers.size();
+                        ++index)
                     {
-                        current_values_[set.transfers[index]
+                        current_values_[planned.transfers[index]
                                             .destination.value()] =
                             emitted.result_by_assignment[index];
                     }
@@ -1151,6 +1351,75 @@ namespace cl::jit
 
                 return RewriteInsertion::insert_transfers(
                     std::move(emitted.instructions), std::move(outputs));
+            }
+
+            RewriteInsertion
+            emit_edge_transfers(RewriteContext &context, const Block &block,
+                                const PlannedEdgeTransferEntry &planned)
+            {
+                assert(block.parameters().size() ==
+                       planned.parameter_bundles.size());
+                assert(block.parameters().size() ==
+                       planned.outgoing_bundles.size());
+
+                absl::flat_hash_map<BundleId, InstructionId> values;
+                values.reserve(planned.parameter_bundles.size());
+                for(size_t index = 0; index < block.parameters().size();
+                    ++index)
+                {
+                    values.try_emplace(planned.parameter_bundles[index],
+                                       block.parameter_at(index).id());
+                }
+
+                RewriteInsertion::InstructionSequence instructions;
+                for(const PlannedTransferSet &phase: planned.phases)
+                {
+                    std::vector<InstructionId> sources;
+                    sources.reserve(phase.transfers.size());
+                    for(const BundleTransfer &transfer: phase.transfers)
+                    {
+                        auto source = values.find(transfer.source);
+                        if(source == values.end())
+                        {
+                            fatal("JIT edge transfer has no source value");
+                        }
+                        sources.push_back(source->second);
+                    }
+                    EmittedParallelAssignment emitted =
+                        emit_parallel_assignment(context, phase.ordered,
+                                                 sources);
+                    instructions.insert(instructions.end(),
+                                        emitted.instructions.begin(),
+                                        emitted.instructions.end());
+                    for(size_t index = 0; index < phase.transfers.size();
+                        ++index)
+                    {
+                        values.insert_or_assign(
+                            phase.transfers[index].destination,
+                            emitted.result_by_assignment[index]);
+                    }
+                }
+
+                RewriteInsertion::TransferOutputs outputs;
+                for(size_t index = 0; index < block.parameters().size();
+                    ++index)
+                {
+                    Instruction parameter = block.parameter_at(index);
+                    auto output = values.find(planned.outgoing_bundles[index]);
+                    if(output == values.end())
+                    {
+                        fatal("JIT edge transfer has no outgoing value");
+                    }
+                    if(output->second != parameter.id())
+                    {
+                        outputs.emplace_back(
+                            ProgramValueRef(parameter),
+                            ProgramValueRef(
+                                context.instruction(output->second)));
+                    }
+                }
+                return RewriteInsertion::insert_transfers(
+                    std::move(instructions), std::move(outputs));
             }
 
             std::vector<InstructionId>
@@ -1205,8 +1474,7 @@ namespace cl::jit
                                        const Instruction &instruction,
                                        const PlannedTransferSet &planned)
             {
-                const BundleTransferSet &set = *planned.original;
-                size_t transfer_count = set.transfers.size();
+                size_t transfer_count = planned.transfers.size();
                 assert(planned.sources.size() == transfer_count);
 
                 std::vector<InstructionId> sources = planned.sources;
@@ -1326,6 +1594,8 @@ namespace cl::jit
                 before_instructions_;
             absl::flat_hash_map<InstructionId, PlannedFixedOperandCopySet>
                 fixed_operand_copies_;
+            absl::flat_hash_map<const Block *, PlannedEdgeTransferEntry>
+                edge_entries_;
             const PlannedFixedOperandCopySet *pending_fixed_operand_copies_ =
                 nullptr;
             std::optional<PendingFixedOperandReplacements>
