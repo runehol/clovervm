@@ -4,7 +4,7 @@
 |---|---|
 | Document type | Design |
 | Status | Accepted |
-| Implementation | Prepared allocation, forwarding definitions, block-edge and same-as-input affinities, bundle coalescing, deterministic constraint splitting, transfer scheduling, conflict-free register/canonical-stack assignment, call-local spill carriers with abstract spill slots, fixed operand copies, parallel-transfer and edge-transfer-block materialization, and the AArch64 fixed-`x21`/`x25` context convention are implemented; concrete spill-slot and block-exit materialization remain open |
+| Implementation | Prepared allocation, forwarding definitions, block-edge and same-as-input affinities, bundle coalescing, deterministic constraint splitting, transfer scheduling, conflict-free register/canonical-stack assignment, call-local spill carriers with concrete managed-frame materialization, fixed operand copies, parallel-transfer and edge-transfer-block materialization, managed spill extent publication, and the AArch64 fixed-`x21`/`x25` context convention are implemented; general spills and block-exit materialization remain open |
 | Scope | Allocation constraints, allocator-local numbering, liveness, bundles, backtracking allocation, live-range splitting, block-edge transfers, clobbers, spills, and post-allocation materialization |
 | Owning layers | Target preparation owns occurrence constraints and physical-transfer capabilities; the generic register allocator owns numbering, liveness, bundles, splitting, allocation, spill decisions, and bundle transfers; generic allocation materialization resolves transfers, rewrites the Core CFG, and publishes occurrence locations; publication and transition planners own canonical-state synchronization; machine-code emission only encodes the materialized graph |
 | Validated against | `tests/test_jit_allocation_constraints.cpp`, `tests/test_aarch64_allocation_constraints.cpp`, `tests/test_jit_register_allocator.cpp`, `tests/test_jit_parallel_assignment_resolver.cpp`, `tests/test_jit_allocation_materializer.cpp`, and `tests/test_aarch64_execution.cpp` |
@@ -175,7 +175,7 @@ struct RegisterAllocationResult
 struct MaterializedAllocation
 {
     LocationAssignments locations;
-    uint32_t spill_slot_count;
+    uint32_t managed_frame_spill_extent;
 };
 
 Result<MaterializedAllocation, RegisterAllocationError> materialize_allocation(
@@ -409,6 +409,11 @@ spills and an emergency parallel-transfer temporary cannot collide with a
 managed call argument window. Generated frame setup must claim that extended
 extent, and safepoint scanning must either describe live spill slots precisely
 or ensure every scanned spill cell contains a safe tagged value.
+
+Materialization first rounds the ordinary local and temporary count to the
+managed-frame ABI alignment. Abstract spill slot `i` then receives frame offset
+`-(ordinary_extent + i + 1)`. The published managed-frame spill extent is the
+exact spill-slot count; the spill area itself requires no additional alignment.
 
 The semantic kind lets a target select an addressing mode without changing
 storage identity. Under the initial AArch64 convention, every managed

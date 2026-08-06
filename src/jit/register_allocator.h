@@ -25,6 +25,7 @@ namespace cl::jit
         RequiresConstraintFixup,
         RequiresSplittingOrSpilling,
         InsufficientTransferScratchRegisters,
+        MissingBytecodeStateOrder,
     };
 
     struct FixedOperandCopyFixup
@@ -69,6 +70,31 @@ namespace cl::jit
         uint32_t spill_slot_count_;
     };
 
+    class MaterializedAllocation
+    {
+    public:
+        MaterializedAllocation(LocationAssignments locations,
+                               uint32_t managed_frame_spill_extent)
+            : locations_(std::move(locations)),
+              managed_frame_spill_extent_(managed_frame_spill_extent)
+        {
+        }
+
+        const LocationAssignments &locations() const { return locations_; }
+        LocationAssignments take_locations() &&
+        {
+            return std::move(locations_);
+        }
+        uint32_t managed_frame_spill_extent() const
+        {
+            return managed_frame_spill_extent_;
+        }
+
+    private:
+        LocationAssignments locations_;
+        uint32_t managed_frame_spill_extent_;
+    };
+
     Result<PreparedAllocationProblem, RegisterAllocationError>
     prepare_register_allocation(const ControlFlowGraph &graph,
                                 const AllocationConstraints &constraints);
@@ -77,7 +103,7 @@ namespace cl::jit
     assign_bundles(const PreparedAllocationProblem &problem,
                    const AllocationConstraints &constraints);
 
-    Result<LocationAssignments, RegisterAllocationError>
+    Result<MaterializedAllocation, RegisterAllocationError>
     allocate_registers(CompilationSession &session, ControlFlowGraph &graph,
                        const AllocationConstraints &constraints);
 

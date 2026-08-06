@@ -9,7 +9,7 @@ namespace cl::jit
     class CompilationSession;
     class ControlFlowGraph;
 
-    Result<LocationAssignments, RegisterAllocationError>
+    Result<MaterializedAllocation, RegisterAllocationError>
     materialize_allocation(CompilationSession &session, ControlFlowGraph &graph,
                            const PreparedAllocationProblem &problem,
                            const AllocationConstraints &constraints,

@@ -23,7 +23,7 @@ namespace cl::jit
             std::move(problem));
     }
 
-    Result<LocationAssignments, RegisterAllocationError>
+    Result<MaterializedAllocation, RegisterAllocationError>
     allocate_registers(CompilationSession &session, ControlFlowGraph &graph,
                        const AllocationConstraints &constraints)
     {

@@ -193,7 +193,8 @@ namespace cl::jit
             make_aarch64_allocation_constraints(*graph);
         auto allocation = allocate_registers(session, *graph, constraints);
         ASSERT_TRUE(allocation);
-        LocationAssignments locations = std::move(allocation).value();
+        LocationAssignments locations =
+            std::move(allocation).value().take_locations();
 
         ResumeInInterpreterWithSideExitInstruction owner =
             entry->instruction_at(entry->instructions().size() - 1)

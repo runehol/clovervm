@@ -10,7 +10,7 @@
 
 namespace cl::jit
 {
-    Result<PublishedCode, AArch64CompilationError>
+    Result<AArch64CompiledCode, AArch64CompilationError>
     compile_to_aarch64(CompilationSession &session, ControlFlowGraph &graph,
                        CodeCache &cache, MachineAddress side_exit_thunk,
                        JitCompilationObserver *observer)
@@ -20,34 +20,37 @@ namespace cl::jit
         auto lowering = lower_side_exits(session, graph, sunk_instructions);
         if(!lowering)
         {
-            return Result<PublishedCode, AArch64CompilationError>::error(
+            return Result<AArch64CompiledCode, AArch64CompilationError>::error(
                 std::move(lowering).error());
         }
         assert(graph.ir_level() == IRLevel::Machine);
 
         AllocationConstraints constraints =
             make_aarch64_allocation_constraints(graph);
-        auto locations_result = allocate_registers(session, graph, constraints);
-        if(!locations_result)
+        auto materialized_result =
+            allocate_registers(session, graph, constraints);
+        if(!materialized_result)
         {
-            return Result<PublishedCode, AArch64CompilationError>::error(
-                std::move(locations_result).error());
+            return Result<AArch64CompiledCode, AArch64CompilationError>::error(
+                std::move(materialized_result).error());
         }
-        LocationAssignments locations = std::move(locations_result).value();
+        MaterializedAllocation materialized =
+            std::move(materialized_result).value();
         if(observer != nullptr)
         {
             observer->on_machine_ir(graph);
         }
 
-        auto emission =
-            emit_aarch64_from_cfg(graph, locations, cache, side_exit_thunk);
+        auto emission = emit_aarch64_from_cfg(graph, materialized.locations(),
+                                              cache, side_exit_thunk);
         if(!emission)
         {
-            return Result<PublishedCode, AArch64CompilationError>::error(
+            return Result<AArch64CompiledCode, AArch64CompilationError>::error(
                 std::move(emission).error());
         }
-        return Result<PublishedCode, AArch64CompilationError>::ok(
-            std::move(emission).value());
+        return Result<AArch64CompiledCode, AArch64CompilationError>::ok(
+            {std::move(emission).value(),
+             materialized.managed_frame_spill_extent()});
     }
 
 }  // namespace cl::jit

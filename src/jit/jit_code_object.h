@@ -7,6 +7,7 @@
 #include "object_model/value.h"
 
 #include <cstddef>
+#include <cstdint>
 #include <span>
 
 namespace cl::jit
@@ -20,7 +21,8 @@ namespace cl::jit
         JitCodeObject(CodeSlice code,
                       MachineAddress interpreter_tail_entry_thunk,
                       std::span<std::byte> constant_pool,
-                      size_t tagged_value_count, size_t encoded_code_size);
+                      size_t tagged_value_count, size_t encoded_code_size,
+                      uint32_t managed_frame_spill_extent);
 
         const CodeSlice &code() const { return code_; }
         MachineAddress entry() const { return code_.execute_address(); }
@@ -29,6 +31,10 @@ namespace cl::jit
             return interpreter_tail_entry_thunk_;
         }
         size_t encoded_code_size() const { return encoded_code_size_; }
+        uint32_t managed_frame_spill_extent() const
+        {
+            return managed_frame_spill_extent_;
+        }
 
         std::span<std::byte> constant_pool() { return constant_pool_; }
         std::span<const std::byte> constant_pool() const
@@ -57,6 +63,7 @@ namespace cl::jit
         std::span<std::byte> constant_pool_;
         size_t tagged_value_count_;
         size_t encoded_code_size_;
+        uint32_t managed_frame_spill_extent_;
     };
 
 }  // namespace cl::jit

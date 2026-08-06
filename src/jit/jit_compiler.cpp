@@ -51,18 +51,19 @@ namespace cl::jit
             return Result<JitCodeObject *, JitCompilationError>::error(
                 std::move(code_result).error());
         }
-        PublishedCode code = std::move(code_result).value();
+        AArch64CompiledCode compiled = std::move(code_result).value();
         if(options.observer != nullptr)
         {
-            options.observer->on_machine_code(code);
+            options.observer->on_machine_code(compiled.code);
         }
 
         JitCodeObject *result = thread.make_internal_raw<JitCodeObject>(
-            code.code(),
+            compiled.code.code(),
             select_aarch64_interpreter_tail_jit_entry_thunk(
                 code_object.function_signature.n_parameters),
-            code.constant_pool(), code.tagged_value_count(),
-            code.encoded_code_size());
+            compiled.code.constant_pool(), compiled.code.tagged_value_count(),
+            compiled.code.encoded_code_size(),
+            compiled.managed_frame_spill_extent);
         return Result<JitCodeObject *, JitCompilationError>::ok(result);
     }
 

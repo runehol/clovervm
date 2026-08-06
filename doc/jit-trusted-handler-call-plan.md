@@ -4,7 +4,7 @@
 |---|---|
 | Document type | Implementation plan |
 | Status | Active |
-| Implementation | Cache guards, call IR, handler metadata and registry, typed resolver installation, float handler declarations, AArch64 call allocation constraints, fixed operand-copy materialization, and allocator-side call-local spill carriers are implemented; concrete spill-slot materialization, return preservation, emission, and frontend integration remain |
+| Implementation | Cache guards, call IR, handler metadata and registry, typed resolver installation, float handler declarations, AArch64 call allocation constraints, fixed operand-copy materialization, and concrete call-local managed-frame spills are implemented; return preservation, emission, and frontend integration remain |
 | Scope | Guarded calls from compiled AArch64 code to non-raising trusted native handlers |
 | Design authority | [JIT Compiler and IR](jit-compiler-and-ir.md), [AArch64 JIT Calling Convention](aarch64-jit-calling-convention.md), [Trusted Handler Declarations](trusted-handler-declarations.md), [Fast Operator Dispatch](fast-operator-dispatch.md), and [Function Specialization](function-specialization.md) |
 

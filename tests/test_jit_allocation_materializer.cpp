@@ -1,6 +1,8 @@
 #include "jit/allocation_materializer.h"
 
 #include "jit/graph_builder.h"
+#include "runtime/trusted_handler.h"
+#include "test_helpers.h"
 
 #include <gtest/gtest.h>
 
@@ -18,6 +20,11 @@ namespace cl::jit
         constexpr PhysicalRegister x1(RegisterClass::GPR, 1);
         constexpr PhysicalRegister x2(RegisterClass::GPR, 2);
         constexpr PhysicalRegister x3(RegisterClass::GPR, 3);
+
+        Value materializer_test_trusted_handler(ThreadState *, Value value)
+        {
+            return value;
+        }
 
         LocationRequirement fixed(PhysicalLocation location)
         {
@@ -89,6 +96,7 @@ namespace cl::jit
 
         ASSERT_TRUE(materialized);
         EXPECT_EQ(x0, materialized.value()
+                          .locations()
                           .location_for(ProgramValueRef(parameter))
                           .reg());
         ASSERT_EQ(1u, entry->instructions().size());
@@ -133,7 +141,9 @@ namespace cl::jit
                                                    constraints, allocation);
 
         ASSERT_TRUE(materialized);
-        EXPECT_EQ(x1, materialized.value().location_for(operation, 0).reg());
+        EXPECT_EQ(
+            x1,
+            materialized.value().locations().location_for(operation, 0).reg());
     }
 
     TEST(JitAllocationMaterializer,
@@ -212,11 +222,117 @@ namespace cl::jit
         EXPECT_EQ(authoritative.id(),
                   return_instruction.return_value().instruction_id());
         EXPECT_EQ(x0, materialized.value()
+                          .locations()
                           .location_for(ProgramValueRef(authoritative))
                           .reg());
         EXPECT_EQ(x1, materialized.value()
+                          .locations()
                           .location_for(ProgramValueRef(fixed_operand_copy))
                           .reg());
+    }
+
+    TEST(JitAllocationMaterializer,
+         ResolvesCallLocalSpillBelowPaddedOrdinaryFrame)
+    {
+        test::VmTestContext context;
+        CodeObject *code_object = context.compile_file(L"pass");
+        code_object->n_locals = 3;
+        code_object->n_temporaries = 0;
+
+        CompilationSession session;
+        GraphBuilder builder(session, IRLevel::Machine);
+        builder.set_bytecode_state_order(BytecodeStateOrder(*code_object));
+        Block *entry = builder.emplace_block();
+        ParameterInstruction parameter =
+            builder.emplace_parameter<ParameterInstruction>(entry);
+        std::array<TaggedValueRef, 1> arguments = {TaggedValueRef(parameter)};
+        TrustedHandlerCallInstruction call =
+            builder.emplace_instruction<TrustedHandlerCallInstruction>(
+                entry, arguments,
+                erase_trusted_handler_target(
+                    materializer_test_trusted_handler));
+        BareReturnInstruction return_instruction =
+            builder.emplace_instruction<BareReturnInstruction>(
+                entry, TaggedValueRef(parameter));
+        ControlFlowGraph *graph = builder.finalize();
+
+        RegisterSet clobbers;
+        clobbers.insert(x1);
+        std::vector<InstructionAllocationConstraints> overrides;
+        overrides.emplace_back(
+            call,
+            std::vector<ProgramValueUseConstraint>{
+                {TrustedHandlerCallInstruction::arguments_operand_index,
+                 AccessTiming::Early,
+                 LocationRequirement::fixed_operand_copy(x1)}},
+            ResultConstraint{AccessTiming::Late,
+                             fixed(PhysicalLocation::reg(x0))},
+            std::vector<TemporaryConstraint>{}, clobbers);
+        overrides.emplace_back(
+            return_instruction,
+            std::vector<ProgramValueUseConstraint>{
+                {BareReturnInstruction::return_value_operand_index,
+                 AccessTiming::Early, fixed(PhysicalLocation::reg(x0))}});
+        AllocationConstraints constraints =
+            constraints_with(std::move(overrides));
+        PreparedAllocationProblem prepared({}, {}, {}, {}, {}, {}, {}, {});
+        RegisterAllocationResult allocation =
+            allocate(*graph, constraints, prepared);
+
+        auto materialized = materialize_allocation(session, *graph, prepared,
+                                                   constraints, allocation);
+
+        ASSERT_TRUE(materialized);
+        EXPECT_EQ(1u, materialized.value().managed_frame_spill_extent());
+
+        std::optional<size_t> call_index;
+        std::optional<size_t> spill_store_index;
+        std::optional<InstructionId> spill_store;
+        std::optional<size_t> reload_index;
+        for(size_t index = 0; index < entry->instructions().size(); ++index)
+        {
+            Instruction instruction = entry->instruction_at(index);
+            if(instruction.kind() == InstructionKind::TrustedHandlerCall)
+            {
+                call_index = index;
+                continue;
+            }
+            if(instruction.kind() == InstructionKind::StoreStack)
+            {
+                StoreStackInstruction store =
+                    instruction.as<StoreStackInstruction>();
+                PhysicalLocation location =
+                    materialized.value().locations().location_for(
+                        ProgramValueRef(store));
+                ASSERT_TRUE(location.is_stack());
+                EXPECT_EQ(StackLocationKind::SpillSlot,
+                          location.stack().kind());
+                EXPECT_EQ(-5, location.stack().frame_offset());
+                spill_store_index = index;
+                spill_store = store.id();
+                continue;
+            }
+            if(instruction.kind() == InstructionKind::LoadStack &&
+               call_index.has_value() && spill_store.has_value())
+            {
+                LoadStackInstruction load =
+                    instruction.as<LoadStackInstruction>();
+                PhysicalLocation location =
+                    materialized.value().locations().location_for(
+                        ProgramValueRef(load));
+                if(load.source().instruction_id() == *spill_store &&
+                   location.reg() == x0)
+                {
+                    reload_index = index;
+                }
+            }
+        }
+
+        ASSERT_TRUE(call_index.has_value());
+        ASSERT_TRUE(spill_store_index.has_value());
+        ASSERT_TRUE(reload_index.has_value());
+        EXPECT_LT(*spill_store_index, *call_index);
+        EXPECT_LT(*call_index, *reload_index);
     }
 
     TEST(JitAllocationMaterializer, UsesGraphRewriterTraversalForEveryBlock)
@@ -261,9 +377,11 @@ namespace cl::jit
 
         ASSERT_TRUE(materialized);
         EXPECT_EQ(x0, materialized.value()
+                          .locations()
                           .location_for(ProgramValueRef(entry_parameter))
                           .reg());
         EXPECT_EQ(x0, materialized.value()
+                          .locations()
                           .location_for(ProgramValueRef(exit_parameter))
                           .reg());
     }
@@ -325,10 +443,13 @@ namespace cl::jit
         MovInstruction move = split->instruction_at(0).as<MovInstruction>();
         EXPECT_EQ(split->parameter_at(0).id(), move.source().instruction_id());
         EXPECT_EQ(x0, materialized.value()
+                          .locations()
                           .location_for(ProgramValueRef(split->parameter_at(0)))
                           .reg());
-        EXPECT_EQ(
-            x1, materialized.value().location_for(ProgramValueRef(move)).reg());
+        EXPECT_EQ(x1, materialized.value()
+                          .locations()
+                          .location_for(ProgramValueRef(move))
+                          .reg());
 
         BlockEdge *incoming = entry->block_successor_edges().front();
         EXPECT_EQ(split, incoming->target());
@@ -465,11 +586,14 @@ namespace cl::jit
         EXPECT_EQ(load.id(), new_return.return_value().instruction_id());
         EXPECT_TRUE(old_return.is_poisoned());
         EXPECT_EQ(4, materialized.value()
+                         .locations()
                          .location_for(ProgramValueRef(parameter))
                          .stack()
                          .frame_offset());
-        EXPECT_EQ(
-            x0, materialized.value().location_for(ProgramValueRef(load)).reg());
+        EXPECT_EQ(x0, materialized.value()
+                          .locations()
+                          .location_for(ProgramValueRef(load))
+                          .reg());
     }
 
     TEST(JitAllocationMaterializer, UsesActiveValueForSplitFromMergedBundle)
@@ -542,10 +666,13 @@ namespace cl::jit
         EXPECT_EQ(move.id(), new_return.return_value().instruction_id());
         EXPECT_TRUE(old_return.is_poisoned());
         EXPECT_EQ(x1, materialized.value()
+                          .locations()
                           .location_for(ProgramValueRef(exit_value))
                           .reg());
-        EXPECT_EQ(
-            x0, materialized.value().location_for(ProgramValueRef(move)).reg());
+        EXPECT_EQ(x0, materialized.value()
+                          .locations()
+                          .location_for(ProgramValueRef(move))
+                          .reg());
     }
 
     TEST(JitAllocationMaterializer, MaterializesPointerTransfers)
@@ -589,8 +716,10 @@ namespace cl::jit
             entry->instruction_at(1).as<MovPointerInstruction>();
         EXPECT_EQ(parameter.id(), load.source().instruction_id());
         EXPECT_EQ(load.id(), rewritten_move.source().instruction_id());
-        EXPECT_EQ(
-            x0, materialized.value().location_for(ProgramValueRef(load)).reg());
+        EXPECT_EQ(x0, materialized.value()
+                          .locations()
+                          .location_for(ProgramValueRef(load))
+                          .reg());
     }
 
     TEST(JitAllocationMaterializer, InsertsParallelStackToRegisterTransfers)
@@ -689,6 +818,7 @@ namespace cl::jit
         EXPECT_EQ(store.id(), new_return.return_value().instruction_id());
         EXPECT_TRUE(old_return.is_poisoned());
         EXPECT_EQ(-8, materialized.value()
+                          .locations()
                           .location_for(ProgramValueRef(store))
                           .stack()
                           .frame_offset());
@@ -737,9 +867,12 @@ namespace cl::jit
         EXPECT_EQ(parameter.id(), load.source().instruction_id());
         EXPECT_EQ(load.id(), store.source().instruction_id());
         EXPECT_EQ(store.id(), new_return.return_value().instruction_id());
-        EXPECT_EQ(
-            x2, materialized.value().location_for(ProgramValueRef(load)).reg());
+        EXPECT_EQ(x2, materialized.value()
+                          .locations()
+                          .location_for(ProgramValueRef(load))
+                          .reg());
         EXPECT_EQ(-8, materialized.value()
+                          .locations()
                           .location_for(ProgramValueRef(store))
                           .stack()
                           .frame_offset());
@@ -796,14 +929,18 @@ namespace cl::jit
         EXPECT_EQ(save.id(), move_lhs.source().instruction_id());
         EXPECT_EQ(move_lhs.id(), new_operation.lhs().instruction_id());
         EXPECT_EQ(move_rhs.id(), new_operation.rhs().instruction_id());
-        EXPECT_EQ(
-            x2, materialized.value().location_for(ProgramValueRef(save)).reg());
-        EXPECT_EQ(
-            x0,
-            materialized.value().location_for(ProgramValueRef(move_rhs)).reg());
-        EXPECT_EQ(
-            x1,
-            materialized.value().location_for(ProgramValueRef(move_lhs)).reg());
+        EXPECT_EQ(x2, materialized.value()
+                          .locations()
+                          .location_for(ProgramValueRef(save))
+                          .reg());
+        EXPECT_EQ(x0, materialized.value()
+                          .locations()
+                          .location_for(ProgramValueRef(move_rhs))
+                          .reg());
+        EXPECT_EQ(x1, materialized.value()
+                          .locations()
+                          .location_for(ProgramValueRef(move_lhs))
+                          .reg());
     }
 
     TEST(JitAllocationMaterializer,
@@ -868,17 +1005,21 @@ namespace cl::jit
         EXPECT_EQ(save_lhs.id(), move_lhs.source().instruction_id());
         EXPECT_EQ(move_lhs.id(), new_operation.lhs().instruction_id());
         EXPECT_EQ(move_rhs.id(), new_operation.rhs().instruction_id());
-        EXPECT_EQ(
-            x2,
-            materialized.value().location_for(ProgramValueRef(save_lhs)).reg());
-        EXPECT_EQ(
-            x3,
-            materialized.value().location_for(ProgramValueRef(save_rhs)).reg());
+        EXPECT_EQ(x2, materialized.value()
+                          .locations()
+                          .location_for(ProgramValueRef(save_lhs))
+                          .reg());
+        EXPECT_EQ(x3, materialized.value()
+                          .locations()
+                          .location_for(ProgramValueRef(save_rhs))
+                          .reg());
         EXPECT_EQ(8, materialized.value()
+                         .locations()
                          .location_for(ProgramValueRef(move_rhs))
                          .stack()
                          .frame_offset());
         EXPECT_EQ(16, materialized.value()
+                          .locations()
                           .location_for(ProgramValueRef(move_lhs))
                           .stack()
                           .frame_offset());

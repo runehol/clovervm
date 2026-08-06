@@ -60,9 +60,10 @@ namespace cl::jit
         JitCodeObject *jit_code = thread->make_internal_raw<JitCodeObject>(
             published.code(), no_interpreter_tail_entry_thunk(),
             published.constant_pool(), published.tagged_value_count(),
-            published.encoded_code_size());
+            published.encoded_code_size(), 4);
 
         EXPECT_EQ(2, string->refcount);
+        EXPECT_EQ(4u, jit_code->managed_frame_spill_extent());
         ASSERT_EQ(1u, jit_code->tagged_values().size());
         EXPECT_EQ(retained.value(), jit_code->tagged_values()[0]);
 
@@ -86,7 +87,7 @@ namespace cl::jit
         JitCodeObject *jit_code = thread->make_internal_raw<JitCodeObject>(
             published.code(), no_interpreter_tail_entry_thunk(),
             published.constant_pool(), published.tagged_value_count(),
-            published.encoded_code_size());
+            published.encoded_code_size(), 0);
 
         EXPECT_FALSE(code_object->has_jit_code());
         EXPECT_EQ(0, jit_code->refcount);
@@ -139,7 +140,7 @@ namespace cl::jit
 
         JitCodeObject *jit_code = thread->make_internal_raw<JitCodeObject>(
             allocation.code, no_interpreter_tail_entry_thunk(),
-            allocation.constant_pool(), 1, allocation.encoded_code_size());
+            allocation.constant_pool(), 1, allocation.encoded_code_size(), 0);
 
         EXPECT_EQ(2, string->refcount);
         incref_heap_ptr(jit_code);

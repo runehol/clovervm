@@ -208,7 +208,8 @@ namespace cl::jit
 
         ASSERT_TRUE(allocation);
         EXPECT_EQ(PhysicalLocation::reg(x0),
-                  allocation.value().location_for(ProgramValueRef(parameter)));
+                  allocation.value().locations().location_for(
+                      ProgramValueRef(parameter)));
     }
 
     TEST(JitRegisterAllocator,
@@ -253,7 +254,8 @@ namespace cl::jit
         auto allocation = allocate_registers(session, *graph, constraints);
 
         ASSERT_TRUE(allocation);
-        LocationAssignments locations = std::move(allocation).value();
+        LocationAssignments locations =
+            std::move(allocation).value().take_locations();
         ASSERT_EQ(2u, entry->instructions().size());
         MovInstruction move = entry->instruction_at(0).as<MovInstruction>();
         auto rewritten_owner =

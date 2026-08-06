@@ -59,6 +59,57 @@ namespace cl::jit
             std::vector<std::optional<InstructionId>> initial_value_by_bundle;
         };
 
+        struct ResolvedBundleLocations
+        {
+            BundleLocationAssignments locations;
+            uint32_t managed_frame_spill_extent;
+        };
+
+        Result<ResolvedBundleLocations, RegisterAllocationError>
+        resolve_bundle_locations(const ControlFlowGraph &graph,
+                                 const RegisterAllocationResult &allocation)
+        {
+            uint32_t spill_slot_count = allocation.spill_slot_count();
+            uint32_t ordinary_extent = 0;
+            if(spill_slot_count != 0)
+            {
+                if(!graph.bytecode_state_order().has_value())
+                {
+                    return Result<ResolvedBundleLocations,
+                                  RegisterAllocationError>::
+                        error(
+                            RegisterAllocationError::MissingBytecodeStateOrder);
+                }
+                const BytecodeStateOrder &order = *graph.bytecode_state_order();
+                ordinary_extent = round_up_to_abi_alignment(
+                    order.n_locals() + order.n_temporaries());
+            }
+
+            std::vector<BundleLocation> locations;
+            locations.reserve(allocation.locations().size());
+            for(size_t index = 0; index < allocation.locations().size();
+                ++index)
+            {
+                BundleLocation location =
+                    allocation.locations().location_for(BundleId(index));
+                if(location.is_physical())
+                {
+                    locations.push_back(location);
+                    continue;
+                }
+
+                uint32_t slot = location.spill_slot().value();
+                assert(slot < spill_slot_count);
+                int32_t frame_offset = -int32_t(ordinary_extent + slot + 1);
+                locations.push_back(BundleLocation::physical(
+                    PhysicalLocation::stack(StackLocation(
+                        StackLocationKind::SpillSlot, frame_offset))));
+            }
+            return Result<ResolvedBundleLocations, RegisterAllocationError>::ok(
+                {BundleLocationAssignments(std::move(locations)),
+                 spill_slot_count});
+        }
+
         struct MaterializationPointIndex
         {
             absl::flat_hash_map<const Block *, LivenessPosition> block_entries;
@@ -348,6 +399,7 @@ namespace cl::jit
         plan_materialization(const PreparedAllocationProblem &problem,
                              const AllocationConstraints &constraints,
                              const RegisterAllocationResult &allocation,
+                             const BundleLocationAssignments &locations,
                              CompilationStorage &storage)
         {
             MaterializationPlan result;
@@ -456,8 +508,7 @@ namespace cl::jit
                 pending.operand_indices.push_back(
                     static_cast<uint32_t>(source.anchor.index()));
                 pending.assignments.push_back(
-                    {allocation.locations().physical_location_for(
-                         source_bundle),
+                    {locations.physical_location_for(source_bundle),
                      PhysicalLocation::reg(fixed_operand_copy.destination),
                      allocation.bundles()[source_bundle.value()]
                          .register_class});
@@ -506,10 +557,8 @@ namespace cl::jit
                               "classes");
                     }
                     transfers.push_back(
-                        {allocation.locations().physical_location_for(
-                             transfer.source),
-                         allocation.locations().physical_location_for(
-                             transfer.destination),
+                        {locations.physical_location_for(transfer.source),
+                         locations.physical_location_for(transfer.destination),
                          register_class});
                 }
                 auto ordered =
@@ -581,12 +630,12 @@ namespace cl::jit
                                 BundleId destination =
                                     bundle_by_occurrence[affinity.destination
                                                              .value()];
-                                location = allocation.locations()
-                                               .physical_location_for(source);
+                                location =
+                                    locations.physical_location_for(source);
                                 if(source != destination &&
                                    !location->aliases(
-                                       allocation.locations()
-                                           .physical_location_for(destination)))
+                                       locations.physical_location_for(
+                                           destination)))
                                 {
                                     assert(transfer_index <
                                            set.transfers.size());
@@ -629,7 +678,7 @@ namespace cl::jit
                 const Occurrence &occurrence = problem.occurrences()[index];
                 BundleId bundle = bundle_by_occurrence[index];
                 PhysicalLocation location =
-                    allocation.locations().physical_location_for(bundle);
+                    locations.physical_location_for(bundle);
                 switch(occurrence.anchor.kind())
                 {
                     case OccurrenceAnchor::Kind::InstructionResult:
@@ -1118,14 +1167,21 @@ namespace cl::jit
         };
     }  // namespace
 
-    Result<LocationAssignments, RegisterAllocationError>
+    Result<MaterializedAllocation, RegisterAllocationError>
     materialize_allocation(CompilationSession &session, ControlFlowGraph &graph,
                            const PreparedAllocationProblem &problem,
                            const AllocationConstraints &constraints,
                            const RegisterAllocationResult &allocation)
     {
-        auto plan_result = plan_materialization(problem, constraints,
-                                                allocation, *graph.storage());
+        auto locations_result = resolve_bundle_locations(graph, allocation);
+        if(!locations_result)
+        {
+            return propagate_failure(std::move(locations_result));
+        }
+        ResolvedBundleLocations resolved = std::move(locations_result).value();
+        auto plan_result =
+            plan_materialization(problem, constraints, allocation,
+                                 resolved.locations, *graph.storage());
         if(!plan_result)
         {
             return propagate_failure(std::move(plan_result));
@@ -1137,8 +1193,10 @@ namespace cl::jit
         AllocationMaterializer materializer(std::move(plan));
         RewriteSummary summary = rewriter.rewrite_instructions(
             InstructionTraversal(), RewriteInput::Normalized, materializer);
-        return Result<LocationAssignments, RegisterAllocationError>::ok(
-            std::move(materializer).finish(summary.normalization_remapping));
+        return Result<MaterializedAllocation, RegisterAllocationError>::ok(
+            MaterializedAllocation(
+                std::move(materializer).finish(summary.normalization_remapping),
+                resolved.managed_frame_spill_extent));
     }
 
 }  // namespace cl::jit

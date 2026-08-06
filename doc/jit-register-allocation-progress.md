@@ -58,7 +58,7 @@ algorithms, invariants, and layer boundaries.
 - [x] Give each carrier a final register probe, then assign abstract
   allocator-owned spill slots with deterministic best-effort reuse across
   non-overlapping carriers.
-- [ ] Resolve abstract spill slots to managed-frame locations during
+- [x] Resolve abstract spill slots to managed-frame locations during
   materialization and report the required spill extent.
 - [x] Materialize ordinary authoritative transfers before fixed-operand-copy parallel
   copies, rewriting only the selected call operands.

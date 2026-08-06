@@ -86,6 +86,9 @@ namespace
                         case cl::jit::RegisterAllocationError::
                             InsufficientTransferScratchRegisters:
                             return "InsufficientTransferScratchRegisters";
+                        case cl::jit::RegisterAllocationError::
+                            MissingBytecodeStateOrder:
+                            return "MissingBytecodeStateOrder";
                     }
                 }
                 else

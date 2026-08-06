@@ -4,6 +4,7 @@
 #include "jit/code_cache.h"
 #include "jit/register_allocator.h"
 
+#include <cstdint>
 #include <variant>
 
 namespace cl::jit
@@ -15,7 +16,13 @@ namespace cl::jit
     using AArch64CompilationError =
         std::variant<RegisterAllocationError, JitCodeError>;
 
-    [[nodiscard]] Result<PublishedCode, AArch64CompilationError>
+    struct AArch64CompiledCode
+    {
+        PublishedCode code;
+        uint32_t managed_frame_spill_extent;
+    };
+
+    [[nodiscard]] Result<AArch64CompiledCode, AArch64CompilationError>
     compile_to_aarch64(CompilationSession &session, ControlFlowGraph &graph,
                        CodeCache &cache, MachineAddress side_exit_thunk,
                        JitCompilationObserver *observer = nullptr);

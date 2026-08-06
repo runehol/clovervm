@@ -471,8 +471,8 @@ namespace cl::jit
                   graph->blocks()[1]->instruction_at(0).kind());
 
         CodeCache cache;
-        auto emission = emit_aarch64_from_cfg(*graph, locations.value(), cache,
-                                              no_side_exit_thunk());
+        auto emission = emit_aarch64_from_cfg(
+            *graph, locations.value().locations(), cache, no_side_exit_thunk());
 
         ASSERT_TRUE(emission);
         PublishedCode code = std::move(emission).value();
