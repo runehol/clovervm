@@ -4,7 +4,7 @@
 |---|---|
 | Document type | Implementation plan |
 | Status | Active |
-| Implementation | Cache guards, call IR, handler metadata and registry, typed resolver installation, float handler declarations, AArch64 call allocation constraints and emission, fixed operand-copy materialization, concrete call-local managed-frame spills, and explicit link-register preservation are implemented; frontend integration remains |
+| Implementation | Cache guards, call IR, handler metadata and registry, typed resolver installation, float handler declarations, binary operator frontend integration, AArch64 call allocation constraints and emission, fixed operand-copy materialization, concrete call-local managed-frame spills, and explicit link-register preservation are implemented |
 | Scope | Guarded calls from compiled AArch64 code to non-raising trusted native handlers |
 | Design authority | [JIT Compiler and IR](jit-compiler-and-ir.md), [AArch64 JIT Calling Convention](aarch64-jit-calling-convention.md), [Trusted Handler Declarations](trusted-handler-declarations.md), [Fast Operator Dispatch](fast-operator-dispatch.md), and [Function Specialization](function-specialization.md) |
 
@@ -211,13 +211,13 @@ Verification should include:
 This slice is covered by manually constructed Machine graphs. The backend path
 is executable before the bytecode frontend selects it.
 
-## Remaining Slice 2: Operator Frontend Integration
+## Implemented Slice 2: Operator Frontend Integration
 
-Extend `CoreBytecodeTranslator::lower_non_fastpathed_operator()` for one
-ordinary cached trusted-handler case:
+`CoreBytecodeTranslator::lower_non_fastpathed_operator()` supports one ordinary
+cached trusted-handler case:
 
-1. Read the `OperatorInlineCache` and determine the trusted-handler ABI from the
-   bytecode operation and semantic argument vector.
+1. Require a non-immediate binary semantic argument vector and use the binary
+   trusted-handler ABI.
 2. Reject caches with no trusted target. Erase the cached target using that
    expected arity and query the VM registry by target alone.
 3. Require the returned metadata arity to equal the expected arity. Reject
@@ -226,20 +226,22 @@ ordinary cached trusted-handler case:
 4. If the cache is not eligible, emit the existing unsupported interpreter
    exit.
 5. Emit one pre-operation Snapshot.
-6. Emit the cached shape and validity guards in cache-match order through one
-   frontend helper for an IC `ShapeKey`: an inline key becomes an exact
-   inline-tag guard, an object key becomes an exact
+6. Emit cached shape and validity guards in cache-match order: an inline key
+   becomes an exact inline-tag guard, an object key becomes an exact
    `PointerAndShapeGuard`, and a corresponding non-null lookup validity cell
    adds a `ValidityCellGuard`.
 7. Emit `TrustedHandlerCall` with the guarded arguments in the same canonical
    operand order used by interpreter cache replay. Reflected behavior is already
    encoded by the concrete cached target; the frontend must not swap operands.
+   The post-guard emission helper receives the complete inline cache, including
+   its shape keys, and the resolved registry metadata so later semantic
+   expansion has both sources of specialization information.
 8. Write its normal tagged result into bytecode state.
 
-Start with a non-immediate binary opcode whose handler is non-raising and does
-not allocate through a safepoint. A float comparison is a useful end-to-end
-candidate: it exercises two object-shape guards, native argument shuffling, a
-tagged boolean result, and the non-leaf return path without requiring F64 IR.
+Float comparison provides the end-to-end executable case: it exercises object
+shape guards, native argument shuffling, a tagged boolean result, the non-leaf
+return path, and interpreter replay after a shape-guard miss without requiring
+F64 IR.
 
 After that fixture works, reuse the same path for eligible unary and ternary
 operator caches and for the interpreter's cached trusted special-method call.

@@ -1,10 +1,14 @@
 #include "jit/core_bytecode_translator.h"
 
+#include "object_model/validity_cell.h"
 #include "runtime/fatal.h"
+#include "runtime/virtual_machine.h"
 
+#include <array>
 #include <cassert>
 #include <cstddef>
 #include <cstdint>
+#include <optional>
 #include <span>
 #include <vector>
 
@@ -327,15 +331,102 @@ namespace cl::jit
 
     bool CoreBytecodeTranslator::lower_non_fastpathed_operator(
         Block *block, const BytecodeInstruction &instruction,
-        std::span<const ProgramValueRef> inputs, const State &state,
+        std::span<const ProgramValueRef> inputs, State &state,
         std::vector<ProgramValueRef> &outputs)
     {
-        (void)inputs;
-        (void)outputs;
-        assert(instruction.operator_cache() != nullptr);
-        assert(!instruction.operator_cache()->empty());
-        emit_unsupported(block, instruction, state);
-        return false;
+        const OperatorInlineCache *cache = instruction.operator_cache();
+        assert(cache != nullptr);
+        assert(!cache->empty());
+
+        if(inputs.size() != 2 || cache->trusted_handler.is_null())
+        {
+            emit_unsupported(block, instruction, state);
+            return false;
+        }
+
+        TrustedHandlerTarget handler =
+            cache->trusted_handler.target(TrustedHandlerArity::Binary);
+        std::optional<TrustedHandlerMetadata> metadata =
+            vm_.trusted_handler_metadata(handler);
+        if(!metadata.has_value() ||
+           metadata->arity != TrustedHandlerArity::Binary ||
+           has_trusted_handler_effects(metadata->effects,
+                                       TrustedHandlerEffects::Safepoint) ||
+           has_trusted_handler_effects(metadata->effects,
+                                       TrustedHandlerEffects::Raise) ||
+           has_trusted_handler_effects(metadata->effects,
+                                       TrustedHandlerEffects::CallPython))
+        {
+            emit_unsupported(block, instruction, state);
+            return false;
+        }
+
+        assert(instruction.sources().size() == 2);
+        SnapshotRef snapshot =
+            emit_snapshot(block, instruction.pc_offset(), state);
+        const std::array shape_keys = {cache->operand_shape_keys[0],
+                                       cache->operand_shape_keys[1]};
+        for(size_t index = 0; index < shape_keys.size(); ++index)
+        {
+            BytecodeValueLocation source = instruction.sources()[index];
+            ProgramValueRef value = state_tracker_.value_at(state, source);
+            if(shape_keys[index].is_inline())
+            {
+                emit_inline_tag_guard(
+                    block, value, snapshot,
+                    TaggedValueClass::masked_equal(
+                        uint8_t(value_tag_mask),
+                        uint8_t(shape_keys[index].inline_tag())),
+                    state);
+            }
+            else
+            {
+                ShapeGuardInstruction guard =
+                    builder_
+                        .emplace_instruction<PointerAndShapeGuardInstruction>(
+                            block, tagged(value), snapshot,
+                            vm_.shape_for_key(shape_keys[index]));
+                state_tracker_.replace_value(state, value,
+                                             ProgramValueRef(guard));
+            }
+        }
+
+        for(size_t index = 0; index < shape_keys.size(); ++index)
+        {
+            ValidityCell *validity =
+                cache->operand_lookup_validity_cells[index];
+            if(validity == nullptr)
+            {
+                continue;
+            }
+            BytecodeValueLocation source = instruction.sources()[index];
+            ProgramValueRef value = state_tracker_.value_at(state, source);
+            ValidityCellGuardInstruction guard =
+                builder_.emplace_instruction<ValidityCellGuardInstruction>(
+                    block, tagged(value), snapshot, validity);
+            state_tracker_.replace_value(state, value, ProgramValueRef(guard));
+        }
+
+        std::array<TaggedValueRef, 2> arguments = {
+            tagged(state_tracker_.value_at(state, instruction.sources()[0])),
+            tagged(state_tracker_.value_at(state, instruction.sources()[1]))};
+        emit_trusted_handler_call(block, *cache, *metadata, arguments, outputs);
+        return true;
+    }
+
+    void CoreBytecodeTranslator::emit_trusted_handler_call(
+        Block *block, const OperatorInlineCache &cache,
+        const TrustedHandlerMetadata &metadata,
+        std::span<const TaggedValueRef> arguments,
+        std::vector<ProgramValueRef> &outputs)
+    {
+        assert(metadata.arity == TrustedHandlerArity::Binary);
+        assert(arguments.size() == 2);
+        TrustedHandlerTarget handler =
+            cache.trusted_handler.target(metadata.arity);
+        outputs.emplace_back(
+            builder_.emplace_instruction<TrustedHandlerCallInstruction>(
+                block, arguments, handler));
     }
 
     bool CoreBytecodeTranslator::lower_binary_arithmetic(

@@ -9,14 +9,20 @@
 #include <span>
 #include <vector>
 
+namespace cl
+{
+    class VirtualMachine;
+}
+
 namespace cl::jit
 {
     class CoreBytecodeTranslator
     {
     public:
-        CoreBytecodeTranslator(const CodeObject &code_object,
+        CoreBytecodeTranslator(VirtualMachine &vm,
+                               const CodeObject &code_object,
                                GraphBuilder &builder)
-            : code_object_(code_object), builder_(builder),
+            : vm_(vm), code_object_(code_object), builder_(builder),
               decoder_(code_object), state_tracker_(code_object)
         {
         }
@@ -49,8 +55,14 @@ namespace cl::jit
                               const State &pre_instruction_state);
         bool lower_non_fastpathed_operator(
             Block *block, const BytecodeInstruction &instruction,
-            std::span<const ProgramValueRef> inputs, const State &state,
+            std::span<const ProgramValueRef> inputs, State &state,
             std::vector<ProgramValueRef> &outputs);
+        void
+        emit_trusted_handler_call(Block *block,
+                                  const OperatorInlineCache &cache,
+                                  const TrustedHandlerMetadata &metadata,
+                                  std::span<const TaggedValueRef> arguments,
+                                  std::vector<ProgramValueRef> &outputs);
         bool lower_binary_arithmetic(
             Block *block, const BytecodeInstruction &instruction,
             BinaryArithmeticSMIWithSnapshotSubkind subkind,
@@ -94,6 +106,7 @@ namespace cl::jit
                 builder_.storage()->instruction(value.instruction_id()));
         }
 
+        VirtualMachine &vm_;
         const CodeObject &code_object_;
         GraphBuilder &builder_;
         BytecodeDecoder decoder_;

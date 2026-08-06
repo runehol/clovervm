@@ -17,6 +17,11 @@ namespace cl::jit
 {
     namespace
     {
+        Value test_translated_trusted_handler(ThreadState *, Value lhs, Value)
+        {
+            return lhs;
+        }
+
         struct TranslatorFixture
         {
             TranslatorFixture()
@@ -37,7 +42,8 @@ namespace cl::jit
             ControlFlowGraph *translate()
             {
                 CodeObject *code_object = code_builder.finalize().value();
-                CoreBytecodeTranslator translator(*code_object, graph_builder);
+                CoreBytecodeTranslator translator(context.vm(), *code_object,
+                                                  graph_builder);
                 return translator.translate();
             }
 
@@ -242,7 +248,8 @@ namespace cl::jit
             ShapeKey::from_value(Value::from_smi(19)),
             ShapeKey::from_value(Value::from_smi(23)));
 
-        CoreBytecodeTranslator translator(*code_object, fixture.graph_builder);
+        CoreBytecodeTranslator translator(fixture.context.vm(), *code_object,
+                                          fixture.graph_builder);
         ControlFlowGraph *graph = translator.translate();
         Block *entry = graph->entry_block();
         EXPECT_TRUE(instructions_of_kind(entry, InstructionKind::InlineTagGuard)
@@ -260,6 +267,86 @@ namespace cl::jit
             snapshots.front().as<SnapshotInstruction>().resume_pc_offset());
         EXPECT_EQ(resumes.front().id(),
                   entry->instruction_at(entry->instructions().size() - 1).id());
+    }
+
+    TEST(JitCoreBytecodeTranslator,
+         LowersEligiblePopulatedCacheToGuardedTrustedHandlerCall)
+    {
+        TranslatorFixture fixture;
+        uint32_t add_pc;
+        {
+            CodeObjectBuilder::TemporaryReg temporaries(fixture.code_builder,
+                                                        1);
+            fixture.code_builder.emit_lda_smi(0, 19).value();
+            fixture.code_builder.emit_star(0, temporaries).value();
+            fixture.code_builder.emit_lda_smi(0, 23).value();
+            add_pc =
+                fixture.code_builder
+                    .emit_operator_reg(
+                        0, Bytecode::Add, temporaries,
+                        OperatorBytecodeFormat::WithCacheAndNotImplementedCheck)
+                    .value();
+            fixture.code_builder.emit_return(0).value();
+        }
+        CodeObject *code_object = fixture.code_builder.finalize().value();
+        Shape *float_shape =
+            fixture.context.vm().float_class()->get_instance_root_shape();
+        ShapeKey operand0_shape_key = ShapeKey::from_shape(float_shape);
+        ShapeKey operand1_shape_key = ShapeKey::from_value(Value::from_smi(23));
+        fixture.context.vm().register_trusted_handler(
+            test_translated_trusted_handler, TrustedHandlerEffects::Allocate,
+            TrustedHandlerSemantics::Add);
+        code_object->inline_caches.operator_caches[0] =
+            OperatorInlineCache::trusted_handler_call(
+                operand0_shape_key, operand1_shape_key,
+                TrustedResolution::call_trusted(
+                    test_translated_trusted_handler),
+                nullptr, nullptr);
+
+        CoreBytecodeTranslator translator(fixture.context.vm(), *code_object,
+                                          fixture.graph_builder);
+        ControlFlowGraph *graph = translator.translate();
+        Block *entry = graph->entry_block();
+        std::vector<Instruction> snapshots =
+            instructions_of_kind(entry, InstructionKind::Snapshot);
+        std::vector<Instruction> shape_guards =
+            instructions_of_kind(entry, InstructionKind::PointerAndShapeGuard);
+        std::vector<Instruction> inline_guards =
+            instructions_of_kind(entry, InstructionKind::InlineTagGuard);
+        std::vector<Instruction> calls =
+            instructions_of_kind(entry, InstructionKind::TrustedHandlerCall);
+        ASSERT_EQ(1u, snapshots.size());
+        ASSERT_EQ(1u, shape_guards.size());
+        ASSERT_EQ(1u, inline_guards.size());
+        ASSERT_EQ(1u, calls.size());
+        EXPECT_TRUE(
+            instructions_of_kind(entry, InstructionKind::ResumeInInterpreter)
+                .empty());
+
+        SnapshotInstruction snapshot =
+            snapshots.front().as<SnapshotInstruction>();
+        EXPECT_EQ(add_pc, snapshot.resume_pc_offset());
+        ShapeGuardInstruction shape_guard =
+            shape_guards.front().as<ShapeGuardInstruction>();
+        EXPECT_EQ(float_shape, shape_guard.expected_shape());
+        EXPECT_EQ(snapshot.id(), shape_guard.snapshot().instruction_id());
+        InlineTagGuardInstruction inline_guard =
+            inline_guards.front().as<InlineTagGuardInstruction>();
+        EXPECT_EQ(TaggedValueClass::smi(), inline_guard.expected_class());
+        EXPECT_EQ(snapshot.id(), inline_guard.snapshot().instruction_id());
+
+        TrustedHandlerCallInstruction call =
+            calls.front().as<TrustedHandlerCallInstruction>();
+        ASSERT_EQ(2u, call.arguments().size());
+        EXPECT_EQ(shape_guard.id(), call.arguments()[0].instruction_id());
+        EXPECT_EQ(inline_guard.id(), call.arguments()[1].instruction_id());
+        EXPECT_EQ(erase_trusted_handler_target(test_translated_trusted_handler),
+                  call.handler());
+        ReturnInstruction return_instruction =
+            entry->instruction_at(entry->instructions().size() - 1)
+                .as<ReturnInstruction>();
+        EXPECT_EQ(call.id(),
+                  return_instruction.return_value().instruction_id());
     }
 
     TEST(JitCoreBytecodeTranslator, LowersAddSmiWithAnEmptyCacheToGuardedSMIAdd)
@@ -477,7 +564,8 @@ namespace cl::jit
             ShapeKey::from_value(Value::from_smi(13)),
             ShapeKey::from_value(Value::from_smi(7)));
 
-        CoreBytecodeTranslator translator(*code_object, fixture.graph_builder);
+        CoreBytecodeTranslator translator(fixture.context.vm(), *code_object,
+                                          fixture.graph_builder);
         ControlFlowGraph *graph = translator.translate();
         Block *entry = graph->entry_block();
         std::vector<Instruction> snapshots =

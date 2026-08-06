@@ -1,3 +1,4 @@
+#include "builtin_types/float.h"
 #include "builtin_types/tuple.h"
 #include "jit/aarch64_allocation_constraints.h"
 #include "jit/aarch64_assembler.h"
@@ -1336,6 +1337,51 @@ namespace cl::jit
 
         EXPECT_EQ(Value::from_smi(42), fixture.call(L"add", Value::from_smi(19),
                                                     Value::from_smi(23)));
+    }
+
+    TEST(AArch64Execution, CallsTrustedHandlerSelectedByOperatorCache)
+    {
+        class Observer : public JitCompilationObserver
+        {
+        public:
+            void on_machine_ir(const ControlFlowGraph &graph) override
+            {
+                for(const Block *block: graph.blocks())
+                {
+                    for(Instruction instruction: block->instructions())
+                    {
+                        if(instruction.kind() ==
+                           InstructionKind::TrustedHandlerCall)
+                        {
+                            ++trusted_handler_call_count;
+                        }
+                    }
+                }
+            }
+
+            size_t trusted_handler_call_count = 0;
+        };
+
+        PythonJitExecutionFixture fixture;
+        fixture.execute_module(L"def equal(lhs, rhs):\n"
+                               L"    return lhs == rhs\n"
+                               L"equal(1.0, 2.0)\n");
+        Observer observer;
+        ASSERT_TRUE(
+            fixture.jit_compile(L"equal", JitCompilerOptions{&observer}));
+        EXPECT_EQ(1u, observer.trusted_handler_call_count);
+
+        Owned<TValue<Float>> one(
+            fixture.thread()->make_object_value<Float>(1.0));
+        Owned<TValue<Float>> two(
+            fixture.thread()->make_object_value<Float>(2.0));
+        EXPECT_EQ(Value::False(),
+                  fixture.call(L"equal", one.value().raw_value(),
+                               two.value().raw_value()));
+        EXPECT_EQ(Value::True(), fixture.call(L"equal", one.value().raw_value(),
+                                              one.value().raw_value()));
+        EXPECT_EQ(Value::True(), fixture.call(L"equal", Value::from_smi(7),
+                                              Value::from_smi(7)));
     }
 
     TEST(AArch64Execution, ResumesInterpreterForStringAdditionSideExit)
