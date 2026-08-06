@@ -10,6 +10,7 @@
 #include <compare>
 #include <cstddef>
 #include <cstdint>
+#include <span>
 #include <utility>
 #include <vector>
 
@@ -328,6 +329,8 @@ namespace cl::jit
     public:
         void add(TransferPoint point, TransferPhase phase,
                  BundleTransfer transfer);
+        void remap_split_bundle(BundleId left, BundleId right,
+                                std::span<const LiveBundle> bundles);
 
         const std::vector<BundleTransferSet> &sets() const { return sets_; }
 

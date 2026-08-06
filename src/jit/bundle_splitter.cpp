@@ -30,7 +30,78 @@ namespace cl::jit
             }
             return result;
         }
+
+        bool bundles_have_adjacent_fragments(const LiveBundle &source,
+                                             const LiveBundle &destination)
+        {
+            for(const BundleFragment &source_fragment: source.fragments)
+            {
+                for(const BundleFragment &destination_fragment:
+                    destination.fragments)
+                {
+                    if(source_fragment.source == destination_fragment.source &&
+                       source_fragment.range.end ==
+                           destination_fragment.range.start)
+                    {
+                        return true;
+                    }
+                }
+            }
+            return false;
+        }
     }  // namespace
+
+    void BundleTransferSchedule::remap_split_bundle(
+        BundleId left, BundleId right, std::span<const LiveBundle> bundles)
+    {
+        assert(left.value() < bundles.size());
+        assert(right.value() < bundles.size());
+        for(BundleTransferSet &set: sets_)
+        {
+            if(set.point.kind() == TransferPoint::Kind::BlockEdge)
+            {
+                continue;
+            }
+            for(BundleTransfer &transfer: set.transfers)
+            {
+                if(transfer.source == left)
+                {
+                    bool left_connected = bundles_have_adjacent_fragments(
+                        bundles[left.value()],
+                        bundles[transfer.destination.value()]);
+                    bool right_connected = bundles_have_adjacent_fragments(
+                        bundles[right.value()],
+                        bundles[transfer.destination.value()]);
+                    if(left_connected == right_connected)
+                    {
+                        fatal("JIT split cannot remap bundle transfer source");
+                    }
+                    if(right_connected)
+                    {
+                        transfer.source = right;
+                    }
+                }
+                if(transfer.destination == left)
+                {
+                    bool left_connected = bundles_have_adjacent_fragments(
+                        bundles[transfer.source.value()],
+                        bundles[left.value()]);
+                    bool right_connected = bundles_have_adjacent_fragments(
+                        bundles[transfer.source.value()],
+                        bundles[right.value()]);
+                    if(left_connected == right_connected)
+                    {
+                        fatal("JIT split cannot remap bundle transfer "
+                              "destination");
+                    }
+                    if(right_connected)
+                    {
+                        transfer.destination = right;
+                    }
+                }
+            }
+        }
+    }
 
     TransferPoint
     transfer_point_for_occurrence(const PreparedAllocationProblem &problem,
@@ -150,6 +221,7 @@ namespace cl::jit
         bundles[bundle_id.value()] = std::move(left);
         BundleId right_id(static_cast<uint32_t>(bundles.size()));
         bundles.push_back(std::move(right));
+        transfers.remap_split_bundle(bundle_id, right_id, bundles);
         if(crosses_boundary)
         {
             transfers.add(transfer_point, TransferPhase::Regular,
