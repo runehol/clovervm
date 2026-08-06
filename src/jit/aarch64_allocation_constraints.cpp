@@ -161,8 +161,8 @@ namespace cl::jit
                     TrustedHandlerCallInstruction::arguments_operand_index +
                         index,
                     AccessTiming::Early,
-                    LocationRequirement::fixed(PhysicalLocation::reg(
-                        gpr(static_cast<uint8_t>(index + 1)))));
+                    LocationRequirement::fixed_operand_copy(
+                        gpr(static_cast<uint8_t>(index + 1))));
             }
             return InstructionAllocationConstraints(
                 instruction, std::move(input_overrides),

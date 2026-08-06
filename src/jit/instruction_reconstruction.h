@@ -12,6 +12,23 @@ namespace cl::jit
 {
     namespace detail
     {
+        template <typename DefResolver>
+        InstructionId resolve_operand_reference(const DefResolver &resolver,
+                                                uint32_t operand_index,
+                                                InstructionId definition)
+        {
+            if constexpr(requires {
+                             resolver.resolve(operand_index, definition);
+                         })
+            {
+                return resolver.resolve(operand_index, definition);
+            }
+            else
+            {
+                return resolver.resolve(definition);
+            }
+        }
+
         template <typename DefResolver> class TypedReferenceResolver
         {
         public:
@@ -21,36 +38,37 @@ namespace cl::jit
             {
             }
 
-            InstructionId resolve(InstructionId def) const
+            InstructionId resolve(InstructionId def)
             {
-                return resolver_->resolve(def);
+                return resolve_operand_reference(*resolver_, operand_index_++,
+                                                 def);
             }
 
-            ProgramValueRef resolve(ProgramValueRef def) const
+            ProgramValueRef resolve(ProgramValueRef def)
             {
                 return ProgramValueRef(
                     storage_->instruction(resolve(def.instruction_id())));
             }
 
-            TaggedValueRef resolve(TaggedValueRef def) const
+            TaggedValueRef resolve(TaggedValueRef def)
             {
                 return TaggedValueRef(
                     storage_->instruction(resolve(def.instruction_id())));
             }
 
-            F64Ref resolve(F64Ref def) const
+            F64Ref resolve(F64Ref def)
             {
                 return F64Ref(
                     storage_->instruction(resolve(def.instruction_id())));
             }
 
-            PointerRef resolve(PointerRef def) const
+            PointerRef resolve(PointerRef def)
             {
                 return PointerRef(
                     storage_->instruction(resolve(def.instruction_id())));
             }
 
-            SnapshotRef resolve(SnapshotRef def) const
+            SnapshotRef resolve(SnapshotRef def)
             {
                 return SnapshotRef(
                     storage_->instruction(resolve(def.instruction_id())));
@@ -67,7 +85,7 @@ namespace cl::jit
             }
 
             template <ValueRepresentation Representation>
-            auto resolve(RepresentedValueRefRange<Representation> defs) const
+            auto resolve(RepresentedValueRefRange<Representation> defs)
             {
                 using Reference = decltype(defs[size_t{0}]);
                 std::vector<Reference> resolved;
@@ -79,8 +97,7 @@ namespace cl::jit
                 return resolved;
             }
 
-            std::vector<ProgramValueRef>
-            resolve(ProgramValueRefRange defs) const
+            std::vector<ProgramValueRef> resolve(ProgramValueRefRange defs)
             {
                 std::vector<ProgramValueRef> resolved;
                 resolved.reserve(defs.size());
@@ -95,6 +112,7 @@ namespace cl::jit
         private:
             const CompilationStorage *storage_;
             const DefResolver *resolver_;
+            uint32_t operand_index_ = 0;
         };
     }  // namespace detail
 
@@ -114,6 +132,12 @@ namespace cl::jit
     //
     //     InstructionId resolve(InstructionId def) const;
     //
+    // A resolver that needs to distinguish duplicate references may instead
+    // additionally provide:
+    //
+    //     InstructionId resolve(uint32_t operand_index,
+    //                           InstructionId def) const;
+    //
     // InstructionFactory provides:
     //
     //     template <typename T, typename... Args>
@@ -128,11 +152,12 @@ namespace cl::jit
         if(mode == InstructionRebuildMode::ReuseIfUnchanged)
         {
             visit_operand_references(
-                instruction,
-                [&](uint32_t, OperandClass, ValueRepresentationRequirement,
-                    InstructionId definition_id) {
-                    changed |=
-                        def_resolver.resolve(definition_id) != definition_id;
+                instruction, [&](uint32_t operand_index, OperandClass,
+                                 ValueRepresentationRequirement,
+                                 InstructionId definition_id) {
+                    changed |= detail::resolve_operand_reference(
+                                   def_resolver, operand_index,
+                                   definition_id) != definition_id;
                 });
             if(instruction.is_block_terminator())
             {

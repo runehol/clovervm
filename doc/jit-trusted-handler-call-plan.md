@@ -4,7 +4,7 @@
 |---|---|
 | Document type | Implementation plan |
 | Status | Active |
-| Implementation | Cache guards, call IR, handler metadata and registry, typed resolver installation, float handler declarations, and AArch64 call allocation constraints are implemented; call-local spills, emission, and frontend integration remain |
+| Implementation | Cache guards, call IR, handler metadata and registry, typed resolver installation, float handler declarations, AArch64 call allocation constraints, and fixed operand-copy materialization are implemented; call-local spills, return preservation, emission, and frontend integration remain |
 | Scope | Guarded calls from compiled AArch64 code to non-raising trusted native handlers |
 | Design authority | [JIT Compiler and IR](jit-compiler-and-ir.md), [AArch64 JIT Calling Convention](aarch64-jit-calling-convention.md), [Trusted Handler Declarations](trusted-handler-declarations.md), [Fast Operator Dispatch](fast-operator-dispatch.md), and [Function Specialization](function-specialization.md) |
 
@@ -103,8 +103,8 @@ Describe the platform ABI directly in allocation constraints. For a binary
 handler:
 
 ```text
-operand 0 -> early FixedUse(x1)
-operand 1 -> early FixedUse(x2)
+operand 0 -> early FixedOperandCopy(x1)
+operand 1 -> early FixedOperandCopy(x2)
 result    -> late FixedLocation(x0)
 ```
 
@@ -113,7 +113,7 @@ The emitter copies fixed JIT context register `x25` to native argument register
 native caller-saved allocation registers as clobbers. The fixed result owns
 `x0`; it is not also represented as an undefined clobber.
 
-`FixedUse` differs from the existing `FixedLocation`: it does not force the
+`FixedOperandCopy` differs from the existing `FixedLocation`: it does not force the
 source bundle into `x1` through `x3`. It records an operand-local copy from the
 source's authoritative location to the ABI register and rewrites only that call
 operand. Later uses continue to refer to the source bundle.
@@ -123,7 +123,7 @@ Ordinary pressure splitting cannot preserve an argument that is both needed in
 Late clobber. The bootstrap implementation uses allocator-owned managed-frame
 spill slots instead. It trims a maximal spill-safe carrier interval around the
 call with two ordinary bundle splits. The resulting connectors store into the
-carrier and reload from it. The `FixedUse` copies the argument from the carrier
+carrier and reload from it. The `FixedOperandCopy` copies the argument from the carrier
 to its ABI register without changing the carrier's authoritative value.
 
 Trimming respects every occurrence's `minimum_coverage`; it never splits
@@ -147,12 +147,12 @@ cannot overlap another managed frame.
 side-exit arguments remain observable and cannot be moved into an untracked
 spill slot. A bootstrap carrier may contain no def, forwarding def, Snapshot
 use, side-exit argument, safepoint, Python call, or Python reentry boundary; its
-only value use may be one trusted-handler `FixedUse`. A value that is merely
+only value use may be one trusted-handler `FixedOperandCopy`. A value that is merely
 live through the call may use the same carrier shape without a use at the call.
 
 Materialization first executes ordinary authoritative transfers, including the
-spill store or reload, and then resolves all fixed uses at the instruction as
-one parallel assignment. The generated fixed-use values are assigned to the
+spill store or reload, and then resolves all fixed operand copies at the instruction as
+one parallel assignment. The generated fixed-operand-copy values are assigned to the
 ABI registers and replace only their corresponding operands. They do not
 update the allocator's current-value mapping for the source bundle.
 
@@ -192,9 +192,9 @@ Verification should include:
 - a leaf graph retaining its current prologue-free code shape;
 - a call graph storing and reloading `x30` through `fp[1]`;
 - a fixed argument live after the call surviving through a call-local managed
-  spill slot and fixed-use argument copy;
+  spill slot and fixed operand copy;
 - an unrelated caller-saved value live across the call surviving through the
-  same call-local spill mechanism without a fixed-use copy;
+  same call-local spill mechanism without an operand copy;
 - non-overlapping calls reusing compatible spill slots;
 - unary, binary, and ternary argument placement;
 - a far handler address using the existing call relaxation.

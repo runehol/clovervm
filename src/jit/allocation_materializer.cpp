@@ -1,6 +1,7 @@
 #include "jit/allocation_materializer.h"
 
 #include "jit/graph_rewriter.h"
+#include "jit/instruction_reconstruction.h"
 #include "jit/parallel_assignment_resolver.h"
 #include "runtime/fatal.h"
 
@@ -39,12 +40,20 @@ namespace cl::jit
             std::vector<PhysicalLocation> parameter_locations;
         };
 
+        struct PlannedFixedOperandCopySet
+        {
+            std::vector<uint32_t> operand_indices;
+            OrderedParallelAssignment<PhysicalLocation> ordered;
+        };
+
         struct MaterializationPlan
         {
             absl::flat_hash_map<const Block *, PlannedTransferSet>
                 block_entries;
             absl::flat_hash_map<InstructionId, PlannedTransferSet>
                 before_instructions;
+            absl::flat_hash_map<InstructionId, PlannedFixedOperandCopySet>
+                fixed_operand_copies;
             std::vector<PlannedEdgeTransferSet> edge_transfers;
             LocationAssignmentsBuilder existing_locations;
             std::vector<std::optional<InstructionId>> initial_value_by_bundle;
@@ -403,6 +412,75 @@ namespace cl::jit
                     definition.register_class())] =
                     definition.scratch_registers();
             }
+
+            struct PendingFixedOperandCopySet
+            {
+                InstructionId instruction;
+                std::vector<uint32_t> operand_indices;
+                std::vector<ParallelAssignment<PhysicalLocation>> assignments;
+            };
+            std::vector<PendingFixedOperandCopySet>
+                pending_fixed_operand_copies;
+            absl::flat_hash_map<InstructionId, size_t>
+                pending_fixed_operand_copy_index;
+            for(const FixedOperandCopyFixup &fixed_operand_copy:
+                allocation.fixed_operand_copies())
+            {
+                if(fixed_operand_copy.source.value() >=
+                   problem.occurrences().size())
+                {
+                    fatal("materialization fixed operand copy names no "
+                          "occurrence");
+                }
+                const Occurrence &source =
+                    problem.occurrences()[fixed_operand_copy.source.value()];
+                if(source.anchor.kind() !=
+                   OccurrenceAnchor::Kind::InstructionOperand)
+                {
+                    fatal("materialization fixed operand copy has no "
+                          "instruction operand");
+                }
+                InstructionId instruction = source.anchor.instruction_id();
+                auto [position, inserted] =
+                    pending_fixed_operand_copy_index.emplace(
+                        instruction, pending_fixed_operand_copies.size());
+                if(inserted)
+                {
+                    pending_fixed_operand_copies.push_back(
+                        {instruction, {}, {}});
+                }
+                PendingFixedOperandCopySet &pending =
+                    pending_fixed_operand_copies[position->second];
+                BundleId source_bundle =
+                    bundle_by_occurrence[fixed_operand_copy.source.value()];
+                pending.operand_indices.push_back(
+                    static_cast<uint32_t>(source.anchor.index()));
+                pending.assignments.push_back(
+                    {allocation.locations().location_for(source_bundle),
+                     PhysicalLocation::reg(fixed_operand_copy.destination),
+                     allocation.bundles()[source_bundle.value()]
+                         .register_class});
+            }
+            for(PendingFixedOperandCopySet &pending:
+                pending_fixed_operand_copies)
+            {
+                auto ordered = plan_physical_assignments(pending.assignments,
+                                                         scratch_registers);
+                if(!ordered)
+                {
+                    return propagate_failure(std::move(ordered));
+                }
+                bool inserted =
+                    result.fixed_operand_copies
+                        .emplace(pending.instruction,
+                                 PlannedFixedOperandCopySet{
+                                     std::move(pending.operand_indices),
+                                     std::move(ordered).value()})
+                        .second;
+                assert(inserted);
+                (void)inserted;
+            }
+
             std::optional<MaterializationPointIndex> point_index;
             std::optional<TransferSourceIndex> source_index;
             for(const BundleTransferSet &set: allocation.transfers().sets())
@@ -667,6 +745,7 @@ namespace cl::jit
             explicit AllocationMaterializer(MaterializationPlan plan)
                 : block_entries_(std::move(plan.block_entries)),
                   before_instructions_(std::move(plan.before_instructions)),
+                  fixed_operand_copies_(std::move(plan.fixed_operand_copies)),
                   locations_(std::move(plan.existing_locations)),
                   current_values_(std::move(plan.initial_value_by_bundle))
             {
@@ -682,11 +761,34 @@ namespace cl::jit
                            : emit_transfers(context, found->second);
             }
 
+            RewriteResult rewrite_instruction(RewriteContext &context,
+                                              const GraphQueries &,
+                                              const Block &,
+                                              const Instruction &instruction)
+            {
+                const PlannedFixedOperandCopySet *fixed_operand_copies =
+                    pending_fixed_operand_copies_;
+                pending_fixed_operand_copies_ = nullptr;
+                if(fixed_operand_copies == nullptr)
+                {
+                    return RewriteResult::keep();
+                }
+                return emit_fixed_operand_copies(context, instruction,
+                                                 *fixed_operand_copies);
+            }
+
             RewriteInsertion before_instruction(RewriteContext &context,
                                                 const GraphQueries &,
                                                 const Block &,
                                                 const Instruction &instruction)
             {
+                assert(pending_fixed_operand_copies_ == nullptr);
+                auto fixed_operand_copy =
+                    fixed_operand_copies_.find(instruction.id());
+                pending_fixed_operand_copies_ =
+                    fixed_operand_copy == fixed_operand_copies_.end()
+                        ? nullptr
+                        : &fixed_operand_copy->second;
                 auto found = before_instructions_.find(instruction.id());
                 return found == before_instructions_.end()
                            ? RewriteInsertion::none()
@@ -696,55 +798,59 @@ namespace cl::jit
             LocationAssignments
             finish(const NormalizationRemapping &normalization) &&
             {
+                assert(pending_fixed_operand_copies_ == nullptr);
                 return std::move(locations_).finalize(normalization);
             }
 
         private:
-            RewriteInsertion emit_transfers(RewriteContext &context,
-                                            const PlannedTransferSet &planned)
+            struct EmittedParallelAssignment
             {
-                const BundleTransferSet &set = *planned.original;
-                bool uses_explicit_sources = !planned.sources.empty();
-                std::span<const InstructionId> sources = planned.sources;
-                std::vector<InstructionId> current_sources;
-                if(!uses_explicit_sources)
-                {
-                    current_sources.reserve(set.transfers.size());
-                    for(const BundleTransfer &transfer: set.transfers)
-                    {
-                        std::optional<InstructionId> source =
-                            current_values_[transfer.source.value()];
-                        if(!source.has_value())
-                        {
-                            fatal("JIT bundle transfer has no program value");
-                        }
-                        current_sources.push_back(*source);
-                    }
-                    sources = current_sources;
-                }
-                assert(sources.size() == set.transfers.size());
-
-                for(size_t index: planned.ordered.aliasing_assignments)
-                {
-                    if(!uses_explicit_sources)
-                    {
-                        const BundleTransfer &transfer = set.transfers[index];
-                        current_values_[transfer.destination.value()] =
-                            sources[index];
-                    }
-                }
-
-                if(planned.ordered.moves.empty())
-                {
-                    return RewriteInsertion::none();
-                }
-
                 RewriteInsertion::InstructionSequence instructions;
-                RewriteInsertion::TransferOutputs outputs;
+                std::vector<InstructionId> result_by_assignment;
+                std::vector<size_t> moved_assignments;
+            };
+
+            class OperandReplacementResolver
+            {
+            public:
+                explicit OperandReplacementResolver(
+                    const absl::flat_hash_map<uint32_t, InstructionId>
+                        &replacements)
+                    : replacements_(&replacements)
+                {
+                }
+
+                InstructionId resolve(uint32_t operand_index,
+                                      InstructionId definition) const
+                {
+                    auto found = replacements_->find(operand_index);
+                    return found == replacements_->end() ? definition
+                                                         : found->second;
+                }
+
+                InstructionId resolve(InstructionId definition) const
+                {
+                    return definition;
+                }
+
+                BlockEdge *resolve(BlockEdge *edge) const { return edge; }
+
+            private:
+                const absl::flat_hash_map<uint32_t, InstructionId>
+                    *replacements_;
+            };
+
+            EmittedParallelAssignment emit_parallel_assignment(
+                RewriteContext &context,
+                const OrderedParallelAssignment<PhysicalLocation> &ordered,
+                std::span<const InstructionId> sources)
+            {
+                EmittedParallelAssignment result;
+                result.result_by_assignment.assign(sources.begin(),
+                                                   sources.end());
                 std::vector<InstructionId> move_values;
-                move_values.reserve(planned.ordered.moves.size());
-                for(const OrderedMove<PhysicalLocation> &move:
-                    planned.ordered.moves)
+                move_values.reserve(ordered.moves.size());
+                for(const OrderedMove<PhysicalLocation> &move: ordered.moves)
                 {
                     InstructionId source(0);
                     switch(move.source.kind())
@@ -834,43 +940,177 @@ namespace cl::jit
                             break;
                         case ValueRepresentation::None:
                         case ValueRepresentation::Count:
-                            fatal("invalid JIT bundle transfer "
-                                  "representation");
+                            fatal("invalid JIT bundle transfer representation");
                     }
                     if(!output.has_value())
                     {
                         fatal("invalid resolved JIT transfer locations");
                     }
-                    instructions.push_back(*output);
+                    result.instructions.push_back(*output);
                     move_values.push_back(output->id());
                     locations_.assign(ProgramValueRef(*output),
                                       move.destination);
 
                     if(move.original_assignment_index >= 0)
                     {
-                        int transfer_index = move.original_assignment_index;
-                        if(!uses_explicit_sources)
+                        size_t assignment =
+                            static_cast<size_t>(move.original_assignment_index);
+                        result.result_by_assignment[assignment] = output->id();
+                        result.moved_assignments.push_back(assignment);
+                    }
+                }
+                return result;
+            }
+
+            RewriteInsertion emit_transfers(RewriteContext &context,
+                                            const PlannedTransferSet &planned)
+            {
+                const BundleTransferSet &set = *planned.original;
+                bool uses_explicit_sources = !planned.sources.empty();
+                std::span<const InstructionId> sources = planned.sources;
+                std::vector<InstructionId> current_sources;
+                if(!uses_explicit_sources)
+                {
+                    current_sources.reserve(set.transfers.size());
+                    for(const BundleTransfer &transfer: set.transfers)
+                    {
+                        std::optional<InstructionId> source =
+                            current_values_[transfer.source.value()];
+                        if(!source.has_value())
                         {
-                            const BundleTransfer &transfer =
-                                set.transfers[transfer_index];
-                            current_values_[transfer.destination.value()] =
-                                output->id();
+                            fatal("JIT bundle transfer has no program value");
                         }
-                        outputs.emplace_back(
-                            ProgramValueRef(
-                                context.instruction(sources[transfer_index])),
-                            ProgramValueRef(*output));
+                        current_sources.push_back(*source);
+                    }
+                    sources = current_sources;
+                }
+                assert(sources.size() == set.transfers.size());
+                EmittedParallelAssignment emitted =
+                    emit_parallel_assignment(context, planned.ordered, sources);
+                RewriteInsertion::TransferOutputs outputs;
+                if(!uses_explicit_sources)
+                {
+                    for(size_t index = 0; index < set.transfers.size(); ++index)
+                    {
+                        current_values_[set.transfers[index]
+                                            .destination.value()] =
+                            emitted.result_by_assignment[index];
                     }
                 }
 
+                for(size_t index: emitted.moved_assignments)
+                {
+                    outputs.emplace_back(
+                        ProgramValueRef(context.instruction(sources[index])),
+                        ProgramValueRef(context.instruction(
+                            emitted.result_by_assignment[index])));
+                }
+
+                if(emitted.instructions.empty())
+                {
+                    return RewriteInsertion::none();
+                }
+
                 return RewriteInsertion::insert_transfers(
-                    std::move(instructions), std::move(outputs));
+                    std::move(emitted.instructions), std::move(outputs));
+            }
+
+            RewriteResult
+            emit_fixed_operand_copies(RewriteContext &context,
+                                      const Instruction &instruction,
+                                      const PlannedFixedOperandCopySet &planned)
+            {
+                absl::flat_hash_map<uint32_t, size_t> use_by_operand;
+                use_by_operand.reserve(planned.operand_indices.size());
+                for(size_t index = 0; index < planned.operand_indices.size();
+                    ++index)
+                {
+                    bool inserted =
+                        use_by_operand
+                            .emplace(planned.operand_indices[index], index)
+                            .second;
+                    if(!inserted)
+                    {
+                        fatal("JIT instruction has two fixed operand copies "
+                              "for one "
+                              "operand");
+                    }
+                }
+                std::vector<InstructionId> sources(
+                    planned.operand_indices.size(), InstructionId(0));
+                std::vector<bool> found_source(planned.operand_indices.size(),
+                                               false);
+                visit_operand_references(
+                    instruction,
+                    [&](uint32_t operand_index, OperandClass operand_class,
+                        ValueRepresentationRequirement,
+                        InstructionId definition) {
+                        auto found = use_by_operand.find(operand_index);
+                        if(found == use_by_operand.end())
+                        {
+                            return;
+                        }
+                        if(operand_class != OperandClass::ProgramValue)
+                        {
+                            fatal("JIT fixed operand copy does not name a "
+                                  "program value");
+                        }
+                        sources[found->second] = definition;
+                        found_source[found->second] = true;
+                    });
+                if(std::ranges::find(found_source, false) != found_source.end())
+                {
+                    fatal(
+                        "JIT fixed operand copy names no materialized operand");
+                }
+
+                EmittedParallelAssignment emitted =
+                    emit_parallel_assignment(context, planned.ordered, sources);
+                if(emitted.instructions.empty())
+                {
+                    return RewriteResult::keep();
+                }
+
+                absl::flat_hash_map<uint32_t, InstructionId> replacements;
+                for(const auto &[operand_index, assignment]: use_by_operand)
+                {
+                    replacements.emplace(
+                        operand_index,
+                        emitted.result_by_assignment[assignment]);
+                }
+                OperandReplacementResolver resolver(replacements);
+                Instruction original = instruction;
+                Instruction replacement = rebuild_instruction_with_references(
+                    original, *instruction.storage(), resolver, context,
+                    InstructionRebuildMode::AlwaysClone);
+                emitted.instructions.push_back(replacement);
+                switch(replacement.result_class())
+                {
+                    case ResultClass::None:
+                        return RewriteResult::replace_without_result(
+                            std::move(emitted.instructions));
+                    case ResultClass::ProgramValue:
+                        return RewriteResult::replace(
+                            std::move(emitted.instructions),
+                            ProgramValueRef(replacement));
+                    case ResultClass::Snapshot:
+                        return RewriteResult::replace(
+                            std::move(emitted.instructions),
+                            SnapshotRef(replacement));
+                    case ResultClass::Count:
+                        break;
+                }
+                fatal("invalid fixed-operand-copy instruction result class");
             }
 
             absl::flat_hash_map<const Block *, PlannedTransferSet>
                 block_entries_;
             absl::flat_hash_map<InstructionId, PlannedTransferSet>
                 before_instructions_;
+            absl::flat_hash_map<InstructionId, PlannedFixedOperandCopySet>
+                fixed_operand_copies_;
+            const PlannedFixedOperandCopySet *pending_fixed_operand_copies_ =
+                nullptr;
             LocationAssignmentsBuilder locations_;
             std::vector<std::optional<InstructionId>> current_values_;
         };
@@ -893,8 +1133,8 @@ namespace cl::jit
         GraphRewriter rewriter(session, graph);
         stage_edge_transfers(plan, rewriter, graph);
         AllocationMaterializer materializer(std::move(plan));
-        RewriteSummary summary =
-            rewriter.rewrite_instructions(InstructionTraversal(), materializer);
+        RewriteSummary summary = rewriter.rewrite_instructions(
+            InstructionTraversal(), RewriteInput::Normalized, materializer);
         return Result<LocationAssignments, RegisterAllocationError>::ok(
             std::move(materializer).finish(summary.normalization_remapping));
     }

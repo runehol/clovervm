@@ -722,9 +722,17 @@ namespace cl::jit
             std::move(assignment_result).value();
         schedule_affinity_transfers(problem, split.bundles, assignments,
                                     split.transfers);
-        RegisterAllocationResult allocation(std::move(split.bundles),
-                                            std::move(assignments),
-                                            std::move(split.transfers));
+        std::vector<FixedOperandCopyFixup> fixed_operand_copies;
+        fixed_operand_copies.reserve(problem.fixed_operand_copies().size());
+        for(const FixedOperandCopyConstraint &fixed_operand_copy:
+            problem.fixed_operand_copies())
+        {
+            fixed_operand_copies.push_back(
+                {fixed_operand_copy.source, fixed_operand_copy.destination});
+        }
+        RegisterAllocationResult allocation(
+            std::move(split.bundles), std::move(assignments),
+            std::move(split.transfers), std::move(fixed_operand_copies));
         verify_register_allocation(problem, constraints, allocation);
         return Result<RegisterAllocationResult, RegisterAllocationError>::ok(
             std::move(allocation));

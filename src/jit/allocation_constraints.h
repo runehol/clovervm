@@ -26,6 +26,7 @@ namespace cl::jit
             AnyLocation,
             AnyRegister,
             FixedLocation,
+            FixedOperandCopy,
             SameAsInput,
         };
 
@@ -40,6 +41,10 @@ namespace cl::jit
         static LocationRequirement fixed(PhysicalLocation location)
         {
             return LocationRequirement(location);
+        }
+        static LocationRequirement fixed_operand_copy(PhysicalRegister reg)
+        {
+            return LocationRequirement(reg);
         }
         static LocationRequirement same_as_input(uint32_t operand_index)
         {
@@ -57,6 +62,8 @@ namespace cl::jit
                 case 2:
                     return Kind::FixedLocation;
                 case 3:
+                    return Kind::FixedOperandCopy;
+                case 4:
                     return Kind::SameAsInput;
             }
             fatal("invalid JIT location requirement");
@@ -76,6 +83,15 @@ namespace cl::jit
                 fatal("fixed_location() requires a FixedLocation requirement");
             }
             return std::get<PhysicalLocation>(payload_);
+        }
+        PhysicalRegister fixed_operand_copy_register() const
+        {
+            if(kind() != Kind::FixedOperandCopy)
+            {
+                fatal("fixed_operand_copy_register() requires a "
+                      "FixedOperandCopy requirement");
+            }
+            return std::get<PhysicalRegister>(payload_);
         }
         uint32_t input_index() const
         {
@@ -103,12 +119,14 @@ namespace cl::jit
             : payload_(location)
         {
         }
+        explicit LocationRequirement(PhysicalRegister reg) : payload_(reg) {}
         explicit LocationRequirement(uint32_t operand_index)
             : payload_(operand_index)
         {
         }
 
-        std::variant<std::monostate, RegisterClass, PhysicalLocation, uint32_t>
+        std::variant<std::monostate, RegisterClass, PhysicalLocation,
+                     PhysicalRegister, uint32_t>
             payload_;
     };
 

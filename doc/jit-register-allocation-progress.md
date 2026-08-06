@@ -50,7 +50,7 @@ algorithms, invariants, and layer boundaries.
 - [x] Split register-only pressure ranges before the conflicting instruction
   and record their connectors in the transfer schedule.
 - [ ] Record remaining fixup connectors in the transfer schedule.
-- [ ] Add `FixedUse` input requirements and operand-local fixed-use fixups;
+- [x] Add `FixedOperandCopy` input requirements and operand-copy fixups;
   keep `AnyLocation` independent from temporary-spill eligibility.
 - [ ] Trim maximal spill-safe carrier intervals across trusted-handler calls
   with two ordinary bundle splits, respecting occurrence
@@ -60,7 +60,7 @@ algorithms, invariants, and layer boundaries.
   non-overlapping carriers.
 - [ ] Resolve abstract spill slots to managed-frame locations during
   materialization and report the required spill extent.
-- [ ] Materialize ordinary authoritative transfers before fixed-use parallel
+- [x] Materialize ordinary authoritative transfers before fixed-operand-copy parallel
   copies, rewriting only the selected call operands.
 - [ ] Generalize spilling beyond non-observable trusted-handler call carriers.
 - [x] Add the reserved spill-weight tiers required by the allocator's progress
@@ -72,9 +72,9 @@ algorithms, invariants, and layer boundaries.
 
 - [x] Describe trusted-handler call arguments, results, and clobbers without
   embedding AArch64 ABI policy in the generic allocator.
-- [ ] Implement fixed-use argument copies without pinning their source bundles
+- [x] Implement fixed operand copies without pinning their source bundles
   to caller-clobbered ABI registers.
-- [ ] Validate that the initial fixed-use targets are clobbered after their
+- [ ] Validate that the initial fixed-operand-copy targets are clobbered after their
   Early uses, and reject contradictory fixed defs and clobbers.
 
 Every register written by an instruction remains represented by either an

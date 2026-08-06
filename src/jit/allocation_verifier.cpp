@@ -406,6 +406,28 @@ namespace cl::jit
             }
         }
 
+        for(const FixedOperandCopyConstraint &fixed_operand_copy:
+            problem.fixed_operand_copies())
+        {
+            if(fixed_operand_copy.source.value() >=
+               problem.occurrences().size())
+            {
+                fatal("JIT fixed operand copy names no occurrence");
+            }
+            const Occurrence &source =
+                problem.occurrences()[fixed_operand_copy.source.value()];
+            if(source.kind != OccurrenceKind::Use ||
+               source.anchor.kind() !=
+                   OccurrenceAnchor::Kind::InstructionOperand ||
+               source.register_required ||
+               fixed_operand_copy.destination.register_class() !=
+                   problem.live_ranges()[source.live_range.value()]
+                       .register_class)
+            {
+                fatal("invalid JIT fixed operand copy");
+            }
+        }
+
         for(const LiveBundle &bundle: problem.bundles())
         {
             if(bundle.fragments.empty())
@@ -659,6 +681,24 @@ namespace cl::jit
                                     const RegisterAllocationResult &allocation)
     {
         std::span<const LiveBundle> bundles = allocation.bundles();
+        if(allocation.fixed_operand_copies().size() !=
+           problem.fixed_operand_copies().size())
+        {
+            fatal("JIT allocation loses fixed operand copies");
+        }
+        for(size_t index = 0; index < problem.fixed_operand_copies().size();
+            ++index)
+        {
+            const FixedOperandCopyConstraint &expected =
+                problem.fixed_operand_copies()[index];
+            const FixedOperandCopyFixup &actual =
+                allocation.fixed_operand_copies()[index];
+            if(actual.source != expected.source ||
+               actual.destination != expected.destination)
+            {
+                fatal("JIT allocation changes a fixed operand copy");
+            }
+        }
         std::vector<std::vector<LivenessRange>> fragments_by_source(
             problem.live_ranges().size());
         for(const LiveBundle &bundle: bundles)

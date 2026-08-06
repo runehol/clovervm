@@ -11,6 +11,7 @@
 #include <span>
 #include <string>
 #include <utility>
+#include <vector>
 
 namespace cl::jit
 {
@@ -26,14 +27,23 @@ namespace cl::jit
         InsufficientTransferScratchRegisters,
     };
 
+    struct FixedOperandCopyFixup
+    {
+        OccurrenceId source;
+        PhysicalRegister destination;
+    };
+
     class RegisterAllocationResult
     {
     public:
-        RegisterAllocationResult(std::vector<LiveBundle> bundles,
-                                 BundleLocationAssignments locations,
-                                 BundleTransferSchedule transfers)
+        RegisterAllocationResult(
+            std::vector<LiveBundle> bundles,
+            BundleLocationAssignments locations,
+            BundleTransferSchedule transfers,
+            std::vector<FixedOperandCopyFixup> fixed_operand_copies)
             : bundles_(std::move(bundles)), locations_(std::move(locations)),
-              transfers_(std::move(transfers))
+              transfers_(std::move(transfers)),
+              fixed_operand_copies_(std::move(fixed_operand_copies))
         {
         }
 
@@ -43,11 +53,16 @@ namespace cl::jit
             return locations_;
         }
         const BundleTransferSchedule &transfers() const { return transfers_; }
+        std::span<const FixedOperandCopyFixup> fixed_operand_copies() const
+        {
+            return fixed_operand_copies_;
+        }
 
     private:
         std::vector<LiveBundle> bundles_;
         BundleLocationAssignments locations_;
         BundleTransferSchedule transfers_;
+        std::vector<FixedOperandCopyFixup> fixed_operand_copies_;
     };
 
     Result<PreparedAllocationProblem, RegisterAllocationError>

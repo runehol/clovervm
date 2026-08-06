@@ -294,8 +294,10 @@ namespace cl::jit
                         argument_index,
                     argument.operand_index);
                 EXPECT_EQ(AccessTiming::Early, argument.timing);
+                EXPECT_EQ(LocationRequirement::Kind::FixedOperandCopy,
+                          argument.requirement.kind());
                 EXPECT_EQ(x(static_cast<uint8_t>(argument_index + 1)),
-                          argument.requirement.fixed_location().reg());
+                          argument.requirement.fixed_operand_copy_register());
             }
 
             ASSERT_TRUE(call->result_override().has_value());

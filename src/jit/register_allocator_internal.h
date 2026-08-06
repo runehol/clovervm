@@ -37,6 +37,7 @@ namespace cl::jit
         std::vector<BlockLivenessRange> block_ranges;
         std::vector<Occurrence> occurrences;
         std::vector<FixedLocationConstraint> fixed_constraints;
+        std::vector<FixedOperandCopyConstraint> fixed_operand_copies;
         std::vector<LiveRange> live_ranges;
         std::vector<ClobberReservation> clobbers;
         std::vector<BundleAffinity> bundle_affinities;

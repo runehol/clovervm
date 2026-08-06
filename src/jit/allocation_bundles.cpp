@@ -397,7 +397,8 @@ namespace cl::jit
 
         return PreparedAllocationProblem(
             std::move(scan.block_ranges), std::move(scan.occurrences),
-            std::move(scan.fixed_constraints), std::move(scan.live_ranges),
+            std::move(scan.fixed_constraints),
+            std::move(scan.fixed_operand_copies), std::move(scan.live_ranges),
             std::move(bundles), std::move(scan.clobbers),
             std::move(scan.bundle_affinities));
     }

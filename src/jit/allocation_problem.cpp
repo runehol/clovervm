@@ -46,12 +46,14 @@ namespace cl::jit
         std::vector<BlockLivenessRange> block_ranges,
         std::vector<Occurrence> occurrences,
         std::vector<FixedLocationConstraint> fixed_constraints,
+        std::vector<FixedOperandCopyConstraint> fixed_operand_copies,
         std::vector<LiveRange> live_ranges, std::vector<LiveBundle> bundles,
         std::vector<ClobberReservation> clobbers,
         std::vector<BundleAffinity> bundle_affinities)
         : block_ranges_(std::move(block_ranges)),
           occurrences_(std::move(occurrences)),
           fixed_constraints_(std::move(fixed_constraints)),
+          fixed_operand_copies_(std::move(fixed_operand_copies)),
           live_ranges_(std::move(live_ranges)), bundles_(std::move(bundles)),
           clobbers_(std::move(clobbers)),
           bundle_affinities_(std::move(bundle_affinities))

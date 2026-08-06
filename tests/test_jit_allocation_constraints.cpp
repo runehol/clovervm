@@ -155,7 +155,8 @@ namespace cl::jit
         EXPECT_EQ(2, locations.at(outgoing));
     }
 
-    TEST(JitLocationRequirement, RepresentsAnyLocationFixedAndSameAsInput)
+    TEST(JitLocationRequirement,
+         RepresentsAnyLocationFixedOperandCopyAndSameAsInput)
     {
         LocationRequirement any_location = LocationRequirement::any_location();
         EXPECT_EQ(LocationRequirement::Kind::AnyLocation, any_location.kind());
@@ -175,6 +176,12 @@ namespace cl::jit
                 StackLocation(StackLocationKind::OutgoingCallArgument, -17)));
         EXPECT_EQ(LocationRequirement::Kind::FixedLocation, fixed_stack.kind());
         EXPECT_EQ(-17, fixed_stack.fixed_location().stack().frame_offset());
+
+        LocationRequirement fixed_operand_copy =
+            LocationRequirement::fixed_operand_copy(x63);
+        EXPECT_EQ(LocationRequirement::Kind::FixedOperandCopy,
+                  fixed_operand_copy.kind());
+        EXPECT_EQ(x63, fixed_operand_copy.fixed_operand_copy_register());
 
         LocationRequirement same = LocationRequirement::same_as_input(1234);
         EXPECT_EQ(LocationRequirement::Kind::SameAsInput, same.kind());
@@ -206,6 +213,9 @@ namespace cl::jit
         EXPECT_DEATH(
             (void)TemporaryConstraint(LocationRequirement::any_location()),
             "temporary cannot accept any location");
+        EXPECT_DEATH((void)TemporaryConstraint(
+                         LocationRequirement::fixed_operand_copy(x0)),
+                     "temporary cannot have a FixedOperandCopy");
         EXPECT_DEATH(
             {
                 InstructionAllocationConstraints invalid(
@@ -215,6 +225,16 @@ namespace cl::jit
                 invalid.validate(*session.storage());
             },
             "result cannot accept any location");
+        EXPECT_DEATH(
+            {
+                InstructionAllocationConstraints invalid(
+                    move, {},
+                    ResultConstraint{
+                        AccessTiming::Late,
+                        LocationRequirement::fixed_operand_copy(x0)});
+                invalid.validate(*session.storage());
+            },
+            "result cannot have a FixedOperandCopy");
     }
 
     TEST(JitAllocationConstraints, ValidatesFixedInstructionShape)

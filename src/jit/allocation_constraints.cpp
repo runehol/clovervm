@@ -37,6 +37,9 @@ namespace cl::jit
                                location.reg().register_class() ==
                                    expected_class;
                     }
+                case LocationRequirement::Kind::FixedOperandCopy:
+                    return requirement.fixed_operand_copy_register()
+                               .register_class() == expected_class;
                 case LocationRequirement::Kind::SameAsInput:
                     return true;
             }
@@ -55,6 +58,17 @@ namespace cl::jit
                 }
             }
             return std::nullopt;
+        }
+
+        std::optional<PhysicalRegister>
+        fixed_input_register_for(LocationRequirement requirement)
+        {
+            if(requirement.kind() ==
+               LocationRequirement::Kind::FixedOperandCopy)
+            {
+                return requirement.fixed_operand_copy_register();
+            }
+            return fixed_register_for(requirement);
         }
     }  // namespace
 
@@ -77,6 +91,10 @@ namespace cl::jit
         require_constraint(
             requirement.kind() != LocationRequirement::Kind::SameAsInput,
             "a JIT temporary cannot have a SameAsInput location requirement");
+        require_constraint(requirement.kind() !=
+                               LocationRequirement::Kind::FixedOperandCopy,
+                           "a JIT temporary cannot have a FixedOperandCopy "
+                           "location requirement");
         require_constraint(requirement.kind() !=
                                    LocationRequirement::Kind::FixedLocation ||
                                requirement.fixed_location().is_register(),
@@ -222,6 +240,10 @@ namespace cl::jit
             require_constraint(requirement.kind() !=
                                    LocationRequirement::Kind::AnyLocation,
                                "a JIT result cannot accept any location");
+            require_constraint(requirement.kind() !=
+                                   LocationRequirement::Kind::FixedOperandCopy,
+                               "a JIT result cannot have a FixedOperandCopy "
+                               "location requirement");
             RegisterClass result_class = register_class_for_representation(
                 instruction.value_representation());
             require_constraint(
@@ -258,7 +280,7 @@ namespace cl::jit
         for(const ProgramValueUseConstraint &input: input_overrides_)
         {
             std::optional<PhysicalRegister> fixed =
-                fixed_register_for(input.requirement);
+                fixed_input_register_for(input.requirement);
             if(input.timing == AccessTiming::Late && fixed.has_value())
             {
                 require_constraint(

@@ -164,6 +164,12 @@ namespace cl::jit
         OccurrenceId occurrence;
     };
 
+    struct FixedOperandCopyConstraint
+    {
+        OccurrenceId source;
+        PhysicalRegister destination;
+    };
+
     class LiveRangeOrigin
     {
     public:
@@ -383,6 +389,7 @@ namespace cl::jit
             std::vector<BlockLivenessRange> block_ranges,
             std::vector<Occurrence> occurrences,
             std::vector<FixedLocationConstraint> fixed_constraints,
+            std::vector<FixedOperandCopyConstraint> fixed_operand_copies,
             std::vector<LiveRange> live_ranges, std::vector<LiveBundle> bundles,
             std::vector<ClobberReservation> clobbers,
             std::vector<BundleAffinity> bundle_affinities);
@@ -398,6 +405,11 @@ namespace cl::jit
         const std::vector<FixedLocationConstraint> &fixed_constraints() const
         {
             return fixed_constraints_;
+        }
+        const std::vector<FixedOperandCopyConstraint> &
+        fixed_operand_copies() const
+        {
+            return fixed_operand_copies_;
         }
         const std::vector<LiveRange> &live_ranges() const
         {
@@ -417,6 +429,7 @@ namespace cl::jit
         std::vector<BlockLivenessRange> block_ranges_;
         std::vector<Occurrence> occurrences_;
         std::vector<FixedLocationConstraint> fixed_constraints_;
+        std::vector<FixedOperandCopyConstraint> fixed_operand_copies_;
         std::vector<LiveRange> live_ranges_;
         std::vector<LiveBundle> bundles_;
         std::vector<ClobberReservation> clobbers_;

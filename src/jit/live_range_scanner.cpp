@@ -40,6 +40,8 @@ namespace cl::jit
                         }
                         return location.reg().register_class();
                     }
+                case LocationRequirement::Kind::FixedOperandCopy:
+                    break;
                 case LocationRequirement::Kind::SameAsInput:
                     break;
             }
@@ -56,6 +58,8 @@ namespace cl::jit
                     return true;
                 case LocationRequirement::Kind::FixedLocation:
                     return requirement.fixed_location().is_register();
+                case LocationRequirement::Kind::FixedOperandCopy:
+                    return false;
                 case LocationRequirement::Kind::SameAsInput:
                     break;
             }
@@ -105,6 +109,20 @@ namespace cl::jit
             }
             if(requirement.kind() == LocationRequirement::Kind::AnyLocation)
             {
+                return;
+            }
+
+            if(requirement.kind() ==
+               LocationRequirement::Kind::FixedOperandCopy)
+            {
+                PhysicalRegister reg =
+                    requirement.fixed_operand_copy_register();
+                if(reg.register_class() != expected_class ||
+                   !definition->members().contains(reg))
+                {
+                    fatal("JIT allocator fixed operand copy names an invalid "
+                          "register");
+                }
                 return;
             }
 
@@ -177,7 +195,8 @@ namespace cl::jit
                 require_all_overrides_consumed();
                 return Result<LiveRangeScan, RegisterAllocationError>::ok(
                     {std::move(block_ranges_), std::move(occurrences_),
-                     std::move(fixed_constraints_), std::move(live_ranges_),
+                     std::move(fixed_constraints_),
+                     std::move(fixed_operand_copies_), std::move(live_ranges_),
                      std::move(clobbers_), std::move(bundle_affinities_)});
             }
 
@@ -350,6 +369,13 @@ namespace cl::jit
                         {position, requirement.fixed_location(), live_range_id,
                          occurrence_id});
                     live_range.fixed_constraints.push_back(fixed_id);
+                }
+                else if(requirement.kind() ==
+                        LocationRequirement::Kind::FixedOperandCopy)
+                {
+                    fixed_operand_copies_.push_back(
+                        {occurrence_id,
+                         requirement.fixed_operand_copy_register()});
                 }
                 return occurrence_id;
             }
@@ -694,6 +720,7 @@ namespace cl::jit
             std::vector<BlockLivenessRange> block_ranges_;
             std::vector<Occurrence> occurrences_;
             std::vector<FixedLocationConstraint> fixed_constraints_;
+            std::vector<FixedOperandCopyConstraint> fixed_operand_copies_;
             std::vector<LiveRange> live_ranges_;
             std::vector<ClobberReservation> clobbers_;
             std::vector<BundleAffinity> bundle_affinities_;

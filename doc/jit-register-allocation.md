@@ -4,7 +4,7 @@
 |---|---|
 | Document type | Design |
 | Status | Accepted |
-| Implementation | Prepared allocation, forwarding definitions, block-edge and same-as-input affinities, bundle coalescing, deterministic constraint splitting, transfer scheduling, conflict-free register/canonical-stack assignment, parallel-transfer and edge-transfer-block materialization, and the AArch64 fixed-`x21`/`x25` context convention are implemented; allocator-owned spill slots, fixed-use copies, and block-exit materialization remain open |
+| Implementation | Prepared allocation, forwarding definitions, block-edge and same-as-input affinities, bundle coalescing, deterministic constraint splitting, transfer scheduling, conflict-free register/canonical-stack assignment, fixed operand copies, parallel-transfer and edge-transfer-block materialization, and the AArch64 fixed-`x21`/`x25` context convention are implemented; allocator-owned spill slots and block-exit materialization remain open |
 | Scope | Allocation constraints, allocator-local numbering, liveness, bundles, backtracking allocation, live-range splitting, block-edge transfers, clobbers, spills, and post-allocation materialization |
 | Owning layers | Target preparation owns occurrence constraints and physical-transfer capabilities; the generic register allocator owns numbering, liveness, bundles, splitting, allocation, spill decisions, and bundle transfers; generic allocation materialization resolves transfers, rewrites the Core CFG, and publishes occurrence locations; publication and transition planners own canonical-state synchronization; machine-code emission only encodes the materialized graph |
 | Validated against | `tests/test_jit_allocation_constraints.cpp`, `tests/test_aarch64_allocation_constraints.cpp`, `tests/test_jit_register_allocator.cpp`, `tests/test_jit_parallel_assignment_resolver.cpp`, `tests/test_jit_allocation_materializer.cpp`, and `tests/test_aarch64_execution.cpp` |
@@ -46,7 +46,7 @@ RegisterAllocationResult
     final LiveBundles
     BundleLocationAssignments
     BundleTransferSchedule
-    FixedUseFixups
+    FixedOperandCopyFixups
     spill slot count
 
 MaterializedAllocation
@@ -61,7 +61,7 @@ machine code
 anchored occurrences. ABI registers and stack locations use the same location
 requirement vocabulary as every other occurrence; there is no separate ABI
 constraint class. `FixedLocation` constrains authoritative storage, while
-`FixedUse` requests only an operand-local ABI copy.
+`FixedOperandCopy` requests only an operand-local ABI copy.
 
 `RegisterAllocationResult` owns the final active bundle vector after
 normalization, merging, and splitting. Its vector indices are the `BundleId`
@@ -92,7 +92,7 @@ same point remain ordered. Transfers do not name source or destination live
 ranges, ProgramValueRefs, or physical locations: bundle fragments retain source
 provenance, and bundle assignment supplies the locations later.
 
-An operand-local fixed use is deliberately not a bundle transfer. Its source
+An operand-local fixed copy is deliberately not a bundle transfer. Its source
 bundle remains the authoritative location of the value; materialization copies
 that value to the required physical register and rewrites only the selected
 instruction operand. Fixed uses at one instruction are resolved as one parallel
@@ -140,10 +140,10 @@ using BundleLocation = std::variant<PhysicalLocation, SpillSlotId>;
 enum class TransferPhase : uint8_t
 {
     Regular,
-    FixedUse,
+    FixedOperandCopy,
 };
 
-struct FixedUseFixup
+struct FixedOperandCopyFixup
 {
     InstructionId instruction;
     uint32_t operand_index;
@@ -163,7 +163,7 @@ struct RegisterAllocationResult
     std::vector<LiveBundle> bundles;
     BundleLocationAssignments locations;
     std::vector<BundleTransferSet> transfers;
-    std::vector<FixedUseFixup> fixed_uses;
+    std::vector<FixedOperandCopyFixup> fixed_operand_copies;
     uint32_t spill_slot_count;
 };
 
@@ -187,7 +187,7 @@ Result<MaterializedAllocation, RegisterAllocationError> allocate_registers(
 ```
 
 `RegisterAllocationResult` owns the final compiler-lifetime bundle partition,
-location table, transfer schedule, fixed-use fixups, and abstract spill-slot
+location table, transfer schedule, fixed-operand-copy fixups, and abstract spill-slot
 count. Its fragments borrow the prepared
 problem's live-range identities, so materialization consumes both products
 before either is discarded. `LocationAssignments` refer to the newly published
@@ -196,7 +196,7 @@ graph and its `LocationAssignments`.
 
 `allocate_registers()` is the common public orchestration verb. It prepares the
 problem, assigns final bundle locations, and materializes the resulting
-transfers and fixed uses. Backends provide constraints and consume only the
+transfers and fixed operand copies. Backends provide constraints and consume only the
 rewritten graph plus the returned concrete `LocationAssignments` and managed
 spill extent.
 
@@ -526,14 +526,14 @@ public:
         AnyLocation,
         AnyRegister,
         FixedLocation,
-        FixedUse,
+        FixedOperandCopy,
         SameAsInput,
     };
 
     static LocationRequirement any_location();
     static LocationRequirement any_register(RegisterClass register_class);
     static LocationRequirement fixed(PhysicalLocation location);
-    static LocationRequirement fixed_use(PhysicalRegister reg);
+    static LocationRequirement fixed_operand_copy(PhysicalRegister reg);
     static LocationRequirement same_as_input(uint32_t operand_index);
 
     Kind kind() const;
@@ -628,7 +628,7 @@ or per-access generation checks in the allocator.
 stack location without requesting a transfer.
 `LocationRequirement::AnyRegister` names a register class.
 `LocationRequirement::FixedLocation` names one register or stack location.
-`LocationRequirement::FixedUse` requires an operand-local copy in one physical
+`LocationRequirement::FixedOperandCopy` requires an operand-local copy in one physical
 register while leaving the source bundle in its authoritative location.
 `LocationRequirement::SameAsInput` names the ProgramValue input whose assigned
 location an independently materialized result should reuse when bundle
@@ -637,9 +637,9 @@ two-address operations, not values that merely forward an input's unchanged
 bits.
 Contextual constructors reject `SameAsInput` for inputs and temporaries, so it
 remains a result-only requirement without a second variant-based representation.
-They accept `FixedUse` only for inputs. A `FixedLocation` input occurrence is
+They accept `FixedOperandCopy` only for inputs. A `FixedLocation` input occurrence is
 part of the source bundle and may force a split around that physical location.
-A `FixedUse` occurrence instead produces a fixup copy and does not move the
+A `FixedOperandCopy` occurrence instead produces a fixup copy and does not move the
 source bundle itself.
 `AnyLocation` is ordinarily input-only: executable results and temporaries must
 identify where code generation can produce them. An internal block parameter
@@ -677,7 +677,7 @@ occurrences, while bootstrap spill slots have no stack map or interpreter
 meaning. Temporary spill eligibility must therefore be established separately;
 the initial implementation permits it only for a spill-safe carrier across a
 non-raising, non-safepointing trusted-handler call. Such a carrier may be
-use-free at the call or may contain one trusted-handler `FixedUse` when the
+use-free at the call or may contain one trusted-handler `FixedOperandCopy` when the
 live-through value is also an argument.
 
 The allocator does not allocate a `SnapshotRef`. At each executable instruction
@@ -757,7 +757,7 @@ Overflow entry parameters, F64 entry parameters, managed Python calls, and
 instruction kinds without a bring-up lowering currently hard-fail instead of
 silently receiving an incomplete contract. Trusted native handlers already
 publish their ABI arguments, fixed result, and clobber set; the next allocator
-slice reclassifies those input requirements as `FixedUse`. Later entry
+slice reclassifies those input requirements as `FixedOperandCopy`. Later entry
 parameters will use fixed
 `IncomingParameter` locations, while overflow call preparation uses fixed
 `OutgoingCallArgument` locations. These do not create a separate ABI constraint
@@ -771,7 +771,7 @@ Constraint validation enforces:
 - a result override occurs only on a ProgramValue-producing instruction;
 - a forwarding definition has no result override;
 - `SameAsInput` names a valid ProgramValue input and occurs only on a result;
-- `FixedUse` names a valid ProgramValue input and a register compatible with
+- `FixedOperandCopy` names a valid ProgramValue input and a register compatible with
   that value's representation;
 - fixed locations and `AnyRegister` classes are compatible with the
   occurrence's `ValueRepresentation`;
@@ -812,7 +812,7 @@ phase 1: Late
 ```
 
 `AccessTiming` determines whether an occurrence is Early or Late. Access kind
-does not determine timing. This lets a fixed-use call argument and a
+does not determine timing. This lets a fixed-operand-copy call argument and a
 fixed-register call result definition share the same physical register at
 different liveness positions of the same instruction. It also makes
 destructive-operation lowering explicit without conflating a target constraint
@@ -1152,7 +1152,7 @@ range's register class. Each occurrence retains whether it requires a register
 so `AnyLocation` remains distinguishable during constraint-driven splitting.
 The allocator retains every ordinary use and def occurrence for liveness,
 spill weight, diagnostics, and later rewriting, but only nondefault
-fixed-location and fixed-use constraints need sparse requirement records.
+fixed-location and fixed-operand-copy constraints need sparse requirement records.
 A fixed constraint records its liveness position, allocation location, source
 live range, and occurrence ID. Incompatible register classes, a fixed register
 from the wrong class, or a stack location incompatible with the value
@@ -1180,7 +1180,7 @@ requirement contribution  = 1000 for AnyRegister, 2000 for FixedLocation
 
 An `AnyLocation` use has zero spill weight because observing allocator metadata
 does not make a register assignment more profitable.
-`FixedUse` also imposes no register requirement on the authoritative source
+`FixedOperandCopy` also imposes no register requirement on the authoritative source
 bundle. Its eventual operand copy has a cost, but pinning the source bundle does
 not reliably avoid that copy and therefore receives no fixed-location weight.
 
@@ -1248,7 +1248,7 @@ requirements cannot be separated at an instruction boundary, normal splitting
 cannot solve them and a fixed-location fixup is required.
 
 If one SSA value must be presented in an additional register for one operand at
-the same instruction, that operand uses `FixedUse` and receives an operand-local
+the same instruction, that operand uses `FixedOperandCopy` and receives an operand-local
 copy. If the instruction instead requires two authoritative locations, one
 constrained occurrence remains on the range and the other becomes a fixup
 transfer at that occurrence. Forwarding definitions do not create this shape:
@@ -1282,7 +1282,7 @@ give each carrier a final register probe, then assign reusable spill slots
 collect split, fixup, explicit, and block-edge bundle transfers
 produce RegisterAllocationResult
 resolve abstract spill slots and parallel bundle transfers
-materialize fixed-use copies and rewrite their selected operands
+materialize fixed operand copies and rewrite their selected operands
 publish LocationAssignments and managed-frame spill extent
 ```
 
@@ -1343,7 +1343,7 @@ is not required. Adjacent compatible spill candidates may be coalesced before
 transfer scheduling, but correctness does not depend on doing so.
 
 A temporary spill carrier may contain only source fragments with no ordinary
-register-required use and, optionally, one trusted-handler `FixedUse` when the
+register-required use and, optionally, one trusted-handler `FixedOperandCopy` when the
 value is an argument to that call. A value merely live through the call needs
 no occurrence there. The carrier may not contain a definition, forwarding
 definition, Snapshot use, side-exit argument, safepoint, Python call, or Python
@@ -1526,24 +1526,25 @@ that register is omitted from the call's clobber set:
 
 ```text
 fixed JIT context x25 -> PhysicalAssignment(x0)
-argument 0            -> Use Early, FixedUse(x1)
-argument 1            -> Use Early, FixedUse(x2)
+argument 0            -> Use Early, FixedOperandCopy(x1)
+argument 1            -> Use Early, FixedOperandCopy(x2)
 result                -> Def Late, FixedLocation(x0)
 clobbers              -> caller-saved registers except x0
 ```
 
-The `FixedUse` copies are ephemeral ABI values. The argument's source bundle may
+The `FixedOperandCopy` results are ephemeral ABI values. The argument's source bundle may
 remain in a callee-preserved register or in a temporary spill slot across the
 call; only the call operand is rewritten to the copied value in `x1` through
 `x3`. Materialization must not update the source bundle's current-value mapping
 or redirect later uses to that copy.
 
 The immovable Late reservation for the `x2` clobber may follow the early fixed
-use. For the initial trusted-handler shape, every fixed-use target is then
+use. For the initial trusted-handler shape, every fixed-operand-copy target is then
 clobbered by the same call, so no unrelated value may remain live in it. The
-allocation verifier checks this narrow contract. A future general fixed-use
-facility may need explicit short reservations when its target is not already
-made unavailable by the instruction.
+initial AArch64 call constraints pair every fixed-operand-copy target with such a
+clobber. The remaining verifier work will pin down this narrow contract. A
+future general fixed-operand-copy facility may need explicit short reservations when
+its target is not already made unavailable by the instruction.
 
 The explicit late result def supplies the required interference for `x0`
 instead. A resultless call includes `x0` in its clobber set when the ABI permits
@@ -1568,14 +1569,13 @@ collects every bundle transfer it introduces:
 - spill and reload transfers;
 - ABI argument shuffles.
 
-Transfer sets are keyed by `(TransferPoint, TransferPhase)`. Transfers in one
-set have parallel semantics. Phases at the same structural point are ordered
-and are not incorrectly combined into one parallel operation. Authoritative
-bundle transitions, including spill stores and reloads, use
-`TransferPhase::Regular`. Operand-local fixed uses execute in
-`TransferPhase::FixedUse` after the regular phase. All fixed uses at one
-instruction form one parallel assignment, so argument-register permutations
-remain correct.
+Transfer sets are keyed by `TransferPoint`. Transfers in one set have parallel
+semantics. Authoritative bundle transitions include spill stores and reloads.
+Fixed operand copies are a separate per-instruction plan rather than bundle
+transfers, because their destination register is not an authoritative bundle
+location. They execute after ordinary transfers at the same instruction. All
+fixed operand copies at one instruction form one parallel assignment, so
+argument-register permutations remain correct.
 
 A transfer contains only source and destination `BundleId`s. After bundle
 assignment, generic materialization maps those endpoints to locations, removes
@@ -1587,7 +1587,7 @@ the target register class. Acyclic memory-to-memory transfers pass through the
 first available scratch.
 
 After regular transfers have established the authoritative locations at an
-instruction, materialization resolves that instruction's `FixedUseFixup`s from
+instruction, materialization resolves that instruction's `FixedOperandCopyFixup`s from
 those locations to their required ABI registers. Each produced move or reload
 defines a new program value assigned to the target register, and only the named
 operand is rewritten to it. The source bundle and every later occurrence keep
@@ -1758,7 +1758,7 @@ levels:
 - every post-allocation assignment satisfies the relevant constraint at its
   occurrence position, including fixed locations, clobbers, reuse constraints,
   split transfers, and block-edge parallel-transfer sets;
-- every `FixedUse` names an input and a register clobbered after that use by the
+- every `FixedOperandCopy` names an input and a register clobbered after that use by the
   initial trusted-handler call shape, and materialization rewrites only that
   operand rather than the source bundle's later occurrences;
 - every temporary spill carrier excludes defs, forwarding defs, Snapshots,
@@ -1842,7 +1842,7 @@ The spill-carrier design follows regalloc2 Ion's useful separation between
 abstract spill slots and concrete frame layout, and its spill-trimming idea of
 moving use-free range ends out of registers. Clover deliberately keeps the
 first version narrower: each trimmed carrier is an independent bundle, only a
-trusted-handler fixed use may remain inside it, and slot reuse is deterministic
+trusted-handler fixed operand copy may remain inside it, and slot reuse is deterministic
 best effort rather than shared per-value spill-bundle construction.
 
 The allocation-priority, spill-weight, splitting, and progress rules above
