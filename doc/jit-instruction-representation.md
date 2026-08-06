@@ -1088,6 +1088,7 @@ enum class EffectProfile : uint8_t
     CallPython = PythonVisibleEffects,
     ControlFlow = 1 << 3,
     TerminateBlock = 1 << 4,
+    MachineState = 1 << 5,
 };
 ```
 
@@ -1097,6 +1098,9 @@ the initial DCE boundary: any complete profile numerically below
 and a side exit are not by themselves Python-visible effects. An instruction
 that can change control flow is not discarded merely because the exit itself
 is invisible to Python. `TerminateBlock` is used together with `ControlFlow`.
+`MachineState` orders explicit target-machine state changes, such as saving or
+restoring the link register around a native call. It lies outside the
+Python-visible DCE range even though it is not itself a Python semantic effect.
 This coarse boundary is implemented; the refined dependency and
 proven-absence analyses below remain later work.
 

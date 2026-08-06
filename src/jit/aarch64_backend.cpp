@@ -2,6 +2,7 @@
 
 #include "jit/aarch64_allocation_constraints.h"
 #include "jit/aarch64_cfg_emitter.h"
+#include "jit/aarch64_link_register_preservation.h"
 #include "jit/jit_compiler.h"
 #include "jit/side_exit_lowering.h"
 
@@ -24,6 +25,7 @@ namespace cl::jit
                 std::move(lowering).error());
         }
         assert(graph.ir_level() == IRLevel::Machine);
+        insert_aarch64_link_register_preservation(session, graph);
 
         AllocationConstraints constraints =
             make_aarch64_allocation_constraints(graph);

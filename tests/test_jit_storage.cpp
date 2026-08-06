@@ -29,6 +29,8 @@ namespace cl::jit
                   EffectProfile::PythonVisibleEffects);
     static_assert(!(EffectProfile::CallPython <
                     EffectProfile::PythonVisibleEffects));
+    static_assert(!(EffectProfile::MachineState <
+                    EffectProfile::PythonVisibleEffects));
     static_assert(!((EffectProfile::SideExit | EffectProfile::ControlFlow) <
                     EffectProfile::PythonVisibleEffects));
 
@@ -573,6 +575,14 @@ namespace cl::jit
             EffectProfile::ControlFlow | EffectProfile::TerminateBlock;
         EXPECT_EQ(terminating_control_flow, BareReturnInstruction::MustEffects);
         EXPECT_EQ(terminating_control_flow, BareReturnInstruction::MayEffects);
+        EXPECT_EQ(EffectProfile::MachineState,
+                  SaveLinkRegisterToFrameInstruction::MustEffects);
+        EXPECT_EQ(EffectProfile::MachineState,
+                  SaveLinkRegisterToFrameInstruction::MayEffects);
+        EXPECT_EQ(EffectProfile::MachineState,
+                  RestoreLinkRegisterFromFrameInstruction::MustEffects);
+        EXPECT_EQ(EffectProfile::MachineState,
+                  RestoreLinkRegisterFromFrameInstruction::MayEffects);
     }
 
     TEST(JitInstructionConstruction, EncodesFixedAttributes)
@@ -646,9 +656,9 @@ namespace cl::jit
         ASSERT_EQ(1u, handler_call.arguments().size());
         EXPECT_EQ(value.instruction_id(),
                   handler_call.arguments()[0].instruction_id());
-        EXPECT_EQ(EffectProfile::None,
+        EXPECT_EQ(EffectProfile::MachineState,
                   TrustedHandlerCallInstruction::MustEffects);
-        EXPECT_EQ(EffectProfile::CallPython,
+        EXPECT_EQ(EffectProfile::MachineState | EffectProfile::CallPython,
                   TrustedHandlerCallInstruction::MayEffects);
 
         for(Instruction instruction:

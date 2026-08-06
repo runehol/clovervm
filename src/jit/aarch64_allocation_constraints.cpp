@@ -254,6 +254,8 @@ namespace cl::jit
                     case MachineInstructionKind::ExitToInterpreter:
                     case MachineInstructionKind::ConditionalBranch:
                     case MachineInstructionKind::UnconditionalBranch:
+                    case MachineInstructionKind::SaveLinkRegisterToFrame:
+                    case MachineInstructionKind::RestoreLinkRegisterFromFrame:
                         if(!input_overrides.empty())
                         {
                             overrides.emplace_back(instruction,

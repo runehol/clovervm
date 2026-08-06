@@ -98,6 +98,8 @@ add_library(libclovervm_objects OBJECT
     jit/aarch64_backend.h
     jit/aarch64_jit_entry.cpp
     jit/aarch64_jit_entry.h
+    jit/aarch64_link_register_preservation.cpp
+    jit/aarch64_link_register_preservation.h
     jit/aarch64_jit_registers.h
     jit/aarch64_transition.cpp
     jit/aarch64_transition.h

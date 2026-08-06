@@ -4,7 +4,7 @@
 |---|---|
 | Document type | Implementation plan |
 | Status | Active |
-| Implementation | Cache guards, call IR, handler metadata and registry, typed resolver installation, float handler declarations, AArch64 call allocation constraints, fixed operand-copy materialization, and concrete call-local managed-frame spills are implemented; return preservation, emission, and frontend integration remain |
+| Implementation | Cache guards, call IR, handler metadata and registry, typed resolver installation, float handler declarations, AArch64 call allocation constraints, fixed operand-copy materialization, concrete call-local managed-frame spills, and explicit link-register preservation IR are implemented; emission and frontend integration remain |
 | Scope | Guarded calls from compiled AArch64 code to non-raising trusted native handlers |
 | Design authority | [JIT Compiler and IR](jit-compiler-and-ir.md), [AArch64 JIT Calling Convention](aarch64-jit-calling-convention.md), [Trusted Handler Declarations](trusted-handler-declarations.md), [Fast Operator Dispatch](fast-operator-dispatch.md), and [Function Specialization](function-specialization.md) |
 
@@ -23,9 +23,10 @@ NoRaise
 ```
 
 The handler may still mutate objects and have Python-visible effects. The call
-therefore retains the conservative trusted-handler `MayEffects` envelope and
-empty `MustEffects`. The restricted contract controls boundary mechanics; it
-does not authorize effect-based reordering.
+therefore retains the conservative trusted-handler `MayEffects` envelope. Its
+`MustEffects` includes `MachineState`, because every native call necessarily
+changes architectural call state. The restricted contract controls boundary
+mechanics; it does not authorize effect-based reordering.
 
 Applicability failures occur only in guards before the call and use the
 ordinary replayable side-exit path. Once the call begins, it must return a
@@ -161,16 +162,24 @@ and does not implement general spilling. Values outside this call-local shape
 remain subject to the existing register-only allocator and clean compilation
 failure.
 
-A graph containing `TrustedHandlerCall` is non-leaf. Before emitting blocks,
-detect that property once and store its incoming hardware return continuation:
+A graph containing `TrustedHandlerCall` is non-leaf. After side-exit lowering,
+an AArch64 Machine-IR pass makes return preservation explicit by inserting one
+`SaveLinkRegisterToFrame` at function entry and one
+`RestoreLinkRegisterFromFrame` immediately before every normal `Return` or
+`BareReturn`. Both instructions have exact `MachineState` effects, as does the
+must-effect bound of `TrustedHandlerCall`, so later instruction movement cannot
+separate their ordering accidentally.
+
+The save stores the incoming hardware return continuation:
 
 ```text
 str x30, [x21, FrameHeaderCompiledReturnPcOffset * sizeof(Value)]
 ```
 
-Every normal `Return` and `BareReturn` in that graph reloads `x30` from the same
-managed-frame header slot before `ret`. Leaf graphs remain unchanged. Do not
-shrink-wrap this store or its reloads in the initial implementation.
+The restore reloads `x30` from the same managed-frame header slot before `ret`.
+Side exits do not restore it because they do not execute a native return. Leaf
+graphs remain unchanged. The initial pass does not shrink-wrap the save or its
+restores.
 
 Snapshots already carry the compiled-return header position. Its entry program
 value is assigned the same canonical `fp[1]` location, so the prologue store

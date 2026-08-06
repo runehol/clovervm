@@ -145,6 +145,7 @@ namespace cl::jit
         CallPython = PythonVisibleEffects,
         ControlFlow = 1 << 3,
         TerminateBlock = 1 << 4,
+        MachineState = 1 << 5,
     };
 
     constexpr EffectProfile operator|(EffectProfile lhs, EffectProfile rhs)

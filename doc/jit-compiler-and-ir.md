@@ -1497,14 +1497,14 @@ prohibition on inferring purity from `MustEffects` alone are specified in
 Specialization that selects a different semantic operation constructs a
 replacement instruction and therefore adopts the new kind's bounds.
 
-The current Core implementation uses a deliberately coarse ordered flag
-vocabulary: `SideExit`, `Allocate`, the `PythonVisibleEffects` boundary
-(`CallPython`), `ControlFlow`, and `TerminateBlock`. Global DCE may discard a
+The current implementation uses a deliberately coarse ordered flag vocabulary:
+`SideExit`, `Allocate`, the `PythonVisibleEffects` boundary (`CallPython`),
+`ControlFlow`, `TerminateBlock`, and `MachineState`. Global DCE may discard a
 dead result only when the kind's conservative `MayEffects` profile is below the
 Python-visible boundary. This already permits removal of dead allocations and
-dead side exits while retaining instructions that can alter control flow. The
-finer dependency taxonomy and per-instance proven-absence analysis described
-here remain future precision work.
+dead side exits while retaining instructions that can alter control flow or
+explicit target-machine state. The finer dependency taxonomy and per-instance
+proven-absence analysis described here remain future precision work.
 
 Effect implications are centralized. `MayCallPython`, for example, implies
 broad heap access, possible shape mutation, validity invalidation, raising, and
