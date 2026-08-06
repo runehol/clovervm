@@ -284,10 +284,14 @@ namespace cl::jit
 
         ASSERT_TRUE(materialized);
         EXPECT_EQ(1u, materialized.value().managed_frame_spill_extent());
+        ASSERT_EQ(5u, entry->instructions().size());
 
         std::optional<size_t> call_index;
         std::optional<size_t> spill_store_index;
         std::optional<InstructionId> spill_store;
+        std::optional<size_t> fixed_copy_index;
+        std::optional<InstructionId> fixed_copy;
+        std::optional<InstructionId> call_argument;
         std::optional<size_t> reload_index;
         for(size_t index = 0; index < entry->instructions().size(); ++index)
         {
@@ -295,6 +299,10 @@ namespace cl::jit
             if(instruction.kind() == InstructionKind::TrustedHandlerCall)
             {
                 call_index = index;
+                TrustedHandlerCallInstruction rewritten_call =
+                    instruction.as<TrustedHandlerCallInstruction>();
+                ASSERT_EQ(1u, rewritten_call.arguments().size());
+                call_argument = rewritten_call.arguments()[0].instruction_id();
                 continue;
             }
             if(instruction.kind() == InstructionKind::StoreStack)
@@ -310,6 +318,16 @@ namespace cl::jit
                 EXPECT_EQ(-5, location.stack().frame_offset());
                 spill_store_index = index;
                 spill_store = store.id();
+                continue;
+            }
+            if(instruction.kind() == InstructionKind::Mov)
+            {
+                MovInstruction copy = instruction.as<MovInstruction>();
+                if(copy.source().instruction_id() == parameter.id())
+                {
+                    fixed_copy_index = index;
+                    fixed_copy = copy.id();
+                }
                 continue;
             }
             if(instruction.kind() == InstructionKind::LoadStack &&
@@ -330,8 +348,13 @@ namespace cl::jit
 
         ASSERT_TRUE(call_index.has_value());
         ASSERT_TRUE(spill_store_index.has_value());
+        ASSERT_TRUE(fixed_copy_index.has_value());
+        ASSERT_TRUE(fixed_copy.has_value());
+        ASSERT_TRUE(call_argument.has_value());
         ASSERT_TRUE(reload_index.has_value());
         EXPECT_LT(*spill_store_index, *call_index);
+        EXPECT_LT(*fixed_copy_index, *call_index);
+        EXPECT_EQ(*fixed_copy, *call_argument);
         EXPECT_LT(*call_index, *reload_index);
     }
 

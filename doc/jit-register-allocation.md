@@ -96,7 +96,10 @@ An operand-local fixed copy is deliberately not a bundle transfer. Its source
 bundle remains the authoritative location of the value; materialization copies
 that value to the required physical register and rewrites only the selected
 instruction operand. Fixed uses at one instruction are resolved as one parallel
-assignment after ordinary authoritative transfers at that point.
+assignment. When their incoming values are already in registers, that assignment
+is combined with ordinary authoritative transfers at the same boundary so both
+consume the original register values. A stack-sourced copy executes after the
+authoritative transfer so it can reuse the loaded register value.
 
 The generic materializer combines the published Core CFG, prepared allocation
 problem, bundle locations, bundle transfers, and target-provided
@@ -1583,8 +1586,10 @@ Transfer sets are keyed by `TransferPoint`. Transfers in one set have parallel
 semantics. Authoritative bundle transitions include spill stores and reloads.
 Fixed operand copies are a separate per-instruction plan rather than bundle
 transfers, because their destination register is not an authoritative bundle
-location. They execute after ordinary transfers at the same instruction. All
-fixed operand copies at one instruction form one parallel assignment, so
+location. The materializer may combine register-sourced copies with ordinary
+transfers at the same instruction into one parallel assignment. Stack-sourced
+copies execute after ordinary transfers so they reuse the authoritative load.
+All fixed operand copies emitted in either phase have parallel semantics, so
 argument-register permutations remain correct.
 
 A transfer contains only source and destination `BundleId`s. After bundle

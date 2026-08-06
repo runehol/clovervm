@@ -60,8 +60,9 @@ algorithms, invariants, and layer boundaries.
   non-overlapping carriers.
 - [x] Resolve abstract spill slots to managed-frame locations during
   materialization and report the required spill extent.
-- [x] Materialize ordinary authoritative transfers before fixed-operand-copy parallel
-  copies, rewriting only the selected call operands.
+- [x] Jointly plan register-sourced authoritative transfers and fixed operand
+  copies at one instruction boundary, while sequencing stack-sourced copies
+  after the authoritative transfer, and rewrite only the selected operands.
 - [ ] Generalize spilling beyond non-observable trusted-handler call carriers.
 - [x] Add the reserved spill-weight tiers required by the allocator's progress
   argument.
