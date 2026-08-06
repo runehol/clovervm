@@ -6,7 +6,7 @@
 | Status | Active |
 | Scope | Prioritized work that turns the current executable AArch64 JIT slice into a broader and runtime-complete compiler |
 | Design authority | [JIT Compiler and IR](jit-compiler-and-ir.md), [JIT Register Allocation](jit-register-allocation.md), [JIT Side-Exit Lowering](jit-side-exit-lowering.md), and [JIT Transition Programs](jit-transition-program.md) |
-| Validated against | `b847eed0` (2026-08-02) |
+| Validated against | `f2fe20d8` (2026-08-07) |
 
 This roadmap records implementation order rather than adding architecture. The
 owning design documents remain authoritative for IR, allocation, recovery,
@@ -20,8 +20,8 @@ Near-term work follows four rules:
 
 1. Keep safepoint and recovery correctness current as compiled execution
    becomes longer-lived.
-2. Add pressure handling before substantially widening expression, object, and
-   call coverage.
+2. Keep pressure handling current as expression, object, and call coverage
+   widens.
 3. Extend allocator contracts when the desired code shape depends on location
    choice; do not repair poor allocation with emitter peepholes.
 4. Widen through operations that reuse the existing Snapshot, guard, side-exit,
@@ -42,22 +42,34 @@ executing compiled code. The test must prove both that roots are published and
 that execution resumes at the backedge target without replaying loop-body
 effects.
 
-### 2. Add Ordinary Spill Storage
+### 2. Unbox Float Arithmetic
 
-Stage ordinary spilling rather than combining every spill mechanism into one
-change:
+Use Mandelbrot as the first end-to-end unboxing target. Implement the float
+pipeline in this order:
 
-1. Provide allocator-owned per-value spill slots, assign eligible
-   register-free bundles to them, and materialize the resulting loads and
-   stores.
-2. Trim register-free regions around pressure splits into spill bundles and
-   record the register-to-spill and spill-to-register connectors.
+1. Recognize trusted-handler calls from their registered semantics and guarded
+   operand shape keys.
+2. Replace recognized calls with explicit `UnboxF64`, F64 operation, and
+   `BoxF64` instructions. `BoxF64` produces an exact builtin-float shape fact.
+3. Propagate exact shapes for immutable types such as float, then eliminate
+   redundant shape guards. In particular, the shape guard immediately after a
+   `BoxF64` must be eliminated using the shape fact produced by the box itself.
+4. Fold `UnboxF64(BoxF64(value))` to `value` once the intervening guards are
+   gone.
+5. Carry unboxed F64 values through loop parameters so loop bodies do not box
+   values merely to feed the next iteration.
+6. Sink remaining boxes into side exits and interpreter-visible returns.
 
-Preserve clean compilation failure for pressure that the completed stage cannot
-yet handle. This precedes substantially wider expression, object, and call
-coverage. The symbolic allocation checker and adversarial pressure tests in
-[JIT Register Allocation Open Work](jit-register-allocation-progress.md)
-should grow with this slice.
+This requires F64 allocation constraints and AArch64 emission, SIMD stack
+transfers, boxing allocation, and recovery computation. Boxing must remain
+where object identity can become observable. Arithmetic temporaries that escape
+only through recovery or return paths should stay unboxed on the main path.
+Guards themselves remain on the executable path because a transition program
+cannot recursively side exit.
+
+The acceptance shape for Mandelbrot is an inner loop containing F64 arithmetic
+and comparisons, integer loop control, and branches, without per-iteration
+float allocation or trusted-handler calls.
 
 ### 3. Complete the Direct Operator Slice
 
@@ -78,25 +90,17 @@ functions rather than introducing one-off instructions. Preserve comparison and
 branch fusion, tagged-fact propagation, and redundant-guard elimination as the
 operator set grows.
 
-### 4. Add Shape-Guarded Known-Field Access
+### 4. Add Known-Field Access
 
-Introduce Machine side-exit forms and AArch64 emission for shape and validity
-guards, followed by known-offset field loads. This is the first high-leverage
-object-oriented slice and should reuse the established runtime exit path.
+Add known-offset field loads behind the existing executable shape and validity
+guards. This is the first high-leverage object-oriented slice and should reuse
+the established runtime exit path.
 
 Guard commoning and motion may begin here, once repeated shape checks exist in
 real generated programs. Keep shape and validity checks independently
 optimizable as required by their separate Core instructions.
 
-### 5. Establish the First Call Slice
-
-Start with guarded calls to trusted native handlers certified `NoCallPython`,
-`NoSafepoint`, and `NoRaise`, following the staged
-[JIT Trusted Handler Call Plan](jit-trusted-handler-call-plan.md). This pulls
-forward executable shape and validity guards, native call clobbers,
-`x25`-to-`x0` thread adaptation, and callee-owned preservation of `x30` in the
-reserved compiled-return frame slot without requiring canonical root
-publication or exception handoff.
+### 5. Broaden Compiled Calls
 
 For JIT-to-JIT calls, move ownership of return-address and return-`CodeObject`
 spilling from the caller to the callee. The caller should transport that return
@@ -110,14 +114,6 @@ arguments, interpreter-state synchronization, safepoint publication, exception
 dispatch, and adaptation owned by the runtime call layer. Those boundaries
 remain later work rather than being inferred from the restricted trusted-call
 path.
-
-### 6. Add F64 Recovery and General Sinking
-
-F64 support requires SIMD stack transfers, float guards, boxing allocation, and
-recovery computation. General transition sinking becomes valuable with boxing
-and other values that exist only for interpreter-visible exit state; guards
-themselves remain on the executable path because a transition program cannot
-recursively side exit.
 
 Semantic IR, inference, inlining, and polymorphic partition realization remain
 deferred until the direct Core path has broader executable coverage and
