@@ -1,5 +1,6 @@
 #include "jit/register_allocator_internal.h"
 
+#include <cassert>
 #include <optional>
 #include <utility>
 #include <vector>
@@ -64,6 +65,41 @@ namespace cl::jit
         fatal("invalid occurrence anchor for JIT bundle split");
     }
 
+    bool can_split_bundle(const LiveBundle &bundle,
+                          const PreparedAllocationProblem &problem,
+                          LivenessPosition boundary)
+    {
+        for(OccurrenceId occurrence_id: covered_occurrences(bundle, problem))
+        {
+            LivenessRange coverage =
+                problem.occurrences()[occurrence_id.value()].minimum_coverage;
+            if(coverage.start < boundary && boundary < coverage.end)
+            {
+                return false;
+            }
+        }
+
+        bool has_left = false;
+        bool has_right = false;
+        for(const BundleFragment &fragment: bundle.fragments)
+        {
+            if(fragment.range.end <= boundary)
+            {
+                has_left = true;
+            }
+            else if(fragment.range.start >= boundary)
+            {
+                has_right = true;
+            }
+            else
+            {
+                has_left = true;
+                has_right = true;
+            }
+        }
+        return has_left && has_right;
+    }
+
     std::optional<BundleId>
     split_bundle(std::vector<LiveBundle> &bundles,
                  BundleTransferSchedule &transfers,
@@ -71,15 +107,9 @@ namespace cl::jit
                  LivenessPosition boundary, TransferPoint transfer_point)
     {
         const LiveBundle &source_bundle = bundles[bundle_id.value()];
-        for(OccurrenceId occurrence_id:
-            covered_occurrences(source_bundle, problem))
+        if(!can_split_bundle(source_bundle, problem, boundary))
         {
-            LivenessRange coverage =
-                problem.occurrences()[occurrence_id.value()].minimum_coverage;
-            if(coverage.start < boundary && boundary < coverage.end)
-            {
-                return std::nullopt;
-            }
+            return std::nullopt;
         }
 
         std::vector<BundleFragment> left_fragments;
@@ -104,10 +134,7 @@ namespace cl::jit
                     {{boundary, fragment.range.end}, fragment.source});
             }
         }
-        if(left_fragments.empty() || right_fragments.empty())
-        {
-            return std::nullopt;
-        }
+        assert(!left_fragments.empty() && !right_fragments.empty());
 
         LiveBundle left{
             source_bundle.register_class, std::move(left_fragments), {}, 0, 0};

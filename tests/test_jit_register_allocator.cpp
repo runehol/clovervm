@@ -4,6 +4,7 @@
 #include "jit/compilation_session.h"
 #include "jit/graph_builder.h"
 #include "jit/side_exit_lowering.h"
+#include "runtime/trusted_handler.h"
 
 #include <gtest/gtest.h>
 
@@ -25,6 +26,16 @@ namespace cl::jit
         constexpr PhysicalRegister x2(RegisterClass::GPR, 2);
         constexpr PhysicalRegister v0(RegisterClass::SIMD, 0);
         constexpr PhysicalRegister v1(RegisterClass::SIMD, 1);
+
+        Value allocator_test_trusted_handler(ThreadState *, Value value)
+        {
+            return value;
+        }
+
+        TrustedHandlerTarget allocator_test_trusted_target()
+        {
+            return erase_trusted_handler_target(allocator_test_trusted_handler);
+        }
 
         LocationRequirement fixed(PhysicalRegister reg)
         {
@@ -54,6 +65,19 @@ namespace cl::jit
             definitions.emplace_back(RegisterClass::GPR, registers);
             return AllocationConstraints(std::move(definitions),
                                          std::move(overrides));
+        }
+
+        InstructionAllocationConstraints
+        trusted_call_constraints(TrustedHandlerCallInstruction call)
+        {
+            RegisterSet clobbers;
+            clobbers.insert(x1);
+            return InstructionAllocationConstraints(
+                call,
+                {{TrustedHandlerCallInstruction::arguments_operand_index,
+                  AccessTiming::Early,
+                  LocationRequirement::fixed_operand_copy(x1)}},
+                ResultConstraint{AccessTiming::Late, fixed(x0)}, {}, clobbers);
         }
 
         AllocationConstraints allocator_test_constraints(
@@ -971,7 +995,7 @@ namespace cl::jit
             std::move(assignment_result).value();
         ASSERT_EQ(2u, allocation.bundles().size());
         PhysicalLocation stack =
-            allocation.locations().location_for(BundleId(0));
+            allocation.locations().physical_location_for(BundleId(0));
         ASSERT_TRUE(stack.is_stack());
         EXPECT_EQ(StackLocationKind::IncomingParameter, stack.stack().kind());
         EXPECT_EQ(4, stack.stack().frame_offset());
@@ -1053,7 +1077,7 @@ namespace cl::jit
             std::move(assignment_result).value();
         ASSERT_EQ(1u, allocation.bundles().size());
         PhysicalLocation location =
-            allocation.locations().location_for(BundleId(0));
+            allocation.locations().physical_location_for(BundleId(0));
         ASSERT_TRUE(location.is_stack());
         EXPECT_EQ(4, location.stack().frame_offset());
         EXPECT_TRUE(allocation.transfers().sets().empty());
@@ -1187,6 +1211,226 @@ namespace cl::jit
                           .locations()
                           .location_for(BundleId(0))
                           .reg());
+    }
+
+    TEST(JitRegisterAllocator, SpillsFixedOperandCopyCarrierAcrossTrustedCall)
+    {
+        CompilationSession session;
+        GraphBuilder builder(session, IRLevel::Machine);
+        Block *entry = builder.emplace_block();
+        ParameterInstruction parameter =
+            builder.emplace_parameter<ParameterInstruction>(entry);
+        std::array<TaggedValueRef, 1> arguments = {TaggedValueRef(parameter)};
+        TrustedHandlerCallInstruction call =
+            builder.emplace_instruction<TrustedHandlerCallInstruction>(
+                entry, arguments, allocator_test_trusted_target());
+        BareReturnInstruction return_instruction =
+            builder.emplace_instruction<BareReturnInstruction>(
+                entry, TaggedValueRef(parameter));
+        ControlFlowGraph *graph = builder.finalize();
+
+        std::vector<InstructionAllocationConstraints> overrides;
+        overrides.push_back(trusted_call_constraints(call));
+        overrides.emplace_back(
+            return_instruction,
+            std::vector<ProgramValueUseConstraint>{
+                {BareReturnInstruction::return_value_operand_index,
+                 AccessTiming::Early, fixed(x0)}});
+        constexpr std::array registers = {x0, x1};
+        AllocationConstraints constraints =
+            gpr_constraints(registers, std::move(overrides));
+
+        auto prepared_result = prepare_register_allocation(*graph, constraints);
+        ASSERT_TRUE(prepared_result);
+        PreparedAllocationProblem prepared = std::move(prepared_result).value();
+        auto assignment_result = assign_bundles(prepared, constraints);
+
+        if(!assignment_result)
+        {
+            FAIL() << "allocation failed with error "
+                   << static_cast<int>(assignment_result.error()) << "\n"
+                   << format_prepared_allocation(prepared);
+        }
+        RegisterAllocationResult allocation =
+            std::move(assignment_result).value();
+        EXPECT_EQ(1u, allocation.spill_slot_count());
+        ASSERT_EQ(4u, allocation.bundles().size());
+        EXPECT_EQ((LivenessRange{LivenessPosition(2), LivenessPosition(4)}),
+                  allocation.bundles()[2].fragments[0].range);
+        ASSERT_TRUE(
+            allocation.locations().location_for(BundleId(2)).is_spill_slot());
+        EXPECT_EQ(
+            SpillSlotId(0),
+            allocation.locations().location_for(BundleId(2)).spill_slot());
+        ASSERT_EQ(2u, allocation.transfers().sets().size());
+        EXPECT_EQ(TransferPoint::before_instruction(call),
+                  allocation.transfers().sets()[0].point);
+        EXPECT_EQ(TransferPoint::before_instruction(return_instruction),
+                  allocation.transfers().sets()[1].point);
+    }
+
+    TEST(JitRegisterAllocator, SpillsUnrelatedValueAcrossTrustedCall)
+    {
+        CompilationSession session;
+        GraphBuilder builder(session, IRLevel::Machine);
+        Block *entry = builder.emplace_block();
+        ParameterInstruction argument =
+            builder.emplace_parameter<ParameterInstruction>(entry);
+        ParameterInstruction live_through =
+            builder.emplace_parameter<ParameterInstruction>(entry);
+        std::array<TaggedValueRef, 1> arguments = {TaggedValueRef(argument)};
+        TrustedHandlerCallInstruction call =
+            builder.emplace_instruction<TrustedHandlerCallInstruction>(
+                entry, arguments, allocator_test_trusted_target());
+        BareReturnInstruction return_instruction =
+            builder.emplace_instruction<BareReturnInstruction>(
+                entry, TaggedValueRef(live_through));
+        ControlFlowGraph *graph = builder.finalize();
+
+        std::vector<InstructionAllocationConstraints> overrides;
+        overrides.push_back(trusted_call_constraints(call));
+        overrides.emplace_back(
+            return_instruction,
+            std::vector<ProgramValueUseConstraint>{
+                {BareReturnInstruction::return_value_operand_index,
+                 AccessTiming::Early, fixed(x0)}});
+        constexpr std::array registers = {x0, x1};
+        AllocationConstraints constraints =
+            gpr_constraints(registers, std::move(overrides));
+
+        auto prepared_result = prepare_register_allocation(*graph, constraints);
+        ASSERT_TRUE(prepared_result);
+        PreparedAllocationProblem prepared = std::move(prepared_result).value();
+        auto assignment_result = assign_bundles(prepared, constraints);
+
+        ASSERT_TRUE(assignment_result);
+        RegisterAllocationResult allocation =
+            std::move(assignment_result).value();
+        EXPECT_EQ(1u, allocation.spill_slot_count());
+        size_t spill_bundle_count = 0;
+        for(size_t index = 0; index < allocation.bundles().size(); ++index)
+        {
+            BundleLocation location =
+                allocation.locations().location_for(BundleId(index));
+            if(!location.is_spill_slot())
+            {
+                continue;
+            }
+            ++spill_bundle_count;
+            ASSERT_EQ(1u, allocation.bundles()[index].fragments.size());
+            LiveRangeId source =
+                allocation.bundles()[index].fragments[0].source;
+            EXPECT_EQ(
+                live_through.id(),
+                prepared.live_ranges()[source.value()].origin.instruction_id());
+        }
+        EXPECT_EQ(1u, spill_bundle_count);
+    }
+
+    TEST(JitRegisterAllocator, RejectsSpillCarrierWithObservableCallOperand)
+    {
+        CompilationSession session;
+        GraphBuilder builder(session, IRLevel::Machine);
+        Block *entry = builder.emplace_block();
+        ParameterInstruction parameter =
+            builder.emplace_parameter<ParameterInstruction>(entry);
+        std::array<TaggedValueRef, 1> arguments = {TaggedValueRef(parameter)};
+        TrustedHandlerCallInstruction call =
+            builder.emplace_instruction<TrustedHandlerCallInstruction>(
+                entry, arguments, allocator_test_trusted_target());
+        BareReturnInstruction return_instruction =
+            builder.emplace_instruction<BareReturnInstruction>(
+                entry, TaggedValueRef(parameter));
+        ControlFlowGraph *graph = builder.finalize();
+
+        RegisterSet clobbers;
+        clobbers.insert(x1);
+        std::vector<InstructionAllocationConstraints> overrides;
+        overrides.emplace_back(
+            call,
+            std::vector<ProgramValueUseConstraint>{
+                {TrustedHandlerCallInstruction::arguments_operand_index,
+                 AccessTiming::Early,
+                 LocationRequirement::any_register(RegisterClass::GPR)}},
+            ResultConstraint{AccessTiming::Late, fixed(x0)},
+            std::vector<TemporaryConstraint>{}, clobbers);
+        overrides.emplace_back(
+            return_instruction,
+            std::vector<ProgramValueUseConstraint>{
+                {BareReturnInstruction::return_value_operand_index,
+                 AccessTiming::Early, fixed(x0)}});
+        constexpr std::array registers = {x0, x1};
+        AllocationConstraints constraints =
+            gpr_constraints(registers, std::move(overrides));
+
+        auto prepared_result = prepare_register_allocation(*graph, constraints);
+        ASSERT_TRUE(prepared_result);
+        PreparedAllocationProblem prepared = std::move(prepared_result).value();
+        auto assignment_result = assign_bundles(prepared, constraints);
+
+        ASSERT_TRUE(assignment_result.has_error());
+        EXPECT_EQ(RegisterAllocationError::RequiresSplittingOrSpilling,
+                  assignment_result.error());
+    }
+
+    TEST(JitRegisterAllocator, ReusesCallLocalSpillSlots)
+    {
+        CompilationSession session;
+        GraphBuilder builder(session, IRLevel::Machine);
+        Block *entry = builder.emplace_block();
+        ParameterInstruction first =
+            builder.emplace_parameter<ParameterInstruction>(entry);
+        std::array<TaggedValueRef, 1> first_arguments = {TaggedValueRef(first)};
+        TrustedHandlerCallInstruction first_call =
+            builder.emplace_instruction<TrustedHandlerCallInstruction>(
+                entry, first_arguments, allocator_test_trusted_target());
+        builder.emplace_instruction<AndSMIInstruction>(
+            entry, TaggedValueRef(first), TaggedValueRef(first));
+        ConstInstruction second = builder.emplace_instruction<ConstInstruction>(
+            entry, Value::from_smi(7));
+        std::array<TaggedValueRef, 1> second_arguments = {
+            TaggedValueRef(second)};
+        TrustedHandlerCallInstruction second_call =
+            builder.emplace_instruction<TrustedHandlerCallInstruction>(
+                entry, second_arguments, allocator_test_trusted_target());
+        BareReturnInstruction return_instruction =
+            builder.emplace_instruction<BareReturnInstruction>(
+                entry, TaggedValueRef(second));
+        ControlFlowGraph *graph = builder.finalize();
+
+        std::vector<InstructionAllocationConstraints> overrides;
+        overrides.push_back(trusted_call_constraints(first_call));
+        overrides.push_back(trusted_call_constraints(second_call));
+        overrides.emplace_back(
+            return_instruction,
+            std::vector<ProgramValueUseConstraint>{
+                {BareReturnInstruction::return_value_operand_index,
+                 AccessTiming::Early, fixed(x0)}});
+        constexpr std::array registers = {x0, x1};
+        AllocationConstraints constraints =
+            gpr_constraints(registers, std::move(overrides));
+
+        auto prepared_result = prepare_register_allocation(*graph, constraints);
+        ASSERT_TRUE(prepared_result);
+        PreparedAllocationProblem prepared = std::move(prepared_result).value();
+        auto assignment_result = assign_bundles(prepared, constraints);
+
+        ASSERT_TRUE(assignment_result);
+        RegisterAllocationResult allocation =
+            std::move(assignment_result).value();
+        EXPECT_EQ(1u, allocation.spill_slot_count());
+        size_t spill_bundle_count = 0;
+        for(size_t index = 0; index < allocation.bundles().size(); ++index)
+        {
+            BundleLocation location =
+                allocation.locations().location_for(BundleId(index));
+            if(location.is_spill_slot())
+            {
+                ++spill_bundle_count;
+                EXPECT_EQ(SpillSlotId(0), location.spill_slot());
+            }
+        }
+        EXPECT_EQ(2u, spill_bundle_count);
     }
 
     TEST(JitRegisterAllocator, SplitsBeforeAClobberedFixedRegister)

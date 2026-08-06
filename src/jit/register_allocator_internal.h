@@ -75,6 +75,10 @@ namespace cl::jit
                  const PreparedAllocationProblem &problem, BundleId bundle,
                  LivenessPosition boundary, TransferPoint transfer_point);
 
+    bool can_split_bundle(const LiveBundle &bundle,
+                          const PreparedAllocationProblem &problem,
+                          LivenessPosition boundary);
+
     TransferPoint
     transfer_point_for_occurrence(const PreparedAllocationProblem &problem,
                                   OccurrenceId occurrence);

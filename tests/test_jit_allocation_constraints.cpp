@@ -433,6 +433,36 @@ namespace cl::jit
             {}, x0_clobber);
         EXPECT_TRUE(allowed.clobbers().contains(x0));
 
+        InstructionAllocationConstraints operand_copy_allowed(
+            move,
+            {{0, AccessTiming::Early,
+              LocationRequirement::fixed_operand_copy(x0)}},
+            ResultConstraint{
+                AccessTiming::Late,
+                LocationRequirement::any_register(RegisterClass::GPR)},
+            {}, x0_clobber);
+        EXPECT_TRUE(operand_copy_allowed.clobbers().contains(x0));
+
+        EXPECT_DEATH(
+            {
+                InstructionAllocationConstraints invalid(
+                    move, {{0, AccessTiming::Early,
+                            LocationRequirement::fixed_operand_copy(x0)}});
+                invalid.validate(*session.storage());
+            },
+            "FixedOperandCopy destination must be clobbered");
+
+        EXPECT_DEATH(
+            {
+                InstructionAllocationConstraints invalid(
+                    move,
+                    {{0, AccessTiming::Late,
+                      LocationRequirement::fixed_operand_copy(x0)}},
+                    std::nullopt, {}, x0_clobber);
+                invalid.validate(*session.storage());
+            },
+            "FixedOperandCopy must be an Early input");
+
         EXPECT_DEATH(
             {
                 InstructionAllocationConstraints invalid(

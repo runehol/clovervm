@@ -594,13 +594,23 @@ namespace cl::jit
         auto ranges_overlap = [](LivenessRange lhs, LivenessRange rhs) {
             return lhs.start < rhs.end && rhs.start < lhs.end;
         };
+        std::vector<bool> fixed_operand_copy_occurrences(
+            problem.occurrences().size(), false);
+        for(const FixedOperandCopyConstraint &copy:
+            problem.fixed_operand_copies())
+        {
+            fixed_operand_copy_occurrences[copy.source.value()] = true;
+        }
+        auto is_fixed_operand_copy = [&](OccurrenceId occurrence) {
+            return fixed_operand_copy_occurrences[occurrence.value()];
+        };
 
         for(size_t bundle_index = 0; bundle_index < bundles.size();
             ++bundle_index)
         {
             BundleId bundle_id(bundle_index);
             const LiveBundle &bundle = bundles[bundle_index];
-            PhysicalLocation location = assignments.location_for(bundle_id);
+            BundleLocation location = assignments.location_for(bundle_id);
             if(location.is_register())
             {
                 PhysicalRegister reg = location.reg();
@@ -618,7 +628,8 @@ namespace cl::jit
             {
                 PhysicalLocation fixed =
                     problem.fixed_constraints()[fixed_id.value()].location;
-                if(!fixed.aliases(location))
+                if(!location.is_physical() ||
+                   !fixed.aliases(location.physical()))
                 {
                     fatal("JIT allocator assignment violates fixed constraint");
                 }
@@ -638,7 +649,7 @@ namespace cl::jit
                         }
                     }
                 }
-                else
+                else if(location.is_stack())
                 {
                     const LiveRange &source =
                         problem.live_ranges()[fragment.source.value()];
@@ -653,6 +664,24 @@ namespace cl::jit
                                                 problem.fixed_constraints()))
                         {
                             fatal("JIT stack bundle covers a register-only "
+                                  "occurrence");
+                        }
+                    }
+                }
+                else
+                {
+                    assert(location.is_spill_slot());
+                    const LiveRange &source =
+                        problem.live_ranges()[fragment.source.value()];
+                    for(OccurrenceId occurrence_id: source.occurrences)
+                    {
+                        const Occurrence &occurrence =
+                            problem.occurrences()[occurrence_id.value()];
+                        if(fragment.range.contains(
+                               occurrence.minimum_coverage) &&
+                           !is_fixed_operand_copy(occurrence_id))
+                        {
+                            fatal("JIT spill carrier contains an observable "
                                   "occurrence");
                         }
                     }
@@ -698,6 +727,26 @@ namespace cl::jit
             {
                 fatal("JIT allocation changes a fixed operand copy");
             }
+        }
+        std::vector<bool> used_spill_slots(allocation.spill_slot_count(),
+                                           false);
+        for(size_t index = 0; index < allocation.locations().size(); ++index)
+        {
+            BundleLocation location =
+                allocation.locations().location_for(BundleId(index));
+            if(!location.is_spill_slot())
+            {
+                continue;
+            }
+            if(location.spill_slot().value() >= used_spill_slots.size())
+            {
+                fatal("JIT allocation names no spill slot");
+            }
+            used_spill_slots[location.spill_slot().value()] = true;
+        }
+        if(std::ranges::find(used_spill_slots, false) != used_spill_slots.end())
+        {
+            fatal("JIT allocation has an unused spill slot");
         }
         std::vector<std::vector<LivenessRange>> fragments_by_source(
             problem.live_ranges().size());

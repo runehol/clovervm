@@ -279,6 +279,17 @@ namespace cl::jit
 
         for(const ProgramValueUseConstraint &input: input_overrides_)
         {
+            if(input.requirement.kind() ==
+               LocationRequirement::Kind::FixedOperandCopy)
+            {
+                require_constraint(input.timing == AccessTiming::Early,
+                                   "a FixedOperandCopy must be an Early input");
+                require_constraint(
+                    clobbers_.contains(
+                        input.requirement.fixed_operand_copy_register()),
+                    "a FixedOperandCopy destination must be clobbered after "
+                    "its use");
+            }
             std::optional<PhysicalRegister> fixed =
                 fixed_input_register_for(input.requirement);
             if(input.timing == AccessTiming::Late && fixed.has_value())

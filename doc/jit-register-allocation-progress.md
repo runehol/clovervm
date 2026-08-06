@@ -52,10 +52,10 @@ algorithms, invariants, and layer boundaries.
 - [ ] Record remaining fixup connectors in the transfer schedule.
 - [x] Add `FixedOperandCopy` input requirements and operand-copy fixups;
   keep `AnyLocation` independent from temporary-spill eligibility.
-- [ ] Trim maximal spill-safe carrier intervals across trusted-handler calls
+- [x] Trim maximal spill-safe carrier intervals across trusted-handler calls
   with two ordinary bundle splits, respecting occurrence
   `minimum_coverage` and excluding observable program points.
-- [ ] Give each carrier a final register probe, then assign abstract
+- [x] Give each carrier a final register probe, then assign abstract
   allocator-owned spill slots with deterministic best-effort reuse across
   non-overlapping carriers.
 - [ ] Resolve abstract spill slots to managed-frame locations during
@@ -74,8 +74,8 @@ algorithms, invariants, and layer boundaries.
   embedding AArch64 ABI policy in the generic allocator.
 - [x] Implement fixed operand copies without pinning their source bundles
   to caller-clobbered ABI registers.
-- [ ] Validate that the initial fixed-operand-copy targets are clobbered after their
-  Early uses, and reject contradictory fixed defs and clobbers.
+- [x] Validate that the initial fixed-operand-copy targets are clobbered after
+  their Early uses, and reject contradictory fixed defs and clobbers.
 
 Every register written by an instruction remains represented by either an
 explicit result def or a clobber reservation, never both.

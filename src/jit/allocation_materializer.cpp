@@ -456,7 +456,8 @@ namespace cl::jit
                 pending.operand_indices.push_back(
                     static_cast<uint32_t>(source.anchor.index()));
                 pending.assignments.push_back(
-                    {allocation.locations().location_for(source_bundle),
+                    {allocation.locations().physical_location_for(
+                         source_bundle),
                      PhysicalLocation::reg(fixed_operand_copy.destination),
                      allocation.bundles()[source_bundle.value()]
                          .register_class});
@@ -505,8 +506,9 @@ namespace cl::jit
                               "classes");
                     }
                     transfers.push_back(
-                        {allocation.locations().location_for(transfer.source),
-                         allocation.locations().location_for(
+                        {allocation.locations().physical_location_for(
+                             transfer.source),
+                         allocation.locations().physical_location_for(
                              transfer.destination),
                          register_class});
                 }
@@ -579,12 +581,12 @@ namespace cl::jit
                                 BundleId destination =
                                     bundle_by_occurrence[affinity.destination
                                                              .value()];
-                                location =
-                                    allocation.locations().location_for(source);
+                                location = allocation.locations()
+                                               .physical_location_for(source);
                                 if(source != destination &&
                                    !location->aliases(
-                                       allocation.locations().location_for(
-                                           destination)))
+                                       allocation.locations()
+                                           .physical_location_for(destination)))
                                 {
                                     assert(transfer_index <
                                            set.transfers.size());
@@ -627,7 +629,7 @@ namespace cl::jit
                 const Occurrence &occurrence = problem.occurrences()[index];
                 BundleId bundle = bundle_by_occurrence[index];
                 PhysicalLocation location =
-                    allocation.locations().location_for(bundle);
+                    allocation.locations().physical_location_for(bundle);
                 switch(occurrence.anchor.kind())
                 {
                     case OccurrenceAnchor::Kind::InstructionResult:

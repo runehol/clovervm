@@ -3,6 +3,7 @@
 #include "runtime/fatal.h"
 
 #include <absl/container/btree_map.h>
+#include <absl/container/flat_hash_set.h>
 
 #include <algorithm>
 #include <array>
@@ -10,6 +11,7 @@
 #include <iterator>
 #include <optional>
 #include <queue>
+#include <set>
 #include <unordered_map>
 #include <utility>
 #include <vector>
@@ -83,6 +85,36 @@ namespace cl::jit
             uint64_t conflict_cost;
         };
 
+        struct SpillBoundary
+        {
+            LivenessRange range;
+            InstructionId instruction;
+        };
+
+        struct BundleAssignmentResult
+        {
+            BundleLocationAssignments locations;
+            uint32_t spill_slot_count;
+        };
+
+        struct ActiveSpillSlot
+        {
+            LivenessPosition end;
+            uint32_t slot;
+        };
+
+        struct ActiveSpillSlotCompare
+        {
+            bool operator()(ActiveSpillSlot lhs, ActiveSpillSlot rhs) const
+            {
+                if(lhs.end != rhs.end)
+                {
+                    return lhs.end > rhs.end;
+                }
+                return lhs.slot > rhs.slot;
+            }
+        };
+
         class BundleWorkItemCompare
         {
         public:
@@ -140,12 +172,43 @@ namespace cl::jit
                            BundleTransferSchedule &transfers,
                            const AllocationConstraints &constraints)
                 : problem_(problem), bundles_(bundles), transfers_(transfers),
-                  constraints_(constraints), location_by_bundle_(bundles.size())
+                  constraints_(constraints),
+                  location_by_bundle_(bundles.size()),
+                  spill_candidate_by_bundle_(bundles.size(), false),
+                  fixed_operand_copy_instruction_(problem.occurrences().size())
             {
+                for(const FixedOperandCopyConstraint &copy:
+                    problem_.fixed_operand_copies())
+                {
+                    fixed_operand_copy_instruction_[copy.source.value()] =
+                        problem_.occurrences()[copy.source.value()]
+                            .anchor.instruction_id();
+                }
+                absl::flat_hash_set<InstructionId> spill_boundary_instructions;
                 for(const ClobberReservation &clobber: problem_.clobbers())
                 {
                     clobber_ranges_[clobber.reg].push_back(clobber.range);
+                    Instruction instruction =
+                        problem_.block_ranges()
+                            .front()
+                            .block->storage()
+                            ->instruction(clobber.instruction);
+                    if(instruction.kind() ==
+                           InstructionKind::TrustedHandlerCall &&
+                       spill_boundary_instructions.insert(clobber.instruction)
+                           .second)
+                    {
+                        assert(clobber.range.start.value() != 0);
+                        spill_boundaries_.push_back(
+                            {{LivenessPosition(clobber.range.start.value() - 1),
+                              clobber.range.end},
+                             clobber.instruction});
+                    }
                 }
+                std::ranges::sort(spill_boundaries_, {},
+                                  [](const SpillBoundary &boundary) {
+                                      return boundary.range.start;
+                                  });
                 for(size_t class_index = 0;
                     class_index < static_cast<size_t>(RegisterClass::Count);
                     ++class_index)
@@ -163,7 +226,7 @@ namespace cl::jit
                 }
             }
 
-            Result<BundleLocationAssignments, RegisterAllocationError> run()
+            Result<BundleAssignmentResult, RegisterAllocationError> run()
             {
                 enqueue_bundles();
                 while(!worklist_.empty())
@@ -171,6 +234,30 @@ namespace cl::jit
                     BundleId bundle_id = worklist_.top().bundle;
                     worklist_.pop();
                     const LiveBundle &bundle = bundles_[bundle_id.value()];
+
+                    if(spill_candidate_by_bundle_[bundle_id.value()])
+                    {
+                        std::optional<PhysicalRegister> selected;
+                        for(PhysicalRegister candidate:
+                            register_class(bundle.register_class)
+                                .allocation_order())
+                        {
+                            if(probe_register(candidate, bundle).fits())
+                            {
+                                selected = candidate;
+                                break;
+                            }
+                        }
+                        if(selected.has_value())
+                        {
+                            place(bundle_id, PhysicalLocation::reg(*selected));
+                        }
+                        else
+                        {
+                            defer_spill_slot_assignment(bundle_id);
+                        }
+                        continue;
+                    }
 
                     std::optional<PhysicalLocation> selected;
                     std::optional<PhysicalLocation> required =
@@ -189,6 +276,10 @@ namespace cl::jit
                         if(probe.fits())
                         {
                             selected = required;
+                        }
+                        else if(trim_spill_carrier(bundle_id))
+                        {
+                            continue;
                         }
                         else if(split_before_later_fixed_use(bundle_id, probe))
                         {
@@ -254,6 +345,11 @@ namespace cl::jit
                             selected = PhysicalLocation::reg(*evictable);
                         }
                         else if(!selected.has_value() &&
+                                trim_spill_carrier(bundle_id))
+                        {
+                            continue;
+                        }
+                        else if(!selected.has_value() &&
                                 split_candidate.has_value() &&
                                 split_at_pressure_boundary(
                                     bundle_id, split_candidate->boundary))
@@ -264,7 +360,7 @@ namespace cl::jit
 
                     if(!selected.has_value())
                     {
-                        return Result<BundleLocationAssignments,
+                        return Result<BundleAssignmentResult,
                                       RegisterAllocationError>::
                             error(RegisterAllocationError::
                                       RequiresSplittingOrSpilling);
@@ -272,9 +368,10 @@ namespace cl::jit
                     place(bundle_id, *selected);
                 }
 
-                std::vector<PhysicalLocation> result;
+                uint32_t spill_slot_count = assign_spill_slots();
+                std::vector<BundleLocation> result;
                 result.reserve(location_by_bundle_.size());
-                for(const std::optional<PhysicalLocation> &location:
+                for(const std::optional<BundleLocation> &location:
                     location_by_bundle_)
                 {
                     if(!location.has_value())
@@ -283,9 +380,9 @@ namespace cl::jit
                     }
                     result.push_back(*location);
                 }
-                return Result<BundleLocationAssignments,
-                              RegisterAllocationError>::
-                    ok(BundleLocationAssignments(std::move(result)));
+                return Result<BundleAssignmentResult, RegisterAllocationError>::
+                    ok({BundleLocationAssignments(std::move(result)),
+                        spill_slot_count});
             }
 
         private:
@@ -426,17 +523,18 @@ namespace cl::jit
             const BlockLivenessRange *
             block_range_containing(LivenessPosition position) const
             {
-                for(const BlockLivenessRange &block_range:
-                    problem_.block_ranges())
+                auto candidate = std::ranges::upper_bound(
+                    problem_.block_ranges(), position, {},
+                    [](const BlockLivenessRange &block_range) {
+                        return block_range.range.start;
+                    });
+                if(candidate == problem_.block_ranges().begin())
                 {
-                    if(position < block_range.range.start ||
-                       block_range.range.end <= position)
-                    {
-                        continue;
-                    }
-                    return &block_range;
+                    return nullptr;
                 }
-                return nullptr;
+                --candidate;
+                return candidate->range.contains(position) ? &*candidate
+                                                           : nullptr;
             }
 
             std::optional<LivenessPosition>
@@ -499,6 +597,210 @@ namespace cl::jit
                 }
                 return TransferPoint::before_instruction(
                     block_range->block->instruction_at((offset - 2) / 2));
+            }
+
+            std::optional<LivenessPosition>
+            transfer_boundary_at_or_after(const BlockLivenessRange &block_range,
+                                          LivenessPosition position) const
+            {
+                if(position <= block_range.range.start)
+                {
+                    return block_range.range.start;
+                }
+                if(block_range.range.end < position)
+                {
+                    return std::nullopt;
+                }
+                size_t offset =
+                    position.value() - block_range.range.start.value();
+                if(offset == 1)
+                {
+                    offset = 2;
+                }
+                else if(offset % 2 != 0)
+                {
+                    ++offset;
+                }
+                size_t exit_offset =
+                    2 + block_range.block->instructions().size() * 2;
+                return offset <= exit_offset
+                           ? std::optional<LivenessPosition>(LivenessPosition(
+                                 block_range.range.start.value() + offset))
+                           : std::nullopt;
+            }
+
+            std::optional<LivenessPosition> transfer_boundary_at_or_before(
+                const BlockLivenessRange &block_range,
+                LivenessPosition position) const
+            {
+                if(position < block_range.range.start)
+                {
+                    return std::nullopt;
+                }
+                if(block_range.range.end <= position)
+                {
+                    return block_range.range.end;
+                }
+                size_t offset =
+                    position.value() - block_range.range.start.value();
+                if(offset == 1)
+                {
+                    offset = 0;
+                }
+                else if(offset % 2 != 0)
+                {
+                    --offset;
+                }
+                return LivenessPosition(block_range.range.start.value() +
+                                        offset);
+            }
+
+            bool is_fixed_operand_copy_for(OccurrenceId occurrence,
+                                           InstructionId instruction) const
+            {
+                const std::optional<InstructionId> &copy_instruction =
+                    fixed_operand_copy_instruction_[occurrence.value()];
+                return copy_instruction.has_value() &&
+                       *copy_instruction == instruction;
+            }
+
+            std::optional<LivenessRange>
+            spill_carrier_range(const LiveBundle &bundle,
+                                const BundleFragment &crossing,
+                                const SpillBoundary &spill_boundary) const
+            {
+                assert(crossing.range.contains(spill_boundary.range));
+
+                const BlockLivenessRange *block_range =
+                    block_range_containing(spill_boundary.range.start);
+                if(block_range == nullptr ||
+                   !block_range->range.contains(spill_boundary.range))
+                {
+                    return std::nullopt;
+                }
+                std::optional<LivenessPosition> start =
+                    transfer_boundary_at_or_after(*block_range,
+                                                  crossing.range.start);
+                std::optional<LivenessPosition> end =
+                    transfer_boundary_at_or_before(*block_range,
+                                                   crossing.range.end);
+                if(!start.has_value() || !end.has_value())
+                {
+                    return std::nullopt;
+                }
+
+                const LiveRange &source =
+                    problem_.live_ranges()[crossing.source.value()];
+                for(OccurrenceId occurrence_id: source.occurrences)
+                {
+                    const Occurrence &occurrence =
+                        problem_.occurrences()[occurrence_id.value()];
+                    if(!crossing.range.contains(occurrence.minimum_coverage) ||
+                       is_fixed_operand_copy_for(occurrence_id,
+                                                 spill_boundary.instruction))
+                    {
+                        continue;
+                    }
+                    if(occurrence.minimum_coverage.end <=
+                       spill_boundary.range.start)
+                    {
+                        std::optional<LivenessPosition> candidate =
+                            transfer_boundary_at_or_after(
+                                *block_range, occurrence.minimum_coverage.end);
+                        if(!candidate.has_value())
+                        {
+                            return std::nullopt;
+                        }
+                        start = std::max(*start, *candidate);
+                    }
+                    else if(spill_boundary.range.end <=
+                            occurrence.minimum_coverage.start)
+                    {
+                        std::optional<LivenessPosition> candidate =
+                            transfer_boundary_at_or_before(
+                                *block_range,
+                                occurrence.minimum_coverage.start);
+                        if(!candidate.has_value())
+                        {
+                            return std::nullopt;
+                        }
+                        end = std::min(*end, *candidate);
+                    }
+                    else
+                    {
+                        return std::nullopt;
+                    }
+                }
+
+                LivenessRange result{*start, *end};
+                if(result.start > spill_boundary.range.start ||
+                   result.end < spill_boundary.range.end || result.empty() ||
+                   !can_split_bundle(bundle, problem_, result.start) ||
+                   !can_split_bundle(bundle, problem_, result.end))
+                {
+                    return std::nullopt;
+                }
+                return result;
+            }
+
+            bool trim_spill_carrier(BundleId bundle_id)
+            {
+                assert(!location_by_bundle_[bundle_id.value()].has_value());
+                const LiveBundle &bundle = bundles_[bundle_id.value()];
+                for(const BundleFragment &fragment: bundle.fragments)
+                {
+                    auto boundary = std::ranges::lower_bound(
+                        spill_boundaries_, fragment.range.start.next(), {},
+                        [](const SpillBoundary &candidate) {
+                            return candidate.range.end;
+                        });
+                    for(; boundary != spill_boundaries_.end() &&
+                          boundary->range.start < fragment.range.end;
+                        ++boundary)
+                    {
+                        if(!fragment.range.contains(boundary->range))
+                        {
+                            continue;
+                        }
+                        std::optional<LivenessRange> carrier =
+                            spill_carrier_range(bundle, fragment, *boundary);
+                        if(!carrier.has_value())
+                        {
+                            continue;
+                        }
+                        std::optional<TransferPoint> start_point =
+                            transfer_point_for_boundary(carrier->start);
+                        std::optional<TransferPoint> end_point =
+                            transfer_point_for_boundary(carrier->end);
+                        if(!start_point.has_value() || !end_point.has_value())
+                        {
+                            continue;
+                        }
+
+                        std::optional<BundleId> middle = split_bundle(
+                            bundles_, transfers_, problem_, bundle_id,
+                            carrier->start, *start_point);
+                        assert(middle.has_value());
+                        assert(middle->value() == location_by_bundle_.size());
+                        location_by_bundle_.push_back(std::nullopt);
+                        spill_candidate_by_bundle_.push_back(false);
+
+                        std::optional<BundleId> right =
+                            split_bundle(bundles_, transfers_, problem_,
+                                         *middle, carrier->end, *end_point);
+                        assert(right.has_value());
+                        assert(right->value() == location_by_bundle_.size());
+                        location_by_bundle_.push_back(std::nullopt);
+                        spill_candidate_by_bundle_.push_back(false);
+                        spill_candidate_by_bundle_[middle->value()] = true;
+
+                        enqueue(bundle_id);
+                        enqueue(*middle);
+                        enqueue(*right);
+                        return true;
+                    }
+                }
+                return false;
             }
 
             std::optional<LivenessPosition>
@@ -567,6 +869,7 @@ namespace cl::jit
                 }
                 assert(right->value() == location_by_bundle_.size());
                 location_by_bundle_.push_back(std::nullopt);
+                spill_candidate_by_bundle_.push_back(false);
                 enqueue(bundle_id);
                 enqueue(*right);
                 return true;
@@ -622,6 +925,7 @@ namespace cl::jit
                 }
                 assert(right->value() == location_by_bundle_.size());
                 location_by_bundle_.push_back(std::nullopt);
+                spill_candidate_by_bundle_.push_back(false);
                 enqueue(bundle_id);
                 enqueue(*right);
                 return true;
@@ -629,7 +933,7 @@ namespace cl::jit
 
             void unplace(BundleId bundle_id)
             {
-                std::optional<PhysicalLocation> &location =
+                std::optional<BundleLocation> &location =
                     location_by_bundle_[bundle_id.value()];
                 assert(location.has_value() && location->is_register());
                 RegisterOccupancy &occupancy = occupancy_[location->reg()];
@@ -665,7 +969,8 @@ namespace cl::jit
             void place(BundleId bundle_id, PhysicalLocation location)
             {
                 assert(!location_by_bundle_[bundle_id.value()].has_value());
-                location_by_bundle_[bundle_id.value()] = location;
+                location_by_bundle_[bundle_id.value()] =
+                    BundleLocation::physical(location);
 
                 RegisterOccupancy &occupancy =
                     location.is_register()
@@ -686,11 +991,75 @@ namespace cl::jit
                 }
             }
 
+            void defer_spill_slot_assignment(BundleId bundle_id)
+            {
+                assert(!location_by_bundle_[bundle_id.value()].has_value());
+                assert(bundles_[bundle_id.value()].fixed_constraints.empty());
+                deferred_spill_bundles_.push_back(bundle_id);
+            }
+
+            uint32_t assign_spill_slots()
+            {
+                std::ranges::sort(
+                    deferred_spill_bundles_, [&](BundleId lhs, BundleId rhs) {
+                        const LiveBundle &left = bundles_[lhs.value()];
+                        const LiveBundle &right = bundles_[rhs.value()];
+                        assert(left.fragments.size() == 1);
+                        assert(right.fragments.size() == 1);
+                        LivenessPosition left_start =
+                            left.fragments.front().range.start;
+                        LivenessPosition right_start =
+                            right.fragments.front().range.start;
+                        return left_start != right_start
+                                   ? left_start < right_start
+                                   : lhs.value() < rhs.value();
+                    });
+
+                std::priority_queue<ActiveSpillSlot,
+                                    std::vector<ActiveSpillSlot>,
+                                    ActiveSpillSlotCompare>
+                    active;
+                std::set<uint32_t> free_slots;
+                uint32_t slot_count = 0;
+                for(BundleId bundle_id: deferred_spill_bundles_)
+                {
+                    const LiveBundle &bundle = bundles_[bundle_id.value()];
+                    assert(bundle.fragments.size() == 1);
+                    LivenessRange range = bundle.fragments.front().range;
+                    while(!active.empty() && active.top().end <= range.start)
+                    {
+                        free_slots.insert(active.top().slot);
+                        active.pop();
+                    }
+
+                    uint32_t slot;
+                    if(free_slots.empty())
+                    {
+                        slot = slot_count++;
+                    }
+                    else
+                    {
+                        auto first = free_slots.begin();
+                        slot = *first;
+                        free_slots.erase(first);
+                    }
+                    location_by_bundle_[bundle_id.value()] =
+                        BundleLocation::spill_slot(SpillSlotId(slot));
+                    active.push({range.end, slot});
+                }
+                return slot_count;
+            }
+
             const PreparedAllocationProblem &problem_;
             std::vector<LiveBundle> &bundles_;
             BundleTransferSchedule &transfers_;
             const AllocationConstraints &constraints_;
-            std::vector<std::optional<PhysicalLocation>> location_by_bundle_;
+            std::vector<std::optional<BundleLocation>> location_by_bundle_;
+            std::vector<bool> spill_candidate_by_bundle_;
+            std::vector<BundleId> deferred_spill_bundles_;
+            std::vector<SpillBoundary> spill_boundaries_;
+            std::vector<std::optional<InstructionId>>
+                fixed_operand_copy_instruction_;
             PerPhysicalRegister<RegisterOccupancy> occupancy_;
             std::unordered_map<int32_t, RegisterOccupancy> stack_occupancy_;
             PerPhysicalRegister<std::vector<LivenessRange>> clobber_ranges_;
@@ -718,8 +1087,8 @@ namespace cl::jit
         {
             return propagate_failure(std::move(assignment_result));
         }
-        BundleLocationAssignments assignments =
-            std::move(assignment_result).value();
+        BundleAssignmentResult assigned = std::move(assignment_result).value();
+        BundleLocationAssignments &assignments = assigned.locations;
         schedule_affinity_transfers(problem, split.bundles, assignments,
                                     split.transfers);
         std::vector<FixedOperandCopyFixup> fixed_operand_copies;
@@ -731,8 +1100,9 @@ namespace cl::jit
                 {fixed_operand_copy.source, fixed_operand_copy.destination});
         }
         RegisterAllocationResult allocation(
-            std::move(split.bundles), std::move(assignments),
-            std::move(split.transfers), std::move(fixed_operand_copies));
+            std::move(split.bundles), std::move(assigned.locations),
+            std::move(split.transfers), std::move(fixed_operand_copies),
+            assigned.spill_slot_count);
         verify_register_allocation(problem, constraints, allocation);
         return Result<RegisterAllocationResult, RegisterAllocationError>::ok(
             std::move(allocation));

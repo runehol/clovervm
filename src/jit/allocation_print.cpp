@@ -153,6 +153,15 @@ namespace cl::jit
                                stack.frame_offset());
         }
 
+        std::string format_location(BundleLocation location)
+        {
+            if(location.is_spill_slot())
+            {
+                return fmt::format("spill{}", location.spill_slot().value());
+            }
+            return format_location(location.physical());
+        }
+
         std::string format_transfer_point(TransferPoint point,
                                           const DumpNames &names)
         {
@@ -429,6 +438,11 @@ namespace cl::jit
             fmt::format_to(std::back_inserter(out), "] = {}\n",
                            format_location(allocation.locations().location_for(
                                BundleId(index))));
+        }
+        if(allocation.spill_slot_count() != 0)
+        {
+            fmt::format_to(std::back_inserter(out), "  spill_slots = {}\n",
+                           allocation.spill_slot_count());
         }
         fmt::format_to(std::back_inserter(out), "  transfers {{\n");
         for(const BundleTransferSet &set: allocation.transfers().sets())

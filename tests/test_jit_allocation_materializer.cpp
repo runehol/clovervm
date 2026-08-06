@@ -153,6 +153,8 @@ namespace cl::jit
         ControlFlowGraph *graph = builder.finalize();
 
         StackLocation source_slot(StackLocationKind::IncomingParameter, 8);
+        RegisterSet operation_clobbers;
+        operation_clobbers.insert(x1);
         std::vector<InstructionAllocationConstraints> overrides;
         overrides.emplace_back(
             parameter, std::vector<ProgramValueUseConstraint>{},
@@ -165,13 +167,18 @@ namespace cl::jit
                  LocationRequirement::fixed_operand_copy(x1)},
                 {1, AccessTiming::Early, fixed(PhysicalLocation::reg(x0))}},
             ResultConstraint{AccessTiming::Late,
-                             fixed(PhysicalLocation::reg(x1))});
+                             fixed(PhysicalLocation::reg(x2))},
+            std::vector<TemporaryConstraint>{}, operation_clobbers);
         overrides.emplace_back(
             old_return,
             std::vector<ProgramValueUseConstraint>{
                 {0, AccessTiming::Early, fixed(PhysicalLocation::reg(x0))}});
-        AllocationConstraints constraints =
-            constraints_with(std::move(overrides));
+        constexpr std::array registers = {x0, x1, x2};
+        constexpr std::array scratch = {x3};
+        std::vector<RegisterClassDefinition> definitions;
+        definitions.emplace_back(RegisterClass::GPR, registers, scratch);
+        AllocationConstraints constraints(std::move(definitions),
+                                          std::move(overrides));
         PreparedAllocationProblem prepared({}, {}, {}, {}, {}, {}, {}, {});
         RegisterAllocationResult allocation =
             allocate(*graph, constraints, prepared);

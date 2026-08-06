@@ -40,10 +40,12 @@ namespace cl::jit
             std::vector<LiveBundle> bundles,
             BundleLocationAssignments locations,
             BundleTransferSchedule transfers,
-            std::vector<FixedOperandCopyFixup> fixed_operand_copies)
+            std::vector<FixedOperandCopyFixup> fixed_operand_copies,
+            uint32_t spill_slot_count)
             : bundles_(std::move(bundles)), locations_(std::move(locations)),
               transfers_(std::move(transfers)),
-              fixed_operand_copies_(std::move(fixed_operand_copies))
+              fixed_operand_copies_(std::move(fixed_operand_copies)),
+              spill_slot_count_(spill_slot_count)
         {
         }
 
@@ -57,12 +59,14 @@ namespace cl::jit
         {
             return fixed_operand_copies_;
         }
+        uint32_t spill_slot_count() const { return spill_slot_count_; }
 
     private:
         std::vector<LiveBundle> bundles_;
         BundleLocationAssignments locations_;
         BundleTransferSchedule transfers_;
         std::vector<FixedOperandCopyFixup> fixed_operand_copies_;
+        uint32_t spill_slot_count_;
     };
 
     Result<PreparedAllocationProblem, RegisterAllocationError>
