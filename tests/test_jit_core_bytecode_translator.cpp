@@ -22,6 +22,17 @@ namespace cl::jit
             return lhs;
         }
 
+        Value test_translated_unary_handler(ThreadState *, Value value)
+        {
+            return value;
+        }
+
+        Value test_translated_ternary_handler(ThreadState *, Value first, Value,
+                                              Value)
+        {
+            return first;
+        }
+
         struct TranslatorFixture
         {
             TranslatorFixture()
@@ -347,6 +358,72 @@ namespace cl::jit
                 .as<ReturnInstruction>();
         EXPECT_EQ(call.id(),
                   return_instruction.return_value().instruction_id());
+    }
+
+    TEST(JitCoreBytecodeTranslator, LowersUnaryAndTernaryTrustedHandlerCalls)
+    {
+        TranslatorFixture fixture;
+        {
+            CodeObjectBuilder::TemporaryReg temporaries(fixture.code_builder,
+                                                        2);
+            fixture.code_builder.emit_lda_smi(0, 2).value();
+            fixture.code_builder
+                .emit_unary_op(0, Bytecode::Neg,
+                               OperatorBytecodeFormat::WithCache)
+                .value();
+            fixture.code_builder.emit_lda_smi(0, 3).value();
+            fixture.code_builder.emit_star(0, temporaries).value();
+            fixture.code_builder.emit_lda_smi(0, 4).value();
+            fixture.code_builder.emit_star(0, uint32_t(temporaries) + 1)
+                .value();
+            fixture.code_builder.emit_lda_smi(0, 5).value();
+            fixture.code_builder
+                .emit_ternary_operator(0, Bytecode::TernaryPow, temporaries,
+                                       uint32_t(temporaries) + 1)
+                .value();
+            fixture.code_builder.emit_return(0).value();
+        }
+
+        CodeObject *code_object = fixture.code_builder.finalize().value();
+        ASSERT_EQ(2u, code_object->inline_caches.operator_caches.size());
+        fixture.context.vm().register_trusted_handler(
+            test_translated_unary_handler, TrustedHandlerEffects::Allocate,
+            TrustedHandlerSemantics::Neg);
+        fixture.context.vm().register_trusted_handler(
+            test_translated_ternary_handler, TrustedHandlerEffects::Allocate,
+            TrustedHandlerSemantics::Generic);
+        code_object->inline_caches.operator_caches[0] =
+            OperatorInlineCache::trusted_handler_call(
+                ShapeKey::from_value(Value::from_smi(2)), ShapeKey{},
+                TrustedResolution::call_trusted(test_translated_unary_handler),
+                nullptr, nullptr);
+        code_object->inline_caches.operator_caches[1] =
+            OperatorInlineCache::trusted_handler_call(
+                ShapeKey::from_value(Value::from_smi(3)),
+                ShapeKey::from_value(Value::from_smi(4)),
+                TrustedResolution::call_trusted(
+                    test_translated_ternary_handler),
+                nullptr, nullptr);
+
+        CoreBytecodeTranslator translator(fixture.context.vm(), *code_object,
+                                          fixture.graph_builder);
+        ControlFlowGraph *graph = translator.translate();
+        Block *entry = graph->entry_block();
+        std::vector<Instruction> guards =
+            instructions_of_kind(entry, InstructionKind::InlineTagGuard);
+        std::vector<Instruction> calls =
+            instructions_of_kind(entry, InstructionKind::TrustedHandlerCall);
+        ASSERT_EQ(3u, guards.size());
+        ASSERT_EQ(2u, calls.size());
+        EXPECT_EQ(
+            1u,
+            calls[0].as<TrustedHandlerCallInstruction>().arguments().size());
+        EXPECT_EQ(
+            3u,
+            calls[1].as<TrustedHandlerCallInstruction>().arguments().size());
+        EXPECT_TRUE(
+            instructions_of_kind(entry, InstructionKind::ResumeInInterpreter)
+                .empty());
     }
 
     TEST(JitCoreBytecodeTranslator, LowersAddSmiWithAnEmptyCacheToGuardedSMIAdd)

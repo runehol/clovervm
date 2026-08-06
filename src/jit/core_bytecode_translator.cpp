@@ -318,6 +318,17 @@ namespace cl::jit
                 }
                 break;
 
+            case Bytecode::Neg:
+            case Bytecode::Pos:
+            case Bytecode::Invert:
+            case Bytecode::TernaryPow:
+                if(!lower_non_fastpathed_operator(block, instruction, inputs,
+                                                  state, outputs))
+                {
+                    return;
+                }
+                break;
+
             case Bytecode::Nop:
                 break;
 
@@ -338,18 +349,43 @@ namespace cl::jit
         assert(cache != nullptr);
         assert(!cache->empty());
 
-        if(inputs.size() != 2 || cache->trusted_handler.is_null())
+        TrustedHandlerArity arity;
+        size_t argument_count;
+        size_t guarded_argument_count;
+        switch(bytecode_info(instruction.encoded_opcode()).compound_role)
+        {
+            case BytecodeCompoundRole::BinaryOperator:
+                arity = TrustedHandlerArity::Binary;
+                argument_count = 2;
+                guarded_argument_count = 2;
+                break;
+            case BytecodeCompoundRole::TernaryOperator:
+                arity = TrustedHandlerArity::Ternary;
+                argument_count = 3;
+                guarded_argument_count = 2;
+                break;
+            case BytecodeCompoundRole::None:
+                arity = TrustedHandlerArity::Unary;
+                argument_count = 1;
+                guarded_argument_count = 1;
+                break;
+            case BytecodeCompoundRole::BinaryOperatorContinuation:
+            case BytecodeCompoundRole::TernaryOperatorContinuation:
+                emit_unsupported(block, instruction, state);
+                return false;
+        }
+
+        if(instruction.sources().size() != argument_count ||
+           cache->trusted_handler.is_null())
         {
             emit_unsupported(block, instruction, state);
             return false;
         }
 
-        TrustedHandlerTarget handler =
-            cache->trusted_handler.target(TrustedHandlerArity::Binary);
+        TrustedHandlerTarget handler = cache->trusted_handler.target(arity);
         std::optional<TrustedHandlerMetadata> metadata =
             vm_.trusted_handler_metadata(handler);
-        if(!metadata.has_value() ||
-           metadata->arity != TrustedHandlerArity::Binary ||
+        if(!metadata.has_value() || metadata->arity != arity ||
            has_trusted_handler_effects(metadata->effects,
                                        TrustedHandlerEffects::Safepoint) ||
            has_trusted_handler_effects(metadata->effects,
@@ -361,23 +397,21 @@ namespace cl::jit
             return false;
         }
 
-        assert(instruction.sources().size() == 2);
+        assert(instruction.sources().size() == inputs.size());
         SnapshotRef snapshot =
             emit_snapshot(block, instruction.pc_offset(), state);
-        const std::array shape_keys = {cache->operand_shape_keys[0],
-                                       cache->operand_shape_keys[1]};
-        for(size_t index = 0; index < shape_keys.size(); ++index)
+        for(size_t index = 0; index < guarded_argument_count; ++index)
         {
             BytecodeValueLocation source = instruction.sources()[index];
             ProgramValueRef value = state_tracker_.value_at(state, source);
-            if(shape_keys[index].is_inline())
+            ShapeKey shape_key = cache->operand_shape_keys[index];
+            if(shape_key.is_inline())
             {
-                emit_inline_tag_guard(
-                    block, value, snapshot,
-                    TaggedValueClass::masked_equal(
-                        uint8_t(value_tag_mask),
-                        uint8_t(shape_keys[index].inline_tag())),
-                    state);
+                emit_inline_tag_guard(block, value, snapshot,
+                                      TaggedValueClass::masked_equal(
+                                          uint8_t(value_tag_mask),
+                                          uint8_t(shape_key.inline_tag())),
+                                      state);
             }
             else
             {
@@ -385,13 +419,13 @@ namespace cl::jit
                     builder_
                         .emplace_instruction<PointerAndShapeGuardInstruction>(
                             block, tagged(value), snapshot,
-                            vm_.shape_for_key(shape_keys[index]));
+                            vm_.shape_for_key(shape_key));
                 state_tracker_.replace_value(state, value,
                                              ProgramValueRef(guard));
             }
         }
 
-        for(size_t index = 0; index < shape_keys.size(); ++index)
+        for(size_t index = 0; index < guarded_argument_count; ++index)
         {
             ValidityCell *validity =
                 cache->operand_lookup_validity_cells[index];
@@ -407,9 +441,12 @@ namespace cl::jit
             state_tracker_.replace_value(state, value, ProgramValueRef(guard));
         }
 
-        std::array<TaggedValueRef, 2> arguments = {
-            tagged(state_tracker_.value_at(state, instruction.sources()[0])),
-            tagged(state_tracker_.value_at(state, instruction.sources()[1]))};
+        std::vector<TaggedValueRef> arguments;
+        arguments.reserve(inputs.size());
+        for(BytecodeValueLocation source: instruction.sources())
+        {
+            arguments.push_back(tagged(state_tracker_.value_at(state, source)));
+        }
         emit_trusted_handler_call(block, *cache, *metadata, arguments, outputs);
         return true;
     }
@@ -420,8 +457,12 @@ namespace cl::jit
         std::span<const TaggedValueRef> arguments,
         std::vector<ProgramValueRef> &outputs)
     {
-        assert(metadata.arity == TrustedHandlerArity::Binary);
-        assert(arguments.size() == 2);
+        assert((metadata.arity == TrustedHandlerArity::Unary &&
+                arguments.size() == 1) ||
+               (metadata.arity == TrustedHandlerArity::Binary &&
+                arguments.size() == 2) ||
+               (metadata.arity == TrustedHandlerArity::Ternary &&
+                arguments.size() == 3));
         TrustedHandlerTarget handler =
             cache.trusted_handler.target(metadata.arity);
         outputs.emplace_back(
