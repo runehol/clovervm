@@ -50,10 +50,19 @@ algorithms, invariants, and layer boundaries.
 - [x] Split register-only pressure ranges before the conflicting instruction
   and record their connectors in the transfer schedule.
 - [ ] Record remaining fixup connectors in the transfer schedule.
-- [ ] Provide allocator-owned spill slots for ordinary allocation pressure.
-- [ ] Add per-value spill bundles and trim register-free regions around
-  pressure splits into them, recording register-to-spill and spill-to-register
-  connectors.
+- [ ] Add `FixedUse` input requirements and operand-local fixed-use fixups;
+  keep `AnyLocation` independent from temporary-spill eligibility.
+- [ ] Trim maximal spill-safe carrier intervals across trusted-handler calls
+  with two ordinary bundle splits, respecting occurrence
+  `minimum_coverage` and excluding observable program points.
+- [ ] Give each carrier a final register probe, then assign abstract
+  allocator-owned spill slots with deterministic best-effort reuse across
+  non-overlapping carriers.
+- [ ] Resolve abstract spill slots to managed-frame locations during
+  materialization and report the required spill extent.
+- [ ] Materialize ordinary authoritative transfers before fixed-use parallel
+  copies, rewriting only the selected call operands.
+- [ ] Generalize spilling beyond non-observable trusted-handler call carriers.
 - [x] Add the reserved spill-weight tiers required by the allocator's progress
   argument.
 - [ ] Add a debug iteration bound.
@@ -61,10 +70,12 @@ algorithms, invariants, and layer boundaries.
 
 ## Calls and Clobbers
 
-- [ ] Support fixed-location call arguments and results without embedding ABI
-  policy in the generic allocator.
-- [ ] Validate early arguments that remain in registers clobbered at Late and
-  reject contradictory fixed defs and clobbers.
+- [x] Describe trusted-handler call arguments, results, and clobbers without
+  embedding AArch64 ABI policy in the generic allocator.
+- [ ] Implement fixed-use argument copies without pinning their source bundles
+  to caller-clobbered ABI registers.
+- [ ] Validate that the initial fixed-use targets are clobbered after their
+  Early uses, and reject contradictory fixed defs and clobbers.
 
 Every register written by an instruction remains represented by either an
 explicit result def or a clobber reservation, never both.
