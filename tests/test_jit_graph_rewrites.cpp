@@ -614,6 +614,94 @@ namespace cl::jit
             callback.second_move->id()));
     }
 
+    TEST(JitGraphRewriter, RetainsNormalizedInsertedDefinitionsAcrossCallbacks)
+    {
+        CompilationSession session;
+        GraphBuilder builder(session, IRLevel::Core);
+        Block *entry = builder.emplace_block();
+        ParameterInstruction parameter =
+            builder.emplace_parameter<ParameterInstruction>(entry);
+        BareReturnInstruction old_return =
+            builder.emplace_instruction<BareReturnInstruction>(
+                entry, TaggedValueRef(parameter));
+        ControlFlowGraph *graph = builder.finalize();
+
+        struct Callback
+        {
+            Block *entry;
+            ParameterInstruction parameter;
+            BareReturnInstruction return_instruction;
+            std::optional<MovInstruction> entry_move;
+            std::optional<MovInstruction> retained_move;
+            std::optional<BareReturnInstruction> replacement_return;
+
+            RewriteInsertion at_block_entry(RewriteContext &context,
+                                            const GraphQueries &,
+                                            const Block &block)
+            {
+                if(&block != entry)
+                {
+                    return RewriteInsertion::none();
+                }
+                entry_move = context.make_instruction<MovInstruction>(
+                    TaggedValueRef(parameter));
+                return RewriteInsertion::insert_transfers(
+                    {*entry_move}, {{ProgramValueRef(parameter),
+                                     ProgramValueRef(*entry_move)}});
+            }
+
+            RewriteInsertion before_instruction(RewriteContext &context,
+                                                const GraphQueries &,
+                                                const Block &,
+                                                const Instruction &instruction)
+            {
+                if(instruction.id() != return_instruction.id())
+                {
+                    return RewriteInsertion::none();
+                }
+                retained_move = context.make_instruction<MovInstruction>(
+                    TaggedValueRef(parameter));
+                return RewriteInsertion::insert({*retained_move});
+            }
+
+            RewriteResult rewrite_instruction(RewriteContext &context,
+                                              const GraphQueries &,
+                                              const Block &,
+                                              const Instruction &instruction)
+            {
+                if(instruction.kind() != InstructionKind::BareReturn)
+                {
+                    return RewriteResult::keep();
+                }
+                assert(retained_move.has_value());
+                replacement_return =
+                    context.make_instruction<BareReturnInstruction>(
+                        TaggedValueRef(*retained_move));
+                return RewriteResult::replace_without_result(
+                    {*replacement_return});
+            }
+        } callback{entry, parameter, old_return, {}, {}, {}};
+
+        GraphRewriter rewriter(session, *graph);
+        RewriteSummary summary = rewriter.rewrite_instructions(
+            InstructionTraversal(), RewriteInput::Normalized, callback);
+
+        ASSERT_EQ(3u, entry->instructions().size());
+        ASSERT_TRUE(callback.entry_move.has_value());
+        ASSERT_TRUE(callback.retained_move.has_value());
+        ASSERT_TRUE(callback.replacement_return.has_value());
+        EXPECT_EQ(*callback.entry_move, entry->instruction_at(0));
+        MovInstruction retained = entry->instruction_at(1).as<MovInstruction>();
+        EXPECT_NE(*callback.retained_move, retained);
+        EXPECT_EQ(callback.entry_move->id(),
+                  retained.source().instruction_id());
+        BareReturnInstruction returned =
+            entry->instruction_at(2).as<BareReturnInstruction>();
+        EXPECT_EQ(retained.id(), returned.return_value().instruction_id());
+        EXPECT_EQ(retained.id(), summary.normalization_remapping.at(
+                                     callback.retained_move->id()));
+    }
+
     TEST(JitGraphRewriter, RejectsStructuralTransferOfAnUnavailableDefinition)
     {
         EXPECT_DEATH(

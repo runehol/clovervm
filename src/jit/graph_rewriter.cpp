@@ -568,6 +568,15 @@ namespace cl::jit
                     if(normalized.result_class() != ResultClass::None)
                     {
                         available_defs.insert(normalized.id());
+                        auto [position, inserted] = def_replacements.emplace(
+                            proposed.id(),
+                            DefReplacement{normalized.id(), false});
+                        require_rewrite_invariant(
+                            inserted ||
+                                (position->second.def == normalized.id() &&
+                                 !position->second.erased),
+                            "an inserted JIT definition has more than one "
+                            "normalized identity");
                     }
                 }
 
