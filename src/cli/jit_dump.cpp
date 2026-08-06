@@ -218,7 +218,7 @@ namespace
         return SourceInput{std::move(*source), std::move(filename)};
     }
 
-    cl::CodeObject *single_function_code(cl::CodeObject &module)
+    cl::CodeObject *last_function_code(cl::CodeObject &module)
     {
         cl::CodeObject *result = nullptr;
         for(const auto &constant: module.constant_table)
@@ -229,10 +229,6 @@ namespace
                    cl::NativeLayoutId::CodeObject)
             {
                 continue;
-            }
-            if(result != nullptr)
-            {
-                return nullptr;
             }
             result = value.get_ptr<cl::CodeObject>();
         }
@@ -502,16 +498,25 @@ int main(int argc, const char *argv[])
         return 1;
     }
 
-    cl::CodeObject *function = single_function_code(*compilation.value());
+    fmt::print("Python:\n{}\n\n", cl::unicode::encode_utf8(input->source));
+
+    cl::Value execution_result =
+        thread->run_clovervm_code_object(compilation.value());
+    if(execution_result.is_exception_marker())
+    {
+        std::wcerr << format_pending_python_exception(thread) << L"\n";
+        return 1;
+    }
+
+    cl::CodeObject *function = last_function_code(*compilation.value());
     if(function == nullptr)
     {
         fmt::print(
             stderr,
-            "Python source must define exactly one top-level function\n");
+            "Python source must define at least one top-level function\n");
         return 1;
     }
 
-    fmt::print("Python:\n{}\n\n", cl::unicode::encode_utf8(input->source));
     DumpObserver observer(command_line);
     cl::jit::JitCompilerOptions compiler_options{&observer};
     auto code_result =
