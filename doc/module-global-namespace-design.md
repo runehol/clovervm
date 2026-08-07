@@ -7,14 +7,11 @@
 | Implementation | Implemented |
 | Scope | Module globals storage, lookup, builtins resolution, mapping views, and cache validity |
 | Owning layers | Runtime modules, scope metadata, interpreter globals access, and inline caches |
-| Validated against | `112cfe9` (2026-05-22) |
+| Validated against | `ad1c5054` (2026-08-07) |
 | Supersedes | N/A |
 
 This note describes the implemented split between lexical scope metadata,
 module objects, and runtime global lookup.
-
-For remaining follow-up work, see
-[Module Global Namespace Implementation Plan](module-global-namespace-implementation.md).
 
 The short version is:
 
@@ -214,14 +211,17 @@ namespace path is a follow-up.
 
 The following are intentionally still separate follow-ups:
 
-- `globals()` and module-scope `locals()` as live mutable views over module
-  storage.
-- `module.__dict__` as a mapping view over module storage.
 - dict-like `__builtins__` traversal and cache invalidation.
-- import and multi-module execution tests.
 - class-body `LOAD_NAME` / `STORE_NAME` / `DEL_NAME` and active class namespace
   execution.
 - large-shape lookup acceleration for cold module-global lookups.
+
+Live `globals()`, module-scope `locals()`, `module.__dict__`, VM-owned
+`sys.modules` and `sys.path`, defining-module function lookup, and mutable module
+`__builtins__` bindings are implemented. Class-namespace execution remains a
+separate language-semantics project recorded in
+[Development Priorities](development-priorities.md); it must not revive
+scope-backed module globals as transitional machinery.
 
 ## Non-Goals
 

@@ -2075,6 +2075,7 @@ every recovery policy must reconstruct the same canonical interpreter state.
 - [JIT Transition Programs](jit-transition-program.md)
 - [JIT Machine-Code Emission](jit-machine-code-emission.md)
 - [JIT Code Cache and Publication](jit-code-cache.md)
+- [Trusted Handler Declarations](trusted-handler-declarations.md)
 - [Semantic IR and Specialization](jit-semantic-ir-and-specialization.md)
 - [Function Calling Convention](function-calling-convention.md)
 - [Native/Managed Boundary Contracts](native-managed-boundaries.md)

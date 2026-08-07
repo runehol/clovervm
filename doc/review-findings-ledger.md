@@ -1,12 +1,37 @@
 # Review Findings Ledger
 
-This ledger is the durable record for the repository-wide correctness campaign
-defined in the [Comprehensive Review Plan](comprehensive-review-plan.md).
+This ledger is the durable record for the completed repository-wide correctness
+campaign. The campaign reviewed memory and ownership, pending exceptions,
+dictionaries, bytecode and interpreter integrity, the object model, calls,
+builtin types, compiler semantics, imports and native APIs, and cross-cutting
+release behavior. The review-unit log records the exact scope and residual risk
+for each pass.
 
 Only reachable, high-confidence defects belong under confirmed findings.
 Suspicions that still require proof belong in the investigation queue. Missing
 features and intentional Python deviations belong in their existing planning or
 deviation documents unless their implementation is itself incorrect.
+
+A confirmed finding must establish the violated invariant or Python-visible
+rule, a reachable supported path, the absence of a caller proof or guard that
+prevents it, and an observable consequence backed by a focused reproduction or
+equally strong code-path proof. Green tests reduce risk but do not disprove a
+finding; a suspicious assertion, stale document, unsupported feature, or broad
+search result is not a finding by itself.
+
+Severity records impact rather than implementation effort:
+
+- `P0`: crash, data corruption, security issue, or pervasive VM breakage;
+- `P1`: likely semantic bug, release-only memory or metadata bug, or common
+  user-visible failure;
+- `P2`: uncommon but real semantic failure, invalidation error, or credible
+  correctness gap;
+- `P3`: maintainability defect only when it materially increases bug risk.
+
+Future review rounds may extend this ledger directly. They should record the
+reviewed commit, relevant design contracts, attempts to disprove suspected
+failures, verification results, unreviewed edges, and residual risk rather than
+creating another campaign staging document.
 
 ## Ledger Rules
 

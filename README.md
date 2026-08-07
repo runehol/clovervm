@@ -17,8 +17,12 @@ or unsupported operation is encountered.
 
 The implemented subset is enough to run small Python programs with functions,
 classes, inheritance, loops, conditionals, integer arithmetic, assertions,
-exceptions, and native string/list/tuple/dict values. Function calls support
-defaults and `*args`; `try`/`except`/`else`/`finally` covers the current useful
+exceptions, boxed floats, arbitrary-size integers, and native
+string/bytes/list/tuple/dict values. Function calls support positional and
+keyword defaults, positional-only and keyword-only parameters, and callee
+`*args`/`**kwargs`; caller unpacking remains incomplete.
+
+`try`/`except`/`else`/`finally` covers the current useful
 exception-handling slice, including nonlocal `return`, `break`, and `continue`
 through `finally`. Classes support ordinary `__init__`, explicit bases,
 `__bases__`, `__mro__`, and C3 method resolution order. Attribute,
@@ -64,6 +68,8 @@ guarantee.
 
 For the broader architecture map and links to the detailed design notes, see
 [`doc/architecture.md`](doc/architecture.md).
+Standard-library coverage and remaining compatibility gaps are tracked in
+[`doc/stdlib-module-bringup-checklist.md`](doc/stdlib-module-bringup-checklist.md).
 
 ## Benchmarking
 

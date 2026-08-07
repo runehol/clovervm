@@ -7,6 +7,8 @@
 | Implementation | Partial; interpreter-aligned fixed context registers, managed-frame-relative stack access and return, result constraints, canonical incoming stack locations, allocation-order register sets, per-class scratch registers, interpreter/JIT entry thunks, executable side-exit register capture and interpreter handoff, and restricted trusted-handler calls are implemented; stack-passed arguments, managed JIT calls, and safepoint-capable native calls remain |
 | Scope | AArch64 compiled managed argument transport, call adaptation, cross-engine entry, return, and safepoint placement |
 | Owning layers | Call-site lowering owns guarded Python adaptation; the AArch64 backend owns argument and result locations; transition adapters own cross-engine reshuffling; the generic allocator and materializer implement the resulting fixed-location constraints and transfers |
+| Validated against | `ad1c5054` (2026-08-07) |
+| Supersedes | N/A |
 | Builds on | [CloverVM Function Calling Convention](function-calling-convention.md) |
 
 This document defines the initial calling convention between compiled
@@ -135,6 +137,38 @@ Caller-saved registers are ordinary call clobbers. The generic allocator may
 split surrounding live ranges and the generic materializer schedules the
 required register shuffles and overflow stores. Python adaptation semantics do
 not enter the allocator.
+
+## Restricted Trusted-Handler Calls
+
+The implemented native-call boundary accepts registered trusted handlers that
+do not safepoint, raise, or call Python. Allocation alone is permitted. The
+platform ABI is:
+
+```text
+x0      = ThreadState * copied from fixed x25
+x1..x3 = one through three tagged handler arguments
+x0      = tagged handler result
+```
+
+Allocation constraints represent each argument as an early
+`FixedOperandCopy`, the result as a late fixed `x0` definition, and every other
+allocatable caller-saved register as a call clobber. A fixed operand copy
+changes only that occurrence; it does not force the source bundle to inhabit
+the ABI register. The generic allocator may preserve live values in registers
+or in its restricted call-local managed-frame spill carriers. Those carriers
+cannot cross a Snapshot, side exit, safepoint, Python call, or interpreter
+reentry and therefore are not general root-visible spills.
+
+A graph containing a trusted-handler call is non-leaf. After side-exit
+lowering, Machine IR stores incoming `x30` in the compiled-return frame-header
+slot at function entry and restores it immediately before each normal return.
+The save and restores are explicit `MachineState` effects, not hidden emitter
+behavior. Leaf graphs retain their prologue-free return shape. The initial pass
+does not shrink-wrap this preservation.
+
+The backend uses ordinary near/far call relaxation for the native target. More
+general handlers require separate contracts for exception-marker results,
+safepoint root publication, and Python reentry.
 
 ## Cross-Engine Calls
 
@@ -285,12 +319,15 @@ path in the current implementation because it also returns a new interpreter
 PC and `CodeObject *`. The side-exit thunk therefore removes the entry record
 itself and resumes the interpreter directly.
 
-A later refinement may preserve the compiled entry return address across the
-portable transition call and `ret` into the entry thunk's existing exit
-sequence. The recovered accumulator would use `x0`, while recovered fixed
-interpreter state would remain in `x21`/`x22`/`x24`/`x25`. That would balance
-the original `blr` in the return-address predictor without changing the
-transition program or interpreter reentry contract.
+A later refinement may restore the authoritative compiled-entry return address
+before branching to the side-exit thunk, preserve it across the portable
+transition call, and `ret` into the entry thunk's existing exit sequence. A
+leaf still has that address in `x30`; a function that made a native call must
+reload the entry value saved in its compiled-return frame-header slot. The
+recovered accumulator would use `x0`, while recovered fixed interpreter state
+would remain in `x21`/`x22`/`x24`/`x25`. That would balance the original `blr`
+in the return-address predictor without changing the transition program or
+interpreter reentry contract.
 
 The native stack is already valid at a side exit. The thunk captures every
 allocator-visible register before calling the portable C++ transition executor

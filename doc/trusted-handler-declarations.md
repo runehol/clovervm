@@ -4,12 +4,12 @@
 |---|---|
 | Document type | Design |
 | Status | Accepted |
-| Implementation | Handler metadata, VM registration, typed resolver installation, float unary and binary type-adapted handler families, and opaque JIT calls for eligible unary, binary, and ternary cached handlers are implemented; remaining builtin migration and semantic JIT expansion are pending |
+| Implementation | Implemented; handler metadata, VM registration, typed resolver installation, float unary and binary type-adapted handler families, and opaque JIT calls for eligible unary, binary, and ternary cached handlers use this design |
 | Scope | Authoritative declaration, registration, and resolution of trusted native handlers |
 | Owning layers | Builtin implementations own handler bodies and declarations; the VM owns the registry; code objects retain resolver function pointers; the JIT consumes registered metadata |
-| Validated against | `57c093f2` (2026-08-07) |
+| Validated against | `ad1c5054` (2026-08-07) |
 | Supersedes | N/A |
-| Related documents | [JIT Trusted Handler Call Plan](jit-trusted-handler-call-plan.md), [Function Specialization](function-specialization.md) |
+| Related documents | [JIT Compiler and IR](jit-compiler-and-ir.md), [AArch64 JIT Calling Convention](aarch64-jit-calling-convention.md), and [Function Specialization](function-specialization.md) |
 
 ## Objective
 
@@ -511,9 +511,34 @@ adaptation, and one concrete handler. The operation descriptor generates the
 checked native entry; effects and semantics remain arguments to its nested
 handler alias.
 
+## Current JIT Consumer
+
+The bytecode-to-Core frontend consumes warmed unary, binary, and ternary
+operator-cache entries without rerunning their resolver. It obtains the cached
+concrete target, queries registry metadata by that target, and requires the
+registered arity to match the bytecode operation. The current native-call
+boundary accepts only handlers that do not declare `Safepoint`, `Raise`, or
+`CallPython`; `Allocate` alone is permitted because allocation and safepointing
+are independent effects.
+
+Eligible lowering emits one pre-operation Snapshot, then the cached shape and
+lookup-validity guards in cache-match order. Unary calls guard operand zero;
+binary and ternary calls guard operands zero and one because the third ternary
+argument is runtime call state rather than a cache key. Inline shape keys become
+exact tag guards, object keys become exact shape guards, and non-null lookup
+validity cells become `ValidityCellGuard`s.
+
+`TrustedHandlerCall` receives the guarded values in the interpreter cache's
+canonical operand order. Reflected selection and operand adaptation are already
+encoded by the concrete target, so the JIT does not swap operands or repeat
+resolution. Immediate binary bytecodes remain on the interpreter path until
+their embedded constant can be represented as an ordinary call argument.
+Unregistered or ineligible targets likewise exit before the operation and
+replay the original bytecode.
+
 ## Recognized JIT Expansion
 
-The initial JIT consumer may emit an opaque `TrustedHandlerCall` after checking
+The current JIT consumer emits an opaque `TrustedHandlerCall` after checking
 registered effects. Known semantics additionally permit a later Core pass to
 replace that call with the exact guarded operation sequence. For example,
 `Add` plus float/SMI-or-Boolean inline-cache shapes expands to a float
@@ -540,96 +565,3 @@ them: registered semantics selects the operation, while IC-derived guards select
 and prove the operand adaptation. `Generic` handlers, unsupported shape
 combinations, and known handlers whose expansion is not yet implemented remain
 ordinary native calls.
-
-## Implementation Plan
-
-### Slice 1: Metadata And Signature Types
-
-Add `TrustedHandlerSemantics`, the independent call-boundary effect vocabulary,
-and compile-time traits for the existing unary, binary, and ternary
-trusted-handler function types. `Generic` is the default semantic identity.
-Derive arity from the unerased target and provide the one canonical target
-erasure. Do not add a registry or change resolver behavior in this slice.
-
-Verify the traits with compile-time assertions for all three accepted ABIs and
-reject unrelated function signatures.
-
-### Slice 2: Handler Definitions And VM Registry
-
-Add `TrustedHandlerDefinition`, `TrustedHandlerMetadata`, and the VM-owned
-registry keyed by erased target. Registration infers arity from the typed
-target, accepts effects and semantics, is idempotent for identical metadata, and
-fails on a conflicting declaration. Registry reads return metadata by value
-under the mutex.
-
-Keep the registry disconnected from resolvers and JIT lowering in this slice.
-
-### Slice 3: Typed Resolver Installation
-
-Add `TrustedHandlerResolverBase`, the templated builtin-method installation
-helper, and the templated code-object installation helper. Convert one small
-float resolver family completely so its successful results come only from
-named `Handler<N>` aliases and installation registers every declared target.
-
-This is the first end-to-end structural proof. Runtime resolution must remain a
-single call through the static resolver pointer with no registry access.
-
-### Slice 4: Float Family Conversion
-
-Convert the remaining float unary and binary resolvers. Replace the current
-operator structs with ordinary semantic functions and operation descriptors
-that generate the checked native entries. Use the float handler-family
-convenience to generate the concrete trusted adaptations and typed resolver
-declarations.
-
-Declare effects and semantics on every concrete adapted handler. Give every
-float semantic operation an explicit non-`Generic` identity, repeated across
-its trusted operand adaptations where appropriate. The operation descriptor may
-offer a compact handler-set alias, but it does not own or infer either field.
-
-### Slice 5: First JIT Consumer
-
-Make JIT frontend lowering query registry metadata for the cached native target.
-Construct `TrustedHandlerCall` only when the target is registered, arity agrees,
-and the call-boundary effects satisfy the current non-raising,
-non-safepointing, non-Python-calling contract. Exercise the converted float
-family as the first complete compiled-call source. Unregistered and ineligible
-handlers retain the interpreter path.
-
-This slice proves the registry serves its intended consumer before broader
-builtin migration.
-
-### Slice 6: Known-Semantics Expansion
-
-After the required unboxed float operations and conversions exist in Core IR,
-add a pass that replaces eligible float `TrustedHandlerCall` instructions with
-the sequence selected by their registered semantics. Follow with local
-box/unbox simplification and rely on snapshot recovery plus dead-code
-elimination to sink unnecessary boxes out of the main path.
-
-This is not a prerequisite for the first native trusted-handler call. Landing
-the identity metadata first prevents the JIT from later reconstructing semantic
-selection from inline-cache shapes.
-
-### Slice 7: Remaining Builtins And Generated Code Objects
-
-Convert integer/bigint, list, dictionary, tuple, string, and other resolver
-families. Preserve non-handler outcomes such as known `NotImplemented` and
-untrusted fallback. Permit one resolver sequence to contain targets of different
-arities when its static resolver branches on requested arity.
-
-Dictionary generated code objects must use the typed code-object installer.
-List and dictionary mutations remain conservatively effectful; exact guarded
-fast paths may declare narrower call-boundary capabilities than their defensive
-unchecked C++ fallback would suggest.
-
-### Slice 8: Retire Raw APIs
-
-Remove successful raw `call_trusted(function_pointer)` construction and raw
-resolver-pointer installation. Search all code-object construction and builtin
-installation paths to establish that every published resolver registered its
-complete target sequence first.
-
-A material need for resolver state, runtime registration, duplicated target
-lists, or metadata that varies for the same target under different trusted
-entry contracts invalidates this proposal and returns to design review.

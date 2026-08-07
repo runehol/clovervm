@@ -14,6 +14,9 @@ This note records the implemented function-call adaptation model for Python
 keyword calls and the remaining design work for richer signatures. It builds on
 the low-level frame mechanics documented in
 [CloverVM Function Calling Convention](function-calling-convention.md).
+Call-span lifetime, method-lookup ordering, alignment, and lazy traceback
+preservation are detailed in
+[Call Argument Temporaries And Lazy Tracebacks](call-argument-temporaries-and-lazy-tracebacks.md).
 
 The goal is to add Python's richer call binding semantics without turning the
 existing positional `CallPositional` hot path into a broad generic slow path.

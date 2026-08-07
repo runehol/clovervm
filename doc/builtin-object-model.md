@@ -7,7 +7,7 @@
 | Implementation | Implemented |
 | Scope | Representation and bootstrap of builtin and runtime object types |
 | Owning layers | Runtime object model, shapes, native layouts, and builtin types |
-| Validated against | `88e2106` (2026-05-15) |
+| Validated against | `ad1c5054` (2026-08-07) |
 | Supersedes | N/A |
 
 ## Purpose
@@ -39,6 +39,7 @@ Each VM currently owns builtin class objects for native layouts such as:
 - `type`
 - `object`
 - `str`
+- `bytes`
 - `list`
 - `dict`
 - `function`
@@ -88,6 +89,7 @@ Examples of native layouts include:
 - `Instance`
 - `ClassObject`
 - `String`
+- `Bytes`
 - `List`
 - `Dict`
 - `Function`
@@ -162,6 +164,41 @@ dynamic layouts.
 Some internal non-`Object` records still have native fields and custom value
 offsets, but they participate in the same descriptor system without carrying the
 full Python-visible `Object` header.
+
+## Immutable Numeric Builtins
+
+`Float` is a fixed-size `Object` containing one C++ `double` and no
+float-specific child `Value`s. It remains a boxed pointer value at runtime;
+mixed numeric adaptation, Python-visible arithmetic, comparison, and result
+construction belong to the float builtin's native and trusted handlers rather
+than to `Value` tagging or the generic object model. Compiled code may use an
+explicit unboxed F64 representation internally, but boxing remains required at
+Python-visible identity boundaries.
+
+Arbitrary-size integer representation and SMI transitions are documented in
+[BigInt Representation And Arithmetic](bigint.md).
+
+## Variable-Size Immutable Builtins
+
+`Bytes` is the representative variable-size immutable builtin. It is an
+`Object` with a VM-owned `bytes` class and `NativeLayoutId::Bytes`. Its byte
+count is a traced SMI member and its raw bytes occupy untraced inline tail
+storage; the count, not a terminator, is authoritative. Allocation uses
+`Bytes::size_for(...)`, and the native layout descriptor reports the same custom
+extent for reclamation and heap inspection.
+
+Call-scoped native helpers expose payloads as `std::span<const uint8_t>`.
+Constructed `Bytes` objects copy that payload into owned storage, so no span or
+external buffer becomes object lifetime state. Python-visible indexing,
+slicing, concatenation, comparison, containment, hashing, representation, and
+the implemented search methods remain owned by `bytes.cpp`; exact builtin fast
+paths may use trusted handlers without changing those semantics.
+
+The implemented constructor accepts no source, an existing bytes object, or an
+exact list/tuple of integer byte values. General iterable construction,
+`bytes(n)`, arbitrary `__index__` conversion, encoding from strings, and public
+native raw-byte APIs remain separate semantic/API work rather than hidden
+extensions of the storage contract.
 
 ## Bootstrap Outline
 

@@ -22,9 +22,8 @@ refcounting, and an opt-in AArch64 baseline JIT.
 For current major-work sequencing, see
 [Development Priorities](development-priorities.md).
 
-For the ongoing repository-wide correctness audit, see the
-[Comprehensive Review Plan](comprehensive-review-plan.md) and
-[Review Findings Ledger](review-findings-ledger.md).
+For the completed repository-wide correctness campaign and its durable
+findings, see the [Review Findings Ledger](review-findings-ledger.md).
 
 ## Design Goals
 
@@ -200,9 +199,9 @@ managed unwind machinery rather than as Python-visible data.
 
 Control-flow features such as `try`/`except`, `raise`, `for` iteration,
 iterator exhaustion, and eventual traceback construction should share one
-coherent exception model. The same metadata also needs to be usable by future
-JIT code when reconstructing interpreter-visible frames during deoptimization or
-unwind.
+coherent exception model. The same metadata is used by compiled code when
+reconstructing interpreter-visible frames during side exits and must remain
+suitable for future compiled exception unwinding.
 
 Detailed docs:
 
@@ -219,8 +218,8 @@ Detailed docs:
 
 - [Dictionaries](dictionaries.md)
 - [Module Global Namespace Design](module-global-namespace-design.md)
-- [Module Global Namespace Implementation Plan](module-global-namespace-implementation.md)
 - [Object Model](object-model.md)
+- [Slice Support](slice-support-design.md)
 - [Specialized list storage design](specialized-list-storage.md) (speculative,
   not accepted)
 
@@ -250,6 +249,7 @@ Detailed docs:
 - [JIT Compiler and IR](jit-compiler-and-ir.md)
 - [JIT Register Allocation](jit-register-allocation.md)
 - [JIT Transition Programs](jit-transition-program.md)
+- [Trusted Handler Declarations](trusted-handler-declarations.md)
 - [Semantic IR and Specialization](jit-semantic-ir-and-specialization.md)
 - [Optimization Ideas](optimization-ideas.md)
 - [Exception Transport And Protocols](exception-transport-and-protocols.md),
