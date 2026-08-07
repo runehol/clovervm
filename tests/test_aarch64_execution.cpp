@@ -1598,6 +1598,62 @@ namespace cl::jit
                                               Value::from_smi(7)));
     }
 
+    TEST(AArch64Execution, SpecializesExactFloatUnaryTrustedHandlers)
+    {
+        class Observer : public JitCompilationObserver
+        {
+        public:
+            void on_machine_ir(const ControlFlowGraph &graph) override
+            {
+                for(const Block *block: graph.blocks())
+                {
+                    for(Instruction instruction: block->instructions())
+                    {
+                        if(instruction.kind() ==
+                           InstructionKind::TrustedHandlerCall)
+                        {
+                            ++trusted_handler_call_count;
+                        }
+                        else if(instruction.kind() == InstructionKind::NegF64)
+                        {
+                            ++neg_f64_count;
+                        }
+                    }
+                }
+            }
+
+            size_t trusted_handler_call_count = 0;
+            size_t neg_f64_count = 0;
+        };
+
+        PythonJitExecutionFixture fixture;
+        fixture.execute_module(L"def negate(value):\n"
+                               L"    return -value\n"
+                               L"def positive(value):\n"
+                               L"    return +value\n"
+                               L"negate(1.0)\n"
+                               L"positive(1.0)\n");
+        Observer negation_observer;
+        ASSERT_TRUE(fixture.jit_compile(
+            L"negate", JitCompilerOptions{&negation_observer}));
+        EXPECT_EQ(0u, negation_observer.trusted_handler_call_count);
+        EXPECT_EQ(1u, negation_observer.neg_f64_count);
+        Observer positive_observer;
+        ASSERT_TRUE(fixture.jit_compile(
+            L"positive", JitCompilerOptions{&positive_observer}));
+        EXPECT_EQ(0u, positive_observer.trusted_handler_call_count);
+        EXPECT_EQ(0u, positive_observer.neg_f64_count);
+
+        Owned<TValue<Float>> operand(
+            fixture.thread()->make_object_value<Float>(2.5));
+        Owned<Value> negated(
+            fixture.call(L"negate", operand.value().raw_value()));
+        ASSERT_TRUE(can_convert_to<Float>(negated.raw_value()));
+        EXPECT_DOUBLE_EQ(-2.5, negated.raw_value().get_ptr<Float>()->value());
+        EXPECT_EQ(operand.value().raw_value(),
+                  fixture.call(L"positive", operand.value().raw_value()));
+    }
+
     TEST(AArch64Execution, ResumesInterpreterForStringAdditionSideExit)
     {
         PythonJitExecutionFixture fixture;

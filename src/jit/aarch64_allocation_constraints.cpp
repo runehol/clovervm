@@ -306,6 +306,18 @@ namespace cl::jit
                     }
 
                     CL_JIT_MACHINE_INSTRUCTION_FAMILY_CASE(
+                        UnaryArithmeticF64, arithmetic_instruction)
+                    {
+                        if(!input_overrides.empty())
+                        {
+                            overrides.emplace_back(
+                                arithmetic_instruction,
+                                std::move(input_overrides));
+                        }
+                        break;
+                    }
+
+                    CL_JIT_MACHINE_INSTRUCTION_FAMILY_CASE(
                         BinaryArithmeticF64, arithmetic_instruction)
                     {
                         if(!input_overrides.empty())

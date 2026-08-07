@@ -271,6 +271,20 @@ CL_JIT_INSTRUCTION_FAMILY(
 #undef CL_JIT_IsComparison_ATTRIBUTES
 #undef CL_JIT_IsComparison_OPERANDS
 
+#define CL_JIT_UnaryArithmeticF64_OPERANDS(fixed, variadic, snapshot_values)  \
+    fixed(source, ProgramValue, F64)
+#define CL_JIT_UnaryArithmeticF64_ATTRIBUTES(attribute)
+#define CL_JIT_UnaryArithmeticF64_SUBKINDS(each, ...)                         \
+    each(NegF64, __VA_ARGS__)
+CL_JIT_INSTRUCTION_FAMILY(UnaryArithmeticF64, CL_JIT_IR_LEVELS(CoreMachine),
+                          CL_JIT_RESULT(ProgramValue, F64, Def),
+                          CL_JIT_EFFECT_BOUNDS(None, None),
+                          CL_JIT_UnaryArithmeticF64_OPERANDS,
+                          CL_JIT_UnaryArithmeticF64_ATTRIBUTES,
+                          CL_JIT_UnaryArithmeticF64_SUBKINDS)
+#undef CL_JIT_UnaryArithmeticF64_ATTRIBUTES
+#undef CL_JIT_UnaryArithmeticF64_OPERANDS
+
 #define CL_JIT_BinaryArithmeticF64_OPERANDS(fixed, variadic, snapshot_values)  \
     fixed(lhs, ProgramValue, F64) fixed(rhs, ProgramValue, F64)
 #define CL_JIT_BinaryArithmeticF64_ATTRIBUTES(attribute)

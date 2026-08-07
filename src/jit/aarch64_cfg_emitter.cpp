@@ -153,6 +153,24 @@ namespace cl::jit
         }
 
         void
+        emit_unary_arithmetic_f64(AArch64MacroAssembler &assembler,
+                                  const LocationAssignments &locations,
+                                  UnaryArithmeticF64Instruction arithmetic)
+        {
+            FPUnaryOp operation = [&] {
+                switch(arithmetic.subkind())
+                {
+                    case UnaryArithmeticF64Subkind::NegF64:
+                        return FPUnaryOp::Neg;
+                }
+                __builtin_unreachable();
+            }();
+            assembler.emit_fp_unary(
+                operation, assigned_f64_register(locations, F64Ref(arithmetic)),
+                assigned_f64_register(locations, arithmetic.source()));
+        }
+
+        void
         emit_binary_arithmetic_f64(AArch64MacroAssembler &assembler,
                                    const LocationAssignments &locations,
                                    BinaryArithmeticF64Instruction arithmetic)
@@ -512,6 +530,14 @@ namespace cl::jit
                 {
                     emit_binary_logical_smi(assembler, locations,
                                             logical_instruction);
+                    break;
+                }
+
+                CL_JIT_MACHINE_INSTRUCTION_FAMILY_CASE(
+                    UnaryArithmeticF64, arithmetic_instruction)
+                {
+                    emit_unary_arithmetic_f64(
+                        assembler, locations, arithmetic_instruction);
                     break;
                 }
 

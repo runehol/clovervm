@@ -466,7 +466,8 @@ namespace cl::jit
                (metadata.arity == TrustedHandlerArity::Ternary &&
                 arguments.size() == 3));
         if(std::optional<ProgramValueRef> specialized =
-               try_emit_exact_float_binary(block, cache, metadata, arguments))
+               try_emit_exact_float_operation(block, cache, metadata,
+                                              arguments))
         {
             outputs.push_back(*specialized);
             return;
@@ -479,20 +480,46 @@ namespace cl::jit
     }
 
     std::optional<ProgramValueRef>
-    CoreBytecodeTranslator::try_emit_exact_float_binary(
+    CoreBytecodeTranslator::try_emit_exact_float_operation(
         Block *block, const OperatorInlineCache &cache,
         const TrustedHandlerMetadata &metadata,
         std::span<const TaggedValueRef> arguments)
     {
-        if(metadata.arity != TrustedHandlerArity::Binary ||
-           arguments.size() != 2)
+        ShapeKey float_shape_key =
+            ShapeKey::from_shape(vm_.float_class()->get_instance_root_shape());
+        if(cache.operand_shape_keys[0] != float_shape_key)
         {
             return std::nullopt;
         }
 
-        ShapeKey float_shape_key =
-            ShapeKey::from_shape(vm_.float_class()->get_instance_root_shape());
-        if(cache.operand_shape_keys[0] != float_shape_key ||
+        if(metadata.arity == TrustedHandlerArity::Unary &&
+           arguments.size() == 1)
+        {
+            switch(metadata.semantics)
+            {
+                case TrustedHandlerSemantics::Pos:
+                    return ProgramValueRef(arguments[0]);
+
+                case TrustedHandlerSemantics::Neg:
+                    {
+                        UnboxF64Instruction source =
+                            builder_.emplace_instruction<UnboxF64Instruction>(
+                                block, arguments[0]);
+                        NegF64Instruction neg =
+                            builder_.emplace_instruction<NegF64Instruction>(
+                                block, F64Ref(source));
+                        return ProgramValueRef(
+                            builder_.emplace_instruction<BoxF64Instruction>(
+                                block, F64Ref(neg)));
+                    }
+
+                default:
+                    return std::nullopt;
+            }
+        }
+
+        if(metadata.arity != TrustedHandlerArity::Binary ||
+           arguments.size() != 2 ||
            cache.operand_shape_keys[1] != float_shape_key)
         {
             return std::nullopt;

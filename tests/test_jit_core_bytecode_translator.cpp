@@ -532,6 +532,111 @@ namespace cl::jit
         }
     }
 
+    TEST(JitCoreBytecodeTranslator, SpecializesExactFloatUnaryNegation)
+    {
+        TranslatorFixture fixture;
+        fixture.code_builder.emit_lda_smi(0, 19).value();
+        fixture.code_builder
+            .emit_unary_op(0, Bytecode::Neg, OperatorBytecodeFormat::WithCache)
+            .value();
+        fixture.code_builder.emit_return(0).value();
+
+        CodeObject *code_object = fixture.code_builder.finalize().value();
+        ShapeKey float_shape_key = ShapeKey::from_shape(
+            fixture.context.vm().float_class()->get_instance_root_shape());
+        fixture.context.vm().register_trusted_handler(
+            test_translated_unary_handler, TrustedHandlerEffects::Allocate,
+            TrustedHandlerSemantics::Neg);
+        code_object->inline_caches.operator_caches[0] =
+            OperatorInlineCache::trusted_handler_call(
+                float_shape_key, ShapeKey{},
+                TrustedResolution::call_trusted(test_translated_unary_handler),
+                nullptr, nullptr);
+
+        CoreBytecodeTranslator translator(fixture.context.vm(), *code_object,
+                                          fixture.graph_builder);
+        ControlFlowGraph *graph = translator.translate();
+        Block *entry = graph->entry_block();
+        std::vector<Instruction> guards =
+            instructions_of_kind(entry, InstructionKind::PointerAndShapeGuard);
+        std::vector<Instruction> unboxes =
+            instructions_of_kind(entry, InstructionKind::UnboxF64);
+        std::vector<Instruction> negations =
+            instructions_of_kind(entry, InstructionKind::NegF64);
+        std::vector<Instruction> boxes =
+            instructions_of_kind(entry, InstructionKind::BoxF64);
+
+        ASSERT_EQ(1u, guards.size());
+        ASSERT_EQ(1u, unboxes.size());
+        ASSERT_EQ(1u, negations.size());
+        ASSERT_EQ(1u, boxes.size());
+        EXPECT_TRUE(
+            instructions_of_kind(entry, InstructionKind::TrustedHandlerCall)
+                .empty());
+        EXPECT_EQ(guards.front().id(), unboxes.front()
+                                           .as<UnboxF64Instruction>()
+                                           .source()
+                                           .instruction_id());
+        EXPECT_EQ(unboxes.front().id(), negations.front()
+                                            .as<NegF64Instruction>()
+                                            .source()
+                                            .instruction_id());
+        EXPECT_EQ(
+            negations.front().id(),
+            boxes.front().as<BoxF64Instruction>().source().instruction_id());
+        EXPECT_EQ(boxes.front().id(),
+                  entry->instruction_at(entry->instructions().size() - 1)
+                      .as<ReturnInstruction>()
+                      .return_value()
+                      .instruction_id());
+    }
+
+    TEST(JitCoreBytecodeTranslator,
+         SpecializesExactFloatUnaryPositiveAsGuardedIdentity)
+    {
+        TranslatorFixture fixture;
+        fixture.code_builder.emit_lda_smi(0, 19).value();
+        fixture.code_builder
+            .emit_unary_op(0, Bytecode::Pos, OperatorBytecodeFormat::WithCache)
+            .value();
+        fixture.code_builder.emit_return(0).value();
+
+        CodeObject *code_object = fixture.code_builder.finalize().value();
+        ShapeKey float_shape_key = ShapeKey::from_shape(
+            fixture.context.vm().float_class()->get_instance_root_shape());
+        fixture.context.vm().register_trusted_handler(
+            test_translated_unary_handler, TrustedHandlerEffects::None,
+            TrustedHandlerSemantics::Pos);
+        code_object->inline_caches.operator_caches[0] =
+            OperatorInlineCache::trusted_handler_call(
+                float_shape_key, ShapeKey{},
+                TrustedResolution::call_trusted(test_translated_unary_handler),
+                nullptr, nullptr);
+
+        CoreBytecodeTranslator translator(fixture.context.vm(), *code_object,
+                                          fixture.graph_builder);
+        ControlFlowGraph *graph = translator.translate();
+        Block *entry = graph->entry_block();
+        std::vector<Instruction> guards =
+            instructions_of_kind(entry, InstructionKind::PointerAndShapeGuard);
+
+        ASSERT_EQ(1u, guards.size());
+        EXPECT_TRUE(
+            instructions_of_kind(entry, InstructionKind::UnboxF64).empty());
+        EXPECT_TRUE(
+            instructions_of_kind(entry, InstructionKind::NegF64).empty());
+        EXPECT_TRUE(
+            instructions_of_kind(entry, InstructionKind::BoxF64).empty());
+        EXPECT_TRUE(
+            instructions_of_kind(entry, InstructionKind::TrustedHandlerCall)
+                .empty());
+        EXPECT_EQ(guards.front().id(),
+                  entry->instruction_at(entry->instructions().size() - 1)
+                      .as<ReturnInstruction>()
+                      .return_value()
+                      .instruction_id());
+    }
+
     TEST(JitCoreBytecodeTranslator, LowersUnaryAndTernaryTrustedHandlerCalls)
     {
         TranslatorFixture fixture;
