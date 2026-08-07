@@ -32,10 +32,9 @@ namespace cl::jit
         : graph_generation_(graph.mutation_generation())
     {
         assert(graph.is_published());
-        Shape *exact_float_shape =
-            graph.thread_state()
-                .class_for_native_layout(NativeLayoutId::Float)
-                ->get_instance_root_shape();
+        Shape *float_shape = graph.thread_state()
+                                 .class_for_native_layout(NativeLayoutId::Float)
+                                 ->get_instance_root_shape();
 
         size_t definition_count = 0;
         for(const Block *block: graph.blocks())
@@ -122,7 +121,7 @@ namespace cl::jit
                 case InstructionFamilyKind::IsComparison:
                     return TaggedValueSet::boolean();
                 case InstructionFamilyKind::BoxF64:
-                    return TaggedValueSet::exact_shape(exact_float_shape);
+                    return TaggedValueSet::exact_shape(float_shape);
                 case InstructionFamilyKind::InlineTagGuard:
                     {
                         InlineTagGuardInstruction guard =
@@ -135,9 +134,10 @@ namespace cl::jit
                     {
                         ShapeGuardInstruction guard =
                             instruction.as<ShapeGuardInstruction>();
+                        Shape *expected_shape = guard.expected_shape();
                         TaggedValueSet accepted =
-                            guard.expected_shape() == exact_float_shape
-                                ? TaggedValueSet::exact_shape(exact_float_shape)
+                            expected_shape->has_flag(ShapeFlag::IsImmutable)
+                                ? TaggedValueSet::exact_shape(expected_shape)
                                 : TaggedValueSet::pointer();
                         return facts_for(ProgramValueRef(guard.object()))
                             .intersect(accepted);

@@ -198,6 +198,46 @@ namespace cl::jit
                   *facts.exact_shape());
     }
 
+    TEST(JitTaggedValueFactAnalysis,
+         ShapeGuardsRetainExactFactsOnlyForImmutableShapes)
+    {
+        test::VmTestContext context;
+        CompilationSession session{*context.thread()};
+        GraphBuilder builder(session, IRLevel::Core);
+        Block *entry = builder.emplace_block();
+        ParameterInstruction parameter =
+            builder.emplace_parameter<ParameterInstruction>(entry);
+        SnapshotInstruction snapshot =
+            builder.emplace_instruction<SnapshotInstruction>(
+                entry, std::span<const ProgramValueRef>{}, BytecodePCOffset{7});
+        Shape *immutable_shape = context.vm().str_instance_root_shape();
+        Shape *mutable_shape =
+            context.vm().list_class()->get_instance_root_shape();
+        PointerAndShapeGuardInstruction immutable_guard =
+            builder.emplace_instruction<PointerAndShapeGuardInstruction>(
+                entry, TaggedValueRef(parameter), SnapshotRef(snapshot),
+                immutable_shape);
+        PointerAndShapeGuardInstruction mutable_guard =
+            builder.emplace_instruction<PointerAndShapeGuardInstruction>(
+                entry, TaggedValueRef(parameter), SnapshotRef(snapshot),
+                mutable_shape);
+        builder.emplace_instruction<BareReturnInstruction>(
+            entry, TaggedValueRef(mutable_guard));
+        ControlFlowGraph *graph = builder.finalize();
+
+        GraphQueries queries =
+            graph->prepare_queries(GraphQuery::TaggedValueFacts);
+        const TaggedValueSet &immutable_facts =
+            queries.tagged_value_facts_of(ProgramValueRef(immutable_guard));
+        ASSERT_TRUE(immutable_facts.exact_shape().has_value());
+        EXPECT_EQ(immutable_shape, *immutable_facts.exact_shape());
+
+        const TaggedValueSet &mutable_facts =
+            queries.tagged_value_facts_of(ProgramValueRef(mutable_guard));
+        EXPECT_EQ(TaggedValueSet::pointer(), mutable_facts);
+        EXPECT_FALSE(mutable_facts.exact_shape().has_value());
+    }
+
     TEST(JitTaggedValueGuardSimplification,
          RemovesGuardProvedByComparisonAndDeadSnapshot)
     {
