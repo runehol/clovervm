@@ -325,6 +325,14 @@ namespace cl
         }
     }
 
+    ALWAYSINLINE SlotObject::SlotObject(Shape *initial_shape,
+                                        NativeLayoutId native_layout_id)
+        : Object(BootstrapObjectTag{}, native_layout_id),
+          overflow_storage(nullptr)
+    {
+        initialize_shape(initial_shape, native_layout_id);
+    }
+
     bool is_subclass_of(ClassObject *cls, ClassObject *base);
     bool is_instance_of(Object *obj, ClassObject *cls);
     BuiltinClassDefinition make_type_class(VirtualMachine *vm);

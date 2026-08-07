@@ -85,8 +85,6 @@ namespace cl
         CL_DECLARE_STATIC_OBJECT_SIZE(Object);
 
     private:
-        ALWAYSINLINE void initialize_shape(Shape *instance_root_shape,
-                                           NativeLayoutId native_layout_id);
         ALWAYSINLINE SlotObject *as_slot_object();
         ALWAYSINLINE const SlotObject *as_slot_object() const;
         ALWAYSINLINE OverflowSlots *get_overflow_slots() const;
@@ -94,6 +92,8 @@ namespace cl
         OverflowSlots *ensure_overflow_slot(int32_t physical_idx);
 
     protected:
+        ALWAYSINLINE void initialize_shape(Shape *instance_root_shape,
+                                           NativeLayoutId native_layout_id);
         void initialize_shape_for_class(ClassObject *class_object,
                                         NativeLayoutId native_layout_id);
     };
@@ -120,6 +120,8 @@ namespace cl
         {
             initialize_shape_for_class(cls, native_layout_id);
         }
+
+        SlotObject(Shape *initial_shape, NativeLayoutId native_layout_id);
 
         SlotObject(BootstrapObjectTag tag, NativeLayoutId native_layout_id)
             : Object(tag, native_layout_id), overflow_storage(nullptr)

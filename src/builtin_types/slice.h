@@ -25,9 +25,9 @@ namespace cl
         static constexpr uint32_t kStepSlot = 2;
         static constexpr uint32_t kInlineSlotCount = 3;
 
-        Slice(ClassObject *cls, Value _start, Value _stop, Value _step)
-            : SlotObject(cls, native_layout), start(_start), stop(_stop),
-              step(_step)
+        Slice(Shape *initial_shape, Value _start, Value _stop, Value _step)
+            : SlotObject(initial_shape, native_layout), start(_start),
+              stop(_stop), step(_step)
         {
         }
 

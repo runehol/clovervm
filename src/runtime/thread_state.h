@@ -348,6 +348,27 @@ namespace cl
                 make_object_raw<T>(std::forward<Args>(args)...));
         }
 
+        template <typename T, typename... Args>
+        T *make_object_raw_with_initial_shape(Shape *initial_shape,
+                                              Args &&...args)
+        {
+            static_assert(std::is_base_of_v<Object, T>);
+            static_assert(HasNativeLayoutId<T>::value);
+            assert(initial_shape != nullptr);
+            assert(initial_shape->get_class() ==
+                   class_for_native_layout(T::native_layout));
+            return make_internal_raw<T>(initial_shape,
+                                        std::forward<Args>(args)...);
+        }
+
+        template <typename T, typename... Args>
+        TValue<T> make_object_value_with_initial_shape(Shape *initial_shape,
+                                                       Args &&...args)
+        {
+            return TValue<T>::from_oop(make_object_raw_with_initial_shape<T>(
+                initial_shape, std::forward<Args>(args)...));
+        }
+
         Expected<CodeObject *> compile(const wchar_t *str,
                                        StartRule start_rule);
         Expected<CodeObject *> compile(const wchar_t *str, StartRule start_rule,

@@ -59,12 +59,10 @@ namespace cl
                              Value step)
     {
         VirtualMachine *vm = thread->get_machine();
-        TValue<Slice> slice =
-            thread->make_object_value<Slice>(start, stop, step);
-        Shape *shape = step.is_none() ? vm->slice_step_none_shape()
-                                      : vm->slice_general_shape();
-        slice.extract()->set_shape(shape);
-        return slice;
+        Shape *initial_shape = step.is_none() ? vm->slice_step_none_shape()
+                                              : vm->slice_general_shape();
+        return thread->make_object_value_with_initial_shape<Slice>(
+            initial_shape, start, stop, step);
     }
 
     static Value native_slice_new(ThreadState *thread, Value cls_value,
