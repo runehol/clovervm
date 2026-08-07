@@ -317,6 +317,7 @@ namespace cl::jit
                     return OrderedMoveSource::move(
                         legalized_move_by_ordered_move[source.index()]);
             }
+            fatal("invalid ordered move source kind");
         }
 
         Result<OrderedParallelAssignment<PhysicalLocation>,

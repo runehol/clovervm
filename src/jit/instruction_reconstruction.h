@@ -179,10 +179,15 @@ namespace cl::jit
 #define CL_JIT_IR_LEVELS(...)
 #define CL_JIT_RESULT(...)
 #define CL_JIT_EFFECT_BOUNDS(...)
-#define CL_JIT_RESOLVE_FIXED(name, ...) resolver.resolve(typed.name()),
-#define CL_JIT_RESOLVE_VARIADIC(name, ...) resolver.resolve(typed.name()),
-#define CL_JIT_RESOLVE_PROGRAM_VALUES(name, role)                              \
-    resolver.resolve(typed.name()),
+#define CL_JIT_DECLARE_RESOLVED_FIXED(name, ...)                               \
+    auto resolved_##name = resolver.resolve(typed.name());
+#define CL_JIT_DECLARE_RESOLVED_VARIADIC(name, ...)                            \
+    auto resolved_##name = resolver.resolve(typed.name());
+#define CL_JIT_DECLARE_RESOLVED_PROGRAM_VALUES(name, role)                     \
+    auto resolved_##name = resolver.resolve(typed.name());
+#define CL_JIT_USE_RESOLVED_FIXED(name, ...) resolved_##name,
+#define CL_JIT_USE_RESOLVED_VARIADIC(name, ...) resolved_##name,
+#define CL_JIT_USE_RESOLVED_PROGRAM_VALUES(name, role) resolved_##name,
 #define CL_JIT_COPY_ATTRIBUTE(name, ...)                                       \
     resolver.resolve_attribute(typed.name()),
 #define CL_JIT_RECONSTRUCT_SUBKIND(subkind, family, operands, attributes)      \
@@ -190,9 +195,13 @@ namespace cl::jit
         {                                                                      \
             [[maybe_unused]] const subkind##Instruction typed =                \
                 instruction.as<subkind##Instruction>();                        \
+            operands(CL_JIT_DECLARE_RESOLVED_FIXED,                            \
+                     CL_JIT_DECLARE_RESOLVED_VARIADIC,                         \
+                     CL_JIT_DECLARE_RESOLVED_PROGRAM_VALUES);                  \
             return factory.template make_instruction<subkind##Instruction>(    \
-                operands(CL_JIT_RESOLVE_FIXED, CL_JIT_RESOLVE_VARIADIC,        \
-                         CL_JIT_RESOLVE_PROGRAM_VALUES)                        \
+                operands(CL_JIT_USE_RESOLVED_FIXED,                            \
+                         CL_JIT_USE_RESOLVED_VARIADIC,                         \
+                         CL_JIT_USE_RESOLVED_PROGRAM_VALUES)                   \
                     attributes(CL_JIT_COPY_ATTRIBUTE)                          \
                         InstructionConstructorEnd{});                          \
         }
@@ -207,9 +216,12 @@ namespace cl::jit
 #undef CL_JIT_INSTRUCTION_FAMILY
 #undef CL_JIT_RECONSTRUCT_SUBKIND
 #undef CL_JIT_COPY_ATTRIBUTE
-#undef CL_JIT_RESOLVE_PROGRAM_VALUES
-#undef CL_JIT_RESOLVE_VARIADIC
-#undef CL_JIT_RESOLVE_FIXED
+#undef CL_JIT_USE_RESOLVED_PROGRAM_VALUES
+#undef CL_JIT_USE_RESOLVED_VARIADIC
+#undef CL_JIT_USE_RESOLVED_FIXED
+#undef CL_JIT_DECLARE_RESOLVED_PROGRAM_VALUES
+#undef CL_JIT_DECLARE_RESOLVED_VARIADIC
+#undef CL_JIT_DECLARE_RESOLVED_FIXED
 #undef CL_JIT_EFFECT_BOUNDS
 #undef CL_JIT_RESULT
 #undef CL_JIT_IR_LEVELS

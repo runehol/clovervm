@@ -2,6 +2,7 @@
 #include "jit/compilation_session.h"
 #include "jit/graph_builder.h"
 #include "jit/instruction.h"
+#include "jit/instruction_reconstruction.h"
 #include "jit/object_pool.h"
 #include "jit/side_exit_binding.h"
 #include "object_model/validity_cell.h"
@@ -723,6 +724,47 @@ namespace cl::jit
         EXPECT_EQ(rhs.instruction_id(), references[1].second);
         EXPECT_EQ(OperandClass::Snapshot, references[2].first);
         EXPECT_EQ(snapshot.instruction_id(), references[2].second);
+    }
+
+    TEST(JitInstructionReconstruction,
+         ResolvesDuplicateReferencesBySchemaOperandIndex)
+    {
+        CompilationSession session;
+        GraphBuilder builder(session, IRLevel::Core);
+        TaggedValueRef original(
+            builder.make_instruction<ParameterInstruction>());
+        TaggedValueRef replacement(
+            builder.make_instruction<ParameterInstruction>());
+        AndSMIInstruction operation =
+            builder.make_instruction<AndSMIInstruction>(original, original);
+        Instruction instruction = operation;
+
+        struct PositionResolver
+        {
+            InstructionId replacement;
+
+            InstructionId resolve(uint32_t operand_index,
+                                  InstructionId definition) const
+            {
+                return operand_index == 0 ? replacement : definition;
+            }
+
+            InstructionId resolve(InstructionId definition) const
+            {
+                return definition;
+            }
+
+            BlockEdge *resolve(BlockEdge *edge) const { return edge; }
+        } resolver{replacement.instruction_id()};
+
+        AndSMIInstruction rebuilt =
+            rebuild_instruction_with_references(
+                instruction, *builder.storage(), resolver, builder,
+                InstructionRebuildMode::AlwaysClone)
+                .as<AndSMIInstruction>();
+
+        EXPECT_EQ(replacement.instruction_id(), rebuilt.lhs().instruction_id());
+        EXPECT_EQ(original.instruction_id(), rebuilt.rhs().instruction_id());
     }
 
     TEST(JitInstructionTraversal, WalksVariadicPythonCallArguments)
