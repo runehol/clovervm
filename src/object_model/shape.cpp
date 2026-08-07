@@ -365,6 +365,7 @@ namespace cl
 
     Shape *Shape::clone_with_class(TValue<ClassObject> new_class) const
     {
+        assert(!has_flag(ShapeFlag::IsImmutable));
         Shape *cloned_shape = make_internal_raw<Shape>(
             new_class, previous_shape, next_slot_index, property_count_,
             inline_slot_capacity, shape_flags, present_count_);

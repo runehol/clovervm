@@ -466,9 +466,6 @@ namespace cl
         DescriptorFlags method_flags =
             descriptor_flag(DescriptorFlag::ReadOnly) |
             descriptor_flag(DescriptorFlag::StableSlot);
-        ShapeFlags class_shape_flags = cls->get_shape()->flags();
-        cls->set_shape(cls->get_shape()->clone_with_flags(
-            class_shape_flags & ~fixed_attribute_shape_flags()));
         for(uint32_t method_idx = 0; method_idx < method_count; ++method_idx)
         {
             const BuiltinIntrinsicMethod &method = methods[method_idx];
@@ -480,7 +477,6 @@ namespace cl
             assert(stored);
             (void)stored;
         }
-        cls->set_shape(cls->get_shape()->clone_with_flags(class_shape_flags));
         return Expected<void>::ok();
     }
 

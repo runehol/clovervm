@@ -243,6 +243,9 @@ namespace cl
     void Object::set_shape(Shape *new_shape)
     {
         Shape *old_shape = shape;
+        assert(old_shape == nullptr ||
+               !old_shape->has_flag(ShapeFlag::IsImmutable) ||
+               old_shape == new_shape);
         shape = incref(new_shape);
         decref(old_shape);
         if(native_layout_has_slots(native_layout_id()))

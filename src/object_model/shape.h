@@ -25,7 +25,7 @@ namespace cl
     {
         None = 0,
         IsClassObject = 1 << 0,
-        IsImmutableType = 1 << 1,
+        IsImmutable = 1 << 1,
         HasCustomGetAttribute = 1 << 2,
         HasCustomGetAttrFallback = 1 << 3,
         HasCustomSetAttribute = 1 << 4,
@@ -58,8 +58,19 @@ namespace cl
                shape_flag(ShapeFlag::DisallowAttributeAddDelete);
     }
 
+    constexpr ShapeFlags immutable_shape_flags()
+    {
+        return shape_flag(ShapeFlag::IsImmutable) |
+               fixed_attribute_shape_flags();
+    }
+
     constexpr bool valid_shape_flags(ShapeFlags flags)
     {
+        if(has_shape_flag(flags, ShapeFlag::IsImmutable))
+        {
+            return (flags & fixed_attribute_shape_flags()) ==
+                   fixed_attribute_shape_flags();
+        }
         return !has_shape_flag(flags, ShapeFlag::DisallowAttributeUpdates) ||
                has_shape_flag(flags, ShapeFlag::DisallowAttributeAddDelete);
     }

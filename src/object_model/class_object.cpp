@@ -330,8 +330,7 @@ namespace cl
         const BuiltinClassMethod *methods, uint32_t method_count,
         NativeLayoutId instance_native_layout_id)
     {
-        ShapeFlags class_shape_flags = shape_flag(ShapeFlag::IsClassObject) |
-                                       shape_flag(ShapeFlag::IsImmutableType);
+        ShapeFlags class_shape_flags = shape_flag(ShapeFlag::IsClassObject);
         ClassObject *type = active_vm()->type_class();
         assert(type != nullptr);
         ClassObject *cls = active_vm()->make_immortal_internal_raw<ClassObject>(
@@ -352,8 +351,6 @@ namespace cl
             (void)stored;
         }
 
-        cls->set_shape(cls->get_shape()->clone_with_flags(
-            class_shape_flags | fixed_attribute_shape_flags()));
         return cls;
     }
 
@@ -362,8 +359,7 @@ namespace cl
         const BuiltinClassMethod *methods, uint32_t method_count,
         ClassObject *single_base, NativeLayoutId instance_native_layout_id)
     {
-        ShapeFlags class_shape_flags = shape_flag(ShapeFlag::IsClassObject) |
-                                       shape_flag(ShapeFlag::IsImmutableType);
+        ShapeFlags class_shape_flags = shape_flag(ShapeFlag::IsClassObject);
         ClassObject *type = active_vm()->type_class();
         assert(type != nullptr);
         ClassObject *cls = active_vm()->make_immortal_internal_raw<ClassObject>(
@@ -383,9 +379,16 @@ namespace cl
             (void)stored;
         }
 
-        cls->set_shape(cls->get_shape()->clone_with_flags(
-            class_shape_flags | fixed_attribute_shape_flags()));
         return cls;
+    }
+
+    void ClassObject::freeze()
+    {
+        Shape *shape = get_shape();
+        assert(shape->has_flag(ShapeFlag::IsClassObject));
+        assert(!shape->has_flag(ShapeFlag::IsImmutable));
+        set_shape(
+            shape->clone_with_flags(shape->flags() | immutable_shape_flags()));
     }
 
     void ClassObject::validate_inline_slot_layout()
@@ -442,9 +445,7 @@ namespace cl
     {
         static constexpr NativeLayoutId native_layout_ids[] = {
             NativeLayoutId::ClassObject};
-        ShapeFlags class_shape_flags = shape_flag(ShapeFlag::IsClassObject) |
-                                       shape_flag(ShapeFlag::IsImmutableType) |
-                                       fixed_attribute_shape_flags();
+        ShapeFlags class_shape_flags = shape_flag(ShapeFlag::IsClassObject);
         ClassObject::validate_inline_slot_layout();
         ClassObject *cls = active_vm()->make_immortal_internal_raw<ClassObject>(
             BootstrapObjectTag{},

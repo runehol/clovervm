@@ -135,8 +135,8 @@ TEST(Shape, ShapeFlagsAreStoredOnShape)
         context.vm().get_or_create_interned_string_value(L"Cls"));
     ClassObject *cls = context.thread()->make_internal_raw<ClassObject>(
         cls_name, 2, context.vm().object_class(), NativeLayoutId::Instance);
-    ShapeFlags flags = shape_flag(ShapeFlag::IsClassObject);
-    flags |= shape_flag(ShapeFlag::IsImmutableType);
+    ShapeFlags flags =
+        shape_flag(ShapeFlag::IsClassObject) | immutable_shape_flags();
 
     Shape *shape = context.thread()->make_internal_raw<Shape>(
         TValue<ClassObject>::from_oop(cls), nullptr, 0, 0,
@@ -144,8 +144,17 @@ TEST(Shape, ShapeFlagsAreStoredOnShape)
 
     EXPECT_EQ(flags, shape->flags());
     EXPECT_TRUE(shape->has_flag(ShapeFlag::IsClassObject));
-    EXPECT_TRUE(shape->has_flag(ShapeFlag::IsImmutableType));
+    EXPECT_TRUE(shape->has_flag(ShapeFlag::IsImmutable));
     EXPECT_FALSE(shape->has_flag(ShapeFlag::HasCustomGetAttribute));
+}
+
+TEST(Shape, ImmutableShapesRequireFixedAttributeNamespaces)
+{
+    EXPECT_FALSE(valid_shape_flags(shape_flag(ShapeFlag::IsImmutable)));
+    EXPECT_FALSE(
+        valid_shape_flags(shape_flag(ShapeFlag::IsImmutable) |
+                          shape_flag(ShapeFlag::DisallowAttributeUpdates)));
+    EXPECT_TRUE(valid_shape_flags(immutable_shape_flags()));
 }
 
 TEST(Shape, AddAndDeleteTransitionsAreCached)
@@ -705,7 +714,7 @@ TEST(ClassObject, PredefinedMetadataSlotsArePresentAndReadonly)
     Shape *shape = cls->get_shape();
     ASSERT_NE(nullptr, shape);
     EXPECT_TRUE(shape->has_flag(ShapeFlag::IsClassObject));
-    EXPECT_FALSE(shape->has_flag(ShapeFlag::IsImmutableType));
+    EXPECT_FALSE(shape->has_flag(ShapeFlag::IsImmutable));
     ASSERT_EQ(7u, shape->property_count());
     EXPECT_EQ(5u, shape->present_count());
     EXPECT_EQ(2u, shape->latent_count());
@@ -866,7 +875,7 @@ TEST(ClassObject, PredefinedConstructorSlotsAreReadWriteStableSlots)
         cls->read_storage_location(deleted_lookup.info.storage_location()));
 }
 
-TEST(ClassObject, BuiltinClassRegistersReadonlyFixedMethods)
+TEST(ClassObject, BuiltinClassFreezesAfterMethodInstallation)
 {
     test::VmTestContext context;
     ThreadState::ActivationScope activation_scope(context.thread());
@@ -889,7 +898,9 @@ TEST(ClassObject, BuiltinClassRegistersReadonlyFixedMethods)
     Shape *shape = cls->get_shape();
     ASSERT_NE(nullptr, shape);
     EXPECT_TRUE(shape->has_flag(ShapeFlag::IsClassObject));
-    EXPECT_TRUE(shape->has_flag(ShapeFlag::IsImmutableType));
+    EXPECT_FALSE(shape->has_flag(ShapeFlag::IsImmutable));
+    EXPECT_TRUE(shape->allows_attribute_updates());
+    EXPECT_TRUE(shape->allows_attribute_add_delete());
     ASSERT_EQ(2u, class_property_count(cls));
     EXPECT_STREQ(L"upper", class_property_name(cls, 0).extract()->data);
     EXPECT_STREQ(L"lower", class_property_name(cls, 1).extract()->data);
@@ -904,12 +915,27 @@ TEST(ClassObject, BuiltinClassRegistersReadonlyFixedMethods)
         EXPECT_TRUE(info.has_flag(DescriptorFlag::StableSlot));
     }
 
+    TValue<String> late_name(
+        context.vm().get_or_create_interned_string_value(L"late"));
+    EXPECT_TRUE(cls->define_own_property(
+        late_name, Value::from_smi(31),
+        descriptor_flag(DescriptorFlag::ReadOnly) |
+            descriptor_flag(DescriptorFlag::StableSlot)));
+
+    cls->freeze();
     Shape *before_shape = cls->get_shape();
+    EXPECT_TRUE(before_shape->has_flag(ShapeFlag::IsImmutable));
+    EXPECT_FALSE(before_shape->allows_attribute_updates());
+    EXPECT_FALSE(before_shape->allows_attribute_add_delete());
     EXPECT_FALSE(cls->set_own_property(method_name, Value::from_smi(99)));
     EXPECT_FALSE(cls->delete_own_property(other_method_name));
+    EXPECT_FALSE(cls->set_own_property(
+        context.vm().get_or_create_interned_string_value(L"new_method"),
+        Value::from_smi(47)));
     EXPECT_EQ(before_shape, cls->get_shape());
     EXPECT_EQ(Value::from_smi(11), cls->get_own_property(method_name));
     EXPECT_EQ(Value::from_smi(23), cls->get_own_property(other_method_name));
+    EXPECT_EQ(Value::from_smi(31), cls->get_own_property(late_name));
 }
 
 TEST(ClassObject, DefineAndSetExistingOwnPropertyHaveSeparateSemantics)
@@ -1095,6 +1121,27 @@ TEST(ClassObject, MroShapeAndContentsValidityCellStartsNullAndIsCreatedLazily)
     ASSERT_NE(nullptr, cell);
     EXPECT_TRUE(cell->is_valid());
     EXPECT_EQ(cell, cls->current_mro_shape_and_contents_validity_cell());
+}
+
+TEST(ClassObject, FreezeInvalidatesMutableShapeValidityCells)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation_scope(context.thread());
+
+    TValue<String> cls_name(
+        context.vm().get_or_create_interned_string_value(L"Cls"));
+    ClassObject *cls = context.thread()->make_internal_raw<ClassObject>(
+        cls_name, 2, context.vm().object_class(), NativeLayoutId::Instance);
+    ValidityCell *cell =
+        cls->get_or_create_mro_shape_and_contents_validity_cell();
+    ASSERT_NE(nullptr, cell);
+    ASSERT_TRUE(cell->is_valid());
+
+    cls->freeze();
+
+    EXPECT_FALSE(cell->is_valid());
+    EXPECT_EQ(nullptr, cls->current_mro_shape_and_contents_validity_cell());
+    EXPECT_TRUE(cls->get_shape()->has_flag(ShapeFlag::IsImmutable));
 }
 
 TEST(ClassObject,

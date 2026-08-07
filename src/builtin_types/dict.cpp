@@ -1054,10 +1054,6 @@ namespace cl
         DescriptorFlags method_flags =
             descriptor_flag(DescriptorFlag::ReadOnly) |
             descriptor_flag(DescriptorFlag::StableSlot);
-        ShapeFlags class_shape_flags = cls->get_shape()->flags();
-        cls->set_shape(cls->get_shape()->clone_with_flags(
-            class_shape_flags & ~fixed_attribute_shape_flags()));
-
         auto install = [&](const wchar_t *name, auto function,
                            Optional<TValue<Tuple>> defaults =
                                Optional<TValue<Tuple>>::none()) {
@@ -1153,8 +1149,6 @@ namespace cl
         install(L"fromkeys", native_dict_fromkeys,
                 Optional<TValue<Tuple>>::some(
                     make_single_default(vm, Value::None())));
-
-        cls->set_shape(cls->get_shape()->clone_with_flags(class_shape_flags));
     }
 
     void install_dict_python_methods(VirtualMachine *vm)

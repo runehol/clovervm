@@ -66,7 +66,7 @@ namespace cl
 
         Object *object = value.get_ptr<Object>();
         Shape *type_shape = object->get_shape()->get_class()->get_shape();
-        if(type_shape->has_flag(ShapeFlag::IsImmutableType))
+        if(type_shape->has_flag(ShapeFlag::IsImmutable))
         {
             return attribute_cache_blocker(AttributeCacheBlocker::None);
         }
@@ -148,6 +148,13 @@ namespace cl
     {
         assert(receiver.is_ptr());
         Object *object = receiver.get_ptr<Object>();
+        if(object->get_shape()->has_flag(ShapeFlag::IsImmutable))
+        {
+            (void)active_thread()->set_pending_builtin_exception_string(
+                L"TypeError", L"__class__ assignment only supported for "
+                              L"mutable types or ModuleType subclasses");
+            return false;
+        }
         NativeLayoutId receiver_layout = object->native_layout_id();
         if(receiver_layout != NativeLayoutId::Instance &&
            receiver_layout != NativeLayoutId::ModuleObject)

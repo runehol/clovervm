@@ -4714,7 +4714,7 @@ TEST(Interpreter, builtin_type_classes_are_vm_roots_and_builtins)
         EXPECT_EQ(type_class, cls->get_shape()->get_class());
         EXPECT_EQ(-1, cls->refcount);
         EXPECT_TRUE(cls->get_shape()->has_flag(ShapeFlag::IsClassObject));
-        EXPECT_TRUE(cls->get_shape()->has_flag(ShapeFlag::IsImmutableType));
+        EXPECT_TRUE(cls->get_shape()->has_flag(ShapeFlag::IsImmutable));
         EXPECT_EQ(Value::not_present(),
                   cls->get_own_property(
                       test_context.vm().get_or_create_interned_string_value(

@@ -297,9 +297,6 @@ namespace cl
             "installing intrinsic methods");
 
         ClassObject *cls = vm->tuple_class();
-        ShapeFlags class_shape_flags = cls->get_shape()->flags();
-        cls->set_shape(cls->get_shape()->clone_with_flags(
-            class_shape_flags & ~fixed_attribute_shape_flags()));
         DescriptorFlags method_flags =
             descriptor_flag(DescriptorFlag::ReadOnly) |
             descriptor_flag(DescriptorFlag::StableSlot);
@@ -317,7 +314,6 @@ namespace cl
             method_flags);
         assert(stored);
         (void)stored;
-        cls->set_shape(cls->get_shape()->clone_with_flags(class_shape_flags));
     }
 
     Value Tuple::get_item(int64_t py_idx) const

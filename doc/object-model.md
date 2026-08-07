@@ -299,7 +299,7 @@ The current flag set is:
 enum class ShapeFlag : uint16_t {
     None = 0,
     IsClassObject = 1 << 0,
-    IsImmutableType = 1 << 1,
+    IsImmutable = 1 << 1,
     HasCustomGetAttribute = 1 << 2,
     HasCustomGetAttrFallback = 1 << 3,
     HasCustomSetAttribute = 1 << 4,
@@ -313,11 +313,16 @@ enum class ShapeFlag : uint16_t {
 duplicates a native object-kind fact, but it lets a Shape guard select
 the correct lookup mode without an additional object-kind guard.
 
-`IsImmutableType` means a class object's namespace and protocol behavior
-cannot change. This flag is meaningful only for class-object Shapes. It
-is useful when analyzing descriptor values: if `descriptor.__class__` has
-an immutable Shape, then descriptor data-ness and protocol behavior are
-stable under a Shape guard.
+`IsImmutable` means the object's Python-visible semantic state cannot change.
+It is meaningful for every object Shape. Immutable Shapes must also carry
+`DisallowAttributeUpdates` and `DisallowAttributeAddDelete`; fixed attribute
+namespaces do not conversely imply immutable payloads. For example, an exact
+list instance has a fixed attribute namespace but mutable contents, while its
+class object becomes immutable after builtin initialization finishes.
+
+The flag is useful when analyzing descriptor values: if
+`descriptor.__class__` has an immutable Shape, then descriptor data-ness and
+protocol behavior are stable under a Shape guard.
 
 The custom attribute flags summarize whether default attribute access can
 be used:

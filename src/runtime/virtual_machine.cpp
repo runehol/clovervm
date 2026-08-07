@@ -1390,6 +1390,11 @@ namespace cl
             fatal_bootstrap_python_exception(thread,
                                              "initializing trusted sys.py");
         }
+
+        for(const BuiltinClassDefinition &definition: builtin_classes)
+        {
+            definition.cls->freeze();
+        }
     }
 
     TValue<Function> VirtualMachine::membership_iter_fallback_function() const

@@ -223,5 +223,5 @@ Builtin type bootstrap is centralized in VM initialization:
 - Which Python-visible builtin objects need fixed native fields exposed through
   ordinary descriptors rather than direct C++ helpers?
 - How much of descriptor protocol for immutable builtin types should be marked
-  through `ShapeFlag::IsImmutableType` during bootstrap?
+  through `ShapeFlag::IsImmutable` after bootstrap?
 - Which internal runtime records should stay non-Object `HeapObject`s forever?

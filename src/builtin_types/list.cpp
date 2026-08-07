@@ -459,9 +459,6 @@ namespace cl
             "installing intrinsic methods");
 
         ClassObject *cls = vm->list_class();
-        ShapeFlags class_shape_flags = cls->get_shape()->flags();
-        cls->set_shape(cls->get_shape()->clone_with_flags(
-            class_shape_flags & ~fixed_attribute_shape_flags()));
         DescriptorFlags method_flags =
             descriptor_flag(DescriptorFlag::ReadOnly) |
             descriptor_flag(DescriptorFlag::StableSlot);
@@ -483,7 +480,6 @@ namespace cl
         install(L"pop", native_list_pop,
                 Optional<TValue<Tuple>>::some(
                     list_default_single(vm, Value::from_smi(-1))));
-        cls->set_shape(cls->get_shape()->clone_with_flags(class_shape_flags));
     }
 
     TValue<List> List::copy() const

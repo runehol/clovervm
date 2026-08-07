@@ -396,7 +396,7 @@ A cacheable trusted descriptor read needs these validity ingredients:
 
 The descriptor-type check should be centralized behind a helper such as
 `descriptor_type_has_stable_protocol(cls)`. Do not scatter ad-hoc
-`IsImmutableType` flag checks at call sites. Builtin descriptor types must only
+`IsImmutable` flag checks at call sites. Builtin descriptor types must only
 become eligible after their class namespace is in its final immutable state.
 
 If a descriptor `__get__` mutates the receiver class, descriptor class, or any
