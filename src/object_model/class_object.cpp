@@ -328,7 +328,8 @@ namespace cl
     ClassObject *ClassObject::make_bootstrap_builtin_class(
         TValue<String> name, uint32_t instance_default_inline_slot_count,
         const BuiltinClassMethod *methods, uint32_t method_count,
-        NativeLayoutId instance_native_layout_id)
+        NativeLayoutId instance_native_layout_id,
+        ShapeFlags instance_shape_flags)
     {
         ShapeFlags class_shape_flags = shape_flag(ShapeFlag::IsClassObject);
         ClassObject *type = active_vm()->type_class();
@@ -336,7 +337,7 @@ namespace cl
         ClassObject *cls = active_vm()->make_immortal_internal_raw<ClassObject>(
             BootstrapObjectTag{}, name, instance_default_inline_slot_count,
             nullptr, instance_native_layout_id, class_shape_flags,
-            fixed_attribute_shape_flags());
+            instance_shape_flags);
         cls->install_bootstrap_class(type);
 
         DescriptorFlags method_flags =
@@ -357,15 +358,15 @@ namespace cl
     ClassObject *ClassObject::make_builtin_class(
         TValue<String> name, uint32_t instance_default_inline_slot_count,
         const BuiltinClassMethod *methods, uint32_t method_count,
-        ClassObject *single_base, NativeLayoutId instance_native_layout_id)
+        ClassObject *single_base, NativeLayoutId instance_native_layout_id,
+        ShapeFlags instance_shape_flags)
     {
         ShapeFlags class_shape_flags = shape_flag(ShapeFlag::IsClassObject);
         ClassObject *type = active_vm()->type_class();
         assert(type != nullptr);
         ClassObject *cls = active_vm()->make_immortal_internal_raw<ClassObject>(
             type, name, instance_default_inline_slot_count, single_base,
-            instance_native_layout_id, class_shape_flags,
-            fixed_attribute_shape_flags());
+            instance_native_layout_id, class_shape_flags, instance_shape_flags);
 
         DescriptorFlags method_flags =
             descriptor_flag(DescriptorFlag::ReadOnly) |

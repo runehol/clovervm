@@ -1677,7 +1677,8 @@ namespace cl
         static constexpr NativeLayoutId native_layout_ids[] = {
             NativeLayoutId::String};
         ClassObject *cls = ClassObject::make_bootstrap_builtin_class<String>(
-            vm->get_or_create_interned_string_value(L"str"), 1, nullptr, 0);
+            vm->get_or_create_interned_string_value(L"str"), 1, nullptr, 0,
+            immutable_shape_flags());
         return builtin_class_definition(cls, native_layout_ids,
                                         BuiltinsVisibility::Public);
     }

@@ -1011,7 +1011,7 @@ namespace cl
             DescriptorInfo::make(StorageLocation::not_found(),
                                  inline_class_flags,
                                  DescriptorSpecialKind::ShapeClass),
-            0, 0, fixed_attribute_shape_flags());
+            0, 0, immutable_shape_flags());
         BuiltinClassDefinition bool_definition =
             make_bool_class(this, int_class_);
         bool_class_ = bool_definition.cls;
@@ -1022,7 +1022,7 @@ namespace cl
             DescriptorInfo::make(StorageLocation::not_found(),
                                  inline_class_flags,
                                  DescriptorSpecialKind::ShapeClass),
-            0, 0, fixed_attribute_shape_flags());
+            0, 0, immutable_shape_flags());
         BuiltinClassDefinition none_type_definition =
             make_none_type_class(this);
         none_type_class_ = none_type_definition.cls;
@@ -1033,7 +1033,7 @@ namespace cl
             DescriptorInfo::make(StorageLocation::not_found(),
                                  inline_class_flags,
                                  DescriptorSpecialKind::ShapeClass),
-            0, 0, fixed_attribute_shape_flags());
+            0, 0, immutable_shape_flags());
         BuiltinClassDefinition not_implemented_type_definition =
             make_not_implemented_type_class(this);
         not_implemented_type_class_ = not_implemented_type_definition.cls;
@@ -1046,7 +1046,7 @@ namespace cl
                 DescriptorInfo::make(StorageLocation::not_found(),
                                      inline_class_flags,
                                      DescriptorSpecialKind::ShapeClass),
-                0, 0, fixed_attribute_shape_flags());
+                0, 0, immutable_shape_flags());
         BuiltinClassDefinition ellipsis_type_definition =
             make_ellipsis_type_class(this);
         ellipsis_type_class_ = ellipsis_type_definition.cls;
@@ -1057,7 +1057,7 @@ namespace cl
             DescriptorInfo::make(StorageLocation::not_found(),
                                  inline_class_flags,
                                  DescriptorSpecialKind::ShapeClass),
-            0, 0, fixed_attribute_shape_flags());
+            0, 0, immutable_shape_flags());
         register_builtin_class(make_list_class(this));
         register_builtin_class(make_bytes_class(this));
         register_builtin_class(make_dict_class(this));

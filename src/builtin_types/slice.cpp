@@ -44,14 +44,13 @@ namespace cl
                       slice_slot_flags())
             .add_slot(descriptors[1].name, Slice::kStopSlot, slice_slot_flags())
             .add_slot(descriptors[2].name, Slice::kStepSlot, slice_slot_flags())
-            .install(fixed_attribute_shape_flags());
+            .install(immutable_shape_flags());
         Shape *general_shape = cls->get_instance_root_shape();
         Shape *step_none_shape = Shape::make_root_with_descriptors(
             TValue<ClassObject>::from_oop(cls), descriptors,
             std::size(descriptors), general_shape->get_next_slot_index(),
             general_shape->present_count(),
-            general_shape->get_inline_slot_count(),
-            fixed_attribute_shape_flags());
+            general_shape->get_inline_slot_count(), immutable_shape_flags());
         vm->install_slice_shapes(cls, step_none_shape, general_shape);
     }
 
@@ -148,7 +147,8 @@ namespace cl
             NativeLayoutId::Slice};
         ClassObject *cls = ClassObject::make_builtin_class<Slice>(
             vm->get_or_create_interned_string_value(L"slice"),
-            Slice::kInlineSlotCount, nullptr, 0, vm->object_class());
+            Slice::kInlineSlotCount, nullptr, 0, vm->object_class(),
+            immutable_shape_flags());
         install_slice_instance_shapes(vm, cls);
         return builtin_class_definition(cls, native_layout_ids,
                                         BuiltinsVisibility::Public);

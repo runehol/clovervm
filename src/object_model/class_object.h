@@ -132,29 +132,31 @@ namespace cl
         template <typename T>
         static ClassObject *make_bootstrap_builtin_class(
             TValue<String> name, uint32_t instance_default_inline_slot_count,
-            const BuiltinClassMethod *methods, uint32_t method_count)
+            const BuiltinClassMethod *methods, uint32_t method_count,
+            ShapeFlags instance_shape_flags = fixed_attribute_shape_flags())
         {
             static_assert(HasNativeLayoutId<T>::value);
             return make_bootstrap_builtin_class(
                 name, instance_default_inline_slot_count, methods, method_count,
-                T::native_layout);
+                T::native_layout, instance_shape_flags);
         }
 
         static ClassObject *make_builtin_class(
             TValue<String> name, uint32_t instance_default_inline_slot_count,
             const BuiltinClassMethod *methods, uint32_t method_count,
-            ClassObject *single_base, NativeLayoutId instance_native_layout_id);
+            ClassObject *single_base, NativeLayoutId instance_native_layout_id,
+            ShapeFlags instance_shape_flags = fixed_attribute_shape_flags());
         template <typename T>
-        static ClassObject *
-        make_builtin_class(TValue<String> name,
-                           uint32_t instance_default_inline_slot_count,
-                           const BuiltinClassMethod *methods,
-                           uint32_t method_count, ClassObject *single_base)
+        static ClassObject *make_builtin_class(
+            TValue<String> name, uint32_t instance_default_inline_slot_count,
+            const BuiltinClassMethod *methods, uint32_t method_count,
+            ClassObject *single_base,
+            ShapeFlags instance_shape_flags = fixed_attribute_shape_flags())
         {
             static_assert(HasNativeLayoutId<T>::value);
             return make_builtin_class(name, instance_default_inline_slot_count,
                                       methods, method_count, single_base,
-                                      T::native_layout);
+                                      T::native_layout, instance_shape_flags);
         }
 
         TValue<String> get_name() const { return name.value(); }
@@ -280,7 +282,8 @@ namespace cl
         static ClassObject *make_bootstrap_builtin_class(
             TValue<String> name, uint32_t instance_default_inline_slot_count,
             const BuiltinClassMethod *methods, uint32_t method_count,
-            NativeLayoutId instance_native_layout_id);
+            NativeLayoutId instance_native_layout_id,
+            ShapeFlags instance_shape_flags);
 
     public:
         CL_DECLARE_STATIC_VALUE_SPAN_EXTENDS(

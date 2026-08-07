@@ -87,6 +87,52 @@ TEST(Shape, InstanceRootShapeCarriesPresentedClass)
     EXPECT_EQ(2u, root_shape->get_instance_default_inline_slot_count());
 }
 
+TEST(Shape, BuiltinInstanceRootsMarkSemanticImmutability)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation_scope(context.thread());
+    VirtualMachine &vm = context.vm();
+
+    ClassObject *immutable_classes[] = {
+        vm.object_class(),        vm.str_class(),
+        vm.bytes_class(),         vm.int_class(),
+        vm.bool_class(),          vm.float_class(),
+        vm.tuple_class(),         vm.slice_class(),
+        vm.none_type_class(),     vm.not_implemented_type_class(),
+        vm.ellipsis_type_class(), vm.code_class(),
+    };
+    for(ClassObject *cls: immutable_classes)
+    {
+        SCOPED_TRACE(cls->get_name().extract()->data);
+        EXPECT_TRUE(
+            cls->get_instance_root_shape()->has_flag(ShapeFlag::IsImmutable));
+    }
+
+    Shape *immutable_inline_shapes[] = {
+        vm.smi_shape(),      vm.bool_shape(),
+        vm.none_shape(),     vm.not_implemented_shape(),
+        vm.ellipsis_shape(),
+    };
+    for(Shape *shape: immutable_inline_shapes)
+    {
+        EXPECT_TRUE(shape->has_flag(ShapeFlag::IsImmutable));
+    }
+
+    EXPECT_TRUE(vm.slice_step_none_shape()->has_flag(ShapeFlag::IsImmutable));
+    EXPECT_TRUE(vm.slice_general_shape()->has_flag(ShapeFlag::IsImmutable));
+
+    ClassObject *mutable_classes[] = {
+        vm.list_class(),   vm.dict_class(),           vm.function_class(),
+        vm.module_class(), vm.range_iterator_class(),
+    };
+    for(ClassObject *cls: mutable_classes)
+    {
+        SCOPED_TRACE(cls->get_name().extract()->data);
+        EXPECT_FALSE(
+            cls->get_instance_root_shape()->has_flag(ShapeFlag::IsImmutable));
+    }
+}
+
 TEST(Shape, ClassObjectShapeCarriesMetaclass)
 {
     test::VmTestContext context;

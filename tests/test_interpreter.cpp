@@ -4631,6 +4631,13 @@ TEST(Interpreter, slotdict_hides_virtual_special_descriptors)
 
 TEST(Interpreter, class_assignment_rejects_builtin_and_class_object_receivers)
 {
+    expect_python_error(L"class F:\n"
+                        L"    pass\n"
+                        L"a = object()\n"
+                        L"a.__class__ = F\n",
+                        L"TypeError",
+                        L"__class__ assignment only supported for mutable "
+                        L"types or ModuleType subclasses");
     expect_python_error(L"a = []\n"
                         L"a.__class__ = list\n",
                         L"TypeError",

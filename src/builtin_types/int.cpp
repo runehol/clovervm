@@ -1838,7 +1838,8 @@ namespace cl
     {
         ClassObject *cls = ClassObject::make_builtin_class(
             vm->get_or_create_interned_string_value(L"int"), 0, nullptr, 0,
-            vm->object_class(), NativeLayoutId::Invalid);
+            vm->object_class(), NativeLayoutId::Invalid,
+            immutable_shape_flags());
         static constexpr NativeLayoutId native_layout_ids[] = {
             NativeLayoutId::BigInt};
         return builtin_class_definition(cls, native_layout_ids,

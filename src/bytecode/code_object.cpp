@@ -72,7 +72,7 @@ namespace cl
         ClassObject *cls = ClassObject::make_builtin_class<CodeObject>(
             vm->get_or_create_interned_string_value(L"code"),
             CodeObject::native_static_release_count(), nullptr, 0,
-            vm->object_class());
+            vm->object_class(), immutable_shape_flags());
         return builtin_class_definition(cls, native_layout_ids,
                                         BuiltinsVisibility::Internal);
     }
