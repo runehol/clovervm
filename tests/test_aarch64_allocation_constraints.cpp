@@ -353,6 +353,8 @@ namespace cl::jit
             builder.emplace_instruction<OrrSMIInstruction>(entry, lhs, rhs);
         EorSMIInstruction eor_instruction =
             builder.emplace_instruction<EorSMIInstruction>(entry, lhs, rhs);
+        UnboxF64Instruction unbox =
+            builder.emplace_instruction<UnboxF64Instruction>(entry, lhs);
         ConditionalBranchInstruction branch =
             builder.emplace_instruction<ConditionalBranchInstruction>(
                 entry, TaggedValueRef(condition), true_edge, false_edge);
@@ -376,6 +378,7 @@ namespace cl::jit
         EXPECT_EQ(nullptr, find_override(constraints, and_instruction));
         EXPECT_EQ(nullptr, find_override(constraints, orr_instruction));
         EXPECT_EQ(nullptr, find_override(constraints, eor_instruction));
+        EXPECT_EQ(nullptr, find_override(constraints, unbox));
 
         EXPECT_EQ(nullptr, find_override(constraints, branch));
         EXPECT_NE(nullptr, find_override(constraints, true_return));

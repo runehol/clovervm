@@ -276,7 +276,7 @@ CL_JIT_INSTRUCTION_FAMILY(
 #define CL_JIT_BinaryArithmeticF64_ATTRIBUTES(attribute)
 #define CL_JIT_BinaryArithmeticF64_SUBKINDS(each, ...)                         \
     each(AddF64, __VA_ARGS__) each(SubF64, __VA_ARGS__)                        \
-        each(MulF64, __VA_ARGS__)
+        each(MulF64, __VA_ARGS__) each(DivF64, __VA_ARGS__)
 CL_JIT_INSTRUCTION_FAMILY(BinaryArithmeticF64, CL_JIT_IR_LEVELS(CoreMachine),
                           CL_JIT_RESULT(ProgramValue, F64, Def),
                           CL_JIT_EFFECT_BOUNDS(None, None),

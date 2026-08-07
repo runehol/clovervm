@@ -1,5 +1,6 @@
 #include "jit/aarch64_cfg_emitter.h"
 
+#include "builtin_types/float.h"
 #include "bytecode/code_object.h"
 #include "jit/aarch64_assembler.h"
 #include "jit/aarch64_jit_registers.h"
@@ -159,6 +160,8 @@ namespace cl::jit
                         return FPBinaryOp::Sub;
                     case BinaryArithmeticF64Subkind::MulF64:
                         return FPBinaryOp::Mul;
+                    case BinaryArithmeticF64Subkind::DivF64:
+                        return FPBinaryOp::Div;
                 }
                 __builtin_unreachable();
             }();
@@ -483,6 +486,18 @@ namespace cl::jit
                     {
                         assembler.ldr(destination, constant);
                     }
+                    break;
+                }
+
+                case CL_JIT_MACHINE_INSTRUCTION_CASE(
+                    UnboxF64Instruction, unbox_instruction)
+                {
+                    assembler.ldr(
+                        assigned_f64_register(locations,
+                                              F64Ref(unbox_instruction)),
+                        assigned_register(locations,
+                                          unbox_instruction.source()),
+                        Float::value_offset());
                     break;
                 }
 

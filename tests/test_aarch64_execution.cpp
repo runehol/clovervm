@@ -400,6 +400,76 @@ namespace cl::jit
                   execute.operator()<GreaterEqualF64Instruction>(nan, lower));
     }
 
+    TEST(AArch64Execution, ExecutesUnboxF64Loads)
+    {
+        test::VmTestContext context;
+        ThreadState::ActivationScope activation_scope(context.thread());
+        Owned<TValue<Float>> lhs(
+            context.thread()->make_object_value<Float>(2.5));
+        Owned<TValue<Float>> equal_rhs(
+            context.thread()->make_object_value<Float>(2.5));
+        Owned<TValue<Float>> unequal_rhs(
+            context.thread()->make_object_value<Float>(3.5));
+
+        CompilationSession session;
+        GraphBuilder builder(session, IRLevel::Machine);
+        Block *entry = builder.emplace_block();
+        ParameterInstruction lhs_parameter =
+            builder.emplace_parameter<ParameterInstruction>(entry);
+        ParameterInstruction rhs_parameter =
+            builder.emplace_parameter<ParameterInstruction>(entry);
+        UnboxF64Instruction unboxed_lhs =
+            builder.emplace_instruction<UnboxF64Instruction>(
+                entry, TaggedValueRef(lhs_parameter));
+        UnboxF64Instruction unboxed_rhs =
+            builder.emplace_instruction<UnboxF64Instruction>(
+                entry, TaggedValueRef(rhs_parameter));
+        EqualF64Instruction result =
+            builder.emplace_instruction<EqualF64Instruction>(
+                entry, F64Ref(unboxed_lhs), F64Ref(unboxed_rhs));
+        builder.emplace_instruction<BareReturnInstruction>(
+            entry, TaggedValueRef(result));
+        ControlFlowGraph *graph = builder.finalize();
+
+        LocationAssignmentsBuilder location_builder;
+        location_builder.assign(ProgramValueRef(lhs_parameter),
+                                PhysicalLocation::reg(x0));
+        location_builder.assign(ProgramValueRef(rhs_parameter),
+                                PhysicalLocation::reg(x1));
+        location_builder.assign(ProgramValueRef(unboxed_lhs),
+                                PhysicalLocation::reg(v0));
+        location_builder.assign(ProgramValueRef(unboxed_rhs),
+                                PhysicalLocation::reg(v1));
+        location_builder.assign(ProgramValueRef(result),
+                                PhysicalLocation::reg(x0));
+        location_builder.assign(result, 0, PhysicalLocation::reg(x2));
+        LocationAssignments locations = std::move(location_builder).finalize();
+
+        CodeCache cache;
+        auto emission = emit_aarch64_from_cfg(*graph, locations, cache,
+                                              no_side_exit_thunk());
+        ASSERT_TRUE(emission);
+        PublishedCode code = std::move(emission).value();
+        const void *instructions = reinterpret_cast<const void *>(
+            code.entry().bits_for_indirect_target());
+        EXPECT_EQ(0xfd400800u, instruction_at(instructions, 0));
+        EXPECT_EQ(0xfd400821u, instruction_at(instructions, 1));
+
+        using Function = uint64_t (*)(uint64_t, uint64_t);
+        Function function =
+            reinterpret_cast<Function>(code.entry().bits_for_indirect_target());
+        uint64_t true_bits = static_cast<uint64_t>(Value::True().as.integer);
+        uint64_t false_bits = static_cast<uint64_t>(Value::False().as.integer);
+        EXPECT_EQ(
+            true_bits,
+            function(static_cast<uint64_t>(lhs.raw_value().as.integer),
+                     static_cast<uint64_t>(equal_rhs.raw_value().as.integer)));
+        EXPECT_EQ(false_bits,
+                  function(static_cast<uint64_t>(lhs.raw_value().as.integer),
+                           static_cast<uint64_t>(
+                               unequal_rhs.raw_value().as.integer)));
+    }
+
     TEST(AArch64Execution, FusesF64ComparisonWithBranch)
     {
         CompilationSession session;
@@ -1745,8 +1815,11 @@ namespace cl::jit
         MulF64Instruction multiply =
             builder.emplace_instruction<MulF64Instruction>(
                 entry, F64Ref(subtract), F64Ref(add));
+        DivF64Instruction divide =
+            builder.emplace_instruction<DivF64Instruction>(
+                entry, F64Ref(multiply), F64Ref(add));
         MovF64Instruction move = builder.emplace_instruction<MovF64Instruction>(
-            entry, F64Ref(multiply));
+            entry, F64Ref(divide));
         StoreStackF64Instruction store =
             builder.emplace_instruction<StoreStackF64Instruction>(entry,
                                                                   F64Ref(move));
@@ -1771,6 +1844,8 @@ namespace cl::jit
                                 PhysicalLocation::reg(v3));
         location_builder.assign(ProgramValueRef(multiply),
                                 PhysicalLocation::reg(v4));
+        location_builder.assign(ProgramValueRef(divide),
+                                PhysicalLocation::reg(v4));
         location_builder.assign(ProgramValueRef(move),
                                 PhysicalLocation::reg(v5));
         location_builder.assign(ProgramValueRef(store),
@@ -1793,10 +1868,11 @@ namespace cl::jit
         EXPECT_EQ(0x1e612822u, instruction_at(code, 1));
         EXPECT_EQ(0x1e613843u, instruction_at(code, 2));
         EXPECT_EQ(0x1e620864u, instruction_at(code, 3));
-        EXPECT_EQ(0x1e604085u, instruction_at(code, 4));
-        EXPECT_EQ(0xfc1f82a5u, instruction_at(code, 5));
-        EXPECT_EQ(0xfc5f82a0u, instruction_at(code, 6));
-        EXPECT_EQ(0xd65f03c0u, instruction_at(code, 7));
+        EXPECT_EQ(0x1e621884u, instruction_at(code, 4));
+        EXPECT_EQ(0x1e604085u, instruction_at(code, 5));
+        EXPECT_EQ(0xfc1f82a5u, instruction_at(code, 6));
+        EXPECT_EQ(0xfc5f82a0u, instruction_at(code, 7));
+        EXPECT_EQ(0xd65f03c0u, instruction_at(code, 8));
     }
 
     TEST(AArch64Execution, EmitsManagedFrameLinkRegisterPreservation)

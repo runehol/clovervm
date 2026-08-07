@@ -445,6 +445,10 @@ namespace cl::jit
         static_assert(std::is_same_v<
                       decltype(std::declval<const AddF64Instruction &>().lhs()),
                       F64Ref>);
+        static_assert(std::is_base_of_v<BinaryArithmeticF64Instruction,
+                                        DivF64Instruction>);
+        static_assert(DivF64Instruction::MustEffects == EffectProfile::None);
+        static_assert(DivF64Instruction::MayEffects == EffectProfile::None);
         static_assert(std::is_same_v<
                       decltype(std::declval<const ShapeGuardInstruction &>()
                                    .expected_shape()),
