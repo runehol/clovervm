@@ -3,6 +3,7 @@
 
 #include <gtest/gtest.h>
 
+#include <bit>
 #include <cstdint>
 #include <string>
 #include <type_traits>
@@ -25,6 +26,14 @@ namespace cl::jit
         EXPECT_EQ(TransitionLocationArea::Scratch, scratch.area());
         EXPECT_EQ(23, scratch.offset());
         EXPECT_EQ(stack, TransitionLocation::stack(-12));
+        EXPECT_NE(stack, TransitionLocation::stack(-11));
+        EXPECT_NE(scratch, TransitionLocation::register_file(23));
+
+        EXPECT_EQ(0x00110000u, std::bit_cast<uint32_t>(register_file));
+        EXPECT_EQ(0xfff40001u, std::bit_cast<uint32_t>(stack));
+        EXPECT_EQ(0x00170002u, std::bit_cast<uint32_t>(scratch));
+        EXPECT_EQ(std::bit_cast<uint32_t>(stack),
+                  std::bit_cast<uint32_t>(TransitionLocation::stack(-12)));
     }
 
     TEST(TransitionInstruction, ConstructsTransitionSpecificInstructions)

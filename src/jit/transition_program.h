@@ -9,6 +9,7 @@
 #include <cstring>
 #include <span>
 #include <string>
+#include <type_traits>
 #include <utility>
 #include <vector>
 
@@ -48,8 +49,12 @@ namespace cl::jit
             return TransitionLocation(TransitionLocationArea::Scratch, index);
         }
 
-        TransitionLocationArea area() const { return area_; }
-        int16_t offset() const { return offset_; }
+        TransitionLocationArea area() const
+        {
+            return static_cast<TransitionLocationArea>(encoded_ & 0xffu);
+        }
+
+        int16_t offset() const { return static_cast<int16_t>(encoded_ >> 16); }
 
         friend bool operator==(TransitionLocation,
                                TransitionLocation) = default;
@@ -57,21 +62,29 @@ namespace cl::jit
         template <typename H>
         friend H AbslHashValue(H hash, TransitionLocation location)
         {
-            return H::combine(std::move(hash), location.area_,
-                              location.offset_);
+            return H::combine(std::move(hash), location.encoded_);
         }
 
     private:
         TransitionLocation(TransitionLocationArea area, int16_t offset)
-            : area_(area), offset_(offset)
+            : encoded_(
+                  static_cast<uint32_t>(area) |
+                  (static_cast<uint32_t>(static_cast<uint16_t>(offset)) << 16))
         {
         }
 
-        TransitionLocationArea area_;
-        int16_t offset_;
+        explicit TransitionLocation(uint32_t encoded) : encoded_(encoded) {}
+
+        uint32_t encoded() const { return encoded_; }
+
+        friend class TransitionInstruction;
+
+        uint32_t encoded_;
     };
 
     static_assert(sizeof(TransitionLocation) == sizeof(uint32_t));
+    static_assert(std::is_trivially_copyable_v<TransitionLocation>);
+    static_assert(std::has_unique_object_representations_v<TransitionLocation>);
 
     class alignas(8) TransitionInstruction
     {
@@ -157,17 +170,13 @@ namespace cl::jit
         void set_location(size_t slot, TransitionLocation location)
         {
             assert(slot < 3);
-            static_assert(sizeof(location) == sizeof(slots_[slot]));
-            std::memcpy(&slots_[slot], &location, sizeof(location));
+            slots_[slot] = location.encoded();
         }
 
         TransitionLocation location(size_t slot) const
         {
             assert(slot < 3);
-            TransitionLocation result = TransitionLocation::register_file(0);
-            static_assert(sizeof(result) == sizeof(slots_[slot]));
-            std::memcpy(&result, &slots_[slot], sizeof(result));
-            return result;
+            return TransitionLocation(slots_[slot]);
         }
 
         uint32_t slots_[3];
