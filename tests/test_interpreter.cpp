@@ -1376,6 +1376,42 @@ TEST(Interpreter, unary_float_handler_has_registered_metadata)
     EXPECT_EQ(TrustedHandlerSemantics::Neg, metadata->semantics);
 }
 
+TEST(Interpreter, unary_positive_float_preserves_exact_identity)
+{
+    test::VmTestContext test_context;
+    ThreadState::ActivationScope activation_scope(test_context.thread());
+
+    TValue<String> function_name(
+        test_context.vm().get_or_create_interned_string_value(L"positive"));
+    CodeObject *code_obj =
+        test_context.compile_file(L"def positive(value):\n"
+                                  L"    return +value\n"
+                                  L"value = 4.5\n"
+                                  L"assert positive(value) is value\n"
+                                  L"assert positive(value) is value\n");
+
+    Value actual = test_context.thread()->run_clovervm_code_object(code_obj);
+    ASSERT_FALSE(actual.is_exception_marker());
+
+    Value function_value =
+        load_global_from_module_for_test(code_obj, function_name);
+    ASSERT_TRUE(can_convert_to<Function>(function_value));
+    CodeObject *function_code =
+        assume_convert_to<Function>(function_value)->code_object.extract();
+    ASSERT_EQ(1u, function_code->inline_caches.operator_caches.size());
+    const OperatorInlineCache &cache =
+        function_code->inline_caches.operator_caches[0];
+    ASSERT_FALSE(cache.trusted_handler.is_null());
+
+    std::optional<TrustedHandlerMetadata> metadata =
+        test_context.vm().trusted_handler_metadata(
+            cache.trusted_handler.target(TrustedHandlerArity::Unary));
+    ASSERT_TRUE(metadata.has_value());
+    EXPECT_EQ(TrustedHandlerArity::Unary, metadata->arity);
+    EXPECT_EQ(TrustedHandlerEffects::None, metadata->effects);
+    EXPECT_EQ(TrustedHandlerSemantics::Pos, metadata->semantics);
+}
+
 TEST(Interpreter, membership_fallback_does_not_index_when_iter_exists)
 {
     expect_python_error(L"class Sequence:\n"

@@ -269,11 +269,6 @@ namespace cl
         return thread->make_object_value<Float>(-value).raw_value();
     }
 
-    static Value float_positive(ThreadState *thread, double value)
-    {
-        return thread->make_object_value<Float>(value).raw_value();
-    }
-
     using FloatBinaryFunction = Value (*)(ThreadState *, double, double);
 
     template <typename Operation, TrustedHandlerEffects Effects,
@@ -631,14 +626,40 @@ namespace cl
     using FloatNegOperation =
         FloatUnaryOperation<float_negate,
                             L"float.__neg__ expects a float receiver">;
-    using FloatPosOperation =
-        FloatUnaryOperation<float_positive,
-                            L"float.__pos__ expects a float receiver">;
+    struct FloatPosOperation
+    {
+        static Value native(ThreadState *thread, Value self)
+        {
+            if(!can_convert_to<Float>(self))
+            {
+                return thread->set_pending_builtin_exception_string(
+                    L"TypeError", L"float.__pos__ expects a float receiver");
+            }
+
+            Float *value = self.get_ptr<Float>();
+            if(value->get_shape() ==
+               thread->get_machine()->float_class()->get_instance_root_shape())
+            {
+                return self;
+            }
+            return thread->make_object_value<Float>(value->value()).raw_value();
+        }
+
+        static Value trusted(ThreadState *thread, Value value)
+        {
+            (void)thread;
+            return value;
+        }
+
+        template <TrustedHandlerEffects Effects,
+                  TrustedHandlerSemantics Semantics>
+        using Handler = TrustedHandlerDefinition<trusted, Effects, Semantics>;
+    };
     using FloatNegHandler =
         FloatNegOperation::Handler<TrustedHandlerEffects::Allocate,
                                    TrustedHandlerSemantics::Neg>;
     using FloatPosHandler =
-        FloatPosOperation::Handler<TrustedHandlerEffects::Allocate,
+        FloatPosOperation::Handler<TrustedHandlerEffects::None,
                                    TrustedHandlerSemantics::Pos>;
 
     template <typename HandlerDefinition>
