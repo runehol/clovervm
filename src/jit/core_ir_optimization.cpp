@@ -2,6 +2,7 @@
 
 #include "jit/dead_code_elimination.h"
 #include "jit/equivalent_block_parameters.h"
+#include "jit/f64_box_simplification.h"
 #include "jit/tagged_value_guard_simplification.h"
 
 #include <array>
@@ -15,6 +16,7 @@ namespace cl::jit
         static constexpr std::array passes = {
             CoreIRPass{"tagged-value-guard-simplification",
                        simplify_tagged_value_guards},
+            CoreIRPass{"f64-box-simplification", simplify_f64_boxing},
             CoreIRPass{"dead-code-elimination", eliminate_dead_code},
             CoreIRPass{"equivalent-block-parameters",
                        collapse_equivalent_block_parameters},

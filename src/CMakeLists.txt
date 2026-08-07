@@ -131,6 +131,8 @@ add_library(libclovervm_objects OBJECT
     jit/dead_code_elimination.h
     jit/equivalent_block_parameters.cpp
     jit/equivalent_block_parameters.h
+    jit/f64_box_simplification.cpp
+    jit/f64_box_simplification.h
     jit/tagged_value_fact_analysis.cpp
     jit/tagged_value_fact_analysis.h
     jit/tagged_value_guard_simplification.cpp
