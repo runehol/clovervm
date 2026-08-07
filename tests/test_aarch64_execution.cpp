@@ -1541,7 +1541,7 @@ namespace cl::jit
                                                     Value::from_smi(23)));
     }
 
-    TEST(AArch64Execution, CallsTrustedHandlerSelectedByOperatorCache)
+    TEST(AArch64Execution, SpecializesExactFloatTrustedHandlers)
     {
         class Observer : public JitCompilationObserver
         {
@@ -1567,11 +1567,18 @@ namespace cl::jit
         PythonJitExecutionFixture fixture;
         fixture.execute_module(L"def equal(lhs, rhs):\n"
                                L"    return lhs == rhs\n"
-                               L"equal(1.0, 2.0)\n");
-        Observer observer;
-        ASSERT_TRUE(
-            fixture.jit_compile(L"equal", JitCompilerOptions{&observer}));
-        EXPECT_EQ(1u, observer.trusted_handler_call_count);
+                               L"def add(lhs, rhs):\n"
+                               L"    return lhs + rhs\n"
+                               L"equal(1.0, 2.0)\n"
+                               L"add(1.0, 2.0)\n");
+        Observer comparison_observer;
+        ASSERT_TRUE(fixture.jit_compile(
+            L"equal", JitCompilerOptions{&comparison_observer}));
+        EXPECT_EQ(0u, comparison_observer.trusted_handler_call_count);
+        Observer arithmetic_observer;
+        ASSERT_TRUE(fixture.jit_compile(
+            L"add", JitCompilerOptions{&arithmetic_observer}));
+        EXPECT_EQ(0u, arithmetic_observer.trusted_handler_call_count);
 
         Owned<TValue<Float>> one(
             fixture.thread()->make_object_value<Float>(1.0));
@@ -1582,6 +1589,10 @@ namespace cl::jit
                                two.value().raw_value()));
         EXPECT_EQ(Value::True(), fixture.call(L"equal", one.value().raw_value(),
                                               one.value().raw_value()));
+        Owned<Value> sum(fixture.call(L"add", one.value().raw_value(),
+                                      two.value().raw_value()));
+        ASSERT_TRUE(can_convert_to<Float>(sum.raw_value()));
+        EXPECT_DOUBLE_EQ(3.0, sum.raw_value().get_ptr<Float>()->value());
         EXPECT_EQ(Value::True(), fixture.call(L"equal", Value::from_smi(7),
                                               Value::from_smi(7)));
     }

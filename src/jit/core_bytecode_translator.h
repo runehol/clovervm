@@ -6,6 +6,7 @@
 #include "jit/graph_builder.h"
 
 #include <cstddef>
+#include <optional>
 #include <span>
 #include <vector>
 
@@ -63,6 +64,11 @@ namespace cl::jit
                                   const TrustedHandlerMetadata &metadata,
                                   std::span<const TaggedValueRef> arguments,
                                   std::vector<ProgramValueRef> &outputs);
+        std::optional<ProgramValueRef>
+        try_emit_exact_float_binary(Block *block,
+                                    const OperatorInlineCache &cache,
+                                    const TrustedHandlerMetadata &metadata,
+                                    std::span<const TaggedValueRef> arguments);
         bool lower_binary_arithmetic(
             Block *block, const BytecodeInstruction &instruction,
             BinaryArithmeticSMIWithSnapshotSubkind subkind,

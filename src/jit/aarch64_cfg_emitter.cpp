@@ -701,6 +701,7 @@ namespace cl::jit
                 case CL_JIT_MACHINE_INSTRUCTION_CASE(BoxF64Instruction,
                                                      box_instruction)
                 {
+                    (void)box_instruction;
                     assert(assigned_f64_register(locations,
                                                  box_instruction.source())
                                .encoding() == 0);

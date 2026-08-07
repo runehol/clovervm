@@ -463,11 +463,94 @@ namespace cl::jit
                 arguments.size() == 2) ||
                (metadata.arity == TrustedHandlerArity::Ternary &&
                 arguments.size() == 3));
+        if(std::optional<ProgramValueRef> specialized =
+               try_emit_exact_float_binary(block, cache, metadata, arguments))
+        {
+            outputs.push_back(*specialized);
+            return;
+        }
         TrustedHandlerTarget handler =
             cache.trusted_handler.target(metadata.arity);
         outputs.emplace_back(
             builder_.emplace_instruction<TrustedHandlerCallInstruction>(
                 block, arguments, handler));
+    }
+
+    std::optional<ProgramValueRef>
+    CoreBytecodeTranslator::try_emit_exact_float_binary(
+        Block *block, const OperatorInlineCache &cache,
+        const TrustedHandlerMetadata &metadata,
+        std::span<const TaggedValueRef> arguments)
+    {
+        if(metadata.arity != TrustedHandlerArity::Binary ||
+           arguments.size() != 2)
+        {
+            return std::nullopt;
+        }
+
+        ShapeKey float_shape_key =
+            ShapeKey::from_shape(vm_.float_class()->get_instance_root_shape());
+        if(cache.operand_shape_keys[0] != float_shape_key ||
+           cache.operand_shape_keys[1] != float_shape_key)
+        {
+            return std::nullopt;
+        }
+
+        std::optional<BinaryArithmeticF64Subkind> arithmetic;
+        std::optional<BinaryComparisonF64Subkind> comparison;
+        switch(metadata.semantics)
+        {
+            case TrustedHandlerSemantics::Add:
+                arithmetic = BinaryArithmeticF64Subkind::AddF64;
+                break;
+            case TrustedHandlerSemantics::Sub:
+                arithmetic = BinaryArithmeticF64Subkind::SubF64;
+                break;
+            case TrustedHandlerSemantics::Mul:
+                arithmetic = BinaryArithmeticF64Subkind::MulF64;
+                break;
+            case TrustedHandlerSemantics::Equal:
+                comparison = BinaryComparisonF64Subkind::EqualF64;
+                break;
+            case TrustedHandlerSemantics::NotEqual:
+                comparison = BinaryComparisonF64Subkind::NotEqualF64;
+                break;
+            case TrustedHandlerSemantics::Less:
+                comparison = BinaryComparisonF64Subkind::LessF64;
+                break;
+            case TrustedHandlerSemantics::LessEqual:
+                comparison = BinaryComparisonF64Subkind::LessEqualF64;
+                break;
+            case TrustedHandlerSemantics::Greater:
+                comparison = BinaryComparisonF64Subkind::GreaterF64;
+                break;
+            case TrustedHandlerSemantics::GreaterEqual:
+                comparison = BinaryComparisonF64Subkind::GreaterEqualF64;
+                break;
+            default:
+                return std::nullopt;
+        }
+
+        UnboxF64Instruction lhs =
+            builder_.emplace_instruction<UnboxF64Instruction>(block,
+                                                              arguments[0]);
+        UnboxF64Instruction rhs =
+            builder_.emplace_instruction<UnboxF64Instruction>(block,
+                                                              arguments[1]);
+        if(arithmetic.has_value())
+        {
+            BinaryArithmeticF64Instruction result =
+                builder_.emplace_instruction<BinaryArithmeticF64Instruction>(
+                    block, *arithmetic, F64Ref(lhs), F64Ref(rhs));
+            return ProgramValueRef(
+                builder_.emplace_instruction<BoxF64Instruction>(
+                    block, F64Ref(result)));
+        }
+
+        assert(comparison.has_value());
+        return ProgramValueRef(
+            builder_.emplace_instruction<BinaryComparisonF64Instruction>(
+                block, *comparison, F64Ref(lhs), F64Ref(rhs)));
     }
 
     bool CoreBytecodeTranslator::lower_binary_arithmetic(

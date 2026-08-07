@@ -9,6 +9,7 @@
 
 #include <gtest/gtest.h>
 
+#include <array>
 #include <cstddef>
 #include <cstdint>
 #include <vector>
@@ -358,6 +359,101 @@ namespace cl::jit
                 .as<ReturnInstruction>();
         EXPECT_EQ(call.id(),
                   return_instruction.return_value().instruction_id());
+    }
+
+    TEST(JitCoreBytecodeTranslator, SpecializesExactFloatBinaryTrustedHandlers)
+    {
+        struct Case
+        {
+            TrustedHandlerSemantics semantics;
+            InstructionKind operation_kind;
+            bool boxes_result;
+        };
+        constexpr std::array cases = {
+            Case{TrustedHandlerSemantics::Add, InstructionKind::AddF64, true},
+            Case{TrustedHandlerSemantics::Sub, InstructionKind::SubF64, true},
+            Case{TrustedHandlerSemantics::Mul, InstructionKind::MulF64, true},
+            Case{TrustedHandlerSemantics::Equal, InstructionKind::EqualF64,
+                 false},
+            Case{TrustedHandlerSemantics::NotEqual,
+                 InstructionKind::NotEqualF64, false},
+            Case{TrustedHandlerSemantics::Less, InstructionKind::LessF64,
+                 false},
+            Case{TrustedHandlerSemantics::LessEqual,
+                 InstructionKind::LessEqualF64, false},
+            Case{TrustedHandlerSemantics::Greater, InstructionKind::GreaterF64,
+                 false},
+            Case{TrustedHandlerSemantics::GreaterEqual,
+                 InstructionKind::GreaterEqualF64, false},
+        };
+
+        for(const Case &test_case: cases)
+        {
+            TranslatorFixture fixture;
+            {
+                CodeObjectBuilder::TemporaryReg temporaries(
+                    fixture.code_builder, 1);
+                fixture.code_builder.emit_lda_smi(0, 19).value();
+                fixture.code_builder.emit_star(0, temporaries).value();
+                fixture.code_builder.emit_lda_smi(0, 23).value();
+                fixture.code_builder
+                    .emit_operator_reg(
+                        0, Bytecode::Add, temporaries,
+                        OperatorBytecodeFormat::WithCacheAndNotImplementedCheck)
+                    .value();
+                fixture.code_builder.emit_return(0).value();
+            }
+            CodeObject *code_object = fixture.code_builder.finalize().value();
+            Shape *float_shape =
+                fixture.context.vm().float_class()->get_instance_root_shape();
+            ShapeKey float_shape_key = ShapeKey::from_shape(float_shape);
+            fixture.context.vm().register_trusted_handler(
+                test_translated_trusted_handler,
+                test_case.boxes_result ? TrustedHandlerEffects::Allocate
+                                       : TrustedHandlerEffects::None,
+                test_case.semantics);
+            code_object->inline_caches.operator_caches[0] =
+                OperatorInlineCache::trusted_handler_call(
+                    float_shape_key, float_shape_key,
+                    TrustedResolution::call_trusted(
+                        test_translated_trusted_handler),
+                    nullptr, nullptr);
+
+            CoreBytecodeTranslator translator(
+                fixture.context.vm(), *code_object, fixture.graph_builder);
+            ControlFlowGraph *graph = translator.translate();
+            Block *entry = graph->entry_block();
+            std::vector<Instruction> guards = instructions_of_kind(
+                entry, InstructionKind::PointerAndShapeGuard);
+            std::vector<Instruction> unboxes =
+                instructions_of_kind(entry, InstructionKind::UnboxF64);
+            std::vector<Instruction> operations =
+                instructions_of_kind(entry, test_case.operation_kind);
+            std::vector<Instruction> boxes =
+                instructions_of_kind(entry, InstructionKind::BoxF64);
+
+            ASSERT_EQ(2u, guards.size());
+            ASSERT_EQ(2u, unboxes.size());
+            ASSERT_EQ(1u, operations.size());
+            EXPECT_EQ(test_case.boxes_result ? 1u : 0u, boxes.size());
+            EXPECT_TRUE(
+                instructions_of_kind(entry, InstructionKind::TrustedHandlerCall)
+                    .empty());
+            EXPECT_EQ(
+                guards[0].id(),
+                unboxes[0].as<UnboxF64Instruction>().source().instruction_id());
+            EXPECT_EQ(
+                guards[1].id(),
+                unboxes[1].as<UnboxF64Instruction>().source().instruction_id());
+
+            ReturnInstruction return_instruction =
+                entry->instruction_at(entry->instructions().size() - 1)
+                    .as<ReturnInstruction>();
+            Instruction expected_result =
+                test_case.boxes_result ? boxes.front() : operations.front();
+            EXPECT_EQ(expected_result.id(),
+                      return_instruction.return_value().instruction_id());
+        }
     }
 
     TEST(JitCoreBytecodeTranslator, LowersUnaryAndTernaryTrustedHandlerCalls)
