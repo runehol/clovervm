@@ -71,9 +71,10 @@ instruction.
 
 The exact assembler follows the processor's encoding classes rather than
 providing a separate C++ method for every mnemonic. Typed operation enums hold
-their architectural field bits in place, W and X operand overloads supply the
-instruction-width bit, and an encoding method combines those fields with the
-fixed template for that class. The initial families include
+their architectural field bits in place, typed GPR operands supply a semantic
+width, and each encoding family maps that width into its architectural field.
+An encoding method combines those fields with the fixed template for that
+class. The initial families include
 `emit_arithmetic_imm12`, `emit_arithmetic_reg`, `emit_logical_reg`, and
 `emit_move_wide_imm16`. Operand wrappers and separate enum types prevent fields
 from unrelated encoding classes from being mixed.
@@ -87,12 +88,14 @@ with the zero register and `neg` is a `SUB` from the zero register.
 
 AArch64 register types distinguish both width and the operand-specific meaning
 of encoding 31. Shared `GPRRegister<Width>`, `GPRRegisterOrSP<Width>`,
-`GPRRegisterOrZero<Width>`, and `GPRAddSubDestination<Width>` templates provide
+`GPRRegisterOrZero<Width>`, and
+`GPRAddSubImmediateDestination<Width>` templates provide
 the implementation, while `XRegister`, `WRegister`, and the corresponding role
 types are aliases. The distinct `xsp`/`wsp` and `xzr`/`wzr` values convert only
-to the appropriate role, and W and X registers do not interconvert. Thin inline
-W/X overloads validate typed operands and pass the width field and raw register
-numbers to one shared encoding implementation.
+to the appropriate role, and W and X registers do not interconvert. Encoding
+methods infer width from their destination or value operand, constrain the
+remaining operands to that same width, and convert the inferred operand to the
+encoding family's exact role type.
 
 ### Encoding-shaped instruction families
 
@@ -109,7 +112,7 @@ encoder then ORs the fixed class template, width, operation fields, and operands
 exactly as the hardware decoder separates them:
 
 ```cpp
-write_instruction(0x0a000000 | encoding_bits(width) |
+write_instruction(0x0a000000 | gpr_sf_bits<Width>() |
                   encoding_bits(operation) | encoding_bits(invert) |
                   encoding_bits(shift) | register_field(source2, 16) |
                   (static_cast<uint32_t>(shift_amount) << 10) |
@@ -121,14 +124,16 @@ fields from another encoding class because they are distinct types. The same
 `LogicalOp` values can be reused by another class only when Arm assigns that
 class the same field meaning and bit positions.
 
-W and X public overloads retain the operand-role types, validate restrictions
-such as legal shift amounts and the meaning of register 31, and pass
-`GPRWidth` plus raw register encodings to one private implementation. This keeps
-the common call site typed and concise without duplicating the substantial bit-
-packing code. `GPRWidth::W` is zero and `GPRWidth::X` contains the architectural
-`sf` bit, so the shared implementation consumes it like any other encoding
-field. An encoding class whose width lives elsewhere may reposition or map that
-same width value locally, as unsigned-offset `LDR` does.
+Public encoding-family methods are templated on `GPRWidth`, which is deduced
+from their operand-role types. They validate restrictions such as legal shift
+amounts and the meaning of register 31 before encoding the instruction directly.
+`GPRWidth::Bits32` and `GPRWidth::Bits64` describe architectural register widths
+rather than carrying instruction bits. Each encoding family maps that semantic
+width into its own field with a `consteval` helper: arithmetic and logical
+encodings use `gpr_sf_bits`, while integer loads and stores use
+`gpr_load_store_size_bits`. This avoids separate W and X implementations without
+coupling the register type to one encoding family or recovering another
+family's field by shifting pre-encoded bits.
 
 Instruction aliases belong in the macro assembler and compose these encoding
 families. They do not receive duplicate exact encoders: `mov` uses `ORR` with

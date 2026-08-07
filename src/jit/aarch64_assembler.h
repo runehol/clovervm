@@ -14,15 +14,17 @@ namespace cl::jit
 {
     class TransitionInstruction;
 
-    enum class GPRWidth : uint32_t
+    enum class GPRWidth : uint8_t
     {
-        W = 0,
-        X = 1u << 31,
+        Bits32 = 32,
+        Bits64 = 64,
     };
 
     template <GPRWidth Width> class GPRRegister
     {
     public:
+        static constexpr GPRWidth width = Width;
+
         explicit constexpr GPRRegister(uint32_t register_number)
             : register_number_(register_number)
         {
@@ -37,14 +39,18 @@ namespace cl::jit
 
     template <GPRWidth Width> struct GPRSP
     {
+        static constexpr GPRWidth width = Width;
     };
     template <GPRWidth Width> struct GPRZero
     {
+        static constexpr GPRWidth width = Width;
     };
 
     template <GPRWidth Width> class GPRRegisterOrSP
     {
     public:
+        static constexpr GPRWidth width = Width;
+
         constexpr GPRRegisterOrSP(GPRRegister<Width> reg)
             : register_number_(reg.encoding())
         {
@@ -60,6 +66,8 @@ namespace cl::jit
     template <GPRWidth Width> class GPRRegisterOrZero
     {
     public:
+        static constexpr GPRWidth width = Width;
+
         constexpr GPRRegisterOrZero(GPRRegister<Width> reg)
             : register_number_(reg.encoding())
         {
@@ -72,18 +80,20 @@ namespace cl::jit
         uint32_t register_number_;
     };
 
-    template <GPRWidth Width> class GPRAddSubDestination
+    template <GPRWidth Width> class GPRAddSubImmediateDestination
     {
     public:
-        constexpr GPRAddSubDestination(GPRRegister<Width> reg)
+        static constexpr GPRWidth width = Width;
+
+        constexpr GPRAddSubImmediateDestination(GPRRegister<Width> reg)
             : register_number_(reg.encoding()), zero_(false)
         {
         }
-        constexpr GPRAddSubDestination(GPRSP<Width>)
+        constexpr GPRAddSubImmediateDestination(GPRSP<Width>)
             : register_number_(31), zero_(false)
         {
         }
-        constexpr GPRAddSubDestination(GPRZero<Width>)
+        constexpr GPRAddSubImmediateDestination(GPRZero<Width>)
             : register_number_(31), zero_(true)
         {
         }
@@ -96,18 +106,16 @@ namespace cl::jit
         bool zero_;
     };
 
-    using XRegister = GPRRegister<GPRWidth::X>;
-    using WRegister = GPRRegister<GPRWidth::W>;
-    using XSP = GPRSP<GPRWidth::X>;
-    using WSP = GPRSP<GPRWidth::W>;
-    using XZero = GPRZero<GPRWidth::X>;
-    using WZero = GPRZero<GPRWidth::W>;
-    using XRegisterOrSP = GPRRegisterOrSP<GPRWidth::X>;
-    using WRegisterOrSP = GPRRegisterOrSP<GPRWidth::W>;
-    using XRegisterOrZero = GPRRegisterOrZero<GPRWidth::X>;
-    using WRegisterOrZero = GPRRegisterOrZero<GPRWidth::W>;
-    using XAddSubDestination = GPRAddSubDestination<GPRWidth::X>;
-    using WAddSubDestination = GPRAddSubDestination<GPRWidth::W>;
+    using XRegister = GPRRegister<GPRWidth::Bits64>;
+    using WRegister = GPRRegister<GPRWidth::Bits32>;
+    using XSP = GPRSP<GPRWidth::Bits64>;
+    using WSP = GPRSP<GPRWidth::Bits32>;
+    using XZero = GPRZero<GPRWidth::Bits64>;
+    using WZero = GPRZero<GPRWidth::Bits32>;
+    using XRegisterOrSP = GPRRegisterOrSP<GPRWidth::Bits64>;
+    using WRegisterOrSP = GPRRegisterOrSP<GPRWidth::Bits32>;
+    using XRegisterOrZero = GPRRegisterOrZero<GPRWidth::Bits64>;
+    using WRegisterOrZero = GPRRegisterOrZero<GPRWidth::Bits32>;
 
     inline constexpr XSP xsp;
     inline constexpr WSP wsp;
@@ -333,6 +341,20 @@ namespace cl::jit
 
     namespace aarch64_detail
     {
+        template <typename Operand>
+        inline constexpr GPRWidth gpr_width = Operand::width;
+
+        template <typename Operand>
+        concept GPRRegisterOrZeroOperand = requires(Operand operand) {
+            GPRRegisterOrZero<gpr_width<Operand>>(operand);
+        };
+
+        template <typename Operand>
+        concept GPRAddSubImmediateDestinationOperand =
+            requires(Operand operand) {
+                GPRAddSubImmediateDestination<gpr_width<Operand>>(operand);
+            };
+
         enum class LoadStoreAddressMode : uint8_t
         {
             UnsignedScaled,
@@ -354,6 +376,39 @@ namespace cl::jit
         constexpr uint32_t encoding_bits(Encoding encoding)
         {
             return static_cast<uint32_t>(encoding);
+        }
+
+        template <GPRWidth Width> consteval uint32_t gpr_sf_bits()
+        {
+            if constexpr(Width == GPRWidth::Bits32)
+            {
+                return 0;
+            }
+            else
+            {
+                static_assert(Width == GPRWidth::Bits64);
+                return 1u << 31;
+            }
+        }
+
+        template <GPRWidth Width> consteval uint32_t gpr_load_store_size_bits()
+        {
+            if constexpr(Width == GPRWidth::Bits32)
+            {
+                return 2u << 30;
+            }
+            else
+            {
+                static_assert(Width == GPRWidth::Bits64);
+                return 3u << 30;
+            }
+        }
+
+        template <GPRWidth Width> consteval uint32_t gpr_byte_width()
+        {
+            static_assert(Width == GPRWidth::Bits32 ||
+                          Width == GPRWidth::Bits64);
+            return static_cast<uint32_t>(Width) / 8;
         }
 
         template <SIMDElementWidth Width>
@@ -637,68 +692,53 @@ namespace cl::jit
 
         AArch64Emitter &emitter() { return sink_.emitter(); }
 
-        void
-        emit_arithmetic_imm12(ArithmeticOp operation,
-                              XAddSubDestination destination,
-                              XRegisterOrSP source, uint16_t immediate,
-                              AddImmediateShift shift = AddImmediateShift::None)
+        template <
+            aarch64_detail::GPRAddSubImmediateDestinationOperand Destination>
+        void emit_arithmetic_imm12(
+            ArithmeticOp operation, Destination destination,
+            GPRRegisterOrSP<aarch64_detail::gpr_width<Destination>> source,
+            uint16_t immediate,
+            AddImmediateShift shift = AddImmediateShift::None)
         {
+            constexpr GPRWidth Width = aarch64_detail::gpr_width<Destination>;
+            GPRAddSubImmediateDestination<Width> encoded_destination(
+                destination);
             assert(immediate < (1 << 12));
-            if(destination.encoding() == 31)
+            if(encoded_destination.encoding() == 31)
             {
                 bool sets_flags =
                     (static_cast<uint32_t>(operation) & (1u << 29)) != 0;
                 (void)sets_flags;
-                assert(destination.is_zero() == sets_flags);
+                assert(encoded_destination.is_zero() == sets_flags);
             }
-            emit_arithmetic_imm12(GPRWidth::X, operation,
-                                  destination.encoding(), source.encoding(),
-                                  immediate, shift);
+            write_instruction(
+                0x11000000 | aarch64_detail::gpr_sf_bits<Width>() |
+                aarch64_detail::encoding_bits(operation) |
+                aarch64_detail::encoding_bits(shift) |
+                (static_cast<uint32_t>(immediate) << 10) |
+                aarch64_detail::register_field(source.encoding(), 5) |
+                encoded_destination.encoding());
         }
 
-        void
-        emit_arithmetic_imm12(ArithmeticOp operation,
-                              WAddSubDestination destination,
-                              WRegisterOrSP source, uint16_t immediate,
-                              AddImmediateShift shift = AddImmediateShift::None)
+        template <aarch64_detail::GPRRegisterOrZeroOperand Destination>
+        void emit_arithmetic_reg(
+            ArithmeticOp operation, Destination destination,
+            GPRRegisterOrZero<aarch64_detail::gpr_width<Destination>> source1,
+            GPRRegisterOrZero<aarch64_detail::gpr_width<Destination>> source2,
+            ArithmeticShift shift = ArithmeticShift::Lsl,
+            uint8_t shift_amount = 0)
         {
-            assert(immediate < (1 << 12));
-            if(destination.encoding() == 31)
-            {
-                bool sets_flags =
-                    (static_cast<uint32_t>(operation) & (1u << 29)) != 0;
-                (void)sets_flags;
-                assert(destination.is_zero() == sets_flags);
-            }
-            emit_arithmetic_imm12(GPRWidth::W, operation,
-                                  destination.encoding(), source.encoding(),
-                                  immediate, shift);
-        }
-
-        void emit_arithmetic_reg(ArithmeticOp operation,
-                                 XRegisterOrZero destination,
-                                 XRegisterOrZero source1,
-                                 XRegisterOrZero source2,
-                                 ArithmeticShift shift = ArithmeticShift::Lsl,
-                                 uint8_t shift_amount = 0)
-        {
-            assert(shift_amount < 64);
-            emit_arithmetic_reg(GPRWidth::X, operation, destination.encoding(),
-                                source1.encoding(), source2.encoding(), shift,
-                                shift_amount);
-        }
-
-        void emit_arithmetic_reg(ArithmeticOp operation,
-                                 WRegisterOrZero destination,
-                                 WRegisterOrZero source1,
-                                 WRegisterOrZero source2,
-                                 ArithmeticShift shift = ArithmeticShift::Lsl,
-                                 uint8_t shift_amount = 0)
-        {
-            assert(shift_amount < 32);
-            emit_arithmetic_reg(GPRWidth::W, operation, destination.encoding(),
-                                source1.encoding(), source2.encoding(), shift,
-                                shift_amount);
+            constexpr GPRWidth Width = aarch64_detail::gpr_width<Destination>;
+            GPRRegisterOrZero<Width> encoded_destination(destination);
+            assert(shift_amount < static_cast<uint8_t>(Width));
+            write_instruction(
+                0x0b000000 | aarch64_detail::gpr_sf_bits<Width>() |
+                aarch64_detail::encoding_bits(operation) |
+                aarch64_detail::encoding_bits(shift) |
+                aarch64_detail::register_field(source2.encoding(), 16) |
+                (static_cast<uint32_t>(shift_amount) << 10) |
+                aarch64_detail::register_field(source1.encoding(), 5) |
+                encoded_destination.encoding());
         }
 
         template <SIMDElementWidth Width>
@@ -749,16 +789,26 @@ namespace cl::jit
                 aarch64_detail::register_field(lhs.encoding(), 5));
         }
 
-        void emit_logical_reg(LogicalOp operation, XRegisterOrZero destination,
-                              XRegisterOrZero source1, XRegisterOrZero source2,
-                              InvertMode invert = InvertMode::Normal,
-                              LogicalShift shift = LogicalShift::Lsl,
-                              uint8_t shift_amount = 0)
+        template <aarch64_detail::GPRRegisterOrZeroOperand Destination>
+        void emit_logical_reg(
+            LogicalOp operation, Destination destination,
+            GPRRegisterOrZero<aarch64_detail::gpr_width<Destination>> source1,
+            GPRRegisterOrZero<aarch64_detail::gpr_width<Destination>> source2,
+            InvertMode invert = InvertMode::Normal,
+            LogicalShift shift = LogicalShift::Lsl, uint8_t shift_amount = 0)
         {
-            assert(shift_amount < 64);
-            emit_logical_reg(GPRWidth::X, operation, destination.encoding(),
-                             source1.encoding(), source2.encoding(), invert,
-                             shift, shift_amount);
+            constexpr GPRWidth Width = aarch64_detail::gpr_width<Destination>;
+            GPRRegisterOrZero<Width> encoded_destination(destination);
+            assert(shift_amount < static_cast<uint8_t>(Width));
+            write_instruction(
+                0x0a000000 | aarch64_detail::gpr_sf_bits<Width>() |
+                aarch64_detail::encoding_bits(operation) |
+                aarch64_detail::encoding_bits(invert) |
+                aarch64_detail::encoding_bits(shift) |
+                aarch64_detail::register_field(source2.encoding(), 16) |
+                (static_cast<uint32_t>(shift_amount) << 10) |
+                aarch64_detail::register_field(source1.encoding(), 5) |
+                encoded_destination.encoding());
         }
 
         void emit_logical_imm(LogicalOp operation, XRegisterOrZero destination,
@@ -770,18 +820,6 @@ namespace cl::jit
                 (static_cast<uint32_t>(encoding) << 10) |
                 aarch64_detail::register_field(source.encoding(), 5) |
                 destination.encoding());
-        }
-
-        void emit_logical_reg(LogicalOp operation, WRegisterOrZero destination,
-                              WRegisterOrZero source1, WRegisterOrZero source2,
-                              InvertMode invert = InvertMode::Normal,
-                              LogicalShift shift = LogicalShift::Lsl,
-                              uint8_t shift_amount = 0)
-        {
-            assert(shift_amount < 32);
-            emit_logical_reg(GPRWidth::W, operation, destination.encoding(),
-                             source1.encoding(), source2.encoding(), invert,
-                             shift, shift_amount);
         }
 
         void emit_multiply_add(XRegisterOrZero destination,
@@ -822,90 +860,77 @@ namespace cl::jit
                 destination.encoding());
         }
 
-        void emit_conditional_select(AArch64Condition condition,
-                                     XRegisterOrZero destination,
-                                     XRegisterOrZero when_true,
-                                     XRegisterOrZero when_false)
+        template <aarch64_detail::GPRRegisterOrZeroOperand Destination>
+        void emit_conditional_select(
+            AArch64Condition condition, Destination destination,
+            GPRRegisterOrZero<aarch64_detail::gpr_width<Destination>> when_true,
+            GPRRegisterOrZero<aarch64_detail::gpr_width<Destination>>
+                when_false)
         {
-            emit_conditional_select(
-                GPRWidth::X, condition, destination.encoding(),
-                when_true.encoding(), when_false.encoding());
+            constexpr GPRWidth Width = aarch64_detail::gpr_width<Destination>;
+            GPRRegisterOrZero<Width> encoded_destination(destination);
+            write_instruction(
+                0x1a800000 | aarch64_detail::gpr_sf_bits<Width>() |
+                aarch64_detail::register_field(when_false.encoding(), 16) |
+                (static_cast<uint32_t>(condition) << 12) |
+                aarch64_detail::register_field(when_true.encoding(), 5) |
+                encoded_destination.encoding());
         }
 
-        void emit_conditional_select(AArch64Condition condition,
-                                     WRegisterOrZero destination,
-                                     WRegisterOrZero when_true,
-                                     WRegisterOrZero when_false)
-        {
-            emit_conditional_select(
-                GPRWidth::W, condition, destination.encoding(),
-                when_true.encoding(), when_false.encoding());
-        }
-
+        template <aarch64_detail::GPRRegisterOrZeroOperand Destination>
         void emit_move_wide_imm16(
-            MoveWideOp operation, XRegisterOrZero destination,
-            uint16_t immediate,
+            MoveWideOp operation, Destination destination, uint16_t immediate,
             MoveWideHalfword halfword = MoveWideHalfword::Bits0)
         {
-            emit_move_wide_imm16(GPRWidth::X, operation, destination.encoding(),
-                                 immediate, halfword);
+            constexpr GPRWidth Width = aarch64_detail::gpr_width<Destination>;
+            GPRRegisterOrZero<Width> encoded_destination(destination);
+            if constexpr(Width == GPRWidth::Bits32)
+            {
+                assert(halfword == MoveWideHalfword::Bits0 ||
+                       halfword == MoveWideHalfword::Bits16);
+            }
+            write_instruction(0x12800000 |
+                              aarch64_detail::gpr_sf_bits<Width>() |
+                              aarch64_detail::encoding_bits(operation) |
+                              aarch64_detail::encoding_bits(halfword) |
+                              (static_cast<uint32_t>(immediate) << 5) |
+                              encoded_destination.encoding());
         }
 
-        void emit_move_wide_imm16(
-            MoveWideOp operation, WRegisterOrZero destination,
-            uint16_t immediate,
-            MoveWideHalfword halfword = MoveWideHalfword::Bits0)
-        {
-            assert(halfword == MoveWideHalfword::Bits0 ||
-                   halfword == MoveWideHalfword::Bits16);
-            emit_move_wide_imm16(GPRWidth::W, operation, destination.encoding(),
-                                 immediate, halfword);
-        }
-
+        template <aarch64_detail::GPRRegisterOrZeroOperand ValueOperand>
         void emit_load_store_unsigned_offset(LoadStoreOp operation,
-                                             XRegisterOrZero value,
+                                             ValueOperand value,
                                              XRegisterOrSP base,
                                              uint16_t byte_offset)
         {
-            assert(byte_offset % 8 == 0);
-            uint32_t scaled_offset = byte_offset / 8;
+            constexpr GPRWidth Width = aarch64_detail::gpr_width<ValueOperand>;
+            GPRRegisterOrZero<Width> encoded_value(value);
+            constexpr uint32_t AccessBytes =
+                aarch64_detail::gpr_byte_width<Width>();
+            assert(byte_offset % AccessBytes == 0);
+            uint32_t scaled_offset = byte_offset / AccessBytes;
             assert(scaled_offset < (1 << 12));
-            emit_load_store_unsigned_offset(GPRWidth::X, operation,
-                                            value.encoding(), base.encoding(),
-                                            scaled_offset);
+            write_instruction(
+                0x39000000 | aarch64_detail::gpr_load_store_size_bits<Width>() |
+                aarch64_detail::encoding_bits(operation) |
+                (scaled_offset << 10) |
+                aarch64_detail::register_field(base.encoding(), 5) |
+                encoded_value.encoding());
         }
 
-        void emit_load_store_unsigned_offset(LoadStoreOp operation,
-                                             WRegisterOrZero value,
-                                             XRegisterOrSP base,
-                                             uint16_t byte_offset)
+        template <aarch64_detail::GPRRegisterOrZeroOperand ValueOperand>
+        void emit_load_store_unscaled(LoadStoreOp operation, ValueOperand value,
+                                      XRegisterOrSP base, int16_t byte_offset)
         {
-            assert(byte_offset % 4 == 0);
-            uint32_t scaled_offset = byte_offset / 4;
-            assert(scaled_offset < (1 << 12));
-            emit_load_store_unsigned_offset(GPRWidth::W, operation,
-                                            value.encoding(), base.encoding(),
-                                            scaled_offset);
-        }
-
-        void emit_load_store_unscaled(LoadStoreOp operation,
-                                      XRegisterOrZero value, XRegisterOrSP base,
-                                      int16_t byte_offset)
-        {
+            constexpr GPRWidth Width = aarch64_detail::gpr_width<ValueOperand>;
+            GPRRegisterOrZero<Width> encoded_value(value);
             uint32_t immediate =
                 aarch64_detail::signed_immediate(byte_offset, 9, 0);
-            emit_load_store_unscaled(GPRWidth::X, operation, value.encoding(),
-                                     base.encoding(), immediate);
-        }
-
-        void emit_load_store_unscaled(LoadStoreOp operation,
-                                      WRegisterOrZero value, XRegisterOrSP base,
-                                      int16_t byte_offset)
-        {
-            uint32_t immediate =
-                aarch64_detail::signed_immediate(byte_offset, 9, 0);
-            emit_load_store_unscaled(GPRWidth::W, operation, value.encoding(),
-                                     base.encoding(), immediate);
+            write_instruction(
+                0x38000000 | aarch64_detail::gpr_load_store_size_bits<Width>() |
+                aarch64_detail::encoding_bits(operation) | (immediate << 12) |
+                aarch64_detail::register_field(base.encoding(), 5) |
+                encoded_value.encoding());
         }
 
         template <SIMDElementWidth Width>
@@ -946,19 +971,20 @@ namespace cl::jit
                              XRegisterOrSP base, int64_t byte_offset)
         {
             constexpr uint32_t AccessBytes =
-                Width == GPRWidth::X ? uint32_t{8} : uint32_t{4};
+                aarch64_detail::gpr_byte_width<Width>();
             aarch64_detail::LoadStoreAddressEncoding address =
                 aarch64_detail::encode_load_store_address(base, byte_offset,
                                                           AccessBytes);
             uint32_t instruction_base =
                 address.mode ==
                         aarch64_detail::LoadStoreAddressMode::UnsignedScaled
-                    ? 0xb9000000
-                    : 0xb8000000;
-            write_instruction(instruction_base |
-                              (aarch64_detail::encoding_bits(Width) >> 1) |
-                              aarch64_detail::encoding_bits(operation) |
-                              address.bits | value.encoding());
+                    ? 0x39000000
+                    : 0x38000000;
+            write_instruction(
+                instruction_base |
+                aarch64_detail::gpr_load_store_size_bits<Width>() |
+                aarch64_detail::encoding_bits(operation) | address.bits |
+                value.encoding());
         }
 
         template <SIMDElementWidth Width>
@@ -1055,91 +1081,6 @@ namespace cl::jit
         }
 
     private:
-        void emit_arithmetic_imm12(GPRWidth width, ArithmeticOp operation,
-                                   uint32_t destination, uint32_t source,
-                                   uint16_t immediate, AddImmediateShift shift)
-        {
-            write_instruction(
-                0x11000000 | aarch64_detail::encoding_bits(width) |
-                aarch64_detail::encoding_bits(operation) |
-                aarch64_detail::encoding_bits(shift) |
-                (static_cast<uint32_t>(immediate) << 10) |
-                aarch64_detail::register_field(source, 5) | destination);
-        }
-
-        void emit_arithmetic_reg(GPRWidth width, ArithmeticOp operation,
-                                 uint32_t destination, uint32_t source1,
-                                 uint32_t source2, ArithmeticShift shift,
-                                 uint8_t shift_amount)
-        {
-            write_instruction(
-                0x0b000000 | aarch64_detail::encoding_bits(width) |
-                aarch64_detail::encoding_bits(operation) |
-                aarch64_detail::encoding_bits(shift) |
-                aarch64_detail::register_field(source2, 16) |
-                (static_cast<uint32_t>(shift_amount) << 10) |
-                aarch64_detail::register_field(source1, 5) | destination);
-        }
-
-        void emit_logical_reg(GPRWidth width, LogicalOp operation,
-                              uint32_t destination, uint32_t source1,
-                              uint32_t source2, InvertMode invert,
-                              LogicalShift shift, uint8_t shift_amount)
-        {
-            write_instruction(
-                0x0a000000 | aarch64_detail::encoding_bits(width) |
-                aarch64_detail::encoding_bits(operation) |
-                aarch64_detail::encoding_bits(invert) |
-                aarch64_detail::encoding_bits(shift) |
-                aarch64_detail::register_field(source2, 16) |
-                (static_cast<uint32_t>(shift_amount) << 10) |
-                aarch64_detail::register_field(source1, 5) | destination);
-        }
-
-        void emit_move_wide_imm16(GPRWidth width, MoveWideOp operation,
-                                  uint32_t destination, uint16_t immediate,
-                                  MoveWideHalfword halfword)
-        {
-            write_instruction(
-                0x12800000 | aarch64_detail::encoding_bits(width) |
-                aarch64_detail::encoding_bits(operation) |
-                aarch64_detail::encoding_bits(halfword) |
-                (static_cast<uint32_t>(immediate) << 5) | destination);
-        }
-
-        void emit_conditional_select(GPRWidth width, AArch64Condition condition,
-                                     uint32_t destination, uint32_t when_true,
-                                     uint32_t when_false)
-        {
-            write_instruction(
-                0x1a800000 | aarch64_detail::encoding_bits(width) |
-                aarch64_detail::register_field(when_false, 16) |
-                (static_cast<uint32_t>(condition) << 12) |
-                aarch64_detail::register_field(when_true, 5) | destination);
-        }
-
-        void emit_load_store_unsigned_offset(GPRWidth width,
-                                             LoadStoreOp operation,
-                                             uint32_t value, uint32_t base,
-                                             uint32_t scaled_offset)
-        {
-            write_instruction(0xb9000000 |
-                              (aarch64_detail::encoding_bits(width) >> 1) |
-                              aarch64_detail::encoding_bits(operation) |
-                              (scaled_offset << 10) |
-                              aarch64_detail::register_field(base, 5) | value);
-        }
-
-        void emit_load_store_unscaled(GPRWidth width, LoadStoreOp operation,
-                                      uint32_t value, uint32_t base,
-                                      uint32_t immediate)
-        {
-            write_instruction(
-                0xb8000000 | (aarch64_detail::encoding_bits(width) >> 1) |
-                aarch64_detail::encoding_bits(operation) | (immediate << 12) |
-                aarch64_detail::register_field(base, 5) | value);
-        }
-
         void write_instruction(uint32_t instruction)
         {
             sink_.write(instruction);
