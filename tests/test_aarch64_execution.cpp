@@ -45,6 +45,8 @@ namespace cl::jit
         constexpr PhysicalRegister v1(RegisterClass::SIMD, 1);
         constexpr PhysicalRegister v2(RegisterClass::SIMD, 2);
         constexpr PhysicalRegister v3(RegisterClass::SIMD, 3);
+        constexpr PhysicalRegister v4(RegisterClass::SIMD, 4);
+        constexpr PhysicalRegister v5(RegisterClass::SIMD, 5);
 
         thread_local ThreadState *expected_trusted_handler_thread = nullptr;
 
@@ -1611,8 +1613,14 @@ namespace cl::jit
                 entry, F64Ref(parameter));
         AddF64Instruction add = builder.emplace_instruction<AddF64Instruction>(
             entry, F64Ref(load), F64Ref(load));
-        MovF64Instruction move =
-            builder.emplace_instruction<MovF64Instruction>(entry, F64Ref(add));
+        SubF64Instruction subtract =
+            builder.emplace_instruction<SubF64Instruction>(entry, F64Ref(add),
+                                                           F64Ref(load));
+        MulF64Instruction multiply =
+            builder.emplace_instruction<MulF64Instruction>(
+                entry, F64Ref(subtract), F64Ref(add));
+        MovF64Instruction move = builder.emplace_instruction<MovF64Instruction>(
+            entry, F64Ref(multiply));
         StoreStackF64Instruction store =
             builder.emplace_instruction<StoreStackF64Instruction>(entry,
                                                                   F64Ref(move));
@@ -1633,8 +1641,12 @@ namespace cl::jit
                                 PhysicalLocation::reg(v1));
         location_builder.assign(ProgramValueRef(add),
                                 PhysicalLocation::reg(v2));
-        location_builder.assign(ProgramValueRef(move),
+        location_builder.assign(ProgramValueRef(subtract),
                                 PhysicalLocation::reg(v3));
+        location_builder.assign(ProgramValueRef(multiply),
+                                PhysicalLocation::reg(v4));
+        location_builder.assign(ProgramValueRef(move),
+                                PhysicalLocation::reg(v5));
         location_builder.assign(ProgramValueRef(store),
                                 PhysicalLocation::stack(StackLocation(
                                     StackLocationKind::LocalOrTemporary, -1)));
@@ -1653,10 +1665,12 @@ namespace cl::jit
         const void *code = allocation.writable_code().data();
         EXPECT_EQ(0xfd4012a1u, instruction_at(code, 0));
         EXPECT_EQ(0x1e612822u, instruction_at(code, 1));
-        EXPECT_EQ(0x1e604043u, instruction_at(code, 2));
-        EXPECT_EQ(0xfc1f82a3u, instruction_at(code, 3));
-        EXPECT_EQ(0xfc5f82a0u, instruction_at(code, 4));
-        EXPECT_EQ(0xd65f03c0u, instruction_at(code, 5));
+        EXPECT_EQ(0x1e613843u, instruction_at(code, 2));
+        EXPECT_EQ(0x1e620864u, instruction_at(code, 3));
+        EXPECT_EQ(0x1e604085u, instruction_at(code, 4));
+        EXPECT_EQ(0xfc1f82a5u, instruction_at(code, 5));
+        EXPECT_EQ(0xfc5f82a0u, instruction_at(code, 6));
+        EXPECT_EQ(0xd65f03c0u, instruction_at(code, 7));
     }
 
     TEST(AArch64Execution, EmitsManagedFrameLinkRegisterPreservation)

@@ -634,7 +634,7 @@ Conceptually, representative definitions describe the following payloads. The
 examples elide the required IR-level and effect-bound fields:
 
 ```text
-AddF64
+BinaryArithmeticF64 (AddF64, SubF64, MulF64)
     result: ProgramValue(F64)
     lhs: ProgramValue(F64)
     rhs: ProgramValue(F64)
@@ -883,11 +883,11 @@ representation as `Instruction` while providing family-typed read-only
 accessors:
 
 ```cpp
-class BinaryF64Instruction : public Instruction
+class BinaryArithmeticF64Instruction : public Instruction
 {
 public:
     static constexpr InstructionFamilyKind FamilyKind =
-        InstructionFamilyKind::BinaryF64;
+        InstructionFamilyKind::BinaryArithmeticF64;
     static constexpr ResultClass Result = ResultClass::ProgramValue;
     static constexpr ValueRepresentation Representation =
         ValueRepresentation::F64;
@@ -899,13 +899,14 @@ public:
     F64Ref lhs() const;
     F64Ref rhs() const;
 
-    BinaryF64Subkind subkind() const;
+    BinaryArithmeticF64Subkind subkind() const;
 
 protected:
-    BinaryF64Instruction(const CompilationStorage *storage, InstructionId id);
+    BinaryArithmeticF64Instruction(const CompilationStorage *storage,
+                                   InstructionId id);
 };
 
-class AddF64Instruction final : public BinaryF64Instruction
+class AddF64Instruction final : public BinaryArithmeticF64Instruction
 {
 public:
     static constexpr InstructionKind Kind = InstructionKind::AddF64;
@@ -915,7 +916,7 @@ private:
     AddF64Instruction(const CompilationStorage *storage, InstructionId id);
 };
 
-static_assert(sizeof(BinaryF64Instruction) == sizeof(Instruction));
+static_assert(sizeof(BinaryArithmeticF64Instruction) == sizeof(Instruction));
 static_assert(sizeof(AddF64Instruction) == sizeof(Instruction));
 ```
 

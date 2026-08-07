@@ -145,6 +145,29 @@ namespace cl::jit
                 assigned_register(locations, logical.rhs()));
         }
 
+        void
+        emit_binary_arithmetic_f64(AArch64MacroAssembler &assembler,
+                                   const LocationAssignments &locations,
+                                   BinaryArithmeticF64Instruction arithmetic)
+        {
+            FPBinaryOp operation = [&] {
+                switch(arithmetic.subkind())
+                {
+                    case BinaryArithmeticF64Subkind::AddF64:
+                        return FPBinaryOp::Add;
+                    case BinaryArithmeticF64Subkind::SubF64:
+                        return FPBinaryOp::Sub;
+                    case BinaryArithmeticF64Subkind::MulF64:
+                        return FPBinaryOp::Mul;
+                }
+                __builtin_unreachable();
+            }();
+            assembler.emit_fp_binary(
+                operation, assigned_f64_register(locations, F64Ref(arithmetic)),
+                assigned_f64_register(locations, arithmetic.lhs()),
+                assigned_f64_register(locations, arithmetic.rhs()));
+        }
+
         AArch64Condition
         emit_is_comparison(AArch64MacroAssembler &assembler,
                            const LocationAssignments &locations,
@@ -446,6 +469,14 @@ namespace cl::jit
                 }
 
                 CL_JIT_MACHINE_INSTRUCTION_FAMILY_CASE(
+                    BinaryArithmeticF64, arithmetic_instruction)
+                {
+                    emit_binary_arithmetic_f64(
+                        assembler, locations, arithmetic_instruction);
+                    break;
+                }
+
+                CL_JIT_MACHINE_INSTRUCTION_FAMILY_CASE(
                     IsComparison, comparison)
                 {
                     AArch64Condition true_condition = emit_is_comparison(
@@ -622,19 +653,6 @@ namespace cl::jit
                         AArch64Condition::Overflow,
                         side_exit_target(
                             make_side_exit_binding(add_instruction)));
-                    break;
-                }
-
-                case CL_JIT_MACHINE_INSTRUCTION_CASE(
-                    AddF64Instruction, add_instruction)
-                {
-                    assembler.emit_fp_binary(
-                        FPBinaryOp::Add,
-                        assigned_f64_register(locations,
-                                              F64Ref(add_instruction)),
-                        assigned_f64_register(locations, add_instruction.lhs()),
-                        assigned_f64_register(locations,
-                                              add_instruction.rhs()));
                     break;
                 }
 

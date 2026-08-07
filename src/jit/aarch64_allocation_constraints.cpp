@@ -246,7 +246,6 @@ namespace cl::jit
                     case MachineInstructionKind::MovF64:
                     case MachineInstructionKind::LoadStackF64:
                     case MachineInstructionKind::StoreStackF64:
-                    case MachineInstructionKind::AddF64:
                     case MachineInstructionKind::AddSMIWithSideExit:
                     case MachineInstructionKind::SubSMIWithSideExit:
                     case MachineInstructionKind::MovPointer:
@@ -274,6 +273,18 @@ namespace cl::jit
                         {
                             overrides.emplace_back(
                                 logical_instruction,
+                                std::move(input_overrides));
+                        }
+                        break;
+                    }
+
+                    CL_JIT_MACHINE_INSTRUCTION_FAMILY_CASE(
+                        BinaryArithmeticF64, arithmetic_instruction)
+                    {
+                        if(!input_overrides.empty())
+                        {
+                            overrides.emplace_back(
+                                arithmetic_instruction,
                                 std::move(input_overrides));
                         }
                         break;
