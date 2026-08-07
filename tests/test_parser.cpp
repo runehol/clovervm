@@ -505,7 +505,7 @@ TEST(Parser, float_literal_stores_constant_value)
 
     Value constant = parsed.ast.constants[literal_idx];
     ASSERT_TRUE(can_convert_to<Float>(constant));
-    EXPECT_DOUBLE_EQ(1.5, constant.get_ptr<Float>()->value);
+    EXPECT_DOUBLE_EQ(1.5, constant.get_ptr<Float>()->value());
 }
 
 TEST(Parser, ellipsis_literal_stores_constant_value)

@@ -359,7 +359,7 @@ extern "C" CL_EXPORT clover_status clover_float_as_double(clover_context *ctx,
 
     if(cl::can_convert_to<cl::Float>(unwrapped))
     {
-        *out = unwrapped.get_ptr<cl::Float>()->value;
+        *out = unwrapped.get_ptr<cl::Float>()->value();
         return CLOVER_STATUS_OK;
     }
 

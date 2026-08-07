@@ -1209,7 +1209,7 @@ TEST(Interpreter, float_literal_values)
     auto expect_float_literal = [&](const wchar_t *source, double expected) {
         Value actual = test_context.run_file(source);
         ASSERT_TRUE(can_convert_to<Float>(actual));
-        EXPECT_DOUBLE_EQ(expected, actual.get_ptr<Float>()->value);
+        EXPECT_DOUBLE_EQ(expected, actual.get_ptr<Float>()->value());
     };
 
     expect_float_literal(L"1.0\n", 1.0);
@@ -1222,30 +1222,30 @@ TEST(Interpreter, float_literal_values)
 
     Value huge_actual = test_context.run_file(L"1e1000\n");
     ASSERT_TRUE(can_convert_to<Float>(huge_actual));
-    EXPECT_TRUE(std::isinf(huge_actual.get_ptr<Float>()->value));
-    EXPECT_FALSE(std::signbit(huge_actual.get_ptr<Float>()->value));
+    EXPECT_TRUE(std::isinf(huge_actual.get_ptr<Float>()->value()));
+    EXPECT_FALSE(std::signbit(huge_actual.get_ptr<Float>()->value()));
 
     Value negative_huge_actual = test_context.run_file(L"-1e1000\n");
     ASSERT_TRUE(can_convert_to<Float>(negative_huge_actual));
-    EXPECT_TRUE(std::isinf(negative_huge_actual.get_ptr<Float>()->value));
-    EXPECT_TRUE(std::signbit(negative_huge_actual.get_ptr<Float>()->value));
+    EXPECT_TRUE(std::isinf(negative_huge_actual.get_ptr<Float>()->value()));
+    EXPECT_TRUE(std::signbit(negative_huge_actual.get_ptr<Float>()->value()));
 
     Value tiny_actual = test_context.run_file(L"1e-1000\n");
     ASSERT_TRUE(can_convert_to<Float>(tiny_actual));
-    EXPECT_EQ(0.0, tiny_actual.get_ptr<Float>()->value);
-    EXPECT_FALSE(std::signbit(tiny_actual.get_ptr<Float>()->value));
+    EXPECT_EQ(0.0, tiny_actual.get_ptr<Float>()->value());
+    EXPECT_FALSE(std::signbit(tiny_actual.get_ptr<Float>()->value()));
 
     Value negative_tiny_actual = test_context.run_file(L"-1e-1000\n");
     ASSERT_TRUE(can_convert_to<Float>(negative_tiny_actual));
-    EXPECT_EQ(0.0, negative_tiny_actual.get_ptr<Float>()->value);
-    EXPECT_TRUE(std::signbit(negative_tiny_actual.get_ptr<Float>()->value));
+    EXPECT_EQ(0.0, negative_tiny_actual.get_ptr<Float>()->value());
+    EXPECT_TRUE(std::signbit(negative_tiny_actual.get_ptr<Float>()->value()));
 
     std::wstring tiny_decimal_source = L"0." + std::wstring(400, L'0') + L"1\n";
     Value tiny_decimal_actual =
         test_context.run_file(tiny_decimal_source.c_str());
     ASSERT_TRUE(can_convert_to<Float>(tiny_decimal_actual));
-    EXPECT_EQ(0.0, tiny_decimal_actual.get_ptr<Float>()->value);
-    EXPECT_FALSE(std::signbit(tiny_decimal_actual.get_ptr<Float>()->value));
+    EXPECT_EQ(0.0, tiny_decimal_actual.get_ptr<Float>()->value());
+    EXPECT_FALSE(std::signbit(tiny_decimal_actual.get_ptr<Float>()->value()));
 }
 
 TEST(Interpreter, builtin_pow_with_modulo_rejects_binary_only_pow)
@@ -1355,7 +1355,7 @@ TEST(Interpreter, unary_float_handler_has_registered_metadata)
 
     Value actual = test_context.thread()->run_clovervm_code_object(code_obj);
     ASSERT_TRUE(can_convert_to<Float>(actual));
-    EXPECT_DOUBLE_EQ(-2.5, actual.get_ptr<Float>()->value);
+    EXPECT_DOUBLE_EQ(-2.5, actual.get_ptr<Float>()->value());
 
     Value function_value =
         load_global_from_module_for_test(code_obj, function_name);
@@ -1802,7 +1802,7 @@ TEST(Interpreter, operator_add_dispatch_reflected_float_trusted_cache_hit)
 
     Value actual = test_context.thread()->run_clovervm_code_object(code_obj);
     ASSERT_TRUE(can_convert_to<Float>(actual));
-    EXPECT_DOUBLE_EQ(3.5, actual.get_ptr<Float>()->value);
+    EXPECT_DOUBLE_EQ(3.5, actual.get_ptr<Float>()->value());
 
     Value function_value =
         load_global_from_module_for_test(code_obj, function_name);
@@ -4900,7 +4900,7 @@ TEST(Interpreter, float_objects_have_builtin_class_and_string_methods)
         Value result = test_context.thread()->call_clovervm_method(
             receiver, name, argument);
         ASSERT_TRUE(can_convert_to<Float>(result));
-        EXPECT_DOUBLE_EQ(expected, result.get_ptr<Float>()->value);
+        EXPECT_DOUBLE_EQ(expected, result.get_ptr<Float>()->value());
     };
 
     Value equal_float = test_context.thread()->call_clovervm_method(

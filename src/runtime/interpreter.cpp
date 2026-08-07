@@ -933,7 +933,7 @@ namespace cl
             MUSTTAIL return unsupported_truthiness_error(ARGS);
         }
 
-        accumulator = accumulator.get_ptr<Float>()->value != 0.0
+        accumulator = accumulator.get_ptr<Float>()->value() != 0.0
                           ? Value::False()
                           : Value::True();
         COMPLETE();
@@ -947,7 +947,7 @@ namespace cl
             MUSTTAIL return unsupported_truthiness_error(ARGS);
         }
 
-        accumulator = accumulator.get_ptr<Float>()->value != 0.0
+        accumulator = accumulator.get_ptr<Float>()->value() != 0.0
                           ? Value::True()
                           : Value::False();
         COMPLETE();
@@ -961,7 +961,7 @@ namespace cl
             MUSTTAIL return unsupported_truthiness_error(ARGS);
         }
 
-        accumulator = accumulator.get_ptr<Float>()->value != 0.0
+        accumulator = accumulator.get_ptr<Float>()->value() != 0.0
                           ? Value::False()
                           : Value::True();
         COMPLETE();
@@ -976,7 +976,7 @@ namespace cl
         }
 
         pc += 3;
-        if(accumulator.get_ptr<Float>()->value != 0.0)
+        if(accumulator.get_ptr<Float>()->value() != 0.0)
         {
             pc += rel_target;
         }
@@ -994,7 +994,7 @@ namespace cl
         }
 
         pc += 3;
-        if(accumulator.get_ptr<Float>()->value == 0.0)
+        if(accumulator.get_ptr<Float>()->value() == 0.0)
         {
             pc += rel_target;
         }
@@ -4038,7 +4038,7 @@ namespace cl
         }
         else if(can_convert_to<Float>(a))
         {
-            value = a.get_ptr<Float>()->value;
+            value = a.get_ptr<Float>()->value();
         }
         else
         {

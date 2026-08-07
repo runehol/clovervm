@@ -99,7 +99,7 @@ TEST(NativeModuleBuild, ImportingNativeExtensionPopulatesModuleGlobals)
             L"overflow_init_value");
     Value overflow_init = module->get_own_property(overflow_init_name);
     ASSERT_TRUE(can_convert_to<Float>(overflow_init));
-    EXPECT_DOUBLE_EQ(4.5, overflow_init.get_ptr<Float>()->value);
+    EXPECT_DOUBLE_EQ(4.5, overflow_init.get_ptr<Float>()->value());
     TValue<String> answer_func_name =
         context.vm().get_or_create_interned_string_value(L"answer_func");
     Value answer_func = module->get_own_property(answer_func_name);
@@ -159,7 +159,7 @@ TEST(NativeModuleBuild, ImportingNativeExtensionPopulatesModuleGlobals)
     Value double_constant_result = context.thread()->call_clovervm_function(
         TValue<Function>::from_value_assumed(double_constant));
     ASSERT_TRUE(can_convert_to<Float>(double_constant_result));
-    EXPECT_DOUBLE_EQ(1.5, double_constant_result.get_ptr<Float>()->value);
+    EXPECT_DOUBLE_EQ(1.5, double_constant_result.get_ptr<Float>()->value());
 
     TValue<String> float_plus_one_name =
         context.vm().get_or_create_interned_string_value(L"float_plus_one");
@@ -169,12 +169,12 @@ TEST(NativeModuleBuild, ImportingNativeExtensionPopulatesModuleGlobals)
         TValue<Function>::from_value_assumed(float_plus_one),
         Value::from_smi(2));
     ASSERT_TRUE(can_convert_to<Float>(smi_float_result));
-    EXPECT_DOUBLE_EQ(3.0, smi_float_result.get_ptr<Float>()->value);
+    EXPECT_DOUBLE_EQ(3.0, smi_float_result.get_ptr<Float>()->value());
     Value float_float_result = context.thread()->call_clovervm_function(
         TValue<Function>::from_value_assumed(float_plus_one),
         context.thread()->make_object_value<Float>(2.5).raw_value());
     ASSERT_TRUE(can_convert_to<Float>(float_float_result));
-    EXPECT_DOUBLE_EQ(3.5, float_float_result.get_ptr<Float>()->value);
+    EXPECT_DOUBLE_EQ(3.5, float_float_result.get_ptr<Float>()->value());
     Value non_float_result = context.thread()->call_clovervm_function(
         TValue<Function>::from_value_assumed(float_plus_one), Value::None());
     EXPECT_TRUE(non_float_result.is_exception_marker());
@@ -251,7 +251,7 @@ TEST(NativeModuleBuild, ImportingNativeExtensionPopulatesModuleGlobals)
         Value sum_result = context.thread()->call_clovervm_function(
             TValue<Function>::from_value_assumed(sum), args...);
         ASSERT_TRUE(can_convert_to<Float>(sum_result));
-        EXPECT_DOUBLE_EQ(expected, sum_result.get_ptr<Float>()->value);
+        EXPECT_DOUBLE_EQ(expected, sum_result.get_ptr<Float>()->value());
     };
     expect_sum_result(L"sum2", 3.0, Value::from_smi(1), Value::from_smi(2));
     expect_sum_result(L"sum3", 6.0, Value::from_smi(1), Value::from_smi(2),

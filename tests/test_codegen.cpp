@@ -1179,7 +1179,7 @@ TEST(Codegen, float_literal_constant_value)
     ASSERT_EQ(size_t(1), code_obj->constant_table.size());
     Value constant = code_obj->constant_table[0].value();
     ASSERT_TRUE(can_convert_to<Float>(constant));
-    EXPECT_DOUBLE_EQ(1.5, constant.get_ptr<Float>()->value);
+    EXPECT_DOUBLE_EQ(1.5, constant.get_ptr<Float>()->value());
 }
 
 TEST(Codegen, attribute_load_uses_register_receiver)

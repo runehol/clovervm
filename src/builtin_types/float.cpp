@@ -42,7 +42,7 @@ namespace cl
         }
         return active_thread()
             ->make_object_value<String>(
-                format_float_value(self.get_ptr<Float>()->value))
+                format_float_value(self.get_ptr<Float>()->value()))
             .raw_value();
     }
 
@@ -55,7 +55,7 @@ namespace cl
         }
         return active_thread()
             ->make_object_value<String>(
-                format_float_value(self.get_ptr<Float>()->value))
+                format_float_value(self.get_ptr<Float>()->value()))
             .raw_value();
     }
 
@@ -71,7 +71,7 @@ namespace cl
         }
         if(can_convert_to<Float>(value))
         {
-            *out = value.get_ptr<Float>()->value;
+            *out = value.get_ptr<Float>()->value();
             return true;
         }
         return false;
@@ -295,7 +295,7 @@ namespace cl
             {
                 return Value::NotImplemented();
             }
-            return Function(thread, self.get_ptr<Float>()->value, right);
+            return Function(thread, self.get_ptr<Float>()->value(), right);
         }
 
         template <TrustedHandlerEffects Effects,
@@ -316,19 +316,19 @@ namespace cl
     {
         if constexpr(Adaptation == FloatBinaryAdaptation::FloatFloat)
         {
-            return Function(thread, left.get_ptr<Float>()->value,
-                            right.get_ptr<Float>()->value);
+            return Function(thread, left.get_ptr<Float>()->value(),
+                            right.get_ptr<Float>()->value());
         }
         else if constexpr(Adaptation == FloatBinaryAdaptation::FloatIntlike)
         {
-            return Function(thread, left.get_ptr<Float>()->value,
+            return Function(thread, left.get_ptr<Float>()->value(),
                             smi_or_bool_as_double(right));
         }
         else
         {
             static_assert(Adaptation == FloatBinaryAdaptation::IntlikeFloat);
             return Function(thread, smi_or_bool_as_double(left),
-                            right.get_ptr<Float>()->value);
+                            right.get_ptr<Float>()->value());
         }
     }
 
@@ -376,7 +376,7 @@ namespace cl
                 return thread->set_pending_builtin_exception_string(
                     L"TypeError", ReceiverError.c_str());
             }
-            return Function(thread, self.get_ptr<Float>()->value);
+            return Function(thread, self.get_ptr<Float>()->value());
         }
 
         template <TrustedHandlerEffects Effects,
@@ -388,7 +388,7 @@ namespace cl
     static Value trusted_adapted_float_unary_operation(ThreadState *thread,
                                                        Value value)
     {
-        return Function(thread, value.get_ptr<Float>()->value);
+        return Function(thread, value.get_ptr<Float>()->value());
     }
 
     template <typename Operation, TrustedHandlerEffects Effects,
