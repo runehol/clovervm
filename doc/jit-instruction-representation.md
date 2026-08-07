@@ -639,6 +639,12 @@ BinaryArithmeticF64 (AddF64, SubF64, MulF64)
     lhs: ProgramValue(F64)
     rhs: ProgramValue(F64)
 
+BinaryComparisonF64 (EqualF64, NotEqualF64, LessF64, LessEqualF64,
+                     GreaterF64, GreaterEqualF64)
+    result: ProgramValue(TaggedValue)
+    lhs: ProgramValue(F64)
+    rhs: ProgramValue(F64)
+
 BinaryArithmeticSMIWithSnapshot (currently AddSMI)
     result: ProgramValue(TaggedValue)
     lhs: ProgramValue(TaggedValue)

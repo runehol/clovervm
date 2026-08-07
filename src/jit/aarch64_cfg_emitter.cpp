@@ -210,6 +210,32 @@ namespace cl::jit
             __builtin_unreachable();
         }
 
+        AArch64Condition
+        emit_binary_comparison_f64(AArch64MacroAssembler &assembler,
+                                   const LocationAssignments &locations,
+                                   BinaryComparisonF64Instruction comparison)
+        {
+            assembler.emit_fp_compare(
+                assigned_f64_register(locations, comparison.lhs()),
+                assigned_f64_register(locations, comparison.rhs()));
+            switch(comparison.subkind())
+            {
+                case BinaryComparisonF64Subkind::EqualF64:
+                    return AArch64Condition::Equal;
+                case BinaryComparisonF64Subkind::NotEqualF64:
+                    return AArch64Condition::NotEqual;
+                case BinaryComparisonF64Subkind::LessF64:
+                    return AArch64Condition::Negative;
+                case BinaryComparisonF64Subkind::LessEqualF64:
+                    return AArch64Condition::UnsignedLowerOrSame;
+                case BinaryComparisonF64Subkind::GreaterF64:
+                    return AArch64Condition::SignedGreater;
+                case BinaryComparisonF64Subkind::GreaterEqualF64:
+                    return AArch64Condition::SignedGreaterOrEqual;
+            }
+            __builtin_unreachable();
+        }
+
         void
         emit_tagged_boolean_from_flags(AArch64MacroAssembler &assembler,
                                        const LocationAssignments &locations,
@@ -491,6 +517,17 @@ namespace cl::jit
                 {
                     AArch64Condition true_condition =
                         emit_binary_comparison_smi(assembler, locations,
+                                                   comparison);
+                    emit_tagged_boolean_from_flags(
+                        assembler, locations, true_condition, instruction);
+                    break;
+                }
+
+                CL_JIT_MACHINE_INSTRUCTION_FAMILY_CASE(
+                    BinaryComparisonF64, comparison)
+                {
+                    AArch64Condition true_condition =
+                        emit_binary_comparison_f64(assembler, locations,
                                                    comparison);
                     emit_tagged_boolean_from_flags(
                         assembler, locations, true_condition, instruction);
@@ -879,6 +916,14 @@ namespace cl::jit
                         BinaryComparisonSMIInstruction comparison =
                             instruction.as<BinaryComparisonSMIInstruction>();
                         true_condition = emit_binary_comparison_smi(
+                            assembler, locations, comparison);
+                    }
+                    else if(BinaryComparisonF64Instruction::accepts_kind(
+                                instruction.kind()))
+                    {
+                        BinaryComparisonF64Instruction comparison =
+                            instruction.as<BinaryComparisonF64Instruction>();
+                        true_condition = emit_binary_comparison_f64(
                             assembler, locations, comparison);
                     }
 

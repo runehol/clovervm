@@ -29,6 +29,7 @@
 #include <cstdint>
 #include <cstring>
 #include <initializer_list>
+#include <limits>
 #include <string>
 #include <utility>
 #include <vector>
@@ -327,6 +328,131 @@ namespace cl::jit
                   execute.operator()<OrrSMIInstruction>(lhs, rhs));
         EXPECT_EQ(static_cast<uint64_t>(Value::from_smi(5).as.integer),
                   execute.operator()<EorSMIInstruction>(lhs, rhs));
+    }
+
+    TEST(AArch64Execution, ExecutesBinaryComparisonF64Family)
+    {
+        auto execute = []<typename Comparison>(double lhs, double rhs) {
+            CompilationSession session;
+            GraphBuilder builder(session, IRLevel::Machine);
+            Block *entry = builder.emplace_block();
+            ParameterF64Instruction lhs_parameter =
+                builder.emplace_parameter<ParameterF64Instruction>(entry);
+            ParameterF64Instruction rhs_parameter =
+                builder.emplace_parameter<ParameterF64Instruction>(entry);
+            Comparison result = builder.emplace_instruction<Comparison>(
+                entry, F64Ref(lhs_parameter), F64Ref(rhs_parameter));
+            builder.emplace_instruction<BareReturnInstruction>(
+                entry, TaggedValueRef(result));
+            ControlFlowGraph *graph = builder.finalize();
+
+            LocationAssignmentsBuilder location_builder;
+            location_builder.assign(ProgramValueRef(lhs_parameter),
+                                    PhysicalLocation::reg(v0));
+            location_builder.assign(ProgramValueRef(rhs_parameter),
+                                    PhysicalLocation::reg(v1));
+            location_builder.assign(ProgramValueRef(result),
+                                    PhysicalLocation::reg(x0));
+            location_builder.assign(result, 0, PhysicalLocation::reg(x1));
+            LocationAssignments locations =
+                std::move(location_builder).finalize();
+
+            CodeCache cache;
+            auto emission = emit_aarch64_from_cfg(*graph, locations, cache,
+                                                  no_side_exit_thunk());
+            EXPECT_TRUE(emission);
+            PublishedCode code = std::move(emission).value();
+            using Function = uint64_t (*)(double, double);
+            Function function = reinterpret_cast<Function>(
+                code.entry().bits_for_indirect_target());
+            return function(lhs, rhs);
+        };
+
+        constexpr double lower = 2.0;
+        constexpr double higher = 3.0;
+        double nan = std::numeric_limits<double>::quiet_NaN();
+        uint64_t true_bits = static_cast<uint64_t>(Value::True().as.integer);
+        uint64_t false_bits = static_cast<uint64_t>(Value::False().as.integer);
+
+        EXPECT_EQ(true_bits,
+                  execute.operator()<EqualF64Instruction>(lower, lower));
+        EXPECT_EQ(false_bits,
+                  execute.operator()<EqualF64Instruction>(nan, nan));
+        EXPECT_EQ(false_bits,
+                  execute.operator()<NotEqualF64Instruction>(lower, lower));
+        EXPECT_EQ(true_bits,
+                  execute.operator()<NotEqualF64Instruction>(nan, nan));
+        EXPECT_EQ(true_bits,
+                  execute.operator()<LessF64Instruction>(lower, higher));
+        EXPECT_EQ(false_bits,
+                  execute.operator()<LessF64Instruction>(nan, higher));
+        EXPECT_EQ(true_bits,
+                  execute.operator()<LessEqualF64Instruction>(lower, lower));
+        EXPECT_EQ(false_bits,
+                  execute.operator()<LessEqualF64Instruction>(nan, higher));
+        EXPECT_EQ(true_bits,
+                  execute.operator()<GreaterF64Instruction>(higher, lower));
+        EXPECT_EQ(false_bits,
+                  execute.operator()<GreaterF64Instruction>(nan, lower));
+        EXPECT_EQ(true_bits, execute.operator()<GreaterEqualF64Instruction>(
+                                 higher, higher));
+        EXPECT_EQ(false_bits,
+                  execute.operator()<GreaterEqualF64Instruction>(nan, lower));
+    }
+
+    TEST(AArch64Execution, FusesF64ComparisonWithBranch)
+    {
+        CompilationSession session;
+        GraphBuilder builder(session, IRLevel::Machine);
+        Block *entry = builder.emplace_block();
+        Block *if_true = builder.emplace_block();
+        Block *if_false = builder.emplace_block();
+        ParameterF64Instruction lhs =
+            builder.emplace_parameter<ParameterF64Instruction>(entry);
+        ParameterF64Instruction rhs =
+            builder.emplace_parameter<ParameterF64Instruction>(entry);
+        LessF64Instruction comparison =
+            builder.emplace_instruction<LessF64Instruction>(entry, F64Ref(lhs),
+                                                            F64Ref(rhs));
+        BlockEdge *true_edge = builder.make_block_edge(entry, if_true);
+        BlockEdge *false_edge = builder.make_block_edge(entry, if_false);
+        builder.emplace_instruction<ConditionalBranchInstruction>(
+            entry, TaggedValueRef(comparison), true_edge, false_edge);
+        ConstInstruction true_result =
+            builder.emplace_instruction<ConstInstruction>(if_true,
+                                                          Value::True());
+        builder.emplace_instruction<BareReturnInstruction>(
+            if_true, TaggedValueRef(true_result));
+        ConstInstruction false_result =
+            builder.emplace_instruction<ConstInstruction>(if_false,
+                                                          Value::False());
+        builder.emplace_instruction<BareReturnInstruction>(
+            if_false, TaggedValueRef(false_result));
+        ControlFlowGraph *graph = builder.finalize();
+
+        LocationAssignmentsBuilder location_builder;
+        location_builder.assign(ProgramValueRef(lhs),
+                                PhysicalLocation::reg(v0));
+        location_builder.assign(ProgramValueRef(rhs),
+                                PhysicalLocation::reg(v1));
+        location_builder.assign(ProgramValueRef(true_result),
+                                PhysicalLocation::reg(x0));
+        location_builder.assign(ProgramValueRef(false_result),
+                                PhysicalLocation::reg(x0));
+        LocationAssignments locations = std::move(location_builder).finalize();
+
+        CodeCache cache;
+        auto emission = emit_aarch64_from_cfg(*graph, locations, cache,
+                                              no_side_exit_thunk());
+        ASSERT_TRUE(emission);
+        PublishedCode code = std::move(emission).value();
+        using Function = uint64_t (*)(double, double);
+        Function function =
+            reinterpret_cast<Function>(code.entry().bits_for_indirect_target());
+        EXPECT_EQ(static_cast<uint64_t>(Value::True().as.integer),
+                  function(2.0, 3.0));
+        EXPECT_EQ(static_cast<uint64_t>(Value::False().as.integer),
+                  function(std::numeric_limits<double>::quiet_NaN(), 3.0));
     }
 
     TEST(AArch64Execution, BranchesOnInlineTruthinessWithEitherFallthrough)

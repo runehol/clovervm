@@ -111,6 +111,7 @@ namespace cl::jit
                 case InstructionFamilyKind::BinaryArithmeticSMIWithSnapshot:
                 case InstructionFamilyKind::BinaryLogicalSMI:
                     return TaggedValueSet::smi();
+                case InstructionFamilyKind::BinaryComparisonF64:
                 case InstructionFamilyKind::BinaryComparisonSMI:
                 case InstructionFamilyKind::IsComparison:
                     return TaggedValueSet::boolean();

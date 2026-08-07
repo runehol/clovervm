@@ -333,6 +333,14 @@ namespace cl::jit
                         break;
                     }
 
+                    CL_JIT_MACHINE_INSTRUCTION_FAMILY_CASE(
+                        BinaryComparisonF64, comparison)
+                    {
+                        overrides.push_back(gpr_temporary_constraints(
+                            comparison, std::move(input_overrides)));
+                        break;
+                    }
+
                     case CL_JIT_MACHINE_INSTRUCTION_CASE(
                         ReturnInstruction, return_instruction)
                     {

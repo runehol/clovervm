@@ -240,6 +240,22 @@ CL_JIT_INSTRUCTION_FAMILY(
 #undef CL_JIT_BinaryComparisonSMI_ATTRIBUTES
 #undef CL_JIT_BinaryComparisonSMI_OPERANDS
 
+#define CL_JIT_BinaryComparisonF64_OPERANDS(fixed, variadic, snapshot_values)  \
+    fixed(lhs, ProgramValue, F64) fixed(rhs, ProgramValue, F64)
+#define CL_JIT_BinaryComparisonF64_ATTRIBUTES(attribute)
+#define CL_JIT_BinaryComparisonF64_SUBKINDS(each, ...)                         \
+    each(EqualF64, __VA_ARGS__) each(NotEqualF64, __VA_ARGS__)                 \
+        each(LessF64, __VA_ARGS__) each(LessEqualF64, __VA_ARGS__)             \
+            each(GreaterF64, __VA_ARGS__) each(GreaterEqualF64, __VA_ARGS__)
+CL_JIT_INSTRUCTION_FAMILY(BinaryComparisonF64, CL_JIT_IR_LEVELS(CoreMachine),
+                          CL_JIT_RESULT(ProgramValue, TaggedValue, Def),
+                          CL_JIT_EFFECT_BOUNDS(None, None),
+                          CL_JIT_BinaryComparisonF64_OPERANDS,
+                          CL_JIT_BinaryComparisonF64_ATTRIBUTES,
+                          CL_JIT_BinaryComparisonF64_SUBKINDS)
+#undef CL_JIT_BinaryComparisonF64_ATTRIBUTES
+#undef CL_JIT_BinaryComparisonF64_OPERANDS
+
 #define CL_JIT_IsComparison_OPERANDS(fixed, variadic, snapshot_values)        \
     fixed(lhs, ProgramValue, TaggedValue)                                      \
     fixed(rhs, ProgramValue, TaggedValue)
