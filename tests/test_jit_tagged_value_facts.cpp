@@ -80,9 +80,54 @@ namespace cl::jit
                   TaggedValueSet::from_shape_key(float_shape));
     }
 
+    TEST(JitTaggedValueSet, CombinesExactShapeFacts)
+    {
+        test::VmTestContext context;
+        Shape *float_shape =
+            context.vm().float_class()->get_instance_root_shape();
+        Shape *string_shape = context.vm().str_instance_root_shape();
+        TaggedValueSet exact_float = TaggedValueSet::exact_shape(float_shape);
+        TaggedValueSet exact_string = TaggedValueSet::exact_shape(string_shape);
+
+        ASSERT_TRUE(exact_float.exact_shape().has_value());
+        EXPECT_EQ(float_shape, *exact_float.exact_shape());
+        EXPECT_EQ(exact_float, TaggedValueSet::never().merge(exact_float));
+        EXPECT_EQ(exact_float, exact_float.merge(exact_float));
+        EXPECT_EQ(TaggedValueSet::pointer(),
+                  exact_float.merge(TaggedValueSet::pointer()));
+        EXPECT_EQ(exact_float,
+                  exact_float.intersect(TaggedValueSet::pointer()));
+        EXPECT_TRUE(exact_float.intersect(exact_string).is_never());
+        EXPECT_TRUE(exact_float.is_subset_of(TaggedValueSet::pointer()));
+        EXPECT_TRUE(exact_float.is_disjoint_from(exact_string));
+
+        TaggedValueSet refcounted_float = exact_float.intersect(
+            TaggedValueSet::from_inline_tag(value_refcounted_ptr_tag));
+        TaggedValueSet interned_float = exact_float.intersect(
+            TaggedValueSet::from_inline_tag(value_interned_ptr_tag));
+        EXPECT_EQ(tagged_value_set_bit(value_refcounted_ptr_tag),
+                  refcounted_float.bits());
+        EXPECT_EQ(tagged_value_set_bit(value_interned_ptr_tag),
+                  interned_float.bits());
+        ASSERT_TRUE(refcounted_float.exact_shape().has_value());
+        ASSERT_TRUE(interned_float.exact_shape().has_value());
+        EXPECT_EQ(float_shape, *refcounted_float.exact_shape());
+        EXPECT_EQ(float_shape, *interned_float.exact_shape());
+        EXPECT_TRUE(refcounted_float.is_disjoint_from(interned_float));
+        EXPECT_EQ(exact_float, refcounted_float.merge(interned_float));
+
+        TaggedValueSet float_or_smi = exact_float.merge(TaggedValueSet::smi());
+        // The current domain cannot constrain only the pointer arm of a mixed
+        // set, so this deliberately widens to SMI or any pointer. A future
+        // pointer-arm shape-set extension could retain exact Float here.
+        EXPECT_EQ(exact_float.bits() | TaggedValueSet::smi().bits(),
+                  float_or_smi.bits());
+        EXPECT_FALSE(float_or_smi.exact_shape().has_value());
+    }
+
     TEST(JitTaggedValueFactAnalysis, ConvergesLoopParameterFacts)
     {
-        CompilationSession session;
+        CompilationSession session{test::compiler_thread()};
         GraphBuilder builder(session, IRLevel::Core);
         Block *entry = builder.emplace_block();
         Block *loop = builder.emplace_block();
@@ -111,10 +156,52 @@ namespace cl::jit
                   queries.tagged_value_facts_of(ProgramValueRef(comparison)));
     }
 
+    TEST(JitTaggedValueFactAnalysis, RetainsExactFloatShapeAcrossMerge)
+    {
+        test::VmTestContext context;
+        CompilationSession session{*context.thread()};
+        GraphBuilder builder(session, IRLevel::Core);
+        Block *entry = builder.emplace_block();
+        Block *join = builder.emplace_block();
+        ParameterF64Instruction lhs =
+            builder.emplace_parameter<ParameterF64Instruction>(entry);
+        ParameterF64Instruction rhs =
+            builder.emplace_parameter<ParameterF64Instruction>(entry);
+        BoxF64Instruction boxed_lhs =
+            builder.emplace_instruction<BoxF64Instruction>(entry, F64Ref(lhs));
+        BoxF64Instruction boxed_rhs =
+            builder.emplace_instruction<BoxF64Instruction>(entry, F64Ref(rhs));
+        ConstInstruction condition =
+            builder.emplace_instruction<ConstInstruction>(entry, Value::True());
+        std::array<ProgramValueRef, 1> lhs_arguments = {
+            ProgramValueRef(boxed_lhs)};
+        std::array<ProgramValueRef, 1> rhs_arguments = {
+            ProgramValueRef(boxed_rhs)};
+        builder.emplace_instruction<ConditionalBranchInstruction>(
+            entry, TaggedValueRef(condition),
+            builder.make_block_edge(entry, join, lhs_arguments),
+            builder.make_block_edge(entry, join, rhs_arguments));
+        ParameterInstruction merged =
+            builder.emplace_parameter<ParameterInstruction>(join);
+        builder.emplace_instruction<BareReturnInstruction>(
+            join, TaggedValueRef(merged));
+        ControlFlowGraph *graph = builder.finalize();
+
+        GraphQueries queries =
+            graph->prepare_queries(GraphQuery::TaggedValueFacts);
+        const TaggedValueSet &facts =
+            queries.tagged_value_facts_of(ProgramValueRef(merged));
+        ASSERT_TRUE(facts.exact_shape().has_value());
+        EXPECT_EQ(context.thread()
+                      ->class_for_native_layout(NativeLayoutId::Float)
+                      ->get_instance_root_shape(),
+                  *facts.exact_shape());
+    }
+
     TEST(JitTaggedValueGuardSimplification,
          RemovesGuardProvedByComparisonAndDeadSnapshot)
     {
-        CompilationSession session;
+        CompilationSession session{test::compiler_thread()};
         GraphBuilder builder(session, IRLevel::Core);
         Block *entry = builder.emplace_block();
         ParameterInstruction lhs =
@@ -150,7 +237,7 @@ namespace cl::jit
 
     TEST(JitTaggedValueGuardSimplification, RetainsGuardForUnknownParameter)
     {
-        CompilationSession session;
+        CompilationSession session{test::compiler_thread()};
         GraphBuilder builder(session, IRLevel::Core);
         Block *entry = builder.emplace_block();
         ParameterInstruction parameter =
@@ -180,7 +267,7 @@ namespace cl::jit
         ThreadState::ActivationScope activation_scope(vm.thread());
         Shape *shape = vm.vm().str_instance_root_shape();
 
-        CompilationSession session;
+        CompilationSession session{test::compiler_thread()};
         GraphBuilder builder(session, IRLevel::Core);
         Block *entry = builder.emplace_block();
         ParameterInstruction parameter =
@@ -220,6 +307,79 @@ namespace cl::jit
                                      .as<BareReturnInstruction>()
                                      .return_value()
                                      .instruction_id());
+    }
+
+    TEST(JitTaggedValueGuardSimplification,
+         RemovesFloatShapeGuardProvedByBoxF64)
+    {
+        test::VmTestContext context;
+        CompilationSession session{*context.thread()};
+        GraphBuilder builder(session, IRLevel::Core);
+        Block *entry = builder.emplace_block();
+        ParameterF64Instruction source =
+            builder.emplace_parameter<ParameterF64Instruction>(entry);
+        BoxF64Instruction box = builder.emplace_instruction<BoxF64Instruction>(
+            entry, F64Ref(source));
+        SnapshotInstruction snapshot =
+            builder.emplace_instruction<SnapshotInstruction>(
+                entry, std::span<const ProgramValueRef>{}, BytecodePCOffset{7});
+        PointerAndShapeGuardInstruction guard =
+            builder.emplace_instruction<PointerAndShapeGuardInstruction>(
+                entry, TaggedValueRef(box), SnapshotRef(snapshot),
+                context.thread()
+                    ->class_for_native_layout(NativeLayoutId::Float)
+                    ->get_instance_root_shape());
+        builder.emplace_instruction<BareReturnInstruction>(
+            entry, TaggedValueRef(guard));
+        ControlFlowGraph *graph = builder.finalize();
+
+        auto optimization = optimize_core_ir(session, *graph);
+
+        ASSERT_TRUE(optimization);
+        EXPECT_TRUE(std::move(optimization).value());
+        EXPECT_TRUE(guard.is_poisoned());
+        EXPECT_TRUE(snapshot.is_poisoned());
+        ASSERT_EQ(2u, entry->instructions().size());
+        EXPECT_EQ(box.id(), entry->instruction_at(0).id());
+        EXPECT_EQ(box.id(), entry->instruction_at(1)
+                                .as<BareReturnInstruction>()
+                                .return_value()
+                                .instruction_id());
+    }
+
+    TEST(JitTaggedValueGuardSimplification,
+         RetainsMismatchedShapeGuardAfterBoxF64)
+    {
+        test::VmTestContext context;
+        CompilationSession session{*context.thread()};
+        GraphBuilder builder(session, IRLevel::Core);
+        Block *entry = builder.emplace_block();
+        ParameterF64Instruction source =
+            builder.emplace_parameter<ParameterF64Instruction>(entry);
+        BoxF64Instruction box = builder.emplace_instruction<BoxF64Instruction>(
+            entry, F64Ref(source));
+        SnapshotInstruction snapshot =
+            builder.emplace_instruction<SnapshotInstruction>(
+                entry, std::span<const ProgramValueRef>{}, BytecodePCOffset{7});
+        PointerAndShapeGuardInstruction guard =
+            builder.emplace_instruction<PointerAndShapeGuardInstruction>(
+                entry, TaggedValueRef(box), SnapshotRef(snapshot),
+                context.vm().str_instance_root_shape());
+        builder.emplace_instruction<BareReturnInstruction>(
+            entry, TaggedValueRef(guard));
+        ControlFlowGraph *graph = builder.finalize();
+
+        auto simplification = simplify_tagged_value_guards(session, *graph);
+
+        ASSERT_TRUE(simplification);
+        EXPECT_TRUE(std::move(simplification).value());
+        EXPECT_TRUE(guard.is_poisoned());
+        ASSERT_EQ(4u, entry->instructions().size());
+        ShapeGuardInstruction retained =
+            entry->instruction_at(2).as<ShapeGuardInstruction>();
+        EXPECT_EQ(ShapeGuardSubkind::ShapeOnlyGuard, retained.subkind());
+        EXPECT_EQ(context.vm().str_instance_root_shape(),
+                  retained.expected_shape());
     }
 
 }  // namespace cl::jit

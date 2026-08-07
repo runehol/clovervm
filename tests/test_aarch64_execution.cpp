@@ -255,7 +255,7 @@ namespace cl::jit
 
     TEST(AArch64Execution, OmitsUnconditionalBranchToFallthroughBlock)
     {
-        CompilationSession session;
+        CompilationSession session{test::compiler_thread()};
         GraphBuilder builder(session, IRLevel::Machine);
         Block *entry = builder.emplace_block();
         Block *target = builder.emplace_block();
@@ -286,7 +286,7 @@ namespace cl::jit
     TEST(AArch64Execution, ExecutesBinaryLogicalSMIFamily)
     {
         auto execute = []<typename Operation>(Value lhs, Value rhs) {
-            CompilationSession session;
+            CompilationSession session{test::compiler_thread()};
             GraphBuilder builder(session, IRLevel::Machine);
             Block *entry = builder.emplace_block();
             ParameterInstruction lhs_parameter =
@@ -333,7 +333,7 @@ namespace cl::jit
     TEST(AArch64Execution, ExecutesBinaryComparisonF64Family)
     {
         auto execute = []<typename Comparison>(double lhs, double rhs) {
-            CompilationSession session;
+            CompilationSession session{test::compiler_thread()};
             GraphBuilder builder(session, IRLevel::Machine);
             Block *entry = builder.emplace_block();
             ParameterF64Instruction lhs_parameter =
@@ -411,7 +411,7 @@ namespace cl::jit
         Owned<TValue<Float>> unequal_rhs(
             context.thread()->make_object_value<Float>(3.5));
 
-        CompilationSession session;
+        CompilationSession session{test::compiler_thread()};
         GraphBuilder builder(session, IRLevel::Machine);
         Block *entry = builder.emplace_block();
         ParameterInstruction lhs_parameter =
@@ -472,7 +472,7 @@ namespace cl::jit
 
     TEST(AArch64Execution, FusesF64ComparisonWithBranch)
     {
-        CompilationSession session;
+        CompilationSession session{test::compiler_thread()};
         GraphBuilder builder(session, IRLevel::Machine);
         Block *entry = builder.emplace_block();
         Block *if_true = builder.emplace_block();
@@ -528,7 +528,7 @@ namespace cl::jit
     TEST(AArch64Execution, BranchesOnInlineTruthinessWithEitherFallthrough)
     {
         auto execute = [](bool true_falls_through, Value condition) {
-            CompilationSession session;
+            CompilationSession session{test::compiler_thread()};
             GraphBuilder builder(session, IRLevel::Machine);
             Block *entry = builder.emplace_block();
             Block *first = builder.emplace_block();
@@ -584,7 +584,7 @@ namespace cl::jit
 
     TEST(AArch64Execution, BranchesWhenNeitherSuccessorFallsThrough)
     {
-        CompilationSession session;
+        CompilationSession session{test::compiler_thread()};
         GraphBuilder builder(session, IRLevel::Machine);
         Block *entry = builder.emplace_block();
         Block *join = builder.emplace_block();
@@ -638,7 +638,7 @@ namespace cl::jit
 
     TEST(AArch64Execution, EmitsAllocationCreatedEdgeTransferBlock)
     {
-        CompilationSession session;
+        CompilationSession session{test::compiler_thread()};
         GraphBuilder builder(session, IRLevel::Machine);
         Block *entry = builder.emplace_block();
         Block *target = builder.emplace_block();
@@ -707,7 +707,7 @@ namespace cl::jit
         BytecodeStateOrder state_order(*code_object);
 
         auto execute_guard = [&](TaggedValueClass expected_class, Value input) {
-            CompilationSession session;
+            CompilationSession session{test::compiler_thread()};
             GraphBuilder builder(session, IRLevel::Machine);
             builder.set_bytecode_state_order(state_order);
             Block *entry = builder.emplace_block();
@@ -805,7 +805,7 @@ namespace cl::jit
 
         auto execute_guard = [&](ShapeGuardWithSideExitSubkind subkind,
                                  Value input) {
-            CompilationSession session;
+            CompilationSession session{test::compiler_thread()};
             GraphBuilder builder(session, IRLevel::Machine);
             builder.set_bytecode_state_order(state_order);
             Block *entry = builder.emplace_block();
@@ -893,7 +893,7 @@ namespace cl::jit
         BytecodeStateOrder state_order(*code_object);
         ValidityCell *validity = vm.thread()->make_internal_raw<ValidityCell>();
 
-        CompilationSession session;
+        CompilationSession session{test::compiler_thread()};
         GraphBuilder builder(session, IRLevel::Machine);
         builder.set_bytecode_state_order(state_order);
         Block *entry = builder.emplace_block();
@@ -961,7 +961,7 @@ namespace cl::jit
         CodeCache cache;
 
         auto make_guarded_function = [&](TaggedValueClass expected_class) {
-            CompilationSession session;
+            CompilationSession session{test::compiler_thread()};
             GraphBuilder builder(session, IRLevel::Machine);
             builder.set_bytecode_state_order(state_order);
             Block *entry = builder.emplace_block();
@@ -1088,7 +1088,7 @@ namespace cl::jit
         code_object->function_signature.n_parameters = 2;
         BytecodeStateOrder state_order(*code_object);
 
-        CompilationSession session;
+        CompilationSession session{test::compiler_thread()};
         GraphBuilder builder(session, IRLevel::Machine);
         builder.set_bytecode_state_order(state_order);
         Block *entry = builder.emplace_block();
@@ -1160,7 +1160,7 @@ namespace cl::jit
         code_object->function_signature.n_parameters = 2;
         BytecodeStateOrder state_order(*code_object);
 
-        CompilationSession session;
+        CompilationSession session{test::compiler_thread()};
         GraphBuilder builder(session, IRLevel::Machine);
         builder.set_bytecode_state_order(state_order);
         Block *entry = builder.emplace_block();
@@ -1232,7 +1232,7 @@ namespace cl::jit
         code_object->function_signature.n_parameters = 2;
         BytecodeStateOrder state_order(*code_object);
 
-        CompilationSession session;
+        CompilationSession session{test::compiler_thread()};
         GraphBuilder builder(session, IRLevel::Machine);
         builder.set_bytecode_state_order(state_order);
         Block *entry = builder.emplace_block();
@@ -1760,7 +1760,7 @@ namespace cl::jit
 
     TEST(AArch64Execution, EmitsManagedFrameRelativeStackTransfers)
     {
-        CompilationSession session;
+        CompilationSession session{test::compiler_thread()};
         GraphBuilder builder(session, IRLevel::Machine);
         Block *entry = builder.emplace_block();
         ParameterInstruction parameter =
@@ -1808,7 +1808,7 @@ namespace cl::jit
 
     TEST(AArch64Execution, EmitsF64ArithmeticAndStackTransfers)
     {
-        CompilationSession session;
+        CompilationSession session{test::compiler_thread()};
         GraphBuilder builder(session, IRLevel::Machine);
         Block *entry = builder.emplace_block();
         ParameterInstruction return_value =
@@ -1888,7 +1888,7 @@ namespace cl::jit
 
     TEST(AArch64Execution, EmitsManagedFrameLinkRegisterPreservation)
     {
-        CompilationSession session;
+        CompilationSession session{test::compiler_thread()};
         GraphBuilder builder(session, IRLevel::Machine);
         Block *entry = builder.emplace_block();
         ParameterInstruction result =
@@ -1919,7 +1919,7 @@ namespace cl::jit
     {
         test::VmTestContext context;
         ThreadState::ActivationScope activation_scope(context.thread());
-        CompilationSession session;
+        CompilationSession session{test::compiler_thread()};
         GraphBuilder builder(session, IRLevel::Machine);
         Block *entry = builder.emplace_block();
         ParameterInstruction lhs =
@@ -1971,7 +1971,7 @@ namespace cl::jit
             context.thread()->make_object_value<Float>(3.25));
         CodeObject *code_object = context.compile_file(L"pass\n");
         code_object->function_signature.n_parameters = 2;
-        CompilationSession session;
+        CompilationSession session{test::compiler_thread()};
         GraphBuilder builder(session, IRLevel::Machine);
         builder.set_bytecode_state_order(BytecodeStateOrder(*code_object));
         Block *entry = builder.emplace_block();

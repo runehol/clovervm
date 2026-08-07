@@ -36,6 +36,12 @@ namespace cl::jit
                         instruction.as<ShapeGuardInstruction>();
                     TaggedValueSet input_tags = queries.tagged_value_facts_of(
                         ProgramValueRef(guard.object()));
+                    if(input_tags.exact_shape().has_value() &&
+                       *input_tags.exact_shape() == guard.expected_shape())
+                    {
+                        return RewriteResult::replace_with_def(
+                            ProgramValueRef(guard.object()));
+                    }
                     if(input_tags.is_subset_of(TaggedValueSet::pointer()))
                     {
                         return RewriteResult::replace(

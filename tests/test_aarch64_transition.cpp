@@ -97,7 +97,7 @@ namespace cl::jit
         code_object->n_temporaries = 0;
         BytecodeStateOrder state_order(*code_object);
 
-        CompilationSession session;
+        CompilationSession session{test::compiler_thread()};
         GraphBuilder builder(session, IRLevel::Machine);
         builder.set_bytecode_state_order(state_order);
         Block *entry = builder.emplace_block();
@@ -167,7 +167,7 @@ namespace cl::jit
         code_object->n_temporaries = 0;
         BytecodeStateOrder state_order(*code_object);
 
-        CompilationSession session;
+        CompilationSession session{test::compiler_thread()};
         GraphBuilder builder(session, IRLevel::Core);
         builder.set_bytecode_state_order(state_order);
         Block *entry = builder.emplace_block();

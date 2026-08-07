@@ -1,4 +1,5 @@
 #include "jit/aarch64_link_register_preservation.h"
+#include "test_helpers.h"
 
 #include "jit/aarch64_call.h"
 #include "jit/compilation_session.h"
@@ -39,7 +40,7 @@ namespace cl::jit
 
     TEST(AArch64LinkRegisterPreservation, LeavesLeafGraphUnchanged)
     {
-        CompilationSession session;
+        CompilationSession session{test::compiler_thread()};
         GraphBuilder builder(session, IRLevel::Machine);
         Block *entry = builder.emplace_block();
         ParameterInstruction value =
@@ -58,7 +59,7 @@ namespace cl::jit
 
     TEST(AArch64LinkRegisterPreservation, SurroundsCallsWithFrameSaveAndRestore)
     {
-        CompilationSession session;
+        CompilationSession session{test::compiler_thread()};
         GraphBuilder builder(session, IRLevel::Machine);
         Block *entry = builder.emplace_block();
         ParameterInstruction value =
@@ -88,7 +89,7 @@ namespace cl::jit
 
     TEST(AArch64LinkRegisterPreservation, TreatsBoxF64AsANonLeafNativeCall)
     {
-        CompilationSession session;
+        CompilationSession session{test::compiler_thread()};
         GraphBuilder builder(session, IRLevel::Machine);
         Block *entry = builder.emplace_block();
         ParameterF64Instruction value =

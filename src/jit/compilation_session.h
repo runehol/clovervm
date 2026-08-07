@@ -6,6 +6,11 @@
 
 #include <vector>
 
+namespace cl
+{
+    class ThreadState;
+}
+
 namespace cl::jit
 {
     // Owns all resources whose lifetime is one compilation. The storage remains
@@ -14,7 +19,7 @@ namespace cl::jit
     class CompilationSession
     {
     public:
-        CompilationSession() = default;
+        explicit CompilationSession(ThreadState &thread) : thread_(thread) {}
 
         CompilationSession(const CompilationSession &) = delete;
         CompilationSession &operator=(const CompilationSession &) = delete;
@@ -23,6 +28,7 @@ namespace cl::jit
 
         CompilationStorage *storage() { return &storage_; }
         const CompilationStorage *storage() const { return &storage_; }
+        ThreadState &thread_state() const { return thread_; }
 
         template <typename T> T retain_and_pin_value(T value)
         {
@@ -38,6 +44,7 @@ namespace cl::jit
         // Members are destroyed in reverse order, so storage-owned compiler
         // state is released before the values it may reference.
         std::vector<Owned<Value>> retained_values_;
+        ThreadState &thread_;
         CompilationStorage storage_;
     };
 

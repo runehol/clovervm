@@ -14,6 +14,11 @@
 #include <span>
 #include <vector>
 
+namespace cl
+{
+    class ThreadState;
+}
+
 namespace cl::jit
 {
     class ControlFlowGraph;
@@ -167,7 +172,7 @@ namespace cl::jit
         using Serial = TypedSerial<ControlFlowGraph>;
 
         ControlFlowGraph(Serial serial, CompilationStorage *storage,
-                         IRLevel ir_level);
+                         ThreadState &thread, IRLevel ir_level);
         ~ControlFlowGraph();
 
         ControlFlowGraph(const ControlFlowGraph &) = delete;
@@ -179,6 +184,7 @@ namespace cl::jit
         CompilationStorage *storage() { return storage_; }
         const CompilationStorage *storage() const { return storage_; }
         IRLevel ir_level() const { return ir_level_; }
+        ThreadState &thread_state() const { return thread_; }
         Block *entry_block() const { return entry_block_; }
         const std::vector<Block *> &blocks() const { return blocks_; }
         bool is_published() const { return published_; }
@@ -200,6 +206,7 @@ namespace cl::jit
 
         Serial serial_;
         CompilationStorage *storage_;
+        ThreadState &thread_;
         IRLevel ir_level_;
         Block *entry_block_ = nullptr;
         std::vector<Block *> blocks_;

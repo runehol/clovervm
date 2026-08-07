@@ -6,6 +6,7 @@
 
 #include <cassert>
 #include <cstdint>
+#include <optional>
 
 namespace cl::jit
 {
@@ -113,6 +114,9 @@ namespace cl::jit
         tagged_value_set_bit(value_ellipsis) |
         tagged_value_set_bit(value_interned_ptr_tag) |
         tagged_value_set_bit(value_refcounted_ptr_tag);
+    constexpr uint32_t pointer_tagged_value_set_bits =
+        tagged_value_set_bit(value_interned_ptr_tag) |
+        tagged_value_set_bit(value_refcounted_ptr_tag);
 
     class TaggedValueSet
     {
@@ -125,9 +129,13 @@ namespace cl::jit
 
         static constexpr TaggedValueSet pointer()
         {
-            return TaggedValueSet(
-                tagged_value_set_bit(value_interned_ptr_tag) |
-                tagged_value_set_bit(value_refcounted_ptr_tag));
+            return TaggedValueSet(pointer_tagged_value_set_bits);
+        }
+
+        static TaggedValueSet exact_shape(Shape *shape)
+        {
+            assert(shape != nullptr);
+            return TaggedValueSet(pointer_tagged_value_set_bits, shape);
         }
 
         static constexpr TaggedValueSet from_inline_tag(uint8_t tag)
@@ -200,34 +208,66 @@ namespace cl::jit
         constexpr bool is_never() const { return bits_ == 0; }
         constexpr bool is_subset_of(TaggedValueSet other) const
         {
-            return (bits_ & ~other.bits_) == 0;
+            return is_never() || ((bits_ & ~other.bits_) == 0 &&
+                                  (!other.exact_shape_.has_value() ||
+                                   exact_shape_ == other.exact_shape_));
         }
         constexpr bool is_disjoint_from(TaggedValueSet other) const
         {
-            return (bits_ & other.bits_) == 0;
+            return (bits_ & other.bits_) == 0 ||
+                   (exact_shape_.has_value() &&
+                    other.exact_shape_.has_value() &&
+                    exact_shape_ != other.exact_shape_);
         }
 
         constexpr TaggedValueSet intersect(TaggedValueSet other) const
         {
-            return TaggedValueSet(bits_ & other.bits_);
+            if(is_disjoint_from(other))
+            {
+                return never();
+            }
+            return TaggedValueSet(
+                bits_ & other.bits_,
+                exact_shape_.has_value() ? exact_shape_ : other.exact_shape_);
         }
         constexpr TaggedValueSet merge(TaggedValueSet other) const
         {
-            return TaggedValueSet(bits_ | other.bits_);
+            if(is_never())
+            {
+                return other;
+            }
+            if(other.is_never())
+            {
+                return *this;
+            }
+            std::optional<Shape *> merged_shape =
+                exact_shape_ == other.exact_shape_ ? exact_shape_
+                                                   : std::nullopt;
+            return TaggedValueSet(bits_ | other.bits_, merged_shape);
         }
 
         constexpr uint32_t bits() const { return bits_; }
+        constexpr const std::optional<Shape *> &exact_shape() const
+        {
+            return exact_shape_;
+        }
 
         friend constexpr bool operator==(TaggedValueSet,
                                          TaggedValueSet) = default;
 
     private:
-        explicit constexpr TaggedValueSet(uint32_t bits) : bits_(bits)
+        explicit constexpr TaggedValueSet(
+            uint32_t bits, std::optional<Shape *> exact_shape = std::nullopt)
+            : bits_(bits), exact_shape_(exact_shape)
         {
             assert((bits & ~valid_tagged_value_set_bits) == 0);
+            assert(!exact_shape_.has_value() ||
+                   (*exact_shape_ != nullptr && bits != 0 &&
+                    (bits & ~pointer_tagged_value_set_bits) == 0));
         }
 
         uint32_t bits_;
+        std::optional<Shape *> exact_shape_;
     };
 
 }  // namespace cl::jit

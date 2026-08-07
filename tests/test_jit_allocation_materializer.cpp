@@ -66,7 +66,7 @@ namespace cl::jit
 
     TEST(JitAllocationMaterializer, PublishesExistingValueLocations)
     {
-        CompilationSession session;
+        CompilationSession session{test::compiler_thread()};
         GraphBuilder builder(session, IRLevel::Core);
         Block *entry = builder.emplace_block();
         ParameterInstruction parameter =
@@ -105,7 +105,7 @@ namespace cl::jit
 
     TEST(JitAllocationMaterializer, PublishesInstructionTemporaryLocations)
     {
-        CompilationSession session;
+        CompilationSession session{test::compiler_thread()};
         GraphBuilder builder(session, IRLevel::Core);
         Block *entry = builder.emplace_block();
         ParameterInstruction parameter =
@@ -149,7 +149,7 @@ namespace cl::jit
     TEST(JitAllocationMaterializer,
          MaterializesFixedOperandCopiesWithoutReplacingLaterUses)
     {
-        CompilationSession session;
+        CompilationSession session{test::compiler_thread()};
         GraphBuilder builder(session, IRLevel::Core);
         Block *entry = builder.emplace_block();
         ParameterInstruction parameter =
@@ -239,7 +239,7 @@ namespace cl::jit
         code_object->n_locals = 3;
         code_object->n_temporaries = 0;
 
-        CompilationSession session;
+        CompilationSession session{test::compiler_thread()};
         GraphBuilder builder(session, IRLevel::Machine);
         builder.set_bytecode_state_order(BytecodeStateOrder(*code_object));
         Block *entry = builder.emplace_block();
@@ -361,7 +361,7 @@ namespace cl::jit
 
     TEST(JitAllocationMaterializer, UsesGraphRewriterTraversalForEveryBlock)
     {
-        CompilationSession session;
+        CompilationSession session{test::compiler_thread()};
         GraphBuilder builder(session, IRLevel::Core);
         Block *entry = builder.emplace_block();
         Block *exit = builder.emplace_block();
@@ -413,7 +413,7 @@ namespace cl::jit
     TEST(JitAllocationMaterializer,
          MaterializesBlockEdgeTransferAfterUnconditionalSource)
     {
-        CompilationSession session;
+        CompilationSession session{test::compiler_thread()};
         GraphBuilder builder(session, IRLevel::Core);
         Block *entry = builder.emplace_block();
         Block *exit = builder.emplace_block();
@@ -487,7 +487,7 @@ namespace cl::jit
     TEST(JitAllocationMaterializer,
          MaterializesBlockEdgeTransferBeforeConditionalTarget)
     {
-        CompilationSession session;
+        CompilationSession session{test::compiler_thread()};
         GraphBuilder builder(session, IRLevel::Core);
         Block *entry = builder.emplace_block();
         Block *other = builder.emplace_block();
@@ -571,7 +571,7 @@ namespace cl::jit
 
     TEST(JitAllocationMaterializer, InsertsSingletonStackToRegisterTransfer)
     {
-        CompilationSession session;
+        CompilationSession session{test::compiler_thread()};
         GraphBuilder builder(session, IRLevel::Core);
         Block *entry = builder.emplace_block();
         ParameterInstruction parameter =
@@ -622,7 +622,7 @@ namespace cl::jit
 
     TEST(JitAllocationMaterializer, UsesActiveValueForSplitFromMergedBundle)
     {
-        CompilationSession session;
+        CompilationSession session{test::compiler_thread()};
         GraphBuilder builder(session, IRLevel::Core);
         Block *entry = builder.emplace_block();
         Block *middle = builder.emplace_block();
@@ -701,7 +701,7 @@ namespace cl::jit
 
     TEST(JitAllocationMaterializer, MaterializesPointerTransfers)
     {
-        CompilationSession session;
+        CompilationSession session{test::compiler_thread()};
         GraphBuilder builder(session, IRLevel::Core);
         Block *entry = builder.emplace_block();
         ParameterPointerInstruction parameter =
@@ -748,7 +748,7 @@ namespace cl::jit
 
     TEST(JitAllocationMaterializer, InsertsParallelStackToRegisterTransfers)
     {
-        CompilationSession session;
+        CompilationSession session{test::compiler_thread()};
         GraphBuilder builder(session, IRLevel::Core);
         Block *entry = builder.emplace_block();
         ParameterInstruction lhs =
@@ -803,7 +803,7 @@ namespace cl::jit
 
     TEST(JitAllocationMaterializer, InsertsRegisterToStackTransfer)
     {
-        CompilationSession session;
+        CompilationSession session{test::compiler_thread()};
         GraphBuilder builder(session, IRLevel::Core);
         Block *entry = builder.emplace_block();
         ParameterInstruction parameter =
@@ -850,7 +850,7 @@ namespace cl::jit
 
     TEST(JitAllocationMaterializer, RoutesStackTransferThroughScratch)
     {
-        CompilationSession session;
+        CompilationSession session{test::compiler_thread()};
         GraphBuilder builder(session, IRLevel::Core);
         Block *entry = builder.emplace_block();
         ParameterInstruction parameter =
@@ -904,7 +904,7 @@ namespace cl::jit
 
     TEST(JitAllocationMaterializer, ResolvesRegisterCycleWithScratch)
     {
-        CompilationSession session;
+        CompilationSession session{test::compiler_thread()};
         GraphBuilder builder(session, IRLevel::Core);
         Block *entry = builder.emplace_block();
         ParameterInstruction lhs =
@@ -970,7 +970,7 @@ namespace cl::jit
     TEST(JitAllocationMaterializer,
          ResolvesAllStackCycleWithTwoScratchRegisters)
     {
-        CompilationSession session;
+        CompilationSession session{test::compiler_thread()};
         GraphBuilder builder(session, IRLevel::Core);
         Block *entry = builder.emplace_block();
         ParameterInstruction lhs =
@@ -1054,7 +1054,7 @@ namespace cl::jit
     TEST(JitAllocationMaterializer,
          ReportsAllStackCycleWithoutSecondScratchRegister)
     {
-        CompilationSession session;
+        CompilationSession session{test::compiler_thread()};
         GraphBuilder builder(session, IRLevel::Core);
         Block *entry = builder.emplace_block();
         ParameterInstruction lhs =

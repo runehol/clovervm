@@ -8,7 +8,7 @@ namespace cl::jit
 {
     GraphBuilder::GraphBuilder(CompilationSession &session, IRLevel ir_level)
         : session_(&session), storage_(session.storage()),
-          graph_(storage_->make_graph(ir_level))
+          graph_(storage_->make_graph(session.thread_state(), ir_level))
     {
     }
 

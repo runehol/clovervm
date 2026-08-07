@@ -20,7 +20,7 @@ namespace cl::jit
 {
     TEST(JitInstructionTraversal, WalksBodyInstructionsInProgramOrder)
     {
-        CompilationSession session;
+        CompilationSession session{test::compiler_thread()};
         GraphBuilder builder(session, IRLevel::Core);
         Block *entry = builder.emplace_block();
         Block *exit = builder.emplace_block();
@@ -65,7 +65,7 @@ namespace cl::jit
 
     TEST(JitUseLists, RecordsUseOccurrencesAndZeroUseDefinitions)
     {
-        CompilationSession session;
+        CompilationSession session{test::compiler_thread()};
         GraphBuilder builder(session, IRLevel::Core);
         Block *entry = builder.emplace_block();
         ParameterInstruction parameter =
@@ -136,7 +136,7 @@ namespace cl::jit
 
     TEST(JitUseLists, RecordsBlockArgumentUseOccurrences)
     {
-        CompilationSession session;
+        CompilationSession session{test::compiler_thread()};
         GraphBuilder builder(session, IRLevel::Core);
         Block *entry = builder.emplace_block();
         Block *exit = builder.emplace_block();
@@ -166,7 +166,7 @@ namespace cl::jit
 
     TEST(JitUseLists, TraversalPreparesOnlyRequestedQueries)
     {
-        CompilationSession session;
+        CompilationSession session{test::compiler_thread()};
         GraphBuilder builder(session, IRLevel::Core);
         Block *entry = builder.emplace_block();
         ConstInstruction constant =
@@ -192,7 +192,7 @@ namespace cl::jit
 
     TEST(JitGraphRewriter, KeepsAnUnchangedGraphWithoutAdvancingGeneration)
     {
-        CompilationSession session;
+        CompilationSession session{test::compiler_thread()};
         GraphBuilder builder(session, IRLevel::Core);
         Block *entry = builder.emplace_block();
         ConstInstruction constant =
@@ -220,7 +220,7 @@ namespace cl::jit
 
     TEST(JitGraphRewriter, StagesAnEdgeSplitAfterItsSource)
     {
-        CompilationSession session;
+        CompilationSession session{test::compiler_thread()};
         GraphBuilder builder(session, IRLevel::Core);
         Block *entry = builder.emplace_block();
         Block *target = builder.emplace_block();
@@ -308,7 +308,7 @@ namespace cl::jit
 
     TEST(JitGraphRewriter, StagesAnEdgeSplitBeforeItsTarget)
     {
-        CompilationSession session;
+        CompilationSession session{test::compiler_thread()};
         GraphBuilder builder(session, IRLevel::Core);
         Block *entry = builder.emplace_block();
         Block *other = builder.emplace_block();
@@ -358,7 +358,7 @@ namespace cl::jit
 
     TEST(JitGraphRewriter, CommitsTargetIrLevelWithRewrite)
     {
-        CompilationSession session;
+        CompilationSession session{test::compiler_thread()};
         GraphBuilder builder(session, IRLevel::Core);
         Block *entry = builder.emplace_block();
         ConstInstruction result =
@@ -383,7 +383,7 @@ namespace cl::jit
 
     TEST(JitGraphRewriter, CompactsBlockParametersAndIncomingArguments)
     {
-        CompilationSession session;
+        CompilationSession session{test::compiler_thread()};
         GraphBuilder builder(session, IRLevel::Core);
         Block *entry = builder.emplace_block();
         Block *exit = builder.emplace_block();
@@ -440,7 +440,7 @@ namespace cl::jit
     TEST(JitGraphRewriter,
          StructuralTransfersRedirectDefinitionsFromTheirInsertionPoint)
     {
-        CompilationSession session;
+        CompilationSession session{test::compiler_thread()};
         GraphBuilder builder(session, IRLevel::Core);
         Block *entry = builder.emplace_block();
         ParameterInstruction parameter =
@@ -535,7 +535,7 @@ namespace cl::jit
     TEST(JitGraphRewriter,
          StructuralTransfersApplySimultaneouslyBeforeEdgeArguments)
     {
-        CompilationSession session;
+        CompilationSession session{test::compiler_thread()};
         GraphBuilder builder(session, IRLevel::Core);
         Block *entry = builder.emplace_block();
         Block *exit = builder.emplace_block();
@@ -616,7 +616,7 @@ namespace cl::jit
 
     TEST(JitGraphRewriter, RetainsNormalizedInsertedDefinitionsAcrossCallbacks)
     {
-        CompilationSession session;
+        CompilationSession session{test::compiler_thread()};
         GraphBuilder builder(session, IRLevel::Core);
         Block *entry = builder.emplace_block();
         ParameterInstruction parameter =
@@ -706,7 +706,7 @@ namespace cl::jit
     {
         EXPECT_DEATH(
             {
-                CompilationSession session;
+                CompilationSession session{test::compiler_thread()};
                 GraphBuilder builder(session, IRLevel::Core);
                 Block *entry = builder.emplace_block();
                 ConstInstruction constant =
@@ -744,7 +744,7 @@ namespace cl::jit
     {
         EXPECT_DEATH(
             {
-                CompilationSession session;
+                CompilationSession session{test::compiler_thread()};
                 GraphBuilder builder(session, IRLevel::Core);
                 Block *entry = builder.emplace_block();
                 ParameterInstruction parameter =
@@ -786,7 +786,7 @@ namespace cl::jit
 
         EXPECT_EQ(0, string->refcount);
         {
-            CompilationSession session;
+            CompilationSession session{test::compiler_thread()};
             GraphBuilder builder(session, IRLevel::Core);
             Block *entry = builder.emplace_block();
             ConstInstruction constant =
@@ -826,7 +826,7 @@ namespace cl::jit
     TEST(JitGraphRewriter,
          InsertsPrefixesAndSuffixesAroundTheCurrentInstruction)
     {
-        CompilationSession session;
+        CompilationSession session{test::compiler_thread()};
         GraphBuilder builder(session, IRLevel::Core);
         Block *entry = builder.emplace_block();
         ParameterInstruction parameter =
@@ -881,7 +881,7 @@ namespace cl::jit
 
     TEST(JitGraphRewriter, ReplacesAnIdentityWithItsExistingDefinition)
     {
-        CompilationSession session;
+        CompilationSession session{test::compiler_thread()};
         GraphBuilder builder(session, IRLevel::Core);
         Block *entry = builder.emplace_block();
         ParameterInstruction parameter =
@@ -926,7 +926,7 @@ namespace cl::jit
 
     TEST(JitGraphRewriter, CanPassNormalizedInstructionsToTheCallback)
     {
-        CompilationSession session;
+        CompilationSession session{test::compiler_thread()};
         GraphBuilder builder(session, IRLevel::Core);
         Block *entry = builder.emplace_block();
         ConstInstruction old_constant =
@@ -998,7 +998,7 @@ namespace cl::jit
     {
         EXPECT_DEATH(
             {
-                CompilationSession session;
+                CompilationSession session{test::compiler_thread()};
                 GraphBuilder builder(session, IRLevel::Core);
                 Block *entry = builder.emplace_block();
                 ConstInstruction constant =
@@ -1020,7 +1020,7 @@ namespace cl::jit
 
     TEST(JitGraphRewriter, ReconstructsTerminatorForNormalizedEdgeArguments)
     {
-        CompilationSession session;
+        CompilationSession session{test::compiler_thread()};
         GraphBuilder builder(session, IRLevel::Core);
         Block *entry = builder.emplace_block();
         Block *exit = builder.emplace_block();
@@ -1072,7 +1072,7 @@ namespace cl::jit
 
     TEST(JitGraphRewriter, ReconstructsVariadicInstructionsFromTheSchema)
     {
-        CompilationSession session;
+        CompilationSession session{test::compiler_thread()};
         GraphBuilder builder(session, IRLevel::Core);
         Block *entry = builder.emplace_block();
         ParameterInstruction parameter =
@@ -1131,7 +1131,7 @@ namespace cl::jit
 
     TEST(JitGraphRewriter, RewritesSideExitArgumentsWithoutChangingInputs)
     {
-        CompilationSession session;
+        CompilationSession session{test::compiler_thread()};
         GraphBuilder builder(session, IRLevel::Machine);
         Block *entry = builder.emplace_block();
         ParameterInstruction parameter =
@@ -1198,7 +1198,7 @@ namespace cl::jit
 
     TEST(JitGraphRewriter, StagesSequencesAcrossTheWholeGraphBeforeCommit)
     {
-        CompilationSession session;
+        CompilationSession session{test::compiler_thread()};
         GraphBuilder builder(session, IRLevel::Core);
         Block *entry = builder.emplace_block();
         Block *exit = builder.emplace_block();
@@ -1258,7 +1258,7 @@ namespace cl::jit
     {
         EXPECT_DEATH(
             {
-                CompilationSession session;
+                CompilationSession session{test::compiler_thread()};
                 GraphBuilder builder(session, IRLevel::Core);
                 Block *entry = builder.emplace_block();
                 ConstInstruction constant =

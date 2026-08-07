@@ -1,5 +1,6 @@
 #include "jit/graph_builder.h"
 #include "jit/location_assignments.h"
+#include "test_helpers.h"
 
 #include <gtest/gtest.h>
 
@@ -7,7 +8,7 @@ namespace cl::jit
 {
     TEST(JitLocationAssignments, StoresProgramValuesAndTemporaries)
     {
-        CompilationSession session;
+        CompilationSession session{test::compiler_thread()};
         GraphBuilder builder(session, IRLevel::Core);
         Block *entry = builder.emplace_block();
         ParameterInstruction parameter =
@@ -36,7 +37,7 @@ namespace cl::jit
 
     TEST(JitLocationAssignments, RemapsKeysAfterInstructionNormalization)
     {
-        CompilationSession session;
+        CompilationSession session{test::compiler_thread()};
         GraphBuilder builder(session, IRLevel::Core);
         Block *entry = builder.emplace_block();
         ParameterInstruction parameter =

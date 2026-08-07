@@ -89,7 +89,7 @@ namespace cl::jit
     TEST(AArch64AllocationConstraints,
          DefinesInitialGPRClassAndPlatformEntryABI)
     {
-        CompilationSession session;
+        CompilationSession session{test::compiler_thread()};
         GraphBuilder builder(session, IRLevel::Machine);
         Block *entry = builder.emplace_block();
         ParameterInstruction first =
@@ -180,7 +180,7 @@ namespace cl::jit
         CodeObject *code_object = context.compile_file(L"pass\n");
         code_object->function_signature.n_parameters = 1;
 
-        CompilationSession session;
+        CompilationSession session{test::compiler_thread()};
         GraphBuilder builder(session, IRLevel::Machine);
         builder.set_bytecode_state_order(BytecodeStateOrder(*code_object));
         Block *entry = builder.emplace_block();
@@ -249,7 +249,7 @@ namespace cl::jit
     TEST(AArch64AllocationConstraints,
          ConstrainsTrustedHandlerNativeCallBoundary)
     {
-        CompilationSession session;
+        CompilationSession session{test::compiler_thread()};
         GraphBuilder builder(session, IRLevel::Machine);
         Block *entry = builder.emplace_block();
         std::array<TaggedValueRef, 3> arguments = {
@@ -335,7 +335,7 @@ namespace cl::jit
 
     TEST(AArch64AllocationConstraints, ConstrainsBoxF64NativeCallBoundary)
     {
-        CompilationSession session;
+        CompilationSession session{test::compiler_thread()};
         GraphBuilder builder(session, IRLevel::Machine);
         Block *entry = builder.emplace_block();
         ParameterInstruction parameter =
@@ -393,7 +393,7 @@ namespace cl::jit
 
     TEST(AArch64AllocationConstraints, OmitsOrdinaryInstructionsAndBranches)
     {
-        CompilationSession session;
+        CompilationSession session{test::compiler_thread()};
         GraphBuilder builder(session, IRLevel::Machine);
         Block *entry = builder.emplace_block();
         Block *if_true = builder.emplace_block();
@@ -447,7 +447,7 @@ namespace cl::jit
 
     TEST(AArch64AllocationConstraints, ObservesSideExitArgumentsLate)
     {
-        CompilationSession session;
+        CompilationSession session{test::compiler_thread()};
         GraphBuilder builder(session, IRLevel::Machine);
         Block *entry = builder.emplace_block();
         ParameterInstruction value =
@@ -481,7 +481,7 @@ namespace cl::jit
     TEST(AArch64AllocationConstraints,
          ObservesInlineTagGuardSideExitArgumentsLate)
     {
-        CompilationSession session;
+        CompilationSession session{test::compiler_thread()};
         GraphBuilder builder(session, IRLevel::Machine);
         Block *entry = builder.emplace_block();
         ParameterInstruction value =
@@ -516,7 +516,7 @@ namespace cl::jit
 
     TEST(AArch64AllocationConstraints, ObservesAddSMISideExitArgumentsLate)
     {
-        CompilationSession session;
+        CompilationSession session{test::compiler_thread()};
         GraphBuilder builder(session, IRLevel::Machine);
         Block *entry = builder.emplace_block();
         ParameterInstruction lhs =
@@ -552,7 +552,7 @@ namespace cl::jit
 
     TEST(AArch64AllocationConstraints, GivesIdentityTestsOneGPRTemporary)
     {
-        CompilationSession session;
+        CompilationSession session{test::compiler_thread()};
         GraphBuilder builder(session, IRLevel::Machine);
         Block *entry = builder.emplace_block();
         ParameterInstruction lhs =
@@ -587,7 +587,7 @@ namespace cl::jit
     TEST(AArch64AllocationConstraints,
          InternalBlockParametersUseDefaultConstraints)
     {
-        CompilationSession session;
+        CompilationSession session{test::compiler_thread()};
         GraphBuilder builder(session, IRLevel::Machine);
         Block *entry = builder.emplace_block();
         Block *exit = builder.emplace_block();
@@ -616,7 +616,7 @@ namespace cl::jit
 
     TEST(AArch64AllocationConstraints, RejectsUnsupportedInstruction)
     {
-        CompilationSession session;
+        CompilationSession session{test::compiler_thread()};
         GraphBuilder builder(session, IRLevel::Machine);
         Block *entry = builder.emplace_block();
         TaggedValueRef parameter(

@@ -105,9 +105,9 @@ namespace cl::jit
             return T(this, id);
         }
 
-        ControlFlowGraph *make_graph(IRLevel ir_level)
+        ControlFlowGraph *make_graph(ThreadState &thread, IRLevel ir_level)
         {
-            return graphs_.make(this, ir_level);
+            return graphs_.make(this, thread, ir_level);
         }
 
         InstructionId next_instruction_id() const;

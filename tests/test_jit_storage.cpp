@@ -85,7 +85,7 @@ namespace cl::jit
 
     TEST(JitCompilationStorage, UsesOneDenseIdentitySequencePerObjectKind)
     {
-        CompilationSession session;
+        CompilationSession session{test::compiler_thread()};
         GraphBuilder builder(session, IRLevel::Core);
         Block *first_block = builder.emplace_block();
         Block *second_block = builder.emplace_block();
@@ -119,7 +119,7 @@ namespace cl::jit
 
     TEST(JitCompilationStorage, GraphBorrowsItsOwningStorage)
     {
-        CompilationSession session;
+        CompilationSession session{test::compiler_thread()};
         GraphBuilder builder(session, IRLevel::Core);
         Block *entry = builder.emplace_block();
         ConstInstruction none =
@@ -149,7 +149,7 @@ namespace cl::jit
         EXPECT_EQ(0, created->refcount);
         EXPECT_EQ(0, existing->refcount);
         {
-            CompilationSession session;
+            CompilationSession session{test::compiler_thread()};
             GraphBuilder builder(session, IRLevel::Core);
             Block *entry = builder.emplace_block();
             TValue<String> retained_created =
@@ -182,7 +182,7 @@ namespace cl::jit
         static_assert(std::is_trivially_copyable_v<InstructionEntry>);
         static_assert(std::is_trivially_destructible_v<Instruction>);
 
-        CompilationSession session;
+        CompilationSession session{test::compiler_thread()};
         GraphBuilder builder(session, IRLevel::Core);
         std::vector<Instruction> instructions;
 
@@ -408,7 +408,7 @@ namespace cl::jit
                               AddSMIWithSideExitInstruction>);
         static_assert(sizeof(IsComparisonInstruction) == sizeof(Instruction));
 
-        CompilationSession session;
+        CompilationSession session{test::compiler_thread()};
         GraphBuilder builder(session, IRLevel::Core);
         ParameterInstruction lhs =
             builder.make_instruction<ParameterInstruction>();
@@ -592,7 +592,7 @@ namespace cl::jit
 
     TEST(JitInstructionConstruction, EncodesFixedAttributes)
     {
-        CompilationSession session;
+        CompilationSession session{test::compiler_thread()};
         GraphBuilder builder(session, IRLevel::Core);
         ConstInstruction instruction =
             builder.make_instruction<ConstInstruction>(Value::False());
@@ -618,7 +618,7 @@ namespace cl::jit
         ValidityCell *validity =
             context.thread()->make_internal_raw<ValidityCell>();
 
-        CompilationSession session;
+        CompilationSession session{test::compiler_thread()};
         GraphBuilder builder(session, IRLevel::Core);
         TaggedValueRef value(builder.make_instruction<ParameterInstruction>());
         ConstInstruction constant =
@@ -690,7 +690,7 @@ namespace cl::jit
 
     TEST(JitInstructionTraversal, WalksProgramValueAndSnapshotReferences)
     {
-        CompilationSession session;
+        CompilationSession session{test::compiler_thread()};
         GraphBuilder builder(session, IRLevel::Core);
         TaggedValueRef lhs(builder.make_instruction<ParameterInstruction>());
         TaggedValueRef rhs(
@@ -733,7 +733,7 @@ namespace cl::jit
     TEST(JitInstructionReconstruction,
          ResolvesDuplicateReferencesBySchemaOperandIndex)
     {
-        CompilationSession session;
+        CompilationSession session{test::compiler_thread()};
         GraphBuilder builder(session, IRLevel::Core);
         TaggedValueRef original(
             builder.make_instruction<ParameterInstruction>());
@@ -773,7 +773,7 @@ namespace cl::jit
 
     TEST(JitInstructionTraversal, WalksVariadicPythonCallArguments)
     {
-        CompilationSession session;
+        CompilationSession session{test::compiler_thread()};
         GraphBuilder builder(session, IRLevel::Core);
         TaggedValueRef callable(
             builder.make_instruction<ParameterInstruction>());
@@ -853,7 +853,7 @@ namespace cl::jit
 
     TEST(JitInstructionTraversal, SnapshotStoresProgramValueReferences)
     {
-        CompilationSession session;
+        CompilationSession session{test::compiler_thread()};
         GraphBuilder builder(session, IRLevel::Core);
         TaggedValueRef tagged(builder.make_instruction<ParameterInstruction>());
         F64Ref f64(builder.make_instruction<ParameterF64Instruction>());
@@ -920,7 +920,7 @@ namespace cl::jit
 
     TEST(JitSideExitBinding, ComparesAndHashesByRegionAndOrderedArguments)
     {
-        CompilationSession session;
+        CompilationSession session{test::compiler_thread()};
         GraphBuilder builder(session, IRLevel::Machine);
         ParameterInstruction first =
             builder.make_instruction<ParameterInstruction>();

@@ -4,7 +4,7 @@
 |---|---|
 | Document type | Design and implementation plan |
 | Status | Accepted design |
-| Implementation | Tag sets and classes, fixed-point CFG analysis, redundant inline-tag guard elimination, guarded-state replacement, `AnyInline` truthiness guards, and pointer-check elimination from shape guards are implemented; exact immutable-shape facts are next |
+| Implementation | Tag sets and classes, exact immutable-shape facts for builtin floats, fixed-point CFG analysis, redundant inline-tag and exact-shape guard elimination, guarded-state replacement, `AnyInline` truthiness guards, and pointer-check elimination from shape guards are implemented |
 | Scope | Tagged-value fact propagation, cheaply encodable tag guards, redundant-guard elimination, and the pointer fact used by shape guards |
 | Owning layers | Core IR analysis and rewriting, with target-specific lowering of retained guards |
 | Validated against | `test_jit_tagged_value_facts.cpp`, `test_jit_core_bytecode_translator.cpp`, and `test_aarch64_execution.cpp` |
@@ -277,15 +277,15 @@ it can add an explicitly costed selector without changing the fact lattice.
 ## Tagged-Value Analysis
 
 The analysis maps each tagged program value directly to a `TaggedValueSet`.
-There is no separate fact wrapper around the set. When exact shape propagation
-is added, the optional exact shape becomes another component of
-`TaggedValueSet` and its lattice operations.
+There is no separate fact wrapper around the set. Its optional exact shape is a
+second component handled directly by `TaggedValueSet` lattice operations.
 
 Instruction results establish facts as follows:
 
 - constants establish their exact low tag;
 - SMI arithmetic and logical operations produce the SMI set;
 - identity and ordinary comparison operations produce the Boolean set;
+- `BoxF64` produces the pointer set with the exact builtin-float shape;
 - a successful tagged-value guard intersects its input facts with the guard's
   class converted through `TaggedValueSet::from_class()`;
 - forwarding definitions and semantic moves propagate their source facts;
@@ -312,35 +312,34 @@ state refinements.
 ## Shape Facts
 
 Exact shape facts are more fragile than tag facts because aliases may mutate an
-object's shape without changing the tagged pointer value. The analysis may
-eventually carry an optional exact shape, but only when provenance and effects
-make its validity explicit:
+object's shape without changing the tagged pointer value. The analysis carries
+an optional concrete shape pointer only when provenance and effects make its
+validity explicit:
 
 ```cpp
-Shape *exact_shape = nullptr;
+std::optional<Shape *> exact_shape;
 ```
 
-The implemented tag-only shape policy is conservative:
+An engaged optional always contains a non-null pointer and is valid only with a
+non-empty subset of the pointer tags. This allows later facts to narrow an
+exact-shaped value to either pointer representation. `nullopt` means that no
+exact shape is known.
 
-- a successful shape guard establishes the `Pointer` tag fact;
-- it does not by itself attach a persistent exact-shape fact;
-- `BoxF64` currently establishes only the pointer tag fact;
+The initial exact-shape policy is deliberately narrow:
+
+- `BoxF64` obtains the root shape from the current thread's cached builtin-float
+  class and establishes that exact shape;
+- a successful guard for that same lifetime-stable float shape establishes the
+  same exact fact;
 - merges and alias effects therefore have no exact-shape component to preserve
-  or clear yet.
+  unless every reachable input has the identical concrete shape pointer;
+- immutable float-shape facts survive aliasing effects because float objects
+  cannot transition shape.
 
-The next extension adds exact immutable-shape facts:
-
-- an instruction whose contract constructs an exact immutable builtin shape
-  establishes that shape directly; in particular, `BoxF64` establishes the
-  exact builtin-float shape;
-- a successful guard for an immutable shape may establish that exact shape;
-- merges retain an exact shape only when every reachable input has the same
-  exact shape;
-- immutable-shape facts survive aliasing effects because the shape cannot
-  transition;
-- any later exact fact for a mutable shape needs an explicit provenance and
-  effect-bounded lifetime; possible aliasing mutation clears that fact while
-  leaving the pointer tag fact intact.
+Generalizing lifetime-stable-shape recognition beyond float remains an
+object-model extension. Any later exact fact for a mutable shape needs explicit
+provenance and an effect-bounded lifetime; possible aliasing mutation clears
+that fact while leaving the pointer tag fact intact.
 
 The pointer check performed as part of shape guarding is independently
 eliminable. The frontend emits `PointerAndShapeGuard`; tagged-value fact
@@ -415,13 +414,13 @@ Adjacent guard combination is initially restricted to compatible
 `MaskedEqual` classes. The existing OR-based combination does not prove that
 two independent `MaskedNonZero` classes both succeeded.
 
-## Implemented Foundation And Next Extension
+## Implemented Foundation
 
 The tag-class representation, class-to-set conversion, fixed-point analysis,
 redundant guard elimination, `AnyInline` branch guards, and independently
 eliminable shape-pointer checks are implemented.
 
-The next extension is the exact immutable-shape component described above. It
-does not synthesize narrowed tag guards, optimize always-failing guards, or
-retain likely shapes. Those remain separate optimizations rather than implicit
-consequences of adding exact shape facts.
+The analysis does not synthesize narrowed tag guards, optimize always-failing
+guards, retain likely shapes, or propagate mutable exact shapes. Those remain
+separate optimizations rather than implicit consequences of exact float-shape
+facts.

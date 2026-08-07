@@ -76,7 +76,7 @@ namespace cl::jit
             test::VmTestContext context;
             CodeObject *code_object = nullptr;
             std::unique_ptr<BytecodeStateOrder> state_order;
-            CompilationSession session;
+            CompilationSession session{test::compiler_thread()};
             GraphBuilder builder;
             std::vector<ProgramValueRef> captured;
             std::optional<InstructionId> exit_id;

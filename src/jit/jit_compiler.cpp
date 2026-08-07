@@ -23,7 +23,7 @@ namespace cl::jit
             options.observer->on_bytecode(code_object);
         }
 
-        CompilationSession session;
+        CompilationSession session(thread);
         GraphBuilder builder(session, IRLevel::Core);
         CoreBytecodeTranslator translator(*thread.get_machine(), code_object,
                                           builder);

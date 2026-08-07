@@ -18,6 +18,12 @@
 
 namespace cl::test
 {
+    inline ThreadState &compiler_thread()
+    {
+        static VirtualMachine vm;
+        return *vm.get_default_thread();
+    }
+
     class VmTestContext
     {
     public:

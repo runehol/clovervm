@@ -1,6 +1,7 @@
 #include "jit/allocation_constraints.h"
 #include "jit/compilation_session.h"
 #include "jit/graph_builder.h"
+#include "test_helpers.h"
 
 #include <absl/container/flat_hash_map.h>
 #include <gtest/gtest.h>
@@ -191,7 +192,7 @@ namespace cl::jit
     TEST(JitAllocationConstraints,
          AcceptsFixedStackValuesButRequiresRegisterTemporaries)
     {
-        CompilationSession session;
+        CompilationSession session{test::compiler_thread()};
         GraphBuilder builder(session, IRLevel::Core);
         TaggedValueRef source(builder.make_instruction<ParameterInstruction>());
         MovInstruction move = builder.make_instruction<MovInstruction>(source);
@@ -239,7 +240,7 @@ namespace cl::jit
 
     TEST(JitAllocationConstraints, ValidatesFixedInstructionShape)
     {
-        CompilationSession session;
+        CompilationSession session{test::compiler_thread()};
         GraphBuilder builder(session, IRLevel::Core);
         TaggedValueRef lhs(builder.make_instruction<ParameterInstruction>());
         TaggedValueRef rhs(builder.make_instruction<ParameterInstruction>());
@@ -264,7 +265,7 @@ namespace cl::jit
 
     TEST(JitAllocationConstraints, ValidatesVariadicInstructionShape)
     {
-        CompilationSession session;
+        CompilationSession session{test::compiler_thread()};
         GraphBuilder builder(session, IRLevel::Core);
         TaggedValueRef callable(
             builder.make_instruction<ParameterInstruction>());
@@ -288,7 +289,7 @@ namespace cl::jit
 
     TEST(JitAllocationConstraints, AcceptsVirtualSnapshotWithoutDirectUses)
     {
-        CompilationSession session;
+        CompilationSession session{test::compiler_thread()};
         GraphBuilder builder(session, IRLevel::Core);
         TaggedValueRef tagged(builder.make_instruction<ParameterInstruction>());
         F64Ref f64(builder.make_instruction<ParameterF64Instruction>());
@@ -306,7 +307,7 @@ namespace cl::jit
 
     TEST(JitAllocationConstraints, MapsValueRepresentationsToRegisterClasses)
     {
-        CompilationSession session;
+        CompilationSession session{test::compiler_thread()};
         GraphBuilder builder(session, IRLevel::Core);
         F64Ref lhs(builder.make_instruction<ParameterF64Instruction>());
         F64Ref rhs(builder.make_instruction<ParameterF64Instruction>());
@@ -350,7 +351,7 @@ namespace cl::jit
 
     TEST(JitAllocationConstraints, AcceptsDefaultsAndRejectsInvalidOverrides)
     {
-        CompilationSession session;
+        CompilationSession session{test::compiler_thread()};
         GraphBuilder builder(session, IRLevel::Core);
         TaggedValueRef lhs(builder.make_instruction<ParameterInstruction>());
         TaggedValueRef rhs(builder.make_instruction<ParameterInstruction>());
@@ -396,7 +397,7 @@ namespace cl::jit
             (void)TemporaryConstraint(LocationRequirement::same_as_input(0)),
             "temporary cannot have a SameAsInput");
 
-        CompilationSession session;
+        CompilationSession session{test::compiler_thread()};
         GraphBuilder builder(session, IRLevel::Core);
         F64Ref source(builder.make_instruction<ParameterF64Instruction>());
         BoxF64Instruction box =
@@ -417,7 +418,7 @@ namespace cl::jit
 
     TEST(JitAllocationConstraints, ValidatesClobberCollisions)
     {
-        CompilationSession session;
+        CompilationSession session{test::compiler_thread()};
         GraphBuilder builder(session, IRLevel::Core);
         TaggedValueRef source(builder.make_instruction<ParameterInstruction>());
         MovInstruction move = builder.make_instruction<MovInstruction>(source);

@@ -47,6 +47,7 @@ namespace cl::jit
                                                  .global_builtins_module()
                                                  .raw_value())),
                                nullptr, name),
+                  session(*context.thread()),
                   graph_builder(session, IRLevel::Core)
             {
             }

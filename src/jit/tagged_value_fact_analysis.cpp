@@ -2,7 +2,9 @@
 
 #include "jit/compilation_storage.h"
 #include "jit/control_flow_graph.h"
+#include "object_model/class_object.h"
 #include "runtime/fatal.h"
+#include "runtime/thread_state.h"
 
 #include <absl/container/flat_hash_set.h>
 
@@ -30,6 +32,10 @@ namespace cl::jit
         : graph_generation_(graph.mutation_generation())
     {
         assert(graph.is_published());
+        Shape *exact_float_shape =
+            graph.thread_state()
+                .class_for_native_layout(NativeLayoutId::Float)
+                ->get_instance_root_shape();
 
         size_t definition_count = 0;
         for(const Block *block: graph.blocks())
@@ -116,7 +122,7 @@ namespace cl::jit
                 case InstructionFamilyKind::IsComparison:
                     return TaggedValueSet::boolean();
                 case InstructionFamilyKind::BoxF64:
-                    return TaggedValueSet::pointer();
+                    return TaggedValueSet::exact_shape(exact_float_shape);
                 case InstructionFamilyKind::InlineTagGuard:
                     {
                         InlineTagGuardInstruction guard =
@@ -129,8 +135,12 @@ namespace cl::jit
                     {
                         ShapeGuardInstruction guard =
                             instruction.as<ShapeGuardInstruction>();
+                        TaggedValueSet accepted =
+                            guard.expected_shape() == exact_float_shape
+                                ? TaggedValueSet::exact_shape(exact_float_shape)
+                                : TaggedValueSet::pointer();
                         return facts_for(ProgramValueRef(guard.object()))
-                            .intersect(TaggedValueSet::pointer());
+                            .intersect(accepted);
                     }
                 case InstructionFamilyKind::Const:
                     return exact_value_facts(

@@ -1,4 +1,5 @@
 #include "jit/equivalent_block_parameters.h"
+#include "test_helpers.h"
 
 #include "jit/compilation_session.h"
 #include "jit/graph_builder.h"
@@ -12,7 +13,7 @@ namespace cl::jit
 {
     TEST(JitEquivalentBlockParameters, CollapsesLoopParametersWithOneBase)
     {
-        CompilationSession session;
+        CompilationSession session{test::compiler_thread()};
         GraphBuilder builder(session, IRLevel::Core);
         Block *entry = builder.emplace_block();
         Block *loop = builder.emplace_block();

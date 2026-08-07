@@ -23,7 +23,7 @@ namespace cl::jit
 
     TEST(JitIRPrint, PrintsDenseValuesAndPositionalOperands)
     {
-        CompilationSession session;
+        CompilationSession session{test::compiler_thread()};
         GraphBuilder builder(session, IRLevel::Core);
         Block *entry = builder.emplace_block();
         TaggedValueRef parameter(
@@ -50,7 +50,7 @@ namespace cl::jit
 
     TEST(JitIRPrint, PrintsTaggedValueClassBySemanticName)
     {
-        CompilationSession session;
+        CompilationSession session{test::compiler_thread()};
         GraphBuilder builder(session, IRLevel::Core);
         Block *entry = builder.emplace_block();
         TaggedValueRef value(
@@ -78,7 +78,7 @@ namespace cl::jit
 
     TEST(JitIRPrint, HidesTrustedHandlerAddresses)
     {
-        CompilationSession session;
+        CompilationSession session{test::compiler_thread()};
         GraphBuilder builder(session, IRLevel::Core);
         Block *entry = builder.emplace_block();
         TaggedValueRef value(
@@ -99,7 +99,7 @@ namespace cl::jit
 
     TEST(JitIRPrint, SegmentsSnapshotsAndNamesEdgeAttributes)
     {
-        CompilationSession session;
+        CompilationSession session{test::compiler_thread()};
         GraphBuilder builder(session, IRLevel::Core);
         Block *entry = builder.emplace_block();
         Block *join = builder.emplace_block();
@@ -143,7 +143,7 @@ namespace cl::jit
 
     TEST(JitIRPrint, PrintsVariadicCallsAndNonDefaultBlockParameterTypes)
     {
-        CompilationSession session;
+        CompilationSession session{test::compiler_thread()};
         GraphBuilder builder(session, IRLevel::Core);
         Block *entry = builder.emplace_block();
 
@@ -191,7 +191,7 @@ namespace cl::jit
         code_object->n_locals = 2;
         code_object->n_temporaries = 1;
 
-        CompilationSession session;
+        CompilationSession session{test::compiler_thread()};
         GraphBuilder builder(session, IRLevel::Core);
         builder.set_bytecode_state_order(BytecodeStateOrder(*code_object));
         Block *entry = builder.emplace_block();

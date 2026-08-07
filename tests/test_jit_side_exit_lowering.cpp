@@ -15,7 +15,7 @@ namespace cl::jit
     TEST(JitSideExitLowering,
          ClonesSunkInstructionsInProgramOrderAndBindsTheirInputs)
     {
-        CompilationSession session;
+        CompilationSession session{test::compiler_thread()};
         GraphBuilder builder(session, IRLevel::Core);
         Block *entry = builder.emplace_block();
         ParameterInstruction first =
@@ -78,7 +78,7 @@ namespace cl::jit
     {
         EXPECT_DEATH(
             ([] {
-                CompilationSession session;
+                CompilationSession session{test::compiler_thread()};
                 GraphBuilder builder(session, IRLevel::Core);
                 Block *entry = builder.emplace_block();
                 ParameterInstruction parameter =
@@ -103,7 +103,7 @@ namespace cl::jit
 
     TEST(JitSideExitLowering, ReplacesInlineTagGuardAndRewritesItsResultUses)
     {
-        CompilationSession session;
+        CompilationSession session{test::compiler_thread()};
         GraphBuilder builder(session, IRLevel::Core);
         Block *entry = builder.emplace_block();
         ParameterInstruction parameter =
@@ -159,7 +159,7 @@ namespace cl::jit
         Shape *shape = vm.vm().str_instance_root_shape();
         ValidityCell *validity = vm.thread()->make_internal_raw<ValidityCell>();
 
-        CompilationSession session;
+        CompilationSession session{test::compiler_thread()};
         GraphBuilder builder(session, IRLevel::Core);
         Block *entry = builder.emplace_block();
         ParameterInstruction parameter =
@@ -224,7 +224,7 @@ namespace cl::jit
 
     TEST(JitSideExitLowering, ReplacesAddSMIAndRewritesItsResultUses)
     {
-        CompilationSession session;
+        CompilationSession session{test::compiler_thread()};
         GraphBuilder builder(session, IRLevel::Core);
         Block *entry = builder.emplace_block();
         ParameterInstruction lhs =
@@ -275,7 +275,7 @@ namespace cl::jit
 
     TEST(JitSideExitLowering, PreservesBinaryArithmeticSubkinds)
     {
-        CompilationSession session;
+        CompilationSession session{test::compiler_thread()};
         GraphBuilder builder(session, IRLevel::Core);
         Block *entry = builder.emplace_block();
         ParameterInstruction lhs =
@@ -324,7 +324,7 @@ namespace cl::jit
 
     TEST(JitSideExitLowering, RegionResumeCapturesReplacementAddSMIResult)
     {
-        CompilationSession session;
+        CompilationSession session{test::compiler_thread()};
         GraphBuilder builder(session, IRLevel::Core);
         Block *entry = builder.emplace_block();
         ParameterInstruction lhs =
