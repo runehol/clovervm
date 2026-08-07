@@ -63,6 +63,23 @@ namespace cl::jit
             return XRegister(reg.number());
         }
 
+        DRegister assigned_f64_register(const LocationAssignments &locations,
+                                        F64Ref value)
+        {
+            PhysicalLocation location =
+                locations.location_for(ProgramValueRef(value));
+            if(!location.is_register())
+            {
+                fatal("AArch64 emitter requires a register-mapped F64 value");
+            }
+            PhysicalRegister reg = location.reg();
+            if(reg.register_class() != RegisterClass::SIMD)
+            {
+                fatal("AArch64 emitter requires a SIMD-mapped F64 value");
+            }
+            return DRegister(reg.number());
+        }
+
         XRegister assigned_temporary(const LocationAssignments &locations,
                                      Instruction instruction,
                                      size_t temporary_index)
@@ -461,6 +478,18 @@ namespace cl::jit
                 }
 
                 case CL_JIT_MACHINE_INSTRUCTION_CASE(
+                    MovF64Instruction, move_instruction)
+                {
+                    assembler.emit_fp_unary(
+                        FPUnaryOp::Mov,
+                        assigned_f64_register(locations,
+                                              F64Ref(move_instruction)),
+                        assigned_f64_register(locations,
+                                              move_instruction.source()));
+                    break;
+                }
+
+                case CL_JIT_MACHINE_INSTRUCTION_CASE(
                     MovPointerInstruction, move_pointer_instruction)
                 {
                     assembler.mov(
@@ -498,6 +527,19 @@ namespace cl::jit
                 }
 
                 case CL_JIT_MACHINE_INSTRUCTION_CASE(
+                    LoadStackF64Instruction, load_instruction)
+                {
+                    assembler.ldr(
+                        assigned_f64_register(locations,
+                                              F64Ref(load_instruction)),
+                        AArch64ManagedFramePointerRegister,
+                        stack_byte_offset(assigned_stack(
+                            locations,
+                            ProgramValueRef(load_instruction.source()))));
+                    break;
+                }
+
+                case CL_JIT_MACHINE_INSTRUCTION_CASE(
                     StoreStackInstruction, store_instruction)
                 {
                     assembler.str(
@@ -523,10 +565,17 @@ namespace cl::jit
                     break;
                 }
 
-                case MachineInstructionKind::LoadStackF64:
-                case MachineInstructionKind::StoreStackF64:
-                    fatal("AArch64 F64 stack transfer emission is not "
-                          "implemented");
+                case CL_JIT_MACHINE_INSTRUCTION_CASE(
+                    StoreStackF64Instruction, store_instruction)
+                {
+                    assembler.str(
+                        assigned_f64_register(locations,
+                                              store_instruction.source()),
+                        AArch64ManagedFramePointerRegister,
+                        stack_byte_offset(assigned_stack(
+                            locations, ProgramValueRef(store_instruction))));
+                    break;
+                }
 
                 case MachineInstructionKind::SaveLinkRegisterToFrame:
                     assembler.str(
@@ -573,6 +622,19 @@ namespace cl::jit
                         AArch64Condition::Overflow,
                         side_exit_target(
                             make_side_exit_binding(add_instruction)));
+                    break;
+                }
+
+                case CL_JIT_MACHINE_INSTRUCTION_CASE(
+                    AddF64Instruction, add_instruction)
+                {
+                    assembler.emit_fp_binary(
+                        FPBinaryOp::Add,
+                        assigned_f64_register(locations,
+                                              F64Ref(add_instruction)),
+                        assigned_f64_register(locations, add_instruction.lhs()),
+                        assigned_f64_register(locations,
+                                              add_instruction.rhs()));
                     break;
                 }
 

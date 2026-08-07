@@ -41,6 +41,10 @@ namespace cl::jit
         constexpr PhysicalRegister x1(RegisterClass::GPR, 1);
         constexpr PhysicalRegister x2(RegisterClass::GPR, 2);
         constexpr PhysicalRegister x3(RegisterClass::GPR, 3);
+        constexpr PhysicalRegister v0(RegisterClass::SIMD, 0);
+        constexpr PhysicalRegister v1(RegisterClass::SIMD, 1);
+        constexpr PhysicalRegister v2(RegisterClass::SIMD, 2);
+        constexpr PhysicalRegister v3(RegisterClass::SIMD, 3);
 
         thread_local ThreadState *expected_trusted_handler_thread = nullptr;
 
@@ -1591,6 +1595,68 @@ namespace cl::jit
         EXPECT_EQ(0xf81f82a1, instruction_at(code, 1));
         EXPECT_EQ(0xf85f82a0, instruction_at(code, 2));
         EXPECT_EQ(0xd65f03c0, instruction_at(code, 3));
+    }
+
+    TEST(AArch64Execution, EmitsF64ArithmeticAndStackTransfers)
+    {
+        CompilationSession session;
+        GraphBuilder builder(session, IRLevel::Machine);
+        Block *entry = builder.emplace_block();
+        ParameterInstruction return_value =
+            builder.emplace_parameter<ParameterInstruction>(entry);
+        ParameterF64Instruction parameter =
+            builder.emplace_parameter<ParameterF64Instruction>(entry);
+        LoadStackF64Instruction load =
+            builder.emplace_instruction<LoadStackF64Instruction>(
+                entry, F64Ref(parameter));
+        AddF64Instruction add = builder.emplace_instruction<AddF64Instruction>(
+            entry, F64Ref(load), F64Ref(load));
+        MovF64Instruction move =
+            builder.emplace_instruction<MovF64Instruction>(entry, F64Ref(add));
+        StoreStackF64Instruction store =
+            builder.emplace_instruction<StoreStackF64Instruction>(entry,
+                                                                  F64Ref(move));
+        LoadStackF64Instruction reload =
+            builder.emplace_instruction<LoadStackF64Instruction>(entry,
+                                                                 F64Ref(store));
+        builder.emplace_instruction<BareReturnInstruction>(
+            entry, TaggedValueRef(return_value));
+        ControlFlowGraph *graph = builder.finalize();
+
+        LocationAssignmentsBuilder location_builder;
+        location_builder.assign(ProgramValueRef(return_value),
+                                PhysicalLocation::reg(x0));
+        location_builder.assign(ProgramValueRef(parameter),
+                                PhysicalLocation::stack(StackLocation(
+                                    StackLocationKind::IncomingParameter, 4)));
+        location_builder.assign(ProgramValueRef(load),
+                                PhysicalLocation::reg(v1));
+        location_builder.assign(ProgramValueRef(add),
+                                PhysicalLocation::reg(v2));
+        location_builder.assign(ProgramValueRef(move),
+                                PhysicalLocation::reg(v3));
+        location_builder.assign(ProgramValueRef(store),
+                                PhysicalLocation::stack(StackLocation(
+                                    StackLocationKind::LocalOrTemporary, -1)));
+        location_builder.assign(ProgramValueRef(reload),
+                                PhysicalLocation::reg(v0));
+        LocationAssignments locations = std::move(location_builder).finalize();
+        AArch64MacroAssembler assembler(AArch64ValuePoolMode::NearLiteral);
+
+        generate_aarch64_assembly(*graph, locations, assembler,
+                                  no_side_exit_thunk());
+        CodeCache cache;
+        Result<CodeAllocation, JitCodeError> finalization =
+            assembler.emitter().finalize(cache);
+        ASSERT_TRUE(finalization);
+        CodeAllocation allocation = std::move(finalization).value();
+        const void *code = allocation.writable_code().data();
+        EXPECT_EQ(0xfd4012a1u, instruction_at(code, 0));
+        EXPECT_EQ(0x1e612822u, instruction_at(code, 1));
+        EXPECT_EQ(0x1e604043u, instruction_at(code, 2));
+        EXPECT_EQ(0xfc1f82a3u, instruction_at(code, 3));
+        EXPECT_EQ(0xfc5f82a0u, instruction_at(code, 4));
+        EXPECT_EQ(0xd65f03c0u, instruction_at(code, 5));
     }
 
     TEST(AArch64Execution, EmitsManagedFrameLinkRegisterPreservation)

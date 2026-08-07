@@ -243,6 +243,10 @@ namespace cl::jit
                 {
                     case MachineInstructionKind::Const:
                     case MachineInstructionKind::Uninitialized:
+                    case MachineInstructionKind::MovF64:
+                    case MachineInstructionKind::LoadStackF64:
+                    case MachineInstructionKind::StoreStackF64:
+                    case MachineInstructionKind::AddF64:
                     case MachineInstructionKind::AddSMIWithSideExit:
                     case MachineInstructionKind::SubSMIWithSideExit:
                     case MachineInstructionKind::MovPointer:
