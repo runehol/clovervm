@@ -23,6 +23,11 @@ namespace cl::jit
         static_assert(std::is_constructible_v<XRegisterOrZero, XZero>);
         static_assert(!std::is_constructible_v<XRegisterOrZero, XSP>);
         static_assert(!std::is_constructible_v<XRegisterOrSP, WRegister>);
+        static_assert(DRegister(31).encoding() == 31);
+        using V4SRegister = SIMDVectorRegister<SIMDRegisterWidth::Bits128,
+                                               SIMDElementWidth::Bits32>;
+        static_assert(V4SRegister(31).encoding() == 31);
+        static_assert(!std::is_same_v<DRegister, V4SRegister>);
 
         uint32_t instruction_at(const void *code, size_t index)
         {

@@ -114,6 +114,62 @@ namespace cl::jit
     inline constexpr XZero xzr;
     inline constexpr WZero wzr;
 
+    enum class SIMDElementWidth : uint16_t
+    {
+        Bits8 = 8,
+        Bits16 = 16,
+        Bits32 = 32,
+        Bits64 = 64,
+    };
+
+    enum class SIMDRegisterWidth : uint16_t
+    {
+        Bits64 = 64,
+        Bits128 = 128,
+    };
+
+    template <SIMDElementWidth ElementWidth> class SIMDScalarRegister
+    {
+    public:
+        explicit constexpr SIMDScalarRegister(uint32_t register_number)
+            : register_number_(register_number)
+        {
+            assert(register_number < 32);
+        }
+
+        constexpr uint32_t encoding() const { return register_number_; }
+
+    private:
+        uint32_t register_number_;
+    };
+
+    template <SIMDRegisterWidth RegisterWidth, SIMDElementWidth ElementWidth>
+    class SIMDVectorRegister
+    {
+        static_assert(static_cast<uint16_t>(RegisterWidth) %
+                              static_cast<uint16_t>(ElementWidth) ==
+                          0,
+                      "SIMD vector element width does not divide its register "
+                      "width");
+
+    public:
+        explicit constexpr SIMDVectorRegister(uint32_t register_number)
+            : register_number_(register_number)
+        {
+            assert(register_number < 32);
+        }
+
+        constexpr uint32_t encoding() const { return register_number_; }
+
+    private:
+        uint32_t register_number_;
+    };
+
+    using BRegister = SIMDScalarRegister<SIMDElementWidth::Bits8>;
+    using HRegister = SIMDScalarRegister<SIMDElementWidth::Bits16>;
+    using SRegister = SIMDScalarRegister<SIMDElementWidth::Bits32>;
+    using DRegister = SIMDScalarRegister<SIMDElementWidth::Bits64>;
+
     // Keep future instruction families aligned with the architectural encoding
     // patterns documented here:
     // https://developer.arm.com/documentation/ddi0602/2026-06/Index-by-Encoding
