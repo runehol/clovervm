@@ -149,6 +149,50 @@ namespace cl::jit
         EXPECT_EQ(0xf2c24685, instruction_at(code, 1));
     }
 
+    TEST(AArch64Assembler, EncodesScalarFloatingPointBinaryInstructions)
+    {
+        uint32_t instructions[12] = {};
+        AArch64BufferAssembler assembler(instructions);
+
+        assembler.emit_fp_binary(FPBinaryOp::Add, HRegister(0), HRegister(1),
+                                 HRegister(2));
+        assembler.emit_fp_binary(FPBinaryOp::Add, SRegister(0), SRegister(1),
+                                 SRegister(2));
+        assembler.emit_fp_binary(FPBinaryOp::Mul, DRegister(0), DRegister(1),
+                                 DRegister(2));
+        assembler.emit_fp_binary(FPBinaryOp::Div, DRegister(0), DRegister(1),
+                                 DRegister(2));
+        assembler.emit_fp_binary(FPBinaryOp::Add, DRegister(0), DRegister(1),
+                                 DRegister(2));
+        assembler.emit_fp_binary(FPBinaryOp::Sub, DRegister(0), DRegister(1),
+                                 DRegister(2));
+        assembler.emit_fp_binary(FPBinaryOp::Max, DRegister(0), DRegister(1),
+                                 DRegister(2));
+        assembler.emit_fp_binary(FPBinaryOp::Min, DRegister(0), DRegister(1),
+                                 DRegister(2));
+        assembler.emit_fp_binary(FPBinaryOp::MaxNumber, DRegister(0),
+                                 DRegister(1), DRegister(2));
+        assembler.emit_fp_binary(FPBinaryOp::MinNumber, DRegister(0),
+                                 DRegister(1), DRegister(2));
+        assembler.emit_fp_binary(FPBinaryOp::NegatedMul, DRegister(0),
+                                 DRegister(1), DRegister(2));
+        assembler.emit_fp_binary(FPBinaryOp::Add, DRegister(31), DRegister(30),
+                                 DRegister(29));
+
+        EXPECT_EQ(0x1ee22820u, instructions[0]);
+        EXPECT_EQ(0x1e222820u, instructions[1]);
+        EXPECT_EQ(0x1e620820u, instructions[2]);
+        EXPECT_EQ(0x1e621820u, instructions[3]);
+        EXPECT_EQ(0x1e622820u, instructions[4]);
+        EXPECT_EQ(0x1e623820u, instructions[5]);
+        EXPECT_EQ(0x1e624820u, instructions[6]);
+        EXPECT_EQ(0x1e625820u, instructions[7]);
+        EXPECT_EQ(0x1e626820u, instructions[8]);
+        EXPECT_EQ(0x1e627820u, instructions[9]);
+        EXPECT_EQ(0x1e628820u, instructions[10]);
+        EXPECT_EQ(0x1e7d2bdfu, instructions[11]);
+    }
+
     TEST(AArch64Assembler, EmitsMacroInstructionsThroughEncodingFamilies)
     {
         CacheAndPlatform fixture(16);

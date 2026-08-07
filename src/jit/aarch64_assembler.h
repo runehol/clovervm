@@ -183,6 +183,19 @@ namespace cl::jit
         Subs = 3u << 29,
     };
 
+    enum class FPBinaryOp : uint32_t
+    {
+        Mul = 0u << 12,
+        Div = 1u << 12,
+        Add = 2u << 12,
+        Sub = 3u << 12,
+        Max = 4u << 12,
+        Min = 5u << 12,
+        MaxNumber = 6u << 12,
+        MinNumber = 7u << 12,
+        NegatedMul = 8u << 12,
+    };
+
     enum class LogicalOp : uint32_t
     {
         And = 0u << 29,
@@ -308,6 +321,26 @@ namespace cl::jit
         constexpr uint32_t encoding_bits(Encoding encoding)
         {
             return static_cast<uint32_t>(encoding);
+        }
+
+        template <SIMDElementWidth Width>
+        consteval uint32_t scalar_fp_type_bits()
+        {
+            static_assert(Width == SIMDElementWidth::Bits16 ||
+                          Width == SIMDElementWidth::Bits32 ||
+                          Width == SIMDElementWidth::Bits64);
+            if constexpr(Width == SIMDElementWidth::Bits16)
+            {
+                return 0b11u << 22;
+            }
+            else if constexpr(Width == SIMDElementWidth::Bits32)
+            {
+                return 0b00u << 22;
+            }
+            else
+            {
+                return 0b01u << 22;
+            }
         }
 
         inline bool fits_signed_scaled_displacement(int64_t displacement,
@@ -601,6 +634,20 @@ namespace cl::jit
             emit_arithmetic_reg(GPRWidth::W, operation, destination.encoding(),
                                 source1.encoding(), source2.encoding(), shift,
                                 shift_amount);
+        }
+
+        template <SIMDElementWidth Width>
+        void emit_fp_binary(FPBinaryOp operation,
+                            SIMDScalarRegister<Width> destination,
+                            SIMDScalarRegister<Width> lhs,
+                            SIMDScalarRegister<Width> rhs)
+        {
+            write_instruction(
+                0x1e200800 | aarch64_detail::scalar_fp_type_bits<Width>() |
+                aarch64_detail::encoding_bits(operation) |
+                aarch64_detail::register_field(rhs.encoding(), 16) |
+                aarch64_detail::register_field(lhs.encoding(), 5) |
+                destination.encoding());
         }
 
         void emit_logical_reg(LogicalOp operation, XRegisterOrZero destination,
