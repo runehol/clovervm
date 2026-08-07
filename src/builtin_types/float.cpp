@@ -14,6 +14,11 @@
 
 namespace cl
 {
+    Value box_float(ThreadState *thread, double value)
+    {
+        return thread->make_object_value<Float>(value).raw_value();
+    }
+
     static std::wstring format_float_value(double value)
     {
         if(std::isnan(value))

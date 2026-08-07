@@ -159,12 +159,32 @@ or in its restricted call-local managed-frame spill carriers. Those carriers
 cannot cross a Snapshot, side exit, safepoint, Python call, or interpreter
 reentry and therefore are not general root-visible spills.
 
-A graph containing a trusted-handler call is non-leaf. After side-exit
-lowering, Machine IR stores incoming `x30` in the compiled-return frame-header
-slot at function entry and restores it immediately before each normal return.
-The save and restores are explicit `MachineState` effects, not hidden emitter
-behavior. Leaf graphs retain their prologue-free return shape. The initial pass
-does not shrink-wrap this preservation.
+A graph containing a native call is non-leaf. After side-exit lowering, Machine
+IR stores incoming `x30` in the compiled-return frame-header slot at function
+entry and restores it immediately before each normal return. The save and
+restores are explicit `MachineState` effects, not hidden emitter behavior. Leaf
+graphs retain their prologue-free return shape. The initial pass does not
+shrink-wrap this preservation.
+
+Whether a Machine instruction lowers to a call is AArch64 backend policy, not
+target-independent instruction metadata. One backend call-properties query is
+shared by link-register preservation and allocation-constraint construction.
+Call presence requires link-register preservation; permission to use restricted
+call-local spill carriers is a separate property because future safepointing or
+Python calls may disallow them.
+
+`BoxF64` uses a dedicated non-raising, non-safepointing allocation helper with
+the mixed platform ABI:
+
+```text
+x0 = ThreadState * copied from fixed x25
+d0 = unboxed double
+x0 = freshly allocated tagged Float result
+```
+
+Its F64 source is an early `FixedOperandCopy`, its tagged result is a late fixed
+definition, and it uses the same allocatable caller-save clobber set as trusted
+handler calls. Allocation does not imply a safepoint.
 
 The backend uses ordinary near/far call relaxation for the native target. More
 general handlers require separate contracts for exception-marker results,

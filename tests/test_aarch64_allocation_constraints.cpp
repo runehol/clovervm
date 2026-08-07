@@ -307,6 +307,8 @@ namespace cl::jit
                 call->result_override()->requirement.fixed_location().reg());
 
             const RegisterSet &clobbers = call->clobbers();
+            EXPECT_EQ(CallLocalSpillPolicy::Allow,
+                      call->call_local_spill_policy());
             EXPECT_EQ(37u, clobbers.size());
             EXPECT_FALSE(clobbers.contains(x(0)));
             for(uint8_t number = 1; number <= 15; ++number)
@@ -329,6 +331,64 @@ namespace cl::jit
             EXPECT_FALSE(clobbers.contains(v(30)));
             EXPECT_FALSE(clobbers.contains(v(31)));
         }
+    }
+
+    TEST(AArch64AllocationConstraints, ConstrainsBoxF64NativeCallBoundary)
+    {
+        CompilationSession session;
+        GraphBuilder builder(session, IRLevel::Machine);
+        Block *entry = builder.emplace_block();
+        ParameterInstruction parameter =
+            builder.emplace_parameter<ParameterInstruction>(entry);
+        UnboxF64Instruction unbox =
+            builder.emplace_instruction<UnboxF64Instruction>(
+                entry, TaggedValueRef(parameter));
+        BoxF64Instruction box = builder.emplace_instruction<BoxF64Instruction>(
+            entry, F64Ref(unbox));
+        builder.emplace_instruction<BareReturnInstruction>(entry,
+                                                           TaggedValueRef(box));
+        ControlFlowGraph *graph = builder.finalize();
+
+        AllocationConstraints constraints =
+            make_aarch64_allocation_constraints(*graph);
+        ASSERT_TRUE(prepare_register_allocation(*graph, constraints));
+
+        const InstructionAllocationConstraints *call =
+            find_override(constraints, box);
+        ASSERT_NE(nullptr, call);
+        ASSERT_EQ(1u, call->input_overrides().size());
+        const ProgramValueUseConstraint &source = call->input_overrides()[0];
+        EXPECT_EQ(BoxF64Instruction::source_operand_index,
+                  source.operand_index);
+        EXPECT_EQ(AccessTiming::Early, source.timing);
+        EXPECT_EQ(LocationRequirement::Kind::FixedOperandCopy,
+                  source.requirement.kind());
+        EXPECT_EQ(v(0), source.requirement.fixed_operand_copy_register());
+
+        ASSERT_TRUE(call->result_override().has_value());
+        EXPECT_EQ(AccessTiming::Late, call->result_override()->timing);
+        EXPECT_EQ(x(0),
+                  call->result_override()->requirement.fixed_location().reg());
+
+        const RegisterSet &clobbers = call->clobbers();
+        EXPECT_EQ(CallLocalSpillPolicy::Allow, call->call_local_spill_policy());
+        EXPECT_EQ(37u, clobbers.size());
+        EXPECT_FALSE(clobbers.contains(x(0)));
+        for(uint8_t number = 1; number <= 15; ++number)
+        {
+            EXPECT_TRUE(clobbers.contains(x(number)));
+        }
+        for(uint8_t number = 0; number <= 7; ++number)
+        {
+            EXPECT_TRUE(clobbers.contains(v(number)));
+        }
+        for(uint8_t number = 16; number <= 29; ++number)
+        {
+            EXPECT_TRUE(clobbers.contains(v(number)));
+        }
+        EXPECT_FALSE(clobbers.contains(v(8)));
+        EXPECT_FALSE(clobbers.contains(v(30)));
+        EXPECT_FALSE(clobbers.contains(v(31)));
     }
 
     TEST(AArch64AllocationConstraints, OmitsOrdinaryInstructionsAndBranches)

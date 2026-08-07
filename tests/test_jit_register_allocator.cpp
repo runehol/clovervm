@@ -77,7 +77,8 @@ namespace cl::jit
                 {{TrustedHandlerCallInstruction::arguments_operand_index,
                   AccessTiming::Early,
                   LocationRequirement::fixed_operand_copy(x1)}},
-                ResultConstraint{AccessTiming::Late, fixed(x0)}, {}, clobbers);
+                ResultConstraint{AccessTiming::Late, fixed(x0)}, {}, clobbers,
+                CallLocalSpillPolicy::Allow);
         }
 
         AllocationConstraints allocator_test_constraints(
@@ -1329,6 +1330,87 @@ namespace cl::jit
         EXPECT_EQ(1u, spill_bundle_count);
     }
 
+    TEST(JitRegisterAllocator, SpillsF64ValueAcrossClobberingBox)
+    {
+        CompilationSession session;
+        GraphBuilder builder(session, IRLevel::Machine);
+        Block *entry = builder.emplace_block();
+        ParameterF64Instruction source =
+            builder.emplace_parameter<ParameterF64Instruction>(entry);
+        ParameterF64Instruction live_through =
+            builder.emplace_parameter<ParameterF64Instruction>(entry);
+        BoxF64Instruction box = builder.emplace_instruction<BoxF64Instruction>(
+            entry, F64Ref(source));
+        MovF64Instruction use = builder.emplace_instruction<MovF64Instruction>(
+            entry, F64Ref(live_through));
+        BareReturnInstruction return_instruction =
+            builder.emplace_instruction<BareReturnInstruction>(
+                entry, TaggedValueRef(box));
+        ControlFlowGraph *graph = builder.finalize();
+
+        RegisterSet clobbers;
+        clobbers.insert(v0);
+        clobbers.insert(v1);
+        std::vector<InstructionAllocationConstraints> overrides;
+        overrides.emplace_back(source, std::vector<ProgramValueUseConstraint>{},
+                               ResultConstraint{AccessTiming::Late, fixed(v0)});
+        overrides.emplace_back(live_through,
+                               std::vector<ProgramValueUseConstraint>{},
+                               ResultConstraint{AccessTiming::Late, fixed(v1)});
+        overrides.emplace_back(
+            box,
+            std::vector<ProgramValueUseConstraint>{
+                {BoxF64Instruction::source_operand_index, AccessTiming::Early,
+                 LocationRequirement::fixed_operand_copy(v0)}},
+            ResultConstraint{AccessTiming::Late, fixed(x0)},
+            std::vector<TemporaryConstraint>{}, clobbers,
+            CallLocalSpillPolicy::Allow);
+        overrides.emplace_back(
+            return_instruction,
+            std::vector<ProgramValueUseConstraint>{
+                {BareReturnInstruction::return_value_operand_index,
+                 AccessTiming::Early, fixed(x0)}});
+        constexpr std::array gprs = {x0};
+        constexpr std::array simds = {v0, v1};
+        std::vector<RegisterClassDefinition> register_classes;
+        register_classes.emplace_back(RegisterClass::GPR, gprs);
+        register_classes.emplace_back(RegisterClass::SIMD, simds);
+        AllocationConstraints constraints(std::move(register_classes),
+                                          std::move(overrides));
+
+        auto prepared_result = prepare_register_allocation(*graph, constraints);
+        ASSERT_TRUE(prepared_result);
+        PreparedAllocationProblem prepared = std::move(prepared_result).value();
+        auto assignment_result = assign_bundles(prepared, constraints);
+
+        ASSERT_TRUE(assignment_result);
+        RegisterAllocationResult allocation =
+            std::move(assignment_result).value();
+        EXPECT_EQ(1u, allocation.spill_slot_count());
+        bool found_live_through_spill = false;
+        for(size_t index = 0; index < allocation.bundles().size(); ++index)
+        {
+            BundleLocation location =
+                allocation.locations().location_for(BundleId(index));
+            if(!location.is_spill_slot())
+            {
+                continue;
+            }
+            ASSERT_EQ(1u, allocation.bundles()[index].fragments.size());
+            LiveRangeId spilled_source =
+                allocation.bundles()[index].fragments[0].source;
+            found_live_through_spill |=
+                prepared.live_ranges()[spilled_source.value()]
+                    .origin.instruction_id() == live_through.id();
+        }
+        EXPECT_TRUE(found_live_through_spill);
+        EXPECT_EQ(2u, allocation.transfers().sets().size());
+        EXPECT_EQ(TransferPoint::before_instruction(box),
+                  allocation.transfers().sets()[0].point);
+        EXPECT_EQ(TransferPoint::before_instruction(use),
+                  allocation.transfers().sets()[1].point);
+    }
+
     TEST(JitRegisterAllocator, RejectsSpillCarrierWithObservableCallOperand)
     {
         CompilationSession session;
@@ -1355,7 +1437,8 @@ namespace cl::jit
                  AccessTiming::Early,
                  LocationRequirement::any_register(RegisterClass::GPR)}},
             ResultConstraint{AccessTiming::Late, fixed(x0)},
-            std::vector<TemporaryConstraint>{}, clobbers);
+            std::vector<TemporaryConstraint>{}, clobbers,
+            CallLocalSpillPolicy::Allow);
         overrides.emplace_back(
             return_instruction,
             std::vector<ProgramValueUseConstraint>{

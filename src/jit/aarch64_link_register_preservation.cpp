@@ -1,5 +1,6 @@
 #include "jit/aarch64_link_register_preservation.h"
 
+#include "jit/aarch64_call.h"
 #include "jit/control_flow_graph.h"
 #include "jit/graph_rewriter.h"
 
@@ -20,7 +21,7 @@ namespace cl::jit
             for(Instruction instruction: block->instructions())
             {
                 has_call |=
-                    instruction.kind() == InstructionKind::TrustedHandlerCall;
+                    aarch64_call_properties(instruction.kind()).has_value();
             }
         }
         if(!has_call)

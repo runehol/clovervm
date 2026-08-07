@@ -157,11 +157,13 @@ namespace cl::jit
         Instruction instruction,
         std::vector<ProgramValueUseConstraint> input_overrides,
         std::optional<ResultConstraint> result_override,
-        std::vector<TemporaryConstraint> temporaries, RegisterSet clobbers)
+        std::vector<TemporaryConstraint> temporaries, RegisterSet clobbers,
+        CallLocalSpillPolicy call_local_spill_policy)
         : instruction_(instruction.id()),
           input_overrides_(std::move(input_overrides)),
           result_override_(std::move(result_override)),
-          temporaries_(std::move(temporaries)), clobbers_(clobbers)
+          temporaries_(std::move(temporaries)), clobbers_(clobbers),
+          call_local_spill_policy_(call_local_spill_policy)
     {
 #ifndef NDEBUG
         validate(*instruction.storage());

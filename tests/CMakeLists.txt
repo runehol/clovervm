@@ -17,6 +17,7 @@ target_sources(test_clovervm PRIVATE
 	test_bytecode.cpp
 	test_codegen.cpp
 	test_exception_handling.cpp
+	test_float.cpp
 	test_hash.cpp
 	test_heap.cpp
 	test_import_system.cpp

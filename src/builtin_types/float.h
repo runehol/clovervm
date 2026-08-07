@@ -8,6 +8,7 @@
 
 namespace cl
 {
+    class ThreadState;
     class VirtualMachine;
 
     class Float : public Object
@@ -32,6 +33,7 @@ namespace cl
 
     inline size_t Float::value_offset() { return CL_OFFSETOF(Float, value_); }
 
+    [[nodiscard]] Value box_float(ThreadState *thread, double value);
     BuiltinClassDefinition make_float_class(VirtualMachine *vm);
     void install_float_class_methods(VirtualMachine *vm);
 

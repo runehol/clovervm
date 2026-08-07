@@ -184,18 +184,25 @@ namespace cl::jit
                         problem_.occurrences()[copy.source.value()]
                             .anchor.instruction_id();
                 }
-                absl::flat_hash_set<InstructionId> spill_boundary_instructions;
+                absl::flat_hash_set<InstructionId>
+                    permitted_spill_boundary_instructions;
+                for(const InstructionAllocationConstraints &constraint:
+                    constraints_.instruction_overrides())
+                {
+                    if(constraint.call_local_spill_policy() ==
+                       CallLocalSpillPolicy::Allow)
+                    {
+                        permitted_spill_boundary_instructions.insert(
+                            constraint.instruction_id());
+                    }
+                }
+                absl::flat_hash_set<InstructionId> added_spill_boundaries;
                 for(const ClobberReservation &clobber: problem_.clobbers())
                 {
                     clobber_ranges_[clobber.reg].push_back(clobber.range);
-                    Instruction instruction =
-                        problem_.block_ranges()
-                            .front()
-                            .block->storage()
-                            ->instruction(clobber.instruction);
-                    if(instruction.kind() ==
-                           InstructionKind::TrustedHandlerCall &&
-                       spill_boundary_instructions.insert(clobber.instruction)
+                    if(permitted_spill_boundary_instructions.contains(
+                           clobber.instruction) &&
+                       added_spill_boundaries.insert(clobber.instruction)
                            .second)
                     {
                         assert(clobber.range.start.value() != 0);

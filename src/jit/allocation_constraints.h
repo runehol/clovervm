@@ -153,6 +153,12 @@ namespace cl::jit
         LocationRequirement requirement;
     };
 
+    enum class CallLocalSpillPolicy : uint8_t
+    {
+        Disallow,
+        Allow,
+    };
+
     class InstructionAllocationConstraints
     {
     public:
@@ -161,7 +167,9 @@ namespace cl::jit
             std::vector<ProgramValueUseConstraint> input_overrides = {},
             std::optional<ResultConstraint> result_override = std::nullopt,
             std::vector<TemporaryConstraint> temporaries = {},
-            RegisterSet clobbers = {});
+            RegisterSet clobbers = {},
+            CallLocalSpillPolicy call_local_spill_policy =
+                CallLocalSpillPolicy::Disallow);
 
         void validate(const CompilationStorage &storage) const;
 
@@ -183,6 +191,10 @@ namespace cl::jit
         }
 
         const RegisterSet &clobbers() const { return clobbers_; }
+        CallLocalSpillPolicy call_local_spill_policy() const
+        {
+            return call_local_spill_policy_;
+        }
 
     private:
         InstructionId instruction_;
@@ -190,6 +202,7 @@ namespace cl::jit
         std::optional<ResultConstraint> result_override_;
         std::vector<TemporaryConstraint> temporaries_;
         RegisterSet clobbers_;
+        CallLocalSpillPolicy call_local_spill_policy_;
     };
 
     class AllocationConstraints

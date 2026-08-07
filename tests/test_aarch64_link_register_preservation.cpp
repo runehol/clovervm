@@ -1,5 +1,6 @@
 #include "jit/aarch64_link_register_preservation.h"
 
+#include "jit/aarch64_call.h"
 #include "jit/compilation_session.h"
 #include "jit/control_flow_graph.h"
 #include "jit/graph_builder.h"
@@ -19,6 +20,22 @@ namespace cl::jit
     {
         Value test_handler(ThreadState *, Value value) { return value; }
     }  // namespace
+
+    TEST(AArch64CallProperties, ClassifiesBackendCallLowerings)
+    {
+        EXPECT_FALSE(
+            aarch64_call_properties(InstructionKind::AddF64).has_value());
+
+        std::optional<AArch64CallProperties> trusted =
+            aarch64_call_properties(InstructionKind::TrustedHandlerCall);
+        ASSERT_TRUE(trusted.has_value());
+        EXPECT_TRUE(trusted->permits_call_local_spills);
+
+        std::optional<AArch64CallProperties> box =
+            aarch64_call_properties(InstructionKind::BoxF64);
+        ASSERT_TRUE(box.has_value());
+        EXPECT_TRUE(box->permits_call_local_spills);
+    }
 
     TEST(AArch64LinkRegisterPreservation, LeavesLeafGraphUnchanged)
     {
@@ -64,6 +81,32 @@ namespace cl::jit
                   entry->instruction_at(0).kind());
         EXPECT_EQ(InstructionKind::TrustedHandlerCall,
                   entry->instruction_at(1).kind());
+        EXPECT_EQ(InstructionKind::RestoreLinkRegisterFromFrame,
+                  entry->instruction_at(2).kind());
+        EXPECT_EQ(InstructionKind::BareReturn, entry->instruction_at(3).kind());
+    }
+
+    TEST(AArch64LinkRegisterPreservation, TreatsBoxF64AsANonLeafNativeCall)
+    {
+        CompilationSession session;
+        GraphBuilder builder(session, IRLevel::Machine);
+        Block *entry = builder.emplace_block();
+        ParameterF64Instruction value =
+            builder.emplace_parameter<ParameterF64Instruction>(entry);
+        BoxF64Instruction box = builder.emplace_instruction<BoxF64Instruction>(
+            entry, F64Ref(value));
+        builder.emplace_instruction<BareReturnInstruction>(entry,
+                                                           TaggedValueRef(box));
+        ControlFlowGraph *graph = builder.finalize();
+
+        RewriteSummary summary =
+            insert_aarch64_link_register_preservation(session, *graph);
+
+        EXPECT_TRUE(summary.instructions_changed);
+        ASSERT_EQ(4u, entry->instructions().size());
+        EXPECT_EQ(InstructionKind::SaveLinkRegisterToFrame,
+                  entry->instruction_at(0).kind());
+        EXPECT_EQ(InstructionKind::BoxF64, entry->instruction_at(1).kind());
         EXPECT_EQ(InstructionKind::RestoreLinkRegisterFromFrame,
                   entry->instruction_at(2).kind());
         EXPECT_EQ(InstructionKind::BareReturn, entry->instruction_at(3).kind());

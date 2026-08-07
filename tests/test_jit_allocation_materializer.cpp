@@ -267,7 +267,8 @@ namespace cl::jit
                  LocationRequirement::fixed_operand_copy(x1)}},
             ResultConstraint{AccessTiming::Late,
                              fixed(PhysicalLocation::reg(x0))},
-            std::vector<TemporaryConstraint>{}, clobbers);
+            std::vector<TemporaryConstraint>{}, clobbers,
+            CallLocalSpillPolicy::Allow);
         overrides.emplace_back(
             return_instruction,
             std::vector<ProgramValueUseConstraint>{

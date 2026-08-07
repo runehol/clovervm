@@ -1,5 +1,6 @@
 #include "jit/aarch64_allocation_constraints.h"
 
+#include "jit/aarch64_call.h"
 #include "jit/compilation_storage.h"
 #include "jit/control_flow_graph.h"
 #include "runtime/fatal.h"
@@ -136,7 +137,7 @@ namespace cl::jit
                                                     std::move(input_overrides));
         }
 
-        RegisterSet trusted_handler_call_clobbers()
+        RegisterSet aarch64_aapcs_call_clobbers()
         {
             RegisterSet result;
             for(uint8_t number = 1; number <= 15; ++number)
@@ -148,6 +149,16 @@ namespace cl::jit
                 result.insert(reg);
             }
             return result;
+        }
+
+        CallLocalSpillPolicy call_local_spill_policy(Instruction instruction)
+        {
+            std::optional<AArch64CallProperties> properties =
+                aarch64_call_properties(instruction.kind());
+            assert(properties.has_value());
+            return properties->permits_call_local_spills
+                       ? CallLocalSpillPolicy::Allow
+                       : CallLocalSpillPolicy::Disallow;
         }
 
         InstructionAllocationConstraints trusted_handler_call_constraints(
@@ -169,7 +180,22 @@ namespace cl::jit
                 ResultConstraint{
                     AccessTiming::Late,
                     LocationRequirement::fixed(PhysicalLocation::reg(gpr(0)))},
-                {}, trusted_handler_call_clobbers());
+                {}, aarch64_aapcs_call_clobbers(),
+                call_local_spill_policy(instruction));
+        }
+
+        InstructionAllocationConstraints
+        box_f64_call_constraints(BoxF64Instruction instruction)
+        {
+            return InstructionAllocationConstraints(
+                instruction,
+                {{BoxF64Instruction::source_operand_index, AccessTiming::Early,
+                  LocationRequirement::fixed_operand_copy(simd(0))}},
+                ResultConstraint{
+                    AccessTiming::Late,
+                    LocationRequirement::fixed(PhysicalLocation::reg(gpr(0)))},
+                {}, aarch64_aapcs_call_clobbers(),
+                call_local_spill_policy(instruction));
         }
 
         InstructionAllocationConstraints gpr_temporary_constraints(
@@ -365,6 +391,14 @@ namespace cl::jit
                     {
                         overrides.push_back(trusted_handler_call_constraints(
                             call_instruction, std::move(input_overrides)));
+                        break;
+                    }
+
+                    case CL_JIT_MACHINE_INSTRUCTION_CASE(
+                        BoxF64Instruction, box_instruction)
+                    {
+                        overrides.push_back(
+                            box_f64_call_constraints(box_instruction));
                         break;
                     }
 
