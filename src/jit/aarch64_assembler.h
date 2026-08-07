@@ -196,6 +196,21 @@ namespace cl::jit
         NegatedMul = 8u << 12,
     };
 
+    enum class FPUnaryOp : uint32_t
+    {
+        Mov = 0u << 15,
+        Abs = 1u << 15,
+        Neg = 2u << 15,
+        Sqrt = 3u << 15,
+        RoundNearestEven = 8u << 15,
+        RoundPlusInfinity = 9u << 15,
+        RoundMinusInfinity = 10u << 15,
+        RoundTowardZero = 11u << 15,
+        RoundNearestAway = 12u << 15,
+        RoundCurrentExact = 14u << 15,
+        RoundCurrent = 15u << 15,
+    };
+
     enum class LogicalOp : uint32_t
     {
         And = 0u << 29,
@@ -647,6 +662,18 @@ namespace cl::jit
                 aarch64_detail::encoding_bits(operation) |
                 aarch64_detail::register_field(rhs.encoding(), 16) |
                 aarch64_detail::register_field(lhs.encoding(), 5) |
+                destination.encoding());
+        }
+
+        template <SIMDElementWidth Width>
+        void emit_fp_unary(FPUnaryOp operation,
+                           SIMDScalarRegister<Width> destination,
+                           SIMDScalarRegister<Width> source)
+        {
+            write_instruction(
+                0x1e204000 | aarch64_detail::scalar_fp_type_bits<Width>() |
+                aarch64_detail::encoding_bits(operation) |
+                aarch64_detail::register_field(source.encoding(), 5) |
                 destination.encoding());
         }
 

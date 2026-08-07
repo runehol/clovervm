@@ -193,6 +193,49 @@ namespace cl::jit
         EXPECT_EQ(0x1e7d2bdfu, instructions[11]);
     }
 
+    TEST(AArch64Assembler, EncodesScalarFloatingPointUnaryInstructions)
+    {
+        uint32_t instructions[14] = {};
+        AArch64BufferAssembler assembler(instructions);
+
+        assembler.emit_fp_unary(FPUnaryOp::Mov, HRegister(0), HRegister(1));
+        assembler.emit_fp_unary(FPUnaryOp::Mov, SRegister(0), SRegister(1));
+        assembler.emit_fp_unary(FPUnaryOp::Mov, DRegister(0), DRegister(1));
+        assembler.emit_fp_unary(FPUnaryOp::Abs, DRegister(0), DRegister(1));
+        assembler.emit_fp_unary(FPUnaryOp::Neg, DRegister(0), DRegister(1));
+        assembler.emit_fp_unary(FPUnaryOp::Sqrt, DRegister(0), DRegister(1));
+        assembler.emit_fp_unary(FPUnaryOp::RoundNearestEven, DRegister(0),
+                                DRegister(1));
+        assembler.emit_fp_unary(FPUnaryOp::RoundPlusInfinity, DRegister(0),
+                                DRegister(1));
+        assembler.emit_fp_unary(FPUnaryOp::RoundMinusInfinity, DRegister(0),
+                                DRegister(1));
+        assembler.emit_fp_unary(FPUnaryOp::RoundTowardZero, DRegister(0),
+                                DRegister(1));
+        assembler.emit_fp_unary(FPUnaryOp::RoundNearestAway, DRegister(0),
+                                DRegister(1));
+        assembler.emit_fp_unary(FPUnaryOp::RoundCurrentExact, DRegister(0),
+                                DRegister(1));
+        assembler.emit_fp_unary(FPUnaryOp::RoundCurrent, DRegister(0),
+                                DRegister(1));
+        assembler.emit_fp_unary(FPUnaryOp::Mov, DRegister(31), DRegister(30));
+
+        EXPECT_EQ(0x1ee04020u, instructions[0]);
+        EXPECT_EQ(0x1e204020u, instructions[1]);
+        EXPECT_EQ(0x1e604020u, instructions[2]);
+        EXPECT_EQ(0x1e60c020u, instructions[3]);
+        EXPECT_EQ(0x1e614020u, instructions[4]);
+        EXPECT_EQ(0x1e61c020u, instructions[5]);
+        EXPECT_EQ(0x1e644020u, instructions[6]);
+        EXPECT_EQ(0x1e64c020u, instructions[7]);
+        EXPECT_EQ(0x1e654020u, instructions[8]);
+        EXPECT_EQ(0x1e65c020u, instructions[9]);
+        EXPECT_EQ(0x1e664020u, instructions[10]);
+        EXPECT_EQ(0x1e674020u, instructions[11]);
+        EXPECT_EQ(0x1e67c020u, instructions[12]);
+        EXPECT_EQ(0x1e6043dfu, instructions[13]);
+    }
+
     TEST(AArch64Assembler, EmitsMacroInstructionsThroughEncodingFamilies)
     {
         CacheAndPlatform fixture(16);
