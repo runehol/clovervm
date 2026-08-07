@@ -211,6 +211,12 @@ namespace cl::jit
         RoundCurrent = 15u << 15,
     };
 
+    enum class FPCompareMode : uint32_t
+    {
+        Quiet = 0,
+        Signaling = 1u << 4,
+    };
+
     enum class LogicalOp : uint32_t
     {
         And = 0u << 29,
@@ -675,6 +681,28 @@ namespace cl::jit
                 aarch64_detail::encoding_bits(operation) |
                 aarch64_detail::register_field(source.encoding(), 5) |
                 destination.encoding());
+        }
+
+        template <SIMDElementWidth Width>
+        void emit_fp_compare(SIMDScalarRegister<Width> lhs,
+                             SIMDScalarRegister<Width> rhs,
+                             FPCompareMode mode = FPCompareMode::Quiet)
+        {
+            write_instruction(
+                0x1e202000 | aarch64_detail::scalar_fp_type_bits<Width>() |
+                aarch64_detail::encoding_bits(mode) |
+                aarch64_detail::register_field(rhs.encoding(), 16) |
+                aarch64_detail::register_field(lhs.encoding(), 5));
+        }
+
+        template <SIMDElementWidth Width>
+        void emit_fp_compare_zero(SIMDScalarRegister<Width> lhs,
+                                  FPCompareMode mode = FPCompareMode::Quiet)
+        {
+            write_instruction(
+                0x1e202008 | aarch64_detail::scalar_fp_type_bits<Width>() |
+                aarch64_detail::encoding_bits(mode) |
+                aarch64_detail::register_field(lhs.encoding(), 5));
         }
 
         void emit_logical_reg(LogicalOp operation, XRegisterOrZero destination,

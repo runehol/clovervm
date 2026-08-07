@@ -236,6 +236,29 @@ namespace cl::jit
         EXPECT_EQ(0x1e6043dfu, instructions[13]);
     }
 
+    TEST(AArch64Assembler, EncodesScalarFloatingPointComparisons)
+    {
+        uint32_t instructions[7] = {};
+        AArch64BufferAssembler assembler(instructions);
+
+        assembler.emit_fp_compare(HRegister(0), HRegister(1));
+        assembler.emit_fp_compare(SRegister(0), SRegister(1));
+        assembler.emit_fp_compare(DRegister(0), DRegister(1));
+        assembler.emit_fp_compare(DRegister(2), DRegister(3),
+                                  FPCompareMode::Signaling);
+        assembler.emit_fp_compare_zero(DRegister(4));
+        assembler.emit_fp_compare_zero(DRegister(5), FPCompareMode::Signaling);
+        assembler.emit_fp_compare(DRegister(31), DRegister(30));
+
+        EXPECT_EQ(0x1ee12000u, instructions[0]);
+        EXPECT_EQ(0x1e212000u, instructions[1]);
+        EXPECT_EQ(0x1e612000u, instructions[2]);
+        EXPECT_EQ(0x1e632050u, instructions[3]);
+        EXPECT_EQ(0x1e602088u, instructions[4]);
+        EXPECT_EQ(0x1e6020b8u, instructions[5]);
+        EXPECT_EQ(0x1e7e23e0u, instructions[6]);
+    }
+
     TEST(AArch64Assembler, EmitsMacroInstructionsThroughEncodingFamilies)
     {
         CacheAndPlatform fixture(16);
