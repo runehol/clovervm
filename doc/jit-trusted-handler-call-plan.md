@@ -4,7 +4,7 @@
 |---|---|
 | Document type | Implementation plan |
 | Status | Active |
-| Implementation | Cache guards, call IR, handler metadata and registry, typed resolver installation, float handler declarations, binary operator frontend integration, AArch64 call allocation constraints and emission, fixed operand-copy materialization, concrete call-local managed-frame spills, and explicit link-register preservation are implemented |
+| Implementation | Cache guards, call IR, handler metadata and registry, typed resolver installation, float handler declarations, unary/binary/ternary operator frontend integration, AArch64 call allocation constraints and emission, fixed operand-copy materialization, concrete call-local managed-frame spills, and explicit link-register preservation are implemented |
 | Scope | Guarded calls from compiled AArch64 code to non-raising trusted native handlers |
 | Design authority | [JIT Compiler and IR](jit-compiler-and-ir.md), [AArch64 JIT Calling Convention](aarch64-jit-calling-convention.md), [Trusted Handler Declarations](trusted-handler-declarations.md), [Fast Operator Dispatch](fast-operator-dispatch.md), and [Function Specialization](function-specialization.md) |
 
@@ -213,11 +213,13 @@ is executable before the bytecode frontend selects it.
 
 ## Implemented Slice 2: Operator Frontend Integration
 
-`CoreBytecodeTranslator::lower_non_fastpathed_operator()` supports one ordinary
-cached trusted-handler case:
+`CoreBytecodeTranslator::lower_non_fastpathed_operator()` supports eligible
+cached unary, binary, and ternary trusted-handler cases:
 
-1. Require a non-immediate binary semantic argument vector and use the binary
-   trusted-handler ABI.
+1. Derive unary, binary, or ternary arity from the bytecode operator role.
+   Require that many explicit semantic source values; immediate binary forms
+   remain unsupported until their embedded constant is materialized as a call
+   argument.
 2. Reject caches with no trusted target. Erase the cached target using that
    expected arity and query the VM registry by target alone.
 3. Require the returned metadata arity to equal the expected arity. Reject
@@ -226,8 +228,10 @@ cached trusted-handler case:
 4. If the cache is not eligible, emit the existing unsupported interpreter
    exit.
 5. Emit one pre-operation Snapshot.
-6. Emit cached shape and validity guards in cache-match order: an inline key
-   becomes an exact inline-tag guard, an object key becomes an exact
+6. Emit cached shape and validity guards in cache-match order: unary calls
+   guard operand zero, while binary and ternary calls guard operands zero and
+   one. Ternary operand two is runtime call state rather than a cache key. An
+   inline key becomes an exact inline-tag guard, an object key becomes an exact
    `PointerAndShapeGuard`, and a corresponding non-null lookup validity cell
    adds a `ValidityCellGuard`.
 7. Emit `TrustedHandlerCall` with the guarded arguments in the same canonical
@@ -238,37 +242,34 @@ cached trusted-handler case:
    expansion has both sources of specialization information.
 8. Write its normal tagged result into bytecode state.
 
-Float comparison provides the end-to-end executable case: it exercises object
-shape guards, native argument shuffling, a tagged boolean result, the non-leaf
-return path, and interpreter replay after a shape-guard miss without requiring
-F64 IR.
-
-After that fixture works, reuse the same path for eligible unary and ternary
-operator caches and for the interpreter's cached trusted special-method call.
-Immediate bytecode forms and generalized function adaptation are separate
-frontend extensions.
+Float comparison and unary negation provide end-to-end executable cases. They
+exercise object shape guards, native argument shuffling, tagged results, the
+non-leaf return path, and interpreter replay after a shape-guard miss without
+requiring F64 emission. Ternary frontend lowering is structurally covered;
+immediate bytecode forms, cached trusted special-method calls, and generalized
+function adaptation are separate frontend extensions.
 
 ## Remaining Slice 3: Semantic Expansion
 
-The opaque call is the first consumer of registered metadata. After that works,
-recognized float semantics may replace eligible `TrustedHandlerCall`
+The opaque call is the first consumer of registered metadata. The next stage
+uses recognized float semantics to replace eligible `TrustedHandlerCall`
 instructions with explicit guards, conversions, unboxed operations, and result
 boxing. The cache shape keys select the exact type adaptation; registered
 semantics select the operation. Neither source is sufficient by itself.
 
-This expansion is not required for the native call boundary. It should land
-only after the required F64 Core operations exist and should then reuse tagged
-value facts, box/unbox simplification, snapshot recovery, and dead-code
-elimination to sink unnecessary boxes into side exits.
+This expansion is not required for the native call boundary. It adds the
+required F64 operations as each recognized semantic family becomes executable,
+then reuses exact immutable-shape facts, box/unbox simplification, snapshot
+recovery, and dead-code elimination to sink unnecessary boxes into side exits.
 
 Broader builtin migration is also independent. Float already supplies
 registered non-raising candidates for the first end-to-end call. Bigint and
 other families may adopt typed declarations after their non-uniform adaptation
 and `NotImplemented` behavior have been reviewed.
 
-## Completion Criteria
+## Completed Opaque-Call Criteria
 
-The initial plan is complete when:
+The initial opaque-call slice now establishes that:
 
 - an actual warmed inline cache selects a registered trusted handler;
 - matching inputs execute the handler and return the correct tagged result;

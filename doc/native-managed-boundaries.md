@@ -4,7 +4,7 @@
 |---|---|
 | Document type | Architecture contract |
 | Status | Accepted |
-| Implementation | Interpreter/native boundary implemented; JIT split-stack extension accepted but not yet implemented |
+| Implementation | Interpreter/native boundaries and initial AArch64 interpreter/JIT entry, return, and side-exit adapters are implemented; safepoint-capable compiled native calls and general managed re-entry remain |
 | Scope | Contracts for managed-to-native calls and native re-entry into managed execution |
 | Owning layers | Managed frames, interpreter, runtime calls, native APIs, exceptions, and root publication |
 | Validated against | `ad0a158` (2026-07-18) |
@@ -208,11 +208,11 @@ managed entry links to the frontier it observed, and each return restores that
 frontier before control resumes in its native caller. Re-entry must not replace,
 detach, or hide the still-live managed frames below it.
 
-During split-stack JIT bring-up, the corresponding boundary activations also
-form a strict stack. `managed A -> native f -> managed B -> native g -> managed
-C` retains one native architectural stack while each entry installs, and each
-return restores, the fixed JIT context registers, managed frontier, and
-continuation belonging to the immediately enclosing activation.
+During JIT bring-up, the corresponding boundary activations also form a strict
+stack. `managed A -> native f -> managed B -> native g -> managed C` retains
+one native architectural stack while each entry installs, and each return
+restores, the fixed JIT context registers, managed frontier, and continuation
+belonging to the immediately enclosing activation.
 
 The same nesting rule applies to pending exceptions and roots: an inner
 boundary may propagate or explicitly handle its own failure, but it must not

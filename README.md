@@ -1,7 +1,6 @@
 # clovervm - Clover Virtual Machine
 A Python VM experiment with a bytecode interpreter, shape-based objects, and
-the runtime machinery needed for future JIT compilation. Very much
-work-in-progress.
+an opt-in AArch64 baseline JIT. Very much work-in-progress.
 
 ## Current status
 
@@ -9,6 +8,10 @@ work-in-progress.
 subset. The project is still exploratory, so unsupported constructs are common
 and some runtime behavior is intentionally narrow, but the runtime now includes
 shape-based object layouts and inline caches for common dynamic operations.
+On native AArch64 builds, `CLOVERVM_ENABLE_JIT` enables synchronous tiering of
+warmed functions into executable machine code. The current compiler covers a
+deliberately narrow subset and exits back to the interpreter when an assumption
+or unsupported operation is encountered.
 
 ## Language surface
 
@@ -54,9 +57,10 @@ guarantee.
   and MRO mutations.
 - Deferred refcounting: stack values are borrowed, and heap/object stores are
   the places that retain references.
-- Still planned: JIT compilation to native code for selected architectures,
-  Python C API compatibility for extension support, and fast multithreading
-  without a GIL.
+- An opt-in AArch64 JIT with SSA Core and Machine IR, register allocation,
+  executable side exits, and guarded calls to selected trusted native handlers.
+- Still planned: broader JIT operation and call coverage, Python C API
+  compatibility for extension support, and fast multithreading without a GIL.
 
 For the broader architecture map and links to the detailed design notes, see
 [`doc/architecture.md`](doc/architecture.md).
@@ -65,7 +69,8 @@ For the broader architecture map and links to the detailed design notes, see
 
 The repository includes Google Benchmark-based microbenchmarks that run
 clovervm and CPython on the same workloads. The suite reports normalized
-throughput and a `vs_cpython` counter for quick comparison.
+throughput and a `vs_cpython` counter for quick comparison. Benchmarks with a
+barrier-protected C++ reference also report `vs_cpp`.
 
 Historical snapshot from a Mac Mini M4, committed on May 3, 2026:
 

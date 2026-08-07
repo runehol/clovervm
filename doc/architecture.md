@@ -1,5 +1,15 @@
 # CloverVM Architecture
 
+| Field | Value |
+|---|---|
+| Document type | Architecture contract |
+| Status | Accepted |
+| Implementation | Partial; this map distinguishes implemented runtime and JIT infrastructure from remaining work |
+| Scope | Repository-wide runtime, interpreter, object-model, memory, and JIT architecture |
+| Owning layers | All runtime and compiler layers; focused documents own their detailed contracts |
+| Validated against | `57c093f2` (2026-08-07) |
+| Supersedes | N/A |
+
 This document is the introductory map for clovervm's architecture. It explains
 the major runtime ideas and points to the more detailed design notes where they
 exist. It is intentionally not an implementation plan; detailed staging notes
@@ -7,7 +17,7 @@ belong in the focused documents linked from each section.
 
 clovervm is a Python VM experiment with a register/accumulator bytecode
 interpreter, tagged values, shape-based objects, inline caches, deferred
-refcounting, and runtime machinery intended to support future JIT compilation.
+refcounting, and an opt-in AArch64 baseline JIT.
 
 For current major-work sequencing, see
 [Development Priorities](development-priorities.md).
@@ -24,8 +34,8 @@ For the ongoing repository-wide correctness audit, see the
   access, small integer arithmetic, and common loops.
 - Make dynamic-language optimizations explicit through shapes, inline caches,
   and validity cells.
-- Avoid per-temporary refcount traffic by making interpreter frames and future
-  JIT frames visible at safepoints.
+- Avoid per-temporary refcount traffic by making interpreter and compiled
+  frames visible at safepoints.
 - Keep bytecode, frames, exception state, and safepoint metadata structured so
   optimized native code can eventually deoptimize back into the interpreter.
 - Preserve a clear distinction between Python-visible semantics and internal
@@ -39,23 +49,23 @@ Python-like source
   -> AST
   -> bytecode compiler
   -> code object
-  -> interpreter frame
+  -> interpreter or optional JIT tier
   -> runtime objects
-  -> future JIT tiers
 ```
 
 The parser owns syntax shape. The bytecode compiler owns name binding, scope
 layout, constants, control-flow lowering, and register assignment. Code objects
 carry the executable bytecode and metadata needed by the interpreter, exception
-handling, debugging, and future compiled code. The interpreter owns bytecode
-execution and dispatch shape. The object model owns attribute lookup, class
-behavior, shapes, and storage layout.
+handling, debugging, and compiled code. The interpreter owns bytecode execution
+and dispatch shape. The baseline JIT consumes bytecode and inline-cache
+feedback, then returns to canonical interpreter state on side exits. The object
+model owns attribute lookup, class behavior, shapes, and storage layout.
 
 ## Value Representation
 
 `Value` is the universal runtime word. Bytecode registers, the accumulator,
-object slots, container entries, native helpers, inline caches, and future JIT
-code all traffic in `Value`.
+object slots, container entries, native helpers, inline caches, and baseline
+compiled boundaries all traffic in `Value`.
 
 The current representation is a 64-bit tagged cell. Small integers are stored
 inline as signed 59-bit SMIs. Booleans, `None`, `not_present`, and
@@ -82,14 +92,15 @@ single-byte forms for the first registers.
 
 Function calls use a defined frame/register convention. Native functions,
 constructor thunks, and managed code-object entry need to preserve the same
-high-level calling contract so the interpreter and future compiled entries can
+high-level calling contract so the interpreter and compiled entries can
 share call paths and frame metadata.
 
 The Clover stack is managed frame storage, not a general native call stack. The
 interpreter and native C++ functions execute on the native machine stack while
-reading and writing Clover frames explicitly. Future JIT code may execute on the
-Clover stack for managed code, but must switch to the native stack before
-calling C++ runtime helpers or native functions.
+reading and writing Clover frames explicitly. Generated AArch64 code retains
+that native architectural stack and addresses Clover frames through fixed
+managed-context registers. Native calls require ABI adaptation and, when they
+may safepoint, explicit root publication; they do not require a stack switch.
 
 Detailed docs:
 
@@ -151,8 +162,8 @@ depend on mutable class or namespace state also need validity cells.
 A validity cell represents an assumption about mutable runtime state. Optimized
 code should not trust mutable structures directly; it should trust assumptions
 represented by validity cells. Mutating the world invalidates the relevant
-cells. This mechanism is intended to be shared by interpreter inline caches and
-future JIT code.
+cells. This mechanism is shared by interpreter inline caches and compiled
+guards.
 
 Detailed docs:
 
@@ -213,18 +224,26 @@ Detailed docs:
 - [Specialized list storage design](specialized-list-storage.md) (speculative,
   not accepted)
 
-## JIT Direction
+## JIT Compiler
 
-The current system is JIT-oriented but not yet a JIT implementation. A future
-JIT should consume bytecode, frame metadata, inline cache feedback, shapes,
-validity cells, safepoint/root maps, and runtime helper conventions.
+The opt-in AArch64 baseline JIT consumes bytecode, frame metadata, inline-cache
+feedback, shapes, validity cells, and runtime helper conventions. It lowers a
+structural bytecode CFG into SSA Core IR, performs focused optimizations,
+allocates machine locations, emits executable code, and reconstructs canonical
+interpreter state through side-exit transition programs.
 
-Guards should be expressible in terms of the same shape and validity-cell model
-used by the interpreter. Deoptimization must reconstruct interpreter-visible
-frames, restore pending exception state when needed, and reconcile deferred
-refcount state. Runtime helper calls from generated code should publish roots,
-switch from the Clover stack to the native stack, and obey the same
-pending-exception/sentinel protocol as interpreter native thunks.
+Current runtime tiering is synchronous and deliberately narrow. It supports
+selected integer operations, comparisons, loops, executable shape and validity
+guards, and non-raising trusted-handler calls. Unsupported or failed
+speculation exits to the interpreter. General compiled safepoints, Python and
+JIT-to-JIT calls, exception-table dispatch, broad object access, and unboxed
+numeric optimization remain active work.
+
+Compiled guards use the same shape and validity-cell model as interpreter
+inline caches. Replayable operations exit before taking an exception and retry
+the bytecode in the interpreter; general compiled exception unwinding is not
+yet implemented. Safepoint-capable runtime calls will require explicit root
+publication while retaining the native architectural stack.
 
 Detailed docs:
 

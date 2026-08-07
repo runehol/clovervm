@@ -4,7 +4,7 @@
 |---|---|
 | Document type | Implementation ledger |
 | Status | Active |
-| Scope | Unfinished implementation and verification work for the accepted SSA bundle allocator |
+| Scope | Implemented milestones and unfinished work for the accepted SSA bundle allocator |
 | Design authority | [JIT Register Allocation](jit-register-allocation.md) |
 
 The prepared problem, forwarding definitions, deterministic constraint
@@ -12,15 +12,16 @@ splitting, cross-edge and non-overlapping same-as-input bundle coalescing,
 conflict-free initial assignment, generic and edge-transfer-block
 materialization, worklist-driven parallel assignment ordering including
 all-stack cycles, `LocationAssignments`, and AArch64 integration are
-implemented. This ledger records only unfinished work; the design document owns
-algorithms, invariants, and layer boundaries.
+implemented. This ledger keeps completed milestones where they clarify the
+remaining sequence; the design document owns algorithms, invariants, and layer
+boundaries.
 
 ## Correctness Checking
 
 - [ ] Add a symbolic allocation checker covering assignments, occurrence
   requirements, interference, location transitions, and generated transfers.
-- [ ] Extend it as splitting, edge transfers, fixed-location pressure, and
-  Snapshot liveness land.
+- [ ] Cover the implemented splitting, edge transfers, fixed-location pressure,
+  call-local spills, and Snapshot liveness in that checker.
 
 ## Affinities and CFG Transfers
 
@@ -36,7 +37,8 @@ algorithms, invariants, and layer boundaries.
   coalescing.
 - [x] Materialize edge transfers in dedicated CFG blocks, including critical
   edges.
-- [ ] Materialize block-exit transfers.
+- [x] Distribute block-exit transfers across all outgoing edges, preserving and
+  composing with transfers already scheduled on those edges.
 
 ## Backtracking, Splitting, and Spilling
 

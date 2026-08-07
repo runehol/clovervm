@@ -4,7 +4,7 @@
 |---|---|
 | Document type | Design |
 | Status | Accepted |
-| Implementation | Prepared allocation, forwarding definitions, block-edge and same-as-input affinities, bundle coalescing, deterministic constraint splitting, transfer scheduling, conflict-free register/canonical-stack assignment, call-local spill carriers with concrete managed-frame materialization, fixed operand copies, parallel-transfer and edge-transfer-block materialization, managed spill extent publication, and the AArch64 fixed-`x21`/`x25` context convention are implemented; general spills and block-exit materialization remain open |
+| Implementation | Prepared allocation, forwarding definitions, block-edge and same-as-input affinities, bundle coalescing, deterministic constraint splitting, transfer scheduling including block-exit distribution, conflict-free register/canonical-stack assignment, call-local spill carriers with concrete managed-frame materialization, fixed operand copies, parallel-transfer and edge-transfer-block materialization, managed spill extent publication, and the AArch64 fixed-`x21`/`x25` context convention are implemented; general safepoint-visible spills and remaining destructive-input fixups remain open |
 | Scope | Allocation constraints, allocator-local numbering, liveness, bundles, backtracking allocation, live-range splitting, block-edge transfers, clobbers, spills, and post-allocation materialization |
 | Owning layers | Target preparation owns occurrence constraints and physical-transfer capabilities; the generic register allocator owns numbering, liveness, bundles, splitting, allocation, spill decisions, and bundle transfers; generic allocation materialization resolves transfers, rewrites the Core CFG, and publishes occurrence locations; publication and transition planners own canonical-state synchronization; machine-code emission only encodes the materialized graph |
 | Validated against | `tests/test_jit_allocation_constraints.cpp`, `tests/test_aarch64_allocation_constraints.cpp`, `tests/test_jit_register_allocator.cpp`, `tests/test_jit_parallel_assignment_resolver.cpp`, `tests/test_jit_allocation_materializer.cpp`, and `tests/test_aarch64_execution.cpp` |
@@ -1330,7 +1330,7 @@ Rounding a Late conflict forward to the next instruction would leave the left
 child resident in its conflicting register throughout the instruction and
 would not solve the pressure.
 
-Once allocator-owned spill slots exist, pressure splitting may instead trim the
+With allocator-owned spill slots, pressure splitting may trim the
 register-resident ends around a split. The left register bundle ends after its
 last register-required occurrence, the right register bundle begins before its
 next register-required occurrence, and the intervening fragments form a
@@ -1813,9 +1813,8 @@ hash-table iteration order, or unstable workqueue ties.
 
 ## Persistent Bring-up Constraints
 
-The current allocator has no ordinary compiler spill area. The first extension
-adds only allocator-owned, call-local spill carriers needed to preserve
-arguments and unrelated live-through values across non-raising,
+The current allocator has an allocator-owned call-local spill area used to
+preserve arguments and unrelated live-through values across non-raising,
 non-safepointing trusted-handler calls. Outside that narrow shape, allocation
 may use registers or a derived canonical home when one is
 proven legal; otherwise excessive pressure aborts compilation and execution

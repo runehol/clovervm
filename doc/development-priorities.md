@@ -1,9 +1,9 @@
 # Development Priorities
 
-This document records the current priority order for major CloverVM
-development. It is not a short-lived task checklist. The goal is to make the
-next few large moves explicit, including the dependencies that should constrain
-JIT, language, and runtime work.
+This document records the major language and runtime work that remains relevant
+alongside JIT development. It is not the ordering authority for near-term
+compiler slices; that order lives in
+[JIT Near-Term Implementation Roadmap](jit-near-term-roadmap.md).
 
 For bounded work that can land independently of this priority order, see
 [Small Tasks](small-tasks.md).
@@ -20,10 +20,10 @@ For bounded work that can land independently of this priority order, see
   Python bytecode, allocate observably, invoke descriptors, or raise, it should
   be routed through explicit VM dispatch and pending-exception propagation.
 - Every VM-implicit Python-visible execution path should be explicit and
-  inspectable before serious JIT code generation begins. Descriptor execution,
+  inspectable before compiled code depends on it. Descriptor execution,
   callable-object dispatch, iteration protocol calls, implicit conversion
   protocols, and attribute hooks need dispatch plans and inline-cache shapes
-  that future compiled code can guard, inline, or exit from.
+  that compiled code can guard, inline, or exit from as coverage expands.
 - Keep fallibility visible in types. `libclovervm` is built without C++
   exceptions, so VM failures must travel through pending Python exception state,
   `Value::exception_marker()`, or `Expected<T>` rather than C++ exception
@@ -42,8 +42,8 @@ For bounded work that can land independently of this priority order, see
    or VM-controlled dispatch so Python-visible execution, allocation, and
    exceptions are not hidden inside lookup/classification helpers.
 
-   Descriptor plans must carry the guards and binding decisions needed by a
-   future JIT. A compiled attribute read, write, delete, or method call should
+   Descriptor plans must carry the guards and binding decisions needed by
+   compiled code. A compiled attribute read, write, delete, or method call should
    be able to replay the same descriptor decision from cache metadata, or exit
    to the interpreter when the guard no longer proves that decision.
 
@@ -83,8 +83,9 @@ For bounded work that can land independently of this priority order, see
    Iteration should be lowered so every implicit call and control-flow edge is
    visible: `__iter__`, `__next__`, public `StopIteration` consumption, and any
    direct internal iterator plan. Loop fast paths should produce feedback that a
-   future JIT can inspect to decide whether it may skip protocol calls, inline a
-   concrete iterator step, or leave an explicit cached `__next__` call in place.
+   compiled optimizer can inspect to decide whether it may skip protocol calls,
+   inline a concrete iterator step, or leave an explicit cached `__next__` call
+   in place.
 
    Direct builtin iteration plans are useful, but they are not a substitute for
    traceable public protocol calls. Exact immutable builtin plans may skip
@@ -99,13 +100,13 @@ For bounded work that can land independently of this priority order, see
    rather than a generational non-moving mark-sweep design. The contracts must
    cover write barriers or temporary retain/release operations, safepoint
    records, accumulator publication, deopt metadata, transition stubs,
-   native-stack switching, descriptor-driven teardown, handles or stable
+   native-call root publication, descriptor-driven teardown, handles or stable
    wrappers for native objects, and specialized pinning or stable-storage rules.
 
-   Implementing a new collector is not necessarily a prerequisite for the first
-   compiler, but starting JIT code generation before the root and heap-write
-   contracts are explicit risks rework in every compiled store, call, exit, and
-   runtime transition.
+   The initial compiler runs on the current collector. Expanding it to
+   safepoint-capable calls and compiled stores before the root and heap-write
+   contracts are explicit risks rework in every call, exit, and runtime
+   transition.
 
 6. **Attribute hooks and escaped bound methods**
 
@@ -177,9 +178,9 @@ Revisit this ordering when:
 - iteration lowering exposes `__iter__`, `__next__`, `StopIteration`
   consumption, and internal iterator plans as inspectable bytecode/cache
   metadata rather than hidden helper behavior;
-- the memory strategy for first JIT work has an explicit contract for heap
-  writes, safepoint publication, deopt/root maps, native-stack transitions, and
-  object pinning;
+- the memory strategy for broader compiled execution has an explicit contract
+  for heap writes, safepoint publication, deopt/root maps, native-call root
+  publication, and object pinning;
 - full pystone runs in the benchmark harness and shows a different blocker than
   benchmark-source adaptation;
 - implicit protocols such as `__len__`, `__iter__`, `__next__`, and numeric

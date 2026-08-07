@@ -113,7 +113,7 @@ The public general-key methods are generated with `CodeObjectBuilder` in
 - `__delitem__` and `pop`
 
 These methods contain their own cache-bearing hash and equality sites. Python
-protocol execution remains visible to the interpreter and to a future JIT;
+protocol execution remains visible to the interpreter and compiled code;
 trusted opcodes perform only table mechanics.
 
 Special-method operator caches install trusted handlers for exact builtin dicts

@@ -6,7 +6,7 @@
 | Status | Accepted |
 | Implementation | Partial |
 | Scope | Pending-exception transport, unwinding, iteration termination, and traceback state |
-| Owning layers | Runtime APIs, interpreter, managed frames, codegen, and future compiled execution |
+| Owning layers | Runtime APIs, interpreter, managed frames, codegen, and compiled execution |
 | Validated against | `12ce21f` (2026-05-24) |
 | Supersedes | N/A |
 
@@ -792,7 +792,7 @@ Remaining durable work:
 - Real Python exceptions live as pending exception state on `ThreadState`.
 - Managed exception propagation is table-driven and slow.
 - The frame header is not tagged for exception return modes.
-- `fp[1]` remains the return pc slot for future JITed code.
+- `fp[1]` remains the durable compiled return-continuation slot.
 - Managed thunks adapt native/protocol result conventions into normal return or
   managed exceptional unwind.
 - A compact pending `StopIteration` may be consumed only by protocol

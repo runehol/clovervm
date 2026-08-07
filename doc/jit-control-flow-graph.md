@@ -4,7 +4,7 @@
 |---|---|
 | Document type | Architecture contract |
 | Status | Accepted |
-| Implementation | Partial: graph construction and publication, fixed-representation terminators, block parameters and edge arguments, predecessor indexes, structural verification, queries, body-instruction rewriting, topology-preserving parameter/argument compaction, and staged edge splitting are implemented; cross-block dominance and other general CFG-topology editing are deferred |
+| Implementation | Partial: graph construction and publication, fixed-representation terminators, block parameters and edge arguments, predecessor indexes, structural verification, queries, body-instruction rewriting, topology-preserving parameter/argument compaction, and staged edge splitting are implemented; storage-level enforcement of the single-graph session invariant, cross-block dominance, and other general CFG-topology editing are deferred |
 | Scope | Structural CFG shared by Core IR and an optional Semantic IR, including block parameters and first-class block-edge arguments |
 | Owning layers | The JIT CFG owns block order, block edges, block parameters, instruction placement, and structural verification; individual IR levels own instruction semantics and side exits |
 | Validated against | `tests/test_jit_cfg.cpp` and `tests/test_jit_graph_rewrites.cpp` |
@@ -97,9 +97,11 @@ unpublished graph from it, and owns all initial mutation of that graph.
 `finalize()` verifies and publishes the graph, returns its stable storage-owned
 pointer, and makes that builder unusable. Destroying a builder without
 finalizing is valid; session teardown destroys the storage and reclaims the
-abandoned graph. One session storage may own multiple graphs. Instructions are
-not shared between them; this is currently a construction invariant rather than
-a storage-wide placement index.
+abandoned graph. A compilation session owns at most one graph for its
+instruction-allocation domain. The storage allocator must reject a second graph
+allocation in that session; until that check is implemented, callers uphold the
+single-graph invariant. This makes cross-graph instruction placement
+unrepresentable without adding a storage-wide placement index.
 
 Each block carries a nonnegative loop-depth annotation. It defaults to zero and
 may be set through `GraphBuilder::set_loop_depth()` while the graph is

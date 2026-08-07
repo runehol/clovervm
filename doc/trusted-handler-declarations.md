@@ -2,11 +2,13 @@
 
 | Field | Value |
 |---|---|
-| Document type | Design proposal |
-| Status | Proposed |
-| Implementation | Handler metadata, VM registration, typed resolver installation, and float unary and binary type-adapted handler families are implemented; remaining builtin migration and JIT consumption are pending |
+| Document type | Design |
+| Status | Accepted |
+| Implementation | Handler metadata, VM registration, typed resolver installation, float unary and binary type-adapted handler families, and opaque JIT calls for eligible unary, binary, and ternary cached handlers are implemented; remaining builtin migration and semantic JIT expansion are pending |
 | Scope | Authoritative declaration, registration, and resolution of trusted native handlers |
 | Owning layers | Builtin implementations own handler bodies and declarations; the VM owns the registry; code objects retain resolver function pointers; the JIT consumes registered metadata |
+| Validated against | `57c093f2` (2026-08-07) |
+| Supersedes | N/A |
 | Related documents | [JIT Trusted Handler Call Plan](jit-trusted-handler-call-plan.md), [Function Specialization](function-specialization.md) |
 
 ## Objective

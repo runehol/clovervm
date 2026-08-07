@@ -4,7 +4,7 @@
 |---|---|
 | Document type | Design |
 | Status | Accepted |
-| Implementation | Read-only traversal, instruction use lists, body-instruction rewriting, block-parameter filtering, matching edge-argument compaction, and global dead-code elimination implemented; general CFG-topology rewriting not started |
+| Implementation | Read-only traversal, instruction use lists, body-instruction rewriting, block-parameter filtering, matching edge-argument compaction, retained inserted definitions, staged edge splitting, and global dead-code elimination are implemented; arbitrary edge redirection and general CFG-topology rewriting remain open |
 | Scope | Read-only instruction traversal, on-demand use lists, forward instruction rewriting, and topology-preserving parameter/edge-argument compaction in published JIT IR graphs |
 | Owning layers | The CFG owns mutation generation and cached analysis storage; the traversal contract declares observable walk order and required queries; `GraphQueries` owns generation-checked callback access; the use-list builder owns use occurrences; the graph rewriter owns operand substitution, instruction placement, and commit; the instruction schema owns reconstruction; individual passes own matching and semantic legality; CFG editing owns successor and predecessor changes |
 | Validated against | `tests/test_jit_graph_rewrites.cpp` and `tests/test_jit_dead_code_elimination.cpp` |

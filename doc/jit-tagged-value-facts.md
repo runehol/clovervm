@@ -4,7 +4,10 @@
 |---|---|
 | Document type | Design and implementation plan |
 | Status | Accepted design |
+| Implementation | Tag sets and classes, fixed-point CFG analysis, redundant inline-tag guard elimination, guarded-state replacement, `AnyInline` truthiness guards, and pointer-check elimination from shape guards are implemented; exact immutable-shape facts are next |
 | Scope | Tagged-value fact propagation, cheaply encodable tag guards, redundant-guard elimination, and the pointer fact used by shape guards |
+| Owning layers | Core IR analysis and rewriting, with target-specific lowering of retained guards |
+| Validated against | `test_jit_tagged_value_facts.cpp`, `test_jit_core_bytecode_translator.cpp`, and `test_aarch64_execution.cpp` |
 | Related documents | [JIT Compiler and IR](jit-compiler-and-ir.md), [JIT Instruction Representation](jit-instruction-representation.md), and [JIT IR Graph Rewrites](jit-ir-graph-rewrites.md) |
 
 ## Purpose
@@ -317,22 +320,33 @@ make its validity explicit:
 Shape *exact_shape = nullptr;
 ```
 
-The initial shape policy is conservative:
+The implemented tag-only shape policy is conservative:
 
 - a successful shape guard establishes the `Pointer` tag fact;
 - it does not by itself attach a persistent exact-shape fact;
-- a fresh or otherwise non-aliased producer may establish an exact shape when
-  its instruction contract guarantees one;
+- `BoxF64` currently establishes only the pointer tag fact;
+- merges and alias effects therefore have no exact-shape component to preserve
+  or clear yet.
+
+The next extension adds exact immutable-shape facts:
+
+- an instruction whose contract constructs an exact immutable builtin shape
+  establishes that shape directly; in particular, `BoxF64` establishes the
+  exact builtin-float shape;
+- a successful guard for an immutable shape may establish that exact shape;
 - merges retain an exact shape only when every reachable input has the same
   exact shape;
-- possible aliasing mutation clears the exact shape but leaves the pointer tag
-  fact intact.
+- immutable-shape facts survive aliasing effects because the shape cannot
+  transition;
+- any later exact fact for a mutable shape needs an explicit provenance and
+  effect-bounded lifetime; possible aliasing mutation clears that fact while
+  leaving the pointer tag fact intact.
 
-The pointer check performed as part of shape guarding must become independently
-eliminable. The precise lowering shape -- a separate `Pointer` tag guard before
-an assuming-pointer shape check, or an equivalent explicit Core rewrite -- is
-settled when shape-guard lowering is implemented. It must not be hidden in
-target emission where Core fact propagation cannot remove it.
+The pointer check performed as part of shape guarding is independently
+eliminable. The frontend emits `PointerAndShapeGuard`; tagged-value fact
+propagation rewrites it to `ShapeOnlyGuard` when pointerness is already proved.
+The check is therefore visible in Core optimization rather than hidden in
+target emission.
 
 Likely shapes are not facts. Profile or inline-cache predictions may justify
 inserting a shape guard, and the successful guard may then establish exact
@@ -401,20 +415,13 @@ Adjacent guard combination is initially restricted to compatible
 `MaskedEqual` classes. The existing OR-based combination does not prove that
 two independent `MaskedNonZero` classes both succeeded.
 
-## Implementation Order
+## Implemented Foundation And Next Extension
 
-1. Add `TaggedValueSet` and `TaggedValueClass`, including the fact-source
-   constructors and constexpr class-to-set conversion.
-2. Replace `InlineValueClass` instruction attributes with `TaggedValueClass` and
-   update printing, side-exit lowering, and AArch64 emission without changing
-   behavior.
-3. Add fixed-point tag-fact propagation and redundant tagged-value-guard
-   elimination before dead-code elimination.
-4. Guard `JumpIfTrue` and `JumpIfFalse` with `AnyInline`, passing the guarded
-   result to `ConditionalBranch`.
-5. Make the pointer portion of shape guarding explicit and eliminable using the
-   `Pointer` class when shape-guard lowering is implemented.
+The tag-class representation, class-to-set conversion, fixed-point analysis,
+redundant guard elimination, `AnyInline` branch guards, and independently
+eliminable shape-pointer checks are implemented.
 
-The initial implementation does not synthesize narrowed guards, optimize
-always-failing guards, retain likely shapes, or preserve exact shapes across
-unknown aliasing effects.
+The next extension is the exact immutable-shape component described above. It
+does not synthesize narrowed tag guards, optimize always-failing guards, or
+retain likely shapes. Those remain separate optimizations rather than implicit
+consequences of adding exact shape facts.

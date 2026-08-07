@@ -4,7 +4,7 @@
 |---|---|
 | Document type | Design |
 | Status | Accepted |
-| Implementation | Partial; Core-to-Machine owner lowering, side-exit regions and bindings, allocation-visible owner arguments, allocation materialization, IR printing, CFG verification, `ExitToInterpreter` publication emission, and deterministic AArch64 binding deduplication are implemented; general sinking analysis, sunk computation emission, target thunks, and interpreter handoff remain |
+| Implementation | Partial; Core-to-Machine owner lowering, side-exit regions and bindings, allocation-visible owner arguments, allocation materialization, IR printing, CFG verification, `ExitToInterpreter` publication emission, deterministic AArch64 binding deduplication, target register-save thunks, transition execution, and interpreter handoff are implemented; general sinking analysis and sunk computation emission remain |
 | Scope | Moving non-returning recovery state out of executable block order while preserving a normal operand surface for allocation and emission |
 | Owning layers | Core optimization owns sinking analysis while instructions remain in the main CFG; side-exit lowering owns region construction and executable owner bindings; ordinary instruction rewriting, use lists, and register allocation own the owner argument operands; transition emission owns deferred computation and interpreter-state publication |
 | Validated against | `tests/test_jit_side_exit_lowering.cpp`, `tests/test_jit_cfg.cpp`, `tests/test_jit_register_allocator.cpp`, `tests/test_transition_program_emitter.cpp`, and `tests/test_aarch64_cfg_emitter.cpp` |

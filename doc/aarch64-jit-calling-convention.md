@@ -4,7 +4,7 @@
 |---|---|
 | Document type | Architecture contract |
 | Status | Accepted |
-| Implementation | Partial; interpreter-aligned fixed context registers, managed-frame-relative stack access and return, result constraints, canonical incoming stack locations, allocation-order register sets, per-class scratch registers, emitted side-exit transition references, side-exit register capture and transition execution, tail-called interpreter/JIT entry thunks, and interpreter call integration are implemented; stack-passed arguments, managed calls, and complete end-to-end side-exit validation remain |
+| Implementation | Partial; interpreter-aligned fixed context registers, managed-frame-relative stack access and return, result constraints, canonical incoming stack locations, allocation-order register sets, per-class scratch registers, interpreter/JIT entry thunks, executable side-exit register capture and interpreter handoff, and restricted trusted-handler calls are implemented; stack-passed arguments, managed JIT calls, and safepoint-capable native calls remain |
 | Scope | AArch64 compiled managed argument transport, call adaptation, cross-engine entry, return, and safepoint placement |
 | Owning layers | Call-site lowering owns guarded Python adaptation; the AArch64 backend owns argument and result locations; transition adapters own cross-engine reshuffling; the generic allocator and materializer implement the resulting fixed-location constraints and transfers |
 | Builds on | [CloverVM Function Calling Convention](function-calling-convention.md) |
@@ -257,9 +257,9 @@ but successful returns stay on the single-result path above.
 
 A compiled side exit branches to a target-specific side-exit register-save
 thunk. That thunk captures enough compiled machine state for recovery, calls
-the portable transition executor, and produces the same JIT exit state as an
-ordinary compiled return. It then returns to the entry-exit thunk's existing
-JIT return label:
+the portable transition executor, installs the recovered interpreter state in
+the interpreter's fixed registers, discards the entry thunk's native-stack
+record, and tail-branches directly to interpreter reentry:
 
 ```text
 compiled guard failure
@@ -273,17 +273,24 @@ side_exit_register_save_thunk
     save x21 as the authoritative managed frame pointer
     save the transition-program address from x16
     call the portable transition executor
-    place the recovered accumulator in x0
-    place recovered fp, pc, CodeObject *, and ThreadState * in x21/x22/x24/x25
-    restore the incoming JIT link register
-    ret
+    place the recovered accumulator, fp, pc, and CodeObject * in x20/x21/x22/x24
+    retain the authoritative ThreadState * in x25
+    discard the entry thunk's native-stack record
+    tail-branch to interpreter reentry, which reconstructs dispatch
 ```
 
-The outstanding return-stack entry from the entry thunk's `blr compiled_entry`
-predicts exactly the entry thunk's `jit_return_label`. The side-exit return
-therefore balances the original call just like an ordinary compiled return.
-The entry-exit thunk moves x0 to the interpreter accumulator and tail-branches
-to interpreter reentry, which reconstructs dispatch from `ThreadState`.
+An ordinary compiled return still balances the entry thunk's
+`blr compiled_entry` with `ret`. A side exit cannot use that ordinary result
+path in the current implementation because it also returns a new interpreter
+PC and `CodeObject *`. The side-exit thunk therefore removes the entry record
+itself and resumes the interpreter directly.
+
+A later refinement may preserve the compiled entry return address across the
+portable transition call and `ret` into the entry thunk's existing exit
+sequence. The recovered accumulator would use `x0`, while recovered fixed
+interpreter state would remain in `x21`/`x22`/`x24`/`x25`. That would balance
+the original `blr` in the return-address predictor without changing the
+transition program or interpreter reentry contract.
 
 The native stack is already valid at a side exit. The thunk captures every
 allocator-visible register before calling the portable C++ transition executor
@@ -380,8 +387,9 @@ compiled unwinding and stack walking.
 - Generated Python functions are not directly callable through the public C
   ABI; native code enters them through the adapter.
 - Side exits branch to a side-exit register-save thunk, capture compiled state,
-  execute recovery, and return JIT exit state to the entry-exit thunk's normal
-  return label.
+  execute recovery, remove the entry thunk's native-stack record, and
+  tail-branch directly to interpreter reentry with recovered fixed-register
+  state.
 - A side-exit thunk may call C++ only after capturing generated register state
   and publishing the managed frame and roots required by the native call.
 - Side exits before call commitment reconstruct the original bytecode call

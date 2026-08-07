@@ -4,7 +4,7 @@
 |---|---|
 | Document type | Architecture contract |
 | Status | Accepted |
-| Implementation | Interpreter convention implemented; accepted JIT extension not yet implemented |
+| Implementation | Interpreter convention and initial AArch64 interpreter/JIT entry, return, and side-exit paths are implemented; stack-passed compiled arguments and general managed JIT calls remain |
 | Scope | Managed frame layout, call argument windows, entry, return, and interpreter dispatch state |
 | Owning layers | `CodeObject` owns frame metadata; codegen owns call-window construction; the interpreter owns managed entry and return; native boundaries and the JIT consume the contract |
 | Validated against | `df8fe91` (2026-07-18) |
@@ -12,7 +12,7 @@
 
 This document defines CloverVM's managed frame and call conventions. It focuses
 on the layout and transition rules shared by the interpreter, runtime-generated
-thunks, native boundary adapters, and future compiled managed code. Opcode
+thunks, native boundary adapters, and compiled managed code. Opcode
 inventories, copied implementation snippets, and helper signatures are not part
 of the contract.
 
@@ -28,7 +28,7 @@ CloverVM uses register/accumulator bytecode over managed frame slots:
 
 The Clover stack is not a C or C++ ABI stack. During JIT bring-up, generated
 Python code retains the native architectural stack and addresses Clover storage
-through a fixed managed-frame register. On AArch64 that register is `x20`;
+through a fixed managed-frame register. On AArch64 that register is `x21`;
 `sp` and `x29` retain their platform ABI meanings. Arbitrary native frames and
 managed values therefore remain on their respective stacks without a stack
 switch. Native/managed transition rules are defined separately in
@@ -99,8 +99,8 @@ fp  previous frame pointer      fp[0]
 lower addresses
 ```
 
-Frame construction, stack scanning, unwinding, native entry, and future JIT
-code must agree on this layout. Changing it is a cross-layer architecture
+Frame construction, stack scanning, unwinding, native entry, and compiled code
+must agree on this layout. Changing it is a cross-layer architecture
 change, not a local opcode refactor.
 
 ## Call Argument Windows
@@ -294,8 +294,8 @@ calling convention used to bring up the JIT.
 - Safepoint scanning distinguishes live managed values from padding and frame
   payload metadata.
 - Changes to header layout, register encoding, alignment, or entry/return shape
-  are coordinated across codegen, interpreter, unwinding, safepoints, native
-  boundaries, tests, and future JIT metadata.
+  are coordinated across codegen, interpreter, JIT lowering, unwinding,
+  safepoints, native boundaries, and tests.
 
 ## Related Documents
 

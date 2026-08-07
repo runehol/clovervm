@@ -4,7 +4,7 @@
 |---|---|
 | Document type | Design |
 | Status | Accepted |
-| Implementation | Partial: canonical outer-frame state ordering without ThreadState, typed frame-header entry definitions, CFG attachment, shared state tracking, and an executable straight-line Core translation slice with basic control flow are implemented; broader semantic coverage, executable side exits, and Semantic translation remain |
+| Implementation | Partial: canonical outer-frame state ordering without ThreadState, typed frame-header entry definitions, CFG attachment, shared state tracking, executable Core translation with basic control flow, and side-exit reconstruction are implemented; broader semantic coverage, inlined-frame state, and Semantic translation remain |
 | Scope | Shared symbolic bytecode state, target-driven bytecode-to-IR translation, block state transfer, multiple results, and Snapshot state queries |
 | Owning layers | The bytecode decoder owns decoded locations and structural blocks; the shared JIT state layer owns opcode-blind bytecode state tracking and its canonical ordering description; each concrete translator owns traversal, IR construction, opcode semantics, and Snapshot extent |
 | Validated against | `tests/test_jit_bytecode_state.cpp`, `tests/test_jit_core_bytecode_translator.cpp`, `tests/test_jit_cfg.cpp`, and `tests/test_jit_storage.cpp` |

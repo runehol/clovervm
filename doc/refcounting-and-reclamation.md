@@ -555,12 +555,13 @@ Python/Clover objects again.
 clovervm will only implement the limited API.
 
 The native machine stack is not part of the managed stack-scanning contract.
-The interpreter and native C++ functions run on the native stack; future JIT code
-may run on the Clover stack for managed execution, but must switch to the native
-stack before calling C++/native code. Any live `Value` that must survive such a
-transition has to be present in a managed frame slot, retained by a heap object,
-or owned by native code through ordinary refcounting. We should not rely on
-finding roots by treating arbitrary native stack words as managed `Value` slots.
+The interpreter, generated code, and native C++ functions retain the native
+architectural stack. Generated code addresses the separate Clover frame through
+a fixed register and must publish every managed value that survives a
+safepoint-capable native call. Such a value has to be present in managed frame
+state, retained by a heap object, or owned by native code through ordinary
+refcounting. We do not find roots by treating arbitrary native stack words as
+managed `Value` slots.
 
 Native stack values follow the CPython C API ownership model: native code that
 keeps a heap object live across safepoint-capable work must own a reference.

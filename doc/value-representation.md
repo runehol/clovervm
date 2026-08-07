@@ -6,13 +6,13 @@
 | Status | Accepted |
 | Implementation | Implemented |
 | Scope | Tagged runtime value layout, integer and special encodings, heap pointers, and ABI constraints |
-| Owning layers | Runtime values, object layouts, bytecode frames, native boundaries, and future compiler |
+| Owning layers | Runtime values, object layouts, bytecode frames, native boundaries, and the JIT compiler |
 | Validated against | `87c32e1` (2026-05-20) |
 | Supersedes | N/A |
 
 This document describes clovervm's runtime `Value` representation. `Value` is
 the common currency used by bytecode registers, the accumulator, object slots,
-containers, native helpers, inline caches, and future JIT code.
+containers, native helpers, inline caches, and compiled code.
 
 The implementation lives primarily in `src/value.h`. This document describes
 the architectural contract; local helper types and ownership wrappers are
@@ -27,8 +27,8 @@ implementation details unless they affect that contract.
   header.
 - Reserve inline sentinels for VM protocols such as missing values and pending
   exception propagation.
-- Preserve a representation that native code can pass in registers and future
-  JIT code can guard, materialize, and scan.
+- Preserve a representation that native and compiled code can pass in
+  registers, guard, materialize, and scan.
 
 ## Word Layout
 
@@ -236,4 +236,4 @@ materializable as a normal `Value`.
 - Heap layout metadata, not the `Value` tag, determines where child values live
   inside an object.
 - At safepoints, every live heap pointer stored in a frame, object, container,
-  inline cache, or future JIT spill must be discoverable.
+  inline cache, or compiled spill must be discoverable.

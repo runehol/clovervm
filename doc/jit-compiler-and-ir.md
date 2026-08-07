@@ -3,11 +3,11 @@
 | Field | Value |
 |---|---|
 | Document type | Design |
-| Status | Proposed |
-| Implementation | Partial; structural bytecode-to-Core translation, optimization, Core-to-Machine side-exit lowering, forwarding definitions, generic register allocation/materialization, `ExitToInterpreter` transition emission and publication, interpreter-aligned AArch64 context registers, executable multi-block AArch64 emission, interpreter/JIT entry thunks, and synchronous runtime tiering are implemented; side-exit runtime entry, sunk computation, and broader lowering remain |
+| Status | Accepted |
+| Implementation | Partial; structural bytecode-to-Core translation, optimization, Core-to-Machine side-exit lowering, forwarding definitions, generic register allocation/materialization, executable transition programs and side-exit interpreter handoff, interpreter-aligned AArch64 context registers, multi-block AArch64 emission, restricted trusted-handler calls, interpreter/JIT entry thunks, and synchronous runtime tiering are implemented; general sinking, compiled safepoints and managed calls, and broader lowering remain |
 | Scope | JIT pipeline, Core IR, exit state, effects, backend lowering, and compiled execution contracts |
 | Owning layers | The JIT owns IR and compiled execution; bytecode, runtime frames, object semantics, and reclamation remain authoritative contracts |
-| Validated against | The focused JIT instruction, CFG, rewrite, allocation-constraint, emitter, code-cache, and executable AArch64 tests |
+| Validated against | `57c093f2` (2026-08-07) and the focused JIT instruction, CFG, rewrite, allocation-constraint, emitter, code-cache, and executable AArch64 tests |
 | Supersedes | N/A |
 
 This document defines the durable architecture and IR contracts for the

@@ -4,7 +4,7 @@
 |---|---|
 | Document type | Design |
 | Status | Accepted |
-| Implementation | The compact representation and executor, thread-owned execution context and register image, `ExitToInterpreter` publication emission without a ThreadState operand, AArch64 location mapping, untagged code-object publication, and AArch64 side-exit references are implemented; sunk computation, target thunks, and interpreter handoff remain |
+| Implementation | The compact representation and executor, thread-owned execution context and register image, `ExitToInterpreter` publication emission without a ThreadState operand, AArch64 location mapping, untagged code-object publication, AArch64 side-exit register capture, and interpreter handoff are implemented; sunk computation emission remains |
 | Scope | Compact straight-line programs that transform values and machine state between execution conventions; the first consumer is JIT side exit |
 | Owning layers | Core IR owns sunk operation semantics and Snapshot state before lowering; side-exit lowering owns `SideExitRegion` construction and owner bindings; register allocation owns physical frontier locations; transition emission owns the continuous transition program and canonical publication; each thread owns reusable transition scratch storage; target thunks own fixed machine-state saves |
 | Validated against | `tests/test_transition_program.cpp`, `tests/test_transition_executor.cpp`, `tests/test_transition_program_emitter.cpp`, and `tests/test_aarch64_transition.cpp` |
@@ -570,7 +570,7 @@ The second slice builds and executes standalone programs:
   context-owned resume state, and scratch storage sized by `BeginTransition`;
 - interpret the three transition-only kinds without safepointing.
 
-The publication slice is complete through the compiled side-exit branch:
+The publication and AArch64 runtime slice is complete:
 
 - publish 8-byte-aligned transition sequences with compiled code-object
   metadata;
@@ -578,10 +578,14 @@ The publication slice is complete through the compiled side-exit branch:
   convention;
 - end each side-exit program with `ResumeInterpreter`;
 - materialize its address through AArch64 near/far constant-pool relocation and
-  branch to a supplied thunk address.
+  branch to the register-save thunk;
+- capture allocator-visible GPR and SIMD state in the thread-owned transition
+  context;
+- execute the transition program against the active managed frame;
+- recover accumulator, bytecode PC, and owning `CodeObject`, then tail-call
+  interpreter reentry in the current managed frame.
 
-The remaining runtime slice must implement the target thunk and interpreter
-handoff. On AArch64 the thunk
-obtains the active `ThreadState *` from fixed `x25`; the transition program does
-not encode or reconstruct it. General sinking and transition-local Core
-computation follow after the snapshot-only execution path closes.
+The AArch64 thunk obtains the active `ThreadState *` from fixed `x25`; the
+transition program does not encode or reconstruct it. General sinking and
+transition-local Core computation remain after the snapshot-only execution
+path.
