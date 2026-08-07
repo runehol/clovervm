@@ -5,6 +5,7 @@
 #include "jit/control_flow_graph.h"
 #include "jit/core_ir_optimization.h"
 #include "jit/instruction.h"
+#include "object_model/validity_cell.h"
 #include "test_helpers.h"
 
 #include <gtest/gtest.h>
@@ -309,12 +310,18 @@ namespace cl::jit
         fixture.context.vm().register_trusted_handler(
             test_translated_trusted_handler, TrustedHandlerEffects::Allocate,
             TrustedHandlerSemantics::Add);
+        ValidityCell *immutable_validity =
+            fixture.context.vm()
+                .float_class()
+                ->get_or_create_mro_shape_and_contents_validity_cell();
+        ASSERT_EQ(ValidityCellDependencyMutability::Immutable,
+                  immutable_validity->dependency_mutability());
         code_object->inline_caches.operator_caches[0] =
             OperatorInlineCache::trusted_handler_call(
                 operand0_shape_key, operand1_shape_key,
                 TrustedResolution::call_trusted(
                     test_translated_trusted_handler),
-                nullptr, nullptr);
+                immutable_validity, nullptr);
 
         CoreBytecodeTranslator translator(fixture.context.vm(), *code_object,
                                           fixture.graph_builder);
@@ -326,11 +333,14 @@ namespace cl::jit
             instructions_of_kind(entry, InstructionKind::PointerAndShapeGuard);
         std::vector<Instruction> inline_guards =
             instructions_of_kind(entry, InstructionKind::InlineTagGuard);
+        std::vector<Instruction> validity_guards =
+            instructions_of_kind(entry, InstructionKind::ValidityCellGuard);
         std::vector<Instruction> calls =
             instructions_of_kind(entry, InstructionKind::TrustedHandlerCall);
         ASSERT_EQ(1u, snapshots.size());
         ASSERT_EQ(1u, shape_guards.size());
         ASSERT_EQ(1u, inline_guards.size());
+        EXPECT_TRUE(validity_guards.empty());
         ASSERT_EQ(1u, calls.size());
         EXPECT_TRUE(
             instructions_of_kind(entry, InstructionKind::ResumeInInterpreter)
@@ -360,6 +370,71 @@ namespace cl::jit
                 .as<ReturnInstruction>();
         EXPECT_EQ(call.id(),
                   return_instruction.return_value().instruction_id());
+    }
+
+    TEST(JitCoreBytecodeTranslator,
+         MutableLookupCellGuardsMatchingTrustedHandlerArgument)
+    {
+        TranslatorFixture fixture;
+        {
+            CodeObjectBuilder::TemporaryReg temporaries(fixture.code_builder,
+                                                        1);
+            fixture.code_builder.emit_lda_smi(0, 19).value();
+            fixture.code_builder.emit_star(0, temporaries).value();
+            fixture.code_builder.emit_lda_smi(0, 23).value();
+            fixture.code_builder
+                .emit_operator_reg(
+                    0, Bytecode::Add, temporaries,
+                    OperatorBytecodeFormat::WithCacheAndNotImplementedCheck)
+                .value();
+            fixture.code_builder.emit_return(0).value();
+        }
+        CodeObject *code_object = fixture.code_builder.finalize().value();
+        Shape *float_shape =
+            fixture.context.vm().float_class()->get_instance_root_shape();
+        ValidityCell *mutable_validity =
+            fixture.context.thread()->make_internal_raw<ValidityCell>(
+                ValidityCellDependencyMutability::Mutable);
+        fixture.context.vm().register_trusted_handler(
+            test_translated_trusted_handler, TrustedHandlerEffects::Allocate,
+            TrustedHandlerSemantics::Add);
+        code_object->inline_caches.operator_caches[0] =
+            OperatorInlineCache::trusted_handler_call(
+                ShapeKey::from_shape(float_shape),
+                ShapeKey::from_value(Value::from_smi(23)),
+                TrustedResolution::call_trusted(
+                    test_translated_trusted_handler),
+                mutable_validity, nullptr);
+
+        CoreBytecodeTranslator translator(fixture.context.vm(), *code_object,
+                                          fixture.graph_builder);
+        ControlFlowGraph *graph = translator.translate();
+        Block *entry = graph->entry_block();
+        std::vector<Instruction> shape_guards =
+            instructions_of_kind(entry, InstructionKind::PointerAndShapeGuard);
+        std::vector<Instruction> inline_guards =
+            instructions_of_kind(entry, InstructionKind::InlineTagGuard);
+        std::vector<Instruction> validity_guards =
+            instructions_of_kind(entry, InstructionKind::ValidityCellGuard);
+        std::vector<Instruction> calls =
+            instructions_of_kind(entry, InstructionKind::TrustedHandlerCall);
+
+        ASSERT_EQ(1u, shape_guards.size());
+        ASSERT_EQ(1u, inline_guards.size());
+        ASSERT_EQ(1u, validity_guards.size());
+        ASSERT_EQ(1u, calls.size());
+        ValidityCellGuardInstruction validity_guard =
+            validity_guards.front().as<ValidityCellGuardInstruction>();
+        EXPECT_EQ(mutable_validity, validity_guard.validity());
+        EXPECT_EQ(shape_guards.front().id(),
+                  validity_guard.value().instruction_id());
+
+        TrustedHandlerCallInstruction call =
+            calls.front().as<TrustedHandlerCallInstruction>();
+        ASSERT_EQ(2u, call.arguments().size());
+        EXPECT_EQ(validity_guard.id(), call.arguments()[0].instruction_id());
+        EXPECT_EQ(inline_guards.front().id(),
+                  call.arguments()[1].instruction_id());
     }
 
     TEST(JitCoreBytecodeTranslator, SpecializesExactFloatBinaryTrustedHandlers)

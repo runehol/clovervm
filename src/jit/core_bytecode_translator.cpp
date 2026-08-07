@@ -429,7 +429,9 @@ namespace cl::jit
         {
             ValidityCell *validity =
                 cache->operand_lookup_validity_cells[index];
-            if(validity == nullptr)
+            if(validity == nullptr ||
+               validity->dependency_mutability() ==
+                   ValidityCellDependencyMutability::Immutable)
             {
                 continue;
             }
