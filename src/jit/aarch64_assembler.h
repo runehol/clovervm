@@ -789,6 +789,39 @@ namespace cl::jit
                 aarch64_detail::register_field(lhs.encoding(), 5));
         }
 
+        template <SIMDElementWidth FPWidth,
+                  aarch64_detail::GPRRegisterOrZeroOperand Source>
+        void emit_signed_integer_to_fp(SIMDScalarRegister<FPWidth> destination,
+                                       Source source)
+        {
+            static_assert(FPWidth == SIMDElementWidth::Bits32 ||
+                          FPWidth == SIMDElementWidth::Bits64);
+            constexpr GPRWidth IntegerWidth = aarch64_detail::gpr_width<Source>;
+            GPRRegisterOrZero<IntegerWidth> encoded_source(source);
+            write_instruction(
+                0x1e220000 | aarch64_detail::gpr_sf_bits<IntegerWidth>() |
+                aarch64_detail::scalar_fp_type_bits<FPWidth>() |
+                aarch64_detail::register_field(encoded_source.encoding(), 5) |
+                destination.encoding());
+        }
+
+        template <aarch64_detail::GPRRegisterOrZeroOperand Destination,
+                  SIMDElementWidth FPWidth>
+        void emit_fp_to_signed_integer_toward_zero(
+            Destination destination, SIMDScalarRegister<FPWidth> source)
+        {
+            static_assert(FPWidth == SIMDElementWidth::Bits32 ||
+                          FPWidth == SIMDElementWidth::Bits64);
+            constexpr GPRWidth IntegerWidth =
+                aarch64_detail::gpr_width<Destination>;
+            GPRRegisterOrZero<IntegerWidth> encoded_destination(destination);
+            write_instruction(
+                0x1e380000 | aarch64_detail::gpr_sf_bits<IntegerWidth>() |
+                aarch64_detail::scalar_fp_type_bits<FPWidth>() |
+                aarch64_detail::register_field(source.encoding(), 5) |
+                encoded_destination.encoding());
+        }
+
         template <aarch64_detail::GPRRegisterOrZeroOperand Destination>
         void emit_logical_reg(
             LogicalOp operation, Destination destination,

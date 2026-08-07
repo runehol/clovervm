@@ -259,6 +259,24 @@ namespace cl::jit
         EXPECT_EQ(0x1e7e23e0u, instructions[6]);
     }
 
+    TEST(AArch64Assembler, EncodesScalarIntegerFloatingPointConversions)
+    {
+        uint32_t instructions[4] = {};
+        AArch64BufferAssembler assembler(instructions);
+
+        assembler.emit_signed_integer_to_fp(DRegister(0), XRegister(1));
+        assembler.emit_signed_integer_to_fp(SRegister(2), WRegister(3));
+        assembler.emit_fp_to_signed_integer_toward_zero(XRegister(6),
+                                                        DRegister(7));
+        assembler.emit_fp_to_signed_integer_toward_zero(WRegister(8),
+                                                        SRegister(9));
+
+        EXPECT_EQ(0x9e620020u, instructions[0]);
+        EXPECT_EQ(0x1e220062u, instructions[1]);
+        EXPECT_EQ(0x9e7800e6u, instructions[2]);
+        EXPECT_EQ(0x1e380128u, instructions[3]);
+    }
+
     TEST(AArch64Assembler, EncodesScalarSIMDLoadStoreInstructions)
     {
         uint32_t instructions[12] = {};
