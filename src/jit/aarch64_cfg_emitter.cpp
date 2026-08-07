@@ -123,6 +123,12 @@ namespace cl::jit
                 reinterpret_cast<const void *>(handler));
         }
 
+        MachineAddress box_float_address()
+        {
+            return detail::MachineAddressAccess::from_pointer(
+                reinterpret_cast<const void *>(&box_float));
+        }
+
         void emit_binary_logical_smi(AArch64MacroAssembler &assembler,
                                      const LocationAssignments &locations,
                                      BinaryLogicalSMIInstruction logical)
@@ -689,6 +695,20 @@ namespace cl::jit
                     assembler.mov(XRegister(0), AArch64ThreadStateRegister);
                     assembler.bl(
                         trusted_handler_address(call_instruction.handler()));
+                    break;
+                }
+
+                case CL_JIT_MACHINE_INSTRUCTION_CASE(BoxF64Instruction,
+                                                     box_instruction)
+                {
+                    assert(assigned_f64_register(locations,
+                                                 box_instruction.source())
+                               .encoding() == 0);
+                    assert(assigned_register(locations,
+                                             ProgramValueRef(box_instruction))
+                               .encoding() == 0);
+                    assembler.mov(XRegister(0), AArch64ThreadStateRegister);
+                    assembler.bl(box_float_address());
                     break;
                 }
 

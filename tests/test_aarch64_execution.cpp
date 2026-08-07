@@ -1950,6 +1950,69 @@ namespace cl::jit
         expected_trusted_handler_thread = nullptr;
     }
 
+    TEST(AArch64Execution, BoxesF64AcrossAllocatedNativeCalls)
+    {
+        test::VmTestContext context;
+        ThreadState::ActivationScope activation_scope(context.thread());
+        Owned<TValue<Float>> lhs(
+            context.thread()->make_object_value<Float>(2.5));
+        Owned<TValue<Float>> rhs(
+            context.thread()->make_object_value<Float>(3.25));
+        CodeObject *code_object = context.compile_file(L"pass\n");
+        code_object->function_signature.n_parameters = 2;
+        CompilationSession session;
+        GraphBuilder builder(session, IRLevel::Machine);
+        builder.set_bytecode_state_order(BytecodeStateOrder(*code_object));
+        Block *entry = builder.emplace_block();
+        ParameterInstruction lhs_parameter =
+            builder.emplace_parameter<ParameterInstruction>(entry);
+        ParameterInstruction rhs_parameter =
+            builder.emplace_parameter<ParameterInstruction>(entry);
+        UnboxF64Instruction unboxed_lhs =
+            builder.emplace_instruction<UnboxF64Instruction>(
+                entry, TaggedValueRef(lhs_parameter));
+        UnboxF64Instruction unboxed_rhs =
+            builder.emplace_instruction<UnboxF64Instruction>(
+                entry, TaggedValueRef(rhs_parameter));
+        builder.emplace_instruction<BoxF64Instruction>(entry,
+                                                       F64Ref(unboxed_lhs));
+        AddF64Instruction sum = builder.emplace_instruction<AddF64Instruction>(
+            entry, F64Ref(unboxed_rhs), F64Ref(unboxed_rhs));
+        BoxF64Instruction result =
+            builder.emplace_instruction<BoxF64Instruction>(entry, F64Ref(sum));
+        builder.emplace_instruction<BareReturnInstruction>(
+            entry, TaggedValueRef(result));
+        ControlFlowGraph *graph = builder.finalize();
+
+        insert_aarch64_link_register_preservation(session, *graph);
+        AllocationConstraints constraints =
+            make_aarch64_allocation_constraints(*graph);
+        auto allocation = allocate_registers(session, *graph, constraints);
+        ASSERT_TRUE(allocation);
+
+        CodeCache cache;
+        auto emission =
+            emit_aarch64_from_cfg(*graph, allocation.value().locations(), cache,
+                                  no_side_exit_thunk());
+        ASSERT_TRUE(emission);
+        PublishedCode code = std::move(emission).value();
+
+        Value boxed_result;
+        boxed_result.as.integer = static_cast<int64_t>(execute_published_jit(
+            code,
+            {static_cast<uint64_t>(lhs.raw_value().as.integer),
+             static_cast<uint64_t>(rhs.raw_value().as.integer)},
+            context.thread()));
+        Owned<Value> owned_result(boxed_result);
+
+        ASSERT_TRUE(can_convert_to<Float>(owned_result.raw_value()));
+        EXPECT_DOUBLE_EQ(6.5,
+                         owned_result.raw_value().get_ptr<Float>()->value());
+        EXPECT_NE(lhs.raw_value(), owned_result.raw_value());
+        EXPECT_NE(rhs.raw_value(), owned_result.raw_value());
+        EXPECT_FALSE(context.thread()->has_pending_exception());
+    }
+
     TEST(AArch64Execution, CallsGeneratedLeafFunction)
     {
         CodeCache cache;
