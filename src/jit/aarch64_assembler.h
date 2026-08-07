@@ -333,6 +333,18 @@ namespace cl::jit
 
     namespace aarch64_detail
     {
+        enum class LoadStoreAddressMode : uint8_t
+        {
+            UnsignedScaled,
+            SignedUnscaled,
+        };
+
+        struct LoadStoreAddressEncoding
+        {
+            LoadStoreAddressMode mode;
+            uint32_t bits;
+        };
+
         constexpr uint32_t register_field(uint32_t encoding, uint8_t shift)
         {
             return encoding << shift;
@@ -363,6 +375,38 @@ namespace cl::jit
                 return 0b01u << 22;
             }
         }
+
+        template <SIMDElementWidth Width>
+        consteval uint32_t simd_scalar_size_bits()
+        {
+            if constexpr(Width == SIMDElementWidth::Bits8)
+            {
+                return 0u << 30;
+            }
+            else if constexpr(Width == SIMDElementWidth::Bits16)
+            {
+                return 1u << 30;
+            }
+            else if constexpr(Width == SIMDElementWidth::Bits32)
+            {
+                return 2u << 30;
+            }
+            else
+            {
+                static_assert(Width == SIMDElementWidth::Bits64);
+                return 3u << 30;
+            }
+        }
+
+        template <SIMDElementWidth Width>
+        consteval uint32_t simd_scalar_byte_width()
+        {
+            return static_cast<uint32_t>(Width) / 8;
+        }
+
+        LoadStoreAddressEncoding
+        encode_load_store_address(XRegisterOrSP base, int64_t byte_offset,
+                                  uint32_t access_bytes);
 
         inline bool fits_signed_scaled_displacement(int64_t displacement,
                                                     uint8_t immediate_bits,
@@ -864,6 +908,80 @@ namespace cl::jit
                                      base.encoding(), immediate);
         }
 
+        template <SIMDElementWidth Width>
+        void emit_load_store_unsigned_offset(LoadStoreOp operation,
+                                             SIMDScalarRegister<Width> value,
+                                             XRegisterOrSP base,
+                                             uint16_t byte_offset)
+        {
+            constexpr uint32_t AccessBytes =
+                aarch64_detail::simd_scalar_byte_width<Width>();
+            assert(byte_offset % AccessBytes == 0);
+            uint32_t scaled_offset = byte_offset / AccessBytes;
+            assert(scaled_offset < (1u << 12));
+            write_instruction(
+                0x3d000000 | aarch64_detail::simd_scalar_size_bits<Width>() |
+                aarch64_detail::encoding_bits(operation) |
+                (scaled_offset << 10) |
+                aarch64_detail::register_field(base.encoding(), 5) |
+                value.encoding());
+        }
+
+        template <SIMDElementWidth Width>
+        void emit_load_store_unscaled(LoadStoreOp operation,
+                                      SIMDScalarRegister<Width> value,
+                                      XRegisterOrSP base, int16_t byte_offset)
+        {
+            uint32_t immediate =
+                aarch64_detail::signed_immediate(byte_offset, 9, 0);
+            write_instruction(
+                0x3c000000 | aarch64_detail::simd_scalar_size_bits<Width>() |
+                aarch64_detail::encoding_bits(operation) | (immediate << 12) |
+                aarch64_detail::register_field(base.encoding(), 5) |
+                value.encoding());
+        }
+
+        template <GPRWidth Width>
+        void emit_load_store(LoadStoreOp operation, GPRRegister<Width> value,
+                             XRegisterOrSP base, int64_t byte_offset)
+        {
+            constexpr uint32_t AccessBytes =
+                Width == GPRWidth::X ? uint32_t{8} : uint32_t{4};
+            aarch64_detail::LoadStoreAddressEncoding address =
+                aarch64_detail::encode_load_store_address(base, byte_offset,
+                                                          AccessBytes);
+            uint32_t instruction_base =
+                address.mode ==
+                        aarch64_detail::LoadStoreAddressMode::UnsignedScaled
+                    ? 0xb9000000
+                    : 0xb8000000;
+            write_instruction(instruction_base |
+                              (aarch64_detail::encoding_bits(Width) >> 1) |
+                              aarch64_detail::encoding_bits(operation) |
+                              address.bits | value.encoding());
+        }
+
+        template <SIMDElementWidth Width>
+        void emit_load_store(LoadStoreOp operation,
+                             SIMDScalarRegister<Width> value,
+                             XRegisterOrSP base, int64_t byte_offset)
+        {
+            constexpr uint32_t AccessBytes =
+                aarch64_detail::simd_scalar_byte_width<Width>();
+            aarch64_detail::LoadStoreAddressEncoding address =
+                aarch64_detail::encode_load_store_address(base, byte_offset,
+                                                          AccessBytes);
+            uint32_t instruction_base =
+                address.mode ==
+                        aarch64_detail::LoadStoreAddressMode::UnsignedScaled
+                    ? 0x3d000000
+                    : 0x3c000000;
+            write_instruction(instruction_base |
+                              aarch64_detail::simd_scalar_size_bits<Width>() |
+                              aarch64_detail::encoding_bits(operation) |
+                              address.bits | value.encoding());
+        }
+
         void emit_b_conditional_immediate(AArch64Condition condition,
                                           int32_t byte_displacement)
         {
@@ -1071,12 +1189,24 @@ namespace cl::jit
                  int64_t byte_offset);
         void ldr(WRegister destination, XRegisterOrSP base,
                  int64_t byte_offset);
+        template <SIMDElementWidth Width>
+        void ldr(SIMDScalarRegister<Width> destination, XRegisterOrSP base,
+                 int64_t byte_offset)
+        {
+            emit_load_store(LoadStoreOp::Load, destination, base, byte_offset);
+        }
         void ldr(XRegister destination, Value value);
         void ldr(XRegister destination, HeapObject *object);
         void adr(XRegister destination, ConstantPoolEntry target);
         ConstantPoolEntry
         add_transition_program(std::span<const TransitionInstruction> program);
         void str(XRegister source, XRegisterOrSP base, int64_t byte_offset);
+        template <SIMDElementWidth Width>
+        void str(SIMDScalarRegister<Width> source, XRegisterOrSP base,
+                 int64_t byte_offset)
+        {
+            emit_load_store(LoadStoreOp::Store, source, base, byte_offset);
+        }
 
         void b(CodeTarget target, XRegister scratch = XRegister(16));
         void b(AArch64Condition condition, Label target);

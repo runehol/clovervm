@@ -88,31 +88,31 @@ namespace cl::jit
             }
         }
 
-        template <GPRWidth Width>
-        void emit_load_store(AArch64EmitterAssembler &assembler,
-                             LoadStoreOp operation, GPRRegister<Width> value,
-                             XRegisterOrSP base, int64_t byte_offset)
-        {
-            constexpr int64_t RegisterBytes =
-                Width == GPRWidth::X ? int64_t{8} : int64_t{4};
-            constexpr int64_t MaximumScaledByteOffset = 4095 * RegisterBytes;
-            if(byte_offset >= 0 && byte_offset % RegisterBytes == 0 &&
-               byte_offset <= MaximumScaledByteOffset)
-            {
-                assembler.emit_load_store_unsigned_offset(
-                    operation, value, base, static_cast<uint16_t>(byte_offset));
-                return;
-            }
-            if(aarch64_detail::fits_signed_scaled_displacement(byte_offset, 9,
-                                                               0))
-            {
-                assembler.emit_load_store_unscaled(
-                    operation, value, base, static_cast<int16_t>(byte_offset));
-                return;
-            }
-            fatal("AArch64 load/store offset is not encodable");
-        }
     }  // namespace
+
+    aarch64_detail::LoadStoreAddressEncoding
+    aarch64_detail::encode_load_store_address(XRegisterOrSP base,
+                                              int64_t byte_offset,
+                                              uint32_t access_bytes)
+    {
+        assert(access_bytes != 0);
+        int64_t maximum_scaled_byte_offset = 4095 * access_bytes;
+        if(byte_offset >= 0 && byte_offset % access_bytes == 0 &&
+           byte_offset <= maximum_scaled_byte_offset)
+        {
+            uint32_t scaled_offset =
+                static_cast<uint32_t>(byte_offset / access_bytes);
+            return {LoadStoreAddressMode::UnsignedScaled,
+                    (scaled_offset << 10) | register_field(base.encoding(), 5)};
+        }
+        if(fits_signed_scaled_displacement(byte_offset, 9, 0))
+        {
+            uint32_t immediate = signed_immediate(byte_offset, 9, 0);
+            return {LoadStoreAddressMode::SignedUnscaled,
+                    (immediate << 12) | register_field(base.encoding(), 5)};
+        }
+        fatal("AArch64 load/store offset is not encodable");
+    }
 
     uint32_t AArch64Relaxation::select(MachineAddress source,
                                        MachineAddress target)
@@ -437,15 +437,13 @@ namespace cl::jit
     void AArch64MacroAssembler::ldr(XRegister destination, XRegisterOrSP base,
                                     int64_t byte_offset)
     {
-        emit_load_store(*this, LoadStoreOp::Load, destination, base,
-                        byte_offset);
+        emit_load_store(LoadStoreOp::Load, destination, base, byte_offset);
     }
 
     void AArch64MacroAssembler::ldr(WRegister destination, XRegisterOrSP base,
                                     int64_t byte_offset)
     {
-        emit_load_store(*this, LoadStoreOp::Load, destination, base,
-                        byte_offset);
+        emit_load_store(LoadStoreOp::Load, destination, base, byte_offset);
     }
 
     void AArch64MacroAssembler::ldr(XRegister destination, Value value)
@@ -518,7 +516,7 @@ namespace cl::jit
     void AArch64MacroAssembler::str(XRegister source, XRegisterOrSP base,
                                     int64_t byte_offset)
     {
-        emit_load_store(*this, LoadStoreOp::Store, source, base, byte_offset);
+        emit_load_store(LoadStoreOp::Store, source, base, byte_offset);
     }
 
     void AArch64MacroAssembler::b(CodeTarget target, XRegister scratch)

@@ -259,6 +259,50 @@ namespace cl::jit
         EXPECT_EQ(0x1e7e23e0u, instructions[6]);
     }
 
+    TEST(AArch64Assembler, EncodesScalarSIMDLoadStoreInstructions)
+    {
+        uint32_t instructions[12] = {};
+        AArch64BufferAssembler assembler(instructions);
+
+        assembler.emit_load_store(LoadStoreOp::Store, BRegister(0),
+                                  XRegister(1), 3);
+        assembler.emit_load_store(LoadStoreOp::Load, BRegister(2), XRegister(3),
+                                  4);
+        assembler.emit_load_store(LoadStoreOp::Store, HRegister(4),
+                                  XRegister(5), 6);
+        assembler.emit_load_store(LoadStoreOp::Load, HRegister(6), XRegister(7),
+                                  8);
+        assembler.emit_load_store(LoadStoreOp::Store, SRegister(8),
+                                  XRegister(9), 12);
+        assembler.emit_load_store(LoadStoreOp::Load, SRegister(10),
+                                  XRegister(11), 16);
+        assembler.emit_load_store(LoadStoreOp::Store, DRegister(12),
+                                  XRegister(13), 24);
+        assembler.emit_load_store(LoadStoreOp::Load, DRegister(14),
+                                  XRegister(15), 32);
+        assembler.emit_load_store(LoadStoreOp::Store, BRegister(16),
+                                  XRegister(17), -1);
+        assembler.emit_load_store(LoadStoreOp::Load, HRegister(18),
+                                  XRegister(19), -2);
+        assembler.emit_load_store(LoadStoreOp::Store, SRegister(20),
+                                  XRegister(21), -4);
+        assembler.emit_load_store(LoadStoreOp::Load, DRegister(22),
+                                  XRegister(23), -8);
+
+        EXPECT_EQ(0x3d000c20u, instructions[0]);
+        EXPECT_EQ(0x3d401062u, instructions[1]);
+        EXPECT_EQ(0x7d000ca4u, instructions[2]);
+        EXPECT_EQ(0x7d4010e6u, instructions[3]);
+        EXPECT_EQ(0xbd000d28u, instructions[4]);
+        EXPECT_EQ(0xbd40116au, instructions[5]);
+        EXPECT_EQ(0xfd000dacu, instructions[6]);
+        EXPECT_EQ(0xfd4011eeu, instructions[7]);
+        EXPECT_EQ(0x3c1ff230u, instructions[8]);
+        EXPECT_EQ(0x7c5fe272u, instructions[9]);
+        EXPECT_EQ(0xbc1fc2b4u, instructions[10]);
+        EXPECT_EQ(0xfc5f82f6u, instructions[11]);
+    }
+
     TEST(AArch64Assembler, EmitsMacroInstructionsThroughEncodingFamilies)
     {
         CacheAndPlatform fixture(16);
