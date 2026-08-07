@@ -16,6 +16,22 @@ namespace cl
 {
     static constexpr size_t kMaxAttachedValidityCellReuseScan = 8;
 
+    static ValidityCellDependencyMutability
+    mro_dependency_mutability(const ClassObject *cls)
+    {
+        Tuple *mro = assume_convert_to<Tuple>(cls->get_mro_value());
+        for(size_t index = 0; index < mro->size(); ++index)
+        {
+            ClassObject *mro_class =
+                assume_convert_to<ClassObject>(mro->item_unchecked(index));
+            if(!mro_class->get_shape()->has_flag(ShapeFlag::IsImmutable))
+            {
+                return ValidityCellDependencyMutability::Mutable;
+            }
+        }
+        return ValidityCellDependencyMutability::Immutable;
+    }
+
     static std::deque<ClassObject *> class_deque_from_tuple(const Tuple *tuple)
     {
         std::vector<ClassObject *> vector =
@@ -596,7 +612,8 @@ namespace cl
     ClassObject::create_mro_shape_and_contents_validity_cell_slow() const
     {
         constructor_thunk = nullptr;
-        ValidityCell *cell = make_internal_raw<ValidityCell>();
+        ValidityCell *cell =
+            make_internal_raw<ValidityCell>(mro_dependency_mutability(this));
         mro_shape_and_contents_validity_cell = cell;
         install_validity_cell_along_mro(
             cell, MroValidityCellInstallMode::SkipSelf,
@@ -609,13 +626,22 @@ namespace cl
         create_mro_shape_and_metaclass_mro_shape_and_contents_validity_cell_slow()
             const
     {
-        ValidityCell *cell = make_internal_raw<ValidityCell>();
+        ValidityCellDependencyMutability dependency_mutability =
+            mro_dependency_mutability(this);
+        ClassObject *metaclass = get_shape()->get_class();
+        if(dependency_mutability ==
+               ValidityCellDependencyMutability::Immutable &&
+           metaclass != this)
+        {
+            dependency_mutability = mro_dependency_mutability(metaclass);
+        }
+        ValidityCell *cell =
+            make_internal_raw<ValidityCell>(dependency_mutability);
         mro_shape_and_metaclass_mro_shape_and_contents_validity_cell = cell;
         install_validity_cell_along_mro(cell,
                                         MroValidityCellInstallMode::SkipSelf,
                                         MroValidityCellDependency::ShapeOnly);
 
-        ClassObject *metaclass = get_shape()->get_class();
         if(metaclass != this)
         {
             metaclass->install_validity_cell_along_mro(

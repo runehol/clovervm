@@ -194,7 +194,8 @@ namespace cl
 
     ValidityCell *ModuleObject::create_module_globals_validity_cell_slow() const
     {
-        ValidityCell *cell = make_internal_raw<ValidityCell>();
+        ValidityCell *cell = make_internal_raw<ValidityCell>(
+            ValidityCellDependencyMutability::Mutable);
         module_globals_validity_cell = cell;
         return cell;
     }
@@ -202,7 +203,8 @@ namespace cl
     ValidityCell *
     ModuleObject::create_module_builtins_validity_cell_slow() const
     {
-        ValidityCell *cell = make_internal_raw<ValidityCell>();
+        ValidityCell *cell = make_internal_raw<ValidityCell>(
+            ValidityCellDependencyMutability::Mutable);
         module_builtins_validity_cell = cell;
         return cell;
     }

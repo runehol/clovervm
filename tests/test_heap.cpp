@@ -146,7 +146,10 @@ TEST(GlobalHeap, VmBootstrapSwitchesDefaultThreadToFreshSlab)
     test::VmTestContext context;
     ThreadState *thread = context.thread();
     ThreadState::ActivationScope active_thread(thread);
-    ValidityCell *object = thread->make_internal_raw<ValidityCell>();
+    ValidityCell *object = thread->make_internal_raw<ValidityCell>(
+        ValidityCellDependencyMutability::Mutable);
+    EXPECT_EQ(ValidityCellDependencyMutability::Mutable,
+              object->dependency_mutability());
     SlabAllocator *slab =
         context.vm().get_refcounted_global_heap().slab_for_object_unlocked(
             object);
@@ -364,7 +367,8 @@ TEST(GlobalHeap, SuccessfulConstructionMarksValidObject)
     GlobalHeap heap = GlobalHeap::refcounted_heap();
     ThreadLocalHeap local_heap(&heap);
 
-    ValidityCell *object = local_heap.make<ValidityCell>();
+    ValidityCell *object = local_heap.make<ValidityCell>(
+        ValidityCellDependencyMutability::Mutable);
     SlabAllocator *slab = heap.slab_for_object_unlocked(object);
 
     std::vector<HeapObject *> objects = valid_objects_in(slab);
@@ -391,7 +395,8 @@ TEST(GlobalHeap, ValidObjectIterationSkipsAbandonedBumpGaps)
     ThreadLocalHeap local_heap(&heap);
 
     EXPECT_THROW(local_heap.make<ThrowingHeapObject>(), std::runtime_error);
-    ValidityCell *object = local_heap.make<ValidityCell>();
+    ValidityCell *object = local_heap.make<ValidityCell>(
+        ValidityCellDependencyMutability::Mutable);
     SlabAllocator *slab = heap.slab_for_object_unlocked(object);
 
     std::vector<HeapObject *> objects = valid_objects_in(slab);

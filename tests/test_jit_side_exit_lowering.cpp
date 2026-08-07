@@ -157,7 +157,8 @@ namespace cl::jit
         test::VmTestContext vm;
         ThreadState::ActivationScope activation_scope(vm.thread());
         Shape *shape = vm.vm().str_instance_root_shape();
-        ValidityCell *validity = vm.thread()->make_internal_raw<ValidityCell>();
+        ValidityCell *validity = vm.thread()->make_internal_raw<ValidityCell>(
+            ValidityCellDependencyMutability::Mutable);
 
         CompilationSession session{test::compiler_thread()};
         GraphBuilder builder(session, IRLevel::Core);

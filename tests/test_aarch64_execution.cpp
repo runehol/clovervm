@@ -891,7 +891,8 @@ namespace cl::jit
         CodeObject *code_object = vm.compile_file(L"pass\n");
         code_object->function_signature.n_parameters = 1;
         BytecodeStateOrder state_order(*code_object);
-        ValidityCell *validity = vm.thread()->make_internal_raw<ValidityCell>();
+        ValidityCell *validity = vm.thread()->make_internal_raw<ValidityCell>(
+            ValidityCellDependencyMutability::Mutable);
 
         CompilationSession session{test::compiler_thread()};
         GraphBuilder builder(session, IRLevel::Machine);

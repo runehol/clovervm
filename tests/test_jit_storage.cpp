@@ -616,7 +616,8 @@ namespace cl::jit
         ThreadState::ActivationScope activation_scope(context.thread());
         Shape *shape = context.vm().str_instance_root_shape();
         ValidityCell *validity =
-            context.thread()->make_internal_raw<ValidityCell>();
+            context.thread()->make_internal_raw<ValidityCell>(
+                ValidityCellDependencyMutability::Mutable);
 
         CompilationSession session{test::compiler_thread()};
         GraphBuilder builder(session, IRLevel::Core);

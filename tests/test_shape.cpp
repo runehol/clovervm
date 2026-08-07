@@ -1166,7 +1166,32 @@ TEST(ClassObject, MroShapeAndContentsValidityCellStartsNullAndIsCreatedLazily)
 
     ASSERT_NE(nullptr, cell);
     EXPECT_TRUE(cell->is_valid());
+    EXPECT_EQ(ValidityCellDependencyMutability::Mutable,
+              cell->dependency_mutability());
     EXPECT_EQ(cell, cls->current_mro_shape_and_contents_validity_cell());
+}
+
+TEST(ClassObject, FrozenBuiltinMroProducesImmutableValidityCell)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation_scope(context.thread());
+
+    ValidityCell *cell =
+        context.vm()
+            .float_class()
+            ->get_or_create_mro_shape_and_contents_validity_cell();
+
+    ASSERT_NE(nullptr, cell);
+    EXPECT_EQ(ValidityCellDependencyMutability::Immutable,
+              cell->dependency_mutability());
+
+    ValidityCell *combined_cell =
+        context.vm()
+            .float_class()
+            ->get_or_create_mro_shape_and_metaclass_mro_shape_and_contents_validity_cell();
+    ASSERT_NE(nullptr, combined_cell);
+    EXPECT_EQ(ValidityCellDependencyMutability::Immutable,
+              combined_cell->dependency_mutability());
 }
 
 TEST(ClassObject, FreezeInvalidatesMutableShapeValidityCells)
@@ -1182,12 +1207,51 @@ TEST(ClassObject, FreezeInvalidatesMutableShapeValidityCells)
         cls->get_or_create_mro_shape_and_contents_validity_cell();
     ASSERT_NE(nullptr, cell);
     ASSERT_TRUE(cell->is_valid());
+    ASSERT_EQ(ValidityCellDependencyMutability::Mutable,
+              cell->dependency_mutability());
 
     cls->freeze();
 
     EXPECT_FALSE(cell->is_valid());
     EXPECT_EQ(nullptr, cls->current_mro_shape_and_contents_validity_cell());
     EXPECT_TRUE(cls->get_shape()->has_flag(ShapeFlag::IsImmutable));
+
+    ValidityCell *frozen_cell =
+        cls->get_or_create_mro_shape_and_contents_validity_cell();
+    ASSERT_NE(nullptr, frozen_cell);
+    EXPECT_EQ(ValidityCellDependencyMutability::Immutable,
+              frozen_cell->dependency_mutability());
+}
+
+TEST(ClassObject, MutableBaseKeepsFrozenChildValidityCellMutable)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation_scope(context.thread());
+
+    TValue<String> base_name(
+        context.vm().get_or_create_interned_string_value(L"Base"));
+    TValue<String> child_name(
+        context.vm().get_or_create_interned_string_value(L"Child"));
+    ClassObject *base = context.thread()->make_internal_raw<ClassObject>(
+        base_name, 2, context.vm().object_class(), NativeLayoutId::Instance);
+    ClassObject *child = context.thread()->make_internal_raw<ClassObject>(
+        child_name, 2, base, NativeLayoutId::Instance);
+    child->freeze();
+
+    ValidityCell *cell =
+        child->get_or_create_mro_shape_and_contents_validity_cell();
+    ASSERT_NE(nullptr, cell);
+    EXPECT_EQ(ValidityCellDependencyMutability::Mutable,
+              cell->dependency_mutability());
+
+    base->freeze();
+
+    EXPECT_FALSE(cell->is_valid());
+    ValidityCell *frozen_cell =
+        child->get_or_create_mro_shape_and_contents_validity_cell();
+    ASSERT_NE(nullptr, frozen_cell);
+    EXPECT_EQ(ValidityCellDependencyMutability::Immutable,
+              frozen_cell->dependency_mutability());
 }
 
 TEST(ClassObject,
@@ -1332,6 +1396,8 @@ TEST(ClassObject,
 
     ASSERT_NE(nullptr, cell);
     EXPECT_TRUE(cell->is_valid());
+    EXPECT_EQ(ValidityCellDependencyMutability::Mutable,
+              cell->dependency_mutability());
     EXPECT_EQ(
         cell,
         cls->current_mro_shape_and_metaclass_mro_shape_and_contents_validity_cell());

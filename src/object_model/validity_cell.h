@@ -5,19 +5,34 @@
 #include "object_model/heap_object.h"
 
 #include <cstddef>
+#include <cstdint>
 
 namespace cl
 {
+    enum class ValidityCellDependencyMutability : uint8_t
+    {
+        Mutable,
+        Immutable,
+    };
+
     class ValidityCell : public HeapObject
     {
     public:
         static constexpr NativeLayoutId native_layout =
             NativeLayoutId::ValidityCell;
 
-        ValidityCell() : HeapObject(native_layout), valid(true) {}
+        explicit ValidityCell(ValidityCellDependencyMutability mutability)
+            : HeapObject(native_layout), valid(true),
+              dependency_mutability_(mutability)
+        {
+        }
 
         bool is_valid() const { return valid; }
         void invalidate() { valid = false; }
+        ValidityCellDependencyMutability dependency_mutability() const
+        {
+            return dependency_mutability_;
+        }
 
         static size_t valid_offset();
 
@@ -26,6 +41,7 @@ namespace cl
 
     private:
         bool valid;
+        ValidityCellDependencyMutability dependency_mutability_;
     };
 
     inline size_t ValidityCell::valid_offset()

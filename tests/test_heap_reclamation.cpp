@@ -21,7 +21,8 @@ namespace cl
         {
             for(size_t idx = 0; idx < 10000; ++idx)
             {
-                HeapObject *obj = thread->make_internal_raw<ValidityCell>();
+                HeapObject *obj = thread->make_internal_raw<ValidityCell>(
+                    ValidityCellDependencyMutability::Mutable);
                 if(heap.slab_for_object_unlocked(obj) != slab)
                 {
                     return obj;
@@ -117,7 +118,8 @@ namespace cl
         test::VmTestContext context;
         ThreadState *thread = context.vm().make_new_thread();
         ThreadState::ActivationScope active_thread(thread);
-        ValidityCell *object = thread->make_internal_raw<ValidityCell>();
+        ValidityCell *object = thread->make_internal_raw<ValidityCell>(
+            ValidityCellDependencyMutability::Mutable);
         thread->add_to_zero_count_table_if_needed(object);
         ASSERT_TRUE(thread->zero_count_table_contains_for_testing(object));
 
@@ -143,7 +145,8 @@ namespace cl
                 ThreadState *second_thread = threads[1].get();
                 ThreadState::ActivationScope active_thread(first_thread);
                 ValidityCell *object =
-                    first_thread->make_internal_raw<ValidityCell>();
+                    first_thread->make_internal_raw<ValidityCell>(
+                        ValidityCellDependencyMutability::Mutable);
                 first_thread->add_to_zero_count_table_if_needed(object);
                 object->lifecycle_state = HeapLifecycleState::Normal;
                 second_thread->add_to_zero_count_table_if_needed(object);
@@ -182,7 +185,8 @@ namespace cl
         GlobalHeap &heap = context.vm().get_refcounted_global_heap();
         context.vm().run_heap_reclamation();
         uint64_t valid_objects_before_alloc = heap.count_valid_objects_slow();
-        ValidityCell *object = thread->make_internal_raw<ValidityCell>();
+        ValidityCell *object = thread->make_internal_raw<ValidityCell>(
+            ValidityCellDependencyMutability::Mutable);
         SlabAllocator *slab = heap.slab_for_object_unlocked(object);
         thread->add_to_zero_count_table_if_needed(object);
         ASSERT_TRUE(thread->zero_count_table_contains_for_testing(object));
@@ -319,7 +323,8 @@ namespace cl
         context.vm().run_heap_reclamation();
         uint64_t valid_objects_before_alloc = heap.count_valid_objects_slow();
 
-        ValidityCell *child = thread->make_internal_raw<ValidityCell>();
+        ValidityCell *child = thread->make_internal_raw<ValidityCell>(
+            ValidityCellDependencyMutability::Mutable);
         HeapPtrArrayBacking *backing =
             thread->make_internal_raw<HeapPtrArrayBacking>(1);
         backing->elements[0] = incref_heap_ptr(child);
@@ -376,15 +381,16 @@ namespace cl
         ThreadState::ActivationScope active_thread(thread);
         GlobalHeap &heap = context.vm().get_refcounted_global_heap();
 
-        ValidityCell *current_object =
-            thread->make_internal_raw<ValidityCell>();
+        ValidityCell *current_object = thread->make_internal_raw<ValidityCell>(
+            ValidityCellDependencyMutability::Mutable);
         SlabAllocator *initial_slab =
             heap.slab_for_object_unlocked(current_object);
         HeapObject *fresh_slab_object =
             allocate_until_slab_changes(thread, heap, initial_slab);
         ASSERT_NE(nullptr, fresh_slab_object);
 
-        ValidityCell *target = thread->make_internal_raw<ValidityCell>();
+        ValidityCell *target = thread->make_internal_raw<ValidityCell>(
+            ValidityCellDependencyMutability::Mutable);
         void *target_address = target;
         SlabAllocator *target_slab = heap.slab_for_object_unlocked(target);
         ASSERT_EQ(heap.slab_for_object_unlocked(fresh_slab_object),
@@ -488,7 +494,8 @@ namespace cl
         context.vm().run_heap_reclamation();
         uint64_t valid_objects_before_alloc = heap.count_valid_objects_slow();
 
-        ValidityCell *object = thread->make_internal_raw<ValidityCell>();
+        ValidityCell *object = thread->make_internal_raw<ValidityCell>(
+            ValidityCellDependencyMutability::Mutable);
         incref_heap_ptr(object);
         ASSERT_FALSE(thread->zero_count_table_contains_for_testing(object));
         ASSERT_EQ(1, object->refcount);
@@ -517,9 +524,12 @@ namespace cl
         context.vm().run_heap_reclamation();
         uint64_t valid_objects_before_alloc = heap.count_valid_objects_slow();
 
-        ValidityCell *in_zct = thread->make_internal_raw<ValidityCell>();
-        ValidityCell *reclaiming = thread->make_internal_raw<ValidityCell>();
-        ValidityCell *dead = thread->make_internal_raw<ValidityCell>();
+        ValidityCell *in_zct = thread->make_internal_raw<ValidityCell>(
+            ValidityCellDependencyMutability::Mutable);
+        ValidityCell *reclaiming = thread->make_internal_raw<ValidityCell>(
+            ValidityCellDependencyMutability::Mutable);
+        ValidityCell *dead = thread->make_internal_raw<ValidityCell>(
+            ValidityCellDependencyMutability::Mutable);
         in_zct->lifecycle_state = HeapLifecycleState::InZct;
         reclaiming->lifecycle_state = HeapLifecycleState::Reclaiming;
         dead->lifecycle_state = HeapLifecycleState::Dead;
