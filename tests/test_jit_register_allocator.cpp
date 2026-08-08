@@ -230,7 +230,7 @@ namespace cl::jit
             entry, SnapshotRef(snapshot));
         ControlFlowGraph *graph = builder.finalize();
 
-        SunkInstructionIds sunk = sink_snapshots(*graph);
+        SunkInstructionIds sunk = select_side_exit_sunk_instructions(*graph);
         auto lowering = lower_side_exits(session, *graph, sunk);
         ASSERT_TRUE(lowering);
         ASSERT_TRUE(std::move(lowering).value());

@@ -45,6 +45,38 @@ namespace cl::jit
         using InstructionPositions =
             absl::flat_hash_map<InstructionId, InstructionProgramPosition>;
 
+        bool is_side_exit_sinkable(const Instruction &instruction)
+        {
+            if(instruction.kind() == InstructionKind::Snapshot)
+            {
+                return true;
+            }
+            if(!instruction_kind_is_allowed_at(instruction.kind(),
+                                               IRLevelMask::Transition))
+            {
+                return false;
+            }
+
+            EffectProfile may_effects =
+                instruction_kind_metadata(instruction.kind()).may_effects;
+            constexpr uint8_t allowed_effects =
+                static_cast<uint8_t>(EffectProfile::Allocate);
+            if((static_cast<uint8_t>(may_effects) & ~allowed_effects) != 0)
+            {
+                return false;
+            }
+
+            bool has_snapshot_operand = false;
+            visit_operand_references(
+                instruction,
+                [&](uint32_t, OperandClass operand_class,
+                    ValueRepresentationRequirement, InstructionId) {
+                    has_snapshot_operand |=
+                        operand_class == OperandClass::Snapshot;
+                });
+            return !has_snapshot_operand;
+        }
+
         BinaryArithmeticSMIWithSideExitSubkind machine_arithmetic_subkind(
             BinaryArithmeticSMIWithSnapshotSubkind subkind)
         {
@@ -171,6 +203,15 @@ namespace cl::jit
             if(graph.ir_level() != IRLevel::Core)
             {
                 fatal("side-exit lowering requires a Core IR graph");
+            }
+
+            for(InstructionId id: sunk_instructions)
+            {
+                if(!is_side_exit_sinkable(graph.storage()->instruction(id)))
+                {
+                    fatal("JIT instruction kind is not eligible for side-exit "
+                          "sinking");
+                }
             }
 
             InstructionPositions positions;
@@ -591,7 +632,8 @@ namespace cl::jit
         }
     }  // namespace
 
-    SunkInstructionIds sink_snapshots(const ControlFlowGraph &graph)
+    SunkInstructionIds
+    select_side_exit_sunk_instructions(const ControlFlowGraph &graph)
     {
         SunkInstructionIds result;
         for(const Block *block: graph.blocks())
@@ -603,6 +645,35 @@ namespace cl::jit
                 if(snapshot)
                 {
                     result.insert(snapshot->instruction_id());
+                }
+            }
+        }
+
+        GraphQueries queries = graph.prepare_queries(GraphQuery::Uses);
+        for(const Block *block: graph.blocks())
+        {
+            for(size_t index = block->instructions().size(); index != 0;
+                --index)
+            {
+                Instruction instruction = block->instruction_at(index - 1);
+                if(instruction.kind() == InstructionKind::Snapshot ||
+                   !is_side_exit_sinkable(instruction))
+                {
+                    continue;
+                }
+
+                const Uses &uses = queries.uses_of(instruction);
+                if(uses.n_uses() == 0 || uses.n_block_argument_uses() != 0)
+                {
+                    continue;
+                }
+                bool all_uses_sunk = std::ranges::all_of(
+                    uses.instruction_uses(), [&](const InstructionUse &use) {
+                        return result.contains(use.instruction);
+                    });
+                if(all_uses_sunk)
+                {
+                    result.insert(instruction.id());
                 }
             }
         }

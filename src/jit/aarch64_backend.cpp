@@ -17,7 +17,8 @@ namespace cl::jit
                        JitCompilationObserver *observer)
     {
         assert(graph.ir_level() == IRLevel::Core);
-        SunkInstructionIds sunk_instructions = sink_snapshots(graph);
+        SunkInstructionIds sunk_instructions =
+            select_side_exit_sunk_instructions(graph);
         auto lowering = lower_side_exits(session, graph, sunk_instructions);
         if(!lowering)
         {

@@ -14,7 +14,8 @@ namespace cl::jit
 
     using SunkInstructionIds = absl::flat_hash_set<InstructionId>;
 
-    SunkInstructionIds sink_snapshots(const ControlFlowGraph &graph);
+    SunkInstructionIds
+    select_side_exit_sunk_instructions(const ControlFlowGraph &graph);
 
     [[nodiscard]] Result<bool, JitCompilationError>
     lower_side_exits(CompilationSession &session, ControlFlowGraph &graph,

@@ -4,7 +4,7 @@
 |---|---|
 | Document type | Design |
 | Status | Accepted |
-| Implementation | Partial; Core-to-Machine owner lowering, side-exit regions and bindings, allocation-visible owner arguments, allocation materialization, IR printing, CFG verification, `ExitToInterpreter` publication emission, deterministic AArch64 binding deduplication, target register-save thunks, transition execution, and interpreter handoff are implemented; general sinking analysis and sunk computation emission remain |
+| Implementation | Partial; Core-to-Machine owner lowering, side-exit regions and bindings, allocation-visible owner arguments, allocation materialization, IR printing, CFG verification, `ExitToInterpreter` publication emission, deterministic AArch64 binding deduplication, target register-save thunks, transition execution, interpreter handoff, and snapshot-only `BoxF64` sinking are implemented; broader transition computation support remains |
 | Scope | Moving non-returning recovery state out of executable block order while preserving a normal operand surface for allocation and emission |
 | Owning layers | Core optimization owns sinking analysis while instructions remain in the main CFG; side-exit lowering owns region construction and executable owner bindings; ordinary instruction rewriting, use lists, and register allocation own the owner argument operands; transition emission owns deferred computation and interpreter-state publication |
 | Validated against | `tests/test_jit_side_exit_lowering.cpp`, `tests/test_jit_cfg.cpp`, `tests/test_jit_register_allocator.cpp`, `tests/test_transition_program_emitter.cpp`, and `tests/test_aarch64_cfg_emitter.cpp` |
@@ -137,6 +137,19 @@ The sinking analysis marks an instruction as sunk only when:
 - all transitive uses lead through other sunk instructions to Snapshots;
 - moving its computation to every consuming side exit is semantically valid;
 - its instruction kind is eligible for transition execution.
+
+`Snapshot` is the recovery-root special case: lowering turns it into
+`ExitToInterpreter` rather than executing it as a transition instruction. An
+ordinary candidate must declare support for `IRLevel::Transition`, have no
+Snapshot operand, and have no effects other than allocation. It is selected
+only when it has no block-edge use and every instruction use is already sunk.
+The initial ordinary set therefore contains only `BoxF64`; adding another
+transition-capable instruction does not bypass the independent effect,
+operand, or use checks.
+
+Transition execution is a no-safepoint region. Allocation may request a later
+safepoint, but the transition program cannot enter one while raw reconstructed
+values remain in transition scratch.
 
 The sinking decision remains derived metadata while optimization continues. The
 instruction is not immediately removed, poisoned, cloned, or rewritten into a
@@ -404,11 +417,11 @@ The structural implementation slices are complete:
 - the AArch64 CFG emitter deduplicates side-exit bindings during emission in
   deterministic first-use order.
 
-The remaining slice is substantive rather than structural: add sinking
-analysis, clone the reachable sunk instruction closure in original block order,
-discover its complete external frontier, and emit each eligible transition
-computation kind. Machine constraints and target emission for individual
-nonterminal side-exit owners are added as those owners become executable.
+The initial sinking implementation handles snapshot-only `BoxF64`. Broader
+sinking extends the transition-capable instruction set while retaining the
+same effect, operand, and use checks. Machine constraints and target emission
+for individual nonterminal side-exit owners are added as those owners become
+executable.
 
 Call-boundary Snapshot lowering is a separate adjacent design and is not part of
 these slices.

@@ -18,18 +18,19 @@ namespace cl::jit
         CompilationSession session{test::compiler_thread()};
         GraphBuilder builder(session, IRLevel::Core);
         Block *entry = builder.emplace_block();
-        ParameterInstruction first =
-            builder.emplace_parameter<ParameterInstruction>(entry);
-        ParameterInstruction second =
-            builder.emplace_parameter<ParameterInstruction>(entry);
-        MovInstruction first_move = builder.emplace_instruction<MovInstruction>(
-            entry, TaggedValueRef(first));
-        MovInstruction second_move =
-            builder.emplace_instruction<MovInstruction>(entry,
-                                                        TaggedValueRef(second));
-        std::array<ProgramValueRef, 3> captured = {ProgramValueRef(second_move),
-                                                   ProgramValueRef(first_move),
-                                                   ProgramValueRef(second)};
+        ParameterF64Instruction first =
+            builder.emplace_parameter<ParameterF64Instruction>(entry);
+        ParameterF64Instruction second =
+            builder.emplace_parameter<ParameterF64Instruction>(entry);
+        BoxF64Instruction first_box =
+            builder.emplace_instruction<BoxF64Instruction>(entry,
+                                                           F64Ref(first));
+        BoxF64Instruction second_box =
+            builder.emplace_instruction<BoxF64Instruction>(entry,
+                                                           F64Ref(second));
+        std::array<ProgramValueRef, 3> captured = {ProgramValueRef(second_box),
+                                                   ProgramValueRef(first_box),
+                                                   ProgramValueRef(second_box)};
         SnapshotInstruction snapshot =
             builder.emplace_instruction<SnapshotInstruction>(
                 entry, captured, BytecodePCOffset{17});
@@ -38,11 +39,11 @@ namespace cl::jit
                 entry, SnapshotRef(snapshot));
         ControlFlowGraph *graph = builder.finalize();
 
-        SunkInstructionIds sunk = sink_snapshots(*graph);
-        ASSERT_EQ(1u, sunk.size());
+        SunkInstructionIds sunk = select_side_exit_sunk_instructions(*graph);
+        ASSERT_EQ(3u, sunk.size());
         EXPECT_TRUE(sunk.contains(snapshot.id()));
-        sunk.insert(first_move.id());
-        sunk.insert(second_move.id());
+        EXPECT_TRUE(sunk.contains(first_box.id()));
+        EXPECT_TRUE(sunk.contains(second_box.id()));
 
         auto lowered = lower_side_exits(session, *graph, sunk);
 
@@ -53,8 +54,8 @@ namespace cl::jit
         auto owner = entry->instruction_at(0)
                          .as<ResumeInInterpreterWithSideExitInstruction>();
         EXPECT_TRUE(old_owner.is_poisoned());
-        EXPECT_TRUE(first_move.is_poisoned());
-        EXPECT_TRUE(second_move.is_poisoned());
+        EXPECT_TRUE(first_box.is_poisoned());
+        EXPECT_TRUE(second_box.is_poisoned());
         EXPECT_TRUE(snapshot.is_poisoned());
 
         ASSERT_EQ(2u, owner.side_exit_arguments().size());
@@ -65,13 +66,131 @@ namespace cl::jit
             session.storage()->side_exit_region(owner.side_exit_region());
         ASSERT_EQ(2u, region.parameter_ids().size());
         ASSERT_EQ(3u, region.instruction_ids().size());
-        EXPECT_NE(first_move.id(), region.instruction_ids()[0]);
-        EXPECT_NE(second_move.id(), region.instruction_ids()[1]);
+        EXPECT_NE(first_box.id(), region.instruction_ids()[0]);
+        EXPECT_NE(second_box.id(), region.instruction_ids()[1]);
         EXPECT_NE(snapshot.id(), region.instruction_ids()[2]);
-        EXPECT_EQ(InstructionKind::Mov, region.instruction_at(0).kind());
-        EXPECT_EQ(InstructionKind::Mov, region.instruction_at(1).kind());
+        EXPECT_EQ(InstructionKind::BoxF64, region.instruction_at(0).kind());
+        EXPECT_EQ(InstructionKind::BoxF64, region.instruction_at(1).kind());
         EXPECT_EQ(InstructionKind::ExitToInterpreter,
                   region.instruction_at(2).kind());
+    }
+
+    TEST(JitSideExitLowering,
+         RejectsANonTransitionInstructionSelectedForSinking)
+    {
+        EXPECT_DEATH(
+            ([] {
+                CompilationSession session{test::compiler_thread()};
+                GraphBuilder builder(session, IRLevel::Core);
+                Block *entry = builder.emplace_block();
+                ParameterInstruction parameter =
+                    builder.emplace_parameter<ParameterInstruction>(entry);
+                MovInstruction move =
+                    builder.emplace_instruction<MovInstruction>(
+                        entry, TaggedValueRef(parameter));
+                std::array<ProgramValueRef, 1> captured = {
+                    ProgramValueRef(move)};
+                SnapshotInstruction snapshot =
+                    builder.emplace_instruction<SnapshotInstruction>(
+                        entry, captured, BytecodePCOffset{19});
+                builder.emplace_instruction<ResumeInInterpreterInstruction>(
+                    entry, SnapshotRef(snapshot));
+                ControlFlowGraph *graph = builder.finalize();
+
+                SunkInstructionIds sunk =
+                    select_side_exit_sunk_instructions(*graph);
+                sunk.insert(move.id());
+                (void)lower_side_exits(session, *graph, sunk);
+            }()),
+            "not eligible for side-exit sinking");
+    }
+
+    TEST(JitSideExitLowering, DoesNotSelectBoxF64WithAnExecutableUse)
+    {
+        CompilationSession session{test::compiler_thread()};
+        GraphBuilder builder(session, IRLevel::Core);
+        Block *entry = builder.emplace_block();
+        ParameterF64Instruction parameter =
+            builder.emplace_parameter<ParameterF64Instruction>(entry);
+        BoxF64Instruction box = builder.emplace_instruction<BoxF64Instruction>(
+            entry, F64Ref(parameter));
+        builder.emplace_instruction<UnboxF64Instruction>(entry,
+                                                         TaggedValueRef(box));
+        std::array<ProgramValueRef, 1> captured = {ProgramValueRef(box)};
+        SnapshotInstruction snapshot =
+            builder.emplace_instruction<SnapshotInstruction>(
+                entry, captured, BytecodePCOffset{21});
+        builder.emplace_instruction<ResumeInInterpreterInstruction>(
+            entry, SnapshotRef(snapshot));
+        ControlFlowGraph *graph = builder.finalize();
+
+        SunkInstructionIds sunk = select_side_exit_sunk_instructions(*graph);
+
+        ASSERT_EQ(1u, sunk.size());
+        EXPECT_TRUE(sunk.contains(snapshot.id()));
+        EXPECT_FALSE(sunk.contains(box.id()));
+    }
+
+    TEST(JitSideExitLowering, DoesNotSelectUnusedBoxF64)
+    {
+        CompilationSession session{test::compiler_thread()};
+        GraphBuilder builder(session, IRLevel::Core);
+        Block *entry = builder.emplace_block();
+        ParameterF64Instruction floating =
+            builder.emplace_parameter<ParameterF64Instruction>(entry);
+        ParameterInstruction result =
+            builder.emplace_parameter<ParameterInstruction>(entry);
+        BoxF64Instruction box = builder.emplace_instruction<BoxF64Instruction>(
+            entry, F64Ref(floating));
+        std::array<ProgramValueRef, 1> captured = {ProgramValueRef(result)};
+        SnapshotInstruction snapshot =
+            builder.emplace_instruction<SnapshotInstruction>(
+                entry, captured, BytecodePCOffset{22});
+        builder.emplace_instruction<ResumeInInterpreterInstruction>(
+            entry, SnapshotRef(snapshot));
+        ControlFlowGraph *graph = builder.finalize();
+
+        SunkInstructionIds sunk = select_side_exit_sunk_instructions(*graph);
+
+        ASSERT_EQ(1u, sunk.size());
+        EXPECT_TRUE(sunk.contains(snapshot.id()));
+        EXPECT_FALSE(sunk.contains(box.id()));
+    }
+
+    TEST(JitSideExitLowering, DoesNotSelectBoxF64UsedByABlockEdge)
+    {
+        CompilationSession session{test::compiler_thread()};
+        GraphBuilder builder(session, IRLevel::Core);
+        Block *entry = builder.emplace_block();
+        Block *exit = builder.emplace_block();
+        ParameterF64Instruction floating =
+            builder.emplace_parameter<ParameterF64Instruction>(entry);
+        ParameterInstruction guarded =
+            builder.emplace_parameter<ParameterInstruction>(entry);
+        ParameterInstruction result =
+            builder.emplace_parameter<ParameterInstruction>(exit);
+        BoxF64Instruction box = builder.emplace_instruction<BoxF64Instruction>(
+            entry, F64Ref(floating));
+        std::array<ProgramValueRef, 1> captured = {ProgramValueRef(box)};
+        SnapshotInstruction snapshot =
+            builder.emplace_instruction<SnapshotInstruction>(
+                entry, captured, BytecodePCOffset{22});
+        builder.emplace_instruction<InlineTagGuardInstruction>(
+            entry, TaggedValueRef(guarded), SnapshotRef(snapshot),
+            TaggedValueClass::smi());
+        std::array<ProgramValueRef, 1> edge_arguments = {ProgramValueRef(box)};
+        BlockEdge *edge = builder.make_block_edge(entry, exit, edge_arguments);
+        builder.emplace_instruction<UnconditionalBranchInstruction>(entry,
+                                                                    edge);
+        builder.emplace_instruction<BareReturnInstruction>(
+            exit, TaggedValueRef(result));
+        ControlFlowGraph *graph = builder.finalize();
+
+        SunkInstructionIds sunk = select_side_exit_sunk_instructions(*graph);
+
+        ASSERT_EQ(1u, sunk.size());
+        EXPECT_TRUE(sunk.contains(snapshot.id()));
+        EXPECT_FALSE(sunk.contains(box.id()));
     }
 
     TEST(JitSideExitLowering, RejectsASelectedSnapshotWithAnExecutableUse)
@@ -121,7 +240,7 @@ namespace cl::jit
                 entry, TaggedValueRef(guard));
         ControlFlowGraph *graph = builder.finalize();
 
-        SunkInstructionIds sunk = sink_snapshots(*graph);
+        SunkInstructionIds sunk = select_side_exit_sunk_instructions(*graph);
         auto lowered = lower_side_exits(session, *graph, sunk);
 
         ASSERT_TRUE(lowered);
@@ -185,7 +304,7 @@ namespace cl::jit
                 entry, TaggedValueRef(validity_guard));
         ControlFlowGraph *graph = builder.finalize();
 
-        SunkInstructionIds sunk = sink_snapshots(*graph);
+        SunkInstructionIds sunk = select_side_exit_sunk_instructions(*graph);
         auto lowered = lower_side_exits(session, *graph, sunk);
 
         ASSERT_TRUE(lowered);
@@ -244,7 +363,7 @@ namespace cl::jit
                 entry, TaggedValueRef(add));
         ControlFlowGraph *graph = builder.finalize();
 
-        SunkInstructionIds sunk = sink_snapshots(*graph);
+        SunkInstructionIds sunk = select_side_exit_sunk_instructions(*graph);
         auto lowered = lower_side_exits(session, *graph, sunk);
 
         ASSERT_TRUE(lowered);
@@ -308,7 +427,7 @@ namespace cl::jit
             entry, TaggedValueRef(result));
         ControlFlowGraph *graph = builder.finalize();
 
-        SunkInstructionIds sunk = sink_snapshots(*graph);
+        SunkInstructionIds sunk = select_side_exit_sunk_instructions(*graph);
         auto lowered = lower_side_exits(session, *graph, sunk);
 
         ASSERT_TRUE(lowered);
@@ -347,7 +466,7 @@ namespace cl::jit
             entry, SnapshotRef(resume_snapshot));
         ControlFlowGraph *graph = builder.finalize();
 
-        SunkInstructionIds sunk = sink_snapshots(*graph);
+        SunkInstructionIds sunk = select_side_exit_sunk_instructions(*graph);
         auto lowered = lower_side_exits(session, *graph, sunk);
 
         ASSERT_TRUE(lowered);
