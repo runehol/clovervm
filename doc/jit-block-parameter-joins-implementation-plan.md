@@ -420,9 +420,12 @@ without self-edges. Validate that:
 - the new parameter was allocated through the active `RewriteContext`;
 - it is a block parameter valid at the target IR level;
 - it has the old parameter's result class and a different representation;
+- the destination is not a registered normal or exception entry block;
 - no new parameter supplies two output columns;
 - every original incoming edge appears exactly once, with no duplicates or
   foreign edges;
+- none of those incoming edges is being split by the same rewriter
+  transaction;
 - every replacement value has the new parameter's representation and is
   available in that edge's source block before its terminator;
 - the materialization has no unrelated transfer outputs;
@@ -439,8 +442,9 @@ staged successfully. Self-edges are explicitly rejected in 9B.
 
 Tests cover one diamond conversion, destination use redirection, normalization
 metadata, source availability, exact edge coverage, result and representation
-compatibility, allocation ownership, duplicate output parameters, and complete
-CFG verification.
+compatibility, allocation ownership, duplicate output parameters, registered
+entry blocks, simultaneous incoming-edge splits, and complete CFG
+verification.
 
 ### Slice 9C: Add Self-Edges and Simultaneous Conversion Hardening
 

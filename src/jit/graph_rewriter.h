@@ -17,8 +17,10 @@
 #include <functional>
 #include <memory>
 #include <optional>
+#include <span>
 #include <type_traits>
 #include <utility>
+#include <vector>
 
 namespace cl::jit
 {
@@ -133,6 +135,12 @@ namespace cl::jit
         TransferOutputs transfer_outputs_;
     };
 
+    struct IncomingArgumentReplacement
+    {
+        BlockEdgeId edge;
+        ProgramValueRef value;
+    };
+
     class BlockParameterRewrite
     {
     public:
@@ -161,6 +169,20 @@ namespace cl::jit
                 std::move(insertion), result.instruction_id()});
         }
 
+        static BlockParameterRewrite convert_representation(
+            Instruction replacement_parameter,
+            std::span<const IncomingArgumentReplacement> incoming,
+            RewriteInsertion destination_materialization,
+            ProgramValueRef materialized_result)
+        {
+            return BlockParameterRewrite(RepresentationConversion{
+                replacement_parameter.id(),
+                std::vector<IncomingArgumentReplacement>(incoming.begin(),
+                                                         incoming.end()),
+                std::move(destination_materialization),
+                materialized_result.instruction_id()});
+        }
+
     private:
         friend class GraphRewriter;
 
@@ -170,12 +192,21 @@ namespace cl::jit
             InstructionId result;
         };
 
+        struct RepresentationConversion
+        {
+            InstructionId replacement_parameter;
+            std::vector<IncomingArgumentReplacement> incoming;
+            RewriteInsertion destination_materialization;
+            InstructionId materialized_result;
+        };
+
         enum class Kind : uint8_t
         {
             Keep,
             Erase,
             ReplaceWithParameter,
             MaterializeInDestination,
+            ConvertRepresentation,
         };
 
         explicit BlockParameterRewrite(
@@ -191,9 +222,16 @@ namespace cl::jit
         {
         }
 
+        explicit BlockParameterRewrite(RepresentationConversion conversion)
+            : kind_(Kind::ConvertRepresentation),
+              representation_conversion_(std::move(conversion))
+        {
+        }
+
         Kind kind_;
         std::optional<InstructionId> replacement_;
         std::optional<DestinationMaterialization> destination_materialization_;
+        std::optional<RepresentationConversion> representation_conversion_;
     };
 
     class RewriteResult

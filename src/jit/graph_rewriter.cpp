@@ -379,16 +379,32 @@ namespace cl::jit
                     summary.block_parameters_changed |=
                         rewrite.kind_ != BlockParameterRewrite::Kind::Keep;
                     InstructionId original_parameter = join.parameter().id();
-                    std::optional<InstructionId> output_parameter =
-                        rewrite.kind_ == BlockParameterRewrite::Kind::Keep
-                            ? std::optional(original_parameter)
-                            : std::nullopt;
+                    std::optional<InstructionId> output_parameter;
+                    switch(rewrite.kind_)
+                    {
+                        case BlockParameterRewrite::Kind::Keep:
+                            output_parameter = original_parameter;
+                            break;
+                        case BlockParameterRewrite::Kind::ConvertRepresentation:
+                            assert(
+                                rewrite.representation_conversion_.has_value());
+                            output_parameter =
+                                rewrite.representation_conversion_
+                                    ->replacement_parameter;
+                            break;
+                        case BlockParameterRewrite::Kind::Erase:
+                        case BlockParameterRewrite::Kind::ReplaceWithParameter:
+                        case BlockParameterRewrite::Kind::
+                            MaterializeInDestination:
+                            break;
+                    }
                     rewrites.push_back({original_parameter, std::move(rewrite),
                                         output_parameter});
                 }
                 block_parameter_rewrites.emplace(block, std::move(rewrites));
             }
 
+            absl::flat_hash_set<InstructionId> conversion_parameters;
             for(const Block *block: rewrite_blocks)
             {
                 const std::vector<StagedBlockParameterRewrite> &rewrites =
@@ -404,6 +420,7 @@ namespace cl::jit
                         case BlockParameterRewrite::Kind::ReplaceWithParameter:
                         case BlockParameterRewrite::Kind::
                             MaterializeInDestination:
+                        case BlockParameterRewrite::Kind::ConvertRepresentation:
                             has_validated_rewrite = true;
                             break;
                     }
@@ -430,6 +447,132 @@ namespace cl::jit
                             block->parameter_ids_[index],
                         "a staged JIT block parameter rewrite changed "
                         "identity");
+                    if(rewrite.kind_ ==
+                       BlockParameterRewrite::Kind::ConvertRepresentation)
+                    {
+                        require_rewrite_invariant(
+                            rewrite.representation_conversion_.has_value(),
+                            "a JIT block parameter representation conversion "
+                            "has no description");
+                        const BlockParameterRewrite::RepresentationConversion
+                            &conversion = *rewrite.representation_conversion_;
+                        Instruction original =
+                            storage_->instruction(staged.original_parameter);
+                        Instruction replacement = storage_->instruction(
+                            conversion.replacement_parameter);
+                        require_rewrite_invariant(
+                            allocated_instructions.contains(replacement.id()),
+                            "a JIT block parameter representation conversion "
+                            "parameter was not allocated through this "
+                            "rewrite's context");
+                        require_rewrite_invariant(
+                            is_block_parameter_kind(replacement.kind()),
+                            "a JIT block parameter representation conversion "
+                            "replacement is not a block parameter");
+                        require_rewrite_invariant(
+                            instruction_kind_is_allowed_at(replacement.kind(),
+                                                           target_ir_level_),
+                            "a JIT block parameter representation conversion "
+                            "replacement is not legal at the target IR level");
+                        require_rewrite_invariant(
+                            original.result_class() ==
+                                replacement.result_class(),
+                            "a JIT block parameter representation conversion "
+                            "replacement has an incompatible result class");
+                        require_rewrite_invariant(
+                            original.value_representation() !=
+                                replacement.value_representation(),
+                            "a JIT block parameter representation conversion "
+                            "does not change representation");
+                        require_rewrite_invariant(
+                            conversion_parameters.insert(replacement.id())
+                                .second,
+                            "a JIT block parameter representation conversion "
+                            "parameter supplies more than one output column");
+
+                        bool is_entry_block = false;
+                        for(const Block *entry: graph_->entry_blocks())
+                        {
+                            is_entry_block |= entry == block;
+                        }
+                        require_rewrite_invariant(
+                            !is_entry_block,
+                            "a registered JIT entry block parameter cannot "
+                            "change representation");
+
+                        absl::flat_hash_set<BlockEdgeId> expected_edges;
+                        expected_edges.reserve(
+                            block->predecessor_edges().size());
+                        for(const BlockEdge *edge: block->predecessor_edges())
+                        {
+                            require_rewrite_invariant(
+                                edge->source() != block,
+                                "a JIT block parameter representation "
+                                "conversion may not include a self-edge");
+                            expected_edges.insert(edge->id());
+                        }
+
+                        absl::flat_hash_set<BlockEdgeId> supplied_edges;
+                        supplied_edges.reserve(conversion.incoming.size());
+                        for(const IncomingArgumentReplacement &incoming:
+                            conversion.incoming)
+                        {
+                            require_rewrite_invariant(
+                                incoming.edge.value() <
+                                    storage_->next_block_edge_id().value(),
+                                "a JIT block parameter representation "
+                                "conversion names an unknown incoming edge");
+                            require_rewrite_invariant(
+                                supplied_edges.insert(incoming.edge).second,
+                                "a JIT block parameter representation "
+                                "conversion names an incoming edge more than "
+                                "once");
+                            require_rewrite_invariant(
+                                expected_edges.contains(incoming.edge),
+                                "a JIT block parameter representation "
+                                "conversion names a foreign incoming edge");
+                            Instruction value = storage_->instruction(
+                                incoming.value.instruction_id());
+                            require_rewrite_invariant(
+                                value.value_representation() ==
+                                    replacement.value_representation(),
+                                "a JIT block parameter representation "
+                                "conversion incoming value has an incompatible "
+                                "representation");
+                        }
+                        require_rewrite_invariant(
+                            supplied_edges.size() == expected_edges.size(),
+                            "a JIT block parameter representation conversion "
+                            "does not replace every incoming edge");
+
+                        require_rewrite_invariant(
+                            conversion.destination_materialization
+                                .transfer_outputs_.empty(),
+                            "a JIT block parameter representation conversion "
+                            "materialization may not transfer unrelated "
+                            "definitions");
+                        size_t result_occurrences = 0;
+                        for(Instruction instruction:
+                            conversion.destination_materialization
+                                .instructions_)
+                        {
+                            result_occurrences +=
+                                instruction.id() ==
+                                conversion.materialized_result;
+                        }
+                        require_rewrite_invariant(
+                            result_occurrences == 1,
+                            "a JIT block parameter representation conversion "
+                            "materialized result must be emitted exactly once");
+                        require_rewrite_invariant(
+                            compatible_results(
+                                original, storage_->instruction(
+                                              conversion.materialized_result)),
+                            "a JIT block parameter representation conversion "
+                            "materialized result is incompatible with the old "
+                            "parameter");
+                        continue;
+                    }
                     if(rewrite.kind_ ==
                        BlockParameterRewrite::Kind::MaterializeInDestination)
                     {
@@ -691,40 +834,65 @@ namespace cl::jit
                     destination_materialization_inputs = available_defs;
                 const std::vector<StagedBlockParameterRewrite> &rewrites =
                     block_parameter_rewrites.at(block);
+                auto materialize_parameter =
+                    [&](const StagedBlockParameterRewrite &staged_parameter,
+                        RewriteInsertion insertion, InstructionId result,
+                        const char *missing_result_message,
+                        const char *duplicate_replacement_message) {
+                        process_insertion(std::move(insertion),
+                                          &destination_materialization_inputs);
+                        auto normalized_result = def_replacements.find(result);
+                        require_rewrite_invariant(
+                            normalized_result != def_replacements.end() &&
+                                normalized_result->second.def.has_value() &&
+                                !normalized_result->second.erased,
+                            missing_result_message);
+                        InstructionId replacement =
+                            *normalized_result->second.def;
+                        bool inserted =
+                            def_replacements
+                                .emplace(staged_parameter.original_parameter,
+                                         DefReplacement{replacement, false})
+                                .second;
+                        require_rewrite_invariant(
+                            inserted, duplicate_replacement_message);
+                        record_normalization(
+                            staged_parameter.original_parameter, replacement);
+                    };
                 for(const StagedBlockParameterRewrite &staged_parameter:
                     rewrites)
                 {
                     const BlockParameterRewrite &rewrite =
                         staged_parameter.rewrite;
-                    if(rewrite.kind_ !=
+                    if(rewrite.kind_ ==
                        BlockParameterRewrite::Kind::MaterializeInDestination)
                     {
+                        const BlockParameterRewrite::DestinationMaterialization
+                            &materialization =
+                                *rewrite.destination_materialization_;
+                        materialize_parameter(
+                            staged_parameter, materialization.insertion,
+                            materialization.result,
+                            "a JIT block parameter materialization result was "
+                            "not inserted",
+                            "a JIT block parameter materialization has more "
+                            "than one replacement");
                         continue;
                     }
-                    const BlockParameterRewrite::DestinationMaterialization &
-                        materialization = *rewrite.destination_materialization_;
-                    process_insertion(materialization.insertion,
-                                      &destination_materialization_inputs);
-                    auto normalized_result =
-                        def_replacements.find(materialization.result);
-                    require_rewrite_invariant(
-                        normalized_result != def_replacements.end() &&
-                            normalized_result->second.def.has_value() &&
-                            !normalized_result->second.erased,
-                        "a JIT block parameter materialization result was not "
-                        "inserted");
-                    InstructionId replacement = *normalized_result->second.def;
-                    bool inserted =
-                        def_replacements
-                            .emplace(staged_parameter.original_parameter,
-                                     DefReplacement{replacement, false})
-                            .second;
-                    require_rewrite_invariant(
-                        inserted,
-                        "a JIT block parameter materialization has more than "
-                        "one replacement");
-                    record_normalization(staged_parameter.original_parameter,
-                                         replacement);
+                    if(rewrite.kind_ ==
+                       BlockParameterRewrite::Kind::ConvertRepresentation)
+                    {
+                        const BlockParameterRewrite::RepresentationConversion
+                            &conversion = *rewrite.representation_conversion_;
+                        materialize_parameter(
+                            staged_parameter,
+                            conversion.destination_materialization,
+                            conversion.materialized_result,
+                            "a JIT block parameter representation conversion "
+                            "materialized result was not inserted",
+                            "a JIT block parameter representation conversion "
+                            "has more than one replacement");
+                    }
                 }
             }
 
@@ -771,33 +939,82 @@ namespace cl::jit
                         {
                             if constexpr(HasBlockParameterCallback)
                             {
+                                const StagedBlockParameterRewrite
+                                    &parameter_rewrite =
+                                        (*parameter_rewrites)[index];
                                 require_rewrite_invariant(
-                                    (*parameter_rewrites)[index]
-                                            .original_parameter ==
+                                    parameter_rewrite.original_parameter ==
                                         edge->target()->parameter_ids_[index],
                                     "a staged JIT block parameter rewrite "
                                     "changed identity");
-                                if(!(*parameter_rewrites)[index]
-                                        .output_parameter.has_value())
+                                if(!parameter_rewrite.output_parameter
+                                        .has_value())
                                 {
                                     changed = true;
                                     continue;
                                 }
-                                require_rewrite_invariant(
-                                    *(*parameter_rewrites)[index]
-                                            .output_parameter ==
-                                        (*parameter_rewrites)[index]
-                                            .original_parameter,
-                                    "a staged replacement parameter has no "
-                                    "replacement edge column");
                             }
                             ProgramValueRef argument = edge->arguments()[index];
+                            if constexpr(HasBlockParameterCallback)
+                            {
+                                const StagedBlockParameterRewrite
+                                    &parameter_rewrite =
+                                        (*parameter_rewrites)[index];
+                                if(parameter_rewrite.rewrite.kind_ ==
+                                   BlockParameterRewrite::Kind::
+                                       ConvertRepresentation)
+                                {
+                                    const BlockParameterRewrite::
+                                        RepresentationConversion &conversion =
+                                            *parameter_rewrite.rewrite
+                                                 .representation_conversion_;
+                                    bool found_replacement = false;
+                                    for(const IncomingArgumentReplacement
+                                            &incoming: conversion.incoming)
+                                    {
+                                        if(incoming.edge == edge->id())
+                                        {
+                                            argument = incoming.value;
+                                            found_replacement = true;
+                                            break;
+                                        }
+                                    }
+                                    require_rewrite_invariant(
+                                        found_replacement,
+                                        "a JIT block parameter representation "
+                                        "conversion has no replacement for an "
+                                        "incoming edge");
+                                    changed = true;
+                                }
+                                else
+                                {
+                                    require_rewrite_invariant(
+                                        *parameter_rewrite.output_parameter ==
+                                            parameter_rewrite
+                                                .original_parameter,
+                                        "a staged replacement parameter has "
+                                        "no replacement edge column");
+                                }
+                            }
                             InstructionId resolved =
                                 resolver.resolve(argument.instruction_id());
                             require_rewrite_invariant(
                                 available_defs.contains(resolved),
                                 "rewritten block edge refers to a definition "
                                 "outside its source block or after the edge");
+                            if constexpr(HasBlockParameterCallback)
+                            {
+                                Instruction output_parameter =
+                                    storage_->instruction(
+                                        *(*parameter_rewrites)[index]
+                                             .output_parameter);
+                                require_rewrite_invariant(
+                                    storage_->instruction(resolved)
+                                            .value_representation() ==
+                                        output_parameter.value_representation(),
+                                    "rewritten block edge has an argument with "
+                                    "an incompatible representation");
+                            }
                             changed |= resolved != argument.instruction_id();
                             arguments.emplace_back(
                                 storage_->instruction(resolved));
