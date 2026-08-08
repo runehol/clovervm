@@ -1728,6 +1728,91 @@ namespace cl::jit
                   fixture.call(L"positive", operand.value().raw_value()));
     }
 
+    TEST(AArch64Execution,
+         PreservesFloatIdentityAcrossF64BlockParameterConversion)
+    {
+        class Observer : public JitCompilationObserver
+        {
+        public:
+            void on_core_ir_optimized(const ControlFlowGraph &graph) override
+            {
+                for(const Block *block: graph.blocks())
+                {
+                    if(block == graph.normal_entry_block())
+                    {
+                        continue;
+                    }
+                    for(Instruction parameter: block->parameters())
+                    {
+                        if(parameter.kind() == InstructionKind::ParameterF64)
+                        {
+                            ++converted_parameter_count;
+                        }
+                    }
+                }
+            }
+
+            size_t converted_parameter_count = 0;
+        };
+
+        PythonJitExecutionFixture fixture;
+        fixture.execute_module(L"def distinct(a, b, flag):\n"
+                               L"    if flag is True:\n"
+                               L"        x = a + b\n"
+                               L"        y = a + b\n"
+                               L"        sink = flag is True\n"
+                               L"    else:\n"
+                               L"        x = a - b\n"
+                               L"        y = a - b\n"
+                               L"        sink = flag is True\n"
+                               L"    return x is y\n"
+                               L"\n"
+                               L"def aliased(a, b, flag):\n"
+                               L"    if flag is True:\n"
+                               L"        x = a + b\n"
+                               L"        y = x\n"
+                               L"        sink = flag is True\n"
+                               L"    else:\n"
+                               L"        x = a - b\n"
+                               L"        y = x\n"
+                               L"        sink = flag is True\n"
+                               L"    return x is y\n");
+
+        Owned<TValue<Float>> lhs(
+            fixture.thread()->make_object_value<Float>(2.5));
+        Owned<TValue<Float>> rhs(
+            fixture.thread()->make_object_value<Float>(1.25));
+        Value lhs_value = lhs.value().raw_value();
+        Value rhs_value = rhs.value().raw_value();
+
+        EXPECT_EQ(Value::False(), fixture.call(L"distinct", lhs_value,
+                                               rhs_value, Value::True()));
+        EXPECT_EQ(Value::False(), fixture.call(L"distinct", lhs_value,
+                                               rhs_value, Value::False()));
+        EXPECT_EQ(Value::True(), fixture.call(L"aliased", lhs_value, rhs_value,
+                                              Value::True()));
+        EXPECT_EQ(Value::True(), fixture.call(L"aliased", lhs_value, rhs_value,
+                                              Value::False()));
+
+        Observer distinct_observer;
+        ASSERT_TRUE(fixture.jit_compile(
+            L"distinct", JitCompilerOptions{&distinct_observer}));
+        EXPECT_EQ(2u, distinct_observer.converted_parameter_count);
+        EXPECT_EQ(Value::False(), fixture.call(L"distinct", lhs_value,
+                                               rhs_value, Value::True()));
+        EXPECT_EQ(Value::False(), fixture.call(L"distinct", lhs_value,
+                                               rhs_value, Value::False()));
+
+        Observer aliased_observer;
+        ASSERT_TRUE(fixture.jit_compile(L"aliased",
+                                        JitCompilerOptions{&aliased_observer}));
+        EXPECT_EQ(0u, aliased_observer.converted_parameter_count);
+        EXPECT_EQ(Value::True(), fixture.call(L"aliased", lhs_value, rhs_value,
+                                              Value::True()));
+        EXPECT_EQ(Value::True(), fixture.call(L"aliased", lhs_value, rhs_value,
+                                              Value::False()));
+    }
+
     TEST(AArch64Execution, ResumesInterpreterForStringAdditionSideExit)
     {
         PythonJitExecutionFixture fixture;
