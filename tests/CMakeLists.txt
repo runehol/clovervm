@@ -40,6 +40,7 @@ target_sources(test_clovervm PRIVATE
 	test_jit_block_parameter_join.cpp
 	test_jit_cfg.cpp
 	test_jit_core_bytecode_translator.cpp
+	test_jit_core_ir_optimization.cpp
 	test_jit_constant_folding.cpp
 	test_jit_dead_code_elimination.cpp
 	test_jit_equivalent_block_parameters.cpp

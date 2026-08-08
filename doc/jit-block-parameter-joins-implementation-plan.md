@@ -528,10 +528,14 @@ Place the passes in a canonical direction that cannot recreate their inputs:
 5. equivalent-parameter elimination;
 6. dead-code elimination.
 
-Any repeated structural group has a fixed maximum round count and reports an
-optimization error on exhaustion. Successful conversion must strictly reduce
-the selected measure, initially the number of eligible boxed incoming join
-arguments, so the pipeline cannot alternate tagged and F64 representations.
+Run the complete sequence until one round reports no changes, up to a fixed
+limit of eight rounds. Each pass commits before the next pass runs, and each new
+round therefore obtains fresh analyses, use lists, and ephemeral join views.
+Reaching the limit is not a compilation failure: every optimization is optional
+and every committed round leaves valid executable IR. Successful conversion
+strictly reduces the number of eligible boxed incoming join arguments, while
+the remaining passes only remove or refine IR, so the pipeline should converge
+well before the defensive limit.
 
 Run focused tests after each slice and `ninja -C build-debug all check` after
 every C++ change. Before pushing the completed sequence, run
