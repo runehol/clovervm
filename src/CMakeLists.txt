@@ -118,6 +118,8 @@ add_library(libclovervm_objects OBJECT
     jit/block_fixed_point.h
     jit/block_order.cpp
     jit/block_order.h
+    jit/block_parameter_join.cpp
+    jit/block_parameter_join.h
     jit/cfg_verifier.cpp
     jit/cfg_verifier.h
     jit/compilation_storage.cpp

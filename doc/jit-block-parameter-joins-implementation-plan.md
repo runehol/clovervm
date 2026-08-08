@@ -4,7 +4,7 @@
 |---|---|
 | Document type | Implementation plan |
 | Status | Accepted |
-| Implementation | Partial: slices 1 through 3 are implemented; slices 4 through 9 are not started |
+| Implementation | Partial: slices 1 through 4 are implemented; slices 5 through 9 are not started |
 | Scope | Staged implementation of block-entry metadata, block traversal, fixed-point scheduling, block-parameter joins, destination-only join rewriting, constant join folding, and restricted cross-edge F64 conversion |
 | Owning layers | `Value::operator==` defines CloverVM tagged-identity comparison; bytecode lowering registers CFG entries; the CFG owns entry metadata and join structure; traversal owns ordering and scheduling; analyses own transfer and conservative fallback; `GraphRewriter` owns atomic join mutation; optimization passes own semantic legality |
 | Validated against | N/A |
@@ -144,7 +144,7 @@ Add the common CFG relationship:
 ```cpp
 struct IncomingArgument
 {
-    const BlockEdge &edge;
+    BlockEdgeId edge;
     ProgramValueRef value;
 };
 
@@ -153,15 +153,22 @@ class BlockParameterJoin
 public:
     const Block &block() const;
     Instruction parameter() const;
-    IncomingArgumentRange incoming_arguments() const;
-    ProgramValueRef argument_from(const BlockEdge &) const;
+    auto incoming_arguments() const;
+    ProgramValueRef argument_from(BlockEdgeId) const;
+};
+
+class ControlFlowGraph
+{
+public:
+    auto block_parameter_joins(const Block &) const;
 };
 ```
 
 The parameter instruction ID identifies the join. The CFG privately resolves
 the parameter's argument-column index; passes do not retain or mutate that
-index. The view records the graph generation and rejects use after structural
-mutation.
+index. Both queries use lazy standard transform views rather than custom
+iterators or allocated vectors. Joins and their borrowed ranges are ephemeral
+and are not retained across structural mutation.
 
 Refactor three existing clients without changing their semantics:
 
@@ -176,8 +183,7 @@ fact to `unknown`; this is conservative and preserves the current infallible
 `GraphQueries` preparation API.
 
 Tests retain all existing analysis cases and add exception-entry facts,
-self-edge joins, two distinct edges with one source and target, and stale-view
-rejection.
+self-edge joins, and two distinct edges with one source and target.
 
 ## Slice 5: Make Block-Parameter Callbacks Join-Based
 

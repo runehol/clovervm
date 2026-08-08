@@ -4,7 +4,7 @@
 |---|---|
 | Document type | Design |
 | Status | Accepted |
-| Implementation | Partial: entry metadata, complete block ordering, and fixed-point scheduling are implemented; block-parameter joins and atomic join conversion are not started |
+| Implementation | Partial: entry metadata, block ordering, fixed-point scheduling, and read-only block-parameter joins are implemented; atomic join conversion is not started |
 | Scope | A shared view of block parameters and their incoming edge arguments, reusable block traversal and fixed-point scheduling, and atomic block-parameter rewrites |
 | Owning layers | The CFG owns entry metadata and join structure; traversal owns ordering and scheduling; analyses own lattices and transfer functions; transformation passes own legality; the graph rewriter owns atomic structural mutation |
 | Validated against | N/A |
@@ -27,7 +27,7 @@ incoming values:
 ```cpp
 struct IncomingArgument
 {
-    const BlockEdge &edge;
+    BlockEdgeId edge;
     ProgramValueRef value;
 };
 
@@ -36,19 +36,26 @@ class BlockParameterJoin
 public:
     const Block &block() const;
     Instruction parameter() const;
-    IncomingArgumentRange incoming_arguments() const;
-    ProgramValueRef argument_from(const BlockEdge &edge) const;
+    auto incoming_arguments() const;
+    ProgramValueRef argument_from(BlockEdgeId edge) const;
+};
+
+class ControlFlowGraph
+{
+public:
+    auto block_parameter_joins(const Block &) const;
 };
 ```
 
 The parameter instruction ID is the relationship's structural identity. The
 argument-column index is a private implementation detail resolved from that ID
-when constructing or committing the view. A join view is valid only for the
-graph generation from which it was obtained. Structural mutation invalidates
-it.
+when constructing or committing the view. Both range queries are lazy standard
+transform views and allocate no intermediate storage. A join is valid only for
+the immediate traversal that produced it. The joins and ranges are ephemeral
+borrowed views and must not be retained across structural mutation.
 
-The read view belongs to the CFG or `GraphQueries`, not to `GraphRewriter`.
-Read-only analyses and transformations both consume it.
+The read view belongs to the CFG, not to `GraphRewriter`. Read-only analyses
+and transformations both consume it.
 
 Existing code that consumes this relationship includes:
 
@@ -298,8 +305,9 @@ do
 while(summary.changed());
 ```
 
-A committed rewrite creates a new graph generation and invalidates join views
-and cached analyses. Each round therefore obtains fresh views and queries.
+A committed rewrite invalidates ephemeral join views and advances the graph
+generation used by cached analyses. Each round therefore obtains fresh views
+and queries.
 The structural pass owns a termination argument and a fixed maximum number of
 rounds. Reaching that maximum causes compilation fallback rather than accepting
 a partially simplified graph. The dataflow fixed-point driver must not be

@@ -1,16 +1,17 @@
 #include "jit/tagged_value_fact_analysis.h"
 
+#include "jit/block_fixed_point.h"
+#include "jit/block_parameter_join.h"
 #include "jit/compilation_storage.h"
 #include "jit/control_flow_graph.h"
 #include "object_model/class_object.h"
 #include "runtime/fatal.h"
 #include "runtime/thread_state.h"
 
-#include <absl/container/flat_hash_set.h>
-
 #include <cassert>
+#include <cstddef>
 #include <cstdint>
-#include <vector>
+#include <limits>
 
 namespace cl::jit
 {
@@ -25,6 +26,20 @@ namespace cl::jit
             return TaggedValueSet::from_inline_tag(
                 uint8_t(value.as.integer & value_tag_mask));
         }
+
+        size_t tagged_fact_revisit_budget(size_t definition_count,
+                                          size_t block_edge_count)
+        {
+            constexpr size_t revisits_per_graph_element = 64;
+            constexpr size_t maximum = std::numeric_limits<size_t>::max();
+            size_t graph_elements =
+                definition_count > maximum - block_edge_count
+                    ? maximum
+                    : definition_count + block_edge_count;
+            return graph_elements > maximum / revisits_per_graph_element
+                       ? maximum
+                       : graph_elements * revisits_per_graph_element;
+        }
     }  // namespace
 
     TaggedValueFactAnalysis::TaggedValueFactAnalysis(
@@ -37,10 +52,12 @@ namespace cl::jit
                                  ->get_instance_root_shape();
 
         size_t definition_count = 0;
+        size_t block_edge_count = 0;
         for(const Block *block: graph.blocks())
         {
             definition_count += block->parameters().size();
             definition_count += block->instructions().size();
+            block_edge_count += block->block_successor_edges().size();
         }
         facts_.reserve(definition_count);
 
@@ -84,22 +101,18 @@ namespace cl::jit
             return true;
         };
 
-        for(Instruction parameter: graph.normal_entry_block()->parameters())
+        for(const Block *entry: graph.entry_blocks())
         {
-            if(parameter.result_class() == ResultClass::ProgramValue &&
-               parameter.value_representation() ==
-                   ValueRepresentation::TaggedValue)
+            for(Instruction parameter: entry->parameters())
             {
-                widen(parameter.id(), TaggedValueSet::unknown());
+                if(parameter.result_class() == ResultClass::ProgramValue &&
+                   parameter.value_representation() ==
+                       ValueRepresentation::TaggedValue)
+                {
+                    widen(parameter.id(), TaggedValueSet::unknown());
+                }
             }
         }
-
-        absl::flat_hash_set<const Block *> reachable;
-        absl::flat_hash_set<const Block *> queued;
-        std::vector<const Block *> worklist;
-        reachable.insert(graph.normal_entry_block());
-        queued.insert(graph.normal_entry_block());
-        worklist.push_back(graph.normal_entry_block());
 
         auto instruction_facts = [&](Instruction instruction) {
             switch(instruction_family_kind(instruction.kind()))
@@ -162,45 +175,50 @@ namespace cl::jit
             return TaggedValueSet::unknown();
         };
 
-        while(!worklist.empty())
-        {
-            const Block *block = worklist.back();
-            worklist.pop_back();
-            queued.erase(block);
-
-            for(Instruction instruction: block->instructions())
-            {
-                if(instruction.result_class() != ResultClass::ProgramValue ||
-                   instruction.value_representation() !=
-                       ValueRepresentation::TaggedValue)
+        FixedPointStatus status = iterate_blocks_to_fixed_point(
+            graph, BlockOrder::Forward,
+            tagged_fact_revisit_budget(facts_.size(), block_edge_count),
+            [&](const Block &block) {
+                bool changed = false;
+                for(BlockParameterJoin join: graph.block_parameter_joins(block))
                 {
-                    continue;
-                }
-                widen(instruction.id(), instruction_facts(instruction));
-            }
-
-            for(const BlockEdge *edge: block->block_successor_edges())
-            {
-                const Block *target = edge->target();
-                bool target_changed = reachable.insert(target).second;
-                assert(edge->arguments().size() == target->parameters().size());
-                for(size_t index = 0; index < target->parameters().size();
-                    ++index)
-                {
-                    Instruction parameter = target->parameter_at(index);
+                    Instruction parameter = join.parameter();
                     if(parameter.result_class() != ResultClass::ProgramValue ||
                        parameter.value_representation() !=
                            ValueRepresentation::TaggedValue)
                     {
                         continue;
                     }
-                    target_changed |= widen(
-                        parameter.id(), facts_for(edge->arguments()[index]));
+
+                    TaggedValueSet incoming = TaggedValueSet::never();
+                    for(IncomingArgument argument: join.incoming_arguments())
+                    {
+                        incoming = incoming.merge(facts_for(argument.value));
+                    }
+                    changed |= widen(parameter.id(), incoming);
                 }
-                if(target_changed && queued.insert(target).second)
+
+                for(Instruction instruction: block.instructions())
                 {
-                    worklist.push_back(target);
+                    if(instruction.result_class() !=
+                           ResultClass::ProgramValue ||
+                       instruction.value_representation() !=
+                           ValueRepresentation::TaggedValue)
+                    {
+                        continue;
+                    }
+                    changed |=
+                        widen(instruction.id(), instruction_facts(instruction));
                 }
+                return changed ? DataflowUpdate::Changed
+                               : DataflowUpdate::Unchanged;
+            });
+
+        if(status == FixedPointStatus::RevisitLimitReached)
+        {
+            for(auto &fact: facts_)
+            {
+                fact.second = TaggedValueSet::unknown();
             }
         }
     }

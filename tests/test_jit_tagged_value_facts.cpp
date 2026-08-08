@@ -156,6 +156,32 @@ namespace cl::jit
                   queries.tagged_value_facts_of(ProgramValueRef(comparison)));
     }
 
+    TEST(JitTaggedValueFactAnalysis,
+         SeedsExceptionEntryParametersWithUnknownFacts)
+    {
+        CompilationSession session{test::compiler_thread()};
+        GraphBuilder builder(session, IRLevel::Core);
+        Block *entry = builder.emplace_block();
+        Block *exception_entry = builder.emplace_block();
+        builder.register_exception_entry_block(exception_entry);
+
+        ConstInstruction result =
+            builder.emplace_instruction<ConstInstruction>(entry, Value::None());
+        builder.emplace_instruction<BareReturnInstruction>(
+            entry, TaggedValueRef(result));
+        ParameterInstruction exception_parameter =
+            builder.emplace_parameter<ParameterInstruction>(exception_entry);
+        builder.emplace_instruction<BareReturnInstruction>(
+            exception_entry, TaggedValueRef(exception_parameter));
+        ControlFlowGraph *graph = builder.finalize();
+
+        GraphQueries queries =
+            graph->prepare_queries(GraphQuery::TaggedValueFacts);
+        EXPECT_EQ(TaggedValueSet::unknown(),
+                  queries.tagged_value_facts_of(
+                      ProgramValueRef(exception_parameter)));
+    }
+
     TEST(JitTaggedValueFactAnalysis, RetainsExactFloatShapeAcrossMerge)
     {
         test::VmTestContext context;

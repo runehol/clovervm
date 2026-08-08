@@ -1,5 +1,6 @@
 #include "jit/equivalent_block_parameters.h"
 
+#include "jit/block_parameter_join.h"
 #include "jit/control_flow_graph.h"
 #include "jit/graph_rewriter.h"
 
@@ -56,15 +57,14 @@ namespace cl::jit
 
             absl::flat_hash_map<InstructionId, InstructionId>
                 representative_by_base;
-            for(size_t index = 0; index < block->parameters().size(); ++index)
+            for(BlockParameterJoin join: graph.block_parameter_joins(*block))
             {
-                Instruction parameter = block->parameter_at(index);
+                Instruction parameter = join.parameter();
                 std::optional<InstructionId> base;
                 bool equivalent = true;
-                for(const BlockEdge *edge: block->predecessor_edges())
+                for(IncomingArgument incoming: join.incoming_arguments())
                 {
-                    InstructionId argument =
-                        edge->arguments()[index].instruction_id();
+                    InstructionId argument = incoming.value.instruction_id();
                     if(argument == parameter.id())
                     {
                         continue;

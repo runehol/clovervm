@@ -207,6 +207,7 @@ namespace cl::jit
         }
 
         bool owns_block(const Block *block) const;
+        auto block_parameter_joins(const Block &block) const;
         GraphQueries prepare_queries(GraphQuery queries) const;
 
     private:

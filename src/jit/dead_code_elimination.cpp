@@ -1,12 +1,12 @@
 #include "jit/dead_code_elimination.h"
 
+#include "jit/block_parameter_join.h"
 #include "jit/compilation_storage.h"
 #include "jit/graph_rewriter.h"
 
 #include <absl/container/flat_hash_map.h>
 #include <absl/container/flat_hash_set.h>
 
-#include <cassert>
 #include <cstddef>
 #include <vector>
 
@@ -14,12 +14,6 @@ namespace cl::jit
 {
     namespace
     {
-        struct BlockParameterPosition
-        {
-            const Block *block;
-            size_t index;
-        };
-
         bool instruction_can_be_eliminated(const Instruction &instruction)
         {
             return instruction.result_class() != ResultClass::None &&
@@ -67,14 +61,12 @@ namespace cl::jit
     Result<bool, JitCompilationError>
     eliminate_dead_code(CompilationSession &session, ControlFlowGraph &graph)
     {
-        absl::flat_hash_map<InstructionId, BlockParameterPosition>
-            block_parameters;
+        absl::flat_hash_map<InstructionId, BlockParameterJoin> block_parameters;
         for(const Block *block: graph.blocks())
         {
-            for(size_t index = 0; index < block->parameters().size(); ++index)
+            for(BlockParameterJoin join: graph.block_parameter_joins(*block))
             {
-                block_parameters.emplace(block->parameter_at(index).id(),
-                                         BlockParameterPosition{block, index});
+                block_parameters.emplace(join.parameter().id(), join);
             }
         }
 
@@ -105,12 +97,10 @@ namespace cl::jit
             auto parameter = block_parameters.find(instruction_id);
             if(parameter != block_parameters.end())
             {
-                const BlockParameterPosition &position = parameter->second;
-                for(const BlockEdge *edge: position.block->predecessor_edges())
+                for(IncomingArgument incoming:
+                    parameter->second.incoming_arguments())
                 {
-                    assert(position.index < edge->arguments().size());
-                    mark_live(
-                        edge->arguments()[position.index].instruction_id());
+                    mark_live(incoming.value.instruction_id());
                 }
                 continue;
             }
