@@ -20,6 +20,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <optional>
+#include <span>
 #include <utility>
 #include <vector>
 
@@ -510,6 +511,23 @@ namespace cl::jit
                     {
                         assembler.ldr(destination, constant);
                     }
+                    break;
+                }
+
+                case CL_JIT_MACHINE_INSTRUCTION_CASE(
+                    ConstF64Instruction, constant_instruction)
+                {
+                    uint64_t bits = constant_instruction.bits();
+                    ConstantPoolEntry entry =
+                        assembler.emitter().add_data_to_constant_pool(
+                            std::as_bytes(std::span(&bits, 1)));
+                    XRegister scratch =
+                        assigned_temporary(locations, instruction, 0);
+                    assembler.adr(scratch, entry);
+                    assembler.ldr(
+                        assigned_f64_register(locations,
+                                              F64Ref(constant_instruction)),
+                        scratch, 0);
                     break;
                 }
 

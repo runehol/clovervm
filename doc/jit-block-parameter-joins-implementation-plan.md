@@ -4,7 +4,7 @@
 |---|---|
 | Document type | Implementation plan |
 | Status | Accepted |
-| Implementation | Partial: slices 1 through 6 are implemented; slices 7 through 11 are not started |
+| Implementation | Partial: slices 1 through 7 are implemented; slices 8 through 11 are not started |
 | Scope | Staged implementation of block-entry metadata, block traversal, fixed-point scheduling, block-parameter joins, destination-only join rewriting, generic constant folding, and restricted cross-edge F64 conversion |
 | Owning layers | `Value::operator==` defines CloverVM tagged-identity comparison; bytecode lowering registers CFG entries; the CFG owns entry metadata and join structure; traversal owns ordering and scheduling; analyses own transfer and conservative fallback; `GraphRewriter` owns atomic join mutation; optimization passes own semantic legality |
 | Validated against | N/A |
@@ -240,7 +240,8 @@ predecessor-local operands. This slice adds no constant-specific behavior.
 ## Slice 7: Add ConstF64
 
 Add an F64 constant instruction that is valid in Core and Machine IR. Its
-attribute stores the exact `double` payload. Constant comparison uses its bit
+attribute stores the exact `uint64_t` payload bits, and IR printing shows both
+the decoded floating value and those bits. Constant comparison uses the bit
 representation so signed zero and NaN payloads remain distinct.
 
 Teach allocation constraints and the AArch64 emitter to materialize arbitrary

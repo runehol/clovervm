@@ -208,4 +208,28 @@ namespace cl::jit
                   format_ir(*graph));
     }
 
+    TEST(JitIRPrint, PrintsF64ConstantsAsExactBits)
+    {
+        CompilationSession session{test::compiler_thread()};
+        GraphBuilder builder(session, IRLevel::Core);
+        Block *entry = builder.emplace_block();
+        ConstF64Instruction constant =
+            builder.emplace_instruction<ConstF64Instruction>(
+                entry, uint64_t{0x3ff8000000000000});
+        BoxF64Instruction boxed =
+            builder.emplace_instruction<BoxF64Instruction>(entry,
+                                                           F64Ref(constant));
+        builder.emplace_instruction<BareReturnInstruction>(
+            entry, TaggedValueRef(boxed));
+        ControlFlowGraph *graph = builder.finalize();
+
+        EXPECT_EQ("graph {\n"
+                  "bb0:\n"
+                  "  %0 = const_f64 {bits = 1.5 (0x3ff8000000000000)}\n"
+                  "  %1 = box_f64 %0\n"
+                  "  bare_return %1\n"
+                  "}\n",
+                  format_ir(*graph));
+    }
+
 }  // namespace cl::jit

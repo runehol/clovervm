@@ -24,6 +24,7 @@
 #include <gtest/gtest.h>
 
 #include <array>
+#include <bit>
 #include <cassert>
 #include <cstddef>
 #include <cstdint>
@@ -468,6 +469,57 @@ namespace cl::jit
                   function(static_cast<uint64_t>(lhs.raw_value().as.integer),
                            static_cast<uint64_t>(
                                unequal_rhs.raw_value().as.integer)));
+    }
+
+    TEST(AArch64Execution, LoadsConstF64BitsExactly)
+    {
+        test::VmTestContext context;
+        ThreadState::ActivationScope activation_scope(context.thread());
+        CodeObject *code_object = context.compile_file(L"pass\n");
+        code_object->function_signature.n_parameters = 0;
+        constexpr std::array values = {
+            uint64_t{0x3ff8000000000000}, uint64_t{0x0000000000000000},
+            uint64_t{0x8000000000000000}, uint64_t{0x7ff0000000000000},
+            uint64_t{0xfff0000000000000}, uint64_t{0x7ff8000000001234}};
+
+        for(uint64_t bits: values)
+        {
+            CompilationSession session{test::compiler_thread()};
+            GraphBuilder builder(session, IRLevel::Machine);
+            builder.set_bytecode_state_order(BytecodeStateOrder(*code_object));
+            Block *entry = builder.emplace_block();
+            ConstF64Instruction constant =
+                builder.emplace_instruction<ConstF64Instruction>(entry, bits);
+            BoxF64Instruction boxed =
+                builder.emplace_instruction<BoxF64Instruction>(
+                    entry, F64Ref(constant));
+            builder.emplace_instruction<BareReturnInstruction>(
+                entry, TaggedValueRef(boxed));
+            ControlFlowGraph *graph = builder.finalize();
+
+            insert_aarch64_link_register_preservation(session, *graph);
+            AllocationConstraints constraints =
+                make_aarch64_allocation_constraints(*graph);
+            auto allocation = allocate_registers(session, *graph, constraints);
+            ASSERT_TRUE(allocation);
+
+            CodeCache cache;
+            auto emission =
+                emit_aarch64_from_cfg(*graph, allocation.value().locations(),
+                                      cache, no_side_exit_thunk());
+            ASSERT_TRUE(emission);
+            PublishedCode code = std::move(emission).value();
+
+            Value result;
+            result.as.integer = static_cast<int64_t>(
+                execute_published_jit(code, {}, context.thread()));
+            Owned<Value> owned_result(result);
+            ASSERT_TRUE(can_convert_to<Float>(owned_result.raw_value()));
+            EXPECT_EQ(bits,
+                      std::bit_cast<uint64_t>(
+                          owned_result.raw_value().get_ptr<Float>()->value()));
+            EXPECT_FALSE(context.thread()->has_pending_exception());
+        }
     }
 
     TEST(AArch64Execution, FusesF64ComparisonWithBranch)

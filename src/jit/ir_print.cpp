@@ -7,6 +7,7 @@
 
 #include <fmt/format.h>
 
+#include <bit>
 #include <cassert>
 #include <cctype>
 #include <cstddef>
@@ -232,6 +233,12 @@ namespace cl::jit
             {
                 attribute_separator(name);
                 print_value(value);
+            }
+
+            void attribute_F64Bits(std::string_view name, uint64_t bits)
+            {
+                attribute_separator(name);
+                format("{} ({:#018x})", std::bit_cast<double>(bits), bits);
             }
 
             void attribute_BytecodePCOffset(std::string_view name,

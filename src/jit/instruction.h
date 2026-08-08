@@ -1121,6 +1121,7 @@ namespace cl::jit
     using InstructionAttributeStorage_ValidityCell = uint32_t;
     using InstructionAttributeStorage_TaggedValueClass = uint32_t;
     using InstructionAttributeStorage_ValueConstant = uint32_t;
+    using InstructionAttributeStorage_F64Bits = uint64_t;
     using InstructionAttributeStorage_BytecodePCOffset = uint32_t;
     using InstructionAttributeStorage_SideExitRegionId = uint32_t;
     using InstructionAttributeStorage_BlockEdge = uint32_t;
@@ -1163,6 +1164,13 @@ namespace cl::jit
     {
         return load_instruction_value_attribute(
             *storage, decode_instruction_attribute_storage<uint32_t>(words));
+    }
+
+    inline uint64_t
+    decode_instruction_attribute_F64Bits(const CompilationStorage *,
+                                         const uint32_t *words)
+    {
+        return decode_instruction_attribute_storage<uint64_t>(words);
     }
 
     inline BytecodePCOffset
@@ -1229,6 +1237,13 @@ namespace cl::jit
     {
         encode_instruction_attribute_storage(
             words, store_instruction_value_attribute(*storage, value));
+    }
+
+    inline void encode_instruction_attribute_F64Bits(CompilationStorage *,
+                                                     uint32_t *words,
+                                                     uint64_t bits)
+    {
+        encode_instruction_attribute_storage(words, bits);
     }
 
     inline void encode_instruction_attribute_BytecodePCOffset(
@@ -1306,6 +1321,7 @@ namespace cl::jit
 #define CL_JIT_ATTRIBUTE_TYPE_ValidityCell ValidityCell *
 #define CL_JIT_ATTRIBUTE_TYPE_TaggedValueClass TaggedValueClass
 #define CL_JIT_ATTRIBUTE_TYPE_ValueConstant Value
+#define CL_JIT_ATTRIBUTE_TYPE_F64Bits uint64_t
 #define CL_JIT_ATTRIBUTE_TYPE_BytecodePCOffset BytecodePCOffset
 #define CL_JIT_ATTRIBUTE_TYPE_SideExitRegionId SideExitRegionId
 #define CL_JIT_ATTRIBUTE_TYPE_BlockEdge BlockEdge *
@@ -1796,6 +1812,7 @@ namespace cl::jit
 #undef CL_JIT_ATTRIBUTE_TYPE_TrustedHandlerTarget
 #undef CL_JIT_ATTRIBUTE_TYPE_SideExitRegionId
 #undef CL_JIT_ATTRIBUTE_TYPE_BytecodePCOffset
+#undef CL_JIT_ATTRIBUTE_TYPE_F64Bits
 #undef CL_JIT_ATTRIBUTE_TYPE_ValueConstant
 #undef CL_JIT_ATTRIBUTE_TYPE_TaggedValueClass
 #undef CL_JIT_ATTRIBUTE_TYPE_ValidityCell

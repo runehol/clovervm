@@ -380,6 +380,11 @@ namespace cl::jit
                         break;
                     }
 
+                    case MachineInstructionKind::ConstF64:
+                        overrides.push_back(gpr_temporary_constraints(
+                            instruction, std::move(input_overrides)));
+                        break;
+
                     case CL_JIT_MACHINE_INSTRUCTION_CASE(
                         ReturnInstruction, return_instruction)
                     {

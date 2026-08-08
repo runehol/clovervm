@@ -538,6 +538,13 @@ namespace cl::jit
         EXPECT_EQ(EffectProfile::SideExit, AddSMIInstruction::MayEffects);
         EXPECT_EQ(EffectProfile::None, UnboxF64Instruction::MustEffects);
         EXPECT_EQ(EffectProfile::None, UnboxF64Instruction::MayEffects);
+        EXPECT_EQ(ResultClass::ProgramValue, ConstF64Instruction::Result);
+        EXPECT_EQ(ValueRepresentation::F64,
+                  ConstF64Instruction::Representation);
+        EXPECT_EQ(EffectProfile::None, ConstF64Instruction::MustEffects);
+        EXPECT_EQ(EffectProfile::None, ConstF64Instruction::MayEffects);
+        EXPECT_EQ(IRLevelMask::Core | IRLevelMask::Machine,
+                  ConstF64Instruction::AllowedIRLevels);
         EXPECT_EQ(IRLevelMask::Core, AddSMIInstruction::AllowedIRLevels);
         EXPECT_FALSE(AddSMIInstruction::IsVariadic);
         EXPECT_FALSE(AddSMIInstruction::OperandsAreIndirect);
@@ -554,6 +561,7 @@ namespace cl::jit
                           .fixed_operand_count);
         EXPECT_FALSE(UnboxF64Instruction::OperandsAreIndirect);
         EXPECT_FALSE(ConstInstruction::OperandsAreIndirect);
+        EXPECT_FALSE(ConstF64Instruction::OperandsAreIndirect);
         EXPECT_EQ(ResultClass::Snapshot, SnapshotInstruction::Result);
         EXPECT_EQ(ValueRepresentation::None,
                   SnapshotInstruction::Representation);
@@ -608,6 +616,15 @@ namespace cl::jit
         EXPECT_EQ(0u, instruction.operand_count());
         EXPECT_FALSE(instruction.operands_are_indirect());
         EXPECT_EQ(instruction, instruction.as<ConstInstruction>());
+
+        constexpr uint64_t f64_bits = 0xfff8000000001234;
+        ConstF64Instruction f64 =
+            builder.make_instruction<ConstF64Instruction>(f64_bits);
+        EXPECT_EQ(InstructionKind::ConstF64, f64.kind());
+        EXPECT_EQ(f64_bits, f64.bits());
+        EXPECT_EQ(0u, f64.operand_count());
+        EXPECT_FALSE(f64.operands_are_indirect());
+        EXPECT_EQ(f64, f64.as<ConstF64Instruction>());
 
         UninitializedInstruction uninitialized =
             builder.make_instruction<UninitializedInstruction>();
