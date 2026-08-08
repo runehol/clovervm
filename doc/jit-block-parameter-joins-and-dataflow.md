@@ -4,7 +4,7 @@
 |---|---|
 | Document type | Design |
 | Status | Accepted |
-| Implementation | Partial: entry metadata and complete block traversal are implemented; block-parameter joins, fixed-point scheduling, and atomic join conversion are not started |
+| Implementation | Partial: entry metadata, complete block ordering, and fixed-point scheduling are implemented; block-parameter joins and atomic join conversion are not started |
 | Scope | A shared view of block parameters and their incoming edge arguments, reusable block traversal and fixed-point scheduling, and atomic block-parameter rewrites |
 | Owning layers | The CFG owns entry metadata and join structure; traversal owns ordering and scheduling; analyses own lattices and transfer functions; transformation passes own legality; the graph rewriter owns atomic structural mutation |
 | Validated against | N/A |
@@ -222,7 +222,7 @@ enum class DataflowUpdate : uint8_t
 };
 
 iterate_blocks_to_fixed_point(
-    graph, traversal, maximum_revisits,
+    graph, order, maximum_total_revisits,
     [&](const Block &block) -> DataflowUpdate {
         // Changed means information visible to dependants changed.
     });
@@ -232,11 +232,16 @@ During the initial visit, a changed block queues only dependants that have
 already been visited. An unvisited dependant needs no queue entry because its
 guaranteed initial visit will observe all changes accumulated so far. After
 every block has been visited once, the driver drains a FIFO revisit queue.
+Fixed-point iteration accepts forward or backward order; program order has no
+dependency direction and is rejected.
 Scheduling a block already present in the queue is a no-op; scheduling a block
 after it has been removed may enqueue it again. Revisits occur in deterministic
 queuing order and have no separate priority scheme.
 
-The revisit count has a fixed maximum. Reaching it fails the analysis and
+The initial sweep is not included in the revisit count. The revisit count is
+one global total rather than one counter per block. Each analysis supplies a
+generous graph-scaled maximum, normally representing some number of effective
+additional sweeps. Reaching it with work still queued fails the analysis and
 causes ordinary whole-compilation fallback; the driver never returns partial
 facts. The scheduler otherwise does not own the analysis domain. The analysis
 owns its initial facts, lattice, merge operation, transfer function, dependency

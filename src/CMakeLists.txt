@@ -115,6 +115,7 @@ add_library(libclovervm_objects OBJECT
     jit/allocation_verifier.cpp
     jit/bundle_location_assignments.h
     jit/bundle_splitter.cpp
+    jit/block_fixed_point.h
     jit/block_order.cpp
     jit/block_order.h
     jit/cfg_verifier.cpp
@@ -131,6 +132,7 @@ add_library(libclovervm_objects OBJECT
     jit/core_ir_optimization.h
     jit/dead_code_elimination.cpp
     jit/dead_code_elimination.h
+    jit/deduplicating_queue.h
     jit/equivalent_block_parameters.cpp
     jit/equivalent_block_parameters.h
     jit/f64_box_simplification.cpp

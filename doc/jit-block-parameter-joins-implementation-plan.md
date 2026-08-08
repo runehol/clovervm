@@ -4,7 +4,7 @@
 |---|---|
 | Document type | Implementation plan |
 | Status | Accepted |
-| Implementation | Partial: slices 1 and 2 are implemented; slices 3 through 9 are not started |
+| Implementation | Partial: slices 1 through 3 are implemented; slices 4 through 9 are not started |
 | Scope | Staged implementation of block-entry metadata, block traversal, fixed-point scheduling, block-parameter joins, destination-only join rewriting, constant join folding, and restricted cross-edge F64 conversion |
 | Owning layers | `Value::operator==` defines CloverVM tagged-identity comparison; bytecode lowering registers CFG entries; the CFG owns entry metadata and join structure; traversal owns ordering and scheduling; analyses own transfer and conservative fallback; `GraphRewriter` owns atomic join mutation; optimization passes own semantic legality |
 | Validated against | N/A |
@@ -109,7 +109,7 @@ enum class FixedPointStatus : uint8_t
 
 template <typename Callback>
 FixedPointStatus iterate_blocks_to_fixed_point(
-    const ControlFlowGraph &, BlockOrder, size_t maximum_revisits,
+    const ControlFlowGraph &, BlockOrder, size_t maximum_total_revisits,
     Callback &&);
 ```
 
@@ -118,15 +118,20 @@ During that pass, a changed block queues only dependants already visited; an
 unvisited dependant will observe the change during its guaranteed initial
 visit. Forward dependants are successors and backward dependants are
 predecessors.
+`BlockOrder::Program` is rejected because it defines no dependency direction.
 
 The revisit queue is FIFO and contains each block at most once. Removing a
 block clears its queued mark, so a later change may enqueue it again. No
 priority queue or recency priority is used.
 
-The driver returns `RevisitLimitReached` rather than deciding failure policy.
-A fact analysis may conservatively replace its result with top facts. A
-transformation may return a compilation error. No caller may consume a partial
-fixed-point result as if it had converged.
+The guaranteed initial sweep does not count against the limit. One global
+counter records every subsequent callback invocation; there is no per-block
+counter. Each analysis chooses a generous graph-scaled total appropriate to
+its lattice height. The driver returns `RevisitLimitReached` only when the
+limit is exhausted with work still queued, rather than deciding failure
+policy. A fact analysis may conservatively replace its result with top facts.
+A transformation may return a compilation error. No caller may consume a
+partial fixed-point result as if it had converged.
 
 Tests pin the complete initial visit, forward and backward revisits, loop
 convergence, FIFO order, duplicate suppression, self-requeue, and the revisit
