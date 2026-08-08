@@ -126,6 +126,8 @@ add_library(libclovervm_objects OBJECT
     jit/compilation_storage.h
     jit/compilation_session.cpp
     jit/compilation_session.h
+    jit/constant_folding.cpp
+    jit/constant_folding.h
     jit/control_flow_graph.cpp
     jit/control_flow_graph.h
     jit/core_bytecode_translator.cpp

@@ -4,7 +4,7 @@
 |---|---|
 | Document type | Design |
 | Status | Accepted |
-| Implementation | Partial: entry metadata, block ordering, fixed-point scheduling, and read-only block-parameter joins are implemented; atomic join conversion is not started |
+| Implementation | Partial: entry metadata, block ordering, fixed-point scheduling, read-only joins, destination materialization, and constant join folding are implemented; atomic representation conversion is not started |
 | Scope | A shared view of block parameters and their incoming edge arguments, reusable block traversal and fixed-point scheduling, and atomic block-parameter rewrites |
 | Owning layers | The CFG owns entry metadata and join structure; traversal owns ordering and scheduling; analyses own lattices and transfer functions; transformation passes own legality; the graph rewriter owns atomic structural mutation |
 | Validated against | N/A |
@@ -313,6 +313,15 @@ The structural pass owns a termination argument and a fixed maximum number of
 rounds. Reaching that maximum causes compilation fallback rather than accepting
 a partially simplified graph. The dataflow fixed-point driver must not be
 reused merely because both operations repeat until there is no change.
+
+Constant block-parameter folding does not require structural rounds. It first
+folds existing instruction expressions, then propagates an
+`Unresolved`/`ExactConstant`/`NotConstant` lattice through parameter joins with
+the forward fixed-point driver. Tagged constants compare by tagged identity;
+F64 constants perform native host arithmetic but compare their resulting
+representations by bits. Once the analysis converges, all proven parameters are
+materialized in their destination blocks in one atomic rewrite. This handles
+constant parameter chains without repeatedly mutating the graph.
 
 ## Deliberate Boundaries
 

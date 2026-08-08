@@ -4,7 +4,7 @@
 |---|---|
 | Document type | Implementation plan |
 | Status | Accepted |
-| Implementation | Partial: slices 1 through 7 are implemented; slices 8 through 11 are not started |
+| Implementation | Partial: slices 1 through 8 are implemented; slices 9 through 11 are not started |
 | Scope | Staged implementation of block-entry metadata, block traversal, fixed-point scheduling, block-parameter joins, destination-only join rewriting, generic constant folding, and restricted cross-edge F64 conversion |
 | Owning layers | `Value::operator==` defines CloverVM tagged-identity comparison; bytecode lowering registers CFG entries; the CFG owns entry metadata and join structure; traversal owns ordering and scheduling; analyses own transfer and conservative fallback; `GraphRewriter` owns atomic join mutation; optimization passes own semantic legality |
 | Validated against | N/A |
@@ -269,37 +269,83 @@ fold_constants(CompilationSession &, ControlFlowGraph &);
 ```
 
 Its graph-rewriter callback owns both instruction folding and block-parameter
-folding. Initial instruction rules are:
+folding. The folding domain distinguishes tagged identity from native F64
+arithmetic:
+
+```cpp
+struct TaggedConstant
+{
+    Value value;
+};
+
+struct F64Constant
+{
+    double value;
+
+    uint64_t bits() const;
+};
+
+using ConstantValue = std::variant<TaggedConstant, F64Constant>;
+```
+
+Tagged constants compare with `Value::operator==`. F64 constants compare their
+`bits()` values, never with floating-point `operator==`, so signed zero and NaN
+representations remain distinct. F64 folding itself uses native host `double`
+arithmetic. The JIT compiler runs on its target platform; it does not emulate a
+separate soft-float model. `ConstF64` bits are converted to `double` on entry to
+the folding domain and converted back to exact bits when new IR is emitted.
+
+Initial instruction rules are:
 
 - `UnboxF64(Const(exact Float)) -> ConstF64`;
 - `NegF64(ConstF64) -> ConstF64`.
 
-Its initial block-parameter rule is:
+The exact Float rule compares the constant object's shape with the builtin
+Float root shape; it does not fold a Float subclass. Negation applies native
+unary minus to the stored `double`. Later F64 arithmetic rules extend this same
+pass and domain rather than adding operation-specific passes.
 
-- ignore incoming references to the parameter itself;
-- require at least one non-self incoming value;
-- require every non-self input to be a `Const` whose tagged value is
-  equal to the candidate under `Value::operator==`;
-- create a destination `Const` retaining and pinning that exact `Value`;
-- remove the parameter and all corresponding edge arguments.
+Constant block-parameter folding is a read-only forward fixed-point analysis,
+not repeated structural mutation. Its parameter lattice is:
 
-Equal SMIs fold according to CloverVM identity. Distinct equal boxed Floats do
-not fold. A loop with one identical constant entry and an unchanged parameter
-backedge folds to a destination-local constant.
+```text
+Unresolved -> ExactConstant -> NotConstant
+```
 
-Run this structural simplification to a fixed maximum number of rounds. Each
-successful round must remove at least one parameter. Reaching the limit returns
-an optimization error through `JitCompilationError`; it never accepts a
-partially iterated result as final. Add an `OptimizationError` alternative to
-`JitCompilationError`, initially containing `FixedPointLimitReached`, rather
-than overloading register-allocation or code-cache failures. DCE runs after the
-fold to remove dead predecessor constants.
+Registered entry parameters start at `NotConstant`. A self-reference
+contributes `Unresolved`, so one constant entry plus an unchanged self-backedge
+can establish a constant, while a self-only cycle does not. Parameter facts
+flow through other parameters, allowing chains across blocks to converge
+without rewriting the graph between analysis steps. Conflicting constants and
+any non-constant incoming definition produce `NotConstant`. Tagged `Const` and
+`ConstF64` are both recognized. If the graph-scaled fixed-point revisit budget
+is exhausted, join folding is conservatively disabled.
+
+The pass has three phases:
+
+1. fold existing instruction expressions with normalized rewrite inputs;
+2. analyze constant block-parameter joins to a fixed point;
+3. atomically materialize every proven parameter in its destination and fold
+   instructions newly exposed by those replacements with normalized inputs.
+
+Destination tagged constants retain and pin the exact candidate `Value`.
+Destination F64 constants store the candidate's exact bits. The parameter and
+its complete incoming argument column are removed in the same graph-rewriter
+transaction. Equal SMIs fold according to CloverVM identity. Two tagged
+constants holding the same heap object fold; distinct numerically equal boxed
+Floats do not. F64 constants fold only when their bit representations match.
+
+DCE remains separate and later removes dead predecessor constants. This slice
+does not add `OptimizationError`: the only iteration is monotone read-only
+analysis with an existing conservative fallback, while each graph rewrite is a
+single atomic commit.
 
 Tests cover exact tagged identity, distinct equal heap objects, SMI identity,
-self-only cycles, a constant plus self-backedge, mixed constants, multiple
-simultaneous parameter removals, destination locality verification, tagged
-Float unboxing, F64 negation, signed zero, and NaN payload preservation. Later
-constant rules extend this pass rather than adding operation-specific passes.
+self-only cycles, a constant plus self-backedge, parameter chains, registered
+entry parameters, mixed constants, multiple simultaneous parameter removals,
+destination locality verification, tagged Float unboxing, rejection of Float
+subclasses, identical and differing F64 joins, normalized instruction chains,
+F64 negation, signed zero, and NaN payload preservation.
 
 ## Slice 9: Add Atomic Representation Conversion Mechanics
 
