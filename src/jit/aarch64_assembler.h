@@ -797,6 +797,14 @@ namespace cl::jit
                               destination.encoding());
         }
 
+        void emit_movi_64bit_mask(DRegister destination, uint8_t byte_mask)
+        {
+            write_instruction(
+                0x2f00e400 | ((static_cast<uint32_t>(byte_mask) & 0xe0) << 11) |
+                ((static_cast<uint32_t>(byte_mask) & 0x1f) << 5) |
+                destination.encoding());
+        }
+
         template <SIMDElementWidth Width>
         void emit_fp_compare(SIMDScalarRegister<Width> lhs,
                              SIMDScalarRegister<Width> rhs,

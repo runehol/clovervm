@@ -258,6 +258,20 @@ namespace cl::jit
         EXPECT_EQ(0x1e67f006u, instructions[6]);
     }
 
+    TEST(AArch64Assembler, Encodes64BitMaskMOVI)
+    {
+        uint32_t instructions[3] = {};
+        AArch64BufferAssembler assembler(instructions);
+
+        assembler.emit_movi_64bit_mask(DRegister(0), 0x00);
+        assembler.emit_movi_64bit_mask(DRegister(3), 0x81);
+        assembler.emit_movi_64bit_mask(DRegister(31), 0xff);
+
+        EXPECT_EQ(0x2f00e400u, instructions[0]);
+        EXPECT_EQ(0x2f04e423u, instructions[1]);
+        EXPECT_EQ(0x2f07e7ffu, instructions[2]);
+    }
+
     TEST(AArch64Assembler, RecognizesExactlyExpandedF64Immediates)
     {
         for(uint16_t immediate = 0; immediate <= UINT8_MAX; ++immediate)

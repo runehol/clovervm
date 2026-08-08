@@ -247,14 +247,14 @@ representation so signed zero and NaN payloads remain distinct.
 Teach allocation constraints and the AArch64 emitter to materialize arbitrary
 F64 constants without boxing. Constants matching the exact architectural
 expansion of an AArch64 floating-point imm8 use `fmov dN, #imm` and require no
-temporary GPR. All other constants place the exact bits in the untagged
-constant-pool area, obtain the pool address through a reserved backend scratch
-GPR, and load the value into the assigned SIMD register. ConstF64 therefore has
-no allocator constraints; immediate selection remains entirely in emission.
-Representability is decided from the stored `uint64_t` bits, so signed zero and
-NaN payloads are never changed by a floating-point conversion or comparison.
-Dedicated positive- and negative-zero materialization is deferred to a later
-slice.
+temporary GPR. Positive zero uses the 64-bit mask form of `movi dN, #imm`, with
+an all-clear byte mask. All other constants place the exact bits in the
+untagged constant-pool area, obtain the pool address through a reserved backend
+scratch GPR, and load the value into the assigned SIMD register. ConstF64
+therefore has no allocator constraints; immediate selection remains entirely
+in emission. Representability is decided from the stored `uint64_t` bits, so
+negative zero and NaN payloads are never changed by a floating-point conversion
+or comparison. Negative zero remains pool-backed.
 
 Storage, allocation, emission, and execution tests cover ordinary values,
 signed zero, infinities, and a non-canonical NaN payload.

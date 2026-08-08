@@ -521,6 +521,11 @@ namespace cl::jit
                     uint64_t bits = constant_instruction.bits();
                     DRegister destination = assigned_f64_register(
                         locations, F64Ref(constant_instruction));
+                    if(bits == 0)
+                    {
+                        assembler.emit_movi_64bit_mask(destination, 0);
+                        break;
+                    }
                     if(std::optional<uint8_t> immediate =
                            aarch64_detail::try_encode_f64_immediate(bits))
                     {
