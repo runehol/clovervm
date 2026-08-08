@@ -303,7 +303,7 @@ CL_JIT_INSTRUCTION_FAMILY(BinaryArithmeticF64, CL_JIT_IR_LEVELS(CoreMachine),
 #define CL_JIT_BoxF64_OPERANDS(fixed, variadic, snapshot_values)               \
     fixed(source, ProgramValue, F64)
 #define CL_JIT_BoxF64_ATTRIBUTES(attribute)
-CL_JIT_INSTRUCTION(BoxF64, CL_JIT_IR_LEVELS(CoreMachine),
+CL_JIT_INSTRUCTION(BoxF64, CL_JIT_IR_LEVELS(CoreMachineTransition),
                    CL_JIT_RESULT(ProgramValue, TaggedValue, Def),
                    CL_JIT_EFFECT_BOUNDS(Allocate, Allocate),
                    CL_JIT_BoxF64_OPERANDS, CL_JIT_BoxF64_ATTRIBUTES)

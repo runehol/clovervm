@@ -107,6 +107,13 @@ namespace cl::jit
             return result;
         }
 
+        static TransitionInstruction box_f64(TransitionLocation source)
+        {
+            TransitionInstruction result(TransitionInstructionKind::BoxF64);
+            result.set_location(0, source);
+            return result;
+        }
+
         static TransitionInstruction
         resume_interpreter(CodeObject *code_object,
                            BytecodePCOffset resume_pc_offset)
@@ -143,6 +150,12 @@ namespace cl::jit
         TransitionLocation transfer_destination() const
         {
             assert(kind_ == TransitionInstructionKind::Transfer);
+            return location(0);
+        }
+
+        TransitionLocation box_f64_source() const
+        {
+            assert(kind_ == TransitionInstructionKind::BoxF64);
             return location(0);
         }
 
@@ -201,6 +214,7 @@ namespace cl::jit
 
         void emplace_transfer(TransitionLocation destination,
                               TransitionLocation source);
+        TransitionLocation emplace_box_f64(TransitionLocation source);
         void emplace_resume_interpreter(CodeObject *code_object,
                                         BytecodePCOffset resume_pc_offset);
 

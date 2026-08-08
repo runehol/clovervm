@@ -45,6 +45,8 @@ namespace cl::jit
         TransitionInstruction transfer = TransitionInstruction::transfer(
             TransitionLocation::stack(-4),
             TransitionLocation::register_file(1));
+        TransitionInstruction box = TransitionInstruction::box_f64(
+            TransitionLocation::register_file(32));
         TransitionInstruction resume =
             TransitionInstruction::resume_interpreter(code_object, 0);
 
@@ -55,6 +57,8 @@ namespace cl::jit
                   transfer.transfer_source());
         EXPECT_EQ(TransitionLocation::stack(-4),
                   transfer.transfer_destination());
+        EXPECT_EQ(TransitionInstructionKind::BoxF64, box.kind());
+        EXPECT_EQ(TransitionLocation::register_file(32), box.box_f64_source());
         EXPECT_EQ(TransitionInstructionKind::ResumeInterpreter, resume.kind());
         EXPECT_EQ(code_object, resume.interpreter_code_object());
         EXPECT_EQ(0u, resume.resume_pc_offset());
@@ -109,6 +113,43 @@ namespace cl::jit
 
         ASSERT_EQ(5u, instructions.size());
         EXPECT_EQ(4u, instructions.front().scratch_slot_count());
+    }
+
+    TEST(TransitionProgramBuilder, BoxF64ProducesImplicitScratchResult)
+    {
+        test::VmTestContext context;
+        CodeObject *code_object = context.compile_file(L"");
+        TransitionProgramBuilder builder;
+        TransitionLocation boxed =
+            builder.emplace_box_f64(TransitionLocation::register_file(32));
+        builder.emplace_transfer(TransitionLocation::scratch(0), boxed);
+        builder.emplace_resume_interpreter(code_object, 0);
+
+        std::vector<TransitionInstruction> instructions =
+            std::move(builder).finalize();
+
+        ASSERT_EQ(4u, instructions.size());
+        EXPECT_EQ(TransitionLocation::scratch(1), boxed);
+        EXPECT_EQ(2u, instructions.front().scratch_slot_count());
+        EXPECT_EQ(TransitionInstructionKind::BoxF64, instructions[1].kind());
+        EXPECT_EQ(TransitionLocation::register_file(32),
+                  instructions[1].box_f64_source());
+    }
+
+    TEST(TransitionProgramBuilder, BoxF64RejectsUninitializedScratchSource)
+    {
+        test::VmTestContext context;
+        CodeObject *code_object = context.compile_file(L"");
+        EXPECT_DEATH(
+            {
+                TransitionProgramBuilder builder;
+                TransitionLocation boxed =
+                    builder.emplace_box_f64(TransitionLocation::scratch(3));
+                builder.emplace_transfer(TransitionLocation::scratch(0), boxed);
+                builder.emplace_resume_interpreter(code_object, 0);
+                (void)std::move(builder).finalize();
+            },
+            "reads uninitialized scratch");
     }
 
     TEST(TransitionProgramBuilder, ResumeRequiresAccumulatorScratch)
@@ -173,6 +214,28 @@ namespace cl::jit
                   "  0: begin_transition {scratch_slots = 1}\n"
                   "  1: transfer scratch[0], register_file[1]\n"
                   "  2: transfer stack[-3], scratch[0]\n"
+                  "  3: resume_interpreter "
+                  "{code_object = <embedded>, resume_pc_offset = 0}\n"
+                  "}\n",
+                  format_transition_program(instructions));
+    }
+
+    TEST(TransitionProgram, FormatsBoxF64)
+    {
+        test::VmTestContext context;
+        CodeObject *code_object = context.compile_file(L"");
+        TransitionProgramBuilder builder;
+        TransitionLocation boxed =
+            builder.emplace_box_f64(TransitionLocation::register_file(32));
+        builder.emplace_transfer(TransitionLocation::scratch(0), boxed);
+        builder.emplace_resume_interpreter(code_object, 0);
+        std::vector<TransitionInstruction> instructions =
+            std::move(builder).finalize();
+
+        EXPECT_EQ("transition {\n"
+                  "  0: begin_transition {scratch_slots = 2}\n"
+                  "  1: box_f64 register_file[32]\n"
+                  "  2: transfer scratch[0], scratch[1]\n"
                   "  3: resume_interpreter "
                   "{code_object = <embedded>, resume_pc_offset = 0}\n"
                   "}\n",

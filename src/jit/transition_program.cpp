@@ -97,6 +97,14 @@ namespace cl::jit
             TransitionInstruction::transfer(destination, source));
     }
 
+    TransitionLocation
+    TransitionProgramBuilder::emplace_box_f64(TransitionLocation source)
+    {
+        size_t entry_index = instructions_.size();
+        append_instruction(TransitionInstruction::box_f64(source));
+        return TransitionLocation::scratch(static_cast<int16_t>(entry_index));
+    }
+
     void TransitionProgramBuilder::emplace_resume_interpreter(
         CodeObject *code_object, BytecodePCOffset resume_pc_offset)
     {
@@ -170,6 +178,20 @@ namespace cl::jit
                         }
                         break;
                     }
+                case TransitionInstructionKind::BoxF64:
+                    {
+                        TransitionLocation source =
+                            instruction.box_f64_source();
+                        require_initialized_scratch(source,
+                                                    initialized_scratch);
+                        require_declared_scratch(source, scratch_slot_count);
+                        if(index >= scratch_slot_count)
+                        {
+                            fatal("transition result exceeds scratch header");
+                        }
+                        initialized_scratch[index] = true;
+                        break;
+                    }
                 case TransitionInstructionKind::ResumeInterpreter:
                     require_initialized_scratch(TransitionLocation::scratch(0),
                                                 initialized_scratch);
@@ -236,6 +258,11 @@ namespace cl::jit
                         index,
                         format_location(instruction.transfer_destination()),
                         format_location(instruction.transfer_source()));
+                    break;
+                case TransitionInstructionKind::BoxF64:
+                    fmt::format_to(
+                        std::back_inserter(result), "  {}: box_f64 {}\n", index,
+                        format_location(instruction.box_f64_source()));
                     break;
                 case TransitionInstructionKind::ResumeInterpreter:
                     fmt::format_to(
