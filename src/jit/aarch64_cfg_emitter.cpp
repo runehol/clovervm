@@ -741,10 +741,26 @@ namespace cl::jit
 
                 CL_JIT_MACHINE_INSTRUCTION_CASE(BoxF64, box_instruction)
                 {
-                    (void)box_instruction;
-                    assert(assigned_f64_register(locations,
-                                                 box_instruction.source())
-                               .encoding() == 0);
+                    PhysicalLocation source = locations.location_for(
+                        ProgramValueRef(box_instruction.source()));
+                    if(source.is_register())
+                    {
+                        PhysicalRegister source_register = source.reg();
+                        assert(source_register.register_class() ==
+                               RegisterClass::SIMD);
+                        DRegister fp_source(source_register.number());
+                        if(fp_source.encoding() != 0)
+                        {
+                            assembler.emit_fp_unary(FPUnaryOp::Mov,
+                                                    DRegister(0), fp_source);
+                        }
+                    }
+                    else
+                    {
+                        assembler.ldr(DRegister(0),
+                                      AArch64ManagedFramePointerRegister,
+                                      stack_byte_offset(source.stack()));
+                    }
                     assert(assigned_register(locations,
                                              ProgramValueRef(box_instruction))
                                .encoding() == 0);

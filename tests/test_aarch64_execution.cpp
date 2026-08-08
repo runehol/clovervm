@@ -471,6 +471,38 @@ namespace cl::jit
                                unequal_rhs.raw_value().as.integer)));
     }
 
+    TEST(AArch64Execution, LoadsStackMappedBoxF64ArgumentIntoD0)
+    {
+        CompilationSession session{test::compiler_thread()};
+        GraphBuilder builder(session, IRLevel::Machine);
+        Block *entry = builder.emplace_block();
+        ParameterF64Instruction parameter =
+            builder.emplace_parameter<ParameterF64Instruction>(entry);
+        BoxF64Instruction boxed =
+            builder.emplace_instruction<BoxF64Instruction>(entry,
+                                                           F64Ref(parameter));
+        builder.emplace_instruction<BareReturnInstruction>(
+            entry, TaggedValueRef(boxed));
+        ControlFlowGraph *graph = builder.finalize();
+
+        LocationAssignmentsBuilder location_builder;
+        location_builder.assign(ProgramValueRef(parameter),
+                                PhysicalLocation::stack(StackLocation(
+                                    StackLocationKind::SpillSlot, -1)));
+        location_builder.assign(ProgramValueRef(boxed),
+                                PhysicalLocation::reg(x0));
+        LocationAssignments locations = std::move(location_builder).finalize();
+
+        CodeCache cache;
+        auto emission = emit_aarch64_from_cfg(*graph, locations, cache,
+                                              no_side_exit_thunk());
+        ASSERT_TRUE(emission);
+        PublishedCode code = std::move(emission).value();
+        const void *instructions = reinterpret_cast<const void *>(
+            code.entry().bits_for_indirect_target());
+        EXPECT_EQ(0xfc5f82a0u, instruction_at(instructions, 0));
+    }
+
     TEST(AArch64Execution, LoadsConstF64BitsExactly)
     {
         test::VmTestContext context;
