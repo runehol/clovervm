@@ -473,8 +473,9 @@ Every successful case ends with complete CFG verification.
 
 ## Slice 10: Implement the Restricted Cross-Edge F64 Rewrite
 
-The first semantic client intentionally handles only joins whose complete
-incoming column is already expressed as identity-discardable `BoxF64` results:
+Extend the existing `simplify_f64_boxing()` pass to handle both local
+box/unbox pairs and joins whose complete incoming column is already expressed
+as identity-discardable `BoxF64` results:
 
 ```text
 BoxF64(x), BoxF64(y), ... -> ParameterF64(x, y, ...)
@@ -491,13 +492,20 @@ It rejects:
 - any join whose aliases cannot all be mapped to one destination box without
   changing `is` behavior.
 
+One invocation runs three phases: local box/unbox simplification, join
+conversion using fresh use lists, and another local simplification when a join
+changed. The join phase remains a private implementation detail of the existing
+pass; it does not add another exported pass or pipeline entry.
+
 The exact eligibility predicate receives a separate readiness review before
 this slice. In particular, snapshot-only uses must preserve one logical box per
 taken exit and all aliases within that exit. The pass may use existing use
 lists, but it must not infer that immutability makes identity irrelevant.
 
-After conversion, local guard and `UnboxF64(BoxF64(...))` simplification runs,
-followed by DCE. Snapshot-only boxing is still handled later by the separate
+The current Core optimizer already invokes `simplify_f64_boxing()`, so the
+restricted conversion becomes active in this slice. Later pipeline work adds
+the repeated guard simplification and DCE needed to expose and remove all newly
+local pairs. Snapshot-only boxing is still handled later by the separate
 Core-to-Machine side-exit sinking design.
 
 Tests cover all accepted and rejected identity cases, including two destination
@@ -514,12 +522,11 @@ implementation.
 Place the passes in a canonical direction that cannot recreate their inputs:
 
 1. tagged-value fact propagation and guard simplification;
-2. local F64 box/unbox simplification;
+2. F64 boxing simplification, including eligible join conversion;
 3. generic constant folding, including constant joins;
-4. restricted F64 join conversion;
-5. local simplification again for newly adjacent operations;
-6. equivalent-parameter elimination;
-7. dead-code elimination.
+4. guard and F64 boxing simplification again for newly exposed local pairs;
+5. equivalent-parameter elimination;
+6. dead-code elimination.
 
 Any repeated structural group has a fixed maximum round count and reports an
 optimization error on exhaustion. Successful conversion must strictly reduce
