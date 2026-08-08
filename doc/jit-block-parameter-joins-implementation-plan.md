@@ -353,7 +353,7 @@ F64 negation, signed zero, and NaN payload preservation.
 
 ## Slice 9: Add Atomic Representation Conversion Mechanics
 
-Add a separate rewrite result for changing one join's representation:
+The representation-conversion surface names all four parts of the transaction:
 
 ```cpp
 struct IncomingArgumentReplacement
@@ -365,29 +365,103 @@ struct IncomingArgumentReplacement
 BlockParameterRewrite::convert_representation(
     Instruction replacement_parameter,
     std::span<const IncomingArgumentReplacement> incoming,
-    RewriteInsertion destination_materialization);
+    RewriteInsertion destination_materialization,
+    ProgramValueRef materialized_result);
 ```
 
-The replacement parameter must be newly allocated through `RewriteContext` and
-must have the same result class as the original. Every original incoming edge
-must appear exactly once with a representation-compatible value already
-available in that edge's source block. The rewrite cannot insert into source
-blocks or edge-transfer blocks.
+The incoming span is copied into owned rewrite storage. The replacement
+parameter supplies the new destination definition. The incoming replacements
+supply the complete new edge column. The destination materialization may use
+the new parameter, and its explicitly named result replaces uses of the old
+parameter. The materialized result is not encoded implicitly as a structural
+transfer.
 
-The destination materialization may use the new parameter and must provide the
-replacement for remaining uses of the old parameter. All conversions are
-planned by original parameter instruction ID and committed in one transaction.
+Implement this mechanic in three separately reviewed slices.
 
-Self-edges receive explicit normalization: a proposed incoming argument may
-refer to the new parameter when the edge source is its own destination. The
-transformation pass, not the rewriter, remains responsible for proving that
-this mapping preserves meaning. The structural rewriter only validates
-availability and representation.
+### Slice 9A: Make Staged Parameter Columns Explicit
 
-Mechanical tests cover one conversion, several conversions in one block,
-shifting argument columns, missing and duplicate edge replacements,
-representation mismatch, unavailable predecessor values, self-edges,
-destination insertion order, and complete CFG verification after commit.
+Refactor the graph rewriter's internal block-parameter plan without changing
+behavior:
+
+```cpp
+struct StagedBlockParameterRewrite
+{
+    InstructionId original_parameter;
+    BlockParameterRewrite rewrite;
+    std::optional<InstructionId> output_parameter;
+};
+```
+
+Every original parameter column produces zero or one destination parameter and
+zero or one incoming edge column. Existing outcomes are represented as:
+
+| Rewrite | Output parameter | Incoming edge column |
+|---|---|---|
+| `keep()` | Original parameter | Original arguments |
+| `erase()` | None | Removed |
+| `replace_with_destination_parameter()` | None | Removed |
+| `materialize_in_destination()` | None | Removed |
+
+Both destination-parameter reconstruction and incoming-edge reconstruction
+consume the same staged column description. This removes the duplicated
+assumption that only `Keep` retains a column. No public conversion API or new
+rewrite behavior is added in 9A.
+
+Existing graph-rewriter tests must remain unchanged. Add one focused mixed
+column test covering keep, erase, destination-parameter replacement, and
+destination materialization together, proving stable parameter order and edge
+argument order.
+
+### Slice 9B: Add Non-Self Representation Conversion
+
+Add the public conversion result and support complete conversions for blocks
+without self-edges. Validate that:
+
+- the new parameter was allocated through the active `RewriteContext`;
+- it is a block parameter valid at the target IR level;
+- it has the old parameter's result class and a different representation;
+- no new parameter supplies two output columns;
+- every original incoming edge appears exactly once, with no duplicates or
+  foreign edges;
+- every replacement value has the new parameter's representation and is
+  available in that edge's source block before its terminator;
+- the materialization has no unrelated transfer outputs;
+- the named materialized result is emitted exactly once and is compatible with
+  the old parameter; and
+- the materialization uses only definitions available at destination entry.
+
+The new parameter occupies the old parameter's position. The materialization
+is inserted in original parameter order. The old parameter normalizes to the
+materialized result, not to the representation-incompatible new parameter.
+Each source terminator rebuilds the converted column from the replacement
+named for that edge. All mutation remains deferred until the complete graph has
+staged successfully. Self-edges are explicitly rejected in 9B.
+
+Tests cover one diamond conversion, destination use redirection, normalization
+metadata, source availability, exact edge coverage, result and representation
+compatibility, allocation ownership, duplicate output parameters, and complete
+CFG verification.
+
+### Slice 9C: Add Self-Edges and Simultaneous Conversion Hardening
+
+A self-edge must explicitly name the new parameter as its replacement argument:
+
+```text
+entry ---- x ----------+
+                       +--> loop(f64 new_parameter)
+backedge -- new_parameter
+```
+
+The rewriter permits a proposed incoming value to reference a new parameter
+only when that parameter is available at the source block's entry. It never
+infers the mapping from the removed old parameter. Supplying the old parameter
+on the self-edge is invalid.
+
+Then cover several conversions in one block, adjacent and non-adjacent
+conversions, conversions mixed with every existing parameter rewrite outcome,
+shifting columns, duplicate new parameters, destination insertion order, and
+multiple loop conversions. Every successful case ends with complete CFG
+verification.
 
 ## Slice 10: Implement the Restricted Cross-Edge F64 Rewrite
 

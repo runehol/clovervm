@@ -177,13 +177,19 @@ machinery:
 BlockParameterRewrite::keep();
 BlockParameterRewrite::replace_with_destination_parameter(parameter);
 BlockParameterRewrite::materialize_in_destination(...);
-BlockParameterRewrite::convert_representation(...);
+BlockParameterRewrite::convert_representation(
+    replacement_parameter,
+    incoming_argument_replacements,
+    destination_materialization,
+    materialized_result);
 ```
 
 `materialize_in_destination()` takes a `RewriteInsertion` and the result it
-emits. The representation-conversion surface remains to be fixed by its later
-implementation readiness review. These names describe separate legality
-contracts, not one unrestricted mutation object.
+emits. Representation conversion additionally names the new parameter, the
+complete replacement edge column, and the destination materialization result
+that replaces old uses. The incoming range is copied into owned rewrite
+storage. These names describe separate legality contracts, not one unrestricted
+mutation object.
 
 ## Block Traversal
 

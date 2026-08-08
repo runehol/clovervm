@@ -445,6 +445,124 @@ namespace cl::jit
         EXPECT_EQ(new_edge, exit->predecessor_edges()[0]);
     }
 
+    TEST(JitGraphRewriter, StagesMixedParameterColumnOutcomesConsistently)
+    {
+        CompilationSession session{test::compiler_thread()};
+        GraphBuilder builder(session, IRLevel::Core);
+        Block *entry = builder.emplace_block();
+        Block *exit = builder.emplace_block();
+
+        std::vector<ParameterInstruction> inputs;
+        inputs.reserve(5);
+        for(size_t index = 0; index < 5; ++index)
+        {
+            inputs.push_back(
+                builder.emplace_parameter<ParameterInstruction>(entry));
+        }
+        std::array<ProgramValueRef, 5> arguments = {
+            ProgramValueRef(inputs[0]), ProgramValueRef(inputs[1]),
+            ProgramValueRef(inputs[2]), ProgramValueRef(inputs[3]),
+            ProgramValueRef(inputs[4])};
+        BlockEdge *old_edge = builder.make_block_edge(entry, exit, arguments);
+        builder.emplace_instruction<UnconditionalBranchInstruction>(entry,
+                                                                    old_edge);
+
+        std::vector<ParameterInstruction> parameters;
+        parameters.reserve(5);
+        for(size_t index = 0; index < 5; ++index)
+        {
+            parameters.push_back(
+                builder.emplace_parameter<ParameterInstruction>(exit));
+        }
+        std::array<ProgramValueRef, 4> captured = {
+            ProgramValueRef(parameters[0]), ProgramValueRef(parameters[2]),
+            ProgramValueRef(parameters[3]), ProgramValueRef(parameters[4])};
+        SnapshotInstruction old_snapshot =
+            builder.emplace_instruction<SnapshotInstruction>(
+                exit, captured, BytecodePCOffset{13});
+        builder.emplace_instruction<BareReturnInstruction>(
+            exit, TaggedValueRef(parameters[4]));
+        ControlFlowGraph *graph = builder.finalize();
+
+        struct Callback
+        {
+            std::vector<ParameterInstruction> parameters;
+            std::optional<ConstInstruction> materialized;
+
+            BlockParameterRewrite
+            block_parameter(RewriteContext &context, const GraphQueries &,
+                            const BlockParameterJoin &join)
+            {
+                Instruction parameter = join.parameter();
+                if(parameter.id() == parameters[1].id())
+                {
+                    return BlockParameterRewrite::erase();
+                }
+                if(parameter.id() == parameters[2].id())
+                {
+                    return BlockParameterRewrite::
+                        replace_with_destination_parameter(
+                            ProgramValueRef(parameters[0]));
+                }
+                if(parameter.id() == parameters[3].id())
+                {
+                    materialized = context.make_instruction<ConstInstruction>(
+                        Value::False());
+                    return BlockParameterRewrite::materialize_in_destination(
+                        RewriteInsertion::insert({*materialized}),
+                        ProgramValueRef(*materialized));
+                }
+                return BlockParameterRewrite::keep();
+            }
+        } callback{parameters, {}};
+
+        GraphRewriter rewriter(session, *graph);
+        RewriteSummary summary =
+            rewriter.rewrite_instructions(InstructionTraversal(), callback);
+
+        ASSERT_TRUE(callback.materialized.has_value());
+        EXPECT_TRUE(summary.block_parameters_changed);
+        EXPECT_TRUE(summary.instructions_changed);
+        EXPECT_TRUE(summary.terminators_changed);
+        ASSERT_EQ(2u, exit->parameters().size());
+        EXPECT_EQ(parameters[0], exit->parameter_at(0));
+        EXPECT_EQ(parameters[4], exit->parameter_at(1));
+        EXPECT_FALSE(parameters[0].is_poisoned());
+        EXPECT_TRUE(parameters[1].is_poisoned());
+        EXPECT_TRUE(parameters[2].is_poisoned());
+        EXPECT_TRUE(parameters[3].is_poisoned());
+        EXPECT_FALSE(parameters[4].is_poisoned());
+        EXPECT_TRUE(old_snapshot.is_poisoned());
+
+        BlockEdge *new_edge = entry->block_successor_edges()[0];
+        EXPECT_NE(old_edge, new_edge);
+        ASSERT_EQ(2u, new_edge->arguments().size());
+        EXPECT_EQ(inputs[0].id(), new_edge->arguments()[0].instruction_id());
+        EXPECT_EQ(inputs[4].id(), new_edge->arguments()[1].instruction_id());
+
+        ASSERT_EQ(3u, exit->instructions().size());
+        EXPECT_EQ(*callback.materialized, exit->instruction_at(0));
+        SnapshotInstruction snapshot =
+            exit->instruction_at(1).as<SnapshotInstruction>();
+        ASSERT_EQ(4u, snapshot.captured_values().size());
+        EXPECT_EQ(parameters[0].id(),
+                  snapshot.captured_values()[0].instruction_id());
+        EXPECT_EQ(parameters[0].id(),
+                  snapshot.captured_values()[1].instruction_id());
+        EXPECT_EQ(callback.materialized->id(),
+                  snapshot.captured_values()[2].instruction_id());
+        EXPECT_EQ(parameters[4].id(),
+                  snapshot.captured_values()[3].instruction_id());
+        EXPECT_EQ(parameters[4].id(), exit->instruction_at(2)
+                                          .as<BareReturnInstruction>()
+                                          .return_value()
+                                          .instruction_id());
+        EXPECT_EQ(parameters[0].id(),
+                  summary.normalization_remapping.at(parameters[2].id()));
+        EXPECT_EQ(callback.materialized->id(),
+                  summary.normalization_remapping.at(parameters[3].id()));
+    }
+
     TEST(JitGraphRewriter,
          MaterializesBlockParameterReplacementsAtTheDestination)
     {

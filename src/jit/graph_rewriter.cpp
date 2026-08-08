@@ -261,8 +261,9 @@ namespace cl::jit
 
         struct StagedBlockParameterRewrite
         {
-            InstructionId parameter;
+            InstructionId original_parameter;
             BlockParameterRewrite rewrite;
+            std::optional<InstructionId> output_parameter;
         };
 
         using BlockParameterRewrites =
@@ -377,8 +378,13 @@ namespace cl::jit
                         callback, context, queries, join);
                     summary.block_parameters_changed |=
                         rewrite.kind_ != BlockParameterRewrite::Kind::Keep;
-                    rewrites.push_back(
-                        {join.parameter().id(), std::move(rewrite)});
+                    InstructionId original_parameter = join.parameter().id();
+                    std::optional<InstructionId> output_parameter =
+                        rewrite.kind_ == BlockParameterRewrite::Kind::Keep
+                            ? std::optional(original_parameter)
+                            : std::nullopt;
+                    rewrites.push_back({original_parameter, std::move(rewrite),
+                                        output_parameter});
                 }
                 block_parameter_rewrites.emplace(block, std::move(rewrites));
             }
@@ -420,7 +426,8 @@ namespace cl::jit
                     const StagedBlockParameterRewrite &staged = rewrites[index];
                     const BlockParameterRewrite &rewrite = staged.rewrite;
                     require_rewrite_invariant(
-                        staged.parameter == block->parameter_ids_[index],
+                        staged.original_parameter ==
+                            block->parameter_ids_[index],
                         "a staged JIT block parameter rewrite changed "
                         "identity");
                     if(rewrite.kind_ ==
@@ -450,7 +457,8 @@ namespace cl::jit
                             "be emitted exactly once by its insertion");
                         require_rewrite_invariant(
                             compatible_results(
-                                storage_->instruction(staged.parameter),
+                                storage_->instruction(
+                                    staged.original_parameter),
                                 storage_->instruction(materialization.result)),
                             "a JIT block parameter materialization has an "
                             "incompatible result");
@@ -476,7 +484,7 @@ namespace cl::jit
                         "a JIT block parameter replacement is not retained");
                     require_rewrite_invariant(
                         compatible_results(
-                            storage_->instruction(staged.parameter),
+                            storage_->instruction(staged.original_parameter),
                             storage_->instruction(*rewrite.replacement_)),
                         "a JIT block parameter replacement has an "
                         "incompatible result");
@@ -517,15 +525,16 @@ namespace cl::jit
                 {
                     InstructionId parameter_id = block->parameter_ids_[index];
                     require_rewrite_invariant(
-                        rewrites[index].parameter == parameter_id,
+                        rewrites[index].original_parameter == parameter_id,
                         "a staged JIT block parameter rewrite changed "
                         "identity");
-                    if(rewrites[index].rewrite.kind_ ==
-                       BlockParameterRewrite::Kind::Keep)
+                    if(rewrites[index].output_parameter.has_value())
                     {
-                        staged.parameters.push_back(parameter_id);
+                        staged.parameters.push_back(
+                            *rewrites[index].output_parameter);
                     }
-                    else
+                    if(!rewrites[index].output_parameter.has_value() ||
+                       *rewrites[index].output_parameter != parameter_id)
                     {
                         staged.removed_originals.push_back(parameter_id);
                     }
@@ -556,13 +565,14 @@ namespace cl::jit
                         continue;
                     }
                     require_rewrite_invariant(
-                        staged.parameter == block->parameter_ids_[index],
+                        staged.original_parameter ==
+                            block->parameter_ids_[index],
                         "a staged JIT block parameter rewrite changed "
                         "identity");
                     def_replacements.emplace(
-                        staged.parameter,
+                        staged.original_parameter,
                         DefReplacement{*rewrite.replacement_, false});
-                    record_normalization(staged.parameter,
+                    record_normalization(staged.original_parameter,
                                          *rewrite.replacement_);
                 }
             }
@@ -706,14 +716,14 @@ namespace cl::jit
                     InstructionId replacement = *normalized_result->second.def;
                     bool inserted =
                         def_replacements
-                            .emplace(staged_parameter.parameter,
+                            .emplace(staged_parameter.original_parameter,
                                      DefReplacement{replacement, false})
                             .second;
                     require_rewrite_invariant(
                         inserted,
                         "a JIT block parameter materialization has more than "
                         "one replacement");
-                    record_normalization(staged_parameter.parameter,
+                    record_normalization(staged_parameter.original_parameter,
                                          replacement);
                 }
             }
@@ -762,16 +772,24 @@ namespace cl::jit
                             if constexpr(HasBlockParameterCallback)
                             {
                                 require_rewrite_invariant(
-                                    (*parameter_rewrites)[index].parameter ==
+                                    (*parameter_rewrites)[index]
+                                            .original_parameter ==
                                         edge->target()->parameter_ids_[index],
                                     "a staged JIT block parameter rewrite "
                                     "changed identity");
-                                if((*parameter_rewrites)[index].rewrite.kind_ !=
-                                   BlockParameterRewrite::Kind::Keep)
+                                if(!(*parameter_rewrites)[index]
+                                        .output_parameter.has_value())
                                 {
                                     changed = true;
                                     continue;
                                 }
+                                require_rewrite_invariant(
+                                    *(*parameter_rewrites)[index]
+                                            .output_parameter ==
+                                        (*parameter_rewrites)[index]
+                                            .original_parameter,
+                                    "a staged replacement parameter has no "
+                                    "replacement edge column");
                             }
                             ProgramValueRef argument = edge->arguments()[index];
                             InstructionId resolved =
