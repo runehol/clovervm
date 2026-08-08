@@ -205,7 +205,7 @@ CL_ASM_SYMBOL(cl_aarch64_jit_side_exit):
 
     // Execute x16's transition program against the current managed frame. The
     // executor returns a pointer to context-owned InterpreterResumeState.
-    mov x0, x25  // TransitionExecutionContext * at ThreadState offset zero
+    mov x0, x25  // ThreadState *
     mov x1, x16  // const TransitionInstruction * selected by the side exit
     mov x2, x21  // Value * for the current managed frame
     bl CL_ASM_SYMBOL(cl_execute_transition_program)

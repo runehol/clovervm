@@ -1,9 +1,11 @@
+#include "builtin_types/float.h"
 #include "jit/transition_executor.h"
 #include "test_helpers.h"
 
 #include <gtest/gtest.h>
 
 #include <array>
+#include <bit>
 #include <cstdint>
 #include <cstring>
 #include <span>
@@ -46,10 +48,11 @@ namespace cl::jit
         std::vector<TransitionInstruction> instructions =
             std::move(builder).finalize();
 
-        TransitionExecutionContext context;
+        TransitionExecutionContext &context =
+            vm.thread()->transition_execution_context();
         context.register_file()[1] = word_for(expected);
         const InterpreterResumeState *result = cl_execute_transition_program(
-            &context, instructions.data(), frame_pointer);
+            vm.thread(), instructions.data(), frame_pointer);
 
         EXPECT_EQ(expected, result->accumulator);
         EXPECT_EQ(code_object->code.data(), result->pc);
@@ -74,15 +77,52 @@ namespace cl::jit
         std::vector<TransitionInstruction> instructions =
             std::move(builder).finalize();
 
-        TransitionExecutionContext context;
+        TransitionExecutionContext &context =
+            vm.thread()->transition_execution_context();
         context.register_file()[0] = Bits;
         context.register_file()[1] = word_for(accumulator);
         const InterpreterResumeState *result = cl_execute_transition_program(
-            &context, instructions.data(), frame_pointer);
+            vm.thread(), instructions.data(), frame_pointer);
 
         EXPECT_EQ(accumulator, result->accumulator);
         EXPECT_EQ(code_object, result->code_object);
         EXPECT_EQ(Bits, stack_word(frame_pointer + 1));
+    }
+
+    TEST(TransitionExecutor, BoxesExactF64Bits)
+    {
+        test::VmTestContext vm;
+        CodeObject *code_object = vm.compile_file(L"");
+        constexpr std::array<uint64_t, 3> TestBits = {
+            uint64_t{0x0000000000000000}, uint64_t{0x8000000000000000},
+            uint64_t{0x7ff8000000000042}};
+
+        for(uint64_t bits: TestBits)
+        {
+            std::array<Value, 8> stack = {};
+            Value *frame_pointer = stack.data() + 4;
+            TransitionProgramBuilder builder;
+            TransitionLocation boxed =
+                builder.emplace_box_f64(TransitionLocation::register_file(32));
+            builder.emplace_transfer(TransitionLocation::scratch(0), boxed);
+            builder.emplace_transfer(TransitionLocation::stack(-1), boxed);
+            builder.emplace_resume_interpreter(code_object, 0);
+            std::vector<TransitionInstruction> instructions =
+                std::move(builder).finalize();
+
+            TransitionExecutionContext &context =
+                vm.thread()->transition_execution_context();
+            context.register_file()[32] = bits;
+            const InterpreterResumeState *result =
+                cl_execute_transition_program(vm.thread(), instructions.data(),
+                                              frame_pointer);
+
+            ASSERT_TRUE(result->accumulator.is_ptr());
+            EXPECT_EQ(result->accumulator, frame_pointer[-1]);
+            double value =
+                assume_convert_to<Float>(result->accumulator)->value();
+            EXPECT_EQ(bits, std::bit_cast<uint64_t>(value));
+        }
     }
 
     TEST(TransitionExecutionContext, ReusesAndGrowsScratchStorage)

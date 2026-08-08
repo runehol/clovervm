@@ -1,5 +1,6 @@
 #include "jit/transition_program_emitter.h"
 
+#include "builtin_types/float.h"
 #include "jit/bytecode_state.h"
 #include "jit/compilation_session.h"
 #include "jit/graph_builder.h"
@@ -10,6 +11,7 @@
 
 #include <algorithm>
 #include <array>
+#include <bit>
 #include <cstdint>
 #include <cstring>
 #include <optional>
@@ -121,10 +123,11 @@ namespace cl::jit
 
         ASSERT_FALSE(program.empty());
         EXPECT_EQ(1u, program.front().scratch_slot_count());
-        TransitionExecutionContext context;
+        TransitionExecutionContext &context =
+            fixture.context.thread()->transition_execution_context();
         std::ranges::copy(register_file, context.register_file().begin());
         const InterpreterResumeState *resume = cl_execute_transition_program(
-            &context, program.data(), execution.frame_pointer);
+            fixture.context.thread(), program.data(), execution.frame_pointer);
 
         EXPECT_EQ(accumulator, resume->accumulator);
         EXPECT_EQ(fixture.code_object, resume->code_object);
@@ -137,6 +140,63 @@ namespace cl::jit
                 execution.frame_pointer[fixture.state_order->frame_offset_at(
                     position)]);
         }
+    }
+
+    TEST(TransitionProgramEmitter, EmitsAndExecutesBoxF64)
+    {
+        test::VmTestContext context;
+        CodeObject *code_object = context.compile_file(L"pass\n");
+        code_object->function_signature.n_parameters = 0;
+        code_object->n_locals = 0;
+        code_object->n_temporaries = 0;
+        BytecodeStateOrder state_order(*code_object);
+        CompilationSession session{test::compiler_thread()};
+        GraphBuilder builder(session, IRLevel::Core);
+
+        ParameterF64Instruction region_f64 =
+            builder.make_instruction<ParameterF64Instruction>();
+        BoxF64Instruction region_box =
+            builder.make_instruction<BoxF64Instruction>(F64Ref(region_f64));
+        std::vector<ProgramValueRef> captured(state_order.size(),
+                                              ProgramValueRef(region_box));
+        ExitToInterpreterInstruction exit =
+            builder.make_instruction<ExitToInterpreterInstruction>(
+                captured, BytecodePCOffset{0});
+        std::array parameter_ids = {region_f64.id()};
+        std::array instruction_ids = {region_box.id(), exit.id()};
+        SideExitRegion *region =
+            builder.make_side_exit_region(parameter_ids, instruction_ids);
+
+        ParameterF64Instruction owner_f64 =
+            builder.make_instruction<ParameterF64Instruction>();
+        std::array owner_arguments = {ProgramValueRef(owner_f64)};
+        ResumeInInterpreterWithSideExitInstruction owner =
+            builder
+                .make_instruction<ResumeInInterpreterWithSideExitInstruction>(
+                    owner_arguments, region->id());
+        std::array input_locations = {TransitionLocation::register_file(32)};
+
+        std::vector<TransitionInstruction> program =
+            emit_side_exit_transition_program(*session.storage(), state_order,
+                                              make_side_exit_binding(owner),
+                                              input_locations);
+
+        ASSERT_GE(program.size(), 3u);
+        EXPECT_EQ(TransitionInstructionKind::BoxF64, program[1].kind());
+        EXPECT_EQ(TransitionLocation::register_file(32),
+                  program[1].box_f64_source());
+
+        constexpr uint64_t Bits = 0x8000000000000000;
+        ExecutionStorage execution;
+        TransitionExecutionContext &execution_context =
+            context.thread()->transition_execution_context();
+        execution_context.register_file()[32] = Bits;
+        const InterpreterResumeState *resume = cl_execute_transition_program(
+            context.thread(), program.data(), execution.frame_pointer);
+
+        ASSERT_TRUE(resume->accumulator.is_ptr());
+        double value = assume_convert_to<Float>(resume->accumulator)->value();
+        EXPECT_EQ(Bits, std::bit_cast<uint64_t>(value));
     }
 
     TEST(TransitionProgramEmitter, OmitsCanonicalFrameLocationTransfers)
@@ -204,10 +264,11 @@ namespace cl::jit
                 fixture.binding(), input_locations);
 
         EXPECT_EQ(2u, program.front().scratch_slot_count());
-        TransitionExecutionContext context;
+        TransitionExecutionContext &context =
+            fixture.context.thread()->transition_execution_context();
         std::ranges::copy(register_file, context.register_file().begin());
         const InterpreterResumeState *resume = cl_execute_transition_program(
-            &context, program.data(), execution.frame_pointer);
+            fixture.context.thread(), program.data(), execution.frame_pointer);
 
         EXPECT_EQ(Value::from_smi(71), resume->accumulator);
         EXPECT_EQ(fixture.code_object, resume->code_object);

@@ -1,8 +1,11 @@
 #include "jit/transition_executor.h"
 
+#include "builtin_types/float.h"
 #include "bytecode/code_object.h"
 #include "runtime/fatal.h"
+#include "runtime/thread_state.h"
 
+#include <bit>
 #include <cassert>
 #include <cstddef>
 #include <cstdint>
@@ -83,18 +86,20 @@ namespace cl::jit
     }  // namespace
 
     extern "C" const InterpreterResumeState *
-    cl_execute_transition_program(TransitionExecutionContext *context,
+    cl_execute_transition_program(ThreadState *thread,
                                   const TransitionInstruction *program,
                                   Value *frame_pointer)
     {
-        assert(context != nullptr);
+        assert(thread != nullptr);
         assert(program != nullptr);
         assert(program->kind() == TransitionInstructionKind::BeginTransition);
         assert(frame_pointer != nullptr);
 
+        TransitionExecutionContext &context =
+            thread->transition_execution_context();
         std::span<uint64_t> scratch =
-            context->ensure_scratch(program->scratch_slot_count());
-        std::span<const uint64_t> register_file = context->register_file();
+            context.ensure_scratch(program->scratch_slot_count());
+        std::span<const uint64_t> register_file = context.register_file();
         assert(!scratch.empty());
         for(const TransitionInstruction *instruction = program + 1;;
             ++instruction)
@@ -112,17 +117,33 @@ namespace cl::jit
                                        value, frame_pointer, scratch);
                         break;
                     }
+                case TransitionInstructionKind::BoxF64:
+                    {
+                        uint64_t source = read_location(
+                            register_file, instruction->box_f64_source(),
+                            frame_pointer, scratch);
+                        // Transition execution is a no-safepoint region, so
+                        // allocation results may remain as raw scratch words
+                        // until they are installed in the interpreter frame.
+                        Value boxed =
+                            box_float(thread, std::bit_cast<double>(source));
+                        size_t result_index =
+                            static_cast<size_t>(instruction - program);
+                        assert(result_index < scratch.size());
+                        scratch[result_index] = boxed.as.integer;
+                        break;
+                    }
                 case TransitionInstructionKind::ResumeInterpreter:
                     {
                         CodeObject *code_object =
                             instruction->interpreter_code_object();
-                        context->interpreter_resume_state_ = {
+                        context.interpreter_resume_state_ = {
                             value_from_word(scratch[0]),
                             code_object->interpreted_pc_for_offset(
                                 instruction->resume_pc_offset()),
                             code_object,
                         };
-                        return &context->interpreter_resume_state_;
+                        return &context.interpreter_resume_state_;
                     }
                 default:
                     fatal("unsupported transition instruction");

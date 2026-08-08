@@ -10,6 +10,7 @@
 #include <absl/container/flat_hash_map.h>
 
 #include <algorithm>
+#include <cassert>
 #include <cstdint>
 #include <limits>
 #include <optional>
@@ -42,6 +43,9 @@ namespace cl::jit
                     Instruction instruction = storage_->instruction(id);
                     switch(instruction.kind())
                     {
+                        case InstructionKind::BoxF64:
+                            append_box_f64(instruction.as<BoxF64Instruction>());
+                            break;
                         case InstructionKind::ExitToInterpreter:
                             append_exit_to_interpreter(
                                 instruction.as<ExitToInterpreterInstruction>());
@@ -63,6 +67,15 @@ namespace cl::jit
                     fatal("transition instruction value has no location");
                 }
                 return found->second;
+            }
+
+            void append_box_f64(BoxF64Instruction box)
+            {
+                TransitionLocation result =
+                    builder_.emplace_box_f64(location_for(box.source()));
+                bool inserted =
+                    value_locations_.emplace(box.id(), result).second;
+                assert(inserted);
             }
 
             void append_exit_to_interpreter(

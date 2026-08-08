@@ -11,6 +11,11 @@
 #include <type_traits>
 #include <vector>
 
+namespace cl
+{
+    class ThreadState;
+}
+
 namespace cl::jit
 {
     struct InterpreterResumeState
@@ -29,7 +34,7 @@ namespace cl::jit
     class TransitionExecutionContext;
 
     extern "C" const InterpreterResumeState *
-    cl_execute_transition_program(TransitionExecutionContext *context,
+    cl_execute_transition_program(ThreadState *thread,
                                   const TransitionInstruction *program,
                                   Value *frame_pointer);
 
@@ -57,7 +62,7 @@ namespace cl::jit
 
     private:
         friend const InterpreterResumeState *
-        cl_execute_transition_program(TransitionExecutionContext *,
+        cl_execute_transition_program(ThreadState *,
                                       const TransitionInstruction *, Value *);
 
         std::array<uint64_t, RegisterFileSlotCount> register_file_{};

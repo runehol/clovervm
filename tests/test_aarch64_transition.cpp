@@ -237,11 +237,12 @@ namespace cl::jit
                                    frame_pointer);
         }
 
-        TransitionExecutionContext execution_context;
+        TransitionExecutionContext &execution_context =
+            vm.thread()->transition_execution_context();
         std::ranges::copy(register_file,
                           execution_context.register_file().begin());
         const InterpreterResumeState *resume = cl_execute_transition_program(
-            &execution_context, program.data(), frame_pointer);
+            vm.thread(), program.data(), frame_pointer);
 
         EXPECT_EQ(expected_value, resume->accumulator);
         EXPECT_EQ(code_object, resume->code_object);
